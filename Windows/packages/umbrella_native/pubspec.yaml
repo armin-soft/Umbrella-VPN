@@ -1,0 +1,19 @@
+name: umbrella_native
+description: "پل بومی ویندوز برای فیلترشکن آمبرلا (تونل، کیل سوییچ، سینی سیستم)"
+version: 1.0.0
+publish_to: "none"
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      windows:
+        pluginClass: UmbrellaNativePlugin
+        fileName: umbrella_native_plugin.h

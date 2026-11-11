@@ -1,0 +1,14 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    always_declare_return_types: true
+    avoid_print: true
+    prefer_single_quotes: true
+    use_super_parameters: true
+
+analyzer:
+  errors:
+    invalid_annotation_target: ignore
+  exclude:
+    - build/**

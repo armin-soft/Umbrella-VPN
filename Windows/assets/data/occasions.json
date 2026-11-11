@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "items": [
+    {
+      "id": "yalda",
+      "title": "شب یلدا",
+      "subtitle": "بلندترین شب سال، گرم و امن در کنار هم",
+      "start": "12-15",
+      "end": "12-22",
+      "icon": "nightlight",
+      "tint": "#C2185B"
+    },
+    {
+      "id": "nowruz",
+      "title": "نوروز",
+      "subtitle": "سال نو مبارک؛ سبز و تازه مثل بهار",
+      "start": "03-15",
+      "end": "04-03",
+      "icon": "spa",
+      "tint": "#2E7D32"
+    },
+    {
+      "id": "chaharshanbe",
+      "title": "چهارشنبه سوری",
+      "subtitle": "آتش و شادی؛ امن و بی خطر",
+      "start": "03-11",
+      "end": "03-20",
+      "icon": "local_fire_department",
+      "tint": "#EF6C00"
+    },
+    {
+      "id": "sizdah",
+      "title": "سیزده بدر",
+      "subtitle": "روز طبیعت مبارک",
+      "start": "04-01",
+      "end": "04-02",
+      "icon": "forest",
+      "tint": "#558B2F"
+    },
+    {
+      "id": "mehregan",
+      "title": "مهرگان",
+      "subtitle": "جشن مهر و دوستی",
+      "start": "10-08",
+      "end": "10-16",
+      "icon": "favorite",
+      "tint": "#AD1457"
+    },
+    {
+      "id": "ramadan",
+      "title": "ماه رمضان",
+      "subtitle": "ماه نیکی و آرامش",
+      "start": "01-01",
+      "end": "12-31",
+      "icon": "dark_mode",
+      "tint": "#3949AB",
+      "hijri": true
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "updated_at": "2026-01-01",
+  "note": "این فایل را سرور یا خودتان می توانید به روز کنید. هر هسته یک بسته فشرده ویندوزی است که برنامه دانلود و در پوشه cores/bin باز می کند.",
+  "cores": [
+    {
+      "id": "singbox",
+      "title": "هسته سینگ باکس",
+      "role": "تونل کامل و همه پروتکل ها",
+      "binary": "sing-box.exe",
+      "version": "1.11.3",
+      "url": "https://github.com/SagerNet/sing-box/releases/download/v1.11.3/sing-box-1.11.3-windows-amd64.zip",
+      "archive": "zip",
+      "inside": "sing-box-1.11.3-windows-amd64/sing-box.exe",
+      "sha256": "",
+      "required": true
+    },
+    {
+      "id": "wintun",
+      "title": "درایور کارت شبکه مجازی",
+      "role": "ساخت تونل کامل ویندوز",
+      "binary": "wintun.dll",
+      "version": "0.14.1",
+      "url": "https://www.wintun.net/builds/wintun-0.14.1.zip",
+      "archive": "zip",
+      "inside": "wintun/bin/amd64/wintun.dll",
+      "sha256": "",
+      "required": true
+    },
+    {
+      "id": "xray",
+      "title": "هسته ایکس ری",
+      "role": "پروتکل های وی لس، وی مس، تروجان و شادوساکس",
+      "binary": "xray.exe",
+      "version": "25.1.1",
+      "url": "https://github.com/XTLS/Xray-core/releases/download/v25.1.1/Xray-windows-64.zip",
+      "archive": "zip",
+      "inside": "xray.exe",
+      "sha256": "",
+      "required": false
+    },
+    {
+      "id": "clash",
+      "title": "هسته کلش متا",
+      "role": "خواندن اشتراک کلش و پروتکل های ترکیبی",
+      "binary": "mihomo.exe",
+      "version": "1.19.0",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.0/mihomo-windows-amd64-v1.19.0.zip",
+      "archive": "zip",
+      "inside": "mihomo-windows-amd64.exe",
+      "sha256": "",
+      "required": false
+    },
+    {
+      "id": "wireguard",
+      "title": "هسته وایرگارد",
+      "role": "اتصال وایرگارد خالص",
+      "binary": "wireguard.exe",
+      "version": "0.5.3",
+      "url": "https://download.wireguard.com/windows-client/wireguard-amd64-0.5.3.msi",
+      "archive": "msi",
+      "inside": "WireGuard/wireguard.exe",
+      "sha256": "",
+      "required": false
+    },
+    {
+      "id": "amnezia",
+      "title": "هسته آمنزیا",
+      "role": "اتصال آمنزیا و آمنزیا وایرگارد",
+      "binary": "amneziawg.exe",
+      "version": "1.0.0",
+      "url": "https://github.com/amnezia-vpn/amneziawg-go/releases/latest/download/amneziawg-go-windows-amd64.zip",
+      "archive": "zip",
+      "inside": "amneziawg.exe",
+      "sha256": "",
+      "required": false
+    },
+    {
+      "id": "mieru",
+      "title": "هسته میرو",
+      "role": "اتصال میرو",
+      "binary": "mieru.exe",
+      "version": "3.5.0",
+      "url": "https://github.com/enfein/mieru/releases/download/v3.5.0/mieru_3.5.0_windows_amd64.zip",
+      "archive": "zip",
+      "inside": "mieru.exe",
+      "sha256": "",
+      "required": false
+    }
+  ]
+}
