@@ -1,0 +1,360 @@
+CREATE TABLE IF NOT EXISTS `Settings` (
+`Key` VARCHAR(190) NOT NULL,
+`Value` TEXT NULL,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`Key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Users` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Telegram_ID` BIGINT NOT NULL,
+`First_Name` VARCHAR(190) NULL,
+`Chat_ID` BIGINT NULL,
+`Balance` DECIMAL(18,0) NOT NULL DEFAULT 0,
+`Is_Blocked` TINYINT(1) NOT NULL DEFAULT 0,
+`Blocked_At` DATETIME NULL,
+`Full_Name` VARCHAR(190) NULL,
+`Phone` VARCHAR(20) NULL,
+`Operator` VARCHAR(50) NULL,
+`Username` VARCHAR(64) NULL,
+`Rank_Title` VARCHAR(50) NULL,
+`Gender` VARCHAR(20) NULL,
+`Client_ID` VARCHAR(255) NULL,
+`Client_Status` VARCHAR(50) NULL,
+`Subscription` VARCHAR(50) NULL,
+`Free_Plan_Claimed` TINYINT(1) NOT NULL DEFAULT 0,
+`Package_Duration` VARCHAR(50) NULL,
+`Package_Start_Date` VARCHAR(100) NULL,
+`Expiration_Date` VARCHAR(100) NULL,
+`Expiration_Time_Stamp` INT UNSIGNED NULL,
+`Total_Usage_GB` DECIMAL(10,2) NOT NULL DEFAULT 0,
+`Used_Usage_GB` DECIMAL(10,2) NOT NULL DEFAULT 0,
+`Remaining_Usage_GB` DECIMAL(10,2) NOT NULL DEFAULT 0,
+`Percent_Usage` DECIMAL(5,2) NOT NULL DEFAULT 0,
+`ED_25519_Private_Key` TEXT NULL,
+`ED_25519_Public_Key` TEXT NULL,
+`WireGuard_Private_Key` TEXT NULL,
+`WireGuard_Public_Key` TEXT NULL,
+`WireGuard_PSK` TEXT NULL,
+`Last_Online` VARCHAR(50) NULL,
+`Server_Comment` TEXT NULL,
+`Server_Enable` TINYINT(1) NOT NULL DEFAULT 1,
+`Server_Is_Active` TINYINT(1) NOT NULL DEFAULT 1,
+`Deactivation_Message` TEXT NULL,
+`Registered_At` TIMESTAMP NULL,
+`Profile_Updated_At` TIMESTAMP NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_Users_Telegram_ID` (`Telegram_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `User_Sessions` (
+`Telegram_ID` BIGINT NOT NULL,
+`Flow` VARCHAR(255) NULL,
+`Temp_UID` BIGINT NULL,
+`Temp_Ticket_ID` BIGINT NULL,
+`Ticket_Subject` VARCHAR(255) NULL,
+`Ticket_Description` TEXT NULL,
+`Custom_Days` INT NULL,
+`Template_Code` VARCHAR(50) NULL,
+`Pending_Plan` VARCHAR(100) NULL,
+`Pending_Payment` VARCHAR(255) NULL,
+`Pending_Custom_Plan` TEXT NULL,
+`Pending_Topup` DECIMAL(18,0) NULL,
+`Broadcast_Mode` VARCHAR(20) NULL,
+`Idle_Notify_Users` TEXT NULL,
+`Is_In_Support` TINYINT(1) NOT NULL DEFAULT 0,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`Telegram_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Scheduled_Jobs` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Command` VARCHAR(190) NOT NULL,
+`User_ID` BIGINT NOT NULL,
+`Run_At` DATETIME NOT NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Scheduled_Jobs_Run_At` (`Run_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `SMS_Logs` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NOT NULL,
+`Phone_Number` VARCHAR(20) NULL,
+`Message` TEXT NULL,
+`Status` VARCHAR(20) NOT NULL DEFAULT 'Ù†Ø§Ù…ÙˆÙÙ‚',
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Versions` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Version` VARCHAR(50) NOT NULL,
+`Changes` TEXT NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `Users` ADD COLUMN `Channel_Grace_Started_At` INT UNSIGNED NULL;
+ALTER TABLE `Users` ADD COLUMN `Channel_Client_Disabled_At` INT UNSIGNED NULL;
+ALTER TABLE `Users` ADD COLUMN `Channel_Member_Check_At` INT UNSIGNED NULL;
+ALTER TABLE `Users` ADD COLUMN `Tags` VARCHAR(255) NULL;
+ALTER TABLE `Users` ADD COLUMN `Total_Recharge` DECIMAL(18,0) NOT NULL DEFAULT 0;
+ALTER TABLE `Users` ADD COLUMN `Total_Spent` DECIMAL(18,0) NOT NULL DEFAULT 0;
+ALTER TABLE `Users` ADD COLUMN `Last_Login_At` TIMESTAMP NULL;
+
+CREATE TABLE IF NOT EXISTS `Transactions` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NOT NULL,
+`Type` VARCHAR(30) NOT NULL,
+`Amount` DECIMAL(18,0) NOT NULL DEFAULT 0,
+`Balance_Before` DECIMAL(18,0) NOT NULL DEFAULT 0,
+`Balance_After` DECIMAL(18,0) NOT NULL DEFAULT 0,
+`Description` TEXT NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Transactions_User_ID` (`User_ID`),
+KEY `IDX_Transactions_Created_At` (`Created_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Subscription_Logs` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NOT NULL,
+`Action` VARCHAR(30) NOT NULL,
+`Plan_Name` VARCHAR(100) NULL,
+`Days` INT NULL,
+`Usage_GB` DECIMAL(10,2) NULL,
+`Server_Response` TEXT NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Subscription_Logs_User_ID` (`User_ID`),
+KEY `IDX_Subscription_Logs_Created_At` (`Created_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES
+('Robot_Status', 'ðŸŸ¢Ø±ÙˆØ´Ù†'),
+('Daily_Report_Enabled', '1'),
+('Daily_Report_Time', '00:00'),
+('Expiry_Warning_3Days', '1'),
+('Expiry_Warning_1Day', '1'),
+('Expiry_Warning_Today', '1'),
+('Auto_Ban_Inactive_Days', '180'),
+('Bot_Username', '');
+
+CREATE TABLE IF NOT EXISTS `Admin_Logs` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Admin_ID` BIGINT NOT NULL,
+`Action` VARCHAR(50) NOT NULL,
+`Target_User_ID` BIGINT NULL,
+`Details` TEXT NULL,
+`IP_Address` VARCHAR(45) NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Admin_Logs_Admin_ID` (`Admin_ID`),
+KEY `IDX_Admin_Logs_Action` (`Action`),
+KEY `IDX_Admin_Logs_Created_At` (`Created_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Tickets` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NOT NULL,
+`Subject` VARCHAR(255) NOT NULL,
+`Category` ENUM('financial','technical','sales','other') NOT NULL DEFAULT 'other',
+`Priority` ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+`Status` ENUM('open','pending','answered','closed') NOT NULL DEFAULT 'open',
+`Assigned_Admin` BIGINT NULL,
+`Last_Reply_At` TIMESTAMP NULL,
+`Last_Reply_By` ENUM('user','admin') NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+`Closed_At` TIMESTAMP NULL,
+PRIMARY KEY (`ID`),
+KEY `IDX_Tickets_User_ID` (`User_ID`),
+KEY `IDX_Tickets_Status` (`Status`),
+KEY `IDX_Tickets_Priority` (`Priority`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Ticket_Messages` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Ticket_ID` BIGINT UNSIGNED NOT NULL,
+`Sender_ID` BIGINT NOT NULL,
+`Sender_Type` ENUM('user','admin') NOT NULL,
+`Message` TEXT NULL,
+`Photo_File_ID` VARCHAR(255) NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Ticket_Messages_Ticket_ID` (`Ticket_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Ratings` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NOT NULL,
+`Subscription_Log_ID` BIGINT UNSIGNED NULL,
+`Stars` TINYINT UNSIGNED NOT NULL,
+`Comment` TEXT NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Ratings_User_ID` (`User_ID`),
+KEY `IDX_Ratings_Stars` (`Stars`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Payment_Queue` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NOT NULL,
+`Authority` VARCHAR(100) NOT NULL,
+`Amount` DECIMAL(18,0) NOT NULL,
+`Type` VARCHAR(30) NOT NULL,
+`Status` ENUM('pending','verified','failed','expired') NOT NULL DEFAULT 'pending',
+`Attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+`Last_Attempt_At` TIMESTAMP NULL,
+`Verified_At` TIMESTAMP NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_Payment_Queue_Authority` (`Authority`),
+KEY `IDX_Payment_Queue_Status` (`Status`),
+KEY `IDX_Payment_Queue_Created_At` (`Created_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `SMS_Templates` (
+`ID` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Code` VARCHAR(50) NOT NULL,
+`Name` VARCHAR(100) NOT NULL,
+`Template` TEXT NOT NULL,
+`Is_Active` TINYINT(1) NOT NULL DEFAULT 1,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_SMS_Templates_Code` (`Code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Notifications` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_ID` BIGINT NULL,
+`Type` VARCHAR(30) NOT NULL,
+`Title` VARCHAR(255) NOT NULL,
+`Message` TEXT NULL,
+`Is_Read` TINYINT(1) NOT NULL DEFAULT 0,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY (`ID`),
+KEY `IDX_Notifications_User_ID` (`User_ID`),
+KEY `IDX_Notifications_Is_Read` (`Is_Read`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Usage_Snapshots` (
+`Snapshot_Date` DATE NOT NULL,
+`User_ID` BIGINT NOT NULL,
+`Start_Used_GB` DECIMAL(12,3) NOT NULL DEFAULT 0,
+`Last_Used_GB` DECIMAL(12,3) NOT NULL DEFAULT 0,
+`Total_GB` DECIMAL(12,3) NOT NULL DEFAULT 0,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`Snapshot_Date`, `User_ID`),
+KEY `IDX_Usage_Snapshots_User_ID` (`User_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Cron_Lock` (
+`Job_Name` VARCHAR(100) NOT NULL,
+`Locked_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Locked_By` VARCHAR(100) NULL,
+PRIMARY KEY (`Job_Name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Desktop app (Umbrella VPN). These mirror Core/Database/Schema-App.php, which
+-- creates them idempotently on every request; the copy here keeps a fresh
+-- install and a documentation dump identical.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `App_Devices` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Device_ID` VARCHAR(64) NOT NULL,
+`User_UUID` VARCHAR(64) NULL,
+`Client_ID` VARCHAR(255) NULL,
+`Telegram_ID` BIGINT NULL,
+`Device_Name` VARCHAR(190) NULL,
+`Platform` VARCHAR(190) NULL,
+`App_Version` VARCHAR(40) NULL,
+`Phone` VARCHAR(20) NULL,
+`Is_Trusted` TINYINT(1) NOT NULL DEFAULT 0,
+`First_Seen_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Last_Seen_At` TIMESTAMP NULL,
+`Last_IP` VARCHAR(45) NULL,
+`Push_Enabled` TINYINT(1) NOT NULL DEFAULT 1,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_App_Devices_Device_ID` (`Device_ID`),
+KEY `IDX_App_Devices_User_UUID` (`User_UUID`),
+KEY `IDX_App_Devices_Telegram_ID` (`Telegram_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_SignIn_Requests` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Challenge` CHAR(32) NOT NULL,
+`Device_ID` VARCHAR(64) NOT NULL,
+`Device_Name` VARCHAR(190) NULL,
+`Platform` VARCHAR(190) NULL,
+`App_Version` VARCHAR(40) NULL,
+`IP` VARCHAR(45) NULL,
+`Phone` VARCHAR(20) NOT NULL,
+`Full_Name` VARCHAR(190) NULL,
+`User_UUID` VARCHAR(64) NULL,
+`Telegram_ID` BIGINT NULL,
+`Otp_Hash` CHAR(64) NULL,
+`Otp_Sent_At` INT UNSIGNED NULL,
+`Otp_Attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+`Stage` VARCHAR(24) NOT NULL DEFAULT 'code_sent',
+`Token` CHAR(64) NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Expires_At` INT UNSIGNED NULL,
+`Confirmed_At` INT UNSIGNED NULL,
+`Decided_At` INT UNSIGNED NULL,
+`Notified_At` INT UNSIGNED NULL,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_App_SignIn_Challenge` (`Challenge`),
+KEY `IDX_App_SignIn_Phone` (`Phone`),
+KEY `IDX_App_SignIn_Stage` (`Stage`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_Sessions` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Token_Hash` CHAR(64) NOT NULL,
+`User_UUID` VARCHAR(64) NOT NULL,
+`Device_ID` VARCHAR(64) NOT NULL,
+`Telegram_ID` BIGINT NULL,
+`Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Last_Used_At` TIMESTAMP NULL,
+`Revoked_At` TIMESTAMP NULL,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_App_Sessions_Token` (`Token_Hash`),
+KEY `IDX_App_Sessions_Device` (`Device_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_Notifications` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`User_UUID` VARCHAR(64) NULL,
+`Device_ID` VARCHAR(64) NULL,
+`Title` VARCHAR(190) NOT NULL,
+`Body` TEXT NULL,
+`Level` VARCHAR(20) NOT NULL DEFAULT 'info',
+`Sent_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+`Delivered_At` INT UNSIGNED NULL,
+PRIMARY KEY (`ID`),
+KEY `IDX_App_Notifications_User` (`User_UUID`),
+KEY `IDX_App_Notifications_Device` (`Device_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_Filter_Settings` (
+`User_UUID` VARCHAR(64) NOT NULL,
+`Enabled` TINYINT(1) NOT NULL DEFAULT 0,
+`Adult` TINYINT(1) NOT NULL DEFAULT 0,
+`Social` TINYINT(1) NOT NULL DEFAULT 0,
+`Gambling` TINYINT(1) NOT NULL DEFAULT 0,
+`Ads` TINYINT(1) NOT NULL DEFAULT 0,
+`Streaming` TINYINT(1) NOT NULL DEFAULT 0,
+`Dating` TINYINT(1) NOT NULL DEFAULT 0,
+`Violence` TINYINT(1) NOT NULL DEFAULT 0,
+`Messaging` TINYINT(1) NOT NULL DEFAULT 0,
+`Custom_Domains` TEXT NULL,
+`Updated_By` VARCHAR(20) NOT NULL DEFAULT 'app',
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`User_UUID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

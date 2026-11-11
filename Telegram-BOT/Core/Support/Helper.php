@@ -1,0 +1,847 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../Config/Environment.php';
+
+final class Helper {
+private const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+private const ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+private const SEPARATOR = '➖➖➖➖➖➖➖➖➖';
+private const OPERATORS = [
+'0910' => 'همراه اول', '0911' => 'همراه اول', '0912' => 'همراه اول', '0913' => 'همراه اول',
+'0914' => 'همراه اول', '0915' => 'همراه اول', '0916' => 'همراه اول', '0917' => 'همراه اول',
+'0918' => 'همراه اول', '0919' => 'همراه اول', '0990' => 'همراه اول', '0991' => 'همراه اول',
+'0992' => 'همراه اول', '0993' => 'همراه اول', '0994' => 'همراه اول',
+'0900' => 'ایرانسل', '0901' => 'ایرانسل', '0902' => 'ایرانسل', '0903' => 'ایرانسل',
+'0904' => 'ایرانسل', '0905' => 'ایرانسل', '0930' => 'ایرانسل', '0931' => 'ایرانسل',
+'0932' => 'ایرانسل', '0933' => 'ایرانسل', '0934' => 'ایرانسل', '0935' => 'ایرانسل',
+'0936' => 'ایرانسل', '0937' => 'ایرانسل', '0938' => 'ایرانسل', '0939' => 'ایرانسل',
+'0941' => 'ایرانسل',
+'0920' => 'رایتل', '0921' => 'رایتل', '0922' => 'رایتل', '0923' => 'رایتل',
+'0924' => 'رایتل', '0925' => 'رایتل', '0926' => 'رایتل', '0927' => 'رایتل',
+'0928' => 'رایتل', '0929' => 'رایتل',
+];
+
+private function __construct() {
+}
+
+public static function toPersian(int|float|string $Number): string {
+return strtr((string)$Number, array_combine(
+['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+self::PERSIAN_DIGITS
+));
+}
+
+public static function toEnglish(string $Text): string {
+return strtr($Text, array_merge(
+array_combine(self::PERSIAN_DIGITS, ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']),
+array_combine(self::ARABIC_DIGITS, ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+));
+}
+
+public static function smsPlan(string $Plan): string {
+$Plan = trim((string)(preg_replace('/^اشتراک\s*/u', '', trim($Plan)) ?? trim($Plan)));
+return $Plan !== '' ? $Plan : 'فعال';
+}
+
+public static function normalizeText(string $Text): string {
+$Text = trim($Text);
+$Text = preg_replace('/\s+/u', ' ', $Text) ?? $Text;
+$Text = str_replace(['‍', ' ', 'ـ', '‬', '‎'], '', $Text);
+$Text = str_replace(['ي', 'ك', 'ة', 'أ', 'إ', 'آ', 'ؤ', 'ئ'], ['ی', 'ک', 'ه', 'ا', 'ا', 'ا', 'و', 'ی'], $Text);
+$Text = preg_replace('/[۰-۹0-9]/u', '', $Text);
+return mb_strtolower($Text, 'UTF-8');
+}
+
+public const DATE_TIME_ERROR_TEXT = '⚠️خطا: دریافت اطلاعات تاریخ و زمان رخ داد';
+private const DATE_TIME_FALLBACK = "📆تاریخ شمسی:*نامعلوم*\n🕌تاریخ قمری:*نامعلوم*\n🌍تاریخ میلادی:*نامعلوم*\n\n🌎فصل:*❓نامعلوم*\n🕰زمان:*--:--:--*";
+private const DATE_TIME_CACHE_TTL = 120;
+private static array $Date_Time_Cache = [];
+
+private static function getDateTimeData(int $Next = 0): array {
+$Cache_Key = (string)$Next;
+$Cached = self::$Date_Time_Cache[$Cache_Key] ?? null;
+
+if (is_array($Cached) && (time() - (int)$Cached['at']) < self::DATE_TIME_CACHE_TTL) {
+return $Cached['data'];
+}
+
+$DateTime_Api_Url = Environment::getDateTimeApiUrl();
+$DateTime_Api_License = Environment::getDateTimeApiLicense();
+$Base = rtrim($DateTime_Api_Url, '/');
+$Params = [];
+
+if ($DateTime_Api_License !== '') $Params[] = 'License=' . urlencode($DateTime_Api_License);
+if ($Next > 0) $Params[] = 'Next=' . $Next;
+$DateTime_Api_Full = $Base . ($Params !== [] ? '/?' . implode('&', $Params) : '');
+$Last_Error = '';
+
+for ($Attempt = 1; $Attempt <= 3; $Attempt++) {
+if ($Attempt > 1) {
+usleep(350000);
+}
+
+$Context = stream_context_create([
+'http' => [
+'method' => 'GET',
+'timeout' => 10,
+'ignore_errors' => true,
+'header' => "Accept: application/json\r\nUser-Agent: ArminSoft-Helper/1.0\r\n",
+],
+]);
+$Response = @file_get_contents($DateTime_Api_Full, false, $Context);
+
+if ($Response === false || trim($Response) === '') {
+$Last_Error = 'دریافت تاریخ و زمان از وب سرویس ناموفق بود.';
+continue;
+}
+
+$Data = json_decode($Response, true);
+
+if (!is_array($Data)) {
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان معتبر نیست.';
+continue;
+}
+
+if (!isset($Data['Data']) || !is_array($Data['Data']) || $Data['Data'] === []) {
+$Last_Error = 'ساختار پاسخ وب سرویس تاریخ و زمان نامعتبر است.';
+continue;
+}
+
+self::$Date_Time_Cache[$Cache_Key] = ['at' => time(), 'data' => $Data['Data']];
+
+return $Data['Data'];
+}
+
+throw new RuntimeException($Last_Error !== '' ? $Last_Error : 'دریافت تاریخ و زمان از وب سرویس ناموفق بود.');
+}
+
+public static function currentDateTimeLabel(?int $Time_Stamp = null): string {
+try {
+$Data = static::getDateTimeData($Time_Stamp !== null ? max(0, (int)round(($Time_Stamp - time()) / 86400)) : 0);
+}
+
+catch (Throwable) {
+return static::DATE_TIME_ERROR_TEXT;
+}
+
+if (!is_array($Data) || $Data === []) {
+return static::DATE_TIME_ERROR_TEXT;
+}
+
+return "📆تاریخ شمسی:*" . (string)($Data['Shamsi_Date'] ?? '') . "*\n" .
+"🕌تاریخ قمری:*" . (string)($Data['Hijri_Date'] ?? '') . "*\n" .
+"🌍تاریخ میلادی:*" . (string)($Data['Gregorian_Date'] ?? '') . "*\n\n" .
+"🌎فصل:*" . (string)($Data['Season_Emoji'] ?? '') . (string)($Data['Season'] ?? '') . "*\n" .
+"🕰زمان:*" . (string)($Data['Time'] ?? '') . " " .
+(string)($Data['Time_Based_Emoji'] ?? '') . (string)($Data['Time_Based'] ?? '') . "*";
+}
+
+
+public static function formatPersianDate(int $Time_Stamp, bool $Include_Time = false): string {
+try {
+$Data = static::getDateTimeData();
+}
+
+catch (Throwable) {
+return $Include_Time ? 'نامعلوم --:--' : 'نامعلوم';
+}
+
+$Result = (string)($Data['Shamsi_Date'] ?? '');
+
+if ($Include_Time) {
+$Result .= ' ' . (string)($Data['Time'] ?? '');
+}
+
+return $Result;
+}
+
+public static function formatExpiration(int $Time_Stamp): string {
+$Now = time();
+$Days_Offset = (int)round(($Time_Stamp - $Now) / 86400);
+
+if ($Days_Offset < 0) $Days_Offset = 0;
+
+try {
+$Data = static::getDateTimeData($Days_Offset);
+}
+
+catch (Throwable) {
+return static::DATE_TIME_ERROR_TEXT;
+}
+
+return "📆تاریخ شمسی:*" . (string)($Data['Shamsi_Date'] ?? '') . "*\n" .
+"🕌تاریخ قمری:*" . (string)($Data['Hijri_Date'] ?? '') . "*\n" .
+"🌍تاریخ میلادی:*" . (string)($Data['Gregorian_Date'] ?? '') . "*\n\n" .
+"🌎فصل:*" . (string)($Data['Season_Emoji'] ?? '') . (string)($Data['Season'] ?? '') . "*\n" .
+"🕰زمان:*" . (string)($Data['Time'] ?? '') . " " .
+(string)($Data['Time_Based_Emoji'] ?? '') . (string)($Data['Time_Based'] ?? '') . "*";
+}
+
+public static function formatExpirationShort(int $Time_Stamp): string {
+$Now = time();
+$Days_Offset = (int)round(($Time_Stamp - $Now) / 86400);
+
+if ($Days_Offset < 0) $Days_Offset = 0;
+try {
+$Data = static::getDateTimeData($Days_Offset);
+}
+
+catch (Throwable) {
+return 'نامشخص';
+}
+
+return (string)($Data['Shamsi_Date'] ?? '');
+}
+
+
+
+public static function gregorianToJalali(string $GregorianDate): string {
+[$gy, $gm, $gd] = array_map('intval', explode('-', $GregorianDate));
+
+if ($gy <= 1600) {
+$jy = 0;
+$gy -= 621;
+}
+
+else {
+$jy = 979;
+$gy -= 1600;
+}
+
+$gy2 = ($gm > 2) ? ($gy + 1) : $gy;
+$days = (365 * $gy) + (int)(($gy2 + 3) / 4) - (int)(($gy2 + 99) / 100) + (int)(($gy2 + 399) / 400) - 80 + $gd + [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][$gm - 1];
+$jy += 33 * (int)($days / 12053);
+$days %= 12053;
+$jy += 4 * (int)($days / 1461);
+$days %= 1461;
+$jy += (int)(($days - 1) / 365);
+
+if ($days > 365) $days = ($days - 1) % 365;
+$jm = ($days > 186) ? 1 + (int)(($days - 186) / 30) : 1 + (int)($days / 31);
+$jd = 1 + (($days > 186) ? ($days - 186) % 30 : $days % 31);
+$jalali_months = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+$jalali_days = ['دوشنبه', 'سه شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه', 'یکشنبه'];
+$day_of_week = (int)date('N', mktime(0, 0, 0, $gm, $gd, $gy));
+$day_name = $jalali_days[($day_of_week + 6) % 7];
+$month_name = $jalali_months[$jm - 1];
+$jd_persian = static::toPersian((string)$jd);
+$jy_persian = static::toPersian((string)$jy);
+return $day_name . ' ' . $jd_persian . ' ' . $month_name . ' ' . $jy_persian;
+}
+
+public static function formatCurrency(float $Number): string {
+$Formatted = number_format((int)round($Number), 0, '.', "\u{066C}");
+return static::toPersian($Formatted) . ' تومان';
+}
+
+public static function formatTime(string $Time): string {
+$Time = trim($Time);
+
+if ($Time === '') return '';
+$Parts = explode(':', $Time);
+$Out = [];
+
+foreach ($Parts as $Index => $P) {
+$P = trim($P);
+if ($P === '') continue;
+
+if ($Index === 0) {
+$Out[] = static::toPersian(ltrim($P, '0') !== '' ? ltrim($P, '0') : '0');
+continue;
+}
+
+$Digits = static::toPersian($P);
+
+if (strlen($P) < 2) $Digits = static::toPersian('0') . $Digits;
+$Out[] = $Digits;
+}
+
+return implode(':', $Out);
+}
+
+public static function translateStatus(string $Status): string {
+$Lower = strtolower(trim($Status));
+return match (true) {
+str_contains($Lower, 'active') && !str_contains($Lower, 'inactive') => '✅فعال',
+str_contains($Lower, 'inactive') || str_contains($Lower, 'deactive') || str_contains($Lower, 'disabled') => '🚫غیرفعال',
+str_contains($Lower, 'enable') => '✅فعال',
+str_contains($Lower, 'disable') => '🚫غیرفعال',
+str_contains($Lower, 'expired') => '⏰منقضی',
+default => $Status,
+};
+}
+
+public static function formatGB(float $Value, bool $Persian = true): string {
+$Abs = abs($Value);
+
+if ($Abs > 0 && $Abs < 1.0) {
+$Formatted = number_format($Value * 1024, 0, '.', '');
+$Unit = 'مگابایت';
+}
+
+elseif ($Abs >= 1000.0) {
+$Tb = $Value / 1000;
+$Formatted = (abs($Tb - round($Tb)) < 0.005) ? (string)round($Tb) : number_format($Tb, 2, '.', '');
+$Unit = 'ترابایت';
+}
+
+else {
+$Formatted = number_format($Value, 3, '.', '');
+$Unit = 'گیگابایت';
+}
+
+$Text = $Formatted . ' ' . $Unit;
+return $Persian ? static::toPersian($Text) : $Text;
+}
+
+public static function formatPercent(int|float $Value, int $Precision = 1): string {
+$Text = number_format((float)$Value, $Precision, '.', '');
+$Text = rtrim(rtrim($Text, '0'), '.');
+
+if ($Text === '' || $Text === '-') $Text = '0';
+return static::toPersian($Text);
+}
+
+public static function humanDuration(int $Seconds, int $Max_Parts = 7): string {
+if ($Seconds <= 0) return 'هم اکنون';
+if ($Seconds < 0) return 'زمان نامعتبر';
+
+$Seconds = (int)abs($Seconds);
+$Total_Days = (int)floor($Seconds / 86400);
+$Years = intdiv($Total_Days, 365);
+$Days_Rem = $Total_Days % 365;
+$Months = intdiv($Days_Rem, 30);
+$Days_After_Months = $Days_Rem % 30;
+$Weeks = intdiv($Days_After_Months, 7);
+$Days = $Days_After_Months % 7;
+$Remainder = $Seconds % 86400;
+$Hours = intdiv($Remainder, 3600);
+$Minutes = intdiv($Remainder % 3600, 60);
+$Remaining_Seconds = $Remainder % 60;
+$Parts = [];
+$Units = [
+['سال', $Years],
+['ماه', $Months],
+['هفته', $Weeks],
+['روز', $Days],
+['ساعت', $Hours],
+['دقیقه', $Minutes],
+['ثانیه', $Remaining_Seconds],
+];
+
+foreach ($Units as [$Label, $Count]) {
+if ($Count <= 0) continue;
+$Parts[] = static::toPersian((string)$Count) . ' ' . $Label;
+if (count($Parts) >= max(1, $Max_Parts)) break;
+}
+
+return $Parts === [] ? 'کمتر از یک ثانیه' : implode(' و ', $Parts);
+}
+
+public static function idleEquivalent(int $Seconds): string {
+if ($Seconds <= 0) return 'کمتر از یک روز';
+$Total_Days = (int)floor($Seconds / 86400);
+
+if ($Total_Days < 1) {
+$Hours = (int)floor($Seconds / 3600);
+$Minutes = (int)floor(($Seconds % 3600) / 60);
+$Parts = [];
+
+if ($Hours > 0) $Parts[] = static::toPersian((string)$Hours) . ' ساعت';
+if ($Minutes > 0 && $Hours > 0) $Parts[] = static::toPersian((string)$Minutes) . ' دقیقه';
+return $Parts === [] ? 'کمتر از یک ساعت' : implode(' و ', $Parts);
+}
+
+$Years = intdiv($Total_Days, 365);
+$Remainder = $Total_Days % 365;
+$Months = intdiv($Remainder, 30);
+$Month_Remainder = $Remainder % 30;
+$Weeks = intdiv($Month_Remainder, 7);
+$Days = $Month_Remainder % 7;
+$Parts = [];
+
+if ($Years > 0) $Parts[] = static::toPersian((string)$Years) . ' سال';
+if ($Months > 0) $Parts[] = static::toPersian((string)$Months) . ' ماه';
+if ($Weeks > 0) $Parts[] = static::toPersian((string)$Weeks) . ' هفته';
+if ($Days > 0) $Parts[] = static::toPersian((string)$Days) . ' روز';
+return $Parts === [] ? 'کمتر از یک روز' : implode(' و ', $Parts);
+}
+
+public static function remainingDuration(int $Expiration_Time_Stamp, int $Max_Parts = 7): string {
+if ($Expiration_Time_Stamp <= 0) return 'نامشخص';
+$Diff = $Expiration_Time_Stamp - time();
+
+if ($Diff <= 0) return 'منقضی شده';
+return static::humanDuration($Diff, $Max_Parts);
+}
+
+public static function durationLabel(int $Days): string {
+$Days = (int)$Days;
+
+if ($Days <= 0) return 'نامشخص';
+$Years = intdiv($Days, 365);
+$Remainder = $Days % 365;
+$Months = intdiv($Remainder, 30);
+$Days_Left = $Remainder % 30;
+$Parts = [];
+
+if ($Years > 0) $Parts[] = static::toPersian((string)$Years) . ' سال';
+if ($Months > 0) $Parts[] = static::toPersian((string)$Months) . ' ماه';
+if ($Days_Left > 0) $Parts[] = static::toPersian((string)$Days_Left) . ' روز';
+return $Parts === [] ? 'نامشخص' : implode(' و ', $Parts);
+}
+
+public static function usageBar(float $Percent, int $Length = 12): string {
+$Length = max(4, $Length);
+$Filled = (int)round(max(0.0, min(100.0, $Percent)) / 100.0 * $Length);
+return str_repeat('▰', $Filled) . str_repeat('▱', $Length - $Filled);
+}
+
+public static function percentShare(float $Part, float $Total, int $Precision = 1): string {
+if ($Total <= 0) return static::toPersian('0') . '٪';
+return static::formatPercent(($Part / $Total) * 100.0, $Precision) . '٪';
+}
+
+public static function durationLabelFromLabel(?string $Label): string {
+$Label = trim((string)$Label);
+
+if ($Label === '') return 'نامشخص';
+$Days = null;
+
+if (preg_match('/([0-9۰-۹]+)\s*روز/u', $Label, $M) === 1) {
+$Days = (int)static::toEnglish($M[1]);
+}
+
+elseif (preg_match('/([0-9۰-۹]+)\s*ماه/u', $Label, $M) === 1) {
+$Days = (int)static::toEnglish($M[1]) * 30;
+}
+
+elseif (preg_match('/([0-9۰-۹]+)\s*سال/u', $Label, $M) === 1) {
+$Days = (int)static::toEnglish($M[1]) * 365;
+}
+
+if ($Days === null || $Days <= 0) return $Label;
+return static::durationLabel($Days);
+}
+
+public static function formatBytes(int $Bytes, int $Precision = 2): string {
+if ($Bytes < 1024) return self::unitConvert(static::toPersian((string)number_format($Bytes, 0, '.', '')), 'بایت');
+$Units = [
+['B', 'بایت'],
+['KB', 'کیلوبایت'],
+['MB', 'مگابایت'],
+['GB', 'گیگابایت'],
+['TB', 'ترابایت'],
+['PB', 'پتابایت'],
+];
+
+$Power = (int)floor(log($Bytes, 1024));
+$Power = min($Power, count($Units) - 1);
+$Value = $Bytes / (1024 ** $Power);
+return self::unitConvert(static::toPersian(number_format($Value, $Precision, '.', '')), $Units[$Power][1]);
+}
+
+public static function containsProfanity(string $Text): bool {
+$Dict = self::profanityDictionary();
+
+if ($Dict === []) return false;
+$Normalize = static function (string $S): string {
+$S = mb_strtolower(trim($S));
+$S = strtr($S, ['ي' => 'ی', 'ك' => 'ک', 'ؤ' => 'و', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ة' => 'ه']);
+return preg_replace('/[\x{200B}-\x{200F}\x{064B}-\x{065F}\x{0670}\x{0640}]/u', '', $S) ?? $S;
+};
+
+$Normalized = $Normalize($Text);
+$Compact = preg_replace('/[\\x{0020}\\x{200C}\\x{200D}]+/u', '', $Normalized) ?? $Normalized;
+$Long_Roots = [];
+$Short_Words = [];
+
+foreach ($Dict as $Word) {
+$W = $Normalize((string)$Word);
+$W_Compact = preg_replace('/[\\x{0020}\\x{200C}\\x{200D}]+/u', '', $W) ?? $W;
+
+if ($W_Compact === '') continue;
+if (mb_strlen($W_Compact, 'UTF-8') >= 5) $Long_Roots[] = $W_Compact;
+else $Short_Words[] = $W;
+}
+
+foreach ($Long_Roots as $Bad) {
+if (mb_stripos($Normalized, $Bad, 0, 'UTF-8') !== false) return true;
+if (mb_stripos($Compact, $Bad, 0, 'UTF-8') !== false) return true;
+}
+
+$Tokens = preg_split('/[\x{0020}\x{200C}\x{200D}]+/u', $Normalized) ?: [];
+$All_Single = $Tokens !== [] && $Tokens !== [''];
+$Joined = '';
+
+foreach ($Tokens as $Token) {
+if ($Token === '') continue;
+if (in_array($Token, $Short_Words, true)) return true;
+if (mb_strlen($Token, 'UTF-8') > 4) {
+foreach ($Long_Roots as $Bad) {
+if (mb_stripos($Token, $Bad, 0, 'UTF-8') !== false) return true;
+}
+}
+
+if (mb_strlen($Token, 'UTF-8') !== 1) $All_Single = false;
+$Joined .= $Token;
+}
+
+if ($All_Single && $Joined !== '') {
+if (in_array($Joined, $Short_Words, true)) return true;
+foreach ($Long_Roots as $Bad) {
+if (mb_stripos($Joined, $Bad, 0, 'UTF-8') !== false) return true;
+}
+}
+
+return false;
+}
+
+private static function profanityDictionary(): array {
+static $Cache = null;
+
+if ($Cache !== null) return $Cache;
+$File = dirname(__DIR__, 2) . '/Resources/Forbidden-Word.json';
+
+if (!is_file($File)) {
+error_log('[Umbrella-Bot][Profanity] Forbidden-Word.json not found; profanity filter is inactive.');
+$Cache = [];
+return $Cache;
+}
+
+$Decoded = json_decode((string)file_get_contents($File), true);
+
+if (!is_array($Decoded) || $Decoded === []) {
+error_log('[Umbrella-Bot][Profanity] Forbidden-Word.json is empty or invalid JSON; profanity filter is inactive.');
+$Cache = [];
+return $Cache;
+}
+
+$Words = [];
+
+foreach ($Decoded as $Word) {
+if (is_string($Word) && trim($Word) !== '') {
+$Words[] = trim($Word);
+}
+}
+
+$Cache = array_values(array_unique($Words));
+return $Cache;
+}
+
+private static function unitConvert(string $Number, string $Unit): string {
+return $Number . ' ' . $Unit;
+}
+
+public static function normalizePhone(string $Phone): string {
+$Phone = static::toEnglish(trim($Phone));
+$Phone = (string)preg_replace('/[^\d+]/', '', $Phone);
+
+if (str_starts_with($Phone, '+98')) $Phone = '0' . substr($Phone, 3);
+elseif (str_starts_with($Phone, '0098')) $Phone = '0' . substr($Phone, 4);
+elseif (str_starts_with($Phone, '98') && strlen($Phone) === 12) $Phone = '0' . substr($Phone, 2);
+elseif (str_starts_with($Phone, '9') && strlen($Phone) === 10) $Phone = '0' . $Phone;
+return (string)preg_replace('/\D/', '', $Phone);
+}
+
+public static function validatePhone(string $Phone): bool {
+return (bool)preg_match('/^09\d{9}$/', static::normalizePhone($Phone));
+}
+
+public static function detectOperator(string $Phone): string {
+$Phone = static::normalizePhone($Phone);
+
+if (!static::validatePhone($Phone)) return 'نامعتبر';
+$Prefix4 = substr($Phone, 0, 4);
+
+return self::OPERATORS[$Prefix4] ?? 'نامعتبر';
+}
+
+public static function toE164(string $Phone): string {
+$Phone = static::normalizePhone($Phone);
+return '+98' . ltrim($Phone, '0');
+}
+
+public static function validateFullName(string $FullName): bool {
+$Trimmed = trim($FullName);
+
+if (mb_strlen($Trimmed, 'UTF-8') < 2) {
+return false;
+}
+
+if (!preg_match('/^[\x{0600}-\x{06FF}]+(?:\s+[\x{0600}-\x{06FF}]+)+$/u', $Trimmed)) {
+return false;
+}
+
+$Normalized = static::normalizeText($Trimmed);
+
+if (static::containsProfanity($Trimmed)) {
+return false;
+}
+
+return true;
+}
+
+
+
+public static function greetingFrame(string $Type, string $Name, string $Section, ?int $User_ID = null): string {
+$Name = trim($Name) !== '' ? trim($Name) : $Type;
+$Name = self::mention($Name, $User_ID);
+
+try {
+$Date_Time_Block = static::currentDateTimeLabel();
+}
+
+catch (Throwable) {
+$Date_Time_Block = static::DATE_TIME_ERROR_TEXT;
+}
+
+return "🌹" . $Type . " گرامی " . $Name . " به بخش " . $Section . " خوش آمدید.\n"
+. self::SEPARATOR . "\n"
+. $Date_Time_Block . "\n"
+. self::SEPARATOR;
+}
+
+public static function mention(string $Name, ?int $User_ID = null, string $Username = ''): string {
+$Safe_Name = trim(str_replace(['[', ']', "\r", "\n"], '', $Name));
+if ($Safe_Name === '') $Safe_Name = trim($Name) !== '' ? trim($Name) : 'کاربر';
+$Username = ltrim(trim($Username), '@');
+
+if ($Username !== '' && preg_match('/^[A-Za-z][A-Za-z0-9_]{3,63}$/', $Username) === 1) {
+return '[' . $Safe_Name . '](https://t.me/' . $Username . ')';
+}
+
+if ($User_ID === null || $User_ID <= 0) {
+return $Safe_Name;
+}
+
+return '[' . $Safe_Name . '](tg://user?id=' . $User_ID . ')';
+}
+
+public static function adminGreeting(Context $Context, string $Section): string {
+return static::greetingFrame('مدیریت', $Context->profileName(), $Section, $Context->UserId);
+}
+
+public static function frame(string $Type, string $Name, string $Section, ?int $User_ID = null): string {
+$Name = trim($Name) !== '' ? trim($Name) : $Type;
+return static::greetingFrame($Type, $Name, $Section, $User_ID);
+}
+
+public static function adminGreetingNamed(string $Name, string $Section, ?int $User_ID = null): string {
+$Name = trim($Name) !== '' ? trim($Name) : 'مدیریت';
+return static::greetingFrame('مدیریت', $Name, $Section, $User_ID);
+}
+
+public static function userGreeting(Context $Context, string $Section): string {
+return static::greetingFrame('کاربر', $Context->profileName(), $Section, $Context->UserId);
+}
+
+public static function noticeBlock(string $Icon_Title, string $Body, string $Note = ''): string {
+$Lines = $Icon_Title . "\n" . self::SEPARATOR . "\n" . $Body;
+
+if (trim($Note) !== '') {
+$Lines .= "\n" . $Note;
+}
+
+return $Lines . "\n";
+}
+
+public static function adminFooter(): string {
+return "\n➖➖➖➖➖➖➖➖➖\n👌جهت استفاده از امکانات مدیریت بر روی منوی مورد نظر کلیک کنید.";
+}
+
+public static function userFooter(): string {
+return "\n" . self::SEPARATOR . "\n👌جهت استفاده از امکانات ربات بر روی منوی نظر کلیک کنید.";
+}
+
+public static function ticketCategories(): array {
+return [
+'financial' => '💰مالی و شارژ',
+'technical' => '🔧فنی و اتصال',
+'sales' => '💬فروش و مشاوره',
+'account' => '👤حساب کاربری',
+'other' => '📦سایر',
+];
+}
+
+public static function ticketPriorities(): array {
+return [
+'low' => '🟢کم',
+'medium' => '🟡متوسط',
+'high' => '🟠زیاد',
+'urgent' => '🔴فوری',
+];
+}
+
+public static function ticketCategoryLabel(string $Category): string {
+$Map = static::ticketCategories();
+return $Map[strtolower(trim($Category))] ?? '📦سایر';
+}
+
+public static function ticketPriorityLabel(string $Priority): string {
+$Map = static::ticketPriorities();
+return $Map[strtolower(trim($Priority))] ?? '🟡متوسط';
+}
+
+public static function isTicketCategory(string $Category): bool {
+return array_key_exists(strtolower(trim($Category)), static::ticketCategories());
+}
+
+public static function isTicketPriority(string $Priority): bool {
+return array_key_exists(strtolower(trim($Priority)), static::ticketPriorities());
+}
+
+public static function sourceLabel(string $Source, string $Type = ''): string {
+$Key = strtolower(trim($Source));
+
+return match (true) {
+$Key === 'gateway', $Key === 'payment', $Key === 'zarinpal' => '🌐درگاه پرداخت اینترنتی',
+$Key === 'card', $Key === 'card_to_card', $Key === 'offline' => '💳کارت به کارت',
+$Key === 'wallet', $Key === 'balance' => '👛کیف پول',
+$Key === 'admin', $Key === 'manager' => '🛠️مدیریت',
+$Key === 'auto_renew', $Key === 'autorenew' => '🔄تمدید خودکار',
+$Key === 'scheduler', $Key === 'cron', $Key === 'system' => '⚙️سیستم (زمان بند)',
+$Key === 'channel', $Key === 'channel_check' => '📢قانون کانال',
+$Key === 'server', $Key === 'api' => '🖥️سرور',
+$Key === 'user', $Key === 'self' => '👤خود کاربر',
+$Key === 'refund' => '↩️بازگشت وجه',
+default => $Key !== '' ? ('🧾' . $Key) : '🧾نامشخص',
+};
+}
+
+public static function actionLabel(string $Action): string {
+return match (strtolower(trim($Action))) {
+'activate' => '✅فعالسازی اشتراک',
+'renew' => '🔄تمدید اشتراک',
+'expire' => '⏰انقضای اشتراک',
+'deactivate' => '🚫غیرفعال سازی کلاینت',
+'admin_update' => '🛠️بروزرسانی توسط مدیریت',
+'link' => '🔗اتصال به سرور',
+'payment_success' => '💳پرداخت موفق درگاه',
+'topup' => '💵شارژ کیف پول',
+'credit_add' => '➕افزایش اعتبار',
+'credit_sub' => '➖کسر اعتبار',
+'wallet_topup' => '👛شارژ کیف پول',
+'purchase' => '🛒خرید اشتراک',
+'refund' => '↩️بازگشت وجه',
+default => '🧾' . $Action,
+};
+}
+
+public static function rankMedal(int $Rank): string {
+if ($Rank <= 0) return '🔹';
+$Medals = [
+1 => '🥇', 2 => '🥈', 3 => '🥉',
+4 => '🏅', 5 => '🎖️', 6 => '🌟', 7 => '⭐️', 8 => '✨', 9 => '💫', 10 => '🔥',
+11 => '⚡️', 12 => '💎', 13 => '🚀', 14 => '🎯', 15 => '🏆', 16 => '🎗️', 17 => '🎀', 18 => '🧿', 19 => '🌈', 20 => '☄️',
+];
+
+if (isset($Medals[$Rank])) return $Medals[$Rank];
+$Cycle = ['🔹', '🔷', '🔸', '🔶', '💠', '🌀', '🌊', '🌙', '🌱', '🌿', '🍀', '🪐', '🌠', '🔮', '🛡️', '🔖', '🧩', '🪄', '🎐', '📌'];
+return $Cycle[($Rank - 21) % count($Cycle)];
+}
+
+public static function rankTitle(int $Rank): string {
+if ($Rank <= 0) return 'بدون رتبه';
+if ($Rank === 1) return 'قهرمان مصرف';
+if ($Rank === 2) return 'نایب قهرمان';
+if ($Rank === 3) return 'رتبه سوم';
+
+return match (true) {
+$Rank <= 5 => 'برترین',
+$Rank <= 7 => 'نخبه',
+$Rank <= 9 => 'درخشان',
+$Rank <= 12 => 'برجسته',
+$Rank <= 15 => 'ممتاز',
+$Rank <= 18 => 'کوشا',
+$Rank <= 22 => 'فعال',
+$Rank <= 27 => 'پایدار',
+$Rank <= 33 => 'رایج',
+default => 'عادی',
+};
+}
+
+public static function rankEmoji(int $Rank): string {
+if ($Rank <= 0) return '🔹';
+return static::rankMedal($Rank);
+}
+
+public static function parseServerTime(string $Raw): int {
+$Raw = trim($Raw);
+
+if ($Raw === '' || str_starts_with($Raw, '0001-01-01')) return 0;
+
+if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/', $Raw, $M)) return 0;
+
+try {
+$Stamp = DateTimeImmutable::createFromFormat(
+'Y-m-d H:i:s',
+$M[1] . '-' . $M[2] . '-' . $M[3] . ' ' . $M[4] . ':' . $M[5] . ':' . ($M[6] ?? '00'),
+new DateTimeZone('Asia/Tehran')
+);
+}
+catch (Throwable) {
+return 0;
+}
+
+return $Stamp === false ? 0 : $Stamp->getTimestamp();
+}
+
+public static function parseServerTimeSafe(string $Raw): int {
+$Stamp = static::parseServerTime($Raw);
+return $Stamp > 0 ? $Stamp : 0;
+}
+
+public static function rankStatusIcon(float $Percent): string {
+if ($Percent >= 95) return '🚨';
+if ($Percent >= 85) return '🔴';
+if ($Percent >= 60) return '🟠';
+if ($Percent > 0) return '🟢';
+return '⚪️';
+}
+
+public static function rankStatusLabel(float $Percent): string {
+if ($Percent >= 95) return 'مصرف بحرانی';
+if ($Percent >= 85) return 'مصرف بسیار بالا';
+if ($Percent >= 60) return 'مصرف بالا';
+if ($Percent > 0) return 'مصرف عادی';
+return 'بدون مصرف';
+}
+
+public static function humanAgo(int $Time_Stamp): string {
+$Diff = time() - $Time_Stamp;
+
+if ($Time_Stamp <= 0) return 'نامشخص';
+
+if ($Diff < 0) {
+$Lead = abs($Diff);
+
+if ($Lead < 60) return 'همین حالا';
+
+if ($Lead < 3600) return static::toPersian((string)intdiv($Lead, 60)) . ' دقیقه دیگر';
+
+return static::toPersian((string)intdiv($Lead, 3600)) . ' ساعت دیگر';
+}
+
+if ($Diff < 60) return 'همین حالا';
+$Years = intdiv($Diff, 31536000);
+$Remainder = $Diff % 31536000;
+$Months = intdiv($Remainder, 2592000);
+$Remainder %= 2592000;
+$Days = intdiv($Remainder, 86400);
+$Remainder %= 86400;
+$Hours = intdiv($Remainder, 3600);
+$Minutes = intdiv($Remainder % 3600, 60);
+$Parts = [];
+
+if ($Years > 0) $Parts[] = self::toPersian((string)$Years) . ' سال';
+if ($Months > 0) $Parts[] = self::toPersian((string)$Months) . ' ماه';
+if ($Days > 0) $Parts[] = self::toPersian((string)$Days) . ' روز';
+if ($Hours > 0 && $Years === 0 && $Months === 0) $Parts[] = self::toPersian((string)$Hours) . ' ساعت';
+if ($Minutes > 0 && $Years === 0 && $Months === 0 && $Days === 0) $Parts[] = self::toPersian((string)$Minutes) . ' دقیقه';
+if ($Parts === []) return 'کمتر از یک دقیقه';
+return implode(' و ', array_slice($Parts, 0, 3));
+}
+}
+?>
