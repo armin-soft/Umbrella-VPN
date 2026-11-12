@@ -102,10 +102,12 @@ return ($Https ? 'https' : 'http') . '://' . (string)$_SERVER['HTTP_HOST'] . $Pa
 }
 
 /**
- * ثبت یا به روزرسانی وبهوک در تلگرام. اگر ثبت تازه باشد یا آدرس دامنه تغییر
- * کرده باشد انجام می شود، وگرنه فقط هر ساعت یک بار بررسی می شود.
+ * ثبت یا به روزرسانی وبهوک در تلگرام.
+ *
+ * @param bool $AllowUrlChange فقط بازدید مرورگری اجازه دارد آدرس ثبت شده را
+ *        عوض کند؛ درخواست های برنامه و API هرگز وبهوک را جابه جا نمی کنند.
  */
-public static function ensureRegistered(): void {
+public static function ensureRegistered(bool $AllowUrlChange = false): void {
 $Url = self::expectedUrl();
 
 if ($Url === '') {
@@ -118,9 +120,22 @@ if ($Secret === '') {
 return;
 }
 
+$Host = (string)parse_url($Url, PHP_URL_HOST);
+
+if ($Host === '' || (filter_var($Host, FILTER_VALIDATE_IP) && !in_array($Host, ['127.0.0.1', '::1'], true))) {
+// آدرس مبتنی بر آی پی برای وبهوک تلگرام معتبر نیست.
+return;
+}
+
 $Fingerprint = hash('sha256', $Url . '|' . $Secret);
 $Now = time();
 $State = self::readState();
+$Known_Url = (string)($State['url'] ?? '');
+
+if (!$AllowUrlChange && $Known_Url !== '' && $Known_Url !== $Url) {
+// آدرس ثبت شده را فقط یک بازدید واقعی از دامنه می تواند عوض کند.
+return;
+}
 
 if (is_array($State)
 && (string)($State['fingerprint'] ?? '') === $Fingerprint
@@ -135,7 +150,7 @@ $Current_Url = (string)($Current['url'] ?? '');
 if (is_array($State)
 && (string)($State['fingerprint'] ?? '') === $Fingerprint
 && $Current_Url === $Url) {
-self::writeState($Fingerprint);
+self::writeState($Fingerprint, $Url);
 return;
 }
 
@@ -147,7 +162,7 @@ $Result = TelegramClient::call('setWebhook', [
 ]);
 
 if (($Result['ok'] ?? false) === true) {
-self::writeState($Fingerprint);
+self::writeState($Fingerprint, $Url);
 error_log('[Umbrella-Bot][Webhook] registered: ' . $Url);
 return;
 }
@@ -173,10 +188,11 @@ $State = json_decode($Raw, true);
 return is_array($State) ? $State : [];
 }
 
-private static function writeState(string $Fingerprint): void {
+private static function writeState(string $Fingerprint, string $Url): void {
 try {
 Repository::setSetting(self::STATE_KEY, (string)json_encode([
 'fingerprint' => $Fingerprint,
+'url' => $Url,
 'at' => time(),
 ]));
 }

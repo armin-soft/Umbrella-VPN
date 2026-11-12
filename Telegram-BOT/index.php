@@ -125,6 +125,8 @@ $Is_Post = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
 if (!$Is_Post) {
 // بازدید ساده از آدرس ربات: ثبت وبهوک تازه می شود و بازدیدکننده به ربات می رود.
 // کارهای زمان بندی شده بعد از بسته شدن پاسخ اجرا می شوند تا هدایت کند نباشد.
+\Webhook::ensureRegistered(true);
+
 register_shutdown_function(static function (): void {
 require_once __DIR__ . '/Bot/Scheduler.php';
 \Scheduler::tick();
