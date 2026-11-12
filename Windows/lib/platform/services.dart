@@ -218,9 +218,9 @@ class IpService {
     http.Client? temporary;
     http.Client client = _client;
     if (proxy.isNotEmpty) {
-      final HttpClient inner = HttpClient()
-        ..findProxy = (Uri _) => 'PROXY $proxy'
-        ..connectionTimeout = const Duration(seconds: 8);
+      final HttpClient inner = HttpClient();
+      inner.findProxy = (Uri _) => 'PROXY $proxy';
+      inner.connectionTimeout = const Duration(seconds: 8);
       temporary = IOClient(inner);
       client = temporary;
     }

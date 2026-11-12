@@ -13,6 +13,7 @@ import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../vpn/vpn_controller.dart';
+import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 
 /// صفحه اصلی اتصال: لوگوی وضعیت، دکمه اتصال، آمار زنده و میانبرها.
