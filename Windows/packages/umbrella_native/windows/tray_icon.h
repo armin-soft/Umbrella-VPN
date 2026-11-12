@@ -41,6 +41,7 @@ class TrayIcon {
   HICON icon_ = nullptr;
   NOTIFYICONDATAW data_ = {};
   bool icon_added_ = false;
+  bool owns_icon_ = false;
   EventCallback callback_;
   std::wstring connect_label_ = L"اتصال";
   std::wstring disconnect_label_ = L"قطع اتصال";

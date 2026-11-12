@@ -43,9 +43,11 @@ bool TrayIcon::Create(EventCallback callback) {
   klass.lpszClassName = kWindowClass;
   RegisterClassExW(&klass);
 
-  window_ = CreateWindowExW(0, kWindowClass, L"Umbrella", 0, 0, 0, 0, 0,
-                            HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr),
-                            this);
+  // A real (never shown) top level window instead of a message-only one: the
+  // shell only delivers tray callbacks reliably to ordinary windows.
+  window_ = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, L"Umbrella",
+                            WS_POPUP, 0, 0, 0, 0, nullptr, nullptr,
+                            GetModuleHandleW(nullptr), this);
   if (window_ == nullptr) return false;
 
   data_ = {};
@@ -75,8 +77,9 @@ void TrayIcon::Destroy() {
     DestroyWindow(window_);
     window_ = nullptr;
   }
-  if (icon_ != nullptr && icon_ != data_.hIcon) {
+  if (owns_icon_ && icon_ != nullptr) {
     DestroyIcon(icon_);
+    owns_icon_ = false;
   }
   icon_ = nullptr;
 }
@@ -88,10 +91,12 @@ bool TrayIcon::SetIconFromFile(const std::string& ico_path) {
       LoadImageW(nullptr, path.c_str(), IMAGE_ICON, 0, 0,
                  LR_LOADFROMFILE | LR_DEFAULTSIZE));
   if (icon == nullptr) return false;
-  if (icon_ != nullptr && icon_ != data_.hIcon) {
+  if (owns_icon_ && icon_ != nullptr) {
     DestroyIcon(icon_);
+    owns_icon_ = false;
   }
   icon_ = icon;
+  owns_icon_ = true;
   data_.hIcon = icon;
   data_.uFlags = NIF_ICON;
   return Shell_NotifyIconW(NIM_MODIFY, &data_) != FALSE;

@@ -11,7 +11,9 @@
 #include <winternl.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <cwctype>
 #include <sstream>
 
@@ -438,7 +440,7 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
   last_spawn_error_ = 0;
   std::wstring wexe = ToWide(exe);
   std::wstring wargs = ToWide(args);
-  std::wstring command_line = Quote(exe);
+  std::wstring command_line = ToWide(Quote(exe));
   if (!args.empty()) {
     command_line += L" ";
     command_line += wargs;
