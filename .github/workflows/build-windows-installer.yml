@@ -2,6 +2,14 @@ name: build windows installer
 
 on:
   workflow_dispatch:
+    inputs:
+      attach_setup:
+        description: 'commit the installer into setup/ as split parts'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
   push:
     paths:
       - 'Windows/**'
@@ -128,6 +136,44 @@ jobs:
             Windows/dist/SHA256SUMS.txt
             Windows/dist/UmbrellaVPN-1.0.0-x64-portable.zip
           if-no-files-found: warn
+
+      # The installer is bigger than the 100 MB limit for a git file, so it is
+      # split into parts that are committed to setup/<version>/. A small join
+      # script rebuilds the exe and checks the sha256. This only runs when it is
+      # asked for, because every run adds ~115 MB to the repository history.
+      - name: Publish setup into the repository
+        if: github.event_name == 'workflow_dispatch' && inputs.attach_setup == 'yes'
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          $exe = 'dist\UmbrellaVPN-Setup-1.0.0-x64.exe'
+          if (-not (Test-Path $exe)) { throw 'installer missing' }
+          $out = '..\setup\1.0.0'
+          if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $buffer = New-Object byte[] (40MB)
+          $stream = [System.IO.File]::OpenRead((Resolve-Path $exe))
+          try {
+            $index = 1
+            while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+              $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.0-x64.exe.part{0:d2}' -f $index)
+              $writer = [System.IO.File]::Create($part)
+              try { $writer.Write($buffer, 0, $read) } finally { $writer.Close() }
+              $index++
+            }
+            Write-Host "split into $($index - 1) parts" -ForegroundColor Green
+          } finally {
+            $stream.Close()
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.0-x64.exe" -Encoding ASCII
+          Copy-Item '..\tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
+          Write-Host "sha256 $hash"
+          git config user.name 'github-actions'
+          git config user.email 'github-actions@users.noreply.github.com'
+          git add -- '../setup'
+          git commit -m "setup: windows installer 1.0.0 (split parts, run ${{ github.run_number }})"
+          git push
 
       # The build logs are published as a commit comment, so the run can be
       # diagnosed from outside GitHub Actions (which is handy in restricted
