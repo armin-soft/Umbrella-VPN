@@ -167,7 +167,7 @@ jobs:
           }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
           Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.0-x64.exe" -Encoding ASCII
-          Copy-Item '..\tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
+          Copy-Item 'tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
           Write-Host "sha256 $hash"
           git config user.name 'github-actions'
           git config user.email 'github-actions@users.noreply.github.com'
