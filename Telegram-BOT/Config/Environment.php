@@ -63,6 +63,12 @@ return self::get('IPPANEL_OTP_PATTERN', 'x7fhdaesmlj7vfi');
 }
 
 /** Shared secret the desktop app's gateway calls must present. */
+/**
+ * Optional operator override for the gateway signing key. Leave it out of
+ * `.env`: `AppSecret::get()` generates one and keeps it in `Settings`, so the
+ * app works with no manual secret at all. When this returns a value it takes
+ * precedence over the stored key (and the diag route asks for it as ?key=).
+ */
 public static function getAppGatewaySecret(): string {
 return self::get('APP_GATEWAY_SECRET');
 }

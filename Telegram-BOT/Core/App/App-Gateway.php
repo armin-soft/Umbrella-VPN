@@ -6,6 +6,7 @@ require_once __DIR__ . '/../Database/Schema-App.php';
 require_once __DIR__ . '/../Server/Umbrella-Panel.php';
 require_once __DIR__ . '/App-Device-Limit.php';
 require_once __DIR__ . '/App-Two-Step.php';
+require_once __DIR__ . '/App-Secret.php';
 require_once __DIR__ . '/../SMS/IPPanel.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once __DIR__ . '/../Storage/Repository.php';
@@ -783,18 +784,19 @@ self::ok([
 
 /*
  * Deployment health check, safe to expose: booleans and statuses only, never
- * values, paths or SQL text. When APP_GATEWAY_SECRET is configured the caller
- * must also present it (?key=...); a server whose .env never uploaded can be
- * diagnosed without knowing anything, because there is no secret to leak.
+ * values, paths or SQL text. The signing key is generated automatically now,
+ * so it cannot be used as a password here; only an operator who put
+ * APP_GATEWAY_SECRET in .env gets the extra ?key= gate, and a server whose
+ * .env never uploaded stays diagnosable (which is the whole point).
  */
 private static function diag(): void {
-$Secret = Environment::getAppGatewaySecret();
+$Env_Secret = Environment::getAppGatewaySecret();
 
-if ($Secret !== '') {
+if ($Env_Secret !== '') {
 $Key = (string)($_GET['key'] ?? '');
 
-if (!hash_equals($Secret, $Key)) {
-self::fail(403, 'diag_locked', 'set APP_GATEWAY_SECRET or ask the admin');
+if (!hash_equals($Env_Secret, $Key)) {
+self::fail(403, 'diag_locked', 'ask the admin for the diag key');
 }
 }
 
@@ -807,7 +809,9 @@ $Out = [
 'db_host_set' => Environment::getDatabaseHost() !== '',
 'db_name_set' => Environment::getDatabaseName() !== '',
 'db_user_set' => Environment::getDatabaseUser() !== '',
-'app_secret_set' => $Secret !== '',
+'app_secret_set' => AppSecret::get() !== '',
+'app_secret_from_env' => AppSecret::fromEnvironment(),
+'app_secret_stored' => AppSecret::stored() !== '',
 ];
 
 try {
@@ -1168,9 +1172,7 @@ return preg_replace('/[^A-Za-z0-9_-]/', '', $Raw) ?? '';
 }
 
 private static function secret(): string {
-$Secret = Environment::getAppGatewaySecret();
-
-return $Secret !== '' ? $Secret : 'umbrella-app-gateway';
+return AppSecret::get();
 }
 
 private static function clientIp(): string {
