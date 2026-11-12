@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
     گرفتن هسته های اتصال برای بسته بندی همراه فایل نصبی.
 
@@ -65,11 +65,31 @@ try {
         $extractDir = Join-Path $tempDir $core.id
         New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
         $insidePath = ''
+        $archiveType = if ([string]::IsNullOrWhiteSpace($core.archive)) { 'raw' } else { $core.archive.ToString().ToLower() }
         try {
-            switch ($core.archive.ToLower()) {
+            switch ($archiveType) {
                 'zip' {
                     Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
-                    $insidePath = Join-Path $extractDir ($core.inside -replace '/', '\')
+                    if (-not [string]::IsNullOrWhiteSpace($core.inside)) {
+                        $insidePath = Join-Path $extractDir ($core.inside -replace '/', '\')
+                    }
+                    if ([string]::IsNullOrWhiteSpace($insidePath) -or -not (Test-Path $insidePath)) {
+                        # نام فایل در بسته ممکن است با فهرست فرق کند؛ همان نام
+                        # باینری و بعد تنها فایل اجرایی بسته امتحان می شود.
+                        $leaf = if ($insidePath) { Split-Path $insidePath -Leaf } else { $core.binary }
+                        $match = Get-ChildItem -Path $extractDir -Recurse -Filter $leaf -ErrorAction SilentlyContinue |
+                            Select-Object -First 1
+                        if ($null -eq $match) {
+                            $match = Get-ChildItem -Path $extractDir -Recurse -Filter $core.binary -ErrorAction SilentlyContinue |
+                                Select-Object -First 1
+                        }
+                        if ($null -eq $match) {
+                            $exes = @(Get-ChildItem -Path $extractDir -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue)
+                            if ($exes.Count -eq 1) { $match = $exes[0] }
+                        }
+                        if ($null -eq $match) { throw "فایل $($core.binary) در بسته پیدا نشد" }
+                        $insidePath = $match.FullName
+                    }
                 }
                 'msi' {
                     # از بسته ام اس آی فقط فایل اجرایی بیرون کشیده می شود.

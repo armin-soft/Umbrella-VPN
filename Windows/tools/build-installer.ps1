@@ -56,6 +56,13 @@ if (-not $SkipBuild -or -not (Test-Path $ReleaseExe)) {
 if (-not (Test-Path $ReleaseExe)) {
     throw "فایل $ReleaseExe ساخته نشد. ابتدا tools\bootstrap.ps1 -Release را اجرا کنید."
 }
+# هسته ها باید کنار فایل اجرایی در خروجی ساخت باشند؛ نصب کننده از همین پوشه
+# آن ها را در {app}\cores می ریزد.
+$releaseCores = Join-Path $ReleaseDir 'cores'
+if (-not (Test-Path $releaseCores)) {
+    Write-Host 'کپی هسته ها در خروجی ساخت ...' -ForegroundColor Yellow
+    Copy-Item $coresDir $releaseCores -Recurse -Force
+}
 $sizeMb = [math]::Round((Get-ChildItem $ReleaseDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
 Write-Host "خروجی آماده است: $ReleaseDir ($sizeMb مگابایت)" -ForegroundColor Green
 

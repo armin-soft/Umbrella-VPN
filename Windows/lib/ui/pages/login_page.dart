@@ -261,7 +261,9 @@ class _LoginPageState extends State<LoginPage> {
         if (auth.error.isNotEmpty) ...<Widget>[
           const SizedBox(height: 16),
           _Message(text: auth.error, kind: _MessageKind.error),
-          if (auth.error.contains('درگاه') || auth.error.contains('سرور')) ...<Widget>[
+          if (auth.error.contains('درگاه') ||
+              auth.error.contains('سرور') ||
+              auth.error.contains('ارتباط')) ...<Widget>[
             const SizedBox(height: 8),
             Row(
               children: <Widget>[

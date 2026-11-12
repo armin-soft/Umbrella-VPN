@@ -172,7 +172,7 @@ class AuthController extends ChangeNotifier {
     final bool ok = await _gateway.ping();
     _busy = false;
     if (!ok) {
-      _error = 'درگاه ${gatewayHost} پاسخ نداد؛ نشانی را بررسی کنید.';
+      _error = 'درگاه $gatewayHost پاسخ نداد؛ نشانی را بررسی کنید.';
     }
     notifyListeners();
     return ok;

@@ -74,9 +74,9 @@ class CoreProvisioner {
   /// بعد پوشه داده.
   Future<String?> locateBinary(String binary) async {
     final List<String> candidates = <String>[
-      '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
-      '${bundledDir}${Platform.pathSeparator}$binary',
-      '${appDir}${Platform.pathSeparator}$binary',
+      '$bundledDir${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
+      '$bundledDir${Platform.pathSeparator}$binary',
+      '$appDir${Platform.pathSeparator}$binary',
       '$binDir${Platform.pathSeparator}$binary',
     ];
     for (final String candidate in candidates) {
