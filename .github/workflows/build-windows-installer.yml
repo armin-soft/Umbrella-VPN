@@ -1,0 +1,65 @@
+name: build windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Windows/**'
+      - '.github/workflows/build-windows-installer.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      # Keep the Flutter and pub caches inside the runner workspace.
+      PUB_CACHE: ${{ github.workspace }}\.pub-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version and doctor
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Analyze (non blocking)
+        working-directory: Windows
+        continue-on-error: true
+        run: flutter analyze
+
+      - name: Build release bundle
+        working-directory: Windows
+        run: powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer and portable zip
+        working-directory: Windows
+        run: >
+          powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
+          -SkipBuild
+          -Portable
+          -InnoPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+
+      - name: Show output
+        run: Get-ChildItem Windows\dist | Format-Table Name, Length
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Setup-1.0.0-x64
+          path: |
+            Windows/dist/UmbrellaVPN-Setup-1.0.0-x64.exe
+            Windows/dist/SHA256SUMS.txt
+            Windows/dist/UmbrellaVPN-1.0.0-x64-portable.zip
+          if-no-files-found: error
