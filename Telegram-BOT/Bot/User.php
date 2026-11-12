@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Panel.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Support/Http.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Subscription/Auto-Renew.php';
@@ -850,7 +851,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄تغییرات ن
 }
 
 $Greeting = Common::greet($Context, 'تغییرات نسخه');
-$Version = (string)(Repository::getSetting('Robot_Version') ?: Environment::getRobotVersion());
+$Version = BotConfig::robotVersion();
 $Version_P = Helper::toPersian($Version);
 $Changes = (string)Repository::getSetting('Robot_Changes', '');
 $Changes_Text = $Changes !== '' ? $Changes : '⚠️تغییراتی جهت برای نمایش وجود ندارد';

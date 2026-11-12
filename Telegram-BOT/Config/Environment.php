@@ -206,8 +206,9 @@ public static function getDateTimeApiLicense(): string {
 return self::get('DATE_TIME_API_LICENSE', '');
 }
 
+/** Fallback for the switch the admin owns from «⚙️ تنظیمات ربات». */
 public static function showEmergencyConfig(): bool {
-$Val = strtolower(self::get('SHOW_EMERGENCY_CONFIG', 'true'));
+$Val = strtolower(self::get('SHOW_EMERGENCY_CONFIG', 'false'));
 return $Val === 'true' || $Val === '1';
 }
 

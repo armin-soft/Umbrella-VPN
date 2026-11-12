@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Config/Environment.php';
@@ -43,6 +44,7 @@ $Markup[] = [['text' => '🏆رتبه بندی کاربران', 'callback_data' 
 $Markup[] = [['text' => '📨ارسال پیامک', 'callback_data' => 'منوی پیامک']];
 $Markup[] = [['text' => '🗄️دیتابیس (پشتیبان/تنظیم مجدد)', 'callback_data' => 'دیتابیس']];
 $Markup[] = [['text' => '🔄بروزرسانی نسخه', 'callback_data' => 'بروز رسانی']];
+$Markup[] = [['text' => '⚙️تنظیمات ربات (نسخه / کانفیگ اضطراری)', 'callback_data' => 'تنظیمات ربات']];
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
@@ -202,6 +204,7 @@ $Map = [
 'update_uid' => 'بروز رسانی داده کاربران',
 'version_number' => 'بروز رسانی نسخه',
 'version_changes' => 'بروز رسانی نسخه',
+'emergency_url' => 'تنظیمات ربات',
 'ticket_reply_text' => 'مدیریت تیکت ها',
 ];
 
@@ -211,6 +214,100 @@ return $Map[$Flow] ?? 'منوی مدیریت';
 public static function settings(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::menu($Context);
+}
+
+/**
+ * The three values that used to live only in `.env`: robot version, whether the
+ * emergency config link is shown, and the link. The panel wins; `.env` is shown
+ * as the fallback so an admin can see what would happen if a key is never set.
+ */
+public static function configMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '⚙️تنظیمات ربات در حال بارگذاری...', false);
+}
+
+$Version = BotConfig::robotVersion();
+$Version_Label = $Version !== '' ? Helper::toPersian($Version) : 'ثبت نشده';
+$Version_Source = BotConfig::source(BotConfig::KEY_VERSION) === 'panel' ? '📝از پنل' : '🌱از فایل .env';
+$Show = BotConfig::showEmergency();
+$Url = BotConfig::emergencyUrl();
+$Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل .env';
+$Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
+. "⚙️*تنظیمات ربات*\n➖➖➖➖➖➖➖➖➖➖\n"
+. "🔄نسخه ربات: `{$Version_Label}` ({$Version_Source})\n"
+. "🚱نمایش کانفیگ اضطراری: *" . ($Show ? '🟢روشن' : '🔴خاموش') . "*\n"
+. "🔗آدرس کانفیگ اضطراری ({$Url_Source}):\n<code>{$Url}</code>\n"
+. ($Show
+? "ℹ️در حال حاضر خط «اضطراری موقت» در پیام کانفیگ کاربران نمایش داده می شود.\n"
+: "ℹ️خط «اضطراری موقت» در پیام کانفیگ کاربران نمایش داده نمی شود.\n")
+. Helper::adminFooter();
+$Markup = [
+[['text' => '🔄تغییر نسخه ربات', 'callback_data' => 'بروز رسانی']],
+[['text' => $Show ? '⛔️خاموش کردن کانفیگ اضطراری' : '✅روشن کردن کانفیگ اضطراری', 'callback_data' => 'emergency_toggle']],
+[['text' => '🔗تغییر آدرس کانفیگ اضطراری', 'callback_data' => 'emergency_url_start']],
+[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
+];
+
+if ($Context->IsCallback && $Context->MessageId !== null) {
+TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+return;
+}
+
+TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard($Markup));
+}
+
+public static function toggleEmergencyConfig(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Next = !BotConfig::showEmergency();
+BotConfig::setShowEmergency($Next);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, $Next ? '✅کانفیگ اضطراری روشن شد.' : '⛔️کانفیگ اضطراری خاموش شد.', false);
+}
+
+self::configMenu($Context);
+}
+
+public static function emergencyUrlStart(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::startInput(
+$Context,
+'admin:emergency_url',
+"🔗آدرس کامل کانفیگ اضطراری را بفرستید (با http یا https).\n"
+. "🚱آدرس فعلی: <code>" . BotConfig::emergencyUrl() . "</code>\n\n"
+. "👌برای پاک کردن آن و برگشت به مقدار پیش فرض، کلمه «حذف» را بفرستید.\n\n"
+);
+}
+
+private static function emergencyUrlSave(Context $Context, string $Text): void {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Value = trim($Text);
+
+if (in_array(mb_strtolower($Value), ['حذف', 'پاک', 'delete', 'clear', '-'], true)) {
+BotConfig::setEmergencyUrl('');
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش فرض (.env یا آدرس داخلی) دوباره استفاده می شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
+]));
+return;
+}
+
+if (!preg_match('#^https?://[^\s<>]+$#i', $Value)) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌آدرس نامعتبر است.\n➖➖➖➖➖➖➖➖➖➖\n⚠️آدرس باید کامل و با http:// یا https:// شروع شود.\n👌مثال: `https://example.com/Emergency-Configuration.txt`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Common::backTo('🔗تلاش دوباره', 'emergency_url_start')],
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+]));
+return;
+}
+
+BotConfig::setEmergencyUrl($Value);
+Repository::logAdminAction($Context->UserId, 'emergency_config_url', null, 'url=' . $Value, '');
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری ثبت شد:\n<code>{$Value}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
+]));
 }
 
 public static function reportMenu(Context $Context): void {
@@ -1110,7 +1207,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function updateMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
-$Current_Version = (string)Repository::getSetting('Robot_Version', Environment::getRobotVersion());
+$Current_Version = BotConfig::robotVersion();
 $Current_Changes = (string)Repository::getSetting('Robot_Changes', '');
 $Text = Helper::adminGreeting($Context, 'بروز رسانی') . '🔁نسخه فعلی: `' . Helper::toPersian($Current_Version) . '`' . "\n\n";
 
@@ -1184,6 +1281,7 @@ $Flow === 'admin:app_push_text' => self::appPushText($Context, $Text),
 $Flow === 'admin:expire_uid' => self::manualExpire($Context, trim($Text)),
 $Flow === 'admin:version_number' => self::versionNumber($Context, trim($Text)),
 $Flow === 'admin:version_changes' => self::versionChanges($Context, $Text),
+$Flow === 'admin:emergency_url' => self::emergencyUrlSave($Context, $Text),
 $Flow === 'admin:ticket_reply_text' => self::ticketAdminReplySend($Context, trim($Text)),
 default => self::unknownAdminInput($Context),
 };
@@ -1265,7 +1363,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فر�
 return;
 }
 
-Repository::setSetting('Robot_Version', $Version);
+BotConfig::setRobotVersion($Version);
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:version_changes']);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅نسخه `" . Helper::toPersian($Version) . "` ثبت شد.\n\n👌حالا تغییرات این نسخه را وارد کنید." . Helper::adminFooter());
 }
@@ -1273,7 +1371,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅نس�
 private static function versionChanges(Context $Context, string $Changes): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 Repository::setSetting('Robot_Changes', $Changes);
-$Version = (string)Repository::getSetting('Robot_Version', Environment::getRobotVersion());
+$Version = BotConfig::robotVersion();
 
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅ربات با موفقیت به نسخه `" . Helper::toPersian($Version) . "` بروزرسانی گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'بروز رسانی']],

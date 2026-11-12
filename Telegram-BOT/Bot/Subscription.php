@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/Admin.php';
 require_once __DIR__ . '/User.php';
 require_once __DIR__ . '/../Core/Payment/ZarinPal.php';
@@ -748,8 +749,8 @@ $Items = [
 
 $Text = "⚡️<b>مشخصات اتصال شما به شرح زیر است</b>\n";
 
-if (Environment::showEmergencyConfig()) {
-$Emergency = Environment::getEmergencyConfigUrl();
+if (BotConfig::showEmergency()) {
+$Emergency = BotConfig::emergencyUrl();
 $Text .= "<blockquote>🚱<b>اضطراری موقت:</b>\n<code>{$Emergency}</code></blockquote>\n";
 }
 
