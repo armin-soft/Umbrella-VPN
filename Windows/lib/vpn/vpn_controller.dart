@@ -238,6 +238,9 @@ class VpnController extends ChangeNotifier {
   bool _killSwitchOn = false;
   int _proxyPort = 0;
   final Map<String, Process> _coreProcesses = <String, Process>{};
+
+  /// اگر آخرین ساخت پیکربندی به خاطر نبود فایل هسته شکست خورده باشد.
+  bool _lastPlanNeedsCore = false;
   bool get killSwitchOn => _killSwitchOn;
 
   int _pingProgressDone = 0;
@@ -407,7 +410,20 @@ class VpnController extends ChangeNotifier {
     if (_nodes.isEmpty) {
       return const ConnectOutcome(
         ok: false,
-        message: 'هیچ سروری موجود نیست؛ ابتدا اشتراک ها را به روز کنید.',
+        message: 'هیچ سروری موجود نیست؛ اشتراک در حال دریافت از سرور است.',
+      );
+    }
+    final List<VpnNode> usableNodes =
+        _nodes.where((VpnNode node) => usable(node) && !node.disabled).toList();
+    if (usableNodes.isEmpty) {
+      _log.add(
+        'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک با هسته های همراه '
+        'نسخه سازگار نبود.',
+        level: 'error',
+      );
+      return const ConnectOutcome(
+        ok: false,
+        message: 'سروری که با این نسخه کار کند در اشتراک شما نیست.',
       );
     }
 
@@ -431,7 +447,7 @@ class VpnController extends ChangeNotifier {
       final SelectionResult selection = requested != null
           ? SelectionResult(node: requested, reason: 'سرور انتخابی شما.')
           : _balancer.pick(
-              nodes: _nodes,
+              nodes: usableNodes,
               mode: _settings.selectionMode,
               deviceSeed: _device.machineId.isNotEmpty
                   ? _device.machineId
@@ -496,7 +512,7 @@ class VpnController extends ChangeNotifier {
       return list;
     }
     final List<VpnNode> rest = _nodes
-        .where((VpnNode node) => node.id != first.id)
+        .where((VpnNode node) => node.id != first.id && usable(node))
         .toList()
       ..sort((VpnNode a, VpnNode b) => a.pingMs.compareTo(b.pingMs));
     for (final VpnNode node in rest) {
@@ -528,11 +544,17 @@ class VpnController extends ChangeNotifier {
     }
     final LaunchPlan? plan = await _buildPlan(node);
     if (plan == null) {
-      _setStatus(VpnStatus.failed, 'هسته لازم در دسترس نیست.');
-      onRequireCores?.call();
+      if (_lastPlanNeedsCore) {
+        _setStatus(VpnStatus.failed, 'هسته لازم در دسترس نیست.');
+        onRequireCores?.call();
+        return const _AttemptResult(
+          message: 'هسته اتصال در دسترس نیست؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
+          needsCores: true,
+        );
+      }
+      _setStatus(VpnStatus.preparing, 'سرور بعدی امتحان می شود.');
       return const _AttemptResult(
-        message: 'هسته اتصال در دسترس نیست؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
-        needsCores: true,
+        message: 'این سرور با هسته های همراه نسخه سازگار نیست؛ سرور بعدی امتحان می شود.',
       );
     }
     if (plan.warning.isNotEmpty) {
@@ -640,17 +662,62 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// آیا این سرور با هسته های همراه نسخه قابل استفاده است؟ سروری که شناسه یا
+  /// رمزش خالی است هرگز نباید اجرا شود؛ ایکس ری با «invalid UUID» بسته می شود.
+  /// هم arguments required for a usable connection are checked here so the
+  /// selector never wastes a cycle on a server that cannot work.
+  static bool usable(VpnNode node) {
+    if (!supports(node)) {
+      return false;
+    }
+    if (node.host.isEmpty || node.port <= 0) {
+      return false;
+    }
+    final Map<String, dynamic> params = node.params;
+    switch (node.protocol) {
+      case NodeProtocol.vless:
+      case NodeProtocol.vmess:
+      case NodeProtocol.tuic:
+        return JsonX.text(params['id'] ?? params['uuid']).isNotEmpty;
+      case NodeProtocol.trojan:
+      case NodeProtocol.hysteria2:
+        return JsonX.text(params['password']).isNotEmpty;
+      case NodeProtocol.shadowsocks:
+        return JsonX.text(params['password']).isNotEmpty &&
+            JsonX.text(params['method'] ?? params['cipher']).isNotEmpty;
+      case NodeProtocol.mieru:
+        return JsonX.text(params['username']).isNotEmpty &&
+            JsonX.text(params['password']).isNotEmpty;
+      case NodeProtocol.socks:
+        return true;
+      case NodeProtocol.wireguard:
+      case NodeProtocol.amnezia:
+      case NodeProtocol.clash:
+        return false;
+    }
+  }
+
   /// پیکربندی و فهرست هسته ها برای یک سرور.
   ///
   /// هسته ایکس ری یک سرور پروکسی محلی روی ۱۲۷٫۰٫۰٫۱ می سازد و برنامه پروکسی
   /// سیستمی ویندوز را به همان پورت وصل می کند؛ بنابراین بدون کارت شبکه مجازی و
   /// بدون هسته سینگ باکس تونل برقرار می شود.
   Future<LaunchPlan?> _buildPlan(VpnNode node) async {
+    _lastPlanNeedsCore = false;
     if (!supports(node)) {
+      // سرورهای آمنزیا و وایرگارد با هسته های همراه این نسخه اجرا نمی شوند و
+      // نباید هر بار هشدار بدهند؛ فقط یک بار در گزارش ها می آید.
       _log.add(
-        'پروتکل ${node.protocol.label} با هسته های همراه نسخه پشتیبانی نمی شود؛ '
-        'سرور بعدی امتحان می شود.',
-        level: 'warning',
+        'سرور ${node.name} (${node.protocol.label}) با هسته های همراه این نسخه '
+        'اجرا نمی شود و از فهرست انتخاب کنار گذاشته شد.',
+        level: 'info',
+      );
+      return null;
+    }
+    if (!usable(node)) {
+      _log.add(
+        'اطلاعات سرور ${node.name} ناقص است (شناسه یا رمز خالی)؛ کنار گذاشته شد.',
+        level: 'info',
       );
       return null;
     }
@@ -663,6 +730,7 @@ class VpnController extends ChangeNotifier {
     if (node.protocol == NodeProtocol.mieru) {
       final String? mieru = await _provisioner.locateBinary('mieru.exe');
       if (mieru == null) {
+        _lastPlanNeedsCore = true;
         _log.add(
           'این سرور میرو است و هسته mieru.exe در نسخه نصب نیست.',
           level: 'error',
@@ -694,6 +762,7 @@ class VpnController extends ChangeNotifier {
 
     final String? xray = await _provisioner.locateBinary('xray.exe');
     if (xray == null) {
+      _lastPlanNeedsCore = true;
       _log.add(
         'هسته xray.exe پیدا نشد. مسیر جستجو: ${_provisioner.bundledDir}',
         level: 'error',

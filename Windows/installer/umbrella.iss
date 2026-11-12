@@ -81,7 +81,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing Microsoft Visual C++ runtime..."; Flags: waituntilterminated skipifsilent skipifdoesntexist
-Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; The exe requires administrator rights (its manifest), so it must be started
+; with the elevated token Setup already holds. Inno's postinstall entries run as
+; the original, unelevated user by default, which fails with CreateProcess 740.
+Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [UninstallRun]
 ; Only the rules this client created are removed, the rest of the firewall stays untouched.

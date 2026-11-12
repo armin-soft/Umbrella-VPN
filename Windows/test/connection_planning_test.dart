@@ -1,0 +1,125 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:umbrella_vpn/data/parsers.dart';
+import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/vpn/config_builders.dart';
+import 'package:umbrella_vpn/vpn/vpn_controller.dart';
+
+/// آزمون انتخاب سرور و ساخت پیکربندی: سروری که شناسه ندارد هرگز نباید اجرا
+/// شود (ایکس ری با «invalid UUID» بسته می شود) و پروتکل های بدون هسته نباید
+/// وارد چرخه اتصال شوند.
+void main() {
+  const String uuid = '9b9d9f5d-9841-45bf-a6b9-0479de273c11';
+
+  VpnNode node({
+    required NodeProtocol protocol,
+    Map<String, dynamic> params = const <String, dynamic>{},
+  }) {
+    return VpnNode(
+      id: 'n-${protocol.name}',
+      name: protocol.label,
+      protocol: protocol,
+      host: 'example.com',
+      port: 443,
+      sourceId: 'user-xray',
+      params: params,
+    );
+  }
+
+  test('سرور وی لس با شناسه قابل استفاده است', () {
+    expect(
+      VpnController.usable(
+        node(protocol: NodeProtocol.vless, params: <String, dynamic>{'id': uuid}),
+      ),
+      isTrue,
+    );
+  });
+
+  test('سرور وی لس بدون شناسه کنار گذاشته می شود', () {
+    expect(
+      VpnController.usable(node(protocol: NodeProtocol.vless)),
+      isFalse,
+    );
+  });
+
+  test('پروتکل های بدون هسته همراه هرگز انتخاب نمی شوند', () {
+    for (final NodeProtocol protocol in <NodeProtocol>[
+      NodeProtocol.amnezia,
+      NodeProtocol.wireguard,
+      NodeProtocol.clash,
+      NodeProtocol.hysteria2,
+      NodeProtocol.tuic,
+    ]) {
+      expect(
+        VpnController.usable(
+          node(
+            protocol: protocol,
+            params: <String, dynamic>{
+              'id': uuid,
+              'password': 'x',
+              'publicKey': 'y',
+              'privateKey': 'z',
+            },
+          ),
+        ),
+        isFalse,
+        reason: '${protocol.name} نباید قابل استفاده باشد',
+      );
+    }
+  });
+
+  test('میرو با نام کاربری و رمز قابل استفاده است', () {
+    expect(
+      VpnController.usable(
+        node(
+          protocol: NodeProtocol.mieru,
+          params: <String, dynamic>{'username': 'u', 'password': 'p'},
+        ),
+      ),
+      isTrue,
+    );
+  });
+
+  test('پیکربندی ایکس ری برای سرور خوانده شده از کلش شناسه دارد', () {
+    const String yaml = '''
+proxies:
+  - name: Clash-VLESS
+    type: vless
+    server: 5.6.7.8
+    port: 443
+    uuid: $uuid
+    servername: cdn.example.com
+    tls: true
+    network: ws
+    ws-opts:
+      path: /ws
+      headers:
+        Host: cdn.example.com
+''';
+    final ParseReport report = SubscriptionParser.parseAuto(yaml, 'user-clash');
+    expect(report.nodes, hasLength(1));
+    final VpnNode parsed = report.nodes.first;
+
+    expect(VpnController.usable(parsed), isTrue);
+
+    final Map<String, dynamic> config = XrayConfig.build(parsed, 2081);
+    final Map<String, dynamic> outbound =
+        (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
+    final Map<String, dynamic> settings =
+        outbound['settings'] as Map<String, dynamic>;
+    final Map<String, dynamic> vnext =
+        (settings['vnext'] as List<dynamic>).first as Map<String, dynamic>;
+    final Map<String, dynamic> user =
+        (vnext['users'] as List<dynamic>).first as Map<String, dynamic>;
+    expect(user['id'], uuid);
+
+    final Map<String, dynamic> stream =
+        outbound['streamSettings'] as Map<String, dynamic>;
+    expect(stream['network'], 'ws');
+    expect(stream['security'], 'tls');
+    final Map<String, dynamic> ws = stream['wsSettings'] as Map<String, dynamic>;
+    expect(ws['path'], '/ws');
+    final Map<String, dynamic> tls =
+        stream['tlsSettings'] as Map<String, dynamic>;
+    expect(tls['serverName'], 'cdn.example.com');
+  });
+}

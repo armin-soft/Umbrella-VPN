@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../core/app_config.dart';
 import '../core/utils.dart';
@@ -15,7 +16,16 @@ import '../models/models.dart';
 class GatewayClient {
   GatewayClient({String? baseUrl, http.Client? client})
       : _baseUrl = baseUrl ?? AppConfig.gatewayBase,
-        _client = client ?? http.Client();
+        _client = client ?? _directClient();
+
+  /// درگاه ایرانی است و باید مستقیم صدا زده شود؛ پروکسی بازمانده یک برنامه
+  /// دیگر نباید ورود و پروفایل را بشکند.
+  static http.Client _directClient() {
+    final HttpClient inner = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
+    inner.findProxy = (Uri _) => 'DIRECT';
+    return IOClient(inner);
+  }
 
   final String _baseUrl;
   final http.Client _client;

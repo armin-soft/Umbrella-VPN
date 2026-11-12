@@ -161,14 +161,10 @@ class _AppShellState extends State<AppShell> {
             darkTheme: settings.themeMode != ThemeMode.light,
           ),
           Expanded(
+            // در چیدمان راست به چپ، فرزند اول سمت راست می نشیند؛ پس نوار کنار
+            // اول می آید تا در لبه راست پنجره باشد.
             child: Row(
               children: <Widget>[
-                Expanded(
-                  child: IndexedStack(
-                    index: _index,
-                    children: pages,
-                  ),
-                ),
                 SideNav(
                   destinations: _destinations,
                   index: _index,
@@ -176,6 +172,12 @@ class _AppShellState extends State<AppShell> {
                   status: vpn.status,
                   onStatusTap: () => setState(() => _index = 0),
                   updateAvailable: updates.available != null,
+                ),
+                Expanded(
+                  child: IndexedStack(
+                    index: _index,
+                    children: pages,
+                  ),
                 ),
               ],
             ),

@@ -438,6 +438,25 @@ class SubscriptionParser {
               ? jsonEncode(entry.value)
               : entry.value,
       };
+      // نام فیلدهای کلش با نام فیلدهای لینک استاندارد یکی نیست؛ اینجا یکسان
+      // می شوند تا سازنده پیکربندی هسته برای همه منابع یکسان کار کند.
+      final String clashUuid = JsonX.text(proxy['uuid'] ?? proxy['id']);
+      if (clashUuid.isNotEmpty) {
+        params['id'] = clashUuid;
+      }
+      final String cipher = JsonX.text(proxy['cipher'] ?? proxy['method']);
+      if (cipher.isNotEmpty) {
+        params['method'] = cipher;
+      }
+      final String servername =
+          JsonX.text(proxy['servername'] ?? proxy['sni'] ?? proxy['server-name']);
+      if (servername.isNotEmpty) {
+        params['sni'] = servername;
+      }
+      if (proxy['alterId'] != null || proxy['alter-id'] != null) {
+        params['alterId'] =
+            JsonX.integer(proxy['alterId'] ?? proxy['alter-id']);
+      }
       if (proxy['ws-opts'] is Map) {
         final Map<String, dynamic> ws = JsonX.asMap(proxy['ws-opts']);
         params['path'] = JsonX.text(ws['path'], '/');

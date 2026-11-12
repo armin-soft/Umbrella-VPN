@@ -95,6 +95,26 @@ Endpoint = 9.9.9.9:51820
     expect(report.nodes.first.host, '9.9.9.9');
   });
 
+  test('شناسه کلش در فیلد id هم قرار می گیرد تا ایکس ری بخواند', () {
+    const String body = '''
+proxies:
+  - name: Clash-VLESS
+    type: vless
+    server: 5.6.7.8
+    port: 443
+    uuid: $uuid
+    servername: cdn.example.com
+    tls: true
+''';
+
+    final ParseReport report = SubscriptionParser.parseAuto(body, 'user');
+
+    expect(report.nodes, hasLength(1));
+    final VpnNode node = report.nodes.first;
+    expect(node.params['id'], uuid);
+    expect(node.params['sni'], 'cdn.example.com');
+  });
+
   test('پاسخ خالی خطای روشن می دهد و سرور جعلی نمی سازد', () {
     final ParseReport report = SubscriptionParser.parseAuto('   ', 'user');
 

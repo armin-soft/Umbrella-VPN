@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
 import '../../core/utils.dart';
@@ -69,7 +68,6 @@ class _AccountPageState extends State<AccountPage> {
     final UmbrellaColors colors = context.colors;
     final Account account = auth.account;
     final DeviceProfile device = auth.device;
-    final SourceState? personal = subs.personalState;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -332,34 +330,32 @@ class _AccountPageState extends State<AccountPage> {
                         title: 'اشتراک من',
                         subtitle:
                             'به صورت خودکار از سرور خوانده می شود؛ نیازی به وارد کردن نشانی نیست.',
-                        trailing: personal == null
-                            ? null
-                            : Pill(
-                                label: personal.loading
-                                    ? 'در حال دریافت'
-                                    : (personal.loaded ? 'آماده' : 'خطا'),
-                                icon: personal.loading
-                                    ? Icons.downloading_rounded
-                                    : (personal.loaded
-                                        ? Icons.check_circle_rounded
-                                        : Icons.error_outline_rounded),
-                                color: personal.loading
-                                    ? colors.warning
-                                    : (personal.loaded
-                                        ? colors.success
-                                        : colors.danger),
-                                dense: true,
-                              ),
+                        trailing: Pill(
+                          label: subs.personalLoading
+                              ? 'در حال دریافت'
+                              : (subs.personalLoaded ? 'آماده' : 'خطا'),
+                          icon: subs.personalLoading
+                              ? Icons.downloading_rounded
+                              : (subs.personalLoaded
+                                  ? Icons.check_circle_rounded
+                                  : Icons.error_outline_rounded),
+                          color: subs.personalLoading
+                              ? colors.warning
+                              : (subs.personalLoaded
+                                  ? colors.success
+                                  : colors.danger),
+                          dense: true,
+                        ),
                       ),
                       const SizedBox(height: 12),
-                      if (personal == null)
+                      if (subs.personalSources.isEmpty)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             InfoRow(
                               icon: Icons.cloud_off_rounded,
                               label: 'اشتراک شخصی',
-                              value: 'سرور هنوز نشانی اشتراک نفرستاده است',
+                              value: 'سرور هنوز داده اشتراک این حساب را نفرستاده است',
                               valueColor: colors.warning,
                             ),
                             const SizedBox(height: 12),
@@ -379,49 +375,42 @@ class _AccountPageState extends State<AccountPage> {
                           ],
                         )
                       else ...<Widget>[
-                        InfoRow(
-                          icon: Icons.link_rounded,
-                          label: 'نشانی اشتراک',
-                          value: _shortUrl(personal.source.url),
-                          onTap: () async {
-                            final Uri? uri = Uri.tryParse(personal.source.url);
-                            if (uri != null) {
-                              await launchUrl(
-                                uri,
-                                mode: LaunchMode.externalApplication,
-                              );
-                            }
-                          },
-                          trailing: IconAction(
-                            icon: Icons.copy_rounded,
-                            size: 28,
-                            tooltip: 'کپی نشانی اشتراک',
-                            onTap: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: personal.source.url),
-                              );
-                              toasts.success('نشانی اشتراک کپی شد');
-                            },
+                        for (final SourceState state in subs.personalSources) ...[
+                          InfoRow(
+                            icon: _formatIcon(state.source.format),
+                            label: state.title,
+                            value: state.loading
+                                ? 'در حال دریافت'
+                                : (state.loaded
+                                    ? Fa.num('${Fa.num(state.count)} سرور')
+                                    : 'بدون سرور'),
+                            valueColor: state.loading
+                                ? colors.warning
+                                : (state.loaded
+                                    ? colors.textPrimary
+                                    : colors.danger),
                           ),
-                        ),
-                        const Divider(height: 18),
+                          const Divider(height: 14),
+                        ],
                         InfoRow(
                           icon: Icons.dns_rounded,
-                          label: 'سرورهای این اشتراک',
-                          value: Fa.num('${Fa.num(personal.count)} سرور'),
+                          label: 'مجموع سرورهای اشتراک',
+                          value: Fa.num('${Fa.num(subs.personalNodeCount)} سرور'),
                         ),
-                        const Divider(height: 18),
+                        const Divider(height: 14),
                         InfoRow(
                           icon: Icons.schedule_rounded,
                           label: 'آخرین دریافت',
-                          value: personal.checkedAt == null
+                          value: subs.personalCheckedAt == null
                               ? 'در انتظار'
-                              : Fa.clock(personal.checkedAt!),
+                              : Fa.clock(subs.personalCheckedAt!),
                         ),
-                        if (personal.error.isNotEmpty) ...<Widget>[
+                        if (subs.personalErrors.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 10),
                           Text(
-                            Fa.num(personal.error),
+                            Fa.num(subs.personalErrors.first),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
                                 .labelSmall
@@ -433,8 +422,8 @@ class _AccountPageState extends State<AccountPage> {
                           label: 'دریافت دوباره از سرور',
                           icon: Icons.sync_rounded,
                           expand: false,
-                          loading: _refreshing || personal.loading,
-                          onPressed: _refreshing || personal.loading
+                          loading: _refreshing || subs.personalLoading,
+                          onPressed: _refreshing || subs.personalLoading
                               ? null
                               : () => _refreshFromServer(auth, subs, toasts),
                         ),
@@ -622,17 +611,22 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  /// نشانی اشتراک کوتاه نمایش داده می شود تا کارت شلوغ نشود.
-  String _shortUrl(String url) {
-    final Uri? uri = Uri.tryParse(url);
-    if (uri == null || uri.host.isEmpty) {
-      return url;
+  /// آیکون متناسب با قالب هر اشتراک.
+  IconData _formatIcon(SubscriptionFormat format) {
+    switch (format) {
+      case SubscriptionFormat.xray:
+        return Icons.bolt_rounded;
+      case SubscriptionFormat.clash:
+        return Icons.grid_view_rounded;
+      case SubscriptionFormat.wireguard:
+        return Icons.shield_rounded;
+      case SubscriptionFormat.amnezia:
+        return Icons.lock_rounded;
+      case SubscriptionFormat.mieru:
+        return Icons.route_rounded;
     }
-    final String path = uri.path.length > 26
-        ? '${uri.path.substring(0, 26)}…'
-        : uri.path;
-    return '${uri.host}$path';
   }
+
 }
 
 class _CategoryToggle extends StatelessWidget {

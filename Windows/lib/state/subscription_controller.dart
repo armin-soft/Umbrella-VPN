@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../core/app_config.dart';
 import '../core/utils.dart';
 import '../data/parsers.dart';
+import '../data/subscription_endpoints.dart';
 import '../models/models.dart';
 import '../platform/services.dart';
 import 'auth_controller.dart';
@@ -28,9 +31,9 @@ class SourceState {
 
 /// دانلود و خواندن اشتراک ها.
 ///
-/// قاعده اصلی: اشتراک شخصی کاربر از سرور خوانده می شود (پاسخ
-/// `account/refresh`) و هیچ نشانی از کاربر گرفته نمی شود. منابع عمومی برنامه
-/// فقط پشتیبان هستند تا پیش از ورود هم سروری برای نمایش وجود داشته باشد.
+/// همه چیز خودکار است: سرور پایه اشتراک هر کاربر را می دهد، برنامه همان پایه
+/// را به پنج نشانی استاندارد پنل (ایکس ری، کلش متا، وایرگارد، آمنزیا، میرو)
+/// تبدیل می کند و خودش می خواند. هیچ نشانی دستی وارد نمی شود.
 class SubscriptionController extends ChangeNotifier {
   SubscriptionController({
     required VpnController vpn,
@@ -38,12 +41,21 @@ class SubscriptionController extends ChangeNotifier {
     http.Client? client,
   })  : _vpn = vpn,
         _auth = auth,
-        _client = client ?? http.Client() {
+        _client = client ?? _directClient() {
     _sources = AppConfig.subscriptionSources
         .map((SubscriptionSource source) => SourceState(source: source))
         .toList();
     _rebuildSources();
     _auth.addListener(_onAccountChanged);
+  }
+
+  /// کلاینت بدون پروکسی: نشانی ها ایرانی هستند و پروکسی بازمانده یک برنامه
+  /// دیگر نباید دریافت اشتراک را بشکند.
+  static http.Client _directClient() {
+    final HttpClient inner = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
+    inner.findProxy = (Uri _) => 'DIRECT';
+    return IOClient(inner);
   }
 
   final VpnController _vpn;
@@ -58,19 +70,51 @@ class SubscriptionController extends ChangeNotifier {
 
   List<SourceState> get sources => List<SourceState>.unmodifiable(_sources);
 
-  /// اشتراک شخصی همین کاربر که سرور داده است (اگر سرور داده باشد).
+  /// همه منابع اشتراک این کاربر که از سرور ساخته شده اند.
+  List<SourceState> get personalSources =>
+      _sources.where((SourceState item) => item.personal).toList();
+
+  /// منبع اصلی (ایکس ری) برای نمایش خلاصه در حساب کاربری.
   SourceState? get personalState {
-    for (final SourceState state in _sources) {
-      if (state.personal) {
+    for (final SourceState state in personalSources) {
+      if (state.source.format == SubscriptionFormat.xray) {
         return state;
       }
     }
-    return null;
+    return personalSources.isEmpty ? null : personalSources.first;
   }
 
-  bool get hasPersonal => personalState != null;
+  bool get hasPersonal => personalSources.isNotEmpty;
 
   String get personalUrl => personalState?.source.url ?? '';
+
+  int get personalNodeCount =>
+      personalSources.fold<int>(0, (int sum, SourceState item) => sum + item.count);
+
+  bool get personalLoading =>
+      personalSources.any((SourceState item) => item.loading);
+
+  bool get personalLoaded =>
+      personalSources.any((SourceState item) => item.loaded);
+
+  List<String> get personalErrors => <String>[
+        for (final SourceState item in personalSources)
+          if (item.error.isNotEmpty) item.error,
+      ];
+
+  DateTime? get personalCheckedAt {
+    DateTime? latest;
+    for (final SourceState item in personalSources) {
+      final DateTime? at = item.checkedAt;
+      if (at == null) {
+        continue;
+      }
+      if (latest == null || at.isAfter(latest)) {
+        latest = at;
+      }
+    }
+    return latest;
+  }
 
   bool _loadingAll = false;
   bool get loadingAll => _loadingAll;
@@ -83,21 +127,16 @@ class SubscriptionController extends ChangeNotifier {
 
   int get okSources => _sources.where((SourceState item) => item.loaded).length;
 
-  /// اشتراک شخصی را از فهرست منبع ها بازسازی می کند و می گوید فهرست عوض شد یا
-  /// نه. با هر تغییر حساب (ورود، خروج، به روز شدن پروفایل) صدا زده می شود.
+  /// منابع اشتراک را از داده حساب بازسازی می کند و می گوید فهرست عوض شد یا نه.
   bool _rebuildSources() {
-    final String url = _auth.account.subscriptionUrl.trim();
+    final List<SubscriptionSource> personal = SubscriptionEndpoints.build(
+      subscriptionUrl: _auth.account.subscriptionUrl,
+      accountBase: _auth.account.accountBase,
+      uuid: _auth.account.uuid,
+    );
     final List<SubscriptionSource> next = <SubscriptionSource>[
-      if (url.isNotEmpty)
-        SubscriptionSource(
-          id: AppConfig.personalSourceId,
-          title: 'اشتراک من',
-          url: url,
-          format: SubscriptionFormat.xray,
-          icon: 'user',
-          personal: true,
-        ),
-      ...AppConfig.subscriptionSources,
+      ...personal,
+      if (personal.isEmpty) ...AppConfig.subscriptionSources,
     ];
     final String signature =
         next.map((SubscriptionSource item) => '${item.id}|${item.url}').join('\n');
@@ -126,16 +165,18 @@ class SubscriptionController extends ChangeNotifier {
     if (changed) {
       notifyListeners();
     }
-    final SourceState? personal = personalState;
-    if (personal == null || personal.loading) {
+    if (!hasPersonal || personalLoading) {
       return;
     }
-    // هر نشانی تازه یک بار به صورت خودکار خوانده می شود.
-    if (_personalFetchedFor == personal.source.url) {
+    // هر مجموعه نشانی تازه یک بار به صورت خودکار خوانده می شود.
+    final String signature = personalSources
+        .map((SourceState item) => item.source.url)
+        .join('|');
+    if (_personalFetchedFor == signature) {
       return;
     }
-    _personalFetchedFor = personal.source.url;
-    unawaited(refreshOne(personal));
+    _personalFetchedFor = signature;
+    unawaited(syncPersonal());
   }
 
   Future<void> loadCached() async {
@@ -152,29 +193,43 @@ class SubscriptionController extends ChangeNotifier {
     }
   }
 
-  /// اشتراک شخصی را از سرور می گیرد. اگر سرور هنوز نشانی نداده باشد، یک بار
+  /// اشتراک شخصی را از سرور می گیرد. اگر سرور هنوز داده کافی نداده باشد، یک بار
   /// حساب به روز می شود و دوباره تلاش می کند. هیچ ورودی دستی وجود ندارد.
   Future<void> syncPersonal() async {
     if (!_auth.signedIn) {
       return;
     }
-    if (_auth.account.subscriptionUrl.trim().isEmpty) {
+    if (!hasPersonal) {
       await _auth.refreshAccount(silent: true);
+      final bool changed = _rebuildSources();
+      if (changed) {
+        notifyListeners();
+      }
     }
-    final bool changed = _rebuildSources();
-    if (changed) {
-      notifyListeners();
-    }
-    final SourceState? personal = personalState;
-    if (personal == null) {
+    final List<SourceState> personal = personalSources;
+    if (personal.isEmpty) {
       _log.add(
-        'سرور برای این حساب نشانی اشتراک برنگرداند؛ منابع عمومی استفاده می شود.',
+        'سرور برای این حساب نشانی اشتراک نداد؛ منابع عمومی استفاده می شود.',
         level: 'warning',
       );
       return;
     }
-    _personalFetchedFor = personal.source.url;
-    await refreshOne(personal);
+    final List<VpnNode> fetched = <VpnNode>[];
+    for (final SourceState state in personal) {
+      final ParseReport? report = await _fetch(state);
+      if (report != null) {
+        fetched.addAll(report.nodes);
+      }
+    }
+    await _applyNodes(fetched);
+    if (!_disposed) {
+      notifyListeners();
+    }
+    _log.add(
+      'اشتراک کاربر از سرور خوانده شد: ${Fa.num(fetched.length)} سرور از '
+      '${Fa.num(personal.where((SourceState item) => item.loaded).length)} '
+      'منبع از ${Fa.num(personal.length)}.',
+    );
   }
 
   Future<void> fetchAll() async {
@@ -185,7 +240,7 @@ class SubscriptionController extends ChangeNotifier {
     _progress = 0;
     notifyListeners();
     final List<SourceState> order = <SourceState>[
-      if (personalState != null) personalState!,
+      ...personalSources,
       ..._sources.where((SourceState item) => !item.personal),
     ];
     final List<VpnNode> all = <VpnNode>[];
@@ -196,41 +251,49 @@ class SubscriptionController extends ChangeNotifier {
         all.addAll(report.nodes);
       }
       done++;
-      _progress = done / order.length;
+      _progress = order.isEmpty ? 1 : done / order.length;
       notifyListeners();
     }
 
-    final Map<String, VpnNode> unique = <String, VpnNode>{};
-    for (final VpnNode node in all) {
-      unique[node.id] = node;
-    }
-    if (unique.isNotEmpty) {
-      await _vpn.applyNodes(unique.values.toList());
-    }
+    await _applyNodes(all);
     _loadingAll = false;
     _progress = 1;
     notifyListeners();
-    _log.add(
-      'اشتراک ها به روز شد: ${Fa.num(unique.length)} سرور از ${Fa.num(okSources)} منبع.',
-    );
   }
 
   Future<void> refreshOne(SourceState state) async {
-    await _fetch(state);
-    final List<VpnNode> all = <VpnNode>[
-      for (final SourceState item in _sources)
-        ..._vpn.nodes.where((VpnNode node) => node.sourceId == item.source.id),
-    ];
-    if (all.isNotEmpty) {
-      await _vpn.applyNodes(all);
+    final ParseReport? report = await _fetch(state);
+    if (report != null) {
+      await _applyNodes(report.nodes);
     }
     if (!_disposed) {
       notifyListeners();
     }
   }
 
-  /// آیا میزبان این نشانی قابل اعتماد است؟ نشانی اشتراک شخصی از خود سرور
-  /// می آید، بنابراین میزبان درگاه یا میزبان پایه حساب هم پذیرفته می شود.
+  /// گره های تازه را با گره های منابع دیگر جمع می کند و به کنترلر اتصال می دهد.
+  Future<void> _applyNodes(List<VpnNode> fetched) async {
+    final Set<String> currentIds =
+        _sources.map((SourceState item) => item.source.id).toSet();
+    final Set<String> fetchedIds =
+        fetched.map((VpnNode node) => node.id).toSet();
+    final List<VpnNode> keep = _vpn.nodes
+        .where((VpnNode node) =>
+            currentIds.contains(node.sourceId) && !fetchedIds.contains(node.id))
+        .toList();
+    final Map<String, VpnNode> unique = <String, VpnNode>{};
+    for (final VpnNode node in <VpnNode>[...keep, ...fetched]) {
+      unique[node.id] = node;
+    }
+    if (unique.isEmpty) {
+      _log.add('هیچ سروری از اشتراک ها خوانده نشد.', level: 'warning');
+      return;
+    }
+    await _vpn.applyNodes(unique.values.toList());
+  }
+
+  /// آیا میزبان این نشانی قابل اعتماد است؟ نشانی اشتراک از خود سرور می آید،
+  /// بنابراین میزبان درگاه یا میزبان پایه حساب هم پذیرفته می شود.
   bool _hostAllowed(Uri uri, {required bool personal}) {
     final String host = uri.host.toLowerCase();
     if (host.isEmpty) {
@@ -249,6 +312,25 @@ class SubscriptionController extends ChangeNotifier {
     return host == gateway || (base.isNotEmpty && host == base);
   }
 
+  /// یک درخواست با یک تلاش دوباره؛ اگر شبکه هنگام اتصال لحظه ای قطع شود،
+  /// دریافت اشتراک بدون دخالت کاربر تکرار می شود.
+  Future<http.Response> _getWithRetry(Uri uri) async {
+    final Map<String, String> headers = <String, String>{
+      'Accept': '*/*',
+      'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
+    };
+    try {
+      return await _client
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 25));
+    } on Exception {
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      return await _client
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 25));
+    }
+  }
+
   Future<ParseReport?> _fetch(SourceState state) async {
     state.loading = true;
     state.error = '';
@@ -265,13 +347,7 @@ class SubscriptionController extends ChangeNotifier {
         notifyListeners();
         return null;
       }
-      final http.Response response = await _client.get(
-        uri,
-        headers: <String, String>{
-          'Accept': '*/*',
-          'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
-        },
-      ).timeout(const Duration(seconds: 25));
+      final http.Response response = await _getWithRetry(uri);
       if (response.statusCode >= 300) {
         state.error = 'پاسخ سرور: کد ${response.statusCode}';
         _log.add(
@@ -291,17 +367,9 @@ class SubscriptionController extends ChangeNotifier {
         ..loaded = report.nodes.isNotEmpty
         ..count = report.count
         ..checkedAt = DateTime.now()
-        ..error = report.problems.take(2).join(' | ');
-      if (state.source.personal) {
-        _log.add(
-          report.nodes.isEmpty
-              ? 'اشتراک شخصی از سرور خوانده شد اما سروری نداشت: '
-                  '${report.problems.take(2).join(' | ')}'
-              : 'اشتراک شخصی از سرور خوانده شد: '
-                  '${Fa.num(report.count)} سرور.',
-          level: report.nodes.isEmpty ? 'warning' : 'info',
-        );
-      }
+        ..error = report.nodes.isEmpty
+            ? report.problems.take(2).join(' | ')
+            : '';
       notifyListeners();
       return report;
     } on Exception catch (error) {

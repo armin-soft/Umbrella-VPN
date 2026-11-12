@@ -382,7 +382,7 @@ class XrayConfig {
                 'port': node.port,
                 'users': <Map<String, dynamic>>[
                   <String, dynamic>{
-                    'id': JsonX.text(params['id']),
+                    'id': JsonX.text(params['id'] ?? params['uuid']),
                     'encryption': 'none',
                     if (JsonX.text(params['flow']).isNotEmpty)
                       'flow': JsonX.text(params['flow']),
@@ -404,7 +404,7 @@ class XrayConfig {
                 'port': node.port,
                 'users': <Map<String, dynamic>>[
                   <String, dynamic>{
-                    'id': JsonX.text(params['id']),
+                    'id': JsonX.text(params['id'] ?? params['uuid']),
                     'alterId': JsonX.integer(params['alterId']),
                     'security': JsonX.text(params['security'], 'auto'),
                   },
@@ -438,7 +438,10 @@ class XrayConfig {
               <String, dynamic>{
                 'address': node.host,
                 'port': node.port,
-                'method': JsonX.text(params['method'], 'aes-256-gcm'),
+                'method': JsonX.text(
+                  params['method'] ?? params['cipher'],
+                  'aes-256-gcm',
+                ),
                 'password': JsonX.text(params['password']),
               },
             ],
@@ -454,7 +457,10 @@ class XrayConfig {
         JsonX.text(params['network'] ?? params['type'], 'tcp').toLowerCase();
     final String security =
         JsonX.text(params['security'] ?? params['tls']).toLowerCase();
-    final String sni = JsonX.text(params['sni'] ?? params['host'], node.host);
+    final String sni = JsonX.text(
+      params['sni'] ?? params['servername'] ?? params['host'],
+      node.host,
+    );
     final bool reality = security == 'reality' || JsonX.text(params['pbk']).isNotEmpty;
     final Map<String, dynamic> stream = <String, dynamic>{
       'network': network.isEmpty ? 'tcp' : network,

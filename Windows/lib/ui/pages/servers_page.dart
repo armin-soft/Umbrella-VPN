@@ -165,6 +165,7 @@ class _ServersPageState extends State<ServersPage> {
                       return _NodeTile(
                         node: node,
                         isActive: vpn.activeNode?.id == node.id,
+                        supported: VpnController.usable(node),
                         onConnect: () async {
                           if (vpn.status.active) {
                             await vpn.switchTo(node);
@@ -247,12 +248,16 @@ class _NodeTile extends StatelessWidget {
   const _NodeTile({
     required this.node,
     required this.isActive,
+    required this.supported,
     required this.onConnect,
     required this.onFavorite,
   });
 
   final VpnNode node;
   final bool isActive;
+
+  /// آیا این سرور با هسته های همراه نسخه قابل اتصال است.
+  final bool supported;
   final VoidCallback onConnect;
   final VoidCallback onFavorite;
 
@@ -326,6 +331,14 @@ class _NodeTile extends StatelessWidget {
                       const SizedBox(width: 6),
                       Icon(Icons.star_rounded, size: 15, color: colors.warning),
                     ],
+                    if (!supported) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Pill(
+                        label: 'بدون پشتیبانی',
+                        color: colors.warning,
+                        dense: true,
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -351,13 +364,17 @@ class _NodeTile extends StatelessWidget {
           SizedBox(
             width: 128,
             child: GradientButton(
-              label: isActive ? 'قطع' : 'اتصال',
+              label: isActive ? 'قطع' : (supported ? 'اتصال' : 'ناممکن'),
               icon: isActive
                   ? Icons.power_settings_new_rounded
-                  : Icons.play_arrow_rounded,
+                  : (supported
+                      ? Icons.play_arrow_rounded
+                      : Icons.block_rounded),
               height: 42,
-              tone: isActive ? colors.danger : colors.primary,
-              onPressed: onConnect,
+              tone: isActive
+                  ? colors.danger
+                  : (supported ? colors.primary : colors.textSecondary),
+              onPressed: supported ? onConnect : null,
             ),
           ),
         ],
