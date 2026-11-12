@@ -30,8 +30,8 @@ private const CFG_KEYS = [
 'Custom_Max_Days' => ['label' => 'حداکثر روز پلن دلخواه', 'type' => 'days', 'screen' => 'pricing', 'hint' => 'عدد صحیح روز، مثلاً 365'],
 'Custom_Min_GB' => ['label' => 'حداقل حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، حداقل ۰.۱'],
 'Custom_Max_GB' => ['label' => 'حداکثر حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، مثلاً 1000'],
-'Support_Url' => ['label' => 'لینک پشتیبانی', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا @username'],
-'Channel_Url' => ['label' => 'لینک کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا @username'],
+'Support_Url' => ['label' => 'لینک پشتیبانی', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا نام کاربری با @'],
+'Channel_Url' => ['label' => 'لینک کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا نام کاربری با @'],
 'Telegram_Channel_ID' => ['label' => 'آی دی کانال تلگرام', 'type' => 'channel', 'screen' => 'links', 'hint' => 'آی دی عددی و معمولاً منفی، مثال: -1001833514833'],
 ];
 
@@ -252,10 +252,10 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '⚙️تنظیمات 
 
 $Version = BotConfig::robotVersion();
 $Version_Label = $Version !== '' ? Helper::toPersian($Version) : 'ثبت نشده';
-$Version_Source = BotConfig::source(BotConfig::KEY_VERSION) === 'panel' ? '📝از پنل' : '🌱از فایل .env';
+$Version_Source = BotConfig::source(BotConfig::KEY_VERSION) === 'panel' ? '📝از پنل' : '🌱از فایل تنظیمات';
 $Show = BotConfig::showEmergency();
 $Url = BotConfig::emergencyUrl();
-$Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل .env';
+$Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل تنظیمات';
 $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 . "⚙️*تنظیمات ربات*\n➖➖➖➖➖➖➖➖➖➖\n"
 . "🔄نسخه ربات: `{$Version_Label}` ({$Version_Source})\n"
@@ -299,7 +299,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::startInput(
 $Context,
 'admin:emergency_url',
-"🔗آدرس کامل کانفیگ اضطراری را بفرستید (با http یا https).\n"
+"🔗آدرس کامل کانفیگ اضطراری را بفرستید (یک آدرس وب).\n"
 . "🚱آدرس فعلی: <code>" . BotConfig::emergencyUrl() . "</code>\n\n"
 . "👌برای پاک کردن آن و برگشت به مقدار پیش فرض، کلمه «حذف» را بفرستید.\n\n"
 );
@@ -311,7 +311,7 @@ $Value = trim($Text);
 
 if (in_array(mb_strtolower($Value), ['حذف', 'پاک', 'delete', 'clear', '-'], true)) {
 BotConfig::setEmergencyUrl('');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش فرض (.env یا آدرس داخلی) دوباره استفاده می شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش‌فرض (تنظیمات سرور یا آدرس داخلی) دوباره استفاده می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
 [Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
@@ -319,7 +319,7 @@ return;
 }
 
 if (!preg_match('#^https?://[^\s<>]+$#i', $Value)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌آدرس نامعتبر است.\n➖➖➖➖➖➖➖➖➖➖\n⚠️آدرس باید کامل و با http:// یا https:// شروع شود.\n👌مثال: `https://example.com/Emergency-Configuration.txt`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌آدرس نامعتبر است.\n➖➖➖➖➖➖➖➖➖➖\n⚠️آدرس باید کامل باشد و با `https://` شروع شود.\n👌مثال: `https://example.com/emergency.txt`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('🔗تلاش دوباره', 'emergency_url_start')],
 [Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
 ]));
@@ -388,7 +388,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '📣لینک ها د�
 $Support = BotConfig::getSupportUrl() ?: 'ثبت نشده';
 $Channel = BotConfig::getChannelUrl() ?: 'ثبت نشده';
 $Channel_Id = BotConfig::getTelegramChannelId() ?: 'ثبت نشده';
-$Source_Label = static fn (string $Key): string => BotConfig::source($Key) === 'panel' ? '📝پنل' : '🌱env';
+$Source_Label = static fn (string $Key): string => BotConfig::source($Key) === 'panel' ? '📝پنل' : '🌱فایل تنظیمات';
 $Text = Helper::adminGreeting($Context, 'لینک ها و کانال')
 . "📣*لینک پشتیبانی و کانال*\n➖➖➖➖➖➖➖➖➖➖\n"
 . "🧑‍💻لینک پشتیبانی ({$Source_Label('Support_Url')}):\n<code>{$Support}</code>\n\n"
@@ -503,7 +503,7 @@ $Value = 'https://t.me/' . substr($Value, 1);
 }
 
 if (!preg_match('#^https?://[^\s<>]+$#i', $Value)) {
-$Error = 'آدرس باید کامل و با http:// یا https:// شروع شود، یا @username باشد.';
+$Error = 'آدرس باید کامل باشد و با `https://` شروع شود، یا نام کاربری با @ باشد.';
 break;
 }
 
@@ -709,13 +709,13 @@ $Services = [
 ['snell_port', '🟡پروتکل اسنل', 'tcp', 'snell_enable'],
 ['naive_port', '🟢نایو', 'tcp', 'naive_enable'],
 ['mieru_port', '🔵میرو', 'tcp', 'mieru_enable'],
-['mieru_tcp_ports', '🔵میرو (tcp)', 'tcp', 'mieru_enable'],
+['mieru_tcp_ports', '🔵میرو (تی‌سی‌پی)', 'tcp', 'mieru_enable'],
 ['wireguard_port', '🟣وایرگارد', 'udp', 'wireguard_enable'],
 ['amnezia_port', '🟠امنزیا وی جی', 'udp', 'amnezia_enable'],
 ['tuic_port', '🔴تیویک', 'udp', 'tuic_enable'],
 ['hysteria_port', '🟠هیستریا ۲', 'udp', 'hysteria_enable'],
 ['kcp_ports', '🟣کی سی پی', 'udp', 'kcp_enable'],
-['mieru_udp_ports', '🔵میرو (udp)', 'udp', 'mieru_enable'],
+['mieru_udp_ports', '🔵میرو (یو‌دی‌پی)', 'udp', 'mieru_enable'],
 ];
 
 $Groups = ['tcp' => [], 'udp' => []];
@@ -734,7 +734,7 @@ $Groups[$Group][] = $Label . ' — `' . Helper::toPersian($Port) . '`';
 
 $Lines = [];
 
-foreach (['tcp' => '🔌پورت های TCP', 'udp' => '🛰پورت های UDP'] as $Kind => $Title) {
+foreach (['tcp' => '🔌پورت‌های تی‌سی‌پی', 'udp' => '🛰پورت‌های یو‌دی‌پی'] as $Kind => $Title) {
 $Items = $Groups[$Kind];
 $Lines[] = "{$Title} (" . Helper::toPersian((string)count($Items)) . "):";
 
@@ -840,7 +840,7 @@ exec($Command, $Output, $Return_Var);
 
 if ($Return_Var !== 0 || !file_exists($Filepath) || filesize($Filepath) === 0) {
 $Error_Msg = implode("\n", array_slice($Output, 0, 5));
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تهیه نسخه پشتیبان ناموفق بود.\n⚠️علت: اجرای mysqldump با خطا مواجه شد.\n💬جزئیات: " . mb_substr($Error_Msg, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تهیه نسخه پشتیبان ناموفق بود.\n⚠️علت: ابزار پشتیبان‌گیری دیتابیس با خطا مواجه شد.\n💬جزئیات: " . mb_substr($Error_Msg, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'دیتابیس']],
 [['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
@@ -889,7 +889,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال تن�
 $Schema_File = __DIR__ . '/../Database/Schema.SQL';
 
 if (!file_exists($Schema_File)) {
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . '❌خطا: فایل Schema.SQL یافت نشد.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . '❌خطا: فایل ساختار دیتابیس یافت نشد.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'دیتابیس']],
 [['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
@@ -1555,7 +1555,7 @@ default => self::unknownAdminInput($Context),
 
 private static function unknownAdminInput(Context $Context): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ورودی شما با هیچ عملیات در انتظاری مطابقت نداشت و نادیده گرفته شد.\n👌لطفاً برای ادامه از دکمه های منو استفاده کنید یا دستور /panel را ارسال نمایید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ورودی شما با هیچ عملیات در انتظاری مطابقت نداشت و نادیده گرفته شد.\n👌لطفاً برای ادامه از دکمه‌های منو استفاده کنید یا دستور `/panel` را ارسال نمایید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 }
@@ -2627,7 +2627,7 @@ $Summary = "✅ارسال موفق تلگرام: " . Helper::toPersian($Sent_Tg)
 $Summary .= "\n👥تعداد کل مخاطبین: " . Helper::toPersian((string)count($Rows)) . " نفر";
 
 if (($Mode === 'sms' || $Mode === 'both') && trim((string)Environment::getSmsApiKey()) === '') {
-$Summary .= "\n⚠️کلید API پنل پیامک در تنظیمات ثبت نشده است؛ پیامک ها ارسال نشدند.";
+$Summary .= "\n⚠️کلید سرویس پیامک در تنظیمات ثبت نشده است؛ پیامک‌ها ارسال نشدند.";
 }
 
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی سفارشی') . "📨ارسال انجام شد.\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
@@ -2721,7 +2721,7 @@ $Reasons[] = '📱پیامک: شماره موبایل کاربر در پروفا
 }
 
 elseif (trim((string)Environment::getSmsApiKey()) === '') {
-$Reasons[] = '📱پیامک: کلید API پنل پیامک در تنظیمات ثبت نشده است.';
+$Reasons[] = '📱پیامک: کلید سرویس پیامک در تنظیمات ثبت نشده است.';
 }
 
 elseif (trim((string)Environment::getSmsSender()) === '') {
@@ -2959,7 +2959,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال با�
 }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:update_uid']);
-$Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . '👌فرمت ورودی (تک یا گروهی — بدون محدودیت):' . "\n\n`USER ID`\n`UUID`\n\nنمونه تک:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\nنمونه گروهی:\n`USER ID`\n`UUID`\n`USER ID`\n`UUID`\n`USER ID`\n`UUID`\n\n⚠️نکته: هر USER ID با نزدیک ترین UUID جفت می شود. ترتیب مهم نیست و تعداد جفت ها محدودیتی ندارد.\n📱به جای USER ID می توانید شماره موبایل کاربر را نیز وارد کنید." . Helper::adminFooter();
+$Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . '👌فرمت ورودی (تک یا گروهی — بدون محدودیت):' . "\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه تک:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\nنمونه گروهی:\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n\n⚠️نکته: هر شناسه کاربر با نزدیک‌ترین شناسه کلاینت جفت می‌شود. ترتیب مهم نیست و تعداد جفت‌ها محدودیتی ندارد.\n📱به جای شناسه کاربر می‌توانید شماره موبایل کاربر را نیز وارد کنید." . Helper::adminFooter();
 
 if ($Context->MessageId !== null) {
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
@@ -3011,7 +3011,7 @@ $Pending_Num = $Line;
 }
 
 if ($Pairs === []) {
-$Error_Text = self::header($Context) . " *❌خطا: فرمت وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️لطفا USER ID و UUID را (تک یا گروهی) وارد کنید:\n\n`USER ID`\n`UUID`\n\nنمونه گروهی:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n`123456789`\n`0d2585be-89a1-4a42-9d5e-2c9a4fcb51aa`" . Helper::adminFooter();
+$Error_Text = self::header($Context) . " *❌خطا: فرمت وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه کاربر و شناسه کلاینت را (تک یا گروهی) وارد کنید:\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه گروهی:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n`123456789`\n`0d2585be-89a1-4a42-9d5e-2c9a4fcb51aa`" . Helper::adminFooter();
 TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'پیکربندی سرور']],
 [['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
@@ -3262,7 +3262,7 @@ $Target_Telegram_ID,
 $Duration_Label,
 $Server_Package_Days,
 $Server_Usage_Limit,
-'بروزرسانی دستی توسط مدیریت (UUID: ' . $Server_UUID . ')',
+'بروزرسانی دستی توسط مدیریت (شناسه کلاینت: ' . $Server_UUID . ')',
 'admin',
 $Context->UserId
 );
@@ -3284,7 +3284,7 @@ $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده ه�
 . "🆔*شناسه تلگرام:* `" . Helper::toPersian((string)$Target_Telegram_ID) . "`\n"
 . "📱*شماره تماس:* {$Phone_Label}\n"
 . "📶*اپراتور:* {$Operator_Label}\n"
-. "🔑*شناسه کلاینت (UUID):* `{$Server_UUID}`\n\n"
+. "🔑*شناسه کلاینت:* `{$Server_UUID}`\n\n"
 . "➖➖➖➖➖➖➖➖➖➖\n"
 . "💎*اطلاعات اشتراک:*\n"
 . "├─🪪نوع اشتراک: *{$Duration_Label}*\n"

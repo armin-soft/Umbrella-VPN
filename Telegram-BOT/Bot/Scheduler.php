@@ -1013,7 +1013,7 @@ $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAd
 if ($Admin <= 0) return;
 
 TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin)
-. '❌خطای همگام‌سازی مصرف کاربران (Usage-Sync)' . "\n\n"
+. '❌خطای همگام‌سازی مصرف کاربران' . "\n\n"
 . '📡وضعیت: ' . ($Status > 0 ? 'HTTP ' . $Status : 'خطا در ارتباط') . "\n"
 . '⚠️پاسخ: ' . mb_substr($Detail !== '' ? $Detail : 'نامشخص', 0, 500) . "\n"
 . '➖➖➖➖➖➖➖➖➖➖' . "\n"

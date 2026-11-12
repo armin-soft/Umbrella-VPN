@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../Support/Http.php';
+require_once __DIR__ . '/../Support/Helper.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 final class TelegramClient {
@@ -45,6 +46,9 @@ return trim($Text);
 public static function md(string $Text): string {
 if ($Text === '') return $Text;
 $Text = str_replace(["\r\n", "\r"], "\n", $Text);
+// Every message goes through here, so this is the one place that guarantees
+// Persian digits — code spans, links and @usernames keep their Latin ones.
+$Text = Helper::digitsToPersian($Text);
 $Text = static::normalizeStars($Text);
 $Text = static::normalizeLayout($Text);
 $Link_Map = [];
@@ -233,7 +237,7 @@ return $Clean === [] ? [] : ['inline_keyboard' => $Clean];
 public static function answerCallbackQuery(string $Callback_Query_ID, string $Text = '', bool $Show_Alert = false): array {
 $Payload = ['callback_query_id' => $Callback_Query_ID, 'show_alert' => $Show_Alert];
 
-if ($Text !== '') $Payload['text'] = $Text;
+if ($Text !== '') $Payload['text'] = Helper::digitsToPersian($Text);
 return self::call('answerCallbackQuery', $Payload);
 }
 
@@ -334,6 +338,15 @@ return 'unknown';
 }
 
 public static function inlineKeyboard(array $Rows): array {
+foreach ($Rows as $Row_Index => $Row) {
+if (!is_array($Row)) continue;
+
+foreach ($Row as $Button_Index => $Button) {
+if (!is_array($Button) || !isset($Button['text']) || !is_string($Button['text'])) continue;
+$Rows[$Row_Index][$Button_Index]['text'] = Helper::digitsToPersian($Button['text']);
+}
+}
+
 return ['inline_keyboard' => $Rows];
 }
 }

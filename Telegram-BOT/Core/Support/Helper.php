@@ -25,6 +25,42 @@ private const OPERATORS = [
 private function __construct() {
 }
 
+/**
+ * Turns every Latin digit in a message into a Persian one, except inside the
+ * parts that are meant to be copied: code spans, code/pre blocks, links,
+ * e-mail addresses, @usernames and bare URLs. Those keep Latin digits or the
+ * copied value would be wrong (a UUID, a subscription link, a payment ref).
+ *
+ * Message texts pass through this once in TelegramClient, so a screen that
+ * forgets Helper::toPersian() still renders Persian numbers.
+ */
+public static function digitsToPersian(string $Text): string {
+if ($Text === '' || preg_match('/[0-9]/', $Text) !== 1) {
+return $Text;
+}
+
+$Hold = [];
+$Keep = static function (string $Value) use (&$Hold): string {
+$Key = "\x01" . str_repeat("\x02", count($Hold) + 1) . "\x01";
+$Hold[$Key] = $Value;
+
+return $Key;
+};
+// Inline code first (`...`), then <code>/<pre> blocks: whatever is inside is
+// literal data, not prose.
+$Text = (string)preg_replace_callback('/`[^`\n]*`/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#<(code|pre)(?:\s[^>]*)?>.*?</\1>#isu', static fn (array $M): string => $Keep($M[0]), $Text);
+// Link targets: markdown ](...), HTML href="..." and any bare URL.
+$Text = (string)preg_replace_callback('/\]\([^)\n]*\)/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/href="[^"]*"/iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#(?:https?|tg)://[^\s<>"`]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/(?<![\w\x01])@[A-Za-z][A-Za-z0-9_]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = strtr($Text, array_combine(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS));
+
+return $Hold === [] ? $Text : strtr($Text, $Hold);
+}
+
 public static function toPersian(int|float|string $Number): string {
 return strtr((string)$Number, array_combine(
 ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],

@@ -1516,7 +1516,7 @@ $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_
 . "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"
 . ($Phone !== '' ? "📞موبایل: `{$Phone}`\n" : '')
-. "🚦وضعیت: `NOK`\n"
+. "🚦وضعیت: *ناموفق*\n"
 . ""
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️کاربر پرداخت را لغو کرده یا تراکنش ناموفق بوده است."
