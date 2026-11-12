@@ -151,28 +151,34 @@ jobs:
           $out = '..\setup\1.0.0'
           if (Test-Path $out) { Remove-Item $out -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $buffer = New-Object byte[] (40MB)
-          $stream = [System.IO.File]::OpenRead((Resolve-Path $exe))
-          try {
-            $index = 1
-            while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-              $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.0-x64.exe.part{0:d2}' -f $index)
-              $writer = [System.IO.File]::Create($part)
-              try { $writer.Write($buffer, 0, $read) } finally { $writer.Close() }
-              $index++
+          $sizeMb = (Get-Item $exe).Length / 1MB
+          if ($sizeMb -lt 90) {
+            Copy-Item $exe (Join-Path $out 'UmbrellaVPN-Setup-1.0.0-x64.exe') -Force
+            Write-Host ("installer is {0:N1} MB, stored as a single file" -f $sizeMb) -ForegroundColor Green
+          } else {
+            $buffer = New-Object byte[] (40MB)
+            $stream = [System.IO.File]::OpenRead((Resolve-Path $exe))
+            try {
+              $index = 1
+              while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.0-x64.exe.part{0:d2}' -f $index)
+                $writer = [System.IO.File]::Create($part)
+                try { $writer.Write($buffer, 0, $read) } finally { $writer.Close() }
+                $index++
+              }
+              Write-Host "split into $($index - 1) parts" -ForegroundColor Green
+            } finally {
+              $stream.Close()
             }
-            Write-Host "split into $($index - 1) parts" -ForegroundColor Green
-          } finally {
-            $stream.Close()
+            Copy-Item 'tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
           }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
           Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.0-x64.exe" -Encoding ASCII
-          Copy-Item 'tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
           Write-Host "sha256 $hash"
           git config user.name 'github-actions'
           git config user.email 'github-actions@users.noreply.github.com'
           git add -- '../setup'
-          git commit -m "setup: windows installer 1.0.0 (split parts, run ${{ github.run_number }})"
+          git commit -m "setup: windows installer 1.0.0 (run ${{ github.run_number }})"
           git push
 
       # The build logs are published as a commit comment, so the run can be
