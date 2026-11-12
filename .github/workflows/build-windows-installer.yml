@@ -45,6 +45,23 @@ jobs:
           flutter analyze *>&1 | Tee-Object -FilePath analyze-log.txt
           exit $LASTEXITCODE
 
+      - name: Verify the windows plugin is registered
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          $registrant = 'windows\flutter\generated_plugin_registrant.cc'
+          if (-not (Test-Path $registrant)) {
+            throw 'generated_plugin_registrant.cc is missing'
+          }
+          $text = Get-Content $registrant -Raw
+          if ($text -notmatch 'umbrella_native') {
+            throw 'umbrella_native is not registered: the native bridge would fail silently'
+          }
+          if (-not (Test-Path 'packages\umbrella_native\windows\include\umbrella_native_plugin.h')) {
+            throw 'public plugin header is missing'
+          }
+          Write-Host 'umbrella_native is registered' -ForegroundColor Green
+
       - name: Unit tests
         working-directory: Windows
         shell: pwsh
@@ -75,6 +92,12 @@ jobs:
             throw 'the built exe does not request administrator rights'
           }
           Write-Host 'administrator manifest verified' -ForegroundColor Green
+
+          $plugin = Join-Path (Get-Location) 'build\windows\x64\runner\Release\umbrella_native_plugin.dll'
+          if (-not (Test-Path $plugin)) {
+            throw 'umbrella_native_plugin.dll was not built'
+          }
+          Write-Host 'native plugin dll verified' -ForegroundColor Green
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress

@@ -23,6 +23,8 @@ Future<void> main(List<String> arguments) async {
   await LocalStore.instance.init();
 
   final NativeBridge native = NativeBridge();
+  // یک فراخوانی سبک تا مشخص شود پل بومی ویندوز واقعا بارگذاری شده است.
+  final bool elevatedNow = await native.isElevated();
   final SoundService sound = SoundService();
   final WindowService window = WindowService(native);
   await window.init();
@@ -47,6 +49,18 @@ Future<void> main(List<String> arguments) async {
     '${AppConfig.appName} ${AppConfig.version} راه اندازی شد | '
     'پوشه نصب: ${provisioner.appDir}',
   );
+  if (!native.available) {
+    AppLogger.instance.add(
+      'پل بومی ویندوز بارگذاری نشد (${native.lastError})؛ '
+      'کارهای حیاتی با نسخه جایگزین انجام می شود.',
+      level: 'warning',
+    );
+  } else {
+    AppLogger.instance.add(
+      'پل بومی ویندوز آماده است | دسترسی مدیر: '
+      '${elevatedNow ? 'بله' : 'خیر'}',
+    );
+  }
   final String? xrayPath = await provisioner.locateBinary('xray.exe');
   if (xrayPath == null) {
     AppLogger.instance.add(

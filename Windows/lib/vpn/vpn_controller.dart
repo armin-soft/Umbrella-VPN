@@ -577,6 +577,15 @@ class VpnController extends ChangeNotifier {
 
     final bool ready = await _waitForTunnel(plan);
     if (!ready) {
+      final String coreLog = '${_provisioner.dataDir}'
+          '${Platform.pathSeparator}run${Platform.pathSeparator}'
+          '${plan.cores.first.name}-core.log';
+      final String tail = await _readLogTail(coreLog);
+      _log.add(
+        'پورت تونل (${Fa.num(plan.readinessPort)}) در ${Fa.num(_tunnelTimeout.inSeconds)} '
+        'ثانیه باز نشد.${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+        level: 'error',
+      );
       await _stopCores();
       await _disableProxy();
       if (_killSwitchOn) {

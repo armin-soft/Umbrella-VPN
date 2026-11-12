@@ -338,7 +338,7 @@ class XrayConfig {
 
   static Map<String, dynamic> build(VpnNode node, int socksPort) {
     return <String, dynamic>{
-      'log': <String, dynamic>{'loglevel': 'warning'},
+      'log': <String, dynamic>{'loglevel': 'info'},
       'inbounds': <Map<String, dynamic>>[
         // پروکسی سیستمی ویندوز به این پورت وصل می شود.
         <String, dynamic>{

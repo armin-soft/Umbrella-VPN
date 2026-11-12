@@ -68,6 +68,9 @@ class SubscriptionController extends ChangeNotifier {
   String _personalFetchedFor = '';
   bool _disposed = false;
 
+  /// وقتی نشانی های سرور پاسخ نمی دهند، منابع عمومی جای آن ها را می گیرند.
+  bool _fallbackActive = false;
+
   List<SourceState> get sources => List<SourceState>.unmodifiable(_sources);
 
   /// همه منابع اشتراک این کاربر که از سرور ساخته شده اند.
@@ -144,6 +147,8 @@ class SubscriptionController extends ChangeNotifier {
       return false;
     }
     _signature = signature;
+    _fallbackActive = false;
+    _personalFetchedFor = '';
     final Map<String, SourceState> previous = <String, SourceState>{
       for (final SourceState item in _sources) item.source.id: item,
     };
@@ -221,6 +226,11 @@ class SubscriptionController extends ChangeNotifier {
         fetched.addAll(report.nodes);
       }
     }
+    if (fetched.isEmpty) {
+      await _activateFallbackSources();
+      return;
+    }
+    _fallbackActive = false;
     await _applyNodes(fetched);
     if (!_disposed) {
       notifyListeners();
@@ -230,6 +240,39 @@ class SubscriptionController extends ChangeNotifier {
       '${Fa.num(personal.where((SourceState item) => item.loaded).length)} '
       'منبع از ${Fa.num(personal.length)}.',
     );
+  }
+
+  /// اگر نشانی هایی که سرور داد پاسخ ندادند، منابع عمومی خود برنامه امتحان
+  /// می شوند تا کاربر بدون سرور نماند. نشانی هر خطا کامل در گزارش ها ثبت شده
+  /// است تا معلوم شود کدام مسیر اشتباه است.
+  Future<void> _activateFallbackSources() async {
+    if (_fallbackActive) {
+      return;
+    }
+    _fallbackActive = true;
+    _sources = AppConfig.subscriptionSources
+        .map((SubscriptionSource source) => SourceState(source: source))
+        .toList();
+    notifyListeners();
+    _log.add(
+      'نشانی های اشتراک سرور پاسخ ندادند؛ منابع عمومی برنامه امتحان می شوند.',
+      level: 'warning',
+    );
+    final List<VpnNode> nodes = <VpnNode>[];
+    for (final SourceState state in _sources) {
+      final ParseReport? report = await _fetch(state);
+      if (report != null) {
+        nodes.addAll(report.nodes);
+      }
+    }
+    if (nodes.isEmpty) {
+      _log.add('منابع عمومی هم سروری ندادند.', level: 'error');
+      return;
+    }
+    await _applyNodes(nodes);
+    if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   Future<void> fetchAll() async {
@@ -351,7 +394,7 @@ class SubscriptionController extends ChangeNotifier {
       if (response.statusCode >= 300) {
         state.error = 'پاسخ سرور: کد ${response.statusCode}';
         _log.add(
-          'دریافت اشتراک ${uri.host} ناموفق: کد ${response.statusCode}',
+          'دریافت اشتراک ناموفق (کد ${response.statusCode}): $uri',
           level: 'error',
         );
         state.loading = false;
@@ -376,7 +419,7 @@ class SubscriptionController extends ChangeNotifier {
       state
         ..loading = false
         ..error = 'دریافت اشتراک ناموفق بود: $error';
-      _log.add('دریافت اشتراک ناموفق بود: $error', level: 'error');
+      _log.add('دریافت اشتراک ناموفق بود: $error | $uri', level: 'error');
       notifyListeners();
       return null;
     }
