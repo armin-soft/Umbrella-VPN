@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
     ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-1.0.0-x64.exe).
 

@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
     اجرای برنامه در حالت دیباگ با دسترسی مدیر.
     چون مانیفست برنامه requireAdministrator است، اجرا از ترمینال معمولی هم

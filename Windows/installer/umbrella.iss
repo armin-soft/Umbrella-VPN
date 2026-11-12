@@ -1,4 +1,4 @@
-; ---------------------------------------------------------------------------
+﻿; ---------------------------------------------------------------------------
 ; فیلترشکن آمبرلا - Umbrella VPN 1.0.0
 ; Windows 10 / 11 x64 only. The product name stays Persian, every installer
 ; message and every OS level string is English on purpose.
