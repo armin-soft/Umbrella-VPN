@@ -124,8 +124,11 @@ $Is_Post = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
 
 if (!$Is_Post) {
 // بازدید ساده از آدرس ربات: ثبت وبهوک تازه می شود و بازدیدکننده به ربات می رود.
+// کارهای زمان بندی شده بعد از بسته شدن پاسخ اجرا می شوند تا هدایت کند نباشد.
+register_shutdown_function(static function (): void {
 require_once __DIR__ . '/Bot/Scheduler.php';
 \Scheduler::tick();
+});
 
 $Visitor_Bot_Username = \Environment::getBotUsername();
 $Visitor_Bot_Link = $Visitor_Bot_Username !== '' ? 'https://t.me/' . $Visitor_Bot_Username : 'https://t.me/';
