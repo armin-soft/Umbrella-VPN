@@ -10,6 +10,7 @@ require_once __DIR__ . '/App-Link.php';
 require_once __DIR__ . '/../Core/App/App-Gateway.php';
 require_once __DIR__ . '/Subscription.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 
 final class Dispatcher {
 private const ROUTES = [
@@ -103,7 +104,7 @@ catch (Throwable) {
 }
 
 private static function channelGuard(Context $Context): void {
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Greeting = Common::greet($Context, 'عضویت در کانال');
 $User = Repository::getUser($Context->UserId);
 $Client_ID = (string)($User['Client_ID'] ?? '');
@@ -169,7 +170,7 @@ $Text = Helper::userGreeting($Context, 'وضعیت ربات')
 'ℹ️لطفاً کمی بعد دوباره تلاش کنید.'
 ) . Helper::userFooter();
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -199,7 +200,7 @@ $Text = Helper::userGreeting($Context, 'وضعیت حساب کاربری')
 ) . Helper::userFooter();
 
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -321,6 +322,8 @@ match($Data) {
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
 'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
 'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
+'cfg_pricing' => AdminFlow::pricingMenu($Context),
+'cfg_links' => AdminFlow::linksMenu($Context),
 'notify_all_start' => AdminFlow::notifyAllStart($Context),
 'device_limit_set_1' => AdminFlow::deviceLimitSet($Context, 1),
 'device_limit_set_2' => AdminFlow::deviceLimitSet($Context, 2),
@@ -410,6 +413,11 @@ if (str_starts_with($Data, 'ticket_user_reply:')) {
 $ID = (int)substr($Data, strlen('ticket_user_reply:'));
 
 if ($ID > 0) UserFlow::ticketUserReplyStart($Context, $ID);
+return;
+}
+
+if (str_starts_with($Data, 'cfg_set:')) {
+AdminFlow::cfgStart($Context, substr($Data, strlen('cfg_set:')));
 return;
 }
 
@@ -516,7 +524,7 @@ catch (Throwable) {}
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
 . "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
 TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]));
 return;
 }

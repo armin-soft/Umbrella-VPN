@@ -125,7 +125,7 @@ $Rows = [];
 
 foreach (self::PLANS as $Month_Key => $Plan_Data) {
 $Plan_Name = $Plan_Data[0];
-$Price_Label = Helper::formatCurrency(Environment::getPlanPrice((int)$Month_Key));
+$Price_Label = Helper::formatCurrency(BotConfig::getPlanPrice((int)$Month_Key));
 $Rows[] = [['text' => "💎اشتراک {$Plan_Name} =💰({$Price_Label})", 'callback_data' => "خرید اشتراک {$Month_Key}"]];
 }
 
@@ -141,11 +141,11 @@ TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeybo
 }
 
 public static function customPlansMenu(Context $Context): void {
-$Day_Rate = Environment::getCustomDayRate();
-$Min = Environment::getCustomMinDays();
-$Max = Environment::getCustomMaxDays();
-$Min_GB = Environment::getCustomMinGB();
-$Max_GB = Environment::getCustomMaxGB();
+$Day_Rate = BotConfig::getCustomDayRate();
+$Min = BotConfig::getCustomMinDays();
+$Max = BotConfig::getCustomMaxDays();
+$Min_GB = BotConfig::getCustomMinGB();
+$Max_GB = BotConfig::getCustomMaxGB();
 $Day_Label = Helper::formatCurrency($Day_Rate);
 $Min_Label = Helper::toPersian((string)$Min);
 $Max_Label = Helper::toPersian((string)$Max);
@@ -173,10 +173,10 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 }
 
 public static function startCustomPlan(Context $Context): void {
-$Min = Environment::getCustomMinDays();
-$Max = Environment::getCustomMaxDays();
-$Min_GB = Environment::getCustomMinGB();
-$Max_GB = Environment::getCustomMaxGB();
+$Min = BotConfig::getCustomMinDays();
+$Max = BotConfig::getCustomMaxDays();
+$Min_GB = BotConfig::getCustomMinGB();
+$Max_GB = BotConfig::getCustomMaxGB();
 $Min_Label = Helper::toPersian((string)$Min);
 $Max_Label = Helper::toPersian((string)$Max);
 $Min_GB_Label = Helper::formatGB($Min_GB);
@@ -200,8 +200,8 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 }
 
 public static function startCustomPlanGB(Context $Context): void {
-$Min_GB = Environment::getCustomMinGB();
-$Max_GB = Environment::getCustomMaxGB();
+$Min_GB = BotConfig::getCustomMinGB();
+$Max_GB = BotConfig::getCustomMaxGB();
 $Min_GB_Label = Helper::formatGB($Min_GB);
 $Max_GB_Label = Helper::formatGB($Max_GB);
 $Days = (int)(Repository::getUserSession($Context->UserId)['Custom_Days'] ?? 0);
@@ -238,8 +238,8 @@ self::saveCustomPlanGB($Context, $Days, $Raw_GB);
 }
 
 private static function saveCustomPlanGB(Context $Context, int $Days, string $Raw_GB): void {
-$Min_GB = Environment::getCustomMinGB();
-$Max_GB = Environment::getCustomMaxGB();
+$Min_GB = BotConfig::getCustomMinGB();
+$Max_GB = BotConfig::getCustomMaxGB();
 $GB = (float)Helper::toEnglish(str_replace([' ', ','], '', trim($Raw_GB)));
 
 if ($GB < $Min_GB || $GB > $Max_GB) {
@@ -274,8 +274,8 @@ if ($Flow !== 'custom_plan_days') {
 return;
 }
 
-$Min = Environment::getCustomMinDays();
-$Max = Environment::getCustomMaxDays();
+$Min = BotConfig::getCustomMinDays();
+$Max = BotConfig::getCustomMaxDays();
 $Days = (int)Helper::toEnglish(trim($Text));
 
 if ($Days < $Min || $Days > $Max) {
@@ -291,7 +291,7 @@ self::startCustomPlanGB($Context);
 }
 
 private static function confirmCustomPlan(Context $Context, int $Days, float $GB = 0.0): void {
-$Day_Rate = Environment::getCustomDayRate();
+$Day_Rate = BotConfig::getCustomDayRate();
 $Total = (int)round($Days * $Day_Rate);
 $Days_Label = Helper::toPersian((string)$Days);
 $GB_Label = Helper::formatGB($GB);
@@ -346,7 +346,7 @@ if ($Need < $Min_Payment) {
 $Shortage = $Min_Payment - $Need;
 $Shortage_Label = Helper::formatCurrency($Shortage);
 $Min_Label = Helper::formatCurrency($Min_Payment);
-$Extra_Days = (int)ceil($Shortage / max(1.0, Environment::getCustomDayRate()));
+$Extra_Days = (int)ceil($Shortage / max(1.0, BotConfig::getCustomDayRate()));
 $Extra_Days_Label = Helper::toPersian((string)$Extra_Days);
 $Text = Common::greet($Context, 'اشتراک دلخواه') . "❌مبلغ قابل پرداخت از درگاه کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ پرداخت از درگاه: *{$Min_Label}*\n💵کسری شما: *{$Shortage_Label}*\n\n👌پیشنهاد می شود حداقل {$Extra_Days_Label} روز دیگر اضافه کنید تا بتوانید پرداخت را تکمیل کنید." . Helper::userFooter() . "*";
 $Rows = [
@@ -435,7 +435,7 @@ self::customPlansMenu($Context);
 return;
 }
 
-$Day_Rate = Environment::getCustomDayRate();
+$Day_Rate = BotConfig::getCustomDayRate();
 $Total = (int)round($Days * $Day_Rate);
 $Days_Label = Helper::toPersian((string)$Days);
 $Name = "اشتراک {$Days_Label} روزه";
@@ -486,7 +486,7 @@ $Shortage = $Min_Payment - $Need_Gateway_Amount;
 $Shortage_Label = Helper::formatCurrency($Shortage);
 $Min_Label = Helper::formatCurrency($Min_Payment);
 $Days_Label_Fix = Helper::toPersian((string)$Days);
-$Extra_Days = (int)ceil($Shortage / max(1.0, Environment::getCustomDayRate()));
+$Extra_Days = (int)ceil($Shortage / max(1.0, BotConfig::getCustomDayRate()));
 $Extra_Days_Label = Helper::toPersian((string)$Extra_Days);
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌مبلغ قابل پرداخت از درگاه کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ پرداخت از درگاه: *{$Min_Label}*\n💵کسری شما: *{$Shortage_Label}*\n\n👌پیشنهاد می شود حداقل {$Extra_Days_Label} روز دیگر اضافه کنید تا بتوانید پرداخت را تکمیل کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '➕افزایش روز', 'callback_data' => 'ساخت اشتراک دلخواه']],
@@ -670,7 +670,7 @@ $Text = $Greeting . Helper::noticeBlock(
 $Send($Text, TelegramClient::inlineKeyboard([
 [['text' => '🔄بررسی مجدد', 'callback_data' => 'اشتراک من']],
 [['text' => '🎫تیکت ها و پشتیبانی', 'callback_data' => 'تیکت های من']],
-[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 Common::mainButton()
 ]));
 return;
@@ -727,7 +727,7 @@ $Text .= Helper::userFooter();
 
 $Markup = TelegramClient::inlineKeyboard([
 Common::backTo('🔄💎بروزرسانی اشتراک من', 'اشتراک من'),
-[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 Common::mainButton()
 ]);
 
@@ -838,7 +838,7 @@ $Name = 'نوروزی'; $Gb = 5; $Days = 13;
 
 else {
 [$Name, $Days, $Gb] = self::PLANS[$Month_Key];
-$Amount = Environment::getPlanPrice($Month_Key);
+$Amount = BotConfig::getPlanPrice($Month_Key);
 }
 
 if ($Type === 'paid' && !$Direct_Charge) {
@@ -992,7 +992,7 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 
 AdminFlow::notifyAdminServerError('ایجاد اشتراک', $Context->UserId, $Name, $Response['StatusCode'] ?? 0, $Api_Error);
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌اشتراک {$Name} شما فعال نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'ایجاد کلاینت']],
 Common::mainButton()
 ]));
@@ -1164,7 +1164,7 @@ $Custom_GB = (float)$CParts[2];
 }
 
 if ($Custom_Days <= 0) {
-$Custom_Days = (int)round(((float)$Amount) / max(1.0, Environment::getCustomDayRate()));
+$Custom_Days = (int)round(((float)$Amount) / max(1.0, BotConfig::getCustomDayRate()));
 }
 
 $Plan_Name = "اشتراک " . Helper::toPersian((string)$Custom_Days) . " روزه";
@@ -1633,7 +1633,7 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 
 AdminFlow::notifyAdminServerError('تمدید اشتراک', $User_ID, $Full_Name, $Response['StatusCode'] ?? 0, $Api_Error);
 TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *❌اشتراک {$Name} شما با موفقیت تمدید نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'اشتراک من']],
 Common::mainButton()
 ]));

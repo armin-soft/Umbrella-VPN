@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../Storage/Repository.php';
 require_once __DIR__ . '/../Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Support/Helper.php';
+require_once __DIR__ . '/../Support/Bot-Config.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once __DIR__ . '/../../Config/Environment.php';
 
@@ -44,7 +45,7 @@ $Balance = (float)($Row['Balance'] ?? 0);
 
 if ($User_ID <= 0 || $Plan === '' || !isset(self::PLANS[$Plan])) continue;
 [$Plan_Name, $Days] = self::PLANS[$Plan];
-$Price = Environment::getPlanPrice($Plan);
+$Price = BotConfig::getPlanPrice($Plan);
 $Final_Price = $Price;
 
 if ($Final_Price <= 0) {

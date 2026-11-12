@@ -5,6 +5,7 @@ require_once __DIR__ . '/Context.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Config/Environment.php';
@@ -72,7 +73,7 @@ return Helper::userGreeting($Context, $Section);
 
 
 public static function robotOff(Context $Context, string $Section = 'منوی خدمات ربات'): void {
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, $Section) . "با عرض پوزش ربات در دسترس نمی باشد.\n⚠️علت:🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢👁مشاهده کانال اطلاع رسانی', 'url' => $Channel_Url]],

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Config/Environment.php';
@@ -707,9 +708,9 @@ if (!$Force && $Last_Check > 0 && (time() - $Last_Check) < $Interval) return;
 if (!Repository::tryCronLock('channel_membership', 3600)) return;
 
 try {
-$Channel_Url = (string)Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Channel_Name = self::extractChannelName($Channel_Url);
-$Channel_ID = Environment::getTelegramChannelId();
+$Channel_ID = BotConfig::getTelegramChannelId();
 
 if ($Channel_Name === '' && $Channel_ID === '') return;
 Repository::setSetting('Last_Channel_Check_At', (string)time());
@@ -744,7 +745,7 @@ $Status = ($Channel_Name === '' && $Channel_ID === '')
 : TelegramClient::channelMemberStatus($User_ID, $Channel_Name, $Channel_ID);
 $Grace_Started_At = $User['Channel_Grace_Started_At'] !== null ? (int)$User['Channel_Grace_Started_At'] : 0;
 $Disabled_At = $User['Channel_Client_Disabled_At'] !== null ? (int)$User['Channel_Client_Disabled_At'] : 0;
-$Channel_Url = (string)Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Minutes = (int)ceil($Grace_Seconds / 60);
 
 if ($Status === 'unknown_participant') {

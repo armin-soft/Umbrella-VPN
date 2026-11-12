@@ -15,6 +15,25 @@ require_once __DIR__ . '/Scheduler.php';
 require_once __DIR__ . '/../Core/App/App-Device-Limit.php';
 
 final class AdminFlow {
+/**
+ * The values that used to live only in `.env` and are now owned by the admin
+ * panel, one entry per text flow. `hint` is what the prompt shows, `screen` is
+ * where the «بازگشت» button leads, and `type` picks the validation.
+ */
+private const CFG_KEYS = [
+'Plan_Price_1' => ['label' => 'قیمت پلن ۱ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 400000'],
+'Plan_Price_3' => ['label' => 'قیمت پلن ۳ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 1000000'],
+'Plan_Price_6' => ['label' => 'قیمت پلن ۶ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 1800000'],
+'Plan_Price_12' => ['label' => 'قیمت پلن ۱۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 3000000'],
+'Custom_Min_Days' => ['label' => 'حداقل روز پلن دلخواه', 'type' => 'days', 'screen' => 'pricing', 'hint' => 'عدد صحیح روز، حداقل ۱'],
+'Custom_Max_Days' => ['label' => 'حداکثر روز پلن دلخواه', 'type' => 'days', 'screen' => 'pricing', 'hint' => 'عدد صحیح روز، مثلاً 365'],
+'Custom_Min_GB' => ['label' => 'حداقل حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، حداقل ۰.۱'],
+'Custom_Max_GB' => ['label' => 'حداکثر حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، مثلاً 1000'],
+'Support_Url' => ['label' => 'لینک پشتیبانی', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا @username'],
+'Channel_Url' => ['label' => 'لینک کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا @username'],
+'Telegram_Channel_ID' => ['label' => 'آی دی کانال تلگرام', 'type' => 'channel', 'screen' => 'links', 'hint' => 'آی دی عددی و معمولاً منفی، مثال: -1001833514833'],
+];
+
 private function __construct() {
 }
 
@@ -208,6 +227,8 @@ $Map = [
 'ticket_reply_text' => 'مدیریت تیکت ها',
 ];
 
+if (str_starts_with($Flow, 'cfg:')) return 'تنظیمات ربات';
+
 return $Map[$Flow] ?? 'منوی مدیریت';
 }
 
@@ -247,6 +268,8 @@ $Markup = [
 [['text' => '🔄تغییر نسخه ربات', 'callback_data' => 'بروز رسانی']],
 [['text' => $Show ? '⛔️خاموش کردن کانفیگ اضطراری' : '✅روشن کردن کانفیگ اضطراری', 'callback_data' => 'emergency_toggle']],
 [['text' => '🔗تغییر آدرس کانفیگ اضطراری', 'callback_data' => 'emergency_url_start']],
+[['text' => '💰تعرفه اشتراک و محدوده پلن', 'callback_data' => 'cfg_pricing']],
+[['text' => '📣لینک پشتیبانی و کانال', 'callback_data' => 'cfg_links']],
 [['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ];
 
@@ -308,6 +331,246 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آد�
 [Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
 [Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
+}
+
+/** Subscription prices and the limits of the custom plan. */
+public static function pricingMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '💰تعرفه ها در حال بارگذاری...', false);
+}
+
+$Rows_Text = '';
+
+foreach (BotConfig::PLAN_MONTHS as $Months => $Label) {
+$Price = BotConfig::getPlanPrice($Months);
+$Price_Label = $Price > 0 ? Helper::formatCurrency($Price) : 'ثبت نشده';
+$Rows_Text .= "├─{$Label}: *{$Price_Label}*\n";
+}
+
+$Min_Days = BotConfig::getCustomMinDays();
+$Max_Days = BotConfig::getCustomMaxDays();
+$Min_GB = BotConfig::getCustomMinGB();
+$Max_GB = BotConfig::getCustomMaxGB();
+$Day_Rate = BotConfig::getCustomDayRate();
+$Text = Helper::adminGreeting($Context, 'تعرفه اشتراک')
+. "💰*تعرفه اشتراک و محدوده پلن*\n➖➖➖➖➖➖➖➖➖➖\n"
+. "💎*پلن های ثابت:*\n" . $Rows_Text . "\n"
+. "📐*پلن دلخواه:*\n"
+. "├─حداقل روز: *" . Helper::toPersian((string)$Min_Days) . "*\n"
+. "├─حداکثر روز: *" . Helper::toPersian((string)$Max_Days) . "*\n"
+. "├─حداقل حجم: *" . Helper::formatGB($Min_GB) . "*\n"
+. "├─حداکثر حجم: *" . Helper::formatGB($Max_GB) . "*\n"
+. "└─قیمت هر روز: *" . Helper::formatCurrency($Day_Rate) . "*\n\n"
+. "ℹ️قیمت هر روز پلن دلخواه از قیمت پلن ۱ ماهه تقسیم بر ۳۰ محاسبه می شود.\n"
+. Helper::adminFooter();
+$Markup = [
+[['text' => '✏️قیمت ۱ ماهه', 'callback_data' => 'cfg_set:Plan_Price_1'], ['text' => '✏️قیمت ۳ ماهه', 'callback_data' => 'cfg_set:Plan_Price_3']],
+[['text' => '✏️قیمت ۶ ماهه', 'callback_data' => 'cfg_set:Plan_Price_6'], ['text' => '✏️قیمت ۱۲ ماهه', 'callback_data' => 'cfg_set:Plan_Price_12']],
+[['text' => '✏️حداقل روز', 'callback_data' => 'cfg_set:Custom_Min_Days'], ['text' => '✏️حداکثر روز', 'callback_data' => 'cfg_set:Custom_Max_Days']],
+[['text' => '✏️حداقل حجم', 'callback_data' => 'cfg_set:Custom_Min_GB'], ['text' => '✏️حداکثر حجم', 'callback_data' => 'cfg_set:Custom_Max_GB']],
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
+];
+self::renderCfgScreen($Context, $Text, $Markup);
+}
+
+/** Support link, channel link and channel id. */
+public static function linksMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '📣لینک ها در حال بارگذاری...', false);
+}
+
+$Support = BotConfig::getSupportUrl() ?: 'ثبت نشده';
+$Channel = BotConfig::getChannelUrl() ?: 'ثبت نشده';
+$Channel_Id = BotConfig::getTelegramChannelId() ?: 'ثبت نشده';
+$Source_Label = static fn (string $Key): string => BotConfig::source($Key) === 'panel' ? '📝پنل' : '🌱env';
+$Text = Helper::adminGreeting($Context, 'لینک ها و کانال')
+. "📣*لینک پشتیبانی و کانال*\n➖➖➖➖➖➖➖➖➖➖\n"
+. "🧑‍💻لینک پشتیبانی ({$Source_Label('Support_Url')}):\n<code>{$Support}</code>\n\n"
+. "📣لینک کانال ({$Source_Label('Channel_Url')}):\n<code>{$Channel}</code>\n\n"
+. "🆔آی دی کانال ({$Source_Label('Telegram_Channel_ID')}):\n<code>{$Channel_Id}</code>\n\n"
+. "ℹ️لینک پشتیبانی در دکمه های «ارتباط با پشتیبانی» و لینک کانال در دکمه عضویت کانال استفاده می شود.\n"
+. Helper::adminFooter();
+$Markup = [
+[['text' => '✏️تغییر لینک پشتیبانی', 'callback_data' => 'cfg_set:Support_Url']],
+[['text' => '✏️تغییر لینک کانال', 'callback_data' => 'cfg_set:Channel_Url']],
+[['text' => '✏️تغییر آی دی کانال', 'callback_data' => 'cfg_set:Telegram_Channel_ID']],
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
+];
+self::renderCfgScreen($Context, $Text, $Markup);
+}
+
+/** Asks for the new value of one CFG_KEYS entry. */
+public static function cfgStart(Context $Context, string $Key): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Key = trim($Key);
+
+if (!isset(self::CFG_KEYS[$Key])) {
+self::unknownAdminInput($Context);
+return;
+}
+
+$Meta = self::CFG_KEYS[$Key];
+self::startInput(
+$Context,
+'admin:cfg:' . $Key,
+"✏️مقدار جدید «{$Meta['label']}» را بفرستید.\n"
+. "🧾مقدار فعلی: <code>" . self::cfgCurrent($Key) . "</code>\n"
+. "💡{$Meta['hint']}\n\n"
+. "👌برای برگشت بدون تغییر، از دکمه پایین استفاده کنید.\n\n"
+);
+}
+
+private static function cfgSave(Context $Context, string $Key, string $Text): void {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Key = trim($Key);
+
+if (!isset(self::CFG_KEYS[$Key])) {
+self::unknownAdminInput($Context);
+return;
+}
+
+$Meta = self::CFG_KEYS[$Key];
+$Value = trim(Helper::toEnglish($Text));
+$Value = str_replace([',', '،', ' ', '٬'], '', $Value);
+$Error = '';
+$Stored = '';
+
+switch ($Meta['type']) {
+case 'price':
+if (!preg_match('/^\d{1,12}$/', $Value) || (int)$Value <= 0) {
+$Error = 'قیمت باید یک عدد مثبت به تومان باشد.';
+break;
+}
+
+$Months = (int)substr($Key, strlen('Plan_Price_'));
+BotConfig::setPlanPrice($Months, (float)$Value);
+$Stored = Helper::formatCurrency((float)$Value);
+break;
+case 'days':
+if (!preg_match('/^\d{1,4}$/', $Value) || (int)$Value < 1) {
+$Error = 'تعداد روز باید عدد صحیح و حداقل ۱ باشد.';
+break;
+}
+
+$Days = (int)$Value;
+
+if ($Key === 'Custom_Min_Days' && $Days >= BotConfig::getCustomMaxDays()) {
+$Error = 'حداقل روز باید کمتر از حداکثر روز (' . BotConfig::getCustomMaxDays() . ') باشد.';
+break;
+}
+
+if ($Key === 'Custom_Max_Days' && $Days <= BotConfig::getCustomMinDays()) {
+$Error = 'حداکثر روز باید بیشتر از حداقل روز (' . BotConfig::getCustomMinDays() . ') باشد.';
+break;
+}
+
+if ($Key === 'Custom_Min_Days') { BotConfig::setCustomMinDays($Days); }
+else { BotConfig::setCustomMaxDays($Days); }
+$Stored = Helper::toPersian((string)$Days) . ' روز';
+break;
+case 'gb':
+if (!preg_match('/^\d{1,6}(\.\d{1,2})?$/', $Value) || (float)$Value <= 0) {
+$Error = 'حجم باید یک عدد مثبت به گیگابایت باشد (مثلاً 1 یا 0.5).';
+break;
+}
+
+$GB = (float)$Value;
+
+if ($Key === 'Custom_Min_GB' && $GB >= BotConfig::getCustomMaxGB()) {
+$Error = 'حداقل حجم باید کمتر از حداکثر حجم (' . Helper::formatGB(BotConfig::getCustomMaxGB()) . ') باشد.';
+break;
+}
+
+if ($Key === 'Custom_Max_GB' && $GB <= BotConfig::getCustomMinGB()) {
+$Error = 'حداکثر حجم باید بیشتر از حداقل حجم (' . Helper::formatGB(BotConfig::getCustomMinGB()) . ') باشد.';
+break;
+}
+
+if ($Key === 'Custom_Min_GB') { BotConfig::setCustomMinGB($GB); }
+else { BotConfig::setCustomMaxGB($GB); }
+$Stored = Helper::formatGB($GB);
+break;
+case 'link':
+if ($Value !== '' && str_starts_with($Value, '@')) {
+$Value = 'https://t.me/' . substr($Value, 1);
+}
+
+if (!preg_match('#^https?://[^\s<>]+$#i', $Value)) {
+$Error = 'آدرس باید کامل و با http:// یا https:// شروع شود، یا @username باشد.';
+break;
+}
+
+if ($Key === 'Support_Url') { BotConfig::setSupportUrl($Value); }
+else { BotConfig::setChannelUrl($Value); }
+$Stored = $Value;
+break;
+case 'channel':
+$Value = ltrim($Value, '+');
+
+if (!preg_match('/^-?\d{5,20}$/', $Value)) {
+$Error = 'آی دی کانال باید عددی باشد (معمولاً منفی و با 100- شروع می شود).';
+break;
+}
+
+BotConfig::setTelegramChannelId($Value);
+$Stored = $Value;
+break;
+default:
+$Error = 'نوع مقدار ناشناخته است.';
+}
+
+if ($Error !== '') {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌{$Error}\n➖➖➖➖➖➖➖➖➖➖\n👌لطفاً دوباره تلاش کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Common::backTo('✏️تلاش دوباره', 'cfg_set:' . $Key)],
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+]));
+return;
+}
+
+Repository::logAdminAction($Context->UserId, 'cfg_' . $Key, null, 'value=' . mb_substr($Stored, 0, 190), '');
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅«{$Meta['label']}» ثبت شد:\n<code>{$Stored}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Common::backTo('🔁مشاهده مقادیر', $Meta['screen'] === 'pricing' ? 'cfg_pricing' : 'cfg_links')],
+[Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
+]));
+}
+
+/** The value in use for one CFG_KEYS entry, formatted for a prompt. */
+private static function cfgCurrent(string $Key): string {
+switch ($Key) {
+case 'Plan_Price_1': case 'Plan_Price_3': case 'Plan_Price_6': case 'Plan_Price_12':
+$Price = BotConfig::getPlanPrice((int)substr($Key, strlen('Plan_Price_')));
+return $Price > 0 ? Helper::formatCurrency($Price) : 'ثبت نشده';
+case 'Custom_Min_Days': return Helper::toPersian((string)BotConfig::getCustomMinDays()) . ' روز';
+case 'Custom_Max_Days': return Helper::toPersian((string)BotConfig::getCustomMaxDays()) . ' روز';
+case 'Custom_Min_GB': return Helper::formatGB(BotConfig::getCustomMinGB());
+case 'Custom_Max_GB': return Helper::formatGB(BotConfig::getCustomMaxGB());
+case 'Support_Url': return BotConfig::getSupportUrl() ?: 'ثبت نشده';
+case 'Channel_Url': return BotConfig::getChannelUrl() ?: 'ثبت نشده';
+case 'Telegram_Channel_ID': return BotConfig::getTelegramChannelId() ?: 'ثبت نشده';
+default: return '—';
+}
+}
+
+/** Edits the current message when a callback came from it, else sends a new one. */
+private static function renderCfgScreen(Context $Context, string $Text, array $Markup): void {
+$Markup = TelegramClient::inlineKeyboard($Markup);
+
+if ($Context->IsCallback && $Context->MessageId !== null) {
+$Result = TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $Markup);
+
+if (is_array($Result) && ($Result['ok'] ?? false) === true) {
+return;
+}
+}
+
+TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 }
 
 public static function reportMenu(Context $Context): void {
@@ -1282,6 +1545,7 @@ $Flow === 'admin:expire_uid' => self::manualExpire($Context, trim($Text)),
 $Flow === 'admin:version_number' => self::versionNumber($Context, trim($Text)),
 $Flow === 'admin:version_changes' => self::versionChanges($Context, $Text),
 $Flow === 'admin:emergency_url' => self::emergencyUrlSave($Context, $Text),
+str_starts_with($Flow, 'admin:cfg:') => self::cfgSave($Context, substr($Flow, strlen('admin:cfg:')), $Text),
 $Flow === 'admin:ticket_reply_text' => self::ticketAdminReplySend($Context, trim($Text)),
 default => self::unknownAdminInput($Context),
 };
@@ -1378,7 +1642,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅ر�
 [['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
 
-$Channell_ID = (string)Environment::getTelegramChannelId();
+$Channell_ID = (string)BotConfig::getTelegramChannelId();
 
 if ($Channell_ID === '') return;
 $Channell_ID_Int = (int)$Channell_ID;
@@ -1566,7 +1830,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *کار
 ]));
 
 TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Name, 'وضعیت حساب کاربری', $Target) . ($Block ? "⛔️با عرض پوزش شما به طور دائمی مسدود شده اید.\n\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter() . "*" : "✅🔓مسدودیت شما رفع گردید. خوش آمدید!") . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }

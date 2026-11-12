@@ -46,7 +46,7 @@ Common::robotOff($Context);
 return;
 }
 
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Status = self::membershipStatus($Context->UserId);
 
 if (in_array($Status, ['unknown', 'unknown_participant'], true)) {
@@ -78,7 +78,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بر�
 }
 
 $Greeting = Common::greet($Context, 'بررسی عضویت کانال');
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Status = self::membershipStatus($Context->UserId);
 $Is_Member = $Status === 'member';
 
@@ -129,9 +129,9 @@ TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما عضو ک
 }
 
 private static function membershipStatus(int $UserId): string {
-$Channel_Link = (string)Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Link = BotConfig::getChannelUrl();
 $Channel_Name = self::extractChannelName($Channel_Link);
-$Channel_ID = Environment::getTelegramChannelId();
+$Channel_ID = BotConfig::getTelegramChannelId();
 
 if ($Channel_Name === '' && $Channel_ID === '') return 'member';
 return \TelegramClient::channelMemberStatus($UserId, $Channel_Name, $Channel_ID);
@@ -497,7 +497,7 @@ if ($Auto_Renew_Plan !== '') {
 $Ar_Plan_Name = AutoRenew::planName($Auto_Renew_Plan);
 
 if ($Ar_Plan_Name === '') $Ar_Plan_Name = 'پلن فعلی';
-$Ar_Price = Environment::getPlanPrice($Auto_Renew_Plan);
+$Ar_Price = BotConfig::getPlanPrice($Auto_Renew_Plan);
 $Ar_Has_Balance = ($Ar_Price <= 0) || ($Ar_Balance >= $Ar_Price);
 $Ar_Balance_Label = Helper::formatCurrency($Ar_Balance);
 $Ar_Price_Label = Helper::formatCurrency($Ar_Price);
@@ -578,7 +578,7 @@ $Text = Common::greet($Context, 'تمدید خودکار اشتراک')
 $Rows = [];
 
 foreach (self::AUTO_RENEW_PLANS as $Key => $Label) {
-$Price = Environment::getPlanPrice((int)$Key);
+$Price = BotConfig::getPlanPrice((int)$Key);
 $Price_Label = $Price > 0 ? Helper::formatCurrency($Price) : 'قیمت ثبت نشده';
 $Mark = $Current === $Key ? '✅' : '🟢';
 $Rows[] = [['text' => "{$Mark}فعال: {$Label} - {$Price_Label}", 'callback_data' => 'auto_renew_on_' . $Key]];
@@ -603,7 +603,7 @@ self::autoRenewMenu($Context);
 return;
 }
 
-$Price = Environment::getPlanPrice((int)$Plan);
+$Price = BotConfig::getPlanPrice((int)$Plan);
 $Balance = Repository::getBalance($Context->UserId);
 Repository::updateUser($Context->UserId, ['Auto_Renew_Plan' => $Plan]);
 
@@ -668,7 +668,7 @@ $Plan = self::currentAutoRenewPlanKey($Duration);
 $Plan_Name = self::AUTO_RENEW_PLANS[$Plan] ?? AutoRenew::planName($Plan);
 
 if ($Plan_Name === '') $Plan_Name = 'پلن فعلی';
-$Plan_Price = Environment::getPlanPrice($Plan);
+$Plan_Price = BotConfig::getPlanPrice($Plan);
 $Wallet_Balance = Repository::getBalance($Context->UserId);
 $Wallet_Short = ($Plan_Price > 0 && $Wallet_Balance < $Plan_Price);
 
@@ -683,7 +683,7 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تمدی�
 '⚠️علت:🚫قیمت پلن «' . $Plan_Name . '» در تنظیمات سرور ثبت نشده است.',
 'ℹ️لطفاً با پشتیبانی تماس بگیرید.'
 ) . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]));
 return;
 }
