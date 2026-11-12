@@ -21,7 +21,8 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 target_include_directories(${PLUGIN_NAME} INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 if(MSVC)
-  target_compile_options(${PLUGIN_NAME} PRIVATE /utf-8 /W3)
+  # /WX- keeps third party style warnings from failing an otherwise good build.
+  target_compile_options(${PLUGIN_NAME} PRIVATE /utf-8 /W3 /WX-)
 endif()
 
 target_link_libraries(${PLUGIN_NAME} PRIVATE iphlpapi ws2_32 wininet shell32 advapi32 ole32 user32 gdi32)

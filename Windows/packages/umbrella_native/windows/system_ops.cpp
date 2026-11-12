@@ -724,7 +724,9 @@ TunnelStats SystemOps::ReadTunnelStats(const std::string& adapter_hint) {
     bool match = ContainsInsensitive(friendly, adapter_hint) ||
                  ContainsInsensitive(description, adapter_hint);
     if (!match) continue;
-    MIB_IF_ROW2 row = {0};
+    // GetIfEntry2 is the documented way to read 64 bit counters for an
+    // interface; the adapter record itself has no byte counters.
+    MIB_IF_ROW2 row = {};
     row.InterfaceLuid = adapter->Luid;
     if (GetIfEntry2(&row) != NO_ERROR) continue;
     stats.rx_bytes = row.InOctets;

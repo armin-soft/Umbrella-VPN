@@ -1,6 +1,12 @@
 #ifndef UMBRELLA_NATIVE_PLUGIN_H_
 #define UMBRELLA_NATIVE_PLUGIN_H_
 
+// The native helpers must come first: they pull in winsock2 before windows.h
+// (which the flutter headers include transitively), otherwise the Winsock 1
+// declarations clash with Winsock 2 and the plugin does not compile.
+#include "system_ops.h"
+#include "tray_icon.h"
+
 #include <flutter/binary_messenger.h>
 #include <flutter/encodable_value.h>
 #include <flutter/event_channel.h>
@@ -15,9 +21,6 @@
 
 #include <memory>
 #include <string>
-
-#include "system_ops.h"
-#include "tray_icon.h"
 
 namespace umbrella {
 
