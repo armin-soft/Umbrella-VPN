@@ -133,6 +133,17 @@ class AuthController extends ChangeNotifier {
     return buffer.toString();
   }
 
+  /// خطای سرویس فقط یک بار ثبت می شود تا پایش دوره ای گزارش را پر نکند.
+  String _lastServiceError = '';
+
+  void _logError(String message) {
+    if (message == _lastServiceError) {
+      return;
+    }
+    _lastServiceError = message;
+    _log.add('خطای سرویس: $message', level: 'error');
+  }
+
   String get baseUrl => _gateway.baseUrl;
 
   /// نشانی درگاهی که همین حالا استفاده می شود.
@@ -215,6 +226,7 @@ class AuthController extends ChangeNotifier {
       return true;
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
       if (error.retryAfter != null) {
         _secondsLeft = error.retryAfter!;
         _startClock();
@@ -257,6 +269,7 @@ class AuthController extends ChangeNotifier {
       return true;
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
       return false;
     } finally {
       _busy = false;
@@ -298,6 +311,7 @@ class AuthController extends ChangeNotifier {
       return true;
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
       return false;
     } finally {
       _busy = false;
@@ -354,6 +368,7 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
       notifyListeners();
     }
   }
@@ -373,6 +388,7 @@ class AuthController extends ChangeNotifier {
       }
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
     } finally {
       _busy = false;
       notifyListeners();
@@ -391,6 +407,7 @@ class AuthController extends ChangeNotifier {
       _startClock();
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
     }
     notifyListeners();
   }
@@ -460,6 +477,7 @@ class AuthController extends ChangeNotifier {
       return true;
     } on ApiError catch (error) {
       _error = error.message;
+      _logError(error.message);
       notifyListeners();
       return false;
     }

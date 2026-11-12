@@ -65,7 +65,11 @@ class SystemOps {
   bool Resolves(const std::string& host);
 
   int Spawn(const std::string& exe, const std::string& args,
-            const std::string& work_dir, bool hidden);
+            const std::string& work_dir, bool hidden,
+            const std::string& log_path = std::string());
+
+  /// متن آخرین خطای CreateProcess برای گزارش دقیق؛ خالی یعنی خطایی نبوده.
+  std::string LastSpawnError() const;
   bool KillPid(int pid);
   int KillByName(const std::string& exe_name);
   bool IsRunning(const std::string& exe_name);
@@ -95,6 +99,7 @@ class SystemOps {
 
   std::mutex mutex_;
   std::map<int, HANDLE> processes_;
+  mutable DWORD last_spawn_error_ = 0;
 };
 
 }  // namespace umbrella

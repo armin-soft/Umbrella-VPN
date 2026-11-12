@@ -13,7 +13,6 @@ import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../vpn/vpn_controller.dart';
-import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 
 /// صفحه اصلی اتصال: لوگوی وضعیت، دکمه اتصال، آمار زنده و میانبرها.
@@ -47,7 +46,6 @@ class _ConnectPageState extends State<ConnectPage> {
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
     final SettingsController settings = context.watch<SettingsController>();
-    final SubscriptionController subs = context.watch<SubscriptionController>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
     final VpnStatus status = vpn.status;
@@ -201,7 +199,7 @@ class _ConnectPageState extends State<ConnectPage> {
                             Flexible(
                               child: Text(
                                 Fa.num(
-                                  '${vpn.activeNode!.name} | ${vpn.activeNode!.protocol.label} | ${vpn.activeNode!.hasPing ? Fa.ms(vpn.activeNode!.pingMs) : 'پینگ نامشخص'}',
+                                  '${vpn.activeNode!.name} | ${vpn.activeNode!.hasPing ? Fa.ms(vpn.activeNode!.pingMs) : 'پینگ نامشخص'}',
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -284,6 +282,7 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
           ),
           const SizedBox(height: 18),
+          if (vpn.stats.available)
           Row(
             children: <Widget>[
               Expanded(
@@ -344,94 +343,35 @@ class _ConnectPageState extends State<ConnectPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(
-                  title: 'وضعیت های اتصال',
-                  subtitle: 'لوگوها و نام فارسی هر وضعیت؛ وضعیت فعال برجسته است.',
-                  trailing: Pill(
-                    label: '${Fa.num(vpn.nodes.length)} سرور',
-                    icon: Icons.storage_rounded,
-                    color: colors.textSecondary,
-                    dense: true,
-                  ),
+                  title: 'حالت انتخاب سرور',
+                  subtitle: 'سرور فعال چطور انتخاب شود؟',
                 ),
-                const SizedBox(height: 16),
-                StateGallery(current: status),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 Row(
                   children: <Widget>[
-                    Expanded(
-                      child: ToggleRow(
-                        icon: Icons.gpp_good_rounded,
-                        title: 'کیل سوییچ',
-                        subtitle: 'در صورت قطع تونل، اینترنت مسدود می شود',
-                        value: settings.settings.killSwitch,
-                        onChanged: (bool value) async {
-                          await settings.setKillSwitch(value);
-                          await vpn.rebuildKillSwitch();
-                          toasts.info(value ? 'کیل سوییچ روشن شد' : 'کیل سوییچ خاموش شد');
-                        },
-                        accent: colors.success,
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: ToggleRow(
-                        icon: Icons.auto_mode_rounded,
-                        title: 'اتصال خودکار',
-                        subtitle: 'اجرای برنامه با اتصال خودکار',
-                        value: settings.settings.autoConnect,
-                        onChanged: settings.setAutoConnect,
-                        accent: colors.info,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          GlassCard(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: <Widget>[
-                SectionHeader(
-                  title: 'اشتراک ها',
-                  subtitle: 'منابع مجاز برنامه؛ برای به روز رسانی سرورها بزنید.',
-                  trailing: TextButton.icon(
-                    onPressed: subs.loadingAll
-                        ? null
-                        : () async {
-                            await subs.fetchAll();
-                            toasts.success(
-                              'اشتراک ها به روز شد',
-                              '${Fa.num(subs.totalNodes)} سرور خوانده شد',
-                            );
-                          },
-                    icon: const Icon(Icons.sync_rounded, size: 17),
-                    label: const Text('به روز رسانی همه'),
-                  ),
-                ),
-                if (subs.loadingAll) ...<Widget>[
-                  const SizedBox(height: 12),
-                  ProgressLine(value: subs.progress, label: 'در حال دریافت اشتراک ها'),
-                ],
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    for (final SourceState state in subs.sources)
-                      Pill(
-                        label:
-                            '${state.title}: ${state.loading ? 'در حال دریافت' : '${Fa.num(state.count)} سرور'}',
-                        icon: state.error.isNotEmpty
-                            ? Icons.error_outline_rounded
-                            : (state.count > 0
-                                ? Icons.check_circle_outline_rounded
-                                : Icons.hourglass_empty_rounded),
-                        color: state.error.isNotEmpty
-                            ? colors.danger
-                            : (state.count > 0 ? colors.success : colors.textSecondary),
-                      ),
+                    for (final SelectionMode mode in SelectionMode.values)
+                      if (mode != SelectionMode.manual)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: SelectionCard(
+                              title: mode.faName,
+                              description: mode.description,
+                              selected: settings.settings.selectionMode == mode,
+                              onTap: () async {
+                                await settings.setSelectionMode(mode);
+                                toasts.info('حالت انتخاب سرور: ${mode.faName}');
+                              },
+                              icon: mode == SelectionMode.auto
+                                  ? Icons.auto_mode_rounded
+                                  : (mode == SelectionMode.roundRobin
+                                      ? Icons.sync_alt_rounded
+                                      : (mode == SelectionMode.consistentHash
+                                          ? Icons.fingerprint_rounded
+                                          : Icons.push_pin_rounded)),
+                            ),
+                          ),
+                        ),
                   ],
                 ),
               ],

@@ -114,6 +114,7 @@ class UpdateController extends ChangeNotifier {
       );
       if (file == null) {
         _error = 'دانلود ناموفق بود یا فایل سالم نبود.';
+        _log.add(_error, level: 'error');
         _downloading = false;
         notifyListeners();
         return false;
@@ -126,6 +127,7 @@ class UpdateController extends ChangeNotifier {
       _downloading = false;
       if (!ok) {
         _error = 'اجرای نصب کننده ناموفق بود.';
+        _log.add(_error, level: 'error');
         notifyListeners();
         return false;
       }
@@ -134,6 +136,7 @@ class UpdateController extends ChangeNotifier {
       return true;
     } on Exception catch (error) {
       _error = 'خطا در به روز رسانی: $error';
+      _log.add(_error, level: 'error');
       _downloading = false;
       _installing = false;
       notifyListeners();

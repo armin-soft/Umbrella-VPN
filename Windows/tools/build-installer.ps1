@@ -33,7 +33,7 @@ if (-not (Test-Path (Join-Path $coresDir 'bin'))) {
 }
 & (Join-Path $PSScriptRoot 'fetch-cores.ps1')
 
-$requiredCores = @('sing-box.exe', 'wintun.dll')
+$requiredCores = @('xray.exe')
 $missingCores = $requiredCores | Where-Object { -not (Test-Path (Join-Path $coresDir "bin\$_")) }
 if ($missingCores) {
     throw "هسته های الزامی برای بسته بندی پیدا نشدند: $($missingCores -join ', ') - ابتدا tools\fetch-cores.ps1 را اجرا کنید."

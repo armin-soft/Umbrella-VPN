@@ -1,32 +1,8 @@
 {
   "schema": 1,
   "updated_at": "2026-01-01",
-  "note": "هسته ها همراه نسخه نصب می شوند و در پوشه cores کنار فایل اجرایی قرار می گیرند؛ برنامه هیچ هسته ای را دانلود نمی کند. این فایل فقط فهرست و توضیح هسته ها است.",
+  "note": "هسته ها همراه نسخه نصب می شوند و در پوشه cores کنار فایل اجرایی قرار می گیرند؛ برنامه هیچ هسته ای را دانلود نمی کند. هسته اصلی ایکس ری است و سینگ باکس کلا حذف شده است.",
   "cores": [
-    {
-      "id": "singbox",
-      "title": "هسته سینگ باکس",
-      "role": "تونل کامل و همه پروتکل ها",
-      "binary": "sing-box.exe",
-      "version": "1.11.3",
-      "url": "https://github.com/SagerNet/sing-box/releases/download/v1.11.3/sing-box-1.11.3-windows-amd64.zip",
-      "archive": "zip",
-      "inside": "sing-box-1.11.3-windows-amd64/sing-box.exe",
-      "sha256": "",
-      "required": true
-    },
-    {
-      "id": "wintun",
-      "title": "درایور کارت شبکه مجازی",
-      "role": "ساخت تونل کامل ویندوز",
-      "binary": "wintun.dll",
-      "version": "0.14.1",
-      "url": "https://www.wintun.net/builds/wintun-0.14.1.zip",
-      "archive": "zip",
-      "inside": "wintun/bin/amd64/wintun.dll",
-      "sha256": "",
-      "required": true
-    },
     {
       "id": "xray",
       "title": "هسته ایکس ری",
@@ -37,7 +13,7 @@
       "archive": "zip",
       "inside": "xray.exe",
       "sha256": "",
-      "required": false
+      "required": true
     },
     {
       "id": "clash",

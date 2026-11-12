@@ -9,12 +9,11 @@ import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../platform/services.dart';
-import '../../vpn/cores.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
-import '../widgets/gateway_dialog.dart';
 
-/// تنظیمات: ظاهر، اتصال، هسته ها، شبکه و حساب.
+/// تنظیمات: ظاهر، اتصال، شبکه و حساب. گزینه های فنی و حالت انتخاب سرور اینجا
+/// نمایش داده نمی شوند.
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.onOpenAbout});
 
@@ -25,35 +24,12 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final Set<String> _preparing = <String>{};
-  List<String> _installed = <String>[];
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshInstalled());
-  }
-
-  Future<void> _refreshInstalled() async {
-    final CoreProvisioner provisioner = context.read<CoreProvisioner>();
-    final List<String> installed = <String>[];
-    for (final CoreInfo core in provisioner.catalog) {
-      if (await provisioner.hasCore(core.id)) {
-        installed.add(core.id);
-      }
-    }
-    if (mounted) {
-      setState(() => _installed = installed);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final SettingsController settings = context.watch<SettingsController>();
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
     final ToastController toasts = context.read<ToastController>();
-    final CoreProvisioner provisioner = context.read<CoreProvisioner>();
     final UmbrellaColors colors = context.colors;
     final AppSettings current = settings.settings;
 
@@ -89,35 +65,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: <Widget>[
                           SectionHeader(
                             title: 'ظاهر برنامه',
-                            subtitle: 'تم تاریک و روشن با فونت وزیرمتن و چیدمان راست چین.',
+                            subtitle: 'فونت وزیرمتن، چیدمان راست چین و جلوه مناسبت ها',
                           ),
                           const SizedBox(height: 14),
-                          Row(
-                            children: <Widget>[
-                              for (final ThemePreference theme in ThemePreference.values)
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(left: 8),
-                                    child: SelectionCard(
-                                      title: theme.label,
-                                      description: theme == ThemePreference.system
-                                          ? 'بر اساس تنظیم ویندوز'
-                                          : (theme == ThemePreference.dark
-                                              ? 'مناسب شب و کاهش خستگی چشم'
-                                              : 'روشن و شفاف برای روز'),
-                                      icon: theme == ThemePreference.dark
-                                          ? Icons.dark_mode_rounded
-                                          : (theme == ThemePreference.light
-                                              ? Icons.light_mode_rounded
-                                              : Icons.brightness_auto_rounded),
-                                      selected: current.theme == theme,
-                                      onTap: () => settings.setTheme(theme),
-                                    ),
-                                  ),
-                                ),
-                            ],
+                          InfoRow(
+                            icon: Icons.brightness_6_rounded,
+                            label: 'تم روشن و تاریک',
+                            value: 'از دکمه ماه و خورشید بالای پنجره',
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           ToggleRow(
                             icon: Icons.auto_awesome_rounded,
                             title: 'جلوه مناسبت ها',
@@ -153,36 +109,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: <Widget>[
                           SectionHeader(
                             title: 'اتصال و امنیت',
-                            subtitle: 'حالت انتخاب سرور، کیل سوییچ و رفتار برنامه',
+                            subtitle: 'کیل سوییچ و رفتار برنامه در زمان اتصال',
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            children: <Widget>[
-                              for (final SelectionMode mode in SelectionMode.values)
-                                if (mode != SelectionMode.manual)
-                                  Expanded(
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(left: 8),
-                                      child: SelectionCard(
-                                        title: mode.faName,
-                                        description: mode.description,
-                                        selected: current.selectionMode == mode,
-                                        onTap: () => settings.setSelectionMode(mode),
-                                        icon: mode == SelectionMode.auto
-                                            ? Icons.auto_mode_rounded
-                                            : (mode == SelectionMode.roundRobin
-                                                ? Icons.sync_alt_rounded
-                                                : (mode == SelectionMode.consistentHash
-                                                    ? Icons.fingerprint_rounded
-                                                    : Icons.push_pin_rounded)),
-                                      ),
-                                    ),
-                                  ),
-                              if (ModeLayout.isWide(context))
-                                const Expanded(child: SizedBox()),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
                           ToggleRow(
                             icon: Icons.gpp_good_rounded,
                             title: 'کیل سوییچ',
@@ -238,108 +167,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    GlassCard(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          SectionHeader(
-                            title: 'پیشرفته',
-                            subtitle: 'برای کاربران حرفه ای؛ مقادیر پیش فرض مناسب است.',
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Column(
-                                  children: <Widget>[
-                                    for (final TunStack stack in TunStack.values)
-                                      Padding(
-                                        padding: const EdgeInsets.only(bottom: 6),
-                                        child: SelectionCard(
-                                          title: 'پشته ${stack.label}',
-                                          description: stack == TunStack.mixed
-                                              ? 'ترکیب سریع ترین حالت ها'
-                                              : (stack == TunStack.gvisor
-                                                  ? 'پایدارتر برای برنامه های خاص'
-                                                  : 'هماهنگ با هسته سیستم'),
-                                          selected: current.tunStack == stack,
-                                          onTap: () => settings.setTunStack(stack),
-                                          icon: Icons.layers_rounded,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  children: <Widget>[
-                                    ToggleRow(
-                                      icon: Icons.block_rounded,
-                                      title: 'مسدودسازی آی پی نسخه ۶',
-                                      value: current.blockIpv6,
-                                      onChanged: settings.setBlockIpv6,
-                                      accent: colors.warning,
-                                    ),
-                                    ToggleRow(
-                                      icon: Icons.route_rounded,
-                                      title: 'مسیر سخت گیرانه',
-                                      value: current.strictRoute,
-                                      onChanged: settings.setStrictRoute,
-                                      accent: colors.info,
-                                    ),
-                                    ToggleRow(
-                                      icon: Icons.dns_rounded,
-                                      title: 'دی ان اس از داخل تونل',
-                                      value: current.dnsOverTunnel,
-                                      onChanged: settings.setDnsOverTunnel,
-                                      accent: colors.success,
-                                    ),
-                                    ToggleRow(
-                                      icon: Icons.flash_on_rounded,
-                                      title: 'حالت توربو',
-                                      value: current.turboMode,
-                                      onChanged: settings.setTurboMode,
-                                      accent: colors.primary,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            Fa.num('اندازه ام تی یو: ${Fa.num(current.mtu)}'),
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
-                          ),
-                          Slider(
-                            value: current.mtu.toDouble().clamp(1280, 9000),
-                            min: 1280,
-                            max: 9000,
-                            divisions: 77,
-                            onChanged: (double value) =>
-                                settings.setMtu(value.round()),
-                          ),
-                          Text(
-                            Fa.num('بازه سنجش پینگ: هر ${Fa.num(current.pingIntervalSeconds)} ثانیه'),
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
-                          ),
-                          Slider(
-                            value: current.pingIntervalSeconds.toDouble().clamp(30, 600),
-                            min: 30,
-                            max: 600,
-                            divisions: 19,
-                            onChanged: (double value) =>
-                                settings.setPingInterval(value.round()),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -347,109 +174,6 @@ class _SettingsPageState extends State<SettingsPage> {
               Expanded(
                 child: Column(
                   children: <Widget>[
-                    GlassCard(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          SectionHeader(
-                            title: 'هسته های اتصال',
-                            subtitle: 'همراه همین نسخه نصب شده اند؛ برنامه چیزی دانلود نمی کند',
-                            trailing: IconAction(
-                              icon: Icons.refresh_rounded,
-                              size: 32,
-                              tooltip: 'بررسی دوباره',
-                              onTap: _refreshInstalled,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          if (provisioner.catalog.isEmpty)
-                            Text(
-                              Fa.num('فهرست هسته ها خوانده نشد.'),
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                          for (final CoreInfo core in provisioner.catalog)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: GlassCard(
-                                padding: const EdgeInsets.all(14),
-                                radius: 16,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Row(
-                                      children: <Widget>[
-                                        IconSquare(
-                                          icon: _installed.contains(core.id)
-                                              ? Icons.check_circle_rounded
-                                              : Icons.download_rounded,
-                                          color: _installed.contains(core.id)
-                                              ? colors.success
-                                              : colors.textSecondary,
-                                          size: 34,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: <Widget>[
-                                              Text(
-                                                Fa.num(core.title),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleSmall
-                                                    ?.copyWith(fontWeight: FontWeight.w800),
-                                              ),
-                                              Text(
-                                                Fa.num('${core.role} | نسخه ${core.version}'),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(color: colors.textSecondary),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (_preparing.contains(core.id))
-                                          const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
-                                          )
-                                        else if (!_installed.contains(core.id))
-                                          IconAction(
-                                            icon: Icons.restore_rounded,
-                                            size: 30,
-                                            tooltip: 'آماده سازی از نسخه نصب',
-                                            onTap: () => _provision(core, provisioner),
-                                          ),
-                                      ],
-                                    ),
-                                    if (!_installed.contains(core.id)) ...<Widget>[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        Fa.num(
-                                          core.bundledCore
-                                              ? 'این هسته در نسخه نصب نیست؛ برای رفع آن برنامه را دوباره نصب کنید.'
-                                              : 'این هسته همراه نسخه عرضه نمی شود و به صورت خودکار جایگزین می شود.',
-                                        ),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color: core.bundledCore
-                                                  ? colors.danger
-                                                  : colors.textSecondary,
-                                            ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 16),
                     GlassCard(
                       padding: const EdgeInsets.all(20),
@@ -506,20 +230,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             value: auth.account.displayName,
                           ),
                           const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.cloud_rounded,
-                            label: 'سرور برنامه',
-                            value: Uri.tryParse(auth.baseUrl)?.host ?? 'نامشخص',
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: TextButton.icon(
-                              onPressed: () => showGatewayDialog(context),
-                              icon: const Icon(Icons.dns_rounded, size: 17),
-                              label: Text(Fa.num('تغییر نشانی درگاه')),
-                            ),
-                          ),
-                          const Divider(height: 14),
+
                           InfoRow(
                             icon: Icons.verified_user_rounded,
                             label: 'دسترسی مدیر',
@@ -567,29 +278,6 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
-  }
-
-  /// هسته همراه نسخه نصب است؛ اینجا فقط از پوشه کنار برنامه کپی می شود.
-  Future<void> _provision(CoreInfo core, CoreProvisioner provisioner) async {
-    setState(() => _preparing.add(core.id));
-    final bool ok = await provisioner.provision(core);
-    if (!mounted) {
-      return;
-    }
-    setState(() => _preparing.remove(core.id));
-    await _refreshInstalled();
-    if (!mounted) {
-      return;
-    }
-    final ToastController toasts = context.read<ToastController>();
-    if (ok) {
-      toasts.success('${core.title} آماده شد');
-    } else {
-      toasts.error(
-        'هسته ${core.title} پیدا نشد',
-        'برنامه را با نصب کننده رسمی دوباره نصب کنید؛ هسته ها همراه نسخه می آیند.',
-      );
-    }
   }
 }
 

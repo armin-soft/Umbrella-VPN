@@ -433,7 +433,9 @@ bool SystemOps::RunAndWait(const std::wstring& command_line) {
 }
 
 int SystemOps::Spawn(const std::string& exe, const std::string& args,
-                     const std::string& work_dir, bool hidden) {
+                     const std::string& work_dir, bool hidden,
+                     const std::string& log_path) {
+  last_spawn_error_ = 0;
   std::wstring wexe = ToWide(exe);
   std::wstring wargs = ToWide(args);
   std::wstring command_line = Quote(exe);
@@ -445,20 +447,65 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
   startup.cb = sizeof(startup);
   startup.dwFlags = STARTF_USESHOWWINDOW;
   startup.wShowWindow = hidden ? SW_HIDE : SW_SHOWNORMAL;
+
+  // خروجی و خطای هسته در یک فایل ثبت می شود تا اگر اجرا نشد، دلیلش خوانده شود.
+  HANDLE log = INVALID_HANDLE_VALUE;
+  if (!log_path.empty()) {
+    SECURITY_ATTRIBUTES security = {0};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
+    std::wstring wlog = ToWide(log_path);
+    log = CreateFileW(wlog.c_str(), FILE_APPEND_DATA,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE, &security,
+                      OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (log != INVALID_HANDLE_VALUE) {
+      startup.dwFlags |= STARTF_USESTDHANDLES;
+      startup.hStdOutput = log;
+      startup.hStdError = log;
+      startup.hStdInput = nullptr;
+    }
+  }
+
   PROCESS_INFORMATION process = {0};
   std::wstring wdir = ToWide(work_dir);
   std::wstring buffer = command_line;
   DWORD flags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT;
-  if (!CreateProcessW(wexe.empty() ? nullptr : wexe.c_str(), buffer.data(),
-                      nullptr, nullptr, FALSE, flags, nullptr,
-                      work_dir.empty() ? nullptr : wdir.c_str(), &startup,
-                      &process)) {
+  BOOL started = CreateProcessW(
+      wexe.empty() ? nullptr : wexe.c_str(), buffer.data(), nullptr, nullptr,
+      log != INVALID_HANDLE_VALUE ? TRUE : FALSE, flags, nullptr,
+      work_dir.empty() ? nullptr : wdir.c_str(), &startup, &process);
+  if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
+  if (!started) {
+    last_spawn_error_ = GetLastError();
     return -1;
   }
   int pid = static_cast<int>(process.dwProcessId);
   CloseHandle(process.hThread);
   CloseHandle(process.hProcess);
   return pid;
+}
+
+std::string SystemOps::LastSpawnError() const {
+  if (last_spawn_error_ == 0) return std::string();
+  std::wstring text;
+  LPWSTR buffer = nullptr;
+  DWORD size = FormatMessageW(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+          FORMAT_MESSAGE_IGNORE_INSERTS,
+      nullptr, last_spawn_error_, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      reinterpret_cast<LPWSTR>(&buffer), 0, nullptr);
+  if (buffer != nullptr) {
+    if (size > 0) text.assign(buffer, size);
+    LocalFree(buffer);
+  }
+  while (!text.empty() && (text.back() == L'\r' || text.back() == L'\n' ||
+                           text.back() == L' ')) {
+    text.pop_back();
+  }
+  std::ostringstream out;
+  out << last_spawn_error_;
+  if (!text.empty()) out << " - " << ToUtf8(text);
+  return out.str();
 }
 
 std::vector<DWORD> SystemOps::FindProcessIds(const std::string& exe_name) {
@@ -589,9 +636,6 @@ bool SystemOps::EnableKillSwitch(const std::vector<std::string>& allowed_exes,
   std::string prefix = "Umbrella-" + app_name + "-KS";
   DisableKillSwitch(app_name);
 
-  RunAndWait(L"netsh advfirewall set allprofiles firewallpolicy "
-             L"blockinbound,blockoutbound");
-
   auto add_rule = [&](const std::string& suffix, const std::string& program,
                       const std::string& extra) {
     std::string command = "netsh advfirewall firewall add rule name=\"" +
@@ -601,14 +645,23 @@ bool SystemOps::EnableKillSwitch(const std::vector<std::string>& allowed_exes,
     }
     if (!extra.empty()) command += " " + extra;
     command += " profile=any enable=yes";
-    RunAndWait(ToWide(command));
+    return RunAndWait(ToWide(command));
   };
 
+  // اول قاعده های مجاز ساخته می شوند و بعد خروجی پیش فرض مسدود می شود؛
+  // وگرنه اگر ساخت قاعده ها شکست بخورد کاربر بی اینترنت می ماند.
   add_rule("loopback", "", "remoteip=127.0.0.1");
   add_rule("subnet", "", "remoteip=localsubnet");
   add_rule("app", ExecutablePath(), "");
   for (size_t index = 0; index < allowed_exes.size(); ++index) {
     add_rule("core" + std::to_string(index), allowed_exes[index], "");
+  }
+
+  if (!RunAndWait(L"netsh advfirewall set allprofiles firewallpolicy "
+                  L"blockinbound,blockoutbound")) {
+    // مسدودسازی انجام نشد؛ همه چیز به حالت عادی برمی گردد.
+    DisableKillSwitch(app_name);
+    return false;
   }
 
   WriteRegistryString(HKEY_CURRENT_USER, kKillSwitchKey, kKillSwitchValue,

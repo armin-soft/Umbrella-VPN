@@ -171,6 +171,8 @@ class TitleBar extends StatelessWidget {
     this.status,
     this.unread = 0,
     this.onNotifications,
+    this.onToggleTheme,
+    this.darkTheme = true,
   });
 
   final VpnStatus? status;
@@ -180,6 +182,10 @@ class TitleBar extends StatelessWidget {
   final VoidCallback onClose;
   final int unread;
   final VoidCallback? onNotifications;
+
+  /// تغییر تم روشن و تاریک از نوار بالای پنجره (نه از تنظیمات).
+  final VoidCallback? onToggleTheme;
+  final bool darkTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +241,16 @@ class TitleBar extends StatelessWidget {
               ),
             ),
           ),
+          if (onToggleTheme != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: _WindowButton(
+                icon: darkTheme
+                    ? Icons.light_mode_rounded
+                    : Icons.dark_mode_rounded,
+                onTap: onToggleTheme!,
+              ),
+            ),
           if (onNotifications != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),

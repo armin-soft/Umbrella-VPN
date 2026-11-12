@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../platform/native.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/settings_controller.dart';
 import '../../state/update_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';
@@ -132,6 +133,7 @@ class _AppShellState extends State<AppShell> {
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
     final UpdateController updates = context.watch<UpdateController>();
+    final SettingsController settings = context.watch<SettingsController>();
     final UmbrellaColors colors = context.colors;
 
     final List<Widget> pages = <Widget>[
@@ -156,6 +158,8 @@ class _AppShellState extends State<AppShell> {
             onClose: () => widget.windowService.onWindowClose(),
             unread: auth.unreadCount,
             onNotifications: _openNotifications,
+            onToggleTheme: settings.toggleTheme,
+            darkTheme: settings.themeMode != ThemeMode.light,
           ),
           Expanded(
             child: Row(
@@ -173,58 +177,6 @@ class _AppShellState extends State<AppShell> {
                   status: vpn.status,
                   onStatusTap: () => setState(() => _index = 0),
                   updateAvailable: updates.available != null,
-                ),
-              ],
-            ),
-          ),
-          Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: colors.backgroundAlt,
-              border: Border(top: BorderSide(color: colors.border)),
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  vpn.killSwitchOn ? Icons.gpp_good_rounded : Icons.gpp_maybe_rounded,
-                  size: 13,
-                  color: vpn.killSwitchOn ? colors.success : colors.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  Fa.num(vpn.killSwitchOn ? 'کیل سوییچ روشن' : 'کیل سوییچ خاموش'),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textSecondary,
-                        fontSize: 10,
-                      ),
-                ),
-                const SizedBox(width: 16),
-                Icon(Icons.hub_rounded, size: 13, color: colors.textSecondary),
-                const SizedBox(width: 6),
-                Text(
-                  Fa.num('${Fa.num(vpn.nodes.length)} سرور | ${vpn.settings.selectionMode.faName}'),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textSecondary,
-                        fontSize: 10,
-                      ),
-                ),
-                const Spacer(),
-                if (vpn.activeNode != null)
-                  Text(
-                    Fa.num(vpn.activeNode!.name),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
-                          fontSize: 10,
-                        ),
-                  ),
-                const SizedBox(width: 14),
-                Text(
-                  Fa.num('${AppConfig.appName} ${AppConfig.version}'),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textSecondary,
-                        fontSize: 10,
-                      ),
                 ),
               ],
             ),

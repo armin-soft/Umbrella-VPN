@@ -10,7 +10,7 @@
     مثال ها:
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Force
-      powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Only singbox,wintun
+      powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Only xray,mieru
 #>
 param(
     [switch]$Force,

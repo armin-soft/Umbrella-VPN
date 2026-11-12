@@ -4,13 +4,12 @@ import 'package:provider/provider.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
-import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 
-/// فهرست سرورها با پینگ، پروتکل، منبع و حالت انتخاب.
+/// فهرست سرورها با پینگ، کیفیت و منبع.
 class ServersPage extends StatefulWidget {
   const ServersPage({super.key});
 
@@ -26,7 +25,6 @@ class _ServersPageState extends State<ServersPage> {
   Widget build(BuildContext context) {
     final VpnController vpn = context.watch<VpnController>();
     final SubscriptionController subs = context.watch<SubscriptionController>();
-    final SettingsController settings = context.watch<SettingsController>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
 
@@ -109,26 +107,6 @@ class _ServersPageState extends State<ServersPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SectionHeader(
-                  title: 'حالت انتخاب سرور',
-                  subtitle: settings.settings.selectionMode.description,
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    for (final SelectionMode mode in SelectionMode.values)
-                      _ModeChip(
-                        mode: mode,
-                        selected: settings.settings.selectionMode == mode,
-                        onTap: () async {
-                          await settings.setSelectionMode(mode);
-                          toasts.info('حالت انتخاب: ${mode.label}');
-                        },
-                      ),
-                  ],
-                ),
                 if (vpn.measuring) ...<Widget>[
                   const SizedBox(height: 14),
                   ProgressLine(
@@ -199,49 +177,6 @@ class _ServersPageState extends State<ServersPage> {
                   ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ModeChip extends StatelessWidget {
-  const _ModeChip({
-    required this.mode,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final SelectionMode mode;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? colors.primary.withValues(alpha: 0.16) : colors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? colors.primary : colors.border,
-            ),
-          ),
-          child: Text(
-            Fa.num(mode.faName),
-            style: TextStyle(
-              fontFamily: AppTheme.fontFamily,
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected ? colors.textPrimary : colors.textSecondary,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -374,30 +309,14 @@ class _NodeTile extends StatelessWidget {
                     ],
                   ],
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: <Widget>[
-                    Pill(label: node.protocol.label, icon: Icons.vpn_key_rounded, dense: true),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        Fa.num('${node.host}:${node.port}'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textDirection: TextDirection.ltr,
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colors.textSecondary,
-                            ),
+                const SizedBox(height: 2),
+                Text(
+                  Fa.num(node.quality),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Pill(
-                      label: node.quality,
-                      color: pingColor,
-                      dense: true,
-                    ),
-                  ],
                 ),
               ],
             ),

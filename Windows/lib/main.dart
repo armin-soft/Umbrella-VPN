@@ -97,6 +97,9 @@ Future<void> main(List<String> arguments) async {
 
   WidgetsBinding.instance.addPostFrameCallback((_) async {
     await tray.init();
+    // اگر اجرای قبلی ناگهان بسته شده باشد، پروکسی سیستمی بازمانده کاربر را بی
+    // اینترنت می کند؛ در شروع اجرا پاک می شود.
+    await native.disableSystemProxy();
     if (arguments.contains('--minimized') && settings.settings.minimizeToTray) {
       await window.hide();
     }

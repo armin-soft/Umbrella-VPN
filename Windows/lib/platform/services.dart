@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -202,8 +203,10 @@ class IpService {
 
   GeoInfo get last => _cache;
 
-  Future<GeoInfo> fetch({bool force = false}) async {
-    if (!force && _cache.ip.isNotEmpty &&
+  /// خواندن آی پی و موقعیت؛ اگر تونل فعال است، درخواست از همان پروکسی محلی
+  /// می رود تا آی پی واقعی به جای آی پی خروجی گزارش نشود.
+  Future<GeoInfo> fetch({bool force = false, String proxy = ''}) async {
+    if (!force && proxy.isEmpty && _cache.ip.isNotEmpty &&
         DateTime.now().difference(_cachedAt) < const Duration(minutes: 3)) {
       return _cache;
     }
@@ -212,46 +215,59 @@ class IpService {
       'http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,timezone,lat,lon,query',
       'https://ipwho.is/',
     ];
-    for (final String endpoint in endpoints) {
-      try {
-        final http.Response response = await _client
-            .get(
-              Uri.parse(endpoint),
-              headers: <String, String>{
-                'Accept': 'application/json',
-                'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
-              },
-            )
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode >= 300) {
+    http.Client? temporary;
+    http.Client client = _client;
+    if (proxy.isNotEmpty) {
+      final HttpClient inner = HttpClient()
+        ..findProxy = (Uri _) => 'PROXY $proxy'
+        ..connectionTimeout = const Duration(seconds: 8);
+      temporary = IOClient(inner);
+      client = temporary;
+    }
+    try {
+      for (final String endpoint in endpoints) {
+        try {
+          final http.Response response = await client
+              .get(
+                Uri.parse(endpoint),
+                headers: <String, String>{
+                  'Accept': 'application/json',
+                  'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
+                },
+              )
+              .timeout(const Duration(seconds: 8));
+          if (response.statusCode >= 300) {
+            continue;
+          }
+          final Map<String, dynamic> json = JsonX.asMap(
+            jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
+          );
+          final Map<String, dynamic> connection = JsonX.asMap(json['connection']);
+          final GeoInfo geo = GeoInfo.fromJson(<String, dynamic>{
+            'ip': json['ip'] ?? json['query'],
+            'city': json['city'],
+            'country': json['country'] ?? json['country_name'],
+            'countryCode': json['country_code'] ?? json['countryCode'],
+            'region': json['region'] ?? json['regionName'] ?? json['region_name'],
+            'isp': json['isp'] ??
+                json['org'] ??
+                connection['isp'] ??
+                JsonX.asMap(json['asn'])['org'],
+            'timezone': json['timezone'] ?? json['timezone_id'],
+            'latitude': json['latitude'] ?? json['lat'],
+            'longitude': json['longitude'] ?? json['lon'],
+          });
+          if (geo.ip.isNotEmpty) {
+            _cache = geo;
+            _cachedAt = DateTime.now();
+            return geo;
+          }
+        } on Exception {
           continue;
         }
-        final Map<String, dynamic> json = JsonX.asMap(
-          jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
-        );
-        final Map<String, dynamic> connection = JsonX.asMap(json['connection']);
-        final GeoInfo geo = GeoInfo.fromJson(<String, dynamic>{
-          'ip': json['ip'] ?? json['query'],
-          'city': json['city'],
-          'country': json['country'] ?? json['country_name'],
-          'countryCode': json['country_code'] ?? json['countryCode'],
-          'region': json['region'] ?? json['regionName'] ?? json['region_name'],
-          'isp': json['isp'] ??
-              json['org'] ??
-              connection['isp'] ??
-              JsonX.asMap(json['asn'])['org'],
-          'timezone': json['timezone'] ?? json['timezone_id'],
-          'latitude': json['latitude'] ?? json['lat'],
-          'longitude': json['longitude'] ?? json['lon'],
-        });
-        if (geo.ip.isNotEmpty) {
-          _cache = geo;
-          _cachedAt = DateTime.now();
-          return geo;
-        }
-      } on Exception {
-        continue;
       }
+    } finally {
+      temporary?.close();
     }
     return _cache;
   }
@@ -543,12 +559,16 @@ class AppLogger extends ChangeNotifier {
   List<LogLine> get lines => List<LogLine>.unmodifiable(_lines.reversed.toList());
 
   void add(String message, {String level = 'info'}) {
-    _lines.add(LogLine(message, level: level));
-    if (_lines.length > 400) {
-      _lines.removeAt(0);
+    final String clean = message.trim();
+    if (clean.isEmpty) {
+      return;
+    }
+    _lines.add(LogLine(clean, level: level));
+    if (_lines.length > 2000) {
+      _lines.removeRange(0, _lines.length - 2000);
     }
     if (kDebugMode) {
-      debugPrint('[${level.toUpperCase()}] $message');
+      debugPrint('[${level.toUpperCase()}] $clean');
     }
     notifyListeners();
   }
@@ -556,5 +576,37 @@ class AppLogger extends ChangeNotifier {
   void clear() {
     _lines.clear();
     notifyListeners();
+  }
+
+  int countOf(String level) =>
+      _lines.where((LogLine line) => line.level == level).length;
+
+  /// متن کامل گزارش ها برای کپی یا ارسال به پشتیبانی.
+  String exportText() {
+    final StringBuffer buffer = StringBuffer();
+    buffer.writeln(
+      '${AppConfig.appName} ${AppConfig.version} | ${Fa.dateTime(DateTime.now())}',
+    );
+    for (final LogLine line in _lines) {
+      buffer.writeln(
+        '${Fa.date(line.time)} ${Fa.clock(line.time)} | ${line.level} | ${line.message}',
+      );
+    }
+    return buffer.toString();
+  }
+
+  /// ذخیره گزارش در پوشه داده برنامه و برگرداندن مسیر فایل.
+  Future<String> saveToFile() async {
+    final Directory dir = await getApplicationSupportDirectory();
+    final Directory logs = Directory('${dir.path}${Platform.pathSeparator}logs');
+    await logs.create(recursive: true);
+    final DateTime now = DateTime.now();
+    final String stamp =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}'
+        '-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+    final File file =
+        File('${logs.path}${Platform.pathSeparator}umbrella-$stamp.log');
+    await file.writeAsString(exportText(), flush: true);
+    return file.path;
   }
 }

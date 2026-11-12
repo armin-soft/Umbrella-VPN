@@ -122,6 +122,10 @@ class SubscriptionController extends ChangeNotifier {
       if (!AppConfig.allowedSubscriptionHosts
           .contains(uri.host.toLowerCase())) {
         state.error = 'این منبع در فهرست مجاز برنامه نیست.';
+        _log.add(
+          'منبع ${uri.host} در فهرست مجاز نیست؛ اشتراک خوانده نشد.',
+          level: 'error',
+        );
         state.loading = false;
         notifyListeners();
         return null;
@@ -135,6 +139,10 @@ class SubscriptionController extends ChangeNotifier {
       ).timeout(const Duration(seconds: 25));
       if (response.statusCode >= 300) {
         state.error = 'پاسخ سرور: کد ${response.statusCode}';
+        _log.add(
+          'دریافت اشتراک ${uri.host} ناموفق: کد ${response.statusCode}',
+          level: 'error',
+        );
         state.loading = false;
         notifyListeners();
         return null;
@@ -154,6 +162,7 @@ class SubscriptionController extends ChangeNotifier {
       state
         ..loading = false
         ..error = 'دریافت اشتراک ناموفق بود: $error';
+      _log.add('دریافت اشتراک ناموفق بود: $error', level: 'error');
       notifyListeners();
       return null;
     }

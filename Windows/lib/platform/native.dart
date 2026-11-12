@@ -88,14 +88,20 @@ class NativeBridge {
     String args = '',
     String workDir = '',
     bool hidden = true,
+    String logPath = '',
   }) async =>
       await _invoke<int>('spawn', <String, dynamic>{
         'exe': exe,
         'args': args,
         'workDir': workDir,
         'hidden': hidden,
+        'logPath': logPath,
       }) ??
       -1;
+
+  /// متن خطای ویندوز هنگام آخرین اجرای ناموفق هسته.
+  Future<String> lastSpawnError() async =>
+      await _invoke<String>('lastSpawnError') ?? '';
 
   Future<bool> killPid(int pid) async =>
       await _invoke<bool>('killPid', <String, dynamic>{'pid': pid}) ?? false;
@@ -111,6 +117,16 @@ class NativeBridge {
         await _invoke<List<Object?>>('runningCores');
     return (raw ?? <Object?>[]).map((Object? item) => item.toString()).toList();
   }
+
+  Future<bool> setSystemProxy({
+    String host = '127.0.0.1',
+    required int port,
+  }) async =>
+      await _invoke<bool>('setSystemProxy', <String, dynamic>{
+        'host': host,
+        'port': port,
+      }) ??
+      false;
 
   Future<bool> disableSystemProxy() async =>
       await _invoke<bool>('disableSystemProxy') ?? false;

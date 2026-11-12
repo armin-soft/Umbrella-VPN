@@ -452,7 +452,7 @@ class _AccountPageState extends State<AccountPage> {
                 ),
                 const SizedBox(height: 8),
                 Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: TextButton.icon(
                     onPressed: () async {
                       await auth.signOut();

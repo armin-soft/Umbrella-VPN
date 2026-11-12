@@ -16,6 +16,23 @@ class NodeBalancer {
   int _roundRobinIndex = 0;
   String _stickyNodeId = '';
   DateTime? _stickySince;
+  final Map<String, DateTime> _failures = <String, DateTime>{};
+
+  /// سروری که همین حالا اتصالش شکست خورده، تا مدتی پیشنهاد نمی شود.
+  void markFailed(String nodeId) {
+    if (nodeId.isEmpty) {
+      return;
+    }
+    _failures[nodeId] = DateTime.now();
+  }
+
+  bool recentlyFailed(VpnNode node, {int cooldownSeconds = 120}) {
+    final DateTime? at = _failures[node.id];
+    if (at == null) {
+      return false;
+    }
+    return DateTime.now().difference(at).inSeconds < cooldownSeconds;
+  }
 
   SelectionResult pick({
     required List<VpnNode> nodes,
@@ -25,9 +42,13 @@ class NodeBalancer {
     int stickyMinutes = 30,
     bool allowFailover = true,
   }) {
-    final List<VpnNode> usable = nodes
+    final List<VpnNode> all = nodes
         .where((VpnNode node) => !node.disabled && node.host.isNotEmpty)
         .toList();
+    final List<VpnNode> fresh = all
+        .where((VpnNode node) => !recentlyFailed(node))
+        .toList();
+    final List<VpnNode> usable = fresh.isEmpty ? all : fresh;
     if (usable.isEmpty) {
       return const SelectionResult(node: null, reason: 'سرور قابل استفاده ای وجود ندارد.');
     }

@@ -411,7 +411,7 @@ class InfoRow extends StatelessWidget {
               Flexible(
                 child: Text(
                   Fa.num(value),
-                  textAlign: TextAlign.left,
+                  textAlign: TextAlign.end,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(

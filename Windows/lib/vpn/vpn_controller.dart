@@ -108,6 +108,20 @@ class ConnectOutcome {
   final bool needsCores;
 }
 
+class _AttemptResult {
+  const _AttemptResult({
+    required this.message,
+    this.ok = false,
+    this.needsCores = false,
+    this.needsElevation = false,
+  });
+
+  final String message;
+  final bool ok;
+  final bool needsCores;
+  final bool needsElevation;
+}
+
 class CoreLaunch {
   const CoreLaunch({
     required this.exe,
@@ -133,6 +147,7 @@ class LaunchPlan {
     required this.tunnelHint,
     required this.chained,
     this.warning = '',
+    this.proxyPort = 0,
   });
 
   final List<CoreLaunch> cores;
@@ -142,6 +157,12 @@ class LaunchPlan {
   final String tunnelHint;
   final bool chained;
   final String warning;
+
+  /// اگر بزرگ تر از صفر باشد، هسته یک سرور پروکسی محلی روی این پورت می سازد و
+  /// برنامه پروکسی سیستمی ویندوز را به آن وصل می کند.
+  final int proxyPort;
+
+  bool get usesSystemProxy => proxyPort > 0;
 }
 
 /// مغز اتصال: انتخاب سرور، ساخت پیکربندی، اجرای هسته، کیل سوییچ، پایش و
@@ -215,6 +236,7 @@ class VpnController extends ChangeNotifier {
   DateTime? get connectedAt => _connectedAt;
 
   bool _killSwitchOn = false;
+  int _proxyPort = 0;
   bool get killSwitchOn => _killSwitchOn;
 
   int _pingProgressDone = 0;
@@ -375,6 +397,8 @@ class VpnController extends ChangeNotifier {
     _notify();
   }
 
+  /// اتصال با تلاش روی چند سرور: اگر یک سرور بالا نیامد، سرور بعدی امتحان
+  /// می شود تا کاربر مجبور نشود دستی سرور عوض کند.
   Future<ConnectOutcome> connect({VpnNode? requested}) async {
     if (_status.active) {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
@@ -421,81 +445,37 @@ class VpnController extends ChangeNotifier {
         _setStatus(VpnStatus.failed, selection.reason);
         return ConnectOutcome(ok: false, message: selection.reason);
       }
-      _activeNode = node;
-      _notify();
 
-      // ۱. بستن هر فیلترشکن و پروکسی فعال دیگر
-      await _terminateForeignCores();
-      await _native.disableSystemProxy();
-
-      // ۲. آماده سازی هسته ها از نسخه نصب (بدون هیچ دانلودی)
-      for (final CoreInfo core in _provisioner.catalog) {
-        if (core.requiredCore) {
-          await _provisioner.provision(core);
+      final List<VpnNode> candidates = _candidates(node, selection.reason);
+      String lastMessage = '';
+      for (int index = 0; index < candidates.length; index++) {
+        final VpnNode candidate = candidates[index];
+        if (candidates.length > 1) {
+          _setStatus(
+            VpnStatus.preparing,
+            'تلاش ${Fa.num(index + 1)} از ${Fa.num(candidates.length)}: ${candidate.name}',
+          );
+        }
+        final _AttemptResult attempt = await _attempt(candidate);
+        if (attempt.ok) {
+          return const ConnectOutcome(ok: true, message: 'اتصال برقرار شد.');
+        }
+        lastMessage = attempt.message;
+        _balancer.markFailed(candidate.id);
+        if (attempt.needsCores || attempt.needsElevation) {
+          return ConnectOutcome(
+            ok: false,
+            needsCores: attempt.needsCores,
+            needsElevation: attempt.needsElevation,
+            message: attempt.message,
+          );
         }
       }
-      final LaunchPlan? plan = await _buildPlan(node);
-      if (plan == null) {
-        _setStatus(VpnStatus.failed, 'هسته لازم در دسترس نیست.');
-        onRequireCores?.call();
-        return const ConnectOutcome(
-          ok: false,
-          needsCores: true,
-          message: 'هسته اتصال در دسترس نیست؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
-        );
-      }
-      if (plan.warning.isNotEmpty) {
-        _log.add(plan.warning, level: 'warning');
-      }
 
-      // ۳. کیل سوییچ قبل از بالا آمدن تونل
-      if (_settings.killSwitch) {
-        await _enableKillSwitch(plan);
-      }
-
-      _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
-      final bool started = await _launch(plan);
-      if (!started) {
-        await _failAndCleanup('هسته اتصال اجرا نشد. گزارش ها را بررسی کنید.');
-        return const ConnectOutcome(
-          ok: false,
-          message: 'اجرای هسته ناموفق بود؛ گزارش ها را بررسی کنید.',
-        );
-      }
-
-      final bool ready = await _waitForTunnel(plan);
-      if (!ready) {
-        await _failAndCleanup('تونل در زمان مقرر بالا نیامد.');
-        return const ConnectOutcome(
-          ok: false,
-          message: 'تونل بالا نیامد؛ سرور دیگری را امتحان کنید.',
-        );
-      }
-
-      _connectedAt = DateTime.now();
-      _healthFailures = 0;
-      _reconnectAttempts = 0;
-      _setStatus(VpnStatus.connected, 'اتصال برقرار شد. ${selection.reason}');
-      _balancer.markConnected(node.id);
-      _startTimers();
-      await _sound.play('connect');
-      await _tray.update(
-        state: 'connected',
-        tooltip: '${AppConfig.appName} - متصل به ${node.name}',
-        connected: true,
+      await _failAndCleanup(
+        lastMessage.isEmpty ? 'اتصال برقرار نشد.' : lastMessage,
       );
-      if (_settings.notificationsEnabled) {
-        await _tray.balloon(
-          'اتصال برقرار شد',
-          '${node.name} | ${Fa.ms(node.pingMs)}',
-        );
-      }
-
-      unawaited(_verifyTunnel());
-      _log.add('اتصال به ${node.name} (${node.host}:${node.port}) برقرار شد.');
-      _settings = _settings.copyWith(lastNodeId: node.id);
-      onSettingsChanged?.call(_settings);
-      return ConnectOutcome(ok: true, message: 'اتصال برقرار شد.');
+      return ConnectOutcome(ok: false, message: lastMessage);
     } on ApiError catch (error) {
       await _failAndCleanup(error.message);
       return ConnectOutcome(ok: false, message: error.message);
@@ -506,6 +486,118 @@ class VpnController extends ChangeNotifier {
         message: 'خطای غیرمنتظره در اتصال؛ گزارش ها را ببینید.',
       );
     }
+  }
+
+  /// سرور انتخاب شده و اگر حالت خودکار باشد دو گزینه بعدی با کمترین پینگ.
+  List<VpnNode> _candidates(VpnNode first, String reason) {
+    final List<VpnNode> list = <VpnNode>[first];
+    if (_settings.selectionMode == SelectionMode.manual ||
+        !_settings.autoFailover) {
+      return list;
+    }
+    final List<VpnNode> rest = _nodes
+        .where((VpnNode node) => node.id != first.id)
+        .toList()
+      ..sort((VpnNode a, VpnNode b) => a.pingMs.compareTo(b.pingMs));
+    for (final VpnNode node in rest) {
+      if (node.disabled || node.host.isEmpty) {
+        continue;
+      }
+      list.add(node);
+      if (list.length >= 3) {
+        break;
+      }
+    }
+    return list;
+  }
+
+  /// یک تلاش اتصال به یک سرور مشخص.
+  Future<_AttemptResult> _attempt(VpnNode node) async {
+    _activeNode = node;
+    _notify();
+
+    // ۱. بستن هر فیلترشکن و پروکسی فعال دیگر
+    await _terminateForeignCores();
+    await _native.disableSystemProxy();
+
+    // ۲. آماده سازی هسته ها از نسخه نصب (بدون هیچ دانلودی)
+    for (final CoreInfo core in _provisioner.catalog) {
+      if (core.requiredCore) {
+        await _provisioner.provision(core);
+      }
+    }
+    final LaunchPlan? plan = await _buildPlan(node);
+    if (plan == null) {
+      _setStatus(VpnStatus.failed, 'هسته لازم در دسترس نیست.');
+      onRequireCores?.call();
+      return const _AttemptResult(
+        message: 'هسته اتصال در دسترس نیست؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
+        needsCores: true,
+      );
+    }
+    if (plan.warning.isNotEmpty) {
+      _log.add(plan.warning, level: 'warning');
+    }
+
+    // ۳. کیل سوییچ قبل از بالا آمدن تونل، تا هنگام اتصال هم نشتی نباشد
+    if (_settings.killSwitch) {
+      await _enableKillSwitch(plan);
+    }
+
+    _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
+    final bool started = await _launch(plan);
+    if (!started) {
+      await _stopCores();
+      await _disableProxy();
+      if (_killSwitchOn) {
+        await _native.disableKillSwitch();
+        _killSwitchOn = false;
+      }
+      return _AttemptResult(
+        message: 'اجرای هسته اتصال ناموفق بود؛ جزئیات در گزارش ها ثبت شد.',
+      );
+    }
+
+    final bool ready = await _waitForTunnel(plan);
+    if (!ready) {
+      await _stopCores();
+      await _disableProxy();
+      if (_killSwitchOn) {
+        await _native.disableKillSwitch();
+        _killSwitchOn = false;
+      }
+      return const _AttemptResult(
+        message: 'تونل بالا نیامد؛ سرور دیگری امتحان می شود.',
+      );
+    }
+    if (plan.usesSystemProxy) {
+      await _enableProxy(plan);
+    }
+
+    _connectedAt = DateTime.now();
+    _healthFailures = 0;
+    _reconnectAttempts = 0;
+    _setStatus(VpnStatus.connected, 'اتصال برقرار شد.');
+    _balancer.markConnected(node.id);
+    _startTimers();
+    await _sound.play('connect');
+    await _tray.update(
+      state: 'connected',
+      tooltip: '${AppConfig.appName} - متصل به ${node.name}',
+      connected: true,
+    );
+    if (_settings.notificationsEnabled) {
+      await _tray.balloon(
+        'اتصال برقرار شد',
+        '${node.name} | ${Fa.ms(node.pingMs)}',
+      );
+    }
+
+    unawaited(_verifyTunnel());
+    _log.add('اتصال به ${node.name} (${node.host}:${node.port}) برقرار شد.');
+    _settings = _settings.copyWith(lastNodeId: node.id);
+    onSettingsChanged?.call(_settings);
+    return const _AttemptResult(message: 'اتصال برقرار شد.', ok: true);
   }
 
   Future<void> _terminateForeignCores() async {
@@ -526,170 +618,221 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// پروتکل هایی که هسته های همراه نسخه پشتیبانی می کنند.
+  ///
+  /// ایکس ری: وی لس، وی مس، تروجان، شادوساکس و ساکس
+  /// میرو: پروتکل میرو
+  static bool supports(VpnNode node) {
+    switch (node.protocol) {
+      case NodeProtocol.vless:
+      case NodeProtocol.vmess:
+      case NodeProtocol.trojan:
+      case NodeProtocol.shadowsocks:
+      case NodeProtocol.socks:
+      case NodeProtocol.mieru:
+        return true;
+      case NodeProtocol.clash:
+      case NodeProtocol.wireguard:
+      case NodeProtocol.amnezia:
+      case NodeProtocol.hysteria2:
+      case NodeProtocol.tuic:
+        return false;
+    }
+  }
+
+  /// پیکربندی و فهرست هسته ها برای یک سرور.
+  ///
+  /// هسته ایکس ری یک سرور پروکسی محلی روی ۱۲۷٫۰٫۰٫۱ می سازد و برنامه پروکسی
+  /// سیستمی ویندوز را به همان پورت وصل می کند؛ بنابراین بدون کارت شبکه مجازی و
+  /// بدون هسته سینگ باکس تونل برقرار می شود.
   Future<LaunchPlan?> _buildPlan(VpnNode node) async {
-    final String? singbox = await _provisioner.locateBinary('sing-box.exe');
-    if (singbox == null) {
+    if (!supports(node)) {
+      _log.add(
+        'پروتکل ${node.protocol.label} با هسته های همراه نسخه پشتیبانی نمی شود؛ '
+        'سرور بعدی امتحان می شود.',
+        level: 'warning',
+      );
       return null;
     }
-    final String binDir = _provisioner.binDir;
+
     final Directory runDir = Directory(
       '${_provisioner.dataDir}${Platform.pathSeparator}run',
     );
     await runDir.create(recursive: true);
 
-    final bool useXray = <NodeProtocol>[
-      NodeProtocol.vless,
-      NodeProtocol.vmess,
-      NodeProtocol.trojan,
-      NodeProtocol.shadowsocks,
-    ].contains(node.protocol) &&
-        await _provisioner.hasCore('xray');
-
-    final bool useMieru =
-        node.protocol == NodeProtocol.mieru && await _provisioner.hasCore('mieru');
-
-    if (useXray) {
-      final String? xray = await _provisioner.locateBinary('xray.exe');
-      if (xray != null) {
-        final File config = File('${runDir.path}${Platform.pathSeparator}xray.json');
-        await config.writeAsString(
-          XrayConfig.encode(node, AppConfig.socksPortXray),
-          flush: true,
-        );
-        final File tunConfig =
-            File('${runDir.path}${Platform.pathSeparator}singbox.json');
-        await tunConfig.writeAsString(
-          SingBoxConfig.encode(
-            SingBoxConfig.build(
-              node: node,
-              settings: _settings,
-              outboundOverride:
-                  SingBoxConfig.localSocksOutbound(AppConfig.socksPortXray),
-            ),
-          ),
-          flush: true,
-        );
-        return LaunchPlan(
-          cores: <CoreLaunch>[
-            CoreLaunch(
-              exe: xray,
-              args: 'run -c "${config.path}"',
-              workDir: binDir,
-              name: 'xray',
-            ),
-            CoreLaunch(
-              exe: singbox,
-              args: 'run -c "${tunConfig.path}"',
-              workDir: binDir,
-              name: 'singbox',
-            ),
-          ],
-          configPaths: <String>[config.path, tunConfig.path],
-          readinessPort: AppConfig.socksPortXray,
-          primaryBinary: 'xray.exe',
-          tunnelHint: AppConfig.tunAdapterHint,
-          chained: true,
-        );
-      }
-    }
-
-    if (useMieru) {
+    if (node.protocol == NodeProtocol.mieru) {
       final String? mieru = await _provisioner.locateBinary('mieru.exe');
-      if (mieru != null) {
-        final File config = File('${runDir.path}${Platform.pathSeparator}mieru.json');
-        await config.writeAsString(
-          MieruConfig.encode(node, AppConfig.socksPortMieru),
-          flush: true,
+      if (mieru == null) {
+        _log.add(
+          'این سرور میرو است و هسته mieru.exe در نسخه نصب نیست.',
+          level: 'error',
         );
-        final File tunConfig =
-            File('${runDir.path}${Platform.pathSeparator}singbox.json');
-        await tunConfig.writeAsString(
-          SingBoxConfig.encode(
-            SingBoxConfig.build(
-              node: node,
-              settings: _settings,
-              outboundOverride:
-                  SingBoxConfig.localSocksOutbound(AppConfig.socksPortMieru),
-            ),
-          ),
-          flush: true,
-        );
-        return LaunchPlan(
-          cores: <CoreLaunch>[
-            CoreLaunch(
-              exe: mieru,
-              args: 'run -c "${config.path}"',
-              workDir: binDir,
-              name: 'mieru',
-            ),
-            CoreLaunch(
-              exe: singbox,
-              args: 'run -c "${tunConfig.path}"',
-              workDir: binDir,
-              name: 'singbox',
-            ),
-          ],
-          configPaths: <String>[config.path, tunConfig.path],
-          readinessPort: AppConfig.socksPortMieru,
-          primaryBinary: 'mieru.exe',
-          tunnelHint: AppConfig.tunAdapterHint,
-          chained: true,
-        );
+        return null;
       }
+      final File config = File('${runDir.path}${Platform.pathSeparator}mieru.json');
+      await config.writeAsString(
+        MieruConfig.encode(node, AppConfig.socksPortMieru),
+        flush: true,
+      );
+      return LaunchPlan(
+        cores: <CoreLaunch>[
+          CoreLaunch(
+            exe: mieru,
+            args: 'run -c "${config.path}"',
+            workDir: _dirOf(mieru),
+            name: 'mieru',
+          ),
+        ],
+        configPaths: <String>[config.path],
+        readinessPort: AppConfig.socksPortMieru,
+        primaryBinary: 'mieru.exe',
+        tunnelHint: '',
+        chained: false,
+        proxyPort: AppConfig.socksPortMieru,
+      );
     }
 
-    final File tunConfig = File('${runDir.path}${Platform.pathSeparator}singbox.json');
-    await tunConfig.writeAsString(
-      SingBoxConfig.encode(
-        SingBoxConfig.build(node: node, settings: _settings),
-      ),
+    final String? xray = await _provisioner.locateBinary('xray.exe');
+    if (xray == null) {
+      _log.add(
+        'هسته xray.exe پیدا نشد. مسیر جستجو: ${_provisioner.bundledDir}',
+        level: 'error',
+      );
+      return null;
+    }
+    final File config = File('${runDir.path}${Platform.pathSeparator}xray.json');
+    await config.writeAsString(
+      XrayConfig.encode(node, AppConfig.socksPortXray),
       flush: true,
     );
-    final bool obfuscated = node.protocol == NodeProtocol.amnezia &&
-        (node.params['jc'] != null || node.params['h1'] != null);
     return LaunchPlan(
       cores: <CoreLaunch>[
         CoreLaunch(
-          exe: singbox,
-          args: 'run -c "${tunConfig.path}"',
-          workDir: binDir,
-          name: 'singbox',
+          exe: xray,
+          args: 'run -c "${config.path}"',
+          workDir: _dirOf(xray),
+          name: 'xray',
         ),
       ],
-      configPaths: <String>[tunConfig.path],
-      readinessPort: 0,
-      primaryBinary: 'sing-box.exe',
-      tunnelHint: AppConfig.tunAdapterHint,
+      configPaths: <String>[config.path],
+      readinessPort: AppConfig.socksPortXray,
+      primaryBinary: 'xray.exe',
+      tunnelHint: '',
       chained: false,
-      warning: obfuscated
-          ? 'این سرور آمنزیا پارامترهای مبهم سازی دارد؛ اگر اتصال برقرار نشد، هسته آمنزیا را از تنظیمات هسته ها نصب کنید.'
-          : '',
+      proxyPort: AppConfig.socksPortXray,
     );
+  }
+
+  String _dirOf(String path) {
+    final int index = path.lastIndexOf(Platform.pathSeparator);
+    return index <= 0 ? path : path.substring(0, index);
   }
 
   Future<bool> _launch(LaunchPlan plan) async {
     _runningPids.clear();
     _runningBinaries.clear();
+    final String logDir = '${_provisioner.dataDir}${Platform.pathSeparator}run';
     for (final CoreLaunch core in plan.cores) {
+      final String coreLog =
+          '$logDir${Platform.pathSeparator}${core.name}-core.log';
       final int pid = await _native.spawn(
         exe: core.exe,
         args: core.args,
         workDir: core.workDir,
+        logPath: coreLog,
       );
       if (pid <= 0) {
-        _log.add('اجرای ${core.binaryName} ناموفق بود.', level: 'error');
+        final String detail = await _native.lastSpawnError();
+        _log.add(
+          'اجرای ${core.binaryName} ناموفق بود. '
+          '${detail.isEmpty ? 'خطای ویندوز گزارش نشد.' : 'کد خطای ویندوز: $detail'}',
+          level: 'error',
+        );
+        _log.add(
+          'مسیر هسته: ${core.exe} | پوشه کار: ${core.workDir} '
+          '| فایل ثبت خروجی: $coreLog',
+          level: 'error',
+        );
+        if (detail.contains('225') || detail.contains('ویروس')) {
+          _log.add(
+            'آنتی ویروس یا ویندوز اجرای هسته را مسدود کرده است. '
+            'پوشه نصب برنامه و پوشه هسته ها را در استثناهای آنتی ویروس اضافه کنید.',
+            level: 'error',
+          );
+        }
         return false;
       }
       _runningPids.add(pid);
       _runningBinaries.add(core.binaryName);
       _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(pid)}).');
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      // اگر هسته بلافاصله بسته شود، معمولاً پیکربندی ایراد دارد؛ خروجی خودش
+      // خوانده و در گزارش ثبت می شود.
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      final bool alive = await _native.isRunning(core.binaryName);
+      if (!alive) {
+        final String tail = await _readLogTail(coreLog);
+        _log.add(
+          '${core.binaryName} بلافاصله بسته شد.'
+          '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+          level: 'error',
+        );
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
     }
     return true;
   }
 
+  /// آخرین خطوط خروجی یک هسته برای نمایش در گزارش ها.
+  Future<String> _readLogTail(String path, {int maxChars = 600}) async {
+    try {
+      final File file = File(path);
+      if (!await file.exists()) {
+        return '';
+      }
+      final String text = await file.readAsString();
+      final String compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (compact.length <= maxChars) {
+        return compact;
+      }
+      return compact.substring(compact.length - maxChars);
+    } on FileSystemException {
+      return '';
+    }
+  }
+
+  /// پروکسی سیستمی ویندوز را به هسته فعال وصل می کند.
+  Future<bool> _enableProxy(LaunchPlan plan) async {
+    if (!plan.usesSystemProxy) {
+      return false;
+    }
+    final bool ok = await _native.setSystemProxy(
+      host: '127.0.0.1',
+      port: plan.proxyPort,
+    );
+    _proxyPort = ok ? plan.proxyPort : 0;
+    if (ok) {
+      _log.add('پروکسی ویندوز روی پورت ${Fa.num(plan.proxyPort)} تنظیم شد.');
+    } else {
+      _log.add('تنظیم پروکسی سیستمی ناموفق بود.', level: 'warning');
+    }
+    return ok;
+  }
+
+  Future<void> _disableProxy() async {
+    if (_proxyPort == 0) {
+      return;
+    }
+    await _native.disableSystemProxy();
+    _proxyPort = 0;
+    _log.add('پروکسی سیستمی برداشته شد.');
+  }
+
+  static const Duration _tunnelTimeout = Duration(seconds: 15);
+
   Future<bool> _waitForTunnel(LaunchPlan plan) async {
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 25));
+    final DateTime deadline = DateTime.now().add(_tunnelTimeout);
     while (DateTime.now().isBefore(deadline)) {
       if (_disposed) {
         return false;
@@ -698,10 +841,10 @@ class VpnController extends ChangeNotifier {
       if (!alive) {
         return false;
       }
-      if (plan.chained) {
+      if (plan.readinessPort > 0) {
         final int probe = await _native.tcpPing('127.0.0.1', plan.readinessPort);
         if (probe >= 0) {
-          await Future<void>.delayed(const Duration(milliseconds: 800));
+          await Future<void>.delayed(const Duration(milliseconds: 500));
           return true;
         }
       } else {
@@ -710,14 +853,17 @@ class VpnController extends ChangeNotifier {
           return true;
         }
       }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
     }
     return false;
   }
 
   Future<void> _verifyTunnel() async {
     try {
-      final GeoInfo geo = await _ip.fetch(force: true);
+      final GeoInfo geo = await _ip.fetch(
+        force: true,
+        proxy: _proxyPort > 0 ? '127.0.0.1:$_proxyPort' : '',
+      );
       _geo = geo;
       _exitIp = geo.ip;
       _tunnelVerified = geo.ip.isNotEmpty && geo.ip != _realIp;
@@ -762,7 +908,9 @@ class VpnController extends ChangeNotifier {
     if (!_status.active) {
       return;
     }
-    final TunnelStats raw = await _native.tunnelStats(hint: AppConfig.tunAdapterHint);
+    final TunnelStats raw = _proxyPort > 0
+        ? TunnelStats.empty
+        : await _native.tunnelStats(hint: AppConfig.tunAdapterHint);
     final int downDelta = raw.rx - _stats.rx;
     final int upDelta = raw.tx - _stats.tx;
     _stats = _stats.copyWith(
@@ -820,6 +968,7 @@ class VpnController extends ChangeNotifier {
   Future<void> _reconnect() async {
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
+    await _disableProxy();
     if (_settings.killSwitch) {
       await _native.disableKillSwitch();
       _killSwitchOn = false;
@@ -842,6 +991,7 @@ class VpnController extends ChangeNotifier {
     }
     _setStatus(VpnStatus.switching, 'تغییر سرور به ${node.name}...');
     await _stopCores();
+    await _disableProxy();
     await Future<void>.delayed(const Duration(milliseconds: 600));
     _status = VpnStatus.disconnected;
     final ConnectOutcome outcome = await connect(requested: node);
@@ -856,6 +1006,7 @@ class VpnController extends ChangeNotifier {
     }
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
     await _stopCores();
+    await _disableProxy();
     if (_killSwitchOn) {
       await _native.disableKillSwitch();
       _killSwitchOn = false;
@@ -906,6 +1057,7 @@ class VpnController extends ChangeNotifier {
 
   Future<void> _failAndCleanup(String reason) async {
     await _stopCores();
+    await _disableProxy();
     if (_killSwitchOn) {
       await _native.disableKillSwitch();
       _killSwitchOn = false;
@@ -947,6 +1099,7 @@ class VpnController extends ChangeNotifier {
 
   Future<void> restoreNetwork() async {
     await _native.restoreNetworkDefaults();
+    _proxyPort = 0;
     _killSwitchOn = false;
     _log.add('تنظیمات شبکه به حالت پیش فرض بازگشت.', level: 'warning');
     _notify();

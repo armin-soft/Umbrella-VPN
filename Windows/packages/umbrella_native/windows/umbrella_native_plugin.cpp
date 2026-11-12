@@ -176,7 +176,12 @@ void UmbrellaNativePlugin::HandleMethodCall(
   if (method == "spawn") {
     result->Success(flutter::EncodableValue(ops_.Spawn(
         StringOf(args, "exe"), StringOf(args, "args"),
-        StringOf(args, "workDir"), BoolOf(args, "hidden", true))));
+        StringOf(args, "workDir"), BoolOf(args, "hidden", true),
+        StringOf(args, "logPath"))));
+    return;
+  }
+  if (method == "lastSpawnError") {
+    result->Success(flutter::EncodableValue(ops_.LastSpawnError()));
     return;
   }
   if (method == "killPid") {
@@ -199,6 +204,11 @@ void UmbrellaNativePlugin::HandleMethodCall(
       list.push_back(flutter::EncodableValue(name));
     }
     result->Success(flutter::EncodableValue(list));
+    return;
+  }
+  if (method == "setSystemProxy") {
+    result->Success(flutter::EncodableValue(ops_.SetSystemProxy(
+        StringOf(args, "host", "127.0.0.1"), IntOf(args, "port", 0))));
     return;
   }
   if (method == "disableSystemProxy") {
