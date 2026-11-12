@@ -54,7 +54,12 @@ error_log('[Umbrella-Bot][AutoRenew] Plan price is not configured for key ' . $P
 try {
 TelegramClient::sendMessage(
 Environment::getAdminUserId(),
-'⚠️تمدید خودکار انجام نشد: قیمت پلن «' . $Plan_Name . '» در تنظیمات (PLAN_PRICE_' . $Plan . ') ثبت نشده است.'
+Helper::adminGreetingNamed('', 'تمدید خودکار')
+. "⚠️*تمدید خودکار انجام نشد.*\n"
+. "├─📦پلن: {$Plan_Name}\n"
+. "├─🔑کلید تنظیمات: `Plan_Price_" . $Plan . "`\n"
+. "└─ℹ️قیمت این پلن در پنل مدیریت (⚙️تنظیمات ربات ← 💰تعرفه اشتراک) ثبت نشده است."
+. Helper::adminFooter()
 );
 }
 

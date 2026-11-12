@@ -892,7 +892,7 @@ TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId);
 }
 
 if (!Zarinpal::isConfigured()) {
-$Text = $Greeting . " *با عرض پوزش اعتبار شما کافی نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته: برای اشتراک " . Helper::formatCurrency($Amount) . " نیاز دارید.\n\nاعتبار کنونی: " . Helper::formatCurrency($Balance) . "";
+$Text = $Greeting . " *با عرض پوزش اعتبار شما کافی نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته: برای اشتراک " . Helper::formatCurrency($Amount) . " نیاز دارید.\n\nاعتبار کنونی: " . Helper::formatCurrency($Balance) . "*" . Helper::userFooter();
 TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard([
 Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
 Common::mainButton()

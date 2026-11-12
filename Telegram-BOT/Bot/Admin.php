@@ -1010,6 +1010,7 @@ if ($No_Mention > 0) {
 $Ranking_Text .= "🔹" . Helper::toPersian((string)$No_Mention) . " کاربر بدون منشن نمایش داده شده اند (هنوز ربات را استارت نکرده یا نام کاربری تلگرام ندارند).";
 }
 
+$Ranking_Text .= Helper::adminFooter();
 $Ranking_Markup = TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی']],
 [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'مدیریت']],
@@ -2238,7 +2239,7 @@ return;
 $User = Repository::findUserByIdentifier($Input);
 
 if ($User === null) {
-TelegramClient::sendMessage($Context->ChatId, "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter());
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter());
 return;
 }
 
@@ -3307,9 +3308,11 @@ $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده ه�
 . "🔹<b>کلید عمومی وایرگارد</b>\n<pre>{$Server_WG_Public}</pre>\n"
 . "🔸<b>کلید از پیش اشتراکی وایرگارد</b>\n<pre>{$Server_WG_PSK}</pre>\n\n"
 . "➖➖➖➖➖➖➖➖➖➖\n"
-. "✅*تمام مقادیر در دیتابیس ذخیره شدند.*" . Helper::adminFooter();
+. "✅*تمام مقادیر در دیتابیس ذخیره شدند.*";
 
-$Detail_Text = mb_substr($Detail_Text, 0, 4000);
+// The 4096-character limit would cut the footer off mid-way, so the body is
+// trimmed first and the standard footer is added after it.
+$Detail_Text = mb_substr($Detail_Text, 0, 3800) . Helper::adminFooter();
 TelegramClient::sendMessage($Context->ChatId, $Detail_Text, TelegramClient::inlineKeyboard([
 [['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']],
 [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'پیکربندی سرور']],
