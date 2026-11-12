@@ -13,7 +13,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../core/app_config.dart';
-import '../core/persian.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
 import 'native.dart';

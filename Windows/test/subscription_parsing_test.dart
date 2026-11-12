@@ -76,6 +76,25 @@ AllowedIPs = 0.0.0.0/0
     expect(report.nodes.first.port, 51820);
   });
 
+  test('پیکربندی وایرگارد داخل base64 هم خوانده می شود', () {
+    const String ini = '''
+[Interface]
+PrivateKey = YWJjZGVmZ2hpamtsbW5vcA==
+Address = 10.66.0.2/32
+
+[Peer]
+PublicKey = cXJzdHV2d3h5ejEyMzQ1Ng==
+Endpoint = 9.9.9.9:51820
+''';
+    final String body = base64.encode(utf8.encode(ini));
+
+    final ParseReport report = SubscriptionParser.parseAuto(body, 'user');
+
+    expect(report.nodes, hasLength(1));
+    expect(report.nodes.first.protocol, NodeProtocol.wireguard);
+    expect(report.nodes.first.host, '9.9.9.9');
+  });
+
   test('پاسخ خالی خطای روشن می دهد و سرور جعلی نمی سازد', () {
     final ParseReport report = SubscriptionParser.parseAuto('   ', 'user');
 

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_config.dart';
-import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../core/ui_formatters.dart';
 import '../../core/utils.dart';

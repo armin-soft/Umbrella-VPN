@@ -530,7 +530,10 @@ class SubscriptionParser {
   static List<String> _extractConfigs(String body) {
     final List<String> configs = <String>[];
     final String trimmed = body.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    // پیکربندی وایرگارد خودش با [Interface] شروع می شود؛ این متن INI است و
+    // نباید با JSON اشتباه گرفته شود.
+    final bool looksIni = trimmed.toLowerCase().startsWith('[interface]');
+    if (!looksIni && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
       final Object? json = _tryJson(trimmed);
       if (json is List) {
         for (final Object? item in json) {
