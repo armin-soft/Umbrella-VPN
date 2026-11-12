@@ -67,11 +67,6 @@ public static function getAppGatewaySecret(): string {
 return self::get('APP_GATEWAY_SECRET');
 }
 
-/** Secret the cron endpoints (?RunScheduler / ?NightlyDiag) must present as &Key=… */
-public static function getSchedulerKey(): string {
-return self::get('SCHEDULER_KEY');
-}
-
 /** Maximum sign-in SMS the gateway may send per hour, globally (0 = unlimited). */
 public static function getAppOtpMaxHourly(): int {
 return max(0, self::getInt('APP_OTP_MAX_HOURLY', 500));

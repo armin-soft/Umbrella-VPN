@@ -94,6 +94,41 @@ self::sendUserUsageReportsIfDue();
 self::sendNowruzWishesIfDue();
 }
 
+/**
+ * اجرای خودکار کارهای زمان بندی شده، بدون cron و بدون کلید.
+ *
+ * از مسیر وبهوک (و بازدیدهای ساده از آدرس ربات) صدا زده می شود و خودش
+ * فاصله زمانی را رعایت می کند: حداکثر یک بار در هر دقیقه.
+ */
+public static function tick(int $MinInterval = 60): void {
+$Now = time();
+
+try {
+$Last = (int)Repository::getSetting('Last_Scheduler_Tick', 0);
+}
+catch (Throwable) {
+return;
+}
+
+if ($Last > 0 && ($Now - $Last) < max(10, $MinInterval)) {
+return;
+}
+
+try {
+Repository::setSetting('Last_Scheduler_Tick', $Now);
+}
+catch (Throwable) {
+return;
+}
+
+try {
+self::run('all');
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Scheduler] automatic tick failed: ' . $Error->getMessage());
+}
+}
+
 public static function debugDailyReport(): void {
 $Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
 $Today = $Now->format('Y-m-d');

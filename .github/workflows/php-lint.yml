@@ -1,0 +1,50 @@
+name: php lint
+
+on:
+  push:
+    paths:
+      - 'Telegram-BOT/**'
+      - '.github/workflows/php-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: PHP version
+        run: php --version
+
+      - name: Lint every PHP file
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          Fail=0
+          Out=""
+          while IFS= read -r -d '' File; do
+            if ! Result=$(php -l "$File" 2>&1); then
+              Fail=1
+              Out+="$Result"$'\n'
+            fi
+          done < <(find Telegram-BOT -name '*.php' -print0)
+          if [ "$Fail" -ne 0 ]; then
+            echo "$Out"
+            {
+              echo "### php -l errors"
+              echo "<pre>"
+              printf '%s\n' "$Out" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+              echo "</pre>"
+            } > body.md
+            gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@body.md || true
+            exit 1
+          fi
+          echo "all PHP files passed php -l"

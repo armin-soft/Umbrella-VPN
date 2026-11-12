@@ -12,29 +12,10 @@ exit;
 require_once __DIR__ . '/Bot/Dispatcher.php';
 require_once __DIR__ . '/Core/Database/Schema.php';
 require_once __DIR__ . '/Config/Environment.php';
+require_once __DIR__ . '/Core/Storage/Repository.php';
+require_once __DIR__ . '/Core/Telegram/Webhook.php';
 
 header('Content-Type: text/plain; charset=UTF-8');
-
-// Cron endpoints spend real money (auto-renew wallet charges, IPPanel SMS),
-// so they must never be reachable without a key. Fail closed: when
-// SCHEDULER_KEY is not set in .env, they refuse to run at all — set it and
-// add &Key=<value> to the cron URL.
-$Scheduler_Guard = static function (): void {
-$Key = \Environment::getSchedulerKey();
-$Provided = trim((string)($_GET['Key'] ?? ''));
-
-if ($Key !== '' && hash_equals($Key, $Provided)) {
-return;
-}
-
-http_response_code(403);
-header('Content-Type: text/plain; charset=UTF-8');
-error_log('[Umbrella-Bot][Scheduler] rejected (' . ($Key === '' ? 'SCHEDULER_KEY is not set in .env' : 'wrong SCHEDULER_KEY') . ') from ' . ($_SERVER['REMOTE_ADDR'] ?? '-'));
-echo $Key === ''
-? "Forbidden: SCHEDULER_KEY is not configured. Set SCHEDULER_KEY in .env, then add &Key=<value> to the cron URL."
-: "Forbidden: invalid Key.";
-exit;
-};
 
 try {
 \Schema::ensureInstalled();
@@ -44,52 +25,38 @@ catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Schema-AutoInstall] ' . $Error->getMessage());
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && isset($_GET['NightlyDiag'])) {
-$Scheduler_Guard();
+// کارهای نگهداری فقط از ترمینال سرور اجرا می شوند:
+//   php index.php RunScheduler [all|daily|operations|membership]
+//   php index.php NightlyDiag
+if (PHP_SAPI === 'cli') {
+$Command = strtolower(trim((string)($argv[1] ?? '')));
+
+if ($Command === 'runscheduler' || $Command === 'nightlydiag') {
 require_once __DIR__ . '/Bot/Scheduler.php';
 header('Content-Type: text/plain; charset=UTF-8');
 
-try {
+if ($Command === 'nightlydiag') {
 \Scheduler::diagnoseNightly();
-echo "DIAG DONE - see error log for [Nightly-DIAG] lines";
+echo "DIAG DONE - see error log for [Nightly-DIAG] lines\n";
 }
 
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Nightly-DIAG] FAILED: ' . $E->getMessage());
-echo 'ERR: ' . $E->getMessage();
+else {
+\Scheduler::run(trim((string)($argv[2] ?? 'all')) ?: 'all');
+echo "SCHEDULER DONE\n";
 }
 
 exit;
 }
-
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && isset($_GET['RunScheduler'])) {
-$Scheduler_Guard();
-require_once __DIR__ . '/Bot/Scheduler.php';
-$Scheduler_Mode = trim((string)($_GET['RunScheduler'] ?? 'all'));
-$Verbose = isset($_GET['Verbose']);
-
-if ($Verbose) {
-error_log('[Umbrella-Bot][Scheduler] START mode=' . $Scheduler_Mode . ' phpTimezone=' . date_default_timezone_get()
-. ' now=' . (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i'));
 }
 
+// وبهوک بدون هیچ ورودی در .env ثبت می شود. این فراخوانی خودش یک ساعت فاصله
+// می گذارد و اگر خطا بدهد مسیر اصلی برنامه متوقف نمی شود.
 try {
-if ($Verbose && $Scheduler_Mode === 'daily') {
-\Scheduler::debugDailyReport();
+\Webhook::ensureRegistered();
 }
 
-\Scheduler::run($Scheduler_Mode === '' ? 'all' : $Scheduler_Mode);
-
-if ($Verbose) error_log('[Umbrella-Bot][Scheduler] DONE mode=' . $Scheduler_Mode);
-echo 'OK';
-}
-
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Scheduler] ' . $E->getMessage());
-echo 'ERR';
-}
-
-exit;
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Webhook] bootstrap failed: ' . $Error->getMessage());
 }
 
 require_once __DIR__ . '/Config/Environment.php';
@@ -150,26 +117,41 @@ exit;
 }
 
 // ── Webhook authentication ────────────────────────────────────────────────
-// Telegram signs every update it delivers with the secret_token that was set
-// via setWebhook (Tools/set-webhook.php). Without it anyone who learns this
-// endpoint's URL can forge updates — including messages that look like the
-// admin pressing an admin button. Enforced fail-closed once the secret is
-// configured; until then the bot keeps working but logs a loud reminder.
-$Webhook_Secret = \Environment::get('TELEGRAM_WEBHOOK_SECRET');
+// Telegram هر به روزرسانی را با secret_token ای که هنگام setWebhook داده شده
+// امضا می کند. ساخت Secret و ثبت وبهوک خودکار انجام می شود (کلاس Webhook)، پس
+// هیچ کلیدی در .env لازم نیست.
+$Is_Post = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
 
-if ($Webhook_Secret !== '') {
-$Header_Secret = (string)($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '');
+if (!$Is_Post) {
+// بازدید ساده از آدرس ربات: ثبت وبهوک تازه می شود و بازدیدکننده به ربات می رود.
+require_once __DIR__ . '/Bot/Scheduler.php';
+\Scheduler::tick();
 
-if (!hash_equals($Webhook_Secret, $Header_Secret)) {
-http_response_code(403);
-header('Content-Type: text/plain; charset=UTF-8');
-error_log('[Umbrella-Bot][Webhook] rejected: missing/invalid X-Telegram-Bot-Api-Secret-Token from ' . ($_SERVER['REMOTE_ADDR'] ?? '-'));
-echo 'Forbidden';
+$Visitor_Bot_Username = \Environment::getBotUsername();
+$Visitor_Bot_Link = $Visitor_Bot_Username !== '' ? 'https://t.me/' . $Visitor_Bot_Username : 'https://t.me/';
+header('Location: ' . $Visitor_Bot_Link, true, 302);
 exit;
 }
+
+$Provided_Secret = (string)($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '');
+
+if (!\Webhook::verify($Provided_Secret)) {
+// شاید دامنه عوض شده باشد؛ یک بار ثبت وبهوک بررسی و اصلاح می شود.
+try {
+\Webhook::ensureRegistered();
 }
-else {
-error_log('[Umbrella-Bot][Webhook] TELEGRAM_WEBHOOK_SECRET is not set — the endpoint is open to forged updates. Set it and run Tools/set-webhook.php to re-register the webhook.');
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Webhook] re-registration failed: ' . $Error->getMessage());
+}
+}
+
+if (!\Webhook::verify($Provided_Secret)) {
+http_response_code(403);
+header('Content-Type: text/plain; charset=UTF-8');
+error_log('[Umbrella-Bot][Webhook] rejected: invalid X-Telegram-Bot-Api-Secret-Token from ' . ($_SERVER['REMOTE_ADDR'] ?? '-'));
+echo 'Forbidden';
+exit;
 }
 
 $Raw_Input = file_get_contents('php://input') ?: '';
@@ -190,4 +172,25 @@ error_log('[Umbrella-Bot] ' . $Error->getMessage());
 }
 
 echo 'OK';
+
+// پاسخ اول تحویل داده می شود تا تلگرام منتظر کارهای زمان بندی شده نماند، بعد
+// نوبت اجرای خودکار Scheduler است (حداکثر یک بار در دقیقه).
+if (function_exists('fastcgi_finish_request')) {
+fastcgi_finish_request();
+}
+
+else {
+// روی سرورهای بدون FastCGI هم پاسخ را زودتر خالی می کنیم.
+while (ob_get_level() > 0) {
+@ob_end_flush();
+}
+
+@flush();
+}
+
+ignore_user_abort(true);
+@set_time_limit(0);
+
+require_once __DIR__ . '/Bot/Scheduler.php';
+\Scheduler::tick();
 ?>
