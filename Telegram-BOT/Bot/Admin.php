@@ -951,12 +951,18 @@ $Rank_Total = (float)$Stats['total_used'];
 $Rank_Number = 0;
 $Shown = 0;
 $No_Mention = 0;
+$Top_Usage = 0.0;
+
+foreach ($Top_Users as $Max_Row) {
+$Top_Usage = max($Top_Usage, (float)($Max_Row['Value'] ?? 0));
+}
+
 $Ranking_Text = Helper::adminGreeting($Context, 'رتبه بندی کاربران');
-$Ranking_Text .= "🏆*رتبه بندی کاربران واقعی سرور بر اساس مصرف:*\n";
-$Ranking_Text .= "👥تعداد کاربران سرور: *" . Helper::toPersian((string)$Stats['total']) . "* |🟢فعال: *" . Helper::toPersian((string)$Stats['active']) . "*\n";
-$Ranking_Text .= "📥مجموع مصرف کاربران: *" . Helper::formatGB($Rank_Total) . "* |🧮میانگین: *" . Helper::formatGB((float)$Stats['avg_used']) . "*\n";
-$Ranking_Text .= "🥇رتبه اول = بیشترین مصرف |🥈رتبه دوم |🥉رتبه سوم\n";
-$Ranking_Text .= "📊درصد داخل پرانتز = سهم هر کاربر از مصرف کل سرور\n";
+$Ranking_Text .= "🏆👑*رتبه بندی کاربران واقعی سرور بر اساس مصرف:*\n";
+$Ranking_Text .= "👥تعداد کل: *" . Helper::toPersian((string)$Stats['total']) . "* |🟢فعال: *" . Helper::toPersian((string)$Stats['active']) . "*\n";
+$Ranking_Text .= "📥مجموع مصرف: *" . Helper::formatGB($Rank_Total) . "* |🧮میانگین هر کاربر: *" . Helper::formatGB((float)$Stats['avg_used']) . "*\n";
+$Ranking_Text .= "🥇جایگاه اول |🥈دوم |🥉سوم |🏅چهارم |🎖️پنجم |🔥سهم بیش از ۲۵٪ |💎بیش از ۱۰۰ گیگ\n";
+$Ranking_Text .= "📊درصد = سهم هر کاربر از مصرف کل | نوار = مصرف نسبت به پرمصرف ترین کاربر\n";
 $Ranking_Text .= "➖➖➖➖➖➖➖➖➖\n";
 
 foreach ($Top_Users as $User) {
@@ -977,9 +983,15 @@ if (stripos($Name_Link, '](') === false) {
 $No_Mention++;
 }
 
-$Medal = Helper::rankMedal($Rank_Number);
 $Usage_Short = str_replace(['ترابایت', 'گیگابایت', 'مگابایت'], ['ترا', 'گیگ', 'مگ'], Helper::formatGB($Usage));
-$Line = Helper::toPersian((string)$Rank_Number) . ". {$Medal} {$Name_Link} — " . $Usage_Short . " (" . Helper::formatPercent($Share) . "٪)";
+$Marks = '';
+
+if ($Rank_Number === 1) $Marks .= '👑';
+if ($Share >= 25.0) $Marks .= '🔥';
+if ($Usage >= 100.0) $Marks .= '💎';
+
+$Bar_Percent = $Top_Usage > 0 ? min(100.0, ($Usage / $Top_Usage) * 100.0) : 0.0;
+$Line = Helper::rankLine($Rank_Number, $Name_Link, $Usage_Short, $Share, $Bar_Percent, $Marks);
 $Ranking_Text .= $Line . "\n";
 $Shown++;
 
@@ -1001,7 +1013,8 @@ if ($Stats['top_user'] !== []) {
 $Top_Name = trim((string)($Stats['top_user']['Full_Name'] ?? ''));
 
 if ($Top_Name === '') $Top_Name = trim((string)($Stats['top_user']['First_Name'] ?? '')) ?: 'کاربر';
-$Ranking_Text .= "👑قهرمان مصرف سرور: *{$Top_Name}* با *" . Helper::formatGB((float)($Stats['top_user']['Value'] ?? 0)) . "*\n";
+$Ranking_Text .= "👑🥇قهرمان مصرف سرور: *{$Top_Name}* با *" . Helper::formatGB((float)($Stats['top_user']['Value'] ?? 0)) . "*\n";
+$Ranking_Text .= "🏅📊میانگین مصرف هر کاربر سرور: *" . Helper::formatGB((float)$Stats['avg_used']) . "*\n";
 }
 
 $Ranking_Text .= "🔵اعضای ربات که روی سرور کاربر فعال ندارند در این رتبه بندی نمایش داده نمی شوند.\n";
@@ -3377,10 +3390,19 @@ $Top = Database::getInstance()->fetchAll(
 $Top_Text = '';
 $Rank = 0;
 
+$Recharge_Base = max(0.0, (float)$Stats['total_recharge']);
+
 foreach ($Top as $U) {
 $Rank++;
-$Name = $U['Full_Name'] ?: $U['First_Name'] ?: 'کاربر';
-$Top_Text .= "├─" . Helper::toPersian((string)$Rank) . ". {$Name} - " . Helper::formatCurrency((int)$U['Total_Recharge']) . "\n";
+$Name = trim((string)($U['Full_Name'] ?? '')) ?: (trim((string)($U['First_Name'] ?? '')) ?: 'کاربر');
+$Name_Link = Helper::mention($Name, (int)($U['Telegram_ID'] ?? 0));
+$Recharge = (float)$U['Total_Recharge'];
+$Share = $Recharge_Base > 0 ? ($Recharge / $Recharge_Base) * 100.0 : 0.0;
+$Marks = $Rank === 1 ? '👑' : '';
+
+if ($Share >= 25.0) $Marks .= '🔥';
+
+$Top_Text .= "├─" . Helper::rankLine($Rank, $Name_Link, Helper::formatCurrency($Recharge), $Share, -1.0, $Marks) . "\n";
 }
 
 if ($Top_Text === '') $Top_Text = "└─❌داده ای موجود نیست\n";
@@ -3395,10 +3417,14 @@ TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, Te
 
 public static function ticketAdminMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Open_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending','answered')");
+$Waiting_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')");
+$Answered_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'answered'");
+$Closed_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'closed'");
 $Total_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets`");
 $Text = Helper::adminGreeting($Context, 'مدیریت تیکت ها') . '📊*آمار تیکت ها:*' . "\n"
-. "├─🟡تیکت های باز: *" . Helper::toPersian((string)$Open_Count) . "*\n"
+. "├─🟡در انتظار پاسخ: *" . Helper::toPersian((string)$Waiting_Count) . "*\n"
+. "├─🟢پاسخ داده شده: *" . Helper::toPersian((string)$Answered_Count) . "*\n"
+. "├─⚫بسته شده: *" . Helper::toPersian((string)$Closed_Count) . "*\n"
 . "└─📋کل تیکت ها: *" . Helper::toPersian((string)$Total_Count) . "*\n\n"
 . "📌*لطفاً یکی از عملیات های زیر را انتخاب کنید:*" . Helper::adminFooter();
 

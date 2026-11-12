@@ -1197,14 +1197,55 @@ $Plan_Name = self::PLANS[$Plan_Month][0];
 }
 
 $Wallet_Balance = (float)(Repository::getUser($Context->UserId)['Balance'] ?? 0);
-$Is_Pure_Topup = ($Topup_Amount > 0 && !$Is_Custom && $Pending_Plan === '' && $Pending_Custom === '');
+$Is_Pure_Topup = ($Topup_Amount > 0 && !$Is_Custom && $Pending_Plan === '');
+// The gateway is only asked for the shortfall (price - wallet balance), so the
+// rest of the price is still owed by the wallet. Without this charge the user
+// would keep the balance the plan was supposed to consume.
+$Wallet_Share = 0.0;
+
+if ($Is_Custom && $Pending_Custom !== '') {
+$Wallet_Parts = array_pad(explode('|', $Pending_Custom, 3), 3, '0');
+$Wallet_Share = max(0.0, (float)$Wallet_Parts[1]);
+}
+
+elseif ($Pending_Plan !== '' && str_starts_with($Pending_Plan, 'paid|')) {
+[, $Wallet_Month] = explode('|', $Pending_Plan, 2);
+$Wallet_Share = max(0.0, (float)BotConfig::getPlanPrice($Wallet_Month));
+}
+
+$Wallet_Charged = 0.0;
 
 if (!$Is_Pure_Topup) {
+$Charge_From_Wallet = ($Topup_Amount > 0 && $Wallet_Share > 0);
+
+if ($Charge_From_Wallet) {
+$Charged = false;
+
+try {
+$Charged = Repository::removeMoney($Context->UserId, $Wallet_Share, 'خرید اشتراک - تسویه با کیف پول', 'bot');
+}
+
+catch (Throwable $Charge_Error) {
+error_log('[Umbrella-Bot][Payment-Wallet] خطا در کسر سهم کیف پول: ' . $Charge_Error->getMessage());
+}
+
+if ($Charged) {
+$Wallet_Charged = $Wallet_Share;
+$Wallet_Balance = max(0.0, $Wallet_Balance - $Wallet_Share);
+}
+
+else {
+error_log('[Umbrella-Bot][Payment-Wallet] کسر ' . $Wallet_Share . ' تومان از کیف پول کاربر ' . $Context->UserId . ' انجام نشد؛ بررسی دستی لازم است.');
+}
+}
+
+else {
 try {
 Repository::addSpent($Context->UserId, (float)$Amount);
 }
 
 catch (Throwable) {}
+}
 }
 
 $Payment_Type_Label = $Is_Pure_Topup
@@ -1218,6 +1259,7 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پردا�
 . "💰مبلغ پرداختی: " . Helper::formatCurrency((float)$Amount) . "\n"
 . ($Topup_Amount > 0 ? "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount) . "\n" : '')
 . ($Topup_Amount > 0 ? "💵موجودی کیف پول: " . Helper::formatCurrency($Wallet_Balance) . "\n" : '')
+. ($Wallet_Charged > 0 ? "💳کسر از کیف پول: " . Helper::formatCurrency($Wallet_Charged) . "\n" : '')
 . (count($Success_Notes) > 0 ? implode("\n", $Success_Notes) . "\n" : '')
 . ($Is_Custom ? "📅مدت اشتراک: " . Helper::toPersian((string)$Custom_Days) . " روز\n" : '')
 . ($Is_Pure_Topup ? "✅اعتبار کیف پول شما با موفقیت شارژ شد." : "🔄در حال فعالسازی {$Plan_Name}...") . Helper::userFooter() . "*",
@@ -1377,6 +1419,7 @@ $Phone = (string)($User['Phone'] ?? '');
 $Parts = array_pad(explode('|', $Pending_Custom, 3), 3, '0');
 $Days = (int)$Parts[0];
 $Amount = (float)$Parts[1];
+$GB = (float)$Parts[2];
 $Need = $Topup_Amount;
 
 if (!Zarinpal::isConfigured() || $Phone === '' || $Need <= 0) {
@@ -1577,6 +1620,7 @@ TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$N
 Common::mainButton()
 ]));
 
+Repository::seedUsageSnapshot($Context->UserId);
 Repository::addSubscriptionLog($Context->UserId, 'activate', $Name, $Days, (float)$Gb, isset($Data['uuid']) ? $Data['uuid'] : null, 'user', $Context->UserId);
 
 TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'فعالسازی اشتراک', $Admin) . "🎁✅لحظاتی پیش اشتراک {$Name} فعال گردید.\n👤نام: " . Helper::mention((string)$Full_Name, (int)$User_ID) . "\n📞شماره موبایل: {$Phone} (" . Helper::detectOperator($Phone) . ")\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n🚀شناسه کلاینت: `" . ($Data['uuid'] ?? '') . "`\n📆تاریخ انقضا:\n{$Expiration_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([

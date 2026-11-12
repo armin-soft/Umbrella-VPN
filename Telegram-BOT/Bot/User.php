@@ -196,7 +196,7 @@ $User = Repository::getUser($Context->UserId);
 
 if (($User['Registered_At'] ?? null) !== null) return;
 
-Repository::updateUser($Context->UserId, ['Registered_At' => date('Y-m-d H:i:s')]);
+Repository::touchUserTime($Context->UserId, 'Registered_At');
 self::linkPanelAccount($Context);
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 
@@ -1290,8 +1290,17 @@ $My_Row = $Row;
 }
 }
 
-$Text = Common::greet($Context, 'رتبه بندی کاربران') . "🏆*رتبه بندی کاربران سرور بر اساس مصرف:*\n";
-$Text .= "📊مجموع مصرف کاربران سرور: *" . Helper::formatGB($Board_Total) . "*\n";
+$Board_Count = count($Board);
+$Board_Top = 0.0;
+
+foreach ($Board as $Row) {
+$Board_Top = max($Board_Top, (float)($Row['Value'] ?? 0));
+}
+
+$Board_Avg = $Board_Count > 0 ? $Board_Total / $Board_Count : 0.0;
+$Text = Common::greet($Context, 'رتبه بندی کاربران') . "🏆👑*رتبه بندی کاربران سرور بر اساس مصرف:*\n";
+$Text .= "👥کاربران سرور: *" . Helper::toPersian((string)$Board_Count) . "* |📥مجموع مصرف: *" . Helper::formatGB($Board_Total) . "* |🧮میانگین: *" . Helper::formatGB($Board_Avg) . "*\n";
+$Text .= "🥇جایگاه اول |🥈دوم |🥉سوم |🔥سهم بیش از ۲۵٪ |⭐️ردیف خود شما\n";
 $Text .= "➖➖➖➖➖➖➖➖➖\n";
 $Shown = 0;
 
@@ -1303,16 +1312,24 @@ $Name = trim((string)($Row['Full_Name'] ?? '')) ?: (trim((string)($Row['First_Na
 $Name_Link = Helper::mention($Name, (int)($Row['Telegram_ID'] ?? 0), trim((string)($Row['Username'] ?? '')));
 $Usage = (float)($Row['Value'] ?? 0);
 $Share = $Board_Total > 0 ? ($Usage / $Board_Total) * 100.0 : 0.0;
-$Text .= Helper::toPersian((string)$Shown) . ". " . Helper::rankMedal($Shown) . " {$Name_Link} — *" . Helper::formatGB($Usage) . "* (" . Helper::formatPercent($Share) . "٪)\n";
+$Is_Me = (int)($Row['Telegram_ID'] ?? 0) === $Context->UserId;
+$Marks = ($Is_Me ? '⭐️' : '') . ($Shown === 1 ? '👑' : '');
+
+if ($Share >= 25.0) $Marks .= '🔥';
+
+$Bar_Percent = $Board_Top > 0 ? min(100.0, ($Usage / $Board_Top) * 100.0) : 0.0;
+$Row_Name = $Name_Link . ($Is_Me ? ' (شما)' : '');
+$Text .= Helper::rankLine($Shown, $Row_Name, Helper::formatGB($Usage), $Share, $Bar_Percent, $Marks) . "\n";
 }
 
 $Text .= "➖➖➖➖➖➖➖➖➖\n";
 
 if ($My_Rank > 0) {
-$Text .= "📌رتبه شما: " . Helper::rankEmoji($My_Rank) . "\n";
-$Text .= "📊مصرف شما: *" . Helper::formatGB((float)($My_Row['Value'] ?? 0)) . "* از مجموع *" . Helper::formatGB($Board_Total) . "*\n";
 $My_Share = $Board_Total > 0 ? (((float)($My_Row['Value'] ?? 0) / $Board_Total) * 100.0) : 0.0;
-$Text .= "📈سهم شما از مصرف سرور: *" . Helper::formatPercent($My_Share) . "٪*\n";
+$Text .= "📌رتبه شما: " . Helper::rankEmoji($My_Rank) . " *" . Helper::toPersian((string)$My_Rank) . "* از *" . Helper::toPersian((string)$Board_Count) . "* کاربر\n";
+$Text .= "🏅عنوان شما: *" . Helper::rankTitle($My_Rank) . "*\n";
+$Text .= "📊مصرف شما: *" . Helper::formatGB((float)($My_Row['Value'] ?? 0)) . "* از مجموع *" . Helper::formatGB($Board_Total) . "*\n";
+$Text .= "📈سهم شما از مصرف سرور: *" . Helper::formatPercent($My_Share) . "٪* " . Helper::usageBar($My_Share, 10) . "\n";
 }
 
 else {

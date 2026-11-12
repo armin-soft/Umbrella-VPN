@@ -126,7 +126,8 @@ $Old_User = Repository::getUser($Context->UserId);
 $Full_Name = trim((string)($Old_User['Full_Name'] ?? ''));
 $Client_ID = trim((string)($Old_User['Client_ID'] ?? ''));
 $Has_Client = $Client_ID !== '' && $Client_ID !== '_';
-Repository::updateUser($Context->UserId, ['Phone' => $Phone, 'Operator' => $Operator, 'Profile_Updated_At' => date('Y-m-d H:i:s')]);
+Repository::updateUser($Context->UserId, ['Phone' => $Phone, 'Operator' => $Operator]);
+Repository::touchUserTime($Context->UserId, 'Profile_Updated_At');
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 
 if ($Has_Client) {

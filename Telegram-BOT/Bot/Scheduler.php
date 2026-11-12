@@ -360,7 +360,7 @@ $Live_Quota = 0.0; $Live_Remaining = 0.0;
 foreach ($Live_Users as $Live_Row) { $Live_Quota += (float)($Live_Row['Total_Usage_GB'] ?? 0); $Live_Remaining += (float)($Live_Row['Remaining_Usage_GB'] ?? 0); }
 $Stats['server_clients'] = (int)$Live_Stats['total'];
 $Stats['server_clients_active'] = (int)$Live_Stats['active'];
-$Stats['server_clients_disabled'] = (int)$Live_Stats['disabled'];
+$Stats['server_clients_disabled'] = max(0, (int)$Live_Stats['disabled'] - (int)($Stats['server_clients_expired'] ?? 0));
 $Stats['server_quota'] = $Live_Quota;
 $Stats['server_used'] = (float)$Live_Stats['total_used'];
 $Stats['server_remaining'] = $Live_Remaining;
@@ -401,12 +401,25 @@ if ($Day_Top !== []) {
 $Text .= "🏆*پرمصرف ترین های روز:*\n";
 $Index = 0;
 
+$Day_Top_Max = 0.0;
+
+foreach ($Day_Top as $Row) {
+$Day_Top_Max = max($Day_Top_Max, (float)($Row['Gain'] ?? 0));
+}
+
 foreach ($Day_Top as $Row) {
 $Index++;
 $Name = trim((string)($Row['Full_Name'] ?? ''));
 
 if ($Name === '') $Name = trim((string)($Row['First_Name'] ?? '')) ?: 'کاربر';
-$Text .= "├─" . Helper::rankMedal($Index) . " {$Name} — *" . Helper::formatGB((float)($Row['Gain'] ?? 0)) . "*\n";
+$Name_Link = Helper::mention($Name, (int)($Row['User_ID'] ?? 0));
+$Gain = (float)($Row['Gain'] ?? 0);
+$Gain_Bar = $Day_Top_Max > 0 ? min(100.0, ($Gain / $Day_Top_Max) * 100.0) : 0.0;
+$Gain_Marks = $Index === 1 ? '👑' : '';
+
+if ($Gain >= 100.0) $Gain_Marks .= '💎';
+
+$Text .= "├─" . Helper::rankLine($Index, $Name_Link, Helper::formatGB($Gain), -1.0, $Gain_Bar, $Gain_Marks) . "\n";
 }
 }
 

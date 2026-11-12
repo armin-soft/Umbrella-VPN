@@ -170,10 +170,24 @@ $Out .= '</' . array_pop($Stack) . '>';
 return $Out;
 }
 
+/**
+ * The footer ("…بر روی منوی مورد نظر کلیک کنید") only makes sense when the
+ * message actually carries an inline keyboard. With no keyboard there is
+ * nothing to press, so the whole block — sentence and its separator — is
+ * dropped before the message is rendered.
+ */
+private static function trimFooterWithoutKeyboard(string $Text, array $Markup): string {
+if ($Text === '' || $Markup !== []) return $Text;
+$Stripped = (string)preg_replace('/\n*[➖—\-]{3,}\s*\n+\s*👌\s*جهت استفاده از امکانات[^\n]*/u', '', $Text);
+$Stripped = (string)preg_replace('/\n*(?:[➖—\-]{3,}\s*)+$/u', '', $Stripped);
+$Stripped = rtrim($Stripped, " \t\n*");
+return $Stripped === '' ? $Text : $Stripped;
+}
+
 public static function sendMessage(int $Chat_ID, string $Text, array $Markup = [], string $Parse_Mode = 'HTML', ?int $Reply_To = null): array {
 $Payload = [
 'chat_id' => $Chat_ID,
-'text' => self::md($Text),
+'text' => self::md(self::trimFooterWithoutKeyboard($Text, $Markup)),
 'parse_mode' => $Parse_Mode,
 'disable_web_page_preview' => true,
 ];
@@ -187,7 +201,7 @@ public static function editMessageText(int $Chat_ID, int $Message_ID, string $Te
 $Payload = [
 'chat_id' => $Chat_ID,
 'message_id' => $Message_ID,
-'text' => self::md($Text),
+'text' => self::md(self::trimFooterWithoutKeyboard($Text, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
@@ -261,7 +275,7 @@ if ($Is_Local) {
 $Fields = [
 'chat_id' => $Chat_ID,
 'photo' => new \CURLFile($PhotoUrl),
-'caption' => self::md($Caption),
+'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
@@ -271,7 +285,7 @@ $Response = HttpClient::postMultipart(self::url('sendPhoto'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
 
-$Payload = ['chat_id' => $Chat_ID, 'photo' => $PhotoUrl, 'caption' => self::md($Caption), 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
+$Payload = ['chat_id' => $Chat_ID, 'photo' => $PhotoUrl, 'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)), 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
 
 if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
 return self::call('sendPhoto', $Payload);
@@ -288,7 +302,7 @@ public static function sendDocument(int $Chat_ID, string $Document_Path, string 
 $Fields = [
 'chat_id' => $Chat_ID,
 'document' => new \CURLFile($Document_Path),
-'caption' => self::md($Caption),
+'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
