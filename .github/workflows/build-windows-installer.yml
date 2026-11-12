@@ -57,7 +57,7 @@ jobs:
           if ($text -notmatch 'umbrella_native') {
             throw 'umbrella_native is not registered: the native bridge would fail silently'
           }
-          if (-not (Test-Path 'packages\umbrella_native\windows\include\umbrella_native_plugin.h')) {
+          if (-not (Test-Path 'packages\umbrella_native\windows\include\umbrella_native\umbrella_native_plugin.h')) {
             throw 'public plugin header is missing'
           }
           Write-Host 'umbrella_native is registered' -ForegroundColor Green
