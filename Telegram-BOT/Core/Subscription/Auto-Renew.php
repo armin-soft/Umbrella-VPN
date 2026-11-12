@@ -16,7 +16,7 @@ private const PLANS = [
 '2' => ['۲ ماهه', 60],
 '3' => ['۳ ماهه', 90],
 '6' => ['۶ ماهه', 180],
-'12' => ['۱۲ ماهه', 360],
+'12' => ['۱ ساله', 360],
 ];
 
 public static function planName(string $Plan_Key): string {
@@ -84,13 +84,13 @@ Helper::frame('کاربر', (string)($User_Now['Full_Name'] ?? ''), 'تمدید 
 continue;
 }
 
-if (!Repository::removeMoney($User_ID, $Final_Price)) continue;
+if (!Repository::removeMoney($User_ID, $Final_Price, 'تمدید خودکار اشتراک', 'bot')) continue;
 
-if ($Days <= 0) { Repository::addMoney($User_ID, $Final_Price); continue; }
+if ($Days <= 0) { Repository::addMoney($User_ID, $Final_Price, 'بازگشت وجه تمدید خودکار', 'bot'); continue; }
 $User = Repository::getUser($User_ID);
 $Client_ID = (string)($User['Client_ID'] ?? '');
 
-if ($Client_ID === '' || $Client_ID === '_') { Repository::addMoney($User_ID, $Final_Price); continue; }
+if ($Client_ID === '' || $Client_ID === '_') { Repository::addMoney($User_ID, $Final_Price, 'بازگشت وجه تمدید خودکار', 'bot'); continue; }
 $Tehran = new DateTimeZone('Asia/Tehran');
 $Now = new DateTimeImmutable('now', $Tehran);
 $New_Expire = $Now->modify('+' . $Days . ' days');
@@ -99,7 +99,7 @@ $Today = $Now->format('Y-m-d');
 $Payload = [
 'start_date' => $Today,
 'package_days' => $Days,
-'usage_limit_GB' => 1000,
+'usage_limit_GB' => self::PLAN_GB,
 'is_active' => true,
 'enable' => true,
 'last_reset_time' => $Today,
@@ -111,7 +111,7 @@ if (($Response['StatusCode'] ?? 0) < 300) {
 Repository::updateUser($User_ID, [
 'Expiration_Time_Stamp' => $New_Expire->getTimestamp(),
 'Expiration_Date' => Helper::formatExpiration($New_Expire->getTimestamp()),
-'Package_Duration' => (string)$Days,
+'Package_Duration' => Helper::durationLabel($Days),
 'Package_Start_Date' => Helper::formatPersianDate($Now->getTimestamp()),
 'Subscription' => $Plan_Name,
 'Total_Usage_GB' => (float)self::PLAN_GB,
@@ -161,7 +161,7 @@ $Count++;
 }
 
 else {
-Repository::addMoney($User_ID, $Final_Price);
+Repository::addMoney($User_ID, $Final_Price, 'بازگشت وجه تمدید خودکار', 'bot');
 }
 }
 

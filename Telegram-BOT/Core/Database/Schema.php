@@ -81,23 +81,37 @@ $Migrations = [
 ['table' => 'Subscription_Logs', 'column' => 'Actor_ID', 'definition' => 'BIGINT NULL'],
 ];
 
+// همه ستون ها با یک پرس وجو خوانده می شوند تا هر آپدیت تلگرام چند ده
+// پرس وجوی اضافه به information_schema نزند.
+$Existing = [];
+
+try {
+foreach ($Database->fetchAll(
+"SELECT table_name AS t, column_name AS c FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name IN ('Users', 'User_Sessions', 'Transactions', 'Subscription_Logs')"
+) as $Row) {
+$Existing[strtolower((string)($Row['t'] ?? ''))][strtolower((string)($Row['c'] ?? ''))] = true;
+}
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Schema-Migration] cannot read the current columns: ' . $Error->getMessage());
+}
+
 foreach ($Migrations as $Migration) {
 $Table = $Migration['table'];
 $Column = $Migration['column'];
 $Definition = $Migration['definition'];
-$Exists = (int)$Database->scalar(
-"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-[$Table, $Column]
-);
 
-if ($Exists === 0) {
+if (isset($Existing[strtolower($Table)][strtolower($Column)])) continue;
+
 try {
 $Database->connection()->exec("ALTER TABLE `{$Table}` ADD COLUMN `{$Column}` {$Definition}");
+$Existing[strtolower($Table)][strtolower($Column)] = true;
 }
 
 catch (Throwable $Error) {
 error_log("[Umbrella-Bot][Schema-Migration] Failed to add column {$Table}.{$Column}: " . $Error->getMessage());
-}
 }
 }
 

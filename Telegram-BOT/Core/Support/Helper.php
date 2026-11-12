@@ -215,7 +215,7 @@ $Date = (new DateTimeImmutable('@' . $Stamp))->setTimezone(new DateTimeZone('Asi
 }
 
 catch (Throwable) {
-return static::DATE_TIME_ERROR_TEXT;
+return static::localDateTimeLabel();
 }
 
 $Hijri = '';
@@ -287,6 +287,24 @@ return $Label;
 }
 
 /** Whole calendar days between a timestamp and today (Tehran); negative when past. */
+/** نسخه تمام محلی برچسب تاریخ و زمان؛ به شبکه و دیتابیس وابسته نیست. */
+private static function localDateTimeLabel(): string {
+try {
+$Date = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
+$Shamsi = static::gregorianToJalali($Date->format('Y-m-d'));
+$Gregorian = static::toPersian($Date->format('Y-m-d'));
+$Clock = static::toPersian($Date->format('H:i:s'));
+[$Season_Emoji, $Season] = static::seasonLabel((int)$Date->format('n'));
+[$Part_Emoji, $Part] = static::dayPartLabel((int)$Date->format('G'));
+}
+
+catch (Throwable) {
+return "📆تاریخ شمسی:*نامعلوم*\n🌍تاریخ میلادی:*نامعلوم*\n\n🌎فصل:*❓نامعلوم*\n🕰زمان:*--:--:--*";
+}
+
+return "📆تاریخ شمسی:*{$Shamsi}*\n🌍تاریخ میلادی:*{$Gregorian}*\n\n🌎فصل:*{$Season_Emoji}{$Season}*\n🕰زمان:*{$Clock} {$Part_Emoji}{$Part}*";
+}
+
 public static function daysFromToday(int $Time_Stamp): int {
 if ($Time_Stamp <= 0) return 0;
 $Tehran = new DateTimeZone('Asia/Tehran');
@@ -804,12 +822,14 @@ public static function greetingFrame(string $Type, string $Name, string $Section
 $Name = trim($Name) !== '' ? trim($Name) : $Type;
 $Name = self::mention($Name, $User_ID);
 
+// حتی اگر سرویس تاریخ و زمان و حافظه پنهان هر دو در دسترس نباشند، هدر با
+// تاریخ محلی پر می شود؛ متن خطای تاریخ و زمان دیگر در هیچ پیامی نمی آید.
 try {
 $Date_Time_Block = static::currentDateTimeLabel();
 }
 
 catch (Throwable) {
-$Date_Time_Block = static::DATE_TIME_ERROR_TEXT;
+$Date_Time_Block = static::localDateTimeLabel();
 }
 
 return "🌹" . $Type . " گرامی " . $Name . " به بخش " . $Section . " خوش آمدید.\n"
@@ -915,6 +935,7 @@ $Key === 'gateway', $Key === 'payment', $Key === 'zarinpal' => '🌐درگاه �
 $Key === 'card', $Key === 'card_to_card', $Key === 'offline' => '💳کارت به کارت',
 $Key === 'wallet', $Key === 'balance' => '👛کیف پول',
 $Key === 'admin', $Key === 'manager' => '🛠️مدیریت',
+$Key === 'bot' => '🤖ربات (استفاده خودکار)',
 $Key === 'auto_renew', $Key === 'autorenew' => '🔄تمدید خودکار',
 $Key === 'scheduler', $Key === 'cron', $Key === 'system' => '⚙️سیستم (زمان بند)',
 $Key === 'channel', $Key === 'channel_check' => '📢قانون کانال',

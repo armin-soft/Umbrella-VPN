@@ -465,7 +465,7 @@ $Balance = Repository::getBalance($Context->UserId);
 $Total_Label = Helper::formatCurrency($Amount);
 
 if ($Balance >= $Amount) {
-if (!Repository::removeMoney($Context->UserId, $Amount)) {
+if (!Repository::removeMoney($Context->UserId, $Amount, 'خرید اشتراک - پرداخت از کیف پول', 'bot')) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار ناموفق بود." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
 Common::mainButton(),
@@ -846,7 +846,7 @@ if ($Type === 'paid' && !$Direct_Charge) {
 $Balance = Repository::getBalance($Context->UserId);
 
 if ($Balance >= $Amount) {
-if (!Repository::removeMoney($Context->UserId, $Amount)) {
+if (!Repository::removeMoney($Context->UserId, $Amount, 'خرید اشتراک - پرداخت از کیف پول', 'bot')) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار از کیف پول ناموفق بود.\n➖➖➖➖➖➖➖➖➖➖\n⚠️لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
 Common::mainButton()
@@ -980,7 +980,7 @@ return;
 
 Repository::updateUser($Context->UserId, ['Free_Plan_Claimed' => 0]);
 
-if ($Type === 'paid') Repository::addMoney($Context->UserId, $Amount, 'بازگشت وجه اشتراک (خطا در فعالسازی)');
+if ($Type === 'paid') Repository::addMoney($Context->UserId, $Amount, 'بازگشت وجه اشتراک (خطا در فعالسازی)', 'bot');
 $Api_Error = '';
 
 if (is_array($Data) && isset($Data['detail'])) {
@@ -1197,7 +1197,7 @@ error_log('[Umbrella-Bot][Payment-Record] ثبت تراکنش درآمد نام�
 $Success_Notes = [];
 
 if ($Topup_Amount > 0) {
-Repository::addMoney($Context->UserId, $Topup_Amount, 'شارژ اعتبار از طریق درگاه پرداخت زرین پال');
+Repository::addMoney($Context->UserId, $Topup_Amount, 'شارژ اعتبار از طریق درگاه پرداخت زرین پال', 'gateway');
 $Success_Notes[] = "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount);
 }
 
