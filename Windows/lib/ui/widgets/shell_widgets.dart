@@ -196,51 +196,19 @@ class TitleBar extends StatelessWidget {
     return Container(
       height: 52,
       decoration: BoxDecoration(
-        color: colors.background.withValues(alpha: 0.92),
+        color: colors.backgroundAlt.withValues(alpha: 0.6),
         border: Border(bottom: BorderSide(color: colors.border)),
       ),
       child: Row(
         children: <Widget>[
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => onDragStart(),
-              onDoubleTap: onMaximize,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: <Widget>[
-                    ClipOval(
-                      child: Image.asset(
-                        BrandAssets.logo,
-                        width: 26,
-                        height: 26,
-                        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-                            Icon(Icons.beach_access_rounded, size: 22, color: colors.primary),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      Fa.num(AppConfig.appName),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
-                    ),
-                    if (current != null) ...<Widget>[
-                      const SizedBox(width: 12),
-                      Pill(
-                        label: current.label,
-                        icon: VpnVisuals.icon(current),
-                        color: tone,
-                        dense: true,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+          // دکمه های پنجره در سمت راست، مطابق چیدمان راست چین.
+          _WindowButton(
+            icon: Icons.close_rounded,
+            onTap: onClose,
+            danger: true,
           ),
+          _WindowButton(icon: Icons.crop_square_rounded, onTap: onMaximize),
+          _WindowButton(icon: Icons.remove_rounded, onTap: onMinimize),
           if (onToggleTheme != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -264,9 +232,12 @@ class TitleBar extends StatelessWidget {
                   if (unread > 0)
                     Positioned(
                       top: 2,
-                      left: 2,
+                      right: 2,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: colors.primary,
                           borderRadius: BorderRadius.circular(8),
@@ -285,13 +256,52 @@ class TitleBar extends StatelessWidget {
                 ],
               ),
             ),
-          _WindowButton(icon: Icons.remove_rounded, onTap: onMinimize),
-          _WindowButton(icon: Icons.crop_square_rounded, onTap: onMaximize),
-          _WindowButton(
-            icon: Icons.close_rounded,
-            onTap: onClose,
-            danger: true,
-            isLast: true,
+          // ناحیه کشیدن پنجره با لوگو و وضعیت در سمت چپ نوار.
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (_) => onDragStart(),
+              onDoubleTap: onMaximize,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    if (current != null) ...<Widget>[
+                      Pill(
+                        label: current.label,
+                        icon: VpnVisuals.icon(current),
+                        color: tone,
+                        dense: true,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Text(
+                      Fa.num(AppConfig.appName),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
+                          ),
+                    ),
+                    const SizedBox(width: 10),
+                    ClipOval(
+                      child: Image.asset(
+                        BrandAssets.logo,
+                        width: 26,
+                        height: 26,
+                        errorBuilder: (BuildContext context, Object error,
+                                StackTrace? stack) =>
+                            Icon(
+                          Icons.beach_access_rounded,
+                          size: 22,
+                          color: colors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),

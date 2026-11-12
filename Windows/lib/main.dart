@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'core/app_config.dart';
 import 'core/storage.dart';
 import 'models/models.dart';
 import 'platform/native.dart';
@@ -42,6 +43,20 @@ Future<void> main(List<String> arguments) async {
   // فهرست هسته ها و پوشه داده پیش از ساخت رابط خوانده می شود تا وضعیت هسته ها
   // از همان ابتدا درست نمایش داده شود.
   await provisioner.init();
+  AppLogger.instance.add(
+    '${AppConfig.appName} ${AppConfig.version} راه اندازی شد | '
+    'پوشه نصب: ${provisioner.appDir}',
+  );
+  final String? xrayPath = await provisioner.locateBinary('xray.exe');
+  if (xrayPath == null) {
+    AppLogger.instance.add(
+      'هسته xray.exe در پوشه نصب پیدا نشد (${provisioner.bundledDir}); '
+      'برنامه بدون هسته کار نمی کند.',
+      level: 'error',
+    );
+  } else {
+    AppLogger.instance.add('هسته اکس ری آماده است: $xrayPath');
+  }
   final ToastController toasts = ToastController();
 
   final VpnController vpn = VpnController(

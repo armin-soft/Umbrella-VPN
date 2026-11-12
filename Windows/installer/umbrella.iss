@@ -1,17 +1,18 @@
 ﻿; ---------------------------------------------------------------------------
-; فیلترشکن آمبرلا - Umbrella VPN 1.0.0
-; Windows 10 / 11 x64 only. The product name stays Persian, every installer
-; message and every OS level string is English on purpose.
+; Umbrella VPN 1.0.0
+; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
+; app name, shortcuts, folder and exe name) is English; the application itself
+; speaks Persian once it starts.
 ;
 ; Build it with: tools\build-installer.ps1
 ; Or open this file in Inno Setup 6 and press Compile (requires Inno 6.0+).
 ; ---------------------------------------------------------------------------
 
-#define AppName "فیلترشکن آمبرلا"
+#define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
 #define AppVersion "1.0.0"
 #define AppPublisher "Armin Soft"
-#define AppExe "umbrella_vpn.exe"
+#define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
 #define ReleaseDir "..\build\windows\x64\runner\Release"
 
@@ -85,6 +86,36 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait pos
 [UninstallRun]
 ; Only the rules this client created are removed, the rest of the firewall stays untouched.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ""Get-NetFirewallRule -DisplayName 'Umbrella-*' | Remove-NetFirewallRule -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveUmbrellaFirewallRules"
+
+[Code]
+// برنامه در حال اجرا با فایل های نصب قفل می کند؛ قبل از کپی، هر نسخه در حال
+// اجرا و هسته های بازمانده بسته می شوند تا کاربر مجبور به تسک منیجر نشود.
+procedure KillRunning();
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaVPN.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM umbrella_vpn.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM xray.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM mihomo.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(600);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  KillRunning();
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    KillRunning();
+end;
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\cores"

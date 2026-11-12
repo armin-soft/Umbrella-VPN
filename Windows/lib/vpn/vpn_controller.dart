@@ -131,7 +131,9 @@ class CoreLaunch {
   });
 
   final String exe;
-  final String args;
+
+  /// آرگومان ها به صورت فهرست، تا فراخوانی مستقیم ویندوز بدون شل انجام شود.
+  final List<String> args;
   final String workDir;
   final String name;
 
@@ -237,6 +239,7 @@ class VpnController extends ChangeNotifier {
 
   bool _killSwitchOn = false;
   int _proxyPort = 0;
+  final Map<String, Process> _coreProcesses = <String, Process>{};
   bool get killSwitchOn => _killSwitchOn;
 
   int _pingProgressDone = 0;
@@ -539,11 +542,6 @@ class VpnController extends ChangeNotifier {
       _log.add(plan.warning, level: 'warning');
     }
 
-    // ۳. کیل سوییچ قبل از بالا آمدن تونل، تا هنگام اتصال هم نشتی نباشد
-    if (_settings.killSwitch) {
-      await _enableKillSwitch(plan);
-    }
-
     _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
     final bool started = await _launch(plan);
     if (!started) {
@@ -572,6 +570,11 @@ class VpnController extends ChangeNotifier {
     }
     if (plan.usesSystemProxy) {
       await _enableProxy(plan);
+    }
+    // کیل سوییچ بعد از برقراری اتصال روشن می شود تا اگر تنظیم فایروال نیمه
+    // کاره ماند، کاربر وسط اتصال بی اینترنت نشود.
+    if (_settings.killSwitch) {
+      await _enableKillSwitch(plan);
     }
 
     _connectedAt = DateTime.now();
@@ -678,7 +681,7 @@ class VpnController extends ChangeNotifier {
         cores: <CoreLaunch>[
           CoreLaunch(
             exe: mieru,
-            args: 'run -c "${config.path}"',
+            args: <String>['run', '-c', config.path],
             workDir: _dirOf(mieru),
             name: 'mieru',
           ),
@@ -709,7 +712,7 @@ class VpnController extends ChangeNotifier {
       cores: <CoreLaunch>[
         CoreLaunch(
           exe: xray,
-          args: 'run -c "${config.path}"',
+          args: <String>['run', '-c', config.path],
           workDir: _dirOf(xray),
           name: 'xray',
         ),
@@ -729,59 +732,103 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<bool> _launch(LaunchPlan plan) async {
-    _runningPids.clear();
-    _runningBinaries.clear();
+    await _stopCores();
     final String logDir = '${_provisioner.dataDir}${Platform.pathSeparator}run';
+    await Directory(logDir).create(recursive: true);
     for (final CoreLaunch core in plan.cores) {
       final String coreLog =
           '$logDir${Platform.pathSeparator}${core.name}-core.log';
-      final int pid = await _native.spawn(
-        exe: core.exe,
-        args: core.args,
-        workDir: core.workDir,
-        logPath: coreLog,
-      );
-      if (pid <= 0) {
-        final String detail = await _native.lastSpawnError();
+      Process process;
+      try {
+        process = await Process.start(
+          core.exe,
+          core.args,
+          workingDirectory: core.workDir,
+          runInShell: false,
+        );
+      } on ProcessException catch (error) {
         _log.add(
-          'اجرای ${core.binaryName} ناموفق بود. '
-          '${detail.isEmpty ? 'خطای ویندوز گزارش نشد.' : 'کد خطای ویندوز: $detail'}',
+          'اجرای ${core.binaryName} ناموفق بود: ${error.message} '
+          '(کد ${Fa.num(error.errorCode)})',
           level: 'error',
         );
+        _log.add('مسیر هسته: ${core.exe}', level: 'error');
+        _logLaunchHint(error.errorCode);
+        return false;
+      } on FileSystemException catch (error) {
         _log.add(
-          'مسیر هسته: ${core.exe} | پوشه کار: ${core.workDir} '
-          '| فایل ثبت خروجی: $coreLog',
+          'اجرای ${core.binaryName} ناموفق بود: ${error.message}',
           level: 'error',
         );
-        if (detail.contains('225') || detail.contains('ویروس')) {
-          _log.add(
-            'آنتی ویروس یا ویندوز اجرای هسته را مسدود کرده است. '
-            'پوشه نصب برنامه و پوشه هسته ها را در استثناهای آنتی ویروس اضافه کنید.',
-            level: 'error',
-          );
-        }
+        _log.add('مسیر هسته: ${core.exe}', level: 'error');
         return false;
       }
-      _runningPids.add(pid);
-      _runningBinaries.add(core.binaryName);
-      _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(pid)}).');
 
-      // اگر هسته بلافاصله بسته شود، معمولاً پیکربندی ایراد دارد؛ خروجی خودش
-      // خوانده و در گزارش ثبت می شود.
-      await Future<void>.delayed(const Duration(milliseconds: 1200));
-      final bool alive = await _native.isRunning(core.binaryName);
-      if (!alive) {
+      final File logFile = File(coreLog);
+      await logFile.parent.create(recursive: true);
+      final IOSink sink = logFile.openWrite(mode: FileMode.append);
+      process.stdout.listen(sink.add);
+      process.stderr.listen(sink.add);
+
+      // اگر هسته بلافاصله بسته شود، خروجی خودش دلیل را می گوید.
+      final int? exited = await Future.any<int?>(<Future<int?>>[
+        process.exitCode,
+        Future<int?>.delayed(const Duration(milliseconds: 1500), () => null),
+      ]);
+      if (exited != null) {
         final String tail = await _readLogTail(coreLog);
         _log.add(
-          '${core.binaryName} بلافاصله بسته شد.'
+          '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(exited)}).'
           '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
         );
         return false;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      unawaited(
+        process.exitCode.then((int code) async {
+          await sink.flush();
+          await sink.close();
+          if (identical(_coreProcesses[core.name], process)) {
+            _coreProcesses.remove(core.name);
+          }
+          _runningPids.remove(process.pid);
+          if (_runningPids.isEmpty) {
+            _runningBinaries.clear();
+          }
+          _log.add(
+            '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
+            level: 'warning',
+          );
+        }),
+      );
+      _coreProcesses[core.name] = process;
+      _runningPids.add(process.pid);
+      _runningBinaries.add(core.binaryName);
+      _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
     }
     return true;
+  }
+
+  /// توضیح فارسی برای خطاهای رایج ویندوز هنگام اجرای هسته.
+  void _logLaunchHint(int code) {
+    if (code == 225 || code == 1260) {
+      _log.add(
+        'آنتی ویروس یا سیاست ویندوز اجرای هسته را مسدود کرده است. '
+        'پوشه نصب برنامه را در استثناهای آنتی ویروس اضافه کنید.',
+        level: 'error',
+      );
+    } else if (code == 5) {
+      _log.add(
+        'دسترسی به فایل هسته ممکن نیست؛ برنامه را با دسترسی مدیر اجرا کنید.',
+        level: 'error',
+      );
+    } else if (code == 2 || code == 3) {
+      _log.add(
+        'فایل هسته در پوشه نصب پیدا نشد؛ نسخه نصب را دوباره اجرا کنید.',
+        level: 'error',
+      );
+    }
   }
 
   /// آخرین خطوط خروجی یک هسته برای نمایش در گزارش ها.
@@ -837,7 +884,10 @@ class VpnController extends ChangeNotifier {
       if (_disposed) {
         return false;
       }
-      final bool alive = await _native.isRunning(plan.primaryBinary);
+      // هسته هایی که خودمان اجرا کرده ایم را با دستگیره فرایند می سنجیم؛
+      // جست وجوی نام در tasklist فقط پشتیبان است.
+      final bool alive = _coreProcesses.isNotEmpty ||
+          await _native.isRunning(plan.primaryBinary);
       if (!alive) {
         return false;
       }
@@ -1031,6 +1081,14 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCores() async {
+    for (final Process process in _coreProcesses.values) {
+      try {
+        process.kill();
+      } on Exception {
+        // فرایند از قبل بسته شده است.
+      }
+    }
+    _coreProcesses.clear();
     for (final int pid in List<int>.of(_runningPids)) {
       await _native.killPid(pid);
     }

@@ -61,7 +61,7 @@ jobs:
                 Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $mt) { throw 'mt.exe was not found in the Windows SDK' }
           Write-Host "mt.exe: $($mt.FullName)"
-          $exe = Join-Path (Get-Location) 'build\windows\x64\runner\Release\umbrella_vpn.exe'
+          $exe = Join-Path (Get-Location) 'build\windows\x64\runner\Release\UmbrellaVPN.exe'
           $arg = '-inputresource:' + $exe + ';#1'
           & $mt.FullName $arg '-out:embedded.manifest'
           Get-Content embedded.manifest -Raw

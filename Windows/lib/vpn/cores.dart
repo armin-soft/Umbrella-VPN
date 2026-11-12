@@ -26,9 +26,8 @@ class CoreProvisioner {
 
   String get dataDir => _dataDir;
 
-  String get binDir => _dataDir.isEmpty
-      ? ''
-      : '$_dataDir${Platform.pathSeparator}cores${Platform.pathSeparator}bin';
+  /// پوشه هسته ها در محل نصب برنامه.
+  String get binDir => '$bundledDir${Platform.pathSeparator}bin';
 
   String get appDir {
     final String exe = Platform.resolvedExecutable;
@@ -38,12 +37,21 @@ class CoreProvisioner {
   String get bundledDir => '$appDir${Platform.pathSeparator}cores';
 
   Future<void> init() async {
-    _dataDir = await _native.dataDir();
-    if (_dataDir.isEmpty) {
+    // پوشه داده برنامه: %APPDATA%\Umbrella (بدون تودرتویی و بدون نام فارسی).
+    final String appData = Platform.environment['APPDATA'] ?? '';
+    if (appData.isNotEmpty) {
+      _dataDir = '$appData${Platform.pathSeparator}Umbrella';
+    } else {
       final Directory dir = await getApplicationSupportDirectory();
       _dataDir = '${dir.path}${Platform.pathSeparator}Umbrella';
     }
-    await Directory(binDir).create(recursive: true);
+    try {
+      await Directory('$_dataDir${Platform.pathSeparator}run').create(
+        recursive: true,
+      );
+    } on FileSystemException {
+      // پوشه داده از قبل ساخته شده یا دسترسی نیست؛ اجرای برنامه ادامه می یابد.
+    }
     if (_catalog.isEmpty) {
       _catalog = await _loadCatalog();
     }
@@ -70,13 +78,13 @@ class CoreProvisioner {
     return null;
   }
 
-  /// مسیر هسته در صورت وجود: اول کنار برنامه (همان جایی که نصب کننده می ریزد)،
-  /// بعد پوشه داده.
+  /// مسیر هسته در صورت وجود. هسته ها همراه نسخه نصب می شوند و از همان پوشه
+  /// نصب اجرا می شوند؛ هیچ کپی یا نصبی لازم نیست.
   Future<String?> locateBinary(String binary) async {
     final List<String> candidates = <String>[
-      '$bundledDir${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
-      '$bundledDir${Platform.pathSeparator}$binary',
-      '$appDir${Platform.pathSeparator}$binary',
+      '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
+      '${bundledDir}${Platform.pathSeparator}$binary',
+      '${appDir}${Platform.pathSeparator}$binary',
       '$binDir${Platform.pathSeparator}$binary',
     ];
     for (final String candidate in candidates) {
@@ -108,62 +116,18 @@ class CoreProvisioner {
     return missing;
   }
 
-  /// هسته را از پوشه همراه نسخه برمی دارد و اگر کنار برنامه باشد، یک نسخه
-  /// قابل نوشتن در پوشه داده می سازد. هیچ درخواست شبکه ای انجام نمی شود.
+  /// هسته از همان پوشه نصب استفاده می شود؛ اگر نبود پیام روشن ثبت می شود.
   Future<bool> provision(CoreInfo core) async {
-    if (await locateBinary(core.binary) != null) {
+    final String? found = await locateBinary(core.binary);
+    if (found != null) {
       return true;
     }
-    final String bundled = bundledDir;
-    final Directory source = Directory(bundled);
-    if (!await source.exists()) {
-      AppLogger.instance.add(
-        'پوشه هسته ها کنار برنامه پیدا نشد: $bundled',
-        level: 'error',
-      );
-      return false;
-    }
-    final File? found = await _findFile(source, core.binary);
-    if (found == null) {
-      AppLogger.instance.add(
-        'هسته ${core.binary} در پوشه $bundled نیست؛ نسخه نصب باید آن را همراه داشته باشد.',
-        level: 'error',
-      );
-      return false;
-    }
-    try {
-      await Directory(binDir).create(recursive: true);
-      final String destination = '$binDir${Platform.pathSeparator}${core.binary}';
-      await found.copy(destination);
-      if (core.binary.toLowerCase().endsWith('.exe')) {
-        final File? wintun = await _findFile(source, 'wintun.dll');
-        if (wintun != null) {
-          await wintun.copy('$binDir${Platform.pathSeparator}wintun.dll');
-        }
-      }
-      AppLogger.instance.add('هسته ${core.title} از نسخه نصب آماده شد: $destination');
-      return true;
-    } on FileSystemException catch (error) {
-      AppLogger.instance.add('آماده سازی ${core.title} ناموفق: $error', level: 'error');
-      return false;
-    }
+    AppLogger.instance.add(
+      'هسته ${core.binary} در پوشه نصب پیدا نشد (${bundledDir}); '
+      'باید همراه نسخه نصب شده باشد.',
+      level: 'error',
+    );
+    return false;
   }
 
-  Future<File?> _findFile(Directory dir, String name) async {
-    if (!await dir.exists()) {
-      return null;
-    }
-    try {
-      await for (final FileSystemEntity entity in dir.list(recursive: true)) {
-        if (entity is File &&
-            entity.path.split(Platform.pathSeparator).last.toLowerCase() ==
-                name.toLowerCase()) {
-          return entity;
-        }
-      }
-    } on FileSystemException {
-      return null;
-    }
-    return null;
-  }
 }

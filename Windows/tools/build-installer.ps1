@@ -38,7 +38,7 @@ $missingCores = $requiredCores | Where-Object { -not (Test-Path (Join-Path $core
 if ($missingCores) {
     throw "هسته های الزامی برای بسته بندی پیدا نشدند: $($missingCores -join ', ') - ابتدا tools\fetch-cores.ps1 را اجرا کنید."
 }
-$ReleaseExe = Join-Path $ReleaseDir 'umbrella_vpn.exe'
+$ReleaseExe = Join-Path $ReleaseDir 'UmbrellaVPN.exe'
 $IssFile = Join-Path $ProjectRoot 'installer\umbrella.iss'
 $DistDir = Join-Path $ProjectRoot 'dist'
 

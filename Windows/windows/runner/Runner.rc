@@ -32,9 +32,9 @@ BEGIN
             VALUE "CompanyName", "Umbrella"
             VALUE "FileDescription", "Umbrella VPN"
             VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "umbrella_vpn"
+            VALUE "InternalName", "UmbrellaVPN"
             VALUE "LegalCopyright", "Copyright (C) 2026 Umbrella"
-            VALUE "OriginalFilename", "umbrella_vpn.exe"
+            VALUE "OriginalFilename", "UmbrellaVPN.exe"
             VALUE "ProductName", "Umbrella VPN"
             VALUE "ProductVersion", "1.0.0.0"
         END
