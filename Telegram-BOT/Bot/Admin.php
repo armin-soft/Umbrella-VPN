@@ -1013,7 +1013,7 @@ $Ranking_Text .= "🔹" . Helper::toPersian((string)$No_Mention) . " کاربر 
 $Ranking_Text .= Helper::adminFooter();
 $Ranking_Markup = TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی']],
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'مدیریت']],
+[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]);
 
 $Chunks = self::splitMessage($Ranking_Text, 3400);
@@ -1274,7 +1274,7 @@ $Summary .= "✅تعداد موفق پیامک: " . Helper::toPersian($Sent_Sms)
 $Summary .= "⛔️تعداد ناموفق پیامک: " . Helper::toPersian($Failed_Sms) . " پیامک";
 
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی به کاربران غیرفعال') . '✅اطلاع رسانی با موفقیت انجام شد.' . "\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'مدیریت']],
+[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
 }
 
@@ -1657,18 +1657,18 @@ $Markup = TelegramClient::inlineKeyboard([
 [['text' => '🧑‍💻پشتیبانی از ما (آرمین سافت)', 'url' => BotConfig::getSupportUrl() ?: 'https://t.me/ARMIN_SOFT']],
 ]);
 
-if (mb_strlen($Message) <= 1024) {
+if (mb_strlen($Message) <= 1000) {
 $Logo = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'Logo.png';
 $Photo = $Logo;
 TelegramClient::sendPhoto($Channell_ID_Int, $Photo, $Message, $Markup);
 }
 
-elseif (mb_strlen($Message) <= 4096) {
+elseif (mb_strlen($Message) <= 4000) {
 TelegramClient::sendMessage($Channell_ID_Int, $Message, $Markup);
 }
 
 else {
-$Chunks = preg_split('/(.{4096})/us', $Message, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+$Chunks = preg_split('/(.{4000})/us', $Message, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
 
 foreach ($Chunks as $Index => $Chunk) {
 if ($Index === 0) {
@@ -2145,6 +2145,7 @@ Repository::updateUserSession($Context->UserId, ['Temp_UID' => null, 'Broadcast_
 if ($Target <= 0) {
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('🔙بازگشت به منوی قبل', 'اطلاع رسانی اول')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 return;
 }
@@ -2219,7 +2220,8 @@ Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_targe
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به برنامه')
 . "👌شناسه عددی کاربر، شماره موبایل یا کلمه «همه» را بفرستید.\n"
 . 'ℹ️ پیام در برنامه آمبرلا به دستگاه همان کاربر نمایش داده می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('🔙بازگشت', 'اطلاع رسانی سرور')],
+[Common::backTo('🔙بازگشت به منوی قبل', 'اطلاع رسانی سرور')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 }
 
@@ -2325,7 +2327,8 @@ TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::hea
 . "➖➖➖➖➖➖➖➖➖➖➖\n"
 . "👌متن دلخواه خود را در یک پیام بفرستید.\n"
 . "📤این متن برای همهٔ کاربران ربات (تلگرام) و همهٔ دستگاه‌های برنامهٔ «آمبرلا» به‌عنوان اعلان برنامه ارسال می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('🔙بازگشت', 'اطلاع رسانی سرور')],
+[Common::backTo('🔙بازگشت به منوی قبل', 'اطلاع رسانی سرور')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 }
 
@@ -2412,7 +2415,10 @@ if (!$Context->isAdmin()) { return; }
 $User = Repository::findUserByIdentifier($Input);
 
 if ($User === null) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter());
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Common::backTo('🔙بازگشت به منوی قبل', 'device_limit_menu')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
+]));
 return;
 }
 
@@ -2456,7 +2462,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), Tel
 ['text' => '۵ دستگاه', 'callback_data' => 'device_limit_set_5'],
 ['text' => '۱۰ دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
-[Common::backTo('🔙بازگشت', 'device_limit_menu')],
+[Common::backTo('🔙بازگشت به منوی قبل', 'device_limit_menu')],
 ]));
 }
 
@@ -2507,6 +2513,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:sms_single_uid', 'Broadcast_Mode' => $Mode, 'Temp_UID' => null]);
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'ارسال پیامک تکی') . '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('🔙بازگشت به منوی قبل', 'ارسال پیامک تکی اول')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 }
 
@@ -2516,6 +2523,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:notify_uid', 'Broadcast_Mode' => $Mode, 'Temp_UID' => null]);
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به کاربر') . '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('🔙بازگشت به منوی قبل', 'اطلاع رسانی اول')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 }
 
@@ -2675,6 +2683,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📨ارسال پیامک تکی', 'callback_data' => 'ارسال پیامک تکی اول']],
 [Common::backTo('🔙بازگشت به منوی قبل', 'منوی پیامک')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 return;
 }
@@ -2696,6 +2705,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🗣اطلاع رسانی به کاربر', 'callback_data' => 'اطلاع رسانی اول']],
 [Common::backTo('🔙بازگشت به منوی قبل', 'منوی پیامک')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 return;
 }
@@ -2746,6 +2756,7 @@ Repository::updateUserSession($Context->UserId, ['Temp_UID' => null, 'Broadcast_
 if ($Target <= 0) {
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Common::backTo('🔙بازگشت به منوی قبل', 'ارسال پیامک تکی اول')],
+[Common::backTo('🏠بازگشت به منوی مدیریت', 'مدیریت')],
 ]));
 return;
 }
@@ -3280,7 +3291,7 @@ $Days_Label = Helper::toPersian((string)$Server_Package_Days);
 
 $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . "📋جزئیات کامل کاربر از سرور آمبرلا\n"
 . "➖➖➖➖➖➖➖➖➖➖\n\n"
-. "👤*نام کامل:* {$Display_Name}\n"
+. "👤*نام کامل:* " . Helper::mention((string)$Display_Name, (int)$Target_Telegram_ID) . "\n"
 . "🆔*شناسه تلگرام:* `" . Helper::toPersian((string)$Target_Telegram_ID) . "`\n"
 . "📱*شماره تماس:* {$Phone_Label}\n"
 . "📶*اپراتور:* {$Operator_Label}\n"
@@ -3393,7 +3404,7 @@ $Text = Helper::adminGreeting($Context, 'مدیریت تیکت ها') . '📊*آ
 
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '📋لیست تیکت های باز', 'callback_data' => 'لیست تیکت باز']],
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'مدیریت']],
+[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
 }
 

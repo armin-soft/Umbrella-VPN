@@ -69,7 +69,12 @@ $Text = str_replace($Key, $Replacement, $Text);
 
 $Text = static::sanitizeHtml($Text);
 $Text = preg_replace('/&(?!(?:amp|lt|gt|quot|#039);)/', '&amp;', $Text) ?? $Text;
-return $Text;
+// Every message the bot sends is bold. Inner <b> tags add nothing once the
+// whole text is bold, so they are dropped and a single pair wraps the message;
+// links, code blocks and blockquotes nest inside it, which Telegram accepts.
+$Text = str_replace(['<b>', '</b>'], '', $Text);
+
+return '<b>' . $Text . '</b>';
 }
 
 /**
@@ -77,15 +82,19 @@ return $Text;
  * user typed (a name, a ticket subject, a rule the panel returned) makes the
  * whole API call fail and the message silently never arrives. md() converts
  * our own markup first; this pass then allows only the tags we generate —
- * <b> <code> <pre> <i> <u> <s> <tg-spoiler> and <a href="http(s)/tg://…"> —
+ * <b> <code> <pre> <i> <u> <s> <tg-spoiler> <blockquote> and <a href="http(s)/tg://…"> —
  * and escapes everything else.
  */
 private static function sanitizeHtml(string $Text): string {
 $Text = (string)preg_replace_callback('/<[^>]*>/s', static function (array $M): string {
 $Tag = $M[0];
 
-if (preg_match('/^<\s*(\/?)\s*(b|code|pre|i|u|s|tg-spoiler)\s*>$/i', $Tag, $M2)) {
+if (preg_match('/^<\s*(\/?)\s*(b|code|pre|i|u|s|tg-spoiler|blockquote)\s*>$/i', $Tag, $M2)) {
 return '<' . ($M2[1] === '/' ? '/' : '') . strtolower($M2[2]) . '>';
+}
+
+if (preg_match('/^<\s*blockquote\s+expandable\s*>$/i', $Tag)) {
+return '<blockquote expandable>';
 }
 
 if (preg_match('/^<\s*\/\s*a\s*>$/i', $Tag)) {
@@ -120,7 +129,7 @@ private static function balanceTags(string $Text): string {
 $Out = '';
 $Stack = [];
 $Pos = 0;
-$Pattern = '/<(\/?)(b|code|pre|i|u|s|tg-spoiler|a)(?:\s[^>]*)?>/i';
+$Pattern = '/<(\/?)(b|code|pre|i|u|s|tg-spoiler|blockquote|a)(?:\s[^>]*)?>/i';
 
 while (preg_match($Pattern, $Text, $M, PREG_OFFSET_CAPTURE, $Pos)) {
 $Tag = $M[0][0];

@@ -822,6 +822,7 @@ $Greeting = Common::greet(new Context([], $User_ID, $Chat_ID, $Full_Name, false,
 TelegramClient::sendMessage($Chat_ID, "{$Greeting}⛔️مهلت عضویت شما به اتمام رسید.\n\n⚠️کلاینت شما به دلیل عدم عضویت در کانال اطلاع رسانی قطع گردید.\n👌جهت اتصال مجدد باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
+Common::mainButton(),
 ]));
 }
 }
@@ -873,6 +874,7 @@ $Body = "⚠️شما از کانال اطلاع رسانی خارج شده ای
 TelegramClient::sendMessage($Chat_ID, $Greeting . $Title . "\n" . $Body . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '✅بررسی عضویت', 'callback_data' => 'بررسی عضویت کانال']],
+Common::mainButton(),
 ]));
 }
 

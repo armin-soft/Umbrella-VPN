@@ -88,7 +88,7 @@ if ($Row !== []) $Rows[] = $Row;
 
 $Rows[] = [['text' => $Settings['enabled'] ? '🔴 خاموش کردن کنترل محتوا' : '🟢 روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
 $Rows[] = [['text' => '🔗 افزودن دامنه دلخواه', 'callback_data' => 'app_filter_domains']];
-$Rows[] = [['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']];
+$Rows[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
@@ -145,7 +145,10 @@ $Context,
 . ($Existing !== '' ? "📄 فهرست فعلی:\n<code>{$Existing}</code>\n➖➖➖➖➖➖➖➖➖➖\n" : '')
 . 'لینک یا دامنه‌ها را بفرستید؛ هر خط یک مورد. برای پاک کردن، «-» بفرستید.'
 . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([[['text' => 'لغو', 'callback_data' => 'app_filter']]])
+TelegramClient::inlineKeyboard([[
+['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_filter'],
+['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات'],
+]])
 );
 }
 
@@ -184,7 +187,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . 'هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([[['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']]])
+TelegramClient::inlineKeyboard([[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']]])
 );
 return;
 }
@@ -214,7 +217,7 @@ $Buttons[] = [[
 ]];
 }
 
-$Buttons[] = [['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']];
+$Buttons[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -261,7 +264,7 @@ $Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? ''
 }
 
 self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']],
+[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
 
@@ -309,7 +312,7 @@ $Rows = $On
 : [[['text' => '✅ فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
 $Rows[] = [['text' => '📱 دستگاه‌های من', 'callback_data' => 'app_devices']];
 $Rows[] = [['text' => '🔔 اعلان‌های برنامه', 'callback_data' => 'app_notifications']];
-$Rows[] = [['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']];
+$Rows[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 

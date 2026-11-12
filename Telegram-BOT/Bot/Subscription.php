@@ -215,7 +215,8 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . "⚠️جهت انصراف «لغو» را ارسال کنید."
 . Helper::userFooter() . "*";
 $Keyboard = TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت به انتخاب روز', 'ساخت اشتراک دلخواه'),
+Common::backTo('🔙بازگشت به منوی قبل', 'ساخت اشتراک دلخواه'),
+Common::mainButton(),
 ]);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -280,7 +281,7 @@ $Days = (int)Helper::toEnglish(trim($Text));
 
 if ($Days < $Min || $Days > $Max) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌خطا: تعداد روز وارد شده معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفاً عددی بین *" . Helper::toPersian((string)$Min) . "* تا *" . Helper::toPersian((string)$Max) . "* وارد کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت', 'اشتراک دلخواه'),
+Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک دلخواه'),
 Common::mainButton(),
 ]));
 return;
@@ -466,7 +467,7 @@ $Total_Label = Helper::formatCurrency($Amount);
 if ($Balance >= $Amount) {
 if (!Repository::removeMoney($Context->UserId, $Amount)) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار ناموفق بود." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت', 'اشتراک من'),
+Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
 Common::mainButton(),
 ]));
 return;
@@ -1578,7 +1579,7 @@ Common::mainButton()
 
 Repository::addSubscriptionLog($Context->UserId, 'activate', $Name, $Days, (float)$Gb, isset($Data['uuid']) ? $Data['uuid'] : null, 'user', $Context->UserId);
 
-TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'فعالسازی اشتراک', $Admin) . "🎁✅لحظاتی پیش اشتراک {$Name} فعال گردید.\n👤نام: {$Full_Name}\n📞شماره موبایل: {$Phone} (" . Helper::detectOperator($Phone) . ")\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n🚀شناسه کلاینت: `" . ($Data['uuid'] ?? '') . "`\n📆تاریخ انقضا:\n{$Expiration_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'فعالسازی اشتراک', $Admin) . "🎁✅لحظاتی پیش اشتراک {$Name} فعال گردید.\n👤نام: " . Helper::mention((string)$Full_Name, (int)$User_ID) . "\n📞شماره موبایل: {$Phone} (" . Helper::detectOperator($Phone) . ")\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n🚀شناسه کلاینت: `" . ($Data['uuid'] ?? '') . "`\n📆تاریخ انقضا:\n{$Expiration_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '👁👤مشاهده کاربر', 'url' => 'tg://user?id=' . $User_ID]],
 ]));
 
