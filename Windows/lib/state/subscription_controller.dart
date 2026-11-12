@@ -440,7 +440,10 @@ class SubscriptionController extends ChangeNotifier {
       state
         ..loading = false
         ..error = 'دریافت اشتراک ناموفق بود: $error';
-      _log.add('دریافت اشتراک ناموفق بود: $error | $uri', level: 'error');
+      _log.add(
+        'دریافت اشتراک ناموفق بود: $error | ${state.source.url}',
+        level: 'error',
+      );
       notifyListeners();
       return null;
     }
