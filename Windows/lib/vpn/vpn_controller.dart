@@ -113,13 +113,11 @@ class _AttemptResult {
     required this.message,
     this.ok = false,
     this.needsCores = false,
-    this.needsElevation = false,
   });
 
   final String message;
   final bool ok;
   final bool needsCores;
-  final bool needsElevation;
 }
 
 class CoreLaunch {
@@ -465,11 +463,10 @@ class VpnController extends ChangeNotifier {
         }
         lastMessage = attempt.message;
         _balancer.markFailed(candidate.id);
-        if (attempt.needsCores || attempt.needsElevation) {
+        if (attempt.needsCores) {
           return ConnectOutcome(
             ok: false,
-            needsCores: attempt.needsCores,
-            needsElevation: attempt.needsElevation,
+            needsCores: true,
             message: attempt.message,
           );
         }

@@ -39,7 +39,7 @@ Future<void> main(List<String> arguments) async {
 
   final IpService ipService = IpService();
   final TrayService tray = TrayService(native);
-  final CoreProvisioner provisioner = CoreProvisioner(native: native);
+  final CoreProvisioner provisioner = CoreProvisioner();
   // فهرست هسته ها و پوشه داده پیش از ساخت رابط خوانده می شود تا وضعیت هسته ها
   // از همان ابتدا درست نمایش داده شود.
   await provisioner.init();

@@ -314,13 +314,11 @@ class _WindowButton extends StatefulWidget {
     required this.icon,
     required this.onTap,
     this.danger = false,
-    this.isLast = false,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final bool danger;
-  final bool isLast;
 
   @override
   State<_WindowButton> createState() => _WindowButtonState();

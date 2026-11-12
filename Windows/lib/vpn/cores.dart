@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/utils.dart';
 import '../models/models.dart';
-import '../platform/native.dart';
 import '../platform/services.dart';
 
 /// محل نگاه داشتن هسته ها و ابزار یافتن و آماده کردن آن ها.
@@ -15,9 +14,6 @@ import '../platform/services.dart';
 /// هیچ چیزی را از اینترنت دانلود نمی کند. اگر هسته ای در نسخه نصب نباشد، همان
 /// پیام روشن فارسی نمایش داده می شود و کاربر باید برنامه را دوباره نصب کند.
 class CoreProvisioner {
-  CoreProvisioner({required NativeBridge native}) : _native = native;
-
-  final NativeBridge _native;
 
   static List<CoreInfo> _catalog = <CoreInfo>[];
   String _dataDir = '';
