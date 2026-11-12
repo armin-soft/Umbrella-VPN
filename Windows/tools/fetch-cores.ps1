@@ -46,6 +46,11 @@ try {
             $fetched += $core.id
             continue
         }
+        if ($null -ne $core.bundle -and -not $core.bundle) {
+            Write-Host "  همراه نسخه عرضه نمی شود: $($core.id)" -ForegroundColor DarkGray
+            $skipped += $core.id
+            continue
+        }
         if ([string]::IsNullOrWhiteSpace($core.url)) {
             Write-Host "  نشانی دانلود ندارد: $($core.id)" -ForegroundColor Yellow
             if ($core.required) { $failedRequired += $core.id } else { $skipped += $core.id }

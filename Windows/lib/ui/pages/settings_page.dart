@@ -429,12 +429,18 @@ class _SettingsPageState extends State<SettingsPage> {
                                       const SizedBox(height: 8),
                                       Text(
                                         Fa.num(
-                                          'این هسته در نسخه نصب نیست؛ برای رفع آن برنامه را دوباره نصب کنید.',
+                                          core.bundledCore
+                                              ? 'این هسته در نسخه نصب نیست؛ برای رفع آن برنامه را دوباره نصب کنید.'
+                                              : 'این هسته همراه نسخه عرضه نمی شود و به صورت خودکار جایگزین می شود.',
                                         ),
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelSmall
-                                            ?.copyWith(color: colors.danger),
+                                            ?.copyWith(
+                                              color: core.bundledCore
+                                                  ? colors.danger
+                                                  : colors.textSecondary,
+                                            ),
                                       ),
                                     ],
                                   ],

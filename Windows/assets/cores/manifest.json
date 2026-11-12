@@ -69,11 +69,12 @@
       "role": "اتصال آمنزیا و آمنزیا وایرگارد",
       "binary": "amneziawg.exe",
       "version": "1.0.0",
-      "url": "https://github.com/amnezia-vpn/amneziawg-go/releases/latest/download/amneziawg-go-windows-amd64.zip",
+      "url": "",
       "archive": "zip",
       "inside": "amneziawg.exe",
       "sha256": "",
-      "required": false
+      "required": false,
+      "bundle": false
     },
     {
       "id": "mieru",

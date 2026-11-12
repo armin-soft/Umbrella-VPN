@@ -873,6 +873,7 @@ class CoreInfo {
     required this.inside,
     required this.requiredCore,
     this.sha256 = '',
+    this.bundledCore = true,
   });
 
   final String id;
@@ -884,6 +885,9 @@ class CoreInfo {
   final String archive;
   final String inside;
   final bool requiredCore;
+
+  /// آیا این هسته همراه نسخه نصب عرضه می شود؟ اگر نه، نبودنش خطا نیست.
+  final bool bundledCore;
   final String sha256;
 
   factory CoreInfo.fromJson(Map<String, dynamic> json) {
@@ -897,6 +901,7 @@ class CoreInfo {
       archive: JsonX.text(json['archive'], 'zip'),
       inside: JsonX.text(json['inside']),
       requiredCore: JsonX.boolean(json['required']),
+      bundledCore: json['bundle'] == null ? true : JsonX.boolean(json['bundle']),
       sha256: JsonX.text(json['sha256']),
     );
   }
