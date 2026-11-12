@@ -53,6 +53,23 @@ jobs:
           powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release *>&1 | Tee-Object -FilePath build-log.txt
           exit $LASTEXITCODE
 
+      - name: Verify the exe requests administrator rights
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          $mt = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe" -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $mt) { throw 'mt.exe was not found in the Windows SDK' }
+          Write-Host "mt.exe: $($mt.FullName)"
+          $exe = Join-Path (Get-Location) 'build\windows\x64\runner\Release\umbrella_vpn.exe'
+          $arg = '-inputresource:' + $exe + ';#1'
+          & $mt.FullName $arg '-out:embedded.manifest'
+          Get-Content embedded.manifest -Raw
+          if (-not (Select-String -Path embedded.manifest -Pattern 'requireAdministrator' -Quiet)) {
+            throw 'the built exe does not request administrator rights'
+          }
+          Write-Host 'administrator manifest verified' -ForegroundColor Green
+
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
 

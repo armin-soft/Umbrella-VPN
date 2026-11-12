@@ -24,6 +24,11 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "UNICODE" "_UNICODE")
 if(MSVC)
   # Keywords and strings in the sources are UTF-8 (Persian menu labels).
   target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
+  # The client always runs elevated: the tunnel adapter and the firewall kill
+  # switch need administrator rights. Declared here so mt.exe merges it into
+  # the final manifest without any hand written trustInfo block.
+  target_link_options(${BINARY_NAME} PRIVATE
+    "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'")
 endif()
 
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
