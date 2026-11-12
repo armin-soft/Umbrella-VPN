@@ -45,6 +45,33 @@ bool BoolOf(const flutter::EncodableMap& args, const char* key, bool fallback) {
   return value == nullptr ? fallback : *value;
 }
 
+/// جریان رویدادهای سینی سیستم؛ بدون وابستگی به کلاس های کمکی نسخه های
+/// مختلف پلاگین، فقط از پایه استاندارد StreamHandler استفاده می کند.
+class TrayStreamHandler
+    : public flutter::StreamHandler<flutter::EncodableValue> {
+ public:
+  explicit TrayStreamHandler(UmbrellaNativePlugin* plugin) : plugin_(plugin) {}
+
+ protected:
+  std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>>
+  OnListenInternal(
+      const flutter::EncodableValue* arguments,
+      std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
+      override {
+    plugin_->AttachTraySink(std::move(events));
+    return nullptr;
+  }
+
+  std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>>
+  OnCancelInternal(const flutter::EncodableValue* arguments) override {
+    plugin_->AttachTraySink(nullptr);
+    return nullptr;
+  }
+
+ private:
+  UmbrellaNativePlugin* plugin_;
+};
+
 }  // namespace
 
 void UmbrellaNativePlugin::RegisterWithRegistrar(
@@ -68,20 +95,7 @@ void UmbrellaNativePlugin::SetupChannels(flutter::BinaryMessenger* messenger) {
       std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
           messenger, "ir.umbrella.app/tray",
           &flutter::StandardMethodCodec::GetInstance());
-  tray_channel_->SetStreamHandler(
-      std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
-          [this](const flutter::EncodableValue* arguments,
-                 std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&&
-                     events) {
-            tray_sink_ = std::move(events);
-            return std::unique_ptr<flutter::StreamHandlerError<
-                flutter::EncodableValue>>(nullptr);
-          },
-          [this](const flutter::EncodableValue* arguments) {
-            tray_sink_ = nullptr;
-            return std::unique_ptr<flutter::StreamHandlerError<
-                flutter::EncodableValue>>(nullptr);
-          }));
+  tray_channel_->SetStreamHandler(std::make_unique<TrayStreamHandler>(this));
 }
 
 UmbrellaNativePlugin::UmbrellaNativePlugin() {
@@ -92,6 +106,11 @@ UmbrellaNativePlugin::UmbrellaNativePlugin() {
 }
 
 UmbrellaNativePlugin::~UmbrellaNativePlugin() { tray_.Destroy(); }
+
+void UmbrellaNativePlugin::AttachTraySink(
+    std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
+  tray_sink_ = std::move(sink);
+}
 
 void UmbrellaNativePlugin::EmitTrayEvent(const std::string& event) {
   if (tray_sink_ != nullptr) {

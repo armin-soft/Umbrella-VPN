@@ -33,6 +33,10 @@ class UMBRELLA_PLUGIN_EXPORT UmbrellaNativePlugin : public flutter::Plugin {
 
   void SetupChannels(flutter::BinaryMessenger* messenger);
 
+  /// جریان رویدادهای سینی سیستم را وصل یا جدا می کند.
+  void AttachTraySink(
+      std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
+
  private:
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue>& call,

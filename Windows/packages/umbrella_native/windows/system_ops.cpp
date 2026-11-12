@@ -2,7 +2,6 @@
 
 #include <iphlpapi.h>
 #include <ipifcons.h>
-#include <netioapi.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <wininet.h>
@@ -724,13 +723,13 @@ TunnelStats SystemOps::ReadTunnelStats(const std::string& adapter_hint) {
     bool match = ContainsInsensitive(friendly, adapter_hint) ||
                  ContainsInsensitive(description, adapter_hint);
     if (!match) continue;
-    // GetIfEntry2 is the documented way to read 64 bit counters for an
-    // interface; the adapter record itself has no byte counters.
-    MIB_IF_ROW2 row = {};
-    row.InterfaceLuid = adapter->Luid;
-    if (GetIfEntry2(&row) != NO_ERROR) continue;
-    stats.rx_bytes = row.InOctets;
-    stats.tx_bytes = row.OutOctets;
+    // GetIfEntry is available on every supported Windows version, unlike the
+    // netioapi helpers whose declarations depend on the SDK version.
+    MIB_IFROW row = {};
+    row.dwIndex = adapter->IfIndex;
+    if (GetIfEntry(&row) != NO_ERROR) continue;
+    stats.rx_bytes = row.dwInOctets;
+    stats.tx_bytes = row.dwOutOctets;
     stats.available = true;
     stats.adapter = friendly;
     return stats;
