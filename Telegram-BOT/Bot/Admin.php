@@ -1553,6 +1553,7 @@ $Flow === 'admin:notify_mode' => self::notifyModeRetry($Context),
 $Flow === 'admin:notify_text' => self::notifyUser($Context, trim($Text)),
 $Flow === 'admin:notify_broadcast_text' => self::broadcastNotify($Context, trim($Text), (string)($Session['Broadcast_Mode'] ?? 'telegram')),
 $Flow === 'admin:device_limit_target' => self::deviceLimitTarget($Context, trim($Text)),
+$Flow === 'admin:device_limit_pick' => self::deviceLimitPickInput($Context, trim($Text)),
 $Flow === 'admin:notify_all_text' => self::broadcastTelegramAndApp($Context, $Text),
 $Flow === 'admin:app_push_target' => self::appPushTarget($Context, trim($Text)),
 $Flow === 'admin:app_push_text' => self::appPushText($Context, $Text),
@@ -2477,6 +2478,37 @@ TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), Tel
 ],
 [Common::backTo('🔙بازگشت به منوی قبل', 'device_limit_menu')],
 ]));
+}
+
+/** دومین گام، وقتی مدیر تعداد را تایپ می کند (به جای انتخاب از دکمه ها). */
+private static function deviceLimitPickInput(Context $Context, string $Text): void {
+$Session = Repository::getUserSession($Context->UserId);
+$Telegram_Id = (int)($Session['Temp_UID'] ?? 0);
+$Number = trim(Helper::toEnglish($Text));
+
+if ($Telegram_Id <= 0) {
+self::deviceLimitMenu($Context);
+return;
+}
+
+// «لغو» و هر ورودی نامعتبر: همان صفحه با دکمه ها دوباره نمایش داده می شود.
+if (!preg_match('/^\d{1,2}$/', $Number) || (int)$Number < 1) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⚠️فقط یک عدد بین ۱ تا ۹۹ مجاز است؛ یکی از دکمه های زیر را انتخاب کنید یا عدد را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[
+['text' => '۱ دستگاه', 'callback_data' => 'device_limit_set_1'],
+['text' => '۲ دستگاه', 'callback_data' => 'device_limit_set_2'],
+['text' => '۳ دستگاه', 'callback_data' => 'device_limit_set_3'],
+],
+[
+['text' => '۵ دستگاه', 'callback_data' => 'device_limit_set_5'],
+['text' => '۱۰ دستگاه', 'callback_data' => 'device_limit_set_10'],
+],
+[Common::backTo('🔙بازگشت به منوی قبل', 'device_limit_menu'), Common::mainButton()],
+]));
+return;
+}
+
+self::deviceLimitSet($Context, min(99, (int)$Number));
 }
 
 /** Third step: persist the choice. */

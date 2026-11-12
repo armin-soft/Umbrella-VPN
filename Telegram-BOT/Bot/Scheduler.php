@@ -286,38 +286,36 @@ error_log('[Umbrella-Bot][AutoRenew] ' . $Error->getMessage());
 }
 }
 
+/**
+ * سفارش های درگاهی که کاربر پول را پرداخت کرده ولی به ربات برنگشته است.
+ * پیش از این فقط جدول Payment_Queue خوانده می شد که هیچ نویسنده ای نداشت و
+ * فراخوانی تایید پرداخت هم با امضای اشتباه انجام می شد.
+ */
 private static function processPaymentQueue(): void {
-if (!Repository::tryCronLock('payment_queue', 1800)) return;
+if (!Repository::tryCronLock('payment_queue', 900)) return;
+
 try {
-$Rows = Repository::pendingPayments(20);
+if (!class_exists('SubscriptionFlow')) {
+require_once __DIR__ . '/Subscription.php';
+}
 
-foreach ($Rows as $Row) {
-$Authority = (string)($Row['Authority'] ?? '');
-$User_ID = (int)($Row['User_ID'] ?? 0);
-$Amount = (int)($Row['Amount'] ?? 0);
-$Type = (string)($Row['Type'] ?? '');
+foreach (Repository::sessionsAwaitingPayment(15) as $Row) {
+$User_ID = (int)($Row['Telegram_ID'] ?? 0);
 
-if ($Authority === '' || $User_ID <= 0) continue;
-$Result = \Zarinpal::verify(['Authority' => $Authority, 'Amount' => $Amount]);
-$Status = (string)($Result['Status'] ?? '');
-$Code = (int)($Result['Code'] ?? 0);
+if ($User_ID <= 0) continue;
 
-if ($Status === 'OK' || $Code === 101) {
-Repository::markPaymentStatus($Authority, 'verified');
+try {
+SubscriptionFlow::recoverPendingPayment($User_ID);
+}
 
-if ($Type === 'topup') {
-$User = Repository::getUser($User_ID);
-$Balance = (int)($User['Balance'] ?? 0);
-$New_Balance = $Balance + $Amount;
-Repository::updateUser($User_ID, ['Balance' => $New_Balance, 'Total_Recharge' => (int)($User['Total_Recharge'] ?? 0) + $Amount]);
-Repository::addTransaction($User_ID, 'topup', $Amount, $Balance, $New_Balance, 'شارژ از صف پرداخت', 'gateway');
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Payment-Recovery] User=' . $User_ID . ' | ' . $Error->getMessage());
+}
 }
 }
 
-elseif ($Code === -50 || $Code === -51) {
-Repository::markPaymentStatus($Authority, 'expired');
-}
-}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Payment-Recovery] job failed: ' . $Error->getMessage());
 }
 
 finally {

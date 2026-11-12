@@ -54,6 +54,8 @@ $Database = Database::getInstance();
 
 $Migrations = [
 ['table' => 'Users', 'column' => 'Channel_Member_Check_At', 'definition' => 'INT UNSIGNED NULL'],
+['table' => 'Users', 'column' => 'Channel_Grace_Started_At', 'definition' => 'INT UNSIGNED NULL'],
+['table' => 'Users', 'column' => 'Channel_Client_Disabled_At', 'definition' => 'INT UNSIGNED NULL'],
 ['table' => 'User_Sessions', 'column' => 'Pending_Custom_Plan', 'definition' => 'TEXT NULL'],
 ['table' => 'User_Sessions', 'column' => 'Pending_Topup', 'definition' => 'DECIMAL(18,0) NULL'],
 ['table' => 'User_Sessions', 'column' => 'Broadcast_Mode', 'definition' => 'VARCHAR(20) NULL'],

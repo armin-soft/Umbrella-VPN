@@ -208,7 +208,9 @@ return self::get('DATE_TIME_API_URL', 'https://api.armin-soft.ir/Date-Time/');
 }
 
 public static function getDateTimeApiLicense(): string {
-return self::get('DATE_TIME_API_LICENSE', '');
+// Ships with the project's own license so the date-time service answers out
+// of the box; DATE_TIME_API_LICENSE in .env overrides it when needed.
+return self::get('DATE_TIME_API_LICENSE', 'd5LAyJxbYst0egh2qNCdc6kWq0gdckmj');
 }
 
 /** Fallback for the switch the admin owns from «⚙️ تنظیمات ربات». */

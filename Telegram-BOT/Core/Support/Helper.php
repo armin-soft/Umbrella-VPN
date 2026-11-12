@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../Config/Environment.php';
+require_once __DIR__ . '/Http.php';
 
 final class Helper {
 private const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
@@ -100,6 +101,7 @@ public const DATE_TIME_ERROR_TEXT = '⚠️خطا: دریافت اطلاعات �
 private const DATE_TIME_FALLBACK = "📆تاریخ شمسی:*نامعلوم*\n🕌تاریخ قمری:*نامعلوم*\n🌍تاریخ میلادی:*نامعلوم*\n\n🌎فصل:*❓نامعلوم*\n🕰زمان:*--:--:--*";
 private const DATE_TIME_CACHE_TTL = 120;
 private static array $Date_Time_Cache = [];
+private static bool $Date_Time_Tried = false;
 
 private static function getDateTimeData(int $Next = 0): array {
 $Cache_Key = (string)$Next;
@@ -109,75 +111,158 @@ if (is_array($Cached) && (time() - (int)$Cached['at']) < self::DATE_TIME_CACHE_T
 return $Cached['data'];
 }
 
-$DateTime_Api_Url = Environment::getDateTimeApiUrl();
-$DateTime_Api_License = Environment::getDateTimeApiLicense();
-$Base = rtrim($DateTime_Api_Url, '/');
+$Base = rtrim(Environment::getDateTimeApiUrl(), '/');
+$License = trim(Environment::getDateTimeApiLicense());
 $Params = [];
 
-if ($DateTime_Api_License !== '') $Params[] = 'License=' . urlencode($DateTime_Api_License);
+if ($License !== '') $Params[] = 'License=' . rawurlencode($License);
 if ($Next > 0) $Params[] = 'Next=' . $Next;
-$DateTime_Api_Full = $Base . ($Params !== [] ? '/?' . implode('&', $Params) : '');
+$Url = $Base . '/' . ($Params !== [] ? '?' . implode('&', $Params) : '');
 $Last_Error = '';
 
-for ($Attempt = 1; $Attempt <= 3; $Attempt++) {
-if ($Attempt > 1) {
-usleep(350000);
+// One network attempt per request at most: a slow or down date service must not
+// hold up every message the bot sends.
+if (self::$Date_Time_Tried) {
+throw new RuntimeException('وب سرویس تاریخ و زمان در این درخواست قبلاً امتحان شده است.');
 }
 
-$Context = stream_context_create([
-'http' => [
-'method' => 'GET',
-'timeout' => 10,
-'ignore_errors' => true,
-'header' => "Accept: application/json\r\nUser-Agent: ArminSoft-Helper/1.0\r\n",
-],
-]);
-$Response = @file_get_contents($DateTime_Api_Full, false, $Context);
+self::$Date_Time_Tried = true;
 
-if ($Response === false || trim($Response) === '') {
-$Last_Error = 'دریافت تاریخ و زمان از وب سرویس ناموفق بود.';
+for ($Attempt = 1; $Attempt <= 2; $Attempt++) {
+if ($Attempt > 1) usleep(250000);
+
+try {
+$Response = HttpClient::get($Url, ['Accept' => 'application/json', 'User-Agent' => 'ArminSoft-Helper/1.0'], 8);
+}
+
+catch (Throwable $Error) {
+$Last_Error = 'ارتباط با وب سرویس تاریخ و زمان برقرار نشد: ' . $Error->getMessage();
 continue;
 }
 
-$Data = json_decode($Response, true);
+$Body = trim((string)($Response['Body'] ?? ''));
 
-if (!is_array($Data)) {
-$Last_Error = 'پاسخ وب سرویس تاریخ و زمان معتبر نیست.';
+if ($Body === '') {
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان خالی بود (HTTP ' . (int)($Response['StatusCode'] ?? 0) . ')';
 continue;
 }
 
-if (!isset($Data['Data']) || !is_array($Data['Data']) || $Data['Data'] === []) {
-$Last_Error = 'ساختار پاسخ وب سرویس تاریخ و زمان نامعتبر است.';
+$Json = $Response['Json'] ?? null;
+
+if (!is_array($Json)) $Json = json_decode($Body, true);
+
+if (!is_array($Json)) {
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان JSON معتبر نبود (HTTP ' . (int)($Response['StatusCode'] ?? 0) . ')';
 continue;
 }
 
-self::$Date_Time_Cache[$Cache_Key] = ['at' => time(), 'data' => $Data['Data']];
+$Data = $Json['Data'] ?? null;
 
-return $Data['Data'];
+if (!is_array($Data) || $Data === []) {
+$Last_Error = 'وب سرویس تاریخ و زمان داده ای برنگرداند (کد ' . (int)($Json['Status']['Code'] ?? ($Response['StatusCode'] ?? 0)) . ')';
+continue;
 }
 
+self::$Date_Time_Cache[$Cache_Key] = ['at' => time(), 'data' => $Data];
+
+if ($Next === 0) static::rememberDateTimeSnapshot($Data);
+
+return $Data;
+}
+
+error_log('[Umbrella-Bot][Date-Time] ' . $Last_Error . ' | URL=' . $Url);
 throw new RuntimeException($Last_Error !== '' ? $Last_Error : 'دریافت تاریخ و زمان از وب سرویس ناموفق بود.');
 }
 
-public static function currentDateTimeLabel(?int $Time_Stamp = null): string {
+/** Keeps the last good answer so the header survives a short outage. */
+private static function rememberDateTimeSnapshot(array $Data): void {
+if (!class_exists('Repository')) return;
+
 try {
-$Data = static::getDateTimeData($Time_Stamp !== null ? max(0, (int)round(($Time_Stamp - time()) / 86400)) : 0);
+Repository::setSetting('Date_Time_Snapshot', (string)json_encode(['at' => time(), 'data' => $Data], JSON_UNESCAPED_UNICODE));
+}
+
+catch (Throwable) {
+}
+}
+
+/** Last good answer, only when it is recent enough to still be today's. */
+private static function dateTimeSnapshot(int $Max_Age = 1800): ?array {
+if (!class_exists('Repository')) return null;
+
+try {
+$Raw = (string)(Repository::getSetting('Date_Time_Snapshot', '') ?? '');
+}
+
+catch (Throwable) {
+return null;
+}
+
+if ($Raw === '') return null;
+$Snapshot = json_decode($Raw, true);
+
+if (!is_array($Snapshot) || !is_array($Snapshot['data'] ?? null)) return null;
+if ((time() - (int)($Snapshot['at'] ?? 0)) > $Max_Age) return null;
+
+return $Snapshot['data'];
+}
+
+public static function currentDateTimeLabel(?int $Time_Stamp = null): string {
+$Stamp = ($Time_Stamp !== null && $Time_Stamp > 0) ? $Time_Stamp : time();
+
+try {
+$Date = (new DateTimeImmutable('@' . $Stamp))->setTimezone(new DateTimeZone('Asia/Tehran'));
 }
 
 catch (Throwable) {
 return static::DATE_TIME_ERROR_TEXT;
 }
 
-if (!is_array($Data) || $Data === []) {
-return static::DATE_TIME_ERROR_TEXT;
+$Hijri = '';
+$Season = '';
+$Season_Emoji = '';
+$Part = '';
+$Part_Emoji = '';
+$Service_Data = null;
+$Offset = static::daysFromToday($Stamp);
+
+if ($Offset === 0) {
+// A snapshot younger than ten minutes is still today's date, and it keeps the
+// header instant even when the date service is slow or unreachable.
+$Service_Data = static::dateTimeSnapshot(600);
 }
 
-return "📆تاریخ شمسی:*" . (string)($Data['Shamsi_Date'] ?? '') . "*\n" .
-"🕌تاریخ قمری:*" . (string)($Data['Hijri_Date'] ?? '') . "*\n" .
-"🌍تاریخ میلادی:*" . (string)($Data['Gregorian_Date'] ?? '') . "*\n\n" .
-"🌎فصل:*" . (string)($Data['Season_Emoji'] ?? '') . (string)($Data['Season'] ?? '') . "*\n" .
-"🕰زمان:*" . (string)($Data['Time'] ?? '') . " " .
-(string)($Data['Time_Based_Emoji'] ?? '') . (string)($Data['Time_Based'] ?? '') . "*";
+if (!is_array($Service_Data)) {
+try {
+$Service_Data = static::getDateTimeData($Offset > 0 ? $Offset : 0);
+}
+
+catch (Throwable) {
+$Service_Data = static::dateTimeSnapshot();
+}
+}
+
+if (is_array($Service_Data)) {
+$Hijri = trim((string)($Service_Data['Hijri_Date'] ?? ''));
+$Season = trim((string)($Service_Data['Season'] ?? ''));
+$Season_Emoji = trim((string)($Service_Data['Season_Emoji'] ?? ''));
+$Part = trim((string)($Service_Data['Time_Based'] ?? ''));
+$Part_Emoji = trim((string)($Service_Data['Time_Based_Emoji'] ?? ''));
+}
+
+if ($Season === '') [$Season_Emoji, $Season] = static::seasonLabel((int)$Date->format('n'));
+if ($Part === '') [$Part_Emoji, $Part] = static::dayPartLabel((int)$Date->format('G'));
+
+$Text = "📆تاریخ شمسی:*" . static::gregorianToJalali($Date->format('Y-m-d')) . "*\n";
+
+if ($Hijri !== '') {
+$Text .= "🕌تاریخ قمری:*{$Hijri}*\n";
+}
+
+$Text .= "🌍تاریخ میلادی:*" . static::toPersian($Date->format('Y-m-d')) . "*\n\n";
+$Text .= "🌎فصل:*{$Season_Emoji}{$Season}*\n";
+$Text .= "🕰زمان:*" . static::toPersian($Date->format('H:i:s')) . " {$Part_Emoji}{$Part}*";
+return $Text;
 }
 
 /** Shamsi date of a unix timestamp, computed locally in Tehran time. */
@@ -315,6 +400,7 @@ return static::gregorianToJalali($Date->format('Y-m-d'));
 
 public static function gregorianToJalali(string $GregorianDate): string {
 [$gy, $gm, $gd] = array_map('intval', explode('-', $GregorianDate));
+$Gy_Original = $gy;
 
 if ($gy <= 1600) {
 $jy = 0;
@@ -335,11 +421,19 @@ $days %= 1461;
 $jy += (int)(($days - 1) / 365);
 
 if ($days > 365) $days = ($days - 1) % 365;
-$jm = ($days > 186) ? 1 + (int)(($days - 186) / 30) : 1 + (int)($days / 31);
-$jd = 1 + (($days > 186) ? ($days - 186) % 30 : $days % 31);
+// شش ماه نخست ۳۱ روزه و شش ماه دوم ۳۰ روزه است؛ ضلع دوم از ماه هفتم شروع می شود.
+if ($days < 186) {
+$jm = 1 + (int)($days / 31);
+$jd = 1 + ($days % 31);
+}
+
+else {
+$jm = 7 + (int)(($days - 186) / 30);
+$jd = 1 + (($days - 186) % 30);
+}
 $jalali_months = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
 $jalali_days = ['دوشنبه', 'سه شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه', 'یکشنبه'];
-$day_of_week = (int)date('N', mktime(0, 0, 0, $gm, $gd, $gy));
+$day_of_week = (int)(new DateTimeImmutable(sprintf('%04d-%02d-%02d', $Gy_Original, $gm, $gd), new DateTimeZone('UTC')))->format('N');
 $day_name = $jalali_days[($day_of_week + 6) % 7];
 $month_name = $jalali_months[$jm - 1];
 $jd_persian = static::toPersian((string)$jd);

@@ -589,6 +589,8 @@ if ($Flow === 'user:ticket_subject') { UserFlow::ticketCreate($Context, $Text); 
 if ($Flow === 'user:ticket_description') { UserFlow::ticketDescriptionInput($Context, $Text); return; }
 if ($Flow === 'user:ticket_media') { UserFlow::ticketMediaInput($Context); return; }
 if ($Flow === 'user:ticket_reply_text') { UserFlow::ticketUserReplySend($Context, $Text); return; }
+// انتخاب دسته تیکت فقط با دکمه انجام می شود؛ متن فرستاده شده دوباره همان صفحه را نشان می دهد.
+if ($Flow === 'user:ticket_category') { UserFlow::ticketCategoryMenu($Context); return; }
 }
 
 if (!$Has_Media) {

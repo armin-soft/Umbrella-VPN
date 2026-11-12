@@ -836,6 +836,27 @@ Database::getInstance()->execute(
 );
 }
 
+/** سفارش پرداخت را به صورت اتمی تصاحب می کند؛ فقط یک مسیر تسویه می کند. */
+public static function claimPendingPayment(int $User_ID, string $Pending): bool {
+if ($User_ID <= 0 || $Pending === '') return false;
+
+return Database::getInstance()->execute(
+'UPDATE `User_Sessions` SET `Pending_Payment` = NULL WHERE `Telegram_ID` = ? AND `Pending_Payment` = ?',
+[$User_ID, $Pending]
+)->rowCount() > 0;
+}
+
+/** کاربرانی که سفارش درگاه بازی دارند و چند دقیقه از آن گذشته است. */
+public static function sessionsAwaitingPayment(int $Limit = 15): array {
+return Database::getInstance()->fetchAll(
+"SELECT `Telegram_ID` FROM `User_Sessions`
+WHERE `Pending_Payment` IS NOT NULL AND `Pending_Payment` != ''
+AND `Updated_At` < (NOW() - INTERVAL 2 MINUTE)
+AND `Updated_At` > (NOW() - INTERVAL 3 DAY)
+ORDER BY `Updated_At` ASC LIMIT " . max(1, $Limit)
+);
+}
+
 public static function getSmsTemplate(string $Code): ?string {
 $Row = Database::getInstance()->fetch(
 'SELECT `Template` FROM `SMS_Templates` WHERE `Code` = ? AND `Is_Active` = 1 LIMIT 1',

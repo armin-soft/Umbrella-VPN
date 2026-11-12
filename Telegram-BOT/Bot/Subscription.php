@@ -1063,6 +1063,51 @@ Common::mainButton(),
 ]));
 }
 
+/**
+ * تسویه خودکار سفارش درگاه برای کاربری که از ربات برنگشته است.
+ * اگر پرداخت هنوز انجام نشده باشد هیچ پیامی برای کاربر نمی فرستد.
+ */
+public static function recoverPendingPayment(int $User_ID): bool {
+if ($User_ID <= 0) return false;
+
+try {
+$Session = Repository::getUserSession($User_ID);
+}
+
+catch (Throwable) {
+return false;
+}
+
+$Pending_Payment = (string)($Session['Pending_Payment'] ?? '');
+
+if ($Pending_Payment === '') return false;
+
+$Parts = array_pad(explode('|', $Pending_Payment, 3), 3, '');
+$Amount = (float)$Parts[1];
+$Authority = $Parts[2];
+
+if ($Amount <= 0 || $Authority === '' || !Zarinpal::isConfigured()) return false;
+
+try {
+$Verify = Zarinpal::verify($Amount, $Authority);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Payment-Recovery] verify failed | User=' . $User_ID . ' | ' . $Error->getMessage());
+return false;
+}
+
+// تا وقتی درگاه تایید نکند هیچ اتفاقی نمی افتد (بدون پیام برای کاربر).
+if (empty($Verify['Ok'])) return false;
+
+$User = Repository::getUser($User_ID);
+$Chat_ID = (int)($User['Chat_ID'] ?? $User_ID);
+$First_Name = (string)($User['First_Name'] ?: 'کاربر');
+$Context = new Context([], $User_ID, $Chat_ID ?: $User_ID, $First_Name, false, null, null, null, null);
+
+return self::settleGatewayPayment($Context);
+}
+
 private static function settleGatewayPayment(Context $Context): bool {
 $Pending_Payment = (string)(Repository::getUserSession($Context->UserId)['Pending_Payment'] ?? '');
 $Pending_Plan = (string)(Repository::getUserSession($Context->UserId)['Pending_Plan'] ?? '');
@@ -1122,6 +1167,13 @@ return false;
 }
 
 $Topup_Amount = $Pending_Topup !== '' ? (float)$Pending_Topup : 0.0;
+
+// سفارش را اتمی تصاحب می کنیم تا اگر کرون و بازگشت درگاه همزمان برسند،
+// اشتراک یا کیف پول دو بار شارژ نشود.
+if (!Repository::claimPendingPayment($Context->UserId, $Pending_Payment)) {
+return true;
+}
+
 Repository::updateUserSession($Context->UserId, [
 'Pending_Payment' => null,
 'Pending_Topup' => null,

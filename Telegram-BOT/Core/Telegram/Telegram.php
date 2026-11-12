@@ -361,16 +361,42 @@ return 'unknown';
 }
 
 public static function inlineKeyboard(array $Rows): array {
-foreach ($Rows as $Row_Index => $Row) {
+$Clean = [];
+
+foreach ($Rows as $Row) {
 if (!is_array($Row)) continue;
+$Buttons = [];
 
-foreach ($Row as $Button_Index => $Button) {
-if (!is_array($Button) || !isset($Button['text']) || !is_string($Button['text'])) continue;
-$Rows[$Row_Index][$Button_Index]['text'] = Helper::digitsToPersian($Button['text']);
+foreach ($Row as $Button) {
+if (!is_array($Button)) continue;
+if (!isset($Button['text']) || !is_string($Button['text']) || trim($Button['text']) === '') continue;
+if (!isset($Button['callback_data']) && !isset($Button['url']) && !isset($Button['web_app'])) continue;
+
+if (isset($Button['callback_data'])) {
+$Data = (string)$Button['callback_data'];
+
+// تلگرام callback_data بیشتر از ۶۴ بایت را رد می کند و کل پیام ناموفق می شود.
+if ($Data === '') continue;
+
+if (strlen($Data) > 64) {
+error_log('[Umbrella-Bot][Keyboard] callback_data longer than 64 bytes dropped: ' . mb_substr($Data, 0, 40));
+continue;
 }
 }
 
-return ['inline_keyboard' => $Rows];
+$Text = Helper::digitsToPersian($Button['text']);
+
+// متن دکمه حداکثر ۶۴ کاراکتر است.
+if (mb_strlen($Text) > 64) $Text = mb_substr($Text, 0, 61) . '…';
+
+$Button['text'] = $Text;
+$Buttons[] = $Button;
+}
+
+if ($Buttons !== []) $Clean[] = $Buttons;
+}
+
+return ['inline_keyboard' => $Clean];
 }
 }
 ?>
