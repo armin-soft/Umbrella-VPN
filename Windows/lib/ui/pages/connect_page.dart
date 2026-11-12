@@ -32,8 +32,15 @@ class _ConnectPageState extends State<ConnectPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final SubscriptionController subs = context.read<SubscriptionController>();
+      final VpnController vpn = context.read<VpnController>();
       if (subs.totalNodes == 0 && !subs.loadingAll) {
-        unawaited(subs.fetchAll());
+        await subs.fetchAll();
+      }
+      // اگر سروری هست ولی هنوز عددی برای پینگ ندارد، سنجش خودکار شروع می شود.
+      if (!vpn.measuring &&
+          vpn.nodes.isNotEmpty &&
+          vpn.nodes.every((VpnNode node) => !node.hasPing)) {
+        unawaited(vpn.refreshPings());
       }
       await OccasionService.instance.load();
       if (mounted) {
@@ -42,12 +49,38 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
+  /// اتصال یا قطع اتصال، با گزارش نتیجه برای کاربر.
+  Future<void> _toggleConnection(
+    VpnController vpn,
+    ToastController toasts,
+  ) async {
+    if (vpn.status.busy) {
+      return;
+    }
+    if (vpn.status.active) {
+      await vpn.disconnect();
+      toasts.info('اتصال قطع شد');
+      return;
+    }
+    if (vpn.nodes.isEmpty) {
+      toasts.error('سروری موجود نیست', 'اول اشتراک باید خوانده شود.');
+      return;
+    }
+    final ConnectOutcome outcome = await vpn.connect();
+    if (outcome.ok) {
+      toasts.success('اتصال برقرار شد', vpn.activeNode?.name ?? '');
+    } else {
+      toasts.error('اتصال برقرار نشد', outcome.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
     final SettingsController settings = context.watch<SettingsController>();
     final ToastController toasts = context.read<ToastController>();
+    final SubscriptionController subs = context.watch<SubscriptionController>();
     final UmbrellaColors colors = context.colors;
     final VpnStatus status = vpn.status;
     final Color tone = VpnVisuals.color(context, status);
@@ -129,155 +162,209 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
           if (OccasionService.instance.active != null)
             const SizedBox(height: 16),
+          if (vpn.nodes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: GlassCard(
+                padding: const EdgeInsets.all(18),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.info_outline_rounded, color: colors.warning, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'هیچ سروری موجود نیست',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            Fa.num(
+                              subs.needsLogin
+                                  ? 'برای دریافت اشتراک باید وارد حساب شوی؛ سپس سرورها خودکار خوانده می شوند.'
+                                  : (subs.personalErrors.isNotEmpty
+                                      ? subs.personalErrors.first
+                                      : 'اشتراک خوانده نشد؛ دوباره تلاش کن.'),
+                            ),
+                            maxLines: 3,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: subs.loadingAll ? null : () => subs.fetchAll(),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('تلاش دوباره'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           GlassCard(
-            padding: const EdgeInsets.all(24),
-            radius: 26,
+            padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+            radius: 28,
             elevated: true,
             gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
               colors: <Color>[
-                tone.withValues(alpha: 0.16),
+                tone.withValues(alpha: 0.18),
                 colors.surface,
                 colors.backgroundAlt,
               ],
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
               children: <Widget>[
-                StatusOrb(
-                  image: status.image,
-                  color: tone,
-                  size: 232,
-                  active: status.busy,
-                ),
-                const SizedBox(width: 26),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Pill(
-                            label: status.label,
-                            icon: VpnVisuals.icon(status),
-                            color: tone,
-                          ),
-                          if (vpn.killSwitchOn)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: Pill(
-                                label: 'کیل سوییچ فعال',
-                                icon: Icons.gpp_good_rounded,
-                                color: colors.success,
-                              ),
-                            ),
-                          if (connected && vpn.tunnelVerified)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: Pill(
-                                label: 'تونل تایید شد',
-                                icon: Icons.verified_user_rounded,
-                                color: colors.info,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        Fa.num(vpn.message),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: colors.textSecondary,
-                              height: 1.8,
-                            ),
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: <Widget>[
-                          if (vpn.activeNode != null) ...<Widget>[
-                            Icon(Icons.dns_rounded, size: 16, color: colors.textSecondary),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                Fa.num(
-                                  '${vpn.activeNode!.name} | ${vpn.activeNode!.hasPing ? Fa.ms(vpn.activeNode!.pingMs) : 'پینگ نامشخص'}',
+                // دکمه بزرگ اتصال: کل دایره وسط صفحه قابل لمس است.
+                Semantics(
+                  button: true,
+                  label: status.active ? 'قطع اتصال' : 'اتصال',
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: status.busy
+                        ? null
+                        : () => _toggleConnection(vpn, toasts),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        StatusOrb(
+                          image: status.image,
+                          color: tone,
+                          size: 300,
+                          active: status.busy,
+                        ),
+                        if (!status.busy)
+                          Container(
+                            width: 74,
+                            height: 74,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: (status.active ? colors.danger : colors.primary)
+                                  .withValues(alpha: 0.92),
+                              boxShadow: <BoxShadow>[
+                                BoxShadow(
+                                  color: (status.active ? colors.danger : colors.primary)
+                                      .withValues(alpha: 0.35),
+                                  blurRadius: 22,
+                                  spreadRadius: 2,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      color: colors.textSecondary,
-                                    ),
-                              ),
+                              ],
                             ),
-                          ] else
-                            Text(
-                              Fa.num('سروری انتخاب نشده است'),
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: colors.textSecondary,
-                                  ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: <Widget>[
-                          SizedBox(
-                            width: 220,
-                            child: GradientButton(
-                              label: status.active && !status.busy
-                                  ? 'قطع اتصال'
-                                  : (status.busy ? status.label : 'اتصال'),
-                              icon: status.active && !status.busy
-                                  ? Icons.power_settings_new_rounded
-                                  : Icons.power_settings_new_rounded,
-                              tone: status.active && !status.busy
-                                  ? colors.danger
-                                  : colors.primary,
-                              loading: status.busy,
-                              onPressed: status.busy
-                                  ? null
-                                  : () async {
-                                      if (status.active) {
-                                        await vpn.disconnect();
-                                        toasts.info('اتصال قطع شد');
-                                      } else {
-                                        final ConnectOutcome outcome =
-                                            await vpn.connect();
-                                        if (outcome.ok) {
-                                          toasts.success(
-                                            'اتصال برقرار شد',
-                                            vpn.activeNode?.name ?? '',
-                                          );
-                                        } else {
-                                          toasts.error('اتصال برقرار نشد', outcome.message);
-                                        }
-                                      }
-                                    },
+                            child: Icon(
+                              Icons.power_settings_new_rounded,
+                              size: 38,
+                              color: colors.onPrimary,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          OutlinedButton.icon(
-                            onPressed: widget.onOpenServers,
-                            icon: const Icon(Icons.dns_outlined, size: 18),
-                            label: const Text('انتخاب سرور'),
-                          ),
-                          const SizedBox(width: 12),
-                          IconAction(
-                            icon: Icons.speed_rounded,
-                            tooltip: 'سنجش پینگ همه سرورها',
-                            size: 44,
-                            onTap: vpn.measuring
-                                ? () {}
-                                : () async {
-                                    toasts.info('سنجش پینگ شروع شد');
-                                    await vpn.refreshPings();
-                                    toasts.success('سنجش پینگ تمام شد');
-                                  },
-                          ),
-                        ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  Fa.num(status.label),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: tone,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  Fa.num(vpn.message),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.7,
+                      ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 320,
+                  child: GradientButton(
+                    label: status.active && !status.busy ? 'قطع اتصال' : 'اتصال',
+                    icon: Icons.power_settings_new_rounded,
+                    height: 60,
+                    tone: status.active && !status.busy ? colors.danger : colors.primary,
+                    loading: status.busy,
+                    onPressed: status.busy
+                        ? null
+                        : () => _toggleConnection(vpn, toasts),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    if (vpn.activeNode != null)
+                      Pill(
+                        label: Fa.num(
+                          '${vpn.activeNode!.name} | '
+                          '${vpn.activeNode!.hasPing ? Fa.ms(vpn.activeNode!.pingMs) : 'پینگ نامشخص'}',
+                        ),
+                        icon: Icons.dns_rounded,
+                        color: colors.info,
+                      )
+                    else
+                      Pill(
+                        label: 'سروری انتخاب نشده است',
+                        icon: Icons.dns_outlined,
+                        color: colors.textSecondary,
+                      ),
+                    if (vpn.killSwitchOn)
+                      Pill(
+                        label: 'کیل سوییچ فعال',
+                        icon: Icons.gpp_good_rounded,
+                        color: colors.success,
+                      ),
+                    if (connected && vpn.tunnelVerified)
+                      Pill(
+                        label: 'تونل تایید شد',
+                        icon: Icons.verified_user_rounded,
+                        color: colors.info,
+                      ),
+                    if (vpn.measuring)
+                      Pill(
+                        label: 'در حال سنجش پینگ',
+                        icon: Icons.speed_rounded,
+                        color: colors.warning,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    OutlinedButton.icon(
+                      onPressed: widget.onOpenServers,
+                      icon: const Icon(Icons.dns_outlined, size: 18),
+                      label: const Text('انتخاب سرور'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: vpn.measuring
+                          ? null
+                          : () async {
+                              toasts.info('سنجش پینگ شروع شد');
+                              await vpn.refreshPings();
+                              toasts.success('سنجش پینگ تمام شد');
+                            },
+                      icon: const Icon(Icons.speed_rounded, size: 18),
+                      label: const Text('سنجش پینگ سرورها'),
+                    ),
+                  ],
                 ),
               ],
             ),

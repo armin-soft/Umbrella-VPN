@@ -427,6 +427,10 @@ class VpnController extends ChangeNotifier {
       );
     }
 
+    _log.add(
+      'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
+      '${Fa.num(usableNodes.length)} سرور قابل استفاده.',
+    );
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
     try {
       if (_native.available && !_device.elevated) {

@@ -217,7 +217,9 @@ class SingBoxConfig {
           'type': 'socks',
           'tag': tag,
           'server': '127.0.0.1',
-          'server_port': AppConfig.socksPortChained,
+          // میرو روی همین پورت سوکس محلی گوش می دهد؛ پورت هاست خود ایکس ری
+          // (۲۰۸۰) اینجا اشتباه است و باعث حلقه می شود.
+          'server_port': AppConfig.socksPortMieru,
           'version': '5',
         };
     }
