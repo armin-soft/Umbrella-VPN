@@ -135,6 +135,7 @@ $Rows[] = [['text' => "💎اشتراک {$Plan_Name} =💰({$Price_Label})", 'ca
 }
 
 if ($Rows === []) {
+error_log('[Umbrella-Bot][Pricing] no plan has a price; the ready-plans menu is empty. Set them in ⚙️تنظیمات ربات ← 💰تعرفه اشتراک.');
 $Support_Url = BotConfig::getSupportUrl();
 $Empty_Buttons = [];
 if ($Support_Url !== '') $Empty_Buttons[] = [['text' => '🎧پشتیبانی', 'url' => $Support_Url]];
