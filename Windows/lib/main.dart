@@ -123,6 +123,16 @@ Future<void> main(List<String> arguments) async {
     if (settings.settings.checkUpdatesOnStart) {
       unawaited(updates.check(silent: true));
     }
+    // به روز رسانی خودکار پروفایل و اشتراک هر نیم ساعت؛ کاربر کاری نمی کند.
+    Timer.periodic(const Duration(minutes: 30), (_) {
+      if (!auth.signedIn) {
+        return;
+      }
+      unawaited(() async {
+        await auth.refreshAccount(silent: true);
+        await subscriptions.syncPersonal();
+      }());
+    });
     if (auth.signedIn) {
       unawaited(auth.fetchNotifications());
       // اشتراک شخصی از سرور خوانده می شود؛ فقط اگر سرور چیزی نداد منابع عمومی
