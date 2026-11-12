@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/vpn/config_builders.dart';
@@ -102,6 +103,12 @@ proxies:
     expect(VpnController.usable(parsed), isTrue);
 
     final Map<String, dynamic> config = XrayConfig.build(parsed, 2081);
+    // پروکسی ویندوز یک پروکسی HTTP می خواهد؛ پورت SOCKS برای آن کار نمی کند.
+    final Map<String, dynamic> httpInbound =
+        (config['inbounds'] as List<dynamic>).first as Map<String, dynamic>;
+    expect(httpInbound['protocol'], 'http');
+    expect(httpInbound['port'], AppConfig.httpPortXray);
+    expect(httpInbound['listen'], '127.0.0.1');
     final Map<String, dynamic> outbound =
         (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
     final Map<String, dynamic> settings =

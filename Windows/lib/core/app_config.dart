@@ -115,6 +115,12 @@ class AppConfig {
   static const String tunAddress6 = 'fdfe:dcba:9876::1/126';
   static const int defaultMtu = 9000;
   static const int socksPortXray = 2081;
+
+  /// پورت HTTP ایکس ری برای پروکسی سیستمی ویندوز.
+  ///
+  /// پروکسی ویندوز (WinINET) پروکسی HTTP می خواهد، نه SOCKS؛ با پورت SOCKS
+  /// مرورگرها و بیشتر برنامه ها عبور نمی کنند. SOCKS برای سنجش های داخلی است.
+  static const int httpPortXray = 2080;
   static const int socksPortMieru = 2082;
   static const int socksPortChained = 2080;
   static const int apiPortSingBox = 9090;

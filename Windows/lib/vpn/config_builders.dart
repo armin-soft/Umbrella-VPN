@@ -340,6 +340,18 @@ class XrayConfig {
     return <String, dynamic>{
       'log': <String, dynamic>{'loglevel': 'warning'},
       'inbounds': <Map<String, dynamic>>[
+        // پروکسی سیستمی ویندوز به این پورت وصل می شود.
+        <String, dynamic>{
+          'tag': 'umbrella-http',
+          'listen': '127.0.0.1',
+          'port': AppConfig.httpPortXray,
+          'protocol': 'http',
+          'settings': <String, dynamic>{'allowTransparent': false},
+          'sniffing': <String, dynamic>{
+            'enabled': true,
+            'destOverride': <String>['http', 'tls', 'quic'],
+          },
+        },
         <String, dynamic>{
           'tag': 'umbrella-socks',
           'listen': '127.0.0.1',
@@ -348,7 +360,6 @@ class XrayConfig {
           'settings': <String, dynamic>{
             'auth': 'noauth',
             'udp': true,
-            'ip': '127.0.0.1',
           },
           'sniffing': <String, dynamic>{
             'enabled': true,

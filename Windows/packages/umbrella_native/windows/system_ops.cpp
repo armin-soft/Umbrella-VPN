@@ -587,6 +587,8 @@ bool SystemOps::DisableSystemProxy() {
   DWORD zero = 0;
   RegSetValueExW(key, L"ProxyEnable", 0, REG_DWORD,
                  reinterpret_cast<const BYTE*>(&zero), sizeof(zero));
+  // The bypass list was written by us when the tunnel came up.
+  RegDeleteValueW(key, L"ProxyOverride");
   RegCloseKey(key);
 
   INTERNET_PER_CONN_OPTION_LIST list = {0};
@@ -621,6 +623,12 @@ bool SystemOps::SetSystemProxy(const std::string& host, int port) {
   RegSetValueExW(key, L"ProxyServer", 0, REG_SZ,
                  reinterpret_cast<const BYTE*>(entry.c_str()),
                  static_cast<DWORD>((entry.size() + 1) * sizeof(wchar_t)));
+  // Loopback and the local network must never go through the tunnel proxy,
+  // otherwise the app cannot reach its own core.
+  const std::wstring bypass = L"<local>;127.0.0.1;localhost;::1";
+  RegSetValueExW(key, L"ProxyOverride", 0, REG_SZ,
+                 reinterpret_cast<const BYTE*>(bypass.c_str()),
+                 static_cast<DWORD>((bypass.size() + 1) * sizeof(wchar_t)));
   RegCloseKey(key);
   InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
   InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);

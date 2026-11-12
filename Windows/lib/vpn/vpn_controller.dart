@@ -784,11 +784,11 @@ class VpnController extends ChangeNotifier {
         ),
       ],
       configPaths: <String>[config.path],
-      readinessPort: AppConfig.socksPortXray,
+      readinessPort: AppConfig.httpPortXray,
       primaryBinary: 'xray.exe',
       tunnelHint: '',
       chained: false,
-      proxyPort: AppConfig.socksPortXray,
+      proxyPort: AppConfig.httpPortXray,
     );
   }
 
