@@ -125,8 +125,22 @@ $Rows = [];
 
 foreach (self::PLANS as $Month_Key => $Plan_Data) {
 $Plan_Name = $Plan_Data[0];
-$Price_Label = Helper::formatCurrency(BotConfig::getPlanPrice((int)$Month_Key));
+$Plan_Price = BotConfig::getPlanPrice((int)$Month_Key);
+
+// پلنی که در پنل قیمت نخورده است نمایش داده نمی شود تا کسی اشتراک رایگان نگیرد.
+if ($Plan_Price <= 0) continue;
+
+$Price_Label = Helper::formatCurrency($Plan_Price);
 $Rows[] = [['text' => "💎اشتراک {$Plan_Name} =💰({$Price_Label})", 'callback_data' => "خرید اشتراک {$Month_Key}"]];
+}
+
+if ($Rows === []) {
+$Support_Url = BotConfig::getSupportUrl();
+$Empty_Buttons = [];
+if ($Support_Url !== '') $Empty_Buttons[] = [['text' => '🎧پشتیبانی', 'url' => $Support_Url]];
+$Empty_Buttons[] = Common::mainButton();
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک های آماده') . "⚠️در حال حاضر هیچ اشتراکی برای فروش تعریف نشده است.\n➖➖➖➖➖➖➖➖➖\n👌لطفاً بعداً مراجعه کنید یا با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard($Empty_Buttons));
+return;
 }
 
 $Rows[] = [Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من')[0]];
@@ -840,6 +854,15 @@ $Name = 'نوروزی'; $Gb = 5; $Days = 13;
 else {
 [$Name, $Days, $Gb] = self::PLANS[$Month_Key];
 $Amount = BotConfig::getPlanPrice($Month_Key);
+
+// پلن بدون قیمت هرگز نباید اشتراک رایگان بسازد.
+if ($Amount <= 0) {
+TelegramClient::sendMessage($Context->ChatId, $Greeting . "⚠️این اشتراک هنوز قیمت گذاری نشده است و قابل خرید نیست.\n➖➖➖➖➖➖➖➖➖\n👌لطفاً یکی از اشتراک های دیگر را انتخاب کنید یا با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+[['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک آماده']],
+Common::mainButton(),
+]));
+return;
+}
 }
 
 if ($Type === 'paid' && !$Direct_Charge) {

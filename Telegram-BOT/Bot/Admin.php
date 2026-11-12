@@ -23,6 +23,7 @@ final class AdminFlow {
  */
 private const CFG_KEYS = [
 'Plan_Price_1' => ['label' => 'قیمت پلن ۱ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 400000'],
+'Plan_Price_2' => ['label' => 'قیمت پلن ۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 700000'],
 'Plan_Price_3' => ['label' => 'قیمت پلن ۳ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 1000000'],
 'Plan_Price_6' => ['label' => 'قیمت پلن ۶ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 1800000'],
 'Plan_Price_12' => ['label' => 'قیمت پلن ۱۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 3000000'],
@@ -367,8 +368,9 @@ $Text = Helper::adminGreeting($Context, 'تعرفه اشتراک')
 . "ℹ️قیمت هر روز پلن دلخواه از قیمت پلن ۱ ماهه تقسیم بر ۳۰ محاسبه می شود.\n"
 . Helper::adminFooter();
 $Markup = [
-[['text' => '✏️قیمت ۱ ماهه', 'callback_data' => 'cfg_set:Plan_Price_1'], ['text' => '✏️قیمت ۳ ماهه', 'callback_data' => 'cfg_set:Plan_Price_3']],
-[['text' => '✏️قیمت ۶ ماهه', 'callback_data' => 'cfg_set:Plan_Price_6'], ['text' => '✏️قیمت ۱۲ ماهه', 'callback_data' => 'cfg_set:Plan_Price_12']],
+[['text' => '✏️قیمت ۱ ماهه', 'callback_data' => 'cfg_set:Plan_Price_1'], ['text' => '✏️قیمت ۲ ماهه', 'callback_data' => 'cfg_set:Plan_Price_2']],
+[['text' => '✏️قیمت ۳ ماهه', 'callback_data' => 'cfg_set:Plan_Price_3'], ['text' => '✏️قیمت ۶ ماهه', 'callback_data' => 'cfg_set:Plan_Price_6']],
+[['text' => '✏️قیمت ۱۲ ماهه', 'callback_data' => 'cfg_set:Plan_Price_12']],
 [['text' => '✏️حداقل روز', 'callback_data' => 'cfg_set:Custom_Min_Days'], ['text' => '✏️حداکثر روز', 'callback_data' => 'cfg_set:Custom_Max_Days']],
 [['text' => '✏️حداقل حجم', 'callback_data' => 'cfg_set:Custom_Min_GB'], ['text' => '✏️حداکثر حجم', 'callback_data' => 'cfg_set:Custom_Max_GB']],
 [Common::backTo('⚙️بازگشت به تنظیمات ربات', 'تنظیمات ربات')],
@@ -545,7 +547,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅«{$M
 /** The value in use for one CFG_KEYS entry, formatted for a prompt. */
 private static function cfgCurrent(string $Key): string {
 switch ($Key) {
-case 'Plan_Price_1': case 'Plan_Price_3': case 'Plan_Price_6': case 'Plan_Price_12':
+case 'Plan_Price_1': case 'Plan_Price_2': case 'Plan_Price_3': case 'Plan_Price_6': case 'Plan_Price_12':
 $Price = BotConfig::getPlanPrice((int)substr($Key, strlen('Plan_Price_')));
 return $Price > 0 ? Helper::formatCurrency($Price) : 'ثبت نشده';
 case 'Custom_Min_Days': return Helper::toPersian((string)BotConfig::getCustomMinDays()) . ' روز';

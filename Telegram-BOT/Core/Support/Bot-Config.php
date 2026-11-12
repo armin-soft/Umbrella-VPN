@@ -20,7 +20,7 @@ public const KEY_EMERGENCY_SHOW = 'Emergency_Show';
 public const KEY_EMERGENCY_URL = 'Emergency_URL';
 
 /** The plans the bot sells, keyed by months, exactly as in `PLAN_PRICE_<M>`. */
-public const PLAN_MONTHS = [1 => '۱ ماهه', 3 => '۳ ماهه', 6 => '۶ ماهه', 12 => '۱۲ ماهه'];
+public const PLAN_MONTHS = [1 => '۱ ماهه', 2 => '۲ ماهه', 3 => '۳ ماهه', 6 => '۶ ماهه', 12 => '۱۲ ماهه'];
 
 private function __construct() {
 }
