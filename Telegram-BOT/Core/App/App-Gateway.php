@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Server/Umbrella-Panel.php';
 require_once __DIR__ . '/App-Device-Limit.php';
 require_once __DIR__ . '/App-Two-Step.php';
 require_once __DIR__ . '/App-Secret.php';
+require_once __DIR__ . '/../Telegram/Bot-Identity.php';
 require_once __DIR__ . '/../SMS/IPPanel.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once __DIR__ . '/../Storage/Repository.php';
@@ -1198,9 +1199,7 @@ return trim((string)($_GET['token'] ?? ''));
 }
 
 private static function botLink(): string {
-$Username = Environment::getBotUsername();
-
-return $Username !== '' ? 'https://t.me/' . $Username : 'https://t.me/';
+return BotIdentity::link();
 }
 
 /**

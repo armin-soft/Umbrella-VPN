@@ -93,6 +93,11 @@ public static function getBotToken(): string {
 return self::get('BOT_TOKEN');
 }
 
+/**
+ * Optional fallback for the bot's @username. The real value is read from
+ * Telegram once (`BotIdentity::username()`) and cached in `Settings`, so
+ * `BOT_USERNAME` does not have to be in `.env` at all.
+ */
 public static function getBotUsername(): string {
 $Username = self::get('BOT_USERNAME');
 return ltrim($Username, '@');

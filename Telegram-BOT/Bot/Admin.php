@@ -8,6 +8,7 @@ require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
 require_once __DIR__ . '/../Core/Support/Bot-Config.php';
+require_once __DIR__ . '/../Core/Telegram/Bot-Identity.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Config/Environment.php';
@@ -1651,8 +1652,8 @@ if ($Channell_ID_Int === 0) return;
 $Message = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'بروز رسانی نسخه') . "✅سلام کاربران گرامی ربات با موفقیت بروز رسانی گردید.\n" . "" . "\n➖➖➖➖➖➖➖➖➖➖\n🔰اطلاعات بروز رسانی جدید بدین شرح است:\n\n🔄نسخه جدید ربات: " . Helper::toPersian($Version) . "\n\n" . $Changes . "*";
 
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '🤖ورود به ربات (فیلترشکن آمبرلا)', 'url' => 'https://t.me/UmbrellaVPN_BOT']],
-[['text' => '🧑‍💻پشتیبانی از ما (آرمین سافت)', 'url' => 'https://t.me/ARMIN_SOFT']],
+[['text' => '🤖ورود به ربات (فیلترشکن آمبرلا)', 'url' => BotIdentity::link()]],
+[['text' => '🧑‍💻پشتیبانی از ما (آرمین سافت)', 'url' => BotConfig::getSupportUrl() ?: 'https://t.me/ARMIN_SOFT']],
 ]);
 
 if (mb_strlen($Message) <= 1024) {

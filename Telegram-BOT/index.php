@@ -14,6 +14,7 @@ require_once __DIR__ . '/Core/Database/Schema.php';
 require_once __DIR__ . '/Config/Environment.php';
 require_once __DIR__ . '/Core/Storage/Repository.php';
 require_once __DIR__ . '/Core/Telegram/Webhook.php';
+require_once __DIR__ . '/Core/Telegram/Bot-Identity.php';
 
 header('Content-Type: text/plain; charset=UTF-8');
 
@@ -109,8 +110,7 @@ catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Zarinpal-Callback] ' . $Error->getMessage());
 }
 
-$Bot_Username = \Environment::getBotUsername();
-$Bot_Link = $Bot_Username !== '' ? 'https://t.me/' . $Bot_Username : 'https://t.me/';
+$Bot_Link = \BotIdentity::link();
 header('Location: ' . $Bot_Link, true, 302);
 header('Content-Type: text/html; charset=UTF-8');
 exit;
@@ -132,8 +132,7 @@ require_once __DIR__ . '/Bot/Scheduler.php';
 \Scheduler::tick();
 });
 
-$Visitor_Bot_Username = \Environment::getBotUsername();
-$Visitor_Bot_Link = $Visitor_Bot_Username !== '' ? 'https://t.me/' . $Visitor_Bot_Username : 'https://t.me/';
+$Visitor_Bot_Link = \BotIdentity::link();
 header('Location: ' . $Visitor_Bot_Link, true, 302);
 exit;
 }
