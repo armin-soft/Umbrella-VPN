@@ -32,10 +32,12 @@ powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
 
 ## ساخت روی گیت هاب بدون ماشین ویندوز
 
-فایل `tools/github-workflow-build-installer.yml` را به
-`.github/workflows/build-windows-installer.yml` منتقل کنید. سپس در تب Actions
-ورک فلو «build windows installer» را اجرا کنید؛ فایل نصبی به عنوان Artifact
-همان اجرا قابل دانلود است.
+ورک فلو `.github/workflows/build-windows-installer.yml` در مخزن فعال است و با
+هر تغییر در پوشه `Windows` اجرا می شود. خروجی آن در بخش Artifacts همان اجرا
+قابل دانلود است. نسخه قالب این ورک فلو در
+`tools/github-workflow-build-installer.yml` نگه داشته می شود.
+
+آخرین ساخت موفق: https://github.com/armin-soft/Umbrella-VPN/actions/runs/43160010414
 
 ## ساخت دستی
 

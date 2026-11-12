@@ -167,6 +167,20 @@ http://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11/m
 
 ## نصب کننده
 
+فایل نصبی هم با گیت هاب ساخته شده و آماده دانلود است:
+
+- اجرای ساخت: https://github.com/armin-soft/Umbrella-VPN/actions/runs/43160010414
+- در بخش Artifacts فایل `UmbrellaVPN-Setup-1.0.0-x64.zip` را دانلود کنید؛
+  شامل `UmbrellaVPN-Setup-1.0.0-x64.exe`، نسخه قابل حمل و `SHA256SUMS.txt`.
+- اندازه فایل نصبی: حدود ۱۹ مگابایت
+- چکسام ساخته شده: `AEB692DD0A5E0EF2CB5DF9BBC1C34C0EAC2E73E783D4E296A3D79695F63A5A3E`
+
+ورک فلو در `.github/workflows/build-windows-installer.yml` است و در هر تغییر
+پوشه `Windows` خودکار اجرا می شود. مراحل آن: تحلیل کد، ساخت ریلیز ویندوز،
+بررسی مانیفست ادمین در فایل اجرایی، نصب Inno Setup، کامپایل نصب کننده، ساخت
+نسخه قابل حمل و بارگذاری خروجی.
+
+
 نصب کننده با Inno Setup 6 ساخته می شود و با یک فرمان آماده است:
 
 ```powershell
