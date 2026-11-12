@@ -63,7 +63,7 @@ $User['Last_Online'] = $Last_Online;
 
 $User['Server_Is_Active'] = !empty($Row['is_active']) ? 1 : 0;
 $User['Server_Enable'] = !empty($Row['enable']) ? 1 : 0;
-$User['Client_Status'] = !empty($Row['is_active']) ? 'active' : 'inactive';
+$User['Client_Status'] = !empty($Row['is_active']) ? '✅فعال' : '🚫غیرفعال';
 return $User;
 }
 
