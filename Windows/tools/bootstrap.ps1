@@ -2,14 +2,15 @@
 <#
     آماده سازی پروژه فیلترشکن آمبرلا برای ساخت روی ویندوز.
 
-    این اسکریپت:
-      1. نسخه فلوتر را بررسی می کند.
-      2. فایل های تولیدی ویندوز (windows/flutter و فایل های پلاگین) را می سازد.
-      3. وابستگی های دات را می گیرد.
-      4. پروژه را به صورت دیباگ یا ریلیز می سازد.
+    هیچ فایل سفارشی پروژه بازنویسی نمی شود. اسکریپت یک پروژه موقت با همان
+    نسخه فلوتر می سازد و فقط فایل های زیرساخت تولیدی ویندوز را از آن کپی
+    می کند (windows\flutter\CMakeLists.txt و فایل های همراه آن). این کار از
+    بازنویسی runner سفارشی، مانیفست ادمین و آیکون جلوگیری می کند.
 
-    فایل های سفارشی پروژه (runner، مانیفست ادمین، آیکون و پلاگین بومی) دست
-    نمی خورند، چون flutter create فایل های موجود را بازنویسی نمی کند.
+    مثال ها:
+      powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1
+      powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release
+      powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -SkipBuild
 #>
 param(
     [switch]$Release,
@@ -20,30 +21,82 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $ProjectRoot
 
-Write-Host '--- بررسی ابزارها ---' -ForegroundColor Cyan
+function Write-Step([string]$Text) {
+    Write-Host ""
+    Write-Host "=== $Text ===" -ForegroundColor Cyan
+}
+
+# ------------------------------------------------------------- 1. toolchain
+Write-Step 'بررسی فلوتر'
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     throw 'فلوتر نصب نیست یا در PATH نیست. از https://docs.flutter.dev/get-started/install/windows نصب کنید.'
-}
-if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
-    Write-Host 'توجه: کامپایلر ویژوال استودیو در PATH نیست؛ فلوتر خودش Visual Studio را پیدا می کند.' -ForegroundColor Yellow
 }
 flutter --version
 flutter doctor -v
 
-Write-Host '--- ساخت فایل های ویندوزی پروژه ---' -ForegroundColor Cyan
-flutter create --platforms=windows --org ir.umbrella --project-name umbrella_vpn .
-
-if (Test-Path 'windows/flutter/CMakeLists.txt') {
-    Write-Host 'windows/flutter/CMakeLists.txt آماده است.'
-} else {
-    throw 'فایل windows/flutter/CMakeLists.txt ساخته نشد. فلوتر را به روز کنید.'
+# ------------------------------------------------------- 2. flutter scaffold
+Write-Step 'بررسی زیرساخت ویندوز'
+$flutterDir = Join-Path $ProjectRoot 'windows\flutter'
+$needed = @(
+    'windows\flutter\CMakeLists.txt',
+    'windows\runner\CMakeLists.txt',
+    'windows\runner\main.cpp',
+    'windows\CMakeLists.txt'
+)
+$missingNeeded = $needed | Where-Object { -not (Test-Path (Join-Path $ProjectRoot $_)) }
+if ($missingNeeded) {
+    Write-Host "فایل های لازم نیستند: $($missingNeeded -join ', ')" -ForegroundColor Yellow
 }
 
-Write-Host '--- گرفتن وابستگی ها ---' -ForegroundColor Cyan
-flutter pub get
+# Only the static flutter scaffolding is taken from a fresh template. The
+# generated plugin files (generated_plugins.cmake, generated_plugin_registrant)
+# are produced by the flutter tool during the build, not copied here.
+$scaffoldTargets = @('windows\flutter\CMakeLists.txt')
+$needScaffold = $scaffoldTargets | Where-Object { -not (Test-Path (Join-Path $ProjectRoot $_)) }
+if ($needScaffold) {
+    Write-Host 'ساخت پروژه موقت برای گرفتن فایل های زیرساخت فلوتر ...' -ForegroundColor Yellow
+    $tempRoot = Join-Path $env:TEMP ("umbrella-scaffold-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+    try {
+        Push-Location $tempRoot
+        try {
+            & flutter create --platforms=windows --org ir.umbrella --project-name umbrella_vpn umbrella_scaffold
+            if ($LASTEXITCODE -ne 0) {
+                throw 'ساخت پروژه موقت فلوتر ناموفق بود.'
+            }
+        } finally {
+            Pop-Location
+        }
+        $sourceFlutterDir = Join-Path $tempRoot 'umbrella_scaffold\windows\flutter'
+        if (-not (Test-Path (Join-Path $sourceFlutterDir 'CMakeLists.txt'))) {
+            throw 'فایل windows\flutter\CMakeLists.txt در پروژه موقت پیدا نشد.'
+        }
+        New-Item -ItemType Directory -Force -Path $flutterDir | Out-Null
+        Copy-Item (Join-Path $sourceFlutterDir 'CMakeLists.txt') $flutterDir -Force
+        Write-Host 'windows\flutter\CMakeLists.txt کپی شد.' -ForegroundColor Green
+    } finally {
+        Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host 'windows\flutter\CMakeLists.txt از قبل موجود است.' -ForegroundColor Green
+}
 
+# Keep the generated scaffolding out of git, like the flutter template does.
+$flutterGitignore = Join-Path $flutterDir '.gitignore'
+if (-not (Test-Path $flutterGitignore)) {
+    Set-Content -Path $flutterGitignore -Value "ephemeral/`r`n" -Encoding ASCII
+}
+
+# ------------------------------------------------------------ 3. dependencies
+Write-Step 'گرفتن وابستگی ها'
+flutter pub get
+if ($LASTEXITCODE -ne 0) {
+    throw 'flutter pub get ناموفق بود.'
+}
+
+# ------------------------------------------------------------------ 4. build
 if (-not $SkipBuild) {
-    Write-Host '--- ساخت برنامه ---' -ForegroundColor Cyan
+    Write-Step 'ساخت برنامه'
     if ($Release) {
         flutter build windows --release
         $OutDir = 'build\windows\x64\runner\Release'
@@ -51,8 +104,12 @@ if (-not $SkipBuild) {
         flutter build windows --debug
         $OutDir = 'build\windows\x64\runner\Debug'
     }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'ساخت برنامه ناموفق بود.'
+    }
     Write-Host "خروجی ساخت: $ProjectRoot\$OutDir" -ForegroundColor Green
-    Write-Host 'برای اجرا: umbrella_vpn.exe (با دسترسی مدیر اجرا می شود)' -ForegroundColor Green
+    Write-Host 'برای ساخت فایل نصبی: tools\build-installer.ps1 -SkipBuild' -ForegroundColor Green
 }
 
-Write-Host '--- پایان ---' -ForegroundColor Green
+Write-Host ""
+Write-Host 'پایان.' -ForegroundColor Green

@@ -10,3 +10,6 @@ windows/runner/Debug/
 windows/runner/Release/
 cores/bin/
 cores/cache/
+dist/
+installer/output/
+installer/redist/VC_redist.x64.exe

@@ -167,13 +167,27 @@ http://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11/m
 
 ## نصب کننده
 
-اسکریپت `installer/umbrella.iss` برای Inno Setup 6 آماده است و نصب را با
-`PrivilegesRequired=admin` انجام می دهد. خروجی مورد انتظار:
-`UmbrellaVPN-Setup-1.0.0-x64.exe`.
+نصب کننده با Inno Setup 6 ساخته می شود و با یک فرمان آماده است:
 
-برنامه همچنین مانیفست خود را با `requireAdministrator` و پشتیبانی از ویندوز ۱۰
-و ۱۱ در `windows/runner/runner.exe.manifest` دارد، پس بدون اجازه مدیر اجرا
-نمی شود.
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
+```
+
+خروجی: `dist\UmbrellaVPN-Setup-1.0.0-x64.exe`
+
+ویژگی ها:
+
+- اجرای اجباری با دسترسی مدیر (`PrivilegesRequired=admin`).
+- فقط ویندوز ۱۰ و ۱۱، فقط x64.
+- متن های نصب کننده انگلیسی، نام محصول فارسی.
+- میانبر منو شروع، میانبر دسکتاپ و گزینه اجرای خودکار با ویندوز.
+- حذف امن: فقط قاعده های فایروال با پیشوند `Umbrella-` پاک می شوند.
+- گزینه نصب بی صدای Visual C++ Runtime در صورت وجود `installer\redist\VC_redist.x64.exe`.
+- سوئیچ `-Portable` نسخه قابل حمل ZIP را هم می سازد.
+
+برنامه نیز مانیفست خود را با `requireAdministrator` و پشتیبانی از ویندوز ۱۰ و
+۱۱ در `windows/runner/runner.exe.manifest` دارد، پس بدون اجازه مدیر اجرا
+نمی شود. جزئیات بیشتر در `installer/README.md`.
 
 ## ظاهر و پیام ها
 
