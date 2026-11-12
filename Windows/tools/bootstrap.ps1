@@ -94,6 +94,16 @@ if ($LASTEXITCODE -ne 0) {
     throw 'flutter pub get ناموفق بود.'
 }
 
+# ------------------------------------------------------- 3.5 bundled cores
+# هسته ها همراه فایل نصبی می روند؛ برنامه خودش چیزی دانلود نمی کند.
+Write-Step 'آماده سازی هسته ها برای بسته بندی'
+try {
+    & (Join-Path $PSScriptRoot 'fetch-cores.ps1')
+} catch {
+    Write-Host "هشدار: هسته ها کامل آماده نشدند: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host 'فایل نصبی بدون هسته ناقص خواهد بود؛ بعدا tools\fetch-cores.ps1 را اجرا کنید.' -ForegroundColor Yellow
+}
+
 # ------------------------------------------------------------------ 4. build
 if (-not $SkipBuild) {
     Write-Step 'ساخت برنامه'
@@ -106,6 +116,13 @@ if (-not $SkipBuild) {
     }
     if ($LASTEXITCODE -ne 0) {
         throw 'ساخت برنامه ناموفق بود.'
+    }
+    $coresSrc = Join-Path $ProjectRoot 'cores'
+    if (Test-Path $coresSrc) {
+        Copy-Item $coresSrc (Join-Path $ProjectRoot $OutDir) -Recurse -Force
+        Write-Host 'هسته ها کنار فایل اجرایی کپی شدند.' -ForegroundColor Green
+    } else {
+        Write-Host 'پوشه cores پیدا نشد؛ نسخه ساخته شده بدون هسته است.' -ForegroundColor Yellow
     }
     Write-Host "خروجی ساخت: $ProjectRoot\$OutDir" -ForegroundColor Green
     Write-Host 'برای ساخت فایل نصبی: tools\build-installer.ps1 -SkipBuild' -ForegroundColor Green

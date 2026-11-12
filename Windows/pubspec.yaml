@@ -32,6 +32,7 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - assets/icons/operators/
     - assets/icons/tray/
     - assets/sounds/
     - assets/cores/manifest.json

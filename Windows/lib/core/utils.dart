@@ -88,6 +88,26 @@ extension MobileOperatorX on MobileOperator {
         return 'unknown';
     }
   }
+
+  /// لوگوی رسمی اپراتور که همراه برنامه نصب می شود.
+  String get logoAsset => 'assets/icons/operators/$assetName.png';
+
+  bool get hasLogo => this != MobileOperator.unknown;
+
+  /// رنگ زمینه لوگو؛ لوگوی همراه اول و رایتل تیره است و روی زمینه روشن
+  /// خوانده می شود، ایرانسل زرد و روی زمینه تیره.
+  Color get chipColor {
+    switch (this) {
+      case MobileOperator.mci:
+        return Colors.white;
+      case MobileOperator.irancell:
+        return Colors.black;
+      case MobileOperator.rightel:
+        return Colors.white;
+      case MobileOperator.unknown:
+        return const Color(0xFF1B2030);
+    }
+  }
 }
 
 class IranPhone {

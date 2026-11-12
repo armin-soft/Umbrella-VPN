@@ -39,6 +39,9 @@ Future<void> main(List<String> arguments) async {
   final IpService ipService = IpService();
   final TrayService tray = TrayService(native);
   final CoreProvisioner provisioner = CoreProvisioner(native: native);
+  // فهرست هسته ها و پوشه داده پیش از ساخت رابط خوانده می شود تا وضعیت هسته ها
+  // از همان ابتدا درست نمایش داده شود.
+  await provisioner.init();
   final ToastController toasts = ToastController();
 
   final VpnController vpn = VpnController(
@@ -57,8 +60,8 @@ Future<void> main(List<String> arguments) async {
     },
     onRequireCores: () {
       toasts.warning(
-        'هسته اتصال نصب نیست',
-        'از بخش تنظیمات، هسته سینگ باکس را نصب کنید.',
+        'هسته اتصال در دسترس نیست',
+        'نسخه نصب هسته ها را همراه ندارد؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
       );
     },
   );

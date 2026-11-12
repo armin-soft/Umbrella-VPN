@@ -428,15 +428,20 @@ class VpnController extends ChangeNotifier {
       await _terminateForeignCores();
       await _native.disableSystemProxy();
 
-      // ۲. آماده سازی هسته ها
+      // ۲. آماده سازی هسته ها از نسخه نصب (بدون هیچ دانلودی)
+      for (final CoreInfo core in _provisioner.catalog) {
+        if (core.requiredCore) {
+          await _provisioner.provision(core);
+        }
+      }
       final LaunchPlan? plan = await _buildPlan(node);
       if (plan == null) {
-        _setStatus(VpnStatus.failed, 'هسته لازم نصب نیست.');
+        _setStatus(VpnStatus.failed, 'هسته لازم در دسترس نیست.');
         onRequireCores?.call();
         return const ConnectOutcome(
           ok: false,
           needsCores: true,
-          message: 'هسته اتصال نصب نیست؛ از بخش تنظیمات هسته ها را نصب کنید.',
+          message: 'هسته اتصال در دسترس نیست؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
         );
       }
       if (plan.warning.isNotEmpty) {

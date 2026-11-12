@@ -24,6 +24,8 @@ class GatewayClient {
 
   String get baseUrl => _baseUrl;
 
+  String get hostName => Uri.tryParse(_baseUrl)?.host ?? _baseUrl;
+
   Uri _uri(String route, [Map<String, String>? query]) {
     final String base = _baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
     if (base.contains('?')) {
@@ -97,9 +99,17 @@ class GatewayClient {
       }
     }
     if (json.isEmpty) {
+      // پاسخ غیر JSON یعنی آدرس اشتباه است (معمولاً صفحه ۴۰۴ میزبان) یا سرور
+      // خطای PHP داده است. نشانی و کد را در پیام می آوریم تا قابل پیگیری باشد.
+      final String hint = response.statusCode == 404
+          ? 'چنین مسیری روی سرور نیست'
+          : 'پاسخ سرور JSON نبود';
       throw ApiError(
         'bad_response',
-        'پاسخ سرور خوانا نبود (کد ${response.statusCode}). آدرس درگاه را در تنظیمات بررسی کنید.',
+        Fa.num(
+          '$hint (کد ${response.statusCode}) از $hostName؛ '
+          'نشانی درگاه را در تنظیمات بررسی کنید.',
+        ),
         status: response.statusCode,
       );
     }

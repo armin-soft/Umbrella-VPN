@@ -8,9 +8,11 @@ import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
+import '../../platform/services.dart';
 import '../../vpn/cores.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
+import '../widgets/gateway_dialog.dart';
 
 /// تنظیمات: ظاهر، اتصال، هسته ها، شبکه و حساب.
 class SettingsPage extends StatefulWidget {
@@ -23,9 +25,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final Map<String, double> _progress = <String, double>{};
-  final Map<String, String> _phase = <String, String>{};
-  final Set<String> _installing = <String>{};
+  final Set<String> _preparing = <String>{};
   List<String> _installed = <String>[];
 
   @override
@@ -354,7 +354,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: <Widget>[
                           SectionHeader(
                             title: 'هسته های اتصال',
-                            subtitle: 'دانلود و نصب هسته ها با نمایش پیشرفت',
+                            subtitle: 'همراه همین نسخه نصب شده اند؛ برنامه چیزی دانلود نمی کند',
                             trailing: IconAction(
                               icon: Icons.refresh_rounded,
                               size: 32,
@@ -410,34 +410,31 @@ class _SettingsPageState extends State<SettingsPage> {
                                             ],
                                           ),
                                         ),
-                                        if (_installing.contains(core.id))
-                                          SizedBox(
+                                        if (_preparing.contains(core.id))
+                                          const SizedBox(
                                             width: 18,
                                             height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              value: _progress[core.id],
-                                            ),
+                                            child: CircularProgressIndicator(strokeWidth: 2),
                                           )
-                                        else
+                                        else if (!_installed.contains(core.id))
                                           IconAction(
-                                            icon: _installed.contains(core.id)
-                                                ? Icons.refresh_rounded
-                                                : Icons.download_rounded,
+                                            icon: Icons.restore_rounded,
                                             size: 30,
-                                            tooltip: _installed.contains(core.id)
-                                                ? 'نصب دوباره'
-                                                : 'نصب هسته',
-                                            onTap: () => _install(core, provisioner),
+                                            tooltip: 'آماده سازی از نسخه نصب',
+                                            onTap: () => _provision(core, provisioner),
                                           ),
                                       ],
                                     ),
-                                    if (_installing.contains(core.id)) ...<Widget>[
-                                      const SizedBox(height: 10),
-                                      ProgressLine(
-                                        value: _progress[core.id] ?? 0,
-                                        label: _phase[core.id] ?? 'در حال دانلود',
-                                        height: 6,
+                                    if (!_installed.contains(core.id)) ...<Widget>[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        Fa.num(
+                                          'این هسته در نسخه نصب نیست؛ برای رفع آن برنامه را دوباره نصب کنید.',
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(color: colors.danger),
                                       ),
                                     ],
                                   ],
@@ -508,6 +505,14 @@ class _SettingsPageState extends State<SettingsPage> {
                             label: 'سرور برنامه',
                             value: Uri.tryParse(auth.baseUrl)?.host ?? 'نامشخص',
                           ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: TextButton.icon(
+                              onPressed: () => showGatewayDialog(context),
+                              icon: const Icon(Icons.dns_rounded, size: 17),
+                              label: Text(Fa.num('تغییر نشانی درگاه')),
+                            ),
+                          ),
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.verified_user_rounded,
@@ -531,6 +536,11 @@ class _SettingsPageState extends State<SettingsPage> {
                             icon: const Icon(Icons.info_outline_rounded, size: 17),
                             label: const Text('درباره برنامه و توسعه دهنده'),
                           ),
+                          TextButton.icon(
+                            onPressed: () => context.read<WindowService>().quit(),
+                            icon: const Icon(Icons.power_settings_new_rounded, size: 17),
+                            label: Text(Fa.num('خروج کامل از برنامه')),
+                          ),
                         ],
                       ),
                     ),
@@ -553,39 +563,25 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Future<void> _install(CoreInfo core, CoreProvisioner provisioner) async {
-    setState(() {
-      _installing.add(core.id);
-      _progress[core.id] = 0;
-      _phase[core.id] = 'آماده سازی';
-    });
-    final bool ok = await provisioner.install(
-      core,
-      onProgress: (double progress, String phase) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _progress[core.id] = progress;
-          _phase[core.id] = phase;
-        });
-      },
-    );
+  /// هسته همراه نسخه نصب است؛ اینجا فقط از پوشه کنار برنامه کپی می شود.
+  Future<void> _provision(CoreInfo core, CoreProvisioner provisioner) async {
+    setState(() => _preparing.add(core.id));
+    final bool ok = await provisioner.provision(core);
     if (!mounted) {
       return;
     }
-    setState(() {
-      _installing.remove(core.id);
-      _progress.remove(core.id);
-    });
+    setState(() => _preparing.remove(core.id));
     await _refreshInstalled();
+    if (!mounted) {
+      return;
+    }
     final ToastController toasts = context.read<ToastController>();
     if (ok) {
-      toasts.success('${core.title} نصب شد');
+      toasts.success('${core.title} آماده شد');
     } else {
       toasts.error(
-        'نصب ${core.title} انجام نشد',
-        'می توانید فایل هسته را دستی در پوشه cores/bin کنار برنامه بگذارید.',
+        'هسته ${core.title} پیدا نشد',
+        'برنامه را با نصب کننده رسمی دوباره نصب کنید؛ هسته ها همراه نسخه می آیند.',
       );
     }
   }

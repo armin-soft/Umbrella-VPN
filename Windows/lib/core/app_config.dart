@@ -27,8 +27,13 @@ class AppConfig {
   /// account/refresh ، app/notifications ، filter/get ، filter/save
   static const String gatewayBase = String.fromEnvironment(
     'UMBRELLA_GATEWAY',
-    defaultValue: 'https://user.umbrella-server.ir/bot/app',
+    defaultValue:
+        'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php?AppApi=',
   );
+
+  /// نشانی پایه درگاه؛ کاربر می تواند در تنظیمات آن را عوض کند و مقدار
+  /// ذخیره شده بر این پیش فرض اولویت دارد.
+  static const String gatewayStoreKey = 'gateway.base';
 
   /// پنل وب سرویس برای دریافت مستقیم مصرف و پروفایل (مسیر پشتیبان).
   static const String panelBase = String.fromEnvironment(

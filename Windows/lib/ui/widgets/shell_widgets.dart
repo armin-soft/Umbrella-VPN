@@ -157,19 +157,24 @@ class _ToastCard extends StatelessWidget {
 }
 
 /// نوار عنوان سفارشی: جابه جایی پنجره، وضعیت اتصال و دکمه های پنجره.
+/// نوار بالای پنجره: لوگو، وضعیت و دکمه های کوچک کردن، بزرگ کردن و بستن.
+///
+/// پنجره ویندوز بدون قاب پیش فرض ساخته می شود، پس این نوار روی همه صفحه ها —
+/// از جمله صفحه ورود و معرفی — باید وجود داشته باشد تا کاربر بتواند پنجره را
+/// جابه جا، کوچک یا بسته کند.
 class TitleBar extends StatelessWidget {
   const TitleBar({
     super.key,
-    required this.status,
     required this.onDragStart,
     required this.onMinimize,
     required this.onMaximize,
     required this.onClose,
+    this.status,
     this.unread = 0,
     this.onNotifications,
   });
 
-  final VpnStatus status;
+  final VpnStatus? status;
   final VoidCallback onDragStart;
   final VoidCallback onMinimize;
   final VoidCallback onMaximize;
@@ -180,7 +185,9 @@ class TitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final Color tone = VpnVisuals.color(context, status);
+    final VpnStatus? current = status;
+    final Color tone =
+        current == null ? colors.primary : VpnVisuals.color(context, current);
     return Container(
       height: 52,
       decoration: BoxDecoration(
@@ -215,13 +222,15 @@ class TitleBar extends StatelessWidget {
                             color: colors.textPrimary,
                           ),
                     ),
-                    const SizedBox(width: 12),
-                    Pill(
-                      label: status.label,
-                      icon: VpnVisuals.icon(status),
-                      color: tone,
-                      dense: true,
-                    ),
+                    if (current != null) ...<Widget>[
+                      const SizedBox(width: 12),
+                      Pill(
+                        label: current.label,
+                        icon: VpnVisuals.icon(current),
+                        color: tone,
+                        dense: true,
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -24,6 +24,20 @@ Set-Location $ProjectRoot
 
 $Version = '1.0.0'
 $ReleaseDir = Join-Path $ProjectRoot 'build\windows\x64\runner\Release'
+
+# هسته های اتصال باید داخل فایل نصبی باشند؛ اینجا فقط روی ماشین سازنده گرفته
+# می شوند و برنامه هیچ دانلودی انجام نمی دهد.
+$coresDir = Join-Path $ProjectRoot 'cores'
+if (-not (Test-Path (Join-Path $coresDir 'bin'))) {
+    Write-Host 'هسته ها آماده نیستند؛ اجرای tools\fetch-cores.ps1' -ForegroundColor Yellow
+}
+& (Join-Path $PSScriptRoot 'fetch-cores.ps1')
+
+$requiredCores = @('sing-box.exe', 'wintun.dll')
+$missingCores = $requiredCores | Where-Object { -not (Test-Path (Join-Path $coresDir "bin\$_")) }
+if ($missingCores) {
+    throw "هسته های الزامی برای بسته بندی پیدا نشدند: $($missingCores -join ', ') - ابتدا tools\fetch-cores.ps1 را اجرا کنید."
+}
 $ReleaseExe = Join-Path $ReleaseDir 'umbrella_vpn.exe'
 $IssFile = Join-Path $ProjectRoot 'installer\umbrella.iss'
 $DistDir = Join-Path $ProjectRoot 'dist'

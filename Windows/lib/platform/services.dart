@@ -64,11 +64,15 @@ class WindowService with WindowListener {
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,
     );
-    windowManager.waitUntilReadyToShow(options, () async {
+    // پیش از نمایش پنجره باید درخواست بستن غیرفعال شود، وگرنه اولین کلیک روی
+    // دکمه بستن، برنامه را کامل می کشد.
+    await windowManager.setPreventClose(true);
+    await windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.setMinimumSize(const Size(1120, 720));
+      await windowManager.center();
       await windowManager.show();
       await windowManager.focus();
     });
-    await windowManager.setPreventClose(true);
     windowManager.addListener(this);
     _initialized = true;
   }

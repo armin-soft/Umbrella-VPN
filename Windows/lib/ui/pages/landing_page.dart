@@ -1,12 +1,15 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../platform/services.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
+import '../widgets/shell_widgets.dart';
 
 /// صفحه معرفی که فقط یک بار در اولین اجرا نمایش داده می شود.
 class LandingPage extends StatefulWidget {
@@ -45,8 +48,17 @@ class _LandingPageState extends State<LandingPage>
     final UmbrellaColors colors = context.colors;
     return Scaffold(
       backgroundColor: colors.background,
-      body: Stack(
+      body: Column(
         children: <Widget>[
+          TitleBar(
+            onDragStart: context.read<WindowService>().startDragging,
+            onMinimize: context.read<WindowService>().minimize,
+            onMaximize: context.read<WindowService>().toggleMaximize,
+            onClose: context.read<WindowService>().quit,
+          ),
+          Expanded(
+            child: Stack(
+              children: <Widget>[
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -189,6 +201,9 @@ class _LandingPageState extends State<LandingPage>
                       color: colors.textSecondary.withValues(alpha: 0.7),
                     ),
               ),
+            ),
+          ),
+              ],
             ),
           ),
         ],

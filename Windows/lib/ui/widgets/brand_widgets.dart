@@ -9,7 +9,10 @@ import '../../platform/services.dart';
 import '../../vpn/vpn_controller.dart';
 import 'common.dart';
 
-/// نشان اپراتور تلفن همراه با رنگ و نشانه اختصاصی.
+/// نشان اپراتور تلفن همراه با لوگوی رسمی خودش (همراه اول، ایرانسل، رایتل).
+///
+/// لوگوها همراه برنامه نصب می شوند و از اینترنت گرفته نمی شوند؛ اگر فایل لوگو
+/// نبود، همان نشان دایره ای رنگی به عنوان جایگزین نمایش داده می شود.
 class OperatorBadge extends StatelessWidget {
   const OperatorBadge({
     super.key,
@@ -23,38 +26,34 @@ class OperatorBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
+    final double height = compact ? 24 : 32;
+    final Widget mark = operator.hasLogo
+        ? Container(
+            height: height,
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 7 : 9,
+              vertical: compact ? 3 : 4,
+            ),
+            decoration: BoxDecoration(
+              color: operator.chipColor,
+              borderRadius: BorderRadius.circular(compact ? 8 : 10),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Image.asset(
+              operator.logoAsset,
+              height: compact ? 18 : 24,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+                  _FallbackMark(operator: operator, compact: compact),
+            ),
+          )
+        : _FallbackMark(operator: operator, compact: compact);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Container(
-          width: compact ? 26 : 32,
-          height: compact ? 26 : 32,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-              colors: <Color>[
-                operator.color,
-                Color.lerp(operator.color, Colors.black, 0.35)!,
-              ],
-            ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            operator.latin,
-            style: TextStyle(
-              fontSize: compact ? 8 : 9.5,
-              fontWeight: FontWeight.w900,
-              color: operator == MobileOperator.irancell
-                  ? const Color(0xFF1A1A1A)
-                  : Colors.white,
-              fontFamily: AppTheme.fontFamily,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
+        mark,
         if (!compact) ...<Widget>[
           const SizedBox(width: 8),
           Text(
@@ -68,6 +67,48 @@ class OperatorBadge extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// نشان جایگزین وقتی لوگوی اپراتور در دسترس نیست.
+class _FallbackMark extends StatelessWidget {
+  const _FallbackMark({required this.operator, required this.compact});
+
+  final MobileOperator operator;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final double size = compact ? 24 : 30;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: <Color>[
+            operator.color,
+            Color.lerp(operator.color, Colors.black, 0.35)!,
+          ],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        operator.latin,
+        style: TextStyle(
+          fontSize: compact ? 8 : 9.5,
+          fontWeight: FontWeight.w900,
+          color: operator == MobileOperator.irancell
+              ? const Color(0xFF1A1A1A)
+              : Colors.white,
+          fontFamily: AppTheme.fontFamily,
+          letterSpacing: 0.2,
+        ),
+      ),
     );
   }
 }

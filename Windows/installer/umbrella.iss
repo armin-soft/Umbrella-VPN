@@ -64,8 +64,8 @@ Name: "autostart"; Description: "Start {#AppNameEn} when Windows starts (minimis
 [Files]
 ; Flutter release bundle: exe, flutter_windows.dll, plugin dll, data folder.
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Optional pre-downloaded cores next to the project (cores\bin).
-Source: "..\cores\*"; DestDir: "{app}\cores"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Cores shipped with the installer (cores\bin is filled by tools\fetch-cores.ps1 at build time).
+Source: "..\cores\*"; DestDir: "{app}\cores"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Optional Visual C++ runtime, put VC_redist.x64.exe in installer\redist to ship it.
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 

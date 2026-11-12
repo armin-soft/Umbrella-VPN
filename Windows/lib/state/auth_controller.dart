@@ -25,11 +25,17 @@ class AuthController extends ChangeNotifier {
     String? gatewayBase,
     LocalStore? store,
   })  : _native = native,
-        _gateway = gateway ?? GatewayClient(baseUrl: gatewayBase),
-        _store = store ?? LocalStore.instance;
+        _store = store ?? LocalStore.instance {
+    // نشانی ذخیره شده در تنظیمات بر پیش فرض برنامه اولویت دارد.
+    final String stored = _store.read(AppConfig.gatewayStoreKey) ?? '';
+    _gateway = gateway ??
+        GatewayClient(
+          baseUrl: stored.isNotEmpty ? stored : gatewayBase,
+        );
+  }
 
   final NativeBridge _native;
-  final GatewayClient _gateway;
+  late GatewayClient _gateway;
   final LocalStore _store;
   final AppLogger _log = AppLogger.instance;
 
@@ -129,9 +135,47 @@ class AuthController extends ChangeNotifier {
 
   String get baseUrl => _gateway.baseUrl;
 
+  /// نشانی درگاهی که همین حالا استفاده می شود.
+  String get gatewayBase => _gateway.baseUrl;
+
+  String get gatewayHost => Uri.tryParse(_gateway.baseUrl)?.host ?? '';
+
+  /// نشانی درگاه را عوض می کند و کلاینت را با نشانی تازه می سازد؛ مقدار
+  /// خالی یعنی بازگشت به پیش فرض برنامه.
   Future<void> setGatewayBase(String base) async {
-    await _store.write('gateway.base', base);
+    final String cleaned = base.trim();
+    if (cleaned.isEmpty) {
+      await _store.remove(AppConfig.gatewayStoreKey);
+      _gateway.close();
+      _gateway = GatewayClient();
+      notifyListeners();
+      return;
+    }
+    final Uri? parsed = Uri.tryParse(cleaned);
+    if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
+      _error = 'نشانی درگاه معتبر نیست؛ نمونه: https://example.com/index.php?AppApi=';
+      notifyListeners();
+      return;
+    }
+    await _store.write(AppConfig.gatewayStoreKey, cleaned);
+    _gateway.close();
+    _gateway = GatewayClient(baseUrl: cleaned);
+    _error = '';
     notifyListeners();
+  }
+
+  /// یک درخواست سبک به درگاه می زند تا کاربر مطمئن شود نشانی درست است.
+  Future<bool> testGateway() async {
+    _busy = true;
+    _error = '';
+    notifyListeners();
+    final bool ok = await _gateway.ping();
+    _busy = false;
+    if (!ok) {
+      _error = 'درگاه ${gatewayHost} پاسخ نداد؛ نشانی را بررسی کنید.';
+    }
+    notifyListeners();
+    return ok;
   }
 
   // ── گام یک: شماره موبایل ─────────────────────────────────────────────

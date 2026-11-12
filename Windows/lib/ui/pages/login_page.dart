@@ -6,11 +6,15 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
+import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
 import '../widgets/brand_widgets.dart';
+import '../widgets/gateway_dialog.dart';
 import '../widgets/common.dart';
+import '../widgets/shell_widgets.dart';
 
 /// صفحه ورود: شماره موبایل، نام و نام خانوادگی برای کاربر جدید، کد پیامکی و
 /// تایید دستگاه در تلگرام.
@@ -62,116 +66,130 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
+    final WindowService window = context.read<WindowService>();
     final UmbrellaColors colors = context.colors;
     return Scaffold(
       backgroundColor: colors.background,
-      body: Stack(
+      body: Column(
         children: <Widget>[
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(-0.8, -0.9),
-                  radius: 1.5,
-                  colors: <Color>[
-                    colors.primary.withValues(alpha: 0.20),
-                    colors.background,
-                  ],
-                ),
-              ),
-            ),
+          TitleBar(
+            onDragStart: window.startDragging,
+            onMinimize: window.minimize,
+            onMaximize: window.toggleMaximize,
+            onClose: window.quit,
           ),
-          Row(
-            children: <Widget>[
-              Expanded(
-                flex: 5,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 54, vertical: 40),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      const BrandMark(size: 64),
-                      const SizedBox(height: 28),
-                      Text(
-                        Fa.num('ورود امن با شماره موبایل'),
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              height: 1.4,
-                            ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        Fa.num(
-                          'کد تایید پیامک می شود و جزئیات دستگاه شما در تلگرام نمایش داده می شود تا فقط خودتان ورود را تایید کنید.',
-                        ),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: colors.textSecondary,
-                              height: 1.9,
-                            ),
-                      ),
-                      const SizedBox(height: 26),
-                      for (final (IconData icon, String text) item in const <(IconData, String)>[
-                        (Icons.sms_rounded, 'کد تایید ۶ رقمی پیامکی'),
-                        (Icons.phonelink_lock_rounded, 'تایید دستگاه در تلگرام'),
-                        (Icons.verified_user_rounded, 'ثبت و همگام سازی حساب در ربات'),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Row(
-                            children: <Widget>[
-                              Icon(item.$1, size: 17, color: colors.primary),
-                              const SizedBox(width: 10),
-                              Text(
-                                Fa.num(item.$2),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: colors.textSecondary,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      const Spacer(),
-                      Text(
-                        Fa.num('نسخه ۱٫۰٫۰ | ویندوز ۱۰ و ۱۱'),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 4,
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 460),
-                      child: GlassCard(
-                        padding: const EdgeInsets.all(28),
-                        radius: 28,
-                        elevated: true,
-                        child: AnimatedSize(
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeOutCubic,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 240),
-                            child: _step(context, auth),
-                          ),
-                        ),
+          Expanded(
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: const Alignment(-0.8, -0.9),
+                        radius: 1.5,
+                        colors: <Color>[
+                          colors.primary.withValues(alpha: 0.20),
+                          colors.background,
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      flex: 5,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 54, vertical: 40),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            const BrandMark(size: 64),
+                            const SizedBox(height: 28),
+                            Text(
+                              Fa.num('ورود امن با شماره موبایل'),
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.4,
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              Fa.num(
+                                'کد تایید پیامک می شود و جزئیات دستگاه شما در تلگرام نمایش داده می شود تا فقط خودتان ورود را تایید کنید.',
+                              ),
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: colors.textSecondary,
+                                    height: 1.9,
+                                  ),
+                            ),
+                            const SizedBox(height: 26),
+                            for (final (IconData icon, String text) item in const <(IconData, String)>[
+                              (Icons.sms_rounded, 'کد تایید ۶ رقمی پیامکی'),
+                              (Icons.phonelink_lock_rounded, 'تایید دستگاه در تلگرام'),
+                              (Icons.verified_user_rounded, 'ثبت و همگام سازی حساب در ربات'),
+                            ])
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  children: <Widget>[
+                                    Icon(item.$1, size: 17, color: colors.primary),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      Fa.num(item.$2),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: colors.textSecondary,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            const Spacer(),
+                            Text(
+                              Fa.num('نسخه ۱٫۰٫۰ | ویندوز ۱۰ و ۱۱'),
+                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: colors.textSecondary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 4,
+                      child: Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 460),
+                            child: GlassCard(
+                              padding: const EdgeInsets.all(28),
+                              radius: 28,
+                              elevated: true,
+                              child: AnimatedSize(
+                                duration: const Duration(milliseconds: 280),
+                                curve: Curves.easeOutCubic,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 240),
+                                  child: _step(context, auth),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+
 
   Widget _step(BuildContext context, AuthController auth) {
     switch (auth.phase) {
@@ -217,6 +235,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
           inputFormatters: <TextInputFormatter>[
             FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹+ ]')),
+            const PersianDigitsFormatter(),
             LengthLimitingTextInputFormatter(14),
           ],
           decoration: const InputDecoration(
@@ -242,6 +261,27 @@ class _LoginPageState extends State<LoginPage> {
         if (auth.error.isNotEmpty) ...<Widget>[
           const SizedBox(height: 16),
           _Message(text: auth.error, kind: _MessageKind.error),
+          if (auth.error.contains('درگاه') || auth.error.contains('سرور')) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Icon(Icons.dns_rounded, size: 14, color: colors.textSecondary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    Fa.num('نشانی فعلی درگاه: ${auth.gatewayHost}'),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => showGatewayDialog(context),
+                  child: Text(Fa.num('تغییر نشانی')),
+                ),
+              ],
+            ),
+          ],
         ],
         if (auth.info.isNotEmpty) ...<Widget>[
           const SizedBox(height: 16),
@@ -371,6 +411,7 @@ class _LoginPageState extends State<LoginPage> {
           keyboardType: TextInputType.number,
           inputFormatters: <TextInputFormatter>[
             FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹]')),
+            const PersianDigitsFormatter(),
             LengthLimitingTextInputFormatter(6),
           ],
           style: const TextStyle(

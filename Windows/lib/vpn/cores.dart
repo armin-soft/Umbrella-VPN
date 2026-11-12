@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/utils.dart';
@@ -11,19 +9,15 @@ import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
 
-/// محل نگاه داشتن هسته ها و ابزار یافتن و نصب آن ها.
+/// محل نگاه داشتن هسته ها و ابزار یافتن و آماده کردن آن ها.
 ///
-/// هسته ها فایل اجرایی باینری هستند و در مخزن نیستند؛ برنامه آن ها را از
-/// نشانی های فهرست هسته ها دانلود می کند یا از پوشه نصب کنار برنامه برمی دارد.
+/// هسته ها همراه خود نسخه نصب می شوند (پوشه cores کنار فایل اجرایی) و برنامه
+/// هیچ چیزی را از اینترنت دانلود نمی کند. اگر هسته ای در نسخه نصب نباشد، همان
+/// پیام روشن فارسی نمایش داده می شود و کاربر باید برنامه را دوباره نصب کند.
 class CoreProvisioner {
-  CoreProvisioner({
-    required NativeBridge native,
-    http.Client? client,
-  })  : _native = native,
-        _client = client ?? http.Client();
+  CoreProvisioner({required NativeBridge native}) : _native = native;
 
   final NativeBridge _native;
-  final http.Client _client;
 
   static List<CoreInfo> _catalog = <CoreInfo>[];
   String _dataDir = '';
@@ -40,6 +34,8 @@ class CoreProvisioner {
     final String exe = Platform.resolvedExecutable;
     return exe.substring(0, exe.lastIndexOf(Platform.pathSeparator));
   }
+
+  String get bundledDir => '$appDir${Platform.pathSeparator}cores';
 
   Future<void> init() async {
     _dataDir = await _native.dataDir();
@@ -74,13 +70,14 @@ class CoreProvisioner {
     return null;
   }
 
-  /// مسیر هسته در صورت وجود: اول کنار برنامه، بعد پوشه داده، بعد PATH.
+  /// مسیر هسته در صورت وجود: اول کنار برنامه (همان جایی که نصب کننده می ریزد)،
+  /// بعد پوشه داده.
   Future<String?> locateBinary(String binary) async {
     final List<String> candidates = <String>[
-      '$binDir${Platform.pathSeparator}$binary',
-      '${appDir}${Platform.pathSeparator}cores${Platform.pathSeparator}bin'
-          '${Platform.pathSeparator}$binary',
+      '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
+      '${bundledDir}${Platform.pathSeparator}$binary',
       '${appDir}${Platform.pathSeparator}$binary',
+      '$binDir${Platform.pathSeparator}$binary',
     ];
     for (final String candidate in candidates) {
       if (await File(candidate).exists()) {
@@ -111,100 +108,43 @@ class CoreProvisioner {
     return missing;
   }
 
-  /// دانلود و نصب یک هسته با گزارش درصد پیشرفت.
-  Future<bool> install(
-    CoreInfo core, {
-    void Function(double progress, String phase)? onProgress,
-  }) async {
-    if (core.url.isEmpty) {
-      return false;
+  /// هسته را از پوشه همراه نسخه برمی دارد و اگر کنار برنامه باشد، یک نسخه
+  /// قابل نوشتن در پوشه داده می سازد. هیچ درخواست شبکه ای انجام نمی شود.
+  Future<bool> provision(CoreInfo core) async {
+    if (await locateBinary(core.binary) != null) {
+      return true;
     }
-    onProgress?.call(0, 'شروع دانلود ${core.title}');
-    final Directory temp = await getTemporaryDirectory();
-    final String archiveName = core.url.split('/').last.split('?').first;
-    final File archive = File('${temp.path}${Platform.pathSeparator}$archiveName');
-
-    try {
-      final http.Request request = http.Request('GET', Uri.parse(core.url));
-      final http.StreamedResponse response =
-          await _client.send(request).timeout(const Duration(seconds: 45));
-      if (response.statusCode >= 300) {
-        AppLogger.instance.add(
-          'دانلود ${core.title} ناموفق بود (کد ${response.statusCode}) - ${core.url}',
-          level: 'error',
-        );
-        return false;
-      }
-      final int total = response.contentLength ?? 0;
-      final IOSink sink = archive.openWrite();
-      int received = 0;
-      await for (final List<int> chunk in response.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        onProgress?.call(
-          total > 0 ? (received / total).clamp(0.0, 1.0) : 0,
-          'دریافت ${core.title}',
-        );
-      }
-      await sink.flush();
-      await sink.close();
-
-      if (core.sha256.isNotEmpty) {
-        final String hash =
-            sha256.convert(await archive.readAsBytes()).toString().toLowerCase();
-        if (hash != core.sha256.toLowerCase()) {
-          AppLogger.instance.add(
-            'چکسام ${core.title} مطابقت نداشت؛ نصب متوقف شد.',
-            level: 'error',
-          );
-          return false;
-        }
-      }
-
-      onProgress?.call(0.98, 'استخراج ${core.title}');
-      if (core.archive == 'msi') {
-        AppLogger.instance.add(
-          '${core.title} یک بسته نصب ویندوز است؛ نصب دستی لازم است.',
-          level: 'warning',
-        );
-        return false;
-      }
-
-      final String extractDir = '${temp.path}${Platform.pathSeparator}umbrella-core-${core.id}';
-      await Directory(extractDir).create(recursive: true);
-      final int pid = await _native.spawn(
-        exe: 'powershell.exe',
-        args:
-            '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath \'${archive.path}\' -DestinationPath \'$extractDir\' -Force"',
-      );
-      if (pid <= 0) {
-        return false;
-      }
-      // صبر کوتاه تا استخراج کامل شود؛ سپس فایل مورد نظر کپی می شود.
-      for (int i = 0; i < 40; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        final File? found = await _findFile(Directory(extractDir), core.binary);
-        if (found != null) {
-          final String destination = '$binDir${Platform.pathSeparator}${core.binary}';
-          await found.copy(destination);
-          if (core.binary == 'sing-box.exe') {
-            final File? wintun = await _findFile(Directory(extractDir), 'wintun.dll');
-            if (wintun != null) {
-              await wintun.copy('$binDir${Platform.pathSeparator}wintun.dll');
-            }
-          }
-          onProgress?.call(1, '${core.title} آماده شد');
-          AppLogger.instance.add('${core.title} نصب شد: $destination');
-          return true;
-        }
-      }
+    final String bundled = bundledDir;
+    final Directory source = Directory(bundled);
+    if (!await source.exists()) {
       AppLogger.instance.add(
-        'فایل ${core.binary} در بسته ${core.title} پیدا نشد.',
+        'پوشه هسته ها کنار برنامه پیدا نشد: $bundled',
         level: 'error',
       );
       return false;
-    } on Exception catch (error) {
-      AppLogger.instance.add('نصب ${core.title} ناموفق: $error', level: 'error');
+    }
+    final File? found = await _findFile(source, core.binary);
+    if (found == null) {
+      AppLogger.instance.add(
+        'هسته ${core.binary} در پوشه $bundled نیست؛ نسخه نصب باید آن را همراه داشته باشد.',
+        level: 'error',
+      );
+      return false;
+    }
+    try {
+      await Directory(binDir).create(recursive: true);
+      final String destination = '$binDir${Platform.pathSeparator}${core.binary}';
+      await found.copy(destination);
+      if (core.binary.toLowerCase().endsWith('.exe')) {
+        final File? wintun = await _findFile(source, 'wintun.dll');
+        if (wintun != null) {
+          await wintun.copy('$binDir${Platform.pathSeparator}wintun.dll');
+        }
+      }
+      AppLogger.instance.add('هسته ${core.title} از نسخه نصب آماده شد: $destination');
+      return true;
+    } on FileSystemException catch (error) {
+      AppLogger.instance.add('آماده سازی ${core.title} ناموفق: $error', level: 'error');
       return false;
     }
   }
@@ -225,9 +165,5 @@ class CoreProvisioner {
       return null;
     }
     return null;
-  }
-
-  Future<void> close() async {
-    _client.close();
   }
 }
