@@ -107,7 +107,8 @@ class LocalStore {
       if (!await target.exists()) {
         return null;
       }
-      return target.readAsString();
+      final String content = await target.readAsString();
+      return content;
     } on FileSystemException {
       return null;
     }

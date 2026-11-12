@@ -371,12 +371,10 @@ class SubscriptionParser {
       report.problems.add('فهرست سرورها در فایل کلش نبود.');
       return report;
     }
-    int index = 0;
     for (final Object? raw in proxies) {
       if (raw is! Map) {
         continue;
       }
-      index++;
       final Map<String, dynamic> proxy = JsonX.asMap(raw);
       final String type = JsonX.text(proxy['type']).toLowerCase();
       final NodeProtocol? protocol = _protocolFromClash(type);

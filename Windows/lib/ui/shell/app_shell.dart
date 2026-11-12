@@ -10,7 +10,6 @@ import '../../models/models.dart';
 import '../../platform/native.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
-import '../../state/toast_controller.dart';
 import '../../state/update_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';

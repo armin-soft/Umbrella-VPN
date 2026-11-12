@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -353,12 +354,12 @@ class UpdateService {
   Future<bool> install(File file, NativeBridge native) async {
     final String path = file.path.toLowerCase();
     if (path.endsWith('.msi')) {
-      final bool ok = await native.spawn(
+      final int pid = await native.spawn(
         exe: 'msiexec.exe',
         args: '/i "$path" /passive /norestart',
         hidden: false,
       );
-      return ok > 0;
+      return pid > 0;
     }
     if (path.endsWith('.exe')) {
       return native.runElevated(file.path);

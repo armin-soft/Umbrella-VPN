@@ -2,6 +2,10 @@
 ///
 /// همه متن های برنامه فارسی و بدون نیم فاصله هستند و همه ارقام با این فایل
 /// به شکل فارسی نمایش داده می شوند.
+/// نام دیگر نوع عدد، چون متد ایستای [Fa.num] نام نوع num را در بدنه کلاس
+/// پنهان می کند و در امضای متدها قابل استفاده نیست.
+typedef NumericValue = num;
+
 class Fa {
   const Fa._();
 
@@ -78,7 +82,7 @@ class Fa {
   }
 
   /// جداکننده هزارگان با ارقام فارسی.
-  static String grouped(num value) {
+  static String grouped(NumericValue value) {
     final String raw = value.round().abs().toString();
     final StringBuffer buffer = StringBuffer();
     for (int i = 0; i < raw.length; i++) {
@@ -91,7 +95,7 @@ class Fa {
     return sign + num(buffer.toString());
   }
 
-  static String decimal(num value, {int fraction = 1}) {
+  static String decimal(NumericValue value, {int fraction = 1}) {
     final String text = value.toStringAsFixed(fraction);
     return num(text).replaceAll('.', '٫');
   }

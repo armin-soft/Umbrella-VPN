@@ -1,4 +1,3 @@
-import '../core/persian.dart';
 import '../core/utils.dart';
 
 enum SubscriptionFormat { xray, clash, wireguard, amnezia, mieru }
