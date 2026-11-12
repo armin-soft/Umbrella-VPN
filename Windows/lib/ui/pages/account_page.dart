@@ -405,6 +405,18 @@ class _AccountPageState extends State<AccountPage> {
                               ? 'در انتظار'
                               : Fa.clock(subs.personalCheckedAt!),
                         ),
+                        if (subs.needsLogin) ...<Widget>[
+                          const SizedBox(height: 10),
+                          Text(
+                            'اشتراک اختصاصی این حساب فقط بعد از ورود به سرور '
+                            'در دسترس است؛ فعلا سرورهای عمومی استفاده می شوند.',
+                            maxLines: 3,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.warning),
+                          ),
+                        ],
                         if (subs.personalErrors.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 10),
                           Text(

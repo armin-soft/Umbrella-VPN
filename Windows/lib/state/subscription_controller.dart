@@ -23,6 +23,11 @@ class SourceState {
   bool loaded = false;
   String error = '';
   int count = 0;
+
+  /// کد پاسخ آخرین دریافت؛ صفر یعنی درخواستی فرستاده نشده است.
+  int lastStatus = 0;
+  bool get unauthorized =>
+      lastStatus == 401 || lastStatus == 403 || lastStatus == 404;
   DateTime? checkedAt;
 
   String get title => source.title;
@@ -70,6 +75,10 @@ class SubscriptionController extends ChangeNotifier {
 
   /// وقتی نشانی های سرور پاسخ نمی دهند، منابع عمومی جای آن ها را می گیرند.
   bool _fallbackActive = false;
+
+  /// نشانی های اشتراک بدون ورود به حساب در دسترس نیستند (کد ۴۰۱/۴۰۳/۴۰۴).
+  bool _needsLogin = false;
+  bool get needsLogin => _needsLogin;
 
   List<SourceState> get sources => List<SourceState>.unmodifiable(_sources);
 
@@ -148,6 +157,7 @@ class SubscriptionController extends ChangeNotifier {
     }
     _signature = signature;
     _fallbackActive = false;
+    _needsLogin = false;
     _personalFetchedFor = '';
     final Map<String, SourceState> previous = <String, SourceState>{
       for (final SourceState item in _sources) item.source.id: item,
@@ -227,10 +237,20 @@ class SubscriptionController extends ChangeNotifier {
       }
     }
     if (fetched.isEmpty) {
+      _needsLogin = personal.every((SourceState item) => item.unauthorized);
+      if (_needsLogin) {
+        _log.add(
+          'نشانی های اشتراک بدون ورود به حساب پاسخ نمی دهند (کد '
+          '${Fa.num(personal.isEmpty ? 0 : personal.first.lastStatus)})؛ '
+          'ابتدا وارد حساب شوید.',
+          level: 'warning',
+        );
+      }
       await _activateFallbackSources();
       return;
     }
     _fallbackActive = false;
+    _needsLogin = false;
     await _applyNodes(fetched);
     if (!_disposed) {
       notifyListeners();
@@ -391,6 +411,7 @@ class SubscriptionController extends ChangeNotifier {
         return null;
       }
       final http.Response response = await _getWithRetry(uri);
+      state.lastStatus = response.statusCode;
       if (response.statusCode >= 300) {
         state.error = 'پاسخ سرور: کد ${response.statusCode}';
         _log.add(
