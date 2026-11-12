@@ -26,6 +26,7 @@ class SubscriptionSource {
     required this.url,
     required this.format,
     required this.icon,
+    this.personal = false,
   });
 
   final String id;
@@ -34,12 +35,16 @@ class SubscriptionSource {
   final SubscriptionFormat format;
   final String icon;
 
+  /// اشتراک شخصی کاربر که سرور می دهد؛ هیچ نشانی از کاربر گرفته نمی شود.
+  final bool personal;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'id': id,
         'title': title,
         'url': url,
         'format': format.name,
         'icon': icon,
+        'personal': personal,
       };
 
   factory SubscriptionSource.fromJson(Map<String, dynamic> json) {
@@ -52,6 +57,7 @@ class SubscriptionSource {
         orElse: () => SubscriptionFormat.xray,
       ),
       icon: JsonX.text(json['icon'], 'bolt'),
+      personal: JsonX.boolean(json['personal']),
     );
   }
 }
@@ -302,6 +308,23 @@ class Account {
   bool get expired => expiryDate != null && expiryDate!.isBefore(DateTime.now());
 
   String get displayName => name.isNotEmpty ? name : (comment.isNotEmpty ? comment : 'کاربر آمبرلا');
+
+  /// نوع سرویس بر اساس اطلاعات پنل: بسته زمانی یا حجمی.
+  String get planLabel {
+    if (comment.isNotEmpty) {
+      return comment;
+    }
+    if (packageDays > 0) {
+      return 'بسته ${Fa.num(packageDays)} روزه';
+    }
+    if (usageLimitGb > 0) {
+      return 'بسته حجمی';
+    }
+    return 'نامشخص';
+  }
+
+  /// نشان می دهد حساب سالم است: فعال، منقضی نشده و غیرفعال نشده.
+  bool get healthy => enable && !expired;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'uuid': uuid,

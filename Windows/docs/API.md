@@ -70,6 +70,17 @@
 برای انتظار تایید تلگرام. پاسخ: `{ "stage": "awaitingTelegram" }` تا زمانی که
 کاربر در ربات دکمه «خودم بودم» را بزند؛ سپس `approved`.
 
+### `account/refresh`
+
+همان پاسخ `auth/session` است و علاوه بر آن همیشه `subscription_url` را برمی
+گرداند. کلاینت این نشانی را خودش می خواند و هیچ نشانی از کاربر نمی پرسد.
+
+پاسخ `data`:
+
+```json
+{ "account": { "...": "...", "account_base": "https://...", "subscription_url": "https://.../<uuid>/sub/" }, "filter": { }, "checked_at": "2026-11-11T10:00:00Z" }
+```
+
 ### `auth/session`
 
 ```json
@@ -79,10 +90,6 @@
   "token": "..."
 }
 ```
-
-### `account/refresh`
-
-پاسخ همان `account` است.
 
 ### `filter/get`
 

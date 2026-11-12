@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | ۱ | فلوتر و کتابخانه های نسل جدید | انجام شده | `pubspec.yaml`، `lib/**` |
 | ۲ | پشتیبانی Xray، Clash Meta، WireGuard، Amnezia، Mieru | انجام شده | `lib/vpn/cores.dart`، `lib/vpn/config_builders.dart`، `assets/cores/manifest.json` |
-| ۳ و ۴ | فقط پنج لینک اشتراک مجاز | انجام شده | `lib/core/app_config.dart`، فیلتر پیش از درخواست در `lib/state/subscription_controller.dart` |
+| ۳ و ۴ | اشتراک فقط از سرور و بدون ورود دستی | انجام شده | `lib/state/subscription_controller.dart`، `lib/data/parsers.dart` (`parseAuto`) |
 | ۵ و ۶ | رابط حرفه ای با نام فیلترشکن آمبرلا | انجام شده | `lib/ui/**` |
 | ۷ | رابط فارسی، نصب کننده انگلیسی | انجام شده | `lib/app.dart` (fa)، `installer/umbrella.iss` |
 | ۸ | راست چین، بدون نیم فاصله، اعداد فارسی | انجام شده | `lib/app.dart`، `lib/core/persian.dart`؛ بررسی خودکار: هیچ U+200C در کد نیست |
@@ -24,11 +24,12 @@
 | ۲۳ | به روزرسانی درون برنامه با درصد | انجام شده | `lib/platform/services.dart` (`UpdateService`)، `lib/state/update_controller.dart`، صفحه به روزرسانی |
 | ۲۴ | بدون ایموجی، فقط آیکون | انجام شده | همه `lib/**`؛ بررسی خودکار بازه های ایموجی |
 | ۲۵ | صفحه فرود فقط یک بار | انجام شده | `lib/state/settings_controller.dart` (`landingSeen`)، `lib/app.dart` |
-| ۲۶ | پروفایل و مصرف از وب سرویس | انجام شده | `lib/data/gateway_client.dart`، `lib/ui/pages/account_page.dart` |
+| ۲۶ | پروفایل کامل و مصرف از وب سرویس | انجام شده | `lib/data/gateway_client.dart`، `lib/models/models.dart` (`Account`)، `lib/ui/pages/account_page.dart` |
 | ۲۷ | اعلان بالای وسط با رنگ و آیکون | انجام شده | `lib/state/toast_controller.dart`، `lib/ui/widgets/shell_widgets.dart` |
 | ۲۸ | منوی درباره و توسعه دهنده | انجام شده | `lib/ui/pages/about_page.dart` |
 | ۲۹ | کنترل بستن و کوچک کردن پنجره | انجام شده | `lib/ui/widgets/shell_widgets.dart` (`TitleBar`)، `windows/runner/win32_window.h` |
 | ۳۰ | صدا با کلید بی صدا | انجام شده | `lib/platform/services.dart` (`SoundService`)، `assets/sounds/*` |
+| ۴۲ | آزمون خودکار خواندن اشتراک و پروفایل | انجام شده | `test/subscription_parsing_test.dart`، `test/account_model_test.dart` |
 | ۳۱ | گرفتن کشور و شهر پیش از اتصال | انجام شده | `lib/platform/services.dart` (`IpService`)، `vpn.bootstrap` |
 | ۳۲ | بررسی خودکار آی پی اتصال | انجام شده | `IpService`، `VpnController.refreshIp`، `tunnelVerified` |
 | ۳۳ | مناسبت ها و جلوه ها | انجام شده | `assets/data/occasions.json`، `lib/platform/services.dart` (`OccasionService`)، `OccasionBanner` |

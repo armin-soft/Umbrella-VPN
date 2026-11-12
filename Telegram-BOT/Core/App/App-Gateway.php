@@ -486,6 +486,9 @@ Database::getInstance()->execute(
 
 $Profile = AppFilter::accountPayload($Account);
 $Profile['account_base'] = PanelClient::accountBase($Account);
+// The client never asks the user for a subscription address: the personal
+// subscription link comes from here, both at sign-in and on every refresh.
+$Profile['subscription_url'] = self::subscriptionUrl($Account, $Profile['account_base'], $UUID);
 
 self::ok([
 'uuid' => $UUID,

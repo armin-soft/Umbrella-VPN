@@ -45,6 +45,12 @@ jobs:
           flutter analyze *>&1 | Tee-Object -FilePath analyze-log.txt
           exit $LASTEXITCODE
 
+      - name: Unit tests
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          flutter test *>&1 | Tee-Object -FilePath test-log.txt
+
       - name: Build release bundle
         id: build
         working-directory: Windows

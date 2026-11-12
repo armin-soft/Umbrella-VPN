@@ -53,6 +53,11 @@ class AppConfig {
     'user.umbrella-server.ir',
   ];
 
+  /// شناسه اشتراک شخصی کاربر که نشانی اش از سرور می آید.
+  static const String personalSourceId = 'user';
+
+  /// منابع عمومی برنامه؛ فقط پشتیبان هستند تا پیش از ورود هم سروری نمایش داده
+  /// شود. اشتراک اصلی هر کاربر همان است که سرور می دهد.
   static const List<SubscriptionSource> subscriptionSources =
       <SubscriptionSource>[
     SubscriptionSource(

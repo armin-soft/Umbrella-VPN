@@ -53,6 +53,51 @@ class SubscriptionParser {
     }
   }
 
+  /// خواندن اشتراکی که سرور می دهد. قالب از روی خود پاسخ تشخیص داده می شود
+  /// (لینک های استاندارد، کلش متا، وایرگارد، آمنزیا یا میرو) تا کاربر هیچ
+  /// انتخابی نکند و هیچ نشانی دستی وارد نشود.
+  static ParseReport parseAuto(String body, String sourceId) {
+    final String trimmed = body.trim();
+    if (trimmed.isEmpty) {
+      return ParseReport(
+        sourceId: sourceId,
+        problems: <String>['پاسخ سرور خالی بود.'],
+      );
+    }
+    final List<ParseReport> attempts = <ParseReport>[
+      _parseXray(trimmed, sourceId),
+      _parseClash(trimmed, sourceId),
+      _parseWireguard(trimmed, sourceId),
+      _parseMieru(trimmed, sourceId),
+      _parseAmnezia(trimmed, sourceId),
+    ];
+    final ParseReport merged = ParseReport(sourceId: sourceId);
+    for (final ParseReport attempt in attempts) {
+      for (final VpnNode node in attempt.nodes) {
+        if (merged.nodes.any((VpnNode item) => item.id == node.id)) {
+          continue;
+        }
+        merged.nodes.add(node);
+      }
+    }
+    if (merged.nodes.isEmpty) {
+      for (final ParseReport attempt in attempts) {
+        for (final String problem in attempt.problems) {
+          if (!merged.problems.contains(problem)) {
+            merged.problems.add(problem);
+          }
+        }
+        if (merged.problems.length >= 3) {
+          break;
+        }
+      }
+      if (merged.problems.isEmpty) {
+        merged.problems.add('هیچ سروری در اشتراک پیدا نشد.');
+      }
+    }
+    return merged;
+  }
+
   // ── ایکس ری / وی۲ری ─────────────────────────────────────────────────
 
   static ParseReport _parseXray(String body, String sourceId) {

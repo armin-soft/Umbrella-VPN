@@ -211,13 +211,19 @@ class AboutPage extends StatelessWidget {
                       const Divider(height: 14),
                       InfoRow(
                         icon: Icons.link_rounded,
-                        label: 'منابع اشتراک',
-                        value: '${Fa.num(AppConfig.subscriptionSources.length)} منبع مجاز',
+                        label: 'اشتراک کاربری',
+                        value: 'به صورت خودکار از درگاه خوانده می شود',
+                      ),
+                      const Divider(height: 14),
+                      InfoRow(
+                        icon: Icons.backup_rounded,
+                        label: 'منابع پشتیبان',
+                        value: '${Fa.num(AppConfig.subscriptionSources.length)} منبع عمومی',
                       ),
                       const SizedBox(height: 12),
                       Text(
                         Fa.num(
-                          'تنها منابع تعریف شده در برنامه برای دانلود اشتراک مجاز هستند و نشانی دیگری پذیرفته نمی شود.',
+                          'نشانی اشتراک هر کاربر را سرور می دهد و برنامه خودش آن را می خواند؛ هیچ نشانی دستی وارد نمی شود. منابع عمومی فقط پشتیبان هستند.',
                         ),
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: colors.textSecondary,

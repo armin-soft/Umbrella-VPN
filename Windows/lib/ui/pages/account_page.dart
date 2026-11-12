@@ -3,17 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
+import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 
-/// حساب کاربری: پروفایل، مصرف، اعتبار، اشتراک ها، کنترل محتوا و دستگاه.
+/// حساب کاربری: پروفایل کامل کاربر از سرور، مصرف، اشتراک خودکار، کنترل محتوا
+/// و مشخصات دستگاه.
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key, required this.onSignedOut});
 
@@ -27,6 +28,7 @@ class _AccountPageState extends State<AccountPage> {
   List<String> _categories = <String>[];
   bool _filterEnabled = false;
   bool _savingFilter = false;
+  bool _refreshing = false;
   bool _initialized = false;
 
   @override
@@ -40,14 +42,35 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  Future<void> _refreshFromServer(AuthController auth,
+      SubscriptionController subs, ToastController toasts) async {
+    if (_refreshing) {
+      return;
+    }
+    setState(() => _refreshing = true);
+    await auth.refreshAccount();
+    await subs.syncPersonal();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _refreshing = false);
+    if (auth.error.isEmpty) {
+      toasts.success('اطلاعات حساب و اشتراک از سرور به روز شد');
+    } else {
+      toasts.error('به روز رسانی ناموفق بود', auth.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
+    final SubscriptionController subs = context.watch<SubscriptionController>();
     final VpnController vpn = context.watch<VpnController>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
     final Account account = auth.account;
     final DeviceProfile device = auth.device;
+    final SourceState? personal = subs.personalState;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -68,7 +91,7 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      Fa.num('پروفایل، مصرف و تنظیمات حساب شما در آمبرلا'),
+                      Fa.num('پروفایل کامل شما از سرور خوانده می شود'),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colors.textSecondary,
                           ),
@@ -77,13 +100,12 @@ class _AccountPageState extends State<AccountPage> {
                 ),
               ),
               IconAction(
-                icon: Icons.refresh_rounded,
-                tooltip: 'به روز رسانی اطلاعات حساب',
+                icon: Icons.sync_rounded,
+                tooltip: 'به روز رسانی از سرور',
                 size: 44,
-                onTap: () async {
-                  await auth.refreshAccount();
-                  toasts.success('اطلاعات حساب به روز شد');
-                },
+                onTap: _refreshing
+                    ? () {}
+                    : () => _refreshFromServer(auth, subs, toasts),
               ),
             ],
           ),
@@ -106,12 +128,17 @@ class _AccountPageState extends State<AccountPage> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
-                                colors: <Color>[colors.primary, colors.primaryDeep],
+                                colors: <Color>[
+                                  colors.primary,
+                                  colors.primaryDeep,
+                                ],
                               ),
                             ),
                             alignment: Alignment.center,
                             child: Text(
-                              Fa.num(account.displayName.isEmpty ? 'آ' : account.displayName.substring(0, 1)),
+                              Fa.num(account.displayName.isEmpty
+                                  ? 'آ'
+                                  : account.displayName.substring(0, 1)),
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
@@ -135,7 +162,9 @@ class _AccountPageState extends State<AccountPage> {
                                 const SizedBox(height: 3),
                                 Text(
                                   Fa.num(IranPhone.display(
-                                    account.phone.isNotEmpty ? account.phone : auth.phone,
+                                    account.phone.isNotEmpty
+                                        ? account.phone
+                                        : auth.phone,
                                   )),
                                   style: Theme.of(context)
                                       .textTheme
@@ -148,36 +177,56 @@ class _AccountPageState extends State<AccountPage> {
                           Pill(
                             label: account.expired
                                 ? 'منقضی'
-                                : (account.isActive ? 'فعال' : 'غیرفعال'),
+                                : (account.healthy ? 'فعال' : 'غیرفعال'),
                             icon: account.expired
                                 ? Icons.timer_off_rounded
                                 : Icons.verified_rounded,
                             color: account.expired
                                 ? colors.danger
-                                : (account.isActive ? colors.success : colors.warning),
+                                : (account.healthy
+                                    ? colors.success
+                                    : colors.warning),
                           ),
                         ],
                       ),
                       const SizedBox(height: 18),
                       InfoRow(
-                        icon: Icons.tag_rounded,
+                        icon: Icons.fingerprint_rounded,
                         label: 'شناسه حساب',
                         value: account.uuid.isEmpty ? 'نامشخص' : account.uuid,
                         trailing: IconAction(
                           icon: Icons.copy_rounded,
                           size: 28,
-                          tooltip: 'کپی شناسه',
+                          tooltip: 'کپی شناسه حساب',
                           onTap: () async {
-                            await Clipboard.setData(ClipboardData(text: account.uuid));
-                            toasts.success('شناسه کپی شد');
+                            await Clipboard.setData(
+                              ClipboardData(text: account.uuid),
+                            );
+                            toasts.success('شناسه حساب کپی شد');
                           },
                         ),
                       ),
                       const Divider(height: 18),
                       InfoRow(
+                        icon: Icons.call_rounded,
+                        label: 'شماره موبایل',
+                        value: IranPhone.display(
+                          account.phone.isNotEmpty ? account.phone : auth.phone,
+                        ),
+                      ),
+                      const Divider(height: 18),
+                      InfoRow(
                         icon: Icons.send_rounded,
-                        label: 'شناسه تلگرام',
-                        value: account.telegramId.isEmpty ? 'وصل نشده' : account.telegramId,
+                        label: 'تلگرام',
+                        value: account.telegramId.isEmpty
+                            ? 'وصل نشده'
+                            : account.telegramId,
+                      ),
+                      const Divider(height: 18),
+                      InfoRow(
+                        icon: Icons.workspace_premium_rounded,
+                        label: 'نوع سرویس',
+                        value: account.planLabel,
                       ),
                       const Divider(height: 18),
                       InfoRow(
@@ -190,14 +239,17 @@ class _AccountPageState extends State<AccountPage> {
                         icon: Icons.event_busy_rounded,
                         label: 'تاریخ انقضا',
                         value: Fa.date(account.expiryDate),
-                        valueColor: account.expired ? colors.danger : colors.textPrimary,
+                        valueColor:
+                            account.expired ? colors.danger : colors.textPrimary,
                       ),
                       const Divider(height: 18),
                       InfoRow(
                         icon: Icons.hourglass_bottom_rounded,
                         label: 'روزهای باقی مانده',
                         value: Fa.days(account.daysLeft),
-                        valueColor: account.daysLeft < 5 ? colors.warning : colors.textPrimary,
+                        valueColor: account.daysLeft < 5
+                            ? colors.warning
+                            : colors.textPrimary,
                       ),
                       const Divider(height: 18),
                       InfoRow(
@@ -220,7 +272,8 @@ class _AccountPageState extends State<AccountPage> {
                       const SizedBox(height: 16),
                       UsageRing(
                         percent: account.usagePercent,
-                        centerValue: Fa.decimal(account.currentUsageGb, fraction: 2),
+                        centerValue:
+                            Fa.decimal(account.currentUsageGb, fraction: 2),
                         centerLabel: 'گیگابایت مصرف شده',
                         size: 176,
                       ),
@@ -231,7 +284,7 @@ class _AccountPageState extends State<AccountPage> {
                             child: StatTile(
                               label: 'حجم کل',
                               value: Fa.gb(account.usageLimitGb),
-                              icon: Icons.data_usage_rounded,
+                              icon: Icons.inventory_2_rounded,
                               compact: true,
                             ),
                           ),
@@ -270,44 +323,130 @@ class _AccountPageState extends State<AccountPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
+                flex: 3,
                 child: GlassCard(
                   padding: const EdgeInsets.all(22),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       SectionHeader(
-                        title: 'اشتراک های من',
-                        subtitle: 'تنها منابع مجاز برنامه؛ برای کپی یا باز کردن بزنید.',
+                        title: 'اشتراک من',
+                        subtitle:
+                            'به صورت خودکار از سرور خوانده می شود؛ نیازی به وارد کردن نشانی نیست.',
+                        trailing: personal == null
+                            ? null
+                            : Pill(
+                                label: personal.loading
+                                    ? 'در حال دریافت'
+                                    : (personal.loaded ? 'آماده' : 'خطا'),
+                                icon: personal.loading
+                                    ? Icons.downloading_rounded
+                                    : (personal.loaded
+                                        ? Icons.check_circle_rounded
+                                        : Icons.error_outline_rounded),
+                                color: personal.loading
+                                    ? colors.warning
+                                    : (personal.loaded
+                                        ? colors.success
+                                        : colors.danger),
+                                dense: true,
+                              ),
                       ),
                       const SizedBox(height: 12),
-                      for (final SubscriptionSource source
-                          in AppConfig.subscriptionSources)
+                      if (personal == null)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            InfoRow(
+                              icon: Icons.cloud_off_rounded,
+                              label: 'اشتراک شخصی',
+                              value: 'سرور هنوز نشانی اشتراک نفرستاده است',
+                              valueColor: colors.warning,
+                            ),
+                            const SizedBox(height: 12),
+                            GradientButton(
+                              label: 'دریافت از سرور',
+                              icon: Icons.cloud_download_rounded,
+                              expand: false,
+                              loading: _refreshing,
+                              onPressed: _refreshing
+                                  ? null
+                                  : () => _refreshFromServer(
+                                        auth,
+                                        subs,
+                                        toasts,
+                                      ),
+                            ),
+                          ],
+                        )
+                      else ...<Widget>[
                         InfoRow(
                           icon: Icons.link_rounded,
-                          label: source.title,
-                          value: source.format.label,
+                          label: 'نشانی اشتراک',
+                          value: _shortUrl(personal.source.url),
                           onTap: () async {
-                            final Uri? uri = Uri.tryParse(source.url);
+                            final Uri? uri = Uri.tryParse(personal.source.url);
                             if (uri != null) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
                             }
                           },
                           trailing: IconAction(
                             icon: Icons.copy_rounded,
                             size: 28,
-                            tooltip: 'کپی نشانی',
+                            tooltip: 'کپی نشانی اشتراک',
                             onTap: () async {
-                              await Clipboard.setData(ClipboardData(text: source.url));
-                              toasts.success('نشانی ${source.title} کپی شد');
+                              await Clipboard.setData(
+                                ClipboardData(text: personal.source.url),
+                              );
+                              toasts.success('نشانی اشتراک کپی شد');
                             },
                           ),
                         ),
+                        const Divider(height: 18),
+                        InfoRow(
+                          icon: Icons.dns_rounded,
+                          label: 'سرورهای این اشتراک',
+                          value: Fa.num('${Fa.num(personal.count)} سرور'),
+                        ),
+                        const Divider(height: 18),
+                        InfoRow(
+                          icon: Icons.schedule_rounded,
+                          label: 'آخرین دریافت',
+                          value: personal.checkedAt == null
+                              ? 'در انتظار'
+                              : Fa.clock(personal.checkedAt!),
+                        ),
+                        if (personal.error.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 10),
+                          Text(
+                            Fa.num(personal.error),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.danger),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        GradientButton(
+                          label: 'دریافت دوباره از سرور',
+                          icon: Icons.sync_rounded,
+                          expand: false,
+                          loading: _refreshing || personal.loading,
+                          onPressed: _refreshing || personal.loading
+                              ? null
+                              : () => _refreshFromServer(auth, subs, toasts),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
+                flex: 2,
                 child: GlassCard(
                   padding: const EdgeInsets.all(22),
                   child: Column(
@@ -318,7 +457,8 @@ class _AccountPageState extends State<AccountPage> {
                         subtitle: 'بین برنامه و ربات همگام است.',
                         trailing: Switch.adaptive(
                           value: _filterEnabled,
-                          onChanged: (bool value) => setState(() => _filterEnabled = value),
+                          onChanged: (bool value) =>
+                              setState(() => _filterEnabled = value),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -365,7 +505,9 @@ class _AccountPageState extends State<AccountPage> {
                                 );
                                 setState(() => _savingFilter = false);
                                 if (ok) {
-                                  toasts.success('تنظیمات کنترل محتوا ذخیره شد');
+                                  toasts.success(
+                                    'تنظیمات کنترل محتوا ذخیره شد',
+                                  );
                                 } else {
                                   toasts.error('ذخیره ناموفق بود', auth.error);
                                 }
@@ -416,7 +558,9 @@ class _AccountPageState extends State<AccountPage> {
                           InfoRow(
                             icon: Icons.person_outline_rounded,
                             label: 'کاربر ویندوز',
-                            value: device.username.isEmpty ? 'نامشخص' : device.username,
+                            value: device.username.isEmpty
+                                ? 'نامشخص'
+                                : device.username,
                           ),
                         ],
                       ),
@@ -428,22 +572,30 @@ class _AccountPageState extends State<AccountPage> {
                           InfoRow(
                             icon: Icons.lan_rounded,
                             label: 'آی پی داخلی',
-                            value: device.localIp.isEmpty ? 'نامشخص' : device.localIp,
+                            value: device.localIp.isEmpty
+                                ? 'نامشخص'
+                                : device.localIp,
                           ),
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.public_rounded,
                             label: 'آی پی خروجی',
-                            value: (vpn.exitIp.isNotEmpty ? vpn.exitIp : vpn.realIp)
+                            value: (vpn.exitIp.isNotEmpty
+                                        ? vpn.exitIp
+                                        : vpn.realIp)
                                     .isEmpty
                                 ? 'نامشخص'
-                                : (vpn.exitIp.isNotEmpty ? vpn.exitIp : vpn.realIp),
+                                : (vpn.exitIp.isNotEmpty
+                                    ? vpn.exitIp
+                                    : vpn.realIp),
                           ),
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.place_rounded,
                             label: 'موقعیت',
-                            value: vpn.geo.isEmpty ? 'نامشخص' : vpn.geo.flagEmojiFreeLabel,
+                            value: vpn.geo.isEmpty
+                                ? 'نامشخص'
+                                : vpn.geo.flagEmojiFreeLabel,
                           ),
                         ],
                       ),
@@ -469,6 +621,18 @@ class _AccountPageState extends State<AccountPage> {
         ],
       ),
     );
+  }
+
+  /// نشانی اشتراک کوتاه نمایش داده می شود تا کارت شلوغ نشود.
+  String _shortUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null || uri.host.isEmpty) {
+      return url;
+    }
+    final String path = uri.path.length > 26
+        ? '${uri.path.substring(0, 26)}…'
+        : uri.path;
+    return '${uri.host}$path';
   }
 }
 
@@ -497,9 +661,13 @@ class _CategoryToggle extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: selected ? colors.primary.withValues(alpha: 0.14) : colors.surfaceHigh,
+              color: selected
+                  ? colors.primary.withValues(alpha: 0.14)
+                  : colors.surfaceHigh,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: selected ? colors.primary : colors.border),
+              border: Border.all(
+                color: selected ? colors.primary : colors.border,
+              ),
             ),
             child: Text(
               Fa.num(label),

@@ -84,7 +84,7 @@ Future<void> main(List<String> arguments) async {
   settings.addListener(() => vpn.updateSettings(settings.settings));
 
   final SubscriptionController subscriptions =
-      SubscriptionController(vpn: vpn);
+      SubscriptionController(vpn: vpn, auth: auth);
   final UpdateController updates = UpdateController(native);
   await OccasionService.instance.load();
 
@@ -125,7 +125,14 @@ Future<void> main(List<String> arguments) async {
     }
     if (auth.signedIn) {
       unawaited(auth.fetchNotifications());
-      unawaited(subscriptions.fetchAll());
+      // اشتراک شخصی از سرور خوانده می شود؛ فقط اگر سرور چیزی نداد منابع عمومی
+      // به عنوان پشتیبان بارگذاری می شوند.
+      unawaited(() async {
+        await subscriptions.syncPersonal();
+        if (vpn.nodes.isEmpty) {
+          await subscriptions.fetchAll();
+        }
+      }());
     }
   });
 }

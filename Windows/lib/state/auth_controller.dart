@@ -366,6 +366,9 @@ class AuthController extends ChangeNotifier {
       _log.add('ورود موفق؛ خوش آمدید ${session.account.displayName}.');
       unawaited(fetchNotifications());
       notifyListeners();
+      // نشست فقط خلاصه حساب را دارد؛ پروفایل کامل و نشانی اشتراک از همین
+      // مسیر از سرور گرفته می شود.
+      unawaited(refreshAccount(silent: true));
     } on ApiError catch (error) {
       _error = error.message;
       _logError(error.message);

@@ -126,6 +126,7 @@ class _ServersPageState extends State<ServersPage> {
                 label: 'همه منابع',
                 count: vpn.nodes.length,
                 selected: _sourceFilter.isEmpty,
+                icon: Icons.apps_rounded,
                 onTap: () => setState(() => _sourceFilter = ''),
               ),
               for (final SourceState state in subs.sources)
@@ -133,6 +134,9 @@ class _ServersPageState extends State<ServersPage> {
                   label: state.title,
                   count: state.count,
                   selected: _sourceFilter == state.source.id,
+                  icon: state.personal
+                      ? Icons.person_rounded
+                      : Icons.public_rounded,
                   onTap: () => setState(() => _sourceFilter = state.source.id),
                 ),
             ],
@@ -143,7 +147,7 @@ class _ServersPageState extends State<ServersPage> {
                 ? EmptyState(
                     icon: Icons.dns_outlined,
                     title: 'سروری پیدا نشد',
-                    message: 'اشتراک ها را به روز کنید یا فیلتر را بردارید.',
+                    message: 'اشتراک شما به صورت خودکار از سرور خوانده می شود؛ اگر سروری نبود فیلتر را بردارید.',
                     action: GradientButton(
                       label: 'دریافت سرورها',
                       icon: Icons.cloud_download_rounded,
@@ -188,12 +192,14 @@ class _SourceChip extends StatelessWidget {
     required this.count,
     required this.selected,
     required this.onTap,
+    this.icon,
   });
 
   final String label;
   final int count;
   final bool selected;
   final VoidCallback onTap;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -209,14 +215,27 @@ class _SourceChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(30),
             border: Border.all(color: selected ? colors.primary : colors.border),
           ),
-          child: Text(
-            Fa.num('$label (${Fa.num(count)})'),
-            style: TextStyle(
-              fontFamily: AppTheme.fontFamily,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: selected ? colors.textPrimary : colors.textSecondary,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                Icon(
+                  icon,
+                  size: 14,
+                  color: selected ? colors.primary : colors.textSecondary,
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                Fa.num('$label (${Fa.num(count)})'),
+                style: TextStyle(
+                  fontFamily: AppTheme.fontFamily,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? colors.textPrimary : colors.textSecondary,
+                ),
+              ),
+            ],
           ),
         ),
       ),
