@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Context.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/App/App-Filter.php';
+require_once __DIR__ . '/../Core/App/App-Two-Step.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Panel.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
@@ -58,6 +59,7 @@ self::reply($Context, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🛡 کنترل محتوا', 'callback_data' => 'app_filter']],
 [['text' => '📱 دستگاه‌های من', 'callback_data' => 'app_devices']],
 [['text' => '🔔 اعلان‌های برنامه', 'callback_data' => 'app_notifications']],
+[['text' => '🔐 تأیید دومرحله‌ای ورود', 'callback_data' => 'app_2fa']],
 [['text' => '🏠 منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
@@ -261,6 +263,54 @@ $Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? ''
 self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']],
 ]));
+}
+
+/** The switch that decides whether a sign-in also needs a tap here. */
+public static function twoStepMenu(Context $Context): void {
+if (self::accountOrPrompt($Context) === null) {
+return;
+}
+
+self::renderTwoStep($Context);
+}
+
+public static function setTwoStep(Context $Context, bool $Enabled): void {
+$Changed = AppTwoStep::enabled($Context->UserId) !== $Enabled;
+
+if ($Changed) {
+AppTwoStep::set($Context->UserId, $Enabled);
+}
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+$Message = $Changed
+? ($Enabled ? '✅تأیید دومرحله‌ای روشن شد.' : '⛔️تأیید دومرحله‌ای خاموش شد.')
+: 'وضعیت تغییری نکرد.';
+TelegramClient::answerCallbackQuery($Context->CallbackId, $Message, false);
+}
+
+self::renderTwoStep($Context);
+}
+
+private static function renderTwoStep(Context $Context): void {
+$On = AppTwoStep::enabled($Context->UserId);
+$Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورود')
+. "🔐 *تأیید دومرحله‌ای ورود به برنامه*\n"
+. 'وضعیت: ' . ($On ? '🟢 فعال' : '🔴 غیرفعال') . "\n"
+. "➖➖➖➖➖➖➖➖➖➖\n"
+. "🟢 فعال: بعد از کد پیامکی، جزئیات دستگاه (نام، سیستم‌عامل، IP و زمان) همین‌جا به تلگرام شما می‌آید و ورود فقط با زدن «✅خودم بودم» کامل می‌شود.\n\n"
+. "🔴 غیرفعال: فقط کد پیامکی کافی است و دستگاه بلافاصله تأیید می‌شود؛ بعد از هر ورود، نتیجه به تلگرام شما اطلاع داده می‌شود.\n\n"
+. ($On
+? 'ℹ️ پیشنهاد می‌شود این گزینه روشن بماند.'
+: '⚠️ با خاموش بودن این گزینه، هر کسی که کد پیامکی را ببیند می‌تواند وارد حساب شود.')
+. \Helper::userFooter();
+
+$Rows = $On
+? [[['text' => '⛔️ غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
+: [[['text' => '✅ فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
+$Rows[] = [['text' => '📱 دستگاه‌های من', 'callback_data' => 'app_devices']];
+$Rows[] = [['text' => '🔔 اعلان‌های برنامه', 'callback_data' => 'app_notifications']];
+$Rows[] = [['text' => '🏠 بازگشت', 'callback_data' => 'app_menu']];
+self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
 /** Finds the panel account of the person chatting, if there is one. */

@@ -549,7 +549,7 @@ $Profile_Buttons[] = [['text' => '📊گزارش مصرف', 'callback_data' => '
 $Profile_Buttons[] = [['text' => '💰شارژ اعتبار حساب کاربری', 'callback_data' => 'شارژ اعتبار حساب کاربری']];
 $Profile_Buttons[] = [['text' => '📋سابقه تراکنش', 'callback_data' => 'سابقه تراکنش'], ['text' => '📋سابقه اشتراک', 'callback_data' => 'سابقه اشتراک']];
 $Profile_Buttons[] = [['text' => '🛡کنترل محتوا', 'callback_data' => 'app_filter'], ['text' => '📱دستگاه من', 'callback_data' => 'app_devices']];
-$Profile_Buttons[] = [['text' => '🔔اعلانات', 'callback_data' => 'app_notifications']];
+$Profile_Buttons[] = [['text' => '🔔اعلانات', 'callback_data' => 'app_notifications'], ['text' => '🔐ورود دو مرحله‌ای', 'callback_data' => 'app_2fa']];
 $Profile_Buttons[] = Common::mainButton();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "🔰اطلاعات پروفایل شما به شرح زیر است:\n\n" . $Profile_Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Profile_Buttons));
 }

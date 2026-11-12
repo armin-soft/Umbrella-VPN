@@ -11,7 +11,7 @@ require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Config/Environment.php';
 require_once __DIR__ . '/Scheduler.php';
-require_once __DIR__ . '/../Core/App/App-DeviceLimit.php';
+require_once __DIR__ . '/../Core/App/App-Device-Limit.php';
 
 final class AdminFlow {
 private function __construct() {

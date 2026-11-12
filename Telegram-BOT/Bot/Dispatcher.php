@@ -6,7 +6,7 @@ require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/Admin.php';
 require_once __DIR__ . '/User.php';
 require_once __DIR__ . '/Profile.php';
-require_once __DIR__ . '/AppLink.php';
+require_once __DIR__ . '/App-Link.php';
 require_once __DIR__ . '/../Core/App/App-Gateway.php';
 require_once __DIR__ . '/Subscription.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
@@ -310,6 +310,9 @@ match($Data) {
 'برنامه آمبرلا' => AppFlow::menu($Context),
 'app_menu' => AppFlow::menu($Context),
 'app_filter' => AppFlow::filterMenu($Context),
+'app_2fa' => AppFlow::twoStepMenu($Context),
+'app_2fa_on' => AppFlow::setTwoStep($Context, true),
+'app_2fa_off' => AppFlow::setTwoStep($Context, false),
 'app_devices' => AppFlow::devices($Context),
 'app_notifications' => AppFlow::notifications($Context),
 'app_filter_domains' => AppFlow::filterDomainsStart($Context),
