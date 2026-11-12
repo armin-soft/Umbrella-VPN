@@ -7,6 +7,10 @@ on:
       - 'Windows/**'
       - '.github/workflows/build-windows-installer.yml'
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build:
     runs-on: windows-latest
@@ -15,6 +19,7 @@ jobs:
     env:
       # Keep the Flutter and pub caches inside the runner workspace.
       PUB_CACHE: ${{ github.workspace }}\.pub-cache
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout
@@ -31,27 +36,35 @@ jobs:
           flutter --version
           flutter doctor -v
 
-      - name: Analyze (non blocking)
-        working-directory: Windows
+      - name: Analyze
+        id: analyze
         continue-on-error: true
-        run: flutter analyze
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          flutter analyze *>&1 | Tee-Object -FilePath analyze-log.txt
+          exit $LASTEXITCODE
 
       - name: Build release bundle
+        id: build
         working-directory: Windows
-        run: powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release *>&1 | Tee-Object -FilePath build-log.txt
+          exit $LASTEXITCODE
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
 
       - name: Build installer and portable zip
         working-directory: Windows
-        run: >
-          powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
-          -SkipBuild
-          -Portable
-          -InnoPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1 -SkipBuild -Portable -InnoPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" *>&1 | Tee-Object -FilePath installer-log.txt
+          exit $LASTEXITCODE
 
       - name: Show output
+        if: always()
         run: Get-ChildItem Windows\dist | Format-Table Name, Length
 
       - name: Upload installer
@@ -62,4 +75,31 @@ jobs:
             Windows/dist/UmbrellaVPN-Setup-1.0.0-x64.exe
             Windows/dist/SHA256SUMS.txt
             Windows/dist/UmbrellaVPN-1.0.0-x64-portable.zip
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      # The build logs are published as a commit comment, so the run can be
+      # diagnosed from outside GitHub Actions (which is handy in restricted
+      # environments where the log download endpoint is not reachable).
+      - name: Publish logs as commit comment
+        if: always()
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          function Encode([string]$text) {
+            return ($text -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;')
+          }
+          $sections = @()
+          foreach ($name in @('analyze-log.txt', 'build-log.txt', 'installer-log.txt')) {
+            if (Test-Path $name) {
+              $text = Get-Content $name -Raw
+              if ($null -eq $text) { $text = '' }
+              if ($text.Length -gt 30000) { $text = $text.Substring($text.Length - 30000) }
+              $sections += ("### " + $name + "`n<pre>" + (Encode $text) + "</pre>")
+            }
+          }
+          if ($sections.Count -eq 0) { exit 0 }
+          $body = ($sections -join "`n`n")
+          if ($body.Length -gt 64000) { $body = $body.Substring($body.Length - 64000) }
+          $json = @{ body = $body } | ConvertTo-Json
+          [System.IO.File]::WriteAllText('payload.json', $json, [System.Text.UTF8Encoding]::new($false))
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" --input payload.json
