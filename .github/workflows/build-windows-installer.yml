@@ -88,7 +88,13 @@ jobs:
 
       - name: Show output
         if: always()
-        run: Get-ChildItem Windows\dist | Format-Table Name, Length
+        shell: pwsh
+        run: |
+          if (Test-Path Windows\dist) {
+            Get-ChildItem Windows\dist | Format-Table Name, Length
+          } else {
+            Write-Host 'no dist folder (the build or the tests failed before packaging)'
+          }
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -112,7 +118,7 @@ jobs:
             return ($text -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;')
           }
           $sections = @()
-          foreach ($name in @('analyze-log.txt', 'build-log.txt', 'installer-log.txt')) {
+          foreach ($name in @('analyze-log.txt', 'test-log.txt', 'build-log.txt', 'installer-log.txt')) {
             if (Test-Path $name) {
               $text = Get-Content $name -Raw
               if ($null -eq $text) { $text = '' }
