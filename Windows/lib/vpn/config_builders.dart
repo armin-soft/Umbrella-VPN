@@ -44,6 +44,40 @@ class SingBoxConfig {
   static String encode(Map<String, dynamic> config) =>
       const JsonEncoder.withIndent('  ').convert(config);
 
+  /// حالت پروکسی محلی: یک inbound مختلط (http و socks روی یک پورت) و یک
+  /// outbound به سرور. همان روشی که کلاینت ویندوز هیدیفای در حالت
+  /// system proxy استفاده می کند.
+  static Map<String, dynamic> buildProxy({
+    required VpnNode node,
+    required AppSettings settings,
+    required int port,
+  }) {
+    final Map<String, dynamic> outbound = outboundFor(node, settings);
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': 'info', 'timestamp': true},
+      'inbounds': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'mixed',
+          'tag': 'mixed-in',
+          'listen': '127.0.0.1',
+          'listen_port': port,
+        },
+      ],
+      'outbounds': <Map<String, dynamic>>[
+        outbound,
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+      ],
+      'route': <String, dynamic>{
+        'rules': <Map<String, dynamic>>[
+          <String, dynamic>{'action': 'sniff'},
+          <String, dynamic>{'ip_is_private': true, 'outbound': 'direct'},
+        ],
+        'final': 'proxy',
+        'auto_detect_interface': true,
+      },
+    };
+  }
+
   static Map<String, dynamic> _tunInbound(AppSettings settings) {
     final List<String> addresses = <String>[AppConfig.tunAddress];
     if (!settings.blockIpv6) {

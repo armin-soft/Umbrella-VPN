@@ -48,12 +48,27 @@ class PingService {
       );
     }
 
+    return _derive(node, samples.reduce(math.min));
+  }
+
+  /// ثبت تاخیر اندازه گیری شده با هسته (تاخیر واقعی تونل).
+  ///
+  /// عدد تونل دقیق تر از تی سی پی و آی سی ام پی است؛ پس همان مبنای نمایش
+  /// قرار می گیرد و جیتر از تاریخچه حساب می شود.
+  VpnNode withTunnelDelay(VpnNode node, int delayMs) {
+    if (delayMs <= 0) {
+      return node;
+    }
     final List<int> history = _history.putIfAbsent(node.id, () => <int>[]);
-    history.add(samples.reduce(math.min));
+    history.add(delayMs);
     if (history.length > 6) {
       history.removeAt(0);
     }
+    return _derive(node, history.reduce(math.min));
+  }
 
+  VpnNode _derive(VpnNode node, int bestPing) {
+    final List<int> history = _history[node.id] ?? <int>[bestPing];
     final double average =
         history.reduce((int a, int b) => a + b) / history.length;
     final double variance = history.length < 2
@@ -63,7 +78,6 @@ class PingService {
                 .reduce((double a, double b) => a + b) /
             history.length;
     final int jitter = math.sqrt(variance).round();
-    final int bestPing = history.reduce(math.min);
 
     // پایداری: کمترین پینگ و کمترین پراکندگی بهترین است.
     final double stability = (1 -

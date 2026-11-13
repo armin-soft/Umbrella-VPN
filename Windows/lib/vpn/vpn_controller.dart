@@ -16,6 +16,7 @@ import '../platform/services.dart';
 import 'balancer.dart';
 import 'config_builders.dart';
 import 'cores.dart';
+import 'core_ping.dart';
 import 'ping.dart';
 
 enum VpnStatus {
@@ -184,7 +185,8 @@ class VpnController extends ChangeNotifier {
         _tray = tray,
         _provisioner = provisioner,
         _settings = settings,
-        _ping = PingService(native);
+        _ping = PingService(native),
+        _corePing = CorePinger(provisioner);
 
   final NativeBridge _native;
   final IpService _ip;
@@ -192,6 +194,7 @@ class VpnController extends ChangeNotifier {
   final TrayService _tray;
   final CoreProvisioner _provisioner;
   final PingService _ping;
+  final CorePinger _corePing;
   final NodeBalancer _balancer = NodeBalancer();
   final AppLogger _log = AppLogger.instance;
 
@@ -353,8 +356,23 @@ class VpnController extends ChangeNotifier {
         _notify();
       },
     );
+    // تاخیر واقعی تونل: هسته سینگ باکس هر سرور را یک بار امتحان می کند و
+    // عدد دقیق را می دهد؛ اگر هسته در دسترس نباشد، نتیجه تی سی پی و آی سی
+    // ام پی همان طور می ماند.
+    Map<String, int> tunnelDelays = <String, int>{};
+    try {
+      tunnelDelays = await _corePing.measure(target, settings: _settings);
+    } catch (_) {
+      tunnelDelays = <String, int>{};
+    }
+    final List<VpnNode> fused = measured
+        .map((VpnNode node) {
+          final int? delay = tunnelDelays[node.id];
+          return delay == null ? node : _ping.withTunnelDelay(node, delay);
+        })
+        .toList();
     final Map<String, VpnNode> results = <String, VpnNode>{
-      for (final VpnNode node in measured) node.id: node,
+      for (final VpnNode node in fused) node.id: node,
     };
     _nodes = _nodes
         .map((VpnNode node) => results[node.id] ?? node)
@@ -543,8 +561,8 @@ class VpnController extends ChangeNotifier {
         await _provisioner.provision(core);
       }
     }
-    final LaunchPlan? plan = await _buildPlan(node);
-    if (plan == null) {
+    final List<LaunchPlan> plans = await _buildPlans(node);
+    if (plans.isEmpty) {
       if (_lastPlanNeedsCore) {
         _setStatus(VpnStatus.failed, 'هسته لازم در دسترس نیست.');
         onRequireCores?.call();
@@ -558,64 +576,72 @@ class VpnController extends ChangeNotifier {
         message: 'این سرور با هسته های همراه نسخه سازگار نیست؛ سرور بعدی امتحان می شود.',
       );
     }
-    if (plan.warning.isNotEmpty) {
-      _log.add(plan.warning, level: 'warning');
+
+    // هر هسته به ترتیب امتحان می شود: سینگ باکس (همان هسته هیدیفای) و اگر
+    // بالا نیامد، ایکس ری یا میرو. این طور حتی اگر یک هسته روی سیستم مشکل
+    // داشته باشد، اتصال از راه دیگر برقرار می شود.
+    for (final LaunchPlan plan in plans) {
+      if (plan.warning.isNotEmpty) {
+        _log.add(plan.warning, level: 'warning');
+      }
+      _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
+      final bool started = await _launch(plan);
+      if (!started) {
+        await _stopCores();
+        await _disableProxy();
+        continue;
+      }
+
+      final bool ready = await _waitForTunnel(plan);
+      if (!ready) {
+        final String coreLog = '${_provisioner.dataDir}'
+            '${Platform.pathSeparator}run${Platform.pathSeparator}'
+            '${plan.cores.first.name}-core.log';
+        final String tail = await _readLogTail(coreLog);
+        _log.add(
+          'پورت تونل (${Fa.num(plan.readinessPort)}) در '
+          '${Fa.num(_tunnelTimeout.inSeconds)} ثانیه باز نشد.'
+          '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+          level: 'error',
+        );
+        await _stopCores();
+        await _disableProxy();
+        continue;
+      }
+
+      if (plan.usesSystemProxy) {
+        await _enableProxy(plan);
+      }
+      _connectedAt = DateTime.now();
+      _healthFailures = 0;
+      _reconnectAttempts = 0;
+      _setStatus(VpnStatus.connected, 'اتصال برقرار شد.');
+      _balancer.markConnected(node.id);
+      _startTimers();
+      await _sound.play('connect');
+      await _tray.update(
+        state: 'connected',
+        tooltip: '${AppConfig.appName} - متصل به ${node.name}',
+        connected: true,
+      );
+      if (_settings.notificationsEnabled) {
+        await _tray.balloon(
+          'اتصال برقرار شد',
+          '${node.name} | ${Fa.ms(node.pingMs)}',
+        );
+      }
+
+      unawaited(_verifyTunnel());
+      _log.add('اتصال به ${node.name} (${node.host}:${node.port}) برقرار شد.');
+      _settings = _settings.copyWith(lastNodeId: node.id);
+      onSettingsChanged?.call(_settings);
+      return const _AttemptResult(message: 'اتصال برقرار شد.', ok: true);
     }
 
-    _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
-    final bool started = await _launch(plan);
-    if (!started) {
-      await _stopCores();
-      await _disableProxy();
-      return _AttemptResult(
-        message: 'اجرای هسته اتصال ناموفق بود؛ جزئیات در گزارش ها ثبت شد.',
-      );
-    }
-
-    final bool ready = await _waitForTunnel(plan);
-    if (!ready) {
-      final String coreLog = '${_provisioner.dataDir}'
-          '${Platform.pathSeparator}run${Platform.pathSeparator}'
-          '${plan.cores.first.name}-core.log';
-      final String tail = await _readLogTail(coreLog);
-      _log.add(
-        'پورت تونل (${Fa.num(plan.readinessPort)}) در ${Fa.num(_tunnelTimeout.inSeconds)} '
-        'ثانیه باز نشد.${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
-        level: 'error',
-      );
-      await _stopCores();
-      await _disableProxy();
-      return const _AttemptResult(
-        message: 'تونل بالا نیامد؛ سرور دیگری امتحان می شود.',
-      );
-    }
-    if (plan.usesSystemProxy) {
-      await _enableProxy(plan);
-    }
-    _connectedAt = DateTime.now();
-    _healthFailures = 0;
-    _reconnectAttempts = 0;
-    _setStatus(VpnStatus.connected, 'اتصال برقرار شد.');
-    _balancer.markConnected(node.id);
-    _startTimers();
-    await _sound.play('connect');
-    await _tray.update(
-      state: 'connected',
-      tooltip: '${AppConfig.appName} - متصل به ${node.name}',
-      connected: true,
+    _setStatus(VpnStatus.failed, 'هیچ هسته ای نتوانست اتصال را برقرار کند.');
+    return const _AttemptResult(
+      message: 'هیچ هسته ای نتوانست تونل را بالا بیاورد؛ گزارش ها را ببینید.',
     );
-    if (_settings.notificationsEnabled) {
-      await _tray.balloon(
-        'اتصال برقرار شد',
-        '${node.name} | ${Fa.ms(node.pingMs)}',
-      );
-    }
-
-    unawaited(_verifyTunnel());
-    _log.add('اتصال به ${node.name} (${node.host}:${node.port}) برقرار شد.');
-    _settings = _settings.copyWith(lastNodeId: node.id);
-    onSettingsChanged?.call(_settings);
-    return const _AttemptResult(message: 'اتصال برقرار شد.', ok: true);
   }
 
   Future<void> _terminateForeignCores() async {
@@ -638,6 +664,8 @@ class VpnController extends ChangeNotifier {
 
   /// پروتکل هایی که هسته های همراه نسخه پشتیبانی می کنند.
   ///
+  /// سینگ باکس: وی لس، وی مس، تروجان، شادوساکس، ساکس، تی یو آی سی و
+  /// هایستریا ۲ (همان هسته ای که کلاینت هیدیفای استفاده می کند)
   /// ایکس ری: وی لس، وی مس، تروجان، شادوساکس و ساکس
   /// میرو: پروتکل میرو
   static bool supports(VpnNode node) {
@@ -648,12 +676,12 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.shadowsocks:
       case NodeProtocol.socks:
       case NodeProtocol.mieru:
+      case NodeProtocol.hysteria2:
+      case NodeProtocol.tuic:
         return true;
       case NodeProtocol.clash:
       case NodeProtocol.wireguard:
       case NodeProtocol.amnezia:
-      case NodeProtocol.hysteria2:
-      case NodeProtocol.tuic:
         return false;
     }
   }
@@ -693,11 +721,79 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// پیکربندی و فهرست هسته ها برای یک سرور.
+  /// فهرست نقشه های اجرا برای یک سرور، به ترتیب اولویت.
   ///
-  /// هسته ایکس ری یک سرور پروکسی محلی روی ۱۲۷٫۰٫۰٫۱ می سازد و برنامه پروکسی
-  /// سیستمی ویندوز را به همان پورت وصل می کند؛ بنابراین بدون کارت شبکه مجازی و
-  /// بدون هسته سینگ باکس تونل برقرار می شود.
+  /// سینگ باکس همان هسته ای است که کلاینت ویندوز هیدیفای استفاده می کند و
+  /// پروتکل های بیشتری (از جمله تی یو آی سی و هایستریا ۲) را پوشش می دهد؛
+  /// ایکس ری و میرو به عنوان پشتیبان می آیند.
+  Future<List<LaunchPlan>> _buildPlans(VpnNode node) async {
+    final List<LaunchPlan> plans = <LaunchPlan>[];
+    final LaunchPlan? singbox = await _buildSingBoxPlan(node);
+    if (singbox != null) {
+      plans.add(singbox);
+    }
+    final LaunchPlan? fallback = await _buildPlan(node);
+    if (fallback != null) {
+      plans.add(fallback);
+    }
+    return plans;
+  }
+
+  /// نقشه اجرای سینگ باکس: پروکسی محلی مختلط روی پورت http و اتصال به سرور.
+  ///
+  /// همان کاری که کلاینت هیدیفای در حالت «پروکسی سیستمی» می کند، با همان
+  /// هسته و همان پروتکل ها (وی لس، وی مس، تروجان، شادوساکس، تی یو آی سی و
+  /// هایستریا ۲).
+  Future<LaunchPlan?> _buildSingBoxPlan(VpnNode node) async {
+    if (!usable(node)) {
+      return null;
+    }
+    final CoreInfo? core = _provisioner.info('singbox');
+    if (core == null) {
+      return null;
+    }
+    final String? exe = await _provisioner.locateBinary(core.binary);
+    if (exe == null || exe.isEmpty) {
+      _log.add('هسته sing-box.exe در نسخه نصب نیست؛ هسته پشتیبان امتحان می شود.');
+      return null;
+    }
+
+    final Directory runDir = Directory(
+      '${_provisioner.dataDir}${Platform.pathSeparator}run',
+    );
+    await runDir.create(recursive: true);
+    final int port = AppConfig.httpPortXray;
+    final File config = File(
+      '${runDir.path}${Platform.pathSeparator}singbox.json',
+    );
+    await config.writeAsString(
+      SingBoxConfig.encode(
+        SingBoxConfig.buildProxy(
+          node: node,
+          settings: _settings,
+          port: port,
+        ),
+      ),
+      flush: true,
+    );
+    return LaunchPlan(
+      cores: <CoreLaunch>[
+        CoreLaunch(
+          exe: exe,
+          args: <String>['run', '-c', config.path],
+          workDir: _dirOf(exe),
+          name: 'singbox',
+        ),
+      ],
+      configPaths: <String>[config.path],
+      readinessPort: port,
+      primaryBinary: 'sing-box.exe',
+      tunnelHint: '',
+      chained: false,
+      proxyPort: port,
+    );
+  }
+
   Future<LaunchPlan?> _buildPlan(VpnNode node) async {
     _lastPlanNeedsCore = false;
     if (!supports(node)) {
@@ -713,6 +809,18 @@ class VpnController extends ChangeNotifier {
     if (!usable(node)) {
       _log.add(
         'اطلاعات سرور ${node.name} ناقص است (شناسه یا رمز خالی)؛ کنار گذاشته شد.',
+        level: 'info',
+      );
+      return null;
+    }
+
+    // تی یو آی سی و هایستریا ۲ را فقط سینگ باکس اجرا می کند؛ ایکس ری چنین
+    // inbound هایی ندارد و پیکربندی نامعتبر می سازد.
+    if (node.protocol == NodeProtocol.hysteria2 ||
+        node.protocol == NodeProtocol.tuic) {
+      _log.add(
+        'سرور ${node.name} از پروتکل ${node.protocol.label} استفاده می کند و '
+        'فقط با هسته سینگ باکس اجرا می شود؛ هسته پشتیبان برای این پروتکل نیست.',
         level: 'info',
       );
       return null;

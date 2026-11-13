@@ -4,6 +4,18 @@
   "note": "هسته ها همراه نسخه نصب می شوند و در پوشه cores کنار فایل اجرایی قرار می گیرند؛ برنامه هیچ هسته ای را دانلود نمی کند. هسته اصلی ایکس ری است و سینگ باکس کلا حذف شده است.",
   "cores": [
     {
+      "id": "singbox",
+      "title": "هسته سینگ باکس",
+      "role": "اتصال همه پروتکل ها با همان هسته ای که کلاینت هیدیفای استفاده می کند",
+      "binary": "sing-box.exe",
+      "version": "1.11.15",
+      "url": "https://github.com/SagerNet/sing-box/releases/download/v1.11.15/sing-box-1.11.15-windows-amd64.zip",
+      "archive": "zip",
+      "inside": "sing-box-1.11.15-windows-amd64/sing-box.exe",
+      "sha256": "",
+      "required": false
+    },
+    {
       "id": "xray",
       "title": "هسته ایکس ری",
       "role": "پروتکل های وی لس، وی مس، تروجان و شادوساکس",
