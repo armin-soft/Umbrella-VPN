@@ -261,6 +261,9 @@ class VpnController extends ChangeNotifier {
   Timer? _ipTimer;
   Timer? _pingTimer;
   int _healthFailures = 0;
+
+  /// هسته ای که برای هر سرور جواب داده است (شناسه سرور → نام هسته).
+  final Map<String, String> _preferredCore = <String, String>{};
   int _reconnectAttempts = 0;
   bool _disposed = false;
 
@@ -691,7 +694,10 @@ class VpnController extends ChangeNotifier {
       // در حالت تونل، درخواست مستقیم هم از کارت شبکه مجازی رد می شود؛ پس
       // معیار درست، عوض شدن آی پی خروجی است نه باز شدن پورت.
       final bool flows = plan.usesSystemProxy
-          ? await TunnelProbe.check(proxyPort: plan.proxyPort)
+          ? await TunnelProbe.check(
+              proxyPort: plan.proxyPort,
+              timeout: Duration(seconds: plans.length > 1 ? 6 : 8),
+            )
           : await _exitIpChanged();
       if (!flows) {
         final String coreLog = '${_provisioner.dataDir}'
@@ -743,12 +749,17 @@ class VpnController extends ChangeNotifier {
       }
 
       unawaited(_verifyTunnel());
-      _log.add('اتصال به ${node.name} (${node.host}:${node.port}) برقرار شد.');
+      _preferredCore[node.id] = plan.cores.first.name;
+      _log.add(
+        'اتصال به ${node.name} (${node.host}:${node.port}) با هسته '
+        '${plan.primaryBinary} برقرار شد.',
+      );
       _settings = _settings.copyWith(lastNodeId: node.id);
       onSettingsChanged?.call(_settings);
       return const _AttemptResult(message: 'اتصال برقرار شد.', ok: true);
     }
 
+    _preferredCore.remove(node.id);
     _setStatus(VpnStatus.failed, 'هیچ هسته ای نتوانست اتصال را برقرار کند.');
     return const _AttemptResult(
       message: 'هیچ هسته ای نتوانست تونل را بالا بیاورد؛ گزارش ها را ببینید.',
@@ -852,6 +863,19 @@ class VpnController extends ChangeNotifier {
     final LaunchPlan? fallback = await _buildPlan(node);
     if (fallback != null) {
       plans.add(fallback);
+    }
+    // هسته ای که آخرین بار برای همین سرور جواب داد، اول امتحان می شود تا
+    // هر بار چند ثانیه صرف هسته ای نشود که با این سرور کار نمی کند.
+    final String preferred = _preferredCore[node.id] ?? '';
+    if (preferred.isNotEmpty && plans.length > 1) {
+      plans.sort((LaunchPlan a, LaunchPlan b) {
+        final bool aFirst = a.cores.first.name == preferred;
+        final bool bFirst = b.cores.first.name == preferred;
+        if (aFirst == bFirst) {
+          return 0;
+        }
+        return aFirst ? -1 : 1;
+      });
     }
     return plans;
   }
@@ -1413,7 +1437,7 @@ class VpnController extends ChangeNotifier {
       final bool flows = await TunnelProbe.check(
         proxyPort: _proxyPort,
         attempts: 1,
-        timeout: const Duration(seconds: 4),
+        timeout: const Duration(seconds: 6),
       );
       if (flows) {
         if (_healthFailures > 0) {
@@ -1430,7 +1454,7 @@ class VpnController extends ChangeNotifier {
       );
       _notify();
     }
-    if (_healthFailures >= 2) {
+    if (_healthFailures >= 3) {
       if (_settings.autoFailover && _reconnectAttempts < 3) {
         _reconnectAttempts++;
         await _reconnect();
