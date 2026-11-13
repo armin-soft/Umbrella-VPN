@@ -111,10 +111,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: <Widget>[
                         ToggleRow(
                           icon: Icons.lan_rounded,
-                          title: 'حالت تونل (مثل هیدیفای)',
-                          subtitle: 'تمام ترافیک از کارت شبکه مجازی رد می شود؛ '
-                              'به دسترسی مدیر نیاز دارد و اگر برنامه مدیر نباشد، '
-                              'خودکار با پروکسی سیستمی وصل می شود',
+                          title: 'حالت تونل (پیشنهاد شده)',
+                          subtitle: 'سریع ترین و پایدارترین حالت، مثل هیدیفای: تمام '
+                              'ترافیک از کارت شبکه مجازی رد می شود. اگر برنامه با '
+                              'دسترسی مدیر اجرا نشود، خودکار با پروکسی سیستمی '
+                              'وصل می شود',
                           value: current.tunMode,
                           onChanged: settings.setTunMode,
                           accent: colors.success,

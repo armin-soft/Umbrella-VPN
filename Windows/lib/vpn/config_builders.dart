@@ -60,6 +60,7 @@ class SingBoxConfig {
     required VpnNode node,
     required int port,
     required int mtu,
+    bool tcpFastOpen = true,
   }) {
     final Map<String, dynamic> params = node.params;
     final List<String> addresses = _addresses(params['address']);
@@ -72,6 +73,7 @@ class SingBoxConfig {
           'tag': 'mixed-in',
           'listen': '127.0.0.1',
           'listen_port': port,
+          if (tcpFastOpen) 'tcp_fast_open': true,
         },
       ],
       'endpoints': <Map<String, dynamic>>[
@@ -118,6 +120,7 @@ class SingBoxConfig {
     required VpnNode node,
     required AppSettings settings,
     required int port,
+    bool tcpFastOpen = true,
   }) {
     final Map<String, dynamic> outbound = outboundFor(node, settings);
     return <String, dynamic>{
@@ -128,6 +131,7 @@ class SingBoxConfig {
           'tag': 'mixed-in',
           'listen': '127.0.0.1',
           'listen_port': port,
+          if (tcpFastOpen) 'tcp_fast_open': true,
         },
       ],
       'outbounds': <Map<String, dynamic>>[
@@ -150,6 +154,10 @@ class SingBoxConfig {
     if (!settings.blockIpv6) {
       addresses.add(AppConfig.tunAddress6);
     }
+    // بافرهای بزرگ تر و استک سیستم: همان تنظیماتی که سرعت بالای کلاینت
+    // هیدیفای از آن می آید. mtu = 0 در سینگ باکس یعنی انتخاب خودکار که برای
+    // tcp بهتر از عددهای بزرگ دستی است.
+    final bool systemStack = settings.tunStack == TunStack.system;
     return <String, dynamic>{
       'type': 'tun',
       'tag': 'tun-in',
@@ -161,6 +169,12 @@ class SingBoxConfig {
       'stack': settings.tunStack.name,
       'endpoint_independent_nat': true,
       'udp_timeout': '5m',
+      if (!systemStack) ...<String, dynamic>{
+        'gso': true,
+        'gso_max_size': 65536,
+      },
+      'tcp_fast_open': true,
+      'tcp_multi_path': false,
     };
   }
 
@@ -202,6 +216,35 @@ class SingBoxConfig {
     };
   }
 
+  /// چند سرویس روی یک اتصال (multiplexing).
+  ///
+  /// کلاینت هیدیفای همین را روشن می کند: هر درخواست جدید لازم نیست یک دست
+  /// دادن TLS و TCP تازه بگیرد، پس هم سرعت بارگذاری صفحه بیشتر می شود و هم
+  /// پینگ پایدارتر است. اگر سروری پشتیبانی نکند، اتصال مستقیم ادامه پیدا
+  /// می کند و چیزی خراب نمی شود.
+  static Map<String, dynamic>? _multiplex(
+    Map<String, dynamic> params,
+    NodeProtocol protocol,
+  ) {
+    // میرو و وایرگارد خودشان مدیر جریان هستند.
+    if (protocol == NodeProtocol.mieru ||
+        protocol == NodeProtocol.wireguard ||
+        protocol == NodeProtocol.amnezia) {
+      return null;
+    }
+    if (JsonX.text(params['multiplex']).toLowerCase() == 'off') {
+      return null;
+    }
+    final int concurrency =
+        JsonX.integer(params['mux'] ?? params['maxConnections'], 8);
+    return <String, dynamic>{
+      'enabled': true,
+      'protocol': 'h2mux',
+      'max_streams': concurrency > 0 ? concurrency : 8,
+      'padding': true,
+    };
+  }
+
   /// تبدیل گره به خروجی سینگ باکس.
   static Map<String, dynamic> outboundFor(VpnNode node, AppSettings settings) {
     final Map<String, dynamic> params = node.params;
@@ -218,6 +261,8 @@ class SingBoxConfig {
           'packet_encoding': 'xudp',
           if (_tls(params) != null) 'tls': _tls(params),
           if (_transport(params) != null) 'transport': _transport(params),
+          if (_multiplex(params, node.protocol) != null)
+            'multiplex': _multiplex(params, node.protocol),
         };
       case NodeProtocol.vmess:
         return <String, dynamic>{
@@ -231,6 +276,8 @@ class SingBoxConfig {
           'packet_encoding': 'xudp',
           if (_tls(params) != null) 'tls': _tls(params),
           if (_transport(params) != null) 'transport': _transport(params),
+          if (_multiplex(params, node.protocol) != null)
+            'multiplex': _multiplex(params, node.protocol),
         };
       case NodeProtocol.trojan:
         return <String, dynamic>{
@@ -245,6 +292,8 @@ class SingBoxConfig {
                 'server_name': JsonX.text(params['sni'], node.host),
               },
           if (_transport(params) != null) 'transport': _transport(params),
+          if (_multiplex(params, node.protocol) != null)
+            'multiplex': _multiplex(params, node.protocol),
         };
       case NodeProtocol.shadowsocks:
         return <String, dynamic>{
@@ -370,9 +419,9 @@ class SingBoxConfig {
     };
     final List<dynamic> alpn = JsonX.asList(params['alpn']);
     if (alpn.isNotEmpty) {
+      // فقط همان چیزی که سرور اعلام کرده؛ تحمیل ALPN اضافی دست دادن TLS را
+      // کند می کند و در برخی سرورها اتصال را کند یا ناموفق می کند.
       tls['alpn'] = alpn.map((Object? item) => item.toString()).toList();
-    } else {
-      tls['alpn'] = <String>['h2', 'http/1.1'];
     }
     if (reality) {
       tls['reality'] = <String, dynamic>{

@@ -1,0 +1,87 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/vpn/config_builders.dart';
+
+/// آزمون تنظیمات سرعت: تونل کامل، بافرها، fast open و multiplexing.
+void main() {
+  VpnNode node(NodeProtocol protocol, Map<String, dynamic> params) => VpnNode(
+        id: 'n',
+        name: 'test',
+        protocol: protocol,
+        host: 'example.com',
+        port: 443,
+        sourceId: 's',
+        params: params,
+      );
+
+  group('پیکربندی تونل', () {
+    test('تونل با بافرهای بزرگ و fast open ساخته می شود', () {
+      final Map<String, dynamic> config = SingBoxConfig.build(
+        node: node(NodeProtocol.vless, <String, dynamic>{'id': 'u'}),
+        settings: const AppSettings(),
+      );
+      final Map<String, dynamic> inbound =
+          (config['inbounds'] as List<dynamic>).first as Map<String, dynamic>;
+      expect(inbound['type'], 'tun');
+      expect(inbound['gso'], isTrue);
+      expect(inbound['tcp_fast_open'], isTrue);
+      expect(inbound['auto_route'], isTrue);
+    });
+
+    test('حالت اتصال پیش فرض تونل کامل است', () {
+      expect(const AppSettings().tunMode, isTrue);
+    });
+
+    test('انتخاب صریح کاربر در JSON می ماند', () {
+      const AppSettings settings =
+          AppSettings(tunMode: false, modeChoiceExplicit: true);
+      final AppSettings restored =
+          AppSettings.fromJson(settings.toJson());
+      expect(restored.tunMode, isFalse);
+      expect(restored.modeChoiceExplicit, isTrue);
+    });
+  });
+
+  group('سرعت خروجی', () {
+    test('وی لس چند سرویسی (multiplex) روشن دارد', () {
+      final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
+        node(NodeProtocol.vless, <String, dynamic>{'id': 'u'}),
+        const AppSettings(),
+      );
+      final Map<String, dynamic> mux =
+          outbound['multiplex'] as Map<String, dynamic>;
+      expect(mux['enabled'], isTrue);
+      expect(mux['protocol'], 'h2mux');
+    });
+
+    test('اگر کاربر multiplex را خاموش کند اعمال می شود', () {
+      final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
+        node(NodeProtocol.vless, <String, dynamic>{'id': 'u', 'multiplex': 'off'}),
+        const AppSettings(),
+      );
+      expect(outbound.containsKey('multiplex'), isFalse);
+    });
+
+    test('وایرگارد multiplex نمی گیرد', () {
+      final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
+        node(NodeProtocol.wireguard,
+            <String, dynamic>{'privateKey': 'a', 'publicKey': 'b'}),
+        const AppSettings(),
+      );
+      expect(outbound.containsKey('multiplex'), isFalse);
+    });
+
+    test('ALPN تحمیلی حذف شده است', () {
+      final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
+        node(NodeProtocol.trojan, <String, dynamic>{
+          'password': 'p',
+          'security': 'tls',
+          'sni': 'example.com',
+        }),
+        const AppSettings(),
+      );
+      final Map<String, dynamic> tls = outbound['tls'] as Map<String, dynamic>;
+      expect(tls.containsKey('alpn'), isFalse);
+    });
+  });
+}

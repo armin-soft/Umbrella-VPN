@@ -114,6 +114,11 @@ class AppConfig {
   static const String tunAddress = '172.19.0.1/30';
   static const String tunAddress6 = 'fdfe:dcba:9876::1/126';
   static const int defaultMtu = 9000;
+
+  /// زمان سنجش سرعت روی سرور متصل. یک مگابایت کافی است تا عدد واقعی سرعت
+  /// به دست بیاید ولی مصرف کاربر بی دلیل بالا نرود.
+  static const String speedTestUrl =
+      'https://speed.cloudflare.com/__down?bytes=1000000';
   static const int socksPortXray = 2081;
 
   /// پورت HTTP ایکس ری برای پروکسی سیستمی ویندوز.

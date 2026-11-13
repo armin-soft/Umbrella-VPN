@@ -938,7 +938,7 @@ class AppSettings {
     this.theme = ThemePreference.dark,
     this.autoConnect = false,
     this.killSwitch = false,
-    this.tunMode = false,
+    this.tunMode = true,
     this.startWithWindows = false,
     this.minimizeToTray = true,
     this.closeToTray = true,
@@ -964,6 +964,7 @@ class AppSettings {
     this.pingIntervalSeconds = 120,
     this.turboMode = false,
     this.logLevel = 'info',
+    this.modeChoiceExplicit = false,
   });
 
   final ThemePreference theme;
@@ -1000,6 +1001,10 @@ class AppSettings {
   final bool turboMode;
   final String logLevel;
 
+  /// کاربر خودش حالت اتصال (تونل یا پروکسی) را انتخاب کرده است؟ تا وقتی
+  /// انتخاب نکرده، پیش فرض برنامه (تونل کامل مثل هیدیفای) اعمال می شود.
+  final bool modeChoiceExplicit;
+
   AppSettings copyWith({
     ThemePreference? theme,
     bool? autoConnect,
@@ -1030,6 +1035,7 @@ class AppSettings {
     int? pingIntervalSeconds,
     bool? turboMode,
     String? logLevel,
+    bool? modeChoiceExplicit,
   }) {
     return AppSettings(
       theme: theme ?? this.theme,
@@ -1061,6 +1067,7 @@ class AppSettings {
       pingIntervalSeconds: pingIntervalSeconds ?? this.pingIntervalSeconds,
       turboMode: turboMode ?? this.turboMode,
       logLevel: logLevel ?? this.logLevel,
+      modeChoiceExplicit: modeChoiceExplicit ?? this.modeChoiceExplicit,
     );
   }
 
@@ -1094,6 +1101,7 @@ class AppSettings {
         'pingIntervalSeconds': pingIntervalSeconds,
         'turboMode': turboMode,
         'logLevel': logLevel,
+        'modeChoiceExplicit': modeChoiceExplicit,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -1111,7 +1119,7 @@ class AppSettings {
       theme: pick(ThemePreference.values, json['theme'], ThemePreference.dark),
       autoConnect: JsonX.boolean(json['autoConnect']),
       killSwitch: JsonX.boolean(json['killSwitch'], fallback: false),
-      tunMode: JsonX.boolean(json['tunMode'], fallback: false),
+      tunMode: JsonX.boolean(json['tunMode'], fallback: true),
       startWithWindows: JsonX.boolean(json['startWithWindows']),
       minimizeToTray: JsonX.boolean(json['minimizeToTray'], fallback: true),
       closeToTray: JsonX.boolean(json['closeToTray'], fallback: true),
@@ -1141,6 +1149,7 @@ class AppSettings {
       pingIntervalSeconds: JsonX.integer(json['pingIntervalSeconds'], 120),
       turboMode: JsonX.boolean(json['turboMode']),
       logLevel: JsonX.text(json['logLevel'], 'info'),
+      modeChoiceExplicit: JsonX.boolean(json['modeChoiceExplicit']),
     );
   }
 

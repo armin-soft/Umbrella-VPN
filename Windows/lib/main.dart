@@ -35,6 +35,7 @@ Future<void> main(List<String> arguments) async {
     window: window,
   );
   await settings.load();
+  await settings.migrateConnectionMode();
 
   final AuthController auth = AuthController(native: native);
   await auth.restore();

@@ -11,6 +11,9 @@ import 'dart:io';
 class TunnelProbe {
   const TunnelProbe._();
 
+  /// نشانی اصلی سنجش؛ سبک و بدون تغییر مسیر.
+  static const String probeUrl = 'http://cp.cloudflare.com/generate_204';
+
   static const List<String> _endpoints = <String>[
     'http://cp.cloudflare.com/generate_204',
     'http://connectivitycheck.gstatic.com/generate_204',
@@ -132,6 +135,30 @@ class TunnelProbe {
     }
   }
 
+  /// اتصال زنده به تونل: یک اتصال پایدار به هسته که برای سنجش پینگ و سرعت
+  /// دوباره و دوباره استفاده می شود.
+  ///
+  /// اندازه گیری هر بار با اتصال تازه TCP، عدد پینگ را چند برابر واقعیت نشان
+  /// می دهد (سه مرحله دست دادن)؛ کلاینت هیدیفای هم همین کار را می کند: اتصال
+  /// باز می ماند و زمان خواندن سرور روی همان اتصال سنجیده می شود.
+  static Future<ProxyLink?> openLink(int port, {int timeoutSeconds = 6}) async {
+    if (port <= 0) {
+      return null;
+    }
+    Socket? socket;
+    try {
+      socket = await Socket.connect(
+        '127.0.0.1',
+        port,
+        timeout: Duration(seconds: timeoutSeconds),
+      );
+      return ProxyLink._(socket);
+    } catch (_) {
+      socket?.destroy();
+      return null;
+    }
+  }
+
   static Future<bool> _viaProxy(
     int port,
     String url,
@@ -235,5 +262,90 @@ class TunnelProbe {
       return false;
     }
     return code >= 200 && code < 400;
+  }
+}
+
+/// اتصال باز به پروکسی محلی هسته؛ برای سنجش پینگ و سرعت زنده.
+class ProxyLink {
+  ProxyLink._(this._socket) {
+    _socket.listen(
+      (List<int> chunk) {
+        _pending?.add(chunk);
+      },
+      onError: (Object _) => _closePending(),
+      onDone: _closePending,
+      cancelOnError: false,
+    );
+  }
+
+  final Socket _socket;
+  final Map<String, List<int>> _buffers = <String, List<int>>{};
+  List<int>? _pending;
+  bool _closed = false;
+
+  bool get alive => !_closed;
+
+  /// یک درخواست کامل روی همان اتصال باز؛ میلی ثانیه یا -۱.
+  Future<int> fetch(String url) async {
+    if (_closed) {
+      return -1;
+    }
+    final Uri uri = Uri.parse(url);
+    final List<int> buffer = <int>[];
+    _pending = buffer;
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      _socket.add(
+        utf8.encode(
+          'GET $url HTTP/1.1\r\n'
+          'Host: ${uri.host}\r\n'
+          'User-Agent: UmbrellaVPN/1.0\r\n'
+          'Accept: */*\r\n'
+          '\r\n',
+        ),
+      );
+      await _socket.flush().timeout(const Duration(seconds: 3));
+      final Completer<int> done = Completer<int>();
+      final Timer timer = Timer(const Duration(seconds: 5), () {
+        if (!done.isCompleted) {
+          done.complete(-1);
+        }
+      });
+      // تا آمدن سرآیند و بدنه ۲۰۴ صبر می کنیم؛ بعد زمان را ثبت می کنیم.
+      final Timer poll = Timer.periodic(const Duration(milliseconds: 4),
+          (Timer tick) {
+        if (!_closed &&
+            !done.isCompleted &&
+            _headersComplete(latin1.decode(buffer, allowInvalid: true))) {
+          done.complete(watch.elapsedMilliseconds);
+          tick.cancel();
+        }
+      });
+      final int result = await done.future;
+      timer.cancel();
+      poll.cancel();
+      return result > 0 ? result : -1;
+    } catch (_) {
+      return -1;
+    } finally {
+      _pending = null;
+      _buffers.remove(url);
+    }
+  }
+
+  static bool _headersComplete(String text) {
+    if (!text.contains('\r\n\r\n')) {
+      return false;
+    }
+    return true;
+  }
+
+  void _closePending() {
+    _closed = true;
+  }
+
+  void close() {
+    _closed = true;
+    _socket.destroy();
   }
 }

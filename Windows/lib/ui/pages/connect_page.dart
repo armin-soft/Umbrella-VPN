@@ -29,6 +29,29 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
+  bool _speedTesting = false;
+
+  /// سنجش سرعت واقعی روی سرور متصل.
+  Future<void> _runSpeedTest(
+    VpnController vpn,
+    ToastController toasts,
+  ) async {
+    if (vpn.status != VpnStatus.connected || _speedTesting) {
+      return;
+    }
+    setState(() => _speedTesting = true);
+    await vpn.measureSpeed();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _speedTesting = false);
+    if (vpn.liveSpeed > 0) {
+      toasts.success('سرعت سرور متصل', Fa.speed(vpn.liveSpeed));
+    } else {
+      toasts.error('سنجش سرعت ناموفق بود', 'تونل جواب نداد؛ سرور دیگری امتحان کن.');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -398,31 +421,41 @@ class _ConnectPageState extends State<ConnectPage> {
                   Column(
                     children: <Widget>[
                       _ActiveServerBar(vpn: vpn),
-                      if (vpn.stats.available) ...<Widget>[
+                      if (vpn.status == VpnStatus.connected) ...<Widget>[
                         const SizedBox(height: 10),
                         Row(
                           children: <Widget>[
                             Expanded(
                               child: _MiniStat(
-                                label: 'دانلود',
-                                value: Fa.speed(vpn.stats.downSpeed),
+                                label: vpn.liveSpeed > 0
+                                    ? 'سرعت سنجیده'
+                                    : 'دانلود',
+                                value: vpn.liveSpeed > 0
+                                    ? Fa.speed(vpn.liveSpeed)
+                                    : (vpn.stats.available
+                                        ? Fa.speed(vpn.stats.downSpeed)
+                                        : '—'),
                                 color: colors.success,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: _MiniStat(
-                                label: 'آپلود',
-                                value: Fa.speed(vpn.stats.upSpeed),
-                                color: colors.info,
+                                label: 'پینگ',
+                                value: vpn.activePingMs > 0
+                                    ? Fa.ms(vpn.activePingMs)
+                                    : 'در حال سنجش',
+                                color: colors.primary,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: _MiniStat(
                                 label: 'دریافتی',
-                                value: Fa.bytes(vpn.stats.rx),
-                                color: colors.primary,
+                                value: vpn.stats.available
+                                    ? Fa.bytes(vpn.stats.rx)
+                                    : '—',
+                                color: colors.info,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -431,6 +464,53 @@ class _ConnectPageState extends State<ConnectPage> {
                                 label: 'مدت اتصال',
                                 value: Fa.duration(vpn.stats.connectedFor),
                                 color: colors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Tooltip(
+                              message: 'سنجش سرعت واقعی روی سرور متصل',
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _runSpeedTest(vpn, toasts),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: colors.primary.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: <Widget>[
+                                      if (_speedTesting)
+                                        const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      else
+                                        Icon(
+                                          Icons.speed_rounded,
+                                          size: 18,
+                                          color: colors.primary,
+                                        ),
+                                      Text(
+                                        Fa.num('سنجش سرعت'),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(color: colors.primary),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -683,6 +763,21 @@ class _ActiveServerBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          // پینگ واقعی سرور متصل: روی همان تونل و همان اتصال باز سنجیده
+          // می شود، پس عدد نمایش داده شده همان چیزی است که کاربر حس می کند.
+          Pill(
+            label: vpn.activePingMs > 0
+                ? 'پینگ ${Fa.ms(vpn.activePingMs)}'
+                : 'در حال سنجش',
+            icon: Icons.speed_rounded,
+            color: vpn.activePingMs > 0
+                ? (vpn.activePingMs < 200
+                    ? colors.success
+                    : (vpn.activePingMs < 400 ? colors.warning : colors.danger))
+                : colors.textSecondary,
+            dense: true,
+          ),
+          const SizedBox(width: 6),
           Pill(
             label: Fa.num(node.protocol.label),
             icon: Icons.lan_rounded,

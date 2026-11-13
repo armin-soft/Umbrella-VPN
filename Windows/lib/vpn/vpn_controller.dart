@@ -258,6 +258,22 @@ class VpnController extends ChangeNotifier {
   /// کیل سوییچ مانند نسخه ویندوز هیدیفای وجود ندارد؛ همیشه خاموش است.
   bool get killSwitchOn => false;
 
+  /// پینگ زنده سرور متصل، روی همان اتصال باز سنجیده می شود.
+  int _livePing = 0;
+  int get livePing => _livePing;
+
+  /// سرعت اندازه گیری شده روی سرور متصل (بایت بر ثانیه) و زمان سنجش.
+  double _liveSpeed = 0;
+  double get liveSpeed => _liveSpeed;
+  DateTime? _speedMeasuredAt;
+  DateTime? get speedMeasuredAt => _speedMeasuredAt;
+  ProxyLink? _link;
+  Timer? _liveTimer;
+
+  /// پینگ سرور متصل: عدد زنده تونل اگر آماده باشد، وگرنه پینگ سنجیده شده.
+  int get activePingMs =>
+      _livePing > 0 ? _livePing : (_activeNode?.pingMs ?? 0);
+
   int _pingProgressDone = 0;
   int _pingProgressTotal = 0;
   bool _measuring = false;
@@ -1511,6 +1527,7 @@ class VpnController extends ChangeNotifier {
   }
 
   void _startTimers() {
+    _startLiveMeasurement();
     _statsTimer?.cancel();
     _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickStats());
     _healthTimer?.cancel();
@@ -1525,6 +1542,128 @@ class VpnController extends ChangeNotifier {
       Duration(seconds: _settings.pingIntervalSeconds.clamp(120, 3600)),
       (_) => unawaited(refreshPings(all: false)),
     );
+  }
+
+  /// سنجش زنده سرور متصل. روی یک اتصال باز انجام می شود تا عدد، پینگ واقعی
+  /// تونل باشد نه زمان دست دادن دوباره TCP.
+  void _startLiveMeasurement() {
+    _liveTimer?.cancel();
+    _livePing = 0;
+    _link?.close();
+    if (_proxyPort <= 0) {
+      // در حالت تونل کامل، عدد پینگ از همان مسیر سیستم خوانده می شود.
+      _liveTimer = Timer.periodic(const Duration(seconds: 5), (Timer _) {
+        unawaited(_measureLiveTunnel());
+      });
+      unawaited(_measureLiveTunnel());
+      return;
+    }
+    unawaited(() async {
+      _link = await TunnelProbe.openLink(_proxyPort);
+      await _measureLiveLink();
+    }());
+    _liveTimer = Timer.periodic(const Duration(seconds: 5), (Timer _) {
+      unawaited(_measureLiveLink());
+    });
+  }
+
+  Future<void> _measureLiveLink() async {
+    if (!_status.active) {
+      return;
+    }
+    ProxyLink? link = _link;
+    if (link == null || !link.alive) {
+      link = await TunnelProbe.openLink(_proxyPort);
+      _link = link;
+    }
+    if (link == null) {
+      return;
+    }
+    final int ms = await link.fetch(TunnelProbe.probeUrl);
+    if (ms > 0) {
+      _livePing = ms;
+      _notify();
+    }
+  }
+
+  Future<void> _measureLiveTunnel() async {
+    if (!_status.active) {
+      return;
+    }
+    final int ms = await TunnelProbe.latency(
+      proxyPort: _proxyPort,
+      timeout: const Duration(seconds: 4),
+    );
+    if (ms > 0) {
+      _livePing = ms;
+      _notify();
+    }
+  }
+
+  /// سنجش سرعت واقعی روی سرور متصل؛ از همان مسیری می رود که ترافیک کاربر
+  /// می رود (تونل کامل یا پروکسی محلی).
+  Future<void> measureSpeed() async {
+    if (!_status.active) {
+      _liveSpeed = 0;
+      return;
+    }
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 8);
+    if (_proxyPort > 0) {
+      client.findProxy = (Uri _) => 'PROXY 127.0.0.1:$_proxyPort';
+    }
+    final Stopwatch watch = Stopwatch();
+    try {
+      final HttpClientRequest request = await client
+          .getUrl(Uri.parse(AppConfig.speedTestUrl))
+          .timeout(const Duration(seconds: 10));
+      final HttpClientResponse response =
+          await request.close().timeout(const Duration(seconds: 12));
+      if (response.statusCode >= 300) {
+        _liveSpeed = 0;
+        _notify();
+        return;
+      }
+      int bytes = 0;
+      int timedOutAfter = 0;
+      watch.start();
+      await for (final List<int> chunk in response.timeout(
+        const Duration(seconds: 8),
+        onTimeout: (EventSink<List<int>> sink) => sink.close(),
+      )) {
+        bytes += chunk.length;
+        timedOutAfter = watch.elapsedMilliseconds;
+        if (timedOutAfter > 8000) {
+          break;
+        }
+      }
+      final int ms = watch.elapsedMilliseconds;
+      if (bytes > 0 && ms > 0) {
+        _liveSpeed = bytes * 1000 / ms;
+        _speedMeasuredAt = DateTime.now();
+        _log.add(
+          'سنجش سرعت سرور متصل: ${Fa.speed(_liveSpeed)} '
+          '(${Fa.num((bytes / 1024).round())} کیلوبایت در '
+          '${Fa.num((ms / 1000).toStringAsFixed(1))} ثانیه)',
+        );
+      }
+    } catch (error) {
+      _liveSpeed = 0;
+      _log.add('سنجش سرعت ناموفق بود: $error', level: 'warning');
+    } finally {
+      client.close(force: true);
+      _notify();
+    }
+  }
+
+  void _stopLiveMeasurement() {
+    _liveTimer?.cancel();
+    _liveTimer = null;
+    _link?.close();
+    _link = null;
+    _livePing = 0;
+    _liveSpeed = 0;
+    _speedMeasuredAt = null;
   }
 
   Future<void> _tickStats() async {
@@ -1652,6 +1791,7 @@ class VpnController extends ChangeNotifier {
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
+    _stopLiveMeasurement();
     _connectedAt = null;
     _stats = TunnelStats.empty;
     _tunnelVerified = false;

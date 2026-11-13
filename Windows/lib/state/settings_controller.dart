@@ -97,7 +97,20 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setTunMode(bool value) async {
-    await update(_settings.copyWith(tunMode: value));
+    // انتخاب کاربر ثبت می شود تا مایگریشن پیش فرض دیگر رویش ننویسد.
+    await update(
+      _settings.copyWith(tunMode: value, modeChoiceExplicit: true),
+    );
+  }
+
+  /// مایگریشن یک باره: نسخه قبلی به طور پیش فرض پروکسی سیستمی بود و کاربر
+  /// گزینه ای انتخاب نکرده بود. حالا مثل هیدیفای، تونل کامل پیش فرض است تا
+  /// سرعت و پایداری بیشتر شود؛ اگر کاربر خودش انتخابی کرده باشد دست نمی زنیم.
+  Future<void> migrateConnectionMode() async {
+    if (_settings.modeChoiceExplicit || _settings.tunMode) {
+      return;
+    }
+    await update(_settings.copyWith(tunMode: true));
   }
 
   Future<void> setCorePreference(CorePreference value) async {
