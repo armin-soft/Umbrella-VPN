@@ -96,6 +96,10 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(killSwitch: value));
   }
 
+  Future<void> setTunMode(bool value) async {
+    await update(_settings.copyWith(tunMode: value));
+  }
+
   Future<void> setSound(bool value) async {
     await update(_settings.copyWith(soundEnabled: value));
   }

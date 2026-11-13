@@ -701,8 +701,10 @@ class VpnController extends ChangeNotifier {
     switch (node.protocol) {
       case NodeProtocol.vless:
       case NodeProtocol.vmess:
-      case NodeProtocol.tuic:
         return JsonX.text(params['id'] ?? params['uuid']).isNotEmpty;
+      case NodeProtocol.tuic:
+        return JsonX.text(params['id'] ?? params['uuid']).isNotEmpty &&
+            JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.trojan:
       case NodeProtocol.hysteria2:
         return JsonX.text(params['password']).isNotEmpty;
@@ -728,6 +730,10 @@ class VpnController extends ChangeNotifier {
   /// ایکس ری و میرو به عنوان پشتیبان می آیند.
   Future<List<LaunchPlan>> _buildPlans(VpnNode node) async {
     final List<LaunchPlan> plans = <LaunchPlan>[];
+    final LaunchPlan? tun = await _buildTunPlan(node);
+    if (tun != null) {
+      plans.add(tun);
+    }
     final LaunchPlan? singbox = await _buildSingBoxPlan(node);
     if (singbox != null) {
       plans.add(singbox);
@@ -737,6 +743,67 @@ class VpnController extends ChangeNotifier {
       plans.add(fallback);
     }
     return plans;
+  }
+
+  /// پورت محلی که فقط برای سنجش آمادگی تونل باز می شود.
+  static const int _tunReadyPort = 19091;
+
+  /// نقشه تونل کامل: سینگ باکس یک کارت شبکه مجازی می سازد و تمام ترافیک
+  /// سیستم از آن رد می شود. همان حالت پیش فرض کلاینت هیدیفای روی ویندوز؛
+  /// به دسترسی مدیر نیاز دارد.
+  Future<LaunchPlan?> _buildTunPlan(VpnNode node) async {
+    if (!_settings.tunMode || !usable(node)) {
+      return null;
+    }
+    if (!_device.elevated) {
+      _log.add(
+        'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
+        'می شویم. برای تونل، برنامه را با دسترسی مدیر اجرا کنید.',
+        level: 'warning',
+      );
+      return null;
+    }
+    final CoreInfo? core = _provisioner.info('singbox');
+    if (core == null) {
+      return null;
+    }
+    final String? exe = await _provisioner.locateBinary(core.binary);
+    if (exe == null || exe.isEmpty) {
+      return null;
+    }
+
+    final Directory runDir = Directory(
+      '${_provisioner.dataDir}${Platform.pathSeparator}run',
+    );
+    await runDir.create(recursive: true);
+    final File config = File(
+      '${runDir.path}${Platform.pathSeparator}singbox-tun.json',
+    );
+    await config.writeAsString(
+      SingBoxConfig.encode(
+        SingBoxConfig.build(
+          node: node,
+          settings: _settings,
+          clashApiPort: _tunReadyPort,
+        ),
+      ),
+      flush: true,
+    );
+    return LaunchPlan(
+      cores: <CoreLaunch>[
+        CoreLaunch(
+          exe: exe,
+          args: <String>['run', '-c', config.path],
+          workDir: _dirOf(exe),
+          name: 'singboxtun',
+        ),
+      ],
+      configPaths: <String>[config.path],
+      readinessPort: _tunReadyPort,
+      primaryBinary: 'sing-box.exe',
+      tunnelHint: 'Umbrella-Tunnel',
+      chained: false,
+    );
   }
 
   /// نقشه اجرای سینگ باکس: پروکسی محلی مختلط روی پورت http و اتصال به سرور.

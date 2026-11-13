@@ -94,6 +94,25 @@ void main() {
     );
   });
 
+  test('پیکربندی تونل کارت شبکه مجازی درست ساخته می شود', () {
+    final Map<String, dynamic> config = SingBoxConfig.build(
+      node: node(
+        protocol: NodeProtocol.trojan,
+        params: <String, dynamic>{'password': 'p'},
+      ),
+      settings: const AppSettings(tunMode: true),
+      clashApiPort: 19091,
+    );
+    final List<dynamic> inbounds = config['inbounds'] as List<dynamic>;
+    expect((inbounds.first as Map<String, dynamic>)['type'], 'tun');
+    final Map<String, dynamic> experimental =
+        config['experimental'] as Map<String, dynamic>;
+    final Map<String, dynamic> api =
+        experimental['clash_api'] as Map<String, dynamic>;
+    expect(api['external_controller'], '127.0.0.1:19091');
+    expect((config['route'] as Map<String, dynamic>)['final'], 'proxy');
+  });
+
   test('پیکربندی سینگ باکس برای تونل درست ساخته می شود', () {
     final Map<String, dynamic> config = SingBoxConfig.buildProxy(
       node: node(

@@ -113,6 +113,16 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                           const SizedBox(height: 12),
                           ToggleRow(
+                            icon: Icons.lan_rounded,
+                            title: 'حالت تونل (مثل هیدیفای)',
+                            subtitle: 'تمام ترافیک از کارت شبکه مجازی رد می شود؛ '
+                                'به دسترسی مدیر نیاز دارد و اگر برنامه مدیر نباشد، '
+                                'خودکار با پروکسی سیستمی وصل می شود',
+                            value: current.tunMode,
+                            onChanged: settings.setTunMode,
+                            accent: colors.success,
+                          ),
+                          ToggleRow(
                             icon: Icons.swap_horiz_rounded,
                             title: 'جابه جایی خودکار سرور',
                             subtitle: 'در صورت افت اتصال، سرور دیگری امتحان می شود',
@@ -181,9 +191,9 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                           const Divider(height: 14),
                           InfoRow(
-                            icon: Icons.gpp_bad_rounded,
-                            label: 'قواعد کیل سوییچ',
-                            value: 'پاک می شود',
+                            icon: Icons.lan_outlined,
+                            label: 'کارت شبکه مجازی',
+                            value: 'بسته می شود',
                           ),
                           const Divider(height: 14),
                           InfoRow(

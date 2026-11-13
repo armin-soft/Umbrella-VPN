@@ -13,6 +13,7 @@ class SingBoxConfig {
     required AppSettings settings,
     Map<String, dynamic>? outboundOverride,
     List<Map<String, dynamic>> extraInbounds = const <Map<String, dynamic>>[],
+    int clashApiPort = 0,
   }) {
     final Map<String, dynamic> outbound =
         outboundOverride ?? outboundFor(node, settings);
@@ -37,6 +38,13 @@ class SingBoxConfig {
           'enabled': true,
           'store_fakeip': false,
         },
+        // پورت سنجش آمادگی تونل: با باز شدن این پورت، هسته واقعا بالا آمده
+        // است. حالت تونل پورت پروکسی محلی ندارد، پس آمادگی از این راه
+        // سنجیده می شود.
+        if (clashApiPort > 0)
+          'clash_api': <String, dynamic>{
+            'external_controller': '127.0.0.1:$clashApiPort',
+          },
       },
     };
   }

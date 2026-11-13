@@ -692,6 +692,7 @@ class AppSettings {
     this.theme = ThemePreference.dark,
     this.autoConnect = false,
     this.killSwitch = false,
+    this.tunMode = false,
     this.startWithWindows = false,
     this.minimizeToTray = true,
     this.closeToTray = true,
@@ -721,6 +722,9 @@ class AppSettings {
   final ThemePreference theme;
   final bool autoConnect;
   final bool killSwitch;
+
+  /// تونل کامل با کارت شبکه مجازی (حالت هیدیفای) به جای پروکسی سیستمی.
+  final bool tunMode;
   final bool startWithWindows;
   final bool minimizeToTray;
   final bool closeToTray;
@@ -750,6 +754,7 @@ class AppSettings {
     ThemePreference? theme,
     bool? autoConnect,
     bool? killSwitch,
+    bool? tunMode,
     bool? startWithWindows,
     bool? minimizeToTray,
     bool? closeToTray,
@@ -779,6 +784,7 @@ class AppSettings {
       theme: theme ?? this.theme,
       autoConnect: autoConnect ?? this.autoConnect,
       killSwitch: killSwitch ?? this.killSwitch,
+      tunMode: tunMode ?? this.tunMode,
       startWithWindows: startWithWindows ?? this.startWithWindows,
       minimizeToTray: minimizeToTray ?? this.minimizeToTray,
       closeToTray: closeToTray ?? this.closeToTray,
@@ -810,6 +816,7 @@ class AppSettings {
         'theme': theme.name,
         'autoConnect': autoConnect,
         'killSwitch': killSwitch,
+        'tunMode': tunMode,
         'startWithWindows': startWithWindows,
         'minimizeToTray': minimizeToTray,
         'closeToTray': closeToTray,
@@ -851,6 +858,7 @@ class AppSettings {
       theme: pick(ThemePreference.values, json['theme'], ThemePreference.dark),
       autoConnect: JsonX.boolean(json['autoConnect']),
       killSwitch: JsonX.boolean(json['killSwitch'], fallback: false),
+      tunMode: JsonX.boolean(json['tunMode'], fallback: false),
       startWithWindows: JsonX.boolean(json['startWithWindows']),
       minimizeToTray: JsonX.boolean(json['minimizeToTray'], fallback: true),
       closeToTray: JsonX.boolean(json['closeToTray'], fallback: true),
