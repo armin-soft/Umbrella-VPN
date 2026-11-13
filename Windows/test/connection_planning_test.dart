@@ -45,7 +45,6 @@ void main() {
   test('پروتکل های بدون هسته همراه هرگز انتخاب نمی شوند', () {
     for (final NodeProtocol protocol in <NodeProtocol>[
       NodeProtocol.amnezia,
-      NodeProtocol.wireguard,
       NodeProtocol.clash,
     ]) {
       expect(
@@ -64,6 +63,48 @@ void main() {
         reason: '${protocol.name} نباید قابل استفاده باشد',
       );
     }
+  });
+
+  test('وایرگارد با کلیدهای کامل قابل استفاده است و بدون کلید نه', () {
+    final VpnNode complete = node(
+      protocol: NodeProtocol.wireguard,
+      params: <String, dynamic>{'privateKey': 'z', 'publicKey': 'y'},
+    );
+    expect(VpnController.usable(complete), isTrue);
+    final VpnNode incomplete = node(
+      protocol: NodeProtocol.wireguard,
+      params: <String, dynamic>{'privateKey': 'z'},
+    );
+    expect(VpnController.usable(incomplete), isFalse);
+  });
+
+  test('حالت هسته، سرور سازگار با آن هسته را انتخاب می کند', () {
+    // وایرگارد فقط وقتی انتخاب می شود که هسته وایرگارد خواسته شده باشد.
+    final List<VpnNode> nodes = <VpnNode>[
+      node(protocol: NodeProtocol.wireguard,
+          params: <String, dynamic>{'privateKey': 'z', 'publicKey': 'y'}),
+      node(protocol: NodeProtocol.vless, params: <String, dynamic>{'id': uuid}),
+    ];
+    expect(
+      VpnController.fitsPreference(CorePreference.wireguard, nodes[0]),
+      isTrue,
+    );
+    expect(
+      VpnController.fitsPreference(CorePreference.wireguard, nodes[1]),
+      isFalse,
+    );
+    expect(
+      VpnController.fitsPreference(CorePreference.xray, nodes[1]),
+      isTrue,
+    );
+    expect(
+      VpnController.fitsPreference(CorePreference.auto, nodes[0]),
+      isTrue,
+    );
+    expect(
+      VpnController.fitsPreference(CorePreference.mieru, nodes[1]),
+      isFalse,
+    );
   });
 
   test('هیستریا ۲ و تی یو آی سی با هسته سینگ باکس قابل استفاده اند', () {

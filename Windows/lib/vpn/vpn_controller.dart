@@ -645,8 +645,12 @@ class VpnController extends ChangeNotifier {
   }
 
   /// آیا این سرور با هسته انتخابی کاربر اجرا می شود؟
-  bool _fitsPreference(VpnNode node) {
-    switch (_settings.corePreference) {
+  bool _fitsPreference(VpnNode node) =>
+      fitsPreference(_settings.corePreference, node);
+
+  /// همان بررسی برای آزمون پذیری: آیا سرور با این هسته اجرا می شود؟
+  static bool fitsPreference(CorePreference preference, VpnNode node) {
+    switch (preference) {
       case CorePreference.auto:
         return true;
       case CorePreference.xray:
