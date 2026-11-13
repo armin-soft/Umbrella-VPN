@@ -270,7 +270,7 @@ class ProxyLink {
   ProxyLink._(this._socket) {
     _socket.listen(
       (List<int> chunk) {
-        _pending?.add(chunk);
+        _pending?.addAll(chunk);
       },
       onError: (Object _) => _closePending(),
       onDone: _closePending,
@@ -279,7 +279,6 @@ class ProxyLink {
   }
 
   final Socket _socket;
-  final Map<String, List<int>> _buffers = <String, List<int>>{};
   List<int>? _pending;
   bool _closed = false;
 
@@ -329,7 +328,6 @@ class ProxyLink {
       return -1;
     } finally {
       _pending = null;
-      _buffers.remove(url);
     }
   }
 
