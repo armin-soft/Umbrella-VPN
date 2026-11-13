@@ -41,6 +41,7 @@ $this->test_footer_is_kept_with_real_menu();
 $this->test_footer_is_dropped_for_navigation_only_keyboard();
 $this->test_footer_is_kept_for_link_buttons();
 $this->test_separator_length_is_uniform();
+$this->test_back_buttons_have_no_destination();
 
 if ($this->Failures !== []) {
 fwrite(STDERR, "FAILURES (menu footer)\n");
@@ -124,6 +125,25 @@ Menu::userHome()[0],
 ]);
 
 $this->check(str_contains($this->trim($Text, $Markup), 'جهت استفاده از امکانات ربات'), 'link-only keyboard keeps the footer');
+}
+
+/**
+ * در هیچ دکمه ای «بازگشت به <مقصد>» نمانده باشد: برچسب همه دکمه های بازگشت
+ * فقط «🔙بازگشت» است.
+ */
+private function test_back_buttons_have_no_destination(): void {
+$Files = glob(dirname(__DIR__) . '/Bot/*.php') ?: [];
+
+foreach ($Files as $File) {
+$Source = (string)file_get_contents($File);
+$Lines = explode("\n", $Source);
+
+foreach ($Lines as $Index => $Line) {
+if (str_contains($Line, 'بازگشت به ') && !str_starts_with(trim($Line), '*') && !str_starts_with(trim($Line), '//')) {
+$this->check(false, basename($File) . ':' . ($Index + 1) . ': a back button still names a destination');
+}
+}
+}
 }
 
 /** همه خطهای جداکننده دقیقاً یک شکل باشند تا پایین صفحه ها یکسان دیده شود. */

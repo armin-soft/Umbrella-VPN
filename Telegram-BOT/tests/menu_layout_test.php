@@ -55,10 +55,11 @@ private array $Failures = [];
 public function run(): int {
 $this->test_rows_pair_layout();
 $this->test_rows_drops_blank_and_extra_buttons();
-$this->test_back_label_names_the_target();
+$this->test_back_label_is_uniform();
 $this->test_nav_rows_have_home();
 $this->test_nav_in_place_skips_duplicate_home();
 $this->test_bullets_last_item_marker();
+$this->test_no_duplicate_back_row();
 $this->test_section_layout();
 $this->test_problems_accepts_clean_keyboard();
 $this->test_problems_reports_long_callback();
@@ -109,11 +110,22 @@ $this->check($Rows[0][0]['callback_data'] === 'ok-call', 'rows(): blank label dr
 $this->check(count($Rows[1]) === Menu::ROW_LIMIT, 'rows(): the third button of a row is dropped');
 }
 
-private function test_back_label_names_the_target(): void {
+/**
+ * برچسب دکمه بازگشت در همه صفحه ها یکی است: «🔙بازگشت». نام مقصد روی دکمه
+ * نمی آید؛ مقصد با خود صفحه و دکمه خانه مشخص می شود.
+ */
+private function test_back_label_is_uniform(): void {
 $Row = Menu::back('گزارش ها', 'منوی گزارش');
 $this->check(count($Row) === 1, 'back(): one button');
-$this->check($Row[0]['text'] === '🔙بازگشت به گزارش ها', 'back(): label names the destination');
+$this->check($Row[0]['text'] === Menu::BACK_LABEL, 'back(): label is the shared «🔙بازگشت»');
+$this->check($Row[0]['text'] === '🔙بازگشت', 'back(): label text is exactly «🔙بازگشت»');
 $this->check($Row[0]['callback_data'] === 'منوی گزارش', 'back(): callback is untouched');
+
+$Other = Menu::back('پیکربندی سرور', 'پیکربندی سرور');
+$this->check($Other[0]['text'] === $Row[0]['text'], 'back(): the destination does not change the label');
+
+$Nav = Menu::adminNav('دیتابیس', 'دیتابیس');
+$this->check($Nav[0][0]['text'] === '🔙بازگشت', 'adminNav(): the back row uses the shared label');
 }
 
 private function test_nav_rows_have_home(): void {
@@ -139,6 +151,26 @@ $this->check(str_contains($Text, '└─سوم'), 'bullets(): last line uses the
 $this->check(substr_count($Text, "\n") === 3, 'bullets(): one line per item');
 $this->check(Menu::bullets([]) === '', 'bullets(): empty input gives empty text');
 $this->check(Menu::bullets(['', '  ']) === '', 'bullets(): blank items are dropped');
+}
+
+/**
+ * دو دکمه با یک برچسب ولی دو مقصد در یک صفحه، کاربر را سرگردان می کند؛ با
+ * برچسب یکدست «🔙بازگشت» هم نباید در یک کیبورد دوتا شود.
+ */
+private function test_no_duplicate_back_row(): void {
+$Rows = [
+Menu::back('گزارش ها', 'منوی گزارش'),
+Menu::back('دیتابیس', 'دیتابیس'),
+];
+
+$Labels = [];
+
+foreach ($Rows as $Row) {
+$Labels[] = $Row[0]['text'];
+}
+
+$this->check(count(array_unique($Labels)) === 1, 'back(): every back button carries the same label');
+$this->check(count($Rows) === 2 && $Rows[0][0]['callback_data'] !== $Rows[1][0]['callback_data'], 'back(): destinations stay different when the labels match');
 }
 
 private function test_section_layout(): void {

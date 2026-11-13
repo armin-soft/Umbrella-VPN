@@ -149,7 +149,7 @@ $Context,
 . "📥لینک یا دامنه ها را بفرستید؛ هر خط یک مورد.\n🧹برای پاک کردن همه، فقط «-» بفرستید."
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
-Menu::button('🔙بازگشت به کنترل محتوا', 'app_filter'),
+Menu::button('🔙بازگشت', 'app_filter'),
 Menu::userHome()[0],
 ]])
 );

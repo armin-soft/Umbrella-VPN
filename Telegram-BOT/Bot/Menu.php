@@ -13,6 +13,9 @@ declare(strict_types=1);
  * بسازد.
  */
 final class Menu {
+/** تنها برچسب دکمه بازگشت در کل ربات. */
+public const BACK_LABEL = '🔙بازگشت';
+
 private function __construct() {
 }
 
@@ -86,9 +89,18 @@ $Out[] = $Buttons;
 return $Out;
 }
 
-/** ردیف بازگشت به منوی قبل با نام همان منو: «🔙بازگشت به گزارش ها». */
+/**
+ * دکمه بازگشت به منوی قبل.
+ *
+ * برچسب همه دکمه های بازگشت در کل ربات یکی است: «🔙بازگشت». نام مقصد روی دکمه
+ * نمی آید تا دکمه کوتاه بماند و در موبایل بریده نشود؛ خود مقصد با صفحه ای که
+ * باز می شود و دکمه خانه مشخص است. `$Title` فقط برای سازگاری با فراخوانی های
+ * موجود نگه داشته شده و استفاده نمی شود.
+ */
 public static function back(string $Title, string $Call): array {
-return [self::button('🔙بازگشت به ' . trim($Title), $Call)];
+unset($Title);
+
+return [self::button(self::BACK_LABEL, $Call)];
 }
 
 /** دکمه خانه ادمین. */

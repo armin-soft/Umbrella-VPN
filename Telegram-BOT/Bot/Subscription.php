@@ -268,7 +268,7 @@ $GB = (float)Helper::toEnglish(str_replace([' ', ','], '', trim($Raw_GB)));
 
 if ($GB < $Min_GB || $GB > $Max_GB) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌خطا: حجم وارد شده معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفاً عددی بین *" . Helper::formatGB($Min_GB) . "* تا *" . Helper::formatGB($Max_GB) . "* وارد کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت به انتخاب روز', 'callback_data' => 'ساخت اشتراک دلخواه']],
+[['text' => '🔙بازگشت', 'callback_data' => 'ساخت اشتراک دلخواه']],
 Menu::userHome(),
 ]));
 return;

@@ -717,7 +717,7 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تمدی�
 . 'ℹ️برای فعال سازی تمدید خودکار ابتدا کیف پول خود را شارژ کنید.'
 ) . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '💰شارژ اعتبار حساب کاربری', 'callback_data' => 'شارژ اعتبار حساب کاربری']],
-[['text' => '🔙بازگشت به پروفایل', 'callback_data' => 'پروفایل کاربری']],
+[['text' => '🔙بازگشت', 'callback_data' => 'پروفایل کاربری']],
 ]));
 return;
 }
@@ -783,7 +783,7 @@ $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper:
 }
 
 $Buttons = [];
-$Buttons[] = [['text' => '🔙بازگشت به پروفایل', 'callback_data' => 'پروفایل کاربری']];
+$Buttons[] = [['text' => '🔙بازگشت', 'callback_data' => 'پروفایل کاربری']];
 $Buttons[] = [['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 
 if ($Page < $Total_Pages) {
@@ -846,7 +846,7 @@ $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper:
 }
 
 $Buttons = [];
-$Buttons[] = [['text' => '🔙بازگشت به پروفایل', 'callback_data' => 'پروفایل کاربری']];
+$Buttons[] = [['text' => '🔙بازگشت', 'callback_data' => 'پروفایل کاربری']];
 $Buttons[] = [['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 
 if ($Page < $Total_Pages) {
@@ -900,7 +900,7 @@ public static function ticketNewStart(Context $Context): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_subject']);
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "موضوع تیکت را وارد کنید:\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت به تیکت ها', 'callback_data' => 'تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+[['text' => '🔙بازگشت', 'callback_data' => 'تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
 
@@ -915,7 +915,7 @@ return;
 Repository::updateUserSession($Context->UserId, ['Ticket_Subject' => $Subject, 'Flow' => 'user:ticket_description']);
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\nتوضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت به تیکت ها', 'callback_data' => 'تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+[['text' => '🔙بازگشت', 'callback_data' => 'تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
 
@@ -974,7 +974,7 @@ foreach (Helper::ticketPriorities() as $Key => $Label) {
 $Rows[] = [['text' => $Label, 'callback_data' => 'اولویت تیکت:' . $Key]];
 }
 
-$Rows[] = Common::backTo('🔙بازگشت به انتخاب دسته', 'انتخاب دسته تیکت');
+$Rows[] = Common::backTo('🔙بازگشت', 'انتخاب دسته تیکت');
 $Rows[] = Menu::userHome();
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
 . "📋موضوع: {$Subject}\n"
@@ -1101,7 +1101,7 @@ $Status_Icon = ['open' => '🟡', 'pending' => '🟠', 'answered' => '🟢', 'cl
 $Buttons[] = [['text' => "{$Status_Icon} #{$T['ID']} - " . mb_substr((string)$T['Subject'], 0, 30), 'callback_data' => 'ticket_user_view:' . $T['ID']]];
 }
 
-$Buttons[] = [['text' => '🔙بازگشت به تیکت ها', 'callback_data' => 'تیکت های من']];
+$Buttons[] = [['text' => '🔙بازگشت', 'callback_data' => 'تیکت های من']];
 $Buttons[] = [['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Common::greet($Context, 'تیکت های من') . "📋تیکت های من" . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
@@ -1144,7 +1144,7 @@ if ($Ticket['Status'] !== 'closed') {
 $Buttons[] = [['text' => '✏️پاسخ', 'callback_data' => 'ticket_user_reply:' . $Ticket_ID]];
 }
 
-$Buttons[] = [['text' => '🔙بازگشت به تیکت های من', 'callback_data' => 'لیست تیکت های من']];
+$Buttons[] = [['text' => '🔙بازگشت', 'callback_data' => 'لیست تیکت های من']];
 $Buttons[] = [['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
@@ -1155,7 +1155,7 @@ if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_reply_text', 'Temp_Ticket_ID' => $Ticket_ID]);
 $Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . 'پاسخ خود را وارد کنید:' . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت به تیکت های من', 'callback_data' => 'لیست تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+[['text' => '🔙بازگشت', 'callback_data' => 'لیست تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
 
