@@ -331,9 +331,9 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄منوی تیکت
 }
 
 $Text = Common::greet($Context, 'تیکت ها و پشتیبانی')
-. Menu::section('🎫', 'تیکت ها و پشتیبانی', [
+. Menu::section('🎫', 'بخش های پشتیبانی', [
 '➕تیکت جدید: مشکل خود را با جزئیات بنویسید',
-'🎫تیکت های من: پیگیری تیکت ها و پاسخ های پشتیبانی',
+'🎫تیکت های من: پیگیری تیکت ها و پاسخ پشتیبانی',
 ])
 . '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::userFooter();
 $Markup = array_merge(
@@ -881,11 +881,19 @@ foreach ($Tickets as $T) {
 if (in_array($T['Status'], ['open', 'pending', 'answered'], true)) $Open_Count++;
 }
 
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::userGreeting($Context, 'تیکت های من') . "📊تیکت های باز: *" . Helper::toPersian((string)$Open_Count) . "*\n📋کل: *" . Helper::toPersian((string)count($Tickets)) . "*" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '➕ایجاد تیکت جدید', 'callback_data' => 'تیکت جدید']],
-[['text' => '📋تیکت های من', 'callback_data' => 'لیست تیکت های من']],
-Menu::userHome(),
-]));
+$Text = Helper::userGreeting($Context, 'تیکت های من')
+. Menu::section('🎫', 'تیکت های من', [
+'📊تیکت های باز: *' . Helper::toPersian((string)$Open_Count) . '*',
+'📋کل تیکت ها: *' . Helper::toPersian((string)count($Tickets)) . '*',
+])
+. '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::userFooter();
+$Markup = array_merge(
+Menu::rows([
+[['➕ایجاد تیکت جدید', 'تیکت جدید'], ['📋تیکت های من', 'لیست تیکت های من']],
+]),
+[Menu::userHome()]
+);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
 }
 
 public static function ticketNewStart(Context $Context): void {

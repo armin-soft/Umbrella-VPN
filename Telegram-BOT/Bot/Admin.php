@@ -296,7 +296,7 @@ $Show = BotConfig::showEmergency();
 $Url = BotConfig::emergencyUrl();
 $Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل تنظیمات';
 $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
-. Menu::section('⚙️', 'تنظیمات ربات', [
+. Menu::section('⚙️', 'وضعیت تنظیمات', [
 '🔄نسخه ربات: `' . $Version_Label . '` (' . $Version_Source . ')',
 '💰تعرفه اشتراک: قیمت پلن ها و محدوده پلن دلخواه',
 '📣لینک ها: پشتیبانی، کانال و آی دی کانال',
@@ -634,7 +634,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 public static function reportMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Text = Helper::adminGreeting($Context, 'گزارش ها و آمار')
-. Menu::section('📊', 'گزارش ها و آمار', [
+. Menu::section('📊', 'انواع گزارش', [
 '📊آمار کلی: کاربران، مصرف، درآمد و پیامک',
 '📅گزارش روزانه: عملکرد امروز به تفکیک بخش ها',
 '💰گزارش مالی: درآمد، کیف پول و خریدها',
@@ -738,7 +738,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 
 $Text = Helper::adminGreeting($Context, 'پیامک و اطلاع رسانی')
-. Menu::section('📨', 'پیامک و اطلاع رسانی', [
+. Menu::section('📨', 'روش ارسال', [
 '📨پیامک تکی: ارسال پیامک به یک کاربر مشخص',
 '📢پیامک همگانی: ارسال پیامک به همه کاربران',
 '🗣اطلاع رسانی: پیام تلگرام، پیامک یا هر دو',
@@ -847,7 +847,7 @@ public static function serverConfig(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 $Text = Helper::adminGreeting($Context, 'پیکربندی سرور')
-. Menu::section('⚙️', 'پیکربندی سرور', [
+. Menu::section('⚙️', 'دسته بندی عملیات', [
 '📊وضعیت سرور و 🔌سرویس ها: سلامت و پورت های باز',
 '🔁بروزرسانی مصرف: همگام سازی مصرف کاربران با سرور',
 '🔄بروزرسانی داده کاربران: دریافت دوباره مشخصات کلاینت ها',
@@ -879,7 +879,7 @@ public static function databaseMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 $Menu_Text = Helper::adminGreeting($Context, 'مدیریت دیتابیس')
-. Menu::section('🗄️', 'مدیریت دیتابیس', [
+. Menu::section('🗄️', 'عملیات دیتابیس', [
 '💾پشتیبان گیری: دریافت فایل پشتیبان از دیتابیس',
 '🔄تنظیم مجدد: بازسازی جدول ها',
 ])
@@ -1162,7 +1162,7 @@ public static function serverNotifyMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 $Text = Helper::adminGreeting($Context, 'اطلاع رسانی سرور')
-. Menu::section('🗣', 'اطلاع رسانی سرور', [
+. Menu::section('🗣', 'روش اطلاع رسانی', [
 '✏️سفارشی: متن آزاد برای کاربران',
 '📱برنامه ها: اعلان در برنامه کاربران',
 '📣تلگرام و برنامه: ارسال همزمان',
@@ -1546,7 +1546,7 @@ public static function creditMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 $Text = Helper::adminGreeting($Context, 'کاربران و اعتبار')
-. Menu::section('👥', 'کاربران و اعتبار', [
+. Menu::section('👥', 'عملیات اعتبار', [
 '➕افزایش اعتبار کیف پول کاربر',
 '➖کسر اعتبار کیف پول کاربر',
 '👁مشاهده موجودی و مشخصات کاربر',
@@ -1568,7 +1568,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 $Blocked_Count = count(Repository::getBlockedUsers(1000));
 $Text = Helper::adminGreeting($Context, 'مسدودیت کاربران')
-. Menu::section('🚨', 'مسدودیت کاربران', [
+. Menu::section('🚨', 'عملیات مسدودیت', [
 '🚫🔒مسدود کردن کاربر متخلف',
 '✅🔓رفع مسدودیت کاربر',
 '👁مشاهده فهرست مسدود شده ها',
@@ -2359,7 +2359,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 
 $Text = self::header($Context, 'ارسال پیامک تکی')
-. Menu::section('📨', 'ارسال پیامک تکی', [
+. Menu::section('📨', 'روش ارسال', [
 '📨تلگرام: ارسال پیام در تلگرام کاربر',
 '📱پیامک: ارسال پیامک به شماره کاربر',
 '📨📱هر دو: ارسال همزمان',
