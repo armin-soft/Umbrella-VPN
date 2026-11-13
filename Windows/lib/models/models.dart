@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import '../core/utils.dart';
 
 enum SubscriptionFormat { xray, clash, wireguard, amnezia, mieru }
@@ -129,6 +131,44 @@ extension NodeProtocolX on NodeProtocol {
 }
 
 /// یک گره اتصال (سرور) که از یکی از اشتراک ها خوانده شده است.
+/// نام کشور به کد پرچم؛ برای استخراج پرچم از نام سرور.
+const Map<String, String> countryAliases = <String, String>{
+  'canada': 'ca',
+  'montreal': 'ca',
+  'toronto': 'ca',
+  'germany': 'de',
+  'frankfurt': 'de',
+  'netherlands': 'nl',
+  'amsterdam': 'nl',
+  'turkey': 'tr',
+  'istanbul': 'tr',
+  'emirates': 'ae',
+  'dubai': 'ae',
+  'united states': 'us',
+  'america': 'us',
+  'finland': 'fi',
+  'helsinki': 'fi',
+  'france': 'fr',
+  'paris': 'fr',
+  'britain': 'gb',
+  'london': 'gb',
+  'sweden': 'se',
+  'stockholm': 'se',
+  'iran': 'ir',
+  'tehran': 'ir',
+  'ژاپن': 'jp',
+  'آلمان': 'de',
+  'هلند': 'nl',
+  'ترکیه': 'tr',
+  'امارات': 'ae',
+  'آمریکا': 'us',
+  'فنلاند': 'fi',
+  'فرانسه': 'fr',
+  'سوئد': 'se',
+  'ایران': 'ir',
+  'کانادا': 'ca',
+};
+
 class VpnNode {
   const VpnNode({
     required this.id,
@@ -163,6 +203,25 @@ class VpnNode {
   final String raw;
 
   bool get hasPing => pingMs > 0;
+
+  /// پرچم کشور این سرور از نام یا میزبان آن استخراج می شود؛ اگر پیدا نشد،
+  /// رشته خالی برمی گردد و برنامه پرچم نشان نمی دهد.
+  String get flagCode {
+    final String fromParams =
+        JsonX.text(params['countryCode'] ?? params['flag'] ?? params['cc'])
+            .toLowerCase();
+    if (fromParams.length == 2) {
+      return fromParams;
+    }
+    final String text = name.toLowerCase();
+    for (final MapEntry<String, String> entry
+        in countryAliases.entries) {
+      if (text.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    return '';
+  }
 
   String get quality {
     if (!hasPing) {
@@ -284,6 +343,53 @@ class Account {
   final String mode;
   final String subscriptionUrl;
   final String accountBase;
+
+  Account copyWith({
+    String? uuid,
+    String? name,
+    String? phone,
+    String? telegramId,
+    String? comment,
+    bool? enable,
+    bool? isActive,
+    double? usageLimitGb,
+    double? currentUsageGb,
+    int? packageDays,
+    DateTime? startDate,
+    DateTime? expiryDate,
+    DateTime? lastOnline,
+    String? mode,
+    String? subscriptionUrl,
+    String? accountBase,
+  }) {
+    return Account(
+      uuid: uuid ?? this.uuid,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      telegramId: telegramId ?? this.telegramId,
+      comment: comment ?? this.comment,
+      enable: enable ?? this.enable,
+      isActive: isActive ?? this.isActive,
+      usageLimitGb: usageLimitGb ?? this.usageLimitGb,
+      currentUsageGb: currentUsageGb ?? this.currentUsageGb,
+      packageDays: packageDays ?? this.packageDays,
+      startDate: startDate ?? this.startDate,
+      expiryDate: expiryDate ?? this.expiryDate,
+      lastOnline: lastOnline ?? this.lastOnline,
+      mode: mode ?? this.mode,
+      subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
+      accountBase: accountBase ?? this.accountBase,
+    );
+  }
+
+  /// سقف حجم بسته به گیگابایت (همان عدد پنل).
+  double get totalGb => usageLimitGb;
+
+  /// بسته بدون سقف حجم.
+  bool get unlimited => usageLimitGb <= 0;
+
+  /// مصرف از سقف گذشته است.
+  bool get overLimit => usageLimitGb > 0 && currentUsageGb > usageLimitGb;
 
   double get remainingGb {
     final double remaining = usageLimitGb - currentUsageGb;
@@ -577,7 +683,44 @@ class GeoInfo {
     };
   }
 
-  String get flagEmojiFreeLabel => '$countryLabel${city.isEmpty ? '' : '، $city'}';
+  String get flagEmojiFreeLabel =>
+      '$countryLabel${city.isEmpty ? '' : '، $city'}';
+
+  /// کد دوحرفی کشور برای نمایش پرچم (کوچک، مثلا ca).
+  String get flagCode {
+    final String code = countryCode.trim().toLowerCase();
+    if (code.length == 2) {
+      return code;
+    }
+    switch (country.trim().toLowerCase()) {
+      case 'canada':
+        return 'ca';
+      case 'irán':
+      case 'iran':
+        return 'ir';
+      case 'germany':
+        return 'de';
+      case 'netherlands':
+        return 'nl';
+      case 'turkey':
+      case 'türkiye':
+        return 'tr';
+      case 'united arab emirates':
+        return 'ae';
+      case 'united states':
+        return 'us';
+      case 'finland':
+        return 'fi';
+      case 'france':
+        return 'fr';
+      case 'united kingdom':
+        return 'gb';
+      case 'sweden':
+        return 'se';
+      default:
+        return '';
+    }
+  }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'ip': ip,
@@ -606,6 +749,65 @@ class GeoInfo {
   }
 
   static const GeoInfo empty = GeoInfo();
+}
+
+/// هسته ای که برای اتصال استفاده می شود (انتخاب کاربر).
+enum CorePreference { auto, xray, clash, wireguard, amnezia, mieru }
+
+extension CorePreferenceX on CorePreference {
+  String get faName {
+    switch (this) {
+      case CorePreference.auto:
+        return 'خودکار';
+      case CorePreference.xray:
+        return 'ایکس ری';
+      case CorePreference.clash:
+        return 'کلش متا';
+      case CorePreference.wireguard:
+        return 'وایرگارد';
+      case CorePreference.amnezia:
+        return 'آمنزیا';
+      case CorePreference.mieru:
+        return 'میرو';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case CorePreference.auto:
+        return 'بهترین هسته برای هر سرور خودکار انتخاب می شود';
+      case CorePreference.xray:
+        return 'هسته ایکس ری ۲۵';
+      case CorePreference.clash:
+        return 'هسته سینگ باکس با قواعد سازگار کلش متا';
+      case CorePreference.wireguard:
+        return 'تونل وایرگارد با هسته سینگ باکس';
+      case CorePreference.amnezia:
+        return 'در این نسخه پشتیبانی نمی شود';
+      case CorePreference.mieru:
+        return 'هسته اختصاصی میرو';
+    }
+  }
+
+  String get logoAsset {
+    switch (this) {
+      case CorePreference.auto:
+        return 'assets/logos/auto.png';
+      case CorePreference.xray:
+        return 'assets/logos/xray.png';
+      case CorePreference.clash:
+        return 'assets/logos/clash.jpg';
+      case CorePreference.wireguard:
+        return 'assets/logos/wireguard.png';
+      case CorePreference.amnezia:
+        return 'assets/logos/amnezia.png';
+      case CorePreference.mieru:
+        return 'assets/logos/mieru.png';
+    }
+  }
+
+  /// آیا این هسته در این نسخه واقعا کار می کند؟
+  bool get available => this != CorePreference.amnezia;
 }
 
 enum SelectionMode { auto, roundRobin, consistentHash, stickySession, manual }
@@ -638,6 +840,21 @@ extension SelectionModeX on SelectionMode {
         return 'یک سرور برای مدت مشخص نگه داشته می شود تا اتصال ثابت بماند.';
       case SelectionMode.manual:
         return 'سرور دلخواه خودتان را از فهرست انتخاب کنید.';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case SelectionMode.auto:
+        return Icons.auto_mode_rounded;
+      case SelectionMode.roundRobin:
+        return Icons.sync_alt_rounded;
+      case SelectionMode.consistentHash:
+        return Icons.fingerprint_rounded;
+      case SelectionMode.stickySession:
+        return Icons.push_pin_rounded;
+      case SelectionMode.manual:
+        return Icons.touch_app_rounded;
     }
   }
 
@@ -699,6 +916,7 @@ class AppSettings {
     this.soundEnabled = true,
     this.notificationsEnabled = true,
     this.selectionMode = SelectionMode.auto,
+    this.corePreference = CorePreference.auto,
     this.autoFailover = true,
     this.stickyMinutes = 30,
     this.tunStack = TunStack.mixed,
@@ -731,6 +949,9 @@ class AppSettings {
   final bool soundEnabled;
   final bool notificationsEnabled;
   final SelectionMode selectionMode;
+
+  /// هسته انتخابی کاربر؛ خودکار یعنی زنجیره پیش فرض.
+  final CorePreference corePreference;
   final bool autoFailover;
   final int stickyMinutes;
   final TunStack tunStack;
@@ -761,6 +982,7 @@ class AppSettings {
     bool? soundEnabled,
     bool? notificationsEnabled,
     SelectionMode? selectionMode,
+    CorePreference? corePreference,
     bool? autoFailover,
     int? stickyMinutes,
     TunStack? tunStack,
@@ -791,6 +1013,7 @@ class AppSettings {
       soundEnabled: soundEnabled ?? this.soundEnabled,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       selectionMode: selectionMode ?? this.selectionMode,
+      corePreference: corePreference ?? this.corePreference,
       autoFailover: autoFailover ?? this.autoFailover,
       stickyMinutes: stickyMinutes ?? this.stickyMinutes,
       tunStack: tunStack ?? this.tunStack,
@@ -823,6 +1046,7 @@ class AppSettings {
         'soundEnabled': soundEnabled,
         'notificationsEnabled': notificationsEnabled,
         'selectionMode': selectionMode.name,
+        'corePreference': corePreference.name,
         'autoFailover': autoFailover,
         'stickyMinutes': stickyMinutes,
         'tunStack': tunStack.name,
@@ -867,6 +1091,8 @@ class AppSettings {
           JsonX.boolean(json['notificationsEnabled'], fallback: true),
       selectionMode:
           pick(SelectionMode.values, json['selectionMode'], SelectionMode.auto),
+      corePreference:
+          pick(CorePreference.values, json['corePreference'], CorePreference.auto),
       autoFailover: JsonX.boolean(json['autoFailover'], fallback: true),
       stickyMinutes: JsonX.integer(json['stickyMinutes'], 30),
       tunStack: pick(TunStack.values, json['tunStack'], TunStack.mixed),

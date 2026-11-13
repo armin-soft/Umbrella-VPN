@@ -353,11 +353,25 @@ class VpnController extends ChangeNotifier {
     if (_measuring || _nodes.isEmpty) {
       return;
     }
+    // در حین اتصال سنجش هسته ای انجام نمی شود: سنجش، پروسه هسته را بالا می آورد
+    // و می تواند تونل فعال کاربر را قطع کند. به جای آن فقط پینگ شبکه خوانده
+    // می شود تا عددها زنده بمانند و اتصال دست نخورد.
+    final bool liveTunnel = _status.active;
     _measuring = true;
     _pingProgressDone = 0;
-    _pingProgressTotal = all ? _nodes.length : _nodes.take(12).length;
+    // سرور متصل از سنجش کنار گذاشته می شود: نه پینگش نمایش داده می شود و نه
+    // با سنجش دوباره آزار می شود.
+    final String activeId = _activeNode?.id ?? '';
+    final List<VpnNode> pool =
+        _nodes.where((VpnNode node) => node.id != activeId).toList();
+    if (pool.isEmpty) {
+      _measuring = false;
+      _notify();
+      return;
+    }
+    _pingProgressTotal = all ? pool.length : pool.take(12).length;
     _notify();
-    final List<VpnNode> target = all ? _nodes : _nodes.take(12).toList();
+    final List<VpnNode> target = all ? pool : pool.take(12).toList();
     List<VpnNode> measured = target;
     try {
       measured = await _ping.measureAll(
@@ -377,10 +391,13 @@ class VpnController extends ChangeNotifier {
     // ام پی همان طور می ماند.
     Map<String, int> tunnelDelays = <String, int>{};
     try {
+      if (liveTunnel) {
+        throw StateError('اتصال فعال است');
+      }
       tunnelDelays = await _corePing
           .measure(target, settings: _settings)
           .timeout(
-            const Duration(seconds: 45),
+            const Duration(seconds: 100),
             onTimeout: () => <String, int>{},
           );
     } catch (_) {
@@ -407,7 +424,15 @@ class VpnController extends ChangeNotifier {
       'سرور به دست آمد.'
       '${_medianNote(fused)}'
       '${_tunnelNote(tunnelDelays)}',
+      level: tunnelDelays.isEmpty && !liveTunnel ? 'warning' : 'info',
     );
+    if (tunnelDelays.isEmpty && !liveTunnel) {
+      final String detail = _corePing.lastError();
+      _log.add(
+        'سنجش تاخیر تونل نتیجه نداد${detail.isEmpty ? '' : ': $detail'}',
+        level: 'warning',
+      );
+    }
     _notify();
   }
 
@@ -494,7 +519,7 @@ class VpnController extends ChangeNotifier {
     _sound.enabled = settings.soundEnabled;
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(
-      Duration(seconds: settings.pingIntervalSeconds.clamp(30, 3600)),
+      Duration(seconds: settings.pingIntervalSeconds.clamp(120, 3600)),
       (_) => unawaited(refreshPings(all: false)),
     );
     _notify();
@@ -526,9 +551,21 @@ class VpnController extends ChangeNotifier {
       );
     }
 
+    final List<VpnNode> fitting = usableNodes
+        .where(_fitsPreference)
+        .toList();
+    if (fitting.isEmpty) {
+      final String message = _settings.corePreference == CorePreference.auto
+          ? 'سروری که با این نسخه کار کند در اشتراک شما نیست.'
+          : 'سروری برای هسته «${_settings.corePreference.faName}» در اشتراک '
+              'شما نیست؛ هسته دیگری را انتخاب کنید.';
+      _setStatus(VpnStatus.failed, message);
+      return ConnectOutcome(ok: false, message: message);
+    }
     _log.add(
       'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
-      '${Fa.num(usableNodes.length)} سرور قابل استفاده.',
+      '${Fa.num(fitting.length)} سرور با هسته '
+      '«${_settings.corePreference.faName}» قابل استفاده.',
     );
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
     try {
@@ -550,7 +587,7 @@ class VpnController extends ChangeNotifier {
       final SelectionResult selection = requested != null
           ? SelectionResult(node: requested, reason: 'سرور انتخابی شما.')
           : _balancer.pick(
-              nodes: usableNodes,
+              nodes: fitting,
               mode: _settings.selectionMode,
               deviceSeed: _device.machineId.isNotEmpty
                   ? _device.machineId
@@ -607,6 +644,27 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// آیا این سرور با هسته انتخابی کاربر اجرا می شود؟
+  bool _fitsPreference(VpnNode node) {
+    switch (_settings.corePreference) {
+      case CorePreference.auto:
+        return true;
+      case CorePreference.xray:
+        return node.protocol != NodeProtocol.hysteria2 &&
+            node.protocol != NodeProtocol.tuic &&
+            node.protocol != NodeProtocol.wireguard;
+      case CorePreference.clash:
+        return node.protocol != NodeProtocol.mieru &&
+            node.protocol != NodeProtocol.wireguard;
+      case CorePreference.wireguard:
+        return node.protocol == NodeProtocol.wireguard;
+      case CorePreference.mieru:
+        return node.protocol == NodeProtocol.mieru;
+      case CorePreference.amnezia:
+        return node.protocol == NodeProtocol.amnezia;
+    }
+  }
+
   /// سرور انتخاب شده و اگر حالت خودکار باشد دو گزینه بعدی با کمترین پینگ.
   List<VpnNode> _candidates(VpnNode first, String reason) {
     final List<VpnNode> list = <VpnNode>[first];
@@ -615,7 +673,8 @@ class VpnController extends ChangeNotifier {
       return list;
     }
     final List<VpnNode> rest = _nodes
-        .where((VpnNode node) => node.id != first.id && usable(node))
+        .where((VpnNode node) =>
+            node.id != first.id && usable(node) && _fitsPreference(node))
         .toList();
     switch (_settings.selectionMode) {
       case SelectionMode.roundRobin:
@@ -837,9 +896,9 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.mieru:
       case NodeProtocol.hysteria2:
       case NodeProtocol.tuic:
+      case NodeProtocol.wireguard:
         return true;
       case NodeProtocol.clash:
-      case NodeProtocol.wireguard:
       case NodeProtocol.amnezia:
         return false;
     }
@@ -876,6 +935,8 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.socks:
         return true;
       case NodeProtocol.wireguard:
+        return JsonX.text(params['privateKey']).isNotEmpty &&
+            JsonX.text(params['publicKey']).isNotEmpty;
       case NodeProtocol.amnezia:
       case NodeProtocol.clash:
         return false;
@@ -901,6 +962,27 @@ class VpnController extends ChangeNotifier {
     if (fallback != null) {
       plans.add(fallback);
     }
+    // هسته انتخابی کاربر: فقط همان مسیر مجاز است.
+    final CorePreference pref = _settings.corePreference;
+    if (pref != CorePreference.auto) {
+      plans.removeWhere((LaunchPlan plan) {
+        final String core = plan.cores.first.name;
+        switch (pref) {
+          case CorePreference.xray:
+            return core != 'xray' && core != 'mieru' && core != 'xrayfront';
+          case CorePreference.clash:
+            return core != 'singbox' && core != 'singboxtun';
+          case CorePreference.mieru:
+            return core != 'mieru';
+          case CorePreference.wireguard:
+            return core != 'singbox' && core != 'singboxtun';
+          case CorePreference.amnezia:
+          case CorePreference.auto:
+            return false;
+        }
+      });
+    }
+
     // هسته ای که آخرین بار برای همین سرور جواب داد، اول امتحان می شود تا
     // هر بار چند ثانیه صرف هسته ای نشود که با این سرور کار نمی کند.
     final String preferred = _preferredCore[node.id] ?? '';
@@ -1006,16 +1088,18 @@ class VpnController extends ChangeNotifier {
     final File config = File(
       '${runDir.path}${Platform.pathSeparator}singbox.json',
     );
-    await config.writeAsString(
-      SingBoxConfig.encode(
-        SingBoxConfig.buildProxy(
-          node: node,
-          settings: _settings,
-          port: port,
-        ),
-      ),
-      flush: true,
-    );
+    final Map<String, dynamic> built = node.protocol == NodeProtocol.wireguard
+        ? SingBoxConfig.buildWireGuardProxy(
+            node: node,
+            port: port,
+            mtu: _settings.mtu,
+          )
+        : SingBoxConfig.buildProxy(
+            node: node,
+            settings: _settings,
+            port: port,
+          );
+    await config.writeAsString(SingBoxConfig.encode(built), flush: true);
     return LaunchPlan(
       cores: <CoreLaunch>[
         CoreLaunch(
@@ -1416,7 +1500,7 @@ class VpnController extends ChangeNotifier {
     });
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(
-      Duration(seconds: _settings.pingIntervalSeconds.clamp(30, 3600)),
+      Duration(seconds: _settings.pingIntervalSeconds.clamp(120, 3600)),
       (_) => unawaited(refreshPings(all: false)),
     );
   }
@@ -1513,13 +1597,16 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  Future<void> switchTo(VpnNode node) async {
+  /// جابه جایی به یک سرور مشخص (انتخاب دستی کاربر).
+  Future<ConnectOutcome> switchTo(VpnNode node) async {
     if (_status.busy) {
-      return;
+      return const ConnectOutcome(
+        ok: false,
+        message: 'برنامه در حال اتصال است؛ چند لحظه صبر کنید.',
+      );
     }
     if (!_status.active) {
-      await connect(requested: node);
-      return;
+      return connect(requested: node);
     }
     _setStatus(VpnStatus.switching, 'تغییر سرور به ${node.name}...');
     await _stopCores();
@@ -1530,6 +1617,7 @@ class VpnController extends ChangeNotifier {
     if (!outcome.ok) {
       await _failAndCleanup(outcome.message);
     }
+    return outcome;
   }
 
   Future<void> disconnect({bool silent = false}) async {

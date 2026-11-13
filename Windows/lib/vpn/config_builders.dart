@@ -52,6 +52,65 @@ class SingBoxConfig {
   static String encode(Map<String, dynamic> config) =>
       const JsonEncoder.withIndent('  ').convert(config);
 
+  /// حالت پروکسی محلی برای سرور وایرگارد.
+  ///
+  /// سینگ باکس وایرگارد را به شکل endpoint می شناسد؛ یک پورت مختلط محلی
+  /// ساخته می شود و تونل وایرگارد خروجی آن است.
+  static Map<String, dynamic> buildWireGuardProxy({
+    required VpnNode node,
+    required int port,
+    required int mtu,
+  }) {
+    final Map<String, dynamic> params = node.params;
+    final List<String> addresses = _addresses(params['address']);
+    final int keepalive = JsonX.integer(params['keepalive'], 25);
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': 'info', 'timestamp': true},
+      'inbounds': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'mixed',
+          'tag': 'mixed-in',
+          'listen': '127.0.0.1',
+          'listen_port': port,
+        },
+      ],
+      'endpoints': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'wireguard',
+          'tag': 'proxy',
+          'system': false,
+          'address': addresses.isEmpty
+              ? <String>['10.0.0.2/32']
+              : addresses,
+          'private_key': JsonX.text(params['privateKey']),
+          'mtu': JsonX.integer(params['mtu'], mtu > 0 ? mtu : 1420),
+          'peers': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'address': node.host,
+              'port': node.port,
+              'public_key': JsonX.text(params['publicKey']),
+              if (JsonX.text(params['presharedKey']).isNotEmpty)
+                'pre_shared_key': JsonX.text(params['presharedKey']),
+              'allowed_ips': <String>['0.0.0.0/0', '::/0'],
+              'persistent_keepalive_interval': keepalive,
+            },
+          ],
+        },
+      ],
+      'outbounds': <Map<String, dynamic>>[
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+      ],
+      'route': <String, dynamic>{
+        'rules': <Map<String, dynamic>>[
+          <String, dynamic>{'action': 'sniff'},
+          <String, dynamic>{'ip_is_private': true, 'outbound': 'direct'},
+        ],
+        'final': 'proxy',
+        'auto_detect_interface': true,
+      },
+    };
+  }
+
   /// حالت پروکسی محلی: یک inbound مختلط (http و socks روی یک پورت) و یک
   /// outbound به سرور. همان روشی که کلاینت ویندوز هیدیفای در حالت
   /// system proxy استفاده می کند.

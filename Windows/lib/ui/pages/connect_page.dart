@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
-import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
@@ -15,12 +14,13 @@ import '../../state/subscription_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
+import '../widgets/flag_view.dart';
 
-/// صفحه اصلی اتصال: لوگوی وضعیت، دکمه اتصال، آمار زنده و میانبرها.
+/// صفحه اصلی اتصال: آی پی و پرچم، دکمه بزرگ اتصال، انتخاب هسته، حالت انتخاب
+/// سرور و آمار زنده. همه چیز در همین صفحه است؛ منوی جدا برای سرورها وجود
+/// ندارد.
 class ConnectPage extends StatefulWidget {
-  const ConnectPage({super.key, required this.onOpenServers});
-
-  final VoidCallback onOpenServers;
+  const ConnectPage({super.key});
 
   @override
   State<ConnectPage> createState() => _ConnectPageState();
@@ -36,7 +36,6 @@ class _ConnectPageState extends State<ConnectPage> {
       if (subs.totalNodes == 0 && !subs.loadingAll) {
         await subs.fetchAll();
       }
-      // اگر سروری هست ولی هنوز عددی برای پینگ ندارد، سنجش خودکار شروع می شود.
       if (!vpn.measuring &&
           vpn.nodes.isNotEmpty &&
           vpn.nodes.every((VpnNode node) => !node.hasPing)) {
@@ -49,7 +48,6 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
-  /// اتصال یا قطع اتصال، با گزارش نتیجه برای کاربر.
   Future<void> _toggleConnection(
     VpnController vpn,
     ToastController toasts,
@@ -74,6 +72,88 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
+  /// انتخاب هسته و اتصال خودکار به پایدارترین سرور همان هسته.
+  Future<void> _selectCore(
+    CorePreference pref,
+    VpnController vpn,
+    SettingsController settings,
+    ToastController toasts,
+  ) async {
+    if (!pref.available) {
+      toasts.info(
+        'هسته ${pref.faName} در این نسخه فعال نیست',
+        'این هسته به همراه نسخه عرضه نشده است.',
+      );
+      return;
+    }
+    await settings.setCorePreference(pref);
+    toasts.info('هسته اتصال: ${pref.faName}');
+    if (vpn.status.busy) {
+      return;
+    }
+    if (vpn.status.active) {
+      await vpn.disconnect();
+    }
+    final ConnectOutcome outcome = await vpn.connect();
+    if (outcome.ok) {
+      toasts.success('متصل شد', vpn.activeNode?.name ?? '');
+    } else {
+      toasts.error('اتصال برقرار نشد', outcome.message);
+    }
+  }
+
+  /// تغییر حالت انتخاب سرور. حالت واقعا روی انتخاب اثر می گذارد و اگر کاربر
+  /// متصل است، با همان حالت دوباره وصل می شود تا اثرش را ببیند.
+  Future<void> _applyMode(
+    SelectionMode mode,
+    VpnController vpn,
+    SettingsController settings,
+    ToastController toasts,
+  ) async {
+    await settings.setSelectionMode(mode);
+    toasts.info('حالت انتخاب سرور: ${mode.faName}');
+    if (vpn.status.busy || !vpn.status.active) {
+      return;
+    }
+    if (vpn.status.active) {
+      await vpn.disconnect();
+    }
+    final ConnectOutcome outcome = await vpn.connect();
+    if (outcome.ok) {
+      toasts.success(
+        'با حالت ${mode.faName} دوباره وصل شد',
+        vpn.activeNode?.name ?? '',
+      );
+    } else {
+      toasts.error('اتصال برقرار نشد', outcome.message);
+    }
+  }
+
+  Future<void> _openServerPicker(
+    VpnController vpn,
+    ToastController toasts,
+  ) async {
+    final VpnNode? picked = await showDialog<VpnNode>(
+      context: context,
+      builder: (BuildContext context) => _ServerPickerDialog(vpn: vpn),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    // انتخاب دستی، حالت انتخاب سرور را هم روی «دستی» می گذارد تا اتصال بعدی
+    // دقیقا همین سرور را بردارد.
+    final SettingsController settings = context.read<SettingsController>();
+    if (settings.settings.selectionMode != SelectionMode.manual) {
+      await settings.setSelectionMode(SelectionMode.manual);
+    }
+    final ConnectOutcome outcome = await vpn.switchTo(picked);
+    if (outcome.ok) {
+      toasts.success('متصل شد', picked.name);
+    } else {
+      toasts.error('اتصال برقرار نشد', outcome.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final VpnController vpn = context.watch<VpnController>();
@@ -86,12 +166,17 @@ class _ConnectPageState extends State<ConnectPage> {
     final Color tone = VpnVisuals.color(context, status);
     final Account account = auth.account;
     final bool connected = status == VpnStatus.connected;
+    final String flagCode = vpn.geo.flagCode.isNotEmpty
+        ? vpn.geo.flagCode
+        : (vpn.activeNode?.flagCode ?? '');
+    final String shownIp = vpn.exitIp.isNotEmpty ? vpn.exitIp : vpn.realIp;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          // ── سرصفحه: سلام، آی پی فعلی و پرچم کشور ────────────────────
           Row(
             children: <Widget>[
               Expanded(
@@ -100,47 +185,60 @@ class _ConnectPageState extends State<ConnectPage> {
                   children: <Widget>[
                     Text(
                       Fa.num('سلام ${account.displayName}، خوش آمدید'),
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      Fa.num(
-                        '${Fa.longDate(DateTime.now())} | ${vpn.geo.cityLabel}${vpn.geo.countryLabel.isEmpty ? '' : '، ${vpn.geo.countryLabel}'}',
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
+                      Fa.num(Fa.longDate(DateTime.now())),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colors.textSecondary),
                     ),
                   ],
                 ),
               ),
-              if (vpn.exitIp.isNotEmpty || vpn.realIp.isNotEmpty)
+              if (shownIp.isNotEmpty)
                 GlassCard(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  radius: 14,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  radius: 16,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(Icons.public_rounded, size: 16, color: colors.info),
-                      const SizedBox(width: 8),
+                      if (flagCode.isNotEmpty) FlagView(code: flagCode, width: 38),
+                      if (flagCode.isNotEmpty) const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           Text(
-                            Fa.num(connected ? 'آی پی فعلی' : 'آی پی دستگاه'),
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
+                            Fa.num(connected ? 'آی پی اتصال' : 'آی پی دستگاه'),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.textSecondary),
                           ),
                           Text(
-                            Fa.num(vpn.exitIp.isNotEmpty ? vpn.exitIp : vpn.realIp),
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            Fa.num(shownIp),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w800),
                           ),
+                          if (connected && vpn.geo.countryLabel.isNotEmpty)
+                            Text(
+                              Fa.num(CountryNames.fa(flagCode).isEmpty
+                                  ? vpn.geo.countryLabel
+                                  : '${CountryNames.fa(flagCode)} | ${vpn.geo.countryLabel}'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: colors.info),
+                            ),
                         ],
                       ),
                       const SizedBox(width: 6),
@@ -155,47 +253,37 @@ class _ConnectPageState extends State<ConnectPage> {
                 ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           OccasionBanner(
             occasion: OccasionService.instance.active,
             enabled: settings.settings.occasionEffects,
           ),
           if (OccasionService.instance.active != null)
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
           if (vpn.nodes.isEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 14),
               child: GlassCard(
                 padding: const EdgeInsets.all(18),
                 child: Row(
                   children: <Widget>[
-                    Icon(Icons.info_outline_rounded, color: colors.warning, size: 22),
+                    Icon(Icons.info_outline_rounded,
+                        color: colors.warning, size: 22),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'هیچ سروری موجود نیست',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            Fa.num(
-                              subs.needsLogin
-                                  ? 'برای دریافت اشتراک باید وارد حساب شوی؛ سپس سرورها خودکار خوانده می شوند.'
-                                  : (subs.personalErrors.isNotEmpty
-                                      ? subs.personalErrors.first
-                                      : 'اشتراک خوانده نشد؛ دوباره تلاش کن.'),
-                            ),
-                            maxLines: 3,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
-                          ),
-                        ],
+                      child: Text(
+                        Fa.num(
+                          subs.needsLogin
+                              ? 'برای دریافت اشتراک باید وارد حساب شوی؛ سپس سرورها خودکار خوانده می شوند.'
+                              : (subs.personalErrors.isNotEmpty
+                                  ? subs.personalErrors.first
+                                  : 'اشتراک خوانده نشد؛ دوباره تلاش کن.'),
+                        ),
+                        maxLines: 3,
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: colors.textSecondary),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -208,8 +296,10 @@ class _ConnectPageState extends State<ConnectPage> {
                 ),
               ),
             ),
+
+          // ── کارت بزرگ اتصال ────────────────────────────────────────
           GlassCard(
-            padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
             radius: 28,
             elevated: true,
             gradient: LinearGradient(
@@ -223,7 +313,6 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
             child: Column(
               children: <Widget>[
-                // دکمه بزرگ اتصال: کل دایره وسط صفحه قابل لمس است.
                 Semantics(
                   button: true,
                   label: status.active ? 'قطع اتصال' : 'اتصال',
@@ -238,20 +327,24 @@ class _ConnectPageState extends State<ConnectPage> {
                         StatusOrb(
                           image: status.image,
                           color: tone,
-                          size: 300,
+                          size: 320,
                           active: status.busy,
                         ),
                         if (!status.busy)
                           Container(
-                            width: 74,
-                            height: 74,
+                            width: 78,
+                            height: 78,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: (status.active ? colors.danger : colors.primary)
+                              color: (status.active
+                                      ? colors.danger
+                                      : colors.primary)
                                   .withValues(alpha: 0.92),
                               boxShadow: <BoxShadow>[
                                 BoxShadow(
-                                  color: (status.active ? colors.danger : colors.primary)
+                                  color: (status.active
+                                          ? colors.danger
+                                          : colors.primary)
                                       .withValues(alpha: 0.35),
                                   blurRadius: 22,
                                   spreadRadius: 2,
@@ -260,7 +353,7 @@ class _ConnectPageState extends State<ConnectPage> {
                             ),
                             child: Icon(
                               Icons.power_settings_new_rounded,
-                              size: 38,
+                              size: 40,
                               color: colors.onPrimary,
                             ),
                           ),
@@ -268,7 +361,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 10),
                 Text(
                   Fa.num(status.label),
                   textAlign: TextAlign.center,
@@ -277,30 +370,32 @@ class _ConnectPageState extends State<ConnectPage> {
                         color: tone,
                       ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   Fa.num(vpn.message),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colors.textSecondary,
-                        height: 1.7,
+                        height: 1.6,
                       ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 SizedBox(
-                  width: 320,
+                  width: 360,
                   child: GradientButton(
                     label: status.active && !status.busy ? 'قطع اتصال' : 'اتصال',
                     icon: Icons.power_settings_new_rounded,
-                    height: 60,
-                    tone: status.active && !status.busy ? colors.danger : colors.primary,
+                    height: 58,
+                    tone: status.active && !status.busy
+                        ? colors.danger
+                        : colors.primary,
                     loading: status.busy,
                     onPressed: status.busy
                         ? null
                         : () => _toggleConnection(vpn, toasts),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Wrap(
                   alignment: WrapAlignment.center,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -308,10 +403,13 @@ class _ConnectPageState extends State<ConnectPage> {
                   runSpacing: 8,
                   children: <Widget>[
                     if (vpn.activeNode != null)
+                      // برای سرور متصل هیچ پینگی نشان داده نمی شود؛ فقط نام و
+                      // وضعیت، چون عدد پینگ همان تونلی است که در حال کار است.
                       Pill(
                         label: Fa.num(
-                          '${vpn.activeNode!.name} | '
-                          '${vpn.activeNode!.hasPing ? Fa.ms(vpn.activeNode!.pingMs) : 'پینگ نامشخص'}',
+                          status.active
+                              ? '${vpn.activeNode!.name} | متصل'
+                              : vpn.activeNode!.name,
                         ),
                         icon: Icons.dns_rounded,
                         color: colors.info,
@@ -326,7 +424,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       Pill(
                         label: 'تونل تایید شد',
                         icon: Icons.verified_user_rounded,
-                        color: colors.info,
+                        color: colors.success,
                       ),
                     if (vpn.measuring)
                       Pill(
@@ -336,17 +434,18 @@ class _ConnectPageState extends State<ConnectPage> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 12,
-                  runSpacing: 8,
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
                     OutlinedButton.icon(
-                      onPressed: widget.onOpenServers,
+                      onPressed: vpn.nodes.isEmpty
+                          ? null
+                          : () => _openServerPicker(vpn, toasts),
                       icon: const Icon(Icons.dns_outlined, size: 18),
                       label: const Text('انتخاب سرور'),
                     ),
+                    const SizedBox(width: 12),
                     OutlinedButton.icon(
                       onPressed: vpn.measuring
                           ? null
@@ -363,103 +462,399 @@ class _ConnectPageState extends State<ConnectPage> {
               ],
             ),
           ),
-          const SizedBox(height: 18),
-          if (vpn.stats.available)
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: StatTile(
-                  label: 'سرعت دانلود',
-                  value: Fa.speed(vpn.stats.downSpeed),
-                  icon: Icons.arrow_downward_rounded,
-                  accent: colors.success,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: StatTile(
-                  label: 'سرعت آپلود',
-                  value: Fa.speed(vpn.stats.upSpeed),
-                  icon: Icons.arrow_upward_rounded,
-                  accent: colors.info,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: StatTile(
-                  label: 'حجم دریافتی',
-                  value: Fa.bytes(vpn.stats.rx),
-                  icon: Icons.cloud_download_rounded,
-                  accent: colors.primary,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: StatTile(
-                  label: 'حجم ارسالی',
-                  value: Fa.bytes(vpn.stats.tx),
-                  icon: Icons.cloud_upload_rounded,
-                  accent: colors.warning,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: StatTile(
-                  label: 'مدت اتصال',
-                  value: Fa.duration(vpn.stats.connectedFor),
-                  icon: Icons.timer_outlined,
-                  accent: colors.textSecondary,
-                  compact: true,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+
+          // ── انتخاب هسته ────────────────────────────────────────────
           GlassCard(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SectionHeader(
+                  title: 'هسته اتصال',
+                  subtitle: 'با انتخاب هر هسته، خودکار به پایدارترین سرور وصل می شوی',
+                  trailing: Pill(
+                    label: Fa.num(settings.settings.corePreference.faName),
+                    icon: Icons.memory_rounded,
+                    color: colors.primary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    for (final CorePreference pref in CorePreference.values)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _CoreChip(
+                            pref: pref,
+                            selected: settings.settings.corePreference == pref,
+                            enabled: pref.available,
+                            busy: status.busy,
+                            onTap: () =>
+                                _selectCore(pref, vpn, settings, toasts),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // ── حالت انتخاب سرور (فشرده) ───────────────────────────────
+          GlassCard(
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(
                   title: 'حالت انتخاب سرور',
-                  subtitle: 'سرور فعال چطور انتخاب شود؟',
+                  subtitle: settings.settings.selectionMode.description,
                 ),
-                const SizedBox(height: 14),
-                Row(
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: <Widget>[
                     for (final SelectionMode mode in SelectionMode.values)
                       if (mode != SelectionMode.manual)
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: SelectionCard(
-                              title: mode.faName,
-                              description: mode.description,
-                              selected: settings.settings.selectionMode == mode,
-                              onTap: () async {
-                                await settings.setSelectionMode(mode);
-                                toasts.info('حالت انتخاب سرور: ${mode.faName}');
-                              },
-                              icon: mode == SelectionMode.auto
-                                  ? Icons.auto_mode_rounded
-                                  : (mode == SelectionMode.roundRobin
-                                      ? Icons.sync_alt_rounded
-                                      : (mode == SelectionMode.consistentHash
-                                          ? Icons.fingerprint_rounded
-                                          : Icons.push_pin_rounded)),
-                            ),
-                          ),
+                        _ModeChip(
+                          label: mode.faName,
+                          icon: mode.icon,
+                          selected: settings.settings.selectionMode == mode,
+                          onTap: () => _applyMode(mode, vpn, settings, toasts),
                         ),
                   ],
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 14),
+          if (vpn.stats.available)
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: StatTile(
+                    label: 'سرعت دانلود',
+                    value: Fa.speed(vpn.stats.downSpeed),
+                    icon: Icons.arrow_downward_rounded,
+                    accent: colors.success,
+                    compact: true,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: StatTile(
+                    label: 'سرعت آپلود',
+                    value: Fa.speed(vpn.stats.upSpeed),
+                    icon: Icons.arrow_upward_rounded,
+                    accent: colors.info,
+                    compact: true,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: StatTile(
+                    label: 'حجم دریافتی',
+                    value: Fa.bytes(vpn.stats.rx),
+                    icon: Icons.cloud_download_rounded,
+                    accent: colors.primary,
+                    compact: true,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: StatTile(
+                    label: 'مدت اتصال',
+                    value: Fa.duration(vpn.stats.connectedFor),
+                    icon: Icons.timer_outlined,
+                    accent: colors.textSecondary,
+                    compact: true,
+                  ),
+                ),
+              ],
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// نشان هسته با لوگوی رسمی.
+class _CoreChip extends StatelessWidget {
+  const _CoreChip({
+    required this.pref,
+    required this.selected,
+    required this.enabled,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final CorePreference pref;
+  final bool selected;
+  final bool enabled;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final Color border = selected ? colors.primary : colors.border;
+    return Tooltip(
+      message: pref.description,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: busy || !enabled ? null : onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: border,
+                width: selected ? 1.6 : 1,
+              ),
+              color: selected
+                  ? colors.primary.withValues(alpha: 0.10)
+                  : colors.surface,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  height: 34,
+                  width: 34,
+                  child: Image.asset(
+                    pref.logoAsset,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.memory_rounded,
+                      size: 26,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  Fa.num(pref.faName),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600,
+                        color: selected ? colors.primary : colors.textPrimary,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: selected
+              ? colors.primary.withValues(alpha: 0.12)
+              : colors.surface,
+          border: Border.all(
+            color: selected ? colors.primary : colors.border,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? colors.primary : colors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              Fa.num(label),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected ? colors.primary : colors.textPrimary,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// فهرست سرورها در یک پنجره؛ سروری که همین حالا وصل هستیم نمایش داده نمی شود.
+class _ServerPickerDialog extends StatefulWidget {
+  const _ServerPickerDialog({required this.vpn});
+
+  final VpnController vpn;
+
+  @override
+  State<_ServerPickerDialog> createState() => _ServerPickerDialogState();
+}
+
+class _ServerPickerDialogState extends State<_ServerPickerDialog> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String connectedId =
+        widget.vpn.activeNode?.id ?? (widget.vpn.status.active ? '' : '');
+    final List<VpnNode> nodes = widget.vpn.nodes
+        .where((VpnNode node) =>
+            node.id != connectedId &&
+            VpnController.usable(node) &&
+            (_query.isEmpty ||
+                node.name.toLowerCase().contains(_query.toLowerCase())))
+        .toList();
+    final List<VpnNode> sorted = <VpnNode>[...nodes]..sort((VpnNode a, VpnNode b) {
+        if (a.hasPing != b.hasPing) {
+          return a.hasPing ? -1 : 1;
+        }
+        return a.pingMs.compareTo(b.pingMs);
+      });
+
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 640),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  IconSquare(
+                    icon: Icons.dns_rounded,
+                    color: colors.info,
+                    size: 34,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      Fa.num('انتخاب سرور'),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  IconAction(
+                    icon: Icons.close_rounded,
+                    size: 30,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                onChanged: (String value) => setState(() => _query = value),
+                decoration: const InputDecoration(
+                  hintText: 'جست وجوی سرور یا کشور',
+                  prefixIcon: Icon(Icons.search_rounded, size: 20),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: sorted.isEmpty
+                    ? const EmptyState(
+                        icon: Icons.dns_outlined,
+                        title: 'سروری برای نمایش نیست',
+                        message: 'یا همه سرورها فیلتر شده اند یا اشتراک خالی است.',
+                      )
+                    : ListView.separated(
+                        itemCount: sorted.length,
+                        separatorBuilder: (BuildContext context, int index) =>
+                            const SizedBox(height: 6),
+                        itemBuilder: (BuildContext context, int index) {
+                          final VpnNode node = sorted[index];
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => Navigator.of(context).pop(node),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: colors.backgroundAlt,
+                                border: Border.all(color: colors.border),
+                              ),
+                              child: Row(
+                                children: <Widget>[
+                                  if (node.flagCode.isNotEmpty) ...<Widget>[
+                                    FlagView(code: node.flagCode, width: 26),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Pill(
+                                    label: node.hasPing
+                                        ? Fa.num(node.pingMs)
+                                        : '—',
+                                    icon: Icons.speed_rounded,
+                                    color: node.hasPing
+                                        ? (node.pingMs < 150
+                                            ? colors.success
+                                            : colors.warning)
+                                        : colors.textSecondary,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      Fa.num(node.name),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    Fa.num(node.protocol.label),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(color: colors.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

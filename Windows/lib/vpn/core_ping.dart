@@ -1,25 +1,28 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
+import '../core/app_config.dart';
 import '../models/models.dart';
 import 'config_builders.dart';
 import 'cores.dart';
+import 'tunnel_probe.dart';
 
 /// سنجش تاخیر واقعی هر سرور با هسته سینگ باکس.
 ///
-/// همان روشی که کلاینت هیدیفای برای «تاخیر» استفاده می کند: هسته یک
-/// outbound برای هر سرور می سازد و آدرس تولید ۲۰۴ را از داخل همان تونل
-/// می گیرد. عددی که به دست می آید تاخیر واقعی اتصال است، نه فقط پینگ
-/// آی سی ام پی یا باز شدن پورت سرور.
+/// برای هر سرور یک نمونه سینگ باکس کوتاه اجرا می شود که یک پورت محلی می سازد
+/// و همان درخواست کوچک از داخل تونل رد می شود؛ عددی که به دست می آید تاخیر
+/// واقعی اتصال است. این روش به رابط مدیریتی کلش وابسته نیست و روی هر نسخه
+/// هسته کار می کند.
 class CorePinger {
   CorePinger(this._provisioner);
 
   final CoreProvisioner _provisioner;
 
-  static const int _apiPort = 19090;
-  static const int _listenPort = 19191;
-  static const String _testUrl = 'http://cp.cloudflare.com/generate_204';
+  /// پورت های سنجش، یکی برای هر نمونه همزمان.
+  static const int _firstPort = 19200;
+
+  /// بیشتر از این تعداد سرور در یک دور سنجیده نمی شود تا زمان معقول بماند.
+  static const int _maxNodes = 24;
 
   /// پروتکل هایی که سینگ باکس می تواند برایشان تست تاخیر انجام دهد.
   static bool supports(VpnNode node) {
@@ -44,188 +47,168 @@ class CorePinger {
   Future<Map<String, int>> measure(
     List<VpnNode> nodes, {
     required AppSettings settings,
-    int concurrency = 8,
-    Duration perNodeTimeout = const Duration(seconds: 5),
+    int concurrency = 4,
+    Duration budget = const Duration(seconds: 70),
   }) async {
     final Map<String, int> delays = <String, int>{};
-    final List<VpnNode> targets = <VpnNode>[];
-    final Map<String, String> tags = <String, String>{};
-    for (final VpnNode node in nodes) {
-      if (!supports(node) || node.host.isEmpty || node.port <= 0) {
-        continue;
-      }
-      final String tag = 'node${targets.length}';
-      tags[node.id] = tag;
-      targets.add(node);
-    }
-    if (targets.isEmpty) {
-      return delays;
-    }
-
     final String? exe = await _provisioner.locateBinary('sing-box.exe');
     if (exe == null || exe.isEmpty) {
       return delays;
     }
 
+    // اول سرورهایی که تا حالا پینگ خوبی داشته اند، بعد بقیه.
+    final List<VpnNode> ordered = nodes
+        .where((VpnNode node) =>
+            supports(node) && node.host.isNotEmpty && node.port > 0)
+        .toList()
+      ..sort((VpnNode a, VpnNode b) {
+        if (a.hasPing != b.hasPing) {
+          return a.hasPing ? -1 : 1;
+        }
+        return a.pingMs.compareTo(b.pingMs);
+      });
+    if (ordered.isEmpty) {
+      return delays;
+    }
+    final List<VpnNode> targets = ordered.length > _maxNodes
+        ? ordered.sublist(0, _maxNodes)
+        : ordered;
+
     final Directory runDir = Directory(
       '${_provisioner.dataDir}${Platform.pathSeparator}run',
     );
     await runDir.create(recursive: true);
-    final File config = File(
-      '${runDir.path}${Platform.pathSeparator}singbox-ping.json',
-    );
+    final String workDir = File(exe).parent.path;
 
-    final List<Map<String, dynamic>> outbounds = <Map<String, dynamic>>[];
-    for (final VpnNode node in targets) {
-      final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
-        node,
-        settings,
-      );
-      outbound['tag'] = tags[node.id];
-      outbounds.add(outbound);
-    }
-    outbounds.add(<String, dynamic>{'type': 'direct', 'tag': 'direct'});
+    final DateTime deadline = DateTime.now().add(budget);
+    int cursor = 0;
+    final int workers = concurrency < 1
+        ? 1
+        : (concurrency > targets.length ? targets.length : concurrency);
 
-    await config.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
-        'log': <String, dynamic>{'level': 'warn', 'timestamp': false},
-        'inbounds': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'type': 'mixed',
-            'tag': 'mixed-in',
-            'listen': '127.0.0.1',
-            'listen_port': _listenPort,
-          },
-        ],
-        'outbounds': outbounds,
-        'route': <String, dynamic>{
-          'rules': <Map<String, dynamic>>[
-            <String, dynamic>{'action': 'sniff'},
-          ],
-          'final': 'direct',
-          'auto_detect_interface': true,
-        },
-        'experimental': <String, dynamic>{
-          'clash_api': <String, dynamic>{
-            'external_controller': '127.0.0.1:$_apiPort',
-            'default_mode': 'global',
-          },
-        },
-      }),
-      flush: true,
-    );
-
-    Process process;
-    try {
-      process = await Process.start(
-        exe,
-        <String>['run', '-c', config.path],
-        workingDirectory: File(exe).parent.path,
-        runInShell: false,
-      );
-    } on ProcessException {
-      return delays;
-    }
-    final IOSink sink = File(
-      '${runDir.path}${Platform.pathSeparator}singbox-ping.log',
-    ).openWrite(mode: FileMode.write);
-    process.stdout.listen(sink.add);
-    process.stderr.listen(sink.add);
-
-    final HttpClient client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 2);
-    try {
-      if (!await _waitForApi(client)) {
-        return delays;
-      }
-      int cursor = 0;
-      Future<void> worker() async {
-        while (true) {
-          final int index = cursor++;
-          if (index >= targets.length) {
-            return;
-          }
-          final VpnNode node = targets[index];
-          final int delay = await _delay(
-            client,
-            tags[node.id]!,
-            perNodeTimeout,
-          );
-          // تاخیر کمتر از ۵ میلی ثانیه برای یک سرور بیرونی معنی ندارد؛
-          // چنین عددی نشانه خطای سنجش است، نه سرور سریع.
-          if (delay >= 5) {
-            delays[node.id] = delay;
-          }
+    Future<void> worker(int slot) async {
+      final int port = _firstPort + slot;
+      while (true) {
+        if (DateTime.now().isAfter(deadline)) {
+          return;
+        }
+        final int index = cursor++;
+        if (index >= targets.length) {
+          return;
+        }
+        final VpnNode node = targets[index];
+        final int ms = await _measureOne(
+          exe: exe,
+          workDir: workDir,
+          runDir: runDir,
+          node: node,
+          settings: settings,
+          port: port,
+          slot: slot,
+        );
+        // تاخیر کمتر از ۵ میلی ثانیه برای یک سرور بیرونی معنی ندارد.
+        if (ms >= 5) {
+          delays[node.id] = ms;
         }
       }
-
-      final int workers = concurrency < 1
-          ? 1
-          : (concurrency > targets.length ? targets.length : concurrency);
-      await Future.wait(<Future<void>>[
-        for (int i = 0; i < workers; i++) worker(),
-      ]);
-    } finally {
-      client.close(force: true);
-      process.kill();
-      await sink.flush();
-      await sink.close();
     }
+
+    await Future.wait(<Future<void>>[
+      for (int slot = 0; slot < workers; slot++) worker(slot),
+    ]);
     return delays;
   }
 
-  Future<bool> _waitForApi(HttpClient client) async {
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 8));
+  Future<int> _measureOne({
+    required String exe,
+    required String workDir,
+    required Directory runDir,
+    required VpnNode node,
+    required AppSettings settings,
+    required int port,
+    required int slot,
+  }) async {
+    final File config = File(
+      '${runDir.path}${Platform.pathSeparator}ping-$slot.json',
+    );
+    Process? process;
+    IOSink? sink;
+    try {
+      await config.writeAsString(
+        SingBoxConfig.encode(
+          SingBoxConfig.buildProxy(
+            node: node,
+            settings: settings,
+            port: port,
+          ),
+        ),
+        flush: true,
+      );
+      process = await Process.start(
+        exe,
+        <String>['run', '-c', config.path],
+        workingDirectory: workDir,
+        runInShell: false,
+      );
+      sink = File(
+        '${runDir.path}${Platform.pathSeparator}ping-$slot.log',
+      ).openWrite(mode: FileMode.write);
+      process.stdout.listen(sink.add);
+      process.stderr.listen(sink.add);
+
+      if (!await _waitForPort(port, const Duration(milliseconds: 2500))) {
+        return -1;
+      }
+      return await TunnelProbe.latency(
+        proxyPort: port,
+        timeout: const Duration(seconds: 5),
+      );
+    } catch (_) {
+      return -1;
+    } finally {
+      process?.kill();
+      if (sink != null) {
+        await sink.flush();
+        await sink.close();
+      }
+    }
+  }
+
+  Future<bool> _waitForPort(int port, Duration timeout) async {
+    final DateTime deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
-        final HttpClientRequest request = await client
-            .getUrl(Uri.parse('http://127.0.0.1:$_apiPort/version'))
-            .timeout(const Duration(milliseconds: 800));
-        final HttpClientResponse response =
-            await request.close().timeout(const Duration(milliseconds: 800));
-        await response.drain<void>();
-        if (response.statusCode == 200) {
-          return true;
-        }
+        final Socket socket = await Socket.connect(
+          '127.0.0.1',
+          port,
+          timeout: const Duration(milliseconds: 300),
+        );
+        socket.destroy();
+        return true;
       } catch (_) {
-        // هسته هنوز بالا نیامده؛ دوباره امتحان می شود.
+        await Future<void>.delayed(const Duration(milliseconds: 120));
       }
-      await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     return false;
   }
 
-  Future<int> _delay(HttpClient client, String tag, Duration timeout) async {
-    final int timeoutMs = timeout.inMilliseconds;
-    final Uri uri = Uri.parse(
-      'http://127.0.0.1:$_apiPort/proxies/${Uri.encodeComponent(tag)}/delay'
-      '?url=${Uri.encodeQueryComponent(_testUrl)}&timeout=$timeoutMs',
-    );
+  /// خلاصه ای از فایل گزارش آخرین سنجش، برای عیب یابی در صفحه گزارش ها.
+  Future<String> lastError() async {
     try {
-      final HttpClientRequest request =
-          await client.getUrl(uri).timeout(timeout);
-      final HttpClientResponse response =
-          await request.close().timeout(timeout);
-      final String body = await response
-          .transform(utf8.decoder)
-          .join()
-          .timeout(timeout, onTimeout: () => '');
-      if (response.statusCode != 200) {
-        return -1;
+      final File log = File(
+        '${_provisioner.dataDir}${Platform.pathSeparator}run'
+        '${Platform.pathSeparator}ping-0.log',
+      );
+      if (!await log.exists()) {
+        return '';
       }
-      final Object? json = jsonDecode(body);
-      if (json is Map<String, dynamic>) {
-        final Object? delay = json['delay'];
-        if (delay is int) {
-          return delay;
-        }
-        if (delay is num) {
-          return delay.round();
-        }
-      }
-      return -1;
+      final List<String> lines = await log.readAsLines();
+      final Iterable<String> errors = lines
+          .where((String line) => line.contains('ERROR') || line.contains('FATAL'))
+          .take(2);
+      return errors.join(' | ');
     } catch (_) {
-      return -1;
+      return '';
     }
   }
 }

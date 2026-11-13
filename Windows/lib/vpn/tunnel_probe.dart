@@ -68,6 +68,70 @@ class TunnelProbe {
     );
   }
 
+  /// اندازه گیری تاخیر واقعی از طریق پروکسی محلی؛ میلی ثانیه یا -۱.
+  static Future<int> latency({
+    required int proxyPort,
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    final Completer<int> done = Completer<int>();
+    int pending = _endpoints.length;
+    for (final String url in _endpoints) {
+      final Future<int> probe = _timedViaProxy(proxyPort, url, timeout);
+      unawaited(
+        probe.then<void>(
+          (int ms) {
+            if (ms > 0 && !done.isCompleted) {
+              done.complete(ms);
+            }
+          },
+          onError: (Object _) {},
+        ).whenComplete(() {
+          pending--;
+          if (pending == 0 && !done.isCompleted) {
+            done.complete(-1);
+          }
+        }),
+      );
+    }
+    return done.future.timeout(
+      timeout + const Duration(seconds: 1),
+      onTimeout: () => -1,
+    );
+  }
+
+  static Future<int> _timedViaProxy(
+    int port,
+    String url,
+    Duration timeout,
+  ) async {
+    final Uri uri = Uri.parse(url);
+    Socket? socket;
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      socket = await Socket.connect('127.0.0.1', port, timeout: timeout);
+      socket.add(
+        utf8.encode(
+          'GET $url HTTP/1.1\r\n'
+          'Host: ${uri.host}\r\n'
+          'User-Agent: UmbrellaVPN/1.0\r\n'
+          'Accept: */*\r\n'
+          'Connection: close\r\n\r\n',
+        ),
+      );
+      await socket.flush();
+      final String head = await _readHead(socket, timeout);
+      watch.stop();
+      if (!_statusOk(head)) {
+        return -1;
+      }
+      return watch.elapsedMilliseconds;
+    } catch (_) {
+      return -1;
+    } finally {
+      socket?.destroy();
+    }
+  }
+
   static Future<bool> _viaProxy(
     int port,
     String url,

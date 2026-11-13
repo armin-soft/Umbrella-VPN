@@ -16,7 +16,7 @@ import '../pages/about_page.dart';
 import '../pages/account_page.dart';
 import '../pages/connect_page.dart';
 import '../pages/logs_page.dart';
-import '../pages/servers_page.dart';
+import '../pages/device_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
 import '../widgets/common.dart';
@@ -43,9 +43,9 @@ class _AppShellState extends State<AppShell> {
       activeIcon: Icons.shield_rounded,
     ),
     NavDestination(
-      label: 'سرورها',
-      icon: Icons.dns_outlined,
-      activeIcon: Icons.dns_rounded,
+      label: 'دستگاه من',
+      icon: Icons.computer_outlined,
+      activeIcon: Icons.computer_rounded,
     ),
     NavDestination(
       label: 'حساب من',
@@ -95,7 +95,7 @@ class _AppShellState extends State<AppShell> {
         break;
       case 'servers':
         await widget.windowService.show();
-        setState(() => _index = 1);
+        setState(() => _index = 0);
         break;
       case 'settings':
         await widget.windowService.show();
@@ -136,8 +136,8 @@ class _AppShellState extends State<AppShell> {
     final UmbrellaColors colors = context.colors;
 
     final List<Widget> pages = <Widget>[
-      ConnectPage(onOpenServers: () => setState(() => _index = 1)),
-      const ServersPage(),
+      const ConnectPage(),
+      const DevicePage(),
       AccountPage(onSignedOut: () => setState(() => _index = 0)),
       SettingsPage(onOpenAbout: () => setState(() => _index = 6)),
       const UpdatesPage(),

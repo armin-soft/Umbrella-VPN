@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../core/app_config.dart';
 import '../core/storage.dart';
 import '../core/utils.dart';
+import '../data/panel_client.dart';
 import '../data/gateway_client.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
@@ -443,6 +444,40 @@ class AuthController extends ChangeNotifier {
         _gateway.heartbeat(token: session.token, deviceId: _deviceId),
       );
     });
+  }
+
+  /// خواندن اعداد دقیق حساب از پنل؛ اگر پنل جواب ندهد همان داده درگاه
+  /// استفاده می شود و چیزی خراب نمی شود.
+  Future<bool> refreshFromPanel() async {
+    final SessionData? session = _session;
+    if (session == null) {
+      return false;
+    }
+    final String uuid = session.account.uuid;
+    if (uuid.isEmpty) {
+      return false;
+    }
+    final Account? panel = await PanelClient().user(uuid);
+    if (panel == null) {
+      return false;
+    }
+    final Account merged = session.account.copyWith(
+      name: panel.name.isNotEmpty ? panel.name : null,
+      phone: panel.phone.isNotEmpty ? panel.phone : null,
+      enable: panel.enable,
+      isActive: panel.isActive,
+      usageLimitGb: panel.usageLimitGb > 0 ? panel.usageLimitGb : null,
+      currentUsageGb: panel.currentUsageGb,
+      packageDays: panel.packageDays > 0 ? panel.packageDays : null,
+      startDate: panel.startDate,
+      expiryDate: panel.expiryDate,
+      lastOnline: panel.lastOnline,
+      mode: panel.mode.isNotEmpty ? panel.mode : null,
+    );
+    _session = session.copyWith(account: merged, filter: session.filter);
+    await _store.writeJson(StoreKeys.session, _session!.toJson());
+    notifyListeners();
+    return true;
   }
 
   Future<void> refreshAccount({bool silent = false}) async {
