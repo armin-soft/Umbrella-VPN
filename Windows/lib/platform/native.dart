@@ -67,9 +67,11 @@ class NativeBridge {
         <String>['-n', '1', '-w', '$timeoutMs', host],
         runInShell: false,
       );
-      final String text = '${result.stdout}\n${result.stderr}';
+      final String text = _asciiDigits('${result.stdout}\n${result.stderr}');
+      // ویندوز فارسی «زمان=۱۲۰ms» و در حالت کمتر از یک میلی ثانیه
+      // «زمان<1ms» می نویسد.
       final RegExpMatch? match =
-          RegExp(r'(?:time|زمان)[=<]\s*([0-9]+)\s*ms').firstMatch(text);
+          RegExp(r'(?:time|زمان)\s*[=<]\s*([0-9]+)\s*(?:ms|میلی)').firstMatch(text);
       if (match != null) {
         final int? value = int.tryParse(match.group(1) ?? '');
         if (value != null) {
@@ -80,6 +82,29 @@ class NativeBridge {
       return -1;
     }
     return -1;
+  }
+
+  /// رقم های فارسی و عربی را به رقم لاتین تبدیل می کند تا خروجی ابزارهای
+  /// ویندوز فارسی هم خوانده شود.
+  static String _asciiDigits(String text) {
+    const String persian = '۰۱۲۳۴۵۶۷۸۹';
+    const String arabic = '٠١٢٣٤٥٦٧٨٩';
+    final StringBuffer buffer = StringBuffer();
+    for (final int code in text.runes) {
+      final String char = String.fromCharCode(code);
+      final int persianIndex = persian.indexOf(char);
+      if (persianIndex >= 0) {
+        buffer.write(persianIndex);
+        continue;
+      }
+      final int arabicIndex = arabic.indexOf(char);
+      if (arabicIndex >= 0) {
+        buffer.write(arabicIndex);
+        continue;
+      }
+      buffer.write(char);
+    }
+    return buffer.toString();
   }
 
   static const String _inetKey =

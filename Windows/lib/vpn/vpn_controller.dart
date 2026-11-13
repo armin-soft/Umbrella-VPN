@@ -304,6 +304,13 @@ class VpnController extends ChangeNotifier {
       final List<dynamic> list = JsonX.asList(jsonDecode(raw));
       _nodes = list
           .map((Object? item) => VpnNode.fromJson(JsonX.asMap(item)))
+          // عددهای غیرممکن (۰ و ۱ میلی ثانیه) از نسخه های قبلی پاک می شوند تا
+          // کاربر پینگ اشتباه نبیند؛ سنجش بعدی مقدار درست را می آورد.
+          .map(
+            (VpnNode node) => node.hasPing && node.pingMs < 4
+                ? node.copyWith(pingMs: 0, jitterMs: 0, stability: 0)
+                : node,
+          )
           .toList();
     } on Exception {
       _nodes = <VpnNode>[];
@@ -394,7 +401,37 @@ class VpnController extends ChangeNotifier {
       ..sort(_sortNodes);
     _measuring = false;
     await _cacheNodes();
+    _log.add(
+      'سنجش پینگ: تاخیر تونل برای ${Fa.num(tunnelDelays.length)} سرور و '
+      'پینگ شبکه برای ${Fa.num(fused.where((VpnNode node) => node.hasPing).length)} '
+      'سرور به دست آمد.'
+      '${_medianNote(fused)}'
+      '${_tunnelNote(tunnelDelays)}',
+    );
     _notify();
+  }
+
+  /// بازه تاخیر تونل برای گزارش ها؛ برای عیب یابی سنجش.
+  static String _tunnelNote(Map<String, int> delays) {
+    if (delays.isEmpty) {
+      return '';
+    }
+    final List<int> values = delays.values.toList()..sort();
+    return ' بازه تاخیر تونل: ${Fa.num(values.first)} تا ${Fa.num(values.last)} '
+        'میلی ثانیه.';
+  }
+
+  /// خلاصه عددی پینگ برای گزارش ها (کمترین و میانه).
+  static String _medianNote(List<VpnNode> nodes) {
+    final List<int> values = <int>[
+      for (final VpnNode node in nodes)
+        if (node.hasPing) node.pingMs,
+    ]..sort();
+    if (values.isEmpty) {
+      return '';
+    }
+    return ' کمترین ${Fa.num(values.first)} و میانه '
+        '${Fa.num(values[values.length ~/ 2])} میلی ثانیه.';
   }
 
   /// ترتیب فهرست سرورها بر اساس حالت انتخاب کاربر.

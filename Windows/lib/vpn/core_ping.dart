@@ -151,7 +151,9 @@ class CorePinger {
             tags[node.id]!,
             perNodeTimeout,
           );
-          if (delay > 0) {
+          // تاخیر کمتر از ۵ میلی ثانیه برای یک سرور بیرونی معنی ندارد؛
+          // چنین عددی نشانه خطای سنجش است، نه سرور سریع.
+          if (delay >= 5) {
             delays[node.id] = delay;
           }
         }

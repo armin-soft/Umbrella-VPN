@@ -14,6 +14,10 @@ class PingService {
   final NativeBridge _native;
   final Map<String, List<int>> _history = <String, List<int>>{};
 
+  /// کمتر از این مقدار برای یک سرور واقعی ممکن نیست؛ عددهای ۰ و ۱ معمولا
+  /// نتیجه واسطه گر شبکه یا خطای سنجش هستند و نباید نمایش داده شوند.
+  static const int _minRealMs = 4;
+
   Future<VpnNode> measure(VpnNode node, {int attempts = 2}) async {
     final List<int> samples = <int>[];
     int icmpBest = -1;
@@ -94,14 +98,16 @@ class PingService {
   }
 
   int _best(int icmp, int tcp) {
-    if (icmp >= 0 && tcp >= 0) {
-      return math.min(icmp, tcp);
+    final int icmpSafe = icmp >= _minRealMs ? icmp : -1;
+    final int tcpSafe = tcp >= _minRealMs ? tcp : -1;
+    if (icmpSafe >= 0 && tcpSafe >= 0) {
+      return math.min(icmpSafe, tcpSafe);
     }
-    if (icmp >= 0) {
-      return icmp;
+    if (icmpSafe >= 0) {
+      return icmpSafe;
     }
-    if (tcp >= 0) {
-      return tcp;
+    if (tcpSafe >= 0) {
+      return tcpSafe;
     }
     return -1;
   }
