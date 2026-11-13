@@ -173,7 +173,7 @@ $Max_GB_Label = Helper::formatGB($Max_GB);
 $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . "📌در این بخش می توانید *تعداد روز* و *حجم* اشتراک را خودتان انتخاب کنید.\n\n"
 . "💰*نرخ هر روز: {$Day_Label}* تومان\n"
-. "(محاسبه بر اساس پلن ۱ ماهه: *" . Helper::formatCurrency((float)Environment::get('PLAN_PRICE_1')) . "* تومان ÷ ۳۰)\n"
+. "🧮محاسبه بر اساس پلن ۱ ماهه: *" . Helper::formatCurrency((float)Environment::get('PLAN_PRICE_1')) . "* تومان ÷ ۳۰\n"
 . "📦*حجم:* بین {$Min_GB_Label} تا {$Max_GB_Label} — *هزینه ای جداگانه ندارد* و فقط سهمیه شماست.\n\n"
 . "📏*محدوده مجاز:* {$Min_Label} تا {$Max_Label} روز\n\n"
 . "👇برای ادامه دکمه زیر را بزنید:" . Helper::userFooter() . "*";
@@ -321,7 +321,7 @@ $Days_Label = Helper::toPersian((string)$Days);
 $GB_Label = Helper::formatGB($GB);
 $Day_Price_Label = Helper::formatCurrency($Day_Rate);
 $Total_Label = Helper::formatCurrency($Total);
-$Name = "اشتراک {$Days_Label} روزه - {$GB_Label}";
+$Name = "💎اشتراک {$Days_Label} روزه - {$GB_Label}";
 $Balance = Repository::getBalance($Context->UserId);
 $Balance_Label = Helper::formatCurrency($Balance);
 $Phone = (string)(Repository::getUser($Context->UserId)['Phone'] ?? '');
@@ -462,7 +462,7 @@ return;
 $Day_Rate = BotConfig::getCustomDayRate();
 $Total = (int)round($Days * $Day_Rate);
 $Days_Label = Helper::toPersian((string)$Days);
-$Name = "اشتراک {$Days_Label} روزه";
+$Name = "💎اشتراک {$Days_Label} روزه";
 self::purchaseCustom($Context, $Name, $Days, $Total);
 }
 
@@ -925,7 +925,7 @@ TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId);
 }
 
 if (!Zarinpal::isConfigured()) {
-$Text = $Greeting . " *با عرض پوزش اعتبار شما کافی نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته: برای اشتراک " . Helper::formatCurrency($Amount) . " نیاز دارید.\n\nاعتبار کنونی: " . Helper::formatCurrency($Balance) . "*" . Helper::userFooter();
+$Text = $Greeting . " *🙏با عرض پوزش اعتبار شما کافی نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️برای اشتراک " . Helper::formatCurrency($Amount) . " نیاز دارید.\n\n👛اعتبار کنونی: " . Helper::formatCurrency($Balance) . "*" . Helper::userFooter();
 TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard([
 Menu::back('اشتراک من', 'اشتراک من'),
 Menu::userHome()
@@ -1716,7 +1716,7 @@ $Plan = Helper::smsPlan($Name);
 $Template = Repository::getSmsTemplate('activate');
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan, '{remaining}' => Helper::durationLabel($Days)])
-: "{$Full_Name} گرامی اشتراک {$Plan} شما با موفقیت فعال گردید.\nمدت اعتبار: " . Helper::durationLabel($Days) . "\n\nسرور آمبرلا";
+: "{$Full_Name} گرامی 🎉اشتراک {$Plan} شما با موفقیت فعال گردید.\n⏳مدت اعتبار: " . Helper::durationLabel($Days) . "\n\nسرور آمبرلا";
 \IppanelClient::send($User_ID, $Phone, $Sms_Text);
 }
 
@@ -1800,7 +1800,7 @@ $Template = Repository::getSmsTemplate('renew');
 $Duration_Label = Helper::durationLabel($Days);
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan, '{remaining}' => $Duration_Label])
-: "{$Full_Name} گرامی اشتراک {$Plan} شما با موفقیت تمدید گردید.\nمدت اعتبار: {$Duration_Label}\n\nسرور آمبرلا";
+: "{$Full_Name} گرامی 🎉اشتراک {$Plan} شما با موفقیت تمدید گردید.\n⏳مدت اعتبار: {$Duration_Label}\n\nسرور آمبرلا";
 IppanelClient::send($User_ID, $Phone, $Sms_Text);
 }
 

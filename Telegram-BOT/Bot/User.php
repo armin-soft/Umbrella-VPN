@@ -122,7 +122,7 @@ return;
 }
 
 $Minutes = (int)ceil(Environment::getChannelGraceSeconds() / 60);
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما عضو کانال اطلاع رسانی نیستید.\n\nبرای استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما عضو کانال اطلاع رسانی نیستید.\n\n🔒برای استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
 ]));
@@ -585,7 +585,7 @@ $Text = Common::greet($Context, 'تمدید خودکار اشتراک')
 '💳موجودی کیف پول: *' . Helper::formatCurrency($Balance) . '*',
 '⏳زمان باقیمانده اشتراک: *' . Helper::remainingDuration($Exp_Stamp) . '*',
 ])
-. 'ℹ️در صورت فعال بودن، ' . Helper::toPersian('3') . " روز قبل از انقضا، اشتراک شما به صورت خودکار از موجودی کیف پول تمدید می شود.\n"
+. 'ℹ️در صورت فعال بودن، ' . Helper::toPersian('3') . " روز قبل از انقضا، ⏳اشتراک شما به صورت خودکار از موجودی کیف پول تمدید می شود.\n"
 . '📌*برای فعال کردن، پلن مورد نظر را انتخاب کنید:*';
 $Rows = [];
 
@@ -898,7 +898,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 
 public static function ticketNewStart(Context $Context): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_subject']);
-$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "موضوع تیکت را وارد کنید:\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📝موضوع تیکت را وارد کنید:\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت', 'callback_data' => 'تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
@@ -913,7 +913,7 @@ return;
 }
 
 Repository::updateUserSession($Context->UserId, ['Ticket_Subject' => $Subject, 'Flow' => 'user:ticket_description']);
-$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\nتوضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\n📝توضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت', 'callback_data' => 'تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
@@ -1045,7 +1045,7 @@ Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Caption, $Ph
 }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null, 'Ticket_Category' => 'other', 'Ticket_Priority' => 'medium']);
-Repository::addNotification($Context->UserId, 'ticket', 'تیکت ایجاد شد', "تیکت #{$Ticket_ID}: {$Subject}");
+Repository::addNotification($Context->UserId, 'ticket', '🎫تیکت ایجاد شد', "🎫تیکت #{$Ticket_ID}: {$Subject}");
 
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 
@@ -1153,7 +1153,7 @@ public static function ticketUserReplyStart(Context $Context, int $Ticket_ID): v
 $Ticket = Repository::getTicket($Ticket_ID);
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_reply_text', 'Temp_Ticket_ID' => $Ticket_ID]);
-$Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . 'پاسخ خود را وارد کنید:' . Helper::userFooter();
+$Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . '✏️📝پاسخ خود را وارد کنید:' . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت', 'callback_data' => 'لیست تیکت های من'], ['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));

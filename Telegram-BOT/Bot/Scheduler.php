@@ -248,8 +248,8 @@ $Remaining_Label = Helper::remainingDuration($Exp_Stamp);
 
 if ($Chat_ID > 0) {
 $Message = $Days > 0
-? "⚠️اشتراک {$Subscription} شما " . Helper::toPersian((string)$Days) . " روز دیگر منقضی می شود.\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\nبرای جلوگیری از قطع، همین الان تمدید کنید."
-: "⚠️اشتراک {$Subscription} شما امروز منقضی می شود!\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\nبرای جلوگیری از قطع، فوراً تمدید کنید.";
+? "⚠️اشتراک {$Subscription} شما " . Helper::toPersian((string)$Days) . " روز دیگر منقضی می شود.\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\n⏳برای جلوگیری از قطع، همین الان تمدید کنید."
+: "⚠️اشتراک {$Subscription} شما امروز منقضی می شود!\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\n⏳برای جلوگیری از قطع، فوراً تمدید کنید.";
 TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'تمدید اشتراک', $User_ID) . "📨{$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '💎تمدید اشتراک', 'callback_data' => 'اشتراک من']],
 Common::mainButton(),

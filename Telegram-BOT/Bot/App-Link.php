@@ -48,10 +48,10 @@ $Active = (bool)($Account['is_active'] ?? false);
 
 $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 . Menu::section('👤', 'حساب کاربری', [
-'نام: ' . $Name,
-'شماره: ' . \Helper::toPersian((string)($Account['phone'] ?? '')),
-'مصرف: ' . $Usage . ' از ' . $Limit,
-'وضعیت: ' . ($Active ? 'فعال ✅' : 'غیرفعال ⛔️'),
+'🧑نام: ' . $Name,
+'📞شماره: ' . \Helper::toPersian((string)($Account['phone'] ?? '')),
+'📊مصرف: ' . $Usage . ' از ' . $Limit,
+'🚦وضعیت: ' . ($Active ? 'فعال ✅' : 'غیرفعال ⛔️'),
 ])
 . $Summary
 . \Helper::userFooter();
@@ -299,7 +299,7 @@ private static function renderTwoStep(Context $Context): void {
 $On = AppTwoStep::enabled($Context->UserId);
 $Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورود')
 . "🔐 *تأیید دومرحله‌ای ورود به برنامه*\n"
-. 'وضعیت: ' . ($On ? '🟢 فعال' : '🔴 غیرفعال') . "\n"
+. '🚦وضعیت: ' . ($On ? '🟢فعال' : '🔴غیرفعال') . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🟢 فعال: بعد از کد پیامکی، جزئیات دستگاه (نام، سیستم‌عامل، آی‌پی و زمان) همین‌جا به تلگرام شما می‌آید و ورود فقط با زدن «✅خودم بودم» کامل می‌شود.\n\n"
 . "🔴 غیرفعال: فقط کد پیامکی کافی است و دستگاه بلافاصله تأیید می‌شود؛ بعد از هر ورود، نتیجه به تلگرام شما اطلاع داده می‌شود.\n\n"

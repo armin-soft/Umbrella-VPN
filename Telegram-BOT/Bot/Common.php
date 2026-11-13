@@ -76,7 +76,7 @@ return Helper::userGreeting($Context, $Section);
 public static function robotOff(Context $Context, string $Section = 'منوی خدمات ربات'): void {
 $Channel_Url = BotConfig::getChannelUrl();
 
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, $Section) . "با عرض پوزش ربات در دسترس نمی باشد.\n⚠️علت:🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, $Section) . "🪫📴با عرض پوزش ربات در دسترس نمی باشد.\n⚠️علت: 🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢👁مشاهده کانال اطلاع رسانی', 'url' => $Channel_Url]],
 ]));
 }
