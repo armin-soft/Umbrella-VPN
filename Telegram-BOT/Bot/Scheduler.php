@@ -607,8 +607,7 @@ $Text = Helper::frame('کاربر', $Name, 'گزارش شبانه مصرف', $Us
 . Helper::userFooter();
 
 $Result = TelegramClient::sendMessage($Chat_ID, $Text, TelegramClient::inlineKeyboard([
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-[['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
+[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من'], ['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
 Common::mainButton(),
 ]));
 

@@ -70,7 +70,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 if ($Phone === '') {
 $Send(Common::greet($Context, 'اشتراک من') . "شما بدلیل عدم ثبت اطلاعات پروفایل کاربری مجاز به دریافت اشتراک نمی باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📝👤ثبت اطلاعات پروفایل کاربری', 'callback_data' => 'ویرایش و ثبت پروفایل']],
-Common::mainButton()
+Menu::userHome()
 ]));
 return;
 }
@@ -81,7 +81,7 @@ return;
 }
 
 if (!is_string($Client_ID) || $Client_ID === '' || $Client_ID === '_') {
-$Send(Common::greet($Context, 'اشتراک من') . "داده های سرور با ربات هماهنگ نیست." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([Common::mainButton()]));
+$Send(Common::greet($Context, 'اشتراک من') . "داده های سرور با ربات هماهنگ نیست." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -91,7 +91,7 @@ self::mySubscriptionActive($Context, $Send);
 catch (Throwable $e) {
 error_log('[Umbrella-Subscription] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
 try {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "❌خطای داخلی رخ داد. لطفاً مجدد تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::mainButton()]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "❌خطای داخلی رخ داد. لطفاً مجدد تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 catch (Throwable $e2) {
@@ -106,7 +106,7 @@ $Rows = [
 [['text' => '🎁🪅اشتراک رایگان ۱ روزه (۱ گیگابایت)', 'callback_data' => 'اشتراک رایگان اول']],
 [['text' => '💎✨اشتراک آماده', 'callback_data' => 'اشتراک آماده'], ['text' => '🛠️🎛️اشتراک دلخواه', 'callback_data' => 'اشتراک دلخواه']],
 [['text' => "🔄💳به روزرسانی اعتبار حساب", 'callback_data' => "اشتراک من"]],
-Common::mainButton(),
+Menu::userHome(),
 ];
 
 $Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\n📌*گزینه های خرید:*\n├─💎✨*اشتراک آماده:* پلن های پیشنهادی (۱، ۲، ۳، ۶ و ۱۲ ماهه)\n└─🛠️🎛️*اشتراک دلخواه:* خودتان تعداد روز را انتخاب کنید\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter() . "*";
@@ -131,7 +131,7 @@ $Plan_Price = BotConfig::getPlanPrice((int)$Month_Key);
 if ($Plan_Price <= 0) continue;
 
 $Price_Label = Helper::formatCurrency($Plan_Price);
-$Rows[] = [['text' => "💎اشتراک {$Plan_Name} =💰({$Price_Label})", 'callback_data' => "خرید اشتراک {$Month_Key}"]];
+$Rows[] = [['text' => "💎{$Plan_Name} — {$Price_Label}", 'callback_data' => "خرید اشتراک {$Month_Key}"]];
 }
 
 if ($Rows === []) {
@@ -139,13 +139,15 @@ error_log('[Umbrella-Bot][Pricing] no plan has a price; the ready-plans menu is 
 $Support_Url = BotConfig::getSupportUrl();
 $Empty_Buttons = [];
 if ($Support_Url !== '') $Empty_Buttons[] = [['text' => '🎧پشتیبانی', 'url' => $Support_Url]];
-$Empty_Buttons[] = Common::mainButton();
+$Empty_Buttons[] = Menu::userHome();
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک های آماده') . "⚠️در حال حاضر هیچ اشتراکی برای فروش تعریف نشده است.\n➖➖➖➖➖➖➖➖➖\n👌لطفاً بعداً مراجعه کنید یا با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard($Empty_Buttons));
 return;
 }
 
-$Rows[] = [Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من')[0]];
-$Rows[] = Common::mainButton();
+$Rows = array_merge($Rows, [
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
+]);
 $Text = Common::greet($Context, 'اشتراک های آماده') . "📌همه اشتراک های آماده با حجم *نامحدود* ارائه می شوند.\n\n💳اعتبار کنونی: *{$Money}*\n\n👇پلن مورد نظر را انتخاب کنید:" . Helper::userFooter() . "*";
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -174,11 +176,15 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . "📏*محدوده مجاز:* {$Min_Label} تا {$Max_Label} روز\n\n"
 . "👇برای ادامه دکمه زیر را بزنید:" . Helper::userFooter() . "*";
 
-$Keyboard = TelegramClient::inlineKeyboard([
-[['text' => '➕ساخت اشتراک دلخواه', 'callback_data' => 'ساخت اشتراک دلخواه']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton(),
-]);
+$Keyboard = TelegramClient::inlineKeyboard(array_merge(
+Menu::rows([
+[['➕ساخت اشتراک دلخواه', 'ساخت اشتراک دلخواه']],
+]),
+[
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
+]
+));
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
 try { TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $Keyboard); return; } catch (Throwable) {}
@@ -204,7 +210,7 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . Helper::userFooter() . "*";
 $Keyboard = TelegramClient::inlineKeyboard([
 Common::backTo('🔙انصراف', 'اشتراک دلخواه'),
-Common::mainButton(),
+Menu::userHome(),
 ]);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -230,8 +236,8 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . "⚠️جهت انصراف «لغو» را ارسال کنید."
 . Helper::userFooter() . "*";
 $Keyboard = TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت به منوی قبل', 'ساخت اشتراک دلخواه'),
-Common::mainButton(),
+Menu::back('ساخت اشتراک دلخواه', 'ساخت اشتراک دلخواه'),
+Menu::userHome(),
 ]);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -261,7 +267,7 @@ $GB = (float)Helper::toEnglish(str_replace([' ', ','], '', trim($Raw_GB)));
 if ($GB < $Min_GB || $GB > $Max_GB) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌خطا: حجم وارد شده معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفاً عددی بین *" . Helper::formatGB($Min_GB) . "* تا *" . Helper::formatGB($Max_GB) . "* وارد کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت به انتخاب روز', 'callback_data' => 'ساخت اشتراک دلخواه']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -296,8 +302,8 @@ $Days = (int)Helper::toEnglish(trim($Text));
 
 if ($Days < $Min || $Days > $Max) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌خطا: تعداد روز وارد شده معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفاً عددی بین *" . Helper::toPersian((string)$Min) . "* تا *" . Helper::toPersian((string)$Max) . "* وارد کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک دلخواه'),
-Common::mainButton(),
+Menu::back('اشتراک دلخواه', 'اشتراک دلخواه'),
+Menu::userHome(),
 ]));
 return;
 }
@@ -367,8 +373,8 @@ $Extra_Days_Label = Helper::toPersian((string)$Extra_Days);
 $Text = Common::greet($Context, 'اشتراک دلخواه') . "❌مبلغ قابل پرداخت از درگاه کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ پرداخت از درگاه: *{$Min_Label}*\n💵کسری شما: *{$Shortage_Label}*\n\n👌پیشنهاد می شود حداقل {$Extra_Days_Label} روز دیگر اضافه کنید تا بتوانید پرداخت را تکمیل کنید." . Helper::userFooter() . "*";
 $Rows = [
 [['text' => '➕افزایش روز', 'callback_data' => 'ساخت اشتراک دلخواه']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton(),
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
 ];
 
 $Is_Callback = $Context->IsCallback && $Context->MessageId !== null;
@@ -425,7 +431,7 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . "⚠️موجود
 . "2️⃣ شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
 . "3️⃣ فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
 
-$Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک من'), Common::mainButton()];
+$Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک من'), Menu::userHome()];
 $Is_Callback = $Context->IsCallback && $Context->MessageId !== null;
 
 if ($Is_Callback) {
@@ -471,7 +477,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️پروفایل 
 
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *⛔️برای فعال سازی اشتراک ابتدا پروفایل کاربری خود را تکمیل کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👤ویرایش و ثبت پروفایل', 'callback_data' => 'ویرایش و ثبت پروفایل']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -482,8 +488,8 @@ $Total_Label = Helper::formatCurrency($Amount);
 if ($Balance >= $Amount) {
 if (!Repository::removeMoney($Context->UserId, $Amount, 'خرید اشتراک - پرداخت از کیف پول', 'bot')) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار ناموفق بود." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton(),
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
 ]));
 return;
 }
@@ -506,8 +512,8 @@ $Extra_Days = (int)ceil($Shortage / max(1.0, BotConfig::getCustomDayRate()));
 $Extra_Days_Label = Helper::toPersian((string)$Extra_Days);
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌مبلغ قابل پرداخت از درگاه کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ پرداخت از درگاه: *{$Min_Label}*\n💵کسری شما: *{$Shortage_Label}*\n\n👌پیشنهاد می شود حداقل {$Extra_Days_Label} روز دیگر اضافه کنید تا بتوانید پرداخت را تکمیل کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '➕افزایش روز', 'callback_data' => 'ساخت اشتراک دلخواه']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton()
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome()
 ]));
 return;
 }
@@ -559,7 +565,7 @@ $Text = $Greeting . "⚠️موجودی کیف پول برای خرید کافی
 . "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
 . "2️⃣ شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
 . "3️⃣ فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
-$Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک من'), Common::mainButton()];
+$Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک من'), Menu::userHome()];
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
 try { TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows)); return; } catch (Throwable) {}
@@ -604,7 +610,7 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 AdminFlow::notifyAdminServerError('ایجاد اشتراک سفارشی', $User_ID, $Name, $Response['StatusCode'] ?? 0, $Api_Error);
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌اشتراک {$Name} شما فعال نشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'تایید اشتراک دلخواه']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 }
 
@@ -687,7 +693,7 @@ $Send($Text, TelegramClient::inlineKeyboard([
 [['text' => '🔄بررسی مجدد', 'callback_data' => 'اشتراک من']],
 [['text' => '🎫تیکت ها و پشتیبانی', 'callback_data' => 'تیکت های من']],
 [['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
-Common::mainButton()
+Menu::userHome()
 ]));
 return;
 }
@@ -744,7 +750,7 @@ $Text .= Helper::userFooter();
 $Markup = TelegramClient::inlineKeyboard([
 Common::backTo('🔄💎بروزرسانی اشتراک من', 'اشتراک من'),
 [['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
-Common::mainButton()
+Menu::userHome()
 ]);
 
 if ($Send !== null) { $Send($Text, $Markup); return; }
@@ -839,7 +845,7 @@ TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId);
 
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "⛔️برای فعالسازی اشتراک ابتدا باید پروفایل کاربری خود را تکمیل کنید.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:وارد کردن نام و شماره موبایل معتبر الزامی می باشد.\n👇از دکمه زیر استفاده کنید:" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👤ویرایش و ثبت پروفایل', 'callback_data' => 'ویرایش و ثبت پروفایل']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -860,7 +866,7 @@ $Amount = BotConfig::getPlanPrice($Month_Key);
 if ($Amount <= 0) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "⚠️این اشتراک هنوز قیمت گذاری نشده است و قابل خرید نیست.\n➖➖➖➖➖➖➖➖➖\n👌لطفاً یکی از اشتراک های دیگر را انتخاب کنید یا با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک آماده']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -872,8 +878,8 @@ $Balance = Repository::getBalance($Context->UserId);
 if ($Balance >= $Amount) {
 if (!Repository::removeMoney($Context->UserId, $Amount, 'خرید اشتراک - پرداخت از کیف پول', 'bot')) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار از کیف پول ناموفق بود.\n➖➖➖➖➖➖➖➖➖➖\n⚠️لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton()
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome()
 ]));
 return;
 }
@@ -902,8 +908,8 @@ $Shortage_Label = Helper::formatCurrency($Shortage);
 $Min_Label = Helper::formatCurrency($Min_Payment);
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌مبلغ قابل پرداخت از درگاه کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ پرداخت از درگاه: *{$Min_Label}*\n💵کسری شما: *{$Shortage_Label}*\n\n👌پیشنهاد می شود اشتراکی با مدت بیشتر انتخاب کنید یا ابتدا کیف پول خود را شارژ کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک آماده']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton()
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome()
 ]));
 return;
 }
@@ -919,8 +925,8 @@ TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId);
 if (!Zarinpal::isConfigured()) {
 $Text = $Greeting . " *با عرض پوزش اعتبار شما کافی نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته: برای اشتراک " . Helper::formatCurrency($Amount) . " نیاز دارید.\n\nاعتبار کنونی: " . Helper::formatCurrency($Balance) . "*" . Helper::userFooter();
 TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard([
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton()
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome()
 ]));
 return;
 }
@@ -974,7 +980,7 @@ TelegramClient::sendMessage($Context->ChatId, $Greeting . " *⚠️موجودی 
 : "⚠️نکته: پس از پرداخت موفق، کیف پول شما شارژ و اشتراک {$Name} به صورت خودکار فعال می گردد.") . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 $Pay_Button,
 Common::backTo('🔙انصراف', 'اشتراک من'),
-Common::mainButton()
+Menu::userHome()
 ]));
 return;
 }
@@ -1019,7 +1025,7 @@ AdminFlow::notifyAdminServerError('ایجاد اشتراک', $Context->UserId, $
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌اشتراک {$Name} شما فعال نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'ایجاد کلاینت']],
-Common::mainButton()
+Menu::userHome()
 ]));
 
 Repository::updateUserSession($Context->UserId, ['Pending_Plan' => $Type . '|' . $Month_Key]);
@@ -1052,7 +1058,7 @@ private static function startGatewayPayment(Context $Context, string $Month_Key,
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 
 if ($Call_Back_Base === '') {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "⚠️درگاه پرداخت هنوز پیکربندی نشده است. لطفا بعدا تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::mainButton()]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "⚠️درگاه پرداخت هنوز پیکربندی نشده است. لطفا بعدا تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -1072,8 +1078,8 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتر�
 . "🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n"
 . "📞در صورت ادامه مشکل با پشتیبانی تماس بگیرید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'پرداخت کسری کیف پول']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton(),
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
 ]));
 return;
 }
@@ -1083,7 +1089,7 @@ Repository::updateUserSession($Context->UserId, ['Pending_Payment' => $Month_Key
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "➖➖➖➖➖➖➖➖➖\n💎اشتراک انتخابی: {$Name}\n💳مبلغ قابل پرداخت: " . Helper::formatCurrency($Final_Amount) . " (شامل کارمزد)\n➖➖➖➖➖➖➖➖➖\n👌برای تکمیل خرید بر روی دکمه پرداخت کلیک کنید.\n⚠️نکته:پس از بازگشت از درگاه،اشتراک شما به صورت خودکار فعال می گردد." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💳پرداخت امن', 'url' => Zarinpal::payLink($Payment)]],
 [['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 }
 
@@ -1141,7 +1147,7 @@ $Pending_Topup = (string)(Repository::getUserSession($Context->UserId)['Pending_
 if ($Pending_Payment === '') {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: سفارش پرداخت فعالی یافت نشد.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: شما پرداخت را به پایان نرساندید یا آن را لغو کردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return false;
 }
@@ -1172,8 +1178,8 @@ Repository::updateUserSession($Context->UserId, [
 
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌این لینک پرداخت منقضی یا تکراری است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: {$Reason}\n🧾کد خطا: `{$Code}`\n\n👌لطفاً مجدداً اشتراک مورد نظر را انتخاب و پرداخت را تکرار کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک آماده']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton(),
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
 ]));
 return false;
 }
@@ -1184,8 +1190,8 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررس�
 . "🔄در صورت کسر وجه حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود.\n"
 . "🧾کد خطا: `{$Code}`" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
-Common::backTo('🔙بازگشت به منوی قبل', 'اشتراک من'),
-Common::mainButton(),
+Menu::back('اشتراک من', 'اشتراک من'),
+Menu::userHome(),
 ]));
 return false;
 }
@@ -1341,7 +1347,7 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پردا�
 . ($Is_Pure_Topup ? "✅اعتبار کیف پول شما با موفقیت شارژ شد." : "🔄در حال فعالسازی {$Plan_Name}...") . Helper::userFooter() . "*",
 TelegramClient::inlineKeyboard([
 Common::backTo('💎اشتراک من', 'اشتراک من'),
-Common::mainButton(),
+Menu::userHome(),
 ]));
 
 $User_For_Admin = Repository::getUser($Context->UserId);
@@ -1465,7 +1471,7 @@ try { TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId); } ca
 
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "⛔️جلسه پرداخت منقضی شده است یا نامعتبر است.\n⚠️لطفا دوباره از بخش اشتراک من پلن خود را انتخاب کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎انتخاب اشتراک', 'callback_data' => 'اشتراک من']],
-Common::mainButton()
+Menu::userHome()
 ]));
 
 return;
@@ -1535,7 +1541,7 @@ $Text = Common::greet($Context, 'شارژ اعتبار حساب کاربری')
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '❌لغو عملیات', 'callback_data' => 'لغو شارژ اعتبار']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 }
 
@@ -1547,7 +1553,7 @@ $Greeting = Common::greet($Context, 'شارژ اعتبار حساب کاربری
 if ($Amount <= 0) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: فقط عدد به تومان وارد کنید مانند: `100000`\n👌مجدداً مبلغ را ارسال کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '❌لغو عملیات', 'callback_data' => 'لغو شارژ اعتبار']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -1555,7 +1561,7 @@ return;
 if ($Amount < (float)self::MIN_TOPUP) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ شارژ: " . Helper::formatCurrency((float)self::MIN_TOPUP) . "\n📥مبلغ وارد شده: " . Helper::formatCurrency($Amount) . "\n👌مجدداً مبلغ صحیح را ارسال کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '❌لغو عملیات', 'callback_data' => 'لغو شارژ اعتبار']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -1579,7 +1585,7 @@ $Call_Back_Base = Environment::getPaymentCallbackUrl();
 $Greeting = Common::greet($Context, 'شارژ اعتبار حساب کاربری');
 
 if ($Call_Back_Base === '') {
-TelegramClient::sendMessage($Context->ChatId, $Greeting . "⚠️درگاه پرداخت هنوز پیکربندی نشده است. لطفا بعدا تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::mainButton()]));
+TelegramClient::sendMessage($Context->ChatId, $Greeting . "⚠️درگاه پرداخت هنوز پیکربندی نشده است. لطفا بعدا تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -1595,7 +1601,7 @@ TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: اتصال
 . "🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n"
 . "📞در صورت ادامه مشکل با پشتیبانی تماس بگیرید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'شارژ اعتبار حساب کاربری']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 return;
 }
@@ -1611,7 +1617,7 @@ Repository::updateUserSession($Context->UserId, [
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "➖➖➖➖➖➖➖➖➖\n💳شارژ اعتبار کیف پول\n💰مبلغ شارژ: " . Helper::formatCurrency($Amount) . "\n💳مبلغ قابل پرداخت: " . Helper::formatCurrency($Final_Amount) . " (شامل کارمزد)\n➖➖➖➖➖➖➖➖➖\n👌برای تکمیل شارژ بر روی دکمه پرداخت کلیک کنید.\n⚠️نکته:پس از بازگشت از درگاه، اعتبار شما به صورت خودکار شارژ می گردد." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💳پرداخت امن', 'url' => Zarinpal::payLink($Payment)]],
 [['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 }
 
@@ -1631,7 +1637,7 @@ $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAd
 $User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone !== '' ? "\n📞موبایل: `{$Phone}`" : '');
 
 if (strtoupper($Status) !== 'OK') {
-TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "❌خطا: پرداخت توسط شما لغو شد.\n➖➖➖➖➖➖➖➖➖\n⚠️در صورت کسر وجه، مبلغ حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::mainButton()]));
+TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "❌خطا: پرداخت توسط شما لغو شد.\n➖➖➖➖➖➖➖➖➖\n⚠️در صورت کسر وجه، مبلغ حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin) . "❌پرداخت ناموفق / لغو شده توسط کاربر\n\n"
 . "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"
@@ -1693,7 +1699,7 @@ $Greeting = Common::greet($Context, 'فعالسازی اشتراک');
 
 TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت فعال گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👁نمایش اشتراک', 'callback_data' => 'اشتراک من']],
-Common::mainButton()
+Menu::userHome()
 ]));
 
 Repository::seedUsageSnapshot($Context->UserId);
@@ -1756,7 +1762,7 @@ AdminFlow::notifyAdminServerError('تمدید اشتراک', $User_ID, $Full_Nam
 TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *❌اشتراک {$Name} شما با موفقیت تمدید نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'اشتراک من']],
-Common::mainButton()
+Menu::userHome()
 ]));
 return;
 }
@@ -1781,7 +1787,7 @@ Repository::updateUserSession($User_ID, ['Pending_Plan' => null]);
 
 TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت تمدید گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👁نمایش اشتراک', 'callback_data' => 'اشتراک من']],
-Common::mainButton()
+Menu::userHome()
 ]));
 
 Repository::addSubscriptionLog($User_ID, 'renew', $Name, $Days, $Usage_Limit, isset($Data['uuid']) ? $Data['uuid'] : null, 'user', $User_ID);

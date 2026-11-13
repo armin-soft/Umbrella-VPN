@@ -34,7 +34,7 @@ $Text = \Helper::userGreeting($Context, 'فیلترشکن آمبرلا')
 'ℹ️ بعد از ورود اول، همه‌چیز به‌صورت خودکار اینجا نمایش داده می‌شود.'
 ) . \Helper::userFooter();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🏠 منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 return;
 }
@@ -47,21 +47,22 @@ $Limit = \Helper::formatGB((float)($Account['usage_limit_GB'] ?? 0));
 $Active = (bool)($Account['is_active'] ?? false);
 
 $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
-. "👤 نام: {$Name}\n"
-. '📞 شماره: ' . \Helper::toPersian((string)($Account['phone'] ?? '')) . "\n"
-. '📊 مصرف: ' . $Usage . ' از ' . $Limit . "\n"
-. '🔋 وضعیت: ' . ($Active ? 'فعال ✅' : 'غیرفعال ⛔️') . "\n"
-. "➖➖➖➖➖➖➖➖➖➖\n"
+. Menu::section('👤', 'حساب کاربری', [
+'نام: ' . $Name,
+'شماره: ' . \Helper::toPersian((string)($Account['phone'] ?? '')),
+'مصرف: ' . $Usage . ' از ' . $Limit,
+'وضعیت: ' . ($Active ? 'فعال ✅' : 'غیرفعال ⛔️'),
+])
 . $Summary
 . \Helper::userFooter();
-
-self::reply($Context, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🛡 کنترل محتوا', 'callback_data' => 'app_filter']],
-[['text' => '📱 دستگاه‌های من', 'callback_data' => 'app_devices']],
-[['text' => '🔔 اعلان‌های برنامه', 'callback_data' => 'app_notifications']],
-[['text' => '🔐 تأیید دومرحله‌ای ورود', 'callback_data' => 'app_2fa']],
-[['text' => '🏠 منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
-]));
+$Rows = array_merge(
+Menu::rows([
+[['🛡کنترل محتوا', 'app_filter'], ['📱دستگاه‌های من', 'app_devices']],
+[['🔔اعلان‌های برنامه', 'app_notifications'], ['🔐تأیید دومرحله‌ای', 'app_2fa']],
+]),
+[Menu::userHome()]
+);
+self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
 /** The filter menu: one button per category, toggling on press. */
@@ -86,9 +87,11 @@ $Row = [];
 
 if ($Row !== []) $Rows[] = $Row;
 
-$Rows[] = [['text' => $Settings['enabled'] ? '🔴 خاموش کردن کنترل محتوا' : '🟢 روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
-$Rows[] = [['text' => '🔗 افزودن دامنه دلخواه', 'callback_data' => 'app_filter_domains']];
-$Rows[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+$Rows[] = [['text' => $Settings['enabled'] ? '🔴خاموش کردن کنترل محتوا' : '🟢روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
+$Rows = array_merge($Rows, Menu::rows([
+[['🔗افزودن دامنه دلخواه', 'app_filter_domains']],
+]));
+$Rows = array_merge($Rows, Menu::userNav('حساب آمبرلا', 'app_menu'));
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
@@ -146,8 +149,8 @@ $Context,
 . 'لینک یا دامنه‌ها را بفرستید؛ هر خط یک مورد. برای پاک کردن، «-» بفرستید.'
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
-['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_filter'],
-['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات'],
+Menu::button('🔙بازگشت به کنترل محتوا', 'app_filter'),
+Menu::userHome()[0],
 ]])
 );
 }
@@ -187,7 +190,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . 'هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']]])
+TelegramClient::inlineKeyboard([Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()])
 );
 return;
 }
@@ -217,7 +220,7 @@ $Buttons[] = [[
 ]];
 }
 
-$Buttons[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+$Buttons = array_merge($Buttons, Menu::userNav('حساب آمبرلا', 'app_menu'));
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -263,9 +266,7 @@ $Icon = match((string)$Row['Level']) { 'warning' => '⚠️', 'error' => '⛔️
 $Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '') . "\n🕐 " . (string)$Row['Sent_At'] . "\n➖➖➖➖➖➖➖➖➖➖\n";
 }
 
-self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
-]));
+self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('حساب آمبرلا', 'app_menu')));
 }
 
 /** The switch that decides whether a sign-in also needs a tap here. */
@@ -308,11 +309,12 @@ $Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورو
 . \Helper::userFooter();
 
 $Rows = $On
-? [[['text' => '⛔️ غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
-: [[['text' => '✅ فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
-$Rows[] = [['text' => '📱 دستگاه‌های من', 'callback_data' => 'app_devices']];
-$Rows[] = [['text' => '🔔 اعلان‌های برنامه', 'callback_data' => 'app_notifications']];
-$Rows[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'app_menu'], ['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
+: [[['text' => '✅فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
+$Rows = array_merge($Rows, Menu::rows([
+[['📱دستگاه‌های من', 'app_devices'], ['🔔اعلان‌های برنامه', 'app_notifications']],
+]));
+$Rows = array_merge($Rows, Menu::userNav('حساب آمبرلا', 'app_menu'));
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
@@ -341,7 +343,7 @@ $Context,
 '📱 حسابی پیدا نشد',
 'برای دیدن این بخش، شماره موبایل شما باید در برنامه یا پنل ثبت شده باشد.'
 ) . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([[['text' => '🏠 منوی اصلی', 'callback_data' => 'منوی خدمات ربات']]])
+TelegramClient::inlineKeyboard([[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']]])
 );
 }
 

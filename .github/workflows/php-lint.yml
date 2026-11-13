@@ -48,3 +48,22 @@ jobs:
             exit 1
           fi
           echo "all PHP files passed php -l"
+
+      - name: Menu layout tests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          if ! php Telegram-BOT/tests/menu_layout_test.php; then
+            {
+              echo "### menu layout tests failed"
+              echo "run: php Telegram-BOT/tests/menu_layout_test.php"
+            } > body.md
+            gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@body.md || true
+            exit 1
+          fi
+
+      - name: Every menu button has a handler
+        shell: bash
+        run: php Telegram-BOT/tests/menu_routes_test.php

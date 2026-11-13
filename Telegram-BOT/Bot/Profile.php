@@ -38,7 +38,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, "⛔️ویرایش پ
 else {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "⛔️ویرایش پروفایل کاربری هر ۳۰ روز یکبار مجاز می باشد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️تعداد روزهای باقی مانده تا ویرایش بعدی: `{$Remaining_Fa}` روز." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
-Common::mainButton(),
+Menu::userHome(),
 ]));
 }
 
@@ -86,7 +86,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter());
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش نام با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
-Common::mainButton()
+Menu::userHome()
 ]));
 
 return;
@@ -135,11 +135,12 @@ self::pushProfileToServer($Client_ID, $Full_Name, $Phone);
 }
 
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره موبایل صحیح و مربوط به اپراتور {$Operator} می باشد." . Helper::userFooter());
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-Common::mainButton()
-]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard(array_merge(
+Menu::rows([
+[['👤پروفایل کاربری', 'پروفایل کاربری'], ['💎اشتراک من', 'اشتراک من']],
+]),
+[Menu::userHome()]
+)));
 }
 
 private static function pushProfileToServer(string $Client_ID, string $Full_Name, string $Phone): void {

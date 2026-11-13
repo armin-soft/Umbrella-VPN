@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Menu.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
@@ -89,12 +90,19 @@ public static function offlineText(Context $Context, string $Section = 'منوی
 return Helper::userGreeting($Context, $Section) . "🪫📴با عرض پوزش ربات در دسترس نمی باشد.\n\n⚠️علت:🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter();
 }
 
+/**
+ * دکمه خانه کاربر.
+ *
+ * منوها از Menu::userHome() استفاده می کنند؛ این تابع برای فراخوان های قدیمی
+ * باقی مانده و همان دکمه را برمی گرداند.
+ */
 public static function mainButton(): array {
-return [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+return Menu::userHome();
 }
 
+/** یک دکمه دلخواه؛ برای دکمه هایی که برچسبشان ثابت نیست. */
 public static function backTo(string $Label, string $Call): array {
-return [['text' => $Label, 'callback_data' => $Call]];
+return [Menu::button($Label, $Call)];
 }
 }
 ?>

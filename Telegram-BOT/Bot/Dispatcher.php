@@ -573,7 +573,7 @@ AdminFlow::handleInput($Context, $Flow, $Text);
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Admin-Input] Flow=' . $Flow . ' | ' . $E->getMessage());
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'خطای ورودی') . '❌خطا در پردازش ورودی مدیریتی؛ لطفاً دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
+[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
 }
 
