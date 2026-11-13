@@ -427,7 +427,7 @@ class VpnController extends ChangeNotifier {
       level: tunnelDelays.isEmpty && !liveTunnel ? 'warning' : 'info',
     );
     if (tunnelDelays.isEmpty && !liveTunnel) {
-      final String detail = _corePing.lastError();
+      final String detail = await _corePing.lastError();
       _log.add(
         'سنجش تاخیر تونل نتیجه نداد${detail.isEmpty ? '' : ': $detail'}',
         level: 'warning',

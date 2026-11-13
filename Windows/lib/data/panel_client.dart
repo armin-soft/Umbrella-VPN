@@ -69,9 +69,18 @@ class PanelClient {
         json['is_active'] ?? json['enable'],
         fallback: true,
       ),
-      usageLimitGb: JsonX.number(json['usage_limit_GB'] ?? json['usage_limit_gb']),
-      currentUsageGb:
-          JsonX.number(json['current_usage_GB'] ?? json['current_usage_gb']),
+      usageLimitGb: JsonX.number(
+        json['usage_limit_GB'] ??
+            json['usage_limit_gb'] ??
+            json['usageLimit'] ??
+            json['usage_limit'],
+      ),
+      currentUsageGb: JsonX.number(
+        json['current_usage_GB'] ??
+            json['current_usage_gb'] ??
+            json['currentUsage'] ??
+            json['current_usage'],
+      ),
       packageDays: JsonX.integer(json['package_days'] ?? json['packageDays']),
       startDate: _date(json['start_date'] ?? json['created_at']),
       expiryDate: _date(json['expire_date'] ?? json['expiry_date']),
