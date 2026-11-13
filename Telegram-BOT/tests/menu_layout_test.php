@@ -29,6 +29,8 @@ if (!function_exists('mb_substr')) {
 eval('function mb_substr(string $Text, int $Start, ?int $Length = null): string { $Chars = preg_split("//u", $Text, -1, PREG_SPLIT_NO_EMPTY) ?: []; $Slice = $Length === null ? array_slice($Chars, $Start) : array_slice($Chars, $Start, $Length); return implode("", $Slice); }');
 }
 
+require_once dirname(__DIR__) . '/Core/Support/Helper.php';
+require_once dirname(__DIR__) . '/Core/Telegram/Telegram.php';
 require_once dirname(__DIR__) . '/Bot/Menu.php';
 
 final class MenuLayoutTest {
@@ -50,6 +52,7 @@ $this->test_problems_reports_long_callback();
 $this->test_problems_reports_duplicate_button();
 $this->test_problems_reports_blank_row();
 $this->test_shared_keyboards_are_healthy();
+$this->test_navigation_only_keyboard_is_detected();
 
 foreach ($this->Failures as $Failure) {
 fwrite(STDERR, 'FAIL ' . $Failure . "\n");
@@ -156,6 +159,32 @@ private function test_problems_reports_blank_row(): void {
 $Rows = [Menu::userHome(), []];
 $Problems = Menu::problems($Rows);
 $this->check(count($Problems) === 1, 'problems(): an empty row is reported');
+}
+
+/**
+ * «کیبورد فقط-ناوبری» همان حالتی است که جمله پایانی «بر روی منوی مورد نظر
+ * کلیک کنید» در آن حذف می شود: صفحه ای که فقط دکمه بازگشت و خانه دارد.
+ */
+private function test_navigation_only_keyboard_is_detected(): void {
+$Nav_Only = [
+'only-home' => [Menu::adminHome()],
+'home-and-back' => [Menu::back('گزارش ها', 'منوی گزارش'), Menu::userHome()],
+'with-cancel' => [Menu::back('اشتراک من', 'اشتراک من'), Menu::userHome()],
+];
+
+foreach ($Nav_Only as $Name => $Rows) {
+$Markup = TelegramClient::inlineKeyboard($Rows);
+$this->check(Menu::isNavigationOnly($Markup), $Name . ': a navigation-only keyboard is detected');
+}
+
+$With_Choice = TelegramClient::inlineKeyboard(array_merge(
+Menu::rows([['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']]),
+[Menu::adminHome()]
+));
+
+$this->check(!Menu::isNavigationOnly($With_Choice), 'a keyboard with a real action is not navigation-only');
+$this->check(!Menu::isNavigationOnly(TelegramClient::inlineKeyboard([Menu::link('🎧پشتیبانی', 'https://t.me/x')])), 'a link button counts as an action');
+$this->check(!Menu::isNavigationOnly([]), 'an empty keyboard is not navigation-only');
 }
 
 /**

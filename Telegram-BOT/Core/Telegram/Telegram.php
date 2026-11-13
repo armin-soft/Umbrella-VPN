@@ -172,16 +172,39 @@ return $Out;
 
 /**
  * The footer ("…بر روی منوی مورد نظر کلیک کنید") only makes sense when the
- * message actually carries an inline keyboard. With no keyboard there is
- * nothing to press, so the whole block — sentence and its separator — is
- * dropped before the message is rendered.
+ * message actually offers something to pick. Two cases are dropped together
+ * with the sentence and its separator:
+ *
+ *   1. there is no inline keyboard at all, or
+ *   2. the keyboard only holds navigation — «بازگشت» and «خانه» — as on the
+ *      "send me the user id" screens, where nothing is left to choose.
  */
 private static function trimFooterWithoutKeyboard(string $Text, array $Markup): string {
-if ($Text === '' || $Markup !== []) return $Text;
+if ($Text === '') return $Text;
+if ($Markup !== [] && !self::hasOnlyNavigationButtons($Markup)) return $Text;
+return self::stripFooter($Text);
+}
+
+/**
+ * حذف جمله پایانی «👌جهت استفاده …» همراه با خط جداکننده بالای آن.
+ */
+private static function stripFooter(string $Text): string {
 $Stripped = (string)preg_replace('/\n*[➖—\-]{3,}\s*\n+\s*👌\s*جهت استفاده از امکانات[^\n]*/u', '', $Text);
 $Stripped = (string)preg_replace('/\n*(?:[➖—\-]{3,}\s*)+$/u', '', $Stripped);
 $Stripped = rtrim($Stripped, " \t\n*");
 return $Stripped === '' ? $Text : $Stripped;
+}
+
+/**
+ * آیا کیبورد فقط دکمه های ناوبری دارد؟
+ *
+ * قاعده در Bot/Menu.php است تا آزمون ها هم همان را بسنجند؛ اگر Menu در دسترس
+ * نبود (مثلاً اسکریپت مستقل)، محافظه کارانه «خیر» برمی گردد و جمله پایانی
+ * دست نخورده می ماند.
+ */
+private static function hasOnlyNavigationButtons(array $Markup): bool {
+if (!class_exists('Menu', false)) return false;
+return Menu::isNavigationOnly($Markup);
 }
 
 public static function sendMessage(int $Chat_ID, string $Text, array $Markup = [], string $Parse_Mode = 'HTML', ?int $Reply_To = null): array {

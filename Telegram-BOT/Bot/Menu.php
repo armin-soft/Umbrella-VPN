@@ -157,6 +157,46 @@ return $Text;
 }
 
 /**
+ * آیا این کیبورد فقط دکمه های ناوبری دارد؟
+ *
+ * کیبورد را به شکلی که TelegramClient::inlineKeyboard می سازد
+ * (`['inline_keyboard' => [[...]]]`) یا به شکل خام ردیف ها می پذیرد. دکمه های
+ * «بازگشت»، «منوی اصلی/مدیریت»، «انصراف»، «لغو» و دکمه های با ایموجی 🏠 ناوبری اند؛
+ * هر دکمه دیگر یعنی صفحه چیزی برای انتخاب دارد. در صفحه ای که فقط ناوبری است،
+ * جمله «بر روی منوی مورد نظر کلیک کنید» باید حذف شود.
+ */
+public static function isNavigationOnly(array $Markup): bool {
+$Rows = $Markup['inline_keyboard'] ?? $Markup;
+
+if (!is_array($Rows) || $Rows === []) return false;
+$Seen = 0;
+
+foreach ($Rows as $Row) {
+if (!is_array($Row)) continue;
+
+foreach ($Row as $Button) {
+if (!is_array($Button)) continue;
+$Text = trim((string)($Button['text'] ?? ''));
+$Call = trim((string)($Button['callback_data'] ?? ''));
+
+if ($Text === '') continue;
+$Seen++;
+
+if (isset($Button['url']) || isset($Button['web_app'])) return false;
+if (str_contains($Text, '🏠')) continue;
+if (str_contains($Text, 'بازگشت')) continue;
+if (str_contains($Text, 'انصراف')) continue;
+if (str_contains($Text, 'لغو')) continue;
+if (in_array($Call, [self::ADMIN_HOME_CALL, self::USER_HOME_CALL], true)) continue;
+
+return false;
+}
+}
+
+return $Seen > 0;
+}
+
+/**
  * بررسی سلامت یک کیبورد پیش از ارسال.
  *
  * هر خطا یک رشته فارسی است؛ آرایه خالی یعنی دکمه ها سالم اند. متن خالی، متن

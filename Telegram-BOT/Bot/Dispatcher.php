@@ -95,7 +95,7 @@ error_log('[Umbrella-Bot][Dispatch-' . $Type . '] ' . get_class($Error) . ': ' .
 
 if ($Context->ChatId > 0) {
 try {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "⚠️خطای موقت در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "⚠️خطای موقت در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
 }
 
 catch (Throwable) {
@@ -225,7 +225,7 @@ self::routeCallbackInner($Context);
 
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Callback] ' . $E->getMessage());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "❌خطایی در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "❌خطایی در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
 }
 }
 
@@ -460,7 +460,7 @@ TelegramClient::answerCallbackQuery(
 $Context->CallbackId,
 $Ok
 ? ($Approved ? '✅ ورود تأیید شد' : '⛔️ ورود مسدود شد')
-: 'این درخواست معتبر نیست یا منقضی شده است.',
+: '⌛️این درخواست معتبر نیست یا منقضی شده است.',
 !$Ok
 );
 }
@@ -468,9 +468,9 @@ $Ok
 $Section = 'تأیید دستگاه';
 $Text = $Ok
 ? ($Approved
-? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
-: Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
-: Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖➖\nاز برنامه دوباره وارد شوید." . Helper::userFooter();
+? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
+: Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
+: Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖\nاز برنامه دوباره وارد شوید." . Helper::userFooter();
 
 $Markup = TelegramClient::inlineKeyboard([[
 ['text' => '📱 حساب آمبرلا', 'callback_data' => 'app_menu'],
@@ -522,7 +522,7 @@ catch (Throwable) {}
 }
 
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
-. "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
+. "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
 TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]));

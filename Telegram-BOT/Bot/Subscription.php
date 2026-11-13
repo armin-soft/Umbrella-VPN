@@ -68,7 +68,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 };
 
 if ($Phone === '') {
-$Send(Common::greet($Context, 'اشتراک من') . "شما بدلیل عدم ثبت اطلاعات پروفایل کاربری مجاز به دریافت اشتراک نمی باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+$Send(Common::greet($Context, 'اشتراک من') . "⚠️برای دریافت اشتراک، ابتدا اطلاعات پروفایل کاربری خود را کامل کنید؛ بدون شماره موبایل امکان صدور اشتراک نیست." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📝👤ثبت اطلاعات پروفایل کاربری', 'callback_data' => 'ویرایش و ثبت پروفایل']],
 Menu::userHome()
 ]));
@@ -81,7 +81,9 @@ return;
 }
 
 if (!is_string($Client_ID) || $Client_ID === '' || $Client_ID === '_') {
-$Send(Common::greet($Context, 'اشتراک من') . "داده های سرور با ربات هماهنگ نیست." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([Menu::userHome()]));
+$Send(Common::greet($Context, 'اشتراک من') . "⚠️داده های سرور با ربات هماهنگ نیست.\n🔁لطفاً چند لحظه بعد دوباره تلاش کنید یا به پشتیبانی اطلاع دهید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+[Menu::back('اشتراک من', 'اشتراک من')],
+]));
 return;
 }
 
@@ -109,7 +111,7 @@ $Rows = [
 Menu::userHome(),
 ];
 
-$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\n📌*گزینه های خرید:*\n├─💎✨*اشتراک آماده:* پلن های پیشنهادی (۱، ۲، ۳، ۶ و ۱۲ ماهه)\n└─🛠️🎛️*اشتراک دلخواه:* خودتان تعداد روز را انتخاب کنید\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter() . "*";
+$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\n📌*گزینه های خرید:*\n├─💎✨*اشتراک آماده:* پلن های پیشنهادی (۱، ۲، ۳، ۶ و ۱۲ ماهه)\n└─🛠️🎛️*اشتراک دلخواه:* خودتان تعداد روز را انتخاب کنید\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter() . "*";
 
 if ($Send !== null) { $Send($Text, TelegramClient::inlineKeyboard($Rows)); return; }
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -843,7 +845,7 @@ if ($Context->IsCallback && $Context->MessageId !== null) {
 TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId);
 }
 
-TelegramClient::sendMessage($Context->ChatId, $Greeting . "⛔️برای فعالسازی اشتراک ابتدا باید پروفایل کاربری خود را تکمیل کنید.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:وارد کردن نام و شماره موبایل معتبر الزامی می باشد.\n👇از دکمه زیر استفاده کنید:" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, $Greeting . "⛔️برای فعالسازی اشتراک ابتدا باید پروفایل کاربری خود را تکمیل کنید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:وارد کردن نام و شماره موبایل معتبر الزامی می باشد.\n👇از دکمه زیر استفاده کنید:" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👤ویرایش و ثبت پروفایل', 'callback_data' => 'ویرایش و ثبت پروفایل']],
 Menu::userHome(),
 ]));
@@ -877,7 +879,7 @@ $Balance = Repository::getBalance($Context->UserId);
 
 if ($Balance >= $Amount) {
 if (!Repository::removeMoney($Context->UserId, $Amount, 'خرید اشتراک - پرداخت از کیف پول', 'bot')) {
-TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار از کیف پول ناموفق بود.\n➖➖➖➖➖➖➖➖➖➖\n⚠️لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار از کیف پول ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 Menu::back('اشتراک من', 'اشتراک من'),
 Menu::userHome()
 ]));
@@ -1540,7 +1542,7 @@ $Text = Common::greet($Context, 'شارژ اعتبار حساب کاربری')
 . Helper::userFooter();
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '❌لغو عملیات', 'callback_data' => 'لغو شارژ اعتبار']],
+[['text' => '🔙انصراف از شارژ', 'callback_data' => 'لغو شارژ اعتبار']],
 Menu::userHome(),
 ]));
 }
@@ -1552,7 +1554,7 @@ $Greeting = Common::greet($Context, 'شارژ اعتبار حساب کاربری
 
 if ($Amount <= 0) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: فقط عدد به تومان وارد کنید مانند: `100000`\n👌مجدداً مبلغ را ارسال کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '❌لغو عملیات', 'callback_data' => 'لغو شارژ اعتبار']],
+[['text' => '🔙انصراف از شارژ', 'callback_data' => 'لغو شارژ اعتبار']],
 Menu::userHome(),
 ]));
 return;
@@ -1560,7 +1562,7 @@ return;
 
 if ($Amount < (float)self::MIN_TOPUP) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده کمتر از حد مجاز است.\n➖➖➖➖➖➖➖➖➖\n⚠️حداقل مبلغ شارژ: " . Helper::formatCurrency((float)self::MIN_TOPUP) . "\n📥مبلغ وارد شده: " . Helper::formatCurrency($Amount) . "\n👌مجدداً مبلغ صحیح را ارسال کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '❌لغو عملیات', 'callback_data' => 'لغو شارژ اعتبار']],
+[['text' => '🔙انصراف از شارژ', 'callback_data' => 'لغو شارژ اعتبار']],
 Menu::userHome(),
 ]));
 return;

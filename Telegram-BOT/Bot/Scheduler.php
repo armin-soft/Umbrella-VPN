@@ -1028,7 +1028,7 @@ TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Reposito
 . '❌خطای همگام‌سازی مصرف کاربران' . "\n\n"
 . '📡وضعیت: ' . ($Status > 0 ? 'HTTP ' . $Status : 'خطا در ارتباط') . "\n"
 . '⚠️پاسخ: ' . mb_substr($Detail !== '' ? $Detail : 'نامشخص', 0, 500) . "\n"
-. '➖➖➖➖➖➖➖➖➖➖' . "\n"
+. '➖➖➖➖➖➖➖➖➖' . "\n"
 . Helper::adminFooter());
 }
 catch (Throwable) {

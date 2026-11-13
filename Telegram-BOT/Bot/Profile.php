@@ -36,7 +36,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, "⛔️ویرایش پ
 }
 
 else {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "⛔️ویرایش پروفایل کاربری هر ۳۰ روز یکبار مجاز می باشد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️تعداد روزهای باقی مانده تا ویرایش بعدی: `{$Remaining_Fa}` روز." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "⛔️ویرایش پروفایل کاربری هر ۳۰ روز یکبار مجاز می باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️تعداد روزهای باقی مانده تا ویرایش بعدی: `{$Remaining_Fa}` روز." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
 Menu::userHome(),
 ]));
@@ -59,7 +59,7 @@ self::askName($Context);
 }
 
 private static function askName(Context $Context): void {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش اول:نام و نام خانوادگی خود را وارد کنید.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش اول:نام و نام خانوادگی خود را وارد کنید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter());
 }
 
 public static function processName(Context $Context, string $Text): void {

@@ -58,14 +58,14 @@ return;
 
 if ($Status === 'member') {
 self::registerNewUserFeedback($Context);
-$Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید." . Helper::userFooter();
+$Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید.\n👇برای دیدن خدمات ربات، دکمه زیر را بزنید:";
 TelegramClient::sendMessage($Context->ChatId, $Welcome_Text, TelegramClient::inlineKeyboard([
 [['text' => '🤖📋منوی خدمات ربات', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
 
 else {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}جهت استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🔒برای استفاده از امکانات ربات باید ابتدا عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '📢🔍بررسی عضویت در کانال', 'callback_data' => 'start']],
 ]));
@@ -531,7 +531,7 @@ $Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((st
 . ($Auto_Renew_Visible ? "🔄تمدید خودکار: {$Auto_Renew_Label}\n" : '')
 . "📅تاریخ عضویت: *{$Created_At_Label}*\n"
 . "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*\n"
-. "➖➖➖➖➖➖➖➖➖➖\n"
+. "➖➖➖➖➖➖➖➖➖\n"
 . "💎*اشتراک:*\n"
 . "{$Subscription_Text}";
 // دکمه ها گروه بندی شده اند: اشتراک و تمدید، پروفایل و کیف پول، سوابق، و
@@ -581,9 +581,9 @@ $Current_Name = $Current !== '' ? (self::AUTO_RENEW_PLANS[$Current] ?? AutoRenew
 $Status = $Current !== '' ? "🟢فعال ({$Current_Name})" : '🔴غیرفعال';
 $Text = Common::greet($Context, 'تمدید خودکار اشتراک')
 . Menu::section('🔄', 'تمدید خودکار اشتراک', [
-'وضعیت فعلی: *' . $Status . '*',
-'موجودی کیف پول: *' . Helper::formatCurrency($Balance) . '*',
-'زمان باقیمانده اشتراک: *' . Helper::remainingDuration($Exp_Stamp) . '*',
+'📌وضعیت فعلی: *' . $Status . '*',
+'💳موجودی کیف پول: *' . Helper::formatCurrency($Balance) . '*',
+'⏳زمان باقیمانده اشتراک: *' . Helper::remainingDuration($Exp_Stamp) . '*',
 ])
 . 'ℹ️در صورت فعال بودن، ' . Helper::toPersian('3') . " روز قبل از انقضا، اشتراک شما به صورت خودکار از موجودی کیف پول تمدید می شود.\n"
 . '📌*برای فعال کردن، پلن مورد نظر را انتخاب کنید:*';
@@ -776,7 +776,7 @@ $Text .= "📝{$Desc}\n";
 $Text .= "📆{$Date}🕰{$Time}\n";
 $Text .= "{$Sign_Icon}مبلغ: <b>{$Amount}</b>\n";
 $Text .= "👛موجودی پس از تراکنش: <b>{$Balance_After}</b>\n";
-$Text .= "➖➖➖➖➖➖➖➖➖➖\n";
+$Text .= "➖➖➖➖➖➖➖➖➖\n";
 }
 
 $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper::toPersian((string)$Total_Pages) . Helper::userFooter() . "*";
