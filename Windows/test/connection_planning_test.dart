@@ -47,8 +47,6 @@ void main() {
       NodeProtocol.amnezia,
       NodeProtocol.wireguard,
       NodeProtocol.clash,
-      NodeProtocol.hysteria2,
-      NodeProtocol.tuic,
     ]) {
       expect(
         VpnController.usable(
@@ -66,6 +64,57 @@ void main() {
         reason: '${protocol.name} نباید قابل استفاده باشد',
       );
     }
+  });
+
+  test('هیستریا ۲ و تی یو آی سی با هسته سینگ باکس قابل استفاده اند', () {
+    expect(
+      VpnController.usable(
+        node(
+          protocol: NodeProtocol.hysteria2,
+          params: <String, dynamic>{'password': 'p'},
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      VpnController.usable(
+        node(
+          protocol: NodeProtocol.tuic,
+          params: <String, dynamic>{'id': uuid, 'password': 'p'},
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      VpnController.usable(
+        node(protocol: NodeProtocol.hysteria2),
+      ),
+      isFalse,
+      reason: 'بدون رمز نباید انتخاب شود',
+    );
+  });
+
+  test('پیکربندی سینگ باکس برای تونل درست ساخته می شود', () {
+    final Map<String, dynamic> config = SingBoxConfig.buildProxy(
+      node: node(
+        protocol: NodeProtocol.trojan,
+        params: <String, dynamic>{'password': 'p'},
+      ),
+      settings: const AppSettings(),
+      port: 2080,
+    );
+    expect(config['inbounds'], isA<List<dynamic>>());
+    final List<dynamic> inbounds = config['inbounds'] as List<dynamic>;
+    expect((inbounds.first as Map<String, dynamic>)['listen_port'], 2080);
+    final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
+    expect((outbounds.first as Map<String, dynamic>)['tag'], 'proxy');
+    expect((config['route'] as Map<String, dynamic>)['final'], 'proxy');
+    expect(
+      List<dynamic>.of(config['outbounds'] as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .any((Map<String, dynamic> item) => item['type'] == 'direct'),
+      isTrue,
+    );
   });
 
   test('میرو با نام کاربری و رمز قابل استفاده است', () {
