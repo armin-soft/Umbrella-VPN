@@ -327,7 +327,7 @@ class _ConnectPageState extends State<ConnectPage> {
                         StatusOrb(
                           image: status.image,
                           color: tone,
-                          size: 320,
+                          size: 288,
                           active: status.busy,
                         ),
                         if (!status.busy)
@@ -381,7 +381,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 ),
                 const SizedBox(height: 12),
                 SizedBox(
-                  width: 360,
+                  width: 420,
                   child: GradientButton(
                     label: status.active && !status.busy ? 'قطع اتصال' : 'اتصال',
                     icon: Icons.power_settings_new_rounded,
@@ -480,23 +480,42 @@ class _ConnectPageState extends State<ConnectPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: <Widget>[
-                    for (final CorePreference pref in CorePreference.values)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: _CoreChip(
-                            pref: pref,
-                            selected: settings.settings.corePreference == pref,
-                            enabled: pref.available,
-                            busy: status.busy,
-                            onTap: () =>
-                                _selectCore(pref, vpn, settings, toasts),
+                LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    // در پنجره باریک، کارت ها کنار هم می لغزند تا هیچ چیز
+                    // فشرده یا بریده نشود.
+                    const double gap = 8;
+                    final double width =
+                        (constraints.maxWidth - gap * 5) / 6;
+                    final double cell = width < 88 ? 88 : width;
+                    final Widget row = Row(
+                      children: <Widget>[
+                        for (final CorePreference pref in CorePreference.values)
+                          Padding(
+                            padding: const EdgeInsets.only(left: gap),
+                            child: SizedBox(
+                              width: cell,
+                              child: _CoreChip(
+                                pref: pref,
+                                selected:
+                                    settings.settings.corePreference == pref,
+                                enabled: pref.available,
+                                busy: status.busy,
+                                onTap: () =>
+                                    _selectCore(pref, vpn, settings, toasts),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                  ],
+                      ],
+                    );
+                    if (cell == 88 && constraints.maxWidth < 88 * 6 + gap * 5) {
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: row,
+                      );
+                    }
+                    return row;
+                  },
                 ),
               ],
             ),
