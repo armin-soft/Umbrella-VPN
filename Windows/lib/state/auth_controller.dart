@@ -476,9 +476,17 @@ class AuthController extends ChangeNotifier {
     );
     _session = session.copyWith(account: merged, filter: session.filter);
     await _store.writeJson(StoreKeys.session, _session!.toJson());
+    // اگر پنل بگوید اشتراک تمام شده، اتصال باید فورا قطع شود.
+    if (!merged.canConnect) {
+      onAccessRevoked?.call(merged.accessReason);
+    }
     notifyListeners();
     return true;
   }
+
+  /// وقتی دسترسی حساب از بین می رود (انقضا، مسدود شدن یا اتمام حجم) صدا زده
+  /// می شود تا اتصال فعال قطع شود. در main به VpnController وصل می شود.
+  void Function(String reason)? onAccessRevoked;
 
   Future<void> refreshAccount({bool silent = false}) async {
     final SessionData? session = _session;

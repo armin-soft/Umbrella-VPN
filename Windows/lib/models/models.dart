@@ -432,6 +432,34 @@ class Account {
   /// نشان می دهد حساب سالم است: فعال، منقضی نشده و غیرفعال نشده.
   bool get healthy => enable && !expired;
 
+  /// حجم بسته تمام شده است.
+  bool get quotaFinished => usageLimitGb > 0 && currentUsageGb >= usageLimitGb;
+
+  /// اجازه اتصال به سرورها. اگر حساب منقضی، غیرفعال، مسدود یا حجمش تمام شده
+  /// باشد، اتصال ممنوع است و برنامه باید همین را به کاربر بگوید.
+  bool get canConnect => enable && isActive && !expired && !quotaFinished;
+
+  /// دلیل بسته بودن دسترسی، به فارسی؛ اگر دسترسی باز باشد رشته خالی است.
+  String get accessReason {
+    final List<String> reasons = <String>[];
+    if (!enable) {
+      reasons.add('حساب شما مسدود شده است');
+    }
+    if (!isActive) {
+      reasons.add('اشتراک شما فعال نیست');
+    }
+    if (expired) {
+      reasons.add('اشتراک شما منقضی شده است');
+    }
+    if (quotaFinished) {
+      reasons.add('حجم اشتراک شما تمام شده است');
+    }
+    if (reasons.isEmpty) {
+      return '';
+    }
+    return '${reasons.join(' و ')}؛ برای ادامه باید اشتراک را تمدید کنید.';
+  }
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'uuid': uuid,
         'name': name,
@@ -789,20 +817,21 @@ extension CorePreferenceX on CorePreference {
     }
   }
 
-  String get logoAsset {
+  /// آیکون ساده هسته؛ در رابط کاربری به جای تصویر لوگو استفاده می شود.
+  IconData get icon {
     switch (this) {
       case CorePreference.auto:
-        return 'assets/logos/auto.png';
+        return Icons.auto_awesome_rounded;
       case CorePreference.xray:
-        return 'assets/logos/xray.png';
+        return Icons.bolt_rounded;
       case CorePreference.clash:
-        return 'assets/logos/clash.jpg';
+        return Icons.hub_rounded;
       case CorePreference.wireguard:
-        return 'assets/logos/wireguard.png';
+        return Icons.vpn_key_rounded;
       case CorePreference.amnezia:
-        return 'assets/logos/amnezia.png';
+        return Icons.security_rounded;
       case CorePreference.mieru:
-        return 'assets/logos/mieru.png';
+        return Icons.travel_explore_rounded;
     }
   }
 

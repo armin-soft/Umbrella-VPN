@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/models/models.dart';
 
@@ -43,13 +44,13 @@ void main() {
   });
 
   group('انتخاب هسته', () {
-    test('هر هسته لوگوی خودش را دارد و لوگوها یکتا هستند', () {
-      final Set<String> assets =
-          CorePreference.values.map((CorePreference item) => item.logoAsset).toSet();
-      expect(assets.length, CorePreference.values.length);
-      for (final String asset in assets) {
-        expect(asset.startsWith('assets/logos/'), isTrue);
-      }
+    test('هر هسته آیکون و نام خودش را دارد', () {
+      final Set<IconData> icons =
+          CorePreference.values.map((CorePreference item) => item.icon).toSet();
+      final Set<String> names =
+          CorePreference.values.map((CorePreference item) => item.faName).toSet();
+      expect(icons.length, CorePreference.values.length);
+      expect(names.length, CorePreference.values.length);
     });
 
     test('آمنزیا در این نسخه در دسترس نیست و بقیه در دسترس اند', () {

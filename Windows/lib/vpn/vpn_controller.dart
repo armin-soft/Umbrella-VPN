@@ -102,12 +102,16 @@ class ConnectOutcome {
     required this.message,
     this.needsElevation = false,
     this.needsCores = false,
+    this.needsRenewal = false,
   });
 
   final bool ok;
   final String message;
   final bool needsElevation;
   final bool needsCores;
+
+  /// اشتراک کاربر اجازه اتصال نمی دهد (منقضی، مسدود یا تمام شده).
+  final bool needsRenewal;
 }
 
 class _AttemptResult {
@@ -180,6 +184,7 @@ class VpnController extends ChangeNotifier {
     this.onSettingsChanged,
     this.onRequireElevation,
     this.onRequireCores,
+    this.accessGuard,
   })  : _native = native,
         _ip = ipService,
         _sound = sound,
@@ -201,6 +206,12 @@ class VpnController extends ChangeNotifier {
 
   final ValueChanged<AppSettings>? onSettingsChanged;
   final VoidCallback? onRequireElevation;
+
+  /// بررسی دسترسی حساب پیش از هر اتصال. اگر رشته غیرخالی برگرداند، اتصال
+  /// انجام نمی شود و همان پیام به کاربر نشان داده می شود (اشتراک منقضی،
+  /// مسدود یا تمام شده).
+  final String Function()? accessGuard;
+
   final VoidCallback? onRequireCores;
 
   AppSettings _settings;
@@ -530,6 +541,13 @@ class VpnController extends ChangeNotifier {
   Future<ConnectOutcome> connect({VpnNode? requested}) async {
     if (_status.active) {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
+    }
+    // دسترسی حساب: اشتراک منقضی، مسدود یا تمام شده حق اتصال ندارد.
+    final String blocked = accessGuard?.call() ?? '';
+    if (blocked.isNotEmpty) {
+      _log.add('اتصال رد شد: $blocked', level: 'warning');
+      _setStatus(VpnStatus.failed, blocked);
+      return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
     if (_nodes.isEmpty) {
       return const ConnectOutcome(

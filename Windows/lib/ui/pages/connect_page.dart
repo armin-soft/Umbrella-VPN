@@ -63,6 +63,11 @@ class _ConnectPageState extends State<ConnectPage> {
       toasts.info('اتصال قطع شد');
       return;
     }
+    final AuthController auth = context.read<AuthController>();
+    if (!auth.account.canConnect) {
+      toasts.error('اجازه اتصال نیست', auth.account.accessReason);
+      return;
+    }
     if (vpn.nodes.isEmpty) {
       toasts.error('سروری موجود نیست', 'اول اشتراک باید خوانده شود.');
       return;
@@ -239,6 +244,16 @@ class _ConnectPageState extends State<ConnectPage> {
                       ),
                     ],
                   ),
+                  if (!account.canConnect)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _AccessBanner(
+                        title: account.enable
+                            ? 'اشتراک شما اجازه اتصال ندارد'
+                            : 'حساب شما مسدود شده است',
+                        message: account.accessReason,
+                      ),
+                    ),
                   if (OccasionService.instance.active != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
@@ -340,6 +355,18 @@ class _ConnectPageState extends State<ConnectPage> {
                               : () => _toggleConnection(vpn, toasts),
                         ),
                       ),
+                      if (!account.canConnect)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            Fa.num('اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.'),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.danger),
+                          ),
+                        ),
                       const SizedBox(height: 12),
 
                       // ── دو منوی کوچک: هسته و حالت انتخاب ────────────
@@ -351,7 +378,7 @@ class _ConnectPageState extends State<ConnectPage> {
                           _PickerChip(
                             label: 'هسته اتصال',
                             value: settings.settings.corePreference.faName,
-                            logo: settings.settings.corePreference.logoAsset,
+                            icon: settings.settings.corePreference.icon,
                             enabled: !status.busy,
                             onTap: () => _pickCore(vpn, settings, toasts),
                           ),
@@ -417,6 +444,57 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
         );
       },
+    );
+  }
+}
+
+/// هشدار دسترسی: اشتراک منقضی، مسدود یا تمام شده.
+class _AccessBanner extends StatelessWidget {
+  const _AccessBanner({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: colors.danger.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.danger.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.lock_rounded, size: 20, color: colors.danger),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  Fa.num(title),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: colors.danger,
+                      ),
+                ),
+                Text(
+                  Fa.num(message),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -501,13 +579,11 @@ class _PickerChip extends StatelessWidget {
     required this.value,
     required this.enabled,
     required this.onTap,
-    this.logo,
     this.icon,
   });
 
   final String label;
   final String value;
-  final String? logo;
   final IconData? icon;
   final bool enabled;
   final VoidCallback onTap;
@@ -530,25 +606,8 @@ class _PickerChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (logo != null)
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Image.asset(
-                    logo!,
-                    fit: BoxFit.contain,
-                    errorBuilder:
-                        (BuildContext context, Object error, StackTrace? stack) =>
-                            Icon(
-                      Icons.memory_rounded,
-                      size: 17,
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                )
-              else
-                Icon(icon ?? Icons.tune_rounded, size: 18,
-                    color: colors.textSecondary),
+              Icon(icon ?? Icons.tune_rounded, size: 18,
+                  color: colors.textSecondary),
               const SizedBox(width: 8),
               Text(
                 Fa.num(label),
@@ -711,6 +770,8 @@ class _CoreDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Dialog(
+      alignment: Alignment.topCenter,
+      insetPadding: const EdgeInsets.only(top: 64, bottom: 24, left: 24, right: 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 380),
         child: Padding(
@@ -735,20 +796,10 @@ class _CoreDialog extends StatelessWidget {
                   enabled: pref.available,
                   title: pref.faName,
                   subtitle: pref.description,
-                  leading: SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: Image.asset(
-                      pref.logoAsset,
-                      fit: BoxFit.contain,
-                      errorBuilder: (BuildContext context, Object error,
-                              StackTrace? stack) =>
-                          Icon(
-                        Icons.memory_rounded,
-                        size: 20,
-                        color: colors.textSecondary,
-                      ),
-                    ),
+                  leading: Icon(
+                    pref.icon,
+                    size: 20,
+                    color: pref == current ? colors.primary : colors.textSecondary,
                   ),
                   onTap: () => Navigator.of(context).pop(pref),
                 ),
@@ -769,6 +820,8 @@ class _ModeDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      alignment: Alignment.topCenter,
+      insetPadding: const EdgeInsets.only(top: 64, bottom: 24, left: 24, right: 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Padding(

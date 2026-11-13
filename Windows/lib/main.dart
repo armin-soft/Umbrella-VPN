@@ -93,9 +93,18 @@ Future<void> main(List<String> arguments) async {
         'نسخه نصب هسته ها را همراه ندارد؛ برنامه را با نصب کننده رسمی دوباره نصب کنید.',
       );
     },
+    // بدون اشتراک سالم، هیچ اتصالی برقرار نمی شود.
+    accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
   );
   vpn.updateSettings(settings.settings);
   settings.addListener(() => vpn.updateSettings(settings.settings));
+  // اگر حساب در میانه کار منقضی یا مسدود شد، اتصال همان لحظه بسته می شود.
+  auth.onAccessRevoked = (String reason) {
+    if (vpn.status.active) {
+      unawaited(vpn.disconnect());
+    }
+    toasts.error('دسترسی اشتراک قطع شد', reason);
+  };
 
   final SubscriptionController subscriptions =
       SubscriptionController(vpn: vpn, auth: auth);
