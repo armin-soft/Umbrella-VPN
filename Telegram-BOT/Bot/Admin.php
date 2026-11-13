@@ -1279,7 +1279,7 @@ $Users_List[] = [
 }
 
 if (empty($Users_List)) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'عدم استفاده از سرور') . "⭕️هیچ کاربر فعالی وجود ندارد که بیش از " . Helper::toPersian((string)$Threshold_Days) . " روز از آخرین اتصالش گذشته باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'عدم استفاده از سرور') . "🚫⭕️هیچ کاربر فعالی وجود ندارد که بیش از " . Helper::toPersian((string)$Threshold_Days) . " روز از آخرین اتصالش گذشته باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت', 'callback_data' => 'پیکربندی سرور']],
 [['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
@@ -1792,7 +1792,7 @@ public static function versionNumber(Context $Context, string $Version): void {
 $Version = trim($Version);
 
 if (!preg_match('/^\d+\.\d+\.\d+$/', $Version)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فرمت نسخه نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️مثال صحیح: `1.0.0`\n🔁لطفاً شماره نسخه را با فرمت درست وارد کنید:\n👇مثلاً `1.0.1`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فرمت نسخه نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️مثال صحیح: `1.0.0`\n🔁لطفاً شماره نسخه را با فرمت درست وارد کنید.\n👇مثلاً `1.0.1`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت', 'callback_data' => 'بروز رسانی']],
 [['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
@@ -2095,7 +2095,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅ک�
 ]));
 
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
-TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Full_Name, 'فعالسازی کلاینت', $Target) . "✅🔓کلاینت شما در سرور فعال گردید.\n\n➖➖➖➖➖➖➖➖➖\n📋نکته: قوانین مانیتورینگ سرور را رعایت فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Full_Name, 'فعالسازی کلاینت', $Target) . "✅🔓کلاینت شما در سرور فعال گردید.\n\n➖➖➖➖➖➖➖➖➖\n⚠️📋نکته: قوانین مانیتورینگ سرور را رعایت فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
 Menu::userHome()
 ]));
