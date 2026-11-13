@@ -182,7 +182,7 @@ private function test_navigation_only_keyboard_is_detected(): void {
 $Nav_Only = [
 'only-home' => [Menu::adminHome()],
 'home-and-back' => [Menu::back('گزارش ها', 'منوی گزارش'), Menu::userHome()],
-'with-cancel' => [Menu::back('اشتراک من', 'اشتراک من'), Menu::userHome()],
+'with-cancel' => [[Menu::button('🔙انصراف از شارژ', 'لغو شارژ اعتبار')], Menu::userHome()],
 ];
 
 foreach ($Nav_Only as $Name => $Rows) {
@@ -191,12 +191,12 @@ $this->check(Menu::isNavigationOnly($Markup), $Name . ': a navigation-only keybo
 }
 
 $With_Choice = test_keyboard(array_merge(
-Menu::rows([['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']]),
+Menu::rows([[['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']]]),
 [Menu::adminHome()]
 ));
 
 $this->check(!Menu::isNavigationOnly($With_Choice), 'a keyboard with a real action is not navigation-only');
-$this->check(!Menu::isNavigationOnly(test_keyboard([Menu::link('🎧پشتیبانی', 'https://t.me/x')])), 'a link button counts as an action');
+$this->check(!Menu::isNavigationOnly(test_keyboard([[Menu::link('🎧پشتیبانی', 'https://t.me/x')]])), 'a link button counts as an action');
 $this->check(!Menu::isNavigationOnly([]), 'an empty keyboard is not navigation-only');
 }
 
