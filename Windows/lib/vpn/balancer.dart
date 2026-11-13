@@ -63,9 +63,13 @@ class NodeBalancer {
               : 'سرور انتخابی شما.',
         );
       case SelectionMode.roundRobin:
-        _roundRobinIndex = (_roundRobinIndex + 1) % usable.length;
-        final VpnNode node = usable[_roundRobinIndex];
-        return SelectionResult(node: node, reason: 'انتخاب گردشی برای پخش بار.');
+        final int index = _roundRobinIndex % usable.length;
+        _roundRobinIndex = (index + 1) % usable.length;
+        final VpnNode node = usable[index];
+        return SelectionResult(
+          node: node,
+          reason: 'انتخاب گردشی برای پخش بار (نوبت ${node.name}).',
+        );
       case SelectionMode.consistentHash:
         final VpnNode node = _consistentHash(usable, deviceSeed);
         return SelectionResult(

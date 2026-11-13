@@ -18,6 +18,7 @@ import 'config_builders.dart';
 import 'cores.dart';
 import 'core_ping.dart';
 import 'ping.dart';
+import 'tunnel_probe.dart';
 
 enum VpnStatus {
   disconnected,
@@ -347,21 +348,31 @@ class VpnController extends ChangeNotifier {
     _pingProgressTotal = all ? _nodes.length : _nodes.take(12).length;
     _notify();
     final List<VpnNode> target = all ? _nodes : _nodes.take(12).toList();
-    final List<VpnNode> measured = await _ping.measureAll(
-      target,
-      concurrency: 8,
-      onProgress: (int done, int total) {
-        _pingProgressDone = done;
-        _pingProgressTotal = total;
-        _notify();
-      },
-    );
+    List<VpnNode> measured = target;
+    try {
+      measured = await _ping.measureAll(
+        target,
+        concurrency: 8,
+        onProgress: (int done, int total) {
+          _pingProgressDone = done;
+          _pingProgressTotal = total;
+          _notify();
+        },
+      );
+    } on Exception catch (error) {
+      _log.add('سنجش پینگ ناموفق بود: ${error.toString()}', level: 'warning');
+    }
     // تاخیر واقعی تونل: هسته سینگ باکس هر سرور را یک بار امتحان می کند و
     // عدد دقیق را می دهد؛ اگر هسته در دسترس نباشد، نتیجه تی سی پی و آی سی
     // ام پی همان طور می ماند.
     Map<String, int> tunnelDelays = <String, int>{};
     try {
-      tunnelDelays = await _corePing.measure(target, settings: _settings);
+      tunnelDelays = await _corePing
+          .measure(target, settings: _settings)
+          .timeout(
+            const Duration(seconds: 45),
+            onTimeout: () => <String, int>{},
+          );
     } catch (_) {
       tunnelDelays = <String, int>{};
     }
@@ -383,7 +394,32 @@ class VpnController extends ChangeNotifier {
     _notify();
   }
 
+  /// ترتیب فهرست سرورها بر اساس حالت انتخاب کاربر.
+  ///
+  /// در حالت گردشی ترتیب اشتراک نگه داشته می شود تا نوبت ها دیده شوند، در
+  /// حالت هش پایدار ترتیب بر اساس شناسه ثابت می ماند و در حالت نشست چسبنده
+  /// سرور فعلی بالا می ماند؛ حالت خودکار همان کمترین پینگ است.
   int _sortNodes(VpnNode a, VpnNode b) {
+    switch (_settings.selectionMode) {
+      case SelectionMode.roundRobin:
+        return 0;
+      case SelectionMode.consistentHash:
+        return _stableHash(a.id).compareTo(_stableHash(b.id));
+      case SelectionMode.stickySession:
+        final bool aPinned = a.id == _settings.lastNodeId;
+        final bool bPinned = b.id == _settings.lastNodeId;
+        if (aPinned != bPinned) {
+          return aPinned ? -1 : 1;
+        }
+        return _byPing(a, b);
+      case SelectionMode.auto:
+      case SelectionMode.manual:
+        break;
+    }
+    return _byPing(a, b);
+  }
+
+  static int _byPing(VpnNode a, VpnNode b) {
     if (a.hasPing != b.hasPing) {
       return a.hasPing ? -1 : 1;
     }
@@ -391,6 +427,14 @@ class VpnController extends ChangeNotifier {
       return a.name.compareTo(b.name);
     }
     return a.pingMs.compareTo(b.pingMs);
+  }
+
+  static int _stableHash(String value) {
+    int hash = 5381;
+    for (final int code in value.codeUnits) {
+      hash = ((hash << 5) + hash + code) & 0x7fffffff;
+    }
+    return hash;
   }
 
   Future<void> toggleFavorite(VpnNode node) async {
@@ -532,8 +576,42 @@ class VpnController extends ChangeNotifier {
     }
     final List<VpnNode> rest = _nodes
         .where((VpnNode node) => node.id != first.id && usable(node))
-        .toList()
-      ..sort((VpnNode a, VpnNode b) => a.pingMs.compareTo(b.pingMs));
+        .toList();
+    switch (_settings.selectionMode) {
+      case SelectionMode.roundRobin:
+        // پس از سرور فعلی، نوبت سرورهای بعدی در همان ترتیب اشتراک است.
+        final int start =
+            _nodes.indexWhere((VpnNode node) => node.id == first.id);
+        if (start >= 0 && _nodes.length > 1) {
+          final List<VpnNode> rotation = <VpnNode>[];
+          for (int step = 1; step < _nodes.length; step++) {
+            final VpnNode candidate = _nodes[(start + step) % _nodes.length];
+            if (candidate.id != first.id && usable(candidate)) {
+              rotation.add(candidate);
+            }
+          }
+          rotation.addAll(
+            rest.where(
+              (VpnNode node) =>
+                  !rotation.any((VpnNode item) => item.id == node.id),
+            ),
+          );
+          rest
+            ..clear()
+            ..addAll(rotation);
+        }
+        break;
+      case SelectionMode.consistentHash:
+        rest.sort(
+          (VpnNode a, VpnNode b) =>
+              _stableHash(a.id).compareTo(_stableHash(b.id)),
+        );
+        break;
+      case SelectionMode.stickySession:
+      case SelectionMode.auto:
+      case SelectionMode.manual:
+        rest.sort(_byPing);
+    }
     for (final VpnNode node in rest) {
       if (node.disabled || node.host.isEmpty) {
         continue;
@@ -609,8 +687,41 @@ class VpnController extends ChangeNotifier {
         continue;
       }
 
+      // تایید واقعی: تا وقتی ترافیک از تونل رد نشود، «وصل شد» اعلام نمی شود.
+      // در حالت تونل، درخواست مستقیم هم از کارت شبکه مجازی رد می شود؛ پس
+      // معیار درست، عوض شدن آی پی خروجی است نه باز شدن پورت.
+      final bool flows = plan.usesSystemProxy
+          ? await TunnelProbe.check(proxyPort: plan.proxyPort)
+          : await _exitIpChanged();
+      if (!flows) {
+        final String coreLog = '${_provisioner.dataDir}'
+            '${Platform.pathSeparator}run${Platform.pathSeparator}'
+            '${plan.cores.first.name}-core.log';
+        final String tail = await _readLogTail(coreLog);
+        _log.add(
+          'هسته بالا آمد ولی هیچ ترافیکی از تونل رد نشد؛ این اتصال معتبر نیست.'
+          '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+          level: 'error',
+        );
+        await _stopCores();
+        await _disableProxy();
+        continue;
+      }
+
       if (plan.usesSystemProxy) {
-        await _enableProxy(plan);
+        final bool proxyOk = await _enableProxy(plan);
+        if (!proxyOk) {
+          // بدون پروکسی سیستمی، هسته کار می کند ولی هیچ برنامه ای از آن
+          // استفاده نمی کند؛ پس این اتصال «وصل» حساب نمی شود.
+          _log.add(
+            'پروکسی سیستمی ویندوز تنظیم نشد؛ این اتصال معتبر نیست و سرور '
+            'بعدی امتحان می شود.',
+            level: 'error',
+          );
+          await _stopCores();
+          await _disableProxy();
+          continue;
+        }
       }
       _connectedAt = DateTime.now();
       _healthFailures = 0;
@@ -812,7 +923,8 @@ class VpnController extends ChangeNotifier {
   /// هسته و همان پروتکل ها (وی لس، وی مس، تروجان، شادوساکس، تی یو آی سی و
   /// هایستریا ۲).
   Future<LaunchPlan?> _buildSingBoxPlan(VpnNode node) async {
-    if (!usable(node)) {
+    // میرو پروتکل اختصاصی خودش را دارد و سینگ باکس آن را نمی شناسد.
+    if (!usable(node) || node.protocol == NodeProtocol.mieru) {
       return null;
     }
     final CoreInfo? core = _provisioner.info('singbox');
@@ -913,21 +1025,47 @@ class VpnController extends ChangeNotifier {
         MieruConfig.encode(node, AppConfig.socksPortMieru),
         flush: true,
       );
-      return LaunchPlan(
-        cores: <CoreLaunch>[
+      // میرو فقط سوکس می دهد؛ ایکس ری به عنوان پل اچ تی تی پی جلوی آن می
+      // نشیند تا پروکسی سیستمی ویندوز واقعا کار کند.
+      final String? front = await _provisioner.locateBinary('xray.exe');
+      final List<CoreLaunch> cores = <CoreLaunch>[
+        CoreLaunch(
+          exe: mieru,
+          args: <String>['run', '-c', config.path],
+          workDir: _dirOf(mieru),
+          name: 'mieru',
+        ),
+      ];
+      final List<String> paths = <String>[config.path];
+      int proxyPort = AppConfig.socksPortMieru;
+      int readinessPort = AppConfig.socksPortMieru;
+      if (front != null) {
+        final File bridge =
+            File('${runDir.path}${Platform.pathSeparator}mieru-front.json');
+        await bridge.writeAsString(
+          XrayConfig.frontSocks(AppConfig.socksPortMieru),
+          flush: true,
+        );
+        cores.add(
           CoreLaunch(
-            exe: mieru,
-            args: <String>['run', '-c', config.path],
-            workDir: _dirOf(mieru),
-            name: 'mieru',
+            exe: front,
+            args: <String>['run', '-c', bridge.path],
+            workDir: _dirOf(front),
+            name: 'xrayfront',
           ),
-        ],
-        configPaths: <String>[config.path],
-        readinessPort: AppConfig.socksPortMieru,
+        );
+        paths.add(bridge.path);
+        proxyPort = AppConfig.httpPortXray;
+        readinessPort = AppConfig.httpPortXray;
+      }
+      return LaunchPlan(
+        cores: cores,
+        configPaths: paths,
+        readinessPort: readinessPort,
         primaryBinary: 'mieru.exe',
         tunnelHint: '',
-        chained: false,
-        proxyPort: AppConfig.socksPortMieru,
+        chained: front != null,
+        proxyPort: proxyPort,
       );
     }
 
@@ -1145,7 +1283,29 @@ class VpnController extends ChangeNotifier {
     return false;
   }
 
+  bool _verifyInFlight = false;
+
+  /// آیا آی پی خروجی با آی پی بدون تونل فرق کرده است؟
+  Future<bool> _exitIpChanged() async {
+    try {
+      final GeoInfo geo = await _ip.fetch(force: true);
+      if (geo.ip.isEmpty) {
+        return false;
+      }
+      if (_realIp.isEmpty) {
+        return true;
+      }
+      return geo.ip != _realIp;
+    } on Exception {
+      return false;
+    }
+  }
+
   Future<void> _verifyTunnel() async {
+    if (_verifyInFlight) {
+      return;
+    }
+    _verifyInFlight = true;
     try {
       final GeoInfo geo = await _ip.fetch(
         force: true,
@@ -1159,6 +1319,13 @@ class VpnController extends ChangeNotifier {
           'آی پی خروجی با آی پی قبلی یکسان است؛ ممکن است تونل کامل برقرار نشده باشد.',
           level: 'warning',
         );
+        // اتصالی که ترافیک از آن رد نمی شود نباید «وصل» بماند.
+        if (_settings.autoFailover && _reconnectAttempts < 3) {
+          _reconnectAttempts++;
+          _verifyInFlight = false;
+          await _reconnect();
+          return;
+        }
       } else {
         _log.add('آی پی خروجی: ${geo.ip} | ${geo.flagEmojiFreeLabel}');
       }
@@ -1171,6 +1338,8 @@ class VpnController extends ChangeNotifier {
       }
     } on Exception catch (error) {
       _log.add('بررسی آی پی ناموفق: $error', level: 'warning');
+    } finally {
+      _verifyInFlight = false;
     }
   }
 
@@ -1236,12 +1405,31 @@ class VpnController extends ChangeNotifier {
     final bool alive = _runningBinaries.isEmpty
         ? true
         : await _native.isRunning(_runningBinaries.first);
-    if (alive) {
-      _healthFailures = 0;
-      return;
+    if (!alive) {
+      _healthFailures++;
+      _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی...', level: 'warning');
+    } else {
+      // زنده بودن فرایند کافی نیست؛ خود تونل هم باید جواب بدهد.
+      final bool flows = await TunnelProbe.check(
+        proxyPort: _proxyPort,
+        attempts: 1,
+        timeout: const Duration(seconds: 4),
+      );
+      if (flows) {
+        if (_healthFailures > 0) {
+          _log.add('تونل دوباره سالم شد.');
+        }
+        _healthFailures = 0;
+        return;
+      }
+      _healthFailures++;
+      _tunnelVerified = false;
+      _log.add(
+        'ترافیک از تونل رد نمی شود؛ بررسی سلامت ناموفق بود.',
+        level: 'warning',
+      );
+      _notify();
     }
-    _healthFailures++;
-    _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی...', level: 'warning');
     if (_healthFailures >= 2) {
       if (_settings.autoFailover && _reconnectAttempts < 3) {
         _reconnectAttempts++;

@@ -380,6 +380,40 @@ class XrayConfig {
   static String encode(VpnNode node, int socksPort) =>
       const JsonEncoder.withIndent('  ').convert(build(node, socksPort));
 
+  /// پل اچ تی تی پی برای هسته ای که فقط سوکس می دهد (مثل میرو).
+  ///
+  /// پروکسی سیستمی ویندوز فقط اچ تی تی پی را می فهمد؛ اگر به پورت سوکس وصل
+  /// شود، برنامه ها «وصل» نشان می دهند ولی هیچ صفحه ای باز نمی شود. این
+  /// پیکربندی یک پورت اچ تی تی پی می سازد و ترافیک را به سوکس محلی می فرستد.
+  static String frontSocks(int socksPort) =>
+      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
+        'log': <String, dynamic>{'loglevel': 'warning'},
+        'inbounds': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'tag': 'umbrella-http',
+            'listen': '127.0.0.1',
+            'port': AppConfig.httpPortXray,
+            'protocol': 'http',
+            'settings': <String, dynamic>{'allowTransparent': false},
+          },
+        ],
+        'outbounds': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'tag': 'proxy',
+            'protocol': 'socks',
+            'settings': <String, dynamic>{
+              'servers': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'address': '127.0.0.1',
+                  'port': socksPort,
+                },
+              ],
+            },
+          },
+          <String, dynamic>{'tag': 'direct', 'protocol': 'freedom'},
+        ],
+      });
+
   static Map<String, dynamic> build(VpnNode node, int socksPort) {
     return <String, dynamic>{
       'log': <String, dynamic>{'loglevel': 'info'},
