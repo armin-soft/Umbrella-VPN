@@ -330,6 +330,16 @@ class NativeBridge {
 
   Future<bool> flushDns() => _run('ipconfig', <String>['/flushdns']);
 
+  /// اجرای ناهمگام یک فرمان ویندوز؛ خروجی صفر یعنی موفق.
+  Future<bool> _run(String exe, List<String> args) async {
+    try {
+      final ProcessResult result = await Process.run(exe, args, runInShell: false);
+      return result.exitCode == 0;
+    } on Object {
+      return false;
+    }
+  }
+
   Future<TunnelStats> tunnelStats({String hint = 'sing-box'}) async {
     final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
       'tunnelStats',
