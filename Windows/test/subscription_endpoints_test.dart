@@ -51,13 +51,31 @@ void main() {
     expect(sources.first.personal, isTrue);
   });
 
-  test('اگر سرور هیچ نشانی ندهد فهرست خالی است', () {
+  test('نشانی بدون مسیر راز پنل با پایه کامل برنامه اصلاح می شود', () {
+    final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
+      subscriptionUrl: 'https://user.umbrella-server.ir/$uuid/sub/',
+      accountBase: 'https://user.umbrella-server.ir/',
+      uuid: uuid,
+    );
+
+    expect(sources, hasLength(5));
+    // آدرس نباید فقط /<شناسه>/all.txt باشد؛ مسیر پنل هم لازم است.
+    expect(
+      Uri.parse(sources.first.url).pathSegments.length,
+      greaterThan(2),
+    );
+    expect(sources.first.url, endsWith('/$uuid/all.txt'));
+  });
+
+  test('اگر سرور هیچ نشانی ندهد پایه خود برنامه استفاده می شود', () {
     final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
       subscriptionUrl: '',
       accountBase: '',
       uuid: uuid,
     );
 
-    expect(sources, isEmpty);
+    expect(sources, isNotEmpty);
+    expect(sources.first.url, contains(uuid));
+    expect(Uri.parse(sources.first.url).pathSegments.length, greaterThan(2));
   });
 }

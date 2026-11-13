@@ -24,7 +24,7 @@ class TunnelProbe {
   static Future<bool> check({
     int proxyPort = 0,
     int attempts = 1,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 4),
   }) async {
     for (int attempt = 0; attempt < attempts; attempt++) {
       if (await _race(proxyPort, timeout)) {

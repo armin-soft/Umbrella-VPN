@@ -149,6 +149,18 @@ class SubscriptionController extends ChangeNotifier {
     final List<SubscriptionSource> next = <SubscriptionSource>[
       ...personal,
       if (personal.isEmpty) ...AppConfig.subscriptionSources,
+      // اگر نشانی سرور مسیر راز پنل را نداشته باشد (نتیجه: کد ۴۰۴)، همان
+      // پنج مسیر با پایه کامل خود برنامه هم امتحان می شوند.
+      if (personal.isNotEmpty && _missingPanelPath(personal))
+        ...AppConfig.subscriptionSources.map(
+          (SubscriptionSource source) => SubscriptionSource(
+            id: 'builtin-${source.id}',
+            title: source.title,
+            url: source.url,
+            format: source.format,
+            icon: source.icon,
+          ),
+        ),
     ];
     final String signature =
         next.map((SubscriptionSource item) => '${item.id}|${item.url}').join('\n');
@@ -170,6 +182,16 @@ class SubscriptionController extends ChangeNotifier {
       return SourceState(source: source);
     }).toList();
     return true;
+  }
+
+  /// آیا نشانی ساخته شده مسیر پنل را ندارد؟ (مثل `/{uuid}/all.txt`)
+  bool _missingPanelPath(List<SubscriptionSource> sources) {
+    final Uri? uri = Uri.tryParse(sources.first.url);
+    if (uri == null) {
+      return false;
+    }
+    // دو بخش یعنی /<شناسه>/all.txt ؛ مسیر راز پنل جا افتاده است.
+    return uri.pathSegments.length <= 2;
   }
 
   void _onAccountChanged() {
@@ -287,6 +309,17 @@ class SubscriptionController extends ChangeNotifier {
     }
     if (nodes.isEmpty) {
       _log.add('منابع عمومی هم سروری ندادند.', level: 'error');
+      if (_needsLogin) {
+        // سرورها با کد ۴۰۴/۴۰۱ پاسخ داده اند؛ فهرست قدیمی و مرده نگه داشته
+        // نمی شود تا برنامه بی دلیل صدها سرور بی جواب را امتحان نکند.
+        _log.add(
+          'فهرست سرورهای قبلی پاک شد؛ پس از ورود به حساب، اشتراک دوباره '
+          'خوانده می شود.',
+          level: 'warning',
+        );
+        await _vpn.applyNodes(<VpnNode>[]);
+      }
+      notifyListeners();
       return;
     }
     await _applyNodes(nodes);

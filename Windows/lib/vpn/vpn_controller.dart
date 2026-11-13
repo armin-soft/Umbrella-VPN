@@ -617,7 +617,7 @@ class VpnController extends ChangeNotifier {
         continue;
       }
       list.add(node);
-      if (list.length >= 3) {
+      if (list.length >= 4) {
         break;
       }
     }
