@@ -238,32 +238,6 @@ void UmbrellaNativePlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(ops_.SystemProxyEnabled()));
     return;
   }
-  if (method == "killSwitchOn") {
-    std::vector<std::string> allowed;
-    auto iterator = args.find(flutter::EncodableValue(std::string("allowed")));
-    if (iterator != args.end()) {
-      if (const auto* list = std::get_if<flutter::EncodableList>(&iterator->second)) {
-        for (const auto& item : *list) {
-          if (const auto* text = std::get_if<std::string>(&item)) {
-            allowed.push_back(*text);
-          }
-        }
-      }
-    }
-    result->Success(flutter::EncodableValue(ops_.EnableKillSwitch(
-        allowed, StringOf(args, "appName", "Umbrella"))));
-    return;
-  }
-  if (method == "killSwitchOff") {
-    result->Success(flutter::EncodableValue(
-        ops_.DisableKillSwitch(StringOf(args, "appName", "Umbrella"))));
-    return;
-  }
-  if (method == "killSwitchActive") {
-    result->Success(flutter::EncodableValue(
-        ops_.KillSwitchActive(StringOf(args, "appName", "Umbrella"))));
-    return;
-  }
   if (method == "flushDns") {
     result->Success(flutter::EncodableValue(ops_.FlushDns()));
     return;
@@ -344,9 +318,8 @@ void UmbrellaNativePlugin::HandleMethodCall(
   }
   if (method == "restoreNetworkDefaults") {
     bool proxy = ops_.DisableSystemProxy();
-    bool kill_switch = ops_.DisableKillSwitch(StringOf(args, "appName", "Umbrella"));
     ops_.FlushDns();
-    result->Success(flutter::EncodableValue(proxy && kill_switch));
+    result->Success(flutter::EncodableValue(proxy));
     return;
   }
 

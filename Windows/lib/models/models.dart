@@ -691,7 +691,7 @@ class AppSettings {
   const AppSettings({
     this.theme = ThemePreference.dark,
     this.autoConnect = false,
-    this.killSwitch = true,
+    this.killSwitch = false,
     this.startWithWindows = false,
     this.minimizeToTray = true,
     this.closeToTray = true,
@@ -850,7 +850,7 @@ class AppSettings {
     return AppSettings(
       theme: pick(ThemePreference.values, json['theme'], ThemePreference.dark),
       autoConnect: JsonX.boolean(json['autoConnect']),
-      killSwitch: JsonX.boolean(json['killSwitch'], fallback: true),
+      killSwitch: JsonX.boolean(json['killSwitch'], fallback: false),
       startWithWindows: JsonX.boolean(json['startWithWindows']),
       minimizeToTray: JsonX.boolean(json['minimizeToTray'], fallback: true),
       closeToTray: JsonX.boolean(json['closeToTray'], fallback: true),

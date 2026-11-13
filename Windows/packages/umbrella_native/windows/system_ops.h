@@ -5,8 +5,10 @@
 //
 // Everything the Flutter side cannot do on its own lives here: elevation,
 // process supervision for the bundled cores, ICMP/TCP latency probes, the
-// full tunnel interface counters, the firewall based kill switch and the
-// housekeeping that removes foreign proxies before we connect.
+// full tunnel interface counters and the housekeeping that removes foreign
+// proxies before we connect. There is no firewall based kill switch: the
+// hiddify windows client does not use one either, and a half applied firewall
+// policy can leave the machine without internet.
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -78,11 +80,6 @@ class SystemOps {
   bool DisableSystemProxy();
   bool SetSystemProxy(const std::string& host, int port);
   bool SystemProxyEnabled();
-
-  bool EnableKillSwitch(const std::vector<std::string>& allowed_exes,
-                        const std::string& app_name);
-  bool DisableKillSwitch(const std::string& app_name);
-  bool KillSwitchActive(const std::string& app_name);
 
   bool FlushDns();
   TunnelStats ReadTunnelStats(const std::string& adapter_hint);

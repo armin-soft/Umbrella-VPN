@@ -328,118 +328,6 @@ class NativeBridge {
   Future<bool> systemProxyEnabled() async =>
       await _invoke<bool>('systemProxyEnabled') ?? false;
 
-  static const String _killSwitchKey = r'HKCU\Software\UmbrellaVPN';
-
-  Future<bool> _run(String exe, List<String> args) async {
-    try {
-      final ProcessResult result = await Process.run(exe, args, runInShell: false);
-      return result.exitCode == 0;
-    } on Object {
-      return false;
-    }
-  }
-
-  /// کیل سوییچ با همان دستورهای netsh، ولی ناهمگام؛ نسخه بومی هر دستور را تا
-  /// ۱۵ ثانیه منتظر می ماند و رابط را قفل می کرد.
-  Future<bool> _dartKillSwitch({
-    required List<String> allowedExes,
-    required String appName,
-    required bool enabled,
-  }) async {
-    final String prefix = 'Umbrella-$appName-KS';
-    const List<String> suffixes = <String>[
-      'loopback',
-      'subnet',
-      'app',
-      'core0',
-      'core1',
-      'core2',
-      'core3',
-      'core4',
-      'core5',
-    ];
-    for (final String suffix in suffixes) {
-      await _run('netsh', <String>[
-        'advfirewall',
-        'firewall',
-        'delete',
-        'rule',
-        'name=$prefix-$suffix',
-      ]);
-    }
-    if (!enabled) {
-      await _run('netsh', <String>[
-        'advfirewall',
-        'set',
-        'allprofiles',
-        'firewallpolicy',
-        'blockinbound,allowoutbound',
-      ]);
-      await _reg(<String>[
-        'delete', _killSwitchKey, '/v', 'KillSwitchActive', '/f',
-      ]);
-      return true;
-    }
-    Future<void> allow(String suffix, {String program = '', String extra = ''}) async {
-      final List<String> args = <String>[
-        'advfirewall', 'firewall', 'add', 'rule',
-        'name=$prefix-$suffix', 'dir=out', 'action=allow',
-      ];
-      if (program.isNotEmpty) {
-        args.add('program="$program"');
-      }
-      if (extra.isNotEmpty) {
-        args.add(extra);
-      }
-      args.addAll(<String>['profile=any', 'enable=yes']);
-      await _run('netsh', args);
-    }
-
-    // اول قاعده های مجاز، بعد مسدود کردن خروجی؛ وگرنه اگر ساخت قاعده ها شکست
-    // بخورد کاربر بدون اینترنت می ماند.
-    await allow('loopback', extra: 'remoteip=127.0.0.1');
-    await allow('subnet', extra: 'remoteip=localsubnet');
-    await allow('app', program: await exePath());
-    for (int index = 0; index < allowedExes.length && index < 6; index++) {
-      await allow('core$index', program: allowedExes[index]);
-    }
-    final bool blocked = await _run('netsh', <String>[
-      'advfirewall', 'set', 'allprofiles', 'firewallpolicy',
-      'blockinbound,blockoutbound',
-    ]);
-    if (!blocked) {
-      await _dartKillSwitch(allowedExes: const <String>[], appName: appName, enabled: false);
-      return false;
-    }
-    await _reg(<String>[
-      'add', _killSwitchKey, '/v', 'KillSwitchActive', '/t', 'REG_SZ',
-      '/d', '1', '/f',
-    ]);
-    return true;
-  }
-
-  Future<bool> enableKillSwitch({
-    required List<String> allowedExes,
-    String appName = 'Umbrella',
-  }) =>
-      _dartKillSwitch(allowedExes: allowedExes, appName: appName, enabled: true);
-
-  Future<bool> disableKillSwitch({String appName = 'Umbrella'}) =>
-      _dartKillSwitch(allowedExes: const <String>[], appName: appName, enabled: false);
-
-  Future<bool> killSwitchActive({String appName = 'Umbrella'}) async {
-    try {
-      final ProcessResult result = await Process.run(
-        'reg',
-        <String>['query', _killSwitchKey, '/v', 'KillSwitchActive'],
-        runInShell: false,
-      );
-      return result.exitCode == 0 && '${result.stdout}'.contains('1');
-    } on Object {
-      return false;
-    }
-  }
-
   Future<bool> flushDns() => _run('ipconfig', <String>['/flushdns']);
 
   Future<TunnelStats> tunnelStats({String hint = 'sing-box'}) async {
@@ -487,9 +375,8 @@ class NativeBridge {
 
   Future<bool> restoreNetworkDefaults() async {
     final bool proxy = await disableSystemProxy();
-    final bool kill = await disableKillSwitch();
     await flushDns();
-    return proxy && kill;
+    return proxy;
   }
 
   Future<bool> trayInit() async => await _invoke<bool>('trayInit') ?? false;

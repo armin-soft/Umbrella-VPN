@@ -27,8 +27,6 @@ namespace {
 
 constexpr wchar_t kRunKey[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t kKillSwitchKey[] = L"Software\\UmbrellaVPN";
-constexpr wchar_t kKillSwitchValue[] = L"KillSwitchActive";
 
 std::string ToUtf8(const std::wstring& value) {
   if (value.empty()) return std::string();
@@ -634,72 +632,6 @@ bool SystemOps::SetSystemProxy(const std::string& host, int port) {
   InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
   InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
   return true;
-}
-
-bool SystemOps::EnableKillSwitch(const std::vector<std::string>& allowed_exes,
-                                const std::string& app_name) {
-  // Windows Firewall lets block rules win over allow rules, so a «block all»
-  // rule plus allow rules would kill every packet. The kill switch therefore
-  // flips the outbound default action to block and then re-allows only what
-  // the tunnel needs.
-  std::string prefix = "Umbrella-" + app_name + "-KS";
-  DisableKillSwitch(app_name);
-
-  auto add_rule = [&](const std::string& suffix, const std::string& program,
-                      const std::string& extra) {
-    std::string command = "netsh advfirewall firewall add rule name=\"" +
-                          prefix + "-" + suffix + "\" dir=out action=allow";
-    if (!program.empty()) {
-      command += " program=" + Quote(program);
-    }
-    if (!extra.empty()) command += " " + extra;
-    command += " profile=any enable=yes";
-    return RunAndWait(ToWide(command));
-  };
-
-  // اول قاعده های مجاز ساخته می شوند و بعد خروجی پیش فرض مسدود می شود؛
-  // وگرنه اگر ساخت قاعده ها شکست بخورد کاربر بی اینترنت می ماند.
-  add_rule("loopback", "", "remoteip=127.0.0.1");
-  add_rule("subnet", "", "remoteip=localsubnet");
-  add_rule("app", ExecutablePath(), "");
-  for (size_t index = 0; index < allowed_exes.size(); ++index) {
-    add_rule("core" + std::to_string(index), allowed_exes[index], "");
-  }
-
-  if (!RunAndWait(L"netsh advfirewall set allprofiles firewallpolicy "
-                  L"blockinbound,blockoutbound")) {
-    // مسدودسازی انجام نشد؛ همه چیز به حالت عادی برمی گردد.
-    DisableKillSwitch(app_name);
-    return false;
-  }
-
-  WriteRegistryString(HKEY_CURRENT_USER, kKillSwitchKey, kKillSwitchValue,
-                      L"1");
-  return true;
-}
-
-bool SystemOps::DisableKillSwitch(const std::string& app_name) {
-  std::string prefix = "Umbrella-" + app_name + "-KS";
-  for (const char* suffix :
-       {"loopback", "subnet", "app", "core0", "core1", "core2", "core3",
-        "core4", "core5"}) {
-    std::string command = "netsh advfirewall firewall delete rule name=\"" +
-                          prefix + "-" + suffix + "\"";
-    RunAndWait(ToWide(command));
-  }
-  RunAndWait(L"netsh advfirewall set allprofiles firewallpolicy "
-             L"blockinbound,allowoutbound");
-  DeleteRegistryValue(HKEY_CURRENT_USER, kKillSwitchKey, kKillSwitchValue);
-  return true;
-}
-
-bool SystemOps::KillSwitchActive(const std::string& app_name) {
-  std::wstring value;
-  if (ReadRegistryString(HKEY_CURRENT_USER, kKillSwitchKey, kKillSwitchValue,
-                         &value)) {
-    return value == L"1";
-  }
-  return false;
 }
 
 bool SystemOps::FlushDns() {

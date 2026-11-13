@@ -322,12 +322,6 @@ class _ConnectPageState extends State<ConnectPage> {
                         icon: Icons.dns_outlined,
                         color: colors.textSecondary,
                       ),
-                    if (vpn.killSwitchOn)
-                      Pill(
-                        label: 'کیل سوییچ فعال',
-                        icon: Icons.gpp_good_rounded,
-                        color: colors.success,
-                      ),
                     if (connected && vpn.tunnelVerified)
                       Pill(
                         label: 'تونل تایید شد',

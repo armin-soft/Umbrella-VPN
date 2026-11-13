@@ -109,20 +109,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: <Widget>[
                           SectionHeader(
                             title: 'اتصال و امنیت',
-                            subtitle: 'کیل سوییچ و رفتار برنامه در زمان اتصال',
+                            subtitle: 'رفتار برنامه در زمان اتصال',
                           ),
                           const SizedBox(height: 12),
-                          ToggleRow(
-                            icon: Icons.gpp_good_rounded,
-                            title: 'کیل سوییچ',
-                            subtitle: 'با قطع تونل، ترافیک دستگاه مسدود می شود',
-                            value: current.killSwitch,
-                            onChanged: (bool value) async {
-                              await settings.setKillSwitch(value);
-                              await vpn.rebuildKillSwitch();
-                            },
-                            accent: colors.success,
-                          ),
                           ToggleRow(
                             icon: Icons.swap_horiz_rounded,
                             title: 'جابه جایی خودکار سرور',

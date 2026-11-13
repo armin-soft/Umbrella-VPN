@@ -235,13 +235,13 @@ class VpnController extends ChangeNotifier {
   DateTime? _connectedAt;
   DateTime? get connectedAt => _connectedAt;
 
-  bool _killSwitchOn = false;
   int _proxyPort = 0;
   final Map<String, Process> _coreProcesses = <String, Process>{};
 
   /// اگر آخرین ساخت پیکربندی به خاطر نبود فایل هسته شکست خورده باشد.
   bool _lastPlanNeedsCore = false;
-  bool get killSwitchOn => _killSwitchOn;
+  /// کیل سوییچ مانند نسخه ویندوز هیدیفای وجود ندارد؛ همیشه خاموش است.
+  bool get killSwitchOn => false;
 
   int _pingProgressDone = 0;
   int _pingProgressTotal = 0;
@@ -269,11 +269,8 @@ class VpnController extends ChangeNotifier {
     _realIp = await _ip.fetchIp(force: true);
     _geo = _ip.last;
     if (_device.elevated && _native.available) {
-      final bool active = await _native.killSwitchActive();
-      if (active) {
-        // اگر اجرای قبلی نیمه کاره بسته شده باشد، شبکه به حالت عادی برمی گردد.
-        await _native.restoreNetworkDefaults();
-      }
+      // پروکسی سیستم از اجرای قبلی پاک می شود.
+      await _native.restoreNetworkDefaults();
     }
     await _loadCachedNodes();
     final String last = _settings.lastNodeId;
@@ -570,10 +567,6 @@ class VpnController extends ChangeNotifier {
     if (!started) {
       await _stopCores();
       await _disableProxy();
-      if (_killSwitchOn) {
-        await _native.disableKillSwitch();
-        _killSwitchOn = false;
-      }
       return _AttemptResult(
         message: 'اجرای هسته اتصال ناموفق بود؛ جزئیات در گزارش ها ثبت شد.',
       );
@@ -592,10 +585,6 @@ class VpnController extends ChangeNotifier {
       );
       await _stopCores();
       await _disableProxy();
-      if (_killSwitchOn) {
-        await _native.disableKillSwitch();
-        _killSwitchOn = false;
-      }
       return const _AttemptResult(
         message: 'تونل بالا نیامد؛ سرور دیگری امتحان می شود.',
       );
@@ -603,12 +592,6 @@ class VpnController extends ChangeNotifier {
     if (plan.usesSystemProxy) {
       await _enableProxy(plan);
     }
-    // کیل سوییچ بعد از برقراری اتصال روشن می شود تا اگر تنظیم فایروال نیمه
-    // کاره ماند، کاربر وسط اتصال بی اینترنت نشود.
-    if (_settings.killSwitch) {
-      await _enableKillSwitch(plan);
-    }
-
     _connectedAt = DateTime.now();
     _healthFailures = 0;
     _reconnectAttempts = 0;
@@ -1098,10 +1081,6 @@ class VpnController extends ChangeNotifier {
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
     await _disableProxy();
-    if (_settings.killSwitch) {
-      await _native.disableKillSwitch();
-      _killSwitchOn = false;
-    }
     await Future<void>.delayed(const Duration(seconds: 2));
     _status = VpnStatus.disconnected;
     final ConnectOutcome outcome = await connect();
@@ -1136,10 +1115,6 @@ class VpnController extends ChangeNotifier {
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
     await _stopCores();
     await _disableProxy();
-    if (_killSwitchOn) {
-      await _native.disableKillSwitch();
-      _killSwitchOn = false;
-    }
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
@@ -1178,27 +1153,9 @@ class VpnController extends ChangeNotifier {
     _runningBinaries.clear();
   }
 
-  Future<void> _enableKillSwitch(LaunchPlan plan) async {
-    final List<String> allowed = <String>[
-      ...plan.cores.map((CoreLaunch core) => core.exe),
-      await _native.exePath(),
-    ].where((String path) => path.isNotEmpty).toList();
-    final bool ok = await _native.enableKillSwitch(allowedExes: allowed);
-    _killSwitchOn = ok;
-    if (ok) {
-      _log.add('کیل سوییچ روشن شد: فقط ترافیک تونل اجازه عبور دارد.');
-    } else {
-      _log.add('روشن کردن کیل سوییچ ناموفق بود.', level: 'warning');
-    }
-  }
-
   Future<void> _failAndCleanup(String reason) async {
     await _stopCores();
     await _disableProxy();
-    if (_killSwitchOn) {
-      await _native.disableKillSwitch();
-      _killSwitchOn = false;
-    }
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
@@ -1216,28 +1173,9 @@ class VpnController extends ChangeNotifier {
     _log.add(reason, level: 'error');
   }
 
-  Future<void> rebuildKillSwitch() async {
-    if (!_killSwitchOn) {
-      return;
-    }
-    await _native.disableKillSwitch();
-    _killSwitchOn = false;
-    if (_settings.killSwitch) {
-      final VpnNode? node = _activeNode;
-      if (node == null) {
-        return;
-      }
-      final LaunchPlan? plan = await _buildPlan(node);
-      if (plan != null) {
-        await _enableKillSwitch(plan);
-      }
-    }
-  }
-
   Future<void> restoreNetwork() async {
     await _native.restoreNetworkDefaults();
     _proxyPort = 0;
-    _killSwitchOn = false;
     _log.add('تنظیمات شبکه به حالت پیش فرض بازگشت.', level: 'warning');
     _notify();
   }
