@@ -20,12 +20,10 @@ class PingService {
     int tcpBest = -1;
 
     for (int attempt = 0; attempt < attempts; attempt++) {
-      final List<int> results = await Future.wait<int>(<Future<int>>[
-        _native.ping(node.host, timeoutMs: 1400),
-        _native.tcpPing(node.host, node.port, timeoutMs: 1400),
-      ]);
-      final int icmp = results[0];
-      final int tcp = results[1];
+      // اول اتصال TCP به پورت خود سرور؛ سریع تر است و همان مسیری را می سنجد
+      // که تونل استفاده می کند. فقط اگر بسته شد، پینگ ICMP هم امتحان می شود.
+      final int tcp = await _native.tcpPing(node.host, node.port, timeoutMs: 1200);
+      final int icmp = tcp >= 0 ? -1 : await _native.ping(node.host, timeoutMs: 1200);
       if (icmp >= 0) {
         icmpBest = icmpBest < 0 ? icmp : math.min(icmpBest, icmp);
       }
