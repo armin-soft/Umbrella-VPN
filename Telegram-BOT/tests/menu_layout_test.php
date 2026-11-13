@@ -29,9 +29,22 @@ if (!function_exists('mb_substr')) {
 eval('function mb_substr(string $Text, int $Start, ?int $Length = null): string { $Chars = preg_split("//u", $Text, -1, PREG_SPLIT_NO_EMPTY) ?: []; $Slice = $Length === null ? array_slice($Chars, $Start) : array_slice($Chars, $Start, $Length); return implode("", $Slice); }');
 }
 
-require_once dirname(__DIR__) . '/Core/Support/Helper.php';
-require_once dirname(__DIR__) . '/Core/Telegram/Telegram.php';
 require_once dirname(__DIR__) . '/Bot/Menu.php';
+
+/**
+ * همان کاری که TelegramClient::inlineKeyboard می کند، بدون بارگذاری کلاینت
+ * تلگرام در این آزمون: ردیف های خالی حذف و کیبورد در پوشش استاندارد پیچیده
+ * می شود.
+ */
+function test_keyboard(array $Rows): array {
+$Clean = [];
+
+foreach ($Rows as $Row) {
+if (is_array($Row) && $Row !== []) $Clean[] = $Row;
+}
+
+return ['inline_keyboard' => $Clean];
+}
 
 final class MenuLayoutTest {
 private int $Passed = 0;
@@ -173,17 +186,17 @@ $Nav_Only = [
 ];
 
 foreach ($Nav_Only as $Name => $Rows) {
-$Markup = TelegramClient::inlineKeyboard($Rows);
+$Markup = test_keyboard($Rows);
 $this->check(Menu::isNavigationOnly($Markup), $Name . ': a navigation-only keyboard is detected');
 }
 
-$With_Choice = TelegramClient::inlineKeyboard(array_merge(
+$With_Choice = test_keyboard(array_merge(
 Menu::rows([['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']]),
 [Menu::adminHome()]
 ));
 
 $this->check(!Menu::isNavigationOnly($With_Choice), 'a keyboard with a real action is not navigation-only');
-$this->check(!Menu::isNavigationOnly(TelegramClient::inlineKeyboard([Menu::link('🎧پشتیبانی', 'https://t.me/x')])), 'a link button counts as an action');
+$this->check(!Menu::isNavigationOnly(test_keyboard([Menu::link('🎧پشتیبانی', 'https://t.me/x')])), 'a link button counts as an action');
 $this->check(!Menu::isNavigationOnly([]), 'an empty keyboard is not navigation-only');
 }
 

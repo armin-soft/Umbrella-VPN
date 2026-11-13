@@ -197,6 +197,20 @@ return $Seen > 0;
 }
 
 /**
+ * حذف جمله پایانی «👌جهت استفاده از امکانات …» همراه با خط جداکننده بالای آن.
+ *
+ * همان قاعده ای که TelegramClient پیش از ارسال اجرا می کند؛ اینجا گذاشته شده تا
+ * آزمون ها بدون نیاز به کلاینت تلگرام همان رفتار را بسنجند.
+ */
+public static function stripFooter(string $Text): string {
+$Stripped = (string)preg_replace('/\n*[➖—\-]{3,}\s*\n+\s*👌\s*جهت استفاده از امکانات[^\n]*/u', '', $Text);
+$Stripped = (string)preg_replace('/\n*(?:[➖—\-]{3,}\s*)+$/u', '', $Stripped);
+$Stripped = rtrim($Stripped, " \t\n*");
+
+return $Stripped === '' ? $Text : $Stripped;
+}
+
+/**
  * بررسی سلامت یک کیبورد پیش از ارسال.
  *
  * هر خطا یک رشته فارسی است؛ آرایه خالی یعنی دکمه ها سالم اند. متن خالی، متن

@@ -186,13 +186,12 @@ return self::stripFooter($Text);
 }
 
 /**
- * حذف جمله پایانی «👌جهت استفاده …» همراه با خط جداکننده بالای آن.
+ * حذف جمله پایانی «👌جهت استفاده …» همراه با خط جداکننده بالای آن (قاعده در Menu).
  */
 private static function stripFooter(string $Text): string {
-$Stripped = (string)preg_replace('/\n*[➖—\-]{3,}\s*\n+\s*👌\s*جهت استفاده از امکانات[^\n]*/u', '', $Text);
-$Stripped = (string)preg_replace('/\n*(?:[➖—\-]{3,}\s*)+$/u', '', $Stripped);
-$Stripped = rtrim($Stripped, " \t\n*");
-return $Stripped === '' ? $Text : $Stripped;
+if (!class_exists('Menu', false)) return $Text;
+
+return Menu::stripFooter($Text);
 }
 
 /**
