@@ -49,7 +49,7 @@ void main() {
         "enable": true
       }
       ''');
-      final PanelClient panel = PanelClient(client: client);
+      final PanelUserApi panel = PanelUserApi(client: client);
       final Account? account = await panel.user('1111');
 
       expect(account, isNotNull);
@@ -71,7 +71,7 @@ void main() {
       {"uuid":"a","name":"x","usageLimit":10,"currentUsage":2.5}
       ''');
       final Account? account =
-          await PanelClient(client: client).user('a');
+          await PanelUserApi(client: client).user('a');
       expect(account!.usageLimitGb, 10);
       expect(account.currentUsageGb, 2.5);
       expect(account.remainingGb, 7.5);
@@ -80,9 +80,9 @@ void main() {
     test('پاسخ ناموفق یا خالی باعث خطا نمی شود', () async {
       final _FakeClient failing =
           _FakeClient('{"detail":"not found"}', status: 404);
-      expect(await PanelClient(client: failing).user('a'), isNull);
+      expect(await PanelUserApi(client: failing).user('a'), isNull);
       final _FakeClient broken = _FakeClient('<html>error</html>');
-      expect(await PanelClient(client: broken).user('a'), isNull);
+      expect(await PanelUserApi(client: broken).user('a'), isNull);
     });
   });
 

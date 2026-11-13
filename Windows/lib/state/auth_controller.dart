@@ -457,7 +457,7 @@ class AuthController extends ChangeNotifier {
     if (uuid.isEmpty) {
       return false;
     }
-    final Account? panel = await PanelClient().user(uuid);
+    final Account? panel = await PanelUserApi().user(uuid);
     if (panel == null) {
       return false;
     }

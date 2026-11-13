@@ -10,8 +10,8 @@ import '../models/models.dart';
 ///
 /// همین داده ای است که پنل نمایش می دهد (مصرف، حجم کل، تاریخ انقضا و وضعیت)؛
 /// پس اعداد صفحه «حساب من» با پنل یکی می شود.
-class PanelClient {
-  PanelClient({http.Client? client}) : _client = client ?? http.Client();
+class PanelUserApi {
+  PanelUserApi({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -44,11 +44,19 @@ class PanelClient {
       if (response.statusCode != 200) {
         return null;
       }
-      final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      final Object? decoded = jsonDecode(
+        utf8.decode(response.bodyBytes, allowMalformed: true),
+      );
       if (decoded is! Map<String, dynamic>) {
         return null;
       }
-      return _parse(decoded);
+      // بعضی نسخه های پنل پاسخ را داخل کلید data می گذارند.
+      final Map<String, dynamic> body =
+          decoded['data'] is Map ? JsonX.asMap(decoded['data']) : decoded;
+      if (body.isEmpty) {
+        return null;
+      }
+      return _parse(body);
     } on Exception {
       return null;
     }
