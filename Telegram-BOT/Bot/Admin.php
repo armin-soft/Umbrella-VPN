@@ -50,8 +50,16 @@ public static function menu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 $Robot_On = Common::isRobotOn();
-$Waiting_Tickets = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')");
-$Active_Users = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Is_Blocked` = 0");
+// شمارش ها نباید منوی مدیریت را بشکنند: اگر دیتابیس پاسخ نداد، صفر نشان داده می شود.
+try {
+$Waiting_Tickets = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')", [], 0);
+$Active_Users = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Is_Blocked` = 0', [], 0);
+}
+
+catch (Throwable) {
+$Waiting_Tickets = 0;
+$Active_Users = 0;
+}
 $Text = Helper::adminGreeting($Context, 'منوی مدیریت')
 . Menu::section('📊', 'وضعیت کلی', [
 '🚦وضعیت ربات: *' . ($Robot_On ? '🟢روشن' : '🔴خاموش') . '*',
