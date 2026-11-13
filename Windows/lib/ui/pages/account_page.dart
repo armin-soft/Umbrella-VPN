@@ -6,7 +6,9 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/subscription_controller.dart';
+import '../../platform/services.dart';
 import '../../state/toast_controller.dart';
+import '../../data/subscription_diagnostics.dart';
 import '../widgets/common.dart';
 
 /// حساب کاربری: پروفایل، مصرف دقیق (همان اعدادی که پنل نشان می دهد) و وضعیت
@@ -24,6 +26,8 @@ class AccountPage extends StatefulWidget {
 class _AccountPageState extends State<AccountPage> {
   bool _refreshing = false;
   bool _panelFresh = false;
+  bool _checkingLinks = false;
+  List<EndpointCheck> _linkChecks = <EndpointCheck>[];
 
   @override
   void initState() {
@@ -47,6 +51,39 @@ class _AccountPageState extends State<AccountPage> {
         toasts.info('پنل پاسخ نداد', 'همان اطلاعات سرور نمایش داده می شود.');
       }
     }
+  }
+
+  /// بررسی هر هشت نشانی اشتراک پنل (خودکار، ساده، Base64، کلش متا، سینگ
+  /// باکس، وایرگارد، آمنزیا، میرو) و نوشتن نتیجه در گزارش ها.
+  Future<void> _checkEndpoints(AuthController auth, ToastController toasts) async {
+    if (_checkingLinks) {
+      return;
+    }
+    setState(() => _checkingLinks = true);
+    final List<EndpointCheck> results =
+        await SubscriptionDiagnostics().checkAll(
+      subscriptionUrl: auth.account.subscriptionUrl,
+      accountBase: auth.account.accountBase,
+      uuid: auth.account.uuid,
+    );
+    final int working = results.where((EndpointCheck item) => item.ok).length;
+    for (final EndpointCheck item in results) {
+      AppLogger.instance.add(
+        'بررسی اشتراک | ${item.line}',
+        level: item.ok ? 'info' : 'warning',
+      );
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _checkingLinks = false;
+      _linkChecks = results;
+    });
+    toasts.success(
+      'بررسی نشانی های اشتراک',
+      '${Fa.num(working)} از ${Fa.num(results.length)} نشانی سرور داد.',
+    );
   }
 
   Future<void> _refreshFromServer(
@@ -402,6 +439,58 @@ class _AccountPageState extends State<AccountPage> {
                                 : account.telegramId,
                           ),
                           const SizedBox(height: 14),
+                          OutlinedButton.icon(
+                            onPressed: _checkingLinks
+                                ? null
+                                : () => _checkEndpoints(auth, toasts),
+                            icon: _checkingLinks
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.fact_check_rounded, size: 18),
+                            label: const Text('بررسی نشانی های اشتراک'),
+                          ),
+                          if (_linkChecks.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 8),
+                            for (final EndpointCheck item in _linkChecks)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  children: <Widget>[
+                                    Icon(
+                                      item.ok
+                                          ? Icons.check_circle_rounded
+                                          : Icons.error_outline_rounded,
+                                      size: 15,
+                                      color: item.ok
+                                          ? colors.success
+                                          : colors.textSecondary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        Fa.num(item.line),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: item.ok
+                                                  ? colors.textPrimary
+                                                  : colors.textSecondary,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                          const SizedBox(height: 6),
                           OutlinedButton.icon(
                             onPressed: () => _loadPanel(false),
                             icon: const Icon(Icons.refresh_rounded, size: 18),

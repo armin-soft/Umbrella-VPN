@@ -19,32 +19,54 @@ class SubscriptionEndpoints {
   const SubscriptionEndpoints._();
 
   static const List<String> paths = <String>[
+    // «خودکار»: پنل خودش قالب مناسب را می دهد.
+    'sub/',
     'all.txt',
+    'sub64/',
     'clash/meta/all.yml',
-    'wireguard/?asn=unknown',
-    'amnezia/?asn=unknown',
-    'mieru/?asn=unknown',
+    'full-singbox.json',
+    'wireguard',
+    'amnezia',
+    'mieru',
   ];
 
+  /// مسیرهای جایگزین هر قالب؛ پنل های مختلف یکی از این ها را دارند.
+  static const Map<String, List<String>> alternates = <String, List<String>>{
+    'clash': <String>['clash/meta/all.yml', 'mihomo/all.yml'],
+    'wireguard': <String>['wireguard', 'wireguard/', 'wireguard/?asn=unknown'],
+    'amnezia': <String>['amnezia', 'amnezia/', 'amnezia/?asn=unknown'],
+    'mieru': <String>['mieru', 'mieru/', 'mieru/?asn=unknown'],
+  };
+
+  /// قالب هر مسیر، دقیقا هم ترتیب با [paths].
   static const List<SubscriptionFormat> formats = <SubscriptionFormat>[
-    SubscriptionFormat.xray,
+    SubscriptionFormat.xray, // sub/  (خودکار)
+    SubscriptionFormat.xray, // all.txt
+    SubscriptionFormat.xray, // sub64/
     SubscriptionFormat.clash,
+    SubscriptionFormat.clash, // full-singbox.json
     SubscriptionFormat.wireguard,
     SubscriptionFormat.amnezia,
     SubscriptionFormat.mieru,
   ];
 
   static const List<String> titles = <String>[
-    'ایکس ری',
+    'خودکار',
+    'فهرست ساده',
+    'فهرست Base 64',
     'کلش متا',
+    'سینگ باکس',
     'وایرگارد',
     'آمنزیا',
     'میرو',
   ];
 
   static const List<String> icons = <String>[
+    'auto',
     'bolt',
+    'code',
     'grid',
+    'box',
     'shield',
     'lock',
     'route',
@@ -135,10 +157,10 @@ class SubscriptionEndpoints {
         ),
       ];
     }
-    return <SubscriptionSource>[
+    final List<SubscriptionSource> sources = <SubscriptionSource>[
       for (int index = 0; index < paths.length; index++)
         SubscriptionSource(
-          id: 'user-${formats[index].name}',
+          id: 'user-${_slug(paths[index])}',
           title: titles[index],
           url: '$base$uuid/${paths[index]}',
           format: formats[index],
@@ -146,9 +168,43 @@ class SubscriptionEndpoints {
           personal: true,
         ),
     ];
+    // مسیرهای جایگزین هر قالب (پنل های مختلف یکی را دارند) به عنوان منبع
+    // پشتیبان اضافه می شوند؛ فقط اگر مسیر اصلی جواب ندهد استفاده می شوند.
+    alternates.forEach((String format, List<String> candidates) {
+      final SubscriptionFormat kind = format == 'clash'
+          ? SubscriptionFormat.clash
+          : (format == 'wireguard'
+              ? SubscriptionFormat.wireguard
+              : (format == 'amnezia'
+                  ? SubscriptionFormat.amnezia
+                  : SubscriptionFormat.mieru));
+      for (final String path in candidates) {
+        if (paths.contains(path)) {
+          continue;
+        }
+        sources.add(
+          SubscriptionSource(
+            id: 'user-${_slug(path)}',
+            title: '${titles[formats.indexOf(kind)]} (مسیر جایگزین)',
+            url: '$base$uuid/$path',
+            format: kind,
+            icon: icons[formats.indexOf(kind)],
+            personal: true,
+          ),
+        );
+      }
+    });
+    return sources;
   }
+
+  /// شناسه کوتاه و پایدار برای هر مسیر.
+  static String _slug(String path) => path
+      .replaceAll('/', '-')
+      .replaceAll('?', '-')
+      .replaceAll('=', '-')
+      .replaceAll(RegExp(r'-+$'), '');
 
   /// آیا این نشانی از سرور آمده و کامل است (برای نمایش در گزارش ها).
   static bool isComplete(List<SubscriptionSource> sources) =>
-      sources.length == paths.length;
+      sources.length >= paths.length;
 }

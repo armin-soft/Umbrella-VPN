@@ -43,6 +43,14 @@ class SubscriptionParser {
       case SubscriptionFormat.xray:
         return _parseXray(trimmed, source.id);
       case SubscriptionFormat.clash:
+        // فایل کلش YAML است و full-singbox.json / mihomo هم JSON؛ هر سه با
+        // یک تشخیص خوانده می شوند.
+        if (trimmed.startsWith('{')) {
+          final ParseReport singbox = parseSingBox(trimmed, source.id);
+          if (singbox.nodes.isNotEmpty) {
+            return singbox;
+          }
+        }
         return _parseClash(trimmed, source.id);
       case SubscriptionFormat.wireguard:
         return _parseWireguard(trimmed, source.id);
@@ -66,6 +74,7 @@ class SubscriptionParser {
     }
     final List<ParseReport> attempts = <ParseReport>[
       _parseXray(trimmed, sourceId),
+      parseSingBox(trimmed, sourceId),
       _parseClash(trimmed, sourceId),
       _parseWireguard(trimmed, sourceId),
       _parseMieru(trimmed, sourceId),
@@ -397,6 +406,153 @@ class SubscriptionParser {
   }
 
   // ── کلش متا ────────────────────────────────────────────────────────
+
+  /// خواندن فایل سینگ باکس (`full-singbox.json`).
+  ///
+  /// این فایل همان کلیدهای `outbounds` (و گاهی `endpoints`) را دارد؛ هر خروجی
+  /// با `server` معتبر به یک سرور تبدیل می شود و بقیه (direct/block/dns)
+  /// کنار گذاشته می شوند.
+  static ParseReport parseSingBox(String body, String sourceId) {
+    final ParseReport report = ParseReport(sourceId: sourceId);
+    final Object? root = _tryJson(body.trim());
+    if (root is! Map) {
+      report.problems.add('فایل سینگ باکس خوانا نبود.');
+      return report;
+    }
+    final List<Object?> entries = <Object?>[
+      ...JsonX.asList(root['outbounds']),
+      ...JsonX.asList(root['endpoints']),
+      ...JsonX.asList(root['proxies']),
+    ];
+    int index = 0;
+    for (final Object? item in entries) {
+      if (item is! Map) {
+        continue;
+      }
+      final Map<String, dynamic> raw = JsonX.asMap(item);
+      final String type = JsonX.text(raw['type']).toLowerCase();
+      final String server = JsonX.text(raw['server'] ?? raw['address']);
+      if (server.isEmpty) {
+        continue;
+      }
+      if (type == 'direct' ||
+          type == 'block' ||
+          type == 'dns' ||
+          type == 'selector' ||
+          type == 'urltest') {
+        continue;
+      }
+      index++;
+      // همان خواننده کلش، چون نام کلیدها یکی است.
+      final Map<String, dynamic> proxy = <String, dynamic>{
+        ...raw,
+        'name': JsonX.text(raw['tag'], 'سینگ باکس ${Fa.num(index)}'),
+        'server': server,
+        'port': JsonX.integer(raw['server_port'] ?? raw['port']),
+        'uuid': JsonX.text(raw['uuid']),
+        'password': JsonX.text(raw['password']),
+      };
+      final ParseReport one =
+          _parseProxyMap(proxy, sourceId, index);
+      report.merge(one);
+    }
+    if (report.nodes.isEmpty && report.problems.isEmpty) {
+      report.problems.add('هیچ سروری در فایل سینگ باکس نبود.');
+    }
+    return report;
+  }
+
+  /// یک خروجی سینگ باکس را به سرور تبدیل می کند (همان قواعد کلش).
+  static ParseReport _parseProxyMap(
+    Map<String, dynamic> proxy,
+    String sourceId,
+    int index,
+  ) {
+    final ParseReport report = ParseReport(sourceId: sourceId);
+    final String type = JsonX.text(proxy['type']).toLowerCase();
+    final NodeProtocol? protocol = _protocolFromClash(type);
+    if (protocol == null) {
+      report.problems.add('نوع ${Fa.num(type)} پشتیبانی نمی شود.');
+      return report;
+    }
+    final String host = JsonX.text(proxy['server']);
+    final int port = JsonX.integer(proxy['port']);
+    if (host.isEmpty || port <= 0) {
+      return report;
+    }
+    final Map<String, dynamic> params = <String, dynamic>{
+      for (final MapEntry<String, dynamic> entry in proxy.entries)
+        entry.key: entry.value is Map || entry.value is List
+            ? jsonEncode(entry.value)
+            : entry.value,
+    };
+    final String id = JsonX.text(proxy['uuid'] ?? proxy['id']);
+    if (id.isNotEmpty) {
+      params['id'] = id;
+    }
+    final String cipher = JsonX.text(proxy['cipher'] ?? proxy['method']);
+    if (cipher.isNotEmpty) {
+      params['method'] = cipher;
+    }
+    final String sni =
+        JsonX.text(proxy['servername'] ?? proxy['sni'] ?? proxy['server_name']);
+    if (sni.isNotEmpty) {
+      params['sni'] = sni;
+    }
+    final String password = JsonX.text(proxy['password']);
+    if (password.isNotEmpty) {
+      params['password'] = password;
+    }
+    final String security = JsonX.text(proxy['security']);
+    if (security.isNotEmpty) {
+      params['security'] = security;
+    }
+    if (proxy['tls'] is Map) {
+      final Map<String, dynamic> tls = JsonX.asMap(proxy['tls']);
+      if (JsonX.boolean(tls['enabled'])) {
+        params['security'] = params['security'] ?? 'tls';
+        final String name = JsonX.text(tls['server_name']);
+        if (name.isNotEmpty) {
+          params['sni'] = name;
+        }
+        if (JsonX.boolean(tls['insecure'])) {
+          params['allowInsecure'] = true;
+        }
+      }
+    }
+    if (proxy['transport'] is Map) {
+      final Map<String, dynamic> transport = JsonX.asMap(proxy['transport']);
+      params['network'] = JsonX.text(transport['type']);
+      final String path = JsonX.text(transport['path']);
+      if (path.isNotEmpty) {
+        params['path'] = path;
+      }
+      final String service = JsonX.text(transport['service_name']);
+      if (service.isNotEmpty) {
+        params['serviceName'] = service;
+      }
+      if (transport['headers'] is Map) {
+        params['host'] =
+            JsonX.text(JsonX.asMap(transport['headers'])['Host']);
+      }
+    }
+    report.nodes.add(
+      VpnNode(
+        id: stableId('$sourceId|singbox|${JsonX.text(proxy['tag'])}|$host|$port'),
+        name: JsonX.text(
+          proxy['tag'] ?? proxy['name'],
+          '${protocol.label} ${Fa.num(index)}',
+        ),
+        protocol: protocol,
+        host: host,
+        port: port,
+        sourceId: sourceId,
+        params: params,
+        raw: jsonEncode(proxy),
+      ),
+    );
+    return report;
+  }
 
   static ParseReport _parseClash(String body, String sourceId) {
     final ParseReport report = ParseReport(sourceId: sourceId);

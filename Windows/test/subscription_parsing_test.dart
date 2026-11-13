@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 /// آزمون خواندن اشتراکی که سرور می دهد: قالب از روی خود پاسخ تشخیص داده
 /// می شود و هیچ نشانی از کاربر گرفته نمی شود.
@@ -128,5 +129,84 @@ proxies:
 
     expect(report.nodes, isEmpty);
     expect(report.problems, isNotEmpty);
+  });
+
+  group('فایل سینگ باکس (full-singbox.json)', () {
+    const String singbox = """
+    {
+      "outbounds": [
+        {"type": "selector", "tag": "select", "outbounds": ["proxy"]},
+        {"type": "vless", "tag": "proxy", "server": "de1.example.com",
+         "server_port": 443, "uuid": "9b9d9f5d-9841-45bf-a6b9-0479de273c11",
+         "tls": {"enabled": true, "server_name": "de1.example.com"},
+         "transport": {"type": "ws", "path": "/ws", "headers": {"Host": "de1.example.com"}}},
+        {"type": "direct", "tag": "direct"}
+      ]
+    }
+    """;
+
+    test('خروجی سینگ باکس به سرور قابل اتصال تبدیل می شود', () {
+      final ParseReport report =
+          SubscriptionParser.parseSingBox(singbox, 'user-full-singbox.json');
+      expect(report.nodes, hasLength(1));
+      final VpnNode node = report.nodes.first;
+      expect(node.host, 'de1.example.com');
+      expect(node.port, 443);
+      expect(node.protocol, NodeProtocol.vless);
+      expect(node.params['id'], '9b9d9f5d-9841-45bf-a6b9-0479de273c11');
+      expect(node.params['network'], 'ws');
+      expect(node.params['path'], '/ws');
+    });
+
+    test('direct و selector و block سرور حساب نمی شوند', () {
+      final ParseReport report = SubscriptionParser.parseSingBox(
+        '{"outbounds":[{"type":"direct","tag":"d"},{"type":"block","tag":"b"}]}',
+        'n',
+      );
+      expect(report.nodes, isEmpty);
+      expect(report.problems, isNotEmpty);
+    });
+
+    test('فایل سینگ باکس در تشخیص خودکار هم خوانده می شود', () {
+      final ParseReport report =
+          SubscriptionParser.parseAuto(singbox, 'user-full-singbox.json');
+      expect(report.nodes, hasLength(1));
+    });
+  });
+
+  group('فایل های مستقیم پنل', () {
+    test('فهرست Base64 همان لینک های استاندارد را می دهد', () {
+      const String line =
+          'vless://9b9d9f5d-9841-45bf-a6b9-0479de273c11@ca1.example.com:443'
+          '?security=tls&sni=ca1.example.com&type=ws&path=%2Fws#Canada';
+      final String encoded = base64Encode(utf8.encode(line));
+      final ParseReport report =
+          SubscriptionParser.parseAuto(encoded, 'user-sub64-');
+      expect(report.nodes, hasLength(1));
+      expect(report.nodes.first.host, 'ca1.example.com');
+    });
+
+    test('فایل وایرگارد مستقیم (بدون پرس وجو) خوانده می شود', () {
+      const String wg = """
+[Interface]
+PrivateKey = aGVsbG8=
+Address = 10.0.0.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = d29ybGQ=
+Endpoint = wg.example.com:51820
+AllowedIPs = 0.0.0.0/0
+""";
+      final ParseReport report =
+          SubscriptionParser.parseAuto(wg, 'user-wireguard');
+      expect(report.nodes, isNotEmpty);
+      final VpnNode node = report.nodes.first;
+      expect(node.protocol, NodeProtocol.wireguard);
+      expect(node.host, 'wg.example.com');
+      expect(node.port, 51820);
+      expect(node.params['publicKey'], 'd29ybGQ=');
+      expect(VpnController.usable(node), isTrue);
+    });
   });
 }

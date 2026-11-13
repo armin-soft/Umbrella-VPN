@@ -97,6 +97,17 @@ class AppConfig {
     ),
   ];
 
+  /// فایل های استاندارد حساب کاربر روی پنل (نتایج واقعی آزمایش، ۹ آبان):
+  /// sub/ خودکار، all.txt فهرست ساده، sub64/ فهرست base64،
+  /// clash/meta/all.yml کلش متا، full-singbox.json سینگ باکس،
+  /// wireguard، amnezia و mieru فایل های مستقیم.
+  /// mihomo کلاینت «کلش متا» است؛ اگر مسیر کلش خالی بود همان سینگ باکس
+  /// استفاده می شود.
+  static const List<String> mihomoPaths = <String>[
+    'clash/meta/all.yml',
+    'mihomo/all.yml',
+  ];
+
   static const String ipCheckPrimary = 'https://api.ipify.org?format=json';
   static const String ipCheckFallback = 'https://ifconfig.co/json';
   static const String ipCheckCloudflare = 'https://www.cloudflare.com/cdn-cgi/trace';

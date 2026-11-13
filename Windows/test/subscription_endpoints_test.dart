@@ -8,25 +8,51 @@ void main() {
   const String base = 'https://user.umbrella-server.ir/D6qnVQXRwa/';
   const String uuid = '9b9d9f5d-9841-45bf-a6b9-0479de273c11';
 
-  test('پنج نشانی استاندارد از پایه حساب ساخته می شود', () {
+  test('هشت نشانی واقعی پنل ساخته می شود (به ترتیب مستندات)', () {
     final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
       subscriptionUrl: '$base$uuid/sub/',
       accountBase: base,
       uuid: uuid,
     );
 
-    expect(sources, hasLength(5));
+    final List<String> urls =
+        sources.map((SubscriptionSource item) => item.url).toList();
+    // مسیرهای اصلی، همان هایی که پنل مستند کرده است.
+    expect(urls.take(8).toList(), <String>[
+      '$base$uuid/sub/',
+      '$base$uuid/all.txt',
+      '$base$uuid/sub64/',
+      '$base$uuid/clash/meta/all.yml',
+      '$base$uuid/full-singbox.json',
+      '$base$uuid/wireguard',
+      '$base$uuid/amnezia',
+      '$base$uuid/mieru',
+    ]);
+    // مسیرهای جایگزین هم پشتیبان هستند.
+    expect(urls, contains('$base$uuid/mihomo/all.yml'));
+    expect(urls, contains('$base$uuid/wireguard/?asn=unknown'));
+    expect(sources.every((SubscriptionSource item) => item.personal), isTrue);
+  });
+
+  test('عنوان هر نشانی همان نام مستند پنل است', () {
+    final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
+      subscriptionUrl: '$base$uuid/sub/',
+      accountBase: base,
+      uuid: uuid,
+    );
     expect(
-      sources.map((SubscriptionSource item) => item.url).toList(),
+      sources.take(8).map((SubscriptionSource item) => item.title).toList(),
       <String>[
-        '$base$uuid/all.txt',
-        '$base$uuid/clash/meta/all.yml',
-        '$base$uuid/wireguard/?asn=unknown',
-        '$base$uuid/amnezia/?asn=unknown',
-        '$base$uuid/mieru/?asn=unknown',
+        'خودکار',
+        'فهرست ساده',
+        'فهرست Base 64',
+        'کلش متا',
+        'سینگ باکس',
+        'وایرگارد',
+        'آمنزیا',
+        'میرو',
       ],
     );
-    expect(sources.every((SubscriptionSource item) => item.personal), isTrue);
   });
 
   test('پایه از خود نشانی اشتراک هم درست استخراج می شود', () {
@@ -36,7 +62,7 @@ void main() {
       uuid: uuid,
     );
 
-    expect(sources.first.url, '$base$uuid/all.txt');
+    expect(sources.first.url, '$base$uuid/sub/');
   });
 
   test('بدون شناسه کاربر فقط نشانی خام سرور استفاده می شود', () {
@@ -58,13 +84,12 @@ void main() {
       uuid: uuid,
     );
 
-    expect(sources, hasLength(5));
-    // آدرس نباید فقط /<شناسه>/all.txt باشد؛ مسیر پنل هم لازم است.
+    // آدرس نباید فقط /<شناسه>/sub/ باشد؛ مسیر پنل هم لازم است.
     expect(
       Uri.parse(sources.first.url).pathSegments.length,
       greaterThan(2),
     );
-    expect(sources.first.url, endsWith('/$uuid/all.txt'));
+    expect(sources.first.url, endsWith('/$uuid/sub/'));
   });
 
   test('اگر سرور هیچ نشانی ندهد پایه خود برنامه استفاده می شود', () {
@@ -77,5 +102,6 @@ void main() {
     expect(sources, isNotEmpty);
     expect(sources.first.url, contains(uuid));
     expect(Uri.parse(sources.first.url).pathSegments.length, greaterThan(2));
+    expect(sources.first.url, endsWith('/$uuid/sub/'));
   });
 }
