@@ -1996,7 +1996,8 @@ return;
 Repository::setBlocked($Target, $Block);
 $Action = $Block ? 'مسدود' : 'آزاد';
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *" . ($Block ? "⛔️" : "🔓") . "کاربر {$Name} با موفقیت {$Action} گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+$Action_Mark = $Block ? '⛔️' : '🔓';
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *{$Action_Mark}کاربر {$Name} با موفقیت {$Action} گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔙بازگشت', 'callback_data' => 'جرایم']],
 [['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
