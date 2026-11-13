@@ -16,7 +16,10 @@ class PingService {
 
   /// کمتر از این مقدار برای یک سرور واقعی ممکن نیست؛ عددهای ۰ و ۱ معمولا
   /// نتیجه واسطه گر شبکه یا خطای سنجش هستند و نباید نمایش داده شوند.
-  static const int _minRealMs = 4;
+  static const int minRealMs = 4;
+
+  /// آیا این عدد پینگ برای یک سرور واقعی معقول است؟
+  static bool plausible(int ms) => ms >= minRealMs;
 
   Future<VpnNode> measure(VpnNode node, {int attempts = 2}) async {
     final List<int> samples = <int>[];
@@ -98,8 +101,8 @@ class PingService {
   }
 
   int _best(int icmp, int tcp) {
-    final int icmpSafe = icmp >= _minRealMs ? icmp : -1;
-    final int tcpSafe = tcp >= _minRealMs ? tcp : -1;
+    final int icmpSafe = plausible(icmp) ? icmp : -1;
+    final int tcpSafe = plausible(tcp) ? tcp : -1;
     if (icmpSafe >= 0 && tcpSafe >= 0) {
       return math.min(icmpSafe, tcpSafe);
     }
