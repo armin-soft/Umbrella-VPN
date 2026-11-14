@@ -41,6 +41,9 @@ $manifest = Get-Content $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $tempDir = Join-Path $env:TEMP ("umbrella-cores-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
+# پوشه هسته پیش از هر کاری ساخته می شود تا کپی فایل ها به مسیر ناموجود نخورد.
+New-Item -ItemType Directory -Force -Path $HiddifyDir | Out-Null
+
 $failedRequired = @()
 $skipped = @()
 $fetched = @()
@@ -124,7 +127,7 @@ try {
                     $insidePath = $found.FullName
                 }
                 'tgz' {
-                    # بسته tar.gz هسته هیدیفای برای ویندوز (tar در ویندوز ۱۰ و
+                    # بسته tar.gz موتور هسته برای ویندوز (tar در ویندوز ۱۰ و
                     # ۱۱ خودش هست و ابزار بیرونی لازم نیست).
                     & tar.exe -xzf $archivePath -C $extractDir
                     if ($LASTEXITCODE -ne 0) { throw 'باز کردن بسته tar.gz ناموفق بود' }
@@ -137,16 +140,18 @@ try {
                     #                       با همین نام در همین پوشه بار می کند.
                     #   libcronet.dll     — وابسته موتور.
                     #
-                    # فایل های اجرایی هیدیفای (HiddifyCli/Admin/CoreEngine)
-                    # کنار گذاشته می شوند: آن ها با پیوند نام، کتابخانه را
-                    # صدا می زنند و همین کار باعث خطای 0xC0000135 در ۱٫۰٫۲
-                    # شد. لانچرهای آمبرلا به جایش با نام و آیکون خودمان و با
-                    # بار کردن مسیر کتابخانه ساخته می شوند.
+                    # فایل های اجرایی همراه بسته کنار گذاشته می شوند: آن ها
+                    # کتابخانه را با پیوند نام صدا می زنند و همین کار باعث خطای
+                    # 0xC0000135 در ۱٫۰٫۲ شد. لانچرهای آمبرلا به جایش با نام و
+                    # آیکون خودمان و با بار کردن مسیر کتابخانه ساخته می شوند.
                     $required = @('hiddify-core.dll', 'libcronet.dll')
                     foreach ($name in $required) {
                         $file = Get-ChildItem -Path $extractDir -Recurse -Filter $name -ErrorAction SilentlyContinue |
                             Select-Object -First 1
                         if ($null -eq $file) { throw "فایل $name در بسته هسته پیدا نشد" }
+                        if (-not (Test-Path $HiddifyDir)) {
+                            New-Item -ItemType Directory -Force -Path $HiddifyDir | Out-Null
+                        }
                         $destination = Join-Path $HiddifyDir $name
                         if ([System.IO.Path]::GetFullPath($file.FullName) -ne
                             [System.IO.Path]::GetFullPath($destination)) {
