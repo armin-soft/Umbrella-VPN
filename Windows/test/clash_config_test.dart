@@ -90,7 +90,7 @@ tun:
     expect(out, contains('Nq3ta7rL_bUIfT7l5OXnu2wPbsgErVikyfW7Ad7OL2E'));
     expect(out, contains('792ac262'));
     expect(out, contains('xtls-rprx-vision'));
-    expect(out, contains('client-fingerprint: chrome'));
+    expect(out, contains('client-fingerprint: "chrome"'));
     expect(out, contains('www.informationsverige.se'));
     expect(out, contains('MATCH,PROXY'));
   });
@@ -102,8 +102,8 @@ tun:
       mixedPort: 2080,
     );
     expect(out, contains('device: "${ClashConfig.tunDevice}"'));
-    expect(out, contains('stack: mixed'));
-    expect(out, contains('any:53'));
+    expect(out, contains('stack: "mixed"'));
+    expect(out, contains('"any:53"'));
     // در حالت تونل، دی ان اس باید روی ۵۳ شنیده شود تا hijack کار کند.
     expect(out, contains('listen: "127.0.0.1:53"'));
   });

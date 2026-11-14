@@ -17,9 +17,18 @@ void main() {
       );
 
   group('انتقال xhttp', () {
-    test('سینگ باکس برای xhttp انتقال http با میزبان می سازد', () {
-      final Map<String, dynamic> config = SingBoxConfig.buildProxy(
-        node: node(NodeProtocol.vless, <String, dynamic>{
+    test('سینگ باکس برای xhttp هیچ نقشی نمی سازد', () {
+      // نسخه همراه سینگ باکس انتقال xhttp ندارد؛ نقشه قبلی (http) از سرور
+      // ۴۰۰ می گرفت و تونل بالا نمی آمد.
+      expect(
+        SingBoxConfig.supportsTransport(node(NodeProtocol.vless, <String, dynamic>{
+          'id': 'u',
+          'type': 'xhttp',
+        })),
+        isFalse,
+      );
+      final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
+        node(NodeProtocol.vless, <String, dynamic>{
           'id': 'u',
           'type': 'xhttp',
           'path': '/abc',
@@ -27,16 +36,9 @@ void main() {
           'security': 'tls',
           'sni': 'proxy.example.com',
         }),
-        settings: const AppSettings(),
-        port: 2080,
+        const AppSettings(),
       );
-      final Map<String, dynamic> outbound =
-          (config['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
-      final Map<String, dynamic> transport =
-          outbound['transport'] as Map<String, dynamic>;
-      expect(transport['type'], 'http');
-      expect(transport['path'], '/abc');
-      expect(transport['host'], <String>['proxy.example.com']);
+      expect(outbound.containsKey('transport'), isFalse);
     });
 
     test('ایکس ری برای xhttp بخش xhttpSettings می سازد', () {
@@ -58,6 +60,7 @@ void main() {
           stream['xhttpSettings'] as Map<String, dynamic>;
       expect(settings['path'], '/abc');
       expect(settings['host'], 'proxy.example.com');
+      expect(settings['mode'], 'auto');
       expect(stream['network'], 'xhttp');
     });
   });

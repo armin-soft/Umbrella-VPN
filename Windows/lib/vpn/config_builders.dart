@@ -818,7 +818,7 @@ class XrayConfig {
         'path': JsonX.text(params['path'], '/'),
         'headers': <String, dynamic>{
           if (wsHost.isNotEmpty) 'Host': wsHost,
-          ..._extraHeaders(params)
+          ...SingBoxConfig._extraHeaders(params)
             ..removeWhere((String key, String _) => key.toLowerCase() == 'host'),
         },
       };
@@ -835,7 +835,7 @@ class XrayConfig {
       // ایکس اچ تی تی پی (splithttp) از ایکس ری ۲۵ شناخته می شود. همان
       // چیزهایی که خود پنل در پیکربندی می گذارد: مسیر، میزبان، حالت، هدرهای
       // مرورگر و پدینگ. بدون این ها سرور درخواست را با ۴۰۰ رد می کرد.
-      final Map<String, String> headers = _extraHeaders(params);
+      final Map<String, String> headers = SingBoxConfig._extraHeaders(params);
       stream['xhttpSettings'] = <String, dynamic>{
         'path': JsonX.text(params['path'], '/'),
         if (JsonX.text(params['host'], sni).isNotEmpty)
