@@ -194,6 +194,13 @@ class LaunchPlan {
   /// آیا این نقشه تونل کامل است (`--tun`)؟
   final bool tun;
 
+  /// پورت سرور gRPC همین اجرا (هر اجرا پورت آزاد خودش را می گیرد، چون
+  /// پیش فرض ۱۷۰۷۸ با نمونه قبلی یا پنجره CLI بازمانده تصادم می کرد).
+  final int grpcPort;
+
+  /// پورت رابط کلش همین اجرا.
+  final int clashPort;
+
   bool get usesSystemProxy => proxyPort > 0 && !tun;
 }
 
