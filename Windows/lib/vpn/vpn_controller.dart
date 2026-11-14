@@ -169,8 +169,6 @@ class LaunchPlan {
     this.warning = '',
     this.proxyPort = 0,
     this.tun = false,
-    this.grpcPort = 0,
-    this.clashPort = 0,
   });
 
   final List<CoreLaunch> cores;
@@ -193,13 +191,6 @@ class LaunchPlan {
 
   /// آیا این نقشه تونل کامل است (`--tun`)؟
   final bool tun;
-
-  /// پورت سرور gRPC همین اجرا (هر اجرا پورت آزاد خودش را می گیرد، چون
-  /// پیش فرض ۱۷۰۷۸ با نمونه قبلی یا پنجره CLI بازمانده تصادم می کرد).
-  final int grpcPort;
-
-  /// پورت رابط کلش همین اجرا.
-  final int clashPort;
 
   bool get usesSystemProxy => proxyPort > 0 && !tun;
 }
@@ -1260,13 +1251,6 @@ class VpnController extends ChangeNotifier {
       );
       tun = false;
     }
-    // پورت های هر اجرا. هسته هر اجرا یک سرور gRPC روی ۱۷۰۷۸ بالا می آورد و
-    // اگر نمونه قبلی (یا پنجره CLI بازمانده) هنوز آن را گرفته باشد، با
-    // «port 17078 is already in use» می میرد و هیچ تونلی ساخته نمی شود.
-    // پس برای هر اجرا پورت آزاد انتخاب می شود (نمونه های کهنه در _attempt
-    // پیش از این بسته شده اند).
-    final int grpcPort = await UmbrellaCore.freeGrpcPort();
-    final int clashPort = await UmbrellaCore.freeClashPort();
     return <LaunchPlan>[
       LaunchPlan(
         cores: <CoreLaunch>[
@@ -1277,7 +1261,6 @@ class VpnController extends ChangeNotifier {
               links: links.path,
               runDir: runDir.path,
               tun: tun,
-              grpcPort: grpcPort,
             ),
             workDir: _umbrellaDir(exe),
             name: tun ? 'umbrella-tun' : 'umbrella',
@@ -1293,8 +1276,6 @@ class VpnController extends ChangeNotifier {
         proxyPort: tun ? 0 : _umbrellaPort,
         runDir: runDir.path,
         tun: tun,
-        grpcPort: grpcPort,
-        clashPort: clashPort,
       ),
     ];
   }
@@ -1321,7 +1302,6 @@ class VpnController extends ChangeNotifier {
     required String links,
     required String runDir,
     required bool tun,
-    int grpcPort = 0,
   }) {
     return UmbrellaCore.args(
       links: links,
@@ -1329,7 +1309,6 @@ class VpnController extends ChangeNotifier {
       port: _umbrellaPort,
       tun: tun,
       systemProxy: !tun,
-      grpcPort: grpcPort,
     );
   }
 
@@ -1448,6 +1427,9 @@ class VpnController extends ChangeNotifier {
   /// بدون پنجره اجرا می شود تا اتصال از دست نرود.
   Future<bool> _launch(LaunchPlan plan) async {
     await _stopCores();
+    if (!await _freeCorePorts()) {
+      return false;
+    }
     if (_orphansKilled > 0) {
       // هسته ای که از اجرای قبلی باز مانده بود پورت هایش را هم گرفته بود؛
       // همان چیزی که اجرای بعدی را با «already in use» می کشت.
@@ -1476,9 +1458,6 @@ class VpnController extends ChangeNotifier {
           systemProxy: plan.usesSystemProxy,
           port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
           logFile: coreLog,
-          clashPort: plan.clashPort > 0
-              ? plan.clashPort
-              : UmbrellaCore.defaultClashPort,
         ),
       ),
       flush: true,
@@ -1626,6 +1605,45 @@ class VpnController extends ChangeNotifier {
     return true;
   }
 
+  /// آزاد کردن پورت هایی که هسته همیشه می گیرد.
+  ///
+  /// دستور `run` هسته، سرور gRPC را روی ۱۷۰۷۸ و رابط کلش را روی ۱۶۷۵۶ باز
+  /// می کند و هیچ پرچمی برای عوض کردنشان ندارد (`--listen` مال دستور `core`
+  /// است؛ در ۱٫۰٫۵ اشتباها به `run` داده شد و هسته با «unknown flag:
+  /// --listen» بست). پس اگر پورت گرفته باشد، تنها راه، آزاد کردن آن است:
+  /// اول نمونه های خودمان بسته می شوند و اگر باز هم گرفته بود، دلیلش به
+  /// کاربر گفته می شود تا خودش برنامه مزاحم را ببندد.
+  Future<bool> _freeCorePorts() async {
+    List<int> held = await UmbrellaCore.heldReservedPorts();
+    if (held.isEmpty) {
+      return true;
+    }
+    for (final String binary in <String>[
+      umbrellaCliBinary,
+      UmbrellaCore.engineBinary,
+      UmbrellaCore.adminBinary,
+    ]) {
+      await _native.killByName(binary);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    held = await UmbrellaCore.heldReservedPorts();
+    if (held.isEmpty) {
+      _log.add(
+        'پورت هسته از اجرای قبلی باز مانده بود و آزاد شد.',
+        level: 'warning',
+      );
+      return true;
+    }
+    final String ports = held.map((int port) => Fa.num(port)).join('، ');
+    _log.add(
+      'پورت $ports در اختیار برنامه دیگری است و هسته برای کار به همان ها '
+      'نیاز دارد. برنامه ای که آن پورت را گرفته ببندید (بیشتر وقت ها یک '
+      'فیلترشکن دیگر یا یک نمونه بازمانده از آمبرلا است) و دوباره وصل شوید.',
+      level: 'error',
+    );
+    return false;
+  }
+
   /// دلیل بسته شدن هسته، از خروجی خودش، به زبان کاربر.
   ///
   /// در ۱٫۰٫۴ کاربر فقط «بلافاصله بسته شد» و یک دیوار متن انگلیسی می دید.
@@ -1637,6 +1655,11 @@ class VpnController extends ChangeNotifier {
           '(یا یک برنامه دیگر) باز مانده است. یک بار «قطع» را بزنید و دوباره '
           'وصل شوید؛ اگر تکرار شد، UmbrellaCli.exe و UmbrellaCoreEngine.exe را '
           'در Task Manager ببندید.';
+    }
+    if (text.contains('unknown flag')) {
+      return 'این نسخه از هسته پرچمی را که برنامه فرستاده نمی شناسد؛ نسخه '
+          'برنامه و هسته با هم نمی خوانند. برنامه را با نصب کننده رسمی همین '
+          'نسخه دوباره نصب کنید.';
     }
     if (text.contains('unable to determine config format') ||
         text.contains('no outbounds found')) {

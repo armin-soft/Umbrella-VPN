@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/vpn/clash_config.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 
@@ -90,8 +91,9 @@ rules:
       // رابط کلش روشن است و پورتش مال خودمان است؛ خود هسته با همین رابط
       // گره ها را می سنجد و سرور سالم را نگه می دارد.
       expect(settings['enable-clash-api'], isTrue);
-      expect(settings['clash-api-port'], greaterThan(0));
-      expect(settings['clash-api-port'], isNot(16756));
+      // پورت رابط کلش همان ثابت خود هسته است (در حالت run هم خودش همان را
+      // می گذارد)؛ عدد ساختگی جای آن گذاشته نمی شود.
+      expect(settings['clash-api-port'], AppConfig.coreClashPort);
       // در حالت تونل، پروکسی سیستمی روشن نمی شود.
       expect(settings['set-system-proxy'], isFalse);
       expect(settings['mixed-port'], UmbrellaCore.port);
@@ -178,19 +180,55 @@ rules:
       expect(args.contains('--disable-color'), isTrue);
     });
 
-    test('هر اجرا پورت gRPC خودش را می گیرد', () {
-      // با پیش فرض ۱۷۰۷۸، نمونه قبلی یا پنجره CLI بازمانده پورت را می گرفت و
-      // هسته با «port 17078 is already in use» می مرد (گزارش ۱٫۰٫۴).
-      final List<String> args = UmbrellaCore.args(
-        links: r'C:\Users\a\links.txt',
-        runDir: r'C:\Users\a\run',
-        tun: false,
-        settingsPath: r'C:\Users\a\s.json',
-        grpcPort: 17105,
-      );
-      final int at = args.indexOf('--listen');
-      expect(at, greaterThanOrEqualTo(0));
-      expect(args[at + 1], '127.0.0.1:17105');
+    test('هیچ پرچمی بیرون از فهرست خود هسته فرستاده نمی شود', () {
+      // فهرست دقیق پرچم های دستور `run` در هسته ۵٫۹٫۱
+      // (`addHConfigFlags` در `cmd/cmd_config_build.go`). هر پرچم دیگری،
+      // هسته را با «unknown flag» می بندد — همان خطای ۱٫۰٫۵ با `--listen`.
+      const Set<String> allowed = <String>{
+        '-c',
+        '--config',
+        '-d',
+        '--hiddify',
+        '--full-config',
+        '--log',
+        '--tun',
+        '--tun-service',
+        '--system-proxy',
+        '--router',
+        '--in-proxy-port',
+        '--fragment',
+        '--fragment-size',
+        '--fragment-sleep',
+        '--padding',
+        '--padding-size',
+        '--mixed-sni-case',
+        '--dns-remote',
+        '--dns-direct',
+        '--web-secret',
+        '--web-port',
+        '--log-level',
+        '-D',
+        '--directory',
+        '--disable-color',
+      };
+      for (final String settingsPath in <String>['', r'C:\a\s.json']) {
+        for (final bool tun in <bool>[false, true]) {
+          final List<String> args = UmbrellaCore.args(
+            links: r'C:\a\links.txt',
+            runDir: r'C:\a\run',
+            tun: tun,
+            systemProxy: !tun,
+            settingsPath: settingsPath,
+          );
+          expect(args.first, 'run');
+          for (final String arg in args.skip(1)) {
+            if (!arg.startsWith('-')) {
+              continue;  // مقدار یک پرچم
+            }
+            expect(allowed.contains(arg), isTrue, reason: arg);
+          }
+        }
+      }
     });
 
     test('بدون فایل تنظیمات، انتخاب ها با پرچم خط فرمان می روند', () {
