@@ -141,16 +141,6 @@ class AppConfig {
   /// فایل تنظیمات هسته (همان `hiddify-settings.json` با نام آمبرلا).
   static const String coreSettingsFile = 'umbrella-settings.json';
 
-  static const int socksPortXray = 2081;
-
-  /// پورت HTTP ایکس ری برای پروکسی سیستمی ویندوز.
-  ///
-  /// پروکسی ویندوز (WinINET) پروکسی HTTP می خواهد، نه SOCKS؛ با پورت SOCKS
-  /// مرورگرها و بیشتر برنامه ها عبور نمی کنند. SOCKS برای سنجش های داخلی است.
-  static const int httpPortXray = 2080;
-  static const int socksPortMieru = 2082;
-  static const int socksPortChained = 2080;
-  static const int apiPortSingBox = 9090;
 
   static const String appMutexName = 'UmbrellaVPN.Desktop.SingleInstance';
   static const String autostartName = 'UmbrellaVPN';

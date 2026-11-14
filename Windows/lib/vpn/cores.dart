@@ -78,8 +78,8 @@ class CoreProvisioner {
   /// مسیر هسته در صورت وجود. هسته ها همراه نسخه نصب می شوند و از همان پوشه
   /// نصب اجرا می شوند؛ هیچ کپی یا نصبی لازم نیست.
   Future<String?> locateBinary(String binary) async {
-    // هسته هیدیفای همه فایل هایش را کنار هم دارد (cores\\hiddify)؛ هسته هایی
-    // که یک فایل بودند در cores\\bin و کنار برنامه اند.
+    // هسته هیدیفای همه فایل هایش را کنار هم دارد (پوشه hiddify در cores)؛
+    // هسته هایی که یک فایل بودند در bin و کنار برنامه بودند.
     final List<String> candidates = <String>[
       '${bundledDir}${Platform.pathSeparator}hiddify${Platform.pathSeparator}$binary',
       '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
