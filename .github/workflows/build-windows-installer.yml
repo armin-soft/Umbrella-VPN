@@ -130,7 +130,7 @@ jobs:
             foreach ($item in Get-ChildItem $dir -Recurse -File) {
               Say ("  {0}  {1:N0} bytes" -f $item.Name, $item.Length)
             }
-            foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.dll')) {
+            foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.dll', 'libcronet.dll')) {
               $path = Join-Path $dir $name
               if (-not (Test-Path $path)) { throw "core file missing: $path" }
               Say ("ok: {0} is {1:N0} bytes" -f $name, (Get-Item $path).Length)

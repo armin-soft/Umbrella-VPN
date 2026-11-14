@@ -71,13 +71,21 @@ Future<void> main(List<String> arguments) async {
       '${elevatedNow ? 'بله' : 'خیر'}',
     );
   }
-  // تنها هسته نسخه: هسته هیدیفای که با نام UmbrellaCli.exe نصب می شود.
+  // تنها هسته نسخه: هسته هیدیفای که با نام UmbrellaCli.exe نصب می شود و
+  // کتابخانه ها و کرونتش باید کنارش باشند.
   final String? corePath =
       await provisioner.locateBinary(HiddifyCore.cliBinary);
   if (corePath == null) {
     AppLogger.instance.add(
       'هسته ${HiddifyCore.cliBinary} در پوشه نصب پیدا نشد '
       '(${provisioner.bundledDir}); برنامه بدون هسته کار نمی کند.',
+      level: 'error',
+    );
+  } else if (!HiddifyCore.installed(provisioner.bundledDir)) {
+    AppLogger.instance.add(
+      'هسته پیدا شد ولی فایل های همراه آن (${HiddifyCore.coreDll} و '
+      '${HiddifyCore.cronetDll}) کامل نیستند؛ برنامه را با نصب کننده رسمی '
+      'دوباره نصب کنید.',
       level: 'error',
     );
   } else {

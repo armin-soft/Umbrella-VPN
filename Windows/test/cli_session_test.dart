@@ -27,6 +27,19 @@ void main() {
       expect(HiddifyCore.port, 12334);
     });
 
+    test('فایل های همراه هسته هم نام برند دارند', () {
+      // ویندوز کتابخانه را کنار خود فایل اجرایی می جوید، پس هر سه باید در
+      // cores\hiddify باشند و هیچ کدام نام قدیمی نداشته باشد.
+      expect(HiddifyCore.coreDll, 'UmbrellaCore.dll');
+      expect(HiddifyCore.cronetDll, 'libcronet.dll');
+      expect(HiddifyCore.coreDll.contains('hiddify'), isFalse);
+    });
+
+    test('نبود یکی از فایل های هسته نصب را ناقص اعلام می کند', () {
+      // پوشه ای که وجود ندارد هم «نصب نیست» است، بدون استثنا.
+      expect(HiddifyCore.installed(r'C:\NoSuchFolder\Umbrella'), isFalse);
+    });
+
     test('پوشه هسته در نسخه نصب', () {
       expect(
         HiddifyCore.directoryOf(r'C:\Program Files\Umbrella'),

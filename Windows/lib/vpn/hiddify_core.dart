@@ -31,6 +31,12 @@ class HiddifyCore {
   /// شناسه هسته در فهرست همراه نسخه.
   static const String id = 'hiddify';
 
+  /// کتابخانه کرونت که هسته کنار خودش می خواهد.
+  static const String cronetDll = 'libcronet.dll';
+
+  /// کتابخانه خود هسته (همان hiddify-core.dll با نام آمبرلا).
+  static const String coreDll = 'UmbrellaCore.dll';
+
   /// پورت پروکسی مختلط محلی.
   static const int port = AppConfig.httpPortHiddify;
 
@@ -99,9 +105,20 @@ class HiddifyCore {
       '${Platform.pathSeparator}hiddify';
 
   /// آیا فایل های هسته در نسخه نصب هستند؟
-  static bool installed(String appDir) =>
-      File('${directoryOf(appDir)}${Platform.pathSeparator}$cliBinary')
-          .existsSync();
+  ///
+  /// هر سه فایل لازم است: خط فرمان، کتابخانه هسته و کرونت. اگر یکی نباشد،
+  /// ویندوز برنامه را با «کتابخانه پیدا نشد» می بندد و کاربر پیام روشنی
+  /// نمی بیند.
+  static bool installed(String appDir) {
+    final String dir = directoryOf(appDir);
+    for (final String name in <String>[cliBinary, coreDll, cronetDll]) {
+      final String path = '$dir${Platform.pathSeparator}$name';
+      if (!File(path).existsSync()) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 /// تنظیمات هسته که در فایل جلسه CLI هم استفاده می شود.

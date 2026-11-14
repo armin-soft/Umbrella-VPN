@@ -83,6 +83,9 @@ Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCli.exe"; DestDir: "{app}"; DestName: "{#CliExe}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; libcronet.dll وابسته به هسته است و ویندوز آن را کنار خود فایل اجرایی
+; می جوید، پس باید همین جا هم باشد.
+Source: "{#ReleaseDir}\cores\hiddify\libcronet.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Optional Visual C++ runtime, put VC_redist.x64.exe in installer\redist to ship it.
