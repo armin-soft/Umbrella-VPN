@@ -69,8 +69,22 @@ Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 ; The core ships inside the installer: tools\fetch-cores.ps1 puts the Hiddify
 ; core bundle in cores\hiddify next to the build output, so the {#ReleaseDir}
 ; rule above carries it into {app}\cores\hiddify. The two files that must sit
-; next to the exe are copied again with the app's names in the [Files] block at
-; the end of this script.
+; next to the exe are listed below with the app's own names.
+; ── هسته هیدیفای: تنها هسته همراه نسخه ───────────────────────────────────
+; همه فایل های هسته در cores\hiddify می مانند (کتابخانه اش باید کنار فایل
+; اجرایی باشد) و همین بلوک دو فایل لازم را کنار خود برنامه با نام آمبرلا
+; می گذارد:
+;
+;   UmbrellaCli.exe          — مثل HiddifyCli؛ خط فرمان و همان پنجره ترمینال
+;   UmbrellaCoreEngine.exe   — مثل HiddifyCoreEngine؛ همان هسته با زیرسیستم
+;                              گرافیکی، پس هیچ پنجره کنسولی باز نمی شود
+;
+; فقط نام عوض می شود؛ خود فایل ها دست نمی خورند.
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCli.exe"; DestDir: "{app}"; DestName: "{#CliExe}"; Flags: ignoreversion
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+
 ; Optional Visual C++ runtime, put VC_redist.x64.exe in installer\redist to ship it.
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 
@@ -129,20 +143,3 @@ end;
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\cores"
-
-; ═══════════════════════════════════════════════════════════════════════════
-; هسته هیدیفای: تنها هسته همراه نسخه.
-;
-; همه فایل های هسته در cores\hiddify می مانند (کتابخانه اش باید کنار فایل
-; اجرایی باشد). دو فایل هم کنار خود برنامه با نام آمبرلا گذاشته می شوند:
-;
-;   UmbrellaCli.exe          — مثل HiddifyCli؛ خط فرمان و پنجره ترمینال
-;   UmbrellaCoreEngine.exe   — مثل HiddifyCoreEngine؛ همان هسته با زیرسیستم
-;                              گرافیکی، پس هیچ پنجره کنسولی باز نمی شود.
-;
-; فقط نام عوض می شود؛ خود فایل ها دست نمی خورند.
-; ═══════════════════════════════════════════════════════════════════════════
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCli.exe"; DestDir: "{app}"; DestName: "{#CliExe}"; Flags: ignoreversion
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
