@@ -13,7 +13,7 @@
 | ۹ و ۱۰ | آیکون دایره ای و رنگ های لوگو | انجام شده | `assets/icons/icon_round.png`، `lib/core/theme.dart` |
 | ۱۱ و ۱۲ | تم تاریک و روشن | انجام شده | `lib/core/theme.dart`، `lib/state/settings_controller.dart` |
 | ۱۳ | تصاویر وضعیت با نام فارسی | انجام شده | `assets/images/*`، `lib/ui/widgets/brand_widgets.dart` (`StateGallery`) |
-| ۱۴ | نسخه ۱٫۰٫۰ برنامه و پروژه | انجام شده | `pubspec.yaml`، `lib/core/app_config.dart`، `windows/CMakeLists.txt` |
+| ۱۴ | نسخه برنامه و پروژه (اکنون ۱٫۰٫۱) | انجام شده | `pubspec.yaml`، `lib/core/app_config.dart`، `windows/CMakeLists.txt` |
 | ۱۵ | انتخاب خودکار سرور با کمترین پینگ پایدار | انجام شده | `lib/vpn/ping.dart`، `lib/vpn/balancer.dart` |
 | ۱۶ | فقط ویندوز ۱۰ و ۱۱ x64 | انجام شده | `windows/runner/runner.exe.manifest`، `windows/CMakeLists.txt` (x64) |
 | ۱۷ | نوتبار با نمایش وضعیت | انجام شده | `packages/umbrella_native/.../tray_icon.cpp`، `lib/platform/services.dart` |
@@ -45,3 +45,13 @@
 نکته درباره ردیف های «سمت سرور»: پوشه `Windows` فقط کلاینت است؛ این موارد در
 کد موجود سرویس (پوشه `Telegram-BOT`) انجام می شوند و کلاینت تنها داده لازم را
 می فرستد و وضعیت را نمایش می دهد.
+
+## نسخه ۱٫۰٫۱
+
+* تونل سینگ باکس با کلیدهای `gso_max_size`، `tcp_fast_open` و `tcp_multi_path` بسته
+  می شد («json: unknown field»)؛ این کلیدها دیگر نوشته نمی شوند.
+* برای انتقال xhttp دیگر پیکربندی سینگ باکس ساخته نمی شود (این انتقال را ندارد)
+  و ایکس ری با هدرهای واقعی سرور، حالت و ALPN درست اجرا می شود.
+* پیکربندی کامل کلش متا که خود پنل می دهد نگه داشته و با `mihomo` اجرا می شود؛
+  فقط پورت محلی، پنل مدیریت، نام کارت شبکه، دی ان اس و سرور انتخاب شده عوض
+  می شوند. محل: `lib/vpn/clash_config.dart`.
