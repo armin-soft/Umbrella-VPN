@@ -132,6 +132,38 @@ void main() {
     });
   });
 
+  group('نسخه', () {
+    test('نسخه در همه فایل ها یکی است و هیچ جا دستی تکرار نمی شود', () {
+      // در ۱٫۰٫۸ اسکریپت ساخت نصب کننده نسخه ۱٫۰٫۷ را دستی نگه داشته بود؛
+      // نصب کننده تازه ساخته می شد ولی اسکریپت دنبال فایل نسخه قبلی می گشت و
+      // CI را می شکست. حالا نسخه فقط در app_config.dart است.
+      final String config = read('lib/core/app_config.dart');
+      final RegExpMatch? match =
+          RegExp(r"static const String version = '([0-9.]+)'").firstMatch(config);
+      expect(match, isNotNull);
+      final String version = match!.group(1)!;
+      expect(read('pubspec.yaml').contains('version: $version+'), isTrue);
+      expect(
+        read('installer/umbrella.iss').contains('#define AppVersion "$version"'),
+        isTrue,
+      );
+
+      final String installer = read('tools/build-installer.ps1');
+      expect(installer.contains('app_config.dart'), isTrue);
+      expect(installer.contains('Select-String'), isTrue);
+      // عدد نسخه نباید در اسکریپت نوشته شده باشد، نه به عنوان مقدار و نه
+      // به عنوان پشتیبان.
+      expect(RegExp(r"\$Version = '1\.0\.\d").hasMatch(installer), isFalse);
+
+      final String workflow =
+          read('../.github/workflows/build-windows-installer.yml');
+      expect(workflow.contains('app_config.dart'), isTrue);
+      expect(workflow.contains("steps.version.outputs.version"), isTrue);
+      // پوشه setup/<version> از همان خروجی گام نسخه ساخته می شود.
+      expect(workflow.contains('../setup/\$version'), isTrue);
+    });
+  });
+
   group('صفحه اتصال', () {
     test('بخش پایین که نام سرور را نشان می داد حذف شده است', () {
       final String page = read('lib/ui/pages/connect_page.dart');

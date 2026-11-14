@@ -1,6 +1,6 @@
 ﻿#requires -version 5.1
 <#
-    ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-1.0.7-x64.exe).
+    ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-<نسخه>-x64.exe).
 
     پیش نیازها روی ماشین ویندوز:
       - فلوتر و Visual Studio 2022 با بار کاری سی پلاس پلاس
@@ -22,7 +22,20 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $ProjectRoot
 
-$Version = '1.0.7'
+# نسخه از یک جا خوانده می شود (app_config.dart). پیش از این اینجا دستی نوشته
+# می شد و در ۱٫۰٫۸ جا ماند؛ نصب کننده ساخته می شد ولی اسکریپت دنبال فایل
+# نسخه قبلی می گشت و ساخت را شکست می داد.
+$Version = ''
+$configFile = Join-Path $ProjectRoot 'lib\core\app_config.dart'
+if (Test-Path $configFile) {
+    $match = Select-String -Path $configFile -Pattern "static const String version = '([0-9.]+)'"
+    if ($match) {
+        $Version = $match.Matches[0].Groups[1].Value
+    }
+}
+if (-not $Version) {
+    throw 'نسخه در lib\core\app_config.dart پیدا نشد'
+}
 $ReleaseDir = Join-Path $ProjectRoot 'build\windows\x64\runner\Release'
 
 # هسته های اتصال باید داخل فایل نصبی باشند؛ اینجا فقط روی ماشین سازنده گرفته
