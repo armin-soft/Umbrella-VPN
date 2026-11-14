@@ -57,9 +57,16 @@ class CorePinger {
     }
 
     // اول سرورهایی که تا حالا پینگ خوبی داشته اند، بعد بقیه.
+    //
+    // سرورهای xhttp از این سنجش کنار گذاشته می شوند: سینگ باکس آن انتقال را
+    // نمی شناسد، پس اجرای هسته برایشان فقط بودجه سنجش را می سوزاند و در
+    // پایان «تاخیر تونل برای ۰ سرور» در گزارش می آمد.
     final List<VpnNode> ordered = nodes
         .where((VpnNode node) =>
-            supports(node) && node.host.isNotEmpty && node.port > 0)
+            supports(node) &&
+            SingBoxConfig.supportsTransport(node) &&
+            node.host.isNotEmpty &&
+            node.port > 0)
         .toList()
       ..sort((VpnNode a, VpnNode b) {
         if (a.hasPing != b.hasPing) {

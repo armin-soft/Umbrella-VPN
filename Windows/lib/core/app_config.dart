@@ -101,11 +101,10 @@ class AppConfig {
   /// sub/ خودکار، all.txt فهرست ساده، sub64/ فهرست base64،
   /// clash/meta/all.yml کلش متا، full-singbox.json سینگ باکس،
   /// wireguard، amnezia و mieru فایل های مستقیم.
-  /// mihomo کلاینت «کلش متا» است؛ اگر مسیر کلش خالی بود همان سینگ باکس
-  /// استفاده می شود.
+  /// تنها مسیر درست کلش متا در این پنل `clash/meta/all.yml` است؛ مسیر قدیمی
+  /// `mihomo/all.yml` با کد ۴۰۴ پاسخ می دهد و دیگر امتحان نمی شود.
   static const List<String> mihomoPaths = <String>[
     'clash/meta/all.yml',
-    'mihomo/all.yml',
   ];
 
   static const String ipCheckPrimary = 'https://api.ipify.org?format=json';

@@ -103,6 +103,7 @@ class ConnectOutcome {
     this.needsElevation = false,
     this.needsCores = false,
     this.needsRenewal = false,
+    this.cancelled = false,
   });
 
   final bool ok;
@@ -112,6 +113,9 @@ class ConnectOutcome {
 
   /// اشتراک کاربر اجازه اتصال نمی دهد (منقضی، مسدود یا تمام شده).
   final bool needsRenewal;
+
+  /// کاربر خودش وسط کار دکمه لغو را زد؛ این خطا نیست و نباید پیام خطا بدهد.
+  final bool cancelled;
 }
 
 class _AttemptResult {
@@ -119,11 +123,13 @@ class _AttemptResult {
     required this.message,
     this.ok = false,
     this.needsCores = false,
+    this.cancelled = false,
   });
 
   final String message;
   final bool ok;
   final bool needsCores;
+  final bool cancelled;
 }
 
 class CoreLaunch {
@@ -270,9 +276,22 @@ class VpnController extends ChangeNotifier {
   ProxyLink? _link;
   Timer? _liveTimer;
 
-  /// پینگ سرور متصل: عدد زنده تونل اگر آماده باشد، وگرنه پینگ سنجیده شده.
-  int get activePingMs =>
-      _livePing > 0 ? _livePing : (_activeNode?.pingMs ?? 0);
+  /// پینگ سرور متصل: عدد زنده تونل اگر آماده باشد، وگرنه پینگ شبکه همان
+  /// سرور. این عدد هرگز صفر نمی ماند چون سرور متصل از فهرست سنجش هسته ای
+  /// کنار گذاشته می شود و پیش از این همیشه «در حال سنجش» می ماند.
+  int get activePingMs {
+    if (_livePing > 0) {
+      return _livePing;
+    }
+    final VpnNode? node = _activeNode;
+    if (node == null) {
+      return 0;
+    }
+    if (node.pingMs > 0) {
+      return node.pingMs;
+    }
+    return 0;
+  }
 
   int _pingProgressDone = 0;
   int _pingProgressTotal = 0;
@@ -300,7 +319,20 @@ class VpnController extends ChangeNotifier {
   Future<void> bootstrap() async {
     await _provisioner.init();
     _device = await _native.deviceInfo();
+    // آی پی واقعی دستگاه پیش از هر اتصالی خوانده می شود تا صفحه اتصال هرگز
+    // «نامشخص» نشان ندهد. اگر یک سرویس جواب نداد، سرویس بعدی امتحان می شود و
+    // در آخر آی پی داخلی کارت شبکه می ماند.
     _realIp = await _ip.fetchIp(force: true);
+    if (_realIp.isEmpty) {
+      final String local = await _native.localIp();
+      if (local.isNotEmpty) {
+        _realIp = local;
+      }
+      _log.add(
+        'آی پی بیرونی خوانده نشد؛ آی پی داخلی دستگاه نمایش داده می شود.',
+        level: 'warning',
+      );
+    }
     _geo = _ip.last;
     if (_device.elevated && _native.available) {
       // پروکسی سیستم از اجرای قبلی پاک می شود.
@@ -386,13 +418,19 @@ class VpnController extends ChangeNotifier {
     final bool liveTunnel = _status.active;
     _measuring = true;
     _pingProgressDone = 0;
-    // سرور متصل از سنجش کنار گذاشته می شود: نه پینگش نمایش داده می شود و نه
-    // با سنجش دوباره آزار می شود.
+    // سرور متصل از سنجش هسته ای کنار گذاشته می شود تا تونل کاربر دست نخورد،
+    // ولی پینگ شبکه اش (تی سی پی) خوانده می شود تا عدد سرور متصل هرگز صفر
+    // نماند. عدد زنده تونل، وقتی آماده باشد، جای این را می گیرد.
     final String activeId = _activeNode?.id ?? '';
+    final VpnNode? active =
+        _activeNode ?? (_nodes.isEmpty ? null : _nodes.first);
     final List<VpnNode> pool =
         _nodes.where((VpnNode node) => node.id != activeId).toList();
     if (pool.isEmpty) {
       _measuring = false;
+      if (active != null) {
+        await _measureActiveNetworkPing(active);
+      }
       _notify();
       return;
     }
@@ -443,6 +481,10 @@ class VpnController extends ChangeNotifier {
         .map((VpnNode node) => results[node.id] ?? node)
         .toList()
       ..sort(_sortNodes);
+    // سرور متصل (اگر بیرون از فهرست سنجش مانده باشد) هم پینگ شبکه می گیرد.
+    if (active != null && !results.containsKey(active.id)) {
+      await _measureActiveNetworkPing(active);
+    }
     _measuring = false;
     await _cacheNodes();
     _log.add(
@@ -461,6 +503,23 @@ class VpnController extends ChangeNotifier {
       );
     }
     _notify();
+  }
+
+  /// پینگ شبکه سرور متصل (باز کردن اتصال تی سی پی به خود سرور).
+  ///
+  /// این سنجش تونل کاربر را دست نمی زند و فقط برای این است که عدد پینگ سرور
+  /// متصل هیچ وقت صفر نماند.
+  Future<void> _measureActiveNetworkPing(VpnNode node) async {
+    final VpnNode updated = await _ping.measure(node, attempts: 1);
+    if (!updated.hasPing) {
+      return;
+    }
+    _nodes = _nodes
+        .map((VpnNode item) => item.id == node.id ? updated : item)
+        .toList();
+    if (_activeNode?.id == node.id) {
+      _activeNode = updated;
+    }
   }
 
   /// بازه تاخیر تونل برای گزارش ها؛ برای عیب یابی سنجش.
@@ -552,12 +611,56 @@ class VpnController extends ChangeNotifier {
     _notify();
   }
 
+  /// درخواست لغو اتصال در حال انجام.
+  ///
+  /// ساخت تونل چند ثانیه طول می کشد و کاربر باید هر لحظه بتواند پشیمان شود؛
+  /// با زدن دکمه قطع، این پرچم بالا می رود، حلقه تلاش هسته ها می شکند و همه
+  /// چیز تمیز بسته می شود.
+  bool _cancelRequested = false;
+  bool get cancelling => _cancelRequested;
+
+  /// لغو فوری اتصال در حال انجام (دکمه «لغو اتصال»).
+  Future<void> cancel() async {
+    if (!_status.busy && _status != VpnStatus.connected) {
+      return;
+    }
+    _cancelRequested = true;
+    _log.add('درخواست لغو اتصال از طرف کاربر.', level: 'warning');
+    _setStatus(VpnStatus.disconnecting, 'لغو اتصال...');
+    await _stopCores();
+    await _disableProxy();
+    _finishCancel();
+  }
+
+  void _finishCancel() {
+    _statsTimer?.cancel();
+    _healthTimer?.cancel();
+    _ipTimer?.cancel();
+    _stopLiveMeasurement();
+    _connectedAt = null;
+    _stats = TunnelStats.empty;
+    _tunnelVerified = false;
+    _exitIp = '';
+    _cancelRequested = false;
+    _activeNode = null;
+    _setStatus(VpnStatus.disconnected, 'اتصال قطع شد.');
+    unawaited(
+      _tray.update(
+        state: 'disconnected',
+        tooltip: '${AppConfig.appName} - قطع',
+        connected: false,
+      ),
+    );
+    _log.add('اتصال لغو شد و تنظیمات شبکه به حالت عادی بازگشت.');
+  }
+
   /// اتصال با تلاش روی چند سرور: اگر یک سرور بالا نیامد، سرور بعدی امتحان
   /// می شود تا کاربر مجبور نشود دستی سرور عوض کند.
   Future<ConnectOutcome> connect({VpnNode? requested}) async {
     if (_status.active) {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
     }
+    _cancelRequested = false;
     // دسترسی حساب: اشتراک منقضی، مسدود یا تمام شده حق اتصال ندارد.
     final String blocked = accessGuard?.call() ?? '';
     if (blocked.isNotEmpty) {
@@ -640,6 +743,9 @@ class VpnController extends ChangeNotifier {
       final List<VpnNode> candidates = _candidates(node, selection.reason);
       String lastMessage = '';
       for (int index = 0; index < candidates.length; index++) {
+        if (_cancelRequested) {
+          return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+        }
         final VpnNode candidate = candidates[index];
         if (candidates.length > 1) {
           _setStatus(
@@ -648,6 +754,9 @@ class VpnController extends ChangeNotifier {
           );
         }
         final _AttemptResult attempt = await _attempt(candidate);
+        if (attempt.cancelled) {
+          return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+        }
         if (attempt.ok) {
           return const ConnectOutcome(ok: true, message: 'اتصال برقرار شد.');
         }
@@ -796,6 +905,11 @@ class VpnController extends ChangeNotifier {
     // بالا نیامد، ایکس ری یا میرو. این طور حتی اگر یک هسته روی سیستم مشکل
     // داشته باشد، اتصال از راه دیگر برقرار می شود.
     for (final LaunchPlan plan in plans) {
+      if (_cancelRequested) {
+        await _stopCores();
+        await _disableProxy();
+        return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
+      }
       if (plan.warning.isNotEmpty) {
         _log.add(plan.warning, level: 'warning');
       }
@@ -808,6 +922,11 @@ class VpnController extends ChangeNotifier {
       }
 
       final bool ready = await _waitForTunnel(plan);
+      if (_cancelRequested) {
+        await _stopCores();
+        await _disableProxy();
+        return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
+      }
       if (!ready) {
         final String coreLog = '${_provisioner.dataDir}'
             '${Platform.pathSeparator}run${Platform.pathSeparator}'
@@ -1047,6 +1166,17 @@ class VpnController extends ChangeNotifier {
     if (!_settings.tunMode || !usable(node)) {
       return null;
     }
+    // انتقال xhttp را سینگ باکس نمی شناسد؛ تونل کامل با این هسته ساخته
+    // نمی شود و باید ایکس ری (که xhttp دارد) امتحان شود.
+    if (!SingBoxConfig.supportsTransport(node)) {
+      _log.add(
+        'سرور ${node.name} از انتقال ${JsonX.text(node.params['type'] ?? node.params['network'])} '
+        'استفاده می کند؛ تونل کامل سینگ باکس برای آن ساخته نمی شود و ایکس ری '
+        'امتحان می شود.',
+        level: 'info',
+      );
+      return null;
+    }
     if (!_device.elevated) {
       _log.add(
         'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
@@ -1106,6 +1236,9 @@ class VpnController extends ChangeNotifier {
   Future<LaunchPlan?> _buildSingBoxPlan(VpnNode node) async {
     // میرو پروتکل اختصاصی خودش را دارد و سینگ باکس آن را نمی شناسد.
     if (!usable(node) || node.protocol == NodeProtocol.mieru) {
+      return null;
+    }
+    if (!SingBoxConfig.supportsTransport(node)) {
       return null;
     }
     final CoreInfo? core = _provisioner.info('singbox');
@@ -1439,7 +1572,7 @@ class VpnController extends ChangeNotifier {
   Future<bool> _waitForTunnel(LaunchPlan plan) async {
     final DateTime deadline = DateTime.now().add(_tunnelTimeout);
     while (DateTime.now().isBefore(deadline)) {
-      if (_disposed) {
+      if (_disposed || _cancelRequested) {
         return false;
       }
       // هسته هایی که خودمان اجرا کرده ایم را با دستگیره فرایند می سنجیم؛
@@ -1496,7 +1629,10 @@ class VpnController extends ChangeNotifier {
       );
       _geo = geo;
       _exitIp = geo.ip;
-      _tunnelVerified = geo.ip.isNotEmpty && geo.ip != _realIp;
+      // اگر آی پی بدون تونل خوانده نشده باشد، مقایسه بی معنی است و نباید
+      // اتصال سالم را «ناموفق» اعلام کند (خطای ۰ سرور در شمارش پینگ).
+      final bool ipKnown = _realIp.isNotEmpty;
+      _tunnelVerified = geo.ip.isNotEmpty && (!ipKnown || geo.ip != _realIp);
       if (!_tunnelVerified) {
         _log.add(
           'آی پی خروجی با آی پی قبلی یکسان است؛ ممکن است تونل کامل برقرار نشده باشد.',
@@ -1550,6 +1686,12 @@ class VpnController extends ChangeNotifier {
     _liveTimer?.cancel();
     _livePing = 0;
     _link?.close();
+    // عدد اولیه پینگ سرور متصل همان لحظه خوانده می شود تا کاربر به جای
+    // «در حال سنجش» یک عدد واقعی ببیند.
+    final VpnNode? node = _activeNode;
+    if (node != null) {
+      unawaited(_measureActiveNetworkPing(node));
+    }
     if (_proxyPort <= 0) {
       // در حالت تونل کامل، عدد پینگ از همان مسیر سیستم خوانده می شود.
       _liveTimer = Timer.periodic(const Duration(seconds: 5), (Timer _) {

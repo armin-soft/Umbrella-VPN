@@ -37,11 +37,19 @@ Future<void> main(List<String> arguments) async {
   await settings.load();
   await settings.migrateConnectionMode();
 
-  final AuthController auth = AuthController(native: native);
-  await auth.restore();
-
   final IpService ipService = IpService();
   final TrayService tray = TrayService(native);
+  // صدا و بالون سینی به کنترلر حساب داده می شود تا اعلان تازه با صدا اعلام
+  // شود (صدا فقط پس از آماده شدن سینی و تنظیمات کار می کند).
+  final AuthController auth = AuthController(
+    native: native,
+    sound: sound,
+    tray: tray,
+  );
+  auth
+    ..soundEnabled = settings.settings.soundEnabled
+    ..notificationsEnabled = settings.settings.notificationsEnabled;
+  await auth.restore();
   final CoreProvisioner provisioner = CoreProvisioner();
   // فهرست هسته ها و پوشه داده پیش از ساخت رابط خوانده می شود تا وضعیت هسته ها
   // از همان ابتدا درست نمایش داده شود.
@@ -98,7 +106,13 @@ Future<void> main(List<String> arguments) async {
     accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
   );
   vpn.updateSettings(settings.settings);
-  settings.addListener(() => vpn.updateSettings(settings.settings));
+  settings.addListener(() {
+    vpn.updateSettings(settings.settings);
+    // خاموش کردن صدا یا اعلان در تنظیمات، همان لحظه روی اعلان ها اثر می گذارد.
+    auth
+      ..soundEnabled = settings.settings.soundEnabled
+      ..notificationsEnabled = settings.settings.notificationsEnabled;
+  });
   // اگر حساب در میانه کار منقضی یا مسدود شد، اتصال همان لحظه بسته می شود.
   auth.onAccessRevoked = (String reason) {
     if (vpn.status.active) {

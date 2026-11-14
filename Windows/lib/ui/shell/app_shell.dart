@@ -15,6 +15,7 @@ import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';
 import '../pages/account_page.dart';
 import '../pages/connect_page.dart';
+import '../pages/connection_page.dart';
 import '../pages/logs_page.dart';
 import '../pages/device_page.dart';
 import '../pages/settings_page.dart';
@@ -46,6 +47,11 @@ class _AppShellState extends State<AppShell> {
       label: 'دستگاه من',
       icon: Icons.computer_outlined,
       activeIcon: Icons.computer_rounded,
+    ),
+    NavDestination(
+      label: 'وضعیت اتصال',
+      icon: Icons.monitor_heart_outlined,
+      activeIcon: Icons.monitor_heart_rounded,
     ),
     NavDestination(
       label: 'حساب من',
@@ -99,7 +105,8 @@ class _AppShellState extends State<AppShell> {
         break;
       case 'settings':
         await widget.windowService.show();
-        setState(() => _index = 3);
+        // «تنظیمات» پس از افزودن «وضعیت اتصال» یک خانه جلو رفته است.
+        setState(() => _index = 4);
         break;
       case 'toggle':
         if (vpn.status.active) {
@@ -138,8 +145,9 @@ class _AppShellState extends State<AppShell> {
     final List<Widget> pages = <Widget>[
       const ConnectPage(),
       const DevicePage(),
+      const ConnectionPage(),
       AccountPage(onSignedOut: () => setState(() => _index = 0)),
-      SettingsPage(onOpenAbout: () => setState(() => _index = 6)),
+      SettingsPage(onOpenAbout: () => setState(() => _index = 7)),
       const UpdatesPage(),
       const LogsPage(),
       const AboutPage(),

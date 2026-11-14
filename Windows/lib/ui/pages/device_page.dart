@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../platform/native.dart';
 import '../../state/auth_controller.dart';
-import '../../state/settings_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 
-/// صفحه «دستگاه من»: مشخصات کامل همین کامپیوتر، شبکه و اتصال.
+/// صفحه «دستگاه من»: فقط مشخصات همین کامپیوتر و شبکه آن.
+///
+/// وضعیت تونل، هسته، مدت اتصال و اطلاعات حساب از این صفحه برداشته شده اند و
+/// هر کدام جای خودشان را دارند: اتصال در صفحه «اتصال»، حساب در «حساب من» و
+/// تنظیمات در «تنظیمات». اینجا تنها چیزی که می ماند خودِ دستگاه است.
 class DevicePage extends StatefulWidget {
   const DevicePage({super.key});
 
@@ -51,10 +53,19 @@ class _DevicePageState extends State<DevicePage> {
   Widget build(BuildContext context) {
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
-    final SettingsController settings = context.watch<SettingsController>();
     final UmbrellaColors colors = context.colors;
     final DeviceProfile device = _device.machineId.isEmpty ? vpn.device : _device;
-    final Account account = auth.account;
+
+    // آی پی بیرونی همین دستگاه: اگر تونل وصل باشد، آی پی خروجی؛ وگرنه آی پی
+    // واقعی که خوانده شده است. هیچ حالتی «نامشخص» نمی شود.
+    final String publicIp = vpn.status == VpnStatus.connected &&
+            vpn.exitIp.isNotEmpty
+        ? vpn.exitIp
+        : (vpn.realIp.isNotEmpty
+            ? vpn.realIp
+            : (vpn.geo.ip.isNotEmpty
+                ? vpn.geo.ip
+                : (device.localIp.isEmpty ? 'در حال خواندن' : device.localIp)));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -70,7 +81,7 @@ class _DevicePageState extends State<DevicePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            Fa.num('مشخصات کامل این کامپیوتر، شبکه و اتصال فعلی.'),
+            Fa.num('مشخصات این کامپیوتر و شبکه آن. وضعیت اتصال در صفحه اتصال است.'),
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -142,15 +153,22 @@ class _DevicePageState extends State<DevicePage> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 14),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  children: <Widget>[
                     GlassCard(
                       padding: const EdgeInsets.all(20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           const SectionHeader(
-                            title: 'شبکه',
-                            subtitle: 'آدرس های همین دستگاه',
+                            title: 'شبکه دستگاه',
+                            subtitle: 'آدرس های همین کامپیوتر',
                           ),
                           const SizedBox(height: 10),
                           InfoRow(
@@ -171,73 +189,16 @@ class _DevicePageState extends State<DevicePage> {
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.public_rounded,
-                            label: 'آی پی بیرونی',
-                            value: Fa.num(vpn.exitIp.isNotEmpty
-                                ? vpn.exitIp
-                                : (vpn.realIp.isEmpty
-                                    ? 'در حال بررسی'
-                                    : vpn.realIp)),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.flag_rounded,
-                            label: 'کشور خروجی',
-                            value: Fa.num(vpn.geo.countryLabel.isEmpty
-                                ? 'نامشخص'
-                                : vpn.geo.countryLabel),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  children: <Widget>[
-                    GlassCard(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const SectionHeader(
-                            title: 'اتصال فعلی',
-                            subtitle: 'وضعیت تونل و هسته',
-                          ),
-                          const SizedBox(height: 10),
-                          InfoRow(
-                            icon: Icons.shield_rounded,
-                            label: 'وضعیت',
-                            value: Fa.num(vpn.status.label),
-                            valueColor: VpnVisuals.color(context, vpn.status),
+                            label: 'آی پی بیرونی دستگاه',
+                            value: Fa.num(publicIp),
                           ),
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.dns_rounded,
-                            label: 'سرور',
-                            value: Fa.num(vpn.activeNode?.name ?? 'انتخاب نشده'),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.memory_rounded,
-                            label: 'هسته انتخابی',
-                            value: Fa.num(settings.settings.corePreference.faName),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.lan_outlined,
-                            label: 'حالت اتصال',
-                            value: settings.settings.tunMode
-                                ? 'تونل کامل (TUN)'
-                                : 'پروکسی سیستمی',
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.timer_outlined,
-                            label: 'مدت اتصال',
-                            value: Fa.duration(vpn.stats.connectedFor),
+                            label: 'کارت شبکه فعال',
+                            value: Fa.num(device.localIp.isEmpty
+                                ? 'نامشخص'
+                                : 'متصل'),
                           ),
                         ],
                       ),
@@ -249,34 +210,22 @@ class _DevicePageState extends State<DevicePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           const SectionHeader(
-                            title: 'برنامه',
-                            subtitle: 'نسخه و حساب',
+                            title: 'هویت دستگاه',
+                            subtitle: 'همان شناسه ای که سرور می شناسد',
                           ),
                           const SizedBox(height: 10),
                           InfoRow(
-                            icon: Icons.apps_rounded,
-                            label: 'نسخه برنامه',
-                            value: Fa.num(AppConfig.versionLabel),
+                            icon: Icons.badge_rounded,
+                            label: 'نام کاربر',
+                            value: Fa.num(device.username.isEmpty
+                                ? 'نامشخص'
+                                : device.username),
                           ),
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.person_rounded,
-                            label: 'حساب',
-                            value: Fa.num(account.displayName),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.badge_rounded,
-                            label: 'شناسه حساب',
-                            value: Fa.num(account.uuid.isEmpty
-                                ? 'نامشخص'
-                                : account.uuid),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.category_rounded,
-                            label: 'نوع سرویس',
-                            value: Fa.num(account.planLabel),
+                            label: 'صاحب حساب',
+                            value: Fa.num(auth.account.displayName),
                           ),
                         ],
                       ),

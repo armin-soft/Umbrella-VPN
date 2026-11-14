@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../core/persian.dart';
 import '../models/models.dart';
@@ -44,9 +46,22 @@ class EndpointCheck {
 /// می شوند و تعداد سرورهای هر کدام در گزارش ها نوشته می شود.
 class SubscriptionDiagnostics {
   SubscriptionDiagnostics({http.Client? client})
-      : _client = client ?? http.Client();
+      : _client = client ?? _directClient();
 
   final http.Client _client;
+
+  /// کلاینت بدون پروکسی.
+  ///
+  /// اگر پروکسی سیستمی ویندوز به یک پورت مرده اشاره کند (اجرای قبلی یک
+  /// فیلترشکن)، هر درخواست با «خطای شبکه» شکست می خورد؛ همان چیزی که باعث
+  /// می شد همه نشانی ها در بررسی اشتراک قرمز شوند در حالی که خود پنل سالم
+  /// بود. اشتراک باید همیشه مستقیم خوانده شود.
+  static http.Client _directClient() {
+    final HttpClient inner = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
+    inner.findProxy = (Uri _) => 'DIRECT';
+    return IOClient(inner);
+  }
 
   Future<List<EndpointCheck>> checkAll({
     required String subscriptionUrl,
@@ -98,13 +113,15 @@ class SubscriptionDiagnostics {
         bytes: body.length,
         problem: report.problems.take(1).join(' '),
       );
-    } on Exception {
+    } on Exception catch (error) {
+      // متن واقعی خطا در گزارش می آید تا معلوم شود مشکل شبکه دستگاه است یا
+      // خود نشانی؛ پیش از این همه چیز «خطای شبکه» بود.
       return EndpointCheck(
         title: source.title,
         url: source.url,
         status: 0,
         nodes: 0,
-        problem: 'خطای شبکه',
+        problem: 'خطای شبکه: $error',
       );
     }
   }

@@ -459,6 +459,8 @@ class SideNav extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+                // پایین منوی کناری فقط شماره نسخه می آید؛ نام سازنده اینجا
+                // نمایش داده نمی شود.
                 Row(
                   children: <Widget>[
                     Text(
@@ -476,13 +478,6 @@ class SideNav extends StatelessWidget {
                         dense: true,
                       ),
                   ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  Fa.num(AppConfig.developer),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textSecondary.withValues(alpha: 0.8),
-                      ),
                 ),
               ],
             ),

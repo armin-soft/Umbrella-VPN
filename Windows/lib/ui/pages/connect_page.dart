@@ -29,27 +29,23 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
-  bool _speedTesting = false;
-
-  /// سنجش سرعت واقعی روی سرور متصل.
-  Future<void> _runSpeedTest(
-    VpnController vpn,
-    ToastController toasts,
-  ) async {
-    if (vpn.status != VpnStatus.connected || _speedTesting) {
-      return;
+  /// آی پی دستگاه برای نمایش در نوار بالا.
+  ///
+  /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
+  /// واقعی همین دستگاه؛ و اگر خواندن آن از اینترنت هنوز تمام نشده باشد، آی پی
+  /// داخلی کارت شبکه. هیچ حالتی «نامشخص» یا خط تیره نمی دهد.
+  String _deviceIp(VpnController vpn) {
+    if (vpn.status == VpnStatus.connected && vpn.exitIp.isNotEmpty) {
+      return vpn.exitIp;
     }
-    setState(() => _speedTesting = true);
-    await vpn.measureSpeed();
-    if (!mounted) {
-      return;
+    if (vpn.realIp.isNotEmpty) {
+      return vpn.realIp;
     }
-    setState(() => _speedTesting = false);
-    if (vpn.liveSpeed > 0) {
-      toasts.success('سرعت سرور متصل', Fa.speed(vpn.liveSpeed));
-    } else {
-      toasts.error('سنجش سرعت ناموفق بود', 'تونل جواب نداد؛ سرور دیگری امتحان کن.');
+    if (vpn.geo.ip.isNotEmpty) {
+      return vpn.geo.ip;
     }
+    final String local = vpn.device.localIp;
+    return local.isEmpty ? 'در حال خواندن' : local;
   }
 
   @override
@@ -72,6 +68,18 @@ class _ConnectPageState extends State<ConnectPage> {
         unawaited(vpn.refreshPings());
       }
     });
+  }
+
+  /// لغو اتصال در حال ساخت (دکمه «لغو اتصال»).
+  Future<void> _cancelConnection(
+    VpnController vpn,
+    ToastController toasts,
+  ) async {
+    await vpn.cancel();
+    if (!mounted) {
+      return;
+    }
+    toasts.info('اتصال لغو شد');
   }
 
   Future<void> _toggleConnection(
@@ -98,7 +106,7 @@ class _ConnectPageState extends State<ConnectPage> {
     final ConnectOutcome outcome = await vpn.connect();
     if (outcome.ok) {
       toasts.success('اتصال برقرار شد', vpn.activeNode?.name ?? '');
-    } else {
+    } else if (!outcome.cancelled) {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
   }
@@ -192,9 +200,9 @@ class _ConnectPageState extends State<ConnectPage> {
     final String flagCode = vpn.geo.flagCode.isNotEmpty
         ? vpn.geo.flagCode
         : (vpn.activeNode?.flagCode ?? '');
-    final String shownIp = vpn.exitIp.isNotEmpty
-        ? vpn.exitIp
-        : (vpn.realIp.isNotEmpty ? vpn.realIp : '—');
+    // آی پی دستگاه هرگز «نامشخص» نمی شود: اول آی پی واقعی خوانده شده از
+    // اینترنت، بعد آی پی خروجی تونل و در آخر آی پی داخلی کارت شبکه.
+    final String shownIp = _deviceIp(vpn);
     final String countryName = CountryNames.fa(flagCode);
 
     // ارتفاع صفحه کامل استفاده می شود؛ هیچ نیمه خالی نمی ماند.
@@ -291,12 +299,18 @@ class _ConnectPageState extends State<ConnectPage> {
                     children: <Widget>[
                       Semantics(
                         button: true,
-                        label: status.active ? 'قطع اتصال' : 'اتصال',
+                        label: status.busy
+                            ? 'لغو اتصال'
+                            : (status.active ? 'قطع اتصال' : 'اتصال'),
                         child: InkWell(
                           customBorder: const CircleBorder(),
-                          onTap: status.busy
+                          // زدن گنبد وسط در حال ساخت تونل هم اتصال را لغو
+                          // می کند؛ نه فقط دکمه پایین.
+                          onTap: status == VpnStatus.disconnecting
                               ? null
-                              : () => _toggleConnection(vpn, toasts),
+                              : (status.busy
+                                  ? () => _cancelConnection(vpn, toasts)
+                                  : () => _toggleConnection(vpn, toasts)),
                           child: Stack(
                             alignment: Alignment.center,
                             children: <Widget>[
@@ -363,20 +377,30 @@ class _ConnectPageState extends State<ConnectPage> {
                       const SizedBox(height: 14),
                       SizedBox(
                         width: 460,
-                        child: GradientButton(
-                          label: status.active && !status.busy
-                              ? 'قطع اتصال'
-                              : 'اتصال',
-                          icon: Icons.power_settings_new_rounded,
-                          height: 60,
-                          tone: status.active && !status.busy
-                              ? colors.danger
-                              : colors.primary,
-                          loading: status.busy,
-                          onPressed: status.busy
-                              ? null
-                              : () => _toggleConnection(vpn, toasts),
-                        ),
+                        child: status.busy
+                            // هنگام ساخت تونل، دکمه به «لغو اتصال» تبدیل می شود؛
+                            // تا پیش از این کاربر هیچ راهی برای پشیمان شدن نداشت.
+                            ? GradientButton(
+                                label: status == VpnStatus.disconnecting
+                                    ? 'در حال لغو...'
+                                    : 'لغو اتصال',
+                                icon: Icons.cancel_rounded,
+                                height: 60,
+                                tone: colors.warning,
+                                loading: status == VpnStatus.disconnecting,
+                                onPressed: status == VpnStatus.disconnecting
+                                    ? null
+                                    : () => _cancelConnection(vpn, toasts),
+                              )
+                            : GradientButton(
+                                label: status.active ? 'قطع اتصال' : 'اتصال',
+                                icon: Icons.power_settings_new_rounded,
+                                height: 60,
+                                tone: status.active
+                                    ? colors.danger
+                                    : colors.primary,
+                                onPressed: () => _toggleConnection(vpn, toasts),
+                              ),
                       ),
                       if (!account.canConnect)
                         Padding(
@@ -417,107 +441,11 @@ class _ConnectPageState extends State<ConnectPage> {
                     ],
                   ),
 
-                  // ── نوار پایین: سرور فعال و آمار ──────────────────────
-                  Column(
-                    children: <Widget>[
-                      _ActiveServerBar(vpn: vpn),
-                      if (vpn.status == VpnStatus.connected) ...<Widget>[
-                        const SizedBox(height: 10),
-                        Row(
-                          children: <Widget>[
-                            Expanded(
-                              child: _MiniStat(
-                                label: vpn.liveSpeed > 0
-                                    ? 'سرعت سنجیده'
-                                    : 'دانلود',
-                                value: vpn.liveSpeed > 0
-                                    ? Fa.speed(vpn.liveSpeed)
-                                    : (vpn.stats.available
-                                        ? Fa.speed(vpn.stats.downSpeed)
-                                        : '—'),
-                                color: colors.success,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _MiniStat(
-                                label: 'پینگ',
-                                value: vpn.activePingMs > 0
-                                    ? Fa.ms(vpn.activePingMs)
-                                    : 'در حال سنجش',
-                                color: colors.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _MiniStat(
-                                label: 'دریافتی',
-                                value: vpn.stats.available
-                                    ? Fa.bytes(vpn.stats.rx)
-                                    : '—',
-                                color: colors.info,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _MiniStat(
-                                label: 'مدت اتصال',
-                                value: Fa.duration(vpn.stats.connectedFor),
-                                color: colors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Tooltip(
-                              message: 'سنجش سرعت واقعی روی سرور متصل',
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => _runSpeedTest(vpn, toasts),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colors.primary.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: colors.primary.withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: <Widget>[
-                                      if (_speedTesting)
-                                        const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      else
-                                        Icon(
-                                          Icons.speed_rounded,
-                                          size: 18,
-                                          color: colors.primary,
-                                        ),
-                                      Text(
-                                        Fa.num('سنجش سرعت'),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(color: colors.primary),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
+                  // نوار پایین عمدا حذف شده است: کارت پایین صفحه دیگر
+                  // سرور فعال را نشان نمی دهد، چون کاربر نخواست نام سرور
+                  // اینجا نمایش داده شود. آمار اتصال در «دستگاه من» و
+                  // گزارش ها هست.
+                  const SizedBox.shrink(),
                 ],
               ),
             ),
@@ -710,146 +638,6 @@ class _PickerChip extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// نوار باریک سرور فعال؛ برای سرور متصل هیچ پینگی نمایش داده نمی شود.
-class _ActiveServerBar extends StatelessWidget {
-  const _ActiveServerBar({required this.vpn});
-
-  final VpnController vpn;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final VpnNode? node = vpn.activeNode;
-    final bool active = vpn.status.active;
-    final String flagCode = node?.flagCode ?? '';
-    if (node == null) {
-      return Text(
-        Fa.num('سروری انتخاب نشده است؛ با زدن دکمه اتصال، بهترین سرور خودکار '
-            'انتخاب می شود.'),
-        textAlign: TextAlign.center,
-        style: Theme.of(context)
-            .textTheme
-            .labelSmall
-            ?.copyWith(color: colors.textSecondary),
-      );
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: colors.backgroundAlt,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: colors.border),
-      ),
-      child: Row(
-        children: <Widget>[
-          if (flagCode.isNotEmpty) ...<Widget>[
-            FlagView(code: flagCode, width: 26),
-            const SizedBox(width: 9),
-          ],
-          Expanded(
-            child: Text(
-              Fa.num(node.name),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // پینگ واقعی سرور متصل: روی همان تونل و همان اتصال باز سنجیده
-          // می شود، پس عدد نمایش داده شده همان چیزی است که کاربر حس می کند.
-          Pill(
-            label: vpn.activePingMs > 0
-                ? 'پینگ ${Fa.ms(vpn.activePingMs)}'
-                : 'در حال سنجش',
-            icon: Icons.speed_rounded,
-            color: vpn.activePingMs > 0
-                ? (vpn.activePingMs < 200
-                    ? colors.success
-                    : (vpn.activePingMs < 400 ? colors.warning : colors.danger))
-                : colors.textSecondary,
-            dense: true,
-          ),
-          const SizedBox(width: 6),
-          Pill(
-            label: Fa.num(node.protocol.label),
-            icon: Icons.lan_rounded,
-            color: colors.info,
-            dense: true,
-          ),
-          if (active) ...<Widget>[
-            const SizedBox(width: 6),
-            Pill(
-              label: vpn.tunnelVerified ? 'تونل تایید شد' : 'متصل',
-              icon: vpn.tunnelVerified
-                  ? Icons.verified_user_rounded
-                  : Icons.shield_rounded,
-              color: colors.success,
-              dense: true,
-            ),
-          ] else if (vpn.measuring) ...<Widget>[
-            const SizedBox(width: 6),
-            Pill(
-              label: 'در حال سنجش',
-              icon: Icons.speed_rounded,
-              color: colors.warning,
-              dense: true,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  const _MiniStat({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: colors.backgroundAlt,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.border.withValues(alpha: 0.6)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            Fa.num(value),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-          ),
-          Text(
-            Fa.num(label),
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: colors.textSecondary),
-          ),
-        ],
       ),
     );
   }

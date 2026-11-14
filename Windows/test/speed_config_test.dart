@@ -23,9 +23,12 @@ void main() {
       final Map<String, dynamic> inbound =
           (config['inbounds'] as List<dynamic>).first as Map<String, dynamic>;
       expect(inbound['type'], 'tun');
-      expect(inbound['gso'], isTrue);
       expect(inbound['tcp_fast_open'], isTrue);
       expect(inbound['auto_route'], isTrue);
+      // gso و gso_max_size در سینگ باکس ۱.۱۱ به بعد حذف شده اند و همان
+      // کلیدها باعث خطای «json: unknown field» و بالا نیامدن تونل می شدند.
+      expect(inbound.containsKey('gso'), isFalse);
+      expect(inbound.containsKey('gso_max_size'), isFalse);
     });
 
     test('حالت اتصال پیش فرض تونل کامل است', () {

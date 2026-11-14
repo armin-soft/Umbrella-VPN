@@ -31,8 +31,12 @@ class SubscriptionEndpoints {
   ];
 
   /// مسیرهای جایگزین هر قالب؛ پنل های مختلف یکی از این ها را دارند.
+  ///
+  /// مسیر `mihomo/all.yml` عمدا حذف شده است: پنل همین سرور آن را با کد ۴۰۴
+  /// رد می کند و هر بار یک درخواست بی نتیجه در گزارش ها می نوشت. مسیر درست
+  /// کلش متا همان `clash/meta/all.yml` است.
   static const Map<String, List<String>> alternates = <String, List<String>>{
-    'clash': <String>['clash/meta/all.yml', 'mihomo/all.yml'],
+    'clash': <String>['clash/meta/all.yml'],
     'wireguard': <String>['wireguard', 'wireguard/', 'wireguard/?asn=unknown'],
     'amnezia': <String>['amnezia', 'amnezia/', 'amnezia/?asn=unknown'],
     'mieru': <String>['mieru', 'mieru/', 'mieru/?asn=unknown'],

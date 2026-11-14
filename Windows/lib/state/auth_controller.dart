@@ -25,7 +25,11 @@ class AuthController extends ChangeNotifier {
     GatewayClient? gateway,
     String? gatewayBase,
     LocalStore? store,
+    SoundService? sound,
+    TrayService? tray,
   })  : _native = native,
+        _sound = sound,
+        _tray = tray,
         _store = store ?? LocalStore.instance {
     // نشانی ذخیره شده در تنظیمات بر پیش فرض برنامه اولویت دارد.
     final String stored = _store.read(AppConfig.gatewayStoreKey) ?? '';
@@ -39,6 +43,18 @@ class AuthController extends ChangeNotifier {
   late GatewayClient _gateway;
   final LocalStore _store;
   final AppLogger _log = AppLogger.instance;
+
+  /// پخش صدای اعلان و بالون سینی سیستم؛ اگر ساخته نشده باشند بی صدا رد می شوند.
+  final SoundService? _sound;
+  final TrayService? _tray;
+
+  /// آیا اعلان ها با صدا و بالون ویندوز اعلام شوند؟ از تنظیمات کاربر.
+  bool notificationsEnabled = true;
+  bool soundEnabled = true;
+
+  /// شناسه اعلان هایی که یک بار اعلام شده اند تا با هر به روز رسانی حساب،
+  /// صدا و بالون تکرار نشود.
+  final Set<String> _announced = <String>{};
 
   SessionData? _session;
   SessionData? get session => _session;
@@ -122,6 +138,10 @@ class AuthController extends ChangeNotifier {
     final List<dynamic> cached = _store.readJsonList(StoreKeys.notifications);
     _notifications =
         cached.map((Object? item) => AppNotification.fromJson(JsonX.asMap(item))).toList();
+    // اعلان های ذخیره شده قبلی دیگر «تازه» نیستند و با شروع برنامه صدا نمی دهند.
+    for (final AppNotification item in _notifications) {
+      _announced.add(_keyOf(item));
+    }
     notifyListeners();
   }
 
@@ -443,6 +463,9 @@ class AuthController extends ChangeNotifier {
       unawaited(
         _gateway.heartbeat(token: session.token, deviceId: _deviceId),
       );
+      // هر ضربان، اعلان ها هم تازه می شوند تا اعلان تازه در همان دقایق
+      // روشن شدن برنامه با صدا اعلام شود، نه فقط هنگام باز شدن.
+      unawaited(fetchNotifications());
     });
   }
 
@@ -536,14 +559,45 @@ class AuthController extends ChangeNotifier {
     }
     try {
       final List<AppNotification> items = await _gateway.notifications(session.token);
+      final List<AppNotification> fresh = items
+          .where((AppNotification item) => !_announced.contains(_keyOf(item)))
+          .toList();
       _notifications = items;
       await _store.writeJsonList(
         StoreKeys.notifications,
         items.map((AppNotification item) => item.toJson()).toList(),
       );
       notifyListeners();
+      // اعلان تازه باید هم صدا داشته باشد و هم در گوشه ویندوز دیده شود.
+      if (fresh.isNotEmpty) {
+        await _announce(fresh);
+      }
     } on ApiError {
       return;
+    }
+  }
+
+  static String _keyOf(AppNotification item) => '${item.id}|${item.sentAt?.toIso8601String() ?? ''}';
+
+  /// اعلام اعلان تازه: صدا و بالون سینی سیستم.
+  ///
+  /// چند اعلان همزمان فقط یک صدا می دهد تا گوش کاربر اذیت نشود؛ متن بالون
+  /// آخرین اعلان است.
+  Future<void> _announce(List<AppNotification> fresh) async {
+    for (final AppNotification item in fresh) {
+      _announced.add(_keyOf(item));
+      _log.add('اعلان تازه: ${item.title}${item.body.isEmpty ? '' : ' | ${item.body}'}');
+    }
+    final AppNotification last = fresh.last;
+    if (soundEnabled) {
+      await _sound?.play('notify');
+    }
+    if (notificationsEnabled) {
+      await _tray?.balloon(
+        last.title.isEmpty ? 'اعلان تازه' : last.title,
+        last.body,
+        warning: fresh.any((AppNotification item) => item.level == 'warning'),
+      );
     }
   }
 

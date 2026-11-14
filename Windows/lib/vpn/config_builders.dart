@@ -52,6 +52,27 @@ class SingBoxConfig {
   static String encode(Map<String, dynamic> config) =>
       const JsonEncoder.withIndent('  ').convert(config);
 
+  /// آیا سینگ باکس این نوع انتقال را می شناسد؟
+  ///
+  /// بیشتر سرورهای این سرویس از `xhttp` (همان split-http ایکس ری) استفاده می
+  /// کنند و سینگ باکس آن را ندارد؛ اجرای سینگ باکس برای این سرورها فقط چند
+  /// ثانیه تلف می کرد و در پایان «هیچ هسته ای تونل را بالا نیاورد» می داد.
+  /// برای این سرورها مستقیم سراغ ایکس ری می رویم.
+  static bool supportsTransport(VpnNode node) {
+    final String network = JsonX.text(
+      node.params['network'] ?? node.params['type'],
+    ).toLowerCase();
+    switch (network) {
+      case 'xhttp':
+      case 'splithttp':
+      case 'kcp':
+      case 'mkcp':
+        return false;
+      default:
+        return true;
+    }
+  }
+
   /// حالت پروکسی محلی برای سرور وایرگارد.
   ///
   /// سینگ باکس وایرگارد را به شکل endpoint می شناسد؛ یک پورت مختلط محلی
@@ -157,7 +178,12 @@ class SingBoxConfig {
     // بافرهای بزرگ تر و استک سیستم: همان تنظیماتی که سرعت بالای کلاینت
     // هیدیفای از آن می آید. mtu = 0 در سینگ باکس یعنی انتخاب خودکار که برای
     // tcp بهتر از عددهای بزرگ دستی است.
-    final bool systemStack = settings.tunStack == TunStack.system;
+    //
+    // ⚠️ gso و gso_max_size از سینگ باکس ۱.۱۱ به بعد حذف شده اند و نسخه
+    // همراه این برنامه همان‌ها را با خطای «json: unknown field» رد می کند؛
+    // همان خطایی که باعث می شد هیچ هسته ای تونل را بالا نیاورد. این کلیدها
+    // هرگز نباید نوشته شوند. در عوض همان کاری که خود سینگ باکس در نسخه های
+    // تازه انجام می دهد: فقط استک و mtu.
     return <String, dynamic>{
       'type': 'tun',
       'tag': 'tun-in',
@@ -169,10 +195,6 @@ class SingBoxConfig {
       'stack': settings.tunStack.name,
       'endpoint_independent_nat': true,
       'udp_timeout': '5m',
-      if (!systemStack) ...<String, dynamic>{
-        'gso': true,
-        'gso_max_size': 65536,
-      },
       'tcp_fast_open': true,
       'tcp_multi_path': false,
     };
@@ -405,7 +427,10 @@ class SingBoxConfig {
         security == 'xtls' ||
         JsonX.boolean(params['tls']) ||
         reality;
-    if (!enabled && sni.isEmpty) {
+    // سرورهایی که صریحا security=none دارند نباید لایه TLS بگیرند؛ پیش از این
+    // فقط داشتن sni کافی بود و همان سرورهای بی TLS با دست دادن TLS ناموفق
+    // می شدند (خطای 301 و «هیچ هسته ای تونل را بالا نیاورد»).
+    if (!enabled) {
       return null;
     }
     final Map<String, dynamic> tls = <String, dynamic>{
@@ -457,6 +482,17 @@ class SingBoxConfig {
           'type': 'httpupgrade',
           'path': path.isEmpty ? '/' : path,
           if (host.isNotEmpty) 'headers': <String, String>{'Host': host},
+        };
+      // ایکس اچ تی تی پی (نوع xhttp در اشتراک های هیدیفای): بیشتر سرورهای
+      // این اشتراک از همین استفاده می کنند. سینگ باکس آن را با نوع http
+      // می شناسد؛ اگر پشتیبانی نکند خودش خطا می دهد و هسته بعدی امتحان
+      // می شود.
+      case 'xhttp':
+      case 'splithttp':
+        return <String, dynamic>{
+          'type': 'http',
+          'path': path.isEmpty ? '/' : path,
+          if (host.isNotEmpty) 'host': <String>[host],
         };
       case 'h2':
       case 'http':
@@ -698,6 +734,14 @@ class XrayConfig {
       stream['httpSettings'] = <String, dynamic>{
         'path': JsonX.text(params['path'], '/'),
         'host': <String>[JsonX.text(params['host'], sni)],
+      };
+    } else if (network == 'xhttp' || network == 'splithttp') {
+      // ایکس اچ تی تی پی از ایکس ری ۲۵ شناخته می شود؛ همان مسیر و میزبان
+      // سرور، بدون بازنویسی شبکه به tcp.
+      stream['xhttpSettings'] = <String, dynamic>{
+        'path': JsonX.text(params['path'], '/'),
+        'host': JsonX.text(params['host'], sni),
+        'mode': JsonX.text(params['mode'], 'auto'),
       };
     }
     return stream;

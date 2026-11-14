@@ -28,8 +28,10 @@ void main() {
       '$base$uuid/amnezia',
       '$base$uuid/mieru',
     ]);
-    // مسیرهای جایگزین هم پشتیبان هستند.
-    expect(urls, contains('$base$uuid/mihomo/all.yml'));
+    // مسیرهای جایگزین هم پشتیبان هستند؛ مسیر ۴۰۴ قدیمی کلش دیگر ساخته
+    // نمی شود و مسیر درست کلش متا در فهرست اصلی است.
+    expect(urls, isNot(contains('$base$uuid/mihomo/all.yml')));
+    expect(urls, contains('$base$uuid/clash/meta/all.yml'));
     expect(urls, contains('$base$uuid/wireguard/?asn=unknown'));
     expect(sources.every((SubscriptionSource item) => item.personal), isTrue);
   });
