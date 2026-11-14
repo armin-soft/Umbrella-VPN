@@ -97,11 +97,11 @@ if ($LASTEXITCODE -ne 0) {
 # ------------------------------------------------------- 3.5 bundled cores
 # هسته ها همراه فایل نصبی می روند؛ برنامه خودش چیزی دانلود نمی کند.
 Write-Step 'آماده سازی هسته ها برای بسته بندی'
-try {
-    & (Join-Path $PSScriptRoot 'fetch-cores.ps1')
-} catch {
-    Write-Host "هشدار: هسته ها کامل آماده نشدند: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host 'فایل نصبی بدون هسته ناقص خواهد بود؛ بعدا tools\fetch-cores.ps1 را اجرا کنید.' -ForegroundColor Yellow
+# هسته هیدیفای باید در بسته باشد؛ اتصال بدون آن ممکن نیست. اگر گرفتن هسته
+# شکست بخورد، ساخت متوقف می شود تا نسخه ناقص ساخته نشود.
+& (Join-Path $PSScriptRoot 'fetch-cores.ps1')
+if ($LASTEXITCODE -ne 0) {
+    throw 'هسته هیدیفای آماده نشد؛ ساخت ادامه نمی یابد.'
 }
 
 # ------------------------------------------------------------------ 4. build

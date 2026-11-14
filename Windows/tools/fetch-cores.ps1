@@ -164,7 +164,12 @@ try {
                     throw "هش فایل با فهرست نمی خواند ($actual)"
                 }
             }
-            Copy-Item $insidePath $target -Force
+            # در بسته tar.gz فایل ها از قبل در جای خودشان (cores\hiddify)
+            # هستند؛ کپی فایل روی خودش خطا می دهد و لازم نیست.
+            if ([System.IO.Path]::GetFullPath($insidePath) -ne
+                [System.IO.Path]::GetFullPath($target)) {
+                Copy-Item $insidePath $target -Force
+            }
             Write-Host "  آماده شد: $($core.binary)" -ForegroundColor Green
             $fetched += $core.id
         } catch {
@@ -185,6 +190,8 @@ if ($skipped) {
     Write-Host ("هسته های اختیاری که گرفته نشد: " + ($skipped -join ', ')) -ForegroundColor Yellow
 }
 if ($failedRequired) {
-    throw ("هسته های الزامی گرفته نشد: " + ($failedRequired -join ', ') + " - ساخت فایل نصبی بدون آن ها کامل نیست.")
+    Write-Host ("هسته های الزامی گرفته نشد: " + ($failedRequired -join ', ')) -ForegroundColor Red
+    exit 1
 }
 Write-Host 'هسته هیدیفای در پوشه cores\hiddify آماده است.' -ForegroundColor Green
+exit 0
