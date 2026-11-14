@@ -125,13 +125,19 @@ class UmbrellaCore {
   }
 
   /// پوشه خود برنامه (جایی که فایل های اجرایی هستند).
+  ///
+  /// [appDir] ممکن است خود برنامه، پوشه `cores` یا پوشه `cores\umbrella` باشد؛
+  /// هر سه به پوشه برنامه برمی گردند تا بررسی نصب از هر مسیری درست کار کند.
   static String rootOf(String appDir) {
-    final String clean = appDir.endsWith(Platform.pathSeparator)
+    final String separator = Platform.pathSeparator;
+    String clean = appDir.endsWith(separator)
         ? appDir.substring(0, appDir.length - 1)
         : appDir;
-    if (clean.endsWith('${Platform.pathSeparator}cores') ||
-        clean.endsWith('${Platform.pathSeparator}umbrella')) {
-      return clean.substring(0, clean.lastIndexOf(Platform.pathSeparator));
+    if (clean.endsWith('${separator}umbrella')) {
+      clean = clean.substring(0, clean.lastIndexOf(separator));
+    }
+    if (clean.endsWith('${separator}cores')) {
+      clean = clean.substring(0, clean.lastIndexOf(separator));
     }
     return clean;
   }
