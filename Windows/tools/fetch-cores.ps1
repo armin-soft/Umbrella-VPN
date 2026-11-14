@@ -25,7 +25,11 @@ $ProjectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $ProjectRoot
 
 $ManifestPath = Join-Path $ProjectRoot 'assets\cores\manifest.json'
-$DestDir = Join-Path $ProjectRoot 'cores\bin'
+# هسته هیدیفای چند فایل دارد و کتابخانه اش باید کنار فایل اجرایی اش بماند، پس
+# در پوشه خودش می رود. نام پوشه را نصب کننده و بررسی CI هم انتظار دارند.
+$CoresRoot = Join-Path $ProjectRoot 'cores'
+$HiddifyDir = Join-Path $CoresRoot 'hiddify'
+$DestDir = Join-Path $CoresRoot 'bin'
 New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
 if (-not (Test-Path $ManifestPath)) {
@@ -46,7 +50,7 @@ try {
         # هسته هیدیفای چند فایل دارد و باید کنار هم بماند؛ برای همین در
         # پوشه خودش می رود و باینری اصلی از همان جا خوانده می شود.
         $target = if ($core.cli_prefix) {
-            Join-Path (Join-Path $DestDir 'hiddify') $core.binary
+            Join-Path $HiddifyDir $core.binary
         } else {
             Join-Path $DestDir $core.binary
         }
@@ -141,7 +145,7 @@ try {
 
                     # همه فایل های هسته (اجرایی و کتابخانه اش) کنار هم در
                     # cores\hiddify می مانند؛ جدایی شان هسته را می شکند.
-                    $coreDir = Join-Path $DestDir 'hiddify'
+                    $coreDir = $HiddifyDir
                     New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
                     Copy-Item (Join-Path $extractDir '*') $coreDir -Recurse -Force
 
