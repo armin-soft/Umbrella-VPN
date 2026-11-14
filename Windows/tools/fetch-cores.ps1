@@ -59,7 +59,7 @@ try {
             Join-Path $DestDir $core.binary
         }
         if ((Test-Path $target) -and (-not $Force)) {
-            Write-Host "  موجود است: $($core.binary)" -ForegroundColor DarkGray
+            Write-Host "  موجود است: $(Split-Path $target -Leaf)" -ForegroundColor DarkGray
             $fetched += $core.id
             continue
         }
