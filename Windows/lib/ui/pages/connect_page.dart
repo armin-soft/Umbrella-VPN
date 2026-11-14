@@ -70,6 +70,21 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
+  /// خط دوم نوار بالا: تاریخ، و اگر معلوم باشد شهر و کشور دستگاه.
+  String _subtitleLine(VpnController vpn) {
+    final String date = Fa.longDate(DateTime.now());
+    final String city = vpn.geo.city;
+    final String country = vpn.geo.countryLabel;
+    final List<String> place = <String>[
+      if (city.isNotEmpty) city,
+      if (country.isNotEmpty) country,
+    ];
+    if (place.isEmpty) {
+      return date;
+    }
+    return '$date | ${place.join('، ')}';
+  }
+
   /// لغو اتصال در حال ساخت (دکمه «لغو اتصال»).
   Future<void> _cancelConnection(
     VpnController vpn,
@@ -250,7 +265,12 @@ class _ConnectPageState extends State<ConnectPage> {
                                   ?.copyWith(fontWeight: FontWeight.w900),
                             ),
                             Text(
-                              Fa.num(Fa.longDate(DateTime.now())),
+                              // تاریخ و، اگر شناخته شده باشد، شهر و کشور همین
+                              // دستگاه؛ بخش ناشناخته نوشته نمی شود تا خط
+                              // «نامشخص، نامشخص» دیده نشود.
+                              Fa.num(_subtitleLine(vpn)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall

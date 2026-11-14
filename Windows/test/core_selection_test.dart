@@ -10,6 +10,13 @@ void main() {
       expect(geo.flagEmojiFreeLabel, 'Canada، Montreal');
     });
 
+    test('موقعیت ناشناخته رشته خالی می دهد، نه «نامشخص»', () {
+      // خط تاریخ و موقعیت در صفحه اتصال نباید «نامشخص، نامشخص» بنویسد.
+      expect(const GeoInfo().countryLabel, isEmpty);
+      expect(const GeoInfo().flagEmojiFreeLabel, isEmpty);
+      expect(const GeoInfo(city: 'Montreal').flagEmojiFreeLabel, 'Montreal');
+    });
+
     test('اگر کد کشور نبود، از نام کشور استنباط می شود', () {
       expect(const GeoInfo(country: 'Germany').flagCode, 'de');
       expect(const GeoInfo(country: 'Netherlands').flagCode, 'nl');

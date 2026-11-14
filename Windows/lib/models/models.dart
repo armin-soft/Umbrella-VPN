@@ -707,12 +707,20 @@ class GeoInfo {
       'FR' => 'فرانسه',
       'GB' => 'بریتانیا',
       'SE' => 'سوئد',
-      _ => 'نامشخص',
+      // کشور ناشناخته رشته خالی می دهد، نه «نامشخص»؛ وگرنه خط تاریخ و موقعیت
+      // در صفحه اتصال به «نامشخص، نامشخص» تبدیل می شد.
+      _ => '',
     };
   }
 
-  String get flagEmojiFreeLabel =>
-      '$countryLabel${city.isEmpty ? '' : '، $city'}';
+  /// برچسب موقعیت برای نمایش؛ اگر هیچ کدام معلوم نباشد یک رشته خالی.
+  String get flagEmojiFreeLabel {
+    final List<String> parts = <String>[
+      if (countryLabel.isNotEmpty) countryLabel,
+      if (city.isNotEmpty) city,
+    ];
+    return parts.join('، ');
+  }
 
   /// کد دوحرفی کشور برای نمایش پرچم (کوچک، مثلا ca).
   String get flagCode {
