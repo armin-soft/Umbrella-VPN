@@ -74,6 +74,9 @@ void main() {
       final String page = read('lib/ui/pages/connection_page.dart');
       expect(page.contains('وضعیت اتصال'), isTrue);
       expect(page.contains('هسته انتخابی'), isTrue);
+      // فراموش شدن این واردات، ساخت ویندوز را با «VpnController isn't a type»
+      // می شکست؛ حالا آزمون هم جلوی آن را می گیرد.
+      expect(page.contains("import '../../vpn/vpn_controller.dart';"), isTrue);
     });
   });
 

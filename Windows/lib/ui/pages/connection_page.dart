@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
+import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 
 /// صفحه «وضعیت اتصال»: همه چیزی که به تونل، هسته و سرور مربوط است.
