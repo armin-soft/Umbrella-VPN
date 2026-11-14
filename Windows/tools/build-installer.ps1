@@ -44,18 +44,6 @@ $missingCores = $requiredCores | Where-Object { -not (Test-Path (Join-Path $core
 if ($missingCores) {
     throw "هسته های الزامی برای بسته بندی پیدا نشدند: $($missingCores -join ', ') - ابتدا tools\fetch-cores.ps1 را اجرا کنید."
 }
-# کتابخانه کرونت باید کنار فایل نصبی باشد؛ همان پوشه ای که هسته در آن اجرا
-# می شود. ویندوز کتابخانه وابسته را از همان پوشه بار می کند.
-$coreDir = Join-Path $coresDir 'hiddify'
-if (Test-Path $coreDir) {
-    foreach ($name in @('libcronet.dll', 'UmbrellaCore.dll')) {
-        $source = Join-Path $coreDir $name
-        if (Test-Path $source) {
-            Copy-Item $source $ReleaseDir -Force
-        }
-    }
-}
-
 $ReleaseExe = Join-Path $ReleaseDir 'UmbrellaVPN.exe'
 $IssFile = Join-Path $ProjectRoot 'installer\umbrella.iss'
 $DistDir = Join-Path $ProjectRoot 'dist'

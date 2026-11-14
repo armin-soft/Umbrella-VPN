@@ -56,14 +56,26 @@ class CliSession {
     }
   }
 
-  /// فایل اجرایی پنجره. همان `UmbrellaCli.exe` که نصب کننده کنار برنامه
-  /// می گذارد.
+  /// فایل اجرایی پنجره: همان `UmbrellaCli.exe`.
+  ///
+  /// هسته در پوشه خودش (`cores\hiddify`) می ماند، چون کتابخانه ۱۰۹ مگابایتی
+  /// و کرونتش باید کنار همین فایل باشند و ویندوز آن ها را از همان پوشه بار
+  /// می کند. اگر آن جا نبود، کنار خود برنامه هم امتحان می شود.
   static String executable() {
     final String exe = Platform.resolvedExecutable;
     final String dir =
         exe.substring(0, exe.lastIndexOf(Platform.pathSeparator));
-    final String cli = '$dir${Platform.pathSeparator}${HiddifyCore.cliBinary}';
-    return File(cli).existsSync() ? cli : exe;
+    final String coreDir = HiddifyCore.directoryOf(dir);
+    final List<String> candidates = <String>[
+      '$coreDir${Platform.pathSeparator}${HiddifyCore.cliBinary}',
+      '$dir${Platform.pathSeparator}${HiddifyCore.cliBinary}',
+    ];
+    for (final String candidate in candidates) {
+      if (File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+    return candidates.first;
   }
 
   /// باز کردن پنجره ترمینال با آرگومان های داده شده.

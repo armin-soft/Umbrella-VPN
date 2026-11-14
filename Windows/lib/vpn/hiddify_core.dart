@@ -100,9 +100,19 @@ class HiddifyCore {
   }
 
   /// پوشه هسته در نسخه نصب: همه فایل های هسته باید کنار هم بمانند.
-  static String directoryOf(String appDir) =>
-      '$appDir${Platform.pathSeparator}cores'
-      '${Platform.pathSeparator}hiddify';
+  ///
+  /// [appDir] یا پوشه خود برنامه است یا پوشه `cores`؛ هر دو پذیرفته می شود تا
+  /// فراخوان ها لازم نباشد بدانند کدام یکی را دارند.
+  static String directoryOf(String appDir) {
+    final String clean = appDir.endsWith(Platform.pathSeparator)
+        ? appDir.substring(0, appDir.length - 1)
+        : appDir;
+    if (clean.endsWith('${Platform.pathSeparator}cores')) {
+      return '$clean${Platform.pathSeparator}hiddify';
+    }
+    return '$clean${Platform.pathSeparator}cores'
+        '${Platform.pathSeparator}hiddify';
+  }
 
   /// آیا فایل های هسته در نسخه نصب هستند؟
   ///

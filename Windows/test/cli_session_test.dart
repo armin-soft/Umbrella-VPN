@@ -45,6 +45,11 @@ void main() {
         HiddifyCore.directoryOf(r'C:\Program Files\Umbrella'),
         endsWith(r'cores\hiddify'),
       );
+      // پوشه cores هم پذیرفته می شود و یک بار بیشتر تودرتو نمی شود.
+      expect(
+        HiddifyCore.directoryOf(r'C:\Program Files\Umbrella\cores'),
+        r'C:\Program Files\Umbrella\cores\hiddify',
+      );
     });
   });
 

@@ -13,7 +13,6 @@
 #define AppVersion "1.0.2"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
-#define CliExe "UmbrellaCli.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
 #define ReleaseDir "..\build\windows\x64\runner\Release"
 
@@ -67,26 +66,22 @@ Name: "autostart"; Description: "Start {#AppNameEn} when Windows starts (minimis
 ; Flutter release bundle: exe, flutter_windows.dll, plugin dll, data folder.
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; The core ships inside the installer: tools\fetch-cores.ps1 puts the Hiddify
-; core bundle in cores\hiddify next to the build output, so the {#ReleaseDir}
-; rule above carries it into {app}\cores\hiddify. The two files that must sit
-; next to the exe are listed below with the app's own names.
+; core bundle in cores\hiddify next to the build output, so the rule above
+; carries it into {app}\cores\hiddify, where the app runs it from. The core
+; library stays in that folder on purpose: it must sit next to its own exe, and
+; copying 109 MB twice would only make the installer bigger.
 ; ── هسته هیدیفای: تنها هسته همراه نسخه ───────────────────────────────────
-; همه فایل های هسته در cores\hiddify می مانند (کتابخانه اش باید کنار فایل
-; اجرایی باشد) و همین بلوک دو فایل لازم را کنار خود برنامه با نام آمبرلا
-; می گذارد:
+; همه فایل های هسته در cores\hiddify می مانند و همان جا اجرا می شوند:
 ;
 ;   UmbrellaCli.exe          — مثل HiddifyCli؛ خط فرمان و همان پنجره ترمینال
+;   UmbrellaCore.dll         — مثل hiddify-core.dll؛ خود موتور (۱۰۹ مگابایت)
+;   libcronet.dll            — کتابخانه وابسته هسته
 ;   UmbrellaCoreEngine.exe   — مثل HiddifyCoreEngine؛ همان هسته با زیرسیستم
 ;                              گرافیکی، پس هیچ پنجره کنسولی باز نمی شود
 ;
-; فقط نام عوض می شود؛ خود فایل ها دست نمی خورند.
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCli.exe"; DestDir: "{app}"; DestName: "{#CliExe}"; Flags: ignoreversion
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-; libcronet.dll وابسته به هسته است و ویندوز آن را کنار خود فایل اجرایی
-; می جوید، پس باید همین جا هم باشد.
-Source: "{#ReleaseDir}\cores\hiddify\libcronet.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; کپی دوباره این فایل ها کنار برنامه فقط حجم فایل نصبی را دو برابر می کرد،
+; پس نصب کننده همین پوشه را با قانون بالا می آورد و برنامه هسته را از همان جا
+; اجرا می کند. فقط نام ها عوض شده اند؛ خود فایل ها دست نمی خورند.
 
 ; Optional Visual C++ runtime, put VC_redist.x64.exe in installer\redist to ship it.
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
