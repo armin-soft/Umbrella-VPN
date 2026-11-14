@@ -15,6 +15,7 @@ import 'state/subscription_controller.dart';
 import 'state/toast_controller.dart';
 import 'state/update_controller.dart';
 import 'vpn/cores.dart';
+import 'vpn/hiddify_core.dart';
 import 'vpn/vpn_controller.dart';
 
 /// نقطه شروع برنامه: آماده سازی انبار داده، پنجره، سرویس ها و کنترلرها.
@@ -70,15 +71,17 @@ Future<void> main(List<String> arguments) async {
       '${elevatedNow ? 'بله' : 'خیر'}',
     );
   }
-  final String? xrayPath = await provisioner.locateBinary('xray.exe');
-  if (xrayPath == null) {
+  // تنها هسته نسخه: هسته هیدیفای که با نام UmbrellaCli.exe نصب می شود.
+  final String? corePath =
+      await provisioner.locateBinary(HiddifyCore.cliBinary);
+  if (corePath == null) {
     AppLogger.instance.add(
-      'هسته xray.exe در پوشه نصب پیدا نشد (${provisioner.bundledDir}); '
-      'برنامه بدون هسته کار نمی کند.',
+      'هسته ${HiddifyCore.cliBinary} در پوشه نصب پیدا نشد '
+      '(${provisioner.bundledDir}); برنامه بدون هسته کار نمی کند.',
       level: 'error',
     );
   } else {
-    AppLogger.instance.add('هسته اکس ری آماده است: $xrayPath');
+    AppLogger.instance.add('هسته هیدیفای آماده است: $corePath');
   }
   final ToastController toasts = ToastController();
 

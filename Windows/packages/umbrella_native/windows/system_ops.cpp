@@ -649,12 +649,28 @@ TunnelStats SystemOps::ReadTunnelStats(const std::string& adapter_hint) {
       NO_ERROR) {
     return stats;
   }
+  // The tunnel adapter of the core: matched by name hint first, and by the
+  // tunnel address range (172.19.0.1/28, the core's TUN) as a fallback, so the
+  // stats stay correct whichever name the core gives its adapter.
+  IP_ADAPTER_ADDRESSES* fallback = nullptr;
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     std::string friendly = ToUtf8(adapter->FriendlyName);
     std::string description = ToUtf8(adapter->Description);
     bool match = ContainsInsensitive(friendly, adapter_hint) ||
                  ContainsInsensitive(description, adapter_hint);
-    if (!match) continue;
+    if (!match) {
+      for (auto* uni = adapter->FirstUnicastAddress; uni != nullptr;
+           uni = uni->Next) {
+        auto* sa = reinterpret_cast<sockaddr_in*>(uni->Address.lpSockaddr);
+        if (sa == nullptr || sa->sin_family != AF_INET) continue;
+        // 172.19.0.0/28 -> the core's own tunnel address.
+        if ((ntohl(sa->sin_addr.s_addr) & 0xFFFFFFF0u) == 0xAC130000u) {
+          fallback = adapter;
+          break;
+        }
+      }
+      continue;
+    }
     // GetIfEntry is available on every supported Windows version, unlike the
     // netioapi helpers whose declarations depend on the SDK version.
     MIB_IFROW row = {};
@@ -665,6 +681,16 @@ TunnelStats SystemOps::ReadTunnelStats(const std::string& adapter_hint) {
     stats.available = true;
     stats.adapter = friendly;
     return stats;
+  }
+  if (fallback != nullptr) {
+    MIB_IFROW row = {};
+    row.dwIndex = fallback->IfIndex;
+    if (GetIfEntry(&row) == NO_ERROR) {
+      stats.rx_bytes = row.dwInOctets;
+      stats.tx_bytes = row.dwOutOctets;
+      stats.available = true;
+      stats.adapter = ToUtf8(fallback->FriendlyName);
+    }
   }
   return stats;
 }

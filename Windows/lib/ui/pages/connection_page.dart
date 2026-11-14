@@ -120,7 +120,7 @@ class ConnectionPage extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           const SectionHeader(
-                            title: 'سرور و هسته',
+                            title: 'سرور و اتصال',
                             subtitle: 'همان چیزی که اتصال را می سازد',
                           ),
                           const SizedBox(height: 10),
@@ -138,8 +138,8 @@ class ConnectionPage extends StatelessWidget {
                           const Divider(height: 14),
                           InfoRow(
                             icon: Icons.memory_rounded,
-                            label: 'هسته انتخابی',
-                            value: Fa.num(settings.settings.corePreference.faName),
+                            label: 'هسته اتصال',
+                            value: Fa.num('هسته هیدیفای'),
                           ),
                           const Divider(height: 14),
                           InfoRow(

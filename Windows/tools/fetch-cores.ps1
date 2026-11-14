@@ -1,16 +1,19 @@
 ﻿#requires -version 5.1
 <#
-    گرفتن هسته های اتصال برای بسته بندی همراه فایل نصبی.
+    گرفتن هسته اتصال (هسته هیدیفای) برای بسته بندی همراه فایل نصبی.
 
-    این اسکریپت فقط روی ماشین سازنده اجرا می شود، نه روی رایانه کاربر. هسته ها
-    در پوشه cores\bin کنار پروژه ذخیره می شوند و نصب کننده آن ها را در
-    {app}\cores کنار فایل اجرایی برنامه می ریزد. خود برنامه هیچ چیزی دانلود
-    نمی کند.
+    این اسکریپت فقط روی ماشین سازنده اجرا می شود، نه روی رایانه کاربر. هسته در
+    پوشه cores\hiddify کنار پروژه ذخیره می شود (فایل ها باید کنار هم بمانند) و
+    نصب کننده آن ها را در {app}\cores\hiddify و دو فایل لازم را کنار خود برنامه
+    می ریزد. خود برنامه هیچ چیزی دانلود نمی کند.
+
+    نام فایل های هیدیفای هنگام گرفتن به نام های آمبرلا عوض می شود و فقط نام
+    عوض می شود، نه محتوا.
 
     مثال ها:
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Force
-      powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Only xray,mieru
+      powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Only hiddify
 #>
 param(
     [switch]$Force,
@@ -40,7 +43,13 @@ $fetched = @()
 try {
     foreach ($core in $manifest.cores) {
         if ($Only -and ($Only -notcontains $core.id)) { continue }
-        $target = Join-Path $DestDir $core.binary
+        # هسته هیدیفای چند فایل دارد و باید کنار هم بماند؛ برای همین در
+        # پوشه خودش می رود و باینری اصلی از همان جا خوانده می شود.
+        $target = if ($core.cli_prefix) {
+            Join-Path (Join-Path $DestDir 'hiddify') $core.binary
+        } else {
+            Join-Path $DestDir $core.binary
+        }
         if ((Test-Path $target) -and (-not $Force)) {
             Write-Host "  موجود است: $($core.binary)" -ForegroundColor DarkGray
             $fetched += $core.id
@@ -109,6 +118,39 @@ try {
                     if ($null -eq $found) { throw "فایل $leaf در بسته پیدا نشد" }
                     $insidePath = $found.FullName
                 }
+                'tgz' {
+                    # بسته tar.gz هسته هیدیفای برای ویندوز (tar در ویندوز ۱۰ و
+                    # ۱۱ خودش هست و ابزار بیرونی لازم نیست).
+                    & tar.exe -xzf $archivePath -C $extractDir
+                    if ($LASTEXITCODE -ne 0) { throw 'باز کردن بسته tar.gz ناموفق بود' }
+
+                    # نام های هیدیفای با نام های برنامه عوض می شوند و فقط نام
+                    # عوض می شود؛ خود فایل ها دست نمی خورند.
+                    if ($core.cli_prefix) {
+                        $renames = @(
+                            @{ from = 'HiddifyCli.exe'; to = 'UmbrellaCli.exe' },
+                            @{ from = 'hiddify-core.dll'; to = 'UmbrellaCore.dll' },
+                            @{ from = 'HiddifyCoreEngine.exe'; to = 'UmbrellaCoreEngine.exe' },
+                            @{ from = 'HiddifyAdmin.exe'; to = 'UmbrellaAdmin.exe' }
+                        )
+                        foreach ($item in $renames) {
+                            Get-ChildItem -Path $extractDir -Recurse -Filter $item.from -ErrorAction SilentlyContinue |
+                                ForEach-Object { Rename-Item -Path $_.FullName -NewName $item.to -Force }
+                        }
+                    }
+
+                    # همه فایل های هسته (اجرایی و کتابخانه اش) کنار هم در
+                    # cores\hiddify می مانند؛ جدایی شان هسته را می شکند.
+                    $coreDir = Join-Path $DestDir 'hiddify'
+                    New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
+                    Copy-Item (Join-Path $extractDir '*') $coreDir -Recurse -Force
+
+                    $leaf = Split-Path $core.inside -Leaf
+                    $match = Get-ChildItem -Path $coreDir -Recurse -Filter $leaf -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+                    if ($null -eq $match) { throw "فایل $leaf در بسته پیدا نشد" }
+                    $insidePath = $match.FullName
+                }
                 default {
                     $insidePath = $archivePath
                 }
@@ -145,4 +187,4 @@ if ($skipped) {
 if ($failedRequired) {
     throw ("هسته های الزامی گرفته نشد: " + ($failedRequired -join ', ') + " - ساخت فایل نصبی بدون آن ها کامل نیست.")
 }
-Write-Host 'همه هسته های الزامی در پوشه cores\bin آماده هستند.' -ForegroundColor Green
+Write-Host 'هسته هیدیفای در پوشه cores\hiddify آماده است.' -ForegroundColor Green

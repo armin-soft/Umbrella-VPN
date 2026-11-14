@@ -15,8 +15,9 @@ import '../platform/native.dart';
 import '../platform/services.dart';
 import 'balancer.dart';
 import 'clash_config.dart';
-import 'config_builders.dart';
+import 'cli_session.dart';
 import 'cores.dart';
+import 'hiddify_core.dart';
 import 'core_ping.dart';
 import 'ping.dart';
 import 'tunnel_probe.dart';
@@ -151,20 +152,33 @@ class CoreLaunch {
   String get binaryName => exe.split(Platform.pathSeparator).last;
 }
 
+/// نقشه اجرای هسته برای یک سرور.
+///
+/// این نسخه یک هسته دارد (هسته هیدیفای)، پس نقشه چیزی جز «همین هسته با این
+/// فایل لینک و این حالت» نیست. نگه داشتنش به صورت یک کلاس، تلاش دوباره با حالت
+/// دیگر و آزمون پذیری را ساده می کند.
 class LaunchPlan {
   const LaunchPlan({
     required this.cores,
-    required this.configPaths,
+    required this.linksPath,
+    required this.runDir,
     required this.readinessPort,
     required this.primaryBinary,
     required this.tunnelHint,
     required this.chained,
     this.warning = '',
     this.proxyPort = 0,
+    this.tun = false,
   });
 
   final List<CoreLaunch> cores;
-  final List<String> configPaths;
+
+  /// فایل لینک سرور که به هسته داده می شود (`-c`).
+  final String linksPath;
+
+  /// پوشه داده هسته برای همین اتصال (`-D`).
+  final String runDir;
+
   final int readinessPort;
   final String primaryBinary;
   final String tunnelHint;
@@ -175,7 +189,10 @@ class LaunchPlan {
   /// برنامه پروکسی سیستمی ویندوز را به آن وصل می کند.
   final int proxyPort;
 
-  bool get usesSystemProxy => proxyPort > 0;
+  /// آیا این نقشه تونل کامل است (`--tun`)؟
+  final bool tun;
+
+  bool get usesSystemProxy => proxyPort > 0 && !tun;
 }
 
 /// مغز اتصال: انتخاب سرور، ساخت پیکربندی، اجرای هسته، کیل سوییچ، پایش و
@@ -360,9 +377,9 @@ class VpnController extends ChangeNotifier {
     // دوباره برنامه، بدون اینترنت دوباره در دسترس باشد.
     try {
       final String? yaml =
-          await LocalStore.instance.readFile(StoreKeys.clashProfile);
+          await LocalStore.instance.readFile(StoreKeys.panelProfile);
       if (yaml != null && yaml.trim().isNotEmpty) {
-        _clashProfile = yaml;
+        _panelProfile = yaml;
         _clashNames = ClashConfig.nodeNames(yaml).toSet();
       }
     } on Exception {
@@ -691,8 +708,8 @@ class VpnController extends ChangeNotifier {
         _nodes.where((VpnNode node) => usable(node) && !node.disabled).toList();
     if (usableNodes.isEmpty) {
       _log.add(
-        'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک با هسته های همراه '
-        'نسخه سازگار نبود.',
+        'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک برای هسته هیدیفای '
+        'ورودی معتبر نداشت.',
         level: 'error',
       );
       return const ConnectOutcome(
@@ -705,17 +722,13 @@ class VpnController extends ChangeNotifier {
         .where(_fitsPreference)
         .toList();
     if (fitting.isEmpty) {
-      final String message = _settings.corePreference == CorePreference.auto
-          ? 'سروری که با این نسخه کار کند در اشتراک شما نیست.'
-          : 'سروری برای هسته «${_settings.corePreference.faName}» در اشتراک '
-              'شما نیست؛ هسته دیگری را انتخاب کنید.';
+      const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
       _setStatus(VpnStatus.failed, message);
-      return ConnectOutcome(ok: false, message: message);
+      return const ConnectOutcome(ok: false, message: message);
     }
     _log.add(
       'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
-      '${Fa.num(fitting.length)} سرور با هسته '
-      '«${_settings.corePreference.faName}» قابل استفاده.',
+      'حالت «${_settings.corePreference.faName}» با هسته هیدیفای.',
     );
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
     try {
@@ -804,26 +817,12 @@ class VpnController extends ChangeNotifier {
   bool _fitsPreference(VpnNode node) =>
       fitsPreference(_settings.corePreference, node);
 
-  /// همان بررسی برای آزمون پذیری: آیا سرور با این هسته اجرا می شود؟
-  static bool fitsPreference(CorePreference preference, VpnNode node) {
-    switch (preference) {
-      case CorePreference.auto:
-        return true;
-      case CorePreference.xray:
-        return node.protocol != NodeProtocol.hysteria2 &&
-            node.protocol != NodeProtocol.tuic &&
-            node.protocol != NodeProtocol.wireguard;
-      case CorePreference.clash:
-        return node.protocol != NodeProtocol.mieru &&
-            node.protocol != NodeProtocol.wireguard;
-      case CorePreference.wireguard:
-        return node.protocol == NodeProtocol.wireguard;
-      case CorePreference.mieru:
-        return node.protocol == NodeProtocol.mieru;
-      case CorePreference.amnezia:
-        return node.protocol == NodeProtocol.amnezia;
-    }
-  }
+  /// همان بررسی برای آزمون پذیری.
+  ///
+  /// هسته یکی است و همه پروتکل ها را می شناسد، پس حالت انتخابی هیچ سروری را
+  /// حذف نمی کند؛ فقط تعیین می کند اول با تونل کامل وصل شود یا با پروکسی
+  /// سیستمی. اگر راه اول نشد، همان هسته با حالت دیگر امتحان می شود.
+  static bool fitsPreference(CorePreference preference, VpnNode node) => true;
 
   /// سرور انتخاب شده و اگر حالت خودکار باشد دو گزینه بعدی با کمترین پینگ.
   List<VpnNode> _candidates(VpnNode first, String reason) {
@@ -910,13 +909,13 @@ class VpnController extends ChangeNotifier {
       }
       _setStatus(VpnStatus.preparing, 'سرور بعدی امتحان می شود.');
       return const _AttemptResult(
-        message: 'این سرور با هسته های همراه نسخه سازگار نیست؛ سرور بعدی امتحان می شود.',
+        message: 'هسته هیدیفای برای این سرور ورودی معتبری نداشت؛ سرور بعدی امتحان می شود.',
       );
     }
 
-    // هر هسته به ترتیب امتحان می شود: سینگ باکس (همان هسته هیدیفای) و اگر
-    // بالا نیامد، ایکس ری یا میرو. این طور حتی اگر یک هسته روی سیستم مشکل
-    // داشته باشد، اتصال از راه دیگر برقرار می شود.
+    // یک هسته است، دو حالت: اگر راه اول (تونل کامل یا پروکسی سیستمی) بالا
+    // نیامد، همان هسته با حالت دیگر امتحان می شود. این همان کاری است که
+    // برنامه هیدیفای می کند، فقط به جای عوض کردن هسته، حالت را عوض می کند.
     for (final LaunchPlan plan in plans) {
       if (_cancelRequested) {
         await _stopCores();
@@ -941,14 +940,16 @@ class VpnController extends ChangeNotifier {
         return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       }
       if (!ready) {
-        final String coreLog = '${_provisioner.dataDir}'
-            '${Platform.pathSeparator}run${Platform.pathSeparator}'
-            '${plan.cores.first.name}-core.log';
+        final String coreLog = _coreLogPath(plan);
         final String tail = await _readLogTail(coreLog);
         _log.add(
-          'پورت تونل (${Fa.num(plan.readinessPort)}) در '
-          '${Fa.num(_tunnelTimeout.inSeconds)} ثانیه باز نشد.'
-          '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+          plan.tun
+              ? 'کارت شبکه تونل در ${Fa.num(_tunnelTimeout.inSeconds)} ثانیه '
+                  'آماده نشد.'
+                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}'
+              : 'پورت محلی هسته (${Fa.num(plan.readinessPort)}) در '
+                  '${Fa.num(_tunnelTimeout.inSeconds)} ثانیه باز نشد.'
+                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
         );
         await _stopCores();
@@ -1078,12 +1079,11 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// پروتکل هایی که هسته های همراه نسخه پشتیبانی می کنند.
+  /// پروتکل هایی که هسته هیدیفای پشتیبانی می کند.
   ///
-  /// سینگ باکس: وی لس، وی مس، تروجان، شادوساکس، ساکس، تی یو آی سی و
-  /// هایستریا ۲ (همان هسته ای که کلاینت هیدیفای استفاده می کند)
-  /// ایکس ری: وی لس، وی مس، تروجان، شادوساکس و ساکس
-  /// میرو: پروتکل میرو
+  /// وی لس، وی مس، تروجان، شادوساکس، ساکس، هایستریا ۲، تی یو آی سی، وایرگارد،
+  /// آمنزیا و میرو؛ پس هیچ سروری به خاطر «هسته سازگار نیست» کنار گذاشته
+  /// نمی شود.
   static bool supports(VpnNode node) {
     switch (node.protocol) {
       case NodeProtocol.vless:
@@ -1095,17 +1095,18 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.hysteria2:
       case NodeProtocol.tuic:
       case NodeProtocol.wireguard:
+      case NodeProtocol.amnezia:
         return true;
       case NodeProtocol.clash:
-      case NodeProtocol.amnezia:
         return false;
     }
   }
 
-  /// آیا این سرور با هسته های همراه نسخه قابل استفاده است؟ سروری که شناسه یا
-  /// رمزش خالی است هرگز نباید اجرا شود؛ ایکس ری با «invalid UUID» بسته می شود.
-  /// هم arguments required for a usable connection are checked here so the
-  /// selector never wastes a cycle on a server that cannot work.
+  /// آیا این سرور با هسته هیدیفای قابل استفاده است؟
+  ///
+  /// سروری که شناسه یا رمزش خالی است هرگز نباید اجرا شود؛ هسته با
+  /// «invalid UUID» بسته می شود. همه چیزهایی که برای یک اتصال سالم لازم است
+  /// همین جا بررسی می شود تا انتخاب گر روی سروری که کار نمی کند وقت تلف نکند.
   static bool usable(VpnNode node) {
     if (!supports(node)) {
       return false;
@@ -1136,447 +1137,243 @@ class VpnController extends ChangeNotifier {
         return JsonX.text(params['privateKey']).isNotEmpty &&
             JsonX.text(params['publicKey']).isNotEmpty;
       case NodeProtocol.amnezia:
+        return JsonX.text(params['privateKey']).isNotEmpty &&
+            JsonX.text(params['publicKey']).isNotEmpty;
       case NodeProtocol.clash:
         return false;
     }
   }
 
-  /// نام گره هایی که در پیکربندی کلش پنل هستند.
+  /// نام گره هایی که در پیکربندی خود پنل هستند.
   ///
-  /// فقط برای همین گره ها اجرای mihomo معنی دارد: انتخاب کاربر باید همان
-  /// سروری باشد که در گروه پنل هست.
+  /// فقط برای همین گره ها نام پنل با نام سرور یکی است، پس در گزارش ها می شود
+  /// هر دو را به هم نسبت داد.
   Set<String> _clashNames = <String>{};
 
-  /// آخرین پیکربندی کامل کلش متا که خود پنل داد.
+  /// آخرین پیکربندی کاملی که خود پنل داد (کلش، ایکس ری یا سینگ باکس).
   ///
   /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
-  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. برای سرورهای کلش، به جای
-  /// ساختن دستی پیکربندی از روی لینک، همین فایل اجرا می شود.
-  String _clashProfile = '';
+  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. هسته هیدیفای خودش این فایل
+  /// را درست می شناسد، پس نگه داشته می شود تا اگر کاربر خواست همان پروفایل
+  /// اجرا شود، آماده باشد.
+  String _panelProfile = '';
 
-  String get clashProfile => _clashProfile;
+  String get panelProfile => _panelProfile;
 
-  /// ذخیره پیکربندی کلش پنل (متن YAML) برای اجرای mihomo.
+  /// ذخیره پیکربندی خود پنل (متن YAML یا JSON).
   Future<void> applyClashProfile(String yaml) async {
-    if (yaml.trim().isEmpty || yaml.trim() == _clashProfile.trim()) {
+    if (yaml.trim().isEmpty || yaml.trim() == _panelProfile.trim()) {
       return;
     }
-    _clashProfile = yaml;
+    _panelProfile = yaml;
     try {
       _clashNames = ClashConfig.nodeNames(yaml).toSet();
     } on Exception {
       _clashNames = <String>{};
     }
-    await LocalStore.instance.writeFile(StoreKeys.clashProfile, yaml);
+    await LocalStore.instance.writeFile(StoreKeys.panelProfile, yaml);
   }
 
-  /// فهرست نقشه های اجرا برای یک سرور، به ترتیب اولویت.
-  ///
-  /// سینگ باکس همان هسته ای است که کلاینت ویندوز هیدیفای استفاده می کند و
-  /// پروتکل های بیشتری (از جمله تی یو آی سی و هایستریا ۲) را پوشش می دهد؛
-  /// ایکس ری و میرو به عنوان پشتیبان می آیند.
-  Future<List<LaunchPlan>> _buildPlans(VpnNode node) async {
-    final List<LaunchPlan> plans = <LaunchPlan>[];
-    // پیکربندی خود پنل (کلش متا) اول امتحان می شود: تنها نسخه ای است که همه
-    // جزئیات گره ها را دارد و در کلاینت های دیگر همین سرور جواب می دهد.
-    final LaunchPlan? clash = await _buildClashPlan(node);
-    if (clash != null) {
-      plans.add(clash);
-    }
-    final LaunchPlan? tun = await _buildTunPlan(node);
-    if (tun != null) {
-      plans.add(tun);
-    }
-    final LaunchPlan? singbox = await _buildSingBoxPlan(node);
-    if (singbox != null) {
-      plans.add(singbox);
-    }
-    final LaunchPlan? fallback = await _buildPlan(node);
-    if (fallback != null) {
-      plans.add(fallback);
-    }
-    // هسته انتخابی کاربر: فقط همان مسیر مجاز است.
-    final CorePreference pref = _settings.corePreference;
-    if (pref != CorePreference.auto) {
-      plans.removeWhere((LaunchPlan plan) {
-        final String core = plan.cores.first.name;
-        switch (pref) {
-          case CorePreference.xray:
-            return core != 'xray' && core != 'mieru' && core != 'xrayfront';
-          case CorePreference.clash:
-            return core != 'singbox' && core != 'singboxtun' && core != 'clash';
-          case CorePreference.mieru:
-            return core != 'mieru';
-          case CorePreference.wireguard:
-            return core != 'singbox' && core != 'singboxtun';
-          case CorePreference.amnezia:
-          case CorePreference.auto:
-            return false;
-        }
-      });
-    }
+  /// پوشه هسته هیدیفای: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
+  /// همان پوشه خود فایل اجرایی است.
+  String _hiddifyDir(String exe) => _dirOf(exe);
 
-    // هسته ای که آخرین بار برای همین سرور جواب داد، اول امتحان می شود تا
-    // هر بار چند ثانیه صرف هسته ای نشود که با این سرور کار نمی کند.
-    final String preferred = _preferredCore[node.id] ?? '';
-    if (preferred.isNotEmpty && plans.length > 1) {
-      plans.sort((LaunchPlan a, LaunchPlan b) {
-        final bool aFirst = a.cores.first.name == preferred;
-        final bool bFirst = b.cores.first.name == preferred;
-        if (aFirst == bFirst) {
-          return 0;
-        }
-        return aFirst ? -1 : 1;
-      });
+  /// نقشه اجرا برای یک سرور.
+  ///
+  /// تنها هسته ای که وجود دارد هسته هیدیفای است (همان هسته کلاینت هیدیفای).
+  /// یک نقشه برگردانده می شود و اگر راه اول جواب نداد، همان هسته با حالت
+  /// دیگر امتحان می شود (تونل کامل و پروکسی سیستمی). این کار عیناً همان چیزی
+  /// است که برنامه هیدیفای می کند.
+  ///
+  /// ورودی هسته، خود لینک سرور است (`-c links.txt`)؛ هسته خودش پیکربندی
+  /// کامل، دی ان اس و مسیرها را می سازد.
+  Future<List<LaunchPlan>> _buildPlans(VpnNode node) async {
+    if (!usable(node)) {
+      return <LaunchPlan>[];
+    }
+    final CoreInfo? core = _provisioner.info(hiddifyCoreId);
+    final String binary = core?.binary ?? hiddifyCliBinary;
+    final String? exe = await _provisioner.locateBinary(binary);
+    if (exe == null || exe.isEmpty) {
+      _lastPlanNeedsCore = true;
+      _log.add(
+        'هسته هیدیفای ($binary) در نسخه نصب نیست؛ برنامه را با نصب کننده '
+        'رسمی دوباره نصب کنید.',
+        level: 'error',
+      );
+      return <LaunchPlan>[];
+    }
+    final Directory runDir = Directory(
+      '${_provisioner.dataDir}${Platform.pathSeparator}run',
+    );
+    await runDir.create(recursive: true);
+    final String link = _hiddifyLink(node);
+    if (link.isEmpty) {
+      _log.add(
+        '${_nodeLabel(node)} لینک قابل اجرا ندارد؛ هسته هیدیفای برای این '
+        'سرور ورودی نمی شناسد.',
+        level: 'info',
+      );
+      return <LaunchPlan>[];
+    }
+    final File links = File(
+      '${runDir.path}${Platform.pathSeparator}umbrella-core-link.txt',
+    );
+    await links.writeAsString('$link\n', flush: true);
+
+    // راه اول همان چیزی است که کاربر خواسته: تونل کامل اگر روشن باشد و
+    // دسترسی مدیر هم داشته باشیم، وگرنه پروکسی سیستمی.
+    bool first = _settings.tunMode;
+    if (first && !_device.elevated) {
+      _log.add(
+        'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
+        'می شویم. برای تونل، برنامه را با دسترسی مدیر اجرا کنید.',
+        level: 'warning',
+      );
+      first = false;
+    }
+    final List<bool> order = <bool>[first, !first];
+    final List<LaunchPlan> plans = <LaunchPlan>[];
+    for (final bool tun in order) {
+      plans.add(
+        LaunchPlan(
+          cores: <CoreLaunch>[
+            CoreLaunch(
+              exe: exe,
+              args: _hiddifyArgs(
+                exe: exe,
+                links: links.path,
+                runDir: runDir.path,
+                tun: tun,
+              ),
+              workDir: _hiddifyDir(exe),
+              name: tun ? 'hiddifytun' : 'hiddify',
+            ),
+          ],
+          linksPath: links.path,
+          // در حالت پروکسی سیستمی، باز شدن پورت محلی نشانه آمادگی است؛ در
+          // حالت تونل، کارت شبکه مجازی نشانه آن است.
+          readinessPort: tun ? 0 : _hiddifyPort,
+          primaryBinary: binary,
+          tunnelHint: tun ? AppConfig.tunAdapterHint : '',
+          chained: false,
+          proxyPort: tun ? 0 : _hiddifyPort,
+          runDir: runDir.path,
+          tun: tun,
+        ),
+      );
     }
     return plans;
   }
 
-  /// پورت محلی که فقط برای سنجش آمادگی تونل باز می شود.
-  static const int _tunReadyPort = 19091;
+  /// شناسه هسته در فهرست همراه نسخه.
+  static const String hiddifyCoreId = HiddifyCore.id;
 
-  /// نقشه تونل کامل: سینگ باکس یک کارت شبکه مجازی می سازد و تمام ترافیک
-  /// سیستم از آن رد می شود. همان حالت پیش فرض کلاینت هیدیفای روی ویندوز؛
-  /// به دسترسی مدیر نیاز دارد.
-  Future<LaunchPlan?> _buildTunPlan(VpnNode node) async {
-    if (!_settings.tunMode || !usable(node)) {
-      return null;
-    }
-    // انتقال xhttp را سینگ باکس نمی شناسد؛ تونل کامل با این هسته ساخته
-    // نمی شود و باید ایکس ری (که xhttp دارد) امتحان شود.
-    if (!SingBoxConfig.supportsTransport(node)) {
-      _log.add(
-        '${_nodeLabel(node)} از انتقال ${JsonX.text(node.params['type'] ?? node.params['network'])} '
-        'استفاده می کند؛ تونل کامل سینگ باکس برای آن ساخته نمی شود و ایکس ری '
-        'امتحان می شود.',
-        level: 'info',
-      );
-      return null;
-    }
-    if (!_device.elevated) {
-      _log.add(
-        'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
-        'می شویم. برای تونل، برنامه را با دسترسی مدیر اجرا کنید.',
-        level: 'warning',
-      );
-      return null;
-    }
-    final CoreInfo? core = _provisioner.info('singbox');
-    if (core == null) {
-      return null;
-    }
-    final String? exe = await _provisioner.locateBinary(core.binary);
-    if (exe == null || exe.isEmpty) {
-      return null;
-    }
+  /// نام فایل خط فرمان هسته (همان HiddifyCli با نام آمبرلا).
+  static const String hiddifyCliBinary = HiddifyCore.cliBinary;
 
-    final Directory runDir = Directory(
-      '${_provisioner.dataDir}${Platform.pathSeparator}run',
-    );
-    await runDir.create(recursive: true);
-    final File config = File(
-      '${runDir.path}${Platform.pathSeparator}singbox-tun.json',
-    );
-    await config.writeAsString(
-      SingBoxConfig.encode(
-        SingBoxConfig.build(
-          node: node,
-          settings: _settings,
-          clashApiPort: _tunReadyPort,
-        ),
-      ),
-      flush: true,
-    );
-    return LaunchPlan(
-      cores: <CoreLaunch>[
-        CoreLaunch(
-          exe: exe,
-          args: <String>['run', '-c', config.path],
-          workDir: _dirOf(exe),
-          name: 'singboxtun',
-        ),
-      ],
-      configPaths: <String>[config.path],
-      readinessPort: _tunReadyPort,
-      primaryBinary: 'sing-box.exe',
-      tunnelHint: 'Umbrella-Tunnel',
-      chained: false,
-    );
-  }
+  /// پورت محلی هسته. خود هسته ۱۲۳۳۴ را پیش فرض دارد و همین عدد در برنامه هم
+  /// ثابت است تا پروکسی سیستمی همیشه همان جا وصل شود.
+  static const int _hiddifyPort = AppConfig.httpPortHiddify;
 
-  /// نقشه اجرای mihomo با پیکربندی خود پنل.
+  /// آرگومان های هسته هیدیفای.
   ///
-  /// فقط برای سرورهایی که از فایل کلش خوانده شده اند معنی دارد؛ برای بقیه
-  /// (لینک های ایکس ری) همان مسیرهای سینگ باکس و ایکس ری می آیند.
-  Future<LaunchPlan?> _buildClashPlan(VpnNode node) async {
-    if (_clashProfile.trim().isEmpty || !usable(node)) {
-      return null;
-    }
-    // فقط سروری که نامش در همین پیکربندی هست با کلش اجرا می شود؛ برای سرورهای
-    // فهرست ایکس ری، mihomo نمی توانست همان سرور را انتخاب کند و ترافیک از
-    // سرور دیگری رد می شد.
-    if (!_clashNames.contains(node.name)) {
-      return null;
-    }
-    final CoreInfo? core = _provisioner.info('clash');
-    if (core == null) {
-      return null;
-    }
-    final String? exe = await _provisioner.locateBinary(
-      core.binary.isEmpty ? 'mihomo.exe' : core.binary,
-    );
-    if (exe == null || exe.isEmpty) {
-      _log.add(
-        'هسته mihomo.exe در نسخه نصب نیست؛ پیکربندی خود پنل اجرا نمی شود و '
-        'هسته های دیگر امتحان می شوند.',
-        level: 'warning',
-      );
-      return null;
-    }
-    final Directory runDir = Directory(
-      '${_provisioner.dataDir}${Platform.pathSeparator}run',
-    );
-    final bool tun = _settings.tunMode && _device.elevated;
-    if (_settings.tunMode && !_device.elevated) {
-      _log.add(
-        'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
-        'می شویم. برای تونل، برنامه را با دسترسی مدیر اجرا کنید.',
-        level: 'warning',
-      );
-    }
-    final String configPath;
-    try {
-      configPath = await ClashPlanner.writeConfig(
-        runDir: runDir,
-        rawYaml: _clashProfile,
-        tun: tun,
-        mixedPort: AppConfig.httpPortXray,
-        apiPort: _clashApiPort,
-        preferred: node.name,
-      );
-    } on Exception catch (error) {
-      _log.add(
-        'پیکربندی کلش متا آماده نشد: $error؛ هسته های دیگر امتحان می شوند.',
-        level: 'warning',
-      );
-      return null;
-    } on Error catch (error) {
-      // خطای خواندن YAML (نوع ناخواسته) هم نباید کل تلاش اتصال را بشکند.
-      _log.add(
-        'پیکربندی کلش متا خوانده نشد: $error؛ هسته های دیگر امتحان می شوند.',
-        level: 'warning',
-      );
-      return null;
-    }
-    return LaunchPlan(
-      cores: <CoreLaunch>[
-        CoreLaunch(
-          exe: exe,
-          args: <String>['-d', runDir.path, '-f', configPath],
-          workDir: _dirOf(exe),
-          name: 'clash',
-        ),
-      ],
-      configPaths: <String>[configPath],
-      // در حالت تونل پورت محلی لازم نیست؛ پنل مدیریت نشانه آمادگی است.
-      readinessPort: _clashApiPort,
-      primaryBinary: core.binary.isEmpty ? 'mihomo.exe' : core.binary,
-      tunnelHint: tun ? ClashConfig.tunDevice : '',
-      chained: false,
-      proxyPort: tun ? 0 : AppConfig.httpPortXray,
+  /// `run -c <links>` همان دستوری است که مستندات هسته برای «فقط لینک ها دارم»
+  /// می دهد: هسته خودش پیکربندی، دی ان اس و مسیرها را می سازد.
+  static List<String> _hiddifyArgs({
+    required String exe,
+    required String links,
+    required String runDir,
+    required bool tun,
+  }) {
+    return HiddifyCore.args(
+      links: links,
+      runDir: runDir,
+      port: _hiddifyPort,
+      tun: tun,
+      systemProxy: !tun,
     );
   }
 
-  /// پورت پنل مدیریت محلی mihomo؛ فقط برای سنجش آمادگی استفاده می شود.
-  static const int _clashApiPort = 19093;
+  /// لینک سرور برای دادن به هسته (برای سنجش پینگ و پنجره CLI هم استفاده
+  /// می شود).
+  static String linkFor(VpnNode node) {
+    final String raw = node.raw.trim();
+    if (raw.contains('://')) {
+      return raw;
+    }
+    return _linkFromNode(node);
+  }
 
-  /// نقشه اجرای سینگ باکس: پروکسی محلی مختلط روی پورت http و اتصال به سرور.
+  /// لینک سرور برای دادن به هسته.
   ///
-  /// همان کاری که کلاینت هیدیفای در حالت «پروکسی سیستمی» می کند، با همان
-  /// هسته و همان پروتکل ها (وی لس، وی مس، تروجان، شادوساکس، تی یو آی سی و
-  /// هایستریا ۲).
-  Future<LaunchPlan?> _buildSingBoxPlan(VpnNode node) async {
-    // میرو پروتکل اختصاصی خودش را دارد و سینگ باکس آن را نمی شناسد.
-    if (!usable(node) || node.protocol == NodeProtocol.mieru) {
-      return null;
-    }
-    if (!SingBoxConfig.supportsTransport(node)) {
-      return null;
-    }
-    final CoreInfo? core = _provisioner.info('singbox');
-    if (core == null) {
-      return null;
-    }
-    final String? exe = await _provisioner.locateBinary(core.binary);
-    if (exe == null || exe.isEmpty) {
-      _log.add('هسته sing-box.exe در نسخه نصب نیست؛ هسته پشتیبان امتحان می شود.');
-      return null;
-    }
+  /// لینک اصلی همان چیزی است که در اشتراک بود؛ اگر نبود، از فیلدهای سرور
+  /// ساخته می شود. هسته خودش جزئیات پروتکل را می فهمد.
+  String _hiddifyLink(VpnNode node) => linkFor(node);
 
-    final Directory runDir = Directory(
-      '${_provisioner.dataDir}${Platform.pathSeparator}run',
-    );
-    await runDir.create(recursive: true);
-    final int port = AppConfig.httpPortXray;
-    final File config = File(
-      '${runDir.path}${Platform.pathSeparator}singbox.json',
-    );
-    final Map<String, dynamic> built = node.protocol == NodeProtocol.wireguard
-        ? SingBoxConfig.buildWireGuardProxy(
-            node: node,
-            port: port,
-            mtu: _settings.mtu,
-          )
-        : SingBoxConfig.buildProxy(
-            node: node,
-            settings: _settings,
-            port: port,
-          );
-    await config.writeAsString(SingBoxConfig.encode(built), flush: true);
-    return LaunchPlan(
-      cores: <CoreLaunch>[
-        CoreLaunch(
-          exe: exe,
-          args: <String>['run', '-c', config.path],
-          workDir: _dirOf(exe),
-          name: 'singbox',
-        ),
-      ],
-      configPaths: <String>[config.path],
-      readinessPort: port,
-      primaryBinary: 'sing-box.exe',
-      tunnelHint: '',
-      chained: false,
-      proxyPort: port,
-    );
-  }
-
-  Future<LaunchPlan?> _buildPlan(VpnNode node) async {
-    _lastPlanNeedsCore = false;
-    if (!supports(node)) {
-      // سرورهای آمنزیا و وایرگارد با هسته های همراه این نسخه اجرا نمی شوند و
-      // نباید هر بار هشدار بدهند؛ فقط یک بار در گزارش ها می آید.
-      _log.add(
-        '${_nodeLabel(node)} (${node.protocol.label}) با هسته های همراه این نسخه '
-        'اجرا نمی شود و از فهرست انتخاب کنار گذاشته شد.',
-        level: 'info',
-      );
-      return null;
-    }
-    if (!usable(node)) {
-      _log.add(
-        'اطلاعات ${_nodeLabel(node)} ناقص است (شناسه یا رمز خالی)؛ کنار گذاشته شد.',
-        level: 'info',
-      );
-      return null;
-    }
-
-    // تی یو آی سی و هایستریا ۲ را فقط سینگ باکس اجرا می کند؛ ایکس ری چنین
-    // inbound هایی ندارد و پیکربندی نامعتبر می سازد.
-    if (node.protocol == NodeProtocol.hysteria2 ||
-        node.protocol == NodeProtocol.tuic) {
-      _log.add(
-        '${_nodeLabel(node)} از پروتکل ${node.protocol.label} استفاده می کند و '
-        'فقط با هسته سینگ باکس اجرا می شود؛ هسته پشتیبان برای این پروتکل نیست.',
-        level: 'info',
-      );
-      return null;
-    }
-
-    final Directory runDir = Directory(
-      '${_provisioner.dataDir}${Platform.pathSeparator}run',
-    );
-    await runDir.create(recursive: true);
-
-    if (node.protocol == NodeProtocol.mieru) {
-      final String? mieru = await _provisioner.locateBinary('mieru.exe');
-      if (mieru == null) {
-        _lastPlanNeedsCore = true;
-        _log.add(
-          'این سرور میرو است و هسته mieru.exe در نسخه نصب نیست.',
-          level: 'error',
+  /// ساختن لینک از فیلدهای سرور برای منابعی که لینک ندارند (کلش، وایرگارد
+  /// و مانند آن). هسته هیدیفای همه این پروتکل ها را می شناسد.
+  static String _linkFromNode(VpnNode node) {
+    final Map<String, dynamic> params = node.params;
+    final String host = node.host;
+    final int port = node.port;
+    final String name = Uri.encodeComponent(node.name);
+    switch (node.protocol) {
+      case NodeProtocol.vless:
+        return 'vless://${JsonX.text(params['id'])}@$host:$port'
+            '?encryption=none&security=${JsonX.text(params['security'], 'none')}'
+            '&type=${JsonX.text(params['network'] ?? params['type'], 'tcp')}'
+            '&sni=${JsonX.text(params['sni'], host)}'
+            '&path=${Uri.encodeComponent(JsonX.text(params['path'], '/'))}'
+            '&host=${JsonX.text(params['host'], host)}'
+            '#$name';
+      case NodeProtocol.vmess:
+        return 'vmess://${B64.encode(jsonEncode(<String, dynamic>{
+              'v': '2',
+              'ps': node.name,
+              'add': host,
+              'port': '$port',
+              'id': JsonX.text(params['id']),
+              'aid': '${JsonX.integer(params['alterId'])}',
+              'scy': JsonX.text(params['method'], 'auto'),
+              'net': JsonX.text(params['network'] ?? params['type'], 'tcp'),
+              'type': 'none',
+              'host': JsonX.text(params['host'], host),
+              'path': JsonX.text(params['path'], '/'),
+              'tls': JsonX.text(params['security']) == 'tls' ? 'tls' : '',
+              'sni': JsonX.text(params['sni'], host),
+            }))}';
+      case NodeProtocol.trojan:
+        return 'trojan://${Uri.encodeComponent(JsonX.text(params['password']))}'
+            '@$host:$port?sni=${JsonX.text(params['sni'], host)}'
+            '&type=${JsonX.text(params['network'] ?? params['type'], 'tcp')}'
+            '#$name';
+      case NodeProtocol.shadowsocks:
+        final String user = B64.encode(
+          '${JsonX.text(params['method'], 'aes-256-gcm')}:'
+          '${JsonX.text(params['password'])}',
         );
-        return null;
-      }
-      final File config = File('${runDir.path}${Platform.pathSeparator}mieru.json');
-      await config.writeAsString(
-        MieruConfig.encode(node, AppConfig.socksPortMieru),
-        flush: true,
-      );
-      // میرو فقط سوکس می دهد؛ ایکس ری به عنوان پل اچ تی تی پی جلوی آن می
-      // نشیند تا پروکسی سیستمی ویندوز واقعا کار کند.
-      final String? front = await _provisioner.locateBinary('xray.exe');
-      final List<CoreLaunch> cores = <CoreLaunch>[
-        CoreLaunch(
-          exe: mieru,
-          args: <String>['run', '-c', config.path],
-          workDir: _dirOf(mieru),
-          name: 'mieru',
-        ),
-      ];
-      final List<String> paths = <String>[config.path];
-      int proxyPort = AppConfig.socksPortMieru;
-      int readinessPort = AppConfig.socksPortMieru;
-      if (front != null) {
-        final File bridge =
-            File('${runDir.path}${Platform.pathSeparator}mieru-front.json');
-        await bridge.writeAsString(
-          XrayConfig.frontSocks(AppConfig.socksPortMieru),
-          flush: true,
-        );
-        cores.add(
-          CoreLaunch(
-            exe: front,
-            args: <String>['run', '-c', bridge.path],
-            workDir: _dirOf(front),
-            name: 'xrayfront',
-          ),
-        );
-        paths.add(bridge.path);
-        proxyPort = AppConfig.httpPortXray;
-        readinessPort = AppConfig.httpPortXray;
-      }
-      return LaunchPlan(
-        cores: cores,
-        configPaths: paths,
-        readinessPort: readinessPort,
-        primaryBinary: 'mieru.exe',
-        tunnelHint: '',
-        chained: front != null,
-        proxyPort: proxyPort,
-      );
+        return 'ss://$user@$host:$port#$name';
+      case NodeProtocol.hysteria2:
+        return 'hysteria2://${Uri.encodeComponent(JsonX.text(params['password']))}'
+            '@$host:$port?sni=${JsonX.text(params['sni'], host)}#$name';
+      case NodeProtocol.tuic:
+        return 'tuic://${JsonX.text(params['id'])}:'
+            '${Uri.encodeComponent(JsonX.text(params['password']))}'
+            '@$host:$port?sni=${JsonX.text(params['sni'], host)}#$name';
+      case NodeProtocol.mieru:
+        return 'mieru://${JsonX.text(params['username'])}:'
+            '${Uri.encodeComponent(JsonX.text(params['password']))}'
+            '@$host:$port?transport=${JsonX.text(params['transport'], 'TCP')}'
+            '#$name';
+      case NodeProtocol.wireguard:
+      case NodeProtocol.amnezia:
+      case NodeProtocol.clash:
+      case NodeProtocol.socks:
+        // این پروتکل ها در اشتراک های دیگر با فایل کامل می آیند؛ هسته
+        // هیدیفای همان فایل را می خواند. لینک ساختگی ساخته نمی شود.
+        return '';
     }
-
-    final String? xray = await _provisioner.locateBinary('xray.exe');
-    if (xray == null) {
-      _lastPlanNeedsCore = true;
-      _log.add(
-        'هسته xray.exe پیدا نشد. مسیر جستجو: ${_provisioner.bundledDir}',
-        level: 'error',
-      );
-      return null;
-    }
-    final File config = File('${runDir.path}${Platform.pathSeparator}xray.json');
-    await config.writeAsString(
-      XrayConfig.encode(node, AppConfig.socksPortXray),
-      flush: true,
-    );
-    return LaunchPlan(
-      cores: <CoreLaunch>[
-        CoreLaunch(
-          exe: xray,
-          args: <String>['run', '-c', config.path],
-          workDir: _dirOf(xray),
-          name: 'xray',
-        ),
-      ],
-      configPaths: <String>[config.path],
-      readinessPort: AppConfig.httpPortXray,
-      primaryBinary: 'xray.exe',
-      tunnelHint: '',
-      chained: false,
-      proxyPort: AppConfig.httpPortXray,
-    );
   }
 
   /// نام سرور برای گزارش ها. بعضی نام ها خودشان با واژه سرور شروع می شوند و
@@ -1594,82 +1391,178 @@ class VpnController extends ChangeNotifier {
     return index <= 0 ? path : path.substring(0, index);
   }
 
+  /// مسیر فایل گزارش هسته برای یک نقشه اجرا.
+  String _coreLogPath(LaunchPlan plan) =>
+      '${plan.runDir}${Platform.pathSeparator}'
+      '${plan.cores.first.name}-core.log';
+
+  /// اجرای هسته.
+  ///
+  /// مثل خود هیدیفای، هسته در یک پنجره کنسول جداگانه بالا می آید: فایل
+  /// `UmbrellaCli.exe` (همان `HiddifyCli.exe`) اجرا می شود و کاربر گزارش زنده
+  /// را در همان پنجره می بیند. اگر باز کردن پنجره ممکن نشد، هسته بی صدا و
+  /// بدون پنجره اجرا می شود تا اتصال از دست نرود.
   Future<bool> _launch(LaunchPlan plan) async {
     await _stopCores();
-    final String logDir = '${_provisioner.dataDir}${Platform.pathSeparator}run';
-    await Directory(logDir).create(recursive: true);
-    for (final CoreLaunch core in plan.cores) {
-      final String coreLog =
-          '$logDir${Platform.pathSeparator}${core.name}-core.log';
-      Process process;
-      try {
-        process = await Process.start(
-          core.exe,
-          core.args,
-          workingDirectory: core.workDir,
-          runInShell: false,
-        );
-      } on ProcessException catch (error) {
-        _log.add(
-          'اجرای ${core.binaryName} ناموفق بود: ${error.message} '
-          '(کد ${Fa.num(error.errorCode)})',
-          level: 'error',
-        );
-        _log.add('مسیر هسته: ${core.exe}', level: 'error');
-        _logLaunchHint(error.errorCode);
-        return false;
-      } on FileSystemException catch (error) {
-        _log.add(
-          'اجرای ${core.binaryName} ناموفق بود: ${error.message}',
-          level: 'error',
-        );
-        _log.add('مسیر هسته: ${core.exe}', level: 'error');
-        return false;
-      }
+    final Directory runDir = Directory(plan.runDir);
+    await runDir.create(recursive: true);
+    final CoreLaunch core = plan.cores.first;
+    final String coreLog = _coreLogPath(plan);
 
-      final File logFile = File(coreLog);
-      await logFile.parent.create(recursive: true);
-      final IOSink sink = logFile.openWrite(mode: FileMode.append);
-      process.stdout.listen(sink.add);
-      process.stderr.listen(sink.add);
+    // فایل تنظیمات هسته: همان تنظیماتی که پنجره CLI و خود برنامه هر دو
+    // می خوانند. لاگ در همان پوشه جلسه نوشته می شود.
+    // همان فایل تنظیماتی که هسته هیدیفای می شناسد (`-d`)، با همان نامی که
+    // خودش استفاده می کند.
+    final String settingsPath =
+        '${plan.runDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
+    await File(settingsPath).writeAsString(
+      jsonEncode(
+        HiddifyCore.settingsJson(
+          tun: plan.tun,
+          systemProxy: plan.usesSystemProxy,
+          port: plan.proxyPort > 0 ? plan.proxyPort : _hiddifyPort,
+          logFile: coreLog,
+        ),
+      ),
+      flush: true,
+    );
 
-      // اگر هسته بلافاصله بسته شود، خروجی خودش دلیل را می گوید.
-      final int? exited = await Future.any<int?>(<Future<int?>>[
-        process.exitCode,
-        Future<int?>.delayed(const Duration(milliseconds: 1500), () => null),
-      ]);
-      if (exited != null) {
-        final String tail = await _readLogTail(coreLog);
-        _log.add(
-          '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(exited)}).'
-          '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
-          level: 'error',
+    // آرگومان های نقشه با فایل تنظیمات تکمیل می شوند (`-d`).
+    final List<String> args = <String>[
+      ...core.args.takeWhile((String arg) => arg != '--in-proxy-port'),
+      '-d',
+      settingsPath,
+      ...core.args.skipWhile((String arg) => arg != '--in-proxy-port'),
+    ];
+
+    try {
+      if (CliSession.wanted(_settings) && Platform.isWindows) {
+        // همان الگوی هیدیفای: اجرا در یک پنجره کنسول جدا. `start` پنجره را
+        // می سازد و خودش فورا برمی گردد؛ خود هسته فرایند فرزند است.
+        final String sessionPath = await CliSession.writeSession(
+          CliSessionFile(
+            exe: core.exe,
+            args: args,
+            workDir: core.workDir,
+            coreName: core.binaryName,
+            logPath: coreLog,
+            title: CliSession.titleFor(
+              _activeNode ?? _nodeFallback,
+              _settings,
+            ),
+          ),
+          plan.runDir,
         );
-        return false;
-      }
-
-      unawaited(
-        process.exitCode.then((int code) async {
-          await sink.flush();
-          await sink.close();
-          if (identical(_coreProcesses[core.name], process)) {
-            _coreProcesses.remove(core.name);
-          }
-          _runningPids.remove(process.pid);
-          if (_runningPids.isEmpty) {
-            _runningBinaries.clear();
-          }
+        final bool opened = await CliSession.openWindow(
+          session: sessionPath,
+          title: CliSession.titleFor(_activeNode ?? _nodeFallback, _settings),
+        );
+        if (!opened) {
+          // پنجره باز نشد؛ همان هسته بی صدا اجرا می شود (پایین همین تابع).
           _log.add(
-            '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
+            'پنجره Umbrella CLI باز نشد؛ هسته بدون پنجره اجرا می شود.',
             level: 'warning',
           );
-        }),
+        } else {
+          _log.add(
+            'هسته در پنجره Umbrella CLI اجرا شد: ${core.binaryName} '
+            '(پورت ${Fa.num(plan.proxyPort)})',
+          );
+          // فرایند هسته فرزند همان پنجره است؛ با نامش سنجیده و بسته می شود.
+          _runningBinaries.add(core.binaryName);
+          _log.add('فایل تنظیمات هسته: $settingsPath');
+          return true;
+        }
+      }
+
+      // نبودِ پنجره: اجرای بی صدا با همان آرگومان ها.
+      final Process process = await Process.start(
+        core.exe,
+        args,
+        workingDirectory: core.workDir,
+        runInShell: false,
       );
-      _coreProcesses[core.name] = process;
-      _runningPids.add(process.pid);
-      _runningBinaries.add(core.binaryName);
-      _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
+      final bool started = await _track(process, core, coreLog);
+      _log.add('فایل تنظیمات هسته: $settingsPath');
+      return started;
+    } on ProcessException catch (error) {
+      _log.add(
+        'اجرای ${core.binaryName} ناموفق بود: ${error.message} '
+        '(کد ${Fa.num(error.errorCode)})',
+        level: 'error',
+      );
+      _log.add('مسیر هسته: ${core.exe}', level: 'error');
+      _logLaunchHint(error.errorCode);
+      return false;
+    } on FileSystemException catch (error) {
+      _log.add(
+        'اجرای ${core.binaryName} ناموفق بود: ${error.message}',
+        level: 'error',
+      );
+      _log.add('مسیر هسته: ${core.exe}', level: 'error');
+      return false;
     }
+  }
+
+  /// نام جایگزین وقتی هنوز سروری انتخاب نشده است.
+  VpnNode get _nodeFallback => VpnNode(
+        id: 'core',
+        name: AppConfig.appName,
+        protocol: NodeProtocol.vless,
+        host: '',
+        port: 0,
+        sourceId: '',
+        params: const <String, dynamic>{},
+      );
+
+  /// ثبت فرایند هسته ای که بی صدا اجرا شده است.
+  Future<bool> _track(
+    Process process,
+    CoreLaunch core,
+    String coreLog,
+  ) async {
+    final File logFile = File(coreLog);
+    await logFile.parent.create(recursive: true);
+    final IOSink sink = logFile.openWrite(mode: FileMode.append);
+    process.stdout.listen(sink.add);
+    process.stderr.listen(sink.add);
+
+    // اگر هسته بلافاصله بسته شود، خروجی خودش دلیل را می گوید.
+    final int? exited = await Future.any<int?>(<Future<int?>>[
+      process.exitCode,
+      Future<int?>.delayed(const Duration(milliseconds: 1500), () => null),
+    ]);
+    if (exited != null) {
+      final String tail = await _readLogTail(coreLog);
+      _log.add(
+        '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(exited)}).'
+        '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+        level: 'error',
+      );
+      return false;
+    }
+
+    unawaited(
+      process.exitCode.then((int code) async {
+        await sink.flush();
+        await sink.close();
+        if (identical(_coreProcesses[core.name], process)) {
+          _coreProcesses.remove(core.name);
+        }
+        _runningPids.remove(process.pid);
+        if (_runningPids.isEmpty) {
+          _runningBinaries.clear();
+        }
+        _log.add(
+          '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
+          level: 'warning',
+        );
+      }),
+    );
+    _coreProcesses[core.name] = process;
+    _runningPids.add(process.pid);
+    _runningBinaries.add(core.binaryName);
+    _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
     return true;
   }
 
@@ -1739,7 +1632,9 @@ class VpnController extends ChangeNotifier {
     _log.add('پروکسی سیستمی برداشته شد.');
   }
 
-  static const Duration _tunnelTimeout = Duration(seconds: 15);
+  /// هسته هیدیفای اول پیکربندی را می سازد، بعد کارت شبکه را بالا می آورد و
+  /// تست سرعت سرورها را شروع می کند؛ ۲۵ ثانیه برای همین کافی است.
+  static const Duration _tunnelTimeout = Duration(seconds: 25);
 
   Future<bool> _waitForTunnel(LaunchPlan plan) async {
     final DateTime deadline = DateTime.now().add(_tunnelTimeout);
@@ -1747,10 +1642,20 @@ class VpnController extends ChangeNotifier {
       if (_disposed || _cancelRequested) {
         return false;
       }
-      // هسته هایی که خودمان اجرا کرده ایم را با دستگیره فرایند می سنجیم؛
-      // جست وجوی نام در tasklist فقط پشتیبان است.
-      final bool alive = _coreProcesses.isNotEmpty ||
-          await _native.isRunning(plan.primaryBinary);
+      // اگر خودمان فرایند را در دست داریم با دستگیره اش می سنجیم؛ در حالت
+      // پنجره CLI، فرایند فرزند آن پنجره است و با نامش پیدا می شود.
+      final bool alive = _coreProcesses.isNotEmpty
+          ? true
+          : await _native.isRunning(plan.primaryBinary);
+      if (!alive && plan.readinessPort <= 0) {
+        // در حالت تونل، ممکن است هسته هنوز کارت شبکه را نساخته باشد؛ کارت
+        // شبکه خودش نشانه زنده بودن است.
+        final TunnelStats probe =
+            await _native.tunnelStats(hint: plan.tunnelHint);
+        if (probe.available) {
+          return true;
+        }
+      }
       if (!alive) {
         return false;
       }
@@ -2123,6 +2028,10 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCores() async {
+    // اگر هسته در پنجره CLI اجرا شده باشد، اول همان بسته می شود تا هیچ هسته
+    // ای بیرون از برنامه نماند و پروکسی سیستمی به حالت عادی برگردد.
+    await _stopCliCore();
+    await CliSession.instance.close();
     for (final Process process in _coreProcesses.values) {
       try {
         process.kill();
@@ -2139,6 +2048,31 @@ class VpnController extends ChangeNotifier {
     }
     _runningPids.clear();
     _runningBinaries.clear();
+  }
+
+  /// بستن هسته ای که در پنجره CLI اجرا شده است.
+  ///
+  /// هسته خودش با `SIGINT`/`SIGTERM` تمیز بسته می شود و پروکسی سیستمی را
+  /// برمی گرداند؛ ویندوز معادل آن، بستن پنجره یا کشتن همان فرایند است.
+  Future<void> _stopCliCore() async {
+    for (final String binary in <String>[
+      hiddifyCliBinary,
+      HiddifyCore.engineBinary,
+    ]) {
+      await _native.killByName(binary);
+    }
+    // فایل قفل هسته پاک می شود تا اجرای بعدی معطل نشود.
+    try {
+      final File pid = File(
+        '${_provisioner.dataDir}${Platform.pathSeparator}run'
+        '${Platform.pathSeparator}umbrella-core.pid',
+      );
+      if (await pid.exists()) {
+        await pid.delete();
+      }
+    } on FileSystemException {
+      // فایل نبود؛ کاری لازم نیست.
+    }
   }
 
   Future<void> _failAndCleanup(String reason) async {

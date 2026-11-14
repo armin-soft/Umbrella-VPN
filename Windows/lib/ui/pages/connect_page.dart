@@ -126,15 +126,19 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
-  /// انتخاب هسته از منوی کوچک؛ سپس اتصال خودکار به پایدارترین سرور.
-  Future<void> _pickCore(
+  /// انتخاب حالت اتصال (تونل کامل / پروکسی سیستمی) از منوی کوچک؛ سپس اتصال
+  /// خودکار به پایدارترین سرور.
+  ///
+  /// هسته یکی است (هسته هیدیفای)؛ این منو فقط تعیین می کند ترافیک با تونل
+  /// کامل رد شود یا با پروکسی سیستمی.
+  Future<void> _pickConnectionMode(
     VpnController vpn,
     SettingsController settings,
     ToastController toasts,
   ) async {
     final CorePreference? picked = await showDialog<CorePreference>(
       context: context,
-      builder: (BuildContext context) => _CoreDialog(
+      builder: (BuildContext context) => _ConnectionModeDialog(
         current: settings.settings.corePreference,
       ),
     );
@@ -142,14 +146,7 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     await settings.setCorePreference(picked);
-    if (!picked.available) {
-      toasts.info(
-        'هسته ${picked.faName} در این نسخه فعال نیست',
-        'هسته این گزینه همراه نسخه عرضه نشده است.',
-      );
-      return;
-    }
-    toasts.info('هسته اتصال: ${picked.faName}');
+    toasts.info('حالت اتصال: ${picked.faName}');
     if (vpn.status.busy) {
       return;
     }
@@ -436,18 +433,22 @@ class _ConnectPageState extends State<ConnectPage> {
                         ),
                       const SizedBox(height: 12),
 
-                      // ── دو منوی کوچک: هسته و حالت انتخاب ────────────
+                      // ── دو منوی کوچک: حالت اتصال و حالت انتخاب سرور ──
                       Wrap(
                         alignment: WrapAlignment.center,
                         spacing: 10,
                         runSpacing: 8,
                         children: <Widget>[
                           _PickerChip(
-                            label: 'هسته اتصال',
+                            label: 'حالت اتصال',
                             value: settings.settings.corePreference.faName,
                             icon: settings.settings.corePreference.icon,
                             enabled: !status.busy,
-                            onTap: () => _pickCore(vpn, settings, toasts),
+                            onTap: () => _pickConnectionMode(
+                              vpn,
+                              settings,
+                              toasts,
+                            ),
                           ),
                           _PickerChip(
                             label: 'حالت انتخاب سرور',
@@ -663,9 +664,9 @@ class _PickerChip extends StatelessWidget {
   }
 }
 
-/// منوی کوچک انتخاب هسته با لوگوی رسمی هر هسته.
-class _CoreDialog extends StatelessWidget {
-  const _CoreDialog({required this.current});
+/// منوی کوچک انتخاب حالت اتصال (توضیح هر حالت زیر نامش می آید).
+class _ConnectionModeDialog extends StatelessWidget {
+  const _ConnectionModeDialog({required this.current});
 
   final CorePreference current;
 
@@ -686,7 +687,7 @@ class _CoreDialog extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
                 child: Text(
-                  Fa.num('هسته اتصال'),
+                  Fa.num('حالت اتصال'),
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall

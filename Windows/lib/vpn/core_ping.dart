@@ -3,16 +3,18 @@ import 'dart:io';
 
 import '../core/app_config.dart';
 import '../models/models.dart';
-import 'config_builders.dart';
 import 'cores.dart';
+import 'hiddify_core.dart';
+import 'vpn_controller.dart';
 import 'tunnel_probe.dart';
 
-/// سنجش تاخیر واقعی هر سرور با هسته سینگ باکس.
+/// سنجش تاخیر واقعی هر سرور با هسته هیدیفای.
 ///
-/// برای هر سرور یک نمونه سینگ باکس کوتاه اجرا می شود که یک پورت محلی می سازد
-/// و همان درخواست کوچک از داخل تونل رد می شود؛ عددی که به دست می آید تاخیر
-/// واقعی اتصال است. این روش به رابط مدیریتی کلش وابسته نیست و روی هر نسخه
-/// هسته کار می کند.
+/// برای هر سرور یک نمونه کوتاه از همان هسته ای که کلاینت هیدیفای استفاده می
+/// کند اجرا می شود: هسته از یک لینک، پروکسی محلی می سازد و همان درخواست
+/// کوچک از داخلش رد می شود. عددی که به دست می آید تاخیر واقعی همان پروتکل
+/// است و چون خود هسته پیکربندی را می سازد، برای xhttp و همه انتقال های دیگر
+/// هم درست کار می کند.
 class CorePinger {
   CorePinger(this._provisioner);
 
@@ -24,24 +26,8 @@ class CorePinger {
   /// بیشتر از این تعداد سرور در یک دور سنجیده نمی شود تا زمان معقول بماند.
   static const int _maxNodes = 24;
 
-  /// پروتکل هایی که سینگ باکس می تواند برایشان تست تاخیر انجام دهد.
-  static bool supports(VpnNode node) {
-    switch (node.protocol) {
-      case NodeProtocol.vless:
-      case NodeProtocol.vmess:
-      case NodeProtocol.trojan:
-      case NodeProtocol.shadowsocks:
-      case NodeProtocol.socks:
-      case NodeProtocol.hysteria2:
-      case NodeProtocol.tuic:
-        return true;
-      case NodeProtocol.mieru:
-      case NodeProtocol.clash:
-      case NodeProtocol.wireguard:
-      case NodeProtocol.amnezia:
-        return false;
-    }
-  }
+  /// هسته هیدیفای همه این پروتکل ها را برای تست تاخیر می شناسد.
+  static bool supports(VpnNode node) => node.protocol != NodeProtocol.clash;
 
   /// تاخیر هر سرور بر حسب میلی ثانیه. سرورهایی که جواب ندهند در نقشه نیستند.
   Future<Map<String, int>> measure(
@@ -51,20 +37,18 @@ class CorePinger {
     Duration budget = const Duration(seconds: 70),
   }) async {
     final Map<String, int> delays = <String, int>{};
-    final String? exe = await _provisioner.locateBinary('sing-box.exe');
+    final String? exe =
+        await _provisioner.locateBinary(VpnController.hiddifyCliBinary);
     if (exe == null || exe.isEmpty) {
       return delays;
     }
 
     // اول سرورهایی که تا حالا پینگ خوبی داشته اند، بعد بقیه.
     //
-    // سرورهای xhttp از این سنجش کنار گذاشته می شوند: سینگ باکس آن انتقال را
-    // نمی شناسد، پس اجرای هسته برایشان فقط بودجه سنجش را می سوزاند و در
-    // پایان «تاخیر تونل برای ۰ سرور» در گزارش می آمد.
     final List<VpnNode> ordered = nodes
         .where((VpnNode node) =>
             supports(node) &&
-            SingBoxConfig.supportsTransport(node) &&
+            VpnController.usable(node) &&
             node.host.isNotEmpty &&
             node.port > 0)
         .toList()
@@ -135,25 +119,28 @@ class CorePinger {
     required int port,
     required int slot,
   }) async {
+    final String link = VpnController.linkFor(node);
+    if (link.isEmpty) {
+      return -1;
+    }
     final File config = File(
-      '${runDir.path}${Platform.pathSeparator}ping-$slot.json',
+      '${runDir.path}${Platform.pathSeparator}ping-$slot.txt',
     );
     Process? process;
     IOSink? sink;
     try {
-      await config.writeAsString(
-        SingBoxConfig.encode(
-          SingBoxConfig.buildProxy(
-            node: node,
-            settings: settings,
-            port: port,
-          ),
-        ),
-        flush: true,
-      );
+      // هسته هیدیفای خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
+      await config.writeAsString('$link\n', flush: true);
       process = await Process.start(
         exe,
-        <String>['run', '-c', config.path],
+        HiddifyCore.args(
+          links: config.path,
+          runDir: runDir.path,
+          port: port,
+          tun: false,
+          systemProxy: false,
+          logLevel: 'warn',
+        ),
         workingDirectory: workDir,
         runInShell: false,
       );
@@ -163,7 +150,7 @@ class CorePinger {
       process.stdout.listen(sink.add);
       process.stderr.listen(sink.add);
 
-      if (!await _waitForPort(port, const Duration(milliseconds: 2500))) {
+      if (!await _waitForPort(port, const Duration(milliseconds: 3500))) {
         return -1;
       }
       return await TunnelProbe.latency(

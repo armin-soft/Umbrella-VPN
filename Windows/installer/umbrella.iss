@@ -1,5 +1,5 @@
 ﻿; ---------------------------------------------------------------------------
-; Umbrella VPN 1.0.1
+; Umbrella VPN 1.0.2
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
@@ -10,9 +10,10 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.1"
+#define AppVersion "1.0.2"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
+#define CliExe "UmbrellaCli.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
 #define ReleaseDir "..\build\windows\x64\runner\Release"
 
@@ -65,9 +66,11 @@ Name: "autostart"; Description: "Start {#AppNameEn} when Windows starts (minimis
 [Files]
 ; Flutter release bundle: exe, flutter_windows.dll, plugin dll, data folder.
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Cores ship inside the installer: they are copied next to the exe at build
-; time (tools\fetch-cores.ps1 + bootstrap.ps1) and included by the {#ReleaseDir}
-; rule above, landing in {app}\cores\bin.
+; The core ships inside the installer: tools\fetch-cores.ps1 puts the Hiddify
+; core bundle in cores\hiddify next to the build output, so the {#ReleaseDir}
+; rule above carries it into {app}\cores\hiddify. The two files that must sit
+; next to the exe are copied again with the app's names in the [Files] block at
+; the end of this script.
 ; Optional Visual C++ runtime, put VC_redist.x64.exe in installer\redist to ship it.
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 
@@ -101,9 +104,13 @@ begin
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM umbrella_vpn.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM xray.exe /T',
+  // هسته (پنجره CLI) و موتور گرافیکی هم بسته می شوند تا فایل در حال استفاده
+  // نماند. هسته قدیمی نسخه های قبلی هم پاک می شود.
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaCli.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM mihomo.exe /T',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaCoreEngine.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCli.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(600);
 end;
@@ -122,3 +129,20 @@ end;
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\cores"
+
+; ═══════════════════════════════════════════════════════════════════════════
+; هسته هیدیفای: تنها هسته همراه نسخه.
+;
+; همه فایل های هسته در cores\hiddify می مانند (کتابخانه اش باید کنار فایل
+; اجرایی باشد). دو فایل هم کنار خود برنامه با نام آمبرلا گذاشته می شوند:
+;
+;   UmbrellaCli.exe          — مثل HiddifyCli؛ خط فرمان و پنجره ترمینال
+;   UmbrellaCoreEngine.exe   — مثل HiddifyCoreEngine؛ همان هسته با زیرسیستم
+;                              گرافیکی، پس هیچ پنجره کنسولی باز نمی شود.
+;
+; فقط نام عوض می شود؛ خود فایل ها دست نمی خورند.
+; ═══════════════════════════════════════════════════════════════════════════
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCli.exe"; DestDir: "{app}"; DestName: "{#CliExe}"; Flags: ignoreversion
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -55,10 +56,9 @@ void main() {
           .where((String line) => !line.trimLeft().startsWith('//'))
           .toList();
       for (final String moved in <String>[
-        'هسته انتخابی',
+        'هسته اتصال',
         'مدت اتصال',
         'حالت اتصال',
-        'نوع سرویس',
         'سرور فعال',
         'تایید عبور ترافیک',
       ]) {
@@ -73,7 +73,7 @@ void main() {
     test('اطلاعات اتصال جای مخصوص خودش را دارد', () {
       final String page = read('lib/ui/pages/connection_page.dart');
       expect(page.contains('وضعیت اتصال'), isTrue);
-      expect(page.contains('هسته انتخابی'), isTrue);
+      expect(page.contains('هسته اتصال'), isTrue);
       // فراموش شدن این واردات، ساخت ویندوز را با «VpnController isn't a type»
       // می شکست؛ حالا آزمون هم جلوی آن را می گیرد.
       expect(page.contains("import '../../vpn/vpn_controller.dart';"), isTrue);
@@ -94,39 +94,65 @@ void main() {
     });
   });
 
-  group('هسته ها', () {
-    test('کلیدهای حذف شده سینگ باکس هیچ جا نوشته نمی شوند', () {
-      final String builders = read('lib/vpn/config_builders.dart');
-      expect(builders.contains("'gso_max_size'"), isFalse);
-      expect(builders.contains("'gso':"), isFalse);
+  group('هسته', () {
+    test('تنها هسته همراه نسخه، هسته هیدیفای است', () {
+      final String manifest = read('assets/cores/manifest.json');
+      final Map<String, dynamic> json =
+          jsonDecode(manifest) as Map<String, dynamic>;
+      final List<dynamic> cores = json['cores'] as List<dynamic>;
+      expect(cores.length, 1);
+      final Map<String, dynamic> core = cores.first as Map<String, dynamic>;
+      expect(core['id'], 'hiddify');
+      expect(core['binary'], 'UmbrellaCli.exe');
+      final String text = manifest.toLowerCase();
+      for (final String gone in <String>[
+        'sing-box',
+        'xray',
+        'mihomo',
+        'clash-meta',
+        'mieru',
+        'wireguard-go',
+        'amneziawg',
+      ]) {
+        expect(text.contains(gone), isFalse, reason: gone);
+      }
     });
 
-    test('انتقال xhttp فقط در ایکس ری ساخته می شود', () {
-      // سینگ باکس انتقال xhttp ندارد؛ پیکربندی آن هسته برای این سرورها باید
-      // کنار گذاشته شود و ایکس ری (که xhttp دارد) اجرا شود.
-      final String builders = read('lib/vpn/config_builders.dart');
-      expect(builders.contains("case 'xhttp':"), isTrue);
-      expect(builders.contains("'xhttpSettings'"), isTrue);
-      // خواندن فایل در ویندوز ممکن است پایان خط CRLF بدهد؛ الگو هر دو را
-      // می پذیرد.
-      expect(
-        RegExp("case 'splithttp':\\s*\\r?\\n\\s*return null;").hasMatch(builders),
-        isTrue,
-      );
+    test('هسته با خط فرمان هیدیفای اجرا می شود', () {
+      final String core = read('lib/vpn/hiddify_core.dart');
+      expect(core.contains("'run'"), isTrue);
+      expect(core.contains("'-c'"), isTrue);
+      expect(core.contains("'--in-proxy-port'"), isTrue);
+      expect(core.contains("'--tun'"), isTrue);
+      expect(core.contains("'--system-proxy'"), isTrue);
+      // نام فایل های هیدیفای فقط با نام برنامه عوض شده است.
+      expect(core.contains('UmbrellaCli.exe'), isTrue);
+      expect(core.contains('UmbrellaCoreEngine.exe'), isTrue);
+    });
+
+    test('هیچ هسته دستی دیگری اجرا نمی شود', () {
+      for (final String path in <String>[
+        'lib/vpn/vpn_controller.dart',
+        'lib/vpn/core_ping.dart',
+        'lib/vpn/cores.dart',
+      ]) {
+        final String text = read(path);
+        for (final String gone in <String>[
+          'sing-box.exe',
+          'xray.exe',
+          'mihomo.exe',
+          'mieru.exe',
+          'amneziawg.exe',
+        ]) {
+          expect(text.contains(gone), isFalse, reason: '$path → $gone');
+        }
+      }
     });
 
     test('نام سرور در گزارش ها دوبار «سرور» نمی گیرد', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('سرور سرور'), isFalse);
       expect(controller.contains('_nodeLabel'), isTrue);
-    });
-
-    test('پیکربندی خود پنل با کلش متا اجرا می شود', () {
-      final String controller = read('lib/vpn/vpn_controller.dart');
-      expect(controller.contains('_buildClashPlan'), isTrue);
-      expect(controller.contains('applyClashProfile'), isTrue);
-      final String clash = read('lib/vpn/clash_config.dart');
-      expect(clash.contains('clash-meta.yaml'), isTrue);
     });
   });
 

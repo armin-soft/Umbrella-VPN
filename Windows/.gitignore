@@ -9,6 +9,7 @@ windows/flutter/ephemeral/
 windows/runner/Debug/
 windows/runner/Release/
 cores/bin/
+cores/hiddify/
 cores/cache/
 dist/
 installer/output/

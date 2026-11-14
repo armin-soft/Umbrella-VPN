@@ -5,7 +5,7 @@
 | # | نیاز | وضعیت | محل |
 | --- | --- | --- | --- |
 | ۱ | فلوتر و کتابخانه های نسل جدید | انجام شده | `pubspec.yaml`، `lib/**` |
-| ۲ | پشتیبانی Xray، Clash Meta، WireGuard، Amnezia، Mieru | انجام شده | `lib/vpn/cores.dart`، `lib/vpn/config_builders.dart`، `assets/cores/manifest.json` |
+| ۲ | همه پروتکل ها و قالب ها با هسته هیدیفای | انجام شده | `lib/vpn/hiddify_core.dart`، `lib/vpn/cores.dart`، `assets/cores/manifest.json` (تنها یک هسته: `UmbrellaCli.exe`) |
 | ۳ و ۴ | اشتراک فقط از سرور و بدون ورود دستی | انجام شده | `lib/state/subscription_controller.dart`، `lib/data/parsers.dart` (`parseAuto`) |
 | ۵ و ۶ | رابط حرفه ای با نام فیلترشکن آمبرلا | انجام شده | `lib/ui/**` |
 | ۷ | رابط فارسی، نصب کننده انگلیسی | انجام شده | `lib/app.dart` (fa)، `installer/umbrella.iss` |
@@ -19,7 +19,7 @@
 | ۱۷ | نوتبار با نمایش وضعیت | انجام شده | `packages/umbrella_native/.../tray_icon.cpp`، `lib/platform/services.dart` |
 | ۱۸ | نصب کننده با دسترسی مدیر | انجام شده | `windows/runner/runner.exe.manifest`، `installer/umbrella.iss` |
 | ۱۹ | سه حالت اتصال | انجام شده | `lib/models/models.dart` (`SelectionMode`)، `lib/vpn/balancer.dart`، تنظیمات |
-| ۲۰ و ۲۱ | VPN کامل TUN و کیل سوییچ | انجام شده | `lib/vpn/config_builders.dart`، `lib/vpn/vpn_controller.dart`، `system_ops.cpp` |
+| ۲۰ و ۲۱ | VPN کامل TUN و کیل سوییچ | انجام شده | `lib/vpn/hiddify_core.dart` (`--tun`) ، `lib/vpn/vpn_controller.dart`، `system_ops.cpp` |
 | ۲۲ | سایر قابلیت های ممکن | انجام شده | مسدودسازی IPv6، مسیر سختگیرانه، DNS درون تونل، حالت توربو، MTU، فن آوری TUN، بازگردانی شبکه، صدا، مناسبت ها، لاگ |
 | ۲۳ | به روزرسانی درون برنامه با درصد | انجام شده | `lib/platform/services.dart` (`UpdateService`)، `lib/state/update_controller.dart`، صفحه به روزرسانی |
 | ۲۴ | بدون ایموجی، فقط آیکون | انجام شده | همه `lib/**`؛ بررسی خودکار بازه های ایموجی |

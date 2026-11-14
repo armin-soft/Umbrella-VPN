@@ -50,8 +50,17 @@ void main() {
     });
   });
 
-  group('انتخاب هسته', () {
-    test('هر هسته آیکون و نام خودش را دارد', () {
+  group('حالت اتصال', () {
+    test('هسته یکی است؛ انتخاب کاربر حالت عبور ترافیک است', () {
+      // هسته هیدیفای تنها هسته نسخه است، پس گزینه «کدام هسته» وجود ندارد.
+      expect(CorePreference.values, <CorePreference>[
+        CorePreference.auto,
+        CorePreference.tun,
+        CorePreference.systemProxy,
+      ]);
+    });
+
+    test('هر حالت آیکون و نام خودش را دارد', () {
       final Set<IconData> icons =
           CorePreference.values.map((CorePreference item) => item.icon).toSet();
       final Set<String> names =
@@ -60,19 +69,18 @@ void main() {
       expect(names.length, CorePreference.values.length);
     });
 
-    test('آمنزیا در این نسخه در دسترس نیست و بقیه در دسترس اند', () {
-      expect(CorePreference.amnezia.available, isFalse);
-      expect(CorePreference.auto.available, isTrue);
-      expect(CorePreference.xray.available, isTrue);
-      expect(CorePreference.clash.available, isTrue);
-      expect(CorePreference.wireguard.available, isTrue);
-      expect(CorePreference.mieru.available, isTrue);
+    test('همه حالت ها در دسترس اند و نام و توضیح فارسی دارند', () {
+      for (final CorePreference item in CorePreference.values) {
+        expect(item.available, isTrue);
+        expect(item.faName.trim(), isNotEmpty);
+        expect(item.description.trim(), isNotEmpty);
+      }
     });
 
-    test('نام فارسی هر هسته خالی نیست', () {
-      for (final CorePreference item in CorePreference.values) {
-        expect(item.faName.trim(), isNotEmpty);
-      }
+    test('حالت خودکار و تونل، تونل کامل را ترجیح می دهند', () {
+      expect(CorePreference.auto.prefersTun, isTrue);
+      expect(CorePreference.tun.prefersTun, isTrue);
+      expect(CorePreference.systemProxy.prefersTun, isFalse);
     });
   });
 
@@ -81,9 +89,9 @@ void main() {
       const AppSettings settings = AppSettings();
       expect(settings.corePreference, CorePreference.auto);
       final AppSettings saved =
-          settings.copyWith(corePreference: CorePreference.mieru);
+          settings.copyWith(corePreference: CorePreference.tun);
       final AppSettings restored = AppSettings.fromJson(saved.toJson());
-      expect(restored.corePreference, CorePreference.mieru);
+      expect(restored.corePreference, CorePreference.tun);
     });
   });
 

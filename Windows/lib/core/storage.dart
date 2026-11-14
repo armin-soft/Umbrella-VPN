@@ -141,7 +141,10 @@ class StoreKeys {
   static const String updateSkipped = 'update.skipped';
   static const String nodesCache = 'nodes-cache.json';
 
-  /// پیکربندی کامل کلش متا که خود پنل می دهد؛ برای اجرای mihomo نگه داشته
-  /// می شود تا هر بار از نو ساخته نشود.
-  static const String clashProfile = 'clash-profile.yml';
+  /// پنجره Umbrella CLI هنگام اتصال باز شود.
+  static const String showCli = 'cli.show';
+
+  /// پیکربندی کاملی که خود پنل می دهد (کلش، ایکس ری یا سینگ باکس)؛ نگه
+  /// داشته می شود تا هر بار از نو گرفته نشود.
+  static const String panelProfile = 'panel-profile.yml';
 }

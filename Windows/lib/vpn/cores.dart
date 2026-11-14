@@ -8,11 +8,12 @@ import '../core/utils.dart';
 import '../models/models.dart';
 import '../platform/services.dart';
 
-/// محل نگاه داشتن هسته ها و ابزار یافتن و آماده کردن آن ها.
+/// محل نگاه داشتن هسته و ابزار یافتن و آماده کردن آن.
 ///
-/// هسته ها همراه خود نسخه نصب می شوند (پوشه cores کنار فایل اجرایی) و برنامه
-/// هیچ چیزی را از اینترنت دانلود نمی کند. اگر هسته ای در نسخه نصب نباشد، همان
-/// پیام روشن فارسی نمایش داده می شود و کاربر باید برنامه را دوباره نصب کند.
+/// تنها هسته این نسخه هسته هیدیفای است و همراه خود نسخه نصب می شود (پوشه
+/// `cores\hiddify` کنار فایل اجرایی)؛ برنامه هیچ چیزی را از اینترنت دانلود
+/// نمی کند. اگر هسته در نسخه نصب نباشد، همان پیام روشن فارسی نمایش داده می شود
+/// و کاربر باید برنامه را دوباره نصب کند.
 class CoreProvisioner {
 
   static List<CoreInfo> _catalog = <CoreInfo>[];
@@ -77,7 +78,10 @@ class CoreProvisioner {
   /// مسیر هسته در صورت وجود. هسته ها همراه نسخه نصب می شوند و از همان پوشه
   /// نصب اجرا می شوند؛ هیچ کپی یا نصبی لازم نیست.
   Future<String?> locateBinary(String binary) async {
+    // هسته هیدیفای همه فایل هایش را کنار هم دارد (cores\\hiddify)؛ هسته هایی
+    // که یک فایل بودند در cores\\bin و کنار برنامه اند.
     final List<String> candidates = <String>[
+      '${bundledDir}${Platform.pathSeparator}hiddify${Platform.pathSeparator}$binary',
       '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
       '${bundledDir}${Platform.pathSeparator}$binary',
       '${appDir}${Platform.pathSeparator}$binary',

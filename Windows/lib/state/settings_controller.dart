@@ -113,8 +113,26 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(tunMode: true));
   }
 
+  /// ثبت حالت اتصال. `tunMode` هم به روز می شود تا این دو هیچ وقت ناهماهنگ
+  /// نباشند: «تونل کامل» یعنی تونل روشن، «پروکسی سیستمی» یعنی خاموش، و
+  /// «خودکار» یعنی اول تونل و اگر نشد پروکسی.
   Future<void> setCorePreference(CorePreference value) async {
-    await update(_settings.copyWith(corePreference: value));
+    await update(
+      _settings.copyWith(
+        corePreference: value,
+        tunMode: value.prefersTun,
+        modeChoiceExplicit: true,
+      ),
+    );
+  }
+
+  /// پنجره CLI هسته هنگام اتصال باز شود یا نه.
+  ///
+  /// پیش فرض روشن است: هیدیفای هم هنگام اتصال پنجره هسته را نشان می دهد و
+  /// گزارش زنده همان جاست. کسی که پنجره را نمی خواهد، از همین کلید خاموشش
+  /// می کند؛ اتصال در هر دو حالت یکی است.
+  Future<void> setShowCli(bool value) async {
+    await update(_settings.copyWith(showCli: value));
   }
 
   Future<void> setSound(bool value) async {

@@ -788,64 +788,53 @@ class GeoInfo {
   static const GeoInfo empty = GeoInfo();
 }
 
-/// هسته ای که برای اتصال استفاده می شود (انتخاب کاربر).
-enum CorePreference { auto, xray, clash, wireguard, amnezia, mieru }
+/// حالت اتصال که کاربر انتخاب می کند.
+///
+/// هسته یکی است (هسته هیدیفای)؛ انتخاب کاربر فقط تعیین می کند ترافیک چطور از
+/// هسته رد شود. حالت «خودکار» اول تونل کامل را امتحان می کند و اگر نشد پروکسی
+/// سیستمی.
+enum CorePreference { auto, tun, systemProxy }
 
 extension CorePreferenceX on CorePreference {
   String get faName {
     switch (this) {
       case CorePreference.auto:
         return 'خودکار';
-      case CorePreference.xray:
-        return 'ایکس ری';
-      case CorePreference.clash:
-        return 'کلش متا';
-      case CorePreference.wireguard:
-        return 'وایرگارد';
-      case CorePreference.amnezia:
-        return 'آمنزیا';
-      case CorePreference.mieru:
-        return 'میرو';
+      case CorePreference.tun:
+        return 'تونل کامل';
+      case CorePreference.systemProxy:
+        return 'پروکسی سیستمی';
     }
   }
 
   String get description {
     switch (this) {
       case CorePreference.auto:
-        return 'بهترین هسته برای هر سرور خودکار انتخاب می شود';
-      case CorePreference.xray:
-        return 'هسته ایکس ری ۲۵';
-      case CorePreference.clash:
-        return 'هسته سینگ باکس با قواعد سازگار کلش متا';
-      case CorePreference.wireguard:
-        return 'تونل وایرگارد با هسته سینگ باکس';
-      case CorePreference.amnezia:
-        return 'در این نسخه پشتیبانی نمی شود';
-      case CorePreference.mieru:
-        return 'هسته اختصاصی میرو';
+        return 'اول تونل کامل، اگر نشد پروکسی سیستمی';
+      case CorePreference.tun:
+        return 'تمام ترافیک ویندوز از کارت شبکه مجازی هسته رد می شود';
+      case CorePreference.systemProxy:
+        return 'پروکسی ویندوز روی پورت محلی هسته تنظیم می شود';
     }
   }
 
-  /// آیکون ساده هسته؛ در رابط کاربری به جای تصویر لوگو استفاده می شود.
+  /// آیکون ساده حالت؛ در رابط کاربری به جای تصویر لوگو استفاده می شود.
   IconData get icon {
     switch (this) {
       case CorePreference.auto:
         return Icons.auto_awesome_rounded;
-      case CorePreference.xray:
-        return Icons.bolt_rounded;
-      case CorePreference.clash:
-        return Icons.hub_rounded;
-      case CorePreference.wireguard:
-        return Icons.vpn_key_rounded;
-      case CorePreference.amnezia:
-        return Icons.security_rounded;
-      case CorePreference.mieru:
-        return Icons.travel_explore_rounded;
+      case CorePreference.tun:
+        return Icons.shield_rounded;
+      case CorePreference.systemProxy:
+        return Icons.lan_rounded;
     }
   }
 
-  /// آیا این هسته در این نسخه واقعا کار می کند؟
-  bool get available => this != CorePreference.amnezia;
+  /// همه حالت ها با همین نسخه کار می کنند.
+  bool get available => true;
+
+  /// تونل کامل به دسترسی مدیر نیاز دارد؛ بدون آن پروکسی سیستمی می آید.
+  bool get prefersTun => this == CorePreference.tun || this == CorePreference.auto;
 }
 
 enum SelectionMode { auto, roundRobin, consistentHash, stickySession, manual }
@@ -974,6 +963,7 @@ class AppSettings {
     this.turboMode = false,
     this.logLevel = 'info',
     this.modeChoiceExplicit = false,
+    this.showCli = true,
   });
 
   final ThemePreference theme;
@@ -1014,6 +1004,9 @@ class AppSettings {
   /// انتخاب نکرده، پیش فرض برنامه (تونل کامل مثل هیدیفای) اعمال می شود.
   final bool modeChoiceExplicit;
 
+  /// پنجره Umbrella CLI هنگام اتصال باز شود (مثل hiddify-cli).
+  final bool showCli;
+
   AppSettings copyWith({
     ThemePreference? theme,
     bool? autoConnect,
@@ -1045,6 +1038,7 @@ class AppSettings {
     bool? turboMode,
     String? logLevel,
     bool? modeChoiceExplicit,
+    bool? showCli,
   }) {
     return AppSettings(
       theme: theme ?? this.theme,
@@ -1077,6 +1071,7 @@ class AppSettings {
       turboMode: turboMode ?? this.turboMode,
       logLevel: logLevel ?? this.logLevel,
       modeChoiceExplicit: modeChoiceExplicit ?? this.modeChoiceExplicit,
+      showCli: showCli ?? this.showCli,
     );
   }
 
@@ -1111,6 +1106,7 @@ class AppSettings {
         'turboMode': turboMode,
         'logLevel': logLevel,
         'modeChoiceExplicit': modeChoiceExplicit,
+        'showCli': showCli,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -1159,6 +1155,7 @@ class AppSettings {
       turboMode: JsonX.boolean(json['turboMode']),
       logLevel: JsonX.text(json['logLevel'], 'info'),
       modeChoiceExplicit: JsonX.boolean(json['modeChoiceExplicit']),
+      showCli: JsonX.boolean(json['showCli']),
     );
   }
 

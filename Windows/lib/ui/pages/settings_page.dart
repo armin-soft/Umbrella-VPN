@@ -121,6 +121,16 @@ class _SettingsPageState extends State<SettingsPage> {
                           accent: colors.success,
                         ),
                         ToggleRow(
+                          icon: Icons.terminal_rounded,
+                          title: 'پنجره خط فرمان هسته',
+                          subtitle: 'هنگام اتصال، پنجره CLI هسته باز می شود و '
+                              'گزارش زنده اتصال را نشان می دهد؛ همان پنجره ای '
+                              'که کلاینت هیدیفای هم دارد',
+                          value: current.showCli,
+                          onChanged: settings.setShowCli,
+                          accent: colors.textSecondary,
+                        ),
+                        ToggleRow(
                           icon: Icons.swap_horiz_rounded,
                           title: 'جابه جایی خودکار سرور',
                           subtitle: 'در صورت افت اتصال، سرور دیگری امتحان می شود',

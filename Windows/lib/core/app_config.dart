@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.1';
+  static const String version = '1.0.2';
   static const int buildNumber = 1;
   static const String versionLabel = 'نسخه ۱٫۰٫۰';
   static const String company = 'آرمین سافت';
@@ -119,7 +119,9 @@ class AppConfig {
   );
 
   /// پیشوند نام آداپتور تونل که برای خواندن آمار مصرف استفاده می شود.
-  static const String tunAdapterHint = 'sing-box';
+  /// هسته هیدیفای کارت شبکه مجازی را با نام خودش می سازد؛ برای پیدا کردن
+  /// آمار همان تونل، بخشی از نام در توضیح کارت جست وجو می شود.
+  static const String tunAdapterHint = 'hiddify';
 
   static const String tunAddress = '172.19.0.1/30';
   static const String tunAddress6 = 'fdfe:dcba:9876::1/126';
@@ -129,6 +131,16 @@ class AppConfig {
   /// به دست بیاید ولی مصرف کاربر بی دلیل بالا نرود.
   static const String speedTestUrl =
       'https://speed.cloudflare.com/__down?bytes=1000000';
+  /// پورت محلی هسته هیدیفای (پروکسی مختلط HTTP/SOCKS). همان پورتی که
+  /// مستندات هسته پیش فرض می دهد.
+  static const int httpPortHiddify = 12334;
+
+  /// پورت gRPC هسته وقتی در پنجره CLI جداگانه اجرا می شود (پیش فرض خود هسته).
+  static const int coreGrpcPort = 17078;
+
+  /// فایل تنظیمات هسته (همان `hiddify-settings.json` با نام آمبرلا).
+  static const String coreSettingsFile = 'umbrella-settings.json';
+
   static const int socksPortXray = 2081;
 
   /// پورت HTTP ایکس ری برای پروکسی سیستمی ویندوز.
