@@ -789,15 +789,33 @@ class XrayConfig {
       'network': network.isEmpty ? 'tcp' : network,
       'security': reality ? 'reality' : (security == 'tls' ? 'tls' : 'none'),
     };
+    final List<String> declaredAlpn = JsonX.asList(params['alpn'])
+        .map((Object? item) => item.toString())
+        .toList();
+    // همان قاعده سینگ باکس: انتقال http/xhttp باید h2 اعلام کند و ws و
+    // httpupgrade فقط http/1.1. سرور با ALPN اشتباه درخواست را ۴۰۰ می بست.
+    final bool httpFamily = network == 'xhttp' ||
+        network == 'splithttp' ||
+        network == 'h2' ||
+        network == 'http';
+    final bool wsFamily = network == 'ws' || network == 'httpupgrade';
+    final List<String> alpn = httpFamily
+        ? <String>[
+            declaredAlpn.contains('h2')
+                ? 'h2'
+                : (declaredAlpn.isEmpty ? 'h2' : declaredAlpn.first),
+          ]
+        : (wsFamily
+            ? <String>[
+                declaredAlpn.isEmpty ? 'http/1.1' : declaredAlpn.first,
+              ]
+            : declaredAlpn);
     if (stream['security'] == 'tls' || stream['security'] == 'reality') {
       stream['tlsSettings'] = <String, dynamic>{
         'serverName': sni,
         'allowInsecure': JsonX.boolean(params['allowInsecure']),
         'fingerprint': JsonX.text(params['fp'], 'chrome'),
-        if (JsonX.asList(params['alpn']).isNotEmpty)
-          'alpn': JsonX.asList(params['alpn'])
-              .map((Object? item) => item.toString())
-              .toList(),
+        if (alpn.isNotEmpty) 'alpn': alpn,
       };
     }
     if (reality) {

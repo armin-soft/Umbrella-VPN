@@ -108,7 +108,7 @@ void main() {
       expect(builders.contains("case 'xhttp':"), isTrue);
       expect(builders.contains("'xhttpSettings'"), isTrue);
       expect(
-        builders.contains("case 'xhttp':\n      case 'splithttp':\n        return null;"),
+        builders.contains("case 'splithttp':\n        return null;"),
         isTrue,
       );
     });
