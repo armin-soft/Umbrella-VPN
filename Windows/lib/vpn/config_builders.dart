@@ -257,6 +257,18 @@ class SingBoxConfig {
     if (JsonX.text(params['multiplex']).toLowerCase() == 'off') {
       return null;
     }
+    // روی انتقال های جریانی (gRPC، xhttp و websocket) چند سرویس روی یک اتصال
+    // باعث خطای ۴۰۳ سرور می شود؛ خود هیدیفای هم برای همین سرورها mux را خاموش
+    // می کند. پس همان کاری را می کنیم که سرور انتظار دارد.
+    final String network =
+        JsonX.text(params['network'] ?? params['type']).toLowerCase();
+    if (network == 'grpc' ||
+        network == 'xhttp' ||
+        network == 'splithttp' ||
+        network == 'ws' ||
+        network == 'httpupgrade') {
+      return null;
+    }
     final int concurrency =
         JsonX.integer(params['mux'] ?? params['maxConnections'], 8);
     return <String, dynamic>{

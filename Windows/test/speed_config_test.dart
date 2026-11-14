@@ -57,6 +57,25 @@ void main() {
       expect(mux['protocol'], 'h2mux');
     });
 
+    test('روی انتقال gRPC و xhttp چند سرویسی روشن نمی شود', () {
+      // سرور برای این انتقال ها ۴۰۳ می داد؛ هیدیفای هم mux را خاموش می کند.
+      for (final String network in <String>['grpc', 'xhttp', 'ws', 'httpupgrade']) {
+        final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
+          node(NodeProtocol.vless, <String, dynamic>{
+            'id': 'u',
+            'type': network,
+            'path': '/x',
+          }),
+          const AppSettings(),
+        );
+        expect(
+          outbound.containsKey('multiplex'),
+          isFalse,
+          reason: 'انتقال $network نباید mux داشته باشد',
+        );
+      }
+    });
+
     test('اگر کاربر multiplex را خاموش کند اعمال می شود', () {
       final Map<String, dynamic> outbound = SingBoxConfig.outboundFor(
         node(NodeProtocol.vless, <String, dynamic>{'id': 'u', 'multiplex': 'off'}),
