@@ -946,12 +946,40 @@ class VpnController extends ChangeNotifier {
       // تایید واقعی: تا وقتی ترافیک از تونل رد نشود، «وصل شد» اعلام نمی شود.
       // در حالت تونل، درخواست مستقیم هم از کارت شبکه مجازی رد می شود؛ پس
       // معیار درست، عوض شدن آی پی خروجی است نه باز شدن پورت.
-      final bool flows = plan.usesSystemProxy
-          ? await TunnelProbe.check(
-              proxyPort: plan.proxyPort,
-              timeout: Duration(seconds: plans.length > 1 ? 6 : 8),
-            )
-          : await _exitIpChanged();
+      // تایید عبور ترافیک: در حالت پروکسی سیستمی، درخواست از همان پروکسی محلی
+      // می رود. در حالت تونل کامل، درخواست مستقیم هم از کارت شبکه مجازی رد
+      // می شود، پس بازگشت پاسخ ۲۰۴ خودش یعنی تونل کار می کند.
+      //
+      // پیش از این در حالت تونل فقط عوض شدن آی پی معیار بود و اگر سرویس
+      // خواندن آی پی جواب نمی داد، اتصال سالم هم رد می شد (همان خطای
+      // «هیچ هسته ای نتوانست تونل را بالا بیاورد»).
+      final Duration probeTimeout =
+          Duration(seconds: plans.length > 1 ? 6 : 8);
+      final bool flows;
+      if (plan.usesSystemProxy) {
+        flows = await TunnelProbe.check(
+          proxyPort: plan.proxyPort,
+          timeout: probeTimeout,
+        );
+      } else {
+        final bool direct = await TunnelProbe.check(timeout: probeTimeout);
+        if (!direct) {
+          flows = false;
+        } else if (_realIp.isEmpty) {
+          // آی پی پیش از اتصال خوانده نشده؛ برای مقایسه چیزی نداریم.
+          flows = true;
+        } else {
+          final bool changed = await _exitIpChanged();
+          if (!changed) {
+            _log.add(
+              'ترافیک از کارت شبکه مجازی رد شد ولی آی پی خروجی عوض نشد؛ '
+              'به عنوان اتصال معتبر پذیرفته نمی شود.',
+              level: 'warning',
+            );
+          }
+          flows = changed;
+        }
+      }
       if (!flows) {
         final String coreLog = '${_provisioner.dataDir}'
             '${Platform.pathSeparator}run${Platform.pathSeparator}'
