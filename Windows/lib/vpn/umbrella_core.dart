@@ -67,6 +67,7 @@ class UmbrellaCore {
     String remoteDns = defaultDns,
     String directDns = defaultDns,
     bool disableColor = true,
+    int grpcPort = 0,
   }) {
     return <String>[
       'run',
@@ -74,6 +75,11 @@ class UmbrellaCore {
       links,
       '-D',
       runDir,
+      // نشانی gRPC خود هسته. پیش فرض ۱۷۰۷۸ است و اگر همان بماند، نمونه
+      // قبلی (یا پنجره CLI بازمانده) پورت را می گیرد و هسته با
+      // «port 17078 is already in use» می میرد. پس هر اجرا پورت خودش را
+      // می گیرد.
+      if (grpcPort > 0) ...<String>['--listen', '127.0.0.1:$grpcPort'],
       if (settingsPath.isNotEmpty) ...<String>['-d', settingsPath],
       // با فایل تنظیمات، خود فایل همه چیز را می گوید (و پرچم ها را نادیده
       // می گیرد)؛ این پرچم ها فقط برای اجرای بدون فایل (سنجش پینگ) هستند.
@@ -88,8 +94,53 @@ class UmbrellaCore {
     ];
   }
 
+  /// اولین پورت آزاد در یک بازه.
+  ///
+  /// هسته هر اجرا یک سرور gRPC روی پورت خودش بالا می آورد (پیش فرض ۱۷۰۷۸) و
+  /// اگر پورت گرفته باشد، اجرا را با «port … is already in use» می بندد —
+  /// همان چیزی که در ۱٫۰٫۴ کل اتصال را می کشت. پس پورت هر اجرا از پورت
+  /// استفاده نشده انتخاب می شود. بازه نگه داشته می شود تا با پورت پروکسی
+  /// (۱۲۳۳۴) و پورت رابط کلش قاطی نشود.
+  static Future<int> freePort(int from, int to) async {
+    for (int port = from; port <= to; port++) {
+      if (!await inUse(port)) {
+        return port;
+      }
+    }
+    return 0;
+  }
+
+  /// آیا این پورت روی لوکال هاست گرفته شده است؟
+  static Future<bool> inUse(int port) async {
+    ServerSocket? socket;
+    try {
+      socket = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        port,
+        shared: false,
+      );
+      return false;
+    } on SocketException {
+      return true;
+    } finally {
+      await socket?.close();
+    }
+  }
+
+  /// پورت آزاد برای سرور gRPC هسته.
+  static Future<int> freeGrpcPort() =>
+      freePort(AppConfig.coreGrpcPortMin, AppConfig.coreGrpcPortMax);
+
+  /// پورت آزاد برای رابط کلش هسته.
+  static Future<int> freeClashPort() =>
+      freePort(AppConfig.coreClashPortMin, AppConfig.coreClashPortMax);
+
   /// دی ان اس پیش فرض هسته (همان پیش فرض خودش در `DefaultHiddifyOptions`).
   static const String defaultDns = '1.1.1.1';
+
+  /// پورت رابط کلش خودمان (پیش فرض هسته ۱۶۷۵۶ است که کلاینت های دیگر هم
+  /// همان را می گیرند).
+  static const int defaultClashPort = 16757;
 
   /// فایل تنظیمات کامل هسته (`-d`).
   ///
@@ -114,6 +165,7 @@ class UmbrellaCore {
     String logFile = '',
     String remoteDns = defaultDns,
     String directDns = defaultDns,
+    int clashPort = defaultClashPort,
   }) {
     return <String, dynamic>{
       // ── گزارش ──────────────────────────────────────────────────────────
@@ -159,8 +211,11 @@ class UmbrellaCore {
       'block-ads': false,
       'enable-full-config': false,
       'use-xray-core-when-possible': false,
-      'enable-clash-api': false,
-      'clash-api-port': 16756,
+      // رابط کلش روشن است: خود هسته گره ها را با آن می سنجد و سرور سالم
+      // را نگه می دارد. پورتش مال خودمان است تا با کلاینت های دیگر (که هم
+      // همان ۱۶۷۵۶ پیش فرض را دارند) تصادم نکند.
+      'enable-clash-api': true,
+      'clash-api-port': clashPort,
       'web-secret': '',
       'connection-test-url': AppConfig.speedTestUrl,
       'url-test-interval': 600,

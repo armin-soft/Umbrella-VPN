@@ -2,7 +2,7 @@
 # قطعه ها را به هم می چسباند و هش فایل نهایی را بررسی می کند.
 $ErrorActionPreference = 'Stop'
 # نسخه همین فایل نصبی است؛ با هر انتشار فقط همین عدد عوض می شود.
-$Version = '1.0.4'
+$Version = '1.0.5'
 $parts = Get-ChildItem -Path $PSScriptRoot -Filter "UmbrellaVPN-Setup-$Version-x64.exe.part*" |
     Sort-Object Name
 if ($parts.Count -eq 0) { throw 'قطعه های فایل نصب پیدا نشد' }

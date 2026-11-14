@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../core/app_config.dart';
 import '../models/models.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
@@ -130,6 +131,12 @@ class CorePinger {
     try {
       // هسته خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
       await config.writeAsString('$link\n', flush: true);
+      // هر نمونه سنجش یک سرور gRPC جدا می خواهد؛ با پیش فرض ۱۷۰۷۸ همه
+      // نمونه ها (و خود برنامه) به هم می خوردند و هیچ عددی به دست نمی آمد.
+      final int grpcPort = await UmbrellaCore.freePort(
+        AppConfig.coreGrpcPortMin,
+        AppConfig.coreGrpcPortMax,
+      );
       process = await Process.start(
         exe,
         UmbrellaCore.args(
@@ -139,6 +146,7 @@ class CorePinger {
           tun: false,
           systemProxy: false,
           logLevel: 'warn',
+          grpcPort: grpcPort,
           // دی ان اس داخل تونل در سنجش، آماده شدن پورت را عقب می اندازد.
           remoteDns: VpnController.pingDns,
           directDns: VpnController.pingDns,

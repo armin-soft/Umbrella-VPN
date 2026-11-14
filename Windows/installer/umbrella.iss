@@ -1,5 +1,5 @@
 ﻿; ---------------------------------------------------------------------------
-; Umbrella VPN 1.0.4
+; Umbrella VPN 1.0.5
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
@@ -10,7 +10,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.4"
+#define AppVersion "1.0.5"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"

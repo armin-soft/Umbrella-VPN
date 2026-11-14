@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.4';
+  static const String version = '1.0.5';
   static const int buildNumber = 1;
   static const String versionLabel = 'نسخه ۱٫۰٫۰';
   static const String company = 'آرمین سافت';
@@ -139,7 +139,17 @@ class AppConfig {
   static const int httpPortUmbrella = 12334;
 
   /// پورت gRPC هسته وقتی در پنجره CLI جداگانه اجرا می شود (پیش فرض خود هسته).
+  ///
+  /// پیش فرض هسته ۱۷۰۷۸ است و همین پورت (نه پورت پروکسی) چیزی است که در
+  /// ۱٫۰٫۴ با «port 17078 is already in use» می بست. برای همین هر اجرا پورت
+  /// خودش را از این بازه می گیرد.
   static const int coreGrpcPort = 17078;
+  static const int coreGrpcPortMin = 17100;
+  static const int coreGrpcPortMax = 17140;
+
+  /// پورت رابط کلش (پیش فرض هسته ۱۶۷۵۶ است).
+  static const int coreClashPortMin = 17160;
+  static const int coreClashPortMax = 17199;
 
   /// فایل تنظیمات هسته (همان فایل تنظیمات موتور، با نام آمبرلا).
   static const String coreSettingsFile = 'umbrella-settings.json';

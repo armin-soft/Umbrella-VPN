@@ -87,6 +87,11 @@ rules:
       expect(settings.containsKey('enable-tun'), isTrue);
       expect(settings.containsKey('set-system-proxy'), isTrue);
       expect(settings['enable-tun'], isTrue);
+      // رابط کلش روشن است و پورتش مال خودمان است؛ خود هسته با همین رابط
+      // گره ها را می سنجد و سرور سالم را نگه می دارد.
+      expect(settings['enable-clash-api'], isTrue);
+      expect(settings['clash-api-port'], greaterThan(0));
+      expect(settings['clash-api-port'], isNot(16756));
       // در حالت تونل، پروکسی سیستمی روشن نمی شود.
       expect(settings['set-system-proxy'], isFalse);
       expect(settings['mixed-port'], UmbrellaCore.port);
@@ -171,6 +176,21 @@ rules:
       expect(args.contains('--dns-remote'), isFalse);
       expect(args.contains('--dns-direct'), isFalse);
       expect(args.contains('--disable-color'), isTrue);
+    });
+
+    test('هر اجرا پورت gRPC خودش را می گیرد', () {
+      // با پیش فرض ۱۷۰۷۸، نمونه قبلی یا پنجره CLI بازمانده پورت را می گرفت و
+      // هسته با «port 17078 is already in use» می مرد (گزارش ۱٫۰٫۴).
+      final List<String> args = UmbrellaCore.args(
+        links: r'C:\Users\a\links.txt',
+        runDir: r'C:\Users\a\run',
+        tun: false,
+        settingsPath: r'C:\Users\a\s.json',
+        grpcPort: 17105,
+      );
+      final int at = args.indexOf('--listen');
+      expect(at, greaterThanOrEqualTo(0));
+      expect(args[at + 1], '127.0.0.1:17105');
     });
 
     test('بدون فایل تنظیمات، انتخاب ها با پرچم خط فرمان می روند', () {

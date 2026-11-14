@@ -169,6 +169,8 @@ class LaunchPlan {
     this.warning = '',
     this.proxyPort = 0,
     this.tun = false,
+    this.grpcPort = 0,
+    this.clashPort = 0,
   });
 
   final List<CoreLaunch> cores;
@@ -1240,49 +1242,54 @@ class VpnController extends ChangeNotifier {
     );
     await links.writeAsString('$link\n', flush: true);
 
-    // راه اول همان چیزی است که کاربر خواسته: تونل کامل اگر روشن باشد و
-    // دسترسی مدیر هم داشته باشیم، وگرنه پروکسی سیستمی.
-    bool first = _settings.tunMode;
-    if (first && !_device.elevated) {
+    // همان حالتی که کاربر خواسته: تونل کامل اگر روشن باشد و دسترسی مدیر هم
+    // داشته باشیم، وگرنه پروکسی سیستمی.
+    bool tun = _settings.tunMode;
+    if (tun && !_device.elevated) {
       _log.add(
         'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
         'می شویم. برای تونل، برنامه را با دسترسی مدیر اجرا کنید.',
         level: 'warning',
       );
-      first = false;
+      tun = false;
     }
-    final List<bool> order = <bool>[first, !first];
-    final List<LaunchPlan> plans = <LaunchPlan>[];
-    for (final bool tun in order) {
-      plans.add(
-        LaunchPlan(
-          cores: <CoreLaunch>[
-            CoreLaunch(
+    // پورت های هر اجرا. هسته هر اجرا یک سرور gRPC روی ۱۷۰۷۸ بالا می آورد و
+    // اگر نمونه قبلی (یا پنجره CLI بازمانده) هنوز آن را گرفته باشد، با
+    // «port 17078 is already in use» می میرد و هیچ تونلی ساخته نمی شود.
+    // پس برای هر اجرا پورت آزاد انتخاب می شود (نمونه های کهنه در _attempt
+    // پیش از این بسته شده اند).
+    final int grpcPort = await UmbrellaCore.freeGrpcPort();
+    final int clashPort = await UmbrellaCore.freeClashPort();
+    return <LaunchPlan>[
+      LaunchPlan(
+        cores: <CoreLaunch>[
+          CoreLaunch(
+            exe: exe,
+            args: _umbrellaArgs(
               exe: exe,
-              args: _umbrellaArgs(
-                exe: exe,
-                links: links.path,
-                runDir: runDir.path,
-                tun: tun,
-              ),
-              workDir: _umbrellaDir(exe),
-              name: tun ? 'umbrella-tun' : 'umbrella',
+              links: links.path,
+              runDir: runDir.path,
+              tun: tun,
+              grpcPort: grpcPort,
             ),
-          ],
-          linksPath: links.path,
-          // در حالت پروکسی سیستمی، باز شدن پورت محلی نشانه آمادگی است؛ در
-          // حالت تونل، کارت شبکه مجازی نشانه آن است.
-          readinessPort: tun ? 0 : _umbrellaPort,
-          primaryBinary: binary,
-          tunnelHint: tun ? AppConfig.tunAdapterHint : '',
-          chained: false,
-          proxyPort: tun ? 0 : _umbrellaPort,
-          runDir: runDir.path,
-          tun: tun,
-        ),
-      );
-    }
-    return plans;
+            workDir: _umbrellaDir(exe),
+            name: tun ? 'umbrella-tun' : 'umbrella',
+          ),
+        ],
+        linksPath: links.path,
+        // در حالت پروکسی سیستمی، باز شدن پورت محلی نشانه آمادگی است؛ در
+        // حالت تونل، کارت شبکه مجازی نشانه آن است.
+        readinessPort: tun ? 0 : _umbrellaPort,
+        primaryBinary: binary,
+        tunnelHint: tun ? AppConfig.tunAdapterHint : '',
+        chained: false,
+        proxyPort: tun ? 0 : _umbrellaPort,
+        runDir: runDir.path,
+        tun: tun,
+        grpcPort: grpcPort,
+        clashPort: clashPort,
+      ),
+    ];
   }
 
   /// شناسه هسته در فهرست همراه نسخه.
@@ -1290,6 +1297,9 @@ class VpnController extends ChangeNotifier {
 
   /// نام فایل خط فرمان هسته (همان HiddifyCli با نام آمبرلا).
   static const String umbrellaCliBinary = UmbrellaCore.cliBinary;
+
+  /// چند فرایند بازمانده از اجرای قبلی در این اجرا بسته شد.
+  int _orphansKilled = 0;
 
   /// پورت محلی هسته. خود هسته ۱۲۳۳۴ را پیش فرض دارد و همین عدد در برنامه هم
   /// ثابت است تا پروکسی سیستمی همیشه همان جا وصل شود.
@@ -1304,6 +1314,7 @@ class VpnController extends ChangeNotifier {
     required String links,
     required String runDir,
     required bool tun,
+    int grpcPort = 0,
   }) {
     return UmbrellaCore.args(
       links: links,
@@ -1311,6 +1322,7 @@ class VpnController extends ChangeNotifier {
       port: _umbrellaPort,
       tun: tun,
       systemProxy: !tun,
+      grpcPort: grpcPort,
     );
   }
 
@@ -1429,6 +1441,16 @@ class VpnController extends ChangeNotifier {
   /// بدون پنجره اجرا می شود تا اتصال از دست نرود.
   Future<bool> _launch(LaunchPlan plan) async {
     await _stopCores();
+    if (_orphansKilled > 0) {
+      // هسته ای که از اجرای قبلی باز مانده بود پورت هایش را هم گرفته بود؛
+      // همان چیزی که اجرای بعدی را با «already in use» می کشت.
+      _log.add(
+        'نمونه بازمانده از اجرای قبلی بسته شد '
+        '(${Fa.num(_orphansKilled)} فرایند) تا پورت هایش آزاد شود.',
+        level: 'warning',
+      );
+      _orphansKilled = 0;
+    }
     final Directory runDir = Directory(plan.runDir);
     await runDir.create(recursive: true);
     final CoreLaunch core = plan.cores.first;
@@ -1447,6 +1469,9 @@ class VpnController extends ChangeNotifier {
           systemProxy: plan.usesSystemProxy,
           port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
           logFile: coreLog,
+          clashPort: plan.clashPort > 0
+              ? plan.clashPort
+              : UmbrellaCore.defaultClashPort,
         ),
       ),
       flush: true,
@@ -1561,6 +1586,12 @@ class VpnController extends ChangeNotifier {
         '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
         level: 'error',
       );
+      // دلیل را به زبان کاربر هم می گوییم؛ خروجی خام بالا برای عیب یابی
+      // می ماند، ولی خودش راه حل نمی دهد.
+      final String cause = _explainCoreExit(tail);
+      if (cause.isNotEmpty) {
+        _log.add(cause, level: 'error');
+      }
       return false;
     }
 
@@ -1586,6 +1617,30 @@ class VpnController extends ChangeNotifier {
     _runningBinaries.add(core.binaryName);
     _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
     return true;
+  }
+
+  /// دلیل بسته شدن هسته، از خروجی خودش، به زبان کاربر.
+  ///
+  /// در ۱٫۰٫۴ کاربر فقط «بلافاصله بسته شد» و یک دیوار متن انگلیسی می دید.
+  /// اینجا همان خروجی خوانده می شود و دلیل واقعی با راه حل گفته می شود.
+  static String _explainCoreExit(String output) {
+    final String text = output.toLowerCase();
+    if (text.contains('already in use')) {
+      return 'پورت هسته پیش از این گرفته شده است؛ یعنی یک نمونه دیگر از هسته '
+          '(یا یک برنامه دیگر) باز مانده است. یک بار «قطع» را بزنید و دوباره '
+          'وصل شوید؛ اگر تکرار شد، UmbrellaCli.exe و UmbrellaCoreEngine.exe را '
+          'در Task Manager ببندید.';
+    }
+    if (text.contains('unable to determine config format') ||
+        text.contains('no outbounds found')) {
+      return 'هسته نتوانست سرور را از لینک بسازد؛ این سرور قابل اجرا نبود و '
+          'سرور بعدی امتحان می شود.';
+    }
+    if (text.contains('permission') || text.contains('access is denied')) {
+      return 'ویندوز اجازه اجرای هسته را نداد؛ برنامه را با دسترسی مدیر اجرا '
+          'کنید یا پوشه نصب را در استثناهای آنتی ویروس بگذارید.';
+    }
+    return '';
   }
 
   /// توضیح فارسی برای خطاهای رایج ویندوز هنگام اجرای هسته.
@@ -2080,8 +2135,15 @@ class VpnController extends ChangeNotifier {
     for (final String binary in <String>[
       umbrellaCliBinary,
       UmbrellaCore.engineBinary,
+      UmbrellaCore.adminBinary,
     ]) {
-      await _native.killByName(binary);
+      final int killed = await _native.killByName(binary);
+      if (killed > 0) {
+        // هسته ای که از اجرای قبلی باز مانده بود، پورت هایش را هم گرفته
+        // بود؛ همان چیزی که اجرای بعدی را با «already in use» می کشت.
+        // این پایان کار عادی است و هر بار لاگ نمی شود.
+        _orphansKilled += killed;
+      }
     }
     // فایل قفل هسته پاک می شود تا اجرای بعدی معطل نشود.
     try {

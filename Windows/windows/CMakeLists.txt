@@ -1,6 +1,6 @@
 # Project-level configuration for the Umbrella VPN client.
 cmake_minimum_required(VERSION 3.14)
-project(UmbrellaVPN VERSION "1.0.4" LANGUAGES C CXX)
+project(UmbrellaVPN VERSION "1.0.5" LANGUAGES C CXX)
 
 # The name of the executable created for the application.
 set(BINARY_NAME "UmbrellaVPN")

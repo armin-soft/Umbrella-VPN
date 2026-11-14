@@ -209,10 +209,15 @@ class IpService {
         DateTime.now().difference(_cachedAt) < const Duration(minutes: 3)) {
       return _cache;
     }
+    // چند سرویس مستقل: اگر یکی در دسترس نباشد (فیلتر، دی ان اس یا قطعی خود
+    // سرویس)، بعدی امتحان می شود. پیش از این اگر هر سه به دی ان اس ناسالم
+    // می خوردند، آی پی خوانده نمی شد و برنامه به آی پی داخلی برمی گشت.
     final List<String> endpoints = <String>[
+      'https://api.ipify.org?format=json',
       'https://ipapi.co/json/',
       'http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,timezone,lat,lon,query',
       'https://ipwho.is/',
+      'https://ifconfig.co/json',
     ];
     http.Client? temporary;
     http.Client client = _client;
@@ -242,8 +247,13 @@ class IpService {
             jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
           );
           final Map<String, dynamic> connection = JsonX.asMap(json['connection']);
+          // api.ipify.org پاسخ تخت `{"ip": "..."}` می دهد و بقیه فیلدها را
+          // ندارد؛ همان آی پی برای نمایش کافی است.
           final GeoInfo geo = GeoInfo.fromJson(<String, dynamic>{
-            'ip': json['ip'] ?? json['query'],
+            'ip': json['ip'] ??
+                json['query'] ??
+                json['ip_addr'] ??
+                json['ip_address'],
             'city': json['city'],
             'country': json['country'] ?? json['country_name'],
             'countryCode': json['country_code'] ?? json['countryCode'],

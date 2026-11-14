@@ -1,6 +1,6 @@
 ﻿#requires -version 5.1
 <#
-    ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-1.0.4-x64.exe).
+    ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-1.0.5-x64.exe).
 
     پیش نیازها روی ماشین ویندوز:
       - فلوتر و Visual Studio 2022 با بار کاری سی پلاس پلاس
@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $ProjectRoot
 
-$Version = '1.0.4'
+$Version = '1.0.5'
 $ReleaseDir = Join-Path $ProjectRoot 'build\windows\x64\runner\Release'
 
 # هسته های اتصال باید داخل فایل نصبی باشند؛ اینجا فقط روی ماشین سازنده گرفته

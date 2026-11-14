@@ -293,6 +293,12 @@ class SubscriptionParser {
     }
     _normalizeSecurity(params);
 
+    // پنل یک ردیف «اطلاعات اشتراک» هم می فرستد (با sni=fake_ip_for_sub_link)
+    // که سرور نیست و هیچ وقت وصل نمی شود. اگر نگه داشته شود، در فهرست
+    // سرورها می نشیند و اتصال خودکار روی آن وقت تلف می کند.
+    if ((query['sni'] ?? '').toString() == 'fake_ip_for_sub_link') {
+      return null;
+    }
     final String label = name.isNotEmpty
         ? name
         : '$titlePrefix ${Fa.num(host)}';

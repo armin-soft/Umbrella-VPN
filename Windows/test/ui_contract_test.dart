@@ -39,6 +39,19 @@ void main() {
       expect(controller.contains('UmbrellaCore.settingsJson('), isTrue);
       expect(controller.contains("'-d',"), isTrue);
     });
+
+    test('هر اجرا پورت gRPC خودش را می گیرد', () {
+      // پیش فرض هسته ۱۷۰۷۸ است؛ اگر نمونه قبلی یا پنجره CLI بازمانده آن را
+      // گرفته باشد، هسته با «already in use» می میرد و کاربر فقط «بلافاصله
+      // بسته شد» می بیند (گزارش ۱٫۰٫۴).
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains('freeGrpcPort'), isTrue);
+      expect(core.contains("'--listen'"), isTrue);
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('UmbrellaCore.freeGrpcPort()'), isTrue);
+      // دلیل بسته شدن هسته به زبان کاربر هم گفته می شود.
+      expect(controller.contains('_explainCoreExit'), isTrue);
+    });
   });
 
   group('صفحه اتصال', () {
