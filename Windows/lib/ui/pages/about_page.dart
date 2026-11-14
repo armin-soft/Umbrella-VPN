@@ -147,7 +147,7 @@ class AboutPage extends StatelessWidget {
                           row in <(IconData, String, String)>[
                         (Icons.flutter_dash, 'رابط کاربری', 'فلاتر نسخه ۳ با متریال ۳'),
                         (Icons.memory_rounded, 'پل بومی', 'سی پلاس پلاس بهینه برای ویندوز'),
-                        (Icons.shield_rounded, 'تونل', 'هسته سینگ باکس با درایور وین تون'),
+                        (Icons.shield_rounded, 'تونل', 'کارت شبکه مجازی ویندوز، بدون نصب درایور جانبی'),
                         (Icons.hub_rounded, 'پروتکل ها', 'وی لس، وی مس، تروجان، شادوساکس، وایرگارد، آمنزیا، میرو، هیستریا و توئیک'),
                         (Icons.security_rounded, 'امنیت', 'کیل سوییچ با سیاست خروجی ویندوز فایروال'),
                         (Icons.sms_rounded, 'ورود', 'پیامک الگویی آی پی پنل و تایید تلگرام'),

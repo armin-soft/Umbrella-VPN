@@ -37,14 +37,17 @@ class UmbrellaCore {
   /// کتابخانه کرونت که هسته کنار خودش می خواهد.
   static const String cronetDll = 'libcronet.dll';
 
-  /// کتابخانه خود هسته (همان hiddify-core.dll با نام اصلی خودش).
+  /// کتابخانه خود هسته، با نام آمبرلا.
   ///
-  /// چرا نامش عوض نمی شود؟ چون نام کتابخانه داخل خودش و داخل وابستگی هایش
-  /// ثبت است؛ در ۱٫۰٫۲ با عوض شدن نام، ویندوز فایل اجرایی را با کد
-  /// 0xC0000135 (کتابخانه پیدا نشد) می بست. این فایل هیچ وقت مستقیم اجرا
-  /// نمی شود و در هیچ پنجره، مسیر یا گزارشی به کاربر نشان داده نمی شود؛
-  /// برنامه آن را با همین نام از پوشه خودش بار می کند.
-  static const String coreDll = 'hiddify-core.dll';
+  /// در ۱٫۰٫۲ عوض کردن این نام خطرناک بود: فایل اجرایی همراه بسته، کتابخانه
+  /// را با پیوند نام صدا می زد و ویندوز پیش از اجرا آن را با 0xC0000135
+  /// (کتابخانه پیدا نشد) می بست. حالا لانچر خودمان (`UmbrellaCli.exe`) کتابخانه
+  /// را با مسیر بار می کند ([LoadLibraryExW])، پس نام فایل آزاد است و نام
+  /// آمبرلا هم همین جا انتخاب شده تا در Explorer هم چیزی جز آمبرلا دیده نشود.
+  ///
+  /// لانچر نام قدیمی را هم به عنوان جایگزین امتحان می کند، تا ارتقای درجا از
+  /// نسخه ای که فایل را با نام قدیمی نصب کرده هم کار کند.
+  static const String coreDll = 'UmbrellaCore.dll';
 
   /// پورت پروکسی مختلط محلی.
   static const int port = AppConfig.httpPortUmbrella;
@@ -61,6 +64,8 @@ class UmbrellaCore {
     bool systemProxy = false,
     String logLevel = 'info',
     String settingsPath = '',
+    String remoteDns = defaultDns,
+    String directDns = defaultDns,
     bool disableColor = true,
   }) {
     return <String>[
@@ -70,41 +75,118 @@ class UmbrellaCore {
       '-D',
       runDir,
       if (settingsPath.isNotEmpty) ...<String>['-d', settingsPath],
-      '--in-proxy-port',
-      '${port ?? UmbrellaCore.port}',
-      if (tun) '--tun',
-      if (systemProxy && !tun) '--system-proxy',
+      // با فایل تنظیمات، خود فایل همه چیز را می گوید (و پرچم ها را نادیده
+      // می گیرد)؛ این پرچم ها فقط برای اجرای بدون فایل (سنجش پینگ) هستند.
+      if (settingsPath.isEmpty) ...<String>['--in-proxy-port', '${port ?? UmbrellaCore.port}'],
+      if (settingsPath.isEmpty && tun) '--tun',
+      if (settingsPath.isEmpty && systemProxy && !tun) '--system-proxy',
+      if (settingsPath.isEmpty) ...<String>['--dns-remote', remoteDns],
+      if (settingsPath.isEmpty) ...<String>['--dns-direct', directDns],
       '--log-level',
       logLevel,
       if (disableColor) '--disable-color',
     ];
   }
 
-  /// فایل تنظیمات هسته (`-d`).
+  /// دی ان اس پیش فرض هسته (همان پیش فرض خودش در `DefaultHiddifyOptions`).
+  static const String defaultDns = '1.1.1.1';
+
+  /// فایل تنظیمات کامل هسته (`-d`).
   ///
-  /// کلیدها همان کلیدهای `HiddifyOptions` در خود هسته اند
-  /// (`v2/config/hiddify_option.go` در خود هسته) و با خط تیره نوشته می شوند، مثل
-  /// `log-level`، `enable-tun`، `set-system-proxy` و `mixed-port`.
+  /// **تله‌ای که ۱٫۰٫۳ را شکست:** اگر `-d` داده شود، هسته فایل را با
+  /// `json.Unmarshal` روی یک ساختار **خالی** می خواند و همه پیش فرض های خودش را
+  /// کنار می گذارد (`readHiddifyOptionsAt` در `v2/hcore/standalone.go`). یعنی
+  /// هر کلیدی که در فایل نباشد خالی و صفر می شود — و پرچم های خط فرمان هم دیگر
+  /// اثری ندارند، چون پس از خواندن فایل اعمال می شوند. نتیجه در گزارش کاربر:
+  /// `remote-dns-address` خالی ⇒ «نشانی سرور نامعتبر» از `v2/config/dns.go`،
+  /// و `enable-tun` صفر ⇒ اصلاً تونلی ساخته نمی شد.
+  ///
+  /// پس این فایل باید **کامل** باشد: هر کلیدی که خود هسته در
+  /// `DefaultHiddifyOptions` می گذارد، با همان مقدار، به اضافه انتخاب های ما.
+  /// [args] دیگر نباید `-tun`/`--system-proxy`/`--in-proxy-port` را هم بفرستد؛
+  /// همان ها اینجا هستند. اگر روزی کلیدی از هسته اضافه شد و اینجا نبود، همان
+  /// مقدار پیش فرض خودش (صفر) می شود؛ برای همین تا جای ممکن همه می نویسیم.
   static Map<String, dynamic> settingsJson({
     required bool tun,
     required bool systemProxy,
     required int port,
     String logLevel = 'info',
     String logFile = '',
+    String remoteDns = defaultDns,
+    String directDns = defaultDns,
   }) {
     return <String, dynamic>{
+      // ── گزارش ──────────────────────────────────────────────────────────
       'log-level': logLevel,
-      if (logFile.isNotEmpty) 'log-file': logFile,
+      'log-file': logFile,
+      // ── ورودی ها (تونل یا پروکسی سیستمی) ───────────────────────────────
       'enable-tun': tun,
+      'enable-tun-service': false,
       'set-system-proxy': systemProxy && !tun,
+      'delegate-system-proxy': false,
       'mixed-port': port,
+      'enable-mixed-port': true,
+      'tproxy-port': 12335,
+      'redirect-port': 12336,
+      'direct-port': 12337,
+      'lan-sharing-port': 12338,
+      'local-proxy-auth': false,
+      'local-proxy-in-vpn': false,
+      // پیش فرض خود هسته: `sing15` یعنی پشته پیش فرض sing-tun و `9000` همان
+      // ام تی یو خودش. صفر گذاشتن این دو، تونل را بی بسته می کند.
+      'tun-implementation': 'sing15',
+      'mtu': 9000,
+      'strict-route': true,
+      'auto-redirect': true,
+      'router-mode': false,
+      // ── دی ان اس: خالی گذاشتن این دو، هسته را با «نشانی نامعتبر» می بندد ──
+      'remote-dns-address': remoteDns,
+      'direct-dns-address': directDns,
+      'remote-dns-domain-strategy': 'as_is',
+      'direct-dns-domain-strategy': 'as_is',
+      'independent-dns-cache': false,
+      'enable-fake-dns': false,
+      // ── مسیر و انتخاب سرور ────────────────────────────────────────────
+      'region': 'other',
+      // زنجیره (chain) خاموش: مقدار خالی «off» است؛ با ایمن سازی، دی ان اس
+      // گروه اضافه ای می سازد که این نسخه لازم ندارد.
+      'chain-status': 'off',
+      'ipv6-mode': 'as_is',
+      'resolve-destination': false,
+      'bypass-lan': false,
+      'allow-connection-from-lan': false,
+      'block-quic': false,
+      'block-ads': false,
+      'enable-full-config': false,
+      'use-xray-core-when-possible': false,
       'enable-clash-api': false,
-      // کارت شبکه مجازی هسته، همان پیش فرض خودش.
-      'tun-implementation': 'system',
+      'clash-api-port': 16756,
+      'web-secret': '',
+      'connection-test-url': AppConfig.speedTestUrl,
+      'url-test-interval': 600,
       // سرعت انتخاب سرور در خود هسته: بهترین گره نگه داشته می شود، پس اگر
       // یک سرور افت کرد، خود هسته بدون قطعی سراغ بعدی می رود.
       'keep-top': 3,
-      'connection-test-url': AppConfig.speedTestUrl,
+      // ── بقیه پیش فرض های هسته، تا صفر نشوند ───────────────────────────
+      'enable-ntp': true,
+      // اگر کلید نباشد، «خاموش» خوانده می شود و هسته به جای TLS خود ویندوز
+      // از uTLS کروم استفاده می کند؛ پیش فرض خودش روشن است.
+      'use-system-tls-engine': true,
+      'mux': <String, dynamic>{
+        'enable': false,
+        'padding': true,
+        'max-streams': 8,
+        'protocol': 'h2mux',
+      },
+      'tls-tricks': <String, dynamic>{
+        'enable-fragment': false,
+        'fragment-size': '10-100',
+        'fragment-sleep': '50-200',
+        'mixed-sni-case': false,
+        'enable-padding': false,
+        'padding-size': '1200-1500',
+      },
+      'rules': <dynamic>[],
     };
   }
 

@@ -557,9 +557,22 @@ class AppLogger extends ChangeNotifier {
   final List<LogLine> _lines = <LogLine>[];
   List<LogLine> get lines => List<LogLine>.unmodifiable(_lines.reversed.toList());
 
+  /// تکرارِ بی وقفه یک پیام، گزارش را ناخوانا می کند و کاربر را به این باور
+  /// می برد که برنامه در حال «تلاش بی پایان» است. خط تکراری پشت سر هم فقط
+  /// یک بار می ماند و بعد از آن تعدادش کنار همان خط می آید.
   void add(String message, {String level = 'info'}) {
     final String clean = message.trim();
     if (clean.isEmpty) {
+      return;
+    }
+    if (_lines.isNotEmpty &&
+        _lines.last.message == clean &&
+        _lines.last.level == level) {
+      _lines.last.repeat++;
+      if (kDebugMode) {
+        debugPrint('[${level.toUpperCase()}] $clean');
+      }
+      notifyListeners();
       return;
     }
     _lines.add(LogLine(clean, level: level));
@@ -588,7 +601,8 @@ class AppLogger extends ChangeNotifier {
     );
     for (final LogLine line in _lines) {
       buffer.writeln(
-        '${Fa.date(line.time)} ${Fa.clock(line.time)} | ${line.level} | ${line.message}',
+        '${Fa.date(line.time)} ${Fa.clock(line.time)} | ${line.level} | '
+        '${line.message}${line.repeat > 1 ? ' (×${Fa.num(line.repeat)})' : ''}',
       );
     }
     return buffer.toString();

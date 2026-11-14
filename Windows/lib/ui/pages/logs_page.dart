@@ -211,7 +211,10 @@ class _LogsPageState extends State<LogsPage> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: SelectableText(
-                                Fa.num(line.message),
+                                Fa.num(line.message) +
+                                    (line.repeat > 1
+                                        ? '  ×${Fa.num(line.repeat)}'
+                                        : ''),
                                 style: TextStyle(
                                   fontFamily: AppTheme.fontFamily,
                                   fontSize: 12,

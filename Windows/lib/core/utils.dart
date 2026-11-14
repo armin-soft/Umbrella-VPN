@@ -26,11 +26,15 @@ class ApiError implements Exception {
 }
 
 class LogLine {
-  LogLine(this.message, {this.level = 'info'}) : time = DateTime.now();
+  LogLine(this.message, {this.level = 'info', DateTime? time})
+    : time = time ?? DateTime.now();
 
   final String message;
   final String level;
   final DateTime time;
+
+  /// چند بار همین پیام پشت سر هم آمده است (۱ یعنی یک بار).
+  int repeat = 1;
 }
 
 /// تشخیص اپراتور از پیش شماره تلفن همراه.

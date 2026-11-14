@@ -76,7 +76,7 @@ rules:
       expect(profile.contains('mixed-port: 7890'), isTrue);
     });
 
-    test('تنظیمات هسته دقیقا همان کلیدهای هیدیفای را دارد', () {
+    test('فایل تنظیمات کامل است و دی ان اس خالی نمی ماند', () {
       // کلیدها از `v2/config/hiddify_option.go` خود هسته گرفته شده اند و با
       // خط تیره نوشته می شوند؛ کلید با زیرخط را هسته نادیده می گیرد.
       final Map<String, dynamic> settings = UmbrellaCore.settingsJson(
@@ -90,6 +90,60 @@ rules:
       // در حالت تونل، پروکسی سیستمی روشن نمی شود.
       expect(settings['set-system-proxy'], isFalse);
       expect(settings['mixed-port'], UmbrellaCore.port);
+      // اگر `-d` داده شود، هسته پیش فرض های خودش را کنار می گذارد و هر کلید
+      // نبوده را صفر می کند؛ دی ان اس خالی هسته را با «نشانی سرور نامعتبر»
+      // می بندد (خطای ۱٫۰۳). پس این کلیدها باید پر باشند.
+      expect(settings['remote-dns-address'], isNotEmpty);
+      expect(settings['direct-dns-address'], isNotEmpty);
+      // صفر گذاشتن این دو، تونل را بی بسته می کند.
+      expect(settings['mtu'], greaterThan(0));
+      expect(settings['tun-implementation'], isNotEmpty);
+      // و انتخاب ما (تونل) باید از فایل بیاید، نه از پرچم خط فرمان.
+      expect(settings['enable-tun'], isTrue);
+      // کلیدهایی که هسته در `DefaultHiddifyOptions` می گذارد و اگر نباشند صفر
+      // می شوند؛ این فهرست همان قرارداد فایل تنظیمات است.
+      for (final String key in <String>[
+        'log-level',
+        'log-file',
+        'enable-tun-service',
+        'delegate-system-proxy',
+        'enable-mixed-port',
+        'tproxy-port',
+        'redirect-port',
+        'direct-port',
+        'lan-sharing-port',
+        'local-proxy-auth',
+        'local-proxy-in-vpn',
+        'strict-route',
+        'auto-redirect',
+        'router-mode',
+        'remote-dns-domain-strategy',
+        'direct-dns-domain-strategy',
+        'independent-dns-cache',
+        'enable-fake-dns',
+        'region',
+        'chain-status',
+        'ipv6-mode',
+        'resolve-destination',
+        'bypass-lan',
+        'allow-connection-from-lan',
+        'block-quic',
+        'block-ads',
+        'enable-full-config',
+        'use-xray-core-when-possible',
+        'enable-clash-api',
+        'clash-api-port',
+        'web-secret',
+        'connection-test-url',
+        'url-test-interval',
+        'keep-top',
+        'enable-ntp',
+        'use-system-tls-engine',
+        'mux',
+        'tls-tricks',
+      ]) {
+        expect(settings.containsKey(key), isTrue, reason: key);
+      }
       // هیچ کلیدی با زیرخط نیست؛ فقط مقادیر (مثل نشانی تست سرعت) می توانند
       // زیرخط داشته باشند.
       for (final String key in settings.keys) {
@@ -108,11 +162,28 @@ rules:
       expect(args.first, 'run');
       expect(args.contains('-c'), isTrue);
       expect(args.contains('-d'), isTrue);
-      expect(args.contains('--in-proxy-port'), isTrue);
+      // با `-d` هسته فایل تنظیمات را روی ساختار خالی می خواند و پرچم ها را
+      // بازنویسی می کند؛ پس این پرچم ها نباید فرستاده شوند (۱٫۰٫۳ همین جا
+      // تونلش را از دست داد).
+      expect(args.contains('--in-proxy-port'), isFalse);
+      expect(args.contains('--tun'), isFalse);
+      expect(args.contains('--system-proxy'), isFalse);
+      expect(args.contains('--dns-remote'), isFalse);
+      expect(args.contains('--dns-direct'), isFalse);
+      expect(args.contains('--disable-color'), isTrue);
+    });
+
+    test('بدون فایل تنظیمات، انتخاب ها با پرچم خط فرمان می روند', () {
+      final List<String> args = UmbrellaCore.args(
+        links: r'C:\Users\a\links.txt',
+        runDir: r'C:\Users\a\run',
+        tun: true,
+      );
       expect(args.contains('--tun'), isTrue);
+      expect(args.contains('--in-proxy-port'), isTrue);
       // تونل و پروکسی سیستمی با هم نمی آیند.
       expect(args.contains('--system-proxy'), isFalse);
-      expect(args.contains('--disable-color'), isTrue);
+      expect(args.contains('-d'), isFalse);
     });
   });
 }

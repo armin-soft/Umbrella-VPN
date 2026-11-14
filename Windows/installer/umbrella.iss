@@ -1,5 +1,5 @@
 ﻿; ---------------------------------------------------------------------------
-; Umbrella VPN 1.0.3
+; Umbrella VPN 1.0.4
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
@@ -10,7 +10,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.3"
+#define AppVersion "1.0.4"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
@@ -75,10 +75,9 @@ Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 ; هستند (native/umbrella_launcher.c) و همراه خروجی ساخت می آیند؛ قانون بالا
 ; آن ها را در {app} می ریزد. هسته در cores\umbrella می ماند:
 ;
-;   hiddify-core.dll          — خود موتور (۱۰۹ مگابایت). نامش عوض نمی شود چون
-;                               نام کتابخانه داخل خودش ثبت است؛ با عوض شدن نام،
-;                               ویندوز فایل اجرایی را با 0xC0000135 می بندد.
-;                               این فایل هیچ وقت مستقیم اجرا یا نشان داده نمی شود.
+;   UmbrellaCore.dll          — خود موتور (۱۰۹ مگابایت)، با نام آمبرلا.
+;                               تغییر نامش بی خطر است چون لانچر ما کتابخانه را
+;                               با مسیر بار می کند، نه با پیوند نام.
 ;   libcronet.dll             — کتابخانه وابسته هسته
 ;
 ; کپی دوباره این فایل ها در {app} فقط حجم فایل نصبی را دو برابر می کرد.
@@ -140,9 +139,9 @@ begin
 end;
 
 [InstallDelete]
-; نسخه های قبلی پوشه هسته را با نام دیگری داشتند و کتابخانه را هم با نام عوض
-; شده می ریختند؛ فایل اجرایی کهنه بدون کتابخانه با خطای 0xC0000135 باز نمی شد.
-; حالا همه پاک می شوند تا فقط نسخه درست بماند.
+; نسخه های قبلی، پوشه هسته را با نام دیگری داشتند و کتابخانه را با نام دیگری
+; می ریختند؛ فایل اجرایی کهنه بدون کتابخانه اش با 0xC0000135 باز نمی شد. حالا
+; پوشه هسته و لانچرهای کهنه پاک می شوند تا فقط نسخه درست بماند.
 Type: filesandordirs; Name: "{app}\cores\hiddify"
 Type: filesandordirs; Name: "{app}\cores\umbrella"
 

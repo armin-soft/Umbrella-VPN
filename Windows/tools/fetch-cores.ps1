@@ -6,10 +6,11 @@
     موتور و کرونتش در پوشه cores\umbrella کنار پروژه ذخیره می شوند و نصب کننده
     همان ها را در {app}\cores\umbrella می ریزد. خود برنامه هیچ چیزی دانلود نمی کند.
 
-    از بسته رسمی موتور فقط hiddify-core.dll و libcronet.dll برداشته می شود؛
-    نامشان عوض نمی شود (نام کتابخانه داخل خودش ثبت است). فایل های اجرایی
-    هیدیفای کنار گذاشته می شوند و جایش، لانچرهای آمبرلا در ساخت برنامه ساخته
-    می شوند (نگاه کنید به native/umbrella_launcher.c).
+    از بسته رسمی موتور فقط کتابخانه موتور و libcronet.dll برداشته می شود و
+    کتابخانه با نام UmbrellaCore.dll ذخیره می شود، تا در Explorer هم نامی جز
+    آمبرلا دیده نشود. این کار فقط چون لانچر خودمان کتابخانه را با مسیر بار می
+    کند بی خطر است. فایل های اجرایی همراه بسته کنار گذاشته می شوند و جایش،
+    لانچرهای آمبرلا در ساخت برنامه ساخته می شوند (native/umbrella_launcher.c).
 
     مثال ها:
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1
@@ -29,7 +30,7 @@ $ManifestPath = Join-Path $ProjectRoot 'assets\cores\manifest.json'
 # هسته هیدیفای چند فایل دارد و کتابخانه اش باید کنار فایل اجرایی اش بماند، پس
 # در پوشه خودش می رود. نام پوشه را نصب کننده و بررسی CI هم انتظار دارند.
 $CoresRoot = Join-Path $ProjectRoot 'cores'
-$HiddifyDir = Join-Path $CoresRoot 'umbrella'
+$CoreDir = Join-Path $CoresRoot 'umbrella'
 $DestDir = Join-Path $CoresRoot 'bin'
 New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
@@ -42,7 +43,7 @@ $tempDir = Join-Path $env:TEMP ("umbrella-cores-" + [guid]::NewGuid().ToString('
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
 # پوشه هسته پیش از هر کاری ساخته می شود تا کپی فایل ها به مسیر ناموجود نخورد.
-New-Item -ItemType Directory -Force -Path $HiddifyDir | Out-Null
+New-Item -ItemType Directory -Force -Path $CoreDir | Out-Null
 
 $failedRequired = @()
 $skipped = @()
@@ -51,10 +52,10 @@ $fetched = @()
 try {
     foreach ($core in $manifest.cores) {
         if ($Only -and ($Only -notcontains $core.id)) { continue }
-        # هسته هیدیفای چند فایل دارد و باید کنار هم بماند؛ برای همین در
-        # پوشه خودش می رود و باینری اصلی از همان جا خوانده می شود.
+        # موتور هسته چند فایل دارد و باید کنار هم بماند؛ برای همین در پوشه
+        # خودش می رود و کتابخانه اصلی از همان جا خوانده می شود.
         $target = if ($core.cli_prefix) {
-            Join-Path $HiddifyDir $core.inside
+            Join-Path $CoreDir $core.inside
         } else {
             Join-Path $DestDir $core.binary
         }
@@ -132,34 +133,32 @@ try {
                     & tar.exe -xzf $archivePath -C $extractDir
                     if ($LASTEXITCODE -ne 0) { throw 'باز کردن بسته tar.gz ناموفق بود' }
 
-                    # فقط این فایل ها از بسته می مانند:
+                    # فقط این فایل ها از بسته می مانند، با نام آمبرلا:
                     #
-                    #   hiddify-core.dll  — خود موتور. نامش عوض نمی شود چون
-                    #                       نام کتابخانه هم داخل خودش و هم در
-                    #                       وابستگی هایش ثبت است؛ برنامه آن را
-                    #                       با همین نام در همین پوشه بار می کند.
-                    #   libcronet.dll     — وابسته موتور.
+                    #   hiddify-core.dll → UmbrellaCore.dll   خود موتور
+                    #   libcronet.dll                         وابسته موتور
                     #
-                    # فایل های اجرایی همراه بسته کنار گذاشته می شوند: آن ها
-                    # کتابخانه را با پیوند نام صدا می زنند و همین کار باعث خطای
-                    # 0xC0000135 در ۱٫۰٫۲ شد. لانچرهای آمبرلا به جایش با نام و
-                    # آیکون خودمان و با بار کردن مسیر کتابخانه ساخته می شوند.
-                    $required = @('hiddify-core.dll', 'libcronet.dll')
-                    foreach ($name in $required) {
-                        $file = Get-ChildItem -Path $extractDir -Recurse -Filter $name -ErrorAction SilentlyContinue |
+                    # تغییر نام الان بی خطر است چون لانچر آمبرلا کتابخانه را با
+                    # «مسیر» بار می کند، نه با پیوند نام (همان وابستگی پیوندی
+                    # باعث خطای 0xC0000135 در ۱٫۰٫۲ شده بود). فایل های اجرایی
+                    # همراه بسته کنار گذاشته می شوند و جایش لانچرهای خودمان در
+                    # ساخت برنامه ساخته می شوند.
+                    $required = @(
+                        @{ from = 'hiddify-core.dll'; to = 'UmbrellaCore.dll' },
+                        @{ from = 'libcronet.dll'; to = 'libcronet.dll' }
+                    )
+                    foreach ($item in $required) {
+                        $file = Get-ChildItem -Path $extractDir -Recurse -Filter $item.from -ErrorAction SilentlyContinue |
                             Select-Object -First 1
-                        if ($null -eq $file) { throw "فایل $name در بسته هسته پیدا نشد" }
-                        if (-not (Test-Path $HiddifyDir)) {
-                            New-Item -ItemType Directory -Force -Path $HiddifyDir | Out-Null
-                        }
-                        $destination = Join-Path $HiddifyDir $name
+                        if ($null -eq $file) { throw "فایل $($item.from) در بسته هسته پیدا نشد" }
+                        $destination = Join-Path $CoreDir $item.to
                         if ([System.IO.Path]::GetFullPath($file.FullName) -ne
                             [System.IO.Path]::GetFullPath($destination)) {
                             Copy-Item $file.FullName $destination -Force
                         }
-                        Write-Host "  هسته: $name" -ForegroundColor DarkGray
+                        Write-Host "  هسته: $($item.to)" -ForegroundColor DarkGray
                     }
-                    $insidePath = Join-Path $HiddifyDir $core.inside
+                    $insidePath = Join-Path $CoreDir $core.inside
                     if (-not (Test-Path $insidePath)) { throw "فایل $($core.inside) در بسته پیدا نشد" }
                 }
                 default {

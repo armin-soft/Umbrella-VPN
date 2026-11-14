@@ -1,6 +1,6 @@
 # Project-level configuration for the Umbrella VPN client.
 cmake_minimum_required(VERSION 3.14)
-project(UmbrellaVPN VERSION "1.0.3" LANGUAGES C CXX)
+project(UmbrellaVPN VERSION "1.0.4" LANGUAGES C CXX)
 
 # The name of the executable created for the application.
 set(BINARY_NAME "UmbrellaVPN")
@@ -53,9 +53,9 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 add_subdirectory("runner")
 
 # ── فایل های اجرایی هسته ────────────────────────────────────────────────────
-# موتور هسته یک کتابخانه است (hiddify-core.dll در cores\umbrella) و فایل های
-# اجرایی لانچرهای نازکی هستند که فقط `parseCli()` را صدا می زنند. اینجا همان لانچرها
-# با نام و آیکون آمبرلا ساخته می شوند (نگاه کنید به native/umbrella_launcher.c).
+# موتور هسته یک کتابخانه است (UmbrellaCore.dll در cores\umbrella) و فایل های
+# اجرایی لانچرهای نازکی هستند که فقط `parseCli()` را صدا می زنند. اینجا همان
+# لانچرها با نام و آیکون آمبرلا ساخته می شوند (native/umbrella_launcher.c).
 #
 # چرا لانچر خودمان؟ لانچر رسمی موتور، کتابخانه را با پیوند نام صدا می زند و
 # نام فایل کتابخانه داخل خود فایل اجرایی نوشته می شود؛ با عوض شدن نام، ویندوز

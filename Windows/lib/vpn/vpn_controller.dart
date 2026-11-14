@@ -481,9 +481,9 @@ class VpnController extends ChangeNotifier {
     } on Exception catch (error) {
       _log.add('سنجش پینگ ناموفق بود: ${error.toString()}', level: 'warning');
     }
-    // تاخیر واقعی تونل: هسته سینگ باکس هر سرور را یک بار امتحان می کند و
-    // عدد دقیق را می دهد؛ اگر هسته در دسترس نباشد، نتیجه تی سی پی و آی سی
-    // ام پی همان طور می ماند.
+    // تاخیر واقعی تونل: هسته هر سرور را یک بار امتحان می کند و عدد دقیق را
+    // می دهد؛ اگر هسته در دسترس نباشد، نتیجه تی سی پی و آی سی ام پی همان
+    // طور می ماند.
     Map<String, int> tunnelDelays = <String, int>{};
     try {
       if (liveTunnel) {
@@ -1161,7 +1161,7 @@ class VpnController extends ChangeNotifier {
   /// است). وقتی پنل پروفایل کاملی داده باشد پر می شود.
   Set<String> get panelNodeNames => Set<String>.unmodifiable(_clashNames);
 
-  /// آخرین پیکربندی کاملی که خود پنل داد (کلش، ایکس ری یا سینگ باکس).
+  /// آخرین پیکربندی کاملی که خود پنل داد (کلش یا قالب کامل موتور).
   ///
   /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
   /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. خود هسته این فایل
@@ -1188,6 +1188,14 @@ class VpnController extends ChangeNotifier {
   /// پوشه هسته: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
   /// همان پوشه خود فایل اجرایی است.
   String _umbrellaDir(String exe) => _dirOf(exe);
+
+  /// دی ان اس سنجش پینگ: سریع و بی وابستگی به شبکه کاربر.
+  ///
+  /// در سنجش پینگ، هسته فقط پیکربندی را می سازد و یک پروکسی محلی باز می کند؛
+  /// اگر دی ان اس داخل تونل، سرور را از طریق خودش ترجمه کند، آماده شدن پورت
+  /// طول می کشد و سنجش (که فقط چند ثانیه صبر می کند) بی نتیجه می ماند —
+  /// همان «تاخیر تونل برای ۰ سرور» در گزارش کاربر.
+  static const String pingDns = 'https://1.1.1.1/dns-query';
 
   /// نقشه اجرا برای یک سرور.
   ///
@@ -1444,13 +1452,10 @@ class VpnController extends ChangeNotifier {
       flush: true,
     );
 
-    // آرگومان های نقشه با فایل تنظیمات تکمیل می شوند (`-d`).
-    final List<String> args = <String>[
-      ...core.args.takeWhile((String arg) => arg != '--in-proxy-port'),
-      '-d',
-      settingsPath,
-      ...core.args.skipWhile((String arg) => arg != '--in-proxy-port'),
-    ];
+    // با `-d` هسته همه تنظیمات را از فایل می خواند و پرچم های تونل و پورت را
+    // نادیده می گیرد؛ پس فایل کامل نوشته می شود (UmbrellaCore.settingsJson) و
+    // فقط مسیر فایل به آرگومان ها اضافه می شود.
+    final List<String> args = <String>[...core.args, '-d', settingsPath];
 
     try {
       if (CliSession.wanted(_settings) && Platform.isWindows) {

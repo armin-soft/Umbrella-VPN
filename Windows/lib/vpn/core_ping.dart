@@ -139,6 +139,9 @@ class CorePinger {
           tun: false,
           systemProxy: false,
           logLevel: 'warn',
+          // دی ان اس داخل تونل در سنجش، آماده شدن پورت را عقب می اندازد.
+          remoteDns: VpnController.pingDns,
+          directDns: VpnController.pingDns,
         ),
         workingDirectory: workDir,
         runInShell: false,
@@ -149,7 +152,7 @@ class CorePinger {
       process.stdout.listen(sink.add);
       process.stderr.listen(sink.add);
 
-      if (!await _waitForPort(port, const Duration(milliseconds: 3500))) {
+      if (!await _waitForPort(port, const Duration(milliseconds: 6000))) {
         return -1;
       }
       return await TunnelProbe.latency(

@@ -24,6 +24,23 @@ void main() {
     });
   });
 
+  group('تنظیمات هسته', () {
+    test('فایل تنظیمات کامل است و پرچم های تکراری فرستاده نمی شوند', () {
+      final String core = read('lib/vpn/umbrella_core.dart');
+      // با `-d` هسته پیش فرض هایش را کنار می گذارد؛ اگر دی ان اس در فایل
+      // نباشد، خالی می شود و هسته با «نشانی سرور نامعتبر» می بندد.
+      expect(core.contains("'remote-dns-address'"), isTrue);
+      expect(core.contains("'direct-dns-address'"), isTrue);
+      expect(core.contains("'mtu'"), isTrue);
+      expect(core.contains("'tun-implementation'"), isTrue);
+      expect(core.contains('settingsPath.isEmpty'), isTrue);
+      // تنظیمات جلسه هم باید همان فایل کامل را بنویسد.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('UmbrellaCore.settingsJson('), isTrue);
+      expect(controller.contains("'-d',"), isTrue);
+    });
+  });
+
   group('صفحه اتصال', () {
     test('بخش پایین که نام سرور را نشان می داد حذف شده است', () {
       final String page = read('lib/ui/pages/connect_page.dart');
@@ -105,7 +122,7 @@ void main() {
       expect(core['id'], 'hiddify');
       expect(core['cli_prefix'], 'umbrella');
       expect(core['binary'], 'UmbrellaCli.exe');
-      expect(core['inside'], 'hiddify-core.dll');
+      expect(core['inside'], 'UmbrellaCore.dll');
       final String text = manifest.toLowerCase();
       for (final String gone in <String>[
         'sing-box',
@@ -199,12 +216,11 @@ void main() {
           .where((File file) => file.path.endsWith('.dart'))
           .toList();
       expect(files, isNotEmpty);
-      // چند مورد عمدی است و مجاز: شناسه هسته در فهرست همراه نسخه، نام کتابخانه
-      // روی دیسک (نامش ثبت شده و عوض کردنش اتصال را می شکند) و پیشوند نام
-      // آداپتور تونل (فقط برای خواندن آمار، هیچ جا نمایش داده نمی شود).
+      // تنها مورد عمدی که مجاز است: شناسه هسته در فهرست همراه نسخه (داخلی،
+      // هیچ جا نمایش داده نمی شود). نام کتابخانه روی دیسک دیگر استثنا نیست؛
+      // کاربر آن را در Explorer می بیند و باید آمبرلا باشد.
       const List<String> allowed = <String>[
         "static const String id = 'hiddify';",
-        "static const String coreDll = 'hiddify-core.dll';",
         "static const String tunAdapterHint = 'hiddify';",
       ];
       for (final File file in files) {

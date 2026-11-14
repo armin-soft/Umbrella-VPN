@@ -36,11 +36,19 @@
 
 /// نام فایل کتابخانه هسته در پوشه این فایل اجرایی.
 ///
-/// این همان نام اصلی فایل در بسته رسمی موتور است و عوض نمی شود، چون نام
-/// کتابخانه داخل خودش و داخل وابستگی هایش ثبت است. این نام هیچ جا به کاربر
-/// نشان داده نمی شود: پیام خطای پایین فقط پوشه را می گوید.
+/// نام عوض شده و فایل با نام آمبرلا نصب می شود، چون نام فایل در Explorer دیده
+/// می شود و کاربر خواسته هیچ نامی جز آمبرلا نبیند. این کار فقط چون کتابخانه
+/// «با مسیر» بار می شود بی خطر است: اگر فایل اجرایی، کتابخانه را با پیوند نام
+/// صدا می زد (کاری که لانچر رسمی موتور می کند)، عوض شدن نام آن را با
+/// 0xC0000135 می بست — همان خطای ۱٫۰٫۲.
+///
+/// نام قدیمی هم به عنوان جایگزین امتحان می شود تا ارتقای درجا و نسخه های قبلی
+/// که فایل را با نام قدیمی دارند هم کار کنند.
 #ifndef UMBRELLA_CORE_LIBRARY
-#define UMBRELLA_CORE_LIBRARY L"hiddify-core.dll"
+#define UMBRELLA_CORE_LIBRARY L"UmbrellaCore.dll"
+#endif
+#ifndef UMBRELLA_CORE_LIBRARY_LEGACY
+#define UMBRELLA_CORE_LIBRARY_LEGACY L"hiddify-core.dll"
 #endif
 
 typedef char *(*parse_cli_fn)(int argc, char **argv);
@@ -59,12 +67,14 @@ static void report(const wchar_t *text) {
 
 /// بار کردن کتابخانه از مسیر خودش، نه با پیوند نام.
 ///
-/// کتابخانه در پوشه `cores\umbrella` کنار برنامه است و فایل اجرایی کنار خود
-/// برنامه؛ پس چند مسیر به ترتیب امتحان می شود. پوشه ای که کتابخانه در آن پیدا
-/// شد به مسیر جست وجوی ویندوز اضافه می شود تا `libcronet.dll` هم پیدا شود.
+/// کتابخانه در پوشه `cores\\umbrella` و فایل های اجرایی کنار خود برنامه هستند،
+/// پس هر دو جا (به ترتیب) با هر دو نام امتحان می شوند. پوشه ای که کتابخانه در
+/// آن پیدا شد به مسیر جست وجوی ویندوز اضافه می شود تا `libcronet.dll` هم پیدا
+/// شود. هیچ نامی در جدول واردات فایل اجرایی نیست، پس نام فایل کتابخانه آزاد
+/// است؛ همین چیزی است که خطای 0xC0000135 نسخه ۱٫۰٫۲ را غیرممکن می کند.
 static parse_cli_fn load_parse_cli(void) {
   wchar_t exe_path[MAX_PATH * 2];
-  DWORD length = GetModuleFileNameW(NULL, exe_path, MAX_PATH * 2);
+  const DWORD length = GetModuleFileNameW(NULL, exe_path, MAX_PATH * 2);
   if (length == 0 || length >= MAX_PATH * 2) {
     return NULL;
   }
@@ -77,40 +87,52 @@ static parse_cli_fn load_parse_cli(void) {
 
   const wchar_t *const folders[] = {L"cores\\umbrella\\", L"cores\\", L""};
   const size_t folder_count = sizeof(folders) / sizeof(folders[0]);
+  const wchar_t *const names[] = {UMBRELLA_CORE_LIBRARY,
+                                  UMBRELLA_CORE_LIBRARY_LEGACY};
+  const size_t name_count = sizeof(names) / sizeof(names[0]);
 
   for (size_t i = 0; i < folder_count; i++) {
     wchar_t folder[MAX_PATH * 2];
-    wchar_t library_path[MAX_PATH * 2];
     if (root_length + wcslen(folders[i]) >= MAX_PATH * 2) {
       continue;
     }
     wcscpy(folder, exe_path);
     wcscat(folder, folders[i]);
-    if (wcslen(folder) + wcslen(UMBRELLA_CORE_LIBRARY) >= MAX_PATH * 2) {
-      continue;
+
+    for (size_t j = 0; j < name_count; j++) {
+      wchar_t library_path[MAX_PATH * 2];
+      if (wcslen(folder) + wcslen(names[j]) >= MAX_PATH * 2) {
+        continue;
+      }
+      wcscpy(library_path, folder);
+      wcscat(library_path, names[j]);
+      if (GetFileAttributesW(library_path) == INVALID_FILE_ATTRIBUTES) {
+        continue;
+      }
+      // پوشه کتابخانه در مسیر جست وجوی ویندوز می رود تا وابسته هایش
+      // (libcronet.dll) پیدا شوند. ماندگار است تا عمر همین فرایند.
+      SetDllDirectoryW(folder);
+      HMODULE core =
+          LoadLibraryExW(library_path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+      if (!core) {
+        // ۱۲۶ = ERROR_MOD_NOT_FOUND، ۱۹۳ = ERROR_BAD_EXE_FORMAT
+        wchar_t message[MAX_PATH * 3];
+        swprintf(message, MAX_PATH * 3,
+                 L"Umbrella: the core library could not be loaded from\n%ls\n"
+                 L"(error %lu). Reinstall the application with the official "
+                 L"setup file.",
+                 folder, (unsigned long)GetLastError());
+        report(message);
+        return NULL;
+      }
+      parse_cli_fn parse_cli =
+          (parse_cli_fn)(void *)GetProcAddress(core, "parseCli");
+      if (!parse_cli) {
+        report(L"Umbrella: the core library has no entry point. Reinstall the "
+               L"application with the official setup file.");
+      }
+      return parse_cli;
     }
-    wcscpy(library_path, folder);
-    wcscat(library_path, UMBRELLA_CORE_LIBRARY);
-    if (GetFileAttributesW(library_path) == INVALID_FILE_ATTRIBUTES) {
-      continue;
-    }
-    // پوشه کتابخانه در مسیر جست وجوی ویندوز می رود تا وابسته هایش
-    // (libcronet.dll) پیدا شوند. ماندگار است تا عمر همین فرایند.
-    SetDllDirectoryW(folder);
-    HMODULE core =
-        LoadLibraryExW(library_path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!core) {
-      // ۱۲۶ = ERROR_MOD_NOT_FOUND، ۱۹۳ = ERROR_BAD_EXE_FORMAT
-      wchar_t message[MAX_PATH * 3];
-      swprintf(message, MAX_PATH * 3,
-               L"Umbrella: the core library could not be loaded from\n%ls\n"
-               L"(error %lu). Reinstall the application with the official "
-               L"setup file.",
-               folder, (unsigned long)GetLastError());
-      report(message);
-      return NULL;
-    }
-    return (parse_cli_fn)(void *)GetProcAddress(core, "parseCli");
   }
 
   wchar_t message[MAX_PATH * 3];
