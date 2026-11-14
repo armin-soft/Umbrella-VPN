@@ -84,6 +84,7 @@ rules:
         tun: true,
         systemProxy: false,
         port: UmbrellaCore.port,
+        logFile: r'C:\Users\a\run\core.log',
       );
       expect(settings.containsKey('enable-tun'), isTrue);
       expect(settings.containsKey('set-system-proxy'), isTrue);
