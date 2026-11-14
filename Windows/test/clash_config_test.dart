@@ -91,6 +91,10 @@ rules:
       // رابط کلش روشن است و پورتش مال خودمان است؛ خود هسته با همین رابط
       // گره ها را می سنجد و سرور سالم را نگه می دارد.
       expect(settings['enable-clash-api'], isTrue);
+      // لاگ هسته در همان مسیری نوشته می شود که برنامه می خواند؛ خالی گذاشتنش
+      // (پیش فرض هسته `data/box.log` است) یعنی گزارش خطا همیشه خالی.
+      expect(settings['log-file'], isNotEmpty);
+      expect(settings['log-level'], isNotEmpty);
       // پورت رابط کلش همان ثابت خود هسته است (در حالت run هم خودش همان را
       // می گذارد)؛ عدد ساختگی جای آن گذاشته نمی شود.
       expect(settings['clash-api-port'], AppConfig.coreClashPort);

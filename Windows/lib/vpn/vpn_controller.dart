@@ -126,12 +126,17 @@ class _AttemptResult {
     this.ok = false,
     this.needsCores = false,
     this.cancelled = false,
+    this.unusable = false,
   });
 
   final String message;
   final bool ok;
   final bool needsCores;
   final bool cancelled;
+
+  /// هسته این سرور را حتی نتوانست بسازد (لینک برایش قابل خواندن نبود)؛
+  /// تلاش دوباره بی فایده است.
+  final bool unusable;
 }
 
 class CoreLaunch {
@@ -329,6 +334,13 @@ class VpnController extends ChangeNotifier {
   /// هسته ای که برای هر سرور جواب داده است (شناسه سرور → نام هسته).
   final Map<String, String> _preferredCore = <String, String>{};
   int _reconnectAttempts = 0;
+
+  /// سرورهایی که در همین تلاش اتصال با خطای «قابل اجرا نبود» رد شده اند.
+  ///
+  /// هسته ای که سروری را نمی تواند بسازد، با تلاش دوباره هم نمی تواند؛ پیش
+  /// از این همان سرور چهار بار پشت سر هم امتحان می شد و کاربر فقط «×(۴)»
+  /// می دید (گزارش ۱٫۰۶). این مجموعه در هر connect پاک می شود.
+  final Set<String> _unusableInThisRun = <String>{};
   bool _disposed = false;
 
   bool get isConnected => _status == VpnStatus.connected;
@@ -489,10 +501,13 @@ class VpnController extends ChangeNotifier {
       if (liveTunnel) {
         throw StateError('اتصال فعال است');
       }
+      // سنجش هسته ای سریال است (هر نمونه دو پورت ثابت هسته را می خواهد)،
+      // پس مهلتش به اندازه کافی بلند است؛ نتیجه هر چه زودتر آماده شد، همان
+      // لحظه برمی گردد.
       tunnelDelays = await _corePing
           .measure(target, settings: _settings)
           .timeout(
-            const Duration(seconds: 100),
+            const Duration(seconds: 150),
             onTimeout: () => <String, int>{},
           );
     } catch (_) {
@@ -773,6 +788,7 @@ class VpnController extends ChangeNotifier {
         return ConnectOutcome(ok: false, message: selection.reason);
       }
 
+      _unusableInThisRun.clear();
       final List<VpnNode> candidates = _candidates(node, selection.reason);
       String lastMessage = '';
       for (int index = 0; index < candidates.length; index++) {
@@ -795,6 +811,11 @@ class VpnController extends ChangeNotifier {
         }
         lastMessage = attempt.message;
         _balancer.markFailed(candidate.id);
+        if (attempt.unusable) {
+          // لینک این سرور با هسته خوانده نمی شود؛ تلاش دوباره با همان لینک
+          // همان نتیجه را می دهد، پس در این دور کنار گذاشته می شود.
+          _unusableInThisRun.add(candidate.id);
+        }
         if (attempt.needsCores) {
           return ConnectOutcome(
             ok: false,
@@ -840,7 +861,10 @@ class VpnController extends ChangeNotifier {
     }
     final List<VpnNode> rest = _nodes
         .where((VpnNode node) =>
-            node.id != first.id && usable(node) && _fitsPreference(node))
+            node.id != first.id &&
+            usable(node) &&
+            !_unusableInThisRun.contains(node.id) &&
+            _fitsPreference(node))
         .toList();
     switch (_settings.selectionMode) {
       case SelectionMode.roundRobin:
@@ -935,8 +959,16 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
       final bool started = await _launch(plan);
       if (!started) {
+        final bool unusable = _lastLaunchUnusable;
         await _stopCores();
         await _disableProxy();
+        if (unusable) {
+          return _AttemptResult(
+            message: '${_nodeLabel(node)} با موتور هسته خوانده نشد؛ سرور بعدی '
+                'امتحان می شود.',
+            unusable: true,
+          );
+        }
         continue;
       }
 
@@ -959,8 +991,21 @@ class VpnController extends ChangeNotifier {
                   '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
         );
+        final String full = await _readLogFull(coreLog);
+        final String why = _explainCoreExit(full);
+        if (why.isNotEmpty) {
+          _log.add(why, level: 'error');
+        }
+        final bool unusable = _linkUnusable(full);
         await _stopCores();
         await _disableProxy();
+        if (unusable) {
+          return _AttemptResult(
+            message: '${_nodeLabel(node)} با موتور هسته خوانده نشد؛ سرور بعدی '
+                'امتحان می شود.',
+            unusable: true,
+          );
+        }
         continue;
       }
 
@@ -1289,6 +1334,9 @@ class VpnController extends ChangeNotifier {
   /// چند فرایند بازمانده از اجرای قبلی در این اجرا بسته شد.
   int _orphansKilled = 0;
 
+  /// نتیجه آخرین اجرای هسته: آیا اصلاً نتوانست سرور را بسازد؟
+  bool _lastLaunchUnusable = false;
+
   /// پورت محلی هسته. خود هسته ۱۲۳۳۴ را پیش فرض دارد و همین عدد در برنامه هم
   /// ثابت است تا پروکسی سیستمی همیشه همان جا وصل شود.
   static const int _umbrellaPort = AppConfig.httpPortUmbrella;
@@ -1426,6 +1474,7 @@ class VpnController extends ChangeNotifier {
   /// را در همان پنجره می بیند. اگر باز کردن پنجره ممکن نشد، هسته بی صدا و
   /// بدون پنجره اجرا می شود تا اتصال از دست نرود.
   Future<bool> _launch(LaunchPlan plan) async {
+    _lastLaunchUnusable = false;
     await _stopCores();
     if (!await _freeCorePorts()) {
       return false;
@@ -1566,18 +1615,10 @@ class VpnController extends ChangeNotifier {
       Future<int?>.delayed(const Duration(milliseconds: 1500), () => null),
     ]);
     if (exited != null) {
-      final String tail = await _readLogTail(coreLog);
-      _log.add(
-        '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(exited)}).'
-        '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
-        level: 'error',
-      );
-      // دلیل را به زبان کاربر هم می گوییم؛ خروجی خام بالا برای عیب یابی
-      // می ماند، ولی خودش راه حل نمی دهد.
-      final String cause = _explainCoreExit(tail);
-      if (cause.isNotEmpty) {
-        _log.add(cause, level: 'error');
-      }
+      await _reportCoreExit(core, coreLog, exited);
+      // جریان خروجی هم بسته می شود تا فایل گزارش نیمه باز نماند.
+      await sink.flush();
+      await sink.close();
       return false;
     }
 
@@ -1591,6 +1632,12 @@ class VpnController extends ChangeNotifier {
         _runningPids.remove(process.pid);
         if (_runningPids.isEmpty) {
           _runningBinaries.clear();
+        }
+        // اگر همین لحظه پیش از آماده شدن بسته شد، _launch خودش گزارش داده
+        // است؛ دو بار گفتن همان حرف، گزارش را گمراه کننده می کرد.
+        if (_reportedExitFor == code) {
+          _reportedExitFor = null;
+          return;
         }
         _log.add(
           '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
@@ -1623,7 +1670,8 @@ class VpnController extends ChangeNotifier {
       UmbrellaCore.engineBinary,
       UmbrellaCore.adminBinary,
     ]) {
-      await _native.killByName(binary);
+      final int killed = await _native.killByName(binary);
+      _orphansKilled += killed;
     }
     await Future<void>.delayed(const Duration(milliseconds: 400));
     held = await UmbrellaCore.heldReservedPorts();
@@ -1644,6 +1692,55 @@ class VpnController extends ChangeNotifier {
     return false;
   }
 
+  /// آیا هسته همین سرور را نتوانست بخواند؟
+  ///
+  /// `unable to determine config format` یعنی لینک این سرور با هسته خوانده
+  /// نمی شود؛ تلاش دوباره با همان لینک همان نتیجه را می دهد.
+  static bool _linkUnusable(String output) {
+    final String text = output.toLowerCase();
+    return text.contains('unable to determine config format') ||
+        text.contains('no outbounds found');
+  }
+
+  /// کد خروجی که همین حالا در `_launch` گزارش شد، تا گزارش دوباره تکرار نشود.
+  int? _reportedExitFor;
+
+  /// گزارش بسته شدن هسته با دلیلش، یک بار و کامل.
+  Future<void> _reportCoreExit(
+    CoreLaunch core,
+    String coreLog,
+    int code,
+  ) async {
+    final String full = await _readLogFull(coreLog);
+    final String tail = await _readLogTail(coreLog);
+    _log.add(
+      '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
+      '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+      level: 'error',
+    );
+    // دلیل را به زبان کاربر هم می گوییم؛ خروجی خام بالا برای عیب یابی
+    // می ماند، ولی خودش راه حل نمی دهد.
+    final String cause = _explainCoreExit(full);
+    if (cause.isNotEmpty) {
+      _log.add(cause, level: 'error');
+    }
+    _lastLaunchUnusable = _linkUnusable(full);
+    _reportedExitFor = code;
+  }
+
+  /// متن کامل گزارش هسته (برای تصمیم گیری، بی برش).
+  Future<String> _readLogFull(String path) async {
+    try {
+      final File file = File(path);
+      if (!await file.exists()) {
+        return '';
+      }
+      return await file.readAsString();
+    } on FileSystemException {
+      return '';
+    }
+  }
+
   /// دلیل بسته شدن هسته، از خروجی خودش، به زبان کاربر.
   ///
   /// در ۱٫۰٫۴ کاربر فقط «بلافاصله بسته شد» و یک دیوار متن انگلیسی می دید.
@@ -1655,6 +1752,12 @@ class VpnController extends ChangeNotifier {
           '(یا یک برنامه دیگر) باز مانده است. یک بار «قطع» را بزنید و دوباره '
           'وصل شوید؛ اگر تکرار شد، UmbrellaCli.exe و UmbrellaCoreEngine.exe را '
           'در Task Manager ببندید.';
+    }
+    if (text.contains('failed to serve grpc') ||
+        text.contains('start core grpc server')) {
+      return 'هسته نتوانست سرور داخلی خودش را بالا بیاورد (پورت ۱۷۰۷۸ یا '
+          '۱۶۷۵۶ گرفته شده است). یک نمونه بازمانده یا یک فیلترشکن دیگر را '
+          'ببندید و دوباره وصل شوید.';
     }
     if (text.contains('unknown flag')) {
       return 'این نسخه از هسته پرچمی را که برنامه فرستاده نمی شناسد؛ نسخه '
@@ -1773,8 +1876,13 @@ class VpnController extends ChangeNotifier {
           return true;
         }
       } else {
+        // کارت شبکه تونل، همان چیزی که هسته در اولین ثانیه می سازد
+        // (`inbound/tun[tun-in]: started at tun0`). اینجا فقط «ساخته شد یا
+        // نه» سنجیده می شود؛ عبور ترافیک کار سنجش بعدی است. پیش از این،
+        // انتظار ۲۵ ثانیه ای برای کارت، اتصال سالم را هم رد می کرد.
         final TunnelStats stats = await _native.tunnelStats(hint: plan.tunnelHint);
         if (stats.available) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
           return true;
         }
       }

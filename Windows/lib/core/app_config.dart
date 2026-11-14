@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.6';
+  static const String version = '1.0.7';
   static const int buildNumber = 1;
   static const String versionLabel = 'نسخه ۱٫۰٫۰';
   static const String company = 'آرمین سافت';
@@ -126,7 +126,9 @@ class AppConfig {
   /// جداگانه است (`packages/umbrella_native` نام آمبرلا را می گذارد).
   static const String tunAdapterHint = 'hiddify';
 
-  static const String tunAddress = '172.19.0.1/30';
+  /// نشانی کارت شبکه تونل؛ همان چیزی که خود هسته می گذارد
+  /// (`v2/config/builder.go`: `172.19.0.1/28`).
+  static const String tunAddress = '172.19.0.1/28';
   static const String tunAddress6 = 'fdfe:dcba:9876::1/126';
   static const int defaultMtu = 9000;
 

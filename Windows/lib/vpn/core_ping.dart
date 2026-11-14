@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import '../models/models.dart';
@@ -32,7 +33,10 @@ class CorePinger {
   Future<Map<String, int>> measure(
     List<VpnNode> nodes, {
     required AppSettings settings,
-    int concurrency = 4,
+    // یک نمونه در هر لحظه. هسته دو پورت ثابت (۱۷۰۷۸ و ۱۶۷۵۶) می خواهد؛ با
+    // چند نمونه همزمان، هر کدام پورت دیگری را می گرفت و یا نمونه دیگری را
+    // می کشت و سنجش بی نتیجه می ماند («۰ سرور» در گزارش ۱٫۰٫۶).
+    int concurrency = 1,
     Duration budget = const Duration(seconds: 70),
   }) async {
     final Map<String, int> delays = <String, int>{};
@@ -125,11 +129,37 @@ class CorePinger {
     final File config = File(
       '${runDir.path}${Platform.pathSeparator}ping-$slot.txt',
     );
+    // فایل تنظیمات کامل، کنار همان پوشه ای که هسته در آن اجرا می شود.
+    // هسته `log-file` را نسبت به همین پوشه می نویسد و پیش از هر کاری آن را
+    // باز می کند؛ اگر پوشه اش نباشد یا قابل نوشتن نباشد، اجرا بی هیچ پیامی
+    // می میرد و سنجش خالی می ماند.
+    final File settings = File(
+      '${workDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}',
+    );
+    final File log = File(
+      '$workDir${Platform.pathSeparator}data${Platform.pathSeparator}box.log',
+    );
     Process? process;
     IOSink? sink;
     try {
       // هسته خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
       await config.writeAsString('$link\n', flush: true);
+      await log.parent.create(recursive: true);
+      await settings.writeAsString(
+        jsonEncode(
+          UmbrellaCore.settingsJson(
+            tun: false,
+            systemProxy: false,
+            port: port,
+            logLevel: 'info',
+            logFile: log.path,
+            // دی ان اس داخل تونل در سنجش، آماده شدن پورت را عقب می اندازد.
+            remoteDns: VpnController.pingDns,
+            directDns: VpnController.pingDns,
+          ),
+        ),
+        flush: true,
+      );
       // هر نمونه سنجش هم پورت های ثابت هسته (۱۷۰۷۸ و ۱۶۷۵۶) را می خواهد؛
       // اگر نمونه قبلی هنوز زنده باشد، این یکی با «already in use» می میرد و
       // هیچ عددی به دست نمی آید. پس پیش از هر نمونه، پورت ها آزاد می شوند.
@@ -142,8 +172,8 @@ class CorePinger {
           port: port,
           tun: false,
           systemProxy: false,
-          logLevel: 'warn',
-          // دی ان اس داخل تونل در سنجش، آماده شدن پورت را عقب می اندازد.
+          logLevel: 'info',
+          settingsPath: settings.path,
           remoteDns: VpnController.pingDns,
           directDns: VpnController.pingDns,
         ),

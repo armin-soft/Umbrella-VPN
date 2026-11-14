@@ -640,58 +640,78 @@ bool SystemOps::FlushDns() {
 
 TunnelStats SystemOps::ReadTunnelStats(const std::string& adapter_hint) {
   TunnelStats stats;
-  ULONG size = 32768;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_INCLUDE_ALL_INTERFACES | GAA_FLAG_SKIP_ANYCAST |
                 GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return stats;
+  // The first size is only a guess: with a VPN, Hyper-V and a few adapters the
+  // table easily passes 32 KB, and the call then fails with
+  // ERROR_BUFFER_OVERFLOW and reports nothing. Ask for the size it needs.
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  auto* addresses = static_cast<IP_ADAPTER_ADDRESSES*>(nullptr);
+  for (int attempt = 0; attempt < 3; attempt++) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG result = GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, addresses,
+                                        &size);
+    if (result == NO_ERROR) break;
+    if (result != ERROR_BUFFER_OVERFLOW) return stats;
+    addresses = nullptr;
   }
-  // The tunnel adapter of the core: matched by name hint first, and by the
-  // tunnel address range (172.19.0.1/28, the core's TUN) as a fallback, so the
-  // stats stay correct whichever name the core gives its adapter.
+  if (addresses == nullptr) return stats;
+
+  // The TUN of the engine carries two addresses: 172.19.0.1/28 and
+  // fdfe:dcba:9876::1/126 (v2/config/builder.go). Either one identifies it,
+  // whichever the adapter kept. The address comes first because it is the
+  // engine's own; a name can also belong to an adapter an older install left.
   IP_ADAPTER_ADDRESSES* fallback = nullptr;
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
-    std::string friendly = ToUtf8(adapter->FriendlyName);
-    std::string description = ToUtf8(adapter->Description);
-    bool match = ContainsInsensitive(friendly, adapter_hint) ||
-                 ContainsInsensitive(description, adapter_hint);
-    if (!match) {
-      for (auto* uni = adapter->FirstUnicastAddress; uni != nullptr;
-           uni = uni->Next) {
+    for (auto* uni = adapter->FirstUnicastAddress; uni != nullptr;
+         uni = uni->Next) {
+      if (uni->Address.lpSockaddr == nullptr) continue;
+      if (uni->Address.lpSockaddr->sa_family == AF_INET) {
         auto* sa = reinterpret_cast<sockaddr_in*>(uni->Address.lpSockaddr);
-        if (sa == nullptr || sa->sin_family != AF_INET) continue;
-        // 172.19.0.0/28 -> the core's own tunnel address.
         if ((ntohl(sa->sin_addr.s_addr) & 0xFFFFFFF0u) == 0xAC130000u) {
+          fallback = adapter;  // 172.19.0.0/28
+          break;
+        }
+      } else if (uni->Address.lpSockaddr->sa_family == AF_INET6) {
+        auto* sa6 = reinterpret_cast<sockaddr_in6*>(uni->Address.lpSockaddr);
+        const BYTE* b = sa6->sin6_addr.s6_addr;
+        // fdfe:dcba:9876::/126
+        if (b[0] == 0xfd && b[1] == 0xfe && b[2] == 0xdc && b[3] == 0xba &&
+            b[4] == 0x98 && b[5] == 0x76 && (b[15] & 0xFC) == 0x00) {
           fallback = adapter;
           break;
         }
       }
-      continue;
     }
-    // GetIfEntry is available on every supported Windows version, unlike the
-    // netioapi helpers whose declarations depend on the SDK version.
-    MIB_IFROW row = {};
-    row.dwIndex = adapter->IfIndex;
-    if (GetIfEntry(&row) != NO_ERROR) continue;
-    stats.rx_bytes = row.dwInOctets;
-    stats.tx_bytes = row.dwOutOctets;
-    stats.available = true;
-    stats.adapter = friendly;
-    return stats;
+    if (fallback == adapter) break;
   }
-  if (fallback != nullptr) {
-    MIB_IFROW row = {};
-    row.dwIndex = fallback->IfIndex;
-    if (GetIfEntry(&row) == NO_ERROR) {
-      stats.rx_bytes = row.dwInOctets;
-      stats.tx_bytes = row.dwOutOctets;
-      stats.available = true;
-      stats.adapter = ToUtf8(fallback->FriendlyName);
+
+  // The tunnel address decides; the name hint is only a last resort (a TUN the
+  // engine named after itself, still coming up). A name alone is not enough:
+  // an adapter an older install left behind must not pass for the live tunnel.
+  IP_ADAPTER_ADDRESSES* chosen = fallback;
+  if (chosen == nullptr && !adapter_hint.empty()) {
+    for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
+      if (ContainsInsensitive(ToUtf8(adapter->FriendlyName), adapter_hint) ||
+          ContainsInsensitive(ToUtf8(adapter->Description), adapter_hint)) {
+        chosen = adapter;
+        break;
+      }
     }
   }
+  if (chosen == nullptr) return stats;
+
+  // GetIfEntry is available on every supported Windows version, unlike the
+  // netioapi helpers whose declarations depend on the SDK version.
+  MIB_IFROW row = {};
+  row.dwIndex = chosen->IfIndex;
+  if (GetIfEntry(&row) != NO_ERROR) return stats;
+  stats.rx_bytes = row.dwInOctets;
+  stats.tx_bytes = row.dwOutOctets;
+  stats.available = true;
+  stats.adapter = ToUtf8(chosen->FriendlyName);
   return stats;
 }
 

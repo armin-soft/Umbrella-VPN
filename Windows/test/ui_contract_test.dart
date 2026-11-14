@@ -40,6 +40,27 @@ void main() {
       expect(controller.contains("'-d',"), isTrue);
     });
 
+    test('آمادگی تونل با نشانی درست کارت شبکه سنجیده می شود', () {
+      // هسته به تونلش 172.19.0.1/28 می دهد (v2/config/builder.go). ماسک
+      // اشتباه /30 باعث می شد کارت شبکه هرگز پیدا نشود و اتصال سالم هم رد
+      // شود («کارت شبکه تونل در ۲۵ ثانیه آماده نشد» در گزارش ۱٫۰۶).
+      final String config = read('lib/core/app_config.dart');
+      expect(config.contains("172.19.0.1/28"), isTrue);
+      expect(config.contains("172.19.0.1/30"), isFalse);
+      final String native = read('packages/umbrella_native/windows/system_ops.cpp');
+      // تطبیق با بازه 172.19.0.0/28 و با نشانی آی پی وی ۶ تونل.
+      expect(native.contains('0xAC130000u'), isTrue);
+      expect(native.contains('ERROR_BUFFER_OVERFLOW'), isTrue);
+    });
+
+    test('سنجش تونل سریال است و هر نمونه فایل تنظیمات خودش را دارد', () {
+      // هر نمونه دو پورت ثابت هسته را می خواهد؛ چند نمونه همزمان، همدیگر را
+      // می کشتند و سنجش «۰ سرور» می داد.
+      final String ping = read('lib/vpn/core_ping.dart');
+      expect(ping.contains('int concurrency = 1'), isTrue);
+      expect(ping.contains('settingsPath: settings.path'), isTrue);
+    });
+
     test('پورت های ثابت هسته پیش از اجرا آزاد می شوند', () {
       // دستور `run` هسته پورت ۱۷۰۷۸ و ۱۶۷۵۶ را همیشه می گیرد و پرچمی برای
       // عوض کردنشان ندارد؛ در ۱٫۰٫۵ فرستادن `--listen` هسته را با «unknown
