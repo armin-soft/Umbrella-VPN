@@ -531,16 +531,25 @@ class SingBoxConfig {
         headers[key] = text;
       }
     });
-    // هدر تخت در خود پارامترها (بعضی پنل ها این طور می فرستند).
+    // هدر تخت در خود پارامترها. خواننده کلش نقشه های تودرتو را به رشته JSON
+    // و خواننده YAML یک نقشه تودرتو می دهد؛ هر دو حالت پذیرفته می شوند.
     final Object? flat = params['headers'];
+    Map<String, dynamic> flatMap = <String, dynamic>{};
     if (flat is Map) {
-      JsonX.asMap(flat).forEach((String key, Object? value) {
-        final String text = JsonX.text(value);
-        if (text.isNotEmpty) {
-          headers.putIfAbsent(key, () => text);
-        }
-      });
+      flatMap = JsonX.asMap(flat);
+    } else if (flat is String && flat.trim().startsWith('{')) {
+      try {
+        flatMap = JsonX.asMap(jsonDecode(flat));
+      } on FormatException {
+        flatMap = <String, dynamic>{};
+      }
     }
+    flatMap.forEach((String key, Object? value) {
+      final String text = JsonX.text(value);
+      if (text.isNotEmpty) {
+        headers.putIfAbsent(key, () => text);
+      }
+    });
     return headers;
   }
 

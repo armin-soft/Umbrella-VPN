@@ -107,8 +107,10 @@ void main() {
       final String builders = read('lib/vpn/config_builders.dart');
       expect(builders.contains("case 'xhttp':"), isTrue);
       expect(builders.contains("'xhttpSettings'"), isTrue);
+      // خواندن فایل در ویندوز ممکن است پایان خط CRLF بدهد؛ الگو هر دو را
+      // می پذیرد.
       expect(
-        builders.contains("case 'splithttp':\n        return null;"),
+        RegExp("case 'splithttp':\\s*\\r?\\n\\s*return null;").hasMatch(builders),
         isTrue,
       );
     });

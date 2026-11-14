@@ -152,6 +152,18 @@ tun:
     expect(ClashConfig.nodeNames(out).length, ClashConfig.nodeNames(panel).length);
   });
 
+  test('هدرهای تودرتو گره های کلش به رشته تبدیل می شوند', () {
+    // خواننده کلش نقشه های تودرتو را JSON می کند؛ سازنده پیکربندی باید همان
+    // رشته را هم بخواند وگرنه هدرها بی صدا از بین می روند.
+    final Map<String, dynamic> headers = ClashConfig.flatHeaders(
+      <String, dynamic>{
+        'headers': '{"User-Agent":"Mozilla/5.0","Host":"cdn.example.com"}',
+      },
+    );
+    expect(headers['User-Agent'], contains('Mozilla'));
+    expect(headers['Host'], 'cdn.example.com');
+  });
+
   test('نام گره های فارسی خوانده می شوند', () {
     final List<String> names = ClashConfig.nodeNames(panel);
     expect(names.length, 1);

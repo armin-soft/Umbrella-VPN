@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:yaml/yaml.dart';
@@ -153,6 +154,32 @@ class ClashConfig {
       ];
       return;
     }
+  }
+
+  /// هدرهای یک گره کلش.
+  ///
+  /// خواننده کلش هر نقشه تودرتو را به رشته JSON تبدیل می کند، پس هدرها هم
+  /// گاهی نقشه و گاهی رشته اند. اینجا هر دو یکسان خوانده می شوند.
+  static Map<String, String> flatHeaders(Map<String, dynamic> proxy) {
+    final Object? raw = proxy['headers'];
+    Map<String, dynamic> source = <String, dynamic>{};
+    if (raw is Map) {
+      source = _deepMap(raw);
+    } else if (raw is String && raw.trim().startsWith('{')) {
+      try {
+        source = _deepMap(jsonDecode(raw));
+      } on FormatException {
+        source = <String, dynamic>{};
+      }
+    }
+    final Map<String, String> out = <String, String>{};
+    source.forEach((String key, Object? value) {
+      final String text = JsonX.text(value);
+      if (text.isNotEmpty) {
+        out[key] = text;
+      }
+    });
+    return out;
   }
 
   /// نام گره هایی که در فایل پنل هستند (برای گزارش خطا به کاربر).
