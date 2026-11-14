@@ -48,14 +48,25 @@ void main() {
 
   group('دستگاه من', () {
     test('فقط اطلاعات دستگاه را نشان می دهد', () {
-      final String page = read('lib/ui/pages/device_page.dart');
+      // فقط خطوط کد بررسی می شوند؛ توضیح بالای فایل می تواند این واژه ها را
+      // برای توضیح جابه جایی داشته باشد.
+      final List<String> code = read('lib/ui/pages/device_page.dart')
+          .split('\n')
+          .where((String line) => !line.trimLeft().startsWith('//'))
+          .toList();
       for (final String moved in <String>[
         'هسته انتخابی',
         'مدت اتصال',
         'حالت اتصال',
         'نوع سرویس',
+        'سرور فعال',
+        'تایید عبور ترافیک',
       ]) {
-        expect(page.contains(moved), isFalse, reason: '$moved باید در صفحه دیگری باشد');
+        expect(
+          code.any((String line) => line.contains(moved)),
+          isFalse,
+          reason: '$moved باید در صفحه دیگری باشد',
+        );
       }
     });
 
