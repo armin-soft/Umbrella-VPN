@@ -109,38 +109,51 @@ jobs:
 
       # تنها هسته نسخه هسته هیدیفای است و نام فایل هایش با نام آمبرلا عوض شده
       # است. اگر نام ها جابه جا شوند، اتصال در سکوت شکست می خورد.
+      # تنها هسته نسخه هسته هیدیفای است و نام فایل هایش با نام آمبرلا عوض شده
+      # است. خروجی این بررسی در core-log.txt می رود تا اگر ساخت شکست خورد، از
+      # کامنت کامیت هم دیده شود.
       - name: Verify the Hiddify core bundle
         shell: pwsh
         working-directory: Windows
         run: |
-          $dir = 'cores\hiddify'
-          if (-not (Test-Path $dir)) { throw "core folder missing: $dir" }
-          Write-Host 'core bundle contents:' -ForegroundColor Cyan
-          Get-ChildItem $dir -Recurse | Format-Table Name, Length -AutoSize
-
-          # همان دو فایلی که برنامه واقعا لازم دارد.
-          foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.dll')) {
-            $path = Join-Path $dir $name
-            if (-not (Test-Path $path)) { throw "core file missing: $path" }
-            $size = (Get-Item $path).Length
-            Write-Host ("{0} is {1:N0} bytes" -f $name, $size) -ForegroundColor Green
+          $log = 'core-log.txt'
+          '' | Set-Content $log
+          function Say([string]$text) {
+            Write-Host $text
+            Add-Content $log $text
           }
-
-          # موتور گرافیکی هم اگر در بسته بود، نامش عوض شده است. نبودنش مانع
-          # ساخت نیست، چون اتصال با UmbrellaCli.exe انجام می شود.
-          $engine = Join-Path $dir 'UmbrellaCoreEngine.exe'
-          if (Test-Path $engine) {
-            Write-Host 'engine executable is present' -ForegroundColor Green
-          } else {
-            Write-Host 'engine executable is not in the bundle (not required)' -ForegroundColor Yellow
+          $failed = $false
+          try {
+            $dir = 'cores\hiddify'
+            if (-not (Test-Path $dir)) { throw "core folder missing: $dir" }
+            Say "core folder: $dir"
+            foreach ($item in Get-ChildItem $dir -Recurse -File) {
+              Say ("  {0}  {1:N0} bytes" -f $item.Name, $item.Length)
+            }
+            foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.dll')) {
+              $path = Join-Path $dir $name
+              if (-not (Test-Path $path)) { throw "core file missing: $path" }
+              Say ("ok: {0} is {1:N0} bytes" -f $name, (Get-Item $path).Length)
+            }
+            # موتور گرافیکی هم اگر در بسته بود، نامش عوض شده است. نبودنش مانع
+            # ساخت نیست، چون اتصال با UmbrellaCli.exe انجام می شود.
+            $engine = Join-Path $dir 'UmbrellaCoreEngine.exe'
+            if (Test-Path $engine) {
+              Say 'ok: engine executable is present'
+            } else {
+              Say 'note: engine executable is not in the bundle (not required)'
+            }
+            # CLI باید برنامه کنسول باشد، وگرنه پنجره اتصال باز نمی شود.
+            $bytes = [System.IO.File]::ReadAllBytes((Join-Path $dir 'UmbrellaCli.exe'))
+            $offset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $subsystem = [BitConverter]::ToUInt16($bytes, $offset + 0x5C)
+            Say ("UmbrellaCli.exe subsystem: {0} (3 = console)" -f $subsystem)
+            if ($subsystem -ne 3) { throw 'UmbrellaCli.exe is not a console program' }
+          } catch {
+            Say ("FAILED: " + $_.Exception.Message)
+            $failed = $true
           }
-
-          # CLI باید برنامه کنسول باشد، وگرنه پنجره اتصال باز نمی شود.
-          $bytes = [System.IO.File]::ReadAllBytes((Join-Path $dir 'UmbrellaCli.exe'))
-          $offset = [BitConverter]::ToInt32($bytes, 0x3C)
-          $subsystem = [BitConverter]::ToUInt16($bytes, $offset + 0x5C)
-          Write-Host "UmbrellaCli.exe subsystem: $subsystem (3 = console)"
-          if ($subsystem -ne 3) { throw 'UmbrellaCli.exe is not a console program' }
+          if ($failed) { throw 'the Hiddify core bundle is not usable' }
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
@@ -228,7 +241,7 @@ jobs:
             return ($text -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;')
           }
           $sections = @()
-          foreach ($name in @('analyze-log.txt', 'test-log.txt', 'build-log.txt', 'installer-log.txt')) {
+          foreach ($name in @('analyze-log.txt', 'test-log.txt', 'core-log.txt', 'build-log.txt', 'installer-log.txt')) {
             if (Test-Path $name) {
               $text = Get-Content $name -Raw
               if ($null -eq $text) { $text = '' }
