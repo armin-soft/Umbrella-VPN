@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../core/app_config.dart';
 import '../models/models.dart';
 import 'cores.dart';
 import 'hiddify_core.dart';

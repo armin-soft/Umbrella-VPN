@@ -90,7 +90,12 @@ rules:
       // در حالت تونل، پروکسی سیستمی روشن نمی شود.
       expect(settings['set-system-proxy'], isFalse);
       expect(settings['mixed-port'], HiddifyCore.port);
-      expect(jsonEncode(settings).contains('_'), isFalse);
+      // هیچ کلیدی با زیرخط نیست؛ فقط مقادیر (مثل نشانی تست سرعت) می توانند
+      // زیرخط داشته باشند.
+      for (final String key in settings.keys) {
+        expect(key.contains('_'), isFalse, reason: key);
+      }
+      expect(jsonEncode(settings).isNotEmpty, isTrue);
     });
 
     test('آرگومان ها همان آرگومان های مستند هسته اند', () {

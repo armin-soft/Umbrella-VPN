@@ -383,7 +383,7 @@ class VpnController extends ChangeNotifier {
         _clashNames = ClashConfig.nodeNames(yaml).toSet();
       }
     } on Exception {
-      // پیکربندی ذخیره نشده است؛ اجرای هسته های دیگر ادامه می یابد.
+      // پیکربندی ذخیره نشده است؛ هسته از لینک ها استفاده می کند.
     }
     try {
       final String? raw = await LocalStore.instance.readFile(StoreKeys.nodesCache);
@@ -730,6 +730,13 @@ class VpnController extends ChangeNotifier {
       'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
       'حالت «${_settings.corePreference.faName}» با هسته هیدیفای.',
     );
+    if (_clashNames.isNotEmpty) {
+      _log.add(
+        'پیکربندی پنل ${Fa.num(_clashNames.length)} گره دارد و نگه داشته '
+        'شده است؛ اگر سرورها با این پروفایل جواب ندهند، همان ها با لینک '
+        'اجرا می شوند.',
+      );
+    }
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
     try {
       if (_native.available && !_device.elevated) {
@@ -1150,6 +1157,10 @@ class VpnController extends ChangeNotifier {
   /// هر دو را به هم نسبت داد.
   Set<String> _clashNames = <String>{};
 
+  /// نام گره های پنل (برای گزارش ها: کاربر می بیند کدام سرور همان گره پنل
+  /// است). وقتی پنل پروفایل کاملی داده باشد پر می شود.
+  Set<String> get panelNodeNames => Set<String>.unmodifiable(_clashNames);
+
   /// آخرین پیکربندی کاملی که خود پنل داد (کلش، ایکس ری یا سینگ باکس).
   ///
   /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
@@ -1328,7 +1339,7 @@ class VpnController extends ChangeNotifier {
             '&host=${JsonX.text(params['host'], host)}'
             '#$name';
       case NodeProtocol.vmess:
-        return 'vmess://${B64.encode(jsonEncode(<String, dynamic>{
+        return 'vmess://${base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
               'v': '2',
               'ps': node.name,
               'add': host,
@@ -1342,17 +1353,23 @@ class VpnController extends ChangeNotifier {
               'path': JsonX.text(params['path'], '/'),
               'tls': JsonX.text(params['security']) == 'tls' ? 'tls' : '',
               'sni': JsonX.text(params['sni'], host),
-            }))}';
+            })))}';
       case NodeProtocol.trojan:
         return 'trojan://${Uri.encodeComponent(JsonX.text(params['password']))}'
             '@$host:$port?sni=${JsonX.text(params['sni'], host)}'
             '&type=${JsonX.text(params['network'] ?? params['type'], 'tcp')}'
             '#$name';
       case NodeProtocol.shadowsocks:
-        final String user = B64.encode(
-          '${JsonX.text(params['method'], 'aes-256-gcm')}:'
-          '${JsonX.text(params['password'])}',
+        final String user = base64Encode(
+          utf8.encode(
+            '${JsonX.text(params['method'], 'aes-256-gcm')}:'
+            '${JsonX.text(params['password'])}',
+          ),
         );
+        // نشانی شادوساکس وقتی نام کاربری و رمز جدا باشند خواناتر است.
+        if (user.isEmpty) {
+          return 'ss://$host:$port#$name';
+        }
         return 'ss://$user@$host:$port#$name';
       case NodeProtocol.hysteria2:
         return 'hysteria2://${Uri.encodeComponent(JsonX.text(params['password']))}'
