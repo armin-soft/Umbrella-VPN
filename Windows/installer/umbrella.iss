@@ -143,6 +143,6 @@ Type: filesandordirs; Name: "{app}\cores"
 ; فقط نام عوض می شود؛ خود فایل ها دست نمی خورند.
 ; ═══════════════════════════════════════════════════════════════════════════
 Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCli.exe"; DestDir: "{app}"; DestName: "{#CliExe}"; Flags: ignoreversion
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion
-Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.exe"; DestDir: "{app}"; DestName: "UmbrellaCoreEngine.exe"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCore.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#ReleaseDir}\cores\hiddify\UmbrellaCoreEngine.ini"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

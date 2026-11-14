@@ -114,15 +114,28 @@ jobs:
         working-directory: Windows
         run: |
           $dir = 'cores\hiddify'
-          foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.exe', 'UmbrellaCoreEngine.exe')) {
+          if (-not (Test-Path $dir)) { throw "core folder missing: $dir" }
+          Write-Host 'core bundle contents:' -ForegroundColor Cyan
+          Get-ChildItem $dir -Recurse | Format-Table Name, Length -AutoSize
+
+          # همان دو فایلی که برنامه واقعا لازم دارد.
+          foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.dll')) {
             $path = Join-Path $dir $name
             if (-not (Test-Path $path)) { throw "core file missing: $path" }
             $size = (Get-Item $path).Length
             Write-Host ("{0} is {1:N0} bytes" -f $name, $size) -ForegroundColor Green
           }
-          $dll = Join-Path $dir 'UmbrellaCore.dll'
-          if (-not (Test-Path $dll)) { throw "core library missing: $dll" }
-          # The CLI must be a console program, so the connect window can appear.
+
+          # موتور گرافیکی هم اگر در بسته بود، نامش عوض شده است. نبودنش مانع
+          # ساخت نیست، چون اتصال با UmbrellaCli.exe انجام می شود.
+          $engine = Join-Path $dir 'UmbrellaCoreEngine.exe'
+          if (Test-Path $engine) {
+            Write-Host 'engine executable is present' -ForegroundColor Green
+          } else {
+            Write-Host 'engine executable is not in the bundle (not required)' -ForegroundColor Yellow
+          }
+
+          # CLI باید برنامه کنسول باشد، وگرنه پنجره اتصال باز نمی شود.
           $bytes = [System.IO.File]::ReadAllBytes((Join-Path $dir 'UmbrellaCli.exe'))
           $offset = [BitConverter]::ToInt32($bytes, 0x3C)
           $subsystem = [BitConverter]::ToUInt16($bytes, $offset + 0x5C)
