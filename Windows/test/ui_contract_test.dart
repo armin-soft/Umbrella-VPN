@@ -115,6 +115,12 @@ void main() {
       );
     });
 
+    test('نام سرور در گزارش ها دوبار «سرور» نمی گیرد', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('سرور سرور'), isFalse);
+      expect(controller.contains('_nodeLabel'), isTrue);
+    });
+
     test('پیکربندی خود پنل با کلش متا اجرا می شود', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('_buildClashPlan'), isTrue);

@@ -1246,7 +1246,7 @@ class VpnController extends ChangeNotifier {
     // نمی شود و باید ایکس ری (که xhttp دارد) امتحان شود.
     if (!SingBoxConfig.supportsTransport(node)) {
       _log.add(
-        'سرور ${node.name} از انتقال ${JsonX.text(node.params['type'] ?? node.params['network'])} '
+        '${_nodeLabel(node)} از انتقال ${JsonX.text(node.params['type'] ?? node.params['network'])} '
         'استفاده می کند؛ تونل کامل سینگ باکس برای آن ساخته نمی شود و ایکس ری '
         'امتحان می شود.',
         level: 'info',
@@ -1457,7 +1457,7 @@ class VpnController extends ChangeNotifier {
       // سرورهای آمنزیا و وایرگارد با هسته های همراه این نسخه اجرا نمی شوند و
       // نباید هر بار هشدار بدهند؛ فقط یک بار در گزارش ها می آید.
       _log.add(
-        'سرور ${node.name} (${node.protocol.label}) با هسته های همراه این نسخه '
+        '${_nodeLabel(node)} (${node.protocol.label}) با هسته های همراه این نسخه '
         'اجرا نمی شود و از فهرست انتخاب کنار گذاشته شد.',
         level: 'info',
       );
@@ -1465,7 +1465,7 @@ class VpnController extends ChangeNotifier {
     }
     if (!usable(node)) {
       _log.add(
-        'اطلاعات سرور ${node.name} ناقص است (شناسه یا رمز خالی)؛ کنار گذاشته شد.',
+        'اطلاعات ${_nodeLabel(node)} ناقص است (شناسه یا رمز خالی)؛ کنار گذاشته شد.',
         level: 'info',
       );
       return null;
@@ -1476,7 +1476,7 @@ class VpnController extends ChangeNotifier {
     if (node.protocol == NodeProtocol.hysteria2 ||
         node.protocol == NodeProtocol.tuic) {
       _log.add(
-        'سرور ${node.name} از پروتکل ${node.protocol.label} استفاده می کند و '
+        '${_nodeLabel(node)} از پروتکل ${node.protocol.label} استفاده می کند و '
         'فقط با هسته سینگ باکس اجرا می شود؛ هسته پشتیبان برای این پروتکل نیست.',
         level: 'info',
       );
@@ -1577,6 +1577,16 @@ class VpnController extends ChangeNotifier {
       chained: false,
       proxyPort: AppConfig.httpPortXray,
     );
+  }
+
+  /// نام سرور برای گزارش ها. بعضی نام ها خودشان با «سرور» شروع می شوند و
+  /// نوشتن «سرور سرور آمبرلا» در گزارش ها زشت و گمراه کننده بود.
+  static String _nodeLabel(VpnNode node) {
+    final String name = node.name.trim();
+    if (name.startsWith('سرور')) {
+      return name;
+    }
+    return 'سرور $name';
   }
 
   String _dirOf(String path) {
