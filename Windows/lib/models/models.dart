@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/app_config.dart';
 import '../core/utils.dart';
 
 enum SubscriptionFormat { xray, clash, wireguard, amnezia, mieru }
@@ -1373,7 +1374,7 @@ class UpdateInfo {
 
   bool get isNewer {
     final List<int> remote = _parts(version);
-    final List<int> local = _parts('1.0.0');
+    final List<int> local = _parts(AppConfig.version);
     for (int i = 0; i < 3; i++) {
       final int r = i < remote.length ? remote[i] : 0;
       final int l = i < local.length ? local[i] : 0;

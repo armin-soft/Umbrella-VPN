@@ -24,6 +24,10 @@ class SourceState {
   String error = '';
   int count = 0;
 
+  /// متن خام پاسخ. برای کلش مهم است: همان پیکربندی کامل پنل که mihomo اجرا
+  /// می کند و پدینگ و هدرها و ALPN گره ها در آن هست.
+  String body = '';
+
   /// کد پاسخ آخرین دریافت؛ صفر یعنی درخواستی فرستاده نشده است.
   int lastStatus = 0;
   bool get unauthorized =>
@@ -456,9 +460,14 @@ class SubscriptionController extends ChangeNotifier {
         return null;
       }
       final String body = utf8.decode(response.bodyBytes, allowMalformed: true);
+      state.body = body;
       final ParseReport report = state.source.personal
           ? SubscriptionParser.parseAuto(body, state.source.id)
           : SubscriptionParser.parse(body, state.source);
+      if (state.source.format == SubscriptionFormat.clash &&
+          body.contains('proxies:')) {
+        await _vpn.applyClashProfile(body);
+      }
       state
         ..loading = false
         ..loaded = report.nodes.isNotEmpty

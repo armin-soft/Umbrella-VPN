@@ -130,11 +130,11 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: UmbrellaVPN-Setup-1.0.0-x64
+          name: UmbrellaVPN-Setup-1.0.1-x64
           path: |
-            Windows/dist/UmbrellaVPN-Setup-1.0.0-x64.exe
+            Windows/dist/UmbrellaVPN-Setup-1.0.1-x64.exe
             Windows/dist/SHA256SUMS.txt
-            Windows/dist/UmbrellaVPN-1.0.0-x64-portable.zip
+            Windows/dist/UmbrellaVPN-1.0.1-x64-portable.zip
           if-no-files-found: warn
 
       # The installer is bigger than the 100 MB limit for a git file, so it is
@@ -146,14 +146,14 @@ jobs:
         shell: pwsh
         working-directory: Windows
         run: |
-          $exe = 'dist\UmbrellaVPN-Setup-1.0.0-x64.exe'
+          $exe = 'dist\UmbrellaVPN-Setup-1.0.1-x64.exe'
           if (-not (Test-Path $exe)) { throw 'installer missing' }
-          $out = '..\setup\1.0.0'
+          $out = '..\setup\1.0.1'
           if (Test-Path $out) { Remove-Item $out -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $sizeMb = (Get-Item $exe).Length / 1MB
           if ($sizeMb -lt 90) {
-            Copy-Item $exe (Join-Path $out 'UmbrellaVPN-Setup-1.0.0-x64.exe') -Force
+            Copy-Item $exe (Join-Path $out 'UmbrellaVPN-Setup-1.0.1-x64.exe') -Force
             Write-Host ("installer is {0:N1} MB, stored as a single file" -f $sizeMb) -ForegroundColor Green
           } else {
             $buffer = New-Object byte[] (40MB)
@@ -161,7 +161,7 @@ jobs:
             try {
               $index = 1
               while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.0-x64.exe.part{0:d2}' -f $index)
+                $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.1-x64.exe.part{0:d2}' -f $index)
                 $writer = [System.IO.File]::Create($part)
                 try { $writer.Write($buffer, 0, $read) } finally { $writer.Close() }
                 $index++
@@ -173,12 +173,12 @@ jobs:
             Copy-Item 'tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
           }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
-          Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.0-x64.exe" -Encoding ASCII
+          Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.1-x64.exe" -Encoding ASCII
           Write-Host "sha256 $hash"
           git config user.name 'github-actions'
           git config user.email 'github-actions@users.noreply.github.com'
           git add -- '../setup'
-          git commit -m "setup: windows installer 1.0.0 (run ${{ github.run_number }})"
+          git commit -m "setup: windows installer 1.0.1 (run ${{ github.run_number }})"
           git push
 
       # The build logs are published as a commit comment, so the run can be

@@ -140,4 +140,8 @@ class StoreKeys {
   static const String deviceTrusted = 'device.trusted';
   static const String updateSkipped = 'update.skipped';
   static const String nodesCache = 'nodes-cache.json';
+
+  /// پیکربندی کامل کلش متا که خود پنل می دهد؛ برای اجرای mihomo نگه داشته
+  /// می شود تا هر بار از نو ساخته نشود.
+  static const String clashProfile = 'clash-profile.yml';
 }

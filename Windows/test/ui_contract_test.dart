@@ -101,10 +101,24 @@ void main() {
       expect(builders.contains("'gso':"), isFalse);
     });
 
-    test('انتقال xhttp در هر دو هسته پشتیبانی می شود', () {
+    test('انتقال xhttp فقط در ایکس ری ساخته می شود', () {
+      // سینگ باکس انتقال xhttp ندارد؛ پیکربندی آن هسته برای این سرورها باید
+      // کنار گذاشته شود و ایکس ری (که xhttp دارد) اجرا شود.
       final String builders = read('lib/vpn/config_builders.dart');
       expect(builders.contains("case 'xhttp':"), isTrue);
       expect(builders.contains("'xhttpSettings'"), isTrue);
+      expect(
+        builders.contains("case 'xhttp':\n      case 'splithttp':\n        return null;"),
+        isTrue,
+      );
+    });
+
+    test('پیکربندی خود پنل با کلش متا اجرا می شود', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_buildClashPlan'), isTrue);
+      expect(controller.contains('applyClashProfile'), isTrue);
+      final String clash = read('lib/vpn/clash_config.dart');
+      expect(clash.contains('clash-meta.yaml'), isTrue);
     });
   });
 

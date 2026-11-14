@@ -195,8 +195,9 @@ class SingBoxConfig {
       'stack': settings.tunStack.name,
       'endpoint_independent_nat': true,
       'udp_timeout': '5m',
-      'tcp_fast_open': true,
-      'tcp_multi_path': false,
+      // ⚠️ تی سی پی فست اوپن و مولتی پث هم روی inbound تونل در سینگ باکس
+      // شناخته نمی شوند و همان خطای «json: unknown field» را می دادند؛
+      // پیکربندی باید فقط کلیدهایی داشته باشد که خود این نسخه می پذیرد.
     };
   }
 
@@ -455,10 +456,27 @@ class SingBoxConfig {
       },
     };
     final List<dynamic> alpn = JsonX.asList(params['alpn']);
-    if (alpn.isNotEmpty) {
+    final List<String> declared =
+        alpn.map((Object? item) => item.toString()).toList();
+    // روی انتقال http/xhttp، لایه TLS باید h2 را اعلام کند وگرنه سرور
+    // درخواست را ۴۰۰ می بندد؛ روی ws و httpupgrade فقط http/1.1 درست است.
+    // خود پنل هم در تنظیمات دانلود همین را می گذارد.
+    final String network =
+        JsonX.text(params['network'] ?? params['type']).toLowerCase();
+    final bool httpFamily =
+        network == 'xhttp' || network == 'splithttp' || network == 'h2' || network == 'http';
+    final bool wsFamily = network == 'ws' || network == 'httpupgrade';
+    if (httpFamily) {
+      final String want = declared.contains('h2')
+          ? 'h2'
+          : (declared.isEmpty ? 'h2' : declared.first);
+      tls['alpn'] = <String>[want];
+    } else if (wsFamily && declared.isEmpty) {
+      tls['alpn'] = <String>['http/1.1'];
+    } else if (declared.isNotEmpty) {
       // فقط همان چیزی که سرور اعلام کرده؛ تحمیل ALPN اضافی دست دادن TLS را
       // کند می کند و در برخی سرورها اتصال را کند یا ناموفق می کند.
-      tls['alpn'] = alpn.map((Object? item) => item.toString()).toList();
+      tls['alpn'] = declared;
     }
     if (reality) {
       tls['reality'] = <String, dynamic>{
@@ -468,6 +486,62 @@ class SingBoxConfig {
       };
     }
     return tls;
+  }
+
+  /// هدرهای انتقال وب سوکت/آپگرید: میزبان + هدرهای مرورگر سرور.
+  static Map<String, String> _wsHeaders(Map<String, dynamic> params, String host) {
+    final Map<String, String> headers = <String, String>{
+      if (host.isNotEmpty) 'Host': host,
+    };
+    _extraHeaders(params).forEach((String key, String value) {
+      // هدر میزبان را با مقدار صریح خود لینک جایگزین نکن؛ آدرس اتصال مهم تر
+      // از هدر مرورگر است.
+      if (key.toLowerCase() == 'host') {
+        return;
+      }
+      headers[key] = value;
+    });
+    return headers;
+  }
+
+  /// هدرهای واقعی سرور (کلید extra در لینک).
+  ///
+  /// سرور این سرویس، درخواست بدون این هدرها را با ۴۰۰ رد می کند: لینک های
+  /// اشتراک یک User-Agent و Pragma مشخص دارند و باید همان ها فرستاده شوند.
+  static Map<String, String> _extraHeaders(Map<String, dynamic> params) {
+    final Object? raw = params['extra'];
+    Map<String, dynamic> extra = <String, dynamic>{};
+    if (raw is Map) {
+      extra = JsonX.asMap(raw);
+    } else {
+      final String text = JsonX.text(raw);
+      if (text.startsWith('{')) {
+        try {
+          extra = JsonX.asMap(jsonDecode(text));
+        } on FormatException {
+          extra = <String, dynamic>{};
+        }
+      }
+    }
+    final Map<String, String> headers = <String, String>{};
+    final Map<String, dynamic> fromExtra = JsonX.asMap(extra['headers']);
+    fromExtra.forEach((String key, Object? value) {
+      final String text = JsonX.text(value);
+      if (text.isNotEmpty) {
+        headers[key] = text;
+      }
+    });
+    // هدر تخت در خود پارامترها (بعضی پنل ها این طور می فرستند).
+    final Object? flat = params['headers'];
+    if (flat is Map) {
+      JsonX.asMap(flat).forEach((String key, Object? value) {
+        final String text = JsonX.text(value);
+        if (text.isNotEmpty) {
+          headers.putIfAbsent(key, () => text);
+        }
+      });
+    }
+    return headers;
   }
 
   static Map<String, dynamic>? _transport(Map<String, dynamic> params) {
@@ -480,7 +554,8 @@ class SingBoxConfig {
         return <String, dynamic>{
           'type': 'ws',
           'path': path.isEmpty ? '/' : path,
-          if (host.isNotEmpty) 'headers': <String, String>{'Host': host},
+          if (_wsHeaders(params, host).isNotEmpty)
+            'headers': _wsHeaders(params, host),
           'max_early_data': 2048,
           'early_data_header_name': 'Sec-WebSocket-Protocol',
         };
@@ -488,30 +563,33 @@ class SingBoxConfig {
         return <String, dynamic>{
           'type': 'grpc',
           'service_name': JsonX.text(params['serviceName'] ?? params['path']),
+          if (_extraHeaders(params).isNotEmpty)
+            'headers': _extraHeaders(params),
         };
       case 'httpupgrade':
         return <String, dynamic>{
           'type': 'httpupgrade',
           'path': path.isEmpty ? '/' : path,
-          if (host.isNotEmpty) 'headers': <String, String>{'Host': host},
+          if (_wsHeaders(params, host).isNotEmpty)
+            'headers': _wsHeaders(params, host),
         };
-      // ایکس اچ تی تی پی (نوع xhttp در اشتراک های هیدیفای): بیشتر سرورهای
-      // این اشتراک از همین استفاده می کنند. سینگ باکس آن را با نوع http
-      // می شناسد؛ اگر پشتیبانی نکند خودش خطا می دهد و هسته بعدی امتحان
-      // می شود.
+      // ایکس اچ تی تی پی (نوع xhttp/splithttp در اشتراک های هیدیفای).
+      //
+      // سینگ باکس این انتقال را ندارد و نسخه فعلی هسته هم آن را به عنوان http
+      // نمی شناسد؛ فرستادن http با یک هدر ناموجود، از سرور ۴۰۰ می گرفت. پس
+      // برای این انتقال نقشه ای ساخته نمی شود و هسته بعدی (ایکس ری که xhttp
+      // دارد) امتحان می شود.
       case 'xhttp':
       case 'splithttp':
-        return <String, dynamic>{
-          'type': 'http',
-          'path': path.isEmpty ? '/' : path,
-          if (host.isNotEmpty) 'host': <String>[host],
-        };
+        return null;
       case 'h2':
       case 'http':
         return <String, dynamic>{
           'type': 'http',
           'path': path.isEmpty ? '/' : path,
           if (host.isNotEmpty) 'host': <String>[host],
+          if (_extraHeaders(params).isNotEmpty)
+            'headers': _extraHeaders(params),
         };
       default:
         return null;
@@ -732,10 +810,16 @@ class XrayConfig {
       };
     }
     if (network == 'ws') {
+      // وب سوکت: مسیر و میزبان درست + همان هدرهای مرورگری که سرور می خواهد.
+      // بدست آمدن «400 Bad Request / bad handshake» در لاگ از همین هدرهای
+      // ناقص بود.
+      final String wsHost = JsonX.text(params['host'], sni);
       stream['wsSettings'] = <String, dynamic>{
         'path': JsonX.text(params['path'], '/'),
         'headers': <String, dynamic>{
-          'Host': JsonX.text(params['host'], sni),
+          if (wsHost.isNotEmpty) 'Host': wsHost,
+          ..._extraHeaders(params)
+            ..removeWhere((String key, String _) => key.toLowerCase() == 'host'),
         },
       };
     } else if (network == 'grpc') {
@@ -748,13 +832,27 @@ class XrayConfig {
         'host': <String>[JsonX.text(params['host'], sni)],
       };
     } else if (network == 'xhttp' || network == 'splithttp') {
-      // ایکس اچ تی تی پی از ایکس ری ۲۵ شناخته می شود؛ همان مسیر و میزبان
-      // سرور، بدون بازنویسی شبکه به tcp.
+      // ایکس اچ تی تی پی (splithttp) از ایکس ری ۲۵ شناخته می شود. همان
+      // چیزهایی که خود پنل در پیکربندی می گذارد: مسیر، میزبان، حالت، هدرهای
+      // مرورگر و پدینگ. بدون این ها سرور درخواست را با ۴۰۰ رد می کرد.
+      final Map<String, String> headers = _extraHeaders(params);
       stream['xhttpSettings'] = <String, dynamic>{
         'path': JsonX.text(params['path'], '/'),
-        'host': JsonX.text(params['host'], sni),
+        if (JsonX.text(params['host'], sni).isNotEmpty)
+          'host': JsonX.text(params['host'], sni),
         'mode': JsonX.text(params['mode'], 'auto'),
+        if (headers.isNotEmpty) 'headers': headers,
       };
+      // پدینگ همان چیزی است که سرور انتظار دارد (مثل padsize در لینک).
+      final String padSize = JsonX.text(params['padsize'] ?? params['padSize']);
+      if (padSize.isNotEmpty) {
+        stream['xhttpSettings'] = <String, dynamic>{
+          ...stream['xhttpSettings'] as Map<String, dynamic>,
+          'extra': <String, dynamic>{
+            if (headers.isNotEmpty) 'headers': headers,
+          },
+        };
+      }
     }
     return stream;
   }

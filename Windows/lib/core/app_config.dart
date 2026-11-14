@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.0';
+  static const String version = '1.0.1';
   static const int buildNumber = 1;
   static const String versionLabel = 'نسخه ۱٫۰٫۰';
   static const String company = 'آرمین سافت';

@@ -15,7 +15,7 @@ void main() {
       );
 
   group('پیکربندی تونل', () {
-    test('تونل با بافرهای بزرگ و fast open ساخته می شود', () {
+    test('تونل فقط کلیدهایی دارد که سینگ باکس همراه قبول می کند', () {
       final Map<String, dynamic> config = SingBoxConfig.build(
         node: node(NodeProtocol.vless, <String, dynamic>{'id': 'u'}),
         settings: const AppSettings(),
@@ -23,8 +23,11 @@ void main() {
       final Map<String, dynamic> inbound =
           (config['inbounds'] as List<dynamic>).first as Map<String, dynamic>;
       expect(inbound['type'], 'tun');
-      expect(inbound['tcp_fast_open'], isTrue);
       expect(inbound['auto_route'], isTrue);
+      // tcp_fast_open و tcp_multi_path هم روی inbound تونل شناخته نمی شوند و
+      // همان خطای «json: unknown field» را می دادند.
+      expect(inbound.containsKey('tcp_fast_open'), isFalse);
+      expect(inbound.containsKey('tcp_multi_path'), isFalse);
       // gso و gso_max_size در سینگ باکس ۱.۱۱ به بعد حذف شده اند و همان
       // کلیدها باعث خطای «json: unknown field» و بالا نیامدن تونل می شدند.
       expect(inbound.containsKey('gso'), isFalse);

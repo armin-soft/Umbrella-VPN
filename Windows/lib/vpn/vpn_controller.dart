@@ -14,6 +14,7 @@ import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
 import 'balancer.dart';
+import 'clash_config.dart';
 import 'config_builders.dart';
 import 'cores.dart';
 import 'core_ping.dart';
@@ -355,6 +356,18 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _loadCachedNodes() async {
+    // پیکربندی کلش پنل هم مثل فهرست سرورها نگه داشته می شود تا پس از اجرای
+    // دوباره برنامه، بدون اینترنت دوباره در دسترس باشد.
+    try {
+      final String? yaml =
+          await LocalStore.instance.readFile(StoreKeys.clashProfile);
+      if (yaml != null && yaml.trim().isNotEmpty) {
+        _clashProfile = yaml;
+        _clashNames = ClashConfig.nodeNames(yaml).toSet();
+      }
+    } on Exception {
+      // پیکربندی ذخیره نشده است؛ اجرای هسته های دیگر ادامه می یابد.
+    }
     try {
       final String? raw = await LocalStore.instance.readFile(StoreKeys.nodesCache);
       if (raw == null || raw.isEmpty) {
@@ -1128,6 +1141,35 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// نام گره هایی که در پیکربندی کلش پنل هستند.
+  ///
+  /// فقط برای همین گره ها اجرای mihomo معنی دارد: انتخاب کاربر باید همان
+  /// سروری باشد که در گروه پنل هست.
+  Set<String> _clashNames = <String>{};
+
+  /// آخرین پیکربندی کامل کلش متا که خود پنل داد.
+  ///
+  /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
+  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. برای سرورهای کلش، به جای
+  /// ساختن دستی پیکربندی از روی لینک، همین فایل اجرا می شود.
+  String _clashProfile = '';
+
+  String get clashProfile => _clashProfile;
+
+  /// ذخیره پیکربندی کلش پنل (متن YAML) برای اجرای mihomo.
+  Future<void> applyClashProfile(String yaml) async {
+    if (yaml.trim().isEmpty || yaml.trim() == _clashProfile.trim()) {
+      return;
+    }
+    _clashProfile = yaml;
+    try {
+      _clashNames = ClashConfig.nodeNames(yaml).toSet();
+    } on Exception {
+      _clashNames = <String>{};
+    }
+    await LocalStore.instance.writeFile(StoreKeys.clashProfile, yaml);
+  }
+
   /// فهرست نقشه های اجرا برای یک سرور، به ترتیب اولویت.
   ///
   /// سینگ باکس همان هسته ای است که کلاینت ویندوز هیدیفای استفاده می کند و
@@ -1135,6 +1177,12 @@ class VpnController extends ChangeNotifier {
   /// ایکس ری و میرو به عنوان پشتیبان می آیند.
   Future<List<LaunchPlan>> _buildPlans(VpnNode node) async {
     final List<LaunchPlan> plans = <LaunchPlan>[];
+    // پیکربندی خود پنل (کلش متا) اول امتحان می شود: تنها نسخه ای است که همه
+    // جزئیات گره ها را دارد و در کلاینت های دیگر همین سرور جواب می دهد.
+    final LaunchPlan? clash = await _buildClashPlan(node);
+    if (clash != null) {
+      plans.add(clash);
+    }
     final LaunchPlan? tun = await _buildTunPlan(node);
     if (tun != null) {
       plans.add(tun);
@@ -1156,7 +1204,7 @@ class VpnController extends ChangeNotifier {
           case CorePreference.xray:
             return core != 'xray' && core != 'mieru' && core != 'xrayfront';
           case CorePreference.clash:
-            return core != 'singbox' && core != 'singboxtun';
+            return core != 'singbox' && core != 'singboxtun' && core != 'clash';
           case CorePreference.mieru:
             return core != 'mieru';
           case CorePreference.wireguard:
@@ -1255,6 +1303,92 @@ class VpnController extends ChangeNotifier {
       chained: false,
     );
   }
+
+  /// نقشه اجرای mihomo با پیکربندی خود پنل.
+  ///
+  /// فقط برای سرورهایی که از فایل کلش خوانده شده اند معنی دارد؛ برای بقیه
+  /// (لینک های ایکس ری) همان مسیرهای سینگ باکس و ایکس ری می آیند.
+  Future<LaunchPlan?> _buildClashPlan(VpnNode node) async {
+    if (_clashProfile.trim().isEmpty || !usable(node)) {
+      return null;
+    }
+    // فقط سروری که نامش در همین پیکربندی هست با کلش اجرا می شود؛ برای سرورهای
+    // فهرست ایکس ری، mihomo نمی توانست همان سرور را انتخاب کند و ترافیک از
+    // سرور دیگری رد می شد.
+    if (!_clashNames.contains(node.name)) {
+      return null;
+    }
+    final CoreInfo? core = _provisioner.info('clash');
+    if (core == null) {
+      return null;
+    }
+    final String? exe = await _provisioner.locateBinary(
+      core.binary.isEmpty ? 'mihomo.exe' : core.binary,
+    );
+    if (exe == null || exe.isEmpty) {
+      _log.add(
+        'هسته mihomo.exe در نسخه نصب نیست؛ پیکربندی خود پنل اجرا نمی شود و '
+        'هسته های دیگر امتحان می شوند.',
+        level: 'warning',
+      );
+      return null;
+    }
+    final Directory runDir = Directory(
+      '${_provisioner.dataDir}${Platform.pathSeparator}run',
+    );
+    final bool tun = _settings.tunMode && _device.elevated;
+    if (_settings.tunMode && !_device.elevated) {
+      _log.add(
+        'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
+        'می شویم. برای تونل، برنامه را با دسترسی مدیر اجرا کنید.',
+        level: 'warning',
+      );
+    }
+    final String configPath;
+    try {
+      configPath = await ClashPlanner.writeConfig(
+        runDir: runDir,
+        rawYaml: _clashProfile,
+        tun: tun,
+        mixedPort: AppConfig.httpPortXray,
+        apiPort: _clashApiPort,
+        preferred: node.name,
+      );
+    } on Exception catch (error) {
+      _log.add(
+        'پیکربندی کلش متا آماده نشد: $error؛ هسته های دیگر امتحان می شوند.',
+        level: 'warning',
+      );
+      return null;
+    } on Error catch (error) {
+      // خطای خواندن YAML (نوع ناخواسته) هم نباید کل تلاش اتصال را بشکند.
+      _log.add(
+        'پیکربندی کلش متا خوانده نشد: $error؛ هسته های دیگر امتحان می شوند.',
+        level: 'warning',
+      );
+      return null;
+    }
+    return LaunchPlan(
+      cores: <CoreLaunch>[
+        CoreLaunch(
+          exe: exe,
+          args: <String>['-d', runDir.path, '-f', configPath],
+          workDir: _dirOf(exe),
+          name: 'clash',
+        ),
+      ],
+      configPaths: <String>[configPath],
+      // در حالت تونل پورت محلی لازم نیست؛ پنل مدیریت نشانه آمادگی است.
+      readinessPort: _clashApiPort,
+      primaryBinary: core.binary.isEmpty ? 'mihomo.exe' : core.binary,
+      tunnelHint: tun ? ClashConfig.tunDevice : '',
+      chained: false,
+      proxyPort: tun ? 0 : AppConfig.httpPortXray,
+    );
+  }
+
+  /// پورت پنل مدیریت محلی mihomo؛ فقط برای سنجش آمادگی استفاده می شود.
+  static const int _clashApiPort = 19093;
 
   /// نقشه اجرای سینگ باکس: پروکسی محلی مختلط روی پورت http و اتصال به سرور.
   ///
