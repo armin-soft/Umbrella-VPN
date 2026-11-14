@@ -21,6 +21,33 @@ class CorePinger {
 
   final CoreProvisioner _provisioner;
 
+  /// نمونه های در حال اجرا.
+  ///
+  /// `Future.timeout` آینده را رها می کند ولی کار را متوقف نمی کند؛ پیش از
+  /// این هر سنجش، هسته ای زنده می گذاشت که پورت ثابت ۱۷۰۷۸ را می گرفت و
+  /// اتصال کاربر را با «پورت در اختیار برنامه دیگری است» می کشت (گزارش ۱٫۰۷).
+  final List<Process> _running = <Process>[];
+
+  /// آیا سنجش جاری باید متوقف شود؟
+  bool _stopped = false;
+
+  /// آیا نمونه ای در حال اجراست؟
+  bool get busy => _running.isNotEmpty;
+
+  /// بستن همه نمونه های در حال اجرا؛ سنجش جاری هم ادامه نمی دهد.
+  Future<void> stopAll() async {
+    _stopped = true;
+    final List<Process> running = List<Process>.of(_running);
+    _running.clear();
+    for (final Process process in running) {
+      try {
+        process.kill();
+      } on Exception {
+        // فرایند از قبل بسته شده است.
+      }
+    }
+  }
+
   /// پورت های سنجش، یکی برای هر نمونه همزمان.
   static const int _firstPort = 19200;
 
@@ -39,8 +66,10 @@ class CorePinger {
     // می کشت و سنجش بی نتیجه می ماند («۰ سرور» در گزارش ۱٫۰٫۶).
     int concurrency = 1,
     Duration budget = const Duration(seconds: 70),
+    int maxNodes = _maxNodes,
   }) async {
     final Map<String, int> delays = <String, int>{};
+    _stopped = false;
     final String? exe =
         await _provisioner.locateBinary(VpnController.umbrellaCliBinary);
     if (exe == null || exe.isEmpty) {
@@ -65,9 +94,9 @@ class CorePinger {
     if (ordered.isEmpty) {
       return delays;
     }
-    final List<VpnNode> targets = ordered.length > _maxNodes
-        ? ordered.sublist(0, _maxNodes)
-        : ordered;
+    final int limit = maxNodes < 1 ? _maxNodes : maxNodes;
+    final List<VpnNode> targets =
+        ordered.length > limit ? ordered.sublist(0, limit) : ordered;
 
     final Directory runDir = Directory(
       '${_provisioner.dataDir}${Platform.pathSeparator}run',
@@ -84,7 +113,7 @@ class CorePinger {
     Future<void> worker(int slot) async {
       final int port = _firstPort + slot;
       while (true) {
-        if (DateTime.now().isAfter(deadline)) {
+        if (_stopped || DateTime.now().isAfter(deadline)) {
           return;
         }
         final int index = cursor++;
@@ -165,6 +194,9 @@ class CorePinger {
       // اگر نمونه قبلی هنوز زنده باشد، این یکی با «already in use» می میرد و
       // هیچ عددی به دست نمی آید. پس پیش از هر نمونه، پورت ها آزاد می شوند.
       await UmbrellaCore.releasePorts();
+      if (_stopped) {
+        return -1;
+      }
       process = await Process.start(
         exe,
         UmbrellaCore.args(
@@ -181,6 +213,7 @@ class CorePinger {
         workingDirectory: workDir,
         runInShell: false,
       );
+      _running.add(process);
       sink = File(
         '${runDir.path}${Platform.pathSeparator}ping-$slot.log',
       ).openWrite(mode: FileMode.write);
@@ -198,6 +231,9 @@ class CorePinger {
       return -1;
     } finally {
       process?.kill();
+      if (process != null) {
+        _running.remove(process);
+      }
       if (sink != null) {
         await sink.flush();
         await sink.close();

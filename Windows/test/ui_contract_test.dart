@@ -61,6 +61,62 @@ void main() {
       expect(ping.contains('settingsPath: settings.path'), isTrue);
     });
 
+    test('سنجش پینگ هیچ وقت هسته یتیم روی پورت ها نمی گذارد', () {
+      // گزارش ۱٫۰۷: پیام «پورت ۱۷۰۷۸ در اختیار برنامه دیگری است» چهار بار
+      // آمد، در حالی که مقصر خود برنامه بود. `Future.timeout` سنجش را رها
+      // می کرد ولی نمونه هایش زنده می ماندند و پورت را گرفته نگه می داشتند.
+      final String ping = read('lib/vpn/core_ping.dart');
+      expect(ping.contains('final List<Process> _running'), isTrue);
+      expect(ping.contains('Future<void> stopAll()'), isTrue);
+      expect(ping.contains('_running.add(process)'), isTrue);
+      expect(ping.contains('_running.remove(process)'), isTrue);
+      // `Future.timeout` دیگر نباید دور سنجش باشد.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_corePing.stopAll()'), isTrue);
+      expect(controller.contains('_stopProbes'), isTrue);
+      // اتصال، پیش از هر کاری، سنجش در جریان را می بندد.
+      final int connectAt = controller.indexOf('Future<ConnectOutcome> connect(');
+      expect(connectAt, greaterThan(0));
+      final String inConnect = controller.substring(
+        connectAt,
+        controller.indexOf('Future<_AttemptResult> _attempt('),
+      );
+      // و پیش از هر کار دیگری، نه بعد از آماده سازی.
+      expect(
+        inConnect.indexOf('_stopProbes'),
+        lessThan(inConnect.indexOf('accessGuard?.call()')),
+      );
+    });
+
+    test('سنجش و اتصال هیچ وقت همزمان پورت های هسته را نمی خواهند', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      // سنجش در حین اتصال آغاز نمی شود.
+      expect(controller.contains('if (_status.busy) {'), isTrue);
+      // و تایمر دوره ای در حین اتصال کاری نمی کند.
+      expect(controller.contains('if (_status.active) {'), isTrue);
+    });
+
+    test('پیام «تاخیر تونل نتیجه نداد» هر بار تکرار نمی شود', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_tunnelFailureReported'), isTrue);
+      // گزارش دوره ای «تاخیر تونل برای ۰ سرور» نباید سطح هشدار بگیرد وقتی
+      // پینگ شبکه هست.
+      final int warn = controller.indexOf('سنجش تاخیر تونل نتیجه نداد');
+      expect(warn, greaterThan(0));
+      final String before = controller.substring(warn - 900, warn);
+      expect(before.contains('_tunnelFailureReported'), isTrue);
+    });
+
+    test('اگر پورت دست برنامه دیگری باشد، نامش در گزارش می آید', () {
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains('static Future<String> portHolders('), isTrue);
+      expect(core.contains('Get-NetTCPConnection'), isTrue);
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('UmbrellaCore.portHolders(held)'), isTrue);
+      // بدون صبر، نمونه ای که تازه بسته شده «برنامه دیگری» حساب می شد.
+      expect(controller.contains('const Duration(seconds: 5)'), isTrue);
+    });
+
     test('پورت های ثابت هسته پیش از اجرا آزاد می شوند', () {
       // دستور `run` هسته پورت ۱۷۰۷۸ و ۱۶۷۵۶ را همیشه می گیرد و پرچمی برای
       // عوض کردنشان ندارد؛ در ۱٫۰٫۵ فرستادن `--listen` هسته را با «unknown

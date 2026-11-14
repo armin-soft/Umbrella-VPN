@@ -450,8 +450,24 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// چند سرور در هر دور با خود هسته سنجیده می شود.
+  ///
+  /// هر نمونه یک فرایند هسته است و دو پورت ثابت هسته را می گیرد؛ سنجیدن همه
+  /// ۲۴ سرور چند دقیقه طول می کشید و در آن مدت اتصال ممکن نبود. دور اول روی
+  /// ۸ سرور است، دورهای بعدی بقیه را هم می سنجند.
+  int _tunnelProbeCount = 8;
+
+  /// آیا خبر «نتیجه نداد» یک بار گفته شده است؟
+  bool _tunnelFailureReported = false;
+
   Future<void> refreshPings({bool all = true}) async {
     if (_measuring || _nodes.isEmpty) {
+      return;
+    }
+    // سنجش هسته ای و اتصال هر دو پورت های ثابت هسته (۱۷۰۷۸ و ۱۶۷۵۶) را
+    // می خواهند؛ اگر سنجش در جریان باشد، اتصال با «پورت در اختیار برنامه
+    // دیگری است» رد می شد (گزارش ۱٫۰۷).
+    if (_status.busy) {
       return;
     }
     // در حین اتصال سنجش هسته ای انجام نمی شود: سنجش، پروسه هسته را بالا می آورد
@@ -501,17 +517,24 @@ class VpnController extends ChangeNotifier {
       if (liveTunnel) {
         throw StateError('اتصال فعال است');
       }
-      // سنجش هسته ای سریال است (هر نمونه دو پورت ثابت هسته را می خواهد)،
-      // پس مهلتش به اندازه کافی بلند است؛ نتیجه هر چه زودتر آماده شد، همان
-      // لحظه برمی گردد.
-      tunnelDelays = await _corePing
-          .measure(target, settings: _settings)
-          .timeout(
-            const Duration(seconds: 150),
-            onTimeout: () => <String, int>{},
-          );
+      // سنجش خودش مهلت دارد و نمونه هایش را می بندد؛ `Future.timeout` این
+      // کار را نمی کرد و هسته های یتیم، پورت ۱۷۰۷۸ را تا اتصال بعدی گرفته
+      // نگه می داشتند.
+      tunnelDelays = await _corePing.measure(
+        target,
+        settings: _settings,
+        maxNodes: _tunnelProbeCount,
+        budget: const Duration(seconds: 60),
+      );
     } catch (_) {
       tunnelDelays = <String, int>{};
+    }
+    // اگر اتصال در این میان شروع شده باشد، سنجش را خودمان بستیم؛ گزارش
+    // «تاخیر تونل برای ۰ سرور» آن وقت فقط گیج کننده است.
+    if (_status.active) {
+      _measuring = false;
+      _notify();
+      return;
     }
     final List<VpnNode> fused = measured
         .map((VpnNode node) {
@@ -532,15 +555,27 @@ class VpnController extends ChangeNotifier {
     }
     _measuring = false;
     await _cacheNodes();
+    // تنها وقتی خبری برای گفتن هست که چیزی به دست نیامده باشد؛ و آن هم یک
+    // بار، نه هر دو دقیقه یک بار. پینگ شبکه ای که در فهرست آمده، عدد کاربر
+    // را دارد و همین کافی است.
+    if (tunnelDelays.isNotEmpty) {
+      // سنجش دوباره کار می کند؛ اگر بعداً یک بار دیگر نتیجه نداد، همان یک بار
+      // گزارش می شود.
+      _tunnelFailureReported = false;
+    }
+    final bool nothing = tunnelDelays.isEmpty &&
+        !liveTunnel &&
+        !fused.any((VpnNode node) => node.hasPing);
     _log.add(
       'سنجش پینگ: تاخیر تونل برای ${Fa.num(tunnelDelays.length)} سرور و '
       'پینگ شبکه برای ${Fa.num(fused.where((VpnNode node) => node.hasPing).length)} '
       'سرور به دست آمد.'
       '${_medianNote(fused)}'
       '${_tunnelNote(tunnelDelays)}',
-      level: tunnelDelays.isEmpty && !liveTunnel ? 'warning' : 'info',
+      level: nothing ? 'warning' : 'info',
     );
-    if (tunnelDelays.isEmpty && !liveTunnel) {
+    if (nothing && !_tunnelFailureReported) {
+      _tunnelFailureReported = true;
       final String detail = await _corePing.lastError();
       _log.add(
         'سنجش تاخیر تونل نتیجه نداد${detail.isEmpty ? '' : ': $detail'}',
@@ -548,6 +583,23 @@ class VpnController extends ChangeNotifier {
       );
     }
     _notify();
+  }
+
+  /// بستن سنجش های در جریان و صبر تا آزاد شدن پورت های ثابت هسته.
+  Future<void> _stopProbes() async {
+    if (!_measuring && !_corePing.busy) {
+      return;
+    }
+    _measuring = false;
+    await _corePing.stopAll();
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 4));
+    while (DateTime.now().isBefore(deadline)) {
+      final List<int> held = await UmbrellaCore.heldReservedPorts();
+      if (held.isEmpty) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
   }
 
   /// پینگ شبکه سرور متصل (باز کردن اتصال تی سی پی به خود سرور).
@@ -651,7 +703,14 @@ class VpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(
       Duration(seconds: settings.pingIntervalSeconds.clamp(120, 3600)),
-      (_) => unawaited(refreshPings(all: false)),
+      (_) {
+        // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
+        // بالا آوردن هسته سنجش، خود اتصال را می کشت.
+        if (_status.active) {
+          return;
+        }
+        unawaited(refreshPings(all: false));
+      },
     );
     _notify();
   }
@@ -706,6 +765,9 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
     }
     _cancelRequested = false;
+    // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
+    // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
+    await _stopProbes();
     // دسترسی حساب: اشتراک منقضی، مسدود یا تمام شده حق اتصال ندارد.
     final String blocked = accessGuard?.call() ?? '';
     if (blocked.isNotEmpty) {
@@ -1673,20 +1735,30 @@ class VpnController extends ChangeNotifier {
       final int killed = await _native.killByName(binary);
       _orphansKilled += killed;
     }
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    held = await UmbrellaCore.heldReservedPorts();
-    if (held.isEmpty) {
-      _log.add(
-        'پورت هسته از اجرای قبلی باز مانده بود و آزاد شد.',
-        level: 'warning',
-      );
-      return true;
+    // بستن فرایند همیشه همان لحظه پورت را آزاد نمی کند؛ کمی صبر می کنیم تا
+    // یک نمونه در حال خروج، «برنامه دیگری» حساب نشود.
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (DateTime.now().isBefore(deadline)) {
+      held = await UmbrellaCore.heldReservedPorts();
+      if (held.isEmpty) {
+        _log.add(
+          'پورت هسته از اجرای قبلی باز مانده بود و آزاد شد.',
+          level: 'warning',
+        );
+        return true;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
+    // نام برنامه ای که پورت را گرفته، در گزارش می آید تا کاربر بداند چه را
+    // ببندد؛ حدس زدن فایده ای ندارد.
+    final String holder = await UmbrellaCore.portHolders(held);
     final String ports = held.map((int port) => Fa.num(port)).join('، ');
     _log.add(
       'پورت $ports در اختیار برنامه دیگری است و هسته برای کار به همان ها '
-      'نیاز دارد. برنامه ای که آن پورت را گرفته ببندید (بیشتر وقت ها یک '
-      'فیلترشکن دیگر یا یک نمونه بازمانده از آمبرلا است) و دوباره وصل شوید.',
+      'نیاز دارد.'
+      '${holder.isEmpty ? '' : ' (در اختیار: $holder)'}'
+      ' برنامه ای که آن پورت را گرفته ببندید (بیشتر وقت ها یک فیلترشکن دیگر '
+      'یا یک نمونه بازمانده از آمبرلا است) و دوباره وصل شوید.',
       level: 'error',
     );
     return false;
@@ -1968,7 +2040,14 @@ class VpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(
       Duration(seconds: _settings.pingIntervalSeconds.clamp(120, 3600)),
-      (_) => unawaited(refreshPings(all: false)),
+      (_) {
+        // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
+        // بالا آوردن هسته سنجش، خود اتصال را می کشت.
+        if (_status.active) {
+          return;
+        }
+        unawaited(refreshPings(all: false));
+      },
     );
   }
 
@@ -2220,6 +2299,9 @@ class VpnController extends ChangeNotifier {
       return;
     }
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
+    // سنجشی که بعد از قطع اتصال شروع شود، هسته ای بالا می آورد و پورت ها را
+    // می گیرد؛ همان چیزی که اتصال بعدی را رد می کرد.
+    await _stopProbes();
     await _stopCores();
     await _disableProxy();
     _statsTimer?.cancel();

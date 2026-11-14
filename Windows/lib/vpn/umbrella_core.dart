@@ -156,6 +156,45 @@ class UmbrellaCore {
     return held;
   }
 
+  /// نام برنامه ای که این پورت ها را گرفته است.
+  ///
+  /// قبلاً گزارش فقط می گفت «پورت در اختیار برنامه دیگری است» و کاربر نمی
+  /// دانست چه را ببندد؛ در گزارش ۱٫۰۷ همین پیام چهار بار آمد و هیچ راهی برای
+  /// پیدا کردن مقصر نداشت. با `Get-NetTCPConnection` نام فرایند خوانده می شود.
+  static Future<String> portHolders(List<int> ports) async {
+    if (!Platform.isWindows || ports.isEmpty) {
+      return '';
+    }
+    final String filter =
+        ports.map((int port) => "\$_.LocalPort -eq $port").join(' -or ');
+    final String script =
+        'Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | '
+        'Where-Object { $filter } | '
+        'ForEach-Object { '
+        '\$p = Get-Process -Id \$_.OwningProcess -ErrorAction SilentlyContinue; '
+        'if (\$p) { "\$(\$_.LocalPort)=\$(\$p.ProcessName)" } }';
+    try {
+      final ProcessResult result = await Process.run(
+        'powershell',
+        <String>['-NoProfile', '-NonInteractive', '-Command', script],
+        runInShell: false,
+      );
+      final String out = '${result.stdout}'.trim();
+      if (out.isEmpty) {
+        return '';
+      }
+      final List<String> names = out
+          .split(RegExp(r'\r?\n'))
+          .map((String line) => line.trim())
+          .where((String line) => line.isNotEmpty)
+          .toSet()
+          .toList();
+      return names.join('، ');
+    } on Exception {
+      return '';
+    }
+  }
+
   /// دی ان اس پیش فرض هسته (همان پیش فرض خودش در `DefaultHiddifyOptions`).
   static const String defaultDns = '1.1.1.1';
 
