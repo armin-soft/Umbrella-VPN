@@ -5,14 +5,14 @@ import '../core/app_config.dart';
 import '../core/storage.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
-import 'hiddify_core.dart';
+import 'umbrella_core.dart';
 
 /// پنجره خط فرمان هسته: `UmbrellaCli run -c ...`
 ///
 /// چرا پنجره دیده می شود؟ فایل `UmbrellaCli.exe` همان `HiddifyCli.exe` است و
-/// آن یک برنامه کنسولی است (زیرسیستم console). هیدیفای هم برای همین یک پنجره
+/// آن یک برنامه کنسولی است (زیرسیستم console)؛ برای همین یک پنجره
 /// سیاه کنار برنامه دارد: هسته ای که در آن اجرا می شود خودش یک برنامه خط فرمان
-/// است، نه بخشی از پنجره گرافیکی. تفاوت این نسخه با هیدیفای فقط نام فایل هاست.
+/// است، نه بخشی از پنجره گرافیکی.
 ///
 /// همان هسته دو راه برای اجرا دارد و مستنداتش هر دو را توضیح می دهد:
 ///
@@ -58,17 +58,17 @@ class CliSession {
 
   /// فایل اجرایی پنجره: همان `UmbrellaCli.exe`.
   ///
-  /// هسته در پوشه خودش (`cores\hiddify`) می ماند، چون کتابخانه ۱۰۹ مگابایتی
-  /// و کرونتش باید کنار همین فایل باشند و ویندوز آن ها را از همان پوشه بار
-  /// می کند. اگر آن جا نبود، کنار خود برنامه هم امتحان می شود.
+  /// لانچر کنار خود برنامه است (همان جایی که CMake و نصب کننده می گذارند) و
+  /// کتابخانه هسته را از `cores\umbrella` بار می کند؛ پس اول کنار برنامه و بعد
+  /// در پوشه هسته جست وجو می شود.
   static String executable() {
     final String exe = Platform.resolvedExecutable;
     final String dir =
         exe.substring(0, exe.lastIndexOf(Platform.pathSeparator));
-    final String coreDir = HiddifyCore.directoryOf(dir);
+    final String coreDir = UmbrellaCore.directoryOf(dir);
     final List<String> candidates = <String>[
-      '$coreDir${Platform.pathSeparator}${HiddifyCore.cliBinary}',
-      '$dir${Platform.pathSeparator}${HiddifyCore.cliBinary}',
+      '$dir${Platform.pathSeparator}${UmbrellaCore.cliBinary}',
+      '$coreDir${Platform.pathSeparator}${UmbrellaCore.cliBinary}',
     ];
     for (final String candidate in candidates) {
       if (File(candidate).existsSync()) {
@@ -173,7 +173,7 @@ class CliSession {
   static String baseDirOf(String dataDir) =>
       '$dataDir${Platform.pathSeparator}core';
 
-  /// آیا کاربر پنجره خط فرمان را خواسته است؟ پیش فرض بله، مثل خود هیدیفای.
+  /// آیا کاربر پنجره خط فرمان را خواسته است؟ پیش فرض بله.
   static bool wanted(AppSettings settings) => settings.showCli;
 
   /// کلید ذخیره سازی انتخاب کاربر.

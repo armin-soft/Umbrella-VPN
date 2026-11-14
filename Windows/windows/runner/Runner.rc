@@ -13,8 +13,8 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 IDI_APP_ICON ICON "resources\\app_icon.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,2,0
- PRODUCTVERSION 1,0,2,0
+ FILEVERSION 1,0,3,0
+ PRODUCTVERSION 1,0,3,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -31,12 +31,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Umbrella"
             VALUE "FileDescription", "Umbrella VPN"
-            VALUE "FileVersion", "1.0.2.0"
+            VALUE "FileVersion", "1.0.3.0"
             VALUE "InternalName", "UmbrellaVPN"
             VALUE "LegalCopyright", "Copyright (C) 2026 Umbrella"
             VALUE "OriginalFilename", "UmbrellaVPN.exe"
             VALUE "ProductName", "Umbrella VPN"
-            VALUE "ProductVersion", "1.0.2.0"
+            VALUE "ProductVersion", "1.0.3.0"
         END
     END
     BLOCK "VarFileInfo"

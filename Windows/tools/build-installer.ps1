@@ -1,6 +1,6 @@
 ﻿#requires -version 5.1
 <#
-    ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-1.0.2-x64.exe).
+    ساخت فایل نصبی ویندوز (UmbrellaVPN-Setup-1.0.3-x64.exe).
 
     پیش نیازها روی ماشین ویندوز:
       - فلوتر و Visual Studio 2022 با بار کاری سی پلاس پلاس
@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $ProjectRoot
 
-$Version = '1.0.2'
+$Version = '1.0.3'
 $ReleaseDir = Join-Path $ProjectRoot 'build\windows\x64\runner\Release'
 
 # هسته های اتصال باید داخل فایل نصبی باشند؛ اینجا فقط روی ماشین سازنده گرفته
@@ -33,16 +33,26 @@ if (-not (Test-Path (Join-Path $coresDir 'bin'))) {
 }
 & (Join-Path $PSScriptRoot 'fetch-cores.ps1')
 
-# تنها هسته ای که همراه نسخه می آید هسته هیدیفای است (همان هسته کلاینت
-# هیدیفای). همه فایل هایش کنار هم در cores\hiddify می مانند.
+# تنها هسته ای که همراه نسخه می آید موتور هسته است. کتابخانه اش و کرونتش با
+# نام واقعی خودشان کنار هم در cores\umbrella می مانند؛ فایل های اجرایی
+# آمبرلا کنار خود برنامه ساخته می شوند.
 $requiredCores = @(
-    'hiddify\UmbrellaCli.exe',
-    'hiddify\UmbrellaCore.dll',
-    'hiddify\libcronet.dll'
+    'umbrella\hiddify-core.dll',
+    'umbrella\libcronet.dll'
 )
 $missingCores = $requiredCores | Where-Object { -not (Test-Path (Join-Path $coresDir $_)) }
 if ($missingCores) {
     throw "هسته های الزامی برای بسته بندی پیدا نشدند: $($missingCores -join ', ') - ابتدا tools\fetch-cores.ps1 را اجرا کنید."
+}
+# لانچرهای هسته همراه برنامه، از همان ساخت CMake می آیند.
+$requiredExes = @(
+    'UmbrellaCli.exe',
+    'UmbrellaAdmin.exe',
+    'UmbrellaCoreEngine.exe'
+)
+$missingExes = $requiredExes | Where-Object { -not (Test-Path (Join-Path $ReleaseDir $_)) }
+if ($missingExes) {
+    throw "لانچرهای هسته ساخته نشدند: $($missingExes -join ', ') - ساخت ویندوز را دوباره اجرا کنید."
 }
 $ReleaseExe = Join-Path $ReleaseDir 'UmbrellaVPN.exe'
 $IssFile = Join-Path $ProjectRoot 'installer\umbrella.iss'

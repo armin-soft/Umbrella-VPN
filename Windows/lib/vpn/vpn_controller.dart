@@ -17,7 +17,7 @@ import 'balancer.dart';
 import 'clash_config.dart';
 import 'cli_session.dart';
 import 'cores.dart';
-import 'hiddify_core.dart';
+import 'umbrella_core.dart';
 import 'core_ping.dart';
 import 'ping.dart';
 import 'tunnel_probe.dart';
@@ -154,7 +154,7 @@ class CoreLaunch {
 
 /// نقشه اجرای هسته برای یک سرور.
 ///
-/// این نسخه یک هسته دارد (هسته هیدیفای)، پس نقشه چیزی جز «همین هسته با این
+/// این نسخه یک هسته دارد (موتور هسته)، پس نقشه چیزی جز «همین هسته با این
 /// فایل لینک و این حالت» نیست. نگه داشتنش به صورت یک کلاس، تلاش دوباره با حالت
 /// دیگر و آزمون پذیری را ساده می کند.
 class LaunchPlan {
@@ -279,7 +279,7 @@ class VpnController extends ChangeNotifier {
 
   /// اگر آخرین ساخت پیکربندی به خاطر نبود فایل هسته شکست خورده باشد.
   bool _lastPlanNeedsCore = false;
-  /// کیل سوییچ مانند نسخه ویندوز هیدیفای وجود ندارد؛ همیشه خاموش است.
+  /// کیل سوییچ در این نسخه وجود ندارد؛ همیشه خاموش است.
   bool get killSwitchOn => false;
 
   /// پینگ زنده سرور متصل، روی همان اتصال باز سنجیده می شود.
@@ -708,7 +708,7 @@ class VpnController extends ChangeNotifier {
         _nodes.where((VpnNode node) => usable(node) && !node.disabled).toList();
     if (usableNodes.isEmpty) {
       _log.add(
-        'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک برای هسته هیدیفای '
+        'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک برای هسته آمبرلا '
         'ورودی معتبر نداشت.',
         level: 'error',
       );
@@ -728,7 +728,7 @@ class VpnController extends ChangeNotifier {
     }
     _log.add(
       'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
-      'حالت «${_settings.corePreference.faName}» با هسته هیدیفای.',
+      'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',
     );
     if (_clashNames.isNotEmpty) {
       _log.add(
@@ -916,13 +916,13 @@ class VpnController extends ChangeNotifier {
       }
       _setStatus(VpnStatus.preparing, 'سرور بعدی امتحان می شود.');
       return const _AttemptResult(
-        message: 'هسته هیدیفای برای این سرور ورودی معتبری نداشت؛ سرور بعدی امتحان می شود.',
+        message: 'هسته آمبرلا برای این سرور ورودی معتبری نداشت؛ سرور بعدی امتحان می شود.',
       );
     }
 
     // یک هسته است، دو حالت: اگر راه اول (تونل کامل یا پروکسی سیستمی) بالا
     // نیامد، همان هسته با حالت دیگر امتحان می شود. این همان کاری است که
-    // برنامه هیدیفای می کند، فقط به جای عوض کردن هسته، حالت را عوض می کند.
+    // همان کاری که کلاینت رسمی هسته می کند، با عوض کردن حالت به جای هسته.
     for (final LaunchPlan plan in plans) {
       if (_cancelRequested) {
         await _stopCores();
@@ -1086,7 +1086,7 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// پروتکل هایی که هسته هیدیفای پشتیبانی می کند.
+  /// پروتکل هایی که هسته پشتیبانی می کند.
   ///
   /// وی لس، وی مس، تروجان، شادوساکس، ساکس، هایستریا ۲، تی یو آی سی، وایرگارد،
   /// آمنزیا و میرو؛ پس هیچ سروری به خاطر «هسته سازگار نیست» کنار گذاشته
@@ -1109,7 +1109,7 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// آیا این سرور با هسته هیدیفای قابل استفاده است؟
+  /// آیا این سرور با این هسته قابل استفاده است؟
   ///
   /// سروری که شناسه یا رمزش خالی است هرگز نباید اجرا شود؛ هسته با
   /// «invalid UUID» بسته می شود. همه چیزهایی که برای یک اتصال سالم لازم است
@@ -1164,7 +1164,7 @@ class VpnController extends ChangeNotifier {
   /// آخرین پیکربندی کاملی که خود پنل داد (کلش، ایکس ری یا سینگ باکس).
   ///
   /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
-  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. هسته هیدیفای خودش این فایل
+  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. خود هسته این فایل
   /// را درست می شناسد، پس نگه داشته می شود تا اگر کاربر خواست همان پروفایل
   /// اجرا شود، آماده باشد.
   String _panelProfile = '';
@@ -1185,16 +1185,16 @@ class VpnController extends ChangeNotifier {
     await LocalStore.instance.writeFile(StoreKeys.panelProfile, yaml);
   }
 
-  /// پوشه هسته هیدیفای: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
+  /// پوشه هسته: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
   /// همان پوشه خود فایل اجرایی است.
-  String _hiddifyDir(String exe) => _dirOf(exe);
+  String _umbrellaDir(String exe) => _dirOf(exe);
 
   /// نقشه اجرا برای یک سرور.
   ///
-  /// تنها هسته ای که وجود دارد هسته هیدیفای است (همان هسته کلاینت هیدیفای).
+  /// تنها هسته ای که وجود دارد موتور هسته است.
   /// یک نقشه برگردانده می شود و اگر راه اول جواب نداد، همان هسته با حالت
   /// دیگر امتحان می شود (تونل کامل و پروکسی سیستمی). این کار عیناً همان چیزی
-  /// است که برنامه هیدیفای می کند.
+  /// است که لانچر رسمی هسته هم همان را می کند.
   ///
   /// ورودی هسته، خود لینک سرور است (`-c links.txt`)؛ هسته خودش پیکربندی
   /// کامل، دی ان اس و مسیرها را می سازد.
@@ -1202,13 +1202,13 @@ class VpnController extends ChangeNotifier {
     if (!usable(node)) {
       return <LaunchPlan>[];
     }
-    final CoreInfo? core = _provisioner.info(hiddifyCoreId);
-    final String binary = core?.binary ?? hiddifyCliBinary;
+    final CoreInfo? core = _provisioner.info(umbrellaCoreId);
+    final String binary = core?.binary ?? umbrellaCliBinary;
     final String? exe = await _provisioner.locateBinary(binary);
     if (exe == null || exe.isEmpty) {
       _lastPlanNeedsCore = true;
       _log.add(
-        'هسته هیدیفای ($binary) در نسخه نصب نیست؛ برنامه را با نصب کننده '
+        'هسته آمبرلا ($binary) در نسخه نصب نیست؛ برنامه را با نصب کننده '
         'رسمی دوباره نصب کنید.',
         level: 'error',
       );
@@ -1218,10 +1218,10 @@ class VpnController extends ChangeNotifier {
       '${_provisioner.dataDir}${Platform.pathSeparator}run',
     );
     await runDir.create(recursive: true);
-    final String link = _hiddifyLink(node);
+    final String link = _umbrellaLink(node);
     if (link.isEmpty) {
       _log.add(
-        '${_nodeLabel(node)} لینک قابل اجرا ندارد؛ هسته هیدیفای برای این '
+        '${_nodeLabel(node)} لینک قابل اجرا ندارد؛ هسته آمبرلا برای این '
         'سرور ورودی نمی شناسد.',
         level: 'info',
       );
@@ -1251,24 +1251,24 @@ class VpnController extends ChangeNotifier {
           cores: <CoreLaunch>[
             CoreLaunch(
               exe: exe,
-              args: _hiddifyArgs(
+              args: _umbrellaArgs(
                 exe: exe,
                 links: links.path,
                 runDir: runDir.path,
                 tun: tun,
               ),
-              workDir: _hiddifyDir(exe),
-              name: tun ? 'hiddifytun' : 'hiddify',
+              workDir: _umbrellaDir(exe),
+              name: tun ? 'umbrella-tun' : 'umbrella',
             ),
           ],
           linksPath: links.path,
           // در حالت پروکسی سیستمی، باز شدن پورت محلی نشانه آمادگی است؛ در
           // حالت تونل، کارت شبکه مجازی نشانه آن است.
-          readinessPort: tun ? 0 : _hiddifyPort,
+          readinessPort: tun ? 0 : _umbrellaPort,
           primaryBinary: binary,
           tunnelHint: tun ? AppConfig.tunAdapterHint : '',
           chained: false,
-          proxyPort: tun ? 0 : _hiddifyPort,
+          proxyPort: tun ? 0 : _umbrellaPort,
           runDir: runDir.path,
           tun: tun,
         ),
@@ -1278,29 +1278,29 @@ class VpnController extends ChangeNotifier {
   }
 
   /// شناسه هسته در فهرست همراه نسخه.
-  static const String hiddifyCoreId = HiddifyCore.id;
+  static const String umbrellaCoreId = UmbrellaCore.id;
 
   /// نام فایل خط فرمان هسته (همان HiddifyCli با نام آمبرلا).
-  static const String hiddifyCliBinary = HiddifyCore.cliBinary;
+  static const String umbrellaCliBinary = UmbrellaCore.cliBinary;
 
   /// پورت محلی هسته. خود هسته ۱۲۳۳۴ را پیش فرض دارد و همین عدد در برنامه هم
   /// ثابت است تا پروکسی سیستمی همیشه همان جا وصل شود.
-  static const int _hiddifyPort = AppConfig.httpPortHiddify;
+  static const int _umbrellaPort = AppConfig.httpPortUmbrella;
 
-  /// آرگومان های هسته هیدیفای.
+  /// آرگومان های هسته.
   ///
   /// `run -c <links>` همان دستوری است که مستندات هسته برای «فقط لینک ها دارم»
   /// می دهد: هسته خودش پیکربندی، دی ان اس و مسیرها را می سازد.
-  static List<String> _hiddifyArgs({
+  static List<String> _umbrellaArgs({
     required String exe,
     required String links,
     required String runDir,
     required bool tun,
   }) {
-    return HiddifyCore.args(
+    return UmbrellaCore.args(
       links: links,
       runDir: runDir,
-      port: _hiddifyPort,
+      port: _umbrellaPort,
       tun: tun,
       systemProxy: !tun,
     );
@@ -1320,10 +1320,10 @@ class VpnController extends ChangeNotifier {
   ///
   /// لینک اصلی همان چیزی است که در اشتراک بود؛ اگر نبود، از فیلدهای سرور
   /// ساخته می شود. هسته خودش جزئیات پروتکل را می فهمد.
-  String _hiddifyLink(VpnNode node) => linkFor(node);
+  String _umbrellaLink(VpnNode node) => linkFor(node);
 
   /// ساختن لینک از فیلدهای سرور برای منابعی که لینک ندارند (کلش، وایرگارد
-  /// و مانند آن). هسته هیدیفای همه این پروتکل ها را می شناسد.
+  /// و مانند آن). هسته همه این پروتکل ها را می شناسد.
   static String _linkFromNode(VpnNode node) {
     final Map<String, dynamic> params = node.params;
     final String host = node.host;
@@ -1388,7 +1388,7 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.clash:
       case NodeProtocol.socks:
         // این پروتکل ها در اشتراک های دیگر با فایل کامل می آیند؛ هسته
-        // هیدیفای همان فایل را می خواند. لینک ساختگی ساخته نمی شود.
+        // خود هسته همان فایل را می خواند. لینک ساختگی ساخته نمی شود.
         return '';
     }
   }
@@ -1415,7 +1415,7 @@ class VpnController extends ChangeNotifier {
 
   /// اجرای هسته.
   ///
-  /// مثل خود هیدیفای، هسته در یک پنجره کنسول جداگانه بالا می آید: فایل
+  /// هسته در یک پنجره کنسول جداگانه بالا می آید: فایل
   /// `UmbrellaCli.exe` (همان `HiddifyCli.exe`) اجرا می شود و کاربر گزارش زنده
   /// را در همان پنجره می بیند. اگر باز کردن پنجره ممکن نشد، هسته بی صدا و
   /// بدون پنجره اجرا می شود تا اتصال از دست نرود.
@@ -1428,16 +1428,16 @@ class VpnController extends ChangeNotifier {
 
     // فایل تنظیمات هسته: همان تنظیماتی که پنجره CLI و خود برنامه هر دو
     // می خوانند. لاگ در همان پوشه جلسه نوشته می شود.
-    // همان فایل تنظیماتی که هسته هیدیفای می شناسد (`-d`)، با همان نامی که
+    // همان فایل تنظیماتی که هسته می شناسد (`-d`)، با همان نامی که
     // خودش استفاده می کند.
     final String settingsPath =
         '${plan.runDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
     await File(settingsPath).writeAsString(
       jsonEncode(
-        HiddifyCore.settingsJson(
+        UmbrellaCore.settingsJson(
           tun: plan.tun,
           systemProxy: plan.usesSystemProxy,
-          port: plan.proxyPort > 0 ? plan.proxyPort : _hiddifyPort,
+          port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
           logFile: coreLog,
         ),
       ),
@@ -1454,7 +1454,7 @@ class VpnController extends ChangeNotifier {
 
     try {
       if (CliSession.wanted(_settings) && Platform.isWindows) {
-        // همان الگوی هیدیفای: اجرا در یک پنجره کنسول جدا. `start` پنجره را
+        // اجرا در یک پنجره کنسول جدا. `start` پنجره را
         // می سازد و خودش فورا برمی گردد؛ خود هسته فرایند فرزند است.
         final String sessionPath = await CliSession.writeSession(
           CliSessionFile(
@@ -1649,7 +1649,7 @@ class VpnController extends ChangeNotifier {
     _log.add('پروکسی سیستمی برداشته شد.');
   }
 
-  /// هسته هیدیفای اول پیکربندی را می سازد، بعد کارت شبکه را بالا می آورد و
+  /// هسته اول پیکربندی را می سازد، بعد کارت شبکه را بالا می آورد و
   /// تست سرعت سرورها را شروع می کند؛ ۲۵ ثانیه برای همین کافی است.
   static const Duration _tunnelTimeout = Duration(seconds: 25);
 
@@ -2073,8 +2073,8 @@ class VpnController extends ChangeNotifier {
   /// برمی گرداند؛ ویندوز معادل آن، بستن پنجره یا کشتن همان فرایند است.
   Future<void> _stopCliCore() async {
     for (final String binary in <String>[
-      hiddifyCliBinary,
-      HiddifyCore.engineBinary,
+      umbrellaCliBinary,
+      UmbrellaCore.engineBinary,
     ]) {
       await _native.killByName(binary);
     }

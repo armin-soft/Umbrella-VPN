@@ -3,14 +3,14 @@ import 'dart:io';
 
 import '../models/models.dart';
 import 'cores.dart';
-import 'hiddify_core.dart';
+import 'umbrella_core.dart';
 import 'vpn_controller.dart';
 import 'tunnel_probe.dart';
 
-/// سنجش تاخیر واقعی هر سرور با هسته هیدیفای.
+/// سنجش تاخیر واقعی هر سرور با موتور هسته.
 ///
-/// برای هر سرور یک نمونه کوتاه از همان هسته ای که کلاینت هیدیفای استفاده می
-/// کند اجرا می شود: هسته از یک لینک، پروکسی محلی می سازد و همان درخواست
+/// برای هر سرور یک نمونه کوتاه از همان هسته اجرا می شود: هسته از یک لینک،
+/// پروکسی محلی می سازد و همان درخواست
 /// کوچک از داخلش رد می شود. عددی که به دست می آید تاخیر واقعی همان پروتکل
 /// است و چون خود هسته پیکربندی را می سازد، برای xhttp و همه انتقال های دیگر
 /// هم درست کار می کند.
@@ -25,7 +25,7 @@ class CorePinger {
   /// بیشتر از این تعداد سرور در یک دور سنجیده نمی شود تا زمان معقول بماند.
   static const int _maxNodes = 24;
 
-  /// هسته هیدیفای همه این پروتکل ها را برای تست تاخیر می شناسد.
+  /// هسته همه این پروتکل ها را برای تست تاخیر می شناسد.
   static bool supports(VpnNode node) => node.protocol != NodeProtocol.clash;
 
   /// تاخیر هر سرور بر حسب میلی ثانیه. سرورهایی که جواب ندهند در نقشه نیستند.
@@ -37,7 +37,7 @@ class CorePinger {
   }) async {
     final Map<String, int> delays = <String, int>{};
     final String? exe =
-        await _provisioner.locateBinary(VpnController.hiddifyCliBinary);
+        await _provisioner.locateBinary(VpnController.umbrellaCliBinary);
     if (exe == null || exe.isEmpty) {
       return delays;
     }
@@ -128,11 +128,11 @@ class CorePinger {
     Process? process;
     IOSink? sink;
     try {
-      // هسته هیدیفای خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
+      // هسته خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
       await config.writeAsString('$link\n', flush: true);
       process = await Process.start(
         exe,
-        HiddifyCore.args(
+        UmbrellaCore.args(
           links: config.path,
           runDir: runDir.path,
           port: port,

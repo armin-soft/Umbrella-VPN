@@ -790,7 +790,7 @@ class GeoInfo {
 
 /// حالت اتصال که کاربر انتخاب می کند.
 ///
-/// هسته یکی است (هسته هیدیفای)؛ انتخاب کاربر فقط تعیین می کند ترافیک چطور از
+/// هسته یکی است (موتور هسته)؛ انتخاب کاربر فقط تعیین می کند ترافیک چطور از
 /// هسته رد شود. حالت «خودکار» اول تونل کامل را امتحان می کند و اگر نشد پروکسی
 /// سیستمی.
 enum CorePreference { auto, tun, systemProxy }
@@ -970,7 +970,7 @@ class AppSettings {
   final bool autoConnect;
   final bool killSwitch;
 
-  /// تونل کامل با کارت شبکه مجازی (حالت هیدیفای) به جای پروکسی سیستمی.
+  /// تونل کامل با کارت شبکه مجازی به جای پروکسی سیستمی.
   final bool tunMode;
   final bool startWithWindows;
   final bool minimizeToTray;
@@ -1001,10 +1001,10 @@ class AppSettings {
   final String logLevel;
 
   /// کاربر خودش حالت اتصال (تونل یا پروکسی) را انتخاب کرده است؟ تا وقتی
-  /// انتخاب نکرده، پیش فرض برنامه (تونل کامل مثل هیدیفای) اعمال می شود.
+  /// انتخاب نکرده، پیش فرض برنامه (تونل کامل) اعمال می شود.
   final bool modeChoiceExplicit;
 
-  /// پنجره Umbrella CLI هنگام اتصال باز شود (مثل hiddify-cli).
+  /// پنجره Umbrella CLI هنگام اتصال باز شود.
   final bool showCli;
 
   AppSettings copyWith({

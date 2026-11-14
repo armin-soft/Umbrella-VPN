@@ -15,7 +15,7 @@ import 'state/subscription_controller.dart';
 import 'state/toast_controller.dart';
 import 'state/update_controller.dart';
 import 'vpn/cores.dart';
-import 'vpn/hiddify_core.dart';
+import 'vpn/umbrella_core.dart';
 import 'vpn/vpn_controller.dart';
 
 /// نقطه شروع برنامه: آماده سازی انبار داده، پنجره، سرویس ها و کنترلرها.
@@ -71,25 +71,25 @@ Future<void> main(List<String> arguments) async {
       '${elevatedNow ? 'بله' : 'خیر'}',
     );
   }
-  // تنها هسته نسخه: هسته هیدیفای که با نام UmbrellaCli.exe نصب می شود و
-  // کتابخانه ها و کرونتش باید کنارش باشند.
+  // تنها هسته نسخه: موتور هسته که UmbrellaCli.exe (لانچر خود ما) آن را بار
+  // می کند؛ کتابخانه هسته و کرونتش باید در پوشه هسته باشند.
   final String? corePath =
-      await provisioner.locateBinary(HiddifyCore.cliBinary);
+      await provisioner.locateBinary(UmbrellaCore.cliBinary);
   if (corePath == null) {
     AppLogger.instance.add(
-      'هسته ${HiddifyCore.cliBinary} در پوشه نصب پیدا نشد '
+      'هسته ${UmbrellaCore.cliBinary} در پوشه نصب پیدا نشد '
       '(${provisioner.bundledDir}); برنامه بدون هسته کار نمی کند.',
       level: 'error',
     );
-  } else if (!HiddifyCore.installed(provisioner.bundledDir)) {
+  } else if (!UmbrellaCore.installed(provisioner.bundledDir)) {
     AppLogger.instance.add(
-      'هسته پیدا شد ولی فایل های همراه آن (${HiddifyCore.coreDll} و '
-      '${HiddifyCore.cronetDll}) کامل نیستند؛ برنامه را با نصب کننده رسمی '
-      'دوباره نصب کنید.',
+      'هسته پیدا شد ولی فایل های همراه آن کامل نیستند؛ کتابخانه هسته یا '
+      'کرونت در پوشه هسته نیست، یا ${UmbrellaCore.cliBinary} کنار برنامه نیست. '
+      'برنامه را با نصب کننده رسمی دوباره نصب کنید.',
       level: 'error',
     );
   } else {
-    AppLogger.instance.add('هسته هیدیفای آماده است: $corePath');
+    AppLogger.instance.add('هسته آمبرلا آماده است: $corePath');
   }
   final ToastController toasts = ToastController();
 

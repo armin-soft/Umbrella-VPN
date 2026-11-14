@@ -2,10 +2,10 @@ import 'dart:io';
 
 import '../core/app_config.dart';
 
-/// تنها هسته اتصال برنامه: هسته هیدیفای.
+/// تنها هسته اتصال برنامه: موتور هسته (کتابخانه هسته به همراه لانچرهای آمبرلا).
 ///
-/// مستندات هسته ([hiddify.com/core](https://hiddify.com/core/)) می گوید هسته
-/// فقط به «پروکسی ها» نیاز دارد و بقیه پیکربندی را خودش می سازد:
+/// مستندات هسته می گوید هسته فقط به «پروکسی ها» نیاز دارد و بقیه پیکربندی را
+/// خودش می سازد:
 ///
 /// * `run -c <links.txt>` برای فایل لینک ها، لینک اشتراک، پیکربندی کلش یا
 ///   ایکس ری و فایل وایرگارد؛ هسته پورت محلی، دی ان اس، مسیرها و انتخاب
@@ -16,17 +16,20 @@ import '../core/app_config.dart';
 ///
 /// همین یک هسته همه پروتکل های اشتراک این پنل را پوشش می دهد (از جمله xhttp
 /// و Reality) و به هسته های دستی (سینگ باکس، ایکس ری، کلش متا، میرو) نیازی
-/// نیست. فایل اجرایی همان `HiddifyCli.exe` است که با نام `UmbrellaCli.exe`
-/// همراه نسخه نصب می شود.
-class HiddifyCore {
-  const HiddifyCore._();
+/// نیست. فایل اجرایی، لانچر خود ما است (`native/umbrella_launcher.c`) که
+/// کتابخانه هسته را از مسیرش بار می کند.
+class UmbrellaCore {
+  const UmbrellaCore._();
 
-  /// نام فایل اجرایی خط فرمان (همان HiddifyCli با نام آمبرلا).
+  /// نام فایل اجرایی خط فرمان (لانچر کنسولی آمبرلا).
   static const String cliBinary = 'UmbrellaCli.exe';
 
-  /// نام فایل اجرایی موتور (همان HiddifyCoreEngine با نام آمبرلا). این فایل
-  /// زیرسیستم گرافیکی دارد، پس هیچ پنجره کنسولی باز نمی کند.
+  /// نام فایل اجرایی موتور. این فایل زیرسیستم گرافیکی دارد، پس هیچ پنجره
+  /// کنسولی باز نمی کند.
   static const String engineBinary = 'UmbrellaCoreEngine.exe';
+
+  /// نام فایل اجرایی مدیر (زیرسیستم گرافیکی با مانیفست requireAdministrator).
+  static const String adminBinary = 'UmbrellaAdmin.exe';
 
   /// شناسه هسته در فهرست همراه نسخه.
   static const String id = 'hiddify';
@@ -34,11 +37,17 @@ class HiddifyCore {
   /// کتابخانه کرونت که هسته کنار خودش می خواهد.
   static const String cronetDll = 'libcronet.dll';
 
-  /// کتابخانه خود هسته (همان hiddify-core.dll با نام آمبرلا).
-  static const String coreDll = 'UmbrellaCore.dll';
+  /// کتابخانه خود هسته (همان hiddify-core.dll با نام اصلی خودش).
+  ///
+  /// چرا نامش عوض نمی شود؟ چون نام کتابخانه داخل خودش و داخل وابستگی هایش
+  /// ثبت است؛ در ۱٫۰٫۲ با عوض شدن نام، ویندوز فایل اجرایی را با کد
+  /// 0xC0000135 (کتابخانه پیدا نشد) می بست. این فایل هیچ وقت مستقیم اجرا
+  /// نمی شود و در هیچ پنجره، مسیر یا گزارشی به کاربر نشان داده نمی شود؛
+  /// برنامه آن را با همین نام از پوشه خودش بار می کند.
+  static const String coreDll = 'hiddify-core.dll';
 
   /// پورت پروکسی مختلط محلی.
-  static const int port = AppConfig.httpPortHiddify;
+  static const int port = AppConfig.httpPortUmbrella;
 
   /// آرگومان های اجرای هسته.
   ///
@@ -62,7 +71,7 @@ class HiddifyCore {
       runDir,
       if (settingsPath.isNotEmpty) ...<String>['-d', settingsPath],
       '--in-proxy-port',
-      '${port ?? HiddifyCore.port}',
+      '${port ?? UmbrellaCore.port}',
       if (tun) '--tun',
       if (systemProxy && !tun) '--system-proxy',
       '--log-level',
@@ -74,7 +83,7 @@ class HiddifyCore {
   /// فایل تنظیمات هسته (`-d`).
   ///
   /// کلیدها همان کلیدهای `HiddifyOptions` در خود هسته اند
-  /// (`v2/config/hiddify_option.go`) و با خط تیره نوشته می شوند، مثل
+  /// (`v2/config/hiddify_option.go` در خود هسته) و با خط تیره نوشته می شوند، مثل
   /// `log-level`، `enable-tun`، `set-system-proxy` و `mixed-port`.
   static Map<String, dynamic> settingsJson({
     required bool tun,
@@ -102,28 +111,52 @@ class HiddifyCore {
   /// پوشه هسته در نسخه نصب: همه فایل های هسته باید کنار هم بمانند.
   ///
   /// [appDir] یا پوشه خود برنامه است یا پوشه `cores`؛ هر دو پذیرفته می شود تا
-  /// فراخوان ها لازم نباشد بدانند کدام یکی را دارند.
+  /// فراخوان ها لازم نباشد بدانند کدام یکی را دارند. نام پوشه `umbrella` است
+  /// تا حتی مسیرهای خطا هم نامی جز آمبرلا نداشته باشند.
   static String directoryOf(String appDir) {
     final String clean = appDir.endsWith(Platform.pathSeparator)
         ? appDir.substring(0, appDir.length - 1)
         : appDir;
     if (clean.endsWith('${Platform.pathSeparator}cores')) {
-      return '$clean${Platform.pathSeparator}hiddify';
+      return '$clean${Platform.pathSeparator}umbrella';
     }
     return '$clean${Platform.pathSeparator}cores'
-        '${Platform.pathSeparator}hiddify';
+        '${Platform.pathSeparator}umbrella';
+  }
+
+  /// پوشه خود برنامه (جایی که فایل های اجرایی هستند).
+  static String rootOf(String appDir) {
+    final String clean = appDir.endsWith(Platform.pathSeparator)
+        ? appDir.substring(0, appDir.length - 1)
+        : appDir;
+    if (clean.endsWith('${Platform.pathSeparator}cores') ||
+        clean.endsWith('${Platform.pathSeparator}umbrella')) {
+      return clean.substring(0, clean.lastIndexOf(Platform.pathSeparator));
+    }
+    return clean;
   }
 
   /// آیا فایل های هسته در نسخه نصب هستند؟
   ///
-  /// هر سه فایل لازم است: خط فرمان، کتابخانه هسته و کرونت. اگر یکی نباشد،
-  /// ویندوز برنامه را با «کتابخانه پیدا نشد» می بندد و کاربر پیام روشنی
-  /// نمی بیند.
+  /// دو جا بررسی می شود، چون دو بخش دارد:
+  ///
+  /// * فایل های اجرایی (لانچرهای آمبرلا) کنار خود برنامه هستند.
+  /// * کتابخانه هسته و کرونتش در پوشه `cores\umbrella`.
+  ///
+  /// اگر یکی نباشد، اتصال با «کتابخانه پیدا نشد» شکست می خورد و کاربر پیام
+  /// روشنی نمی بیند؛ برای همین پیش از هر تلاشی بررسی می شود.
   static bool installed(String appDir) {
-    final String dir = directoryOf(appDir);
-    for (final String name in <String>[cliBinary, coreDll, cronetDll]) {
-      final String path = '$dir${Platform.pathSeparator}$name';
-      if (!File(path).existsSync()) {
+    final String root = rootOf(appDir);
+    final String dir = directoryOf(root);
+    bool has(String base, String name) =>
+        File('$base${Platform.pathSeparator}$name').existsSync();
+    for (final String name in <String>[cliBinary, engineBinary, adminBinary]) {
+      if (!has(root, name) && !has(dir, name)) {
+        return false;
+      }
+    }
+    for (final String name in <String>[coreDll, cronetDll]) {
+      if (!has(dir, name) && !has(root, name)) {
         return false;
       }
     }
@@ -132,8 +165,8 @@ class HiddifyCore {
 }
 
 /// تنظیمات هسته که در فایل جلسه CLI هم استفاده می شود.
-class HiddifySession {
-  const HiddifySession._();
+class UmbrellaSession {
+  const UmbrellaSession._();
 
   /// فایل `links.txt` را می نویسد و مسیرش را برمی گرداند.
   static Future<String> writeLinks({

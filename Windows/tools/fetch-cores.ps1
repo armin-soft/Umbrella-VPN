@@ -2,18 +2,19 @@
 <#
     گرفتن هسته اتصال (هسته هیدیفای) برای بسته بندی همراه فایل نصبی.
 
-    این اسکریپت فقط روی ماشین سازنده اجرا می شود، نه روی رایانه کاربر. هسته در
-    پوشه cores\hiddify کنار پروژه ذخیره می شود (فایل ها باید کنار هم بمانند) و
-    نصب کننده آن ها را در {app}\cores\hiddify و دو فایل لازم را کنار خود برنامه
-    می ریزد. خود برنامه هیچ چیزی دانلود نمی کند.
+    این اسکریپت فقط روی ماشین سازنده اجرا می شود، نه روی رایانه کاربر. کتابخانه
+    موتور و کرونتش در پوشه cores\umbrella کنار پروژه ذخیره می شوند و نصب کننده
+    همان ها را در {app}\cores\umbrella می ریزد. خود برنامه هیچ چیزی دانلود نمی کند.
 
-    نام فایل های هیدیفای هنگام گرفتن به نام های آمبرلا عوض می شود و فقط نام
-    عوض می شود، نه محتوا.
+    از بسته رسمی موتور فقط hiddify-core.dll و libcronet.dll برداشته می شود؛
+    نامشان عوض نمی شود (نام کتابخانه داخل خودش ثبت است). فایل های اجرایی
+    هیدیفای کنار گذاشته می شوند و جایش، لانچرهای آمبرلا در ساخت برنامه ساخته
+    می شوند (نگاه کنید به native/umbrella_launcher.c).
 
     مثال ها:
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1
       powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Force
-      powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Only hiddify
+      powershell -ExecutionPolicy Bypass -File tools\fetch-cores.ps1 -Only hiddify  # شناسه هسته در فهرست
 #>
 param(
     [switch]$Force,
@@ -28,7 +29,7 @@ $ManifestPath = Join-Path $ProjectRoot 'assets\cores\manifest.json'
 # هسته هیدیفای چند فایل دارد و کتابخانه اش باید کنار فایل اجرایی اش بماند، پس
 # در پوشه خودش می رود. نام پوشه را نصب کننده و بررسی CI هم انتظار دارند.
 $CoresRoot = Join-Path $ProjectRoot 'cores'
-$HiddifyDir = Join-Path $CoresRoot 'hiddify'
+$HiddifyDir = Join-Path $CoresRoot 'umbrella'
 $DestDir = Join-Path $CoresRoot 'bin'
 New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
@@ -50,7 +51,7 @@ try {
         # هسته هیدیفای چند فایل دارد و باید کنار هم بماند؛ برای همین در
         # پوشه خودش می رود و باینری اصلی از همان جا خوانده می شود.
         $target = if ($core.cli_prefix) {
-            Join-Path $HiddifyDir $core.binary
+            Join-Path $HiddifyDir $core.inside
         } else {
             Join-Path $DestDir $core.binary
         }
@@ -128,32 +129,33 @@ try {
                     & tar.exe -xzf $archivePath -C $extractDir
                     if ($LASTEXITCODE -ne 0) { throw 'باز کردن بسته tar.gz ناموفق بود' }
 
-                    # نام های هیدیفای با نام های برنامه عوض می شوند و فقط نام
-                    # عوض می شود؛ خود فایل ها دست نمی خورند.
-                    if ($core.cli_prefix) {
-                        $renames = @(
-                            @{ from = 'HiddifyCli.exe'; to = 'UmbrellaCli.exe' },
-                            @{ from = 'hiddify-core.dll'; to = 'UmbrellaCore.dll' },
-                            @{ from = 'HiddifyCoreEngine.exe'; to = 'UmbrellaCoreEngine.exe' },
-                            @{ from = 'HiddifyAdmin.exe'; to = 'UmbrellaAdmin.exe' }
-                        )
-                        foreach ($item in $renames) {
-                            Get-ChildItem -Path $extractDir -Recurse -Filter $item.from -ErrorAction SilentlyContinue |
-                                ForEach-Object { Rename-Item -Path $_.FullName -NewName $item.to -Force }
+                    # فقط این فایل ها از بسته می مانند:
+                    #
+                    #   hiddify-core.dll  — خود موتور. نامش عوض نمی شود چون
+                    #                       نام کتابخانه هم داخل خودش و هم در
+                    #                       وابستگی هایش ثبت است؛ برنامه آن را
+                    #                       با همین نام در همین پوشه بار می کند.
+                    #   libcronet.dll     — وابسته موتور.
+                    #
+                    # فایل های اجرایی هیدیفای (HiddifyCli/Admin/CoreEngine)
+                    # کنار گذاشته می شوند: آن ها با پیوند نام، کتابخانه را
+                    # صدا می زنند و همین کار باعث خطای 0xC0000135 در ۱٫۰٫۲
+                    # شد. لانچرهای آمبرلا به جایش با نام و آیکون خودمان و با
+                    # بار کردن مسیر کتابخانه ساخته می شوند.
+                    $required = @('hiddify-core.dll', 'libcronet.dll')
+                    foreach ($name in $required) {
+                        $file = Get-ChildItem -Path $extractDir -Recurse -Filter $name -ErrorAction SilentlyContinue |
+                            Select-Object -First 1
+                        if ($null -eq $file) { throw "فایل $name در بسته هسته پیدا نشد" }
+                        $destination = Join-Path $HiddifyDir $name
+                        if ([System.IO.Path]::GetFullPath($file.FullName) -ne
+                            [System.IO.Path]::GetFullPath($destination)) {
+                            Copy-Item $file.FullName $destination -Force
                         }
+                        Write-Host "  هسته: $name" -ForegroundColor DarkGray
                     }
-
-                    # همه فایل های هسته (اجرایی و کتابخانه اش) کنار هم در
-                    # cores\hiddify می مانند؛ جدایی شان هسته را می شکند.
-                    $coreDir = $HiddifyDir
-                    New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
-                    Copy-Item (Join-Path $extractDir '*') $coreDir -Recurse -Force
-
-                    $leaf = Split-Path $core.inside -Leaf
-                    $match = Get-ChildItem -Path $coreDir -Recurse -Filter $leaf -ErrorAction SilentlyContinue |
-                        Select-Object -First 1
-                    if ($null -eq $match) { throw "فایل $leaf در بسته پیدا نشد" }
-                    $insidePath = $match.FullName
+                    $insidePath = Join-Path $HiddifyDir $core.inside
+                    if (-not (Test-Path $insidePath)) { throw "فایل $($core.inside) در بسته پیدا نشد" }
                 }
                 default {
                     $insidePath = $archivePath
@@ -168,13 +170,13 @@ try {
                     throw "هش فایل با فهرست نمی خواند ($actual)"
                 }
             }
-            # در بسته tar.gz فایل ها از قبل در جای خودشان (cores\hiddify)
+            # در بسته tar.gz فایل ها از قبل در جای خودشان (cores\umbrella)
             # هستند؛ کپی فایل روی خودش خطا می دهد و لازم نیست.
             if ([System.IO.Path]::GetFullPath($insidePath) -ne
                 [System.IO.Path]::GetFullPath($target)) {
                 Copy-Item $insidePath $target -Force
             }
-            Write-Host "  آماده شد: $($core.binary)" -ForegroundColor Green
+            Write-Host "  آماده شد: $($core.inside)" -ForegroundColor Green
             $fetched += $core.id
         } catch {
             Write-Host "  پردازش ناموفق: $($core.id) - $($_.Exception.Message)" -ForegroundColor Yellow
@@ -197,5 +199,5 @@ if ($failedRequired) {
     Write-Host ("هسته های الزامی گرفته نشد: " + ($failedRequired -join ', ')) -ForegroundColor Red
     exit 1
 }
-Write-Host 'هسته هیدیفای در پوشه cores\hiddify آماده است.' -ForegroundColor Green
+Write-Host 'موتور هسته در پوشه cores\umbrella آماده است؛ فایل های اجرایی آمبرلا در ساخت برنامه ساخته می شوند.' -ForegroundColor Green
 exit 0

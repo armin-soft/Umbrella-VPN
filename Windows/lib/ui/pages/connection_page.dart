@@ -139,7 +139,7 @@ class ConnectionPage extends StatelessWidget {
                           InfoRow(
                             icon: Icons.memory_rounded,
                             label: 'هسته اتصال',
-                            value: Fa.num('هسته هیدیفای'),
+                            value: Fa.num('هسته آمبرلا'),
                           ),
                           const Divider(height: 14),
                           InfoRow(

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/vpn/clash_config.dart';
-import 'package:umbrella_vpn/vpn/hiddify_core.dart';
+import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 
 /// آزمون پیکربندی خود پنل و نام گره هایش.
 ///
@@ -79,17 +79,17 @@ rules:
     test('تنظیمات هسته دقیقا همان کلیدهای هیدیفای را دارد', () {
       // کلیدها از `v2/config/hiddify_option.go` خود هسته گرفته شده اند و با
       // خط تیره نوشته می شوند؛ کلید با زیرخط را هسته نادیده می گیرد.
-      final Map<String, dynamic> settings = HiddifyCore.settingsJson(
+      final Map<String, dynamic> settings = UmbrellaCore.settingsJson(
         tun: true,
         systemProxy: false,
-        port: HiddifyCore.port,
+        port: UmbrellaCore.port,
       );
       expect(settings.containsKey('enable-tun'), isTrue);
       expect(settings.containsKey('set-system-proxy'), isTrue);
       expect(settings['enable-tun'], isTrue);
       // در حالت تونل، پروکسی سیستمی روشن نمی شود.
       expect(settings['set-system-proxy'], isFalse);
-      expect(settings['mixed-port'], HiddifyCore.port);
+      expect(settings['mixed-port'], UmbrellaCore.port);
       // هیچ کلیدی با زیرخط نیست؛ فقط مقادیر (مثل نشانی تست سرعت) می توانند
       // زیرخط داشته باشند.
       for (final String key in settings.keys) {
@@ -99,7 +99,7 @@ rules:
     });
 
     test('آرگومان ها همان آرگومان های مستند هسته اند', () {
-      final List<String> args = HiddifyCore.args(
+      final List<String> args = UmbrellaCore.args(
         links: r'C:\Users\a\links.txt',
         runDir: r'C:\Users\a\run',
         tun: true,

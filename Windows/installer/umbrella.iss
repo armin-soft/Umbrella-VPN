@@ -1,5 +1,5 @@
 ﻿; ---------------------------------------------------------------------------
-; Umbrella VPN 1.0.2
+; Umbrella VPN 1.0.3
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
@@ -10,7 +10,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.2"
+#define AppVersion "1.0.3"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
@@ -65,23 +65,23 @@ Name: "autostart"; Description: "Start {#AppNameEn} when Windows starts (minimis
 [Files]
 ; Flutter release bundle: exe, flutter_windows.dll, plugin dll, data folder.
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; The core ships inside the installer: tools\fetch-cores.ps1 puts the Hiddify
-; core bundle in cores\hiddify next to the build output, so the rule above
-; carries it into {app}\cores\hiddify, where the app runs it from. The core
-; library stays in that folder on purpose: it must sit next to its own exe, and
-; copying 109 MB twice would only make the installer bigger.
-; ── هسته هیدیفای: تنها هسته همراه نسخه ───────────────────────────────────
-; همه فایل های هسته در cores\hiddify می مانند و همان جا اجرا می شوند:
+; The core ships inside the installer: tools\fetch-cores.ps1 puts the engine
+; library and its dependency in cores\umbrella next to the build output, so the
+; rule above carries them into {app}\cores\umbrella, where the launchers load
+; them from. They stay in that folder on purpose: copying 109 MB twice would
+; only make the installer bigger.
+; ── فایل های اجرایی هسته، همین جا ساخته می شوند ──────────────────────────
+; UmbrellaCli.exe، UmbrellaAdmin.exe و UmbrellaCoreEngine.exe لانچرهای خود ما
+; هستند (native/umbrella_launcher.c) و همراه خروجی ساخت می آیند؛ قانون بالا
+; آن ها را در {app} می ریزد. هسته در cores\umbrella می ماند:
 ;
-;   UmbrellaCli.exe          — مثل HiddifyCli؛ خط فرمان و همان پنجره ترمینال
-;   UmbrellaCore.dll         — مثل hiddify-core.dll؛ خود موتور (۱۰۹ مگابایت)
-;   libcronet.dll            — کتابخانه وابسته هسته
-;   UmbrellaCoreEngine.exe   — مثل HiddifyCoreEngine؛ همان هسته با زیرسیستم
-;                              گرافیکی، پس هیچ پنجره کنسولی باز نمی شود
+;   hiddify-core.dll          — خود موتور (۱۰۹ مگابایت). نامش عوض نمی شود چون
+;                               نام کتابخانه داخل خودش ثبت است؛ با عوض شدن نام،
+;                               ویندوز فایل اجرایی را با 0xC0000135 می بندد.
+;                               این فایل هیچ وقت مستقیم اجرا یا نشان داده نمی شود.
+;   libcronet.dll             — کتابخانه وابسته هسته
 ;
-; کپی دوباره این فایل ها کنار برنامه فقط حجم فایل نصبی را دو برابر می کرد،
-; پس نصب کننده همین پوشه را با قانون بالا می آورد و برنامه هسته را از همان جا
-; اجرا می کند. فقط نام ها عوض شده اند؛ خود فایل ها دست نمی خورند.
+; کپی دوباره این فایل ها در {app} فقط حجم فایل نصبی را دو برابر می کرد.
 
 ; Optional Visual C++ runtime, put VC_redist.x64.exe in installer\redist to ship it.
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
@@ -138,6 +138,13 @@ begin
   if CurUninstallStep = usUninstall then
     KillRunning();
 end;
+
+[InstallDelete]
+; نسخه های قبلی پوشه هسته را با نام دیگری داشتند و کتابخانه را هم با نام عوض
+; شده می ریختند؛ فایل اجرایی کهنه بدون کتابخانه با خطای 0xC0000135 باز نمی شد.
+; حالا همه پاک می شوند تا فقط نسخه درست بماند.
+Type: filesandordirs; Name: "{app}\cores\hiddify"
+Type: filesandordirs; Name: "{app}\cores\umbrella"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\cores"

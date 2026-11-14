@@ -1,6 +1,6 @@
 name: umbrella_native
 description: "پل بومی ویندوز برای فیلترشکن آمبرلا (تونل، کیل سوییچ، سینی سیستم)"
-version: 1.0.2
+version: 1.0.3
 publish_to: "none"
 
 environment:

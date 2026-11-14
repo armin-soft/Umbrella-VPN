@@ -107,12 +107,11 @@ jobs:
           }
           Write-Host 'native plugin dll verified' -ForegroundColor Green
 
-      # تنها هسته نسخه هسته هیدیفای است و نام فایل هایش با نام آمبرلا عوض شده
-      # است. اگر نام ها جابه جا شوند، اتصال در سکوت شکست می خورد.
-      # تنها هسته نسخه هسته هیدیفای است و نام فایل هایش با نام آمبرلا عوض شده
-      # است. خروجی این بررسی در core-log.txt می رود تا اگر ساخت شکست خورد، از
-      # کامنت کامیت هم دیده شود.
-      - name: Verify the Hiddify core bundle
+      # هسته نسخه دو بخش دارد: کتابخانه خود هسته در cores\umbrella و سه لانچر
+      # آمبرلا کنار خود برنامه. اگر هرکدام نباشد، اتصال در سکوت شکست می خورد
+      # (۱٫۰٫۲ با کد 0xC0000135 همین جا شکست). خروجی این بررسی در core-log.txt
+      # می رود تا اگر ساخت شکست خورد، از کامنت کامیت هم دیده شود.
+      - name: Verify the core bundle
         shell: pwsh
         working-directory: Windows
         run: |
@@ -124,36 +123,75 @@ jobs:
           }
           $failed = $false
           try {
-            $dir = 'cores\hiddify'
+            $dir = 'cores\umbrella'
             if (-not (Test-Path $dir)) { throw "core folder missing: $dir" }
             Say "core folder: $dir"
             foreach ($item in Get-ChildItem $dir -Recurse -File) {
               Say ("  {0}  {1:N0} bytes" -f $item.Name, $item.Length)
             }
-            foreach ($name in @('UmbrellaCli.exe', 'UmbrellaCore.dll', 'libcronet.dll')) {
+            # کتابخانه هسته و کرونت، با نام واقعی خودشان (نامشان ثبت شده است).
+            foreach ($name in @('hiddify-core.dll', 'libcronet.dll')) {
               $path = Join-Path $dir $name
               if (-not (Test-Path $path)) { throw "core file missing: $path" }
               Say ("ok: {0} is {1:N0} bytes" -f $name, (Get-Item $path).Length)
             }
-            # موتور گرافیکی هم اگر در بسته بود، نامش عوض شده است. نبودنش مانع
-            # ساخت نیست، چون اتصال با UmbrellaCli.exe انجام می شود.
-            $engine = Join-Path $dir 'UmbrellaCoreEngine.exe'
-            if (Test-Path $engine) {
-              Say 'ok: engine executable is present'
-            } else {
-              Say 'note: engine executable is not in the bundle (not required)'
+            # در پوشه هسته فقط کتابخانه می ماند. فایل های اجرایی باید کنار خود
+            # برنامه باشند؛ اگر در پوشه هسته بمانند، اجرای قدیمی (که کتابخانه را
+            # با پیوند نام صدا می زد) کاربر را با 0xC0000135 می بست.
+            foreach ($gone in @('UmbrellaCli.exe', 'UmbrellaAdmin.exe', 'UmbrellaCoreEngine.exe')) {
+              if (Test-Path (Join-Path $dir $gone)) { throw "launcher left inside the core folder: $gone" }
             }
-            # CLI باید برنامه کنسول باشد، وگرنه پنجره اتصال باز نمی شود.
-            $bytes = [System.IO.File]::ReadAllBytes((Join-Path $dir 'UmbrellaCli.exe'))
-            $offset = [BitConverter]::ToInt32($bytes, 0x3C)
-            $subsystem = [BitConverter]::ToUInt16($bytes, $offset + 0x5C)
-            Say ("UmbrellaCli.exe subsystem: {0} (3 = console)" -f $subsystem)
-            if ($subsystem -ne 3) { throw 'UmbrellaCli.exe is not a console program' }
+            Say 'ok: the core folder holds only the library and its dependency'
+
+            $release = 'build\windows\x64\runner\Release'
+            $specs = @(
+              @{ name = 'UmbrellaCli.exe'; subsystem = 3 },
+              @{ name = 'UmbrellaAdmin.exe'; subsystem = 2 },
+              @{ name = 'UmbrellaCoreEngine.exe'; subsystem = 2 }
+            )
+            foreach ($spec in $specs) {
+              $path = Join-Path $release $spec.name
+              if (-not (Test-Path $path)) { throw "launcher missing: $path" }
+              $bytes = [System.IO.File]::ReadAllBytes($path)
+              $offset = [BitConverter]::ToInt32($bytes, 0x3C)
+              $subsystem = [BitConverter]::ToUInt16($bytes, $offset + 0x5C)
+              Say ("{0}: {1:N0} bytes, subsystem {2} (want {3})" -f $spec.name, $bytes.Length, $subsystem, $spec.subsystem)
+              if ($subsystem -ne $spec.subsystem) { throw "$($spec.name) has subsystem $subsystem" }
+            }
+            # لانچر ما نباید کتابخانه را با پیوند نام صدا بزند؛ باید خودش بارش
+            # کند. اگر نام کتابخانه در جدول واردات باشد، یافتن نشدنش همان
+            # 0xC0000135 است.
+            $cli = [System.IO.File]::ReadAllBytes((Join-Path $release 'UmbrellaCli.exe'))
+            $ascii = [System.Text.Encoding]::ASCII.GetString($cli)
+            # در جدول واردات، نام کتابخانه به صورت اسکی ذخیره می شود؛ رشته
+            # گسترده (UTF-16) لانچر ما با این بررسی نمی خواند و درست همین است.
+            foreach ($dll in @('hiddify-core.dll', 'UmbrellaCore.dll')) {
+              if ($ascii.Contains($dll)) { throw "UmbrellaCli.exe still imports $dll" }
+            }
+            Say 'ok: the launcher does not import the core library by name'
+            # UmbrellaAdmin.exe باید دسترسی مدیر بخواهد، وگرنه پنجره UAC با نام
+            # آمبرلا نمی آید و کاربر مجبور می شود خودش «Run as administrator»
+            # بزند. مانیفست با mt.exe نشانده می شود.
+            $mt = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe" -ErrorAction SilentlyContinue |
+                  Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $mt) { throw 'mt.exe was not found in the Windows SDK' }
+            $admin = Join-Path $release 'UmbrellaAdmin.exe'
+            & $mt.FullName ("-inputresource:" + $admin + ';#1') '-out:admin.manifest'
+            Get-Content admin.manifest -Raw | Add-Content $log
+            if (-not (Select-String -Path admin.manifest -Pattern 'requireAdministrator' -Quiet)) {
+              throw 'UmbrellaAdmin.exe does not request administrator rights'
+            }
+            Say 'ok: UmbrellaAdmin.exe asks for administrator rights'
+            # آیکون و متن نسخه باید از منابع آمبرلا آمده باشند.
+            if (-not (Select-String -Path 'native\umbrella_launcher.rc' -Pattern 'app_icon.ico' -Quiet)) {
+              throw 'the launcher resource script does not use the Umbrella icon'
+            }
+            Say 'ok: the launcher resources use the Umbrella icon'
           } catch {
             Say ("FAILED: " + $_.Exception.Message)
             $failed = $true
           }
-          if ($failed) { throw 'the Hiddify core bundle is not usable' }
+          if ($failed) { throw 'the core bundle is not usable' }
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
@@ -178,11 +216,11 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: UmbrellaVPN-Setup-1.0.2-x64
+          name: UmbrellaVPN-Setup-1.0.3-x64
           path: |
-            Windows/dist/UmbrellaVPN-Setup-1.0.2-x64.exe
+            Windows/dist/UmbrellaVPN-Setup-1.0.3-x64.exe
             Windows/dist/SHA256SUMS.txt
-            Windows/dist/UmbrellaVPN-1.0.2-x64-portable.zip
+            Windows/dist/UmbrellaVPN-1.0.3-x64-portable.zip
           if-no-files-found: warn
 
       # The installer is bigger than the 100 MB limit for a git file, so it is
@@ -194,14 +232,14 @@ jobs:
         shell: pwsh
         working-directory: Windows
         run: |
-          $exe = 'dist\UmbrellaVPN-Setup-1.0.2-x64.exe'
+          $exe = 'dist\UmbrellaVPN-Setup-1.0.3-x64.exe'
           if (-not (Test-Path $exe)) { throw 'installer missing' }
-          $out = '..\setup\1.0.2'
+          $out = '..\setup\1.0.3'
           if (Test-Path $out) { Remove-Item $out -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $sizeMb = (Get-Item $exe).Length / 1MB
           if ($sizeMb -lt 90) {
-            Copy-Item $exe (Join-Path $out 'UmbrellaVPN-Setup-1.0.2-x64.exe') -Force
+            Copy-Item $exe (Join-Path $out 'UmbrellaVPN-Setup-1.0.3-x64.exe') -Force
             Write-Host ("installer is {0:N1} MB, stored as a single file" -f $sizeMb) -ForegroundColor Green
           } else {
             $buffer = New-Object byte[] (40MB)
@@ -209,7 +247,7 @@ jobs:
             try {
               $index = 1
               while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.2-x64.exe.part{0:d2}' -f $index)
+                $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.3-x64.exe.part{0:d2}' -f $index)
                 $writer = [System.IO.File]::Create($part)
                 try { $writer.Write($buffer, 0, $read) } finally { $writer.Close() }
                 $index++
@@ -221,12 +259,12 @@ jobs:
             Copy-Item 'tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
           }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
-          Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.2-x64.exe" -Encoding ASCII
+          Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.3-x64.exe" -Encoding ASCII
           Write-Host "sha256 $hash"
           git config user.name 'github-actions'
           git config user.email 'github-actions@users.noreply.github.com'
           git add -- '../setup'
-          git commit -m "setup: windows installer 1.0.2 (run ${{ github.run_number }})"
+          git commit -m "setup: windows installer 1.0.3 (run ${{ github.run_number }})"
           git push
 
       # The build logs are published as a commit comment, so the run can be

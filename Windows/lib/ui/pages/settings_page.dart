@@ -112,7 +112,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ToggleRow(
                           icon: Icons.lan_rounded,
                           title: 'حالت تونل (پیشنهاد شده)',
-                          subtitle: 'سریع ترین و پایدارترین حالت، مثل هیدیفای: تمام '
+                          subtitle: 'سریع ترین و پایدارترین حالت: تمام '
                               'ترافیک از کارت شبکه مجازی رد می شود. اگر برنامه با '
                               'دسترسی مدیر اجرا نشود، خودکار با پروکسی سیستمی '
                               'وصل می شود',
@@ -123,9 +123,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         ToggleRow(
                           icon: Icons.terminal_rounded,
                           title: 'پنجره خط فرمان هسته',
-                          subtitle: 'هنگام اتصال، پنجره CLI هسته باز می شود و '
-                              'گزارش زنده اتصال را نشان می دهد؛ همان پنجره ای '
-                              'که کلاینت هیدیفای هم دارد',
+                          subtitle: 'هنگام اتصال، پنجره خط فرمان هسته باز می شود و '
+                              'گزارش زنده اتصال را نشان می دهد؛ همین پنجره پوششی '
+                              'است که هسته پشت آن اجرا می شود',
                           value: current.showCli,
                           onChanged: settings.setShowCli,
                           accent: colors.textSecondary,

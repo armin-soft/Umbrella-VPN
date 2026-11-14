@@ -2,53 +2,81 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/vpn/cli_session.dart';
-import 'package:umbrella_vpn/vpn/hiddify_core.dart';
+import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 
 /// آزمون «پنجره CLI» و راه اندازی هسته.
 ///
-/// کاربر پرسیده بود چرا هیدیفای هنگام اتصال یک پنجره ترمینال باز می کند. پاسخ
-/// در [HiddifyCore] و [CliSession] مستند شده است: موتور همان برنامه خط فرمان
-/// (`HiddifyCli.exe` با نام `UmbrellaCli.exe`) است و ویندوز برای آن پنجره
-/// کنسول می سازد. این آزمون ها همان قرارداد را قفل می کنند.
+/// کاربر پرسیده بود چرا هنگام اتصال یک پنجره ترمینال باز می شود. پاسخ در
+/// [UmbrellaCore] و [CliSession] مستند شده است: موتور به شکل یک برنامه خط
+/// فرمان (`UmbrellaCli.exe`) اجرا می شود و ویندوز برای آن پنجره کنسول می سازد.
+/// این آزمون ها همان قرارداد را قفل می کنند.
 void main() {
-  group('هسته هیدیفای', () {
-    test('نام فایل ها همان نام های هیدیفای با برند آمبرلاست', () {
-      expect(HiddifyCore.cliBinary, 'UmbrellaCli.exe');
-      expect(HiddifyCore.engineBinary, 'UmbrellaCoreEngine.exe');
-      expect(HiddifyCore.id, 'hiddify');
+  group('هسته', () {
+    test('نام فایل های اجرایی برند آمبرلاست', () {
+      expect(UmbrellaCore.cliBinary, 'UmbrellaCli.exe');
+      expect(UmbrellaCore.engineBinary, 'UmbrellaCoreEngine.exe');
+      expect(UmbrellaCore.id, 'hiddify');
     });
 
     test('نام های قدیمی هیچ جا نمی مانند', () {
-      expect(HiddifyCore.cliBinary.contains('Hiddify'), isFalse);
-      expect(HiddifyCore.engineBinary.contains('Hiddify'), isFalse);
+      expect(UmbrellaCore.cliBinary.contains('Hiddify'), isFalse);
+      expect(UmbrellaCore.engineBinary.contains('Hiddify'), isFalse);
     });
 
     test('پورت پروکسی محلی همان پورت پیش فرض هسته است', () {
-      expect(HiddifyCore.port, 12334);
+      expect(UmbrellaCore.port, 12334);
     });
 
-    test('فایل های همراه هسته هم نام برند دارند', () {
-      // ویندوز کتابخانه را کنار خود فایل اجرایی می جوید، پس هر سه باید در
-      // cores\hiddify باشند و هیچ کدام نام قدیمی نداشته باشد.
-      expect(HiddifyCore.coreDll, 'UmbrellaCore.dll');
-      expect(HiddifyCore.cronetDll, 'libcronet.dll');
-      expect(HiddifyCore.coreDll.contains('hiddify'), isFalse);
+    test('کتابخانه هسته با نام خودش می ماند', () {
+      // نام کتابخانه داخل خودش و داخل وابستگی هایش ثبت است؛ در ۱٫۰٫۲ با
+      // عوض شدن نام، ویندوز فایل اجرایی را با 0xC0000135 بست. این فایل هیچ
+      // وقت مستقیم اجرا یا به کاربر نشان داده نمی شود.
+      expect(UmbrellaCore.coreDll, 'hiddify-core.dll');
+      expect(UmbrellaCore.cronetDll, 'libcronet.dll');
+    });
+
+    test('هر سه فایل اجرایی نام آمبرلا دارند', () {
+      // این ها لانچرهای خود ما هستند و هیچ وقت نام هیدیفای ندارند.
+      for (final String name in <String>[
+        UmbrellaCore.cliBinary,
+        UmbrellaCore.engineBinary,
+        UmbrellaCore.adminBinary,
+      ]) {
+        expect(name.startsWith('Umbrella'), isTrue, reason: name);
+        expect(name.toLowerCase().contains('hiddify'), isFalse, reason: name);
+        expect(name.endsWith('.exe'), isTrue, reason: name);
+      }
     });
 
     test('نبود یکی از فایل های هسته نصب را ناقص اعلام می کند', () {
       // پوشه ای که وجود ندارد هم «نصب نیست» است، بدون استثنا.
-      expect(HiddifyCore.installed(r'C:\NoSuchFolder\Umbrella'), isFalse);
+      expect(UmbrellaCore.installed(r'C:\NoSuchFolder\Umbrella'), isFalse);
+    });
+
+    test('پوشه برنامه از پوشه هسته جدا می شود', () {
+      // لانچرها کنار برنامه اند و کتابخانه در پوشه هسته؛ بررسی نصب باید هر دو
+      // جا را بداند.
+      expect(
+        UmbrellaCore.rootOf(r'C:\App\cores\umbrella'),
+        r'C:\App',
+      );
+      expect(UmbrellaCore.rootOf(r'C:\App\cores'), r'C:\App');
+      expect(UmbrellaCore.rootOf(r'C:\App'), r'C:\App');
+      expect(
+        UmbrellaCore.directoryOf(UmbrellaCore.rootOf(r'C:\App\cores\umbrella')),
+        r'C:\App\cores\umbrella',
+      );
     });
 
     test('پوشه هسته در نسخه نصب', () {
       expect(
-        HiddifyCore.directoryOf(r'C:\Program Files\Umbrella'),
-        endsWith(r'cores\hiddify'),
+        UmbrellaCore.directoryOf(r'C:\Program Files\Umbrella'),
+        endsWith(r'cores\umbrella'),
       );
       // پوشه cores هم پذیرفته می شود و یک بار بیشتر تودرتو نمی شود.
       expect(
-        HiddifyCore.directoryOf(r'C:\Program Files\Umbrella\cores'),
-        r'C:\Program Files\Umbrella\cores\hiddify',
+        UmbrellaCore.directoryOf(r'C:\Program Files\Umbrella\cores'),
+        r'C:\Program Files\Umbrella\cores\umbrella',
       );
     });
   });
@@ -62,9 +90,9 @@ void main() {
       final CliSessionFile file = CliSessionFile(
         exe: r'C:\Program Files\Umbrella\UmbrellaCli.exe',
         args: <String>['run', '-c', r'C:\Users\a\links.txt'],
-        workDir: r'C:\Program Files\Umbrella\cores\hiddify',
+        workDir: r'C:\Program Files\Umbrella\cores\umbrella',
         coreName: 'UmbrellaCli.exe',
-        logPath: r'C:\Users\a\AppData\Roaming\Umbrella\run\hiddify-core.log',
+        logPath: r'C:\Users\a\AppData\Roaming\Umbrella\run\umbrella-core.log',
         title: 'Umbrella CLI',
       );
       final CliSessionFile? parsed =

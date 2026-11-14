@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.2';
+  static const String version = '1.0.3';
   static const int buildNumber = 1;
   static const String versionLabel = 'نسخه ۱٫۰٫۰';
   static const String company = 'آرمین سافت';
@@ -119,8 +119,11 @@ class AppConfig {
   );
 
   /// پیشوند نام آداپتور تونل که برای خواندن آمار مصرف استفاده می شود.
-  /// هسته هیدیفای کارت شبکه مجازی را با نام خودش می سازد؛ برای پیدا کردن
-  /// آمار همان تونل، بخشی از نام در توضیح کارت جست وجو می شود.
+  ///
+  /// این رشته فقط برای پیدا کردن آداپتور در فهرست شبکه است و هیچ جا نمایش داده
+  /// نمی شود؛ باید با نامی که خود هسته روی کارت شبکه می گذارد یکی باشد، وگرنه
+  /// آداپتور پیدا نمی شود و آمار حالت تونل صفر می ماند. مسیر نمایشی نام کارت
+  /// جداگانه است (`packages/umbrella_native` نام آمبرلا را می گذارد).
   static const String tunAdapterHint = 'hiddify';
 
   static const String tunAddress = '172.19.0.1/30';
@@ -131,14 +134,14 @@ class AppConfig {
   /// به دست بیاید ولی مصرف کاربر بی دلیل بالا نرود.
   static const String speedTestUrl =
       'https://speed.cloudflare.com/__down?bytes=1000000';
-  /// پورت محلی هسته هیدیفای (پروکسی مختلط HTTP/SOCKS). همان پورتی که
+  /// پورت محلی هسته (پروکسی مختلط HTTP/SOCKS). همان پورتی که
   /// مستندات هسته پیش فرض می دهد.
-  static const int httpPortHiddify = 12334;
+  static const int httpPortUmbrella = 12334;
 
   /// پورت gRPC هسته وقتی در پنجره CLI جداگانه اجرا می شود (پیش فرض خود هسته).
   static const int coreGrpcPort = 17078;
 
-  /// فایل تنظیمات هسته (همان `hiddify-settings.json` با نام آمبرلا).
+  /// فایل تنظیمات هسته (همان فایل تنظیمات موتور، با نام آمبرلا).
   static const String coreSettingsFile = 'umbrella-settings.json';
 
 

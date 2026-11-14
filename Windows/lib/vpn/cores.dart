@@ -10,8 +10,8 @@ import '../platform/services.dart';
 
 /// محل نگاه داشتن هسته و ابزار یافتن و آماده کردن آن.
 ///
-/// تنها هسته این نسخه هسته هیدیفای است و همراه خود نسخه نصب می شود (پوشه
-/// `cores\hiddify` کنار فایل اجرایی)؛ برنامه هیچ چیزی را از اینترنت دانلود
+/// تنها هسته این نسخه موتور هسته است و همراه خود نسخه نصب می شود (پوشه
+/// `cores\umbrella` کنار فایل اجرایی)؛ برنامه هیچ چیزی را از اینترنت دانلود
 /// نمی کند. اگر هسته در نسخه نصب نباشد، همان پیام روشن فارسی نمایش داده می شود
 /// و کاربر باید برنامه را دوباره نصب کند.
 class CoreProvisioner {
@@ -78,13 +78,13 @@ class CoreProvisioner {
   /// مسیر هسته در صورت وجود. هسته ها همراه نسخه نصب می شوند و از همان پوشه
   /// نصب اجرا می شوند؛ هیچ کپی یا نصبی لازم نیست.
   Future<String?> locateBinary(String binary) async {
-    // هسته هیدیفای همه فایل هایش را کنار هم دارد (پوشه hiddify در cores)؛
-    // هسته هایی که یک فایل بودند در bin و کنار برنامه بودند.
+    // لانچرها (UmbrellaCli/Admin/CoreEngine) کنار خود برنامه می آیند؛ بخش
+    // کتابخانه هسته در cores\umbrella می ماند. هر دو جا بررسی می شود.
     final List<String> candidates = <String>[
-      '${bundledDir}${Platform.pathSeparator}hiddify${Platform.pathSeparator}$binary',
-      '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
-      '${bundledDir}${Platform.pathSeparator}$binary',
       '${appDir}${Platform.pathSeparator}$binary',
+      '$bundledDir${Platform.pathSeparator}$binary',
+      '${bundledDir}${Platform.pathSeparator}umbrella${Platform.pathSeparator}$binary',
+      '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
       '$binDir${Platform.pathSeparator}$binary',
     ];
     for (final String candidate in candidates) {
