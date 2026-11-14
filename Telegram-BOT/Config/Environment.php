@@ -63,13 +63,14 @@ return self::get('IPPANEL_OTP_PATTERN', 'x7fhdaesmlj7vfi');
 }
 
 /** Shared secret the desktop app's gateway calls must present. */
+/**
+ * Optional operator override for the gateway signing key. Leave it out of
+ * `.env`: `AppSecret::get()` generates one and keeps it in `Settings`, so the
+ * app works with no manual secret at all. When this returns a value it takes
+ * precedence over the stored key (and the diag route asks for it as ?key=).
+ */
 public static function getAppGatewaySecret(): string {
 return self::get('APP_GATEWAY_SECRET');
-}
-
-/** Secret the cron endpoints (?RunScheduler / ?NightlyDiag) must present as &Key=… */
-public static function getSchedulerKey(): string {
-return self::get('SCHEDULER_KEY');
 }
 
 /** Maximum sign-in SMS the gateway may send per hour, globally (0 = unlimited). */
@@ -92,6 +93,11 @@ public static function getBotToken(): string {
 return self::get('BOT_TOKEN');
 }
 
+/**
+ * Optional fallback for the bot's @username. The real value is read from
+ * Telegram once (`BotIdentity::username()`) and cached in `Settings`, so
+ * `BOT_USERNAME` does not have to be in `.env` at all.
+ */
 public static function getBotUsername(): string {
 $Username = self::get('BOT_USERNAME');
 return ltrim($Username, '@');
@@ -202,11 +208,14 @@ return self::get('DATE_TIME_API_URL', 'https://api.armin-soft.ir/Date-Time/');
 }
 
 public static function getDateTimeApiLicense(): string {
-return self::get('DATE_TIME_API_LICENSE', '');
+// Ships with the project's own license so the date-time service answers out
+// of the box; DATE_TIME_API_LICENSE in .env overrides it when needed.
+return self::get('DATE_TIME_API_LICENSE', 'd5LAyJxbYst0egh2qNCdc6kWq0gdckmj');
 }
 
+/** Fallback for the switch the admin owns from «⚙️ تنظیمات ربات». */
 public static function showEmergencyConfig(): bool {
-$Val = strtolower(self::get('SHOW_EMERGENCY_CONFIG', 'true'));
+$Val = strtolower(self::get('SHOW_EMERGENCY_CONFIG', 'false'));
 return $Val === 'true' || $Val === '1';
 }
 

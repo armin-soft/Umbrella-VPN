@@ -1,0 +1,60 @@
+name: umbrella_vpn
+description: "فیلترشکن آمبرلا - کلاینت ویندوز با تونل کامل و هسته های چندگانه"
+publish_to: "none"
+version: 1.0.3+4
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  provider: ^6.1.2
+  http: ^1.2.2
+  shared_preferences: ^2.3.3
+  path_provider: ^2.1.5
+  window_manager: ^0.4.3
+  url_launcher: ^6.3.1
+  yaml: ^3.1.2
+  crypto: ^3.0.6
+  audioplayers: ^6.1.0
+  # پل بومی ویندوز (پینگ، پروکسی سیستمی، کیل سوییچ، سینی سیستم).
+  # بدون این خط پلاگین اصلا ثبت نمی شود و همه فراخوانی های بومی بی صدا شکست
+  # می خورند؛ همان چیزی که باعث شد پینگ و تونل کار نکند.
+  umbrella_native:
+    path: packages/umbrella_native
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/icons/operators/
+    - assets/icons/tray/
+    - assets/flags/
+    - assets/sounds/
+    - assets/cores/manifest.json
+    - assets/data/
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Vazirmatn-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Vazirmatn-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Vazirmatn-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Vazirmatn-Black.ttf
+          weight: 900

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../Support/Http.php';
+require_once __DIR__ . '/../Support/Helper.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 final class TelegramClient {
@@ -45,6 +46,9 @@ return trim($Text);
 public static function md(string $Text): string {
 if ($Text === '') return $Text;
 $Text = str_replace(["\r\n", "\r"], "\n", $Text);
+// Every message goes through here, so this is the one place that guarantees
+// Persian digits — code spans, links and @usernames keep their Latin ones.
+$Text = Helper::digitsToPersian($Text);
 $Text = static::normalizeStars($Text);
 $Text = static::normalizeLayout($Text);
 $Link_Map = [];
@@ -65,7 +69,12 @@ $Text = str_replace($Key, $Replacement, $Text);
 
 $Text = static::sanitizeHtml($Text);
 $Text = preg_replace('/&(?!(?:amp|lt|gt|quot|#039);)/', '&amp;', $Text) ?? $Text;
-return $Text;
+// Every message the bot sends is bold. Inner <b> tags add nothing once the
+// whole text is bold, so they are dropped and a single pair wraps the message;
+// links, code blocks and blockquotes nest inside it, which Telegram accepts.
+$Text = str_replace(['<b>', '</b>'], '', $Text);
+
+return '<b>' . $Text . '</b>';
 }
 
 /**
@@ -73,15 +82,19 @@ return $Text;
  * user typed (a name, a ticket subject, a rule the panel returned) makes the
  * whole API call fail and the message silently never arrives. md() converts
  * our own markup first; this pass then allows only the tags we generate —
- * <b> <code> <pre> <i> <u> <s> <tg-spoiler> and <a href="http(s)/tg://…"> —
+ * <b> <code> <pre> <i> <u> <s> <tg-spoiler> <blockquote> and <a href="http(s)/tg://…"> —
  * and escapes everything else.
  */
 private static function sanitizeHtml(string $Text): string {
 $Text = (string)preg_replace_callback('/<[^>]*>/s', static function (array $M): string {
 $Tag = $M[0];
 
-if (preg_match('/^<\s*(\/?)\s*(b|code|pre|i|u|s|tg-spoiler)\s*>$/i', $Tag, $M2)) {
+if (preg_match('/^<\s*(\/?)\s*(b|code|pre|i|u|s|tg-spoiler|blockquote)\s*>$/i', $Tag, $M2)) {
 return '<' . ($M2[1] === '/' ? '/' : '') . strtolower($M2[2]) . '>';
+}
+
+if (preg_match('/^<\s*blockquote\s+expandable\s*>$/i', $Tag)) {
+return '<blockquote expandable>';
 }
 
 if (preg_match('/^<\s*\/\s*a\s*>$/i', $Tag)) {
@@ -116,7 +129,7 @@ private static function balanceTags(string $Text): string {
 $Out = '';
 $Stack = [];
 $Pos = 0;
-$Pattern = '/<(\/?)(b|code|pre|i|u|s|tg-spoiler|a)(?:\s[^>]*)?>/i';
+$Pattern = '/<(\/?)(b|code|pre|i|u|s|tg-spoiler|blockquote|a)(?:\s[^>]*)?>/i';
 
 while (preg_match($Pattern, $Text, $M, PREG_OFFSET_CAPTURE, $Pos)) {
 $Tag = $M[0][0];
@@ -157,10 +170,46 @@ $Out .= '</' . array_pop($Stack) . '>';
 return $Out;
 }
 
+/**
+ * The footer ("…بر روی منوی مورد نظر کلیک کنید") only makes sense when the
+ * message actually offers something to pick. Two cases are dropped together
+ * with the sentence and its separator:
+ *
+ *   1. there is no inline keyboard at all, or
+ *   2. the keyboard only holds navigation — «بازگشت» and «خانه» — as on the
+ *      "send me the user id" screens, where nothing is left to choose.
+ */
+private static function trimFooterWithoutKeyboard(string $Text, array $Markup): string {
+if ($Text === '') return $Text;
+if ($Markup !== [] && !self::hasOnlyNavigationButtons($Markup)) return $Text;
+return self::stripFooter($Text);
+}
+
+/**
+ * حذف جمله پایانی «👌جهت استفاده …» همراه با خط جداکننده بالای آن (قاعده در Menu).
+ */
+private static function stripFooter(string $Text): string {
+if (!class_exists('Menu', false)) return $Text;
+
+return Menu::stripFooter($Text);
+}
+
+/**
+ * آیا کیبورد فقط دکمه های ناوبری دارد؟
+ *
+ * قاعده در Bot/Menu.php است تا آزمون ها هم همان را بسنجند؛ اگر Menu در دسترس
+ * نبود (مثلاً اسکریپت مستقل)، محافظه کارانه «خیر» برمی گردد و جمله پایانی
+ * دست نخورده می ماند.
+ */
+private static function hasOnlyNavigationButtons(array $Markup): bool {
+if (!class_exists('Menu', false)) return false;
+return Menu::isNavigationOnly($Markup);
+}
+
 public static function sendMessage(int $Chat_ID, string $Text, array $Markup = [], string $Parse_Mode = 'HTML', ?int $Reply_To = null): array {
 $Payload = [
 'chat_id' => $Chat_ID,
-'text' => self::md($Text),
+'text' => self::md(self::trimFooterWithoutKeyboard($Text, $Markup)),
 'parse_mode' => $Parse_Mode,
 'disable_web_page_preview' => true,
 ];
@@ -174,7 +223,7 @@ public static function editMessageText(int $Chat_ID, int $Message_ID, string $Te
 $Payload = [
 'chat_id' => $Chat_ID,
 'message_id' => $Message_ID,
-'text' => self::md($Text),
+'text' => self::md(self::trimFooterWithoutKeyboard($Text, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
@@ -233,7 +282,7 @@ return $Clean === [] ? [] : ['inline_keyboard' => $Clean];
 public static function answerCallbackQuery(string $Callback_Query_ID, string $Text = '', bool $Show_Alert = false): array {
 $Payload = ['callback_query_id' => $Callback_Query_ID, 'show_alert' => $Show_Alert];
 
-if ($Text !== '') $Payload['text'] = $Text;
+if ($Text !== '') $Payload['text'] = Helper::digitsToPersian($Text);
 return self::call('answerCallbackQuery', $Payload);
 }
 
@@ -248,7 +297,7 @@ if ($Is_Local) {
 $Fields = [
 'chat_id' => $Chat_ID,
 'photo' => new \CURLFile($PhotoUrl),
-'caption' => self::md($Caption),
+'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
@@ -258,7 +307,7 @@ $Response = HttpClient::postMultipart(self::url('sendPhoto'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
 
-$Payload = ['chat_id' => $Chat_ID, 'photo' => $PhotoUrl, 'caption' => self::md($Caption), 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
+$Payload = ['chat_id' => $Chat_ID, 'photo' => $PhotoUrl, 'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)), 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
 
 if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
 return self::call('sendPhoto', $Payload);
@@ -275,7 +324,7 @@ public static function sendDocument(int $Chat_ID, string $Document_Path, string 
 $Fields = [
 'chat_id' => $Chat_ID,
 'document' => new \CURLFile($Document_Path),
-'caption' => self::md($Caption),
+'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
@@ -334,7 +383,42 @@ return 'unknown';
 }
 
 public static function inlineKeyboard(array $Rows): array {
-return ['inline_keyboard' => $Rows];
+$Clean = [];
+
+foreach ($Rows as $Row) {
+if (!is_array($Row)) continue;
+$Buttons = [];
+
+foreach ($Row as $Button) {
+if (!is_array($Button)) continue;
+if (!isset($Button['text']) || !is_string($Button['text']) || trim($Button['text']) === '') continue;
+if (!isset($Button['callback_data']) && !isset($Button['url']) && !isset($Button['web_app'])) continue;
+
+if (isset($Button['callback_data'])) {
+$Data = (string)$Button['callback_data'];
+
+// تلگرام callback_data بیشتر از ۶۴ بایت را رد می کند و کل پیام ناموفق می شود.
+if ($Data === '') continue;
+
+if (strlen($Data) > 64) {
+error_log('[Umbrella-Bot][Keyboard] callback_data longer than 64 bytes dropped: ' . mb_substr($Data, 0, 40));
+continue;
+}
+}
+
+$Text = Helper::digitsToPersian($Button['text']);
+
+// متن دکمه حداکثر ۶۴ کاراکتر است.
+if (mb_strlen($Text) > 64) $Text = mb_substr($Text, 0, 61) . '…';
+
+$Button['text'] = $Text;
+$Buttons[] = $Button;
+}
+
+if ($Buttons !== []) $Clean[] = $Buttons;
+}
+
+return ['inline_keyboard' => $Clean];
 }
 }
 ?>

@@ -2,11 +2,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../Config/Environment.php';
+require_once __DIR__ . '/Http.php';
 
 final class Helper {
 private const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 private const ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
 private const SEPARATOR = '➖➖➖➖➖➖➖➖➖';
+
+/** همان خط جداکننده برای متن هایی که خودشان خط را می سازند. */
+public const SEPARATOR_LINE = '➖➖➖➖➖➖➖➖➖';
 private const OPERATORS = [
 '0910' => 'همراه اول', '0911' => 'همراه اول', '0912' => 'همراه اول', '0913' => 'همراه اول',
 '0914' => 'همراه اول', '0915' => 'همراه اول', '0916' => 'همراه اول', '0917' => 'همراه اول',
@@ -25,6 +29,42 @@ private const OPERATORS = [
 private function __construct() {
 }
 
+/**
+ * Turns every Latin digit in a message into a Persian one, except inside the
+ * parts that are meant to be copied: code spans, code/pre blocks, links,
+ * e-mail addresses, @usernames and bare URLs. Those keep Latin digits or the
+ * copied value would be wrong (a UUID, a subscription link, a payment ref).
+ *
+ * Message texts pass through this once in TelegramClient, so a screen that
+ * forgets Helper::toPersian() still renders Persian numbers.
+ */
+public static function digitsToPersian(string $Text): string {
+if ($Text === '' || preg_match('/[0-9]/', $Text) !== 1) {
+return $Text;
+}
+
+$Hold = [];
+$Keep = static function (string $Value) use (&$Hold): string {
+$Key = "\x01" . str_repeat("\x02", count($Hold) + 1) . "\x01";
+$Hold[$Key] = $Value;
+
+return $Key;
+};
+// Inline code first (`...`), then <code>/<pre> blocks: whatever is inside is
+// literal data, not prose.
+$Text = (string)preg_replace_callback('/`[^`\n]*`/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#<(code|pre)(?:\s[^>]*)?>.*?</\1>#isu', static fn (array $M): string => $Keep($M[0]), $Text);
+// Link targets: markdown ](...), HTML href="..." and any bare URL.
+$Text = (string)preg_replace_callback('/\]\([^)\n]*\)/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/href="[^"]*"/iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#(?:https?|tg)://[^\s<>"`]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/(?<![\w\x01])@[A-Za-z][A-Za-z0-9_]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = strtr($Text, array_combine(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS));
+
+return $Hold === [] ? $Text : strtr($Text, $Hold);
+}
+
 public static function toPersian(int|float|string $Number): string {
 return strtr((string)$Number, array_combine(
 ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
@@ -37,6 +77,13 @@ return strtr($Text, array_merge(
 array_combine(self::PERSIAN_DIGITS, ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']),
 array_combine(self::ARABIC_DIGITS, ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
 ));
+}
+
+private static function trimZeros(string $Number): string {
+if (!str_contains($Number, '.')) return $Number;
+$Number = rtrim(rtrim($Number, '0'), '.');
+
+return ($Number === '' || $Number === '-') ? '0' : $Number;
 }
 
 public static function smsPlan(string $Plan): string {
@@ -57,6 +104,7 @@ public const DATE_TIME_ERROR_TEXT = '⚠️خطا: دریافت اطلاعات �
 private const DATE_TIME_FALLBACK = "📆تاریخ شمسی:*نامعلوم*\n🕌تاریخ قمری:*نامعلوم*\n🌍تاریخ میلادی:*نامعلوم*\n\n🌎فصل:*❓نامعلوم*\n🕰زمان:*--:--:--*";
 private const DATE_TIME_CACHE_TTL = 120;
 private static array $Date_Time_Cache = [];
+private static bool $Date_Time_Tried = false;
 
 private static function getDateTimeData(int $Next = 0): array {
 $Cache_Key = (string)$Next;
@@ -66,79 +114,239 @@ if (is_array($Cached) && (time() - (int)$Cached['at']) < self::DATE_TIME_CACHE_T
 return $Cached['data'];
 }
 
-$DateTime_Api_Url = Environment::getDateTimeApiUrl();
-$DateTime_Api_License = Environment::getDateTimeApiLicense();
-$Base = rtrim($DateTime_Api_Url, '/');
+$Base = rtrim(Environment::getDateTimeApiUrl(), '/');
+$License = trim(Environment::getDateTimeApiLicense());
 $Params = [];
 
-if ($DateTime_Api_License !== '') $Params[] = 'License=' . urlencode($DateTime_Api_License);
+if ($License !== '') $Params[] = 'License=' . rawurlencode($License);
 if ($Next > 0) $Params[] = 'Next=' . $Next;
-$DateTime_Api_Full = $Base . ($Params !== [] ? '/?' . implode('&', $Params) : '');
+$Url = $Base . '/' . ($Params !== [] ? '?' . implode('&', $Params) : '');
 $Last_Error = '';
 
-for ($Attempt = 1; $Attempt <= 3; $Attempt++) {
-if ($Attempt > 1) {
-usleep(350000);
+// One network attempt per request at most: a slow or down date service must not
+// hold up every message the bot sends.
+if (self::$Date_Time_Tried) {
+throw new RuntimeException('وب سرویس تاریخ و زمان در این درخواست قبلاً امتحان شده است.');
 }
 
-$Context = stream_context_create([
-'http' => [
-'method' => 'GET',
-'timeout' => 10,
-'ignore_errors' => true,
-'header' => "Accept: application/json\r\nUser-Agent: ArminSoft-Helper/1.0\r\n",
-],
-]);
-$Response = @file_get_contents($DateTime_Api_Full, false, $Context);
+self::$Date_Time_Tried = true;
 
-if ($Response === false || trim($Response) === '') {
-$Last_Error = 'دریافت تاریخ و زمان از وب سرویس ناموفق بود.';
+for ($Attempt = 1; $Attempt <= 2; $Attempt++) {
+if ($Attempt > 1) usleep(250000);
+
+try {
+$Response = HttpClient::get($Url, ['Accept' => 'application/json', 'User-Agent' => 'ArminSoft-Helper/1.0'], 8);
+}
+
+catch (Throwable $Error) {
+$Last_Error = 'ارتباط با وب سرویس تاریخ و زمان برقرار نشد: ' . $Error->getMessage();
 continue;
 }
 
-$Data = json_decode($Response, true);
+$Body = trim((string)($Response['Body'] ?? ''));
 
-if (!is_array($Data)) {
-$Last_Error = 'پاسخ وب سرویس تاریخ و زمان معتبر نیست.';
+if ($Body === '') {
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان خالی بود (HTTP ' . (int)($Response['StatusCode'] ?? 0) . ')';
 continue;
 }
 
-if (!isset($Data['Data']) || !is_array($Data['Data']) || $Data['Data'] === []) {
-$Last_Error = 'ساختار پاسخ وب سرویس تاریخ و زمان نامعتبر است.';
+$Json = $Response['Json'] ?? null;
+
+if (!is_array($Json)) $Json = json_decode($Body, true);
+
+if (!is_array($Json)) {
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان JSON معتبر نبود (HTTP ' . (int)($Response['StatusCode'] ?? 0) . ')';
 continue;
 }
 
-self::$Date_Time_Cache[$Cache_Key] = ['at' => time(), 'data' => $Data['Data']];
+$Data = $Json['Data'] ?? null;
 
-return $Data['Data'];
+if (!is_array($Data) || $Data === []) {
+$Last_Error = 'وب سرویس تاریخ و زمان داده ای برنگرداند (کد ' . (int)($Json['Status']['Code'] ?? ($Response['StatusCode'] ?? 0)) . ')';
+continue;
 }
 
+self::$Date_Time_Cache[$Cache_Key] = ['at' => time(), 'data' => $Data];
+
+if ($Next === 0) static::rememberDateTimeSnapshot($Data);
+
+return $Data;
+}
+
+error_log('[Umbrella-Bot][Date-Time] ' . $Last_Error . ' | URL=' . $Url);
 throw new RuntimeException($Last_Error !== '' ? $Last_Error : 'دریافت تاریخ و زمان از وب سرویس ناموفق بود.');
 }
 
-public static function currentDateTimeLabel(?int $Time_Stamp = null): string {
+/** Keeps the last good answer so the header survives a short outage. */
+private static function rememberDateTimeSnapshot(array $Data): void {
+if (!class_exists('Repository')) return;
+
 try {
-$Data = static::getDateTimeData($Time_Stamp !== null ? max(0, (int)round(($Time_Stamp - time()) / 86400)) : 0);
+Repository::setSetting('Date_Time_Snapshot', (string)json_encode(['at' => time(), 'data' => $Data], JSON_UNESCAPED_UNICODE));
 }
 
 catch (Throwable) {
-return static::DATE_TIME_ERROR_TEXT;
+}
 }
 
-if (!is_array($Data) || $Data === []) {
-return static::DATE_TIME_ERROR_TEXT;
+/** Last good answer, only when it is recent enough to still be today's. */
+private static function dateTimeSnapshot(int $Max_Age = 1800): ?array {
+if (!class_exists('Repository')) return null;
+
+try {
+$Raw = (string)(Repository::getSetting('Date_Time_Snapshot', '') ?? '');
 }
 
-return "📆تاریخ شمسی:*" . (string)($Data['Shamsi_Date'] ?? '') . "*\n" .
-"🕌تاریخ قمری:*" . (string)($Data['Hijri_Date'] ?? '') . "*\n" .
-"🌍تاریخ میلادی:*" . (string)($Data['Gregorian_Date'] ?? '') . "*\n\n" .
-"🌎فصل:*" . (string)($Data['Season_Emoji'] ?? '') . (string)($Data['Season'] ?? '') . "*\n" .
-"🕰زمان:*" . (string)($Data['Time'] ?? '') . " " .
-(string)($Data['Time_Based_Emoji'] ?? '') . (string)($Data['Time_Based'] ?? '') . "*";
+catch (Throwable) {
+return null;
+}
+
+if ($Raw === '') return null;
+$Snapshot = json_decode($Raw, true);
+
+if (!is_array($Snapshot) || !is_array($Snapshot['data'] ?? null)) return null;
+if ((time() - (int)($Snapshot['at'] ?? 0)) > $Max_Age) return null;
+
+return $Snapshot['data'];
+}
+
+public static function currentDateTimeLabel(?int $Time_Stamp = null): string {
+$Stamp = ($Time_Stamp !== null && $Time_Stamp > 0) ? $Time_Stamp : time();
+
+try {
+$Date = (new DateTimeImmutable('@' . $Stamp))->setTimezone(new DateTimeZone('Asia/Tehran'));
+}
+
+catch (Throwable) {
+return static::localDateTimeLabel();
+}
+
+$Hijri = '';
+$Season = '';
+$Season_Emoji = '';
+$Part = '';
+$Part_Emoji = '';
+$Service_Data = null;
+$Offset = static::daysFromToday($Stamp);
+
+if ($Offset === 0) {
+// A snapshot younger than ten minutes is still today's date, and it keeps the
+// header instant even when the date service is slow or unreachable.
+$Service_Data = static::dateTimeSnapshot(600);
+}
+
+if (!is_array($Service_Data)) {
+try {
+$Service_Data = static::getDateTimeData($Offset > 0 ? $Offset : 0);
+}
+
+catch (Throwable) {
+$Service_Data = static::dateTimeSnapshot();
+}
+}
+
+if (is_array($Service_Data)) {
+$Hijri = trim((string)($Service_Data['Hijri_Date'] ?? ''));
+$Season = trim((string)($Service_Data['Season'] ?? ''));
+$Season_Emoji = trim((string)($Service_Data['Season_Emoji'] ?? ''));
+$Part = trim((string)($Service_Data['Time_Based'] ?? ''));
+$Part_Emoji = trim((string)($Service_Data['Time_Based_Emoji'] ?? ''));
+}
+
+if ($Season === '') [$Season_Emoji, $Season] = static::seasonLabel((int)$Date->format('n'));
+if ($Part === '') [$Part_Emoji, $Part] = static::dayPartLabel((int)$Date->format('G'));
+
+$Text = "📆تاریخ شمسی:*" . static::gregorianToJalali($Date->format('Y-m-d')) . "*\n";
+
+if ($Hijri !== '') {
+$Text .= "🕌تاریخ قمری:*{$Hijri}*\n";
+}
+
+$Text .= "🌍تاریخ میلادی:*" . static::toPersian($Date->format('Y-m-d')) . "*\n\n";
+$Text .= "🌎فصل:*{$Season_Emoji}{$Season}*\n";
+$Text .= "🕰زمان:*" . static::toPersian($Date->format('H:i:s')) . " {$Part_Emoji}{$Part}*";
+return $Text;
+}
+
+/** Shamsi date of a unix timestamp, computed locally in Tehran time. */
+public static function jalaliFromTimestamp(int $Time_Stamp, bool $Include_Time = false): string {
+if ($Time_Stamp <= 0) return 'نامشخص';
+
+try {
+$Date = (new DateTimeImmutable('@' . $Time_Stamp))->setTimezone(new DateTimeZone('Asia/Tehran'));
+}
+
+catch (Throwable) {
+return 'نامشخص';
+}
+
+$Label = static::gregorianToJalali($Date->format('Y-m-d'));
+
+if ($Include_Time) {
+$Label .= ' ' . static::toPersian($Date->format('H:i'));
+}
+
+return $Label;
+}
+
+/** Whole calendar days between a timestamp and today (Tehran); negative when past. */
+/** نسخه تمام محلی برچسب تاریخ و زمان؛ به شبکه و دیتابیس وابسته نیست. */
+private static function localDateTimeLabel(): string {
+try {
+$Date = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
+$Shamsi = static::gregorianToJalali($Date->format('Y-m-d'));
+$Gregorian = static::toPersian($Date->format('Y-m-d'));
+$Clock = static::toPersian($Date->format('H:i:s'));
+[$Season_Emoji, $Season] = static::seasonLabel((int)$Date->format('n'));
+[$Part_Emoji, $Part] = static::dayPartLabel((int)$Date->format('G'));
+}
+
+catch (Throwable) {
+return "📆تاریخ شمسی:*نامعلوم*\n🌍تاریخ میلادی:*نامعلوم*\n\n🌎فصل:*❓نامعلوم*\n🕰زمان:*--:--:--*";
+}
+
+return "📆تاریخ شمسی:*{$Shamsi}*\n🌍تاریخ میلادی:*{$Gregorian}*\n\n🌎فصل:*{$Season_Emoji}{$Season}*\n🕰زمان:*{$Clock} {$Part_Emoji}{$Part}*";
+}
+
+public static function daysFromToday(int $Time_Stamp): int {
+if ($Time_Stamp <= 0) return 0;
+$Tehran = new DateTimeZone('Asia/Tehran');
+
+try {
+$Today = new DateTimeImmutable('today', $Tehran);
+$Target = (new DateTimeImmutable('@' . $Time_Stamp))->setTimezone($Tehran)->setTime(0, 0);
+}
+
+catch (Throwable) {
+return 0;
+}
+
+return (int)round(($Target->getTimestamp() - $Today->getTimestamp()) / 86400);
+}
+
+/** Time-of-day label used by the expiry block (local, never fails). */
+private static function dayPartLabel(int $Hour): array {
+if ($Hour >= 5 && $Hour < 12) return ['🌅', 'صبح'];
+if ($Hour >= 12 && $Hour < 16) return ['☀️', 'ظهر'];
+if ($Hour >= 16 && $Hour < 20) return ['🌇', 'عصر'];
+if ($Hour >= 20) return ['🌙', 'شب'];
+return ['🌌', 'بامداد'];
+}
+
+/** Season of a Gregorian month, used when the date web service is unreachable. */
+private static function seasonLabel(int $Month): array {
+if ($Month >= 3 && $Month <= 5) return ['🌸', 'بهار'];
+if ($Month >= 6 && $Month <= 8) return ['☀️', 'تابستان'];
+if ($Month >= 9 && $Month <= 11) return ['🍂', 'پاییز'];
+return ['❄️', 'زمستان'];
 }
 
 
 public static function formatPersianDate(int $Time_Stamp, bool $Include_Time = false): string {
+if ($Time_Stamp > 0) {
+return static::jalaliFromTimestamp($Time_Stamp, $Include_Time);
+}
+
 try {
 $Data = static::getDateTimeData();
 }
@@ -157,47 +365,63 @@ return $Result;
 }
 
 public static function formatExpiration(int $Time_Stamp): string {
-$Now = time();
-$Days_Offset = (int)round(($Time_Stamp - $Now) / 86400);
-
-if ($Days_Offset < 0) $Days_Offset = 0;
+if ($Time_Stamp <= 0) return 'نامشخص';
 
 try {
-$Data = static::getDateTimeData($Days_Offset);
-}
-
-catch (Throwable) {
-return static::DATE_TIME_ERROR_TEXT;
-}
-
-return "📆تاریخ شمسی:*" . (string)($Data['Shamsi_Date'] ?? '') . "*\n" .
-"🕌تاریخ قمری:*" . (string)($Data['Hijri_Date'] ?? '') . "*\n" .
-"🌍تاریخ میلادی:*" . (string)($Data['Gregorian_Date'] ?? '') . "*\n\n" .
-"🌎فصل:*" . (string)($Data['Season_Emoji'] ?? '') . (string)($Data['Season'] ?? '') . "*\n" .
-"🕰زمان:*" . (string)($Data['Time'] ?? '') . " " .
-(string)($Data['Time_Based_Emoji'] ?? '') . (string)($Data['Time_Based'] ?? '') . "*";
-}
-
-public static function formatExpirationShort(int $Time_Stamp): string {
-$Now = time();
-$Days_Offset = (int)round(($Time_Stamp - $Now) / 86400);
-
-if ($Days_Offset < 0) $Days_Offset = 0;
-try {
-$Data = static::getDateTimeData($Days_Offset);
+$Date = (new DateTimeImmutable('@' . $Time_Stamp))->setTimezone(new DateTimeZone('Asia/Tehran'));
 }
 
 catch (Throwable) {
 return 'نامشخص';
 }
 
-return (string)($Data['Shamsi_Date'] ?? '');
+$Shamsi = static::gregorianToJalali($Date->format('Y-m-d'));
+$Gregorian = static::toPersian($Date->format('Y-m-d'));
+$Clock = static::toPersian($Date->format('H:i'));
+[$Part_Emoji, $Part] = static::dayPartLabel((int)$Date->format('G'));
+[$Season_Emoji, $Season] = static::seasonLabel((int)$Date->format('n'));
+$Hijri = '';
+
+try {
+$Data = static::getDateTimeData(static::daysFromToday($Time_Stamp));
+
+if (($Data['Hijri_Date'] ?? '') !== '') $Hijri = (string)$Data['Hijri_Date'];
+if (($Data['Season'] ?? '') !== '') $Season = (string)$Data['Season'];
+if (($Data['Season_Emoji'] ?? '') !== '') $Season_Emoji = (string)$Data['Season_Emoji'];
+if (($Data['Time_Based'] ?? '') !== '') $Part = (string)$Data['Time_Based'];
+if (($Data['Time_Based_Emoji'] ?? '') !== '') $Part_Emoji = (string)$Data['Time_Based_Emoji'];
+}
+
+catch (Throwable) {
+}
+
+$Text = "📆تاریخ شمسی:*{$Shamsi}*\n";
+if ($Hijri !== '') $Text .= "🕌تاریخ قمری:*{$Hijri}*\n";
+$Text .= "🌍تاریخ میلادی:*{$Gregorian}*\n\n";
+$Text .= "🌎فصل:*{$Season_Emoji}{$Season}*\n";
+$Text .= "🕰زمان:*{$Clock} {$Part_Emoji}{$Part}*";
+return $Text;
+}
+
+public static function formatExpirationShort(int $Time_Stamp): string {
+if ($Time_Stamp <= 0) return 'نامشخص';
+
+try {
+$Date = (new DateTimeImmutable('@' . $Time_Stamp))->setTimezone(new DateTimeZone('Asia/Tehran'));
+}
+
+catch (Throwable) {
+return 'نامشخص';
+}
+
+return static::gregorianToJalali($Date->format('Y-m-d'));
 }
 
 
 
 public static function gregorianToJalali(string $GregorianDate): string {
 [$gy, $gm, $gd] = array_map('intval', explode('-', $GregorianDate));
+$Gy_Original = $gy;
 
 if ($gy <= 1600) {
 $jy = 0;
@@ -218,11 +442,19 @@ $days %= 1461;
 $jy += (int)(($days - 1) / 365);
 
 if ($days > 365) $days = ($days - 1) % 365;
-$jm = ($days > 186) ? 1 + (int)(($days - 186) / 30) : 1 + (int)($days / 31);
-$jd = 1 + (($days > 186) ? ($days - 186) % 30 : $days % 31);
+// شش ماه نخست ۳۱ روزه و شش ماه دوم ۳۰ روزه است؛ ضلع دوم از ماه هفتم شروع می شود.
+if ($days < 186) {
+$jm = 1 + (int)($days / 31);
+$jd = 1 + ($days % 31);
+}
+
+else {
+$jm = 7 + (int)(($days - 186) / 30);
+$jd = 1 + (($days - 186) % 30);
+}
 $jalali_months = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
 $jalali_days = ['دوشنبه', 'سه شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه', 'یکشنبه'];
-$day_of_week = (int)date('N', mktime(0, 0, 0, $gm, $gd, $gy));
+$day_of_week = (int)(new DateTimeImmutable(sprintf('%04d-%02d-%02d', $Gy_Original, $gm, $gd), new DateTimeZone('UTC')))->format('N');
 $day_name = $jalali_days[($day_of_week + 6) % 7];
 $month_name = $jalali_months[$jm - 1];
 $jd_persian = static::toPersian((string)$jd);
@@ -275,23 +507,33 @@ default => $Status,
 public static function formatGB(float $Value, bool $Persian = true): string {
 $Abs = abs($Value);
 
-if ($Abs > 0 && $Abs < 1.0) {
-$Formatted = number_format($Value * 1024, 0, '.', '');
+if ($Abs <= 0.0) {
+$Number = '0';
+$Unit = 'گیگابایت';
+}
+
+elseif ($Abs < 0.1) {
+$Mb = $Abs * 1024;
+
+if ($Mb < 0.5) {
+return 'کمتر از ' . static::toPersian('1') . ' مگابایت';
+}
+
+$Number = static::trimZeros(number_format($Mb, 0, '.', ''));
 $Unit = 'مگابایت';
 }
 
 elseif ($Abs >= 1000.0) {
-$Tb = $Value / 1000;
-$Formatted = (abs($Tb - round($Tb)) < 0.005) ? (string)round($Tb) : number_format($Tb, 2, '.', '');
+$Number = static::trimZeros(number_format($Value / 1000, 2, '.', ''));
 $Unit = 'ترابایت';
 }
 
 else {
-$Formatted = number_format($Value, 3, '.', '');
+$Number = static::trimZeros(number_format($Value, 2, '.', ''));
 $Unit = 'گیگابایت';
 }
 
-$Text = $Formatted . ' ' . $Unit;
+$Text = $Number . ' ' . $Unit;
 return $Persian ? static::toPersian($Text) : $Text;
 }
 
@@ -426,20 +668,14 @@ return static::durationLabel($Days);
 }
 
 public static function formatBytes(int $Bytes, int $Precision = 2): string {
-if ($Bytes < 1024) return self::unitConvert(static::toPersian((string)number_format($Bytes, 0, '.', '')), 'بایت');
-$Units = [
-['B', 'بایت'],
-['KB', 'کیلوبایت'],
-['MB', 'مگابایت'],
-['GB', 'گیگابایت'],
-['TB', 'ترابایت'],
-['PB', 'پتابایت'],
-];
-
+if ($Bytes <= 0) return self::unitConvert(static::toPersian('0'), 'بایت');
+if ($Bytes < 1024) return self::unitConvert(static::toPersian(number_format($Bytes, 0, '.', '')), 'بایت');
+$Units = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت', 'پتابایت'];
 $Power = (int)floor(log($Bytes, 1024));
-$Power = min($Power, count($Units) - 1);
+$Power = max(0, min($Power, count($Units) - 1));
 $Value = $Bytes / (1024 ** $Power);
-return self::unitConvert(static::toPersian(number_format($Value, $Precision, '.', '')), $Units[$Power][1]);
+$Number = static::trimZeros(number_format($Value, $Precision, '.', ''));
+return self::unitConvert(static::toPersian($Number), $Units[$Power]);
 }
 
 public static function containsProfanity(string $Text): bool {
@@ -589,12 +825,14 @@ public static function greetingFrame(string $Type, string $Name, string $Section
 $Name = trim($Name) !== '' ? trim($Name) : $Type;
 $Name = self::mention($Name, $User_ID);
 
+// حتی اگر سرویس تاریخ و زمان و حافظه پنهان هر دو در دسترس نباشند، هدر با
+// تاریخ محلی پر می شود؛ متن خطای تاریخ و زمان دیگر در هیچ پیامی نمی آید.
 try {
 $Date_Time_Block = static::currentDateTimeLabel();
 }
 
 catch (Throwable) {
-$Date_Time_Block = static::DATE_TIME_ERROR_TEXT;
+$Date_Time_Block = static::localDateTimeLabel();
 }
 
 return "🌹" . $Type . " گرامی " . $Name . " به بخش " . $Section . " خوش آمدید.\n"
@@ -652,7 +890,7 @@ return "\n➖➖➖➖➖➖➖➖➖\n👌جهت استفاده از امکان
 }
 
 public static function userFooter(): string {
-return "\n" . self::SEPARATOR . "\n👌جهت استفاده از امکانات ربات بر روی منوی نظر کلیک کنید.";
+return "\n" . self::SEPARATOR . "\n👌جهت استفاده از امکانات ربات بر روی منوی مورد نظر کلیک کنید.";
 }
 
 public static function ticketCategories(): array {
@@ -700,6 +938,7 @@ $Key === 'gateway', $Key === 'payment', $Key === 'zarinpal' => '🌐درگاه �
 $Key === 'card', $Key === 'card_to_card', $Key === 'offline' => '💳کارت به کارت',
 $Key === 'wallet', $Key === 'balance' => '👛کیف پول',
 $Key === 'admin', $Key === 'manager' => '🛠️مدیریت',
+$Key === 'bot' => '🤖ربات (استفاده خودکار)',
 $Key === 'auto_renew', $Key === 'autorenew' => '🔄تمدید خودکار',
 $Key === 'scheduler', $Key === 'cron', $Key === 'system' => '⚙️سیستم (زمان بند)',
 $Key === 'channel', $Key === 'channel_check' => '📢قانون کانال',
@@ -735,11 +974,29 @@ $Medals = [
 1 => '🥇', 2 => '🥈', 3 => '🥉',
 4 => '🏅', 5 => '🎖️', 6 => '🌟', 7 => '⭐️', 8 => '✨', 9 => '💫', 10 => '🔥',
 11 => '⚡️', 12 => '💎', 13 => '🚀', 14 => '🎯', 15 => '🏆', 16 => '🎗️', 17 => '🎀', 18 => '🧿', 19 => '🌈', 20 => '☄️',
+21 => '🪐', 22 => '🌠', 23 => '🔮', 24 => '🛡️', 25 => '🧩', 26 => '🪄', 27 => '🎐', 28 => '📌', 29 => '🔖', 30 => '🌱',
 ];
 
 if (isset($Medals[$Rank])) return $Medals[$Rank];
-$Cycle = ['🔹', '🔷', '🔸', '🔶', '💠', '🌀', '🌊', '🌙', '🌱', '🌿', '🍀', '🪐', '🌠', '🔮', '🛡️', '🔖', '🧩', '🪄', '🎐', '📌'];
-return $Cycle[($Rank - 21) % count($Cycle)];
+$Cycle = ['🔹', '🔷', '🔸', '🔶', '💠', '🌀', '🌊', '🌙', '🌿', '🍀'];
+return $Cycle[($Rank - 31) % count($Cycle)];
+}
+
+/** Medal plus the matching title, e.g. "🥇 قهرمان مصرف". */
+public static function rankBadge(int $Rank): string {
+if ($Rank <= 0) return '🔹 ' . static::rankTitle(0);
+return static::rankMedal($Rank) . ' ' . static::rankTitle($Rank);
+}
+
+/** One ranking row: number, medal, name, usage, share and an optional bar. */
+public static function rankLine(int $Rank, string $Name, string $Usage, float $Share, float $Bar_Percent = -1.0, string $Marks = '', string $Extra = ''): string {
+$Bar = $Bar_Percent >= 0.0 ? ' ' . static::usageBar($Bar_Percent, 8) : '';
+$Share_Text = $Share >= 0.0 ? ' | ' . static::formatPercent($Share) . '٪' : '';
+$Text = static::toPersian((string)$Rank) . '. ' . static::rankMedal($Rank) . $Marks . ' ' . $Name
+. ' — ' . $Usage . $Share_Text . $Bar;
+
+if ($Extra !== '') $Text .= ' ' . $Extra;
+return $Text;
 }
 
 public static function rankTitle(int $Rank): string {

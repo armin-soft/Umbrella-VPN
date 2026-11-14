@@ -6,10 +6,11 @@ require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/Admin.php';
 require_once __DIR__ . '/User.php';
 require_once __DIR__ . '/Profile.php';
-require_once __DIR__ . '/AppLink.php';
+require_once __DIR__ . '/App-Link.php';
 require_once __DIR__ . '/../Core/App/App-Gateway.php';
 require_once __DIR__ . '/Subscription.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 
 final class Dispatcher {
 private const ROUTES = [
@@ -94,7 +95,7 @@ error_log('[Umbrella-Bot][Dispatch-' . $Type . '] ' . get_class($Error) . ': ' .
 
 if ($Context->ChatId > 0) {
 try {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "⚠️خطای موقت در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "⚠️خطای موقت در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖\n🔁لطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
 }
 
 catch (Throwable) {
@@ -103,7 +104,7 @@ catch (Throwable) {
 }
 
 private static function channelGuard(Context $Context): void {
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Greeting = Common::greet($Context, 'عضویت در کانال');
 $User = Repository::getUser($Context->UserId);
 $Client_ID = (string)($User['Client_ID'] ?? '');
@@ -169,7 +170,7 @@ $Text = Helper::userGreeting($Context, 'وضعیت ربات')
 'ℹ️لطفاً کمی بعد دوباره تلاش کنید.'
 ) . Helper::userFooter();
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -199,7 +200,7 @@ $Text = Helper::userGreeting($Context, 'وضعیت حساب کاربری')
 ) . Helper::userFooter();
 
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -224,7 +225,7 @@ self::routeCallbackInner($Context);
 
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Callback] ' . $E->getMessage());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "❌خطایی در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "❌خطایی در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖\n🔁لطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
 }
 }
 
@@ -310,11 +311,19 @@ match($Data) {
 'برنامه آمبرلا' => AppFlow::menu($Context),
 'app_menu' => AppFlow::menu($Context),
 'app_filter' => AppFlow::filterMenu($Context),
+'app_2fa' => AppFlow::twoStepMenu($Context),
+'app_2fa_on' => AppFlow::setTwoStep($Context, true),
+'app_2fa_off' => AppFlow::setTwoStep($Context, false),
 'app_devices' => AppFlow::devices($Context),
 'app_notifications' => AppFlow::notifications($Context),
 'app_filter_domains' => AppFlow::filterDomainsStart($Context),
 'app_push_start' => AdminFlow::appPushStart($Context),
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
+'تنظیمات ربات' => AdminFlow::configMenu($Context),
+'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
+'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
+'cfg_pricing' => AdminFlow::pricingMenu($Context),
+'cfg_links' => AdminFlow::linksMenu($Context),
 'notify_all_start' => AdminFlow::notifyAllStart($Context),
 'device_limit_set_1' => AdminFlow::deviceLimitSet($Context, 1),
 'device_limit_set_2' => AdminFlow::deviceLimitSet($Context, 2),
@@ -407,6 +416,11 @@ if ($ID > 0) UserFlow::ticketUserReplyStart($Context, $ID);
 return;
 }
 
+if (str_starts_with($Data, 'cfg_set:')) {
+AdminFlow::cfgStart($Context, substr($Data, strlen('cfg_set:')));
+return;
+}
+
 if (str_starts_with($Data, 'app_filter_toggle:')) {
 AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
 return;
@@ -446,7 +460,7 @@ TelegramClient::answerCallbackQuery(
 $Context->CallbackId,
 $Ok
 ? ($Approved ? '✅ ورود تأیید شد' : '⛔️ ورود مسدود شد')
-: 'این درخواست معتبر نیست یا منقضی شده است.',
+: '⌛️این درخواست معتبر نیست یا منقضی شده است.',
 !$Ok
 );
 }
@@ -454,9 +468,9 @@ $Ok
 $Section = 'تأیید دستگاه';
 $Text = $Ok
 ? ($Approved
-? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
-: Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
-: Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖➖\nاز برنامه دوباره وارد شوید." . Helper::userFooter();
+? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
+: Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
+: Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n🔁از برنامه دوباره وارد شوید." . Helper::userFooter();
 
 $Markup = TelegramClient::inlineKeyboard([[
 ['text' => '📱 حساب آمبرلا', 'callback_data' => 'app_menu'],
@@ -508,9 +522,9 @@ catch (Throwable) {}
 }
 
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
-. "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
+. "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
 TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]));
 return;
 }
@@ -559,7 +573,7 @@ AdminFlow::handleInput($Context, $Flow, $Text);
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Admin-Input] Flow=' . $Flow . ' | ' . $E->getMessage());
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'خطای ورودی') . '❌خطا در پردازش ورودی مدیریتی؛ لطفاً دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
+[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
 }
 
@@ -575,6 +589,8 @@ if ($Flow === 'user:ticket_subject') { UserFlow::ticketCreate($Context, $Text); 
 if ($Flow === 'user:ticket_description') { UserFlow::ticketDescriptionInput($Context, $Text); return; }
 if ($Flow === 'user:ticket_media') { UserFlow::ticketMediaInput($Context); return; }
 if ($Flow === 'user:ticket_reply_text') { UserFlow::ticketUserReplySend($Context, $Text); return; }
+// انتخاب دسته تیکت فقط با دکمه انجام می شود؛ متن فرستاده شده دوباره همان صفحه را نشان می دهد.
+if ($Flow === 'user:ticket_category') { UserFlow::ticketCategoryMenu($Context); return; }
 }
 
 if (!$Has_Media) {

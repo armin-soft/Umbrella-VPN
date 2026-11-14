@@ -1,0 +1,16 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.idea/
+.vscode/
+*.iml
+windows/flutter/ephemeral/
+windows/runner/Debug/
+windows/runner/Release/
+cores/bin/
+cores/umbrella/
+cores/cache/
+dist/
+installer/output/
+installer/redist/VC_redist.x64.exe

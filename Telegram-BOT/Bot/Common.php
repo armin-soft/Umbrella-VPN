@@ -2,9 +2,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Menu.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Config/Environment.php';
@@ -62,7 +64,7 @@ $User['Last_Online'] = $Last_Online;
 
 $User['Server_Is_Active'] = !empty($Row['is_active']) ? 1 : 0;
 $User['Server_Enable'] = !empty($Row['enable']) ? 1 : 0;
-$User['Client_Status'] = !empty($Row['is_active']) ? 'active' : 'inactive';
+$User['Client_Status'] = !empty($Row['is_active']) ? '✅فعال' : '🚫غیرفعال';
 return $User;
 }
 
@@ -72,9 +74,9 @@ return Helper::userGreeting($Context, $Section);
 
 
 public static function robotOff(Context $Context, string $Section = 'منوی خدمات ربات'): void {
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, $Section) . "با عرض پوزش ربات در دسترس نمی باشد.\n⚠️علت:🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, $Section) . "🪫📴با عرض پوزش ربات در دسترس نمی باشد.\n⚠️علت: 🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢👁مشاهده کانال اطلاع رسانی', 'url' => $Channel_Url]],
 ]));
 }
@@ -88,12 +90,19 @@ public static function offlineText(Context $Context, string $Section = 'منوی
 return Helper::userGreeting($Context, $Section) . "🪫📴با عرض پوزش ربات در دسترس نمی باشد.\n\n⚠️علت:🤖🔴ربات جهت بروز رسانی خاموش می باشد" . Helper::userFooter();
 }
 
+/**
+ * دکمه خانه کاربر.
+ *
+ * منوها از Menu::userHome() استفاده می کنند؛ این تابع برای فراخوان های قدیمی
+ * باقی مانده و همان دکمه را برمی گرداند.
+ */
 public static function mainButton(): array {
-return [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+return Menu::userHome();
 }
 
+/** یک دکمه دلخواه؛ برای دکمه هایی که برچسبشان ثابت نیست. */
 public static function backTo(string $Label, string $Call): array {
-return [['text' => $Label, 'callback_data' => $Call]];
+return [Menu::button($Label, $Call)];
 }
 }
 ?>

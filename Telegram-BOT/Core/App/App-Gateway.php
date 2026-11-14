@@ -4,7 +4,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../Database/Database.php';
 require_once __DIR__ . '/../Database/Schema-App.php';
 require_once __DIR__ . '/../Server/Umbrella-Panel.php';
-require_once __DIR__ . '/App-DeviceLimit.php';
+require_once __DIR__ . '/App-Device-Limit.php';
+require_once __DIR__ . '/App-Two-Step.php';
+require_once __DIR__ . '/App-Secret.php';
+require_once __DIR__ . '/../Telegram/Bot-Identity.php';
 require_once __DIR__ . '/../SMS/IPPanel.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once __DIR__ . '/../Storage/Repository.php';
@@ -115,6 +118,7 @@ $Device_Limit = AppDeviceLimit::check($Phone, $Device_Id);
 
 if (!$Device_Limit['allowed']) {
 error_log('[Umbrella-Bot][App-Auth] device limit reached | phone-masked-' . substr(md5($Phone), 0, 8) . ' | used=' . $Device_Limit['used'] . '/limit=' . $Device_Limit['limit']);
+self::notifyFailedLogin($Phone, 'device_limit', $Body);
 self::fail(403, 'device_limit', 'این حساب قبلاً روی دستگاه دیگری فعال است. برای استفاده از دستگاه دوم، از بخش مدیریت ربات مجوز بگیرید.');
 }
 
@@ -200,7 +204,7 @@ $Telegram_Id = (int)(Repository::findUserByPhone($Phone)['Telegram_ID'] ?? 0);
 }
 
 $Challenge = bin2hex(random_bytes(16));
-$Code = (string)random_int(10000, 99999);
+$Code = (string)random_int(100000, 999999);
 $Now = time();
 $Ttl = Environment::getSignInTtl();
 
@@ -268,6 +272,7 @@ self::fail(409, 'wrong_stage', 'این کد قبلاً استفاده شده ا�
 }
 
 if ((int)$Row['Otp_Attempts'] >= 5) {
+self::notifyFailedLogin((string)$Row['Phone'], 'too_many_attempts', $Row, (int)$Row['Telegram_ID']);
 self::fail(429, 'too_many_attempts', 'تعداد تلاش‌ها زیاد شد؛ کد جدید بگیرید.');
 }
 
@@ -275,14 +280,20 @@ $Device_Limit = AppDeviceLimit::check((string)$Row['Phone'], (string)$Row['Devic
 
 if (!$Device_Limit['allowed']) {
 error_log('[Umbrella-Bot][App-Auth] device limit reached at verify | used=' . $Device_Limit['used'] . '/limit=' . $Device_Limit['limit']);
+self::notifyFailedLogin((string)$Row['Phone'], 'device_limit', $Row, (int)$Row['Telegram_ID']);
 self::fail(403, 'device_limit', 'این حساب قبلاً روی دستگاه دیگری فعال است. برای استفاده از دستگاه دوم، از بخش مدیریت ربات مجوز بگیرید.');
 }
 
 if (!hash_equals((string)$Row['Otp_Hash'], hash_hmac('sha256', $Code, self::secret()))) {
+$Attempts = (int)$Row['Otp_Attempts'] + 1;
 Database::getInstance()->execute(
 'UPDATE `App_SignIn_Requests` SET `Otp_Attempts` = `Otp_Attempts` + 1 WHERE `Challenge` = ?',
 [$Challenge]
 );
+// One typo is normal, three in a row is worth telling the owner about.
+if ($Attempts >= 3) {
+self::notifyFailedLogin((string)$Row['Phone'], 'code_invalid', $Row, (int)$Row['Telegram_ID']);
+}
 self::fail(409, 'code_invalid', 'کد وارد شده درست نیست.');
 }
 
@@ -350,7 +361,30 @@ self::ok([
 'challenge' => $Challenge,
 'stage' => 'needs_telegram',
 'bot' => self::botLink(),
-'message' => 'برای تأیید دستگاه، یک‌بار ربات را باز کنید و Start بزنید؛ سپس این صفحه را تازه کنید.',
+'message' => 'برای تأیید دستگاه، یک‌بار ربات را باز کنید و دکمهٔ «شروع» را بزنید؛ سپس این صفحه را تازه کنید.',
+]);
+}
+
+// With two-step switched off in the bot the SMS code is the only factor: the
+// device is trusted right away and Telegram gets a notice afterwards instead
+// of a question, so the app never sits on the waiting screen.
+// When the flip fails the request simply falls through to the question below,
+// so a bookkeeping problem can never turn into «cannot sign in».
+if (!AppTwoStep::enabled($Telegram_Id) && self::decide($Challenge, true, $Telegram_Id)) {
+try {
+TelegramClient::sendMessage($Telegram_Id, self::signedInMessage($Row));
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Gateway] signed-in notice failed for ' . $Challenge . ': ' . $Error->getMessage());
+}
+
+self::ok([
+'verified' => true,
+'challenge' => $Challenge,
+'stage' => 'approved',
+'expires_at' => gmdate('c', (int)$Row['Expires_At']),
+'message' => 'ورود انجام شد.',
 ]);
 }
 
@@ -452,6 +486,9 @@ Database::getInstance()->execute(
 
 $Profile = AppFilter::accountPayload($Account);
 $Profile['account_base'] = PanelClient::accountBase($Account);
+// The client never asks the user for a subscription address: the personal
+// subscription link comes from here, both at sign-in and on every refresh.
+$Profile['subscription_url'] = self::subscriptionUrl($Account, $Profile['account_base'], $UUID);
 
 self::ok([
 'uuid' => $UUID,
@@ -495,7 +532,7 @@ self::fail(429, 'rate_limited', 'کمی بعد دوباره تلاش کنید.',
 ]);
 }
 
-$Code = (string)random_int(10000, 99999);
+$Code = (string)random_int(100000, 999999);
 $Now = time();
 
 Database::getInstance()->execute(
@@ -751,18 +788,19 @@ self::ok([
 
 /*
  * Deployment health check, safe to expose: booleans and statuses only, never
- * values, paths or SQL text. When APP_GATEWAY_SECRET is configured the caller
- * must also present it (?key=...); a server whose .env never uploaded can be
- * diagnosed without knowing anything, because there is no secret to leak.
+ * values, paths or SQL text. The signing key is generated automatically now,
+ * so it cannot be used as a password here; only an operator who put
+ * APP_GATEWAY_SECRET in .env gets the extra ?key= gate, and a server whose
+ * .env never uploaded stays diagnosable (which is the whole point).
  */
 private static function diag(): void {
-$Secret = Environment::getAppGatewaySecret();
+$Env_Secret = Environment::getAppGatewaySecret();
 
-if ($Secret !== '') {
+if ($Env_Secret !== '') {
 $Key = (string)($_GET['key'] ?? '');
 
-if (!hash_equals($Secret, $Key)) {
-self::fail(403, 'diag_locked', 'set APP_GATEWAY_SECRET or ask the admin');
+if (!hash_equals($Env_Secret, $Key)) {
+self::fail(403, 'diag_locked', 'ask the admin for the diag key');
 }
 }
 
@@ -775,7 +813,9 @@ $Out = [
 'db_host_set' => Environment::getDatabaseHost() !== '',
 'db_name_set' => Environment::getDatabaseName() !== '',
 'db_user_set' => Environment::getDatabaseUser() !== '',
-'app_secret_set' => $Secret !== '',
+'app_secret_set' => AppSecret::get() !== '',
+'app_secret_from_env' => AppSecret::fromEnvironment(),
+'app_secret_stored' => AppSecret::stored() !== '',
 ];
 
 try {
@@ -1026,6 +1066,90 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . \Helper::userFooter();
 }
 
+/** The notice sent right after a sign-in that did not need a tap. */
+private static function signedInMessage(array $Row): string {
+$Name = trim((string)($Row['Full_Name'] ?? ''));
+$Device = trim((string)($Row['Device_Name'] ?? ''));
+$Platform = trim((string)($Row['Platform'] ?? ''));
+$IP = trim((string)($Row['IP'] ?? ''));
+$Version = trim((string)($Row['App_Version'] ?? ''));
+$Telegram_Id = (int)($Row['Telegram_ID'] ?? 0);
+
+return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Telegram_Id > 0 ? $Telegram_Id : null)
+. "✅ ورود به فیلترشکن آمبرلا انجام شد\n"
+. "👤 نام: " . ($Name !== '' ? $Name : '—') . "\n"
+. "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
+. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
+. ($IP !== '' ? "🌐 IP: " . \Helper::toPersian($IP) . "\n" : '')
+. "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "تأیید دومرحله‌ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در پروفایل آن دستگاه را حذف کنید و تأیید دومرحله‌ای را روشن کنید."
+. \Helper::userFooter();
+}
+
+/**
+ * Tells the owner of a number that somebody failed at their door: a wrong code,
+ * too many tries, or one device too many. Best-effort and rate-limited — the
+ * caller is on its way to fail(), which exits, so nothing here may throw.
+ */
+private static function notifyFailedLogin(string $Phone, string $Reason, array $Source = [], int $Telegram_Id = 0): void {
+try {
+if ($Telegram_Id <= 0) {
+$Telegram_Id = (int)(Repository::findUserByPhone($Phone)['Telegram_ID'] ?? 0);
+}
+
+if ($Telegram_Id <= 0) {
+return;
+}
+
+// Three wrong codes in a row are one event, not three; without this the person
+// fumbling their own code would fill their chat with alerts.
+$Throttle_Key = 'AppFailNotify_' . $Telegram_Id;
+
+if (time() - (int)Repository::getSetting($Throttle_Key, 0) < 60) {
+return;
+}
+
+Repository::setSetting($Throttle_Key, time());
+
+$Labels = [
+'code_invalid' => 'کد تأیید اشتباه',
+'too_many_attempts' => 'تلاش بیش از حد با کد تأیید',
+'device_limit' => 'محدودیت تعداد دستگاه',
+'expired' => 'پایان زمان تأیید',
+];
+$Device = trim((string)($Source['Device_Name'] ?? $Source['device_name'] ?? ''));
+$Platform = trim((string)($Source['Platform'] ?? $Source['platform'] ?? ''));
+$Version = trim((string)($Source['App_Version'] ?? $Source['app_version'] ?? ''));
+$Name = trim((string)($Source['Full_Name'] ?? ''));
+$IP = trim((string)($Source['IP'] ?? ''));
+
+if ($IP === '') {
+$IP = self::clientIp();
+}
+
+TelegramClient::sendMessage(
+$Telegram_Id,
+\Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Telegram_Id)
+. "⚠️ ورود ناموفق به فیلترشکن آمبرلا\n"
+. "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
+. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
+. "🌐 IP: " . \Helper::toPersian($IP) . "\n"
+. "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
+. "🔎 دلیل: " . ($Labels[$Reason] ?? $Reason) . "\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در پروفایل، دستگاه‌های ناشناس را حذف کنید."
+. \Helper::userFooter()
+);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Gateway] failed-login notice failed: ' . $Error->getMessage());
+}
+}
+
 private static function trackDevice(string $Device_Id, array $Body, string $Phone): void {
 Database::getInstance()->execute(
 'INSERT INTO `App_Devices`
@@ -1052,9 +1176,7 @@ return preg_replace('/[^A-Za-z0-9_-]/', '', $Raw) ?? '';
 }
 
 private static function secret(): string {
-$Secret = Environment::getAppGatewaySecret();
-
-return $Secret !== '' ? $Secret : 'umbrella-app-gateway';
+return AppSecret::get();
 }
 
 private static function clientIp(): string {
@@ -1080,9 +1202,7 @@ return trim((string)($_GET['token'] ?? ''));
 }
 
 private static function botLink(): string {
-$Username = Environment::getBotUsername();
-
-return $Username !== '' ? 'https://t.me/' . $Username : 'https://t.me/';
+return BotIdentity::link();
 }
 
 /**

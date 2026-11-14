@@ -1,0 +1,63 @@
+# ساخت خودکار فایل نصبی روی گیت هاب (ویندوز واقعی، بدون نیاز به ماشین محلی)
+#
+# طرز استفاده:
+#   1. این فایل را به مسیر .github/workflows/build-windows-installer.yml منتقل کنید.
+#   2. در گیت هاب به تب Actions بروید و ورک فلو «build windows installer» را
+#      اجرا کنید (یا یک بار روی شاخه پوش کنید تا خودکار اجرا شود).
+#   3. فایل نصبی را از بخش Artifacts همان اجرا دانلود کنید.
+#
+# این فایل در پوشه Windows نگه داشته شده تا محدوده پروژه رعایت شود؛ مسیر
+# نهایی آن خارج از این پوشه است.
+
+name: build windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Windows/**'
+      - '.github/workflows/build-windows-installer.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Build release bundle
+        working-directory: Windows
+        run: powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer
+        working-directory: Windows
+        run: >
+          powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
+          -SkipBuild
+          -InnoPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+
+      - name: Show output
+        run: Get-ChildItem Windows\dist | Format-Table Name, Length
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Setup-1.0.0-x64
+          path: |
+            Windows/dist/UmbrellaVPN-Setup-1.0.0-x64.exe
+            Windows/dist/SHA256SUMS.txt
+          if-no-files-found: error

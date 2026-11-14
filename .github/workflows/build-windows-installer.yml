@@ -1,0 +1,295 @@
+name: build windows installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      attach_setup:
+        description: 'commit the installer into setup/ as split parts'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+  push:
+    paths:
+      - 'Windows/**'
+      - '.github/workflows/build-windows-installer.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      # Keep the Flutter and pub caches inside the runner workspace.
+      PUB_CACHE: ${{ github.workspace }}\.pub-cache
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version and doctor
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Analyze
+        id: analyze
+        continue-on-error: true
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          flutter analyze *>&1 | Tee-Object -FilePath analyze-log.txt
+          exit $LASTEXITCODE
+
+      - name: Verify the windows plugin is registered
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          $registrant = 'windows\flutter\generated_plugin_registrant.cc'
+          if (-not (Test-Path $registrant)) {
+            throw 'generated_plugin_registrant.cc is missing'
+          }
+          $text = Get-Content $registrant -Raw
+          if ($text -notmatch 'umbrella_native') {
+            throw 'umbrella_native is not registered: the native bridge would fail silently'
+          }
+          if (-not (Test-Path 'packages\umbrella_native\windows\include\umbrella_native\umbrella_native_plugin.h')) {
+            throw 'public plugin header is missing'
+          }
+          Write-Host 'umbrella_native is registered' -ForegroundColor Green
+
+      - name: Unit tests
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          flutter test *>&1 | Tee-Object -FilePath test-log.txt
+
+      - name: Build release bundle
+        id: build
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release *>&1 | Tee-Object -FilePath build-log.txt
+          exit $LASTEXITCODE
+
+      - name: Verify the exe requests administrator rights
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          $mt = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe" -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $mt) { throw 'mt.exe was not found in the Windows SDK' }
+          Write-Host "mt.exe: $($mt.FullName)"
+          $exe = Join-Path (Get-Location) 'build\windows\x64\runner\Release\UmbrellaVPN.exe'
+          $arg = '-inputresource:' + $exe + ';#1'
+          & $mt.FullName $arg '-out:embedded.manifest'
+          Get-Content embedded.manifest -Raw
+          if (-not (Select-String -Path embedded.manifest -Pattern 'requireAdministrator' -Quiet)) {
+            throw 'the built exe does not request administrator rights'
+          }
+          Write-Host 'administrator manifest verified' -ForegroundColor Green
+
+          $plugin = Join-Path (Get-Location) 'build\windows\x64\runner\Release\umbrella_native_plugin.dll'
+          if (-not (Test-Path $plugin)) {
+            throw 'umbrella_native_plugin.dll was not built'
+          }
+          Write-Host 'native plugin dll verified' -ForegroundColor Green
+
+      # هسته نسخه دو بخش دارد: کتابخانه خود هسته در cores\umbrella و سه لانچر
+      # آمبرلا کنار خود برنامه. اگر هرکدام نباشد، اتصال در سکوت شکست می خورد
+      # (۱٫۰٫۲ با کد 0xC0000135 همین جا شکست). خروجی این بررسی در core-log.txt
+      # می رود تا اگر ساخت شکست خورد، از کامنت کامیت هم دیده شود.
+      - name: Verify the core bundle
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          $log = 'core-log.txt'
+          '' | Set-Content $log
+          function Say([string]$text) {
+            Write-Host $text
+            Add-Content $log $text
+          }
+          $failed = $false
+          try {
+            $dir = 'cores\umbrella'
+            if (-not (Test-Path $dir)) { throw "core folder missing: $dir" }
+            Say "core folder: $dir"
+            foreach ($item in Get-ChildItem $dir -Recurse -File) {
+              Say ("  {0}  {1:N0} bytes" -f $item.Name, $item.Length)
+            }
+            # کتابخانه هسته و کرونت، با نام واقعی خودشان (نامشان ثبت شده است).
+            foreach ($name in @('hiddify-core.dll', 'libcronet.dll')) {
+              $path = Join-Path $dir $name
+              if (-not (Test-Path $path)) { throw "core file missing: $path" }
+              Say ("ok: {0} is {1:N0} bytes" -f $name, (Get-Item $path).Length)
+            }
+            # در پوشه هسته فقط کتابخانه می ماند. فایل های اجرایی باید کنار خود
+            # برنامه باشند؛ اگر در پوشه هسته بمانند، اجرای قدیمی (که کتابخانه را
+            # با پیوند نام صدا می زد) کاربر را با 0xC0000135 می بست.
+            foreach ($gone in @('UmbrellaCli.exe', 'UmbrellaAdmin.exe', 'UmbrellaCoreEngine.exe')) {
+              if (Test-Path (Join-Path $dir $gone)) { throw "launcher left inside the core folder: $gone" }
+            }
+            Say 'ok: the core folder holds only the library and its dependency'
+
+            $release = 'build\windows\x64\runner\Release'
+            $specs = @(
+              @{ name = 'UmbrellaCli.exe'; subsystem = 3 },
+              @{ name = 'UmbrellaAdmin.exe'; subsystem = 2 },
+              @{ name = 'UmbrellaCoreEngine.exe'; subsystem = 2 }
+            )
+            foreach ($spec in $specs) {
+              $path = Join-Path $release $spec.name
+              if (-not (Test-Path $path)) { throw "launcher missing: $path" }
+              $bytes = [System.IO.File]::ReadAllBytes($path)
+              $offset = [BitConverter]::ToInt32($bytes, 0x3C)
+              $subsystem = [BitConverter]::ToUInt16($bytes, $offset + 0x5C)
+              Say ("{0}: {1:N0} bytes, subsystem {2} (want {3})" -f $spec.name, $bytes.Length, $subsystem, $spec.subsystem)
+              if ($subsystem -ne $spec.subsystem) { throw "$($spec.name) has subsystem $subsystem" }
+            }
+            # لانچر ما نباید کتابخانه را با پیوند نام صدا بزند؛ باید خودش بارش
+            # کند. اگر نام کتابخانه در جدول واردات باشد، یافتن نشدنش همان
+            # 0xC0000135 است.
+            $cli = [System.IO.File]::ReadAllBytes((Join-Path $release 'UmbrellaCli.exe'))
+            $ascii = [System.Text.Encoding]::ASCII.GetString($cli)
+            # در جدول واردات، نام کتابخانه به صورت اسکی ذخیره می شود؛ رشته
+            # گسترده (UTF-16) لانچر ما با این بررسی نمی خواند و درست همین است.
+            foreach ($dll in @('hiddify-core.dll', 'UmbrellaCore.dll')) {
+              if ($ascii.Contains($dll)) { throw "UmbrellaCli.exe still imports $dll" }
+            }
+            Say 'ok: the launcher does not import the core library by name'
+            # UmbrellaAdmin.exe باید دسترسی مدیر بخواهد، وگرنه پنجره UAC با نام
+            # آمبرلا نمی آید و کاربر مجبور می شود خودش «Run as administrator»
+            # بزند. مانیفست با mt.exe نشانده می شود.
+            $mt = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe" -ErrorAction SilentlyContinue |
+                  Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $mt) { throw 'mt.exe was not found in the Windows SDK' }
+            $admin = Join-Path $release 'UmbrellaAdmin.exe'
+            & $mt.FullName ("-inputresource:" + $admin + ';#1') '-out:admin.manifest'
+            Get-Content admin.manifest -Raw | Add-Content $log
+            if (-not (Select-String -Path admin.manifest -Pattern 'requireAdministrator' -Quiet)) {
+              throw 'UmbrellaAdmin.exe does not request administrator rights'
+            }
+            Say 'ok: UmbrellaAdmin.exe asks for administrator rights'
+            # آیکون و متن نسخه باید از منابع آمبرلا آمده باشند.
+            if (-not (Select-String -Path 'native\umbrella_launcher.rc' -Pattern 'app_icon.ico' -Quiet)) {
+              throw 'the launcher resource script does not use the Umbrella icon'
+            }
+            Say 'ok: the launcher resources use the Umbrella icon'
+          } catch {
+            Say ("FAILED: " + $_.Exception.Message)
+            $failed = $true
+          }
+          if ($failed) { throw 'the core bundle is not usable' }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer and portable zip
+        working-directory: Windows
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1 -SkipBuild -Portable -InnoPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" *>&1 | Tee-Object -FilePath installer-log.txt
+          exit $LASTEXITCODE
+
+      - name: Show output
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path Windows\dist) {
+            Get-ChildItem Windows\dist | Format-Table Name, Length
+          } else {
+            Write-Host 'no dist folder (the build or the tests failed before packaging)'
+          }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Setup-1.0.3-x64
+          path: |
+            Windows/dist/UmbrellaVPN-Setup-1.0.3-x64.exe
+            Windows/dist/SHA256SUMS.txt
+            Windows/dist/UmbrellaVPN-1.0.3-x64-portable.zip
+          if-no-files-found: warn
+
+      # The installer is bigger than the 100 MB limit for a git file, so it is
+      # split into parts that are committed to setup/<version>/. A small join
+      # script rebuilds the exe and checks the sha256. This only runs when it is
+      # asked for, because every run adds ~115 MB to the repository history.
+      - name: Publish setup into the repository
+        if: github.event_name == 'workflow_dispatch' && inputs.attach_setup == 'yes'
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          $exe = 'dist\UmbrellaVPN-Setup-1.0.3-x64.exe'
+          if (-not (Test-Path $exe)) { throw 'installer missing' }
+          $out = '..\setup\1.0.3'
+          if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $sizeMb = (Get-Item $exe).Length / 1MB
+          if ($sizeMb -lt 90) {
+            Copy-Item $exe (Join-Path $out 'UmbrellaVPN-Setup-1.0.3-x64.exe') -Force
+            Write-Host ("installer is {0:N1} MB, stored as a single file" -f $sizeMb) -ForegroundColor Green
+          } else {
+            $buffer = New-Object byte[] (40MB)
+            $stream = [System.IO.File]::OpenRead((Resolve-Path $exe))
+            try {
+              $index = 1
+              while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $part = Join-Path $out ('UmbrellaVPN-Setup-1.0.3-x64.exe.part{0:d2}' -f $index)
+                $writer = [System.IO.File]::Create($part)
+                try { $writer.Write($buffer, 0, $read) } finally { $writer.Close() }
+                $index++
+              }
+              Write-Host "split into $($index - 1) parts" -ForegroundColor Green
+            } finally {
+              $stream.Close()
+            }
+            Copy-Item 'tools\join-setup.ps1' (Join-Path $out 'join-setup.ps1') -Force
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Value "$hash  UmbrellaVPN-Setup-1.0.3-x64.exe" -Encoding ASCII
+          Write-Host "sha256 $hash"
+          git config user.name 'github-actions'
+          git config user.email 'github-actions@users.noreply.github.com'
+          git add -- '../setup'
+          git commit -m "setup: windows installer 1.0.3 (run ${{ github.run_number }})"
+          git push
+
+      # The build logs are published as a commit comment, so the run can be
+      # diagnosed from outside GitHub Actions (which is handy in restricted
+      # environments where the log download endpoint is not reachable).
+      - name: Publish logs as commit comment
+        if: always()
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          function Encode([string]$text) {
+            return ($text -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;')
+          }
+          $sections = @()
+          foreach ($name in @('analyze-log.txt', 'test-log.txt', 'core-log.txt', 'build-log.txt', 'installer-log.txt')) {
+            if (Test-Path $name) {
+              $text = Get-Content $name -Raw
+              if ($null -eq $text) { $text = '' }
+              if ($text.Length -gt 30000) { $text = $text.Substring($text.Length - 30000) }
+              $sections += ("### " + $name + "`n<pre>" + (Encode $text) + "</pre>")
+            }
+          }
+          if ($sections.Count -eq 0) { exit 0 }
+          $body = ($sections -join "`n`n")
+          if ($body.Length -gt 64000) { $body = $body.Substring($body.Length - 64000) }
+          $json = @{ body = $body } | ConvertTo-Json
+          [System.IO.File]::WriteAllText('payload.json', $json, [System.Text.UTF8Encoding]::new($false))
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" --input payload.json
