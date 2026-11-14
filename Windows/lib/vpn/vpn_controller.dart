@@ -1579,8 +1579,8 @@ class VpnController extends ChangeNotifier {
     );
   }
 
-  /// نام سرور برای گزارش ها. بعضی نام ها خودشان با «سرور» شروع می شوند و
-  /// نوشتن «سرور سرور آمبرلا» در گزارش ها زشت و گمراه کننده بود.
+  /// نام سرور برای گزارش ها. بعضی نام ها خودشان با واژه سرور شروع می شوند و
+  /// تکرار آن واژه در گزارش ها زشت و گمراه کننده بود.
   static String _nodeLabel(VpnNode node) {
     final String name = node.name.trim();
     if (name.startsWith('سرور')) {
