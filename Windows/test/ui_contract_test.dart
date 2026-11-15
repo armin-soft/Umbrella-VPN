@@ -287,12 +287,15 @@ void main() {
       expect(settings.contains('context.read<WindowService>().quit()'), isFalse);
     });
 
-    test('اعلان ویندوز آیکون دارد و آیکون سینی را پاک نمی کند', () {
-      // علت «اعلان بدون آیکون»: NIIF_USER بدون hBalloonIcon یعنی هیچ آیکونی.
+    test('اعلان ویندوز آیکون خود برنامه را دارد و آیکون سینی را پاک نمی کند', () {
+      // ۱٫۰۱۸ با NIIF_INFO منتشر شد: حباب، آیکون «i» ویندوز را نشان می داد و
+      // آیکون برنامه هیچ وقت دیده نمی شد. حالا NIIF_USER با یک HICON واقعی
+      // ۳۲×۳۲ می آید، و اگر فایل آیکون نبود، آیکون خود exe استخراج می شود.
       final String tray = read('packages/umbrella_native/windows/tray_icon.cpp');
-      expect(tray.contains('data_.dwInfoFlags = NIIF_USER'), isFalse);
-      expect(tray.contains('data_.dwInfoFlags = NIIF_INFO'), isTrue);
-      expect(tray.contains('hBalloonIcon'), isTrue);
+      expect(tray.contains('NIIF_USER | NIIF_LARGE_ICON'), isTrue);
+      expect(tray.contains('data_.hBalloonIcon'), isTrue);
+      expect(tray.contains('balloon_icon_'), isTrue);
+      expect(tray.contains('ExtractIconExW'), isTrue);
       // به روز رسانی اعلان نباید آیکون و تولتیپ را صفر کند.
       expect(tray.contains('NIF_INFO | NIF_ICON | NIF_TIP'), isTrue);
       expect(tray.contains('NIF_TIP | NIF_ICON'), isTrue);
@@ -777,11 +780,11 @@ void main() {
 
     test('آی پی کش شده از مسیر تونل برنمی گردد', () {
       final String services = read('lib/platform/services.dart');
-      expect(
-        services.contains('if (proxy.isNotEmpty) {\n      return GeoInfo.empty;'),
-        isTrue,
-        reason: 'کش قبلی آی پی واقعی کاربر بود و اتصال بی ترافیک را تایید می کرد',
-      );
+      // کش قدیمی آی پی واقعی کاربر بود و اتصال بی ترافیک را تایید می کرد.
+      // حالا وقتی درخواست از مسیر پروکسی/تونل رفته، کش برنمی گردد و
+      // «ناشناخته» ناشناخته می ماند.
+      expect(services.contains('GeoInfo.empty'), isTrue);
+      expect(services.contains('if (proxy.isNotEmpty)'), isTrue);
     });
 
     test('پورت هسته با تلاش دوباره آزاد می شود، نه یک بار', () {
