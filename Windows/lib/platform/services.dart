@@ -361,7 +361,7 @@ class UpdateService {
       if (json.isEmpty) {
         return null;
       }
-      // تگ به شکل `v1.0.17-windows` است؛ فقط شماره نسخه لازم است.
+      // تگ به شکل `v1.0.18-windows` است؛ فقط شماره نسخه لازم است.
       final String tag = JsonX.text(json['tag_name']);
       final String version = _versionOf(tag);
       if (version.isEmpty || !_isReleaseForWindows(tag)) {
@@ -398,7 +398,7 @@ class UpdateService {
   static bool _isReleaseForWindows(String tag) =>
       tag.toLowerCase().contains('windows');
 
-  /// `v1.0.17-windows` یا `1.0.17` → `1.0.17`.
+  /// `v1.0.18-windows` یا `1.0.18` → `1.0.18`.
   static String _versionOf(String tag) {
     final RegExpMatch? match =
         RegExp(r'(\d+\.\d+\.\d+)').firstMatch(tag);

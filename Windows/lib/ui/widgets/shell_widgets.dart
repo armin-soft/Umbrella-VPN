@@ -528,26 +528,21 @@ class SideNav extends StatelessWidget {
                         ),
                       // «خروج» بخش جداگانه ای در انتهای منو است، نه ته
                       // تنظیمات. یک خط جداکننده هم مرزش را نشان می دهد.
-                      if (exitIndex != null) ...<Widget>[
+                      // «خروج» دیگر یک خانه جداگانه نیست: خودش در فهرست
+                      // `destinations` هست و بالا با آن کشیده می شود.
+                      //
+                      // **اشکال گزارش ۱٫۰۱۷:** اینجا یک خانه «خروج» هم دستی
+                      // ساخته می شد، پس کاربر دو «خروج» می دید — یکی وسط
+                      // منو و یکی پایین با خط جداکننده. تنها چیزی که اینجا
+                      // لازم است همان خط جداکننده پیش از «خروج» است.
+                      if (exitIndex != null)
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 4,
-                            vertical: 8,
+                            vertical: 6,
                           ),
                           child: Divider(height: 1, color: colors.border),
                         ),
-                        _NavItem(
-                          destination: const NavDestination(
-                            label: 'خروج',
-                            icon: Icons.logout_rounded,
-                            activeIcon: Icons.logout_rounded,
-                          ),
-                          selected: index == exitIndex,
-                          compact: compact,
-                          tone: colors.danger,
-                          onTap: () => onSelect(exitIndex!),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -610,7 +605,7 @@ class SideNav extends StatelessWidget {
                       ),
                     const SizedBox(height: 10),
                     // پایین منوی کناری فقط شماره نسخه می آید، به شکل ساده
-                    // `1.0.17` — بدون کلمه «نسخه» و بدون نام سازنده.
+                    // `1.0.18` — بدون کلمه «نسخه» و بدون نام سازنده.
                     if (compact)
                       Center(
                         child: Tooltip(

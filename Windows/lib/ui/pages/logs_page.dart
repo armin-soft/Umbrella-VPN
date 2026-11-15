@@ -64,6 +64,13 @@ class _LogsPageState extends State<LogsPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
+              // نشان صفحه: با بقیه صفحات یکدست است و چشم اول آن را می بیند.
+              IconSquare(
+                icon: Icons.receipt_long_rounded,
+                color: colors.primary,
+                size: 44,
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -81,6 +88,7 @@ class _LogsPageState extends State<LogsPage> {
                       ),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colors.textSecondary,
+                            height: 1.7,
                           ),
                     ),
                   ],

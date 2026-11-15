@@ -96,11 +96,18 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
+    // «نه، بمان» در صفحه خروج به صفحه اتصال برمی گردد.
+    ExitPage.onCancel = () {
+      if (mounted) {
+        setState(() => _index = 0);
+      }
+    };
   }
 
   @override
   void dispose() {
     _traySub?.cancel();
+    ExitPage.onCancel = null;
     super.dispose();
   }
 
@@ -163,13 +170,8 @@ class _AppShellState extends State<AppShell> {
       const LogsPage(),
       const AboutPage(),
       ExitPage(
-        // `quit` و `onWindowClose` هر دو `void`/`Future<void>` هستند و نمی
-        // توانند مستقیم برگردانده شوند؛ هر کدام در بدنه خودش اجرا می شود.
         onExit: () async {
           await widget.windowService.quit();
-        },
-        onCloseWindow: () async {
-          widget.windowService.onWindowClose();
         },
       ),
     ];

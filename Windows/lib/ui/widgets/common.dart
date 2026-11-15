@@ -140,13 +140,21 @@ class GradientButton extends StatelessWidget {
             Icon(
               icon,
               size: 19,
-              color: active ? colors.onPrimary : colors.textSecondary,
+              color: !active
+                  ? colors.textSecondary
+                  : (tone == null ? colors.onPrimary : colors.textPrimary),
             ),
           if (loading || icon != null) const SizedBox(width: 10),
           Text(
             Fa.num(label),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: active ? colors.onPrimary : colors.textSecondary,
+                  // دکمه کم رنگ (tone) رنگ روشن دارد؛ متن سفید روی آن
+                  // خوانده نمی شود.
+                  color: !active
+                      ? colors.textSecondary
+                      : (tone == null
+                          ? colors.onPrimary
+                          : colors.textPrimary),
                   fontWeight: FontWeight.w800,
                 ),
           ),

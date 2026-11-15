@@ -839,6 +839,22 @@ extension CorePreferenceX on CorePreference {
 
 enum SelectionMode { auto, roundRobin, consistentHash, stickySession, manual }
 
+/// حالت هایی که در منوی برنامه نشان داده می شوند.
+///
+/// `manual` عمدا اینجا نیست: کاربر خواست «انتخاب دستی» از رابط حذف شود،
+/// چون فهرست بلند سرورها در صفحه اتصال جای درستی ندارد و انتخاب خودکار
+/// بهترین گره را می گیرد. مقدار `manual` در مدل می ماند تا تنظیم ذخیره شده
+/// کاربران قبلی بی خطا خوانده شود؛ فقط در منو دیده نمی شود و اگر کسی از
+/// نسخه قبل آن را داشته باشد، به `auto` برمی گردد.
+extension SelectionModeList on SelectionMode {
+  static const List<SelectionMode> visible = <SelectionMode>[
+    SelectionMode.auto,
+    SelectionMode.roundRobin,
+    SelectionMode.consistentHash,
+    SelectionMode.stickySession,
+  ];
+}
+
 extension SelectionModeX on SelectionMode {
   String get label {
     switch (this) {
@@ -1121,6 +1137,13 @@ class AppSettings {
         'showCli': showCli,
       };
 
+  /// اگر تنظیم ذخیره شده `manual` باشد، به `auto` برمی گردد.
+  ///
+  /// حالت دستی از منو حذف شده، پس نگه داشتن آن یعنی کاربر گزینه ای می دید
+  /// که دیگر نمی تواند عوضش کند.
+  static SelectionMode _withoutManual(SelectionMode mode) =>
+      SelectionModeList.visible.contains(mode) ? mode : SelectionMode.auto;
+
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     T pick<T extends Enum>(List<T> values, Object? raw, T fallback) {
       final String name = JsonX.text(raw);
@@ -1145,7 +1168,12 @@ class AppSettings {
       notificationsEnabled:
           JsonX.boolean(json['notificationsEnabled'], fallback: true),
       selectionMode:
-          pick(SelectionMode.values, json['selectionMode'], SelectionMode.auto),
+          // `manual` دیگر در رابط نیست؛ اگر در تنظیمات قدیمی مانده باشد،
+          // به خودکار برمی گردد تا کاربر گزینه ای نبیند که نمی تواند
+          // عوضش کند.
+          _withoutManual(
+            pick(SelectionMode.values, json['selectionMode'], SelectionMode.auto),
+          ),
       corePreference:
           pick(CorePreference.values, json['corePreference'], CorePreference.auto),
       autoFailover: JsonX.boolean(json['autoFailover'], fallback: true),

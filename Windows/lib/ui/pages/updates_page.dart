@@ -41,6 +41,12 @@ class _UpdatesPageState extends State<UpdatesPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
+              IconSquare(
+                icon: Icons.system_update_rounded,
+                color: colors.primary,
+                size: 44,
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

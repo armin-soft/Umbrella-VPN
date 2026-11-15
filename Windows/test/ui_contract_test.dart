@@ -754,4 +754,99 @@ void main() {
       expect(endpoints.contains("'clash/meta/all.yml'"), isTrue);
     });
   });
+
+  group('دور ۳۱ — تایید واقعی تونل', () {
+    String controller() => read('lib/vpn/vpn_controller.dart');
+
+    test('معیار اتصال فقط رشد دریافت است، نه فرستاده', () {
+      // در ۱٫۰٫۱۷ فقط «رشد ترافیک» دلیل کافی بود؛ چون درخواست های دی ان اس
+      // خودمان فرستاده را بالا می بردند، تونل مرده هم «متصل» گزارش می شد و
+      // کاربر می گفت «متصل هست ولی هیچی باز نمی کند».
+      final String text = controller();
+      expect(text.contains('grownRx > 0'), isTrue);
+      expect(text.contains('grownRx >= (grownTx ~/ 2)'), isTrue);
+      expect(
+        text.contains('grownRx > 4096 || grownTx > 4096'),
+        isFalse,
+        reason: 'معیار قدیمی باید حذف شده باشد',
+      );
+      expect(text.contains('Future<bool> _trafficReturns('), isTrue);
+    });
+
+    test('بررسی عبور ترافیک به نشانی های ۲۰۴ می رود', () {
+      final String text = controller();
+      expect(text.contains('cp.cloudflare.com/generate_204'), isTrue);
+      expect(text.contains('connectivitycheck.gstatic.com/generate_204'), isTrue);
+      expect(text.contains('findProxy'), isTrue,
+          reason: 'درخواست باید از همان پورت پروکسی برود');
+    });
+
+    test('نشانه های خرابی در گزارش هسته، «شروع شد» را باطل می کنند', () {
+      final String text = controller();
+      for (final String marker in <String>[
+        'unexpected status',
+        'connection reset',
+        'i/o timeout',
+        'context deadline exceeded',
+        'no route to host',
+      ]) {
+        expect(text.contains(marker), isTrue, reason: marker);
+      }
+    });
+  });
+
+  group('دور ۳۱ — منو و ظاهر', () {
+    test('حالت انتخاب سرور دستی جایی در رابط کاربری نیست', () {
+      for (final String path in <String>[
+        'lib/ui/pages/connect_page.dart',
+        'lib/ui/pages/settings_page.dart',
+        'lib/ui/shell/app_shell.dart',
+      ]) {
+        final String text = read(path);
+        expect(text.contains('انتخاب دستی'), isFalse, reason: path);
+        expect(text.contains('SelectionMode.manual'), isFalse, reason: path);
+      }
+      // لیست قابل نمایش، حالت دستی را ندارد.
+      final String models = read('lib/models/models.dart');
+      expect(models.contains('SelectionModeList.visible'), isTrue);
+      final int visibleAt = models.indexOf('SelectionModeList.visible');
+      final int visibleEnd = models.indexOf('];', visibleAt);
+      final String visibleBody =
+          models.substring(visibleAt, visibleEnd);
+      expect(visibleBody.contains('SelectionMode.manual'), isFalse);
+      // و در بارگذاری تنظیمات، دستی به خودکار تبدیل می شود.
+      expect(models.contains('_withoutManual'), isTrue);
+    });
+
+    test('«خروج» فقط یک بار در نوار کناری است', () {
+      // «خروج» یک خانه از فهرست منوها است (app_shell)؛ نوار کناری نباید
+      // خانه دومی برایش بسازد.
+      final String shell = read('lib/ui/widgets/shell_widgets.dart');
+      final RegExp exitLabel = RegExp("label: 'خروج'");
+      expect(exitLabel.allMatches(shell).length, 0,
+          reason: 'نوار کناری خودش «خروج» نمی سازد');
+      final String appShell = read('lib/ui/shell/app_shell.dart');
+      expect(exitLabel.allMatches(appShell).length, 1,
+          reason: 'فقط یک «خروج» در فهرست منوها');
+      // صفحه خروج هم یک تایید ساده بله/نه دارد.
+      final String exit = read('lib/ui/pages/exit_page.dart');
+      expect(exit.contains('بله، خارج شو'), isTrue);
+      expect(exit.contains('نه، بمان'), isTrue);
+    });
+
+    test('سه صفحه اصلی پوسته مدرن دارند: هدر، کارت آماری و زمان زنده', () {
+      for (final String path in <String>[
+        'lib/ui/pages/device_page.dart',
+        'lib/ui/pages/connection_page.dart',
+        'lib/ui/pages/account_page.dart',
+      ]) {
+        final String text = read(path);
+        expect(text.contains('GlassCard'), isTrue, reason: path);
+        expect(text.contains('SectionHeader'), isTrue, reason: path);
+        expect(text.contains('LiveDateTimeLine'), isTrue, reason: path);
+        expect(text.contains('LayoutBuilder'), isTrue,
+            reason: '$path باید ریسپانسیو باشد');
+      }
+    });
+  });
 }

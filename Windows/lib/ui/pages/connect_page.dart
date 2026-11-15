@@ -49,6 +49,53 @@ class _ConnectPageState extends State<ConnectPage> {
     return local.isEmpty ? 'در حال خواندن' : local;
   }
 
+  /// پرچم مناسب همان آی پی که نشان می دهیم.
+  ///
+  /// • آی پی داخلی (`192.168.x.x`، `10.x`، `172.16-31.x`) پرچم ندارد؛
+  ///   آی پی داخلی کشور ندارد و ایران نشان دادنش گمراه کننده است.
+  /// • متصل: پرچم کشور سرور متصل از نام یا پارامترهای همان گره.
+  /// • قطع: پرچم کشور واقعی دستگاه از `geo`.
+  static String _flagForIp(VpnController vpn, bool connected, String ip) {
+    if (_isPrivateIp(ip)) {
+      return '';
+    }
+    if (connected) {
+      final String fromNode = vpn.activeNode?.flagCode ?? '';
+      if (fromNode.isNotEmpty) {
+        return fromNode;
+      }
+    }
+    // آی پی خروجی تونل: پرچم از داده جغرافیایی همان آی پی.
+    if (vpn.geo.ip.isNotEmpty && vpn.geo.ip == ip) {
+      return vpn.geo.flagCode;
+    }
+    return '';
+  }
+
+  /// آی پی داخلی است؟ (بدون پرچم، بدون کشور)
+  static bool _isPrivateIp(String ip) {
+    final String value = ip.trim();
+    if (value.isEmpty) {
+      return false;
+    }
+    if (value.startsWith('10.') ||
+        value.startsWith('192.168.') ||
+        value.startsWith('127.') ||
+        value.startsWith('169.254.')) {
+      return true;
+    }
+    if (value.startsWith('172.')) {
+      final int? second =
+          int.tryParse(value.split('.').elementAt(1));
+      if (second != null && second >= 16 && second <= 31) {
+        return true;
+      }
+    }
+    // IPv6 محلی
+    return value.toLowerCase().startsWith('fe80') ||
+        value == '::1';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -238,13 +285,17 @@ class _ConnectPageState extends State<ConnectPage> {
     final bool connected = status == VpnStatus.connected;
     final Account account = auth.account;
 
-    final String flagCode = vpn.geo.flagCode.isNotEmpty
-        ? vpn.geo.flagCode
-        : (vpn.activeNode?.flagCode ?? '');
-    // آی پی دستگاه هرگز «نامشخص» نمی شود: اول آی پی واقعی خوانده شده از
-    // اینترنت، بعد آی پی خروجی تونل و در آخر آی پی داخلی کارت شبکه.
+    // پرچم: پیش از اتصال، کشور خودِ دستگاه؛ پس از اتصال، کشور سرور متصل.
+    //
+    // **اشکالی که در تصویر کاربر دیده شد:** آی پی `192.168.1.2` (آی پی
+    // داخلی) با پرچم ایران نمایش داده می شد، چون پرچم از `geo` گرفته می شد
+    // که وقتی آی پی خوانده نشود به آی پی داخلی برمی گردد. پرچم باید مال
+    // همان جایی باشد که آی پی از آن آمده.
     final String shownIp = _deviceIp(vpn);
-    final String countryName = CountryNames.fa(flagCode);
+    final String flagCode = _flagForIp(vpn, connected, shownIp);
+    final String countryName = connected
+        ? CountryNames.fa(vpn.activeNode?.flagCode ?? '')
+        : CountryNames.fa(flagCode);
 
     // ارتفاع صفحه کامل استفاده می شود؛ هیچ نیمه خالی نمی ماند.
     return LayoutBuilder(
@@ -847,7 +898,7 @@ class _ModeDialog extends StatelessWidget {
                       ?.copyWith(fontWeight: FontWeight.w900),
                 ),
               ),
-              for (final SelectionMode mode in SelectionMode.values)
+              for (final SelectionMode mode in SelectionModeList.visible)
                 _MenuTile(
                   selected: mode == current,
                   title: mode.faName,

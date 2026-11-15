@@ -1185,20 +1185,29 @@ class VpnController extends ChangeNotifier {
               await _native.tunnelStats(hint: plan.tunnelHint);
           final bool direct = await TunnelProbe.check(timeout: probeTimeout);
           if (!direct) {
-            // سنجش وب شکست خورد، ولی ممکن است تونل سالم باشد.
+            // سنجش وب شکست خورد.
             //
-            // در گزارش ۱٫۰٫۱۰ هسته در ۰٫۶۶ ثانیه بالا آمد و در همان ثانیه
-            // ترافیک واقعی از تونل رد شد (DNS به ۱٫۱٫۱٫۱، اتصال به
-            // 173.194.61.6:443 و 74.125.197.188:5228) اما سنجش ۱ ثانیه ای
-            // جواب نداد و برنامه تونل سالم را کشت. حالا اگر بایت روی کارت
-            // شبکه تونل بالا رفته باشد، همان مدرک عبور ترافیک است.
+            // **خطایی که در ۱٫۰٫۱۷ «متصل ولی هیچی باز نمی کند» را ساخت:**
+            // اینجا فقط شمارش بایت ها را نگاه می کردیم و اگر بیش از ۴ کیلوبایت
+            // جابه جا شده بود اتصال را معتبر می گفتیم. اما آن بایت ها
+            // **ترافیک ارسالی خودمان** بود، نه ترافیک برگشته. در گزارش کاربر
+            // دو بار نوشت «دریافت ۶٫۰ کیلوبایت و ارسال ۱۶٫۶ کیلوبایت» —
+            // نسبت ۲٫۷ برابر به نفع ارسال. یعنی درخواست ها رفتند، DNS جواب
+            // نداد و خود برنامه دوباره تلاش کرد؛ هیچ پاسخی نیامد. بعدش سه
+            // بار «آی پی خروجی خوانده نشد» آمد که همان را تأیید می کند.
+            //
+            // قاعده درست: اتصال «وصل» است فقط اگر ترافیکی **برگشته** باشد.
+            // پس دریافت خالص باید هم مثبت باشد و هم دست کم به اندازه ارسال
+            // نباشد (یک پاسخ HTTP از یک درخواست کوچک بزرگ تر است). ارسال
+            // تنها هرگز مدرک موفقیت نیست.
             final TunnelStats after =
                 await _native.tunnelStats(hint: plan.tunnelHint);
             final int grownRx = after.rx - before.rx;
             final int grownTx = after.tx - before.tx;
-            final bool moved = after.available &&
-                before.available &&
-                (grownRx > 4096 || grownTx > 4096);
+            final bool responded = after.available && before.available &&
+                grownRx > 0 &&
+                grownRx >= (grownTx ~/ 2);
+            final bool moved = responded;
             if (moved) {
               _log.add(
                 'سنجش وب پاسخ نداد ولی ترافیک واقعی از تونل رد شد '
@@ -1227,19 +1236,11 @@ class VpnController extends ChangeNotifier {
             } else {
               flows = true;
             }
-          } else if (_realIp.isEmpty) {
-            // آی پی پیش از اتصال خوانده نشده؛ برای مقایسه چیزی نداریم.
-            flows = true;
           } else {
-            final bool changed = await _exitIpChanged();
-            if (!changed) {
-              _log.add(
-                'ترافیک از کارت شبکه مجازی رد شد ولی آی پی خروجی عوض نشد؛ '
-                'به عنوان اتصال معتبر پذیرفته نمی شود.',
-                level: 'warning',
-              );
-            }
-            flows = changed;
+            // سنجش web جواب داد: یک پاسخ HTTP کامل برگشت. این به تنهایی
+            // کافی است؛ لازم نیست آی پی هم عوض شود، چون بعضی شبکه ها آی پی
+            // خروجی را به همان شکل برمی گردانند (CGNAT).
+            flows = true;
           }
         }
       }
@@ -2859,6 +2860,22 @@ class VpnController extends ChangeNotifier {
     // کند. پس یک «اتصال ورودی» از کارت شبکه تونل هم لازم است:
     //   inbound/tun[tun-in]: inbound connection from 172.19.0.1
     // که یعنی برنامه ای روی همین دستگاه از تونل استفاده کرد.
+    // خطای کشنده ای که در همین تلاش رخ داده، هر مدرک دیگری را باطل می کند.
+    //
+    // در گزارش ۱٫۰٫۱۷ خط `unexpected status: 301 Moved Permanently` و
+    // `v2ray-http-upgrade` آمد: یعنی گره واقعاً جواب نداد. اگر همان تلاش
+    // «sing-box started» هم داشته باشد، نباید سالم حساب شود.
+    for (final String broken in <String>[
+      'unexpected status',
+      'connection reset',
+      'i/o timeout',
+      'context deadline exceeded',
+      'no route to host',
+    ]) {
+      if (text.contains(broken)) {
+        return false;
+      }
+    }
     final bool started = text.contains('sing-box started');
     if (!started) {
       return false;
@@ -3076,6 +3093,54 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// آیا ترافیک واقعاً از تونل **برگشت**؟
+  ///
+  /// این سنجش با خواندن شمارنده کارت شبکه فرق دارد: یک درخواست HTTP کامل
+  /// (درخواست + پاسخ) می فرستد و منتظر **بدنه پاسخ** می ماند. اگر پاسخ
+  /// برگشت، تونل واقعاً کار می کند؛ اگر فقط ارسال زیاد شد و پاسخی نیامد،
+  /// تونل مرده است — همان چیزی که در گزارش ۱٫۰۱۷ «متصل ولی هیچی باز نمی
+  /// کند» را ساخت.
+  ///
+  /// نشانی ها همان `generate_204` هستند: سبک، بدون بدنه بزرگ و در بیشتر
+  /// شبکه ها باز. ۲۰۴ و ۳۰۲ هر دو قبول است؛ فقط پاسخ HTTP لازم است.
+  Future<bool> _trafficReturns({Duration timeout = const Duration(seconds: 8)}) async {
+    const List<String> urls = <String>[
+      'http://cp.cloudflare.com/generate_204',
+      'http://connectivitycheck.gstatic.com/generate_204',
+      'http://www.msftconnecttest.com/connecttest.txt',
+    ];
+    for (final String url in urls) {
+      final Uri? uri = Uri.tryParse(url);
+      if (uri == null) {
+        continue;
+      }
+      HttpClient? client;
+      try {
+        client = HttpClient()..connectionTimeout = timeout;
+        // در حالت پروکسی سیستمی، درخواست از همان پروکسی محلی می رود.
+        if (_proxyPort > 0) {
+          client.findProxy = (Uri _) => 'PROXY 127.0.0.1:$_proxyPort';
+        }
+        final HttpClientRequest request = await client.getUrl(uri);
+        request.followRedirects = false;
+        request.headers.set(HttpHeaders.connectionHeader, 'close');
+        final HttpClientResponse response =
+            await request.close().timeout(timeout);
+        // بدنه را هم بخوان؛ رسیدن هدر به تنهایی کافی نیست، چون بعضی
+        // پروکسی ها هدر می فرستند و بعد اتصال را می بندند.
+        await response.drain<void>().timeout(timeout);
+        if (response.statusCode > 0) {
+          return true;
+        }
+      } on Exception {
+        // نشانی بعدی.
+      } finally {
+        client?.close(force: true);
+      }
+    }
+    return false;
+  }
+
   Future<void> _verifyTunnel() async {
     if (_verifyInFlight) {
       return;
@@ -3096,12 +3161,37 @@ class VpnController extends ChangeNotifier {
       // خواند و `_reconnect()` را صدا زد. یعنی خودمان تونل درست را کشتیم.
       // خوانده نشدن آی پی یک ناشناخته است، نه یک شکست.
       if (geo.ip.isEmpty) {
+        // آی پی خوانده نشد. این به خودی خود شکست نیست، ولی **نشانه** است:
+        // اگر تونل کار کند، درخواست ما از مسیرش بیرون می رود و پاسخ می آید.
+        // پس یک سنجش عبور ترافیک می کنیم تا معلوم شود تونل زنده است یا نه.
+        //
+        // در گزارش ۱٫۰۱۷ سه بار همین پیام آمد و کاربر گفت «متصل هست ولی
+        // هیچی باز نمی کند»: تونل مرده بود، ولی ما فقط هشدار می دادیم و
+        // همان گره مرده را نگه می داشتیم.
+        final bool alive = await _trafficReturns();
+        if (alive) {
+          _log.add(
+            'آی پی خروجی خوانده نشد، ولی ترافیک واقعی از تونل برگشت؛ '
+            'اتصال معتبر است.',
+            level: 'warning',
+          );
+          _tunnelVerified = true;
+          _notify();
+          return;
+        }
+        // ترافیکی برنگشت: این گره واقعاً کار نمی کند.
+        _tunnelVerified = false;
         _log.add(
-          'آی پی خروجی خوانده نشد؛ نمی شود با اطمینان گفت تونل برقرار است یا نه، '
-          'ولی اتصال قطع نمی شود.',
-          level: 'warning',
+          'آی پی خروجی خوانده نشد و ترافیکی هم از تونل برنگشت؛ '
+          'این سرور کار نمی کند و سرور بعدی امتحان می شود.',
+          level: 'error',
         );
         _notify();
+        if (_settings.autoFailover && _reconnectAttempts < 3) {
+          _reconnectAttempts++;
+          _verifyInFlight = false;
+          await _reconnect();
+        }
         return;
       }
       // اگر آی پی بدون تونل خوانده نشده باشد، مقایسه بی معنی است و نباید

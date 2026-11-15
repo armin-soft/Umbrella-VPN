@@ -1,7 +1,4 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/app_config.dart';
 import '../../core/persian.dart';
@@ -12,19 +9,17 @@ import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 
-/// منوی «خروج» — از تنظیمات جدا شد.
+/// منوی «خروج».
 ///
-/// پیش از این دکمه «خروج کامل» ته کارت «حساب و سرویس» در تنظیمات بود؛ جایی که
-/// کاربر دنبالش نمی گشت و خطرش هم بالا بود. حالا یک بخش مستقل در انتهای نوار
-/// کناری است، با گزینه های روشن و توضیح هرکدام.
+/// کاربر خواست دقیقا یک چیز: «روی خروج کلیک شد، بدون هیچ صفحه ای که باز شود،
+/// بله و خیر خروج بزند.» پس این صفحه چند گزینه ندارد؛ یک کارت ساده است با
+/// دو دکمه «بله، خارج شو» و «نه، بمان»، و همان کاری را می کند که از اسمش
+/// برمی آید. بستن پنجره از دکمه پنجره و سینی سیستم انجام می شود، نه از اینجا.
 class ExitPage extends StatefulWidget {
-  const ExitPage({super.key, required this.onExit, required this.onCloseWindow});
+  const ExitPage({super.key, required this.onExit});
 
   /// بستن کامل برنامه (پروسه پایان می یابد).
   final Future<void> Function() onExit;
-
-  /// بستن پنجره و ماندن در سینی سیستم.
-  final Future<void> Function() onCloseWindow;
 
   @override
   State<ExitPage> createState() => _ExitPageState();
@@ -33,19 +28,30 @@ class ExitPage extends StatefulWidget {
 class _ExitPageState extends State<ExitPage> {
   bool _busy = false;
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _leave() async {
     if (_busy) {
       return;
     }
     setState(() => _busy = true);
+    final VpnController vpn = context.read<VpnController>();
     try {
-      await action();
+      // اتصال اول قطع می شود تا تنظیمات شبکه به حالت عادی برگردد و
+      // کارت شبکه مجازی پاک شود؛ وگرنه بعد از خروج اینترنت کاربر خراب
+      // می ماند.
+      await vpn.disconnect(silent: true);
+      await widget.onExit();
     } finally {
       if (mounted) {
         setState(() => _busy = false);
       }
     }
   }
+
+  /// هنگام «نه، بمان» صدا زده می شود تا پوسته به صفحه اتصال برگردد.
+  ///
+  /// صفحه های پوسته در `IndexedStack` هستند و چیزی برای `pop` وجود ندارد،
+  /// پس بازگشت با یک callback به پوسته انجام می شود.
+  static VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -55,226 +61,108 @@ class _ExitPageState extends State<ExitPage> {
     final UmbrellaColors colors = context.colors;
     final bool connected = vpn.status.active;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Center(
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 660),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                Fa.num('خروج'),
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                Fa.num('انتخاب کنید برنامه چطور بسته شود.'),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textSecondary),
-              ),
-              const SizedBox(height: 18),
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: GlassCard(
+            padding: const EdgeInsets.all(26),
+            radius: 22,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Center(
+                  child: IconSquare(
+                    icon: Icons.logout_rounded,
+                    color: colors.danger,
+                    size: 58,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  Fa.num('از برنامه خارج می شوید؟'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  Fa.num(
+                    connected
+                        ? 'اتصال قطع می شود و تنظیمات شبکه به حالت عادی '
+                            'برمی گردد، بعد برنامه بسته می شود.'
+                        : 'برنامه بسته می شود.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.8,
+                      ),
+                ),
+                const SizedBox(height: 22),
 
-              // وضعیت فعلی، تا کاربر بداند خروج یعنی چه.
-              GlassCard(
-                padding: const EdgeInsets.all(18),
-                child: Row(
+                // ── بله / نه ──────────────────────────────────────────
+                Row(
                   children: <Widget>[
-                    IconSquare(
-                      icon: connected
-                          ? Icons.shield_rounded
-                          : Icons.shield_outlined,
-                      color: connected ? colors.success : colors.textSecondary,
-                      size: 40,
-                    ),
-                    const SizedBox(width: 14),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Text(
-                            Fa.num(
-                              connected
-                                  ? 'در حال حاضر متصل هستید'
-                                  : 'در حال حاضر قطع هستید',
-                            ),
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            Fa.num(
-                              connected
-                                  ? 'با خروج، اتصال بسته و تنظیمات شبکه به حالت '
-                                      'عادی برمی گردد.'
-                                  : 'اتصالی برای بستن نیست.',
-                            ),
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: colors.textSecondary),
-                          ),
-                        ],
+                      child: GradientButton(
+                        label: 'نه، بمان',
+                        icon: Icons.close_rounded,
+                        height: 48,
+                        tone: colors.surfaceHigh,
+                        onPressed: _busy
+                            ? null
+                            : () {
+                                ExitPage.onCancel?.call();
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GradientButton(
+                        label: 'بله، خارج شو',
+                        icon: Icons.power_settings_new_rounded,
+                        height: 48,
+                        tone: colors.danger,
+                        loading: _busy,
+                        onPressed: _busy ? null : _leave,
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 14),
 
-              _ExitOption(
-                icon: Icons.minimize_rounded,
-                title: 'کوچک کردن به سینی سیستم',
-                subtitle: settings.settings.closeToTray
-                    ? 'اتصال باز می ماند و برنامه در سینی ویندوز فعال می ماند.'
-                    : 'پنجره بسته می شود ولی برنامه در سینی می ماند.',
-                tone: colors.info,
-                label: 'کوچک کن',
-                busy: _busy,
-                onTap: () => _run(() async {
-                  await widget.onCloseWindow();
-                }),
-              ),
-              const SizedBox(height: 12),
-              _ExitOption(
-                icon: Icons.link_off_rounded,
-                title: 'قطع اتصال',
-                subtitle: 'تونل بسته و تنظیمات شبکه بازگردانی می شود؛ برنامه '
-                    'باز می ماند.',
-                tone: colors.warning,
-                label: 'قطع کن',
-                busy: _busy || !connected,
-                onTap: () => _run(() async {
-                  await vpn.disconnect();
-                  toasts.info('اتصال قطع شد');
-                }),
-              ),
-              const SizedBox(height: 12),
-              _ExitOption(
-                icon: Icons.logout_rounded,
-                title: 'خروج کامل از برنامه',
-                subtitle: 'اتصال قطع می شود و برنامه کاملا بسته می شود.',
-                tone: colors.danger,
-                label: 'خروج',
-                busy: _busy,
-                danger: true,
-                onTap: () => _run(() async {
-                  await vpn.disconnect(silent: true);
-                  await widget.onExit();
-                }),
-              ),
-              const SizedBox(height: 22),
-              Center(
-                child: Text(
-                  Fa.num('${AppConfig.appName} | ${AppConfig.versionPhrase}'),
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: colors.textSecondary),
+                // میانبر «بستن به سینی» جدا و کم رنگ می ماند تا با خروج
+                // اشتباه نشود.
+                TextButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          context.read<WindowService>().onWindowClose();
+                          toasts.info('برنامه در سینی سیستم ماند');
+                        },
+                  icon: const Icon(Icons.minimize_rounded, size: 16),
+                  label: Text(Fa.num('فقط کوچک کن به سینی')),
                 ),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    Fa.num('${AppConfig.appName} | ${AppConfig.versionPhrase}'
+                        '${settings.elevated ? ' | دسترسی مدیر' : ''}'),
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: colors.textSecondary),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ExitOption extends StatelessWidget {
-  const _ExitOption({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.tone,
-    required this.label,
-    required this.busy,
-    required this.onTap,
-    this.danger = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color tone;
-  final String label;
-  final bool busy;
-  final VoidCallback onTap;
-  final bool danger;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          // در پنجره باریک، دکمه زیر متن می رود نه کنارش.
-          final bool narrow = constraints.maxWidth < 430;
-          final Widget info = Row(
-            children: <Widget>[
-              IconSquare(icon: icon, color: tone, size: 40),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      Fa.num(title),
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      Fa.num(subtitle),
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-          final Widget button = GradientButton(
-            label: label,
-            icon: danger ? Icons.power_settings_new_rounded : null,
-            height: 42,
-            expand: false,
-            tone: tone,
-            loading: busy,
-            onPressed: busy ? null : onTap,
-          );
-          if (narrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                info,
-                const SizedBox(height: 12),
-                button,
-              ],
-            );
-          }
-          return Row(
-            children: <Widget>[
-              Expanded(child: info),
-              const SizedBox(width: 14),
-              button,
-            ],
-          );
-        },
       ),
     );
   }
