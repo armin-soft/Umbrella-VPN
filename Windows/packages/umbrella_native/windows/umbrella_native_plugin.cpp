@@ -212,6 +212,24 @@ void UmbrellaNativePlugin::HandleMethodCall(
         flutter::EncodableValue(ops_.KillByName(StringOf(args, "name"))));
     return;
   }
+  if (method == "pidsHoldingPort") {
+    flutter::EncodableList list;
+    for (int pid : ops_.PidsHoldingPort(IntOf(args, "port", 0))) {
+      list.push_back(flutter::EncodableValue(pid));
+    }
+    result->Success(flutter::EncodableValue(list));
+    return;
+  }
+  if (method == "processNameOf") {
+    result->Success(
+        flutter::EncodableValue(ops_.ProcessNameOf(IntOf(args, "pid", 0))));
+    return;
+  }
+  if (method == "processPathOf") {
+    result->Success(
+        flutter::EncodableValue(ops_.ProcessPathOf(IntOf(args, "pid", 0))));
+    return;
+  }
   if (method == "isRunning") {
     result->Success(
         flutter::EncodableValue(ops_.IsRunning(StringOf(args, "name"))));

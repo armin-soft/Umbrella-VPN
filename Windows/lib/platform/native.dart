@@ -293,6 +293,109 @@ class NativeBridge {
     return _dartKillByName(name);
   }
 
+  /// شناسه پردازش هایی که این پورت را گرفته اند.
+  ///
+  /// راه اول از پل بومی می آید (`GetExtendedTcpTable`) و راه دوم `netstat`
+  /// است؛ اگر هیچ کدام جواب نداد، فهرست خالی برمی گردد و برنامه دست به حدس
+  /// نمی زند.
+  Future<List<int>> pidsHoldingPort(int port) async {
+    final List<Object?>? raw =
+        await _invoke<List<Object?>>('pidsHoldingPort', <String, dynamic>{
+      'port': port,
+    });
+    if (raw != null && raw.isNotEmpty) {
+      return raw
+          .map((Object? item) => int.tryParse('$item') ?? 0)
+          .where((int pid) => pid > 0)
+          .toList();
+    }
+    return _netstatPids(port);
+  }
+
+  /// خواندن صاحب پورت از `netstat` برای وقتی که پل بومی در دسترس نیست.
+  Future<List<int>> _netstatPids(int port) async {
+    final List<int> pids = <int>[];
+    try {
+      final ProcessResult result = await Process.run(
+        'netstat',
+        <String>['-ano', '-p', 'tcp'],
+        runInShell: false,
+      );
+      for (final String row in '${result.stdout}'.split(RegExp(r'\r?\n'))) {
+        final List<String> cols = row
+            .trim()
+            .split(RegExp(r'\s+'))
+            .where((String part) => part.isNotEmpty)
+            .toList();
+        // ستون ها: پروتکل، آدرس محلی، آدرس خارجی، حالت، شناسه پردازش
+        if (cols.length < 5 || !cols[0].toUpperCase().startsWith('TCP')) {
+          continue;
+        }
+        if (!cols[1].endsWith(':$port')) {
+          continue;
+        }
+        final int? pid = int.tryParse(cols[4]);
+        if (pid != null && pid > 0 && !pids.contains(pid)) {
+          pids.add(pid);
+        }
+      }
+    } on Object {
+      return <int>[];
+    }
+    return pids;
+  }
+
+  /// نام فایل اجرایی یک پردازش (مثلاً `Hiddify.exe`).
+  Future<String> processNameOf(int pid) async {
+    final String? name =
+        await _invoke<String>('processNameOf', <String, dynamic>{'pid': pid});
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+    try {
+      final ProcessResult result = await Process.run(
+        'tasklist',
+        <String>['/FI', 'PID eq $pid', '/FO', 'CSV', '/NH'],
+        runInShell: false,
+      );
+      final String out = '${result.stdout}'.trim();
+      if (out.isEmpty || out.startsWith('INFO')) {
+        return '';
+      }
+      final List<String> cols = out
+          .split(',')
+          .map((String part) => part.replaceAll('"', '').trim())
+          .toList();
+      return cols.isEmpty ? '' : cols.first;
+    } on Object {
+      return '';
+    }
+  }
+
+  /// مسیر کامل فایل اجرایی یک پردازش؛ برای این که دوباره اشتباه نشود.
+  Future<String> processPathOf(int pid) async {
+    final String? path =
+        await _invoke<String>('processPathOf', <String, dynamic>{'pid': pid});
+    if (path != null && path.isNotEmpty) {
+      return path;
+    }
+    try {
+      final ProcessResult result = await Process.run(
+        'powershell',
+        <String>[
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "(Get-Process -Id $pid -ErrorAction SilentlyContinue).Path",
+        ],
+        runInShell: false,
+      );
+      return '${result.stdout}'.trim();
+    } on Object {
+      return '';
+    }
+  }
+
   Future<bool> isRunning(String name) async {
     final bool? running =
         await _invoke<bool>('isRunning', <String, dynamic>{'name': name});

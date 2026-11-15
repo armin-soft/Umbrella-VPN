@@ -74,6 +74,18 @@ class SystemOps {
   std::string LastSpawnError() const;
   bool KillPid(int pid);
   int KillByName(const std::string& exe_name);
+
+  /// شناسه پردازش هایی که این پورت TCP را روی لوکال هاست گرفته اند.
+  ///
+  /// هسته ما دو پورت ثابت دارد (۱۷۰۷۸ و ۱۶۷۵۶) و راهی برای عوض کردنشان نیست؛
+  /// پس اگر برنامه دیگری گرفته باشد، باید همان برنامه بسته شود.
+  std::vector<int> PidsHoldingPort(int port);
+
+  /// نام فایل اجرایی یک پردازش (بدون مسیر)، برای گزارش به کاربر.
+  std::string ProcessNameOf(int pid);
+
+  /// مسیر کامل فایل اجرایی یک پردازش؛ خالی یعنی خوانده نشد.
+  std::string ProcessPathOf(int pid);
   bool IsRunning(const std::string& exe_name);
   std::vector<std::string> ListRunningCores();
 

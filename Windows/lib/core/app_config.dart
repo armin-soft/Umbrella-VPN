@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.9';
+  static const String version = '1.0.10';
   static const int buildNumber = 1;
   /// برچسب نسخه برای نمایش؛ از همان `version` ساخته می شود تا هیچ وقت
   /// عقب نماند (در ۱٫۰٫۸ اینجا هنوز «۱٫۰٫۰» نوشته بود).

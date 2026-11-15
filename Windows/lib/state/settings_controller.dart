@@ -92,6 +92,11 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(autoConnect: value));
   }
 
+  /// آزادسازی خودکار پورت های ثابت هسته پیش از اتصال.
+  Future<void> setFreeCorePorts(bool value) async {
+    await update(_settings.copyWith(freeCorePorts: value));
+  }
+
   Future<void> setKillSwitch(bool value) async {
     await update(_settings.copyWith(killSwitch: value));
   }

@@ -1609,18 +1609,10 @@ class VpnController extends ChangeNotifier {
   Future<bool> _launch(LaunchPlan plan) async {
     _lastLaunchUnusable = false;
     await _stopCores();
+    // _freeCorePorts خودش دلیل و نتیجه را گزارش می کند، پس اینجا تکرار
+    // نمی شود.
     if (!await _freeCorePorts()) {
       return false;
-    }
-    if (_orphansKilled > 0) {
-      // هسته ای که از اجرای قبلی باز مانده بود پورت هایش را هم گرفته بود؛
-      // همان چیزی که اجرای بعدی را با «already in use» می کشت.
-      _log.add(
-        'نمونه بازمانده از اجرای قبلی بسته شد '
-        '(${Fa.num(_orphansKilled)} فرایند) تا پورت هایش آزاد شود.',
-        level: 'warning',
-      );
-      _orphansKilled = 0;
     }
     final Directory runDir = Directory(plan.runDir);
     await runDir.create(recursive: true);
@@ -1885,43 +1877,105 @@ class VpnController extends ChangeNotifier {
   /// --listen» بست). پس اگر پورت گرفته باشد، تنها راه، آزاد کردن آن است:
   /// اول نمونه های خودمان بسته می شوند و اگر باز هم گرفته بود، دلیلش به
   /// کاربر گفته می شود تا خودش برنامه مزاحم را ببندد.
+  /// آزاد کردن خودکار پورت های ثابت هسته پیش از اتصال.
+  ///
+  /// هسته دو پورت ثابت دارد (۱۷۰۷۸ و ۱۶۷۵۶) و راهی برای عوض کردنشان نیست.
+  /// تا ۱٫۰٫۹ اگر برنامه دیگری گرفته بود، فقط پیام خطا می دادیم و کاربر باید
+  /// خودش برنامه را پیدا و ببندد. در گزارش ۱٫۰٫۹ صاحب پورت `Hiddify` بود.
+  ///
+  /// حالا برنامه خودش این کار را می کند: هر پردازشی که این پورت ها را گرفته
+  /// بسته می شود، اما فقط وقتی که یکی از این دو باشد:
+  ///
+  /// ۱. خودِ هسته های ما (UmbrellaCli/CoreEngine/Admin) — همیشه.
+  /// ۲. هسته های فیلترشکن دیگری که همین پورت را گرفته اند — چون تا وقتی
+  ///    باز باشند، هیچ اتصالی ممکن نیست؛ و کاربر خودش آمبرلا را باز کرده
+  ///    که وصل شود.
+  ///
+  /// پردازش های دیگر ویندوز (مرورگر، سرویس های سیستم) هرگز بسته نمی شوند؛
+  /// برای آن ها فقط گزارش می دهیم تا کاربر خودش تصمیم بگیرد. این کار با
+  /// اجازه کاربر انجام می شود (تنظیم `freeCorePorts`).
   Future<bool> _freeCorePorts() async {
     List<int> held = await UmbrellaCore.heldReservedPorts();
-    if (held.isEmpty) {
+    // پورت های خود برنامه هم بررسی می شوند: نمونه بازمانده آمبرلا که پورت
+    // پروکسی را گرفته باشد، همان قدر اتصال را می کشد.
+    final List<int> appHeld = await _heldPorts(UmbrellaCore.appPorts);
+    if (held.isEmpty && appHeld.isEmpty) {
       return true;
     }
-    for (final String binary in <String>[
-      umbrellaCliBinary,
-      UmbrellaCore.engineBinary,
-      UmbrellaCore.adminBinary,
-    ]) {
-      final int killed = await _native.killByName(binary);
-      _orphansKilled += killed;
-    }
-    // بستن فرایند همیشه همان لحظه پورت را آزاد نمی کند؛ کمی صبر می کنیم تا
-    // یک نمونه در حال خروج، «برنامه دیگری» حساب نشود.
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 5));
-    while (DateTime.now().isBefore(deadline)) {
-      held = await UmbrellaCore.heldReservedPorts();
-      if (held.isEmpty) {
+    if (held.isEmpty) {
+      // فقط پورت های برنامه گرفته اند؛ با بستن نمونه بازمانده آزاد می شوند.
+      final int killed = await _killOwnCores();
+      if (await _waitForPorts(appHeld)) {
         _log.add(
-          'پورت هسته از اجرای قبلی باز مانده بود و آزاد شد.',
+          'پورت پروکسی از اجرای قبلی باز مانده بود و آزاد شد'
+          '${killed > 0 ? ' (${Fa.num(killed)} فرایند)' : ''}.',
           level: 'warning',
         );
         return true;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
-    // نام برنامه ای که پورت را گرفته، در گزارش می آید تا کاربر بداند چه را
-    // ببندد؛ حدس زدن فایده ای ندارد.
-    final String holder = await UmbrellaCore.portHolders(held);
-    final String ports = held.map((int port) => Fa.num(port)).join('، ');
+
+    // ۱. همیشه اول نمونه های خودمان.
+    final int own = await _killOwnCores();
+    _orphansKilled += own;
+    if (await _waitForPorts(held)) {
+      _log.add(
+        'پورت هسته از اجرای قبلی باز مانده بود و آزاد شد'
+        '${_orphansKilled > 0 ? ' (${Fa.num(_orphansKilled)} فرایند)' : ''}.',
+        level: 'warning',
+      );
+      _orphansKilled = 0;
+      return true;
+    }
+
+    // ۲. برنامه دیگری پورت را گرفته. اگر اجازه داشته باشیم، خودش می بندد.
+    held = await UmbrellaCore.heldReservedPorts();
+    final List<PortHolder> holders =
+        await UmbrellaCore.holders(held, native: _native);
+    final List<PortHolder> cores =
+        holders.where((PortHolder holder) => holder.isForeignCore).toList();
+    final List<PortHolder> strangers =
+        holders.where((PortHolder holder) => !holder.isForeignCore).toList();
+
+    if (cores.isNotEmpty && _settings.freeCorePorts) {
+      final String names =
+          cores.map((PortHolder holder) => holder.label).join('، ');
+      _log.add(
+        'برنامه دیگری پورت هسته را گرفته بود ($names)؛ خودکار بسته شد تا '
+        'اتصال ممکن شود.',
+        level: 'warning',
+        details: <LogDetail>[
+          LogDetail(title: 'چه چیزی بسته شد', text: _holderText(cores)),
+          LogDetail(
+            title: 'چرا',
+            text: 'هسته آمبرلا پورت های ثابت ۱۷۰۷۸ و ۱۶۷۵۶ را می خواهد و '
+                'راهی برای عوض کردنشان ندارد؛ تا وقتی برنامه دیگری روی آن '
+                'ها گوش می دهد، هسته اصلا بالا نمی آید.\n'
+                'اگر نمی خواهید برنامه دیگری بسته شود، در تنظیمات '
+                '«آزادسازی خودکار پورت های هسته» را خاموش کنید.',
+          ),
+        ],
+      );
+      for (final PortHolder holder in cores) {
+        await _native.killPid(holder.pid);
+      }
+      if (await _waitForPorts(held)) {
+        return true;
+      }
+    }
+
+    // ۳. هنوز گرفته است: حالا دقیق بگویید چه چیزی مانده و چرا خودکار بسته نشد.
+    final List<int> still = await UmbrellaCore.heldReservedPorts();
+    if (still.isEmpty) {
+      return true;
+    }
+    final String ports = still.map((int port) => Fa.num(port)).join('، ');
+    final String names =
+        strangers.map((PortHolder holder) => holder.label).join('، ');
+    final bool blockedByStranger = strangers.isNotEmpty;
     _log.add(
-      'پورت $ports در اختیار برنامه دیگری است و هسته برای کار به همان ها '
-      'نیاز دارد.'
-      '${holder.isEmpty ? '' : ' (در اختیار: $holder)'}'
-      ' برنامه ای که آن پورت را گرفته ببندید (بیشتر وقت ها یک فیلترشکن دیگر '
-      'یا یک نمونه بازمانده از آمبرلا است) و دوباره وصل شوید.',
+      'پورت $ports آزاد نشد و هسته برای کار به همان ها نیاز دارد.'
+      '${names.isEmpty ? '' : ' (در اختیار: $names)'}',
       level: 'error',
       details: <LogDetail>[
         LogDetail(
@@ -1929,23 +1983,94 @@ class VpnController extends ChangeNotifier {
           text: <String>[
             for (final int port in UmbrellaCore.reservedPorts)
               '${Fa.num(port)}: '
-                  '${held.contains(port) ? 'گرفته شده' : 'آزاد'}',
-            if (holder.isNotEmpty) 'صاحب پورت: $holder',
+                  '${still.contains(port) ? 'گرفته شده' : 'آزاد'}',
           ].join('\n'),
         ),
+        if (holders.isNotEmpty)
+          LogDetail(title: 'برنامه های صاحب پورت', text: _holderText(holders)),
         LogDetail(
-          title: 'چطور آزادش کنم',
-          text: '۱. اگر نمونه دیگری از آمبرلا باز است، آن را ببندید.\n'
-              '۲. در Task Manager، فرایندهای UmbrellaCli.exe و '
-              'UmbrellaCoreEngine.exe را ببندید.\n'
-              '۳. اگر برنامه دیگری این پورت را گرفته، ببندیدش یا پورت را '
-              'عوض کنید.\n'
-              '۴. دوباره وصل شوید.',
+          title: 'چرا خودکار بسته نشد',
+          text: blockedByStranger
+              ? 'این برنامه ها هسته فیلترشکن نیستند (یا ویندوز اجازه بستنشان '
+                  'را نداد)، پس برنامه عمداً آن ها را نبست. اگر می دانید کار '
+                  'همان برنامه را مختل نمی کند، خودتان ببندیدش و دوباره وصل '
+                  'شوید.'
+              : _settings.freeCorePorts
+                  ? 'برنامه تلاش کرد صاحب پورت را ببندد ولی پورت آزاد نشد؛ '
+                      'احتمالاً ویندوز اجازه نداد. برنامه را با دسترسی مدیر '
+                      'اجرا کنید.'
+                  : '«آزادسازی خودکار پورت های هسته» در تنظیمات خاموش است. '
+                      'با روشن کردن آن، آمبرلا خودش برنامه مزاحم را می بندد.',
         ),
       ],
     );
     return false;
   }
+
+  /// بستن نمونه های خود آمبرلا با نام؛ تعداد بسته شده برمی گردد.
+  Future<int> _killOwnCores() async {
+    int killed = 0;
+    for (final String binary in <String>[
+      umbrellaCliBinary,
+      UmbrellaCore.engineBinary,
+      UmbrellaCore.adminBinary,
+    ]) {
+      killed += await _native.killByName(binary);
+    }
+    return killed;
+  }
+
+  /// کدام یک از این پورت ها همین حالا گرفته اند.
+  Future<List<int>> _heldPorts(List<int> ports) async {
+    final List<int> held = <int>[];
+    for (final int port in ports) {
+      if (await UmbrellaCore.inUse(port)) {
+        held.add(port);
+      }
+    }
+    return held;
+  }
+
+  /// انتظار کوتاه تا آزاد شدن پورت ها (یا پایان مهلت).
+  Future<bool> _waitForPorts(
+    List<int> ports, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final DateTime deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if ((await UmbrellaCore.heldReservedPorts()).isEmpty) {
+        return true;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+    return (await UmbrellaCore.heldReservedPorts()).isEmpty;
+  }
+
+  /// متن خوانا از صاحب های پورت، برای گزارش.
+  static String _holderText(List<PortHolder> holders) {
+    if (holders.isEmpty) {
+      return 'نام برنامه خوانده نشد (ویندوز اجازه نداد).';
+    }
+    return holders
+        .map(
+          (PortHolder holder) => <String>[
+            '${holder.label} (شناسه ${Fa.num(holder.pid)})',
+            // مسیر فقط برای هسته های شناخته شده پنهان می شود؛ برای بقیه
+            // کاربر باید بداند کدام برنامه را ببندد.
+            if (holder.path.isNotEmpty && !holder.isForeignCore)
+              '  مسیر: ${holder.path}',
+            '  پورت: '
+                '${holder.ports.map((int port) => Fa.num(port)).join('، ')}',
+          ].join('\n'),
+        )
+        .join('\n');
+  }
+
+  /// نام فایل اجرایی صاحب پورت، فقط وقتی که هسته شناخته شده نیست.
+  ///
+  /// برای هسته های شناخته شده نام تجاری نمایش داده نمی شود (قاعده «فقط
+  /// آمبرلا»)، ولی شناسه پردازش و پورت گفته می شود تا در Task Manager
+  /// پیدا شود.
 
   /// آیا هسته همین سرور را نتوانست بخواند؟
   ///

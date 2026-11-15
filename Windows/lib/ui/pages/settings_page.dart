@@ -131,6 +131,16 @@ class _SettingsPageState extends State<SettingsPage> {
                           accent: colors.textSecondary,
                         ),
                         ToggleRow(
+                          icon: Icons.lock_open_rounded,
+                          title: 'آزادسازی خودکار پورت های هسته',
+                          subtitle: 'اگر برنامه دیگری (مثل یک فیلترشکن دیگر) '
+                              'پورت های ثابت هسته را گرفته باشد، پیش از اتصال '
+                              'خودکار بسته می شود تا اتصال ممکن شود',
+                          value: current.freeCorePorts,
+                          onChanged: settings.setFreeCorePorts,
+                          accent: colors.success,
+                        ),
+                        ToggleRow(
                           icon: Icons.swap_horiz_rounded,
                           title: 'جابه جایی خودکار سرور',
                           subtitle: 'در صورت افت اتصال، سرور دیگری امتحان می شود',

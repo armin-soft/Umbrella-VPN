@@ -936,6 +936,7 @@ class AppSettings {
     this.theme = ThemePreference.dark,
     this.autoConnect = false,
     this.killSwitch = false,
+    this.freeCorePorts = true,
     this.tunMode = true,
     this.startWithWindows = false,
     this.minimizeToTray = true,
@@ -969,6 +970,14 @@ class AppSettings {
   final ThemePreference theme;
   final bool autoConnect;
   final bool killSwitch;
+
+  /// آزادسازی خودکار پورت های ثابت هسته (۱۷۰۷۸ و ۱۶۷۵۶) پیش از اتصال.
+  ///
+  /// اگر برنامه دیگری — مثل نسخه دیگری از همین هسته — این پورت ها را گرفته
+  /// باشد، هسته اصلا بالا نمی آید و هیچ اتصالی ممکن نیست. با روشن بودن این
+  /// تنظیم، آمبرلا خودش همان برنامه را می بندد. فقط هسته های شناخته شده
+  /// فیلترشکن بسته می شوند، نه هر برنامه ای.
+  final bool freeCorePorts;
 
   /// تونل کامل با کارت شبکه مجازی به جای پروکسی سیستمی.
   final bool tunMode;
@@ -1011,6 +1020,7 @@ class AppSettings {
     ThemePreference? theme,
     bool? autoConnect,
     bool? killSwitch,
+    bool? freeCorePorts,
     bool? tunMode,
     bool? startWithWindows,
     bool? minimizeToTray,
@@ -1044,6 +1054,7 @@ class AppSettings {
       theme: theme ?? this.theme,
       autoConnect: autoConnect ?? this.autoConnect,
       killSwitch: killSwitch ?? this.killSwitch,
+      freeCorePorts: freeCorePorts ?? this.freeCorePorts,
       tunMode: tunMode ?? this.tunMode,
       startWithWindows: startWithWindows ?? this.startWithWindows,
       minimizeToTray: minimizeToTray ?? this.minimizeToTray,
@@ -1079,6 +1090,7 @@ class AppSettings {
         'theme': theme.name,
         'autoConnect': autoConnect,
         'killSwitch': killSwitch,
+        'freeCorePorts': freeCorePorts,
         'tunMode': tunMode,
         'startWithWindows': startWithWindows,
         'minimizeToTray': minimizeToTray,
@@ -1124,6 +1136,7 @@ class AppSettings {
       theme: pick(ThemePreference.values, json['theme'], ThemePreference.dark),
       autoConnect: JsonX.boolean(json['autoConnect']),
       killSwitch: JsonX.boolean(json['killSwitch'], fallback: false),
+      freeCorePorts: JsonX.boolean(json['freeCorePorts'], fallback: true),
       tunMode: JsonX.boolean(json['tunMode'], fallback: true),
       startWithWindows: JsonX.boolean(json['startWithWindows']),
       minimizeToTray: JsonX.boolean(json['minimizeToTray'], fallback: true),

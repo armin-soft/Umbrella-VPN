@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cwctype>
 #include <sstream>
@@ -544,6 +545,67 @@ int SystemOps::KillByName(const std::string& exe_name) {
     if (KillPid(static_cast<int>(pid))) killed++;
   }
   return killed;
+}
+
+std::vector<int> SystemOps::PidsHoldingPort(int port) {
+  std::vector<int> pids;
+  PMIB_TCPTABLE_OWNER_PID table = nullptr;
+  DWORD size = 0;
+  // اولین فراخوانی اندازه را می دهد و شکست می خورد؛ این خطا طبیعی است.
+  GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
+                      TCP_TABLE_OWNER_PID_LISTENER, 0);
+  if (size == 0) return pids;
+  table = static_cast<PMIB_TCPTABLE_OWNER_PID>(malloc(size));
+  if (table == nullptr) return pids;
+  const DWORD result = GetExtendedTcpTable(table, &size, FALSE, AF_INET,
+                                           TCP_TABLE_OWNER_PID_LISTENER, 0);
+  if (result == ERROR_SUCCESS) {
+    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+      const MIB_TCPROW_OWNER_PID& row = table->table[i];
+      // پورت در ساختار شبکه به ترتیب بایت است.
+      const int local = ntohs(static_cast<u_short>(row.dwLocalPort));
+      if (local != port) continue;
+      const int pid = static_cast<int>(row.dwOwningProcess);
+      if (pid > 0 &&
+          std::find(pids.begin(), pids.end(), pid) == pids.end()) {
+        pids.push_back(pid);
+      }
+    }
+  }
+  free(table);
+  return pids;
+}
+
+std::string SystemOps::ProcessNameOf(int pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return std::string();
+  wchar_t buffer[MAX_PATH] = {0};
+  DWORD size = MAX_PATH;
+  std::string name;
+  if (QueryFullProcessImageNameW(process, 0, buffer, &size)) {
+    const std::wstring full(buffer, size);
+    const size_t slash = full.find_last_of(L"\\/");
+    const std::wstring base =
+        slash == std::wstring::npos ? full : full.substr(slash + 1);
+    name = ToUtf8(base);
+  }
+  CloseHandle(process);
+  return name;
+}
+
+std::string SystemOps::ProcessPathOf(int pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return std::string();
+  wchar_t buffer[MAX_PATH * 2] = {0};
+  DWORD size = MAX_PATH * 2;
+  std::string path;
+  if (QueryFullProcessImageNameW(process, 0, buffer, &size)) {
+    path = ToUtf8(std::wstring(buffer, size));
+  }
+  CloseHandle(process);
+  return path;
 }
 
 bool SystemOps::IsRunning(const std::string& exe_name) {

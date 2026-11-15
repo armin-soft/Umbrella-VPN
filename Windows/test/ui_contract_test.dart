@@ -132,6 +132,71 @@ void main() {
     });
   });
 
+  group('آزادسازی خودکار پورت', () {
+    test('صاحب پورت پیدا می شود و می تواند بسته شود', () {
+      // گزارش ۱٫۰٫۹: صاحب پورت ۱۷۰۷۸ یک نسخه دیگر از هسته بود که خودش را
+      // Hiddify معرفی می کرد و کاربر باید دستی می بستش. حالا برنامه خودش
+      // پیدایش می کند و می بندد.
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains('static Future<List<PortHolder>> holders('), isTrue);
+      expect(core.contains('static Future<bool> killPid('), isTrue);
+      expect(core.contains('class PortHolder'), isTrue);
+
+      // پیدا کردن صاحب پورت باید راه بومی و راه جایگزین داشته باشد.
+      final String native = read('lib/platform/native.dart');
+      expect(native.contains('pidsHoldingPort'), isTrue);
+      expect(native.contains('processNameOf'), isTrue);
+      expect(native.contains('processPathOf'), isTrue);
+      expect(native.contains("'netstat'"), isTrue);
+
+      // و در لایه بومی ویندوز هم واقعا پیاده شده باشد.
+      final String ops = read('packages/umbrella_native/windows/system_ops.cpp');
+      expect(ops.contains('SystemOps::PidsHoldingPort'), isTrue);
+      expect(ops.contains('GetExtendedTcpTable'), isTrue);
+      expect(ops.contains('QueryFullProcessImageNameW'), isTrue);
+      final String plugin =
+          read('packages/umbrella_native/windows/umbrella_native_plugin.cpp');
+      expect(plugin.contains('"pidsHoldingPort"'), isTrue);
+    });
+
+    test('فقط هسته های شناخته شده بسته می شوند، نه هر برنامه ای', () {
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains('bool get isForeignCore'), isTrue);
+      // نام های شناخته شده هسته ها در فهرست سفید هستند
+      expect(core.contains("'hiddify'"), isTrue);
+      expect(core.contains("'sing-box'"), isTrue);
+      expect(core.contains("'xray'"), isTrue);
+      // نام تجاری هسته های دیگر هیچ وقت نمایش داده نمی شود؛ قاعده «فقط
+      // آمبرلا» حتی در گزارش خطا.
+      expect(core.contains('یک هسته فیلترشکن دیگر'), isTrue);
+      // و این کار به اجازه کاربر بسته است
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_settings.freeCorePorts'), isTrue);
+      expect(read('lib/models/models.dart').contains('this.freeCorePorts = true'),
+          isTrue);
+      // تنظیم در صفحه تنظیمات هم هست
+      expect(read('lib/ui/pages/settings_page.dart').contains('freeCorePorts'),
+          isTrue);
+    });
+
+    test('همه پورت ها بررسی می شوند، نه فقط دو پورت ثابت', () {
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains('static const List<int> appPorts'), isTrue);
+      expect(core.contains('static const List<int> allPorts'), isTrue);
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_heldPorts(UmbrellaCore.appPorts)'), isTrue);
+      expect(controller.contains('_killOwnCores'), isTrue);
+    });
+
+    test('اگر پورت آزاد نشد، دلیلش دقیق گفته می شود', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('چرا خودکار بسته نشد'), isTrue);
+      expect(controller.contains('برنامه های صاحب پورت'), isTrue);
+      // و هیچ وقت ادعا نمی کند که پورت آزاد شد در حالی که نشده
+      expect(controller.contains('پورت \$ports آزاد نشد'), isTrue);
+    });
+  });
+
   group('گزارش ها و خطاها', () {
     test('هر خطا می تواند جزئیات کامل داشته باشد', () {
       final String utils = read('lib/core/utils.dart');
@@ -158,8 +223,8 @@ void main() {
       final String controller = read('lib/vpn/vpn_controller.dart');
       // بلافاصله بسته شدن هسته
       expect(controller.contains('details: await _coreDiagnostics'), isTrue);
-      // پورت در اختیار برنامه دیگر
-      expect(controller.contains('چطور آزادش کنم'), isTrue);
+      // پورت در اختیار برنامه دیگر (حالا خودکار بسته می شود)
+      expect(controller.contains('چرا خودکار بسته نشد'), isTrue);
       // سروری برای اجرا نبود
       expect(controller.contains('_whyNoUsableServer'), isTrue);
       expect(controller.contains('_protocolBreakdown'), isTrue);
@@ -406,6 +471,10 @@ void main() {
       const List<String> allowed = <String>[
         "static const String id = 'hiddify';",
         "static const String tunAdapterHint = 'hiddify';",
+        // فهرست داخلی هسته هایی که پورت را می توانند گرفته باشند. این نام
+        // هیچ وقت نمایش داده نمی شود: PortHolder.label برای هسته های
+        // شناخته شده «یک هسته فیلترشکن دیگر» برمی گرداند.
+        "'hiddify',",
       ];
       for (final File file in files) {
         final List<String> lines = file.readAsLinesSync();

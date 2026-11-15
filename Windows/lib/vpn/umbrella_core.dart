@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import '../core/app_config.dart';
+import '../core/persian.dart';
+import '../platform/native.dart';
 
 /// تنها هسته اتصال برنامه: موتور هسته (کتابخانه هسته به همراه لانچرهای آمبرلا).
 ///
@@ -103,6 +105,22 @@ class UmbrellaCore {
     AppConfig.coreClashPort,
   ];
 
+  /// پورت های خود برنامه (پروکسی مختلط و بقیه).
+  ///
+  /// اگر نمونه بازمانده ای این ها را گرفته باشد، هسته نمی تواند پروکسی را
+  /// بالا بیاورد و اتصال با «پورت در اختیار» رد می شود — همان مشکلی که برای
+  /// پورت های ثابت داشتیم.
+  static const List<int> appPorts = <int>[
+    AppConfig.httpPortUmbrella,
+    12335,
+    12336,
+    12337,
+    12338,
+  ];
+
+  /// همه پورت هایی که پیش از اتصال باید آزاد باشند.
+  static const List<int> allPorts = <int>[...reservedPorts, ...appPorts];
+
   /// آیا این پورت روی لوکال هاست گرفته شده است؟
   static Future<bool> inUse(int port) async {
     ServerSocket? socket;
@@ -193,6 +211,46 @@ class UmbrellaCore {
     } on Exception {
       return '';
     }
+  }
+
+  /// پروسه هایی که این پورت ها را گرفته اند، با نام و مسیرشان.
+  ///
+  /// برای این که برنامه بتواند تصمیم بگیرد: اگر مال خودمان است ببندد، اگر
+  /// برنامه دیگری است کاربر را خبر کند، و اگر مال نسخه دیگری از همان هسته
+  /// است (مثل `Hiddify`) با نام درست گزارش دهد.
+  static Future<List<PortHolder>> holders(
+    List<int> ports, {
+    required NativeBridge native,
+  }) async {
+    final List<PortHolder> found = <PortHolder>[];
+    for (final int port in ports) {
+      for (final int pid in await native.pidsHoldingPort(port)) {
+        if (found.any((PortHolder h) => h.pid == pid)) {
+          found
+              .firstWhere((PortHolder h) => h.pid == pid)
+              .ports
+              .add(port);
+          continue;
+        }
+        final String name = await native.processNameOf(pid);
+        final String path = await native.processPathOf(pid);
+        found.add(
+          PortHolder(pid: pid, name: name, path: path, ports: <int>[port]),
+        );
+      }
+    }
+    return found;
+  }
+
+  /// بستن یک پردازش با شناسه.
+  static Future<bool> killPid(
+    int pid, {
+    required NativeBridge native,
+  }) async {
+    if (pid <= 0) {
+      return false;
+    }
+    return native.killPid(pid);
   }
 
   /// دی ان اس پیش فرض هسته (همان پیش فرض خودش در `DefaultHiddifyOptions`).
@@ -375,5 +433,86 @@ class UmbrellaSession {
         File('$runDir${Platform.pathSeparator}umbrella-core-link.txt');
     await file.writeAsString('${links.join('\n')}\n', flush: true);
     return file.path;
+  }
+}
+
+/// برنامه ای که یک پورت را گرفته است.
+class PortHolder {
+  PortHolder({
+    required this.pid,
+    required this.name,
+    required this.path,
+    required this.ports,
+  });
+
+  final int pid;
+
+  /// نام فایل اجرایی، مثل `Hiddify.exe`.
+  final String name;
+
+  /// مسیر کامل؛ ممکن است خالی باشد اگر ویندوز اجازه خواندن نداد.
+  final String path;
+
+  final List<int> ports;
+
+  /// آیا این پردازش هسته خود ماست؟
+  bool get isOurs => name.toLowerCase().startsWith('umbrella');
+
+  /// آیا این پردازش، هسته یک فیلترشکن است؟
+  ///
+  /// فقط نام های شناخته شده هسته؛ هیچ برنامه دیگری (مرورگر، بازی، سرویس
+  /// ویندوز) در این فهرست نیست و هرگز بسته نمی شود. این فهرست داخلی است و
+  /// هیچ جا نمایش داده نمی شود.
+  bool get isForeignCore {
+    if (isOurs) {
+      return true;
+    }
+    final String lower = name.toLowerCase();
+    if (lower.isEmpty) {
+      return false;
+    }
+    return _coreNames.any(lower.startsWith);
+  }
+
+  static const List<String> _coreNames = <String>[
+    'hiddify',
+    'sing-box',
+    'xray',
+    'v2ray',
+    'mihomo',
+    'clash',
+    'nekoray',
+    'nekobox',
+    'hysteria',
+    'tuic',
+    'wireguard',
+    'amnezia',
+    'awg',
+    'mieru',
+    'shadowsocks',
+    'ss-local',
+    'trojan',
+    'naive',
+    'openvpn',
+    'outline',
+    'psiphon',
+    'warp',
+    'tun2socks',
+  ];
+
+  /// نام نمایشی برای گزارش.
+  ///
+  /// نام هسته های شناخته شده با نام تجاری خودشان نوشته نمی شود؛ در تمام
+  /// برنامه فقط «آمبرلا» دیده می شود. خود فایل روی دیسک دست نمی خورد و نام
+  /// واقعی اش در بخش «مسیر» می آید، چون همان چیزی است که کاربر باید در
+  /// Task Manager پیدا کند.
+  String get label {
+    if (name.isEmpty) {
+      return 'پردازش با شناسه ${Fa.num(pid)}';
+    }
+    if (isForeignCore && !isOurs) {
+      return 'یک هسته فیلترشکن دیگر';
+    }
+    return name;
   }
 }
