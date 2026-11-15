@@ -107,12 +107,16 @@ void main() {
       expect(before.contains('_tunnelFailureReported'), isTrue);
     });
 
-    test('اگر پورت دست برنامه دیگری باشد، نامش در گزارش می آید', () {
+    test('اگر پورت دست برنامه دیگری باشد، صاحبش در گزارش می آید', () {
       final String core = read('lib/vpn/umbrella_core.dart');
-      expect(core.contains('static Future<String> portHolders('), isTrue);
       expect(core.contains('Get-NetTCPConnection'), isTrue);
+      // نام خام ویندوز (`17078=Hiddify`) نباید در گزارش بیاید؛ طبق قرارمان
+      // در متن نمایش داده شده فقط نام «آمبرلا» می آید و هسته های رقیب
+      // «یک هسته فیلترشکن دیگر» نامیده می شوند.
       final String controller = read('lib/vpn/vpn_controller.dart');
-      expect(controller.contains('UmbrellaCore.portHolders(held)'), isTrue);
+      expect(controller.contains('UmbrellaCore.portHolders(held)'), isFalse);
+      expect(controller.contains('UmbrellaCore.holders(held, native: _native)'),
+          isTrue);
       // بدون صبر، نمونه ای که تازه بسته شده «برنامه دیگری» حساب می شد.
       expect(controller.contains('const Duration(seconds: 5)'), isTrue);
     });

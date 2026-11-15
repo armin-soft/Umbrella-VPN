@@ -1166,7 +1166,26 @@ class VpnController extends ChangeNotifier {
               level: 'warning',
             );
           }
-          flows = moved;
+          // مدرک سوم و قوی ترین: خود هسته در گزارشش چه گفت؟
+          //
+          // اگر هسته نوشته باشد «sing-box started» و برای همین سرور اتصال
+          // بیرونی برقرار کرده باشد، یعنی تونل کار می کند؛ حتی اگر هیچ
+          // درخواستی از برنامه هایی که اینجا سنجیده می شوند رد نشده باشد.
+          if (!moved) {
+            final bool coreSays = await _coreReportsWorkingTunnel(
+              _coreLogPath(plan),
+            );
+            if (coreSays) {
+              _log.add(
+                'سنجش وب پاسخ نداد ولی خود هسته گزارش داد که تونل بالا آمد '
+                'و برای این سرور اتصال بیرونی برقرار شد؛ اتصال معتبر است.',
+                level: 'warning',
+              );
+            }
+            flows = coreSays;
+          } else {
+            flows = true;
+          }
         } else if (_realIp.isEmpty) {
           // آی پی پیش از اتصال خوانده نشده؛ برای مقایسه چیزی نداریم.
           flows = true;
@@ -1325,12 +1344,17 @@ class VpnController extends ChangeNotifier {
       return false;
     }
     final Map<String, dynamic> params = node.params;
-    // توجه: نوع انتقال اینجا رد نمی شود.
-    //
     // گرهی که در نقشه کلش `type: vless` دارد داده اش غلط نیست، فقط نام
     // پروتکل در جای نوع انتقال نشسته؛ لینک ساز آن را به `tcp` عادی می کند
-    // (`_transportOf`). رد کردن چنین گره ای یعنی سروری که شاید تنها سرور
-    // کارآمد باشد هیچ وقت امتحان نشود.
+    // (`_transportOf`).
+    //
+    // ولی گرهی که واقعا `network: xhttp` یا `splithttp` دارد با این هسته
+    // اجرا نمی شود: این دو مخصوص زیکس‌ری هستند. اگر امتحان شوند، هسته بالا
+    // نمی آید و کاربر یک خطای نامفهوم می بیند؛ بهتر است از اول در فهرست
+    // قابل انتخاب نباشند.
+    if (!transportSupported(node)) {
+      return false;
+    }
     switch (node.protocol) {
       case NodeProtocol.vless:
       case NodeProtocol.vmess:
@@ -1564,20 +1588,7 @@ class VpnController extends ChangeNotifier {
     if (raw.isEmpty) {
       return true;
     }
-    const List<String> known = <String>[
-      'tcp',
-      'ws',
-      'grpc',
-      'http',
-      'h2',
-      'quic',
-      'kcp',
-      'mkcp',
-      'xhttp',
-      'splithttp',
-      'httpupgrade',
-    ];
-    return known.contains(raw);
+    return _coreTransports.contains(raw) || raw == 'mkcp';
   }
 
   /// لینک وی لس از فیلدهای گره.
@@ -1617,8 +1628,9 @@ class VpnController extends ChangeNotifier {
         query.add('serviceName=${Uri.encodeComponent(service)}');
       }
     }
-    // ریلیتی: بدون این سه پارامتر، دست‌دادن TLS انجام نمی شود.
-    for (final String key in <String>['pbk', 'sid', 'fp', 'spx']) {
+    // ریلیتی: بدون این پارامترها دست‌دادن TLS انجام نمی شود. `fp` پایین تر
+    // با توضیح خودش اضافه می شود.
+    for (final String key in <String>['pbk', 'sid', 'spx']) {
       final String value = JsonX.text(params[key]);
       if (value.isNotEmpty) {
         query.add('$key=${Uri.encodeComponent(value)}');
@@ -1628,12 +1640,51 @@ class VpnController extends ChangeNotifier {
     if (flow.isNotEmpty) {
       query.add('flow=${Uri.encodeComponent(flow)}');
     }
+    // `h2` و `http/1.1` یکی نیستند؛ اگر سرور فقط یکی را بپذیرد، فرستادن هردو
+    // یا هیچ کدام، دست دادن را خراب می کند.
+    final String alpn = JsonX.text(params['alpn']);
+    if (alpn.isNotEmpty) {
+      query.add('alpn=${Uri.encodeComponent(alpn)}');
+    }
+    // ریلیتی بدون اثر انگشت مرورگر (uTLS) دست نمی دهد: سرور انتظار دست دادن
+    // کروم را دارد و دست دادن پیش فرض Go را رد می کند.
+    final String fp = JsonX.text(params['fp']);
+    if (fp.isNotEmpty) {
+      query.add('fp=${Uri.encodeComponent(fp)}');
+    }
     if (JsonX.boolean(params['allowInsecure'])) {
       query.add('allowInsecure=1');
     }
     final String id = JsonX.text(params['id'] ?? params['uuid']);
     final String name = Uri.encodeComponent(node.name);
     return 'vless://$id@$host:${node.port}?${query.join('&')}#$name';
+  }
+
+  /// نوع انتقال هایی که این هسته واقعا پیاده کرده است.
+  ///
+  /// `xhttp` و `splithttp` مخصوص زیکس‌ری هستند و هسته آمبرلا (سینگ باکس)
+  /// هیچ کدام را نمی شناسد. نساختنشان بهتر از ساختن یک `tcp` حدسی است:
+  /// `tcp` حدسی یعنی اتصال با تنظیمات غلط انجام می شود، سرور جواب نمی دهد و
+  /// کاربر فکر می کند سرور خراب است.
+  static const List<String> _coreTransports = <String>[
+    'tcp',
+    'ws',
+    'grpc',
+    'http',
+    'h2',
+    'quic',
+    'httpupgrade',
+    'kcp',
+  ];
+
+  /// آیا این گره با نوع انتقالش برای هسته آمبرلا قابل اجراست؟
+  static bool transportSupported(VpnNode node) {
+    final String network =
+        JsonX.text(node.params['network']).trim().toLowerCase();
+    if (network.isEmpty) {
+      return true;
+    }
+    return _coreTransports.contains(network);
   }
 
   /// نوع انتقال لینک (`tcp`، `ws`، `grpc`، `http`، `h2`).
@@ -2339,10 +2390,15 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    // ۴. وضعیت پورت های ثابت هسته؛ اگر گرفته باشند، نام صاحبش.
+    // ۴. وضعیت پورت های ثابت هسته؛ اگر گرفته باشند، صاحبش.
+    //
+    // نام خام ویندوز (`17078=Hiddify`) اینجا نوشته نمی شود: طبق قرارمان در
+    // متن نمایش داده شده فقط نام «آمبرلا» می آید. `PortHolder.label` همان
+    // هسته های رقیب را «یک هسته فیلترشکن دیگر» می نامد.
     final List<int> held = await UmbrellaCore.heldReservedPorts();
     if (held.isNotEmpty) {
-      final String holders = await UmbrellaCore.portHolders(held);
+      final List<PortHolder> holders =
+          await UmbrellaCore.holders(held, native: _native);
       details.add(
         LogDetail(
           title: 'پورت های هسته در همین لحظه',
@@ -2350,7 +2406,7 @@ class VpnController extends ChangeNotifier {
               .map(
                 (int port) =>
                     '${Fa.num(port)}: گرفته شده'
-                    '${holders.isEmpty ? '' : ' ($holders)'}',
+                    '${holders.isEmpty ? '' : ' (${_holderText(holders)})'}',
               )
               .join('\n'),
         ),
@@ -2370,6 +2426,51 @@ class VpnController extends ChangeNotifier {
       }
     }
     return details;
+  }
+
+  /// آیا خود هسته گفته است که تونل بالا آمد و کار کرد؟
+  ///
+  /// گزارش ۱٫۰٫۱۱ نشان داد سنجش وب تنها معیار بودن، خطرناک است: هسته بالا
+  /// آمده بود، `sing-box started` نوشته بود و برای همان سرور اتصال بیرونی
+  /// برقرار کرده بود (DNS به ۱٫۱٫۱٫۱ از مسیر همان گره)، ولی سنجش یک ثانیه ای
+  /// جواب نداد و برنامه تونل سالم را کشت. پس گزارش خود هسته هم خوانده می شود.
+  ///
+  /// نشانه های پذیرش:
+  ///  • `sing-box started` یعنی هسته بی خطا بالا آمد.
+  ///  • `outbound/vless[...]: outbound connection to ...` یعنی برای همان
+  ///    سرور اتصال واقعی برقرار شد (برخلاف `direct` که یعنی بدون تونل رفت).
+  ///
+  /// اگر خطای کشنده ای مثل `already in use` یا `unknown transport type` در
+  /// گزارش باشد، هیچ کدام از این ها پذیرفته نمی شود.
+  Future<bool> _coreReportsWorkingTunnel(String coreLog) async {
+    final String full = await _readLogFull(coreLog);
+    if (full.isEmpty) {
+      return false;
+    }
+    final String text = full.toLowerCase();
+    const List<String> fatal = <String>[
+      'already in use',
+      'unknown transport type',
+      'unable to determine config format',
+      'no outbounds found',
+      'failed to set up global configuration',
+      'invalid server address',
+    ];
+    for (final String marker in fatal) {
+      if (text.contains(marker)) {
+        return false;
+      }
+    }
+    if (!text.contains('sing-box started')) {
+      return false;
+    }
+    // اتصال از مسیر خود گره (نه `direct`) — همان چیزی که ثابت می کند تونل
+    // بیرون رفت.
+    final RegExp outbound = RegExp(
+      r'outbound/(vless|vmess|trojan|shadowsocks|hysteria2|tuic|wireguard|anytls|mieru)'
+      r'\[[^\]]*\]: outbound connection to ',
+    );
+    return outbound.hasMatch(text);
   }
 
   /// متن کامل گزارش هسته (برای تصمیم گیری، بی برش).
@@ -2392,10 +2493,13 @@ class VpnController extends ChangeNotifier {
   static String _explainCoreExit(String output) {
     final String text = output.toLowerCase();
     if (text.contains('already in use')) {
-      return 'پورت هسته پیش از این گرفته شده است؛ یعنی یک نمونه دیگر از هسته '
-          '(یا یک برنامه دیگر) باز مانده است. یک بار «قطع» را بزنید و دوباره '
-          'وصل شوید؛ اگر تکرار شد، UmbrellaCli.exe و UmbrellaCoreEngine.exe را '
-          'در Task Manager ببندید.';
+      // پیش از ۱٫۰٫۱۲ اینجا از کاربر خواسته می شد خودش در Task Manager
+      // برنامه را ببندد. طبق قرارمان، بستن پورت کار خود برنامه است.
+      return 'پورت هسته هنگام این تلاش گرفته شده بود. آمبرلا پیش از هر تلاش '
+          'خودش هسته قبلی را می بندد و پورت را آزاد می کند؛ این حالت دوباره '
+          'امتحان می شود. اگر همه حالت ها همین را گفتند، تنظیم «آزادسازی '
+          'خودکار پورت های هسته» را روشن بگذارید تا برنامه مزاحم هم خودکار '
+          'بسته شود.';
     }
     if (text.contains('failed to serve grpc') ||
         text.contains('start core grpc server')) {

@@ -627,9 +627,45 @@ class SubscriptionParser {
       }
       if (proxy['reality-opts'] is Map) {
         final Map<String, dynamic> reality = JsonX.asMap(proxy['reality-opts']);
-        params['pbk'] = JsonX.text(reality['public-key']);
-        params['sid'] = JsonX.text(reality['short-id']);
+        params['pbk'] = JsonX.text(
+          reality['public-key'] ??
+              reality['public_key'] ??
+              reality['publickey'] ??
+              reality['pbk'],
+        );
+        params['sid'] = JsonX.text(
+          reality['short-id'] ??
+              reality['short_id'] ??
+              reality['shortid'] ??
+              reality['sid'],
+        );
         params['security'] = 'reality';
+      }
+      // اثر انگشت مرورگر (uTLS). ریلیتی بدون آن دست نمی دهد: سرور انتظار
+      // دست دادن کروم را دارد و دست دادن پیش فرض Go را رد می کند. تا ۱٫۰٫۱۱
+      // این فیلد از فایل کلش خوانده نمی شد، پس گره های ریلیتی خود پنل هم با
+      // اینکه لینکشان درست بود، از مسیر کلش سالم به هسته نمی رسیدند.
+      final String fingerprint = JsonX.text(
+        proxy['client-fingerprint'] ??
+            proxy['client_fingerprint'] ??
+            proxy['fingerprint'] ??
+            proxy['fp'],
+      );
+      if (fingerprint.isNotEmpty) {
+        params['fp'] = fingerprint;
+      }
+      // ALPN روی ریلیتی و TLS معمولی اثر دارد؛ `h2` و `http/1.1` یکسان
+      // نیستند و سرور فقط یکی را می پذیرد.
+      if (proxy['alpn'] is List) {
+        final String alpn = JsonX.asList(proxy['alpn'])
+            .map((Object? item) => JsonX.text(item))
+            .where((String item) => item.isNotEmpty)
+            .join(',');
+        if (alpn.isNotEmpty) {
+          params['alpn'] = alpn;
+        }
+      } else if (JsonX.text(proxy['alpn']).isNotEmpty) {
+        params['alpn'] = JsonX.text(proxy['alpn']);
       }
       if (JsonX.boolean(proxy['tls'])) {
         params['security'] = params['security'] ?? 'tls';

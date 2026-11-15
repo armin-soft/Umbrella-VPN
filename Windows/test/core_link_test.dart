@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
@@ -129,6 +130,124 @@ void main() {
       );
       final String link = VpnController.linkFor(vmess);
       expect(link, startsWith('vmess://'));
+    });
+  });
+
+  group('پارامترهای ریلیتی از فایل کلش', () {
+    test('اثر انگشت مرورگر و ALPN حفظ می شوند', () {
+      // در فایل کلش پنل، همین گره `client-fingerprint: chrome` و
+      // `alpn: [http/1.1]` دارد. ریلیتی بدون اثر انگشت مرورگر دست نمی دهد،
+      // پس اگر این دو از دست بروند گره سالم هم وصل نمی شود.
+      final String link = VpnController.linkFor(
+        nodeOf(<String, dynamic>{
+          'id': '9b9d9f5d-9841-45bf-a6b9-0479de273c11',
+          'security': 'reality',
+          'pbk': 'Nq3ta7rL_bUIfT7l5OXnu2wPbsgErVikyfW7Ad7OL2E',
+          'sid': '792ac262',
+          'sni': 'www.informationsverige.se',
+          'fp': 'chrome',
+          'alpn': 'http/1.1',
+          'flow': 'xtls-rprx-vision',
+          'network': 'tcp',
+        }),
+      );
+      expect(link, contains('fp=chrome'));
+      expect(link, contains('alpn=http%2F1.1'));
+      expect(link, contains('flow=xtls-rprx-vision'));
+      expect(link, contains('pbk='));
+      expect(link, contains('sid=792ac262'));
+      expect(link, contains('security=reality'));
+      expect(link, contains('type=tcp'));
+    });
+  });
+
+  group('نوع انتقال پشتیبانی نشده', () {
+    test('xhttp و splithttp برای این هسته قابل اجرا نیستند', () {
+      // این دو مخصوص زیکس‌ری هستند؛ هسته آمبرلا (سینگ باکس) نمی شناسدشان.
+      // ساختن `tcp` حدسی یعنی اتصال با تنظیمات غلط و سرور «خراب» به نظر
+      // می رسد.
+      VpnNode withNetwork(String network) => VpnNode(
+            id: 'x',
+            name: 'node',
+            protocol: NodeProtocol.vless,
+            host: 'h',
+            port: 443,
+            sourceId: 's',
+            params: <String, dynamic>{'id': 'u', 'network': network},
+          );
+      expect(VpnController.transportSupported(withNetwork('xhttp')), isFalse);
+      expect(
+        VpnController.transportSupported(withNetwork('splithttp')),
+        isFalse,
+      );
+      expect(VpnController.transportSupported(withNetwork('tcp')), isTrue);
+      expect(VpnController.transportSupported(withNetwork('ws')), isTrue);
+      expect(VpnController.transportSupported(withNetwork('grpc')), isTrue);
+      expect(
+        VpnController.transportSupported(withNetwork('httpupgrade')),
+        isTrue,
+      );
+      // خالی یعنی پیش فرض (tcp) و مشکلی نیست.
+      expect(VpnController.transportSupported(withNetwork('')), isTrue);
+    });
+
+    test('گره xhttp از فهرست قابل استفاده کنار گذاشته می شود', () {
+      final VpnNode node = VpnNode(
+        id: 'x',
+        name: 'سرور آمبرلا xhttp',
+        protocol: NodeProtocol.vless,
+        host: 'direct.umbrella-server.ir',
+        port: 443,
+        sourceId: 's',
+        params: <String, dynamic>{'id': 'u', 'network': 'xhttp'},
+      );
+      expect(VpnController.usable(node), isFalse);
+    });
+  });
+
+  group('خواندن فایل کلش پنل', () {
+    test('اثر انگشت مرورگر و ALPN از کلش خوانده می شوند', () {
+      // همان شکل واقعی که پنل می دهد: `client-fingerprint` و `alpn` جدا از
+      // `reality-opts` هستند. تا ۱٫۰٫۱۱ هیچ کدام خوانده نمی شد، پس گره
+      // ریلیتی از مسیر کلش با دست دادن اشتباه به هسته می رفت.
+      const String yaml = '''
+proxies:
+  - name: reality-node
+    type: vless
+    server: direct.umbrella-server.ir
+    port: 443
+    uuid: 9b9d9f5d-9841-45bf-a6b9-0479de273c11
+    udp: true
+    alpn:
+      - http/1.1
+    skip-cert-verify: false
+    client-fingerprint: chrome
+    servername: www.informationsverige.se
+    tls: true
+    packet-encoding: xudp
+    flow: xtls-rprx-vision
+    network: tcp
+    reality-opts:
+      public-key: Nq3ta7rL_bUIfT7l5OXnu2wPbsgErVikyfW7Ad7OL2E
+      short-id: 792ac262
+''';
+      final ParseReport report = SubscriptionParser.parseAuto(yaml, 'panel');
+      expect(report.nodes, hasLength(1));
+      final VpnNode node = report.nodes.first;
+      expect(node.params['fp'], 'chrome');
+      expect(node.params['alpn'], 'http/1.1');
+      expect(node.params['pbk'], 'Nq3ta7rL_bUIfT7l5OXnu2wPbsgErVikyfW7Ad7OL2E');
+      expect(node.params['sid'], '792ac262');
+      expect(node.params['security'], 'reality');
+      expect(node.params['network'], 'tcp');
+      expect(node.params['flow'], 'xtls-rprx-vision');
+
+      // و لینکی که از همین گره ساخته می شود باید همه این ها را داشته باشد.
+      final String link = VpnController.linkFor(node);
+      expect(link, contains('fp=chrome'));
+      expect(link, contains('alpn=http%2F1.1'));
+      expect(link, contains('security=reality'));
+      expect(link, contains('type=tcp'));
     });
   });
 }
