@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/app_config.dart';
 import '../../core/persian.dart';
@@ -20,6 +21,12 @@ class ExitPage extends StatefulWidget {
 
   /// بستن کامل برنامه (پروسه پایان می یابد).
   final Future<void> Function() onExit;
+
+  /// هنگام «نه، بمان» صدا زده می شود تا پوسته به صفحه اتصال برگردد.
+  ///
+  /// صفحه های پوسته در `IndexedStack` هستند و چیزی برای `pop` وجود ندارد،
+  /// پس بازگشت با یک callback به پوسته انجام می شود.
+  static VoidCallback? onCancel;
 
   @override
   State<ExitPage> createState() => _ExitPageState();
@@ -46,12 +53,6 @@ class _ExitPageState extends State<ExitPage> {
       }
     }
   }
-
-  /// هنگام «نه، بمان» صدا زده می شود تا پوسته به صفحه اتصال برگردد.
-  ///
-  /// صفحه های پوسته در `IndexedStack` هستند و چیزی برای `pop` وجود ندارد،
-  /// پس بازگشت با یک callback به پوسته انجام می شود.
-  static VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {

@@ -468,9 +468,6 @@ class SideNav extends StatelessWidget {
     required this.onSelect,
     required this.status,
     this.onStatusTap,
-    // نمی تواند مقدار پیش فرض const باشد چون برچسب نسخه از نسخه ساخته
-    // می شود؛ در بدنه همان مقدار می آید.
-    this.version,
     this.updateAvailable = false,
     this.exitIndex,
   });
@@ -480,15 +477,11 @@ class SideNav extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final VpnStatus status;
   final VoidCallback? onStatusTap;
-  final String? version;
   final bool updateAvailable;
 
   /// اندیس گزینه «خروج» در [destinations]؛ اگر داده نشود، خروج نمایش داده
   /// نمی شود. جدا از بقیه منوها کشیده می شود تا با آن ها اشتباه نشود.
   final int? exitIndex;
-
-  /// برچسب نسخه؛ اگر داده نشود از تنظیمات برنامه خوانده می شود.
-  String get _version => version ?? AppConfig.versionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -659,7 +652,6 @@ class _NavItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.compact = false,
-    this.tone,
   });
 
   final NavDestination destination;
@@ -668,9 +660,6 @@ class _NavItem extends StatefulWidget {
 
   /// در پنجره باریک فقط آیکون نشان داده می شود و متن در Tooltip می آید.
   final bool compact;
-
-  /// رنگ دلخواه؛ «خروج» قرمز است تا از گزینه های معمولی جدا باشد.
-  final Color? tone;
 
   @override
   State<_NavItem> createState() => _NavItemState();

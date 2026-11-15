@@ -3077,22 +3077,6 @@ class VpnController extends ChangeNotifier {
 
   bool _verifyInFlight = false;
 
-  /// آیا آی پی خروجی با آی پی بدون تونل فرق کرده است؟
-  Future<bool> _exitIpChanged() async {
-    try {
-      final GeoInfo geo = await _ip.fetch(force: true);
-      if (geo.ip.isEmpty) {
-        return false;
-      }
-      if (_realIp.isEmpty) {
-        return true;
-      }
-      return geo.ip != _realIp;
-    } on Exception {
-      return false;
-    }
-  }
-
   /// آیا ترافیک واقعاً از تونل **برگشت**؟
   ///
   /// این سنجش با خواندن شمارنده کارت شبکه فرق دارد: یک درخواست HTTP کامل

@@ -279,7 +279,8 @@ void main() {
       final String nav = read('lib/ui/widgets/shell_widgets.dart');
       expect(nav.contains('exitIndex'), isTrue);
       final String exit = read('lib/ui/pages/exit_page.dart');
-      expect(exit.contains('خروج کامل از برنامه'), isTrue);
+      // صفحه خروج یک پرسش ساده است: «از برنامه خارج می شوید؟» با بله/نه.
+      expect(exit.contains('از برنامه خارج می شوید؟'), isTrue);
       // تنظیمات دیگر دکمه خروج ندارد.
       // تنظیمات دیگر دکمه خروج ندارد؛ فقط «درباره» می ماند.
       final String settings = read('lib/ui/pages/settings_page.dart');
@@ -580,7 +581,9 @@ void main() {
     test('اطلاعات اتصال جای مخصوص خودش را دارد', () {
       final String page = read('lib/ui/pages/connection_page.dart');
       expect(page.contains('وضعیت اتصال'), isTrue);
-      expect(page.contains('هسته اتصال'), isTrue);
+      // کارت «سرور و اتصال» جای «هسته اتصال» را گرفته است.
+      expect(page.contains('سرور و اتصال'), isTrue);
+      expect(page.contains('حالت اتصال'), isTrue);
       // فراموش شدن این واردات، ساخت ویندوز را با «VpnController isn't a type»
       // می شکست؛ حالا آزمون هم جلوی آن را می گیرد.
       expect(page.contains("import '../../vpn/vpn_controller.dart';"), isTrue);
@@ -809,7 +812,8 @@ void main() {
       // لیست قابل نمایش، حالت دستی را ندارد.
       final String models = read('lib/models/models.dart');
       expect(models.contains('SelectionModeList.visible'), isTrue);
-      final int visibleAt = models.indexOf('SelectionModeList.visible');
+      final int visibleAt =
+          models.indexOf('static const List<SelectionMode> visible');
       final int visibleEnd = models.indexOf('];', visibleAt);
       final String visibleBody =
           models.substring(visibleAt, visibleEnd);

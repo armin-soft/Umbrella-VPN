@@ -69,7 +69,8 @@ class _DevicePageState extends State<DevicePage> {
                 : (device.localIp.isEmpty ? 'در حال خواندن' : device.localIp)));
     final bool tunnelUp = vpn.status == VpnStatus.connected;
 
-    Widget orUnknown(String value) =>
+    // اعداد فارسی می شوند؛ رشته خالی «نامشخص» می شود.
+    String orUnknown(String value) =>
         Fa.num(value.isEmpty ? 'نامشخص' : value);
 
     return SingleChildScrollView(

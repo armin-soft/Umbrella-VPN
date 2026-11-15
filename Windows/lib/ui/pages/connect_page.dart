@@ -118,21 +118,6 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
-  /// خط دوم نوار بالا: تاریخ، و اگر معلوم باشد شهر و کشور دستگاه.
-  String _subtitleLine(VpnController vpn) {
-    final String date = Fa.longDate(DateTime.now());
-    final String city = vpn.geo.city;
-    final String country = vpn.geo.countryLabel;
-    final List<String> place = <String>[
-      if (city.isNotEmpty) city,
-      if (country.isNotEmpty) country,
-    ];
-    if (place.isEmpty) {
-      return date;
-    }
-    return '$date | ${place.join('، ')}';
-  }
-
   /// خط دوم اعلان اتصال، بدون نام سرور: فقط پینگ و حالت.
   ///
   /// کاربر خواست پس از اتصال هیچ جا نام سرور نمایش داده نشود؛ فقط «به آمبرلا
