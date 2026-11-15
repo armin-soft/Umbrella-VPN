@@ -118,6 +118,10 @@ rules:
       expect(settings['tun-implementation'], isNotEmpty);
       // و انتخاب ما (تونل) باید از فایل بیاید، نه از پرچم خط فرمان.
       expect(settings['enable-tun'], isTrue);
+      // حالت quick مشابه Hiddify؛ هسته زودتر از تمام شدن بررسی صدها گره
+      // بهترین های فعلی را انتخاب می کند و پس زمینه بقیه را ادامه می دهد.
+      expect(settings['keep-top-quick'], isTrue);
+      expect(settings['default-proxy'], 'lowest');
       // کلیدهایی که هسته در `DefaultHiddifyOptions` می گذارد و اگر نباشند صفر
       // می شوند؛ این فهرست همان قرارداد فایل تنظیمات است.
       for (final String key in <String>[
@@ -155,6 +159,7 @@ rules:
         'connection-test-url',
         'url-test-interval',
         'keep-top',
+        'keep-top-quick',
         'default-proxy',
         'enable-ntp',
         'use-system-tls-engine',
