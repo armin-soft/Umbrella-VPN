@@ -565,7 +565,7 @@ std::vector<int> SystemOps::PidsHoldingPort(int port) {
       // پورت در ساختار شبکه به ترتیب بایت است.
       const int local = ntohs(static_cast<u_short>(row.dwLocalPort));
       if (local != port) continue;
-      const int pid = static_cast<int>(row.dwOwningProcess);
+      const int pid = static_cast<int>(row.dwOwningPid);
       if (pid > 0 &&
           std::find(pids.begin(), pids.end(), pid) == pids.end()) {
         pids.push_back(pid);
