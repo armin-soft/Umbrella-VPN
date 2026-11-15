@@ -35,7 +35,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
     final bool hasUpdate = updates.available != null;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -48,16 +48,16 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 label: updates.checking ? 'در حال بررسی' : 'بررسی نسخه جدید',
                 icon: Icons.system_update_rounded,
                 expand: false,
-                height: 46,
+                height: AppMetrics.controlHeight,
                 loading: updates.checking,
                 onPressed: onPressedUpdate(updates, toasts),
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: AppMetrics.space5),
           GlassCard(
-            padding: const EdgeInsets.all(24),
-            radius: 24,
+            padding: AppMetrics.pagePadding,
+            radius: AppMetrics.radiusXxl,
             gradient: LinearGradient(
               begin: Alignment.topRight,
               end: Alignment.bottomLeft,
@@ -68,8 +68,8 @@ class _UpdatesPageState extends State<UpdatesPage> {
             ),
             child: Row(
               children: <Widget>[
-                const BrandMark(size: 72, showTitle: false),
-                const SizedBox(width: 22),
+                const BrandMark(size: AppMetrics.logoLg, showTitle: false),
+                const SizedBox(width: AppMetrics.space6),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +85,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                                 .titleLarge
                                 ?.copyWith(fontWeight: FontWeight.w900),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: AppMetrics.space3),
                           Pill(
                             label: hasUpdate ? 'جدید' : 'آخرین نسخه',
                             color: hasUpdate ? colors.warning : colors.success,
@@ -96,7 +96,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppMetrics.space2),
                       Text(
                         Fa.num(
                           hasUpdate
@@ -111,7 +111,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                             ),
                       ),
                       if (hasUpdate) ...<Widget>[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: AppMetrics.space2),
                         Text(
                           Fa.num(
                             'حجم بسته: ${updates.available!.sizeBytes > 0 ? Fa.bytes(updates.available!.sizeBytes) : 'نامشخص'}',
@@ -128,14 +128,14 @@ class _UpdatesPageState extends State<UpdatesPage> {
             ),
           ),
           if (updates.error.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 14),
+            const SizedBox(height: AppMetrics.space4),
             GlassCard(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppMetrics.space4),
               borderColor: colors.danger.withValues(alpha: 0.5),
               child: Row(
                 children: <Widget>[
-                  Icon(Icons.error_outline_rounded, size: 18, color: colors.danger),
-                  const SizedBox(width: 10),
+                  Icon(Icons.error_outline_rounded, size: AppMetrics.iconSm, color: colors.danger),
+                  const SizedBox(width: AppMetrics.space3),
                   Expanded(
                     child: Text(
                       Fa.num(updates.error),
@@ -149,9 +149,9 @@ class _UpdatesPageState extends State<UpdatesPage> {
             ),
           ],
           if (hasUpdate) ...<Widget>[
-            const SizedBox(height: 16),
+            const SizedBox(height: AppMetrics.space4),
             GlassCard(
-              padding: const EdgeInsets.all(22),
+              padding: AppMetrics.pagePadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -164,18 +164,18 @@ class _UpdatesPageState extends State<UpdatesPage> {
                       dense: true,
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: AppMetrics.space4),
                   if (updates.downloading || updates.installing)
                     ProgressLine(
                       value: updates.progress,
                       label:
                           '${updates.phase} | ${Fa.bytes(updates.received)} از ${Fa.bytes(updates.total)}',
                     ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppMetrics.space4),
                   Row(
                     children: <Widget>[
                       SizedBox(
-                        width: 260,
+                        width: AppMetrics.buttonMaxWidth,
                         child: GradientButton(
                           label: updates.downloading
                               ? 'در حال دانلود...'
@@ -197,10 +197,10 @@ class _UpdatesPageState extends State<UpdatesPage> {
                                 },
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppMetrics.space3),
                       OutlinedButton.icon(
                         onPressed: updates.skipCurrent,
-                        icon: const Icon(Icons.skip_next_rounded, size: 18),
+                        icon: const Icon(Icons.skip_next_rounded, size: AppMetrics.iconSm),
                         label: const Text('این نسخه را رد کن'),
                       ),
                     ],
@@ -209,14 +209,14 @@ class _UpdatesPageState extends State<UpdatesPage> {
               ),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           GlassCard(
-            padding: const EdgeInsets.all(22),
+            padding: AppMetrics.pagePadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(title: 'تاریخچه نسخه ها'),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppMetrics.space3),
                 _VersionRow(
                   version: '۱٫۰٫۰',
                   date: 'انتشار اولیه',
@@ -266,11 +266,11 @@ class _VersionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Container(
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(AppMetrics.space4),
+      margin: const EdgeInsets.only(bottom: AppMetrics.space3),
       decoration: BoxDecoration(
         color: colors.surfaceHigh.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         border: Border.all(
           color: current ? colors.primary.withValues(alpha: 0.4) : colors.border,
         ),
@@ -286,7 +286,7 @@ class _VersionRow extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                     ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppMetrics.space2),
               if (current)
                 Pill(label: 'نصب شده', color: colors.primary, dense: true),
               const Spacer(),
@@ -298,7 +298,7 @@ class _VersionRow extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppMetrics.space2),
           Text(
             Fa.num(notes),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(

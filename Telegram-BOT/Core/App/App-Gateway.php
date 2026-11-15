@@ -1024,10 +1024,24 @@ private static function sessionRow(string $Token): ?array {
 if ($Token === '') return null;
 
 $Row = Database::getInstance()->fetch(
-'SELECT * FROM `App_Sessions` WHERE `Token_Hash` = ? AND `Revoked_At` IS NULL LIMIT 1',
+'SELECT `S`.*, `D`.`Is_Trusted` AS `Device_Trusted`
+FROM `App_Sessions` AS `S`
+LEFT JOIN `App_Devices` AS `D` ON `D`.`Device_ID` = `S`.`Device_ID`
+WHERE `S`.`Token_Hash` = ?
+LIMIT 1',
 [hash('sha256', $Token)]
 );
 
+if ($Row === null) return null;
+
+// نشست دستگاهی که از تلگرام لغو شده، روی همه مسیرهای API ممنوع است.
+// ابتدا اعتماد دستگاه بررسی می شود تا کد مشخص device_revoked به کلاینت برسد،
+// حتی اگر نشست همان لحظه در جدول نشست ها هم باطل شده باشد.
+if ((int)($Row['Device_Trusted'] ?? 0) !== 1) {
+self::fail(403, 'device_revoked', 'مجوز استفاده از این دستگاه در ربات تلگرام لغو شده است. از حساب خارج می شوید؛ برای استفاده دوباره، دوباره وارد شوید.');
+}
+
+if (($Row['Revoked_At'] ?? null) !== null) return null;
 return $Row;
 }
 

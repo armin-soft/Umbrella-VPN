@@ -64,12 +64,12 @@ class _ExitPageState extends State<ExitPage> {
 
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: AppMetrics.pagePadding,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+          constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
           child: GlassCard(
-            padding: const EdgeInsets.all(26),
-            radius: 22,
+            padding: AppMetrics.pagePadding,
+            radius: AppMetrics.radiusXl,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -78,10 +78,10 @@ class _ExitPageState extends State<ExitPage> {
                   child: IconSquare(
                     icon: Icons.logout_rounded,
                     color: colors.danger,
-                    size: 58,
+                    size: AppMetrics.iconBoxHero,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppMetrics.space4),
                 Text(
                   Fa.num('از برنامه خارج می شوید؟'),
                   textAlign: TextAlign.center,
@@ -90,7 +90,7 @@ class _ExitPageState extends State<ExitPage> {
                       .titleLarge
                       ?.copyWith(fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppMetrics.space2),
                 Text(
                   Fa.num(
                     connected
@@ -104,7 +104,7 @@ class _ExitPageState extends State<ExitPage> {
                         height: 1.8,
                       ),
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: AppMetrics.space6),
 
                 // ── بله / نه ──────────────────────────────────────────
                 Row(
@@ -113,7 +113,7 @@ class _ExitPageState extends State<ExitPage> {
                       child: GradientButton(
                         label: 'نه، بمان',
                         icon: Icons.close_rounded,
-                        height: 48,
+                        height: AppMetrics.controlHeightSmall,
                         tone: colors.surfaceHigh,
                         onPressed: _busy
                             ? null
@@ -122,12 +122,12 @@ class _ExitPageState extends State<ExitPage> {
                               },
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppMetrics.space3),
                     Expanded(
                       child: GradientButton(
                         label: 'بله، خارج شو',
                         icon: Icons.power_settings_new_rounded,
-                        height: 48,
+                        height: AppMetrics.controlHeightSmall,
                         tone: colors.danger,
                         loading: _busy,
                         onPressed: _busy ? null : _leave,
@@ -135,7 +135,7 @@ class _ExitPageState extends State<ExitPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppMetrics.space4),
 
                 // میانبر «بستن به سینی» جدا و کم رنگ می ماند تا با خروج
                 // اشتباه نشود.
@@ -146,10 +146,10 @@ class _ExitPageState extends State<ExitPage> {
                           context.read<WindowService>().onWindowClose();
                           toasts.info('برنامه در سینی سیستم ماند');
                         },
-                  icon: const Icon(Icons.minimize_rounded, size: 16),
+                  icon: const Icon(Icons.minimize_rounded, size: AppMetrics.iconSm),
                   label: Text(Fa.num('فقط کوچک کن به سینی')),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: AppMetrics.space2),
                 Center(
                   child: Text(
                     Fa.num('${AppConfig.appName} | ${AppConfig.versionPhrase}'

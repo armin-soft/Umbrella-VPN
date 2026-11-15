@@ -56,7 +56,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: AppMetrics.cardPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -68,15 +68,15 @@ class _ContentControlCardState extends State<ContentControlCard> {
               onChanged: (bool value) => setState(() => _enabled = value),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppMetrics.space3),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: AppMetrics.space2,
+            runSpacing: AppMetrics.space2,
             children: <Widget>[
               for (final MapEntry<String, String> entry
                   in FilterSettings.categoryLabels.entries)
                 InkWell(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
                   onTap: !_enabled
                       ? null
                       : () => setState(() {
@@ -90,11 +90,11 @@ class _ContentControlCardState extends State<ContentControlCard> {
                     opacity: _enabled ? 1 : 0.5,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
+                        horizontal: AppMetrics.space3,
+                        vertical: AppMetrics.space2,
                       ),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
                         color: _categories.contains(entry.key)
                             ? colors.primary.withValues(alpha: 0.14)
                             : colors.backgroundAlt,
@@ -111,12 +111,12 @@ class _ContentControlCardState extends State<ContentControlCard> {
                             _categories.contains(entry.key)
                                 ? Icons.check_circle_rounded
                                 : Icons.circle_outlined,
-                            size: 15,
+                            size: AppMetrics.iconSm,
                             color: _categories.contains(entry.key)
                                 ? colors.primary
                                 : colors.textSecondary,
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: AppMetrics.space2),
                           Text(
                             Fa.num(entry.value),
                             style: Theme.of(context)
@@ -131,11 +131,11 @@ class _ContentControlCardState extends State<ContentControlCard> {
                 ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           GradientButton(
             label: 'ذخیره تنظیمات کنترل محتوا',
             icon: Icons.save_rounded,
-            height: 44,
+            height: AppMetrics.controlHeightSmall,
             expand: false,
             loading: _saving,
             onPressed: _saving ? null : _save,

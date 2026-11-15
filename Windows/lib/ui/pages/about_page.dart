@@ -21,10 +21,10 @@ class AboutPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
+          constraints: const BoxConstraints(maxWidth: AppMetrics.maxContentWidth),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -33,9 +33,9 @@ class AboutPage extends StatelessWidget {
                 subtitle: 'درباره برنامه، سازنده و بررسی دسترسی.',
                 icon: Icons.info_rounded,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppMetrics.space4),
               _Hero(colors: colors),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppMetrics.space4),
               // در پنجره باریک کارت ها زیر هم می روند، نه کنار هم.
               LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
@@ -47,7 +47,7 @@ class AboutPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         developer,
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppMetrics.space4),
                         check,
                       ],
                     );
@@ -56,13 +56,13 @@ class AboutPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Expanded(child: developer),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: AppMetrics.space4),
                       Expanded(child: check),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: AppMetrics.space5),
               Center(
                 child: Text(
                   Fa.num(
@@ -92,8 +92,8 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(26),
-      radius: 24,
+      padding: AppMetrics.pagePadding,
+      radius: AppMetrics.radiusXxl,
       gradient: LinearGradient(
         begin: Alignment.topRight,
         end: Alignment.bottomLeft,
@@ -105,7 +105,7 @@ class _Hero extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool narrow = constraints.maxWidth < 480;
-          final Widget mark = const BrandMark(size: 78, showTitle: false);
+          final Widget mark = const BrandMark(size: AppMetrics.logoLg, showTitle: false);
           final Widget text = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -115,14 +115,14 @@ class _Hero extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: AppMetrics.space2),
               Text(
                 Fa.num('نسخه ${AppConfig.version}'),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textSecondary,
                     ),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: AppMetrics.space2),
               Text(
                 Fa.num(
                   'فیلترشکن آمبرلا یک کلاینت ویندوزی کامل است: تونل کامل دستگاه، '
@@ -134,7 +134,7 @@ class _Hero extends StatelessWidget {
                       height: 1.9,
                     ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppMetrics.space3),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -151,7 +151,7 @@ class _Hero extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 mark,
-                const SizedBox(height: 14),
+                const SizedBox(height: AppMetrics.space4),
                 text,
               ],
             );
@@ -160,7 +160,7 @@ class _Hero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               mark,
-              const SizedBox(width: 22),
+              const SizedBox(width: AppMetrics.space6),
               Expanded(child: text),
             ],
           );
@@ -186,7 +186,7 @@ class _DeveloperCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -194,10 +194,10 @@ class _DeveloperCard extends StatelessWidget {
           Row(
             children: <Widget>[
               Container(
-                width: 56,
-                height: 56,
+                width: AppMetrics.iconBoxHero,
+                height: AppMetrics.iconBoxHero,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
                   gradient: LinearGradient(
                     colors: <Color>[
                       colors.primary.withValues(alpha: 0.28),
@@ -216,12 +216,12 @@ class _DeveloperCard extends StatelessWidget {
                           StackTrace? stack) =>
                       Icon(
                     Icons.verified_rounded,
-                    size: 28,
+                    size: AppMetrics.iconXl,
                     color: colors.primary,
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: AppMetrics.space4),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +234,7 @@ class _DeveloperCard extends StatelessWidget {
                           .titleMedium
                           ?.copyWith(fontWeight: FontWeight.w900),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppMetrics.space1),
                     Text(
                       Fa.num('پشتیبانی، پیشنهاد و گزارش خطا'),
                       style: Theme.of(context)
@@ -247,33 +247,33 @@ class _DeveloperCard extends StatelessWidget {
               ),
               Icon(
                 Icons.verified_rounded,
-                size: 20,
+                size: AppMetrics.iconMd,
                 color: colors.primary.withValues(alpha: 0.8),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.public_rounded,
             label: 'وبسایت',
             value: AppConfig.developerSite,
             onTap: () => _open(AppConfig.developerSite),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.support_agent_rounded,
             label: 'پشتیبانی',
             value: '@UmbrellaSupport',
             onTap: () => _open(AppConfig.supportUrl),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.campaign_rounded,
             label: 'کانال',
             value: '@UmbrellaChannel',
             onTap: () => _open(AppConfig.channelUrl),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.smart_toy_rounded,
             label: 'ربات تلگرام',
@@ -298,7 +298,7 @@ class _AccessCheckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -307,9 +307,9 @@ class _AccessCheckCard extends StatelessWidget {
               IconSquare(
                 icon: Icons.network_check_rounded,
                 color: colors.info,
-                size: 38,
+                size: AppMetrics.iconBoxLg,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppMetrics.space3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -334,21 +334,21 @@ class _AccessCheckCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           const _PingTestButton(),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space3, vertical: AppMetrics.space3),
             decoration: BoxDecoration(
               color: colors.surfaceHigh,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
               border: Border.all(color: colors.border),
             ),
             child: Row(
               children: <Widget>[
                 Icon(Icons.info_outline_rounded,
-                    size: 15, color: colors.textSecondary),
-                const SizedBox(width: 8),
+                    size: AppMetrics.iconSm, color: colors.textSecondary),
+                const SizedBox(width: AppMetrics.space2),
                 Expanded(
                   child: Text(
                     Fa.num(
@@ -418,21 +418,21 @@ class _PingTestButtonState extends State<_PingTestButton> {
         GradientButton(
           label: 'بررسی اتصال به سرور',
           icon: Icons.wifi_tethering_rounded,
-          height: 44,
+          height: AppMetrics.controlHeightSmall,
           tone: colors.info,
           loading: _running,
           onPressed: _running ? null : _run,
         ),
         if (_result.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 10),
+          const SizedBox(height: AppMetrics.space3),
           Row(
             children: <Widget>[
               Icon(
                 _ok ? Icons.check_circle_rounded : Icons.error_rounded,
-                size: 16,
+                size: AppMetrics.iconSm,
                 color: _ok ? colors.success : colors.danger,
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: AppMetrics.space2),
               Expanded(
                 child: Text(
                   Fa.num(_result),

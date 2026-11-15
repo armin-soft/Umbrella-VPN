@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
+import '../../core/theme.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
 
@@ -26,12 +27,12 @@ Future<void> showGatewayDialog(BuildContext context) async {
               Fa.num('نشانی کامل فایل index.php ربات را وارد کنید. نمونه:'),
               style: Theme.of(dialogContext).textTheme.labelSmall,
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: AppMetrics.space2),
             const SelectableText(
               'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php?AppApi=',
               textDirection: TextDirection.ltr,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppMetrics.space3),
             TextField(
               controller: controller,
               autofocus: true,

@@ -296,14 +296,14 @@ class _ConnectPageState extends State<ConnectPage> {
             ? 210
             : (constraints.maxHeight < 780 ? 250 : 288);
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 20, 28, 22),
+          padding: const EdgeInsets.fromLTRB(AppMetrics.space7, AppMetrics.space5, AppMetrics.space7, AppMetrics.space6),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               minHeight: constraints.maxHeight - 42,
             ),
             child: GlassCard(
-              radius: 26,
-              padding: const EdgeInsets.fromLTRB(26, 18, 26, 20),
+              radius: AppMetrics.radiusHuge,
+              padding: const EdgeInsets.fromLTRB(AppMetrics.space6, AppMetrics.space5, AppMetrics.space6, AppMetrics.space5),
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -328,10 +328,10 @@ class _ConnectPageState extends State<ConnectPage> {
                               children: <Widget>[
                                 Icon(
                                   _greetingIcon(),
-                                  size: 17,
+                                  size: AppMetrics.iconSm,
                                   color: colors.warning,
                                 ),
-                                const SizedBox(width: 6),
+                                const SizedBox(width: AppMetrics.space2),
                                 Flexible(
                                   child: Text(
                                     Fa.num(
@@ -348,7 +348,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: AppMetrics.space1),
                             // تاریخ شمسی با روز هفته و ساعت زنده.
                             LiveDateTimeLine(
                               style: Theme.of(context)
@@ -365,7 +365,7 @@ class _ConnectPageState extends State<ConnectPage> {
                           icon: Icons.login_rounded,
                           color: colors.warning,
                         ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppMetrics.space2),
                       _IpChip(
                         ip: shownIp,
                         flagCode: flagCode,
@@ -377,7 +377,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   ),
                   if (!account.canConnect)
                     Padding(
-                      padding: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.only(top: AppMetrics.space3),
                       child: _AccessBanner(
                         title: account.enable
                             ? 'اشتراک شما اجازه اتصال ندارد'
@@ -387,7 +387,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     ),
                   if (OccasionService.instance.active != null)
                     Padding(
-                      padding: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.only(top: AppMetrics.space3),
                       child: OccasionBanner(
                         occasion: OccasionService.instance.active,
                         enabled: settings.settings.occasionEffects,
@@ -451,15 +451,15 @@ class _ConnectPageState extends State<ConnectPage> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: AppMetrics.space3),
                       // وضعیت و پرچم کنار هم: کاربر می خواست وقتی وصل شد،
                       // پرچم سرور متصل کنار «متصل» دیده شود.
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: <Widget>[
                           if (connected && flagCode.isNotEmpty) ...<Widget>[
-                            FlagView(code: flagCode, width: 30),
-                            const SizedBox(width: 8),
+                            FlagView(code: flagCode, width: AppMetrics.flagWidth),
+                            const SizedBox(width: AppMetrics.space2),
                           ],
                           Flexible(
                             child: Text(
@@ -482,7 +482,7 @@ class _ConnectPageState extends State<ConnectPage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppMetrics.space1),
                       // پینگ سرور متصل، همان چیزی که کاربر خواست زیر وضعیت
                       // دیده شود. نام سرور اینجا نمی آید؛ فقط گزارش ها.
                       if (connected)
@@ -500,9 +500,9 @@ class _ConnectPageState extends State<ConnectPage> {
                         ),
                       // فاصله بیشتر تا دکمه ها: کاربر خواست دکمه ها به گنبد
                       // نچسبند و پایین تر و مرتب تر باشند.
-                      const SizedBox(height: 26),
+                      const SizedBox(height: AppMetrics.space6),
                       SizedBox(
-                        width: 420,
+                        width: AppMetrics.controlMaxWidth,
                         child: status.busy
                             // هنگام ساخت تونل، دکمه به «لغو اتصال» تبدیل می شود؛
                             // تا پیش از این کاربر هیچ راهی برای پشیمان شدن نداشت.
@@ -511,7 +511,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                     ? 'در حال لغو...'
                                     : 'لغو اتصال',
                                 icon: Icons.cancel_rounded,
-                                height: 60,
+                                height: AppMetrics.controlHeightLarge,
                                 tone: colors.warning,
                                 loading: status == VpnStatus.disconnecting,
                                 onPressed: status == VpnStatus.disconnecting
@@ -521,7 +521,7 @@ class _ConnectPageState extends State<ConnectPage> {
                             : GradientButton(
                                 label: status.active ? 'قطع اتصال' : 'اتصال',
                                 icon: Icons.power_settings_new_rounded,
-                                height: 60,
+                                height: AppMetrics.controlHeightLarge,
                                 tone: status.active
                                     ? colors.danger
                                     : colors.primary,
@@ -530,7 +530,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       ),
                       if (!account.canConnect)
                         Padding(
-                          padding: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.only(top: AppMetrics.space2),
                           child: Text(
                             Fa.num('اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.'),
                             textAlign: TextAlign.center,
@@ -540,7 +540,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                 ?.copyWith(color: colors.danger),
                           ),
                         ),
-                      const SizedBox(height: 22),
+                      const SizedBox(height: AppMetrics.space6),
 
                       // ── دو منوی کوچک: حالت اتصال و حالت انتخاب سرور ──
                       Wrap(
@@ -609,8 +609,8 @@ class _PingLine extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
-        Icon(Icons.speed_rounded, size: 15, color: tone),
-        const SizedBox(width: 6),
+        Icon(Icons.speed_rounded, size: AppMetrics.iconSm, color: tone),
+        const SizedBox(width: AppMetrics.space2),
         Text(
           Fa.num(known ? 'پینگ ${Fa.ms(pingMs)}' : 'پینگ در حال اندازه گیری'),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -634,16 +634,16 @@ class _AccessBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4, vertical: AppMetrics.space3),
       decoration: BoxDecoration(
         color: colors.danger.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         border: Border.all(color: colors.danger.withValues(alpha: 0.45)),
       ),
       child: Row(
         children: <Widget>[
-          Icon(Icons.lock_rounded, size: 20, color: colors.danger),
-          const SizedBox(width: 10),
+          Icon(Icons.lock_rounded, size: AppMetrics.iconMd, color: colors.danger),
+          const SizedBox(width: AppMetrics.space3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -698,18 +698,18 @@ class _IpChip extends StatelessWidget {
       child: GestureDetector(
         onTap: onRefresh,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space3, vertical: AppMetrics.space2),
           decoration: BoxDecoration(
             color: colors.surfaceHigh,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
             border: Border.all(color: colors.border),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (flagCode.isNotEmpty) ...<Widget>[
-                FlagView(code: flagCode, width: 30),
-                const SizedBox(width: 9),
+                FlagView(code: flagCode, width: AppMetrics.flagWidth),
+                const SizedBox(width: AppMetrics.space2),
               ],
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -769,21 +769,21 @@ class _PickerChip extends StatelessWidget {
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         onTap: enabled ? onTap : null,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+          padding: const EdgeInsets.fromLTRB(AppMetrics.space3, AppMetrics.space2, AppMetrics.space3, AppMetrics.space2),
           decoration: BoxDecoration(
             color: colors.surfaceHigh,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
             border: Border.all(color: colors.border),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon ?? Icons.tune_rounded, size: 18,
+              Icon(icon ?? Icons.tune_rounded, size: AppMetrics.iconSm,
                   color: colors.textSecondary),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppMetrics.space2),
               Text(
                 Fa.num(label),
                 style: Theme.of(context)
@@ -791,7 +791,7 @@ class _PickerChip extends StatelessWidget {
                     .labelSmall
                     ?.copyWith(color: colors.textSecondary),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: AppMetrics.space2),
               Text(
                 Fa.num(value),
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -799,8 +799,8 @@ class _PickerChip extends StatelessWidget {
                       color: colors.textPrimary,
                     ),
               ),
-              const SizedBox(width: 4),
-              Icon(Icons.expand_more_rounded, size: 17,
+              const SizedBox(width: AppMetrics.space1),
+              Icon(Icons.expand_more_rounded, size: AppMetrics.iconSm,
                   color: colors.textSecondary),
             ],
           ),
@@ -821,17 +821,21 @@ class _ConnectionModeDialog extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return Dialog(
       alignment: Alignment.topCenter,
-      insetPadding: const EdgeInsets.only(top: 64, bottom: 24, left: 24, right: 24),
+      insetPadding: const EdgeInsets.only(top: AppMetrics.space10, bottom: AppMetrics.space6, left: AppMetrics.space6, right: AppMetrics.space6),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
+        constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+          padding: const EdgeInsets.fromLTRB(AppMetrics.space4, AppMetrics.space4, AppMetrics.space4, AppMetrics.space2),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Padding(
-                padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+                padding: const EdgeInsets.only(
+                  left: AppMetrics.space2,
+                  right: AppMetrics.space2,
+                  bottom: AppMetrics.space2,
+                ),
                 child: Text(
                   Fa.num('حالت اتصال'),
                   style: Theme.of(context)
@@ -848,7 +852,7 @@ class _ConnectionModeDialog extends StatelessWidget {
                   subtitle: pref.description,
                   leading: Icon(
                     pref.icon,
-                    size: 20,
+                    size: AppMetrics.iconMd,
                     color: pref == current ? colors.primary : colors.textSecondary,
                   ),
                   onTap: () => Navigator.of(context).pop(pref),
@@ -871,17 +875,21 @@ class _ModeDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       alignment: Alignment.topCenter,
-      insetPadding: const EdgeInsets.only(top: 64, bottom: 24, left: 24, right: 24),
+      insetPadding: const EdgeInsets.only(top: AppMetrics.space10, bottom: AppMetrics.space6, left: AppMetrics.space6, right: AppMetrics.space6),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
+        constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+          padding: const EdgeInsets.fromLTRB(AppMetrics.space4, AppMetrics.space4, AppMetrics.space4, AppMetrics.space2),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Padding(
-                padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+                padding: const EdgeInsets.only(
+                  left: AppMetrics.space2,
+                  right: AppMetrics.space2,
+                  bottom: AppMetrics.space2,
+                ),
                 child: Text(
                   Fa.num('حالت انتخاب سرور'),
                   style: Theme.of(context)
@@ -897,7 +905,7 @@ class _ModeDialog extends StatelessWidget {
                   subtitle: mode.description,
                   leading: Icon(
                     mode.icon,
-                    size: 20,
+                    size: AppMetrics.iconMd,
                     color: context.colors.textSecondary,
                   ),
                   onTap: () => Navigator.of(context).pop(mode),
@@ -933,13 +941,13 @@ class _MenuTile extends StatelessWidget {
     return Opacity(
       opacity: enabled ? 1 : 0.5,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         onTap: enabled ? onTap : null,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          margin: const EdgeInsets.only(bottom: AppMetrics.space1),
+          padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space3, vertical: AppMetrics.space2),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
             color: selected
                 ? colors.primary.withValues(alpha: 0.10)
                 : Colors.transparent,
@@ -949,8 +957,8 @@ class _MenuTile extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
-              SizedBox(width: 28, child: Center(child: leading)),
-              const SizedBox(width: 8),
+              SizedBox(width: AppMetrics.space7, child: Center(child: leading)),
+              const SizedBox(width: AppMetrics.space2),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -977,7 +985,7 @@ class _MenuTile extends StatelessWidget {
                 ),
               ),
               if (selected)
-                Icon(Icons.check_rounded, size: 18, color: colors.primary),
+                Icon(Icons.check_rounded, size: AppMetrics.iconSm, color: colors.primary),
             ],
           ),
         ),

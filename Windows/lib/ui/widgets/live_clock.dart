@@ -95,10 +95,10 @@ class _LiveClockState extends State<LiveClock> {
           children: <Widget>[
             Icon(
               Icons.schedule_rounded,
-              size: 13,
+              size: AppMetrics.iconXs,
               color: colors.textSecondary,
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num(Fa.clock(_now)),
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -112,7 +112,7 @@ class _LiveClockState extends State<LiveClock> {
           ],
         ),
         if (widget.showDate) ...<Widget>[
-          const SizedBox(height: 2),
+          const SizedBox(height: AppMetrics.space1),
           Text(
             Fa.num(Fa.fullDate(_now)),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(

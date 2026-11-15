@@ -206,9 +206,20 @@ class _AppShellState extends State<AppShell> {
                   exitIndex: _exitIndex,
                 ),
                 Expanded(
-                  child: IndexedStack(
-                    index: _index,
-                    children: pages,
+                  // در پنجره های بسیار پهن (مثلا روی مانیتور ۲۷ اینچ) خط متن بی
+                  // اندازه بلند می شد و منو ها از هم فاصله می گرفتند. محتوا حالا
+                  // حداکثر به [AppMetrics.maxContentWidth] پهن می شود و در
+                  // وسط پنجره می ایستد؛ نوار کناری همچنان لبه راست پنجره است.
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: AppMetrics.maxContentWidth,
+                      ),
+                      child: IndexedStack(
+                        index: _index,
+                        children: pages,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -277,11 +288,19 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Dialog(
-      insetPadding: const EdgeInsets.all(28),
+      insetPadding: const EdgeInsets.all(AppMetrics.space7),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+        constraints: const BoxConstraints(
+          maxWidth: AppMetrics.dialogMaxWidth,
+          maxHeight: AppMetrics.dialogMaxHeight,
+        ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          padding: const EdgeInsets.fromLTRB(
+            AppMetrics.space5,
+            AppMetrics.space5,
+            AppMetrics.space5,
+            AppMetrics.space4,
+          ),
           child: ListenableBuilder(
             listenable: widget.auth,
             builder: (BuildContext context, Widget? child) {
@@ -300,9 +319,9 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                       IconSquare(
                         icon: Icons.notifications_active_rounded,
                         color: colors.primary,
-                        size: 38,
+                        size: AppMetrics.iconBoxLg,
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppMetrics.space3),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,12 +352,12 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                       ),
                       IconAction(
                         icon: Icons.close_rounded,
-                        size: 32,
+                        size: AppMetrics.iconBoxSm,
                         onTap: () => Navigator.of(context).pop(),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppMetrics.space3),
 
                   // ── فیلترها ─────────────────────────────────────────
                   Row(
@@ -349,7 +368,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                         selected: !_unreadOnly,
                         onTap: () => setState(() => _unreadOnly = false),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppMetrics.space2),
                       _FilterChip(
                         label: 'خوانده نشده',
                         count: unread,
@@ -360,12 +379,15 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                       if (unread > 0)
                         TextButton.icon(
                           onPressed: widget.auth.markNotificationsRead,
-                          icon: const Icon(Icons.done_all_rounded, size: 16),
+                          icon: const Icon(
+                            Icons.done_all_rounded,
+                            size: AppMetrics.iconSm,
+                          ),
                           label: Text(Fa.num('همه خوانده شد')),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppMetrics.space3),
 
                   // ── فهرست ───────────────────────────────────────────
                   Expanded(
@@ -386,22 +408,22 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                             itemCount: items.length,
                             separatorBuilder:
                                 (BuildContext context, int index) =>
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: AppMetrics.space2),
                             itemBuilder: (BuildContext context, int index) {
                               final AppNotification item = items[index];
                               final Color tone = _tone(colors, item.level);
                               return GlassCard(
-                                padding: const EdgeInsets.all(13),
-                                radius: 14,
+                                padding: const EdgeInsets.all(AppMetrics.space3),
+                                radius: AppMetrics.radiusMd,
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
                                     IconSquare(
                                       icon: _icon(item.level),
                                       color: tone,
-                                      size: 32,
+                                      size: AppMetrics.iconBoxSm,
                                     ),
-                                    const SizedBox(width: 11),
+                                    const SizedBox(width: AppMetrics.space3),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
@@ -412,14 +434,16 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                             children: <Widget>[
                                               if (!item.read) ...<Widget>[
                                                 Container(
-                                                  width: 6,
-                                                  height: 6,
+                                                  width: AppMetrics.space1,
+                                                  height: AppMetrics.space1,
                                                   decoration: BoxDecoration(
                                                     shape: BoxShape.circle,
                                                     color: colors.primary,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 6),
+                                                const SizedBox(
+                                                  width: AppMetrics.space2,
+                                                ),
                                               ],
                                               Expanded(
                                                 child: Text(
@@ -437,7 +461,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                                       ),
                                                 ),
                                               ),
-                                              const SizedBox(width: 8),
+                                              const SizedBox(width: AppMetrics.space2),
                                               Text(
                                                 Fa.num(
                                                   Fa.relative(item.sentAt),
@@ -448,13 +472,16 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                                     ?.copyWith(
                                                       color:
                                                           colors.textSecondary,
-                                                      fontSize: 10,
+                                                      fontSize:
+                                                          AppMetrics.fontMicro,
                                                     ),
                                               ),
                                             ],
                                           ),
                                           if (item.body.isNotEmpty) ...<Widget>[
-                                            const SizedBox(height: 3),
+                                            const SizedBox(
+                                              height: AppMetrics.space1,
+                                            ),
                                             Text(
                                               Fa.num(item.body),
                                               maxLines: 3,
@@ -478,10 +505,13 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                             },
                           ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppMetrics.space3),
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.check_rounded, size: 17),
+                    icon: const Icon(
+                      Icons.check_rounded,
+                      size: AppMetrics.iconSm,
+                    ),
                     label: Text(Fa.num('بستن')),
                   ),
                 ],
@@ -512,16 +542,19 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return InkWell(
-      borderRadius: BorderRadius.circular(11),
+      borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppMetrics.space3,
+          vertical: AppMetrics.space2,
+        ),
         decoration: BoxDecoration(
           color: selected
               ? colors.primary.withValues(alpha: 0.16)
               : colors.surfaceHigh,
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           border: Border.all(
             color: selected
                 ? colors.primary.withValues(alpha: 0.5)
@@ -538,7 +571,7 @@ class _FilterChip extends StatelessWidget {
                     color: selected ? colors.primary : colors.textSecondary,
                   ),
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num(count),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(

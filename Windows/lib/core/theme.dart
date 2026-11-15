@@ -166,6 +166,139 @@ extension UmbrellaThemeX on BuildContext {
       );
 }
 
+/// مقیاس یکدست اندازه های رابط کاربری.
+///
+/// پیش از این هر صفحه و هر ویجت عدد خودش را می نوشت: فاصله های ۱۰ و ۱۲ و ۱۴،
+/// گوشه های ۱۱ و ۱۴ و ۱۵، دکمه های ۴۸ و ۵۲ و ۵۴، کارت های ۲۰ و ۲۴ و ۲۸. در
+/// نتیجه منوها و بخش ها «یکسان» به نظر نمی رسیدند و هر بار که صفحه ای اضافه می
+/// شد یک عدد تازه می آمد. حالا همه اندازه ها از همین یک مقیاس می آیند؛ صفحه ها
+/// و ویجت ها فقط درجه مقیاس را انتخاب می کنند و عدد نمی نویسند.
+///
+/// مقیاس فاصله پایه ۴ پیکسل است (۴، ۸، ۱۲، ۱۶، ۲۰، ۲۴، ۲۸، ۳۲، ۴۰، ۴۸) و
+/// مقیاس گوشه هم ۶ تا ۳۰ پیکسل است. عددی که بین دو درجه است نباید نوشته شود؛
+/// به نزدیک ترین درجه گرد می شود.
+class AppMetrics {
+  const AppMetrics._();
+
+  /// ── فاصله (پایه ۴ پیکسل) ──────────────────────────────────────────
+  static const double space1 = 4;
+  static const double space2 = 8;
+  static const double space3 = 12;
+  static const double space4 = 16;
+  static const double space5 = 20;
+  static const double space6 = 24;
+  static const double space7 = 28;
+  static const double space8 = 32;
+  static const double space9 = 40;
+  static const double space10 = 48;
+
+  /// حاشیه داخلی صفحه (فاصله از لبه پنجره تا محتوا).
+  static const EdgeInsets pagePadding = EdgeInsets.all(space6);
+
+  /// حاشیه داخلی کارت ها.
+  static const EdgeInsets cardPadding = EdgeInsets.all(space5);
+
+  /// ── گردی گوشه ها ─────────────────────────────────────────────────
+  static const double radiusXs = 6;
+  static const double radiusSm = 8;
+  static const double radiusMd = 12;
+  static const double radiusLg = 16;
+  static const double radiusXl = 20;
+  static const double radiusXxl = 24;
+  static const double radiusHuge = 30;
+
+  /// گوشه ی کپسول (قرص) برای چیپ و نشان های کوچک.
+  static const double radiusPill = 999;
+
+  /// ── اندازه متن ────────────────────────────────────────────────────
+  ///
+  /// متن های اصلی از `textTheme` می آیند؛ این مقادیر برای متن های کوچکِ
+  /// اندازه اشتباه (نشان، عدد شمارنده، برچسب ریز) هستند.
+  static const double fontMicro = 10;
+  static const double fontCaption = 11;
+  static const double fontSmall = 12;
+  static const double fontBody = 14;
+  static const double fontButton = 15;
+  static const double fontEmphasis = 17;
+  static const double fontDisplay = 28;
+  static const double fontHero = 40;
+
+  /// ── اندازه آیکون ──────────────────────────────────────────────────
+  static const double iconXs = 14;
+  static const double iconSm = 16;
+  static const double iconMd = 20;
+  static const double iconLg = 24;
+  static const double iconXl = 32;
+
+  /// اندازه جعبه مربعی دور آیکون (`IconSquare`).
+  static const double iconBoxSm = 32;
+  static const double iconBoxMd = 36;
+  static const double iconBoxLg = 40;
+  static const double iconBoxXl = 48;
+  static const double iconBoxHero = 56;
+
+  /// ── قد کنترل ها ───────────────────────────────────────────────────
+  ///
+  /// دکمه اصلی ۵۲، دکمه کوچک ۴۴ و دکمه ی بزرگ (دکمه اتصال) ۵۶ پیکسل است —
+  /// روی ویندوز کمی بلندتر از حداقل لمسی ۴۴ پیکسل تا با تورفتگی ۲۰ پیکسل در
+  /// کارت ها جاری باشد.
+  static const double controlHeight = 52;
+  static const double controlHeightSmall = 44;
+  static const double controlHeightLarge = 56;
+
+  /// دکمه آیکونی مربعی (نسخه ۴۰ در ۴۰ پیکسل).
+  static const double iconButton = 40;
+
+  /// بیشینه پهنای دکمه ها تا در پنجره پهن بی اندازه کشیده نشوند.
+  static const double buttonMaxWidth = 240;
+  static const double controlMaxWidth = 420;
+
+  /// خانه منو در نوار کناری.
+  static const double navItemHeight = 44;
+
+  /// ── نوار بالای پنجره ──────────────────────────────────────────────
+  static const double titleBarHeight = 54;
+  static const double windowButtonWidth = 48;
+
+  /// ── نوار کناری ───────────────────────────────────────────────────
+  ///
+  /// مرزها بر حسب **عرض پنجره** هستند و چون کمینه اندازه پنجره ۱۱۲۰ است،
+  /// هر سه حالت واقعا به دست می آیند: پنجره ۱۱۲۰ فقط آیکون می دهد، ۱۲۸۰
+  /// نوار متوسط و ۱۴۴۰ به بعد نوار پهن. پیش از این مرزها ۸۲۰ و ۱۰۶۰ بودند،
+  /// یعنی زیر کمینه اندازه پنجره بودند و حالت باریک هیچ وقت دیده نمی شد.
+  static const double navWidthCompact = 72;
+  static const double navWidthMedium = 188;
+  static const double navWidthWide = 236;
+
+  /// مرزهای نوار کناری، بر حسب **عرض پنجره**.
+  static const double breakpointNav = 1200;
+  static const double breakpointNavWide = 1440;
+
+  /// ── مرزهای ریسپانسیو (عرض محتوا) ──────────────────────────────────
+  static const double breakpointCompact = 560;
+  static const double breakpointGrid = 720;
+  static const double breakpointColumns = 820;
+
+  /// حداکثر پهنای محتوا تا در پنجره های بسیار پهن خط متن بی اندازه بلند
+  /// نشود و چیدمان منو ها در وسط بماند.
+  static const double maxContentWidth = 1180;
+
+  /// حداکثر پهنای گفت و گو ها.
+  static const double dialogMaxWidth = 560;
+  static const double dialogMaxHeight = 620;
+
+  /// کمینه پهنای نشان عددی (شمارنده اعلان ها).
+  static const double badgeMinWidth = 14;
+
+  /// اندازه لوگوی برنامه در صفحه های معرفی، ورود و درباره.
+  static const double logoMd = 64;
+  static const double logoLg = 80;
+
+  /// اندازه پرچم کشورها.
+  static const double flagWidth = 32;
+  static const double flagWidthSmall = 28;
+}
+
 class AppTheme {
   const AppTheme._();
 
@@ -251,23 +384,23 @@ class AppTheme {
       extensions: <ThemeExtension<dynamic>>[palette],
       textTheme: text,
       dividerTheme: DividerThemeData(color: palette.border, thickness: 1, space: 1),
-      iconTheme: IconThemeData(color: palette.textSecondary, size: 20),
+      iconTheme: IconThemeData(color: palette.textSecondary, size: AppMetrics.iconMd),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
           color: palette.surfaceHigh,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           border: Border.all(color: palette.border),
         ),
         textStyle: TextStyle(
           fontFamily: fontFamily,
-          fontSize: 12,
+          fontSize: AppMetrics.fontSmall,
           color: palette.textPrimary,
         ),
         waitDuration: const Duration(milliseconds: 400),
       ),
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStatePropertyAll<Color>(palette.border),
-        radius: const Radius.circular(8),
+        radius: const Radius.circular(AppMetrics.radiusSm),
         thickness: const WidgetStatePropertyAll<double>(6),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -275,27 +408,30 @@ class AppTheme {
         fillColor: isDark ? palette.surfaceHigh : palette.surfaceHigh,
         hintStyle: TextStyle(color: palette.textSecondary, fontFamily: fontFamily),
         labelStyle: TextStyle(color: palette.textSecondary, fontFamily: fontFamily),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppMetrics.space5,
+          vertical: AppMetrics.space5,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
           borderSide: BorderSide(color: palette.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
           borderSide: BorderSide(color: palette.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
           borderSide: BorderSide(color: palette.primary, width: 1.6),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
           borderSide: BorderSide(color: palette.danger),
         ),
         errorStyle: TextStyle(
           fontFamily: fontFamily,
           color: palette.danger,
-          fontSize: 12,
+          fontSize: AppMetrics.fontSmall,
         ),
       ),
       switchTheme: SwitchThemeData(
@@ -344,14 +480,14 @@ class AppTheme {
           backgroundColor: palette.primary,
           foregroundColor: palette.onPrimary,
           elevation: 0,
-          minimumSize: const Size(0, 52),
+          minimumSize: const Size(0, AppMetrics.controlHeight),
           textStyle: TextStyle(
             fontFamily: fontFamily,
             fontWeight: FontWeight.w800,
-            fontSize: 15,
+            fontSize: AppMetrics.fontButton,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
           ),
         ),
       ),
@@ -359,14 +495,14 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: palette.textPrimary,
           side: BorderSide(color: palette.border),
-          minimumSize: const Size(0, 48),
+          minimumSize: const Size(0, AppMetrics.controlHeightSmall),
           textStyle: TextStyle(
             fontFamily: fontFamily,
             fontWeight: FontWeight.w700,
-            fontSize: 14,
+            fontSize: AppMetrics.fontBody,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           ),
         ),
       ),

@@ -10,8 +10,8 @@ class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(20),
-    this.radius = 24,
+    this.padding = AppMetrics.cardPadding,
+    this.radius = AppMetrics.radiusXxl,
     this.onTap,
     this.gradient,
     this.borderColor,
@@ -81,7 +81,7 @@ class GradientButton extends StatelessWidget {
     this.onPressed,
     this.loading = false,
     this.expand = true,
-    this.height = 54,
+    this.height = AppMetrics.controlHeight,
     this.tone,
     this.enabled = true,
   });
@@ -103,7 +103,7 @@ class GradientButton extends StatelessWidget {
     final Widget child = AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 26),
+      padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space6),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topRight,
@@ -112,7 +112,7 @@ class GradientButton extends StatelessWidget {
               ? <Color>[base, Color.lerp(base, Colors.black, 0.35)!]
               : <Color>[colors.surfaceHigh, colors.surfaceHigh],
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         boxShadow: active
             ? <BoxShadow>[
                 BoxShadow(
@@ -129,8 +129,8 @@ class GradientButton extends StatelessWidget {
         children: <Widget>[
           if (loading)
             SizedBox(
-              width: 18,
-              height: 18,
+              width: AppMetrics.iconMd,
+              height: AppMetrics.iconMd,
               child: CircularProgressIndicator(
                 strokeWidth: 2.2,
                 color: active ? colors.onPrimary : colors.textSecondary,
@@ -139,12 +139,12 @@ class GradientButton extends StatelessWidget {
           else if (icon != null)
             Icon(
               icon,
-              size: 19,
+              size: AppMetrics.iconMd,
               color: !active
                   ? colors.textSecondary
                   : (tone == null ? colors.onPrimary : colors.textPrimary),
             ),
-          if (loading || icon != null) const SizedBox(width: 10),
+          if (loading || icon != null) const SizedBox(width: AppMetrics.space3),
           Text(
             Fa.num(label),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -201,7 +201,7 @@ class PageHeader extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool narrow = constraints.maxWidth < 560;
+        final bool narrow = constraints.maxWidth < AppMetrics.breakpointCompact;
         final Widget text = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -215,7 +215,7 @@ class PageHeader extends StatelessWidget {
                   ),
             ),
             if (subtitle != null) ...<Widget>[
-              const SizedBox(height: 4),
+              const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num(subtitle!),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -229,20 +229,23 @@ class PageHeader extends StatelessWidget {
         final Widget mark = icon == null
             ? const SizedBox.shrink()
             : Container(
-                width: 46,
-                height: 46,
+                width: AppMetrics.iconBoxXl,
+                height: AppMetrics.iconBoxXl,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
                   color: colors.primary.withValues(alpha: 0.14),
                   border: Border.all(
                     color: colors.primary.withValues(alpha: 0.32),
                   ),
                 ),
-                child: Icon(icon, size: 23, color: colors.primary),
+                child: Icon(icon, size: AppMetrics.iconLg, color: colors.primary),
               );
         final Widget heading = Row(
           children: <Widget>[
-            if (icon != null) ...<Widget>[mark, const SizedBox(width: 14)],
+            if (icon != null) ...<Widget>[
+              mark,
+              const SizedBox(width: AppMetrics.space4),
+            ],
             Expanded(child: text),
           ],
         );
@@ -250,7 +253,7 @@ class PageHeader extends StatelessWidget {
           // حاشیه پایین یکسان: صفحه هایی که دکمه در هدر ندارند هم نباید به
           // محتوای زیرین بچسبند. بدون این، سه صفحه فاصله داشتند و بقیه نه.
           return Padding(
-            padding: const EdgeInsets.only(bottom: 2),
+            padding: const EdgeInsets.only(bottom: AppMetrics.space1),
             child: heading,
           );
         }
@@ -259,8 +262,12 @@ class PageHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               heading,
-              const SizedBox(height: 12),
-              Wrap(spacing: 10, runSpacing: 10, children: actions),
+              const SizedBox(height: AppMetrics.space3),
+              Wrap(
+                spacing: AppMetrics.space3,
+                runSpacing: AppMetrics.space3,
+                children: actions,
+              ),
             ],
           );
         }
@@ -268,7 +275,7 @@ class PageHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Expanded(child: heading),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppMetrics.space3),
             ...actions,
           ],
         );
@@ -305,7 +312,7 @@ class SectionHeader extends StatelessWidget {
                     ),
               ),
               if (subtitle != null) ...<Widget>[
-                const SizedBox(height: 4),
+                const SizedBox(height: AppMetrics.space1),
                 Text(
                   Fa.num(subtitle!),
                   style: Theme.of(context)
@@ -343,25 +350,29 @@ class Pill extends StatelessWidget {
     final Color tone = color ?? colors.textSecondary;
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: dense ? 8 : 11,
-        vertical: dense ? 4 : 6,
+        horizontal: dense ? AppMetrics.space2 : AppMetrics.space3,
+        vertical: AppMetrics.space1,
       ),
       decoration: BoxDecoration(
         color: tone.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
         border: Border.all(color: tone.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            Icon(icon, size: dense ? 12 : 14, color: tone),
-            const SizedBox(width: 5),
+            Icon(
+              icon,
+              size: dense ? AppMetrics.fontSmall : AppMetrics.iconXs,
+              color: tone,
+            ),
+            const SizedBox(width: AppMetrics.space1),
           ],
           Text(
             Fa.num(label),
             style: TextStyle(
-              fontSize: dense ? 10.5 : 12,
+              fontSize: dense ? AppMetrics.fontCaption : AppMetrics.fontSmall,
               fontWeight: FontWeight.w700,
               color: tone,
               fontFamily: AppTheme.fontFamily,
@@ -396,16 +407,22 @@ class StatTile extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     final Color tone = accent ?? colors.primary;
     return GlassCard(
-      padding: EdgeInsets.all(compact ? 14 : 18),
-      radius: 18,
+      padding: EdgeInsets.all(
+        compact ? AppMetrics.space3 : AppMetrics.space4,
+      ),
+      radius: AppMetrics.radiusLg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Row(
             children: <Widget>[
-              IconSquare(icon: icon, color: tone, size: compact ? 30 : 36),
-              const SizedBox(width: 10),
+              IconSquare(
+                icon: icon,
+                color: tone,
+                size: compact ? AppMetrics.iconBoxSm : AppMetrics.iconBoxMd,
+              ),
+              const SizedBox(width: AppMetrics.space3),
               Expanded(
                 child: Text(
                   Fa.num(label),
@@ -418,7 +435,7 @@ class StatTile extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: compact ? 8 : 12),
+          SizedBox(height: compact ? AppMetrics.space2 : AppMetrics.space3),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
@@ -426,12 +443,14 @@ class StatTile extends StatelessWidget {
               Fa.num(value),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    fontSize: compact ? 14 : 17,
+                    fontSize: compact
+                        ? AppMetrics.fontBody
+                        : AppMetrics.fontEmphasis,
                   ),
             ),
           ),
           if (hint != null) ...<Widget>[
-            const SizedBox(height: 4),
+            const SizedBox(height: AppMetrics.space1),
             Text(
               Fa.num(hint!),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -452,7 +471,7 @@ class IconSquare extends StatelessWidget {
     super.key,
     required this.icon,
     required this.color,
-    this.size = 36,
+    this.size = AppMetrics.iconBoxMd,
     this.radius,
   });
 
@@ -502,11 +521,14 @@ class InfoRow extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppMetrics.space1,
+            vertical: AppMetrics.space3,
+          ),
           child: Row(
             children: <Widget>[
-              Icon(icon, size: 17, color: colors.textSecondary),
-              const SizedBox(width: 12),
+              Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
+              const SizedBox(width: AppMetrics.space3),
               Expanded(
                 child: Text(
                   Fa.num(label),
@@ -515,7 +537,7 @@ class InfoRow extends StatelessWidget {
                       ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppMetrics.space2),
               Flexible(
                 child: Text(
                   Fa.num(value),
@@ -529,12 +551,16 @@ class InfoRow extends StatelessWidget {
                 ),
               ),
               if (trailing != null) ...<Widget>[
-                const SizedBox(width: 8),
+                const SizedBox(width: AppMetrics.space2),
                 trailing!,
               ],
               if (onTap != null) ...<Widget>[
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_left_rounded, size: 18, color: colors.border),
+                const SizedBox(width: AppMetrics.space1),
+                Icon(
+                  Icons.chevron_left_rounded,
+                  size: AppMetrics.iconSm,
+                  color: colors.border,
+                ),
               ],
             ],
           ),
@@ -587,7 +613,7 @@ class UsageRing extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num(centerLabel),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -784,12 +810,16 @@ class EmptyState extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(AppMetrics.space7),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            IconSquare(icon: icon, color: colors.textSecondary, size: 56),
-            const SizedBox(height: 16),
+            IconSquare(
+              icon: icon,
+              color: colors.textSecondary,
+              size: AppMetrics.iconBoxHero,
+            ),
+            const SizedBox(height: AppMetrics.space4),
             Text(
               Fa.num(title),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -798,7 +828,7 @@ class EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             if (message.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppMetrics.space2),
               Text(
                 Fa.num(message),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -808,7 +838,7 @@ class EmptyState extends StatelessWidget {
               ),
             ],
             if (action != null) ...<Widget>[
-              const SizedBox(height: 18),
+              const SizedBox(height: AppMetrics.space5),
               action!,
             ],
           ],
@@ -839,8 +869,8 @@ class SelectionCard extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return GlassCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(16),
-      radius: 18,
+      padding: const EdgeInsets.all(AppMetrics.space4),
+      radius: AppMetrics.radiusLg,
       borderColor: selected ? colors.primary : colors.border,
       tint: selected ? colors.primarySoft : colors.surface,
       child: Row(
@@ -848,9 +878,9 @@ class SelectionCard extends StatelessWidget {
           IconSquare(
             icon: icon ?? Icons.tune_rounded,
             color: selected ? colors.primary : colors.textSecondary,
-            size: 34,
+            size: AppMetrics.iconBoxMd,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppMetrics.space3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -862,7 +892,7 @@ class SelectionCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppMetrics.space1),
                 Text(
                   Fa.num(description),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -873,11 +903,11 @@ class SelectionCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppMetrics.space2),
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width: 22,
-            height: 22,
+            width: AppMetrics.iconMd,
+            height: AppMetrics.iconMd,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: selected ? colors.primary : Colors.transparent,
@@ -887,7 +917,11 @@ class SelectionCard extends StatelessWidget {
               ),
             ),
             child: selected
-                ? Icon(Icons.check_rounded, size: 14, color: colors.onPrimary)
+                ? Icon(
+                    Icons.check_rounded,
+                    size: AppMetrics.iconXs,
+                    color: colors.onPrimary,
+                  )
                 : null,
           ),
         ],
@@ -918,11 +952,15 @@ class ToggleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),
       child: Row(
         children: <Widget>[
-          IconSquare(icon: icon, color: accent ?? colors.primary, size: 34),
-          const SizedBox(width: 12),
+          IconSquare(
+            icon: icon,
+            color: accent ?? colors.primary,
+            size: AppMetrics.iconBoxMd,
+          ),
+          const SizedBox(width: AppMetrics.space3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -934,7 +972,7 @@ class ToggleRow extends StatelessWidget {
                       ),
                 ),
                 if (subtitle != null) ...<Widget>[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: AppMetrics.space1),
                   Text(
                     Fa.num(subtitle!),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -992,7 +1030,7 @@ class ProgressLine extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppMetrics.space2),
         ],
         ClipRRect(
           borderRadius: BorderRadius.circular(height),
@@ -1015,7 +1053,7 @@ class IconAction extends StatelessWidget {
     required this.onTap,
     this.tooltip,
     this.color,
-    this.size = 34,
+    this.size = AppMetrics.iconButton,
   });
 
   final IconData icon;
@@ -1036,7 +1074,7 @@ class IconAction extends StatelessWidget {
           height: size,
           decoration: BoxDecoration(
             color: colors.surfaceHigh,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
             border: Border.all(color: colors.border),
           ),
           child: Icon(icon, size: size * 0.5, color: color ?? colors.textSecondary),
@@ -1063,8 +1101,8 @@ class ResponsiveColumns extends StatelessWidget {
     required this.right,
     this.leftFlex = 3,
     this.rightFlex = 2,
-    this.spacing = 16,
-    this.breakpoint = 820,
+    this.spacing = AppMetrics.space4,
+    this.breakpoint = AppMetrics.breakpointColumns,
   });
 
   final Widget left;

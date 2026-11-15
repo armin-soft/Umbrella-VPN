@@ -9,8 +9,8 @@ class FlagView extends StatelessWidget {
   const FlagView({
     super.key,
     required this.code,
-    this.width = 34,
-    this.radius = 6,
+    this.width = AppMetrics.flagWidth,
+    this.radius = AppMetrics.radiusXs,
   });
 
   final String code;
@@ -55,7 +55,7 @@ class FlagLabel extends StatelessWidget {
     super.key,
     required this.code,
     this.showName = true,
-    this.width = 30,
+    this.width = AppMetrics.flagWidth,
   });
 
   final String code;
@@ -70,7 +70,7 @@ class FlagLabel extends StatelessWidget {
       children: <Widget>[
         FlagView(code: code, width: width),
         if (showName && name.isNotEmpty) ...<Widget>[
-          const SizedBox(width: 8),
+          const SizedBox(width: AppMetrics.space2),
           Text(
             Fa.num(name),
             style: Theme.of(context).textTheme.bodySmall,

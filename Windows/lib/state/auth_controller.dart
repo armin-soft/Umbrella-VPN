@@ -112,6 +112,8 @@ class AuthController extends ChangeNotifier {
   Timer? _clockTimer;
   Timer? _heartbeatTimer;
   bool _restored = false;
+  bool _checkingDeviceAccess = false;
+  bool _revokingSession = false;
 
   Future<void> restore() async {
     if (_restored) {
@@ -132,6 +134,7 @@ class AuthController extends ChangeNotifier {
       } else {
         _phase = AuthPhase.done;
         _phone = _session!.account.phone;
+        _startHeartbeat();
         unawaited(refreshAccount(silent: true));
       }
     }
@@ -213,6 +216,7 @@ class AuthController extends ChangeNotifier {
   // ── گام یک: شماره موبایل ─────────────────────────────────────────────
 
   Future<bool> submitPhone(String rawPhone) async {
+    _revokingSession = false;
     final String phone = IranPhone.normalize(rawPhone);
     _error = '';
     _info = '';
@@ -455,19 +459,72 @@ class AuthController extends ChangeNotifier {
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      final SessionData? session = _session;
-      if (session == null) {
-        return;
-      }
-      unawaited(
-        _gateway.heartbeat(token: session.token, deviceId: _deviceId),
-      );
-      // هر ضربان، اعلان ها هم تازه می شوند تا اعلان تازه در همان دقایق
-      // روشن شدن برنامه با صدا اعلام شود، نه فقط هنگام باز شدن.
-      unawaited(fetchNotifications());
+    unawaited(_checkDeviceAccess());
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_checkDeviceAccess());
     });
   }
+
+  /// وضعیت مجوز دستگاه از درگاه بررسی می شود. خطای شبکه نشست را باطل نمی کند؛
+  /// اما لغو دسترسی از تلگرام، اعلان را نشان می دهد و سپس کاربر را خارج می کند.
+  Future<void> _checkDeviceAccess() async {
+    if (_checkingDeviceAccess || _revokingSession) return;
+    final SessionData? session = _session;
+    if (session == null) return;
+
+    _checkingDeviceAccess = true;
+    try {
+      await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
+      await fetchNotifications();
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ برای ادامه دوباره وارد شوید.';
+        notifyListeners();
+      }
+    } finally {
+      _checkingDeviceAccess = false;
+    }
+  }
+
+  Future<void> _handleDeviceRevoked(String serverMessage) async {
+    if (_revokingSession || _session == null) return;
+    _revokingSession = true;
+    _heartbeatTimer?.cancel();
+    final String message = serverMessage.trim().isEmpty
+        ? 'مجوز استفاده از این دستگاه در تلگرام لغو شده است. برای استفاده دوباره، دوباره وارد شوید.'
+        : serverMessage;
+    _error = message;
+    _info = 'پس از نمایش این اعلان از حساب خارج می شوید.';
+    notifyListeners();
+
+    // اعلان و قطع تونل پیش از پاک شدن نشست انجام می شود تا کاربر علت خروج را ببیند.
+    try {
+      await onSessionRevoked?.call(message);
+    } catch (_) {
+      // خروج محلی باید حتی اگر اعلان یا قطع اتصال خطا داد انجام شود.
+    }
+    if (notificationsEnabled) {
+      try {
+        await _tray?.balloon('مجوز این دستگاه لغو شد', message, warning: true);
+      } catch (_) {}
+    }
+    if (soundEnabled) {
+      try {
+        await _sound?.play('notify');
+      } catch (_) {}
+    }
+
+    await signOut(callServer: false);
+    _error = message;
+    _info = 'برای استفاده دوباره از نرم افزار، دوباره وارد شوید و دستگاه را در تلگرام تایید کنید.';
+    notifyListeners();
+  }
+
+  /// اعلان و قطع اتصال برای سلب مجوز دستگاه (جدا از اتمام اشتراک).
+  Future<void> Function(String reason)? onSessionRevoked;
 
   /// خواندن اعداد دقیق حساب از پنل؛ اگر پنل جواب ندهد همان داده درگاه
   /// استفاده می شود و چیزی خراب نمی شود.
@@ -523,12 +580,12 @@ class AuthController extends ChangeNotifier {
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());
       notifyListeners();
     } on ApiError catch (error) {
-      if (error.needsLogin) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
         await signOut(callServer: false);
-        if (!silent) {
-          _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
-          notifyListeners();
-        }
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+        notifyListeners();
       }
     }
   }
@@ -545,9 +602,13 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       return true;
     } on ApiError catch (error) {
-      _error = error.message;
-      _logError(error.message);
-      notifyListeners();
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else {
+        _error = error.message;
+        _logError(error.message);
+        notifyListeners();
+      }
       return false;
     }
   }
@@ -572,8 +633,14 @@ class AuthController extends ChangeNotifier {
       if (fresh.isNotEmpty) {
         await _announce(fresh);
       }
-    } on ApiError {
-      return;
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+        notifyListeners();
+      }
     }
   }
 

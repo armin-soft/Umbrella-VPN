@@ -48,7 +48,7 @@ $Prefixes = $Prefix_Match[1];
  */
 $Early = ['start', '/start'];
 
-preg_match_all("/\\$Data === '([^']+)'/u", $Dispatcher, $Early_Match);
+preg_match_all('/\\$Data === \'([^\']+)\'/u', $Dispatcher, $Early_Match);
 
 foreach ($Early_Match[1] as $Key) {
 $Early[] = $Key;
@@ -143,6 +143,11 @@ $Failures[] = $Name . ': no handler in Dispatcher for callback «' . $Call . '»
 /** مسیرهای پایه ای که نباید هرگز حذف شوند. */
 $Required = [
 'مدیریت',
+'منوی کاربران',
+'منوی سیستم',
+'اطلاعات سرور',
+'همگام سازی سرور',
+'عملیات کلاینت سرور',
 'منوی خدمات ربات',
 'منوی پشتیبانی',
 'اعتبار حساب کاربری',

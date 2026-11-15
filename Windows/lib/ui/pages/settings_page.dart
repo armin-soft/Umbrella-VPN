@@ -34,7 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final AppSettings current = settings.settings;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -43,7 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle: 'هر بخش یک موضوع؛ گزینه ها با یک نگاه خوانده می شوند.',
             icon: Icons.tune_rounded,
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: AppMetrics.space5),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -89,9 +89,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     const ContentControlCard(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     _Section(
                       icon: Icons.shield_rounded,
                       title: 'اتصال و امنیت',
@@ -150,7 +150,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppMetrics.space4),
               // ── ستون چپ: ویندوز، شبکه، حساب ─────────────────────────
               Expanded(
                 child: Column(
@@ -188,7 +188,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     _Section(
                       icon: Icons.settings_backup_restore_rounded,
                       title: 'بازگردانی شبکه',
@@ -201,23 +201,23 @@ class _SettingsPageState extends State<SettingsPage> {
                           label: 'پروکسی سیستمی ویندوز',
                           value: 'غیرفعال می شود',
                         ),
-                        const Divider(height: 14),
+                        const Divider(height: AppMetrics.space4),
                         const InfoRow(
                           icon: Icons.lan_outlined,
                           label: 'کارت شبکه مجازی',
                           value: 'بسته می شود',
                         ),
-                        const Divider(height: 14),
+                        const Divider(height: AppMetrics.space4),
                         const InfoRow(
                           icon: Icons.dns_outlined,
                           label: 'حافظه دی ان اس',
                           value: 'پاک می شود',
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: AppMetrics.space3),
                         GradientButton(
                           label: 'بازگردانی تنظیمات شبکه',
                           icon: Icons.settings_backup_restore_rounded,
-                          height: 44,
+                          height: AppMetrics.controlHeightSmall,
                           tone: colors.warning,
                           onPressed: () async {
                             await vpn.restoreNetwork();
@@ -226,7 +226,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     _Section(
                       icon: Icons.person_rounded,
                       title: 'حساب و سرویس',
@@ -238,13 +238,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           label: 'کاربر',
                           value: auth.account.displayName,
                         ),
-                        const Divider(height: 14),
+                        const Divider(height: AppMetrics.space4),
                         InfoRow(
                           icon: Icons.category_rounded,
                           label: 'نوع سرویس',
                           value: auth.account.planLabel,
                         ),
-                        const Divider(height: 14),
+                        const Divider(height: AppMetrics.space4),
                         InfoRow(
                           icon: Icons.verified_user_rounded,
                           label: 'دسترسی مدیر',
@@ -252,20 +252,20 @@ class _SettingsPageState extends State<SettingsPage> {
                           valueColor:
                               settings.elevated ? colors.success : colors.warning,
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: AppMetrics.space3),
                         if (!settings.elevated)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.only(bottom: AppMetrics.space2),
                             child: GradientButton(
                               label: 'اجرای دوباره با دسترسی مدیر',
                               icon: Icons.admin_panel_settings_rounded,
-                              height: 44,
+                              height: AppMetrics.controlHeightSmall,
                               onPressed: () => settings.requestElevation(),
                             ),
                           ),
                         TextButton.icon(
                           onPressed: widget.onOpenAbout,
-                          icon: const Icon(Icons.info_outline_rounded, size: 17),
+                          icon: const Icon(Icons.info_outline_rounded, size: AppMetrics.iconSm),
                           label: const Text('درباره برنامه و توسعه دهنده'),
                         ),
                         // «خروج کامل از برنامه» عمدا اینجا نیست: منوی خروج
@@ -277,7 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: AppMetrics.space5),
           Center(
             child: Text(
               Fa.num(
@@ -315,14 +315,14 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              IconSquare(icon: icon, color: color, size: 34),
-              const SizedBox(width: 10),
+              IconSquare(icon: icon, color: color, size: AppMetrics.iconBoxMd),
+              const SizedBox(width: AppMetrics.space3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,7 +348,7 @@ class _Section extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           ...children,
         ],
       ),

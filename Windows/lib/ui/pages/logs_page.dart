@@ -58,7 +58,7 @@ class _LogsPageState extends State<LogsPage> {
     final ToastController toasts = context.read<ToastController>();
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -70,7 +70,7 @@ class _LogsPageState extends State<LogsPage> {
               IconAction(
                 icon: Icons.copy_all_rounded,
                 tooltip: 'کپی همه',
-                size: 42,
+                size: AppMetrics.iconButton,
                 onTap: () async {
                   await Clipboard.setData(
                     ClipboardData(text: AppLogger.instance.exportText()),
@@ -78,17 +78,17 @@ class _LogsPageState extends State<LogsPage> {
                   toasts.success('گزارش ها کپی شد');
                 },
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppMetrics.space3),
               IconAction(
                 icon: Icons.save_alt_rounded,
                 tooltip: 'ذخیره فایل گزارش',
-                size: 42,
+                size: AppMetrics.iconButton,
                 onTap: () async {
                   final String path = await AppLogger.instance.saveToFile();
                   toasts.success('فایل گزارش ذخیره شد', path);
                 },
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppMetrics.space3),
               // باز کردن همه خطاها با یک کلیک؛ برای وقتی که کاربر می خواهد
               // همه چیز را یک جا ببیند و بفرستد.
               ListenableBuilder(
@@ -105,7 +105,7 @@ class _LogsPageState extends State<LogsPage> {
                     return const SizedBox.shrink();
                   }
                   return Padding(
-                    padding: const EdgeInsets.only(left: 10),
+                    padding: const EdgeInsets.only(left: AppMetrics.space3),
                     child: IconAction(
                       icon: allOpen
                           ? Icons.unfold_less_rounded
@@ -114,7 +114,7 @@ class _LogsPageState extends State<LogsPage> {
                           ? 'بستن جزئیات همه'
                           : 'باز کردن جزئیات همه خطاها '
                               '(${Fa.num(withDetails.length)})',
-                      size: 42,
+                      size: AppMetrics.iconButton,
                       onTap: () {
                         setState(() {
                           if (allOpen) {
@@ -130,11 +130,11 @@ class _LogsPageState extends State<LogsPage> {
                   );
                 },
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppMetrics.space3),
               IconAction(
                 icon: Icons.delete_sweep_rounded,
                 tooltip: 'پاک کردن',
-                size: 42,
+                size: AppMetrics.iconButton,
                 onTap: () {
                   AppLogger.instance.clear();
                   toasts.info('گزارش ها پاک شد');
@@ -142,7 +142,7 @@ class _LogsPageState extends State<LogsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           ListenableBuilder(
             listenable: AppLogger.instance,
             builder: (BuildContext context, Widget? child) {
@@ -165,10 +165,10 @@ class _LogsPageState extends State<LogsPage> {
               );
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           Expanded(
             child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space2, vertical: AppMetrics.space2),
               child: ListenableBuilder(
                 listenable: AppLogger.instance,
                 builder: (BuildContext context, Widget? child) {
@@ -190,7 +190,7 @@ class _LogsPageState extends State<LogsPage> {
                     );
                   }
                   return ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),
                     itemCount: lines.length,
                     itemBuilder: (BuildContext context, int index) {
                       final LogLine line = lines[index];
@@ -211,8 +211,8 @@ class _LogsPageState extends State<LogsPage> {
                           .length;
                       return Padding(
                         padding: const EdgeInsets.symmetric(
-                          vertical: 6,
-                          horizontal: 8,
+                          vertical: AppMetrics.space2,
+                          horizontal: AppMetrics.space2,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -227,7 +227,7 @@ class _LogsPageState extends State<LogsPage> {
                                       Fa.num(Fa.date(line.time)),
                                       style: TextStyle(
                                         fontFamily: AppTheme.fontFamily,
-                                        fontSize: 10,
+                                        fontSize: AppMetrics.fontMicro,
                                         color: colors.textSecondary,
                                       ),
                                     ),
@@ -235,34 +235,34 @@ class _LogsPageState extends State<LogsPage> {
                                       Fa.clock(line.time),
                                       style: TextStyle(
                                         fontFamily: AppTheme.fontFamily,
-                                        fontSize: 11,
+                                        fontSize: AppMetrics.fontCaption,
                                         color: colors.textSecondary,
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: AppMetrics.space3),
                                 Container(
-                                  margin: const EdgeInsets.only(top: 4),
+                                  margin: const EdgeInsets.only(top: AppMetrics.space1),
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
+                                    horizontal: AppMetrics.space2,
+                                    vertical: AppMetrics.space1,
                                   ),
                                   decoration: BoxDecoration(
                                     color: tone.withValues(alpha: 0.14),
-                                    borderRadius: BorderRadius.circular(6),
+                                    borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
                                   ),
                                   child: Text(
                                     Fa.num(levelLabel),
                                     style: TextStyle(
                                       fontFamily: AppTheme.fontFamily,
-                                      fontSize: 9,
+                                      fontSize: AppMetrics.fontMicro,
                                       fontWeight: FontWeight.w700,
                                       color: tone,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: AppMetrics.space3),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -275,7 +275,7 @@ class _LogsPageState extends State<LogsPage> {
                                                 : ''),
                                         style: TextStyle(
                                           fontFamily: AppTheme.fontFamily,
-                                          fontSize: 12,
+                                          fontSize: AppMetrics.fontSmall,
                                           height: 1.7,
                                           color: colors.textPrimary,
                                         ),
@@ -285,14 +285,14 @@ class _LogsPageState extends State<LogsPage> {
                                       if (line.hasDetails)
                                         Padding(
                                           padding:
-                                              const EdgeInsets.only(top: 4),
+                                              const EdgeInsets.only(top: AppMetrics.space1),
                                           child: TextButton.icon(
                                             onPressed: () => _toggle(key),
                                             icon: Icon(
                                               open
                                                   ? Icons.unfold_less_rounded
                                                   : Icons.unfold_more_rounded,
-                                              size: 16,
+                                              size: AppMetrics.iconSm,
                                             ),
                                             label: Text(
                                               Fa.num(
@@ -302,14 +302,14 @@ class _LogsPageState extends State<LogsPage> {
                                                         '(${Fa.num(sections)} بخش)',
                                               ),
                                               style: const TextStyle(
-                                                fontSize: 11,
+                                                fontSize: AppMetrics.fontCaption,
                                               ),
                                             ),
                                             style: TextButton.styleFrom(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 2,
+                                                horizontal: AppMetrics.space2,
+                                                vertical: AppMetrics.space1,
                                               ),
                                               minimumSize: Size.zero,
                                               tapTargetSize:
@@ -348,7 +348,7 @@ class _LogsPageState extends State<LogsPage> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           Text(
             Fa.num(
               'گزارش ها برای پشتیبانی مفید است | ${AppConfig.appName} ${AppConfig.version}',
@@ -382,11 +382,11 @@ class _DetailPanel extends StatelessWidget {
         .where((LogDetail detail) => detail.text.trim().isNotEmpty)
         .toList();
     return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 4),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: AppMetrics.space2, bottom: AppMetrics.space1),
+      padding: const EdgeInsets.all(AppMetrics.space3),
       decoration: BoxDecoration(
         color: colors.surfaceHigh.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         border: Border.all(color: colors.border.withValues(alpha: 0.6)),
       ),
       child: Column(
@@ -394,14 +394,14 @@ class _DetailPanel extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.bug_report_outlined, size: 16, color: colors.textSecondary),
-              const SizedBox(width: 6),
+              Icon(Icons.bug_report_outlined, size: AppMetrics.iconSm, color: colors.textSecondary),
+              const SizedBox(width: AppMetrics.space2),
               Expanded(
                 child: Text(
                   Fa.num('جزئیات کامل برای عیب یابی'),
                   style: TextStyle(
                     fontFamily: AppTheme.fontFamily,
-                    fontSize: 11,
+                    fontSize: AppMetrics.fontCaption,
                     fontWeight: FontWeight.w700,
                     color: colors.textSecondary,
                   ),
@@ -409,13 +409,13 @@ class _DetailPanel extends StatelessWidget {
               ),
               TextButton.icon(
                 onPressed: () => onCopy(),
-                icon: const Icon(Icons.copy_all_rounded, size: 15),
+                icon: const Icon(Icons.copy_all_rounded, size: AppMetrics.iconSm),
                 label: Text(
                   Fa.num('کپی جزئیات'),
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: AppMetrics.fontCaption),
                 ),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space2, vertical: AppMetrics.space1),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   foregroundColor: colors.info,
@@ -423,16 +423,16 @@ class _DetailPanel extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppMetrics.space2),
           for (final LogDetail detail in shown) ...<Widget>[
             if (detail.title.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 4),
+                padding: const EdgeInsets.only(top: AppMetrics.space3, bottom: AppMetrics.space1),
                 child: Text(
                   Fa.num(detail.title),
                   style: TextStyle(
                     fontFamily: AppTheme.fontFamily,
-                    fontSize: 11,
+                    fontSize: AppMetrics.fontCaption,
                     fontWeight: FontWeight.w800,
                     color: colors.textPrimary,
                   ),
@@ -440,10 +440,10 @@ class _DetailPanel extends StatelessWidget {
               ),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(AppMetrics.space3),
               decoration: BoxDecoration(
                 color: colors.background.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
               ),
               // متن خام هسته لاتین است و شماره سطر ندارد که فارسی شود؛ فقط
               // همان طور که هست، انتخاب پذیر و کامل نشان داده می شود.
@@ -451,7 +451,7 @@ class _DetailPanel extends StatelessWidget {
                 detail.text.trim(),
                 style: TextStyle(
                   fontFamily: 'Consolas',
-                  fontSize: 11,
+                  fontSize: AppMetrics.fontCaption,
                   height: 1.5,
                   color: colors.textPrimary,
                 ),

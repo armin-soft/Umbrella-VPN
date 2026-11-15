@@ -31,7 +31,7 @@ class ConnectionPage extends StatelessWidget {
     final bool connected = status == VpnStatus.connected;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -40,7 +40,7 @@ class ConnectionPage extends StatelessWidget {
             subtitle: 'تونل، سرعت و عبور واقعی ترافیک در یک نگاه.',
             icon: Icons.monitor_heart_rounded,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           _StatusHero(
             status: status,
             tone: tone,
@@ -51,13 +51,13 @@ class ConnectionPage extends StatelessWidget {
             verified: vpn.tunnelVerified,
             colors: colors,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── چهار عدد اصلی ──────────────────────────────────────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               // در پنجره باریک دو به دو، در پهن هر چهار تا کنار هم.
-              final int perRow = constraints.maxWidth < 720 ? 2 : 4;
+              final int perRow = constraints.maxWidth < AppMetrics.breakpointGrid ? 2 : 4;
               final List<Widget> tiles = <Widget>[
                 StatTile(
                   label: 'پینگ زنده',
@@ -95,7 +95,7 @@ class ConnectionPage extends StatelessWidget {
               return _TileGrid(tiles: tiles, perRow: perRow);
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── سرور و برنامه ─────────────────────────────────────────
           LayoutBuilder(
@@ -106,7 +106,7 @@ class ConnectionPage extends StatelessWidget {
               if (constraints.maxWidth < 700) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[server, const SizedBox(height: 16), app],
+                  children: <Widget>[server, const SizedBox(height: AppMetrics.space4), app],
                 );
               }
               // دو کارت هم ارتفاع می شوند تا لبه پایین یکی نباشد.
@@ -115,14 +115,14 @@ class ConnectionPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     Expanded(child: server),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: AppMetrics.space4),
                     Expanded(child: app),
                   ],
                 ),
               );
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           Center(
             child: LiveDateTimeLine(
               style: Theme.of(context)
@@ -164,14 +164,14 @@ class _TileGrid extends StatelessWidget {
                   Expanded(child: row[j])
                 else
                   const Spacer(),
-                if (j < perRow - 1) const SizedBox(width: 12),
+                if (j < perRow - 1) const SizedBox(width: AppMetrics.space3),
               ],
             ],
           ),
         ),
       );
       if (i + perRow < tiles.length) {
-        rows.add(const SizedBox(height: 12));
+        rows.add(const SizedBox(height: AppMetrics.space3));
       }
     }
     return Column(children: rows);
@@ -214,8 +214,8 @@ class _StatusHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(22),
-      radius: 22,
+      padding: AppMetrics.pagePadding,
+      radius: AppMetrics.radiusXl,
       gradient: LinearGradient(
         begin: Alignment.topRight,
         end: Alignment.bottomLeft,
@@ -228,14 +228,14 @@ class _StatusHero extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool narrow = constraints.maxWidth < 460;
           final Widget icon = Container(
-            width: 62,
-            height: 62,
+            width: AppMetrics.iconBoxHero,
+            height: AppMetrics.iconBoxHero,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: tone.withValues(alpha: 0.16),
               border: Border.all(color: tone.withValues(alpha: 0.45)),
             ),
-            child: Icon(VpnVisuals.icon(status), size: 30, color: tone),
+            child: Icon(VpnVisuals.icon(status), size: AppMetrics.iconXl, color: tone),
           );
           final Widget text = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,13 +249,13 @@ class _StatusHero extends StatelessWidget {
                     ),
               ),
               if (connected && flagCode.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 6),
+                const SizedBox(height: AppMetrics.space2),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    FlagView(code: flagCode, width: 26),
+                    FlagView(code: flagCode, width: AppMetrics.flagWidthSmall),
                     if (countryName.isNotEmpty) ...<Widget>[
-                      const SizedBox(width: 7),
+                      const SizedBox(width: AppMetrics.space2),
                       Text(
                         Fa.num(countryName),
                         style: Theme.of(context)
@@ -270,7 +270,7 @@ class _StatusHero extends StatelessWidget {
                   ],
                 ),
               ],
-              const SizedBox(height: 3),
+              const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num(
                   connected
@@ -325,7 +325,7 @@ class _ServerCard extends StatelessWidget {
     final VpnNode? node = vpn.activeNode;
     final bool has = node != null && vpn.status.active;
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -333,25 +333,25 @@ class _ServerCard extends StatelessWidget {
             title: 'سرور و اتصال',
             subtitle: 'همان چیزی که تونل را می سازد',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.dns_rounded,
             label: 'سرور',
             value: Fa.num(has ? node.name : 'انتخاب نشده'),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.lock_outline_rounded,
             label: 'پروتکل',
             value: Fa.num(has ? node.protocol.label : '—'),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.memory_rounded,
             label: 'هسته',
             value: 'آمبرلا',
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.wifi_tethering_rounded,
             label: 'حالت اتصال',
@@ -363,7 +363,7 @@ class _ServerCard extends StatelessWidget {
                   : '—',
             ),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.public_rounded,
             label: 'کشور خروجی',
@@ -387,7 +387,7 @@ class _AppCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -395,25 +395,25 @@ class _AppCard extends StatelessWidget {
             title: 'برنامه',
             subtitle: 'نسخه، حساب و بررسی ها',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.tag_rounded,
             label: 'نسخه',
             value: Fa.num(AppConfig.versionLabel),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.person_rounded,
             label: 'حساب',
             value: Fa.num(auth.account.displayName),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.workspace_premium_rounded,
             label: 'سرویس',
             value: Fa.num(auth.account.planLabel),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.window_rounded,
             label: 'سیستم',

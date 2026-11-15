@@ -74,7 +74,7 @@ class _DevicePageState extends State<DevicePage> {
         Fa.num(value.isEmpty ? 'نامشخص' : value);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -83,13 +83,13 @@ class _DevicePageState extends State<DevicePage> {
             subtitle: 'مشخصات این کامپیوتر و شبکه آن؛ وضعیت اتصال صفحه خودش را دارد.',
             icon: Icons.devices_rounded,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           _DeviceHero(
             device: device,
             colors: colors,
             accountName: auth.account.displayName,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── شبکه در یک نگاه ────────────────────────────────────────
           LayoutBuilder(
@@ -125,12 +125,12 @@ class _DevicePageState extends State<DevicePage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
                           Expanded(child: ip),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: AppMetrics.space3),
                           Expanded(child: local),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppMetrics.space3),
                     mac,
                   ],
                 );
@@ -140,23 +140,23 @@ class _DevicePageState extends State<DevicePage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     Expanded(flex: 5, child: ip),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppMetrics.space3),
                     Expanded(flex: 4, child: local),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppMetrics.space3),
                     Expanded(flex: 5, child: mac),
                   ],
                 ),
               );
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── سخت افزار و هویت ──────────────────────────────────────
           ResponsiveColumns(
             leftFlex: 3,
             rightFlex: 2,
             left: GlassCard(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(AppMetrics.space5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -164,32 +164,32 @@ class _DevicePageState extends State<DevicePage> {
                     title: 'کامپیوتر',
                     subtitle: 'اطلاعات سخت افزاری و سیستم عامل',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppMetrics.space3),
                   InfoRow(
                     icon: Icons.computer_rounded,
                     label: 'نام دستگاه',
                     value: orUnknown(device.deviceName),
                   ),
-                  const Divider(height: 14),
+                  const Divider(height: AppMetrics.space4),
                   InfoRow(
                     icon: Icons.memory_rounded,
                     label: 'پردازنده',
                     value: orUnknown(device.cpu),
                   ),
-                  const Divider(height: 14),
+                  const Divider(height: AppMetrics.space4),
                   InfoRow(
                     icon: Icons.window_rounded,
                     label: 'سیستم عامل',
                     value: Fa.num(device.platformLabel),
                   ),
-                  const Divider(height: 14),
+                  const Divider(height: AppMetrics.space4),
                   InfoRow(
                     icon: Icons.admin_panel_settings_rounded,
                     label: 'دسترسی مدیر',
                     value: device.elevated ? 'فعال' : 'غیرفعال',
                     valueColor: device.elevated ? colors.success : colors.warning,
                   ),
-                  const Divider(height: 14),
+                  const Divider(height: AppMetrics.space4),
                   InfoRow(
                     icon: Icons.badge_rounded,
                     label: 'شناسه یکتای دستگاه',
@@ -201,7 +201,7 @@ class _DevicePageState extends State<DevicePage> {
             right: Column(
               children: <Widget>[
                 GlassCard(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(AppMetrics.space5),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -209,19 +209,19 @@ class _DevicePageState extends State<DevicePage> {
                         title: 'هویت دستگاه',
                         subtitle: 'همان شناسه ای که سرور می شناسد',
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppMetrics.space3),
                       InfoRow(
                         icon: Icons.person_outline_rounded,
                         label: 'کاربر ویندوز',
                         value: orUnknown(device.username),
                       ),
-                      const Divider(height: 14),
+                      const Divider(height: AppMetrics.space4),
                       InfoRow(
                         icon: Icons.person_rounded,
                         label: 'صاحب حساب',
                         value: Fa.num(auth.account.displayName),
                       ),
-                      const Divider(height: 14),
+                      const Divider(height: AppMetrics.space4),
                       InfoRow(
                         icon: Icons.wifi_rounded,
                         label: 'کارت شبکه فعال',
@@ -233,7 +233,7 @@ class _DevicePageState extends State<DevicePage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppMetrics.space4),
                 LiveDateTimeLine(
                   style: Theme.of(context)
                       .textTheme
@@ -244,7 +244,7 @@ class _DevicePageState extends State<DevicePage> {
             ),
           ),
           if (_loading) ...<Widget>[
-            const SizedBox(height: 12),
+            const SizedBox(height: AppMetrics.space3),
             const LinearProgressIndicator(minHeight: 3),
           ],
         ],
@@ -270,8 +270,8 @@ class _DeviceHero extends StatelessWidget {
     final String name =
         device.deviceName.isEmpty ? 'این دستگاه' : device.deviceName;
     return GlassCard(
-      padding: const EdgeInsets.all(22),
-      radius: 22,
+      padding: AppMetrics.pagePadding,
+      radius: AppMetrics.radiusXl,
       gradient: LinearGradient(
         begin: Alignment.topRight,
         end: Alignment.bottomLeft,
@@ -284,14 +284,14 @@ class _DeviceHero extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool narrow = constraints.maxWidth < 470;
           final Widget icon = Container(
-            width: 62,
-            height: 62,
+            width: AppMetrics.iconBoxHero,
+            height: AppMetrics.iconBoxHero,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
               color: colors.primary.withValues(alpha: 0.16),
               border: Border.all(color: colors.primary.withValues(alpha: 0.45)),
             ),
-            child: Icon(Icons.devices_rounded, size: 30, color: colors.primary),
+            child: Icon(Icons.devices_rounded, size: AppMetrics.iconXl, color: colors.primary),
           );
           final Widget text = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,7 +305,7 @@ class _DeviceHero extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num('${device.platformLabel} • ${accountName}'),
                 maxLines: 1,
@@ -326,7 +326,7 @@ class _DeviceHero extends StatelessWidget {
               color: device.elevated ? colors.success : colors.warning,
               dense: true,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppMetrics.space2),
             Pill(
               label: device.localIp.isEmpty ? 'شبکه نامشخص' : 'شبکه متصل',
               icon: Icons.wifi_rounded,
@@ -341,11 +341,11 @@ class _DeviceHero extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     icon,
-                    const SizedBox(width: 14),
+                    const SizedBox(width: AppMetrics.space4),
                     Expanded(child: text),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppMetrics.space3),
                 Wrap(spacing: 8, runSpacing: 8, children: pills),
               ],
             );
@@ -353,7 +353,7 @@ class _DeviceHero extends StatelessWidget {
           return Row(
             children: <Widget>[
               icon,
-              const SizedBox(width: 18),
+              const SizedBox(width: AppMetrics.space5),
               Expanded(child: text),
               ...pills,
             ],

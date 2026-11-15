@@ -232,15 +232,56 @@ if ($Account === null) return;
 
 $Prefix = preg_replace('/[^A-Za-z0-9_-]/', '', $Device_Prefix) ?? '';
 
-if ($Prefix !== '') {
-\Database::getInstance()->execute(
-'UPDATE `App_Devices` SET `Is_Trusted` = 0 WHERE `Device_ID` LIKE ? AND (`User_UUID` = ? OR `Telegram_ID` = ?)',
-[$Prefix . '%', (string)$Account['uuid'], $Context->UserId]
-);
+if ($Prefix === '') {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'شناسه دستگاه معتبر نیست', true);
+}
+return;
 }
 
+$Database = \Database::getInstance();
+$Devices = $Database->fetchAll(
+'SELECT `Device_ID`, `User_UUID` FROM `App_Devices`
+WHERE `Device_ID` LIKE ? AND `Is_Trusted` = 1 AND (`User_UUID` = ? OR `Telegram_ID` = ?)',
+[$Prefix . '%', (string)$Account['uuid'], $Context->UserId]
+);
+
+if ($Devices === []) {
 if ($Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, 'اعتماد دستگاه لغو شد');
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه مجاز پیدا نشد یا قبلاً لغو شده است', true);
+}
+self::devices($Context);
+return;
+}
+
+$Title = 'مجوز این دستگاه لغو شد';
+$Body = 'به درخواست شما از تلگرام، دسترسی این دستگاه به نرم افزار آمبرلا لغو شد. از حساب خارج می شوید؛ برای استفاده دوباره باید با شماره موبایل و تایید تلگرام وارد شوید.';
+
+// اعلان و لغو نشست در یک تراکنش انجام می شوند؛ کلاینت در ضربان بعدی
+// پیام device_revoked را دریافت می کند، اعلان را نشان می دهد و سپس خارج می شود.
+$Database->transaction(static function (\Database $Database) use ($Devices, $Title, $Body): void {
+foreach ($Devices as $Device) {
+$Device_Id = (string)$Device['Device_ID'];
+$User_UUID = (string)($Device['User_UUID'] ?? '');
+$Database->execute(
+'INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`)
+VALUES (?, ?, ?, ?, ?)',
+[$User_UUID !== '' ? $User_UUID : null, $Device_Id, $Title, $Body, 'warning']
+);
+$Database->execute(
+'UPDATE `App_Devices` SET `Is_Trusted` = 0 WHERE `Device_ID` = ? AND `Is_Trusted` = 1',
+[$Device_Id]
+);
+$Database->execute(
+'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP
+WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
+[$Device_Id]
+);
+}
+});
+
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد؛ برنامه از حساب خارج خواهد شد.');
 }
 
 self::devices($Context);

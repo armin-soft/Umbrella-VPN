@@ -143,7 +143,7 @@ class _AccountPageState extends State<AccountPage> {
     final double percent = account.usagePercent;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -152,14 +152,14 @@ class _AccountPageState extends State<AccountPage> {
             subtitle: 'هویت، مصرف دقیق و زمان اشتراک شما.',
             icon: Icons.person_rounded,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           _AccountHero(
             account: account,
             colors: colors,
             refreshing: _refreshing,
             onRefresh: () => _refreshFromServer(auth, subs, toasts),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── مصرف و روزهای باقی مانده در یک نگاه ──────────────────
           LayoutBuilder(
@@ -179,7 +179,7 @@ class _AccountPageState extends State<AccountPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     usage,
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     days,
                   ],
                 );
@@ -189,20 +189,20 @@ class _AccountPageState extends State<AccountPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     Expanded(flex: 3, child: usage),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: AppMetrics.space4),
                     Expanded(flex: 2, child: days),
                   ],
                 ),
               );
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── جزئیات حساب و ارتباط ──────────────────────────────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget details = GlassCard(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(AppMetrics.space5),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -210,13 +210,13 @@ class _AccountPageState extends State<AccountPage> {
                       title: 'جزئیات سرویس',
                       subtitle: 'نوع و حالت اشتراک',
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppMetrics.space3),
                     InfoRow(
                       icon: Icons.category_rounded,
                       label: 'نوع سرویس',
                       value: Fa.num(account.planLabel),
                     ),
-                    const Divider(height: 14),
+                    const Divider(height: AppMetrics.space4),
                     InfoRow(
                       icon: Icons.event_available_rounded,
                       label: 'روزهای باقی مانده',
@@ -233,7 +233,7 @@ class _AccountPageState extends State<AccountPage> {
                               : colors.textPrimary),
                     ),
                     if (account.mode.isNotEmpty) ...<Widget>[
-                      const Divider(height: 14),
+                      const Divider(height: AppMetrics.space4),
                       InfoRow(
                         icon: Icons.tune_rounded,
                         label: 'حالت حساب',
@@ -244,7 +244,7 @@ class _AccountPageState extends State<AccountPage> {
                 ),
               );
               final Widget identity = GlassCard(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(AppMetrics.space5),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -252,19 +252,19 @@ class _AccountPageState extends State<AccountPage> {
                       title: 'حساب و ارتباط',
                       subtitle: 'شناسه و راه های تماس',
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppMetrics.space3),
                     InfoRow(
                       icon: Icons.badge_rounded,
                       label: 'شناسه حساب',
                       value: account.uuid.isEmpty ? 'نامشخص' : account.uuid,
                     ),
-                    const Divider(height: 14),
+                    const Divider(height: AppMetrics.space4),
                     InfoRow(
                       icon: Icons.phone_rounded,
                       label: 'شماره موبایل',
                       value: account.phone.isEmpty ? 'ثبت نشده' : account.phone,
                     ),
-                    const Divider(height: 14),
+                    const Divider(height: AppMetrics.space4),
                     InfoRow(
                       icon: Icons.send_rounded,
                       label: 'تلگرام',
@@ -275,17 +275,17 @@ class _AccountPageState extends State<AccountPage> {
                           ? colors.textSecondary
                           : colors.success,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     _TelegramSyncButton(
                       account: account,
                       onOpen: () => _openTelegramBot(account, toasts),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppMetrics.space3),
                     Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: TextButton.icon(
                         onPressed: () => _signOut(auth, toasts),
-                        icon: const Icon(Icons.logout_rounded, size: 18),
+                        icon: const Icon(Icons.logout_rounded, size: AppMetrics.iconSm),
                         label: const Text('خروج از حساب'),
                         style: TextButton.styleFrom(
                           foregroundColor: colors.danger,
@@ -300,7 +300,7 @@ class _AccountPageState extends State<AccountPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     details,
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppMetrics.space4),
                     identity,
                   ],
                 );
@@ -310,14 +310,14 @@ class _AccountPageState extends State<AccountPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     Expanded(flex: 3, child: details),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: AppMetrics.space4),
                     Expanded(flex: 2, child: identity),
                   ],
                 ),
               );
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           Center(
             child: LiveDateTimeLine(
               style: Theme.of(context)
@@ -353,8 +353,8 @@ class _AccountHero extends StatelessWidget {
     final String initial =
         trimmed.isEmpty ? 'U' : String.fromCharCode(trimmed.runes.first);
     return GlassCard(
-      padding: const EdgeInsets.all(22),
-      radius: 22,
+      padding: AppMetrics.pagePadding,
+      radius: AppMetrics.radiusXl,
       gradient: LinearGradient(
         begin: Alignment.topRight,
         end: Alignment.bottomLeft,
@@ -367,8 +367,8 @@ class _AccountHero extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool narrow = constraints.maxWidth < 520;
           final Widget avatar = Container(
-            width: 62,
-            height: 62,
+            width: AppMetrics.iconBoxHero,
+            height: AppMetrics.iconBoxHero,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
@@ -395,7 +395,7 @@ class _AccountHero extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num(
                   account.phone.isNotEmpty
@@ -422,16 +422,16 @@ class _AccountHero extends StatelessWidget {
                 color: account.healthy ? colors.success : colors.danger,
                 dense: true,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppMetrics.space3),
               OutlinedButton.icon(
                 onPressed: refreshing ? null : onRefresh,
                 icon: refreshing
                     ? const SizedBox(
-                        width: 14,
-                        height: 14,
+                        width: AppMetrics.iconXs,
+                        height: AppMetrics.iconXs,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.sync_rounded, size: 18),
+                    : const Icon(Icons.sync_rounded, size: AppMetrics.iconSm),
                 label: const Text('به روز رسانی'),
               ),
             ],
@@ -443,11 +443,11 @@ class _AccountHero extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     avatar,
-                    const SizedBox(width: 14),
+                    const SizedBox(width: AppMetrics.space4),
                     Expanded(child: text),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppMetrics.space3),
                 actions,
               ],
             );
@@ -455,7 +455,7 @@ class _AccountHero extends StatelessWidget {
           return Row(
             children: <Widget>[
               avatar,
-              const SizedBox(width: 18),
+              const SizedBox(width: AppMetrics.space5),
               Expanded(child: text),
               actions,
             ],
@@ -492,7 +492,7 @@ class _UsageCard extends StatelessWidget {
         ? colors.danger
         : (percent >= 70 ? colors.warning : colors.success);
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -502,7 +502,7 @@ class _UsageCard extends StatelessWidget {
                 ? 'اعداد مستقیم از پنل خوانده می شوند.'
                 : 'منبع: سرور برنامه (پنل پاسخ نداد).',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           Row(
             children: <Widget>[
               _UsageRing(
@@ -511,7 +511,7 @@ class _UsageCard extends StatelessWidget {
                 tone: tone,
                 colors: colors,
               ),
-              const SizedBox(width: 18),
+              const SizedBox(width: AppMetrics.space5),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -531,7 +531,7 @@ class _UsageCard extends StatelessWidget {
                                 color: tone,
                               ),
                         ),
-                        const SizedBox(width: 5),
+                        const SizedBox(width: AppMetrics.space2),
                         Text(
                           Fa.num('گیگابایت'),
                           style: Theme.of(context)
@@ -541,7 +541,7 @@ class _UsageCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppMetrics.space1),
                     Text(
                       Fa.num(
                         unlimited
@@ -558,9 +558,9 @@ class _UsageCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
             child: LinearProgressIndicator(
               value: unlimited ? 0 : (percent.clamp(0, 100) / 100).toDouble(),
               minHeight: 10,
@@ -568,7 +568,7 @@ class _UsageCard extends StatelessWidget {
               valueColor: AlwaysStoppedAnimation<Color>(tone),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppMetrics.space2),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
@@ -623,14 +623,14 @@ class _UsageRing extends StatelessWidget {
   Widget build(BuildContext context) {
     final double value = unlimited ? 0 : (percent.clamp(0, 100) / 100).toDouble();
     return SizedBox(
-      width: 86,
-      height: 86,
+      width: AppMetrics.logoLg,
+      height: AppMetrics.logoLg,
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
           SizedBox(
-            width: 86,
-            height: 86,
+            width: AppMetrics.logoLg,
+            height: AppMetrics.logoLg,
             child: CircularProgressIndicator(
               value: value,
               strokeWidth: 9,
@@ -668,7 +668,7 @@ class _DaysCard extends StatelessWidget {
     final Color tone =
         expired ? colors.danger : (soon ? colors.warning : colors.success);
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -676,7 +676,7 @@ class _DaysCard extends StatelessWidget {
             title: 'زمان اشتراک',
             subtitle: 'تا پایان سرویس چقدر مانده',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
@@ -690,7 +690,7 @@ class _DaysCard extends StatelessWidget {
                       color: tone,
                     ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: AppMetrics.space2),
               Text(
                 Fa.num(expired ? 'منقضی شده' : 'روز باقی مانده'),
                 style: Theme.of(context)
@@ -700,19 +700,19 @@ class _DaysCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.event_rounded,
             label: 'تاریخ انقضا',
             value: Fa.dateTime(account.expiryDate),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.play_circle_outline_rounded,
             label: 'شروع سرویس',
             value: Fa.dateTime(account.startDate),
           ),
-          const Divider(height: 14),
+          const Divider(height: AppMetrics.space4),
           InfoRow(
             icon: Icons.schedule_rounded,
             label: 'آخرین اتصال',
@@ -737,13 +737,13 @@ class _TelegramSyncButton extends StatelessWidget {
     final bool linked = account.telegramId.isNotEmpty;
     final Color tone = linked ? colors.success : const Color(0xFF29A9EB);
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
       onTap: onOpen,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4, vertical: AppMetrics.space3),
         decoration: BoxDecoration(
           color: tone.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
           border: Border.all(color: tone.withValues(alpha: 0.42)),
         ),
         child: Row(
@@ -751,9 +751,9 @@ class _TelegramSyncButton extends StatelessWidget {
             IconSquare(
               icon: linked ? Icons.verified_rounded : Icons.send_rounded,
               color: tone,
-              size: 34,
+              size: AppMetrics.iconBoxMd,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppMetrics.space3),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,7 +766,7 @@ class _TelegramSyncButton extends StatelessWidget {
                           color: tone,
                         ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: AppMetrics.space1),
                   Text(
                     Fa.num(
                       linked
@@ -781,7 +781,7 @@ class _TelegramSyncButton extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.open_in_new_rounded, size: 16, color: tone),
+            Icon(Icons.open_in_new_rounded, size: AppMetrics.iconSm, color: tone),
           ],
         ),
       ),

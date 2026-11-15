@@ -9,6 +9,34 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
+  group('لغو مجوز دستگاه از تلگرام', () {
+    test('درگاه دسترسی نشست را با اعتماد دستگاه می سنجد', () {
+      final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
+      expect(gateway.contains('Device_Trusted'), isTrue);
+      expect(gateway.contains("'device_revoked'"), isTrue);
+      expect(gateway.contains('`D`.`Is_Trusted`'), isTrue);
+    });
+
+    test('لغو دستگاه، اعلان می سازد و نشست های همان دستگاه را می بندد', () {
+      final String bot = read('../Telegram-BOT/Bot/App-Link.php');
+      expect(bot.contains('INSERT INTO `App_Notifications`'), isTrue);
+      expect(bot.contains("'warning'"), isTrue);
+      expect(bot.contains('UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP'), isTrue);
+      expect(bot.contains('مجوز لغو شد؛ برنامه از حساب خارج خواهد شد'), isTrue);
+    });
+
+    test('برنامه مجوز را دوره ای می سنجد، قطع اتصال را اعلام و سپس خارج می شود', () {
+      final String auth = read('lib/state/auth_controller.dart');
+      expect(auth.contains('Duration(seconds: 30)'), isTrue);
+      expect(auth.contains('_handleDeviceRevoked(error.message)'), isTrue);
+      expect(auth.contains("_tray?.balloon('مجوز این دستگاه لغو شد'"), isTrue);
+      expect(auth.contains('await signOut(callServer: false);'), isTrue);
+      final String app = read('lib/main.dart');
+      expect(app.contains('onSessionRevoked'), isTrue);
+      expect(app.contains('مجوز استفاده از این دستگاه لغو شد'), isTrue);
+    });
+  });
+
   group('دکمه لغو اتصال', () {
     test('صفحه اتصال دکمه «لغو اتصال» دارد', () {
       final String page = read('lib/ui/pages/connect_page.dart');
@@ -189,6 +217,21 @@ void main() {
       expect(controller.contains('_maxPoolLinks'), isTrue);
       // گره انتخاب شده اول فهرست است تا اولویت کاربر حفظ شود.
       expect(controller.contains('add(chosen);'), isTrue);
+    });
+
+    test('کل اشتراک امتحان می شود، نه چهار سرور اول', () {
+      // شکایت کاربر ۱٫۰٫۱۹: رابط «تلاش ۱ از ۴» می نویشت و از ۳۳۱ سروری که
+      // اشتراک خوانده بود فقط چهار تای اول امتحان می شد؛ هدیفای همه لینک
+      // های داخل اشتراک را یک جا می سنجد. پس حلقه تلاش نباید روی چهار تای
+      // اول بسته شود و فایل لینک هسته هم نباید روی ۳۰ لینک بسته شود.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('list.length >= 4'), isFalse);
+      expect(controller.contains('list.addAll(rest)'), isTrue);
+      expect(controller.contains('_maxPoolLinks = 30'), isFalse);
+      expect(controller.contains('_maxPoolLinks = 1000'), isTrue);
+      // بودجه زمانی برای وقتی هیچ سروری جواب نمی دهد، تا حلقه برای همیشه
+      // روی «تلاش N از M» نماند.
+      expect(controller.contains('_connectBudget'), isTrue);
     });
 
     test('هسته چند گره زنده نگه می دارد تا بتواند سوییچ کند', () {
@@ -931,6 +974,188 @@ void main() {
         expect(text.contains('LiveDateTimeLine'), isTrue, reason: path);
         expect(text.contains('LayoutBuilder'), isTrue,
             reason: '$path باید ریسپانسیو باشد');
+      }
+    });
+  });
+
+  group('حذف نرم افزار', () {
+    test('پوشه نصب کاملا برداشته می شود، نه فقط فایل های نصب شده', () {
+      // شکایت کاربر: بعد از «حذف برنامه» پوشه D:\Umbrella VPN باقی می ماند.
+      // Inno نمی تواند پوشه ای را که فایل اجرایی خودش (unins000.exe) در آن
+      // است حذف کند، پس یک فرایند جدا صبر می کند تا حذف کننده بسته شود و
+      // بعد کل پوشه را با همه چیز پاک می کند.
+      final String iss = read('installer/umbrella.iss');
+      expect(iss.contains('RemoveInstallFolder'), isTrue);
+      expect(iss.contains('Wait-Process'), isTrue);
+      expect(iss.contains('Remove-Item -LiteralPath'), isTrue);
+      // پوشه کاری عوض می شود تا برداشتن پوشه نصب به «دسترسی رد شد» نخورد.
+      expect(iss.contains('Set-Location'), isTrue);
+      // پوشه داده برنامه هم پاک می شود تا هیچ چیزی باقی نماند.
+      expect(iss.contains('GetFolderPath'), isTrue);
+      // مسیرها با علامت نقل قول تکی امن می شوند.
+      expect(iss.contains('PsQuote'), isTrue);
+    });
+  });
+
+  group('یکدستی اندازه های رابط کاربری', () {
+    test('مقیاس اندازه ها در یک کلاس واحد تعریف شده', () {
+      // شکایت کاربر: «منوها و بخش ها با اندازه های متفاوت و غریبه». پیش از این
+      // فاصله های ۱۰/۱۲/۱۴، گوشه های ۱۱/۱۴/۱۵ و دکمه های ۴۸/۵۲/۵۴ در همه جا
+      // پخش شده بود. حالا همه اندازه ها از AppMetrics می آیند.
+      final String theme = read('lib/core/theme.dart');
+      expect(theme.contains('class AppMetrics'), isTrue);
+      for (final String token in <String>[
+        'space1',
+        'space2',
+        'space3',
+        'space4',
+        'space5',
+        'space6',
+        'radiusSm',
+        'radiusMd',
+        'radiusLg',
+        'radiusXl',
+        'radiusXxl',
+        'controlHeight',
+        'controlHeightSmall',
+        'controlHeightLarge',
+        'iconButton',
+        'navItemHeight',
+        'titleBarHeight',
+        'windowButtonWidth',
+        'breakpointNav',
+        'breakpointNavWide',
+        'breakpointColumns',
+        'maxContentWidth',
+      ]) {
+        expect(theme.contains('static const double $token'), isTrue,
+            reason: 'AppMetrics.$token باید تعریف شود');
+      }
+      // دکمه های اصلی ۵۲، کوچک ۴۴ و دکمه اتصال ۵۶ پیکسل: روی ویندوز بلندتر از
+      // حداقل لمسی ۴۴ پیکسل است.
+      expect(
+        RegExp('static const double controlHeight = 52').hasMatch(theme),
+        isTrue,
+      );
+      expect(
+        RegExp('static const double controlHeightSmall = 44').hasMatch(theme),
+        isTrue,
+      );
+      expect(
+        RegExp('static const double controlHeightLarge = 56').hasMatch(theme),
+        isTrue,
+      );
+      // نوار بالای پنجره ۵۴ و دکمه های پنجره ۴۸ در ۵۴ پیکسل.
+      expect(
+        RegExp('static const double titleBarHeight = 54').hasMatch(theme),
+        isTrue,
+      );
+      expect(
+        RegExp('static const double windowButtonWidth = 48').hasMatch(theme),
+        isTrue,
+      );
+      // فاصله همه صفحه ها با فاصله همه کارت ها یک مقیاس است: ۲۴ و ۲۰.
+      expect(
+        RegExp('static const EdgeInsets pagePadding = EdgeInsets.all\\(space6\\)')
+            .hasMatch(theme),
+        isTrue,
+      );
+      expect(
+        RegExp('static const EdgeInsets cardPadding = EdgeInsets.all\\(space5\\)')
+            .hasMatch(theme),
+        isTrue,
+      );
+    });
+
+    test('همه صفحه ها و ویجت های رابط از مقیاس اندازه استفاده می کنند', () {
+      final List<String> files = Directory('lib/ui')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((File f) => f.path)
+          .where((String path) => path.endsWith('.dart'))
+          .toList();
+      expect(files, isNotEmpty);
+      for (final String path in files) {
+        expect(read(path).contains('AppMetrics.'), isTrue,
+            reason: '$path باید از AppMetrics استفاده کند');
+      }
+    });
+
+    test('عدد اندازه خام در رابط کاربری نمانده است', () {
+      // استثنا ها: بلندی خط متن (height: 1.7)، ضخامت خط (width: 1.5) و
+      // نسبت های لوگو/گنبد (size * 0.66) که اندازه نیستند. ارجاع های
+      // `AppMetrics.` اول کنار می مانند تا عدد داخل نام آن ها اشتباهی گزارش
+      // نشود.
+      final RegExp raw = RegExp(
+        r'(SizedBox\(\s*(width|height):\s*[0-9.]+|'
+        r'EdgeInsets\.(all|only|fromLTRB|symmetric)\([^)]*[0-9]|'
+        r'BorderRadius\.circular\([0-9.]+\)|'
+        r'fontSize:\s*[0-9.]+)',
+      );
+      final RegExp tokens = RegExp(r'AppMetrics\.\w+');
+      final List<String> files = Directory('lib/ui')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((File f) => f.path)
+          .where((String path) => path.endsWith('.dart'))
+          .toList();
+      for (final String path in files) {
+        final String text = read(path).replaceAll(tokens, 'AppMetrics');
+        final Iterable<RegExpMatch> matches = raw.allMatches(text);
+        expect(
+          matches.length,
+          0,
+          reason: '$path: '
+              '${matches.map((RegExpMatch m) => m.group(0)).join(' | ')}',
+        );
+      }
+    });
+
+    test('نوار کناری واقعا ریسپانسیو است، نه فقط ادعا', () {
+      // کمینه اندازه پنجره ۱۱۲۰ است. اگر مرز نوار کناری زیر آن باشد، حالت
+      // باریک هیچ وقت دیده نمی شود — همان اشکالی که مرزهای ۸۲۰/۱۰۶۰ داشتند.
+      final String theme = read('lib/core/theme.dart');
+      final int minWindow = int.parse(
+        RegExp(r'minimumSize: const Size\((\d+),')
+            .firstMatch(read('lib/platform/services.dart'))!
+            .group(1)!,
+      );
+      final int navBreak = int.parse(
+        RegExp('static const double breakpointNav = (\\d+)')
+            .firstMatch(theme)!
+            .group(1)!,
+      );
+      final int navWideBreak = int.parse(
+        RegExp('static const double breakpointNavWide = (\\d+)')
+            .firstMatch(theme)!
+            .group(1)!,
+      );
+      expect(navBreak, greaterThan(minWindow),
+          reason: 'مرز نوار کناری باید بالای کمینه پنجره باشد');
+      expect(navWideBreak, greaterThan(navBreak));
+      // هر سه حالت نوار کناری هم در کد هستند.
+      final String nav = read('lib/ui/widgets/shell_widgets.dart');
+      expect(nav.contains('navWidthCompact'), isTrue);
+      expect(nav.contains('navWidthMedium'), isTrue);
+      expect(nav.contains('navWidthWide'), isTrue);
+    });
+
+    test('محتوا در پنجره های پهن زیر حداکثر پهنا می ماند', () {
+      // روی مانیتور بزرگ خط متن بی اندازه بلند می شد و منو ها پراکنده می شدند.
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      expect(shell.contains('maxContentWidth'), isTrue);
+      expect(shell.contains('Center('), isTrue);
+    });
+
+    test('نسخه در همه صفحه ها از یک عدد خوانده می شود', () {
+      for (final String path in <String>[
+        'lib/ui/pages/landing_page.dart',
+        'lib/ui/pages/login_page.dart',
+        'lib/ui/widgets/shell_widgets.dart',
+      ]) {
+        final String text = read(path);
+        expect(text.contains('نسخه ۱٫۰٫۰'), isFalse, reason: path);
+        expect(text.contains('AppConfig.versionLabel'), isTrue, reason: path);
       }
     });
   });

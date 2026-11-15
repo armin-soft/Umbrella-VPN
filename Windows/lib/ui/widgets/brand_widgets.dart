@@ -26,22 +26,25 @@ class OperatorBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final double height = compact ? 24 : 32;
+    final double height =
+        compact ? AppMetrics.iconLg : AppMetrics.iconBoxSm;
     final Widget mark = operator.hasLogo
         ? Container(
             height: height,
             padding: EdgeInsets.symmetric(
-              horizontal: compact ? 7 : 9,
-              vertical: compact ? 3 : 4,
+              horizontal: AppMetrics.space2,
+              vertical: AppMetrics.space1,
             ),
             decoration: BoxDecoration(
               color: operator.chipColor,
-              borderRadius: BorderRadius.circular(compact ? 8 : 10),
+              borderRadius: BorderRadius.circular(
+                compact ? AppMetrics.radiusSm : AppMetrics.radiusMd,
+              ),
               border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
             ),
             child: Image.asset(
               operator.logoAsset,
-              height: compact ? 18 : 24,
+              height: compact ? AppMetrics.iconSm : AppMetrics.iconLg,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
               errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
@@ -55,7 +58,7 @@ class OperatorBadge extends StatelessWidget {
       children: <Widget>[
         mark,
         if (!compact) ...<Widget>[
-          const SizedBox(width: 8),
+          const SizedBox(width: AppMetrics.space2),
           Text(
             Fa.num(operator.label),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -80,7 +83,8 @@ class _FallbackMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double size = compact ? 24 : 30;
+    final double size =
+        compact ? AppMetrics.iconLg : AppMetrics.iconBoxSm;
     return Container(
       width: size,
       height: size,
@@ -100,7 +104,7 @@ class _FallbackMark extends StatelessWidget {
       child: Text(
         operator.latin,
         style: TextStyle(
-          fontSize: compact ? 8 : 9.5,
+          fontSize: AppMetrics.fontMicro,
           fontWeight: FontWeight.w900,
           color: operator == MobileOperator.irancell
               ? const Color(0xFF1A1A1A)
@@ -140,10 +144,11 @@ class StateGallery extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final double size = compact ? 44 : 56;
+    final double size =
+        compact ? AppMetrics.iconBoxLg : AppMetrics.iconBoxHero;
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: AppMetrics.space3,
+      runSpacing: AppMetrics.space3,
       children: <Widget>[
         for (final StateChip chip in chips)
           Builder(
@@ -154,12 +159,14 @@ class StateGallery extends StatelessWidget {
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 width: compact ? 74 : 88,
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppMetrics.space3,
+                ),
                 decoration: BoxDecoration(
                   color: active
                       ? colors.primary.withValues(alpha: 0.10)
                       : colors.surface,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
                   border: Border.all(
                     color: active ? colors.primary.withValues(alpha: 0.55) : colors.border,
                   ),
@@ -183,12 +190,14 @@ class StateGallery extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: AppMetrics.space2),
                     Text(
                       Fa.num(chip.label),
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: compact ? 9.5 : 10.5,
+                        fontSize: compact
+                            ? AppMetrics.fontMicro
+                            : AppMetrics.fontCaption,
                         fontFamily: AppTheme.fontFamily,
                         fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                         color: active ? colors.textPrimary : colors.textSecondary,
@@ -222,8 +231,8 @@ class OccasionBanner extends StatelessWidget {
     return Stack(
       children: <Widget>[
         GlassCard(
-          padding: const EdgeInsets.all(18),
-          radius: 20,
+          padding: const EdgeInsets.all(AppMetrics.space5),
+          radius: AppMetrics.radiusXl,
           borderColor: tint.withValues(alpha: 0.45),
           gradient: LinearGradient(
             begin: Alignment.topRight,
@@ -235,8 +244,12 @@ class OccasionBanner extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
-              IconSquare(icon: _iconFor(item), color: tint, size: 42),
-              const SizedBox(width: 14),
+              IconSquare(
+                icon: _iconFor(item),
+                color: tint,
+                size: AppMetrics.iconBoxLg,
+              ),
+              const SizedBox(width: AppMetrics.space4),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,7 +260,7 @@ class OccasionBanner extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: AppMetrics.space1),
                     Text(
                       Fa.num(item.subtitle),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -316,7 +329,11 @@ class _SparklePainter extends CustomPainter {
 
 /// نشان کوچک لوگو و نام برنامه.
 class BrandMark extends StatelessWidget {
-  const BrandMark({super.key, this.size = 42, this.showTitle = true});
+  const BrandMark({
+    super.key,
+    this.size = AppMetrics.iconBoxXl,
+    this.showTitle = true,
+  });
 
   final double size;
   final bool showTitle;
@@ -337,7 +354,7 @@ class BrandMark extends StatelessWidget {
           ),
         ),
         if (showTitle) ...<Widget>[
-          const SizedBox(width: 12),
+          const SizedBox(width: AppMetrics.space3),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

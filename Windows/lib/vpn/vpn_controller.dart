@@ -902,10 +902,24 @@ class VpnController extends ChangeNotifier {
 
       _unusableInThisRun.clear();
       final List<VpnNode> candidates = _candidates(node, selection.reason);
+      // کل اشتراک امتحان می شود، نه چند سرور اول. بودجه زمانی فقط برای وقتی
+      // است که هیچ کدام جواب نمی دهند؛ در آن حالت برنامه نباید برای همیشه
+      // روی «تلاش N از M» بماند و باید به کاربر بگوید چه کرد.
+      final DateTime connectDeadline = DateTime.now().add(_connectBudget);
       String lastMessage = '';
+      int attempted = 0;
       for (int index = 0; index < candidates.length; index++) {
         if (_cancelRequested) {
           return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+        }
+        if (index > 0 && DateTime.now().isAfter(connectDeadline)) {
+          _log.add(
+            'بودجه زمانی اتصال تمام شد: ${Fa.num(attempted)} سرور از '
+            '${Fa.num(candidates.length)} سرور اشتراک امتحان شد و هیچ '
+            'کدام تونل نساخت.',
+            level: 'warning',
+          );
+          break;
         }
         final VpnNode candidate = candidates[index];
         if (candidates.length > 1) {
@@ -914,6 +928,7 @@ class VpnController extends ChangeNotifier {
             'تلاش ${Fa.num(index + 1)} از ${Fa.num(candidates.length)}: ${candidate.name}',
           );
         }
+        attempted++;
         final _AttemptResult attempt = await _attempt(candidate);
         if (attempt.cancelled) {
           return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
@@ -964,7 +979,19 @@ class VpnController extends ChangeNotifier {
   /// سیستمی. اگر راه اول نشد، همان هسته با حالت دیگر امتحان می شود.
   static bool fitsPreference(CorePreference preference, VpnNode node) => true;
 
-  /// سرور انتخاب شده و اگر حالت خودکار باشد دو گزینه بعدی با کمترین پینگ.
+  /// سرور انتخاب شده و بعد از او **همه** سرورهای اشتراک، به ترتیب اولویت.
+  ///
+  /// **شکایت کاربر (۱٫۰٫۱۹):** تا این نسخه این فهرست فقط چهار تای اول را
+  /// می داد و رابط «تلاش ۱ از ۴» می نوشت. یعنی از ۳۳۱ سروری که اشتراک
+  /// خوانده بود فقط چهار تای اول امتحان می شد؛ اگر آن ها بی جواب می ماندند،
+  /// کاربر «هیچ هسته ای نتوانست تونل را بالا بیاورد» می دید، در حالی که
+  /// هدیفای همه لینک های داخل اشتراک را یک جا می سنجد و سراغ سرور بعدی
+  /// می رود. حالا کل اشتراک در امتحان می آید.
+  ///
+  /// خود هسته هم همه لینک ها را در یک اجرا می گیرد ([_linkPool])، پس سنجش
+  /// «همه سرورها» در یک نوبت انجام می شود؛ این حلقه برای عیب یابی و برای
+  /// زمانی است که هسته اصلاً بالا نیامده باشد. بودجه زمانی [_connectBudget]
+  /// مانع می شود درخواست برای همیشه روی همین حلقه بماند.
   List<VpnNode> _candidates(VpnNode first, String reason) {
     final List<VpnNode> list = <VpnNode>[first];
     if (_settings.selectionMode == SelectionMode.manual ||
@@ -974,6 +1001,7 @@ class VpnController extends ChangeNotifier {
     final List<VpnNode> rest = _nodes
         .where((VpnNode node) =>
             node.id != first.id &&
+            !node.disabled &&
             usable(node) &&
             !_unusableInThisRun.contains(node.id) &&
             _fitsPreference(node))
@@ -987,7 +1015,9 @@ class VpnController extends ChangeNotifier {
           final List<VpnNode> rotation = <VpnNode>[];
           for (int step = 1; step < _nodes.length; step++) {
             final VpnNode candidate = _nodes[(start + step) % _nodes.length];
-            if (candidate.id != first.id && usable(candidate)) {
+            if (candidate.id != first.id &&
+                !candidate.disabled &&
+                usable(candidate)) {
               rotation.add(candidate);
             }
           }
@@ -1013,15 +1043,8 @@ class VpnController extends ChangeNotifier {
       case SelectionMode.manual:
         rest.sort(_byPing);
     }
-    for (final VpnNode node in rest) {
-      if (node.disabled || node.host.isEmpty) {
-        continue;
-      }
-      list.add(node);
-      if (list.length >= 4) {
-        break;
-      }
-    }
+    // همه سرورهای سازگار اشتراک به امتحان می آیند، نه چند تای اول.
+    list.addAll(rest);
     return list;
   }
 
@@ -1573,8 +1596,9 @@ class VpnController extends ChangeNotifier {
     await links.writeAsString('${pool.join('\n')}\n', flush: true);
     if (pool.length > 1) {
       _log.add(
-        'فایل لینک هسته ${Fa.num(pool.length)} سرور دارد؛ خود هسته سریع ترین '
-        'را انتخاب می کند و اگر افت کرد به بعدی سوییچ می کند.',
+        'فایل لینک هسته ${Fa.num(pool.length)} سرور از اشتراک را دارد؛ خود '
+        'هسته همه را می سنجد، سریع ترین را انتخاب می کند و اگر افت کرد '
+        'به بعدی سوییچ می کند.',
       );
     }
 
@@ -1677,9 +1701,16 @@ class VpnController extends ChangeNotifier {
   /// سریع ترین را نگه دارد و هنگام افتادن یکی، به بعدی سوییچ کند — همان
   /// کاری که کاربر از یک فیلترشکن انتظار دارد.
   ///
-  /// محدودیت تعداد دارد تا پیکربندی هسته با ۴۶۰ گره سنگین و کند نشود؛
-  /// `keep-top` هم فقط همین چند تا را اجرا می کند.
-  static const int _maxPoolLinks = 30;
+  /// بیشترین تعداد لینکی که در یک اجرا به هسته داده می شود.
+  ///
+  /// **شکایت کاربر (۱٫۰٫۱۹):** این عدد تا ۱٫۰٫۱۹ روی ۳۰ بود، پس از ۳۳۱
+  /// سرور اشتراک فقط ۳۰ تای اول (بعد از مرتب سازی بر اساس پینگ) به هسته
+  /// می رسید و خود هسته هم نمی توانست سرورهای دیگر را امتحان کند. حالا این
+  /// عدد فقط یک سقف ایمنیتی برای اشتراک های بی نهایت بزرگ است، نه سقف
+  /// رفتاری: هر لینک معتبر اشتراک — از هر منبع، از جمله لینک های ایکس ری —
+  /// در فایل لینک هسته می آید تا خود هسته همه را با `lowest-delay` بسنجد.
+  /// `keep-top` هم چند گره زنده نگه می دارد، ولی سنجش روی همه انجام می شود.
+  static const int _maxPoolLinks = 1000;
 
   List<String> _linkPool(VpnNode chosen) {
     final List<String> pool = <String>[];
@@ -1696,10 +1727,14 @@ class VpnController extends ChangeNotifier {
       if (link.isEmpty) {
         return;
       }
-      // یک گره دو بار نوشته نمی شود؛ هسته با نام تکراری گیج می شود.
-      final String key =
-          '${n.host}:${n.port}|${n.protocol.name}|${JsonX.text(n.params['network'])}'
-          '|${JsonX.text(n.params['security'])}';
+      // یک لینک دو بار نوشته نمی شود؛ هسته با نام تکراری گیج می شود.
+      //
+      // کلید، خود لینک است اما بدون بخش نام (`#...`). پیش از این اصلاح کلید
+      // `میزبان:پورت|پروتکل|انتقال|امنیت` بود؛ یعنی چند کلاینت مختلف روی
+      // یک سرور (رایج ترین حالت: یک سرور با چند شناسه کاربر) به یکی
+      // کاهش می یافتند و فقط یکی از آن ها به هسته می رسید. حالا هر لینک
+      // یکتا یک کلاینت است و همه شان امتحان می شوند.
+      final String key = link.split('#').first;
       if (!seen.add(key)) {
         return;
       }
@@ -1718,6 +1753,14 @@ class VpnController extends ChangeNotifier {
       });
     for (final VpnNode n in rest) {
       add(n);
+    }
+    if (pool.length >= _maxPoolLinks) {
+      _log.add(
+        'اشتراک لینک بیشتری دارد ولی فایل لینک هسته به سقف '
+        '${Fa.num(_maxPoolLinks)} لینک رسید؛ سرور انتخاب شده و کم پینگ '
+        'ترین ها به هسته داده می شوند.',
+        level: 'warning',
+      );
     }
     // اگر هیچ کدام سازگار نبود، لااقل همان یکی.
     return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
@@ -3078,6 +3121,15 @@ class VpnController extends ChangeNotifier {
   /// هسته اول پیکربندی را می سازد، بعد کارت شبکه را بالا می آورد و
   /// تست سرعت سرورها را شروع می کند؛ ۲۵ ثانیه برای همین کافی است.
   static const Duration _tunnelTimeout = Duration(seconds: 25);
+
+  /// بودجه زمانی یک درخواست اتصال.
+  ///
+  /// با این اصلاح کل اشتراک امتحان می شود، پس این بودجه لازم است: اگر هیچ
+  /// سروری تونل نسازد، حلقه تلاش باید بعد از این مدت بسته شود و کاربر
+  /// بفهمد چند سرور امتحان شد، نه اینکه برای همیشه «در حال اتصال» بماند.
+  /// در حالت عادی (هسته همه لینک ها را یک جا می سنجد) نوبت اول کافی است و
+  /// این بودجه اصلا به پایان نمی رسد.
+  static const Duration _connectBudget = Duration(minutes: 5);
 
   Future<bool> _waitForTunnel(LaunchPlan plan) async {
     final DateTime deadline = DateTime.now().add(_tunnelTimeout);

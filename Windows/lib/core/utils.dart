@@ -19,7 +19,10 @@ class ApiError implements Exception {
   bool get isNetwork => code == 'network' || code == 'timeout';
 
   bool get needsLogin =>
-      code == 'invalid_token' || code == 'unauthorized' || code == 'session_expired';
+      code == 'invalid_token' ||
+      code == 'unauthorized' ||
+      code == 'session_expired' ||
+      code == 'device_revoked';
 
   @override
   String toString() => '$code: $message';

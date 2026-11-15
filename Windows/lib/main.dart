@@ -50,7 +50,6 @@ Future<void> main(List<String> arguments) async {
   auth
     ..soundEnabled = settings.settings.soundEnabled
     ..notificationsEnabled = settings.settings.notificationsEnabled;
-  await auth.restore();
   final CoreProvisioner provisioner = CoreProvisioner();
   // فهرست هسته ها و پوشه داده پیش از ساخت رابط خوانده می شود تا وضعیت هسته ها
   // از همان ابتدا درست نمایش داده شود.
@@ -131,6 +130,15 @@ Future<void> main(List<String> arguments) async {
     }
     toasts.error('دسترسی اشتراک قطع شد', reason);
   };
+  auth.onSessionRevoked = (String reason) async {
+    toasts.error('مجوز استفاده از این دستگاه لغو شد', reason);
+    if (vpn.status.active) {
+      await vpn.disconnect();
+    }
+  };
+  // نشست بازیابی شده را پس از نصب callback قطع اتصال بررسی کن تا اگر مجوزش
+  // لغو شده بود، قبل از خروج اتصال VPN هم حتماً قطع شود.
+  await auth.restore();
 
   final SubscriptionController subscriptions =
       SubscriptionController(vpn: vpn, auth: auth);

@@ -78,7 +78,7 @@ class _LandingPageState extends State<LandingPage>
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 56, vertical: 32),
+              padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space10, vertical: AppMetrics.space8),
               child: Row(
                 children: <Widget>[
                   Expanded(
@@ -89,17 +89,17 @@ class _LandingPageState extends State<LandingPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: <Widget>[
-                          const BrandMark(size: 62),
-                          const SizedBox(height: 30),
+                          const BrandMark(size: AppMetrics.logoMd),
+                          const SizedBox(height: AppMetrics.space8),
                           Text(
                             Fa.num('اینترنت آزاد،\nبا اتصالی که دوام می آورد.'),
                             style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                                  fontSize: 42,
+                                  fontSize: AppMetrics.fontHero,
                                   height: 1.35,
                                   fontWeight: FontWeight.w900,
                                 ),
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: AppMetrics.space5),
                           Text(
                             Fa.num(
                               'فیلترشکن آمبرلا با هسته های نسل جدید، تونل کامل ویندوز و انتخاب هوشمند سرور، اتصال پایدار و امن می سازد.',
@@ -109,26 +109,26 @@ class _LandingPageState extends State<LandingPage>
                                   height: 1.9,
                                 ),
                           ),
-                          const SizedBox(height: 34),
+                          const SizedBox(height: AppMetrics.space8),
                           Row(
                             children: <Widget>[
                               SizedBox(
-                                width: 240,
+                                width: AppMetrics.buttonMaxWidth,
                                 child: GradientButton(
                                   label: 'شروع',
                                   icon: Icons.arrow_back_rounded,
                                   onPressed: widget.onStart,
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: AppMetrics.space4),
                               Pill(
-                                label: 'نسخه ۱٫۰٫۰',
+                                label: 'نسخه ${AppConfig.versionLabel}',
                                 icon: Icons.verified_rounded,
                                 color: colors.success,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 22),
+                          const SizedBox(height: AppMetrics.space6),
                           Text(
                             Fa.num('ویندوز ۱۰ و ۱۱ نسخه ۶۴ بیت | اجرا با دسترسی مدیر'),
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -139,7 +139,7 @@ class _LandingPageState extends State<LandingPage>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 56),
+                  const SizedBox(width: AppMetrics.space10),
                   Expanded(
                     flex: 4,
                     child: SingleChildScrollView(
@@ -148,14 +148,14 @@ class _LandingPageState extends State<LandingPage>
                           for (final (IconData icon, String title, String subtitle) item
                               in _features)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.only(bottom: AppMetrics.space3),
                               child: GlassCard(
-                                padding: const EdgeInsets.all(16),
-                                radius: 18,
+                                padding: const EdgeInsets.all(AppMetrics.space4),
+                                radius: AppMetrics.radiusLg,
                                 child: Row(
                                   children: <Widget>[
-                                    IconSquare(icon: item.$1, color: colors.primary, size: 40),
-                                    const SizedBox(width: 14),
+                                    IconSquare(icon: item.$1, color: colors.primary, size: AppMetrics.iconBoxLg),
+                                    const SizedBox(width: AppMetrics.space4),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,7 +167,7 @@ class _LandingPageState extends State<LandingPage>
                                                 .titleSmall
                                                 ?.copyWith(fontWeight: FontWeight.w800),
                                           ),
-                                          const SizedBox(height: 3),
+                                          const SizedBox(height: AppMetrics.space1),
                                           Text(
                                             Fa.num(item.$3),
                                             style: Theme.of(context)

@@ -99,13 +99,13 @@ class _LoginPageState extends State<LoginPage> {
                     Expanded(
                       flex: 5,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 54, vertical: 40),
+                        padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space10, vertical: AppMetrics.space9),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[
-                            const BrandMark(size: 64),
-                            const SizedBox(height: 28),
+                            const BrandMark(size: AppMetrics.logoMd),
+                            const SizedBox(height: AppMetrics.space7),
                             Text(
                               Fa.num('ورود امن با شماره موبایل'),
                               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -113,7 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                                     height: 1.4,
                                   ),
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: AppMetrics.space3),
                             Text(
                               Fa.num(
                                 'کد تایید پیامک می شود و جزئیات دستگاه شما در تلگرام نمایش داده می شود تا فقط خودتان ورود را تایید کنید.',
@@ -123,18 +123,18 @@ class _LoginPageState extends State<LoginPage> {
                                     height: 1.9,
                                   ),
                             ),
-                            const SizedBox(height: 26),
+                            const SizedBox(height: AppMetrics.space6),
                             for (final (IconData icon, String text) item in const <(IconData, String)>[
                               (Icons.sms_rounded, 'کد تایید ۶ رقمی پیامکی'),
                               (Icons.phonelink_lock_rounded, 'تایید دستگاه در تلگرام'),
                               (Icons.verified_user_rounded, 'ثبت و همگام سازی حساب در ربات'),
                             ])
                               Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.only(bottom: AppMetrics.space3),
                                 child: Row(
                                   children: <Widget>[
-                                    Icon(item.$1, size: 17, color: colors.primary),
-                                    const SizedBox(width: 10),
+                                    Icon(item.$1, size: AppMetrics.iconSm, color: colors.primary),
+                                    const SizedBox(width: AppMetrics.space3),
                                     Text(
                                       Fa.num(item.$2),
                                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -146,7 +146,9 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             const Spacer(),
                             Text(
-                              Fa.num('نسخه ۱٫۰٫۰ | ویندوز ۱۰ و ۱۱'),
+                              Fa.num(
+                                'نسخه ${AppConfig.versionLabel} | ویندوز ۱۰ و ۱۱',
+                              ),
                               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                     color: colors.textSecondary,
                                   ),
@@ -159,12 +161,12 @@ class _LoginPageState extends State<LoginPage> {
                       flex: 4,
                       child: Center(
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+                          padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space9, vertical: AppMetrics.space9),
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 460),
+                            constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
                             child: GlassCard(
-                              padding: const EdgeInsets.all(28),
-                              radius: 28,
+                              padding: const EdgeInsets.all(AppMetrics.space7),
+                              radius: AppMetrics.radiusHuge,
                               elevated: true,
                               child: AnimatedSize(
                                 duration: const Duration(milliseconds: 280),
@@ -216,14 +218,14 @@ class _LoginPageState extends State<LoginPage> {
                 fontWeight: FontWeight.w900,
               ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppMetrics.space2),
         Text(
           Fa.num('شماره را وارد کنید تا کد تایید برای شما پیامک شود.'),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colors.textSecondary,
               ),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: AppMetrics.space6),
         TextField(
           controller: _phone,
           keyboardType: TextInputType.phone,
@@ -239,11 +241,11 @@ class _LoginPageState extends State<LoginPage> {
           ],
           decoration: const InputDecoration(
             hintText: '۰۹۱۲۳۴۵۶۷۸۹',
-            prefixIcon: Icon(Icons.smartphone_rounded, size: 20),
+            prefixIcon: Icon(Icons.smartphone_rounded, size: AppMetrics.iconMd),
           ),
           onSubmitted: (_) => _submitPhone(auth),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppMetrics.space3),
         Row(
           children: <Widget>[
             OperatorBadge(operator: _operator),
@@ -258,16 +260,16 @@ class _LoginPageState extends State<LoginPage> {
           ],
         ),
         if (auth.error.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           _Message(text: auth.error, kind: _MessageKind.error),
           if (auth.error.contains('درگاه') ||
               auth.error.contains('سرور') ||
               auth.error.contains('ارتباط')) ...<Widget>[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppMetrics.space2),
             Row(
               children: <Widget>[
-                Icon(Icons.dns_rounded, size: 14, color: colors.textSecondary),
-                const SizedBox(width: 6),
+                Icon(Icons.dns_rounded, size: AppMetrics.iconXs, color: colors.textSecondary),
+                const SizedBox(width: AppMetrics.space2),
                 Expanded(
                   child: Text(
                     Fa.num('نشانی فعلی درگاه: ${auth.gatewayHost}'),
@@ -285,17 +287,17 @@ class _LoginPageState extends State<LoginPage> {
           ],
         ],
         if (auth.info.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           _Message(text: auth.info, kind: _MessageKind.info),
         ],
-        const SizedBox(height: 24),
+        const SizedBox(height: AppMetrics.space6),
         GradientButton(
           label: 'دریافت کد تایید',
           icon: Icons.arrow_back_rounded,
           loading: auth.busy,
           onPressed: auth.busy ? null : () => _submitPhone(auth),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppMetrics.space4),
         Text(
           Fa.num('با ورود، شرایط استفاده و سیاست حریم خصوصی آمبرلا را می پذیرید.'),
           textAlign: TextAlign.center,
@@ -321,7 +323,7 @@ class _LoginPageState extends State<LoginPage> {
               onTap: auth.resetToPhoneStep,
               tooltip: 'بازگشت',
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppMetrics.space3),
             Expanded(
               child: Text(
                 Fa.num('تکمیل ثبت نام'),
@@ -332,34 +334,34 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppMetrics.space2),
         Text(
           Fa.num('این شماره در سیستم نیست؛ برای ساخت حساب نام و نام خانوادگی را وارد کنید.'),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colors.textSecondary,
               ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: AppMetrics.space5),
         TextField(
           controller: _firstName,
           decoration: const InputDecoration(
             labelText: 'نام',
-            prefixIcon: Icon(Icons.person_outline_rounded, size: 20),
+            prefixIcon: Icon(Icons.person_outline_rounded, size: AppMetrics.iconMd),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppMetrics.space3),
         TextField(
           controller: _lastName,
           decoration: const InputDecoration(
             labelText: 'نام خانوادگی',
-            prefixIcon: Icon(Icons.badge_outlined, size: 20),
+            prefixIcon: Icon(Icons.badge_outlined, size: AppMetrics.iconMd),
           ),
         ),
         if (auth.error.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 16),
+          const SizedBox(height: AppMetrics.space4),
           _Message(text: auth.error, kind: _MessageKind.error),
         ],
-        const SizedBox(height: 22),
+        const SizedBox(height: AppMetrics.space6),
         GradientButton(
           label: 'ثبت نام و دریافت کد',
           icon: Icons.arrow_back_rounded,
@@ -385,7 +387,7 @@ class _LoginPageState extends State<LoginPage> {
               onTap: auth.resetToPhoneStep,
               tooltip: 'بازگشت',
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppMetrics.space3),
             Expanded(
               child: Text(
                 Fa.num('کد تایید'),
@@ -396,14 +398,14 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppMetrics.space2),
         Text(
           Fa.num('کد ارسال شده به ${IranPhone.display(auth.phone)} را وارد کنید.'),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colors.textSecondary,
               ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: AppMetrics.space5),
         TextField(
           controller: _code,
           focusNode: _codeFocus,
@@ -416,7 +418,7 @@ class _LoginPageState extends State<LoginPage> {
             LengthLimitingTextInputFormatter(6),
           ],
           style: const TextStyle(
-            fontSize: 26,
+            fontSize: AppMetrics.fontDisplay,
             letterSpacing: 16,
             fontWeight: FontWeight.w900,
             fontFamily: AppTheme.fontFamily,
@@ -424,11 +426,11 @@ class _LoginPageState extends State<LoginPage> {
           decoration: const InputDecoration(hintText: 'ــــــ'),
           onSubmitted: (String value) => auth.verifyCode(value),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppMetrics.space4),
         Row(
           children: <Widget>[
-            Icon(Icons.timer_outlined, size: 15, color: colors.textSecondary),
-            const SizedBox(width: 6),
+            Icon(Icons.timer_outlined, size: AppMetrics.iconSm, color: colors.textSecondary),
+            const SizedBox(width: AppMetrics.space2),
             Text(
               Fa.num('زمان باقی مانده: ${Fa.countdown(Duration(seconds: auth.secondsLeft))}'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -448,7 +450,7 @@ class _LoginPageState extends State<LoginPage> {
         ),
         if (auth.error.isNotEmpty) ...<Widget>[
           _Message(text: auth.error, kind: _MessageKind.error),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
         ],
         GradientButton(
           label: 'تایید کد',
@@ -468,8 +470,8 @@ class _LoginPageState extends State<LoginPage> {
       children: <Widget>[
         Row(
           children: <Widget>[
-            IconSquare(icon: Icons.send_rounded, color: colors.info, size: 40),
-            const SizedBox(width: 12),
+            IconSquare(icon: Icons.send_rounded, color: colors.info, size: AppMetrics.iconBoxLg),
+            const SizedBox(width: AppMetrics.space3),
             Expanded(
               child: Text(
                 Fa.num('تایید در تلگرام'),
@@ -480,7 +482,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppMetrics.space3),
         Text(
           Fa.num(
             auth.stage == SignInStage.needsTelegram
@@ -492,16 +494,16 @@ class _LoginPageState extends State<LoginPage> {
                 height: 1.9,
               ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: AppMetrics.space5),
         if (auth.stage == SignInStage.awaitingTelegram)
           Row(
             children: <Widget>[
               const SizedBox(
-                width: 16,
-                height: 16,
+                width: AppMetrics.iconSm,
+                height: AppMetrics.iconSm,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppMetrics.space3),
               Text(
                 Fa.num('در انتظار تایید شما در تلگرام...'),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -511,22 +513,22 @@ class _LoginPageState extends State<LoginPage> {
             ],
           ),
         if (auth.error.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 12),
+          const SizedBox(height: AppMetrics.space3),
           _Message(text: auth.error, kind: _MessageKind.error),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: AppMetrics.space5),
         GradientButton(
           label: 'باز کردن تلگرام',
           icon: Icons.open_in_new_rounded,
           onPressed: () => _openBot(auth.botUrl),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: AppMetrics.space3),
         OutlinedButton.icon(
           onPressed: auth.busy ? null : auth.checkNow,
-          icon: const Icon(Icons.refresh_rounded, size: 18),
+          icon: const Icon(Icons.refresh_rounded, size: AppMetrics.iconSm),
           label: const Text('بررسی دوباره وضعیت'),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: AppMetrics.space3),
         TextButton(
           onPressed: auth.resetToPhoneStep,
           child: const Text('بازگشت به شماره موبایل'),
@@ -577,10 +579,10 @@ class _Message extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     final Color tone = kind == _MessageKind.error ? colors.danger : colors.info;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4, vertical: AppMetrics.space3),
       decoration: BoxDecoration(
         color: tone.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         border: Border.all(color: tone.withValues(alpha: 0.35)),
       ),
       child: Row(
@@ -590,10 +592,10 @@ class _Message extends StatelessWidget {
             kind == _MessageKind.error
                 ? Icons.error_outline_rounded
                 : Icons.info_outline_rounded,
-            size: 17,
+            size: AppMetrics.iconSm,
             color: tone,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: AppMetrics.space3),
           Expanded(
             child: Text(
               Fa.num(text),

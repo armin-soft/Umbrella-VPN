@@ -136,10 +136,55 @@ begin
   Result := '';
 end;
 
+// علامت نقل قول تکی برای PowerShell: در رشته نقل قول شده، علامت نقل قول تکی
+// با دو تا از خودش جایگزین می شود. بدون این کار، پوشه نصبی که اسم آن علامت
+// نقل قول دارد (مثل D:\Reza's VPN) دستور را می شکند.
+function PsQuote(const Value: String): String;
+begin
+  Result := '''' + StringReplace(Value, '''', '''''', [rfReplaceAll]) + '''';
+end;
+
+// پوشه نصب را کاملا پاک می کند.
+//
+// Inno نمی تواند پوشه ای را که فایل اجرایی خودش (`unins000.exe`) در آن
+// است حذف کند، پس بعد از «حذف برنامه» پوشه نصب با یک یا دو فایل `unins000`
+// در آن باقی می ماند — دقیقا همان چیزی که کاربر دید و گزارش کرد. حذف
+// کننده با دسترسی مدیر اجرا می شود، پس این فرایند جدا همان دسترسی را
+// دارد و می تواند کل پوشه را بردارد.
+//
+// فرایند جدا غیر از حذف کننده است، پس وقتی حذف کننده بسته شود همه فایل
+// های اجرایی آزاد شده اند و پوشه برداشته می شود. پوشه داده برنامه
+// (`%APPDATA%\Umbrella`) هم پاک می شود تا هیچ چیزی باقی نماند.
+procedure RemoveInstallFolder();
+var
+  ResultCode: Integer;
+  UninstallerName, Command: String;
+begin
+  UninstallerName :=
+    ChangeFileExt(ExtractFileName(ExpandConstant('{uninstallexe}')), '');
+  // پوشه کاری را عوض می کنیم تا اگر حذف کننده پوشه نصب را پوشه کاری
+  // خودش کرده بود، برداشتن پوشه به «دسترسی رد شد» نخورد.
+  Command :=
+    '$p=' + PsQuote(UninstallerName) + '; ' +
+    'Set-Location -LiteralPath ([Environment]::GetFolderPath(''Windows'')); ' +
+    '$null=Wait-Process -Name $p -Timeout 900 -ErrorAction SilentlyContinue; ' +
+    'Remove-Item -LiteralPath ' + PsQuote(ExpandConstant('{app}')) +
+      ' -Recurse -Force -ErrorAction SilentlyContinue; ' +
+    'Remove-Item -LiteralPath ([Environment]::GetFolderPath(''ApplicationData'') '
+      + '+ ''\Umbrella'') -Recurse -Force -ErrorAction SilentlyContinue';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass '
+       + '-Command "' + Command + '"',
+       '', SW_HIDE, ewNoWait, ResultCode);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
     KillRunning();
+    RemoveInstallFolder();
+  end;
 end;
 
 [InstallDelete]

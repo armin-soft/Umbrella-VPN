@@ -20,7 +20,7 @@ class ToastOverlay extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         final List<ToastMessage> items = controller.items;
         return Positioned(
-          top: 16,
+          top: AppMetrics.space4,
           left: 0,
           right: 0,
           child: IgnorePointer(
@@ -81,15 +81,17 @@ class _ToastCard extends StatelessWidget {
         return Opacity(
           opacity: value,
           child: Transform.translate(
-            offset: Offset(0, -16 * (1 - value)),
+            offset: Offset(0, -AppMetrics.space4 * (1 - value)),
             child: child,
           ),
         );
       },
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.only(bottom: AppMetrics.space3),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(
+            maxWidth: AppMetrics.dialogMaxWidth,
+          ),
           child: Material(
             color: Colors.transparent,
             child: MouseRegion(
@@ -97,10 +99,13 @@ class _ToastCard extends StatelessWidget {
               child: GestureDetector(
                 onTap: onClose,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppMetrics.space4,
+                    vertical: AppMetrics.space3,
+                  ),
                   decoration: BoxDecoration(
                     color: colors.surface,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
                     border: Border.all(color: tone.withValues(alpha: 0.5)),
                     boxShadow: <BoxShadow>[
                       BoxShadow(
@@ -113,8 +118,12 @@ class _ToastCard extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      IconSquare(icon: icon, color: tone, size: 32),
-                      const SizedBox(width: 12),
+                      IconSquare(
+                        icon: icon,
+                        color: tone,
+                        size: AppMetrics.iconBoxSm,
+                      ),
+                      const SizedBox(width: AppMetrics.space3),
                       Flexible(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +137,7 @@ class _ToastCard extends StatelessWidget {
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             if (message.message.isNotEmpty) ...<Widget>[
-                              const SizedBox(height: 2),
+                              const SizedBox(height: AppMetrics.space1),
                               Text(
                                 Fa.num(message.message),
                                 style: Theme.of(context)
@@ -142,8 +151,12 @@ class _ToastCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Icon(Icons.close_rounded, size: 15, color: colors.textSecondary),
+                      const SizedBox(width: AppMetrics.space2),
+                      Icon(
+                        Icons.close_rounded,
+                        size: AppMetrics.iconSm,
+                        color: colors.textSecondary,
+                      ),
                     ],
                   ),
                 ),
@@ -197,7 +210,7 @@ class TitleBar extends StatelessWidget {
     // چیدمان خواسته شده: وضعیت اتصال **وسط** نوار، و اعلان و تم در **سمت
     // چپ** آن. دکمه های پنجره در لبه راست می مانند (چیدمان راست چین).
     return Container(
-      height: 54,
+      height: AppMetrics.titleBarHeight,
       decoration: BoxDecoration(
         color: colors.backgroundAlt.withValues(alpha: 0.65),
         border: Border(bottom: BorderSide(color: colors.border)),
@@ -222,18 +235,18 @@ class TitleBar extends StatelessWidget {
                     ClipOval(
                       child: Image.asset(
                         BrandAssets.logo,
-                        width: 24,
-                        height: 24,
+                        width: AppMetrics.iconLg,
+                        height: AppMetrics.iconLg,
                         errorBuilder: (BuildContext context, Object error,
                                 StackTrace? stack) =>
                             Icon(
                           Icons.beach_access_rounded,
-                          size: 20,
+                          size: AppMetrics.iconMd,
                           color: colors.primary,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppMetrics.space2),
                     Flexible(
                       child: Text(
                         Fa.num(AppConfig.appName),
@@ -246,11 +259,11 @@ class TitleBar extends StatelessWidget {
                       ),
                     ),
                     if (current != null) ...<Widget>[
-                      const SizedBox(width: 10),
+                      const SizedBox(width: AppMetrics.space3),
                       // نقطه رنگی وضعیت، در پنجره باریک فقط همین می ماند.
                       Container(
-                        width: 8,
-                        height: 8,
+                        width: AppMetrics.space2,
+                        height: AppMetrics.space2,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: tone,
@@ -262,7 +275,7 @@ class TitleBar extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: AppMetrics.space2),
                       Flexible(
                         child: Text(
                           Fa.num(current.label),
@@ -285,7 +298,7 @@ class TitleBar extends StatelessWidget {
           // ── چپ: اعلان و تم ────────────────────────────────────────
           if (onNotifications != null)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
+              padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space1),
               child: _HeaderIconButton(
                 icon: Icons.notifications_none_rounded,
                 filledIcon: Icons.notifications_rounded,
@@ -296,7 +309,10 @@ class TitleBar extends StatelessWidget {
             ),
           if (onToggleTheme != null)
             Padding(
-              padding: const EdgeInsets.only(left: 3, right: 10),
+              padding: const EdgeInsets.only(
+                left: AppMetrics.space1,
+                right: AppMetrics.space2,
+              ),
               child: _HeaderIconButton(
                 icon: darkTheme
                     ? Icons.light_mode_rounded
@@ -352,11 +368,11 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
             children: <Widget>[
               AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                width: 34,
-                height: 34,
+                width: AppMetrics.iconButton,
+                height: AppMetrics.iconButton,
                 decoration: BoxDecoration(
                   color: _hover ? colors.surfaceHigh : Colors.transparent,
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
                   border: Border.all(
                     color: _hover ? colors.border : Colors.transparent,
                   ),
@@ -365,7 +381,7 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
                   hasBadge
                       ? (widget.filledIcon ?? widget.icon)
                       : widget.icon,
-                  size: 17,
+                  size: AppMetrics.iconSm,
                   color: hasBadge ? colors.primary : colors.textSecondary,
                 ),
               ),
@@ -374,19 +390,23 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
                   top: -1,
                   right: -1,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    constraints: const BoxConstraints(minWidth: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppMetrics.space1,
+                      vertical: AppMetrics.space1,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: AppMetrics.badgeMinWidth,
+                    ),
                     decoration: BoxDecoration(
                       color: colors.danger,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
                       border: Border.all(color: colors.backgroundAlt, width: 1.5),
                     ),
                     child: Text(
                       Fa.num(widget.badge > 99 ? '99+' : widget.badge),
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 8.5,
+                        fontSize: AppMetrics.fontMicro,
                         height: 1.1,
                         color: colors.onPrimary,
                         fontWeight: FontWeight.w900,
@@ -433,12 +453,12 @@ class _WindowButtonState extends State<_WindowButton> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          width: 48,
-          height: 52,
+          width: AppMetrics.windowButtonWidth,
+          height: AppMetrics.titleBarHeight,
           color: _hover ? hoverColor : Colors.transparent,
           child: Icon(
             widget.icon,
-            size: 17,
+            size: AppMetrics.iconSm,
             color: _hover && widget.danger ? colors.onPrimary : colors.textSecondary,
           ),
         ),
@@ -490,10 +510,12 @@ class SideNav extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         // ریسپانسیو: در پنجره باریک نوار کناری باریک می شود و متن منوها
         // کوتاه می شود تا محتوا جا شود؛ هیچ گزینه ای حذف نمی شود.
-        final double width = constraints.maxWidth < 820
-            ? 68
-            : (constraints.maxWidth < 1060 ? 186 : 232);
-        final bool compact = width < 150;
+        final double width = constraints.maxWidth < AppMetrics.breakpointNav
+            ? AppMetrics.navWidthCompact
+            : (constraints.maxWidth < AppMetrics.breakpointNavWide
+                ? AppMetrics.navWidthMedium
+                : AppMetrics.navWidthWide);
+        final bool compact = width < AppMetrics.navWidthMedium;
         return Container(
           width: width,
           decoration: BoxDecoration(
@@ -504,11 +526,11 @@ class SideNav extends StatelessWidget {
           ),
           child: Column(
             children: <Widget>[
-              const SizedBox(height: 12),
+              const SizedBox(height: AppMetrics.space3),
               Expanded(
                 child: SingleChildScrollView(
                   padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 10 : 14,
+                    horizontal: compact ? AppMetrics.space3 : AppMetrics.space4,
                   ),
                   child: Column(
                     children: <Widget>[
@@ -537,8 +559,8 @@ class SideNav extends StatelessWidget {
                       if (exitIndex != null)
                         Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 6,
+                            horizontal: AppMetrics.space1,
+                            vertical: AppMetrics.space2,
                           ),
                           child: Divider(height: 1, color: colors.border),
                         ),
@@ -547,20 +569,22 @@ class SideNav extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: EdgeInsets.all(compact ? 10 : 14),
+                padding: EdgeInsets.all(
+                  compact ? AppMetrics.space3 : AppMetrics.space4,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     if (!compact)
                       GlassCard(
                         onTap: onStatusTap,
-                        padding: const EdgeInsets.all(12),
-                        radius: 14,
+                        padding: const EdgeInsets.all(AppMetrics.space3),
+                        radius: AppMetrics.radiusMd,
                         child: Row(
                           children: <Widget>[
                             Container(
-                              width: 8,
-                              height: 8,
+                              width: AppMetrics.space2,
+                              height: AppMetrics.space2,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: VpnVisuals.color(context, status),
@@ -573,7 +597,7 @@ class SideNav extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 9),
+                            const SizedBox(width: AppMetrics.space2),
                             Expanded(
                               child: Text(
                                 Fa.num(status.label),
@@ -593,8 +617,8 @@ class SideNav extends StatelessWidget {
                         child: Tooltip(
                           message: Fa.num(status.label),
                           child: Container(
-                            width: 10,
-                            height: 10,
+                            width: AppMetrics.space3,
+                            height: AppMetrics.space3,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: VpnVisuals.color(context, status),
@@ -602,7 +626,7 @@ class SideNav extends StatelessWidget {
                           ),
                         ),
                       ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppMetrics.space3),
                     // پایین منوی کناری فقط شماره نسخه می آید، به شکل ساده
                     // `1.0.18` — بدون کلمه «نسخه» و بدون نام سازنده.
                     if (compact)
@@ -616,7 +640,7 @@ class SideNav extends StatelessWidget {
                                 .labelSmall
                                 ?.copyWith(
                                   color: colors.textSecondary,
-                                  fontSize: 9,
+                                  fontSize: AppMetrics.fontMicro,
                                 ),
                           ),
                         ),
@@ -690,10 +714,13 @@ class _NavItemState extends State<_NavItem> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          margin: const EdgeInsets.only(bottom: 6),
+          constraints: const BoxConstraints(
+            minHeight: AppMetrics.navItemHeight,
+          ),
+          margin: const EdgeInsets.only(bottom: AppMetrics.space2),
           padding: EdgeInsets.symmetric(
-            horizontal: widget.compact ? 6 : 12,
-            vertical: 11,
+            horizontal: widget.compact ? AppMetrics.space2 : AppMetrics.space3,
+            vertical: AppMetrics.space3,
           ),
           decoration: BoxDecoration(
             gradient: widget.selected
@@ -707,7 +734,7 @@ class _NavItemState extends State<_NavItem> {
             color: widget.selected
                 ? null
                 : (_hover ? colors.surface : Colors.transparent),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
             border: Border.all(
               color: widget.selected
                   ? colors.primary.withValues(alpha: 0.45)
@@ -718,27 +745,29 @@ class _NavItemState extends State<_NavItem> {
             children: <Widget>[
               AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                width: 3,
-                height: 18,
+                width: AppMetrics.space1,
+                height: AppMetrics.iconSm,
                 decoration: BoxDecoration(
                   color: widget.selected
                       ? (widget.tone ?? colors.primary)
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(3),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
                 ),
               ),
-              SizedBox(width: widget.compact ? 6 : 10),
+              SizedBox(
+                width: widget.compact ? AppMetrics.space2 : AppMetrics.space3,
+              ),
               Icon(
                 widget.selected
                     ? widget.destination.activeIcon
                     : widget.destination.icon,
-                size: 19,
+                size: AppMetrics.iconMd,
                 color: widget.selected
                     ? (widget.tone ?? colors.primary)
                     : (highlight ? colors.textPrimary : colors.textSecondary),
               ),
               if (!widget.compact) ...<Widget>[
-                const SizedBox(width: 10),
+                const SizedBox(width: AppMetrics.space3),
                 Flexible(
                   child: Text(
                     Fa.num(widget.destination.label),
