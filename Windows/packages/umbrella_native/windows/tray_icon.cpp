@@ -106,13 +106,14 @@ bool TrayIcon::SetIconFromFile(const std::string& ico_path) {
   if (icon == nullptr) {
     wchar_t exe[MAX_PATH] = {0};
     if (GetModuleFileNameW(nullptr, exe, MAX_PATH) == 0) return false;
-    // First icon of our own executable: `small` is the 16x16 tray frame,
-    // `large` is the 32x32 frame the balloon needs.
-    HICON large = nullptr;
-    HICON small = nullptr;
-    if (ExtractIconExW(exe, 0, &large, &small, 1) == 0) return false;
-    icon = small != nullptr ? small : large;
-    balloon = large != nullptr ? large : small;
+    // First icon of our own executable: the small frame is 16x16 for the
+    // tray, the big one is 32x32 for the balloon. (`large`/`small` cannot be
+    // used as names: they are macros in rpcndr.h.)
+    HICON big_frame = nullptr;
+    HICON tray_frame = nullptr;
+    if (ExtractIconExW(exe, 0, &big_frame, &tray_frame, 1) == 0) return false;
+    icon = tray_frame != nullptr ? tray_frame : big_frame;
+    balloon = big_frame != nullptr ? big_frame : tray_frame;
     if (icon == nullptr) return false;
   }
   if (owns_icon_ && icon_ != nullptr) {
