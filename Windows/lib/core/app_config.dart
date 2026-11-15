@@ -9,7 +9,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.14';
+  static const String version = '1.0.15';
   static const int buildNumber = 1;
   /// برچسب نسخه برای نمایش؛ از همان `version` ساخته می شود تا هیچ وقت
   /// عقب نماند (در ۱٫۰٫۸ اینجا هنوز «۱٫۰٫۰» نوشته بود).
@@ -138,6 +138,25 @@ class AppConfig {
   /// به دست بیاید ولی مصرف کاربر بی دلیل بالا نرود.
   static const String speedTestUrl =
       'https://speed.cloudflare.com/__down?bytes=1000000';
+
+  /// نشانی سنجش سلامت گره که به خود هسته داده می شود.
+  ///
+  /// این باید یک نشانی سبک و همه جا در دسترس باشد، **نه** نشانی سنجش سرعت.
+  /// تا ۱٫۰٫۱۴ کلید `connection-test-url` روی `speed.cloudflare.com` بود و
+  /// همان، گره های سالم را «خراب» نشان می داد: در گزارش کاربر ترافیک واقعی
+  /// از تونل رد شد (گوگل، تلگرام، DNS) ولی هسته می نوشت
+  /// `MONITORING vless § 0: no answer after 1s`. علتش این بود که آن دامنه
+  /// از داخل ایران ۳۰۱/۴۰۳ برمی گرداند و پاسخی که هسته انتظار دارد نمی دهد.
+  ///
+  /// این سه نشانی، همان هایی هستند که اندروید و ویندوز خودشان برای تشخیص
+  /// «اینترنت وصل است؟» استفاده می کنند؛ سبک اند (۲۰۴ بدون بدنه) و در
+  /// بیشتر شبکه ها باز.
+  static const List<String> connectionTestUrls = <String>[
+    'https://www.gstatic.com/generate_204',
+    'http://connectivitycheck.gstatic.com/generate_204',
+    'http://cp.cloudflare.com/generate_204',
+    'https://www.google.com/generate_204',
+  ];
   /// پورت محلی هسته (پروکسی مختلط HTTP/SOCKS). همان پورتی که
   /// مستندات هسته پیش فرض می دهد.
   static const int httpPortUmbrella = 12334;
@@ -152,6 +171,20 @@ class AppConfig {
 
   /// پورت رابط کلش هسته؛ در خود هسته هم ثابت است.
   static const int coreClashPort = 16756;
+
+  /// رمز رابط کلش هسته.
+  ///
+  /// **چرا نمی توانیم خالی بگذاریم:** در `setExperimental` خود هسته
+  /// (`v2/config/builder.go`) این خط هست:
+  ///   if hopt.ClashApiSecret == "" { hopt.ClashApiSecret = defaultClashApiSecret() }
+  /// یعنی وقتی `web-secret` خالی باشد، هسته خودش یک رمز **ناشناس** می سازد.
+  /// ما بی خبر از آن رمز به `127.0.0.1:16756/connections` می زدیم، جواب ۴۰۱
+  /// می گرفتیم، `_clashTunnelVerdict()` مقدار `null` برمی گرداند و درست همان
+  /// چیزی می شد که در گزارش ۱٫۰۱۴ دیدیم: پرسش از هسته هرگز جواب نداد و
+  /// تصمیم آخر را یک سنجش درونی شکست خورده گرفت.
+  ///
+  /// رمز فقط روی `127.0.0.1` شنیده می شود، پس مقدار ثابت و ساده کافی است.
+  static const String coreClashSecret = 'umbrella-local-16756';
 
   /// فایل تنظیمات هسته (همان فایل تنظیمات موتور، با نام آمبرلا).
   static const String coreSettingsFile = 'umbrella-settings.json';

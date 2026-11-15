@@ -328,9 +328,16 @@ class UmbrellaCore {
       // کند و همین رابط است که گره ها را می سنجد و سرور سالم را نگه می دارد.
       'enable-clash-api': true,
       'clash-api-port': AppConfig.coreClashPort,
-      'web-secret': '',
-      'connection-test-url': AppConfig.speedTestUrl,
-      'url-test-interval': 600,
+      // خالی گذاشتن این کلید یعنی هسته خودش رمز ناشناس می سازد و ما دیگر
+      // نمی توانیم از رابط کلش بپرسیم (۴۰۱). رمز ثابت ما را ببینید در
+      // `AppConfig.coreClashSecret`.
+      'web-secret': AppConfig.coreClashSecret,
+      // نشانی سنجش سلامت گره. پیش از این `speedTestUrl` بود که از داخل
+      // ایران ۳۰۱/۴۰۳ می دهد، پس هسته گره سالم را «no answer» می خواند.
+      'connection-test-url': AppConfig.connectionTestUrls.first,
+      'connection-test-urls': AppConfig.connectionTestUrls,
+      // هر ۳۰ ثانیه به جای ۶۰۰ تا گره تازه وصل‌شده سریع دیده شود.
+      'url-test-interval': 30,
       // سرعت انتخاب سرور در خود هسته: بهترین گره نگه داشته می شود، پس اگر
       // یک سرور افت کرد، خود هسته بدون قطعی سراغ بعدی می رود.
       'keep-top': 3,

@@ -99,6 +99,12 @@ rules:
       // پورت رابط کلش همان ثابت خود هسته است (در حالت run هم خودش همان را
       // می گذارد)؛ عدد ساختگی جای آن گذاشته نمی شود.
       expect(settings['clash-api-port'], AppConfig.coreClashPort);
+      // رمز رابط کلش نمی تواند خالی بماند: خود هسته در `setExperimental`
+      // (`v2/config/builder.go`) برای `web-secret` خالی یک رمز ناشناس
+      // می سازد و پرسش ما از `/connections` ۴۰۱ می شود. در ۱٫۰۱۴ همین
+      // باعث شد پرسش از هسته هیچ وقت جواب ندهد.
+      expect(settings['web-secret'], isNotEmpty);
+      expect(settings['web-secret'], AppConfig.coreClashSecret);
       // در حالت تونل، پروکسی سیستمی روشن نمی شود.
       expect(settings['set-system-proxy'], isFalse);
       expect(settings['mixed-port'], UmbrellaCore.port);

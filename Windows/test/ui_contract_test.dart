@@ -145,14 +145,47 @@ void main() {
       expect(core.contains("'use-system-tls-engine': false"), isTrue);
     });
 
-    test('«وصل شدن» از روی حرف خود هسته سنجیده می شود، نه یک خط خوش بینانه', () {
-      // در ۱٫۰۱۳ گره‌هایی «وصل» اعلام شدند که خود هسته در همان لحظه برایشان
-      // `MONITORING ... no answer` می نوشت. آن خط outbound فقط یعنی «تلاش
-      // کردم»، نه «وصل شدم».
+    test('گره ای که ترافیک رد می کند هرگز به خاطر یک سنجش رد نمی شود', () {
+      // داستان دو طرف دارد و هر دو باید در کد باشد:
+      //
+      // ۱٫۰۱۳: یک خط `no answer` نادیده گرفته شد و گره خراب «وصل» شد.
+      // ۱٫۰۱۴: همان خط مدرک خرابی شد و گره سالمی که گوگل و تلگرام را رد
+      //        می کرد رد شد — چون آن سنجش به `speed.cloudflare.com` می زد
+      //        که از ایران جواب نمی دهد.
+      //
+      // حالا: سنجش درونی هسته فقط «تأیید» است، هرگز «رد».
       final String controller = read('lib/vpn/vpn_controller.dart');
-      expect(controller.contains('no answer after'), isTrue);
       expect(controller.contains('_clashTunnelVerdict'), isTrue);
-      expect(controller.contains('خود هسته گفت این گره جواب نمی دهد'), isTrue);
+      // جواب منفی دیگر باعث رد نمی شود؛ فقط جواب مثبت پذیرفته است.
+      expect(controller.contains('clashSays == true'), isTrue);
+      expect(controller.contains('خود هسته گفت این گره جواب نمی دهد'), isFalse);
+    });
+
+    test('نشانی سنجش سلامت گره، سنجش سرعت نیست', () {
+      // تا ۱٫۰۱۴ کلید `connection-test-url` روی `speed.cloudflare.com` بود؛
+      // همان دامنه از داخل ایران ۳۰۱ می دهد و هسته گره سالم را «no answer»
+      // می خواند. سنجش سلامت باید یک نشانی سبک و همه جا باز باشد.
+      final String config = read('lib/core/app_config.dart');
+      expect(config.contains('connectionTestUrls'), isTrue);
+      expect(config.contains('generate_204'), isTrue);
+
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(
+        core.contains("'connection-test-url': AppConfig.connectionTestUrls"),
+        isTrue,
+      );
+      expect(
+        core.contains("'connection-test-url': AppConfig.speedTestUrl"),
+        isFalse,
+      );
+    });
+
+    test('آزادسازی پورت هسته چند بار تلاش می کند، نه یک بار', () {
+      // در گزارش ۱٫۰۱۴ سه شناسه پشت سر هم بسته شد (۱۱۸۶۰، ۵۲۳۶، ۵۲۴۴) و هر
+      // سه بار بعدش `port 17078 is already in use` آمد: شناسه ای که بستیم
+      // صاحب واقعی پورت نبود، یا بلافاصله پردازش تازه ای همان پورت را گرفت.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('تلاش ${Fa.num(round + 2)} از ۳'), isTrue);
     });
 
     test('پورت های ثابت هسته پیش از اجرا آزاد می شوند', () {

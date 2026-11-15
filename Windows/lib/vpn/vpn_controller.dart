@@ -1161,86 +1161,86 @@ class VpnController extends ChangeNotifier {
           timeout: probeTimeout,
         );
       } else {
-        // اول از خود هسته می پرسیم. این قاطع ترین جواب است و جلوی «الکی
-        // وصل شدن» را می گیرد: در ۱٫۰۱۳ گره‌هایی «وصل» اعلام شدند که خود
-        // هسته در همان لحظه `no answer` برایشان می نوشت.
-        final bool? verdict = await _clashTunnelVerdict();
-        if (verdict == false) {
-          final String coreLog = _coreLogPath(plan);
-          _log.add(
-            'خود هسته گفت این گره جواب نمی دهد؛ اتصال معتبر نیست.',
-            level: 'error',
-            details: await _coreDiagnostics(
-              plan.cores.first,
-              coreLog,
-              plan: plan,
-              node: node,
-            ),
-          );
-          await _stopCores();
-          await _disableProxy();
-          continue;
-        }
-        // پیش از سنجش، شمارنده های کارت شبکه تونل خوانده می شوند.
-        final TunnelStats before =
-            await _native.tunnelStats(hint: plan.tunnelHint);
-        final bool direct = await TunnelProbe.check(timeout: probeTimeout);
-        if (!direct) {
-          // سنجش وب شکست خورد، ولی ممکن است تونل سالم باشد.
-          //
-          // در گزارش ۱٫۰٫۱۰ هسته در ۰٫۶۶ ثانیه بالا آمد و در همان ثانیه
-          // ترافیک واقعی از تونل رد شد (DNS به ۱٫۱٫۱٫۱، اتصال به
-          // 173.194.61.6:443 و 74.125.197.188:5228) اما سنجش ۱ ثانیه ای
-          // جواب نداد و برنامه تونل سالم را کشت. حالا اگر بایت روی کارت
-          // شبکه تونل بالا رفته باشد، همان مدرک عبور ترافیک است.
-          final TunnelStats after =
+        // از خود هسته می پرسیم، ولی فقط برای **تأیید**، نه برای رد.
+        //
+        // در ۱٫۰۱۴ جواب منفی همین پرسش را مدرک خرابی گرفتیم و نتیجه اش
+        // فاجعه بود: در گزارش کاربر تونل واقعاً ترافیک رد می کرد (گوگل،
+        // تلگرام، DNS) ولی چون در همان لحظه هنوز اتصال زنده ای در
+        // `/connections` نبود و نشانی سنجش درونی هم جواب نمی داد، گره سالم
+        // رد شد و پیام «هیچ هسته ای نتوانست تونل را بالا بیاورد» آمد.
+        //
+        // راستش این است: نبودِ اتصال در `/connections` در ثانیه اول یعنی
+        // «هنوز کسی از تونل استفاده نکرده»، نه «تونل خراب است». پس جواب
+        // `true` را می پذیریم و `false`/`null` را نادیده می گیریم تا شواهد
+        // بعدی (ترافیک کارت شبکه، سنجش وب، لاگ خود هسته) حرف آخر را بزنند.
+        final bool? clashSays = await _clashTunnelVerdict();
+        if (clashSays == true) {
+          // زنده ترین مدرک: اتصالی که همین حالا از مسیر گره باز است.
+          // نیازی به سنجش دوباره نیست؛ مسیر عادی موفقیت پایین تر اجرا می شود.
+          _log.add('خود هسته اتصال زنده از مسیر گره را تأیید کرد.');
+          flows = true;
+        } else {
+          // پیش از سنجش، شمارنده های کارت شبکه تونل خوانده می شوند.
+          final TunnelStats before =
               await _native.tunnelStats(hint: plan.tunnelHint);
-          final int grownRx = after.rx - before.rx;
-          final int grownTx = after.tx - before.tx;
-          final bool moved = after.available &&
-              before.available &&
-              (grownRx > 4096 || grownTx > 4096);
-          if (moved) {
-            _log.add(
-              'سنجش وب پاسخ نداد ولی ترافیک واقعی از تونل رد شد '
-              '(دریافت ${Fa.bytes(grownRx)} و ارسال ${Fa.bytes(grownTx)})؛ '
-              'اتصال معتبر است.',
-              level: 'warning',
-            );
-          }
-          // مدرک سوم و قوی ترین: خود هسته در گزارشش چه گفت؟
-          //
-          // اگر هسته نوشته باشد «sing-box started» و برای همین سرور اتصال
-          // بیرونی برقرار کرده باشد، یعنی تونل کار می کند؛ حتی اگر هیچ
-          // درخواستی از برنامه هایی که اینجا سنجیده می شوند رد نشده باشد.
-          if (!moved) {
-            final bool coreSays = await _coreReportsWorkingTunnel(
-              _coreLogPath(plan),
-            );
-            if (coreSays) {
+          final bool direct = await TunnelProbe.check(timeout: probeTimeout);
+          if (!direct) {
+            // سنجش وب شکست خورد، ولی ممکن است تونل سالم باشد.
+            //
+            // در گزارش ۱٫۰٫۱۰ هسته در ۰٫۶۶ ثانیه بالا آمد و در همان ثانیه
+            // ترافیک واقعی از تونل رد شد (DNS به ۱٫۱٫۱٫۱، اتصال به
+            // 173.194.61.6:443 و 74.125.197.188:5228) اما سنجش ۱ ثانیه ای
+            // جواب نداد و برنامه تونل سالم را کشت. حالا اگر بایت روی کارت
+            // شبکه تونل بالا رفته باشد، همان مدرک عبور ترافیک است.
+            final TunnelStats after =
+                await _native.tunnelStats(hint: plan.tunnelHint);
+            final int grownRx = after.rx - before.rx;
+            final int grownTx = after.tx - before.tx;
+            final bool moved = after.available &&
+                before.available &&
+                (grownRx > 4096 || grownTx > 4096);
+            if (moved) {
               _log.add(
-                'سنجش وب پاسخ نداد ولی خود هسته گزارش داد که تونل بالا آمد '
-                'و برای این سرور اتصال بیرونی برقرار شد؛ اتصال معتبر است.',
+                'سنجش وب پاسخ نداد ولی ترافیک واقعی از تونل رد شد '
+                '(دریافت ${Fa.bytes(grownRx)} و ارسال ${Fa.bytes(grownTx)})؛ '
+                'اتصال معتبر است.',
                 level: 'warning',
               );
             }
-            flows = coreSays;
-          } else {
+            // مدرک سوم و قوی ترین: خود هسته در گزارشش چه گفت؟
+            //
+            // اگر هسته نوشته باشد «sing-box started» و برای همین سرور اتصال
+            // بیرونی برقرار کرده باشد، یعنی تونل کار می کند؛ حتی اگر هیچ
+            // درخواستی از برنامه هایی که اینجا سنجیده می شوند رد نشده باشد.
+            if (!moved) {
+              final bool coreSays = await _coreReportsWorkingTunnel(
+                _coreLogPath(plan),
+              );
+              if (coreSays) {
+                _log.add(
+                  'سنجش وب پاسخ نداد ولی خود هسته گزارش داد که تونل بالا آمد '
+                  'و برای این سرور اتصال بیرونی برقرار شد؛ اتصال معتبر است.',
+                  level: 'warning',
+                );
+              }
+              flows = coreSays;
+            } else {
+              flows = true;
+            }
+          } else if (_realIp.isEmpty) {
+            // آی پی پیش از اتصال خوانده نشده؛ برای مقایسه چیزی نداریم.
             flows = true;
+          } else {
+            final bool changed = await _exitIpChanged();
+            if (!changed) {
+              _log.add(
+                'ترافیک از کارت شبکه مجازی رد شد ولی آی پی خروجی عوض نشد؛ '
+                'به عنوان اتصال معتبر پذیرفته نمی شود.',
+                level: 'warning',
+              );
+            }
+            flows = changed;
           }
-        } else if (_realIp.isEmpty) {
-          // آی پی پیش از اتصال خوانده نشده؛ برای مقایسه چیزی نداریم.
-          flows = true;
-        } else {
-          final bool changed = await _exitIpChanged();
-          if (!changed) {
-            _log.add(
-              'ترافیک از کارت شبکه مجازی رد شد ولی آی پی خروجی عوض نشد؛ '
-              'به عنوان اتصال معتبر پذیرفته نمی شود.',
-              level: 'warning',
-            );
-          }
-          flows = changed;
         }
       }
       if (!flows) {
@@ -2229,8 +2229,37 @@ class VpnController extends ChangeNotifier {
           ),
         ],
       );
-      for (final PortHolder holder in cores) {
-        await _native.killPid(holder.pid);
+      // بستن با خواندن دوبارهٔ فهرست، تا سه بار.
+      //
+      // در گزارش ۱٫۰۱۴ سه بار پشت سر هم هسته «خارجی» با شناسه های
+      // ۱۱۸۶۰ و ۵۲۳۶ و ۵۲۴۴ بسته شد و هر سه بار بعدش
+      // `port 17078 is already in use` آمد. یعنی شناسه ای که بستیم صاحب
+      // واقعی پورت نبود: یا پردازش فرزند جای دیگری گوش می داد، یا بلافاصله
+      // پردازش تازه ای همان پورت را گرفت. یک بار بستن کافی نیست.
+      for (int round = 0; round < 3; round++) {
+        final List<PortHolder> current = await UmbrellaCore.holders(
+          await UmbrellaCore.heldReservedPorts(),
+          native: _native,
+        );
+        final List<PortHolder> stillCores = current
+            .where((PortHolder holder) => holder.isForeignCore)
+            .toList();
+        if (stillCores.isEmpty) {
+          break;
+        }
+        for (final PortHolder holder in stillCores) {
+          await _native.killPid(holder.pid);
+        }
+        if (await _waitForPorts(held, timeout: const Duration(seconds: 3))) {
+          return true;
+        }
+        if (round < 2) {
+          _log.add(
+            'پورت هسته هنوز گرفته بود؛ دوباره بررسی و آزادسازی می شود '
+            '(تلاش ${Fa.num(round + 2)} از ۳).',
+            level: 'warning',
+          );
+        }
       }
       if (await _waitForPorts(held)) {
         return true;
@@ -2624,9 +2653,14 @@ class VpnController extends ChangeNotifier {
   Future<Map<String, dynamic>?> _clashGet(HttpClient client, Uri url) async {
     try {
       final HttpClientRequest request = await client.getUrl(url);
-      // کلید رابط کلش در تنظیمات ما خالی است (`web-secret: ''`)، پس هدر
-      // احراز هویت لازم نیست. فرستادن «Bearer » خالی بعضی نسخه ها را رد
-      // می کند، برای همین فقط وقتی کلید داشتیم فرستاده می شود.
+      // رمز رابط کلش را می فرستیم، چون در تنظیمات هم همان را به هسته داده
+      // ایم. اگر `web-secret` خالی بماند، هسته خودش رمز ناشناس می سازد و
+      // این درخواست ۴۰۱ می شود (همان چیزی که در ۱٫۰۱۴ پرسش از هسته را
+      // بی نتیجه گذاشت).
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ${AppConfig.coreClashSecret}',
+      );
       final HttpClientResponse response = await request.close();
       if (response.statusCode != 200) {
         await response.drain<void>();
@@ -2676,27 +2710,41 @@ class VpnController extends ChangeNotifier {
     if (!text.contains('sing-box started')) {
       return false;
     }
-    // اگر خود هسته گفت گره «جواب نداد»، مدرکِ «اتصال برقرار شد» باطل است.
+    // نکته مهم: «no answer» در بخش monitoring به معنی خرابی گره **نیست**.
     //
-    // در گزارش ۱٫۰۱۳ این خط بارها بود:
-    //   MONITORING vless § 0: no answer after 1s: unavailable for now
-    // یعنی هسته خودش گره را ناسالم می دانست، ولی وجود یک خط
-    // `outbound/vless[...]: outbound connection to ...` کافی بود که ما اتصال
-    // را «معتبر» اعلام کنیم. آن خط فقط یعنی «تلاش کردم وصل شوم»، نه
-    // «وصل شدم». همین بود که کاربر می گفت «الکی وصل می شود».
-    final RegExp noAnswer = RegExp(
-      r'(no answer after [0-9.]+m?s|the attempt failed)',
-    );
-    if (noAnswer.hasMatch(text)) {
-      return false;
-    }
+    // در ۱٫۰۱۴ همین را مدرک خرابی گرفتیم و نتیجه اش این شد که در گزارش
+    // کاربر تونل واقعاً کار می کرد — گوگل، تلگرام، DNS همه از مسیر گره
+    // می رفتند — ولی هسته `MONITORING vless § 0: no answer after 1s` می نوشت
+    // و ما اتصال سالم را رد می کردیم. علتش این بود که نشانی سنجش خود هسته
+    // (`speed.cloudflare.com`) از ایران ۳۰۱ می داد.
+    //
+    // آن خط فقط می گوید «سنجش درونی من جواب نگرفت»، نه «ترافیک رد نمی شود».
+    // پس دیگر آن را مدرک خرابی نمی گیریم؛ نشانی سنجش هم عوض شد
+    // (`AppConfig.connectionTestUrls`).
+    //
     // اتصال از مسیر خود گره (نه `direct`) — همان چیزی که ثابت می کند تونل
     // بیرون رفت.
-    final RegExp outbound = RegExp(
+    // باید ترافیک واقعی کاربر از مسیر گره رفته باشد، نه فقط سنجش خود هسته.
+    //
+    // سنجش خود هسته سه نشانی مشخص را امتحان می کند (`www.gstatic.com` و
+    // مانند آن). اگر فقط همان ها باشند، معلوم نیست مرورگر کاربر هم کار می
+    // کند. پس یک «اتصال ورودی» از کارت شبکه تونل هم لازم است:
+    //   inbound/tun[tun-in]: inbound connection from 172.19.0.1
+    // که یعنی برنامه ای روی همین دستگاه از تونل استفاده کرد.
+    final bool started = text.contains('sing-box started');
+    if (!started) {
+      return false;
+    }
+    final RegExp proxiedTraffic = RegExp(
       r'outbound/(vless|vmess|trojan|shadowsocks|hysteria2|tuic|wireguard|anytls|mieru)'
-      r'\[[^\]]*\]: outbound (multiplex )?(packet )?connection to ',
+      r'\[[^\]]*\]: outbound (multiplex )?(packet )?connection to '
+      r'(?!1\.1\.1\.1|8\.8\.8\.8|8\.8\.4\.4)',
     );
-    return outbound.hasMatch(text);
+    if (proxiedTraffic.hasMatch(text)) {
+      return true;
+    }
+    // گره ای که هیچ ترافیکی رد نکرد، سالم حساب نمی شود.
+    return false;
   }
 
   /// متن کامل گزارش هسته (برای تصمیم گیری، بی برش).
