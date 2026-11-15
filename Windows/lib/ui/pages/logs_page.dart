@@ -22,12 +22,35 @@ class _LogsPageState extends State<LogsPage> {
   /// فیلتر سطح گزارش؛ خالی یعنی همه.
   String _level = '';
 
+  /// شماره خطوطی که جزئیاتشان باز است.
+  ///
+  /// کلید از زمان و پیام ساخته می شود، چون فهرست با هر گزارش تازه دوباره
+  /// ساخته می شود و شماره ردیف عوض می شود.
+  final Set<String> _open = <String>{};
+
+  static String _keyOf(LogLine line) =>
+      '${line.time.microsecondsSinceEpoch}|${line.level}|${line.message}';
+
+  /// فقط خطاها و هشدارها؛ برای دکمه «باز کردن همه خطاها».
+  static bool _hasDetail(LogLine line) => line.hasDetails;
+
   static const List<(String, String)> _levels = <(String, String)>[
     ('', 'همه'),
     ('error', 'خطا'),
     ('warning', 'هشدار'),
     ('info', 'اطلاع'),
   ];
+
+  void _toggle(String key) {
+    setState(() {
+      if (!_open.remove(key)) {
+        _open.add(key);
+      }
+    });
+  }
+
+  /// متن کامل یک خط با همه جزئیاتش، برای کپی جداگانه.
+  static String _detailText(LogLine line) => AppLogger.lineDetailText(line);
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +105,48 @@ class _LogsPageState extends State<LogsPage> {
                 onTap: () async {
                   final String path = await AppLogger.instance.saveToFile();
                   toasts.success('فایل گزارش ذخیره شد', path);
+                },
+              ),
+              const SizedBox(width: 10),
+              // باز کردن همه خطاها با یک کلیک؛ برای وقتی که کاربر می خواهد
+              // همه چیز را یک جا ببیند و بفرستد.
+              ListenableBuilder(
+                listenable: AppLogger.instance,
+                builder: (BuildContext context, Widget? child) {
+                  final List<LogLine> withDetails = AppLogger.instance.lines
+                      .where(_hasDetail)
+                      .toList();
+                  final bool allOpen = withDetails.isNotEmpty &&
+                      withDetails.every(
+                        (LogLine line) => _open.contains(_keyOf(line)),
+                      );
+                  if (withDetails.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: IconAction(
+                      icon: allOpen
+                          ? Icons.unfold_less_rounded
+                          : Icons.unfold_more_rounded,
+                      tooltip: allOpen
+                          ? 'بستن جزئیات همه'
+                          : 'باز کردن جزئیات همه خطاها '
+                              '(${Fa.num(withDetails.length)})',
+                      size: 42,
+                      onTap: () {
+                        setState(() {
+                          if (allOpen) {
+                            _open.clear();
+                          } else {
+                            _open
+                              ..clear()
+                              ..addAll(withDetails.map(_keyOf));
+                          }
+                        });
+                      },
+                    ),
+                  );
                 },
               ),
               const SizedBox(width: 10),
@@ -148,6 +213,8 @@ class _LogsPageState extends State<LogsPage> {
                     itemCount: lines.length,
                     itemBuilder: (BuildContext context, int index) {
                       final LogLine line = lines[index];
+                      final String key = _keyOf(line);
+                      final bool open = _open.contains(key);
                       final Color tone = switch (line.level) {
                         'error' => colors.danger,
                         'warning' => colors.warning,
@@ -158,70 +225,138 @@ class _LogsPageState extends State<LogsPage> {
                         'warning' => 'هشدار',
                         _ => 'اطلاع',
                       };
+                      final int sections = line.details
+                          .where((LogDetail d) => d.text.trim().isNotEmpty)
+                          .length;
                       return Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 6,
                           horizontal: 8,
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
-                            Column(
+                            Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
-                                Text(
-                                  Fa.num(Fa.date(line.time)),
-                                  style: TextStyle(
-                                    fontFamily: AppTheme.fontFamily,
-                                    fontSize: 10,
-                                    color: colors.textSecondary,
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      Fa.num(Fa.date(line.time)),
+                                      style: TextStyle(
+                                        fontFamily: AppTheme.fontFamily,
+                                        fontSize: 10,
+                                        color: colors.textSecondary,
+                                      ),
+                                    ),
+                                    Text(
+                                      Fa.clock(line.time),
+                                      style: TextStyle(
+                                        fontFamily: AppTheme.fontFamily,
+                                        fontSize: 11,
+                                        color: colors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  margin: const EdgeInsets.only(top: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: tone.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    Fa.num(levelLabel),
+                                    style: TextStyle(
+                                      fontFamily: AppTheme.fontFamily,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: tone,
+                                    ),
                                   ),
                                 ),
-                                Text(
-                                  Fa.clock(line.time),
-                                  style: TextStyle(
-                                    fontFamily: AppTheme.fontFamily,
-                                    fontSize: 11,
-                                    color: colors.textSecondary,
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      SelectableText(
+                                        Fa.num(line.message) +
+                                            (line.repeat > 1
+                                                ? '  ×${Fa.num(line.repeat)}'
+                                                : ''),
+                                        style: TextStyle(
+                                          fontFamily: AppTheme.fontFamily,
+                                          fontSize: 12,
+                                          height: 1.7,
+                                          color: colors.textPrimary,
+                                        ),
+                                      ),
+                                      // دکمه «جزئیات کامل» فقط وقتی که واقعا
+                                      // چیزی برای نشان دادن باشد.
+                                      if (line.hasDetails)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 4),
+                                          child: TextButton.icon(
+                                            onPressed: () => _toggle(key),
+                                            icon: Icon(
+                                              open
+                                                  ? Icons.unfold_less_rounded
+                                                  : Icons.unfold_more_rounded,
+                                              size: 16,
+                                            ),
+                                            label: Text(
+                                              Fa.num(
+                                                open
+                                                    ? 'بستن جزئیات'
+                                                    : 'جزئیات کامل '
+                                                        '(${Fa.num(sections)} بخش)',
+                                              ),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 2,
+                                              ),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              foregroundColor: tone,
+                                            ),
+                                          ),
+                                        ),
+                                      if (open)
+                                        _DetailPanel(
+                                          line: line,
+                                          colors: colors,
+                                          onCopy: () async {
+                                            await Clipboard.setData(
+                                              ClipboardData(
+                                                text: _detailText(line),
+                                              ),
+                                            );
+                                            toasts.success(
+                                              'جزئیات این خطا کپی شد',
+                                            );
+                                          },
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ],
-                            ),
-                            const SizedBox(width: 10),
-                            Container(
-                              margin: const EdgeInsets.only(top: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: tone.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                Fa.num(levelLabel),
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontFamily,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  color: tone,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: SelectableText(
-                                Fa.num(line.message) +
-                                    (line.repeat > 1
-                                        ? '  ×${Fa.num(line.repeat)}'
-                                        : ''),
-                                style: TextStyle(
-                                  fontFamily: AppTheme.fontFamily,
-                                  fontSize: 12,
-                                  height: 1.7,
-                                  color: colors.textPrimary,
-                                ),
-                              ),
                             ),
                           ],
                         ),
@@ -241,6 +376,107 @@ class _LogsPageState extends State<LogsPage> {
                   color: colors.textSecondary,
                 ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// پنل جزئیات یک خطا: هر بخش با عنوان و متن کامل و قابل انتخاب، به اضافه
+/// دکمه کپی همان بخش. کاربر نباید برای خواندن خروجی هسته به جای دیگری برود.
+class _DetailPanel extends StatelessWidget {
+  const _DetailPanel({
+    required this.line,
+    required this.colors,
+    required this.onCopy,
+  });
+
+  final LogLine line;
+  final UmbrellaColors colors;
+  final Future<void> Function() onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LogDetail> shown = line.details
+        .where((LogDetail detail) => detail.text.trim().isNotEmpty)
+        .toList();
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.border.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.bug_report_outlined, size: 16, color: colors.textSecondary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  Fa.num('جزئیات کامل برای عیب یابی'),
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontFamily,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textSecondary,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => onCopy(),
+                icon: const Icon(Icons.copy_all_rounded, size: 15),
+                label: Text(
+                  Fa.num('کپی جزئیات'),
+                  style: const TextStyle(fontSize: 11),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: colors.info,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final LogDetail detail in shown) ...<Widget>[
+            if (detail.title.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 4),
+                child: Text(
+                  Fa.num(detail.title),
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontFamily,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colors.background.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              // متن خام هسته لاتین است و شماره سطر ندارد که فارسی شود؛ فقط
+              // همان طور که هست، انتخاب پذیر و کامل نشان داده می شود.
+              child: SelectableText(
+                detail.text.trim(),
+                style: TextStyle(
+                  fontFamily: 'Consolas',
+                  fontSize: 11,
+                  height: 1.5,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

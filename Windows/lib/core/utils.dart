@@ -25,9 +25,31 @@ class ApiError implements Exception {
   String toString() => '$code: $message';
 }
 
+/// جزئیات کامل یک خطا یا هشدار.
+///
+/// پیام کوتاه برای خواندن سریع است؛ این بخش همان چیزی است که برای فهمیدن
+/// «مشکلش چیست» لازم است: خروجی خام هسته، مسیر فایل ها، فرمان اجرا و آنچه در
+/// همان لحظه از سیستم خوانده شده. در صفحه گزارش ها زیر همان خط باز می شود و
+/// در فایل خروجی هم کامل می آید.
+class LogDetail {
+  const LogDetail({this.title = '', required this.text});
+
+  /// عنوان کوتاه برای دکمه باز کردن (مثلاً «خروجی کامل هسته»).
+  final String title;
+
+  final String text;
+
+  /// شمار خطوط؛ برای نشان دادن حجم متن.
+  int get lineCount => text.isEmpty ? 0 : text.split('\n').length;
+}
+
 class LogLine {
-  LogLine(this.message, {this.level = 'info', DateTime? time})
-    : time = time ?? DateTime.now();
+  LogLine(
+    this.message, {
+    this.level = 'info',
+    DateTime? time,
+    this.details = const <LogDetail>[],
+  }) : time = time ?? DateTime.now();
 
   final String message;
   final String level;
@@ -35,6 +57,12 @@ class LogLine {
 
   /// چند بار همین پیام پشت سر هم آمده است (۱ یعنی یک بار).
   int repeat = 1;
+
+  /// جزئیات کامل خطا؛ خالی یعنی همین پیام همه چیز است.
+  final List<LogDetail> details;
+
+  /// آیا برای این خط چیزی برای باز کردن هست؟
+  bool get hasDetails => details.any((LogDetail d) => d.text.trim().isNotEmpty);
 }
 
 /// تشخیص اپراتور از پیش شماره تلفن همراه.

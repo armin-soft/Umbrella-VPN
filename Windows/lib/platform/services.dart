@@ -570,7 +570,11 @@ class AppLogger extends ChangeNotifier {
   /// تکرارِ بی وقفه یک پیام، گزارش را ناخوانا می کند و کاربر را به این باور
   /// می برد که برنامه در حال «تلاش بی پایان» است. خط تکراری پشت سر هم فقط
   /// یک بار می ماند و بعد از آن تعدادش کنار همان خط می آید.
-  void add(String message, {String level = 'info'}) {
+  void add(
+    String message, {
+    String level = 'info',
+    List<LogDetail> details = const <LogDetail>[],
+  }) {
     final String clean = message.trim();
     if (clean.isEmpty) {
       return;
@@ -585,7 +589,7 @@ class AppLogger extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    _lines.add(LogLine(clean, level: level));
+    _lines.add(LogLine(clean, level: level, details: details));
     if (_lines.length > 2000) {
       _lines.removeRange(0, _lines.length - 2000);
     }
@@ -603,17 +607,83 @@ class AppLogger extends ChangeNotifier {
   int countOf(String level) =>
       _lines.where((LogLine line) => line.level == level).length;
 
+  /// اطلاعات محیط؛ بدون آن، خروجی خام هسته معلوم نمی کند روی چه سیستمی و با
+  /// چه تنظیماتی رخ داده است.
+  Future<String> environmentText() async {
+    String dataDir = '';
+    try {
+      final Directory dir = await getApplicationSupportDirectory();
+      dataDir = dir.path;
+    } on Exception {
+      dataDir = 'نامشخص';
+    }
+    return <String>[
+      'برنامه: ${AppConfig.appName} ${AppConfig.version}',
+      'سیستم: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      'پیوند هسته های پردازنده: ${Fa.num(Platform.numberOfProcessors)}',
+      'پوشه داده: $dataDir',
+      'پورت ثابت هسته (gRPC): ${Fa.num(AppConfig.coreGrpcPort)}',
+      'پورت ثابت هسته (Clash): ${Fa.num(AppConfig.coreClashPort)}',
+      'زمان گزارش: ${Fa.dateTime(DateTime.now())}',
+    ].join('\n');
+  }
+
+  /// همان اطلاعات محیط، به صورت متن آماده؛ برای جایی که await ممکن نیست.
+  String environmentTextSync() => <String>[
+        'برنامه: ${AppConfig.appName} ${AppConfig.version}',
+        'سیستم: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+        'پیوند هسته های پردازنده: ${Fa.num(Platform.numberOfProcessors)}',
+        'پورت ثابت هسته (gRPC): ${Fa.num(AppConfig.coreGrpcPort)}',
+        'پورت ثابت هسته (Clash): ${Fa.num(AppConfig.coreClashPort)}',
+        'زمان گزارش: ${Fa.dateTime(DateTime.now())}',
+      ].join('\n');
+
   /// متن کامل گزارش ها برای کپی یا ارسال به پشتیبانی.
   String exportText() {
     final StringBuffer buffer = StringBuffer();
     buffer.writeln(
       '${AppConfig.appName} ${AppConfig.version} | ${Fa.dateTime(DateTime.now())}',
     );
+    buffer.writeln(environmentTextSync());
+    buffer.writeln('──────────────────────────────');
     for (final LogLine line in _lines) {
       buffer.writeln(
         '${Fa.date(line.time)} ${Fa.clock(line.time)} | ${line.level} | '
         '${line.message}${line.repeat > 1 ? ' (×${Fa.num(line.repeat)})' : ''}',
       );
+      // جزئیات با تورفتگی زیر همان خط می آید تا در فایل هم معلوم باشد مال
+      // کدام خطا است.
+      for (final LogDetail detail in line.details) {
+        final String text = detail.text.trim();
+        if (text.isEmpty) {
+          continue;
+        }
+        if (detail.title.isNotEmpty) {
+          buffer.writeln('    ── ${detail.title} ──');
+        }
+        for (final String row in text.split('\n')) {
+          buffer.writeln('    $row');
+        }
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// متن یک خط با همه جزئیات آن.
+  static String lineDetailText(LogLine line) {
+    final StringBuffer buffer = StringBuffer()
+      ..writeln('${Fa.date(line.time)} — ${Fa.clock(line.time)}')
+      ..writeln('سطح: ${line.level}')
+      ..writeln('پیام: ${line.message}');
+    for (final LogDetail detail in line.details) {
+      if (detail.text.trim().isEmpty) {
+        continue;
+      }
+      buffer.writeln();
+      if (detail.title.isNotEmpty) {
+        buffer.writeln('── ${detail.title} ──');
+      }
+      buffer.writeln(detail.text.trim());
     }
     return buffer.toString();
   }
@@ -629,7 +699,10 @@ class AppLogger extends ChangeNotifier {
         '-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
     final File file =
         File('${logs.path}${Platform.pathSeparator}umbrella-$stamp.log');
-    await file.writeAsString(exportText(), flush: true);
+    // فایل روی دیسک، کامل ترین نسخه است: محیط سیستم هم بالای آن می آید تا
+    // کاربر فقط همان یک فایل را بفرستد.
+    final String env = await environmentText();
+    await file.writeAsString('$env\n\n${exportText()}', flush: true);
     return file.path;
   }
 }

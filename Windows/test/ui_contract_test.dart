@@ -132,6 +132,63 @@ void main() {
     });
   });
 
+  group('گزارش ها و خطاها', () {
+    test('هر خطا می تواند جزئیات کامل داشته باشد', () {
+      final String utils = read('lib/core/utils.dart');
+      expect(utils.contains('class LogDetail'), isTrue);
+      expect(utils.contains('final List<LogDetail> details'), isTrue);
+      expect(utils.contains('bool get hasDetails'), isTrue);
+    });
+
+    test('گزارش هسته کامل نگه داشته می شود، نه ۶۰۰ نویسه آخر', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      // جزئیات باید خروجی کامل هسته را بیاورد.
+      expect(controller.contains('_coreDiagnostics'), isTrue);
+      expect(controller.contains('خروجی کامل هسته'), isTrue);
+      // فرمان، مسیرها، سرور و وضعیت پورت ها هم بخشی از جزئیات اند.
+      expect(controller.contains('فرمان اجرا و مسیرها'), isTrue);
+      expect(controller.contains('سروری که با آن تلاش شد'), isTrue);
+      expect(controller.contains('پورت های هسته در همین لحظه'), isTrue);
+      // خلاصه دیگر نباید متن چسبیده ۶۰۰ نویسه ای باشد.
+      expect(controller.contains('maxChars = 300'), isTrue);
+      expect(controller.contains('maxChars = 600'), isFalse);
+    });
+
+    test('خطاهای مهم جزئیات دارند', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      // بلافاصله بسته شدن هسته
+      expect(controller.contains('details: await _coreDiagnostics'), isTrue);
+      // پورت در اختیار برنامه دیگر
+      expect(controller.contains('چطور آزادش کنم'), isTrue);
+      // سروری برای اجرا نبود
+      expect(controller.contains('_whyNoUsableServer'), isTrue);
+      expect(controller.contains('_protocolBreakdown'), isTrue);
+      // هسته در نصب نبود
+      expect(controller.contains('کجای نصب را بگردید'), isTrue);
+    });
+
+    test('صفحه گزارش ها جزئیات را باز می کند و کپی می کند', () {
+      final String page = read('lib/ui/pages/logs_page.dart');
+      expect(page.contains('_DetailPanel'), isTrue);
+      expect(page.contains('جزئیات کامل'), isTrue);
+      expect(page.contains('کپی جزئیات'), isTrue);
+      // باز کردن همه خطاها با یک کلیک
+      expect(page.contains('باز کردن جزئیات همه خطاها'), isTrue);
+      // متن خام هسته باید کامل و قابل انتخاب باشد
+      expect(page.contains('SelectableText'), isTrue);
+    });
+
+    test('فایل گزارش جزئیات و اطلاعات محیط را هم دارد', () {
+      final String services = read('lib/platform/services.dart');
+      expect(services.contains('environmentText'), isTrue);
+      expect(services.contains('lineDetailText'), isTrue);
+      // جزئیات با تورفتگی زیر همان خط در فایل می آید
+      expect(services.contains('── \${detail.title} ──'), isTrue);
+      // فایل ذخیره شده اطلاعات محیط را هم بالای خود دارد
+      expect(services.contains('await environmentText()'), isTrue);
+    });
+  });
+
   group('نسخه', () {
     test('نسخه در همه فایل ها یکی است و هیچ جا دستی تکرار نمی شود', () {
       // در ۱٫۰٫۸ اسکریپت ساخت نصب کننده نسخه ۱٫۰٫۷ را دستی نگه داشته بود؛
@@ -147,6 +204,10 @@ void main() {
         read('installer/umbrella.iss').contains('#define AppVersion "$version"'),
         isTrue,
       );
+      // برچسب نمایشی نسخه از همان عدد ساخته می شود؛ در ۱٫۰٫۸ اینجا هنوز
+      // «نسخه ۱٫۰٫۰» نوشته بود و کاربر نسخه غلط می دید.
+      expect(config.contains('static String get versionLabel'), isTrue);
+      expect(config.contains('نسخه ۱٫۰٫۰'), isFalse);
 
       final String installer = read('tools/build-installer.ps1');
       expect(installer.contains('app_config.dart'), isTrue);

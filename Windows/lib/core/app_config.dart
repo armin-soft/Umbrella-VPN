@@ -9,9 +9,11 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.8';
+  static const String version = '1.0.9';
   static const int buildNumber = 1;
-  static const String versionLabel = 'نسخه ۱٫۰٫۰';
+  /// برچسب نسخه برای نمایش؛ از همان `version` ساخته می شود تا هیچ وقت
+  /// عقب نماند (در ۱٫۰٫۸ اینجا هنوز «۱٫۰٫۰» نوشته بود).
+  static String get versionLabel => 'نسخه ${version.split('.').join('٫')}';
   static const String company = 'آرمین سافت';
   static const String developer = 'آرمین سافت';
   static const String developerSite = 'https://armin-soft.ir';

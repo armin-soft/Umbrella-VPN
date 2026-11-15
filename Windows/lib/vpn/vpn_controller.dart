@@ -580,6 +580,24 @@ class VpnController extends ChangeNotifier {
       _log.add(
         'سنجش تاخیر تونل نتیجه نداد${detail.isEmpty ? '' : ': $detail'}',
         level: 'warning',
+        details: <LogDetail>[
+          LogDetail(
+            title: 'وضعیت سنجش',
+            text: <String>[
+              'سرورهای سنجیده شده در این دور: '
+                  '${Fa.num(_tunnelProbeCount)}',
+              'پینگ شبکه (تی سی پی) برای '
+                  '${Fa.num(fused.where((VpnNode node) => node.hasPing).length)} '
+                  'سرور به دست آمد؛ همان عدد در فهرست نشان داده می شود.',
+              if (detail.isNotEmpty) 'آخرین خطای هسته سنجش: $detail',
+              if (detail.isEmpty)
+                'هسته سنجش هیچ خطایی نداد؛ احتمالا مهلت ۶۰ ثانیه ای برای '
+                    'این سرورها کافی نبود.',
+              'پورت های ثابت هسته در همین لحظه: '
+                  '${(await UmbrellaCore.heldReservedPorts()).isEmpty ? 'آزاد' : 'گرفته شده'}',
+            ].join('\n'),
+          ),
+        ],
       );
     }
     _notify();
@@ -788,6 +806,16 @@ class VpnController extends ChangeNotifier {
         'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک برای هسته آمبرلا '
         'ورودی معتبر نداشت.',
         level: 'error',
+        details: <LogDetail>[
+          LogDetail(
+            title: 'چرا هیچ سروری قبول نشد',
+            text: _whyNoUsableServer(),
+          ),
+          LogDetail(
+            title: 'پروتکل سرورهای اشتراک',
+            text: _protocolBreakdown(),
+          ),
+        ],
       );
       return const ConnectOutcome(
         ok: false,
@@ -1052,6 +1080,12 @@ class VpnController extends ChangeNotifier {
                   '${Fa.num(_tunnelTimeout.inSeconds)} ثانیه باز نشد.'
                   '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
+          details: await _coreDiagnostics(
+            plan.cores.first,
+            coreLog,
+            plan: plan,
+            node: node,
+          ),
         );
         final String full = await _readLogFull(coreLog);
         final String why = _explainCoreExit(full);
@@ -1117,6 +1151,12 @@ class VpnController extends ChangeNotifier {
           'هسته بالا آمد ولی هیچ ترافیکی از تونل رد نشد؛ این اتصال معتبر نیست.'
           '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
+          details: await _coreDiagnostics(
+            plan.cores.first,
+            coreLog,
+            plan: plan,
+            node: node,
+          ),
         );
         await _stopCores();
         await _disableProxy();
@@ -1132,6 +1172,22 @@ class VpnController extends ChangeNotifier {
             'پروکسی سیستمی ویندوز تنظیم نشد؛ این اتصال معتبر نیست و سرور '
             'بعدی امتحان می شود.',
             level: 'error',
+            details: <LogDetail>[
+              LogDetail(
+                title: 'تنظیم پروکسی ویندوز',
+                text: <String>[
+                  'آدرس پروکسی: 127.0.0.1:${Fa.num(plan.proxyPort)}',
+                  'پورت محلی هسته: ${Fa.num(plan.proxyPort)}',
+                  if (plan.proxyPort > 0)
+                    'پورت باز است: '
+                        '${await UmbrellaCore.inUse(plan.proxyPort) ? 'بله' : 'نه'}',
+                  '',
+                  'اگر پورت باز نیست، هسته بالا نیامده است؛ اگر باز است ولی '
+                      'پروکسی تنظیم نشد، دسترسی به تنظیمات ویندوز (رجیستری) '
+                      'بسته است و برنامه باید با دسترسی مدیر اجرا شود.',
+                ].join('\n'),
+              ),
+            ],
           );
           await _stopCores();
           await _disableProxy();
@@ -1326,6 +1382,21 @@ class VpnController extends ChangeNotifier {
         'هسته آمبرلا ($binary) در نسخه نصب نیست؛ برنامه را با نصب کننده '
         'رسمی دوباره نصب کنید.',
         level: 'error',
+        details: <LogDetail>[
+          LogDetail(
+            title: 'کجای نصب را بگردید',
+            text: <String>[
+              'فایل اجرایی: $binary',
+              'پوشه برنامه: ${_provisioner.appDir}',
+              'پوشه هسته ها: ${_provisioner.bundledDir}',
+              'پوشه داده: ${_provisioner.dataDir}',
+              '',
+              'این مسیرها بررسی شد و فایل در هیچ کدام نبود:',
+              for (final String path in _binaryCandidates(binary))
+                '  • $path ${await File(path).exists() ? '(هست)' : '(نیست)'}',
+            ].join('\n'),
+          ),
+        ],
       );
       return <LaunchPlan>[];
     }
@@ -1634,6 +1705,23 @@ class VpnController extends ChangeNotifier {
         'اجرای ${core.binaryName} ناموفق بود: ${error.message} '
         '(کد ${Fa.num(error.errorCode)})',
         level: 'error',
+        details: <LogDetail>[
+          LogDetail(
+            title: 'فرمان اجرا و مسیرها',
+            text: <String>[
+              'برنامه: ${core.binaryName}',
+              'مسیر: ${core.exe}',
+              'پوشه اجرا: ${core.workDir}',
+              'کد خطای ویندوز: ${Fa.num(error.errorCode)}',
+              'نوع خطا: ${error.runtimeType}',
+              if (args.isNotEmpty) 'آرگومان ها: ${args.join(' ')}',
+            ].join('\n'),
+          ),
+          LogDetail(
+            title: 'آیا فایل اجرایی هست؟',
+            text: await _executableState(core.exe),
+          ),
+        ],
       );
       _log.add('مسیر هسته: ${core.exe}', level: 'error');
       _logLaunchHint(error.errorCode);
@@ -1642,9 +1730,84 @@ class VpnController extends ChangeNotifier {
       _log.add(
         'اجرای ${core.binaryName} ناموفق بود: ${error.message}',
         level: 'error',
+        details: <LogDetail>[
+          LogDetail(
+            title: 'فرمان اجرا و مسیرها',
+            text: <String>[
+              'برنامه: ${core.binaryName}',
+              'مسیر: ${core.exe}',
+              'پوشه اجرا: ${core.workDir}',
+              'مسیر مشکل دار: ${error.path ?? 'نامشخص'}',
+              'آیا فایل اجرایی هست؟ ${await _executableState(core.exe)}',
+            ].join('\n'),
+          ),
+        ],
       );
       _log.add('مسیر هسته: ${core.exe}', level: 'error');
       return false;
+    }
+  }
+
+  /// همان مسیرهایی که برای پیدا کردن فایل اجرایی بررسی می شوند.
+  List<String> _binaryCandidates(String binary) => <String>[
+        '${_provisioner.appDir}${Platform.pathSeparator}$binary',
+        '${_provisioner.bundledDir}${Platform.pathSeparator}$binary',
+        '${_provisioner.bundledDir}${Platform.pathSeparator}umbrella'
+            '${Platform.pathSeparator}$binary',
+        '${_provisioner.bundledDir}${Platform.pathSeparator}bin'
+            '${Platform.pathSeparator}$binary',
+        '${_provisioner.binDir}${Platform.pathSeparator}$binary',
+      ];
+
+  /// توضیح اینکه چرا هیچ سروری برای اجرا قبول نشد.
+  String _whyNoUsableServer() {
+    final List<VpnNode> disabled =
+        _nodes.where((VpnNode node) => node.disabled).toList();
+    final List<VpnNode> noHost =
+        _nodes.where((VpnNode node) => node.host.trim().isEmpty).toList();
+    final List<VpnNode> notUsable =
+        _nodes.where((VpnNode node) => !usable(node)).toList();
+    return <String>[
+      'کل سرورها: ${Fa.num(_nodes.length)}',
+      'غیرفعال شده: ${Fa.num(disabled.length)}',
+      'بدون میزبان: ${Fa.num(noHost.length)}',
+      'پروتکل پشتیبانی نشده: ${Fa.num(notUsable.length)}',
+      if (notUsable.isNotEmpty)
+        'اولین سرور پشتیبانی نشده: ${notUsable.first.name} '
+            '(${notUsable.first.protocol.name})',
+    ].join('\n');
+  }
+
+  /// چند سرور از هر پروتکل در اشتراک هست.
+  String _protocolBreakdown() {
+    final Map<String, int> counts = <String, int>{};
+    for (final VpnNode node in _nodes) {
+      counts[node.protocol.name] = (counts[node.protocol.name] ?? 0) + 1;
+    }
+    if (counts.isEmpty) {
+      return 'هیچ سروری خوانده نشده است.';
+    }
+    final List<String> rows = counts.entries
+        .map((MapEntry<String, int> e) => '${e.key}: ${Fa.num(e.value)}')
+        .toList()
+      ..sort();
+    return rows.join('\n');
+  }
+
+  /// وضعیت فایل اجرایی هسته: هست یا نه، چه اندازه ای دارد، آخرین تغییرش کِی
+  /// بوده. فایل نیمه دانلود شده یا پاک شده با آنتی ویروس، همین جا معلوم می شود.
+  Future<String> _executableState(String path) async {
+    try {
+      final File file = File(path);
+      if (!await file.exists()) {
+        return 'فایل وجود ندارد: $path';
+      }
+      final FileStat stat = await file.stat();
+      final double mb = stat.size / (1024 * 1024);
+      return 'هست (${mb.toStringAsFixed(1)} مگابایت، آخرین تغییر: '
+          '${Fa.dateTime(stat.modified)})';
+    } on FileSystemException catch (error) {
+      return 'وضعیت فایل خوانده نشد: ${error.message}';
     }
   }
 
@@ -1760,6 +1923,26 @@ class VpnController extends ChangeNotifier {
       ' برنامه ای که آن پورت را گرفته ببندید (بیشتر وقت ها یک فیلترشکن دیگر '
       'یا یک نمونه بازمانده از آمبرلا است) و دوباره وصل شوید.',
       level: 'error',
+      details: <LogDetail>[
+        LogDetail(
+          title: 'پورت های هسته در همین لحظه',
+          text: <String>[
+            for (final int port in UmbrellaCore.reservedPorts)
+              '${Fa.num(port)}: '
+                  '${held.contains(port) ? 'گرفته شده' : 'آزاد'}',
+            if (holder.isNotEmpty) 'صاحب پورت: $holder',
+          ].join('\n'),
+        ),
+        LogDetail(
+          title: 'چطور آزادش کنم',
+          text: '۱. اگر نمونه دیگری از آمبرلا باز است، آن را ببندید.\n'
+              '۲. در Task Manager، فرایندهای UmbrellaCli.exe و '
+              'UmbrellaCoreEngine.exe را ببندید.\n'
+              '۳. اگر برنامه دیگری این پورت را گرفته، ببندیدش یا پورت را '
+              'عوض کنید.\n'
+              '۴. دوباره وصل شوید.',
+        ),
+      ],
     );
     return false;
   }
@@ -1789,6 +1972,7 @@ class VpnController extends ChangeNotifier {
       '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
       '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
       level: 'error',
+      details: await _coreDiagnostics(core, coreLog, code: code),
     );
     // دلیل را به زبان کاربر هم می گوییم؛ خروجی خام بالا برای عیب یابی
     // می ماند، ولی خودش راه حل نمی دهد.
@@ -1798,6 +1982,101 @@ class VpnController extends ChangeNotifier {
     }
     _lastLaunchUnusable = _linkUnusable(full);
     _reportedExitFor = code;
+  }
+
+  /// همه چیزهایی که برای فهمیدن «مشکلش چیست» لازم است.
+  ///
+  /// پیام خطا یک جمله است و کاربر را به جایی نمی رساند؛ در گزارش ۱٫۰٫۷ هم
+  /// معلوم نبود کدام سرور، با چه فرمانی و در چه وضعیتی بسته شد. اینجا خروجی
+  /// کامل هسته (نه ۶۰۰ نویسه آخر)، فرمان اجرا، مسیر فایل ها، پورت های گرفته
+  /// شده و نام برنامه ای که گرفته، یک جا جمع می شود.
+  Future<List<LogDetail>> _coreDiagnostics(
+    CoreLaunch core,
+    String coreLog, {
+    int? code,
+    LaunchPlan? plan,
+    VpnNode? node,
+  }) async {
+    final List<LogDetail> details = <LogDetail>[];
+
+    // ۱. خروجی کامل هسته؛ مهمترین چیز برای فهمیدن دلیل.
+    final String full = (await _readLogFull(coreLog)).trim();
+    details.add(
+      LogDetail(
+        title: 'خروجی کامل هسته (${core.name})',
+        text: full.isEmpty
+            ? 'هسته هیچ خروجی‌ای نداد. یعنی پیش از نوشتن هر خطی بسته شد؛ '
+                'بیشتر وقت ها دلیلش نبود دسترسی، آنتی ویروس یا فایل اجرایی '
+                'ناقص است.'
+            : full,
+      ),
+    );
+
+    // ۲. فرمان اجرا و مسیرها؛ برای بازتولید همان اجرا بیرون از برنامه.
+    details.add(
+      LogDetail(
+        title: 'فرمان اجرا و مسیرها',
+        text: <String>[
+          'برنامه: ${core.binaryName}',
+          'مسیر: ${core.exe}',
+          'پوشه اجرا: ${core.workDir}',
+          'فایل گزارش هسته: $coreLog',
+          if (plan != null) 'فایل لینک سرور: ${plan.linksPath}',
+          if (plan != null) 'حالت اتصال: ${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}',
+          if (plan != null && plan.proxyPort > 0)
+            'پورت محلی: ${Fa.num(plan.proxyPort)}',
+          if (code != null) 'کد خروج: ${Fa.num(code)}',
+        ].join('\n'),
+      ),
+    );
+
+    // ۳. سروری که با آن تلاش شد؛ بدون رمز و شناسه، فقط آنچه برای تشخیص لازم
+    // است. نام و میزبان برای پیدا کردن سرور مشکل دار کافی است.
+    if (node != null) {
+      details.add(
+        LogDetail(
+          title: 'سروری که با آن تلاش شد',
+          text: <String>[
+            'نام: ${node.name}',
+            'پروتکل: ${node.protocol.name}',
+            'میزبان: ${node.host}',
+            'پورت: ${Fa.num(node.port)}',
+          ].join('\n'),
+        ),
+      );
+    }
+
+    // ۴. وضعیت پورت های ثابت هسته؛ اگر گرفته باشند، نام صاحبش.
+    final List<int> held = await UmbrellaCore.heldReservedPorts();
+    if (held.isNotEmpty) {
+      final String holders = await UmbrellaCore.portHolders(held);
+      details.add(
+        LogDetail(
+          title: 'پورت های هسته در همین لحظه',
+          text: held
+              .map(
+                (int port) =>
+                    '${Fa.num(port)}: گرفته شده'
+                    '${holders.isEmpty ? '' : ' ($holders)'}',
+              )
+              .join('\n'),
+        ),
+      );
+    }
+
+    // ۵. فایل تنظیماتی که به هسته داده شد؛ اگر کلیدی غلط یا خالی باشد،
+    // همان جا دیده می شود.
+    if (plan != null) {
+      final String settingsPath = '${plan.runDir}'
+          '${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
+      final String settings = (await _readLogFull(settingsPath)).trim();
+      if (settings.isNotEmpty) {
+        details.add(
+          LogDetail(title: 'فایل تنظیمات هسته', text: settings),
+        );
+      }
+    }
+    return details;
   }
 
   /// متن کامل گزارش هسته (برای تصمیم گیری، بی برش).
@@ -1869,19 +2148,36 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// آخرین خطوط خروجی یک هسته برای نمایش در گزارش ها.
-  Future<String> _readLogTail(String path, {int maxChars = 600}) async {
+  /// خلاصه خروجی یک هسته برای همان یک خط پیام.
+  ///
+  /// قبلاً ۶۰۰ نویسه آخر همه خطوط به هم چسبیده بود و گزارش را ناخوانا می کرد.
+  /// متن کامل، دیگر در بخش جزئیات می آید؛ اینجا فقط آخرین خطی می آید که
+  /// واقعاً چیزی می گوید (خطوط خالی و تزئینی رد می شوند).
+  Future<String> _readLogTail(String path, {int maxChars = 300}) async {
     try {
       final File file = File(path);
       if (!await file.exists()) {
         return '';
       }
       final String text = await file.readAsString();
-      final String compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-      if (compact.length <= maxChars) {
-        return compact;
+      final List<String> rows = text
+          .split(RegExp(r'\r?\n'))
+          .map((String row) => row.trim())
+          // خطوط تزئینی هسته (کادر و فاصله) چیزی نمی گویند.
+          .where(
+            (String row) =>
+                row.isNotEmpty &&
+                !RegExp(r'^[\-=_*\s]+$').hasMatch(row),
+          )
+          .toList();
+      if (rows.isEmpty) {
+        return '';
       }
-      return compact.substring(compact.length - maxChars);
+      String last = rows.last;
+      if (last.length > maxChars) {
+        last = '…${last.substring(last.length - maxChars)}';
+      }
+      return last;
     } on FileSystemException {
       return '';
     }

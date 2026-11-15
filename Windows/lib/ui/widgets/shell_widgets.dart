@@ -374,7 +374,9 @@ class SideNav extends StatelessWidget {
     required this.onSelect,
     required this.status,
     this.onStatusTap,
-    this.version = AppConfig.versionLabel,
+    // نمی تواند مقدار پیش فرض const باشد چون برچسب نسخه از نسخه ساخته
+    // می شود؛ در بدنه همان مقدار می آید.
+    this.version,
     this.updateAvailable = false,
   });
 
@@ -383,8 +385,11 @@ class SideNav extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final VpnStatus status;
   final VoidCallback? onStatusTap;
-  final String version;
+  final String? version;
   final bool updateAvailable;
+
+  /// برچسب نسخه؛ اگر داده نشود از تنظیمات برنامه خوانده می شود.
+  String get _version => version ?? AppConfig.versionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -464,7 +469,7 @@ class SideNav extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     Text(
-                      Fa.num(version),
+                      Fa.num(_version),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: colors.textSecondary,
                           ),
