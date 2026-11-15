@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../core/app_config.dart';
 import '../core/storage.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
@@ -144,7 +146,26 @@ class UpdateController extends ChangeNotifier {
     }
   }
 
-  void openDownloadPage() {
-    _log.add('درخواست باز کردن صفحه دانلود.');
+  /// باز کردن صفحه انتشار در مرورگر.
+  ///
+  /// پیش از این فقط یک خط در گزارش می نوشت و هیچ صفحه ای باز نمی شد؛
+  /// کاربر «دکمه کار نمی کند» را دقیقا همین می دید.
+  Future<bool> openDownloadPage() async {
+    final String url = AppConfig.releasesPageUrl;
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) {
+      _log.add('نشانی صفحه انتشار نامعتبر است.', level: 'error');
+      return false;
+    }
+    try {
+      final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        _log.add('مرورگر صفحه انتشار را باز نکرد: $url', level: 'warning');
+      }
+      return ok;
+    } on Exception catch (error) {
+      _log.add('باز کردن صفحه انتشار ناموفق بود: $error', level: 'error');
+      return false;
+    }
   }
 }

@@ -228,6 +228,53 @@ class Fa {
   /// تاریخ شمسی امروز به شکل رشته ۱۴۰۴/۰۸/۲۰.
   static String today() => date(DateTime.now());
 
+  /// روز هفته شمسی: «یکشنبه».
+  ///
+  /// `DateTime.weekday` دوشنبه را ۱ و یکشنبه را ۷ می دهد، و فهرست [weekDays]
+  /// هم از دوشنبه شروع می شود، پس اندیس همان `weekday - 1` است.
+  static String weekDay(DateTime time) => weekDays[(time.weekday - 1) % 7];
+
+  /// تاریخ کامل با روز هفته: «یکشنبه ۲۴ آذر ۱۴۰۵».
+  static String fullDate(DateTime time) =>
+      '${weekDay(time)} ${longDate(time)}';
+
+  /// یک خط کامل تاریخ و ساعت زنده: «یکشنبه ۲۴ آذر ۱۴۰۵ — ۱۲:۳۶:۰۱».
+  static String fullDateTime(DateTime time) =>
+      '${fullDate(time)} — ${clock(time)}';
+
+  /// سلام مناسب ساعت روز.
+  ///
+  /// پیش از این همیشه «سلام» نوشته می شد؛ کاربر خواست صبح بخیر، ظهر بخیر و
+  /// شب بخیر با همان سلام اول باشد.
+  static String greeting([DateTime? now]) {
+    final int hour = (now ?? DateTime.now()).hour;
+    if (hour >= 5 && hour < 12) {
+      return 'صبح بخیر';
+    }
+    if (hour >= 12 && hour < 15) {
+      return 'ظهر بخیر';
+    }
+    if (hour >= 15 && hour < 19) {
+      return 'عصر بخیر';
+    }
+    return 'شب بخیر';
+  }
+
+  /// آیکون مناسب همان سلام، تا متن و آیکون با هم بخوانند.
+  static String greetingKey([DateTime? now]) {
+    final int hour = (now ?? DateTime.now()).hour;
+    if (hour >= 5 && hour < 12) {
+      return 'morning';
+    }
+    if (hour >= 12 && hour < 15) {
+      return 'noon';
+    }
+    if (hour >= 15 && hour < 19) {
+      return 'evening';
+    }
+    return 'night';
+  }
+
   static JalaliDate jalali(DateTime time) => JalaliDate.fromDateTime(time);
 }
 

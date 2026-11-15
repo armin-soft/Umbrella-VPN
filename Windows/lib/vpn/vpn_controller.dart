@@ -1302,15 +1302,28 @@ class VpnController extends ChangeNotifier {
       _balancer.markConnected(node.id);
       _startTimers();
       await _sound.play('connect');
+      // نام سرور در سینی ویندوز و اعلان نمی آید.
+      //
+      // کاربر خواست پس از اتصال هیچ جا نام سرور دیده نشود، فقط «به آمبرلا
+      // متصل شد»؛ جزئیات سرور فقط در گزارش ها می ماند. اعلان هم پینگ واقعی
+      // را می گوید، نه پینگ لحظه انتخاب.
       await _tray.update(
         state: 'connected',
-        tooltip: '${AppConfig.appName} - متصل به ${node.name}',
+        tooltip: '${AppConfig.appName} - متصل شد',
         connected: true,
       );
+      // آی پی خروجی از سطر MONITORING خود هسته؛ اگر خوانده نشود، سنجش وب
+      // جای آن را می گیرد.
+      final String coreIp = await _coreExitIp(_coreLogPath(plan));
+      if (coreIp.isNotEmpty) {
+        _log.add('آی پی خروجی از گزارش هسته: $coreIp');
+        _notify();
+      }
       if (_settings.notificationsEnabled) {
+        final int shownPing = activePingMs > 0 ? activePingMs : node.pingMs;
         await _tray.balloon(
-          'اتصال برقرار شد',
-          '${node.name} | ${Fa.ms(node.pingMs)}',
+          'به آمبرلا متصل شد',
+          shownPing > 0 ? 'پینگ ${Fa.ms(shownPing)}' : 'اتصال امن برقرار است',
         );
       }
 
@@ -2756,6 +2769,37 @@ class VpnController extends ChangeNotifier {
     } on Exception {
       return null;
     }
+  }
+
+  /// آی پی و کشور خروجی از سطر `MONITORING result` خود هسته.
+  ///
+  /// گزارش ۱٫۰٫۱۵ نشان داد خواندن آی پی از سرویس های وب در ایران کار نمی کند
+  /// (همه فیلتر یا کند هستند)، پس برنامه همیشه «آی پی خروجی خوانده نشد» می
+  /// نوشت و کاربر نمی توانست مطمئن شود تونل کار می کند. خود هسته بعد از
+  /// تنظیم `ipinfo-url` این سطر را می نویسد:
+  ///   MONITORING result vless § 0: 1573 ms, IP: 1.2.3.4, Country: DE ...
+  /// و همان، مدرک مستقیم خروج از کشور دیگر است.
+  Future<String> _coreExitIp(String coreLog) async {
+    final String full = await _readLogFull(coreLog);
+    if (full.isEmpty) {
+      return '';
+    }
+    final RegExp pattern = RegExp(
+      r'MONITORING result [^:]*:\s*[0-9.]+\s*ms,\s*IP:\s*([0-9a-fA-F.:]+),'
+      r'\s*Country:\s*([A-Za-z]{2})(?:,|\s|$)',
+      caseSensitive: false,
+    );
+    for (final RegExpMatch match in pattern.allMatches(full)) {
+      final String ip = match.group(1) ?? '';
+      final String country = (match.group(2) ?? '').toLowerCase();
+      // `direct` هم همین سطر را دارد؛ آی پی ایران یعنی تونل نبوده.
+      if (ip.isEmpty || country == 'ir') {
+        continue;
+      }
+      _exitIp = ip;
+      return ip;
+    }
+    return '';
   }
 
   /// آیا خود هسته گفته است که تونل بالا آمد و کار کرد؟

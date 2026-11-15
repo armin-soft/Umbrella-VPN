@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -8,7 +10,6 @@ import '../../state/auth_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../platform/services.dart';
 import '../../state/toast_controller.dart';
-import '../../data/subscription_diagnostics.dart';
 import '../widgets/common.dart';
 
 /// حساب کاربری: پروفایل، مصرف دقیق (همان اعدادی که پنل نشان می دهد) و وضعیت
@@ -26,8 +27,6 @@ class AccountPage extends StatefulWidget {
 class _AccountPageState extends State<AccountPage> {
   bool _refreshing = false;
   bool _panelFresh = false;
-  bool _checkingLinks = false;
-  List<EndpointCheck> _linkChecks = <EndpointCheck>[];
 
   @override
   void initState() {
@@ -51,39 +50,6 @@ class _AccountPageState extends State<AccountPage> {
         toasts.info('پنل پاسخ نداد', 'همان اطلاعات سرور نمایش داده می شود.');
       }
     }
-  }
-
-  /// بررسی هر هشت نشانی اشتراک پنل (خودکار، ساده، Base64، کلش متا، سینگ
-  /// باکس، وایرگارد، آمنزیا، میرو) و نوشتن نتیجه در گزارش ها.
-  Future<void> _checkEndpoints(AuthController auth, ToastController toasts) async {
-    if (_checkingLinks) {
-      return;
-    }
-    setState(() => _checkingLinks = true);
-    final List<EndpointCheck> results =
-        await SubscriptionDiagnostics().checkAll(
-      subscriptionUrl: auth.account.subscriptionUrl,
-      accountBase: auth.account.accountBase,
-      uuid: auth.account.uuid,
-    );
-    final int working = results.where((EndpointCheck item) => item.ok).length;
-    for (final EndpointCheck item in results) {
-      AppLogger.instance.add(
-        'بررسی اشتراک | ${item.line}',
-        level: item.ok ? 'info' : 'warning',
-      );
-    }
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _checkingLinks = false;
-      _linkChecks = results;
-    });
-    toasts.success(
-      'بررسی نشانی های اشتراک',
-      '${Fa.num(working)} از ${Fa.num(results.length)} نشانی سرور داد.',
-    );
   }
 
   Future<void> _refreshFromServer(
@@ -136,6 +102,30 @@ class _AccountPageState extends State<AccountPage> {
     await auth.signOut();
     widget.onSignedOut();
     toasts.info('از حساب خارج شدی');
+  }
+
+  /// باز کردن ربات تلگرام با شناسه همین حساب.
+  ///
+  /// ربات همان سرور و دیتابیس برنامه را دارد، پس با `?start=<uuid>` حساب
+  /// ویندوز را می شناسد و سینک می کند. اگر شناسه نباشد، فقط ربات باز می شود.
+  Future<void> _openTelegramBot(Account account, ToastController toasts) async {
+    final String id = account.uuid.trim();
+    final String url = id.isEmpty
+        ? 'https://t.me/${AppConfig.botUsername}'
+        : 'https://t.me/${AppConfig.botUsername}?start=$id';
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) {
+      toasts.error('نشانی ربات نامعتبر است');
+      return;
+    }
+    try {
+      final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        toasts.error('مرورگر باز نشد', 'دستی به آدرس t.me/${AppConfig.botUsername} بروید.');
+      }
+    } on Exception {
+      toasts.error('باز کردن تلگرام ناموفق بود');
+    }
   }
 
   @override
@@ -350,64 +340,6 @@ class _AccountPageState extends State<AccountPage> {
                 flex: 2,
                 child: Column(
                   children: <Widget>[
-                    GlassCard(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const SectionHeader(
-                            title: 'اشتراک من',
-                            subtitle: 'پنج قالب اشتراک، خودکار از سرور',
-                          ),
-                          const SizedBox(height: 10),
-                          InfoRow(
-                            icon: Icons.dns_rounded,
-                            label: 'مجموع سرورها',
-                            value: Fa.num('${Fa.num(subs.personalNodeCount)} سرور'),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.check_circle_outline_rounded,
-                            label: 'منابع سالم',
-                            value: Fa.num(
-                              '${Fa.num(subs.personalSources.where((SourceState s) => s.loaded).length)}'
-                              ' از ${Fa.num(subs.personalSources.length)}',
-                            ),
-                          ),
-                          const Divider(height: 14),
-                          InfoRow(
-                            icon: Icons.schedule_rounded,
-                            label: 'آخرین دریافت',
-                            value: subs.personalCheckedAt == null
-                                ? 'در انتظار'
-                                : Fa.clock(subs.personalCheckedAt!),
-                          ),
-                          if (subs.needsLogin) ...<Widget>[
-                            const SizedBox(height: 10),
-                            Text(
-                              'اشتراک اختصاصی فقط بعد از ورود به حساب در دسترس '
-                              'است؛ دوباره وارد شو.',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(color: colors.warning),
-                            ),
-                          ],
-                          if (subs.personalErrors.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 10),
-                            Text(
-                              Fa.num(subs.personalErrors.first),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(color: colors.danger),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 14),
                     GlassCard(
                       padding: const EdgeInsets.all(20),
@@ -439,64 +371,21 @@ class _AccountPageState extends State<AccountPage> {
                                 : account.telegramId,
                           ),
                           const SizedBox(height: 14),
-                          OutlinedButton.icon(
-                            onPressed: _checkingLinks
-                                ? null
-                                : () => _checkEndpoints(auth, toasts),
-                            icon: _checkingLinks
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.fact_check_rounded, size: 18),
-                            label: const Text('بررسی نشانی های اشتراک'),
+                          // دکمه بررسی دستی نشانی ها و دکمه خواندن دوباره
+                          // از پنل حذف شدند: کاربر آن ها را نمی خواست و همان
+                          // کار را خواندن خودکار برنامه انجام می دهد.
+
+                          const SizedBox(height: 14),
+                          // ── سینک با تلگرام ─────────────────────────────
+                          //
+                          // یک دکمه که کاربر را به ربات می برد؛ ربات همان
+                          // سرور، دیتابیس و حساب همین برنامه را دارد، پس
+                          // با یک کلیک حساب ویندوز به تلگرام وصل می شود.
+                          _TelegramSyncButton(
+                            account: account,
+                            onOpen: () => _openTelegramBot(account, toasts),
                           ),
-                          if (_linkChecks.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 8),
-                            for (final EndpointCheck item in _linkChecks)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Row(
-                                  children: <Widget>[
-                                    Icon(
-                                      item.ok
-                                          ? Icons.check_circle_rounded
-                                          : Icons.error_outline_rounded,
-                                      size: 15,
-                                      color: item.ok
-                                          ? colors.success
-                                          : colors.textSecondary,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        Fa.num(item.line),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color: item.ok
-                                                  ? colors.textPrimary
-                                                  : colors.textSecondary,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                          const SizedBox(height: 6),
-                          OutlinedButton.icon(
-                            onPressed: () => _loadPanel(false),
-                            icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text('خواندن دوباره از پنل'),
-                          ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 8),
                           TextButton.icon(
                             onPressed: () => _signOut(auth, toasts),
                             icon: const Icon(Icons.logout_rounded, size: 18),
@@ -511,6 +400,73 @@ class _AccountPageState extends State<AccountPage> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// دکمه «سینک با تلگرام»: حساب ویندوز را به ربات همان سرویس وصل می کند.
+class _TelegramSyncButton extends StatelessWidget {
+  const _TelegramSyncButton({required this.account, required this.onOpen});
+
+  final Account account;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final bool linked = account.telegramId.isNotEmpty;
+    final Color tone = linked ? colors.success : const Color(0xFF29A9EB);
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onOpen,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: tone.withValues(alpha: 0.42)),
+        ),
+        child: Row(
+          children: <Widget>[
+            IconSquare(
+              icon: linked
+                  ? Icons.verified_rounded
+                  : Icons.send_rounded,
+              color: tone,
+              size: 34,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    Fa.num(linked ? 'به تلگرام سینک شده' : 'سینک با تلگرام'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: tone,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    Fa.num(
+                      linked
+                          ? 'حساب و اشتراک شما در ربات به روز است.'
+                          : 'با یک کلیک، حساب را به ربات آمبرلا وصل کنید.',
+                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: colors.textSecondary, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.open_in_new_rounded, size: 16, color: tone),
+          ],
+        ),
       ),
     );
   }

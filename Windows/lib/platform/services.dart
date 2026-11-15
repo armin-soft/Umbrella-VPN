@@ -309,15 +309,48 @@ class UpdateService {
   final http.Client _client;
 
   Future<UpdateInfo?> check() async {
+    // ۱. اگر نشانی فهرست دستی تنظیم نشده باشد، از صفحه انتشار گیت هاب
+    //    می خوانیم. نشانی پیشین روی سرور پنل بود و از داخل ایران باز نمی شد،
+    //    پس دکمه «به روز رسانی» عملا هیچ کاری نمی کرد.
+    if (AppConfig.updateManifestUrl.isNotEmpty) {
+      final UpdateInfo? manual = await _checkManifest();
+      if (manual != null) {
+        return manual;
+      }
+    }
+    return _checkGithubRelease();
+  }
+
+  /// خواندن فهرست JSON دستی (اگر کسی تنظیم کرده باشد).
+  Future<UpdateInfo?> _checkManifest() async {
     try {
       final http.Response response = await _client
           .get(
             Uri.parse(AppConfig.updateManifestUrl),
-            headers: <String, String>{
-              'Accept': 'application/json',
-              'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
-            },
+            headers: _headers,
           )
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode >= 300) {
+        return null;
+      }
+      final Map<String, dynamic> json = JsonX.asMap(
+        jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
+      );
+      return _accept(json);
+    } on Exception {
+      return null;
+    }
+  }
+
+  /// خواندن آخرین انتشار از API گیت هاب.
+  ///
+  /// هر انتشار این مخزن فایل نصب را با نام `UmbrellaVPN-Setup-<نسخه>-x64.exe`
+  /// و یک `SHA256SUMS.txt` در پوشه `setup/<نسخه>` دارد، پس نشانی دانلود و
+  /// اثر انگشت هر دو از همان تگ خوانده می شوند و دستی نگه داشته نمی شوند.
+  Future<UpdateInfo?> _checkGithubRelease() async {
+    try {
+      final http.Response response = await _client
+          .get(Uri.parse(AppConfig.releaseApiUrl), headers: _headers)
           .timeout(const Duration(seconds: 12));
       if (response.statusCode >= 300) {
         return null;
@@ -328,14 +361,91 @@ class UpdateService {
       if (json.isEmpty) {
         return null;
       }
-      final UpdateInfo info = UpdateInfo.fromJson(json);
-      if (info.version.isEmpty || info.url.isEmpty || !info.isNewer) {
+      // تگ به شکل `v1.0.17-windows` است؛ فقط شماره نسخه لازم است.
+      final String tag = JsonX.text(json['tag_name']);
+      final String version = _versionOf(tag);
+      if (version.isEmpty || !_isReleaseForWindows(tag)) {
         return null;
       }
-      return info;
+      final bool draft = JsonX.boolean(json['draft']);
+      if (draft) {
+        return null;
+      }
+      final String url = _installerUrl(tag, version);
+      if (url.isEmpty) {
+        return null;
+      }
+      final String sha = await _shaForVersion(tag, version);
+      return _accept(<String, dynamic>{
+        'version': version,
+        'url': url,
+        'sha256': sha,
+        'notes': JsonX.text(json['body']),
+        'size': 0,
+        'published_at': JsonX.text(json['published_at']),
+      });
     } on Exception {
       return null;
     }
+  }
+
+  Map<String, String> get _headers => <String, String>{
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
+      };
+
+  /// فقط نسخه ویندوز این مخزن به روز رسانی دارد.
+  static bool _isReleaseForWindows(String tag) =>
+      tag.toLowerCase().contains('windows');
+
+  /// `v1.0.17-windows` یا `1.0.17` → `1.0.17`.
+  static String _versionOf(String tag) {
+    final RegExpMatch? match =
+        RegExp(r'(\d+\.\d+\.\d+)').firstMatch(tag);
+    return match?.group(1) ?? '';
+  }
+
+  /// همان مسیری که نصب کننده همیشه در مخزن دارد.
+  static String _installerUrl(String tag, String version) =>
+      'https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
+      'setup/$version/UmbrellaVPN-Setup-$version-x64.exe';
+
+  /// اثر انگشت فایل نصب از `SHA256SUMS.txt` همان نسخه.
+  ///
+  /// اگر خوانده نشود، خالی برمی گردد: دانلود بدون بررسی هش بهتر از دانلود
+  /// نکردن نیست، ولی خود `download` هم فقط وقتی هش بدهیم بررسی می کند.
+  Future<String> _shaForVersion(String tag, String version) async {
+    try {
+      final http.Response response = await _client
+          .get(
+            Uri.parse('https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
+                'setup/$version/SHA256SUMS.txt'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode >= 300) {
+        return '';
+      }
+      final String body = utf8.decode(response.bodyBytes, allowMalformed: true);
+      final RegExpMatch? match = RegExp(r'^([0-9a-fA-F]{64})',
+              multiLine: true)
+          .firstMatch(body);
+      return match?.group(1)?.toLowerCase() ?? '';
+    } on Exception {
+      return '';
+    }
+  }
+
+  /// پذیرش فقط اگر نسخه واقعا تازه تر باشد.
+  UpdateInfo? _accept(Map<String, dynamic> json) {
+    if (json.isEmpty) {
+      return null;
+    }
+    final UpdateInfo info = UpdateInfo.fromJson(json);
+    if (info.version.isEmpty || info.url.isEmpty || !info.isNewer) {
+      return null;
+    }
+    return info;
   }
 
   Future<File?> download(

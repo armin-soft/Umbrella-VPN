@@ -98,7 +98,8 @@ bool TrayIcon::SetIconFromFile(const std::string& ico_path) {
   icon_ = icon;
   owns_icon_ = true;
   data_.hIcon = icon;
-  data_.uFlags = NIF_ICON;
+  // NIF_TIP too, so the hover text survives an icon change.
+  data_.uFlags = NIF_ICON | NIF_TIP;
   return Shell_NotifyIconW(NIM_MODIFY, &data_) != FALSE;
 }
 
@@ -106,7 +107,8 @@ bool TrayIcon::SetTooltip(const std::string& text) {
   if (!icon_added_) return false;
   std::wstring wide = ToWide(text);
   wcsncpy_s(data_.szTip, wide.c_str(), _TRUNCATE);
-  data_.uFlags = NIF_TIP;
+  // NIF_ICON too: a tooltip-only update would drop the tray icon.
+  data_.uFlags = NIF_TIP | NIF_ICON;
   return Shell_NotifyIconW(NIM_MODIFY, &data_) != FALSE;
 }
 
@@ -122,12 +124,28 @@ bool TrayIcon::SetMenuLabels(const std::string& connect_label,
 bool TrayIcon::ShowBalloon(const std::string& title, const std::string& body,
                            bool warning) {
   if (!icon_added_) return false;
-  data_.uFlags = NIF_INFO;
-  data_.dwInfoFlags = warning ? NIIF_WARNING : NIIF_USER;
+  // Keep the icon and tooltip in this update: NIM_MODIFY replaces whatever
+  // uFlags names, so a balloon-only update would blank the tray icon.
+  data_.uFlags = NIF_INFO | NIF_ICON | NIF_TIP;
+  // NIIF_USER shows the icon in hBalloonIcon. It used to be set without
+  // providing one, so Windows drew the notification with no icon at all --
+  // the "اعلان بدون آیکون" users reported. Plain NIIF_INFO always draws the
+  // standard information icon, so a successful connect never looks empty.
+  if (warning) {
+    data_.dwInfoFlags = NIIF_WARNING;
+  } else {
+    data_.dwInfoFlags = NIIF_INFO;
+  }
+  data_.hBalloonIcon = data_.hIcon;
   wcsncpy_s(data_.szInfoTitle, ToWide(title).c_str(), _TRUNCATE);
   wcsncpy_s(data_.szInfo, ToWide(body).c_str(), _TRUNCATE);
   data_.uTimeout = 10000;
-  return Shell_NotifyIconW(NIM_MODIFY, &data_) != FALSE;
+  const bool shown = Shell_NotifyIconW(NIM_MODIFY, &data_) != FALSE;
+  // Leave the struct ready for the next icon or tooltip update.
+  data_.uFlags = NIF_ICON | NIF_TIP;
+  data_.dwInfoFlags = 0;
+  data_.hBalloonIcon = nullptr;
+  return shown;
 }
 
 void TrayIcon::ShowMenu() {

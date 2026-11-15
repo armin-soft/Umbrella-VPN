@@ -8,7 +8,6 @@ import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
-import '../../platform/services.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 import '../widgets/content_control.dart';
@@ -279,15 +278,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           icon: const Icon(Icons.info_outline_rounded, size: 17),
                           label: const Text('درباره برنامه و توسعه دهنده'),
                         ),
-                        TextButton.icon(
-                          onPressed: () =>
-                              context.read<WindowService>().quit(),
-                          icon: const Icon(
-                            Icons.power_settings_new_rounded,
-                            size: 17,
-                          ),
-                          label: Text(Fa.num('خروج کامل از برنامه')),
-                        ),
+                        // «خروج کامل از برنامه» عمدا اینجا نیست: منوی خروج
+                        // بخش جداگانه ای در انتهای نوار کناری است.
                       ],
                     ),
                   ],
@@ -299,7 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Center(
             child: Text(
               Fa.num(
-                '${AppConfig.appName} | ${AppConfig.versionLabel} | ${AppConfig.developer}',
+                '${AppConfig.appName} | ${AppConfig.versionPhrase} | ${AppConfig.developer}',
               ),
               style: Theme.of(context)
                   .textTheme

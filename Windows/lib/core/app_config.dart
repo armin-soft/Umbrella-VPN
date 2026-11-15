@@ -9,11 +9,18 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.16';
+  static const String version = '1.0.17';
   static const int buildNumber = 1;
-  /// برچسب نسخه برای نمایش؛ از همان `version` ساخته می شود تا هیچ وقت
-  /// عقب نماند (در ۱٫۰٫۸ اینجا هنوز «۱٫۰٫۰» نوشته بود).
-  static String get versionLabel => 'نسخه ${version.split('.').join('٫')}';
+  /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.17`.
+  ///
+  /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
+  /// هنوز «۱٫۰٫۰» نوشته بود). بدون کلمه «نسخه» و با رقم لاتین، چون کاربر
+  /// دقیقا همین را زیر منوی کناری خواست.
+  static String get versionLabel => version;
+
+  /// همان شماره با پیشوند فارسی، برای جاهایی که متن جمله است (تنظیمات،
+  /// گزارش خطا): «نسخه ۱٫۰٫۱۶».
+  static String get versionPhrase => 'نسخه ${version.split('.').join('٫')}';
   static const String company = 'آرمین سافت';
   static const String developer = 'آرمین سافت';
   static const String developerSite = 'https://armin-soft.ir';
@@ -114,11 +121,23 @@ class AppConfig {
   static const String ipCheckCloudflare = 'https://www.cloudflare.com/cdn-cgi/trace';
 
   /// فایل به روز رسانی نسخه ویندوز؛ JSON با کلیدهای version, url, sha256, notes
+  ///
+  /// اگر این متغیر نده شود، نسخه از **صفحه انتشار گیت هاب** خوانده می شود.
+  /// نشانی پیشین `user.umbrella-server.ir` بود که از داخل ایران اغلب باز
+  /// نمی شود؛ به همین دلیل دکمه «بررسی به روز رسانی» در گزارش کاربر هیچ
+  /// کاری نمی کرد. گیت هاب برای همین بررسی همیشه در دسترس است.
   static const String updateManifestUrl = String.fromEnvironment(
     'UMBRELLA_UPDATE_MANIFEST',
-    defaultValue:
-        'https://user.umbrella-server.ir/5mkVYdBkp8OS/api/windows/update.json',
+    defaultValue: '',
   );
+
+  /// آخرین انتشار ویندوز در گیت هاب (همان مخزنی که نصب کننده از آن می آید).
+  static const String releaseApiUrl =
+      'https://api.github.com/repos/armin-soft/Umbrella-VPN/releases/latest';
+
+  /// صفحه انتشار، برای وقتی که خودکار نمی شود.
+  static const String releasesPageUrl =
+      'https://github.com/armin-soft/Umbrella-VPN/releases/latest';
 
   /// پیشوند نام آداپتور تونل که برای خواندن آمار مصرف استفاده می شود.
   ///

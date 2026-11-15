@@ -166,7 +166,7 @@ class ConnectionPage extends StatelessWidget {
                           InfoRow(
                             icon: Icons.apps_rounded,
                             label: 'نسخه برنامه',
-                            value: Fa.num(AppConfig.versionLabel),
+                            value: Fa.num(AppConfig.versionPhrase),
                           ),
                           const Divider(height: 14),
                           InfoRow(

@@ -941,3 +941,50 @@ class IconAction extends StatelessWidget {
     return Tooltip(message: Fa.num(tooltip!), child: button);
   }
 }
+
+/// دو ستون که در پنجره باریک زیر هم می روند.
+///
+/// صفحه های دستگاه، حساب و تنظیمات همه یک `Row` با دو `Expanded` داشتند؛ در
+/// پنجره باریک یا بزرگ شده ویندوز، ستون ها آن قدر تنگ می شدند که متن ها روی
+/// هم می افتادند. این ویجت با `LayoutBuilder` عرض واقعی را می سنجد و زیر
+/// [breakpoint] چیدمان را عمودی می کند.
+class ResponsiveColumns extends StatelessWidget {
+  const ResponsiveColumns({
+    super.key,
+    required this.left,
+    required this.right,
+    this.leftFlex = 3,
+    this.rightFlex = 2,
+    this.spacing = 16,
+    this.breakpoint = 820,
+  });
+
+  final Widget left;
+  final Widget right;
+  final int leftFlex;
+  final int rightFlex;
+  final double spacing;
+  final double breakpoint;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < breakpoint) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[left, SizedBox(height: spacing), right],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(flex: leftFlex, child: left),
+            SizedBox(width: spacing),
+            Expanded(flex: rightFlex, child: right),
+          ],
+        );
+      },
+    );
+  }
+}

@@ -15,6 +15,7 @@ import '../../vpn/vpn_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 import '../widgets/flag_view.dart';
+import '../widgets/live_clock.dart';
 
 /// صفحه اتصال: یک نگاه، یک دکمه.
 ///
@@ -85,6 +86,32 @@ class _ConnectPageState extends State<ConnectPage> {
     return '$date | ${place.join('، ')}';
   }
 
+  /// خط دوم اعلان اتصال، بدون نام سرور: فقط پینگ و حالت.
+  ///
+  /// کاربر خواست پس از اتصال هیچ جا نام سرور نمایش داده نشود؛ فقط «به آمبرلا
+  /// متصل شد». جزئیات سرور در گزارش ها می ماند.
+  static String _connectedNote(VpnController vpn) {
+    final int ping = vpn.activePingMs;
+    if (ping > 0) {
+      return 'پینگ ${Fa.ms(ping)}';
+    }
+    return 'اتصال امن برقرار است';
+  }
+
+  /// آیکون مناسب همان سلام ساعت روز (صبح، ظهر، عصر، شب).
+  static IconData _greetingIcon() {
+    switch (Fa.greetingKey()) {
+      case 'morning':
+        return Icons.wb_twilight_rounded;
+      case 'noon':
+        return Icons.wb_sunny_rounded;
+      case 'evening':
+        return Icons.nights_stay_rounded;
+      default:
+        return Icons.bedtime_rounded;
+    }
+  }
+
   /// لغو اتصال در حال ساخت (دکمه «لغو اتصال»).
   Future<void> _cancelConnection(
     VpnController vpn,
@@ -120,7 +147,9 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     final ConnectOutcome outcome = await vpn.connect();
     if (outcome.ok) {
-      toasts.success('اتصال برقرار شد', vpn.activeNode?.name ?? '');
+      // نام سرور اینجا نمی آید: کاربر خواست پس از اتصال هیچ جا نام سرور
+      // دیده نشود و همه جزئیات فقط در گزارش ها باشد.
+      toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
     } else if (!outcome.cancelled) {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
@@ -155,7 +184,7 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     final ConnectOutcome outcome = await vpn.connect();
     if (outcome.ok) {
-      toasts.success('متصل شد', vpn.activeNode?.name ?? '');
+      toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
     } else {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
@@ -189,7 +218,7 @@ class _ConnectPageState extends State<ConnectPage> {
     if (outcome.ok) {
       toasts.success(
         'با حالت ${picked.faName} دوباره وصل شد',
-        vpn.activeNode?.name ?? '',
+        _connectedNote(vpn),
       );
     } else {
       toasts.error('اتصال برقرار نشد', outcome.message);
@@ -252,22 +281,33 @@ class _ConnectPageState extends State<ConnectPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text(
-                              Fa.num('سلام ${account.displayName}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            Row(
+                              children: <Widget>[
+                                Icon(
+                                  _greetingIcon(),
+                                  size: 17,
+                                  color: colors.warning,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    Fa.num(
+                                      'سلام ${account.displayName} '
+                                      '${Fa.greeting()}',
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w900),
+                                  ),
+                                ),
+                              ],
                             ),
-                            Text(
-                              // تاریخ و، اگر شناخته شده باشد، شهر و کشور همین
-                              // دستگاه؛ بخش ناشناخته نوشته نمی شود تا خط
-                              // «نامشخص، نامشخص» دیده نشود.
-                              Fa.num(_subtitleLine(vpn)),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            const SizedBox(height: 2),
+                            // تاریخ شمسی با روز هفته و ساعت زنده.
+                            LiveDateTimeLine(
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall
@@ -368,32 +408,58 @@ class _ConnectPageState extends State<ConnectPage> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        Fa.num(status.label),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: tone,
+                      const SizedBox(height: 10),
+                      // وضعیت و پرچم کنار هم: کاربر می خواست وقتی وصل شد،
+                      // پرچم سرور متصل کنار «متصل» دیده شود.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          if (connected && flagCode.isNotEmpty) ...<Widget>[
+                            FlagView(code: flagCode, width: 30),
+                            const SizedBox(width: 8),
+                          ],
+                          Flexible(
+                            child: Text(
+                              Fa.num(
+                                connected
+                                    ? 'به آمبرلا متصل شد'
+                                    : status.label,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    color: tone,
+                                  ),
                             ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        Fa.num(vpn.message),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: colors.textSecondary),
-                      ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 4),
+                      // پینگ سرور متصل، همان چیزی که کاربر خواست زیر وضعیت
+                      // دیده شود. نام سرور اینجا نمی آید؛ فقط گزارش ها.
+                      if (connected)
+                        _PingLine(pingMs: vpn.activePingMs)
+                      else
+                        Text(
+                          Fa.num(vpn.message),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colors.textSecondary),
+                        ),
+                      // فاصله بیشتر تا دکمه ها: کاربر خواست دکمه ها به گنبد
+                      // نچسبند و پایین تر و مرتب تر باشند.
+                      const SizedBox(height: 26),
                       SizedBox(
-                        width: 460,
+                        width: 420,
                         child: status.busy
                             // هنگام ساخت تونل، دکمه به «لغو اتصال» تبدیل می شود؛
                             // تا پیش از این کاربر هیچ راهی برای پشیمان شدن نداشت.
@@ -431,7 +497,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                 ?.copyWith(color: colors.danger),
                           ),
                         ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 22),
 
                       // ── دو منوی کوچک: حالت اتصال و حالت انتخاب سرور ──
                       Wrap(
@@ -473,6 +539,43 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
         );
       },
+    );
+  }
+}
+
+/// پینگ سرور متصل، زیر وضعیت اتصال.
+///
+/// کاربر خواست وقتی وصل می شود پینگ همان لحظه زیرش دیده شود. عدد زنده تونل
+/// اگر آماده باشد می آید، وگرنه پینگ شبکه همان سرور؛ تا وقتی هیچ عددی
+/// نرسیده باشد «در حال اندازه گیری» نوشته می شود، نه صفر.
+class _PingLine extends StatelessWidget {
+  const _PingLine({required this.pingMs});
+
+  final int pingMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final bool known = pingMs > 0;
+    // رنگ بر اساس کیفیت: سبز زیر ۸۰، کهربایی زیر ۱۸۰، قرمز بالاتر.
+    final Color tone = !known
+        ? colors.textSecondary
+        : (pingMs < 80
+            ? colors.success
+            : (pingMs < 180 ? colors.warning : colors.danger));
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Icon(Icons.speed_rounded, size: 15, color: tone),
+        const SizedBox(width: 6),
+        Text(
+          Fa.num(known ? 'پینگ ${Fa.ms(pingMs)}' : 'پینگ در حال اندازه گیری'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: tone,
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+      ],
     );
   }
 }

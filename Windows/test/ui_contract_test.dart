@@ -212,6 +212,144 @@ void main() {
       expect(controller.contains('holder.holdsPortAgainstUs'), isTrue);
     });
 
+    test('سلام ساعت روز، تاریخ کامل و ساعت زنده دارد', () {
+      // کاربر خواست بالای صفحه «سلام آرمین ... صبح بخیر» با آیکون مناسب و
+      // زیرش تاریخ شمسی با روز هفته و ساعت زنده باشد.
+      final String persian = read('lib/core/persian.dart');
+      expect(persian.contains('static String greeting('), isTrue);
+      expect(persian.contains('صبح بخیر'), isTrue);
+      expect(persian.contains('static String weekDay('), isTrue);
+      // اندیس روز هفته باید (weekday - 1) باشد؛ با `% 7` یکشنبه «دوشنبه»
+      // می شد.
+      expect(persian.contains('weekDays[(time.weekday - 1) % 7]'), isTrue);
+
+      final String clock = read('lib/ui/widgets/live_clock.dart');
+      expect(clock.contains('Timer.periodic'), isTrue);
+      expect(clock.contains('Fa.fullDateTime'), isTrue);
+
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(page.contains('Fa.greeting()'), isTrue);
+      expect(page.contains('LiveDateTimeLine'), isTrue);
+    });
+
+    test('پس از اتصال نام سرور نمایش داده نمی شود، فقط «به آمبرلا متصل شد»', () {
+      // کاربر خواست هیچ جا نام سرور دیده نشود؛ فقط در گزارش ها بماند.
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(page.contains('به آمبرلا متصل شد'), isTrue);
+      expect(page.contains('activeNode?.name'), isFalse);
+
+      // اعلان ویندوز و تولتیپ سینی هم نام سرور را نمی گویند.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('متصل به \${node.name}'), isFalse);
+      expect(controller.contains('\${node.name} | \${Fa.ms(node.pingMs)}'), isFalse);
+      // ولی در گزارش، سرور و مشخصاتش هست.
+      expect(controller.contains('اتصال به \${node.name}'), isTrue);
+    });
+
+    test('پینگ سرور متصل زیر وضعیت اتصال نشان داده می شود', () {
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(page.contains('_PingLine'), isTrue);
+      expect(page.contains('vpn.activePingMs'), isTrue);
+    });
+
+    test('نسخه در نوار کناری به شکل ساده 1.0.16 است', () {
+      final String config = read('lib/core/app_config.dart');
+      expect(config.contains('static String get versionLabel => version;'), isTrue);
+      // پیشوند «نسخه» فقط در متن های جمله ای می آید، نه زیر منو.
+      expect(config.contains('versionPhrase'), isTrue);
+      final String nav = read('lib/ui/widgets/shell_widgets.dart');
+      expect(nav.contains('AppConfig.versionLabel'), isTrue);
+    });
+
+    test('نوار بالا وضعیت را وسط و اعلان و تم را چپ می گذارد', () {
+      final String shell = read('lib/ui/widgets/shell_widgets.dart');
+      // وضعیت داخل Expanded و Center می آید (وسط)، اعلان و تم بعد از آن
+      // یعنی سمت چپ در چیدمان راست چین.
+      expect(shell.contains('_HeaderIconButton'), isTrue);
+      expect(shell.contains('onNotifications'), isTrue);
+      final String bar =
+          shell.substring(shell.indexOf('class TitleBar'), shell.indexOf('class _HeaderIconButton'));
+      expect(bar.contains('Center('), isTrue);
+    });
+
+    test('خروج منوی جداگانه در انتهای نوار کناری است، نه ته تنظیمات', () {
+      final String appShell = read('lib/ui/shell/app_shell.dart');
+      expect(appShell.contains('ExitPage('), isTrue);
+      expect(appShell.contains('_exitIndex'), isTrue);
+      final String nav = read('lib/ui/widgets/shell_widgets.dart');
+      expect(nav.contains('exitIndex'), isTrue);
+      final String exit = read('lib/ui/pages/exit_page.dart');
+      expect(exit.contains('خروج کامل از برنامه'), isTrue);
+      // تنظیمات دیگر دکمه خروج ندارد.
+      // تنظیمات دیگر دکمه خروج ندارد؛ فقط «درباره» می ماند.
+      final String settings = read('lib/ui/pages/settings_page.dart');
+      expect(settings.contains('context.read<WindowService>().quit()'), isFalse);
+    });
+
+    test('اعلان ویندوز آیکون دارد و آیکون سینی را پاک نمی کند', () {
+      // علت «اعلان بدون آیکون»: NIIF_USER بدون hBalloonIcon یعنی هیچ آیکونی.
+      final String tray = read('packages/umbrella_native/windows/tray_icon.cpp');
+      expect(tray.contains('data_.dwInfoFlags = NIIF_USER'), isFalse);
+      expect(tray.contains('data_.dwInfoFlags = NIIF_INFO'), isTrue);
+      expect(tray.contains('hBalloonIcon'), isTrue);
+      // به روز رسانی اعلان نباید آیکون و تولتیپ را صفر کند.
+      expect(tray.contains('NIF_INFO | NIF_ICON | NIF_TIP'), isTrue);
+      expect(tray.contains('NIF_TIP | NIF_ICON'), isTrue);
+    });
+
+    test('به روز رسانی از صفحه انتشار گیت هاب خوانده می شود، نه سرور پنل', () {
+      final String config = read('lib/core/app_config.dart');
+      expect(config.contains('releaseApiUrl'), isTrue);
+      expect(config.contains('releasesPageUrl'), isTrue);
+      // نشانی فهرست بهروزرسانی دیگر روی سرور پنل نیست.
+      expect(config.contains('api/windows/update.json'), isFalse);
+
+      final String services = read('lib/platform/services.dart');
+      expect(services.contains('_checkGithubRelease'), isTrue);
+      expect(services.contains('SHA256SUMS.txt'), isTrue);
+      // دکمه دانلود باید واقعا مرورگر را باز کند، نه فقط گزارش بنویسد.
+      final String updates = read('lib/state/update_controller.dart');
+      expect(updates.contains('launchUrl'), isTrue);
+    });
+
+    test('چیدمان ویندوز ریسپانسیو است', () {
+      final String nav = read('lib/ui/widgets/shell_widgets.dart');
+      // نوار کناری بر اساس عرض پنجره باریک می شود و در حالت باریک فقط
+      // آیکون با Tooltip نشان می دهد.
+      expect(nav.contains('LayoutBuilder'), isTrue);
+      expect(nav.contains('compact'), isTrue);
+      expect(nav.contains('Tooltip'), isTrue);
+    });
+
+    test('حساب من: اشتراک من و بررسی نشانی حذف شده، سینک تلگرام اضافه شده', () {
+      final String account = read('lib/ui/pages/account_page.dart');
+      expect(account.contains('اشتراک من'), isFalse);
+      expect(account.contains('بررسی نشانی های اشتراک'), isFalse);
+      expect(account.contains('خواندن دوباره از پنل'), isFalse);
+      expect(account.contains('_TelegramSyncButton'), isTrue);
+      // سینک با شناسه حساب به ربات می رود، نه فقط صفحه ربات.
+      expect(account.contains('?start='), isTrue);
+    });
+
+    test('بخش ابزار برنامه: تنظیمات، گزارش ها و دستگاه ریسپانسیو هستند', () {
+      final String common2 = read('lib/ui/widgets/common.dart');
+      expect(common2.contains('class ResponsiveColumns'), isTrue);
+      final String device = read('lib/ui/pages/device_page.dart');
+      expect(device.contains('ResponsiveColumns'), isTrue);
+      final String about = read('lib/ui/pages/about_page.dart');
+      expect(about.contains('LayoutBuilder'), isTrue);
+    });
+
+    test('درباره: بخش های فنی حذف شدند و لوگوی توسعه دهنده هست', () {
+      final String about = read('lib/ui/pages/about_page.dart');
+      expect(about.contains('اجزای فنی'), isFalse);
+      expect(about.contains('سرویس های متصل'), isFalse);
+      // لوگوی توسعه دهنده با همان تصویر برند.
+      expect(about.contains('BrandAssets.logo'), isTrue);
+      // بررسی اتصال جای مشخص خودش را دارد.
+      expect(about.contains('_AccessCheckCard'), isTrue);
+    });
+
     test('آزادسازی پورت هسته چند بار تلاش می کند، نه یک بار', () {
       // در گزارش ۱٫۰۱۴ سه شناسه پشت سر هم بسته شد (۱۱۸۶۰، ۵۲۳۶، ۵۲۴۴) و هر
       // سه بار بعدش `port 17078 is already in use` آمد: شناسه ای که بستیم

@@ -193,117 +193,211 @@ class TitleBar extends StatelessWidget {
     final VpnStatus? current = status;
     final Color tone =
         current == null ? colors.primary : VpnVisuals.color(context, current);
+
+    // چیدمان خواسته شده: وضعیت اتصال **وسط** نوار، و اعلان و تم در **سمت
+    // چپ** آن. دکمه های پنجره در لبه راست می مانند (چیدمان راست چین).
     return Container(
-      height: 52,
+      height: 54,
       decoration: BoxDecoration(
-        color: colors.backgroundAlt.withValues(alpha: 0.6),
+        color: colors.backgroundAlt.withValues(alpha: 0.65),
         border: Border(bottom: BorderSide(color: colors.border)),
       ),
       child: Row(
         children: <Widget>[
-          // دکمه های پنجره در سمت راست، مطابق چیدمان راست چین.
-          _WindowButton(
-            icon: Icons.close_rounded,
-            onTap: onClose,
-            danger: true,
-          ),
+          // ── راست: دکمه های پنجره ───────────────────────────────────
+          _WindowButton(icon: Icons.close_rounded, onTap: onClose, danger: true),
           _WindowButton(icon: Icons.crop_square_rounded, onTap: onMaximize),
           _WindowButton(icon: Icons.remove_rounded, onTap: onMinimize),
-          if (onToggleTheme != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: _WindowButton(
-                icon: darkTheme
-                    ? Icons.light_mode_rounded
-                    : Icons.dark_mode_rounded,
-                onTap: onToggleTheme!,
-              ),
-            ),
-          if (onNotifications != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  _WindowButton(
-                    icon: Icons.notifications_none_rounded,
-                    onTap: onNotifications!,
-                  ),
-                  if (unread > 0)
-                    Positioned(
-                      top: 2,
-                      right: 2,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          Fa.num(unread),
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: colors.onPrimary,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: AppTheme.fontFamily,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          // ناحیه کشیدن پنجره با لوگو و وضعیت در سمت چپ نوار.
+
+          // ── وسط: لوگو، نام، وضعیت ────────────────────────────────
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onPanStart: (_) => onDragStart(),
               onDoubleTap: onMaximize,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    if (current != null) ...<Widget>[
-                      Pill(
-                        label: current.label,
-                        icon: VpnVisuals.icon(current),
-                        color: tone,
-                        dense: true,
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    Text(
-                      Fa.num(AppConfig.appName),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
-                    ),
-                    const SizedBox(width: 10),
                     ClipOval(
                       child: Image.asset(
                         BrandAssets.logo,
-                        width: 26,
-                        height: 26,
+                        width: 24,
+                        height: 24,
                         errorBuilder: (BuildContext context, Object error,
                                 StackTrace? stack) =>
                             Icon(
                           Icons.beach_access_rounded,
-                          size: 22,
+                          size: 20,
                           color: colors.primary,
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        Fa.num(AppConfig.appName),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: colors.textPrimary,
+                            ),
+                      ),
+                    ),
+                    if (current != null) ...<Widget>[
+                      const SizedBox(width: 10),
+                      // نقطه رنگی وضعیت، در پنجره باریک فقط همین می ماند.
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: tone,
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: tone.withValues(alpha: 0.6),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(
+                          Fa.num(current.label),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: tone,
+                                  ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
           ),
+
+          // ── چپ: اعلان و تم ────────────────────────────────────────
+          if (onNotifications != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: _HeaderIconButton(
+                icon: Icons.notifications_none_rounded,
+                filledIcon: Icons.notifications_rounded,
+                badge: unread,
+                tooltip: 'اعلان ها',
+                onTap: onNotifications!,
+              ),
+            ),
+          if (onToggleTheme != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 3, right: 10),
+              child: _HeaderIconButton(
+                icon: darkTheme
+                    ? Icons.light_mode_rounded
+                    : Icons.dark_mode_rounded,
+                tooltip: darkTheme ? 'تم روشن' : 'تم تاریک',
+                onTap: onToggleTheme!,
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// دکمه گرد و مدرن نوار بالا (اعلان و تم) با عدد نشان.
+class _HeaderIconButton extends StatefulWidget {
+  const _HeaderIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.filledIcon,
+    this.badge = 0,
+  });
+
+  final IconData icon;
+  final IconData? filledIcon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final int badge;
+
+  @override
+  State<_HeaderIconButton> createState() => _HeaderIconButtonState();
+}
+
+class _HeaderIconButtonState extends State<_HeaderIconButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final bool hasBadge = widget.badge > 0;
+    return Tooltip(
+      message: Fa.num(widget.tooltip),
+      waitDuration: const Duration(milliseconds: 350),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: _hover ? colors.surfaceHigh : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                    color: _hover ? colors.border : Colors.transparent,
+                  ),
+                ),
+                child: Icon(
+                  hasBadge
+                      ? (widget.filledIcon ?? widget.icon)
+                      : widget.icon,
+                  size: 17,
+                  color: hasBadge ? colors.primary : colors.textSecondary,
+                ),
+              ),
+              if (hasBadge)
+                Positioned(
+                  top: -1,
+                  right: -1,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 14),
+                    decoration: BoxDecoration(
+                      color: colors.danger,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: colors.backgroundAlt, width: 1.5),
+                    ),
+                    child: Text(
+                      Fa.num(widget.badge > 99 ? '99+' : widget.badge),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        height: 1.1,
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: AppTheme.fontFamily,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -378,6 +472,7 @@ class SideNav extends StatelessWidget {
     // می شود؛ در بدنه همان مقدار می آید.
     this.version,
     this.updateAvailable = false,
+    this.exitIndex,
   });
 
   final List<NavDestination> destinations;
@@ -388,107 +483,177 @@ class SideNav extends StatelessWidget {
   final String? version;
   final bool updateAvailable;
 
+  /// اندیس گزینه «خروج» در [destinations]؛ اگر داده نشود، خروج نمایش داده
+  /// نمی شود. جدا از بقیه منوها کشیده می شود تا با آن ها اشتباه نشود.
+  final int? exitIndex;
+
   /// برچسب نسخه؛ اگر داده نشود از تنظیمات برنامه خوانده می شود.
   String get _version => version ?? AppConfig.versionLabel;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    return Container(
-      width: 244,
-      decoration: BoxDecoration(
-        color: colors.backgroundAlt,
-        border: BorderDirectional(
-          start: BorderSide(color: colors.border),
-        ),
-      ),
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: <Widget>[
-                for (int i = 0; i < destinations.length; i++)
-                  _NavItem(
-                    destination: destinations[i],
-                    selected: i == index,
-                    onTap: () => onSelect(i),
-                  ),
-              ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // ریسپانسیو: در پنجره باریک نوار کناری باریک می شود و متن منوها
+        // کوتاه می شود تا محتوا جا شود؛ هیچ گزینه ای حذف نمی شود.
+        final double width = constraints.maxWidth < 820
+            ? 68
+            : (constraints.maxWidth < 1060 ? 186 : 232);
+        final bool compact = width < 150;
+        return Container(
+          width: width,
+          decoration: BoxDecoration(
+            color: colors.backgroundAlt,
+            border: BorderDirectional(
+              start: BorderSide(color: colors.border),
             ),
           ),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                GlassCard(
-                  onTap: onStatusTap,
-                  padding: const EdgeInsets.all(14),
-                  radius: 16,
-                  child: Row(
+          child: Column(
+            children: <Widget>[
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 10 : 14,
+                  ),
+                  child: Column(
                     children: <Widget>[
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: VpnVisuals.color(context, status),
-                          boxShadow: <BoxShadow>[
-                            BoxShadow(
-                              color: VpnVisuals.color(context, status)
-                                  .withValues(alpha: 0.6),
-                              blurRadius: 8,
-                            ),
-                          ],
+                      for (int i = 0; i < destinations.length; i++)
+                        _NavItem(
+                          destination: destinations[i],
+                          selected: i == index,
+                          compact: compact,
+                          onTap: () => onSelect(i),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          Fa.num(status.label),
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                      // «خروج» بخش جداگانه ای در انتهای منو است، نه ته
+                      // تنظیمات. یک خط جداکننده هم مرزش را نشان می دهد.
+                      if (exitIndex != null) ...<Widget>[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 8,
+                          ),
+                          child: Divider(height: 1, color: colors.border),
                         ),
-                      ),
-                      Icon(
-                        Icons.chevron_left_rounded,
-                        size: 16,
-                        color: colors.textSecondary,
-                      ),
+                        _NavItem(
+                          destination: const NavDestination(
+                            label: 'خروج',
+                            icon: Icons.logout_rounded,
+                            activeIcon: Icons.logout_rounded,
+                          ),
+                          selected: index == exitIndex,
+                          compact: compact,
+                          tone: colors.danger,
+                          onTap: () => onSelect(exitIndex!),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                // پایین منوی کناری فقط شماره نسخه می آید؛ نام سازنده اینجا
-                // نمایش داده نمی شود.
-                Row(
+              ),
+              Padding(
+                padding: EdgeInsets.all(compact ? 10 : 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Text(
-                      Fa.num(_version),
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: colors.textSecondary,
+                    if (!compact)
+                      GlassCard(
+                        onTap: onStatusTap,
+                        padding: const EdgeInsets.all(12),
+                        radius: 14,
+                        child: Row(
+                          children: <Widget>[
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: VpnVisuals.color(context, status),
+                                boxShadow: <BoxShadow>[
+                                  BoxShadow(
+                                    color: VpnVisuals.color(context, status)
+                                        .withValues(alpha: 0.6),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                Fa.num(status.label),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Center(
+                        child: Tooltip(
+                          message: Fa.num(status.label),
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: VpnVisuals.color(context, status),
+                            ),
                           ),
-                    ),
-                    const Spacer(),
-                    if (updateAvailable)
-                      Pill(
-                        label: 'به روز رسانی',
-                        icon: Icons.system_update_rounded,
-                        color: colors.warning,
-                        dense: true,
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    // پایین منوی کناری فقط شماره نسخه می آید، به شکل ساده
+                    // `1.0.17` — بدون کلمه «نسخه» و بدون نام سازنده.
+                    if (compact)
+                      Center(
+                        child: Tooltip(
+                          message: Fa.num(AppConfig.versionLabel),
+                          child: Text(
+                            Fa.num(AppConfig.versionLabel),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: colors.textSecondary,
+                                  fontSize: 9,
+                                ),
+                          ),
+                        ),
+                      )
+                    else
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            Fa.num(AppConfig.versionLabel),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.textSecondary),
+                          ),
+                          const Spacer(),
+                          if (updateAvailable)
+                            Pill(
+                              label: 'به روز رسانی',
+                              icon: Icons.system_update_rounded,
+                              color: colors.warning,
+                              dense: true,
+                            ),
+                        ],
                       ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -498,11 +663,19 @@ class _NavItem extends StatefulWidget {
     required this.destination,
     required this.selected,
     required this.onTap,
+    this.compact = false,
+    this.tone,
   });
 
   final NavDestination destination;
   final bool selected;
   final VoidCallback onTap;
+
+  /// در پنجره باریک فقط آیکون نشان داده می شود و متن در Tooltip می آید.
+  final bool compact;
+
+  /// رنگ دلخواه؛ «خروج» قرمز است تا از گزینه های معمولی جدا باشد.
+  final Color? tone;
 
   @override
   State<_NavItem> createState() => _NavItemState();
@@ -515,7 +688,7 @@ class _NavItemState extends State<_NavItem> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final bool highlight = widget.selected || _hover;
-    return MouseRegion(
+    final Widget tile = MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       cursor: SystemMouseCursors.click,
@@ -524,7 +697,10 @@ class _NavItemState extends State<_NavItem> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.compact ? 6 : 12,
+            vertical: 11,
+          ),
           decoration: BoxDecoration(
             gradient: widget.selected
                 ? LinearGradient(
@@ -551,35 +727,54 @@ class _NavItemState extends State<_NavItem> {
                 width: 3,
                 height: 18,
                 decoration: BoxDecoration(
-                  color: widget.selected ? colors.primary : Colors.transparent,
+                  color: widget.selected
+                      ? (widget.tone ?? colors.primary)
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: widget.compact ? 6 : 10),
               Icon(
                 widget.selected
                     ? widget.destination.activeIcon
                     : widget.destination.icon,
                 size: 19,
                 color: widget.selected
-                    ? colors.primary
+                    ? (widget.tone ?? colors.primary)
                     : (highlight ? colors.textPrimary : colors.textSecondary),
               ),
-              const SizedBox(width: 10),
-              Text(
-                Fa.num(widget.destination.label),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: widget.selected
-                          ? colors.textPrimary
-                          : (highlight ? colors.textPrimary : colors.textSecondary),
-                      fontWeight:
-                          widget.selected ? FontWeight.w800 : FontWeight.w600,
-                    ),
-              ),
+              if (!widget.compact) ...<Widget>[
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    Fa.num(widget.destination.label),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: widget.selected
+                              ? colors.textPrimary
+                              : (highlight
+                                  ? colors.textPrimary
+                                  : colors.textSecondary),
+                          fontWeight: widget.selected
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
+    );
+    if (!widget.compact) {
+      return tile;
+    }
+    return Tooltip(
+      message: Fa.num(widget.destination.label),
+      waitDuration: const Duration(milliseconds: 400),
+      child: tile,
     );
   }
 }

@@ -89,12 +89,11 @@ class _DevicePageState extends State<DevicePage> {
           ),
           const SizedBox(height: 16),
           if (_loading) const LinearProgressIndicator(minHeight: 3),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                flex: 3,
-                child: Column(
+          // دو ستون در پنجره باریک زیر هم می روند (ریسپانسیو).
+          ResponsiveColumns(
+            leftFlex: 3,
+            rightFlex: 2,
+            left: Column(
                   children: <Widget>[
                     GlassCard(
                       padding: const EdgeInsets.all(20),
@@ -155,11 +154,7 @@ class _DevicePageState extends State<DevicePage> {
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                flex: 2,
-                child: Column(
+            right: Column(
                   children: <Widget>[
                     GlassCard(
                       padding: const EdgeInsets.all(20),
@@ -232,8 +227,6 @@ class _DevicePageState extends State<DevicePage> {
                     ),
                   ],
                 ),
-              ),
-            ],
           ),
         ],
       ),

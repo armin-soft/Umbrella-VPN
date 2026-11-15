@@ -18,6 +18,7 @@ import '../pages/connect_page.dart';
 import '../pages/connection_page.dart';
 import '../pages/logs_page.dart';
 import '../pages/device_page.dart';
+import '../pages/exit_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
 import '../widgets/common.dart';
@@ -78,7 +79,17 @@ class _AppShellState extends State<AppShell> {
       icon: Icons.info_outline_rounded,
       activeIcon: Icons.info_rounded,
     ),
+    // «خروج» در همین فهرست است تا اندیس صفحه اش با بقیه یکی بماند، ولی
+    // نوار کناری آن را با خط جداکننده و رنگ قرمز، جدا از منوها می کشد.
+    NavDestination(
+      label: 'خروج',
+      icon: Icons.logout_rounded,
+      activeIcon: Icons.logout_rounded,
+    ),
   ];
+
+  /// اندیس صفحه «خروج» در فهرست بالا.
+  static const int _exitIndex = 8;
 
   @override
   void initState() {
@@ -151,6 +162,10 @@ class _AppShellState extends State<AppShell> {
       const UpdatesPage(),
       const LogsPage(),
       const AboutPage(),
+      ExitPage(
+        onExit: () => widget.windowService.quit(),
+        onCloseWindow: () => widget.windowService.onWindowClose(),
+      ),
     ];
 
     return Scaffold(
@@ -180,6 +195,7 @@ class _AppShellState extends State<AppShell> {
                   status: vpn.status,
                   onStatusTap: () => setState(() => _index = 0),
                   updateAvailable: updates.available != null,
+                  exitIndex: _exitIndex,
                 ),
                 Expanded(
                   child: IndexedStack(
@@ -205,7 +221,14 @@ class _NotificationsDialog extends StatefulWidget {
   State<_NotificationsDialog> createState() => _NotificationsDialogState();
 }
 
+/// مرکز اعلان ها: فهرست زمان بندی شده، فیلتر «خوانده نشده»، و شمارش.
+///
+/// نسخه پیشین یک لیست ساده بود. اینجا هر اعلان سرصفحه رنگی بر اساس سطح،
+/// زمان نسبی و نقطه «خوانده نشده» دارد، و بالای صفحه شمارنده و دکمه
+/// «همه خوانده شد» هست.
 class _NotificationsDialogState extends State<_NotificationsDialog> {
+  bool _unreadOnly = false;
+
   @override
   void initState() {
     super.initState();
@@ -214,101 +237,308 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
     });
   }
 
+  static Color _tone(UmbrellaColors colors, String level) {
+    switch (level.toLowerCase()) {
+      case 'error':
+      case 'danger':
+        return colors.danger;
+      case 'warning':
+        return colors.warning;
+      case 'success':
+        return colors.success;
+      default:
+        return colors.info;
+    }
+  }
+
+  static IconData _icon(String level) {
+    switch (level.toLowerCase()) {
+      case 'error':
+      case 'danger':
+        return Icons.error_rounded;
+      case 'warning':
+        return Icons.warning_amber_rounded;
+      case 'success':
+        return Icons.check_circle_rounded;
+      default:
+        return Icons.campaign_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Dialog(
+      insetPadding: const EdgeInsets.all(28),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
         child: Padding(
-          padding: const EdgeInsets.all(22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          child: ListenableBuilder(
+            listenable: widget.auth,
+            builder: (BuildContext context, Widget? child) {
+              final List<AppNotification> all = widget.auth.notifications;
+              final int unread = widget.auth.unreadCount;
+              final List<AppNotification> items = _unreadOnly
+                  ? all.where((AppNotification n) => !n.read).toList()
+                  : all;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  IconSquare(
-                    icon: Icons.notifications_active_rounded,
-                    color: colors.primary,
-                    size: 36,
+                  // ── سرصفحه ──────────────────────────────────────────
+                  Row(
+                    children: <Widget>[
+                      IconSquare(
+                        icon: Icons.notifications_active_rounded,
+                        color: colors.primary,
+                        size: 38,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              Fa.num('اعلان ها'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            ),
+                            Text(
+                              Fa.num(
+                                unread > 0
+                                    ? '${Fa.num(unread)} اعلان خوانده نشده از '
+                                        '${Fa.num(all.length)}'
+                                    : 'همه ${Fa.num(all.length)} اعلان خوانده '
+                                        'شده است',
+                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: colors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconAction(
+                        icon: Icons.close_rounded,
+                        size: 32,
+                        onTap: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(height: 12),
+
+                  // ── فیلترها ─────────────────────────────────────────
+                  Row(
+                    children: <Widget>[
+                      _FilterChip(
+                        label: 'همه',
+                        count: all.length,
+                        selected: !_unreadOnly,
+                        onTap: () => setState(() => _unreadOnly = false),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'خوانده نشده',
+                        count: unread,
+                        selected: _unreadOnly,
+                        onTap: () => setState(() => _unreadOnly = true),
+                      ),
+                      const Spacer(),
+                      if (unread > 0)
+                        TextButton.icon(
+                          onPressed: widget.auth.markNotificationsRead,
+                          icon: const Icon(Icons.done_all_rounded, size: 16),
+                          label: Text(Fa.num('همه خوانده شد')),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ── فهرست ───────────────────────────────────────────
                   Expanded(
-                    child: Text(
-                      Fa.num('اعلان ها'),
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
+                    child: items.isEmpty
+                        ? EmptyState(
+                            icon: _unreadOnly
+                                ? Icons.mark_email_read_rounded
+                                : Icons.notifications_off_rounded,
+                            title: _unreadOnly
+                                ? 'اعلان خوانده نشده ای نیست'
+                                : 'اعلانی وجود ندارد',
+                            message: _unreadOnly
+                                ? 'همه اعلان ها خوانده شده اند.'
+                                : 'اعلان های حساب، اشتراک و اتصال اینجا نمایش '
+                                    'داده می شوند.',
+                          )
+                        : ListView.separated(
+                            itemCount: items.length,
+                            separatorBuilder:
+                                (BuildContext context, int index) =>
+                                    const SizedBox(height: 8),
+                            itemBuilder: (BuildContext context, int index) {
+                              final AppNotification item = items[index];
+                              final Color tone = _tone(colors, item.level);
+                              return GlassCard(
+                                padding: const EdgeInsets.all(13),
+                                radius: 14,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    IconSquare(
+                                      icon: _icon(item.level),
+                                      color: tone,
+                                      size: 32,
+                                    ),
+                                    const SizedBox(width: 11),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: <Widget>[
+                                          Row(
+                                            children: <Widget>[
+                                              if (!item.read) ...<Widget>[
+                                                Container(
+                                                  width: 6,
+                                                  height: 6,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: colors.primary,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                              ],
+                                              Expanded(
+                                                child: Text(
+                                                  Fa.num(item.title),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .titleSmall
+                                                      ?.copyWith(
+                                                        fontWeight: !item.read
+                                                            ? FontWeight.w900
+                                                            : FontWeight.w700,
+                                                      ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                Fa.num(
+                                                  Fa.relative(item.sentAt),
+                                                ),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color:
+                                                          colors.textSecondary,
+                                                      fontSize: 10,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (item.body.isNotEmpty) ...<Widget>[
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              Fa.num(item.body),
+                                              maxLines: 3,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colors.textSecondary,
+                                                    height: 1.5,
+                                                  ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
-                    ),
                   ),
-                  IconAction(
-                    icon: Icons.close_rounded,
-                    size: 32,
-                    onTap: () => Navigator.of(context).pop(),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.check_rounded, size: 17),
+                    label: Text(Fa.num('بستن')),
                   ),
                 ],
-              ),
-              const SizedBox(height: 14),
-              Expanded(
-                child: ListenableBuilder(
-                  listenable: widget.auth,
-                  builder: (BuildContext context, Widget? child) {
-                    final int count = widget.auth.notifications.length;
-                    if (count == 0) {
-                      return const EmptyState(
-                        icon: Icons.notifications_off_rounded,
-                        title: 'اعلانی وجود ندارد',
-                        message: 'اعلان های حساب و اتصال اینجا نمایش داده می شوند.',
-                      );
-                    }
-                    return ListView.separated(
-                      itemCount: count,
-                      separatorBuilder: (BuildContext context, int index) =>
-                          const SizedBox(height: 8),
-                      itemBuilder: (BuildContext context, int index) {
-                        final AppNotification item = widget.auth.notifications[index];
-                        return GlassCard(
-                          padding: const EdgeInsets.all(14),
-                          radius: 14,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                Fa.num(item.title),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w800),
-                              ),
-                              if (item.body.isNotEmpty) ...<Widget>[
-                                const SizedBox(height: 4),
-                                Text(
-                                  Fa.num(item.body),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(color: colors.textSecondary),
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () {
-                  widget.auth.markNotificationsRead();
-                  Navigator.of(context).pop();
-                },
-                icon: const Icon(Icons.done_all_rounded, size: 17),
-                label: const Text('خوانده شد'),
-              ),
-            ],
+              );
+            },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// چیپ فیلتر اعلان ها با شمارنده.
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return InkWell(
+      borderRadius: BorderRadius.circular(11),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? colors.primary.withValues(alpha: 0.16)
+              : colors.surfaceHigh,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(
+            color: selected
+                ? colors.primary.withValues(alpha: 0.5)
+                : colors.border,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              Fa.num(label),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+                    color: selected ? colors.primary : colors.textSecondary,
+                  ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              Fa.num(count),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: selected ? colors.primary : colors.textSecondary,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ],
         ),
       ),
     );
