@@ -185,7 +185,7 @@ void main() {
       // سه بار بعدش `port 17078 is already in use` آمد: شناسه ای که بستیم
       // صاحب واقعی پورت نبود، یا بلافاصله پردازش تازه ای همان پورت را گرفت.
       final String controller = read('lib/vpn/vpn_controller.dart');
-      expect(controller.contains('تلاش ${Fa.num(round + 2)} از ۳'), isTrue);
+      expect(controller.contains('دوباره بررسی و آزادسازی می شود'), isTrue);
     });
 
     test('پورت های ثابت هسته پیش از اجرا آزاد می شوند', () {
