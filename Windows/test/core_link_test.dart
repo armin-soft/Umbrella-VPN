@@ -89,6 +89,25 @@ void main() {
       expect(VpnController.linkFor(nodeOf(<String, dynamic>{}, raw: raw)), raw);
     });
 
+    test('انتقال قدیمی h2 در لینک خام به http تبدیل می شود', () {
+      const String raw =
+          'trojan://password@host:443?sni=example.com&type=h2#legacy';
+      final String normalized =
+          VpnController.linkFor(nodeOf(<String, dynamic>{}, raw: raw));
+      expect(normalized, contains('type=http'));
+      expect(normalized, isNot(contains('type=h2')));
+      expect(normalized, contains('sni=example.com'));
+      expect(normalized, endsWith('#legacy'));
+    });
+
+    test('انتقال h2 از اطلاعات خام سرور با نام پشتیبانی شده ساخته می شود', () {
+      final String link = VpnController.linkFor(
+        nodeOf(<String, dynamic>{'network': 'h2', 'id': 'u'}),
+      );
+      expect(link, contains('type=http'));
+      expect(link, isNot(contains('type=h2')));
+    });
+
     test('نوع انتقال ناشناخته به tcp برمی گردد، نه نام پروتکل', () {
       final String link = VpnController.linkFor(
         nodeOf(<String, dynamic>{'network': 'vless', 'id': 'u'}),
@@ -188,6 +207,8 @@ void main() {
         VpnController.transportSupported(withNetwork('httpupgrade')),
         isTrue,
       );
+      // h2 در لینک های قدیمی می آید و پیش از ارسال به هسته به http تبدیل می شود.
+      expect(VpnController.transportSupported(withNetwork('h2')), isTrue);
       // خالی یعنی پیش فرض (tcp) و مشکلی نیست.
       expect(VpnController.transportSupported(withNetwork('')), isTrue);
     });

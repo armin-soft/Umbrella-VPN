@@ -1682,9 +1682,21 @@ class VpnController extends ChangeNotifier {
   static String linkFor(VpnNode node) {
     final String raw = node.raw.trim();
     if (raw.contains('://')) {
-      return raw;
+      return _normalizeLegacyTransportLink(raw);
     }
     return _linkFromNode(node);
+  }
+
+  /// `h2` در فرمت های قدیمی لینک، معادل انتقال HTTP/2 است؛ ولی نسخه هسته
+  /// همراه آمبرلا نوع انتقالی به نام `h2` نمی شناسد و با
+  /// `unknown transport type: h2` خارج می شود. در فرمت لینک sing-box این
+  /// انتقال با نام `http` شناخته می شود. فقط پارامتر نوع انتقال نرمال می شود؛
+  /// سایر پارامترهای لینک خام دست نخورده می مانند.
+  static String _normalizeLegacyTransportLink(String link) {
+    return link.replaceAllMapped(
+      RegExp(r'([?&]type=)h2(?=(&|#|$))', caseSensitive: false),
+      (Match match) => '${match.group(1)}http',
+    );
   }
 
   /// لینک سرور برای دادن به هسته.
@@ -1907,7 +1919,8 @@ class VpnController extends ChangeNotifier {
     final String raw =
         JsonX.text(params['network']).trim().toLowerCase();
     if (raw.isNotEmpty && _transportKnown(params)) {
-      return raw;
+      // `h2` نام قدیمی همان انتقالی است که هسته با نام `http` می شناسد.
+      return raw == 'h2' ? 'http' : raw;
     }
     // بعضی منابع `network` را با نام دیگر می دهند.
     if (JsonX.boolean(params['grpc'])) {

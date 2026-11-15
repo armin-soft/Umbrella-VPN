@@ -67,6 +67,7 @@ $this->test_problems_reports_duplicate_button();
 $this->test_problems_reports_blank_row();
 $this->test_shared_keyboards_are_healthy();
 $this->test_server_notifications_live_in_messaging_menu();
+$this->test_certificate_bundle_is_preserved();
 $this->test_navigation_only_keyboard_is_detected();
 
 foreach ($this->Failures as $Failure) {
@@ -232,6 +233,15 @@ $this->check(str_contains($Notify_Menu, "Menu::back('منوی پیامک', 'من
 }
 
 $this->check(str_contains($Source, "['📣اطلاع رسانی سرور', 'اطلاع رسانی سرور']"), 'messaging menu links to server notifications');
+}
+
+/** گواهی محلی ربات باید همراه ساختار منو و بسته ربات حفظ شود. */
+private function test_certificate_bundle_is_preserved(): void {
+$Root = dirname(__DIR__);
+$Certificate = $Root . '/Cert/Cacert.Pem';
+$Http_Source = (string)file_get_contents($Root . '/Core/Support/Http.php');
+$this->check(is_file($Certificate) && filesize($Certificate) > 0, 'Telegram-BOT/Cert/Cacert.Pem exists and is non-empty');
+$this->check(str_contains($Http_Source, "'/Cert/Cacert.Pem'"), 'HTTP client still falls back to the bundled certificate');
 }
 
 /**
