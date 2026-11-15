@@ -779,9 +779,31 @@ class VpnController extends ChangeNotifier {
   /// اتصال با تلاش روی چند سرور: اگر یک سرور بالا نیامد، سرور بعدی امتحان
   /// می شود تا کاربر مجبور نشود دستی سرور عوض کند.
   Future<ConnectOutcome> connect({VpnNode? requested}) async {
+    // فقط یک اتصال همزمان.
+    //
+    // در گزارش ۱٫۰۱۲ دو «درخواست اتصال» با سه ثانیه فاصله آمد و هر دو
+    // اجرا شدند. هر کدام هسته خودش را بالا می آورد، هر دو پورت ثابت ۱۷۰۷۸ را
+    // می خواستند، و نتیجه اش همان «port 17078 is already in use» پشت سر هم و
+    // کشته شدن هسته ای بود که تازه کار کرده بود. `_status.active` اینجا کافی
+    // نیست چون وضعیت تا وقتی به `preparing` نرسیده هنوز `disconnected` است.
+    if (_connectInFlight) {
+      return const ConnectOutcome(
+        ok: false,
+        message: 'یک اتصال در حال انجام است؛ چند لحظه صبر کنید.',
+      );
+    }
     if (_status.active) {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
     }
+    _connectInFlight = true;
+    try {
+      return await _connectInner(requested: requested);
+    } finally {
+      _connectInFlight = false;
+    }
+  }
+
+  Future<ConnectOutcome> _connectInner({VpnNode? requested}) async {
     _cancelRequested = false;
     // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
     // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
@@ -2292,6 +2314,12 @@ class VpnController extends ChangeNotifier {
   /// کد خروجی که همین حالا در `_launch` گزارش شد، تا گزارش دوباره تکرار نشود.
   int? _reportedExitFor;
 
+  /// آیا همین حالا یک اتصال در جریان است؟
+  ///
+  /// تا ۱٫۰۱۲ دو درخواست همزمان هر دو اجرا می شدند و بر سر پورت ثابت هسته
+  /// با هم می جنگیدند.
+  bool _connectInFlight = false;
+
   /// هنگام خاموش کردن عمدی هسته روشن می شود.
   ///
   /// تا ۱٫۰٫۱۰، وقتی خود برنامه هسته را می کشت، خروج با کد ۰ به گزارش
@@ -2402,13 +2430,13 @@ class VpnController extends ChangeNotifier {
       details.add(
         LogDetail(
           title: 'پورت های هسته در همین لحظه',
-          text: held
-              .map(
-                (int port) =>
-                    '${Fa.num(port)}: گرفته شده'
-                    '${holders.isEmpty ? '' : ' (${_holderText(holders)})'}',
-              )
-              .join('\n'),
+          text: <String>[
+            for (final int port in held)
+              '${Fa.num(port)}: '
+                  '${holders.any((PortHolder holder) => holder.ports.contains(port)) ? 'گرفته شده' : 'آزاد'}',
+            if (holders.isNotEmpty) '─ صاحب پورت ─',
+            if (holders.isNotEmpty) _holderText(holders),
+          ].join('\n'),
         ),
       );
     }
@@ -2426,6 +2454,44 @@ class VpnController extends ChangeNotifier {
       }
     }
     return details;
+  }
+
+  /// آیا همین حالا ترافیک از تونل رد می شود؟
+  ///
+  /// سه مدرک، هر کدام کافی است:
+  ///  • پاسخ سنجش وب (از پروکسی محلی یا مسیر کارت شبکه تونل)
+  ///  • رشد شمارنده بایت روی کارت شبکه تونل در یک ثانیه
+  ///  • گزارش خود هسته (شروع موفق و اتصال بیرونی از مسیر گره، بدون خطای کشنده)
+  ///
+  /// سنجش وب تنها معیار بودن، در ۱٫۰۱۱ و ۱٫۰۱۲ اتصال سالم را کشت؛ بعضی
+  /// شبکه ها (و بعضی گره ها) به این سه نشانی سنجش اجازه نمی دهند.
+  Future<bool> _tunnelFlowsNow() async {
+    final bool probe = await TunnelProbe.check(
+      proxyPort: _proxyPort,
+      attempts: 1,
+      timeout: const Duration(seconds: 6),
+    );
+    if (probe) {
+      return true;
+    }
+    // مدرک دوم: بایت روی کارت شبکه تونل.
+    final TunnelStats before = await _native.tunnelStats(
+      hint: AppConfig.tunAdapterHint,
+    );
+    await Future<void>.delayed(const Duration(seconds: 1));
+    final TunnelStats after = await _native.tunnelStats(
+      hint: AppConfig.tunAdapterHint,
+    );
+    if (before.available && after.available) {
+      if (after.rx > before.rx || after.tx > before.tx) {
+        return true;
+      }
+    }
+    // مدرک سوم: گزارش خود هسته.
+    final String log = '${_provisioner.dataDir}'
+        '${Platform.pathSeparator}run${Platform.pathSeparator}'
+        'umbrella-tun-core.log';
+    return _coreReportsWorkingTunnel(log);
   }
 
   /// آیا خود هسته گفته است که تونل بالا آمد و کار کرد؟
@@ -2686,10 +2752,26 @@ class VpnController extends ChangeNotifier {
       );
       _geo = geo;
       _exitIp = geo.ip;
+      // اگر آی پی خوانده نشد، این هیچ چیزی را درباره تونل ثابت نمی کند.
+      //
+      // در گزارش ۱٫۰۱۲ همین حالت تونل سالم را کشت: اتصال برقرار شد، ولی
+      // سرویس های خواندن آی پی (ipinfo/ip-api/…) از مسیر تونل جواب ندادند،
+      // `geo.ip` خالی ماند و کد آن را «آی پی خروجی با آی پی قبلی یکسان است»
+      // خواند و `_reconnect()` را صدا زد. یعنی خودمان تونل درست را کشتیم.
+      // خوانده نشدن آی پی یک ناشناخته است، نه یک شکست.
+      if (geo.ip.isEmpty) {
+        _log.add(
+          'آی پی خروجی خوانده نشد؛ نمی شود با اطمینان گفت تونل برقرار است یا نه، '
+          'ولی اتصال قطع نمی شود.',
+          level: 'warning',
+        );
+        _notify();
+        return;
+      }
       // اگر آی پی بدون تونل خوانده نشده باشد، مقایسه بی معنی است و نباید
       // اتصال سالم را «ناموفق» اعلام کند (خطای ۰ سرور در شمارش پینگ).
       final bool ipKnown = _realIp.isNotEmpty;
-      _tunnelVerified = geo.ip.isNotEmpty && (!ipKnown || geo.ip != _realIp);
+      _tunnelVerified = !ipKnown || geo.ip != _realIp;
       if (!_tunnelVerified) {
         _log.add(
           'آی پی خروجی با آی پی قبلی یکسان است؛ ممکن است تونل کامل برقرار نشده باشد.',
@@ -2922,11 +3004,12 @@ class VpnController extends ChangeNotifier {
       _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی...', level: 'warning');
     } else {
       // زنده بودن فرایند کافی نیست؛ خود تونل هم باید جواب بدهد.
-      final bool flows = await TunnelProbe.check(
-        proxyPort: _proxyPort,
-        attempts: 1,
-        timeout: const Duration(seconds: 6),
-      );
+      //
+      // ولی سنجش وب تنها معیار نمی شود: در گزارش ۱٫۰۱۲ همین سنجش جواب
+      // نمی داد در حالی که ترافیک واقعی از تونل رد می شد، و هر ۱۰ ثانیه
+      // «ترافیک از تونل رد نمی شود» می نوشت تا در سومین بار اتصال سالم را
+      // عوض کند. پس رشد بایت کارت شبکه و گزارش خود هسته هم بررسی می شوند.
+      final bool flows = await _tunnelFlowsNow();
       if (flows) {
         if (_healthFailures > 0) {
           _log.add('تونل دوباره سالم شد.');

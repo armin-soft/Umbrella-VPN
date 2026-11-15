@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 /// ساختن لینک از فیلدهای گره.
@@ -248,6 +249,21 @@ proxies:
       expect(link, contains('alpn=http%2F1.1'));
       expect(link, contains('security=reality'));
       expect(link, contains('type=tcp'));
+    });
+  });
+
+  group('تنظیمات هسته', () {
+    test('موتور TLS ویندوز خاموش است تا ریلیتی دست بدهد', () {
+      // در ۱٫۰٫۱۲ این کلید روشن بود. هسته برای گره بدون اثر انگشت، TLS
+      // ویندوز را انتخاب می کند، ولی ریلیتی از انتخاب موتور کنار گذاشته
+      // می شود و به دست دادن پیش فرض Go می رسد؛ سرور ریلیتی آن را رد می کند
+      // و هیچ اتصالی برقرار نمی شود.
+      final Map<String, dynamic> settings = UmbrellaCore.settingsJson(
+        tun: true,
+        systemProxy: false,
+        port: 12334,
+      );
+      expect(settings['use-system-tls-engine'], isFalse);
     });
   });
 }

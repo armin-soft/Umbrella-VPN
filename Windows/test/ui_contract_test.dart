@@ -121,6 +121,30 @@ void main() {
       expect(controller.contains('const Duration(seconds: 5)'), isTrue);
     });
 
+    test('هنگام سبز شدن، تونل سالم با یک سنجش تنها کشته نمی شود', () {
+      // در ۱٫۰۱۲ سنجش وب تنها معیار بود و اتصال سالم را کشت، هم در
+      // _verifyTunnel (خواندن آی پی خالی) و هم در _tickHealth.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      // خواندن آی پی که خالی برگردد دیگر باعث اتصال دوباره نمی شود.
+      expect(controller.contains('اگر آی پی خوانده نشد، این هیچ چیزی را'), isTrue);
+      // بررسی سلامت هم سه مدرک را می بیند، نه فقط سنجش وب.
+      expect(controller.contains('_tunnelFlowsNow'), isTrue);
+    });
+
+    test('دو اتصال همزمان روی پورت ثابت هسته با هم نمی جنگند', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_connectInFlight'), isTrue);
+      expect(controller.contains('یک اتصال در حال انجام است'), isTrue);
+    });
+
+    test('ریلیتی با موتور TLS ویندوز کشته نمی شود', () {
+      // هسته برای گره بدون اثر انگشت، TLS ویندوز را انتخاب می کند و ریلیتی
+      // را از انتخاب موتور کنار می گذارد؛ حاصل دست دادن پیش فرض Go و رد
+      // شدن از طرف سرور است.
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains("'use-system-tls-engine': false"), isTrue);
+    });
+
     test('پورت های ثابت هسته پیش از اجرا آزاد می شوند', () {
       // دستور `run` هسته پورت ۱۷۰۷۸ و ۱۶۷۵۶ را همیشه می گیرد و پرچمی برای
       // عوض کردنشان ندارد؛ در ۱٫۰٫۵ فرستادن `--listen` هسته را با «unknown
