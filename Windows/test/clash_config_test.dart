@@ -155,6 +155,7 @@ rules:
         'connection-test-url',
         'url-test-interval',
         'keep-top',
+        'default-proxy',
         'enable-ntp',
         'use-system-tls-engine',
         'mux',

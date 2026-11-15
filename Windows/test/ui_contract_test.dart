@@ -180,6 +180,38 @@ void main() {
       );
     });
 
+    test('همه سرورهای سازگار به هسته داده می شوند، نه فقط یکی', () {
+      // شکایت کاربر ۱٫۰٫۱۵: «کلی سرور هست ولی فقط یکی وصل می شود». علتش
+      // این بود که فایل لینک هسته فقط یک خط داشت، پس خود هسته هم فقط
+      // می توانست همان یک گره را بشناسد.
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_linkPool'), isTrue);
+      expect(controller.contains('_maxPoolLinks'), isTrue);
+      // گره انتخاب شده اول فهرست است تا اولویت کاربر حفظ شود.
+      expect(controller.contains('add(chosen);'), isTrue);
+    });
+
+    test('هسته چند گره زنده نگه می دارد تا بتواند سوییچ کند', () {
+      // با `keep-top: 3` اگر دو گره اول کند بودند جایگزینی نمی ماند. ۸
+      // گره یعنی همیشه جای سوییچ هست.
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains("'keep-top': 8"), isTrue);
+      // `lowest` یعنی گروه انتخاب روی بالانسر کم ترین تاخیر می رود، پس
+      // خود هسته سریع ترین را برمی دارد و هنگام افتادن سوییچ می کند.
+      expect(core.contains("'default-proxy': 'lowest'"), isTrue);
+    });
+
+    test('پورت هسته فقط از هسته ای غیر از خودمان پس گرفته می شود', () {
+      // در گزارش ۱٫۰۱۵ هسته ای که خودمان اجرا کردیم (شناسه ۱۱۳۵۲) فورا
+      // بسته شد ولی صاحب پورت فرزندش بود (شناسه ۱۳۶۰۰). چون آن را
+      // «بیگانه» دیدیم، سه دور صرف بستن فرزند شد و هر بار هسته تازه دوباره
+      // همان پورت را گرفت.
+      final String core = read('lib/vpn/umbrella_core.dart');
+      expect(core.contains('holdsPortAgainstUs'), isTrue);
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('holder.holdsPortAgainstUs'), isTrue);
+    });
+
     test('آزادسازی پورت هسته چند بار تلاش می کند، نه یک بار', () {
       // در گزارش ۱٫۰۱۴ سه شناسه پشت سر هم بسته شد (۱۱۸۶۰، ۵۲۳۶، ۵۲۴۴) و هر
       // سه بار بعدش `port 17078 is already in use` آمد: شناسه ای که بستیم

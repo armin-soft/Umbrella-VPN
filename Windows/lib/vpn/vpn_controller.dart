@@ -1528,7 +1528,24 @@ class VpnController extends ChangeNotifier {
     final File links = File(
       '${runDir.path}${Platform.pathSeparator}umbrella-core-link.txt',
     );
-    await links.writeAsString('$link\n', flush: true);
+    // همه سرورهای سازگار نوشته می شوند، نه فقط همین یکی.
+    //
+    // **شکایت درست کاربر:** تا ۱٫۰٫۱۵ فایل لینک فقط یک خط داشت، پس هسته
+    // گروه انتخاب و بالانسر خودش را روی «یک» گره می ساخت و هیچ وقت نمی
+    // توانست سوییچ کند. کاربر ۴۶۰ سرور در فهرست داشت و دائم به همان یک
+    // سرور وصل می شد.
+    //
+    // خود هسته کاری که باید بکند را بلد است: از چند گره، گروه `select` و
+    // بالانسر `lowest-delay` می سازد، همه را می سنجد و سریع ترین را نگه
+    // می دارد (`keep-top`). برای همین کافی است همه لینک ها را بدهیم.
+    final List<String> pool = _linkPool(node);
+    await links.writeAsString('${pool.join('\n')}\n', flush: true);
+    if (pool.length > 1) {
+      _log.add(
+        'فایل لینک هسته ${Fa.num(pool.length)} سرور دارد؛ خود هسته سریع ترین '
+        'را انتخاب می کند و اگر افت کرد به بعدی سوییچ می کند.',
+      );
+    }
 
     // همان حالتی که کاربر خواسته: تونل کامل اگر روشن باشد و دسترسی مدیر هم
     // داشته باشیم، وگرنه پروکسی سیستمی.
@@ -1620,6 +1637,60 @@ class VpnController extends ChangeNotifier {
   /// لینک اصلی همان چیزی است که در اشتراک بود؛ اگر نبود، از فیلدهای سرور
   /// ساخته می شود. هسته خودش جزئیات پروتکل را می فهمد.
   String _umbrellaLink(VpnNode node) => linkFor(node);
+
+  /// چند لینک برای دادن به هسته، به ترتیب اولویت.
+  ///
+  /// سرور انتخاب شده همیشه اول است، پس اگر خود هسته هم چیزی انتخاب نکند،
+  /// همان گره ای می شود که کاربر خواسته. بعد از آن، همه سرورهای دیگری که
+  /// با این هسته کار می کنند می آیند تا خود هسته بتواند بینشان سنجش کند،
+  /// سریع ترین را نگه دارد و هنگام افتادن یکی، به بعدی سوییچ کند — همان
+  /// کاری که کاربر از یک فیلترشکن انتظار دارد.
+  ///
+  /// محدودیت تعداد دارد تا پیکربندی هسته با ۴۶۰ گره سنگین و کند نشود؛
+  /// `keep-top` هم فقط همین چند تا را اجرا می کند.
+  static const int _maxPoolLinks = 30;
+
+  List<String> _linkPool(VpnNode chosen) {
+    final List<String> pool = <String>[];
+    final Set<String> seen = <String>{};
+
+    void add(VpnNode n) {
+      if (pool.length >= _maxPoolLinks) {
+        return;
+      }
+      if (!usable(n)) {
+        return;
+      }
+      final String link = linkFor(n).trim();
+      if (link.isEmpty) {
+        return;
+      }
+      // یک گره دو بار نوشته نمی شود؛ هسته با نام تکراری گیج می شود.
+      final String key =
+          '${n.host}:${n.port}|${n.protocol.name}|${JsonX.text(n.params['network'])}'
+          '|${JsonX.text(n.params['security'])}';
+      if (!seen.add(key)) {
+        return;
+      }
+      pool.add(link);
+    }
+
+    add(chosen);
+    // بعد از گره انتخاب شده، سرورهای سالم به ترتیب پینگ.
+    final List<VpnNode> rest = _nodes
+        .where((VpnNode n) => n.id != chosen.id && !n.disabled && n != chosen)
+        .toList()
+      ..sort((VpnNode a, VpnNode b) {
+        final int pa = a.pingMs <= 0 ? 1 << 30 : a.pingMs;
+        final int pb = b.pingMs <= 0 ? 1 << 30 : b.pingMs;
+        return pa.compareTo(pb);
+      });
+    for (final VpnNode n in rest) {
+      add(n);
+    }
+    // اگر هیچ کدام سازگار نبود، لااقل همان یکی.
+    return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
+  }
 
   /// آیا نوع انتقال این گره برای هسته شناخته شده است؟
   ///
@@ -2236,16 +2307,29 @@ class VpnController extends ChangeNotifier {
       // `port 17078 is already in use` آمد. یعنی شناسه ای که بستیم صاحب
       // واقعی پورت نبود: یا پردازش فرزند جای دیگری گوش می داد، یا بلافاصله
       // پردازش تازه ای همان پورت را گرفت. یک بار بستن کافی نیست.
+      // فقط هسته هایی که واقعاً مال ما نیستند بسته می شوند. پورت ۱۷۰۷۸
+      // اغلب در دست فرزند همان هسته خودمان است که لحظه ای زنده مانده؛
+      // بستن آن فقط هسته تازه را دوباره به همان جنگ می اندازد.
       for (int round = 0; round < 3; round++) {
         final List<PortHolder> current = await UmbrellaCore.holders(
           await UmbrellaCore.heldReservedPorts(),
           native: _native,
         );
         final List<PortHolder> stillCores = current
-            .where((PortHolder holder) => holder.isForeignCore)
+            .where((PortHolder holder) => holder.holdsPortAgainstUs)
             .toList();
+        // فرزندان خودمان: فقط کشته می شوند، گزارش «برنامه دیگری» برایشان
+        // نوشته نمی شود، چون واقعاً برنامه دیگری نیست.
+        for (final PortHolder holder in current) {
+          if (!holder.holdsPortAgainstUs && !holder.isOurs) {
+            await _native.killPid(holder.pid);
+          }
+        }
         if (stillCores.isEmpty) {
-          break;
+          if (await _waitForPorts(held, timeout: const Duration(seconds: 3))) {
+            return true;
+          }
+          continue;
         }
         for (final PortHolder holder in stillCores) {
           await _native.killPid(holder.pid);

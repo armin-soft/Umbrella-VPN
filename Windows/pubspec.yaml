@@ -1,7 +1,7 @@
 name: umbrella_vpn
 description: "فیلترشکن آمبرلا - کلاینت ویندوز با تونل کامل و هسته های چندگانه"
 publish_to: "none"
-version: 1.0.15+16
+version: 1.0.16+17
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
