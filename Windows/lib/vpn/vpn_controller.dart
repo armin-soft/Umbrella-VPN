@@ -1046,6 +1046,21 @@ class VpnController extends ChangeNotifier {
       if (plan.warning.isNotEmpty) {
         _log.add(plan.warning, level: 'warning');
       }
+      // پیش از هر تلاش، پورت های هسته آزاد می شوند.
+      //
+      // تا ۱٫۰٫۱۰ این کار فقط یک بار در ابتدای اتصال انجام می شد. وقتی تلاش
+      // اول شکست می خورد و هسته قبلی هنوز در حال خاموش شدن بود، تلاش دوم و
+      // سوم و چهارم همگی با «port 17078 is already in use» برمی گشتند؛ یعنی
+      // هر بار همان پورت خودمان جلوی خودمان را می گرفت.
+      await _stopCores();
+      final bool portFree = await _freeCorePorts();
+      if (!portFree) {
+        _log.add(
+          'پورت هسته پیش از تلاش بعدی آزاد نشد؛ این حالت امتحان نمی شود.',
+          level: 'warning',
+        );
+        continue;
+      }
       _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
       final bool started = await _launch(plan);
       if (!started) {
@@ -1117,16 +1132,41 @@ class VpnController extends ChangeNotifier {
       // «هیچ هسته ای نتوانست تونل را بالا بیاورد»).
       final Duration probeTimeout =
           Duration(seconds: plans.length > 1 ? 6 : 8);
-      final bool flows;
+      bool flows;
       if (plan.usesSystemProxy) {
         flows = await TunnelProbe.check(
           proxyPort: plan.proxyPort,
           timeout: probeTimeout,
         );
       } else {
+        // پیش از سنجش، شمارنده های کارت شبکه تونل خوانده می شوند.
+        final TunnelStats before =
+            await _native.tunnelStats(hint: plan.tunnelHint);
         final bool direct = await TunnelProbe.check(timeout: probeTimeout);
         if (!direct) {
-          flows = false;
+          // سنجش وب شکست خورد، ولی ممکن است تونل سالم باشد.
+          //
+          // در گزارش ۱٫۰٫۱۰ هسته در ۰٫۶۶ ثانیه بالا آمد و در همان ثانیه
+          // ترافیک واقعی از تونل رد شد (DNS به ۱٫۱٫۱٫۱، اتصال به
+          // 173.194.61.6:443 و 74.125.197.188:5228) اما سنجش ۱ ثانیه ای
+          // جواب نداد و برنامه تونل سالم را کشت. حالا اگر بایت روی کارت
+          // شبکه تونل بالا رفته باشد، همان مدرک عبور ترافیک است.
+          final TunnelStats after =
+              await _native.tunnelStats(hint: plan.tunnelHint);
+          final int grownRx = after.rx - before.rx;
+          final int grownTx = after.tx - before.tx;
+          final bool moved = after.available &&
+              before.available &&
+              (grownRx > 4096 || grownTx > 4096);
+          if (moved) {
+            _log.add(
+              'سنجش وب پاسخ نداد ولی ترافیک واقعی از تونل رد شد '
+              '(دریافت ${Fa.bytes(grownRx)} و ارسال ${Fa.bytes(grownTx)})؛ '
+              'اتصال معتبر است.',
+              level: 'warning',
+            );
+          }
+          flows = moved;
         } else if (_realIp.isEmpty) {
           // آی پی پیش از اتصال خوانده نشده؛ برای مقایسه چیزی نداریم.
           flows = true;
@@ -1285,6 +1325,12 @@ class VpnController extends ChangeNotifier {
       return false;
     }
     final Map<String, dynamic> params = node.params;
+    // توجه: نوع انتقال اینجا رد نمی شود.
+    //
+    // گرهی که در نقشه کلش `type: vless` دارد داده اش غلط نیست، فقط نام
+    // پروتکل در جای نوع انتقال نشسته؛ لینک ساز آن را به `tcp` عادی می کند
+    // (`_transportOf`). رد کردن چنین گره ای یعنی سروری که شاید تنها سرور
+    // کارآمد باشد هیچ وقت امتحان نشود.
     switch (node.protocol) {
       case NodeProtocol.vless:
       case NodeProtocol.vmess:
@@ -1509,6 +1555,108 @@ class VpnController extends ChangeNotifier {
   /// ساخته می شود. هسته خودش جزئیات پروتکل را می فهمد.
   String _umbrellaLink(VpnNode node) => linkFor(node);
 
+  /// آیا نوع انتقال این گره برای هسته شناخته شده است؟
+  ///
+  /// فقط `network` ملاک است؛ اگر خالی باشد یعنی پیش فرض (`tcp`) و مشکلی
+  /// نیست. مقدار ناشناخته (مثل نام پروتکل) یعنی گره با این هسته بالا نمی آید.
+  static bool _transportKnown(Map<String, dynamic> params) {
+    final String raw = JsonX.text(params['network']).trim().toLowerCase();
+    if (raw.isEmpty) {
+      return true;
+    }
+    const List<String> known = <String>[
+      'tcp',
+      'ws',
+      'grpc',
+      'http',
+      'h2',
+      'quic',
+      'kcp',
+      'mkcp',
+      'xhttp',
+      'splithttp',
+      'httpupgrade',
+    ];
+    return known.contains(raw);
+  }
+
+  /// لینک وی لس از فیلدهای گره.
+  ///
+  /// پارامترهای مخصوص هر نوع انتقال فقط وقتی نوشته می شوند که به آن نوع
+  /// مربوط باشند؛ فرستادن `path` برای `tcp` یا `security` خالی، هسته را
+  /// گیج می کرد.
+  static String _vlessLink(VpnNode node, String transport) {
+    final Map<String, dynamic> params = node.params;
+    final String host = node.host.isEmpty ? '127.0.0.1' : node.host;
+    final String sni = JsonX.text(params['sni'], host);
+    final String security = JsonX.text(params['security'], 'none');
+    final bool streamed = transport == 'ws' ||
+        transport == 'http' ||
+        transport == 'h2' ||
+        transport == 'httpupgrade' ||
+        transport == 'xhttp' ||
+        transport == 'splithttp';
+    final List<String> query = <String>[
+      'encryption=none',
+      'security=$security',
+      'type=$transport',
+      'sni=${Uri.encodeComponent(sni)}',
+    ];
+    if (streamed) {
+      final String path = JsonX.text(params['path'], '/');
+      query.add('path=${Uri.encodeComponent(path)}');
+      final String streamHost = JsonX.text(params['host'], sni);
+      if (streamHost.isNotEmpty) {
+        query.add('host=${Uri.encodeComponent(streamHost)}');
+      }
+    }
+    if (transport == 'grpc') {
+      final String service =
+          JsonX.text(params['serviceName'] ?? params['service_name']);
+      if (service.isNotEmpty) {
+        query.add('serviceName=${Uri.encodeComponent(service)}');
+      }
+    }
+    // ریلیتی: بدون این سه پارامتر، دست‌دادن TLS انجام نمی شود.
+    for (final String key in <String>['pbk', 'sid', 'fp', 'spx']) {
+      final String value = JsonX.text(params[key]);
+      if (value.isNotEmpty) {
+        query.add('$key=${Uri.encodeComponent(value)}');
+      }
+    }
+    final String flow = JsonX.text(params['flow']);
+    if (flow.isNotEmpty) {
+      query.add('flow=${Uri.encodeComponent(flow)}');
+    }
+    if (JsonX.boolean(params['allowInsecure'])) {
+      query.add('allowInsecure=1');
+    }
+    final String id = JsonX.text(params['id'] ?? params['uuid']);
+    final String name = Uri.encodeComponent(node.name);
+    return 'vless://$id@$host:${node.port}?${query.join('&')}#$name';
+  }
+
+  /// نوع انتقال لینک (`tcp`، `ws`، `grpc`، `http`، `h2`).
+  ///
+  /// فقط از `network` خوانده می شود؛ `type` در نقشه کلش نام پروتکل است و
+  /// فرستادنش به عنوان نوع انتقال، هسته را با «unknown transport type» می
+  /// کشت. اگر مقدار ناشناخته بود، `tcp` می شود.
+  static String _transportOf(Map<String, dynamic> params) {
+    final String raw =
+        JsonX.text(params['network']).trim().toLowerCase();
+    if (raw.isNotEmpty && _transportKnown(params)) {
+      return raw;
+    }
+    // بعضی منابع `network` را با نام دیگر می دهند.
+    if (JsonX.boolean(params['grpc'])) {
+      return 'grpc';
+    }
+    if (JsonX.boolean(params['ws']) || JsonX.text(params['ws-opts']).isNotEmpty) {
+      return 'ws';
+    }
+    return 'tcp';
+  }
+
   /// ساختن لینک از فیلدهای سرور برای منابعی که لینک ندارند (کلش، وایرگارد
   /// و مانند آن). هسته همه این پروتکل ها را می شناسد.
   static String _linkFromNode(VpnNode node) {
@@ -1518,13 +1666,11 @@ class VpnController extends ChangeNotifier {
     final String name = Uri.encodeComponent(node.name);
     switch (node.protocol) {
       case NodeProtocol.vless:
-        return 'vless://${JsonX.text(params['id'])}@$host:$port'
-            '?encryption=none&security=${JsonX.text(params['security'], 'none')}'
-            '&type=${JsonX.text(params['network'] ?? params['type'], 'tcp')}'
-            '&sni=${JsonX.text(params['sni'], host)}'
-            '&path=${Uri.encodeComponent(JsonX.text(params['path'], '/'))}'
-            '&host=${JsonX.text(params['host'], host)}'
-            '#$name';
+        // تله‌ای که ۱٫۰٫۱۰ را شکست: در منابع کلش، `type` نام **پروتکل** است
+        // (`type: vless`)، نه نوع انتقال. خواندن `params['type']` باعث می شد
+        // لینک `type=vless` بسازد و هسته با «unknown transport type: vless»
+        // آن را رد کند. نوع انتقال فقط از `network` می آید.
+        return _vlessLink(node, _transportOf(params));
       case NodeProtocol.vmess:
         return 'vmess://${base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
               'v': '2',
@@ -1534,7 +1680,7 @@ class VpnController extends ChangeNotifier {
               'id': JsonX.text(params['id']),
               'aid': '${JsonX.integer(params['alterId'])}',
               'scy': JsonX.text(params['method'], 'auto'),
-              'net': JsonX.text(params['network'] ?? params['type'], 'tcp'),
+              'net': _transportOf(params),
               'type': 'none',
               'host': JsonX.text(params['host'], host),
               'path': JsonX.text(params['path'], '/'),
@@ -1542,9 +1688,10 @@ class VpnController extends ChangeNotifier {
               'sni': JsonX.text(params['sni'], host),
             })))}';
       case NodeProtocol.trojan:
+        // همین تله `type` در تروجان هم بود؛ نوع انتقال فقط از `network`.
         return 'trojan://${Uri.encodeComponent(JsonX.text(params['password']))}'
-            '@$host:$port?sni=${JsonX.text(params['sni'], host)}'
-            '&type=${JsonX.text(params['network'] ?? params['type'], 'tcp')}'
+            '@$host:$port?sni=${Uri.encodeComponent(JsonX.text(params['sni'], host))}'
+            '&type=${_transportOf(params)}'
             '#$name';
       case NodeProtocol.shadowsocks:
         final String user = base64Encode(
@@ -1822,7 +1969,12 @@ class VpnController extends ChangeNotifier {
   ) async {
     final File logFile = File(coreLog);
     await logFile.parent.create(recursive: true);
-    final IOSink sink = logFile.openWrite(mode: FileMode.append);
+    // هر اجرا گزارش تازه خودش را دارد.
+    //
+    // تا ۱٫۰٫۱۰ این فایل با `FileMode.append` باز می شد، پس خروجی همه اجراهای
+    // قبلی روی هم تلنبار می شد. در گزارش کاربر صدها خط از اجرای عصر روز قبل
+    // آمده بود و خطای واقعی همان لحظه (که دو خط بود) بین آن ها گم شده بود.
+    final IOSink sink = logFile.openWrite(mode: FileMode.write);
     process.stdout.listen(sink.add);
     process.stderr.listen(sink.add);
 
@@ -1854,6 +2006,10 @@ class VpnController extends ChangeNotifier {
         // است؛ دو بار گفتن همان حرف، گزارش را گمراه کننده می کرد.
         if (_reportedExitFor == code) {
           _reportedExitFor = null;
+          return;
+        }
+        if (_stoppingOwnCore) {
+          // خودمان بستیم؛ هشدار «بسته شد» گمراه کننده است.
           return;
         }
         _log.add(
@@ -2085,6 +2241,13 @@ class VpnController extends ChangeNotifier {
   /// کد خروجی که همین حالا در `_launch` گزارش شد، تا گزارش دوباره تکرار نشود.
   int? _reportedExitFor;
 
+  /// هنگام خاموش کردن عمدی هسته روشن می شود.
+  ///
+  /// تا ۱٫۰٫۱۰، وقتی خود برنامه هسته را می کشت، خروج با کد ۰ به گزارش
+  /// می آمد و به شکل «بلافاصله بسته شد (کد خروج ۰)» نمایش داده می شد؛
+  /// یعنی کاربر فکر می کرد هسته خودش مرده، در حالی که خودمان بسته بودیمش.
+  bool _stoppingOwnCore = false;
+
   /// گزارش بسته شدن هسته با دلیلش، یک بار و کامل.
   Future<void> _reportCoreExit(
     CoreLaunch core,
@@ -2092,6 +2255,11 @@ class VpnController extends ChangeNotifier {
     int code,
   ) async {
     final String full = await _readLogFull(coreLog);
+    if (_stoppingOwnCore && code == 0) {
+      // بستن عمدی خودمان؛ این «خرابی» نیست و نباید در گزارش خطا بیاید.
+      _lastLaunchUnusable = false;
+      return;
+    }
     final String tail = await _readLogTail(coreLog);
     _log.add(
       '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
@@ -2746,6 +2914,15 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCores() async {
+    _stoppingOwnCore = true;
+    try {
+      await _stopCoresInner();
+    } finally {
+      _stoppingOwnCore = false;
+    }
+  }
+
+  Future<void> _stopCoresInner() async {
     // اگر هسته در پنجره CLI اجرا شده باشد، اول همان بسته می شود تا هیچ هسته
     // ای بیرون از برنامه نماند و پروکسی سیستمی به حالت عادی برگردد.
     await _stopCliCore();
