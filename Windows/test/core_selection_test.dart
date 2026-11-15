@@ -36,6 +36,29 @@ void main() {
       expect(node.flagCode, 'de');
     });
 
+    test('پرچم از منطقه زمانی گره خوانده می شود', () {
+      // نام سرورهای اشتراک «tls_h2 grpc CDN vless» است و هیچ نام کشوری در
+      // آن نیست؛ گزارش ۱٫۰۱۸ همین را نشان داد («چرا پرچم نمی دهد»).
+      const VpnNode node = VpnNode(
+        id: 'tz',
+        name: 'سرور آمبرلا (خودکار) tls_h2 grpc CDN vless',
+        protocol: NodeProtocol.vless,
+        host: 'x',
+        port: 443,
+        sourceId: 's',
+        params: <String, dynamic>{'timezone': 'Europe/Berlin'},
+      );
+      expect(node.flagCode, 'de');
+    });
+
+    test('نام فارسی کشور برای اعلان ویندوز', () {
+      expect(countryNameFa('de'), 'آلمان');
+      expect(countryNameFa('DE'), 'آلمان');
+      expect(countryNameFa(''), isEmpty);
+      // کد ناشناخته نباید نام جعلی بسازد.
+      expect(countryNameFa('zz'), isEmpty);
+    });
+
     test('پرچم از کد کشور داخل پارامترها اولویت دارد', () {
       const VpnNode node = VpnNode(
         id: 'b',

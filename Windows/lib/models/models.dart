@@ -168,6 +168,167 @@ const Map<String, String> countryAliases = <String, String>{
   'سوئد': 'se',
   'ایران': 'ir',
   'کانادا': 'ca',
+  // نام هایی که در اشتراک های فارسی واقعا دیده می شوند. نام سرور در گزارش
+  // های کاربر «سرور آمبرلا (خودکار) tls_h2 grpc CDN vless» بود؛ هیچ کدام از
+  // این واژه ها کشور نیست، پس پرچم هم پیدا نمی شد و کاربر می پرسید «چرا
+  // پرچم کشورها را نمایش نمی دهد».
+  'انگلیس': 'gb',
+  'بریتانیا': 'gb',
+  'فرانکفورت': 'de',
+  'آمستردام': 'nl',
+  'استانبول': 'tr',
+  'دبی': 'ae',
+  'قطر': 'qa',
+  'عمان': 'om',
+  'عربستان': 'sa',
+  'روسیه': 'ru',
+  'مسکو': 'ru',
+  'اوکراین': 'ua',
+  'لهستان': 'pl',
+  'وارسو': 'pl',
+  'اتریش': 'at',
+  'سوئیس': 'ch',
+  'بلژیک': 'be',
+  'دانمارک': 'dk',
+  'نروژ': 'no',
+  'اسپانیا': 'es',
+  'پرتغال': 'pt',
+  'ایتالیا': 'it',
+  'میلان': 'it',
+  'رومانی': 'ro',
+  'بلغارستان': 'bg',
+  'مجارستان': 'hu',
+  'جمهوری چک': 'cz',
+  'پراگ': 'cz',
+  'یونان': 'gr',
+  'قبرس': 'cy',
+  'ارمنستان': 'am',
+  'گرجستان': 'ge',
+  'آذربایجان': 'az',
+  'قزاقستان': 'kz',
+  'هند': 'in',
+  'مumbai': 'in',
+  'سنگاپور': 'sg',
+  'اندونزی': 'id',
+  'مالزی': 'my',
+  'تایلند': 'th',
+  'ویتنام': 'vn',
+  'فیلیپین': 'ph',
+  'توکیو': 'jp',
+  'کره': 'kr',
+  'سئول': 'kr',
+  'چین': 'cn',
+  'هنگ کنگ': 'hk',
+  'تایوان': 'tw',
+  'استرالیا': 'au',
+  'سیدنی': 'au',
+  'نیوزیلند': 'nz',
+  'برزیل': 'br',
+  'آرژانتین': 'ar',
+  'شیلی': 'cl',
+  'مکزیک': 'mx',
+  'مصر': 'eg',
+  'مراکش': 'ma',
+  'الجزایر': 'dz',
+  'تونس': 'tn',
+  'آفریقای جنوبی': 'za',
+  'نیجریه': 'ng',
+  'کنیا': 'ke',
+  'اسرائیل': 'il',
+  'پاکستان': 'pk',
+  'بنگلادش': 'bd',
+  'سریلانکا': 'lk',
+  'نپال': 'np',
+  // نام های انگلیسی رایج در نام سرور.
+  'united kingdom': 'gb',
+  'england': 'gb',
+  'switzerland': 'ch',
+  'zurich': 'ch',
+  'austria': 'at',
+  'vienna': 'at',
+  'belgium': 'be',
+  'denmark': 'dk',
+  'norway': 'no',
+  'oslo': 'no',
+  'spain': 'es',
+  'madrid': 'es',
+  'italy': 'it',
+  'milan': 'it',
+  'romania': 'ro',
+  'bulgaria': 'bg',
+  'hungary': 'hu',
+  'budapest': 'hu',
+  'czech': 'cz',
+  'prague': 'cz',
+  'greece': 'gr',
+  'cyprus': 'cy',
+  'armenia': 'am',
+  'yerevan': 'am',
+  'georgia': 'ge',
+  'tbilisi': 'ge',
+  'azerbaijan': 'az',
+  'baku': 'az',
+  'kazakhstan': 'kz',
+  'india': 'in',
+  'mumbai': 'in',
+  'singapore': 'sg',
+  'indonesia': 'id',
+  'malaysia': 'my',
+  'thailand': 'th',
+  'vietnam': 'vn',
+  'philippines': 'ph',
+  'japan': 'jp',
+  'tokyo': 'jp',
+  'korea': 'kr',
+  'seoul': 'kr',
+  'china': 'cn',
+  'hong kong': 'hk',
+  'taiwan': 'tw',
+  'australia': 'au',
+  'sydney': 'au',
+  'new zealand': 'nz',
+  'brazil': 'br',
+  'argentina': 'ar',
+  'chile': 'cl',
+  'mexico': 'mx',
+  'egypt': 'eg',
+  'morocco': 'ma',
+  'algeria': 'dz',
+  'tunisia': 'tn',
+  'south africa': 'za',
+  'nigeria': 'ng',
+  'kenya': 'ke',
+  'israel': 'il',
+  'pakistan': 'pk',
+  'bangladesh': 'bd',
+  'sri lanka': 'lk',
+  'nepal': 'np',
+  'russia': 'ru',
+  'moscow': 'ru',
+  'ukraine': 'ua',
+  'poland': 'pl',
+  'warsaw': 'pl',
+  'ireland': 'ie',
+  'dublin': 'ie',
+  'iceland': 'is',
+  'luxembourg': 'lu',
+  'moldova': 'md',
+  'serbia': 'rs',
+  'croatia': 'hr',
+  'slovakia': 'sk',
+  'slovenia': 'si',
+  'lithuania': 'lt',
+  'latvia': 'lv',
+  'estonia': 'ee',
+  'belarus': 'by',
+  'qatar': 'qa',
+  'oman': 'om',
+  'saudi': 'sa',
+  'kuwait': 'kw',
+  'bahrain': 'bh',
+  'jordan': 'jo',
+  'lebanon': 'lb',
+  'iraq': 'iq',
 };
 
 class VpnNode {
@@ -205,12 +366,20 @@ class VpnNode {
 
   bool get hasPing => pingMs > 0;
 
-  /// پرچم کشور این سرور از نام یا میزبان آن استخراج می شود؛ اگر پیدا نشد،
-  /// رشته خالی برمی گردد و برنامه پرچم نشان نمی دهد.
+  /// پرچم کشور این سرور از پارامترها، نام یا منطقه زمانی آن استخراج می شود؛
+  /// اگر پیدا نشد، رشته خالی برمی گردد و برنامه پرچم نشان نمی دهد.
+  ///
+  /// **گزارش ۱٫۰۱۸:** نام سرورهای اشتراک «سرور آمبرلا (خودکار) tls_h2 grpc
+  /// CDN vless» است؛ هیچ نام کشوری در آن نیست، پس پرچم هم پیدا نمی شد. حالا
+  /// پس از پارامترها و نام، منطقه زمانی گره (`timezone` مثل `Europe/Berlin`)
+  /// هم خوانده می شود که در بیشتر اشتراک ها هست.
   String get flagCode {
-    final String fromParams =
-        JsonX.text(params['countryCode'] ?? params['flag'] ?? params['cc'])
-            .toLowerCase();
+    final String fromParams = JsonX.text(
+      params['countryCode'] ??
+          params['country_code'] ??
+          params['flag'] ??
+          params['cc'],
+    ).toLowerCase();
     if (fromParams.length == 2) {
       return fromParams;
     }
@@ -221,8 +390,119 @@ class VpnNode {
         return entry.value;
       }
     }
+    // میزبان سرور: `de1.example.com` یا `germany.example.com`.
+    final String hostText = host.toLowerCase();
+    for (final MapEntry<String, String> entry
+        in countryAliases.entries) {
+      if (entry.key.length >= 4 && hostText.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    // منطقه زمانی گره، مثل `Europe/Berlin` یا `Asia/Tehran`.
+    final String zone = JsonX.text(
+      params['timezone'] ?? params['time_zone'] ?? params['tz'],
+    ).toLowerCase();
+    if (zone.isNotEmpty) {
+      final String city = zone.split('/').last;
+      for (final MapEntry<String, String> entry
+          in countryAliases.entries) {
+        if (city.contains(entry.key)) {
+          return entry.value;
+        }
+      }
+      for (final MapEntry<String, String> zoneEntry
+          in _timezoneCities.entries) {
+        if (city.contains(zoneEntry.key)) {
+          return zoneEntry.value;
+        }
+      }
+    }
     return '';
   }
+
+  /// شهرهای رایج در منطقه زمانی که نامشان در [countryAliases] نیست.
+  static const Map<String, String> _timezoneCities = <String, String>{
+  'berlin': 'de',
+  'amsterdam': 'nl',
+  'frankfurt': 'de',
+  'paris': 'fr',
+  'london': 'gb',
+  'stockholm': 'se',
+  'helsinki': 'fi',
+  'istanbul': 'tr',
+  'dubai': 'ae',
+  'tehran': 'ir',
+  'warsaw': 'pl',
+  'vienna': 'at',
+  'zurich': 'ch',
+  'madrid': 'es',
+  'rome': 'it',
+  'milan': 'it',
+  'moscow': 'ru',
+  'kyiv': 'ua',
+  'kiev': 'ua',
+  'tokyo': 'jp',
+  'seoul': 'kr',
+  'singapore': 'sg',
+  'hongkong': 'hk',
+  'shanghai': 'cn',
+  'taipei': 'tw',
+  'sydney': 'au',
+  'auckland': 'nz',
+  'toronto': 'ca',
+  'vancouver': 'ca',
+  'newyork': 'us',
+  'chicago': 'us',
+  'denver': 'us',
+  'losangeles': 'us',
+  'saopaulo': 'br',
+  'buenosaires': 'ar',
+  'santiago': 'cl',
+  'mexicocity': 'mx',
+  'cairo': 'eg',
+  'johannesburg': 'za',
+  'telaviv': 'il',
+  'jerusalem': 'il',
+  'riyadh': 'sa',
+  'doha': 'qa',
+  'kuwait': 'kw',
+  'manama': 'bh',
+  'muscat': 'om',
+  'beirut': 'lb',
+  'amman': 'jo',
+  'baghdad': 'iq',
+  'karachi': 'pk',
+  'mumbai': 'in',
+  'delhi': 'in',
+  'dhaka': 'bd',
+  'bangkok': 'th',
+  'jakarta': 'id',
+  'kualalumpur': 'my',
+  'manila': 'ph',
+  'hanoi': 'vn',
+  'yerevan': 'am',
+  'tbilisi': 'ge',
+  'baku': 'az',
+  'almaty': 'kz',
+  'minsk': 'by',
+  'chisinau': 'md',
+  'bucharest': 'ro',
+  'sofia': 'bg',
+  'budapest': 'hu',
+  'prague': 'cz',
+  'athens': 'gr',
+  'nicosia': 'cy',
+  'riga': 'lv',
+  'vilnius': 'lt',
+  'tallinn': 'ee',
+  'zagreb': 'hr',
+  'bratislava': 'sk',
+  'ljubljana': 'si',
+  'belgrade': 'rs',
+  'reykjavik': 'is',
+  'luxembourg': 'lu',
+  'dublin': 'ie',
+};
 
   String get quality {
     if (!hasPing) {
@@ -523,15 +803,15 @@ class FilterSettings {
   final String updatedAt;
 
   static const Map<String, String> categoryLabels = <String, String>{
-    'adult': 'محتوای بزرگسال',
-    'social': 'شبکه های اجتماعی',
-    'gambling': 'شرط بندی',
-    'ads': 'تبلیغات',
-    'streaming': 'ویدیو و پخش',
-    'dating': 'دوستیابی',
-    'violence': 'محتوای خشن',
-    'messaging': 'پیام رسان ها',
-  };
+  'adult': 'محتوای بزرگسال',
+  'social': 'شبکه های اجتماعی',
+  'gambling': 'شرط بندی',
+  'ads': 'تبلیغات',
+  'streaming': 'ویدیو و پخش',
+  'dating': 'دوستیابی',
+  'violence': 'محتوای خشن',
+  'messaging': 'پیام رسان ها',
+};
 
   FilterSettings copyWith({
     bool? enabled,
@@ -1586,3 +1866,117 @@ class PingSample {
   final bool ok;
   final DateTime at;
 }
+
+/// نام فارسی کشورها برای نمایش کنار پرچم.
+///
+/// در `models` است، نه در ویجت ها، چون هم رابط کاربری و هم کنترلر اتصال
+/// (برای متن اعلان ویندوز) به آن نیاز دارند.
+String countryNameFa(String code) {
+  final String key = code.trim().toLowerCase();
+  if (key.isEmpty) {
+    return '';
+  }
+  return countryNamesFa[key] ?? '';
+}
+
+const Map<String, String> countryNamesFa = <String, String>{
+  'ad': 'آندورا',
+  'ae': 'امارات',
+  'af': 'افغانستان',
+  'al': 'آلبانی',
+  'am': 'ارمنستان',
+  'ar': 'آرژانتین',
+  'at': 'اتریش',
+  'au': 'استرالیا',
+  'az': 'آذربایجان',
+  'ba': 'بوسنی',
+  'bd': 'بنگلادش',
+  'be': 'بلژیک',
+  'bg': 'بلغارستان',
+  'bh': 'بحرین',
+  'bn': 'برونئی',
+  'br': 'برزیل',
+  'by': 'بلاروس',
+  'ca': 'کانادا',
+  'ch': 'سوئیس',
+  'cl': 'شیلی',
+  'cn': 'چین',
+  'cy': 'قبرس',
+  'cz': 'چک',
+  'de': 'آلمان',
+  'dk': 'دانمارک',
+  'dz': 'الجزایر',
+  'ee': 'استونی',
+  'eg': 'مصر',
+  'es': 'اسپانیا',
+  'fi': 'فنلاند',
+  'fr': 'فرانسه',
+  'gb': 'بریتانیا',
+  'ge': 'گرجستان',
+  'gr': 'یونان',
+  'hk': 'هنگ کنگ',
+  'hr': 'کرواسی',
+  'hu': 'مجارستان',
+  'id': 'اندونزی',
+  'ie': 'ایرلند',
+  'il': 'اسرائیل',
+  'in': 'هند',
+  'iq': 'عراق',
+  'ir': 'ایران',
+  'is': 'ایسلند',
+  'it': 'ایتالیا',
+  'jo': 'اردن',
+  'jp': 'ژاپن',
+  'ke': 'کنیا',
+  'kg': 'قرقیزستان',
+  'kh': 'کامبوج',
+  'kr': 'کره جنوبی',
+  'kw': 'کویت',
+  'kz': 'قزاقستان',
+  'la': 'لائوس',
+  'lb': 'لبنان',
+  'lk': 'سریلانکا',
+  'lt': 'لیتوانی',
+  'lu': 'لوکزامبورگ',
+  'lv': 'لتونی',
+  'ma': 'مراکش',
+  'md': 'مولداوی',
+  'me': 'مونته نگرو',
+  'mk': 'مقدونیه',
+  'mm': 'میانمار',
+  'mn': 'مغولستان',
+  'mx': 'مکزیک',
+  'my': 'مالزی',
+  'ng': 'نیجریه',
+  'nl': 'هلند',
+  'no': 'نروژ',
+  'np': 'نپال',
+  'nz': 'زلاندنو',
+  'om': 'عمان',
+  'ph': 'فیلیپین',
+  'pk': 'پاکستان',
+  'pl': 'لهستان',
+  'pt': 'پرتغال',
+  'qa': 'قطر',
+  'ro': 'رومانی',
+  'rs': 'صربستان',
+  'ru': 'روسیه',
+  'sa': 'عربستان',
+  'se': 'سوئد',
+  'sg': 'سنگاپور',
+  'si': 'اسلوونی',
+  'sk': 'اسلواکی',
+  'th': 'تایلند',
+  'tj': 'تاجیکستان',
+  'tm': 'ترکمنستان',
+  'tr': 'ترکیه',
+  'tw': 'تایوان',
+  'tz': 'تانزانیا',
+  'ua': 'اوکراین',
+  'us': 'آمریکا',
+  'uy': 'اروگوئه',
+  'uz': 'ازبکستان',
+  'vn': 'ویتنام',
+  'xk': 'کوزوو',
+  'za': 'آفریقای جنوبی',
+};

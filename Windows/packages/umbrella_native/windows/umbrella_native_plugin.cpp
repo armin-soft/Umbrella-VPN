@@ -4,6 +4,8 @@
 #include <knownfolders.h>
 #include <shlobj.h>
 
+#include <string>
+
 #include <vector>
 
 namespace umbrella {
@@ -304,6 +306,12 @@ void UmbrellaNativePlugin::HandleMethodCall(
     bool created = tray_.Create([this](const std::string& event) {
       EmitTrayEvent(event);
     });
+    if (created) {
+      // The tray must never appear as the generic Windows application icon.
+      // Load our own icon immediately; Dart calls `trayIcon` right after, but
+      // an empty path there must not leave IDI_APPLICATION behind.
+      tray_.SetIconFromFile(std::string());
+    }
     result->Success(flutter::EncodableValue(created));
     return;
   }

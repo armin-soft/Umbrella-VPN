@@ -235,6 +235,14 @@ class AppTheme {
       useMaterial3: true,
       brightness: brightness,
       fontFamily: fontFamily,
+      // فونت وزیرمتن نمادهای یونیکد (مثل نشانگرها و علامت های ریاضی) را
+      // ندارد؛ بدون فونت جانشین، ویندوز آن ها را مربع یا خط تیره نشان می
+      // داد. Segoe UI Symbol همیشه روی ویندوز هست.
+      fontFamilyFallback: const <String>[
+        'Segoe UI',
+        'Segoe UI Symbol',
+        'Tahoma',
+      ],
       colorScheme: scheme,
       scaffoldBackgroundColor: palette.background,
       canvasColor: palette.background,

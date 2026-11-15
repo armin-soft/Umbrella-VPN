@@ -1075,7 +1075,7 @@ class VpnController extends ChangeNotifier {
       // سوم و چهارم همگی با «port 17078 is already in use» برمی گشتند؛ یعنی
       // هر بار همان پورت خودمان جلوی خودمان را می گرفت.
       await _stopCores();
-      final bool portFree = await _freeCorePorts();
+      final bool portFree = await _freeCorePortsWithRetry();
       if (!portFree) {
         _log.add(
           'پورت هسته پیش از تلاش بعدی آزاد نشد؛ این حالت امتحان نمی شود.',
@@ -1204,9 +1204,26 @@ class VpnController extends ChangeNotifier {
                 await _native.tunnelStats(hint: plan.tunnelHint);
             final int grownRx = after.rx - before.rx;
             final int grownTx = after.tx - before.tx;
-            final bool responded = after.available && before.available &&
-                grownRx > 0 &&
-                grownRx >= (grownTx ~/ 2);
+            // **درس ۱٫۰٫۱۸:** در گزارش کاربر «دریافت ۷٫۸ و ارسال ۱۳٫۹
+            // کیلوبایت» آمد و ما آن را «اتصال معتبر» خواندیم، در حالی که یک
+            // ثانیه بعد خودمان نوشتیم «آی پی خروجی خوانده نشد و ترافیکی هم
+            // از تونل برنگشت» و «ترافیک از تونل رد نمی شود». یعنی معیار بایت
+            // دروغ می گفت. آن بایت ها ترافیک داخلی خود هسته (DNS و تلاش
+            // دوباره) بود، نه پاسخ سرور.
+            //
+            // قاعده تازه: شمارنده بایت به تنهایی **هرگز** مدرک اتصال نیست.
+            // فقط اگر ترافیک برگشته باشد و پس از یک ثانیه هم دوباره برگردد
+            // (یعنی پاسخ واقعی جریان دارد) قبول می شود.
+            bool responded = false;
+            if (after.available && before.available && grownRx > 0 &&
+                grownRx >= grownTx) {
+              final TunnelStats later =
+                  await _native.tunnelStats(hint: plan.tunnelHint);
+              final int secondRx = later.rx - after.rx;
+              responded = later.available &&
+                  secondRx > 0 &&
+                  secondRx >= (later.tx - after.tx);
+            }
             final bool moved = responded;
             if (moved) {
               _log.add(
@@ -2227,17 +2244,39 @@ class VpnController extends ChangeNotifier {
     return true;
   }
 
-  /// آزاد کردن پورت هایی که هسته همیشه می گیرد.
+  /// آزادسازی پورت های هسته با تلاش دوباره، پیش از اجرای هسته.
   ///
-  /// دستور `run` هسته، سرور gRPC را روی ۱۷۰۷۸ و رابط کلش را روی ۱۶۷۵۶ باز
-  /// می کند و هیچ پرچمی برای عوض کردنشان ندارد (`--listen` مال دستور `core`
-  /// است؛ در ۱٫۰٫۵ اشتباها به `run` داده شد و هسته با «unknown flag:
-  /// --listen» بست). پس اگر پورت گرفته باشد، تنها راه، آزاد کردن آن است:
-  /// اول نمونه های خودمان بسته می شوند و اگر باز هم گرفته بود، دلیلش به
-  /// کاربر گفته می شود تا خودش برنامه مزاحم را ببندد.
-  /// آزاد کردن خودکار پورت های ثابت هسته پیش از اتصال.
+  /// **گزارش ۱٫۰۱۸:** `_freeCorePorts` صاحب پورت را بست و پورت را «آزاد»
+  /// خواند، ولی هسته تازه بلافاصله با `port 17078 is already in use` مرد.
+  /// ویندوز پس از `TerminateProcess` چند صد میلی ثانیه پورت را در TIME_WAIT
+  /// نگه می دارد و فرزندِ در حال مرگ هم هنوز گوش می دهد. آزاد بودن فهرست
+  /// بلافاصله بعد از kill، تضمین آزاد بودن هنگام اجرا نیست. پس: چند تلاش،
+  /// با فاصله فزاینده، و در هر تلاش فهرست واقعی دوباره خوانده می شود.
+  Future<bool> _freeCorePortsWithRetry() async {
+    const List<Duration> gaps = <Duration>[
+      Duration(milliseconds: 250),
+      Duration(milliseconds: 500),
+      Duration(milliseconds: 900),
+      Duration(seconds: 2),
+    ];
+    for (int attempt = 0; attempt < gaps.length; attempt++) {
+      if (await _freeCorePorts()) {
+        // یک بار دیگر بعد از مکث کوتاه تایید می شود؛ اگر همان لحظه کسی
+        // پورت را گرفت، دور بعدی.
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        if (await UmbrellaCore.heldReservedPorts().then(
+              (List<int> held) => held.isEmpty,
+            )) {
+          return true;
+        }
+      }
+      await Future<void>.delayed(gaps[attempt]);
+    }
+    return _freeCorePorts();
+  }
+
+  /// بستن پورت های هسته: نمونه های بازمانده، بعد هسته های دیگر.
   ///
-  /// هسته دو پورت ثابت دارد (۱۷۰۷۸ و ۱۶۷۵۶) و راهی برای عوض کردنشان نیست.
   /// تا ۱٫۰٫۹ اگر برنامه دیگری گرفته بود، فقط پیام خطا می دادیم و کاربر باید
   /// خودش برنامه را پیدا و ببندد. در گزارش ۱٫۰٫۹ صاحب پورت `Hiddify` بود.
   ///
@@ -2871,6 +2910,16 @@ class VpnController extends ChangeNotifier {
       'i/o timeout',
       'context deadline exceeded',
       'no route to host',
+      // نشانه هایی که در گزارش ۱٫۰۱۸ آمد و «وصل شدن الکی» را ساخت:
+      //   "code = PermissionDenied ... 403 (Forbidden)" از کلادفلر
+      //   "unexpected content-type "text/plain"" و 526
+      //   "the connection is draining"
+      // یعنی هسته بالا آمده ولی گره هیچ ترافیکی را رد نمی کند.
+      'permissiondenied',
+      'the connection is draining',
+      'transport: received unexpected content-type',
+      ' 526',
+      ' 403 (forbidden)',
     ]) {
       if (text.contains(broken)) {
         return false;
@@ -3093,6 +3142,9 @@ class VpnController extends ChangeNotifier {
       'http://connectivitycheck.gstatic.com/generate_204',
       'http://www.msftconnecttest.com/connecttest.txt',
     ];
+    // دو پاسخ مستقل لازم است: یک پاسخ می تواند از کش یا صفحه خطای میانی
+    // بیاید؛ دو پاسخ پشت سر هم یعنی مسیر واقعاً باز است.
+    int answered = 0;
     for (final String url in urls) {
       final Uri? uri = Uri.tryParse(url);
       if (uri == null) {
@@ -3111,9 +3163,17 @@ class VpnController extends ChangeNotifier {
         final HttpClientResponse response =
             await request.close().timeout(timeout);
         // بدنه را هم بخوان؛ رسیدن هدر به تنهایی کافی نیست، چون بعضی
-        // پروکسی ها هدر می فرستند و بعد اتصال را می بندند.
+        // پروکسی ها هدر می فرستند و بعد اتصال را ببندند.
+        //
+        // **درس ۱٫۰٫۱۸:** در گزارش کاربر، هسته به `generate_204` پاسخ **۴۰۳
+        // کلادفلر** داد ("Attention Required!") و ما آن را پاسخ سالم شمردیم.
+        // هر پاسخ ۴xx/۵xx کلادفلر یعنی گره ترافیک را رد نکرده است.
+        if (response.statusCode >= 400) {
+          continue;
+        }
         await response.drain<void>().timeout(timeout);
-        if (response.statusCode > 0) {
+        answered++;
+        if (answered >= 2) {
           return true;
         }
       } on Exception {
@@ -3181,12 +3241,28 @@ class VpnController extends ChangeNotifier {
       // اگر آی پی بدون تونل خوانده نشده باشد، مقایسه بی معنی است و نباید
       // اتصال سالم را «ناموفق» اعلام کند (خطای ۰ سرور در شمارش پینگ).
       final bool ipKnown = _realIp.isNotEmpty;
-      _tunnelVerified = !ipKnown || geo.ip != _realIp;
-      if (!_tunnelVerified) {
+      final bool ipChanged = !ipKnown || geo.ip != _realIp;
+      // **گزارش «وصل میشه الکی»:** تا ۱٫۰۱۸ فقط تغییر نکردن آی پی بررسی می
+      // شد. یعنی اگر آی پی عوض می شد، اتصال «تایید شده» اعلام می شد حتی اگر
+      // هیچ درخواستی از تونل رد نمی شد. حالا عبور واقعی ترافیک هم شرط است:
+      // دو پاسخ ۲xx مستقل. اگر تونل جواب ندهد، پرچم تایید برداشته می شود و
+      // در صورت فعال بودن جابه جایی خودکار، گره بعدی امتحان می شود.
+      final bool passes = await _trafficReturns();
+      _tunnelVerified = ipChanged && passes;
+      if (!ipChanged) {
         _log.add(
           'آی پی خروجی با آی پی قبلی یکسان است؛ ممکن است تونل کامل برقرار نشده باشد.',
           level: 'warning',
         );
+      } else if (!passes) {
+        _log.add(
+          'آی پی خروجی عوض شد (${Fa.num(geo.ip)}) ولی هیچ درخواستی از تونل '
+          'برنگشت؛ این اتصال معتبر نیست و سرور بعدی امتحان می شود.',
+          level: 'error',
+        );
+      }
+      if (!_tunnelVerified) {
+        _notify();
         // اتصالی که ترافیک از آن رد نمی شود نباید «وصل» بماند.
         if (_settings.autoFailover && _reconnectAttempts < 3) {
           _reconnectAttempts++;
@@ -3195,13 +3271,18 @@ class VpnController extends ChangeNotifier {
           return;
         }
       } else {
-        _log.add('آی پی خروجی: ${geo.ip} | ${geo.flagEmojiFreeLabel}');
+        _log.add('آی پی خروجی: ${Fa.num(geo.ip)} | ${geo.flagEmojiFreeLabel}');
       }
       _notify();
       if (_settings.notificationsEnabled && _tunnelVerified) {
+        // نام کشور از کد دوحرفی و به فارسی؛ `countryLabel` ممکن است نام
+        // انگلیسی سرویس (مثل `Iran`) باشد و کاربر فارسی خواسته است.
+        final String where = countryNameFa(geo.flagCode);
         await _tray.balloon(
           'آی پی جدید شما',
-          '${Fa.num(geo.ip)} | ${geo.flagEmojiFreeLabel}',
+          where.isEmpty
+              ? Fa.num(geo.ip)
+              : '${Fa.num(geo.ip)} | $where',
         );
       }
     } on Exception catch (error) {
@@ -3520,6 +3601,7 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCoresInner() async {
+    await _sweepOrphanChildren();
     // اگر هسته در پنجره CLI اجرا شده باشد، اول همان بسته می شود تا هیچ هسته
     // ای بیرون از برنامه نماند و پروکسی سیستمی به حالت عادی برگردد.
     await _stopCliCore();
@@ -3540,6 +3622,32 @@ class VpnController extends ChangeNotifier {
     }
     _runningPids.clear();
     _runningBinaries.clear();
+  }
+
+  /// بستن پردازش هایی که هسته با نام دیگری اجرا کرده و پورت های ما را گرفته
+  /// اند.
+  ///
+  /// **گزارش ۱٫۰۱۸:** در فهرست پردازش ها سه `UmbrellaCli.exe` بازمانده با
+  /// شناسه های ۱۲۸۷۶ / ۱۴۲۲۴ / ... دیده شد. `_stopCores` فقط شناسه هایی را
+  /// می بست که خودش ثبت کرده بود و فرزندانِ هسته ثبت نمی شدند. تجمع آن ها
+  /// همان چیزی است که دفعه بعد پورت ۱۷۰۷۸ را می گیرد و اتصال را می کشد.
+  Future<void> _sweepOrphanChildren() async {
+    try {
+      final List<int> held = await UmbrellaCore.heldReservedPorts();
+      if (held.isEmpty) {
+        return;
+      }
+      final List<PortHolder> holders =
+          await UmbrellaCore.holders(held, native: _native);
+      for (final PortHolder holder in holders) {
+        if (holder.isOurs && !_runningPids.contains(holder.pid)) {
+          await _native.killPid(holder.pid);
+          _orphansKilled++;
+        }
+      }
+    } on Exception {
+      // پاکسازی نباید هرگز جلوی بستن اتصال را بگیرد.
+    }
   }
 
   /// بستن هسته ای که در پنجره CLI اجرا شده است.

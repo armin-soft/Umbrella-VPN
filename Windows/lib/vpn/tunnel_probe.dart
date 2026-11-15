@@ -172,6 +172,7 @@ class TunnelProbe {
         port,
         timeout: timeout,
       );
+      // درخواست به شکل مطلق برای پروکسی HTTP.
       socket.add(
         utf8.encode(
           'GET $url HTTP/1.1\r\n'

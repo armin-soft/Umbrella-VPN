@@ -9,6 +9,7 @@ import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
+import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 
 /// وضعیت اتصال: یک نگاه کوتاه به این که تونل زنده است یا نه.
@@ -34,10 +35,18 @@ class ConnectionPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          const PageHeader(
+            title: 'وضعیت اتصال',
+            subtitle: 'تونل، سرعت و عبور واقعی ترافیک در یک نگاه.',
+            icon: Icons.monitor_heart_rounded,
+          ),
+          const SizedBox(height: 16),
           _StatusHero(
             status: status,
             tone: tone,
             connected: connected,
+            flagCode: connected ? _flagCode(vpn) : '',
+            countryName: connected ? _countryName(vpn) : '',
             pingMs: vpn.activePingMs,
             verified: vpn.tunnelVerified,
             colors: colors,
@@ -169,12 +178,25 @@ class _TileGrid extends StatelessWidget {
   }
 }
 
+/// پرچم کشور سرور متصل: اول از خود گره، بعد از کشور واقعی خروجی.
+String _flagCode(VpnController vpn) {
+  final String fromNode = vpn.activeNode?.flagCode ?? '';
+  if (fromNode.isNotEmpty) {
+    return fromNode;
+  }
+  return vpn.geo.flagCode;
+}
+
+String _countryName(VpnController vpn) => CountryNames.fa(_flagCode(vpn));
+
 /// هدر وضعیت: آیکون بزرگ، برچسب وضعیت و راهنمای یک خطی.
 class _StatusHero extends StatelessWidget {
   const _StatusHero({
     required this.status,
     required this.tone,
     required this.connected,
+    required this.flagCode,
+    required this.countryName,
     required this.pingMs,
     required this.verified,
     required this.colors,
@@ -183,6 +205,8 @@ class _StatusHero extends StatelessWidget {
   final VpnStatus status;
   final Color tone;
   final bool connected;
+  final String flagCode;
+  final String countryName;
   final int pingMs;
   final bool verified;
   final UmbrellaColors colors;
@@ -224,6 +248,28 @@ class _StatusHero extends StatelessWidget {
                       color: tone,
                     ),
               ),
+              if (connected && flagCode.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FlagView(code: flagCode, width: 26),
+                    if (countryName.isNotEmpty) ...<Widget>[
+                      const SizedBox(width: 7),
+                      Text(
+                        Fa.num(countryName),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: colors.textPrimary,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
               const SizedBox(height: 3),
               Text(
                 Fa.num(

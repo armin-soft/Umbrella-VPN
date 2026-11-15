@@ -81,23 +81,62 @@ void TrayIcon::Destroy() {
     DestroyIcon(icon_);
     owns_icon_ = false;
   }
+  if (balloon_icon_ != nullptr) {
+    DestroyIcon(balloon_icon_);
+    balloon_icon_ = nullptr;
+  }
   icon_ = nullptr;
 }
 
 bool TrayIcon::SetIconFromFile(const std::string& ico_path) {
   if (window_ == nullptr) return false;
-  std::wstring path = ToWide(ico_path);
-  HICON icon = static_cast<HICON>(
-      LoadImageW(nullptr, path.c_str(), IMAGE_ICON, 0, 0,
-                 LR_LOADFROMFILE | LR_DEFAULTSIZE));
-  if (icon == nullptr) return false;
+  HICON icon = nullptr;
+  HICON balloon = nullptr;
+  if (!ico_path.empty()) {
+    std::wstring path = ToWide(ico_path);
+    icon = static_cast<HICON>(
+        LoadImageW(nullptr, path.c_str(), IMAGE_ICON, 0, 0,
+                   LR_LOADFROMFILE | LR_DEFAULTSIZE));
+    balloon = static_cast<HICON>(
+        LoadImageW(nullptr, path.c_str(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE));
+  }
+  // No usable file (missing asset in a stripped install): take the icon that
+  // is embedded in our own executable. This is what makes the tray icon show
+  // the umbrella instead of the generic Windows application icon.
+  if (icon == nullptr) {
+    wchar_t exe[MAX_PATH] = {0};
+    if (GetModuleFileNameW(nullptr, exe, MAX_PATH) == 0) return false;
+    // First icon of our own executable: `small` is the 16x16 tray frame,
+    // `large` is the 32x32 frame the balloon needs.
+    HICON large = nullptr;
+    HICON small = nullptr;
+    if (ExtractIconExW(exe, 0, &large, &small, 1) == 0) return false;
+    icon = small != nullptr ? small : large;
+    balloon = large != nullptr ? large : small;
+    if (icon == nullptr) return false;
+  }
   if (owns_icon_ && icon_ != nullptr) {
     DestroyIcon(icon_);
     owns_icon_ = false;
   }
+  if (balloon_icon_ != nullptr) {
+    DestroyIcon(balloon_icon_);
+    balloon_icon_ = nullptr;
+  }
   icon_ = icon;
+  balloon_icon_ = balloon;
   owns_icon_ = true;
   data_.hIcon = icon;
+  // The window icon and the taskbar button use the same image, so the app has
+  // one identity everywhere. It used to be whatever the runner embedded, which
+  // in the installed build could be the generic Flutter icon.
+  if (window_ != nullptr) {
+    // Large frame for the taskbar/Alt-Tab, small frame for the title bar.
+    SendMessageW(window_, WM_SETICON, ICON_BIG,
+                 reinterpret_cast<LPARAM>(balloon != nullptr ? balloon : icon));
+    SendMessageW(window_, WM_SETICON, ICON_SMALL,
+                 reinterpret_cast<LPARAM>(icon));
+  }
   // NIF_TIP too, so the hover text survives an icon change.
   data_.uFlags = NIF_ICON | NIF_TIP;
   return Shell_NotifyIconW(NIM_MODIFY, &data_) != FALSE;
@@ -127,16 +166,30 @@ bool TrayIcon::ShowBalloon(const std::string& title, const std::string& body,
   // Keep the icon and tooltip in this update: NIM_MODIFY replaces whatever
   // uFlags names, so a balloon-only update would blank the tray icon.
   data_.uFlags = NIF_INFO | NIF_ICON | NIF_TIP;
-  // NIIF_USER shows the icon in hBalloonIcon. It used to be set without
-  // providing one, so Windows drew the notification with no icon at all --
-  // the "اعلان بدون آیکون" users reported. Plain NIIF_INFO always draws the
-  // standard information icon, so a successful connect never looks empty.
-  if (warning) {
+  // NIIF_USER makes Windows draw *our* icon in the balloon. Two traps used to
+  // leave it empty:
+  //   * NIIF_INFO (the "i" bubble) ignores hBalloonIcon entirely, so the app
+  //     icon could never appear;
+  //   * NIIF_USER without a valid 32x32 HICON draws nothing at all.
+  // `LoadImageW(..., LR_DEFAULTSIZE)` returns the 32x32 frame the shell wants,
+  // but if the .ico could not be read the tray icon is still IDI_APPLICATION.
+  // In that case fall back to the plain information icon so the balloon is
+  // never iconless.
+  const bool have_app_icon = owns_icon_ && data_.hIcon != nullptr;
+  if (have_app_icon) {
+    // NIIF_USER must be paired with NIIF_LARGE_ICON and a 32x32 icon, which is
+    // exactly what LoadImageW(LR_DEFAULTSIZE) returns. It cannot be ORed with
+    // NIIF_INFO/NIIF_WARNING: those bits select a different icon shape.
+    data_.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON;
+    data_.hBalloonIcon =
+        balloon_icon_ != nullptr ? balloon_icon_ : data_.hIcon;
+  } else if (warning) {
     data_.dwInfoFlags = NIIF_WARNING;
+    data_.hBalloonIcon = nullptr;
   } else {
     data_.dwInfoFlags = NIIF_INFO;
+    data_.hBalloonIcon = nullptr;
   }
-  data_.hBalloonIcon = data_.hIcon;
   wcsncpy_s(data_.szInfoTitle, ToWide(title).c_str(), _TRUNCATE);
   wcsncpy_s(data_.szInfo, ToWide(body).c_str(), _TRUNCATE);
   data_.uTimeout = 10000;

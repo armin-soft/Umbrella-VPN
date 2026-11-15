@@ -147,6 +147,12 @@ class _AccountPageState extends State<AccountPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          const PageHeader(
+            title: 'حساب من',
+            subtitle: 'هویت، مصرف دقیق و زمان اشتراک شما.',
+            icon: Icons.person_rounded,
+          ),
+          const SizedBox(height: 16),
           _AccountHero(
             account: account,
             colors: colors,

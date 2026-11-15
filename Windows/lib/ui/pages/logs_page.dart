@@ -62,38 +62,11 @@ class _LogsPageState extends State<LogsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              // نشان صفحه: با بقیه صفحات یکدست است و چشم اول آن را می بیند.
-              IconSquare(
-                icon: Icons.receipt_long_rounded,
-                color: colors.primary,
-                size: 44,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      Fa.num('گزارش ها'),
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      Fa.num(
-                        'همه رویدادها، خطاها و هشدارها با تاریخ و ساعت؛ برای پیگیری مشکل اتصال.',
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                            height: 1.7,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
+          PageHeader(
+            title: 'گزارش ها',
+            subtitle: 'همه رویدادها، خطاها و هشدارها با تاریخ و ساعت؛ برای پیگیری مشکل اتصال.',
+            icon: Icons.receipt_long_rounded,
+            actions: <Widget>[
               IconAction(
                 icon: Icons.copy_all_rounded,
                 tooltip: 'کپی همه',

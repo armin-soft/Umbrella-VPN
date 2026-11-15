@@ -758,6 +758,81 @@ void main() {
     });
   });
 
+  group('دور ۳۲ — اتصال واقعی، پرچم و آیکون', () {
+    test('پاسخ ۴xx هرگز مدرک عبور ترافیک نیست', () {
+      // کلادفلر برای درخواست ۲۰۴ از ایران ۴۰۳ می داد و ما آن را «موفق»
+      // می شمردیم؛ همین «وصل شدن الکی» را ساخت.
+      final String probe = read('lib/vpn/tunnel_probe.dart');
+      expect(probe.contains('code >= 200 && code < 400'), isTrue);
+      final String text = read('lib/vpn/vpn_controller.dart');
+      expect(text.contains('if (response.statusCode >= 400)'), isTrue);
+      expect(text.contains('answered >= 2'), isTrue);
+    });
+
+    test('تغییر آی پی به تنهایی اتصال را تایید نمی کند', () {
+      final String text = read('lib/vpn/vpn_controller.dart');
+      expect(text.contains('final bool ipChanged'), isTrue);
+      expect(text.contains('_tunnelVerified = ipChanged && passes;'), isTrue);
+    });
+
+    test('آی پی کش شده از مسیر تونل برنمی گردد', () {
+      final String services = read('lib/platform/services.dart');
+      expect(
+        services.contains('if (proxy.isNotEmpty) {\n      return GeoInfo.empty;'),
+        isTrue,
+        reason: 'کش قبلی آی پی واقعی کاربر بود و اتصال بی ترافیک را تایید می کرد',
+      );
+    });
+
+    test('پورت هسته با تلاش دوباره آزاد می شود، نه یک بار', () {
+      final String text = read('lib/vpn/vpn_controller.dart');
+      expect(text.contains('Future<bool> _freeCorePortsWithRetry()'), isTrue);
+      expect(text.contains('_freeCorePortsWithRetry()'), isTrue);
+      expect(text.contains('_sweepOrphanChildren'), isTrue);
+    });
+
+    test('اعلان ویندوز آیکون خود برنامه را می آورَد', () {
+      final String tray =
+          read('packages/umbrella_native/windows/tray_icon.cpp');
+      expect(tray.contains('NIIF_USER'), isTrue);
+      expect(tray.contains('NIIF_LARGE_ICON'), isTrue);
+      expect(tray.contains('balloon_icon_'), isTrue);
+      expect(tray.contains('ExtractIconExW'), isTrue);
+      final String runner = read('windows/runner/main.cpp');
+      expect(runner.contains('SetCurrentProcessExplicitAppUserModelID'), isTrue);
+      final String iss = read('installer/umbrella.iss');
+      expect(iss.contains('AppUserModelID: "Umbrella.VPN.Desktop"'), isTrue);
+    });
+
+    test('همه صفحه ها هدر یکسان دارند', () {
+      for (final String page in <String>[
+        'device_page',
+        'connection_page',
+        'account_page',
+        'logs_page',
+        'updates_page',
+        'settings_page',
+        'about_page',
+      ]) {
+        expect(
+          read('lib/ui/pages/$page.dart').contains('PageHeader('),
+          isTrue,
+          reason: page,
+        );
+      }
+    });
+
+    test('متن محیط گزارش، فارسی و با ارقام فارسی است', () {
+      final String services = read('lib/platform/services.dart');
+      expect(services.contains('_systemLabel()'), isTrue);
+      expect(
+        services.contains('Platform.operatingSystemVersion}'),
+        isFalse,
+        reason: 'رشته خام ویندوز نباید در گزارش بیاید',
+      );
+    });
+  });
+
   group('دور ۳۱ — تایید واقعی تونل', () {
     String controller() => read('lib/vpn/vpn_controller.dart');
 
@@ -767,7 +842,10 @@ void main() {
       // کاربر می گفت «متصل هست ولی هیچی باز نمی کند».
       final String text = controller();
       expect(text.contains('grownRx > 0'), isTrue);
-      expect(text.contains('grownRx >= (grownTx ~/ 2)'), isTrue);
+      // ۱٫۰۱۹: نسبت نصف هم کافی نبود (دریافت ۷٫۸ در برابر ارسال ۱۳٫۹ در
+      // گزارش ۱٫۰۱۸)؛ حالا دریافت باید دست کم به اندازه ارسال باشد و نمونه
+      // دوم هم مثبت باشد.
+      expect(text.contains('grownRx >= grownTx'), isTrue);
       expect(
         text.contains('grownRx > 4096 || grownTx > 4096'),
         isFalse,

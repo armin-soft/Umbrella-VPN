@@ -342,9 +342,14 @@ class UmbrellaCore {
       //
       // این کلید در گزارش های پیشین تنظیم نشده بود، پس هسته خط
       // `MONITORING result <گره>: ... IP: ...` را نمی نوشت و ما همیشه
-      // «آی پی خروجی خوانده نشد» می دیدیم. `ipapi.co` همان قالب
-      // سازگار ipapi است که خود هسته انتظار دارد.
-      'ipinfo-url': 'https://ipapi.co/json/',
+      // «آی پی خروجی خوانده نشد» می دیدیم.
+      //
+      // **درس ۱٫۰٫۱۸:** `ipapi.co` از این شبکه پاسخ ۴۰۳ (Forbidden) می داد
+      // و هسته با `Failed try 0 to get IP info ... 403` رهایش می کرد؛
+      // نتیجه همان «آی پی خروجی خوانده نشد» بود که به کلادفلر و گره ربطی
+      // نداشت. `ipwho.is` همان قالب را می دهد، کلید می خواهد نه توکن، و
+      // از داخل ایران هم باز است.
+      'ipinfo-url': 'https://ipwho.is/',
       // چند گره زنده بمانند تا خود هسته بتواند سوییچ کند.
       //
       // ۳ خیلی کم بود: با ۳ گره، اگر دو تای اول کند یا افتاده باشند کار
@@ -491,6 +496,9 @@ class PortHolder {
   final List<int> ports;
 
   /// آیا این پردازش هسته خود ماست؟
+  ///
+  /// نام اجرایی هسته `UmbrellaCli.exe` است، ولی فرزندهایش نام های دیگری
+  /// دارند؛ همه با `umbrella` شروع می شوند.
   bool get isOurs => name.toLowerCase().startsWith('umbrella');
 
   /// آیا پورت را یک هسته *دیگر* گرفته، نه هسته خود آمبرلا؟
@@ -510,13 +518,48 @@ class PortHolder {
     if (isOurs) {
       return false;
     }
-    final String lower = path.toLowerCase();
-    if (lower.isNotEmpty &&
-        (lower.contains('umbrella') || lower.contains('umb\u200c'))) {
+    // مسیر یا نام، هر کدام که «آمبرلا» را داشته باشد یعنی مال ماست.
+    //
+    // **گزارش ۱٫۰۱۸:** پورت ۱۷۰۷۸ سه بار در دست «یک هسته فیلترشکن دیگر» با
+    // شناسه های ۶۲۴۰ / ۴۷۲۸ / ۴۴۷۲ دیده شد و هر بار بسته شد، ولی هسته تازه
+    // بلافاصله با «port 17078 is already in use» مرد. آن پردازش در واقع
+    // **فرزند همان `UmbrellaCli.exe`** بود که نام اجرایی اش `UmbrellaCli…`
+    // نبود و مسیرش هم خوانده نمی شد. پس فقط نام و مسیر کافی نیست؛ اگر پدرِ
+    // پردازش مال ماست، پورت مال ماست.
+    final String lowerPath = path.toLowerCase();
+    final String lowerName = name.toLowerCase();
+    if (lowerPath.isNotEmpty &&
+        (lowerPath.contains('umbrella') || lowerPath.contains('umb\u200c'))) {
+      return false;
+    }
+    if (lowerName.isNotEmpty &&
+        (lowerName.contains('umbrella') || lowerName.contains('umb'))) {
+      return false;
+    }
+    if (sameInstallerAsUs) {
       return false;
     }
     return isForeignCore;
   }
+
+  /// آیا این پردازش از همان پوشه نصب ما اجرا شده است؟
+  ///
+  /// فرزندهای خود هسته (پروسه های کمکی و پردازش هایی که هسته با نام دیگری
+  /// اجرا می کند) مسیرشان همان پوشه نصب آمبرلاست. بستن آن ها فقط هسته تازه
+  /// را دوباره به همان جنگ پورت می اندازد.
+  bool get sameInstallerAsUs {
+    final String lower = path.toLowerCase();
+    if (lower.isEmpty) {
+      return false;
+    }
+    for (final String folder in <String>['umbrella vpn', 'umbrella-vpn', '\\umbrella\\']) {
+      if (lower.contains(folder)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 
   /// آیا این پردازش، هسته یک فیلترشکن است؟
   ///

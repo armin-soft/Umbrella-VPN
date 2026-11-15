@@ -50,6 +50,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // The shell identifies the app (window icon, taskbar icon and — the part
+  // users noticed — the ballon's icon) by its AppUserModelID. Without one,
+  // Windows groups the process under a generic host and the notification
+  // falls back to an iconless balloon. It must match the ID the installer
+  // writes into the shortcut's AppUserModelID property.
+  ::SetCurrentProcessExplicitAppUserModelID(L"Umbrella.VPN.Desktop");
+
   flutter::DartProject project(L"data");
 
   std::vector<std::string> command_line_arguments = GetCommandLineArguments();
@@ -58,7 +65,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(0, 0);
   Win32Window::Size size(1280, 820);
-  if (!window.Create(L"Umbrella VPN", origin, size)) {
+  // Persian title, same as the window title the app sets after start-up.
+  if (!window.Create(L"\u0641\u06cc\u0644\u062a\u0631\u0634\u06a9\u0646 "
+                    L"\u0622\u0645\u0628\u0631\u0644\u0627",
+                    origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

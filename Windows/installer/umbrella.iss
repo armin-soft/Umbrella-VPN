@@ -10,7 +10,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.18"
+#define AppVersion "1.0.19"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
@@ -86,9 +86,13 @@ Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; AppUserModelID links the shortcut to the process, so Windows keeps the app's
+; own icon in the taskbar, the Alt-Tab list and notification balloons. It must
+; stay identical to the value in windows/runner/main.cpp; without it the shell
+; groups the app under a generic host and draws an iconless notification.
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"
 Name: "{group}\Uninstall {#AppNameEn}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "UmbrellaVPN"; ValueData: """{app}\{#AppExe}"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart

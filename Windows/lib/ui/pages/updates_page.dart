@@ -39,34 +39,11 @@ class _UpdatesPageState extends State<UpdatesPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              IconSquare(
-                icon: Icons.system_update_rounded,
-                color: colors.primary,
-                size: 44,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      Fa.num('به روز رسانی'),
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      Fa.num('نسخه فعلی ${AppConfig.version} | آخرین بررسی در همین صفحه'),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
+          PageHeader(
+            title: 'به روز رسانی',
+            subtitle: 'نسخه فعلی ${AppConfig.version} | آخرین بررسی در همین صفحه',
+            icon: Icons.system_update_rounded,
+            actions: <Widget>[
               GradientButton(
                 label: updates.checking ? 'در حال بررسی' : 'بررسی نسخه جدید',
                 icon: Icons.system_update_rounded,

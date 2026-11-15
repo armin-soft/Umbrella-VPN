@@ -153,10 +153,22 @@ class TrayService {
   String _iconPath(String state) {
     final String file = _iconFiles[state] ?? _iconFiles['idle']!;
     final String exe = Platform.resolvedExecutable;
-    final String dir = exe.substring(0, exe.lastIndexOf(Platform.pathSeparator));
-    return '$dir${Platform.pathSeparator}data${Platform.pathSeparator}flutter_assets'
-        '${Platform.pathSeparator}assets${Platform.pathSeparator}icons'
-        '${Platform.pathSeparator}tray${Platform.pathSeparator}$file';
+    final String sep = Platform.pathSeparator;
+    final String dir = exe.substring(0, exe.lastIndexOf(sep));
+    // مسیر استاندارد بسته نصب.
+    final String bundled = '$dir${sep}data${sep}flutter_assets${sep}assets'
+        '${sep}icons${sep}tray$sep$file';
+    if (File(bundled).existsSync()) {
+      return bundled;
+    }
+    // حالت توسعه (`flutter run`): فایل ها کنار پروژه هستند.
+    final String local = 'assets${sep}icons${sep}tray$sep$file';
+    if (File(local).existsSync()) {
+      return local;
+    }
+    // اگر هیچ آیکونی پیدا نشد، مسیر خالی یعنی «آیکون داخلی فایل اجرایی»؛
+    // هسته بومی آن وقت آیکون خود برنامه را می گذارد، نه آیکون ویندوز.
+    return '';
   }
 
   Future<void> update({
@@ -212,11 +224,13 @@ class IpService {
     // چند سرویس مستقل: اگر یکی در دسترس نباشد (فیلتر، دی ان اس یا قطعی خود
     // سرویس)، بعدی امتحان می شود. پیش از این اگر هر سه به دی ان اس ناسالم
     // می خوردند، آی پی خوانده نمی شد و برنامه به آی پی داخلی برمی گشت.
+    // `ipapi.co` از این شبکه ۴۰۳ می دهد (در گزارش ۱٫۰٫۱۸ دیدیم)، پس اول
+    // `ipwho.is` و `ipify` می آیند: هر دو بدون کلید کار می کنند و از داخل
+    // ایران باز هستند.
     final List<String> endpoints = <String>[
-      'https://api.ipify.org?format=json',
-      'https://ipapi.co/json/',
-      'http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,timezone,lat,lon,query',
       'https://ipwho.is/',
+      'https://api.ipify.org?format=json',
+      'http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,timezone,lat,lon,query',
       'https://ifconfig.co/json',
     ];
     http.Client? temporary;
@@ -277,6 +291,15 @@ class IpService {
       }
     } finally {
       temporary?.close();
+    }
+    // **تله ۱٫۰۱۸:** وقتی درخواست از مسیر تونل می رفت و هیچ سرویسی جواب
+    // نمی داد، اینجا مقدار **کش قبلی** برگردانده می شد؛ یعنی آی پی واقعی
+    // کاربر پیش از اتصال. بعد بالاتر `geo.ip != _realIp` همین را «شکست»
+    // می دید، ولی بدتر از آن، اگر آی پی کش با آی پی جدید تصادفاً یکی می شد
+    // اتصال بی ترافیک «تایید» می شد. پاسخ درست: اگر مسیر پرسش عوض شده باشد
+    // (پروکسی)، مقدار کش را برنگردان؛ ناشناخته را ناشناخته بگویید.
+    if (proxy.isNotEmpty) {
+      return GeoInfo.empty;
     }
     return _cache;
   }
@@ -728,8 +751,8 @@ class AppLogger extends ChangeNotifier {
       dataDir = 'نامشخص';
     }
     return <String>[
-      'برنامه: ${AppConfig.appName} ${AppConfig.version}',
-      'سیستم: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      'برنامه: ${AppConfig.appName} ${Fa.num(AppConfig.version)}',
+      'سیستم: ${_systemLabel()}',
       'پیوند هسته های پردازنده: ${Fa.num(Platform.numberOfProcessors)}',
       'پوشه داده: $dataDir',
       'پورت ثابت هسته (gRPC): ${Fa.num(AppConfig.coreGrpcPort)}',
@@ -738,10 +761,47 @@ class AppLogger extends ChangeNotifier {
     ].join('\n');
   }
 
+  /// نام سیستم عامل به فارسی و خوانا.
+  ///
+  /// پیش از این رشته خام ویندوز چاپ می شد:
+  /// `windows "Windows 10 Pro" 10.0 (Build 26200)` — هم لاتین بود و هم
+  /// اعدادش فارسی نمی شد؛ کاربر خواست همه متن ها و اعداد فارسی باشند.
+  static String _systemLabel() {
+    final String raw = Platform.operatingSystemVersion;
+    // نسخه ویندوز از همان رشته خوانده می شود؛ اگر نبود، نام ساده می آید.
+    final RegExpMatch? build = RegExp(r'\(Build (\d+)\)').firstMatch(raw);
+    final String edition = _windowsEdition(raw);
+    final String arch = Platform.version.contains('arm64') ? 'ARM' : '۶۴ بیت';
+    if (!Platform.isWindows) {
+      return Fa.num('${Platform.operatingSystem} $raw');
+    }
+    return Fa.num(
+      'ویندوز${edition.isEmpty ? '' : ' $edition'} • $arch'
+      '${build == null ? '' : ' • ساخت ${build.group(1)}'}',
+    );
+  }
+
+  static String _windowsEdition(String raw) {
+    for (final String edition in <String>[
+      'Windows 11 Pro',
+      'Windows 11 Home',
+      'Windows 11',
+      'Windows 10 Pro',
+      'Windows 10 Home',
+      'Windows 10',
+    ]) {
+      if (raw.contains(edition)) {
+        final String tail = edition.split(' ').last;
+        return tail == 'Windows' ? '' : (tail == 'Pro' ? 'حرفه ای' : 'خانگی');
+      }
+    }
+    return '';
+  }
+
   /// همان اطلاعات محیط، به صورت متن آماده؛ برای جایی که await ممکن نیست.
   String environmentTextSync() => <String>[
-        'برنامه: ${AppConfig.appName} ${AppConfig.version}',
-        'سیستم: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+        'برنامه: ${AppConfig.appName} ${Fa.num(AppConfig.version)}',
+        'سیستم: ${_systemLabel()}',
         'پیوند هسته های پردازنده: ${Fa.num(Platform.numberOfProcessors)}',
         'پورت ثابت هسته (gRPC): ${Fa.num(AppConfig.coreGrpcPort)}',
         'پورت ثابت هسته (Clash): ${Fa.num(AppConfig.coreClashPort)}',

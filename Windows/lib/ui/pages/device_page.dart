@@ -78,6 +78,12 @@ class _DevicePageState extends State<DevicePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          const PageHeader(
+            title: 'دستگاه من',
+            subtitle: 'مشخصات این کامپیوتر و شبکه آن؛ وضعیت اتصال صفحه خودش را دارد.',
+            icon: Icons.devices_rounded,
+          ),
+          const SizedBox(height: 16),
           _DeviceHero(
             device: device,
             colors: colors,

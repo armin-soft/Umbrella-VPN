@@ -39,6 +39,10 @@ class TrayIcon {
 
   HWND window_ = nullptr;
   HICON icon_ = nullptr;
+  // 32x32 frame of the same .ico; NIIF_USER requires exactly this size, while
+  // the tray wants the small frame. Loading one image for both left the
+  // balloon blank (or cropped) in some Windows builds.
+  HICON balloon_icon_ = nullptr;
   NOTIFYICONDATAW data_ = {};
   bool icon_added_ = false;
   bool owns_icon_ = false;

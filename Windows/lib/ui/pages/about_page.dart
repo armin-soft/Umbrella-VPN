@@ -28,6 +28,12 @@ class AboutPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              const PageHeader(
+                title: 'درباره',
+                subtitle: 'درباره برنامه، سازنده و بررسی دسترسی.',
+                icon: Icons.info_rounded,
+              ),
+              const SizedBox(height: 16),
               _Hero(colors: colors),
               const SizedBox(height: 16),
               // در پنجره باریک کارت ها زیر هم می روند، نه کنار هم.

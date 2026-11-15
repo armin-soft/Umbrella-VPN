@@ -56,14 +56,21 @@ class _ConnectPageState extends State<ConnectPage> {
   /// • متصل: پرچم کشور سرور متصل از نام یا پارامترهای همان گره.
   /// • قطع: پرچم کشور واقعی دستگاه از `geo`.
   static String _flagForIp(VpnController vpn, bool connected, String ip) {
-    if (_isPrivateIp(ip)) {
-      return '';
-    }
     if (connected) {
+      // سرور متصل: اول پرچم خود گره؛ اگر نام گره هیچ کشوری را نشان نمی داد،
+      // کشور واقعی خروجی از داده جغرافیایی همان آی پی.
       final String fromNode = vpn.activeNode?.flagCode ?? '';
       if (fromNode.isNotEmpty) {
         return fromNode;
       }
+      final String fromGeo = vpn.geo.flagCode;
+      if (fromGeo.isNotEmpty && !_isPrivateIp(ip)) {
+        return fromGeo;
+      }
+      return '';
+    }
+    if (_isPrivateIp(ip) || ip == 'در حال خواندن') {
+      return '';
     }
     // آی پی خروجی تونل: پرچم از داده جغرافیایی همان آی پی.
     if (vpn.geo.ip.isNotEmpty && vpn.geo.ip == ip) {
@@ -278,9 +285,9 @@ class _ConnectPageState extends State<ConnectPage> {
     // همان جایی باشد که آی پی از آن آمده.
     final String shownIp = _deviceIp(vpn);
     final String flagCode = _flagForIp(vpn, connected, shownIp);
-    final String countryName = connected
-        ? CountryNames.fa(vpn.activeNode?.flagCode ?? '')
-        : CountryNames.fa(flagCode);
+    // نام کشور همیشه از همان کدی می آید که پرچم از آن ساخته شد؛ وگرنه پرچم
+    // آلمان با نام «آمبرلا» یا رشته خالی کنار هم می نشستند.
+    final String countryName = CountryNames.fa(flagCode);
 
     // ارتفاع صفحه کامل استفاده می شود؛ هیچ نیمه خالی نمی ماند.
     return LayoutBuilder(

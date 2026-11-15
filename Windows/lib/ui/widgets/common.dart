@@ -177,6 +177,106 @@ class GradientButton extends StatelessWidget {
   }
 }
 
+/// سرصفحه یکدست همه صفحه ها: نشان، عنوان، زیرعنوان و دکمه های سمت چپ.
+///
+/// پیش از این هر صفحه سرصفحه خودش را با فاصله ها و اندازه های کمی متفاوت
+/// می ساخت؛ نتیجه اش این بود که منوها «یکسان» به نظر نمی رسیدند. همه صفحه ها
+/// حالا از همین یک ویجت استفاده می کنند.
+class PageHeader extends StatelessWidget {
+  const PageHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.icon,
+    this.actions = const <Widget>[],
+  });
+
+  final String title;
+  final String? subtitle;
+  final IconData? icon;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool narrow = constraints.maxWidth < 560;
+        final Widget text = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              Fa.num(title),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            if (subtitle != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                Fa.num(subtitle!),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                      height: 1.7,
+                    ),
+              ),
+            ],
+          ],
+        );
+        final Widget mark = icon == null
+            ? const SizedBox.shrink()
+            : Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(15),
+                  color: colors.primary.withValues(alpha: 0.14),
+                  border: Border.all(
+                    color: colors.primary.withValues(alpha: 0.32),
+                  ),
+                ),
+                child: Icon(icon, size: 23, color: colors.primary),
+              );
+        final Widget heading = Row(
+          children: <Widget>[
+            if (icon != null) ...<Widget>[mark, const SizedBox(width: 14)],
+            Expanded(child: text),
+          ],
+        );
+        if (actions.isEmpty) {
+          // حاشیه پایین یکسان: صفحه هایی که دکمه در هدر ندارند هم نباید به
+          // محتوای زیرین بچسبند. بدون این، سه صفحه فاصله داشتند و بقیه نه.
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: heading,
+          );
+        }
+        if (narrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              heading,
+              const SizedBox(height: 12),
+              Wrap(spacing: 10, runSpacing: 10, children: actions),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(child: heading),
+            const SizedBox(width: 12),
+            ...actions,
+          ],
+        );
+      },
+    );
+  }
+}
+
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
     super.key,
