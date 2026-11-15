@@ -1,4 +1,4 @@
-﻿; ---------------------------------------------------------------------------
+; ---------------------------------------------------------------------------
 ; Umbrella VPN 1.0.8
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
@@ -140,8 +140,16 @@ end;
 // با دو تا از خودش جایگزین می شود. بدون این کار، پوشه نصبی که اسم آن علامت
 // نقل قول دارد (مثل D:\Reza's VPN) دستور را می شکند.
 function PsQuote(const Value: String): String;
+var
+  I: Integer;
 begin
-  Result := '''' + StringReplace(Value, '''', '''''', [rfReplaceAll]) + '''';
+  Result := '''';
+  for I := 1 to Length(Value) do begin
+    Result := Result + Value[I];
+    if Value[I] = '''' then
+      Result := Result + '''';
+  end;
+  Result := Result + '''';
 end;
 
 // پوشه نصب را کاملا پاک می کند.
