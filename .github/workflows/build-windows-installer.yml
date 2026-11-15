@@ -298,7 +298,29 @@ jobs:
           function Encode([string]$text) {
             return ($text -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;')
           }
+          # خلاصه خطاهای تحلیل، همیشه اول و کوچک: بدنه کامنت به ۶۴ کیلوبایت
+          # محدود است و از **اول** بریده می شود، پس خطاها باید بالا باشند
+          # وگرنه در سکوت گم می شوند (یک بار همین شد و ساخت با ۱۴ خطا مرد
+          # در حالی که «Analyze» سبز دیده می شد).
           $sections = @()
+          if (Test-Path 'analyze-log.txt') {
+            $found = Select-String -Path 'analyze-log.txt' -Pattern ' (error|warning) - ' |
+                     ForEach-Object { $_.Line.Trim() }
+            if ($found) {
+              $joined = ($found -join "`n")
+              if ($joined.Length -gt 8000) { $joined = $joined.Substring(0, 8000) }
+              $sections += ("### analyze errors`n<pre>" + (Encode $joined) + "</pre>")
+            }
+          }
+          if (Test-Path 'build-log.txt') {
+            $bad = Select-String -Path 'build-log.txt' -Pattern 'error [A-Z]|\.dart\(\d+,\d+\): error' |
+                   ForEach-Object { $_.Line.Trim() }
+            if ($bad) {
+              $joined = ($bad -join "`n")
+              if ($joined.Length -gt 6000) { $joined = $joined.Substring(0, 6000) }
+              $sections += ("### build errors`n<pre>" + (Encode $joined) + "</pre>")
+            }
+          }
           foreach ($name in @('analyze-log.txt', 'test-log.txt', 'core-log.txt', 'build-log.txt', 'installer-log.txt')) {
             if (Test-Path $name) {
               $text = Get-Content $name -Raw

@@ -658,6 +658,7 @@ class _NavItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.compact = false,
+    this.tone,
   });
 
   final NavDestination destination;
@@ -666,6 +667,9 @@ class _NavItem extends StatefulWidget {
 
   /// در پنجره باریک فقط آیکون نشان داده می شود و متن در Tooltip می آید.
   final bool compact;
+
+  /// رنگ دلخواه؛ «خروج» قرمز است تا از گزینه های معمولی جدا باشد.
+  final Color? tone;
 
   @override
   State<_NavItem> createState() => _NavItemState();
