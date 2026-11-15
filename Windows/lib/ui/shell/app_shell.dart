@@ -163,8 +163,14 @@ class _AppShellState extends State<AppShell> {
       const LogsPage(),
       const AboutPage(),
       ExitPage(
-        onExit: () => widget.windowService.quit(),
-        onCloseWindow: () => widget.windowService.onWindowClose(),
+        // `quit` و `onWindowClose` هر دو `void`/`Future<void>` هستند و نمی
+        // توانند مستقیم برگردانده شوند؛ هر کدام در بدنه خودش اجرا می شود.
+        onExit: () async {
+          await widget.windowService.quit();
+        },
+        onCloseWindow: () async {
+          widget.windowService.onWindowClose();
+        },
       ),
     ];
 
