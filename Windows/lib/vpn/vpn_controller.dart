@@ -1161,6 +1161,26 @@ class VpnController extends ChangeNotifier {
           timeout: probeTimeout,
         );
       } else {
+        // اول از خود هسته می پرسیم. این قاطع ترین جواب است و جلوی «الکی
+        // وصل شدن» را می گیرد: در ۱٫۰۱۳ گره‌هایی «وصل» اعلام شدند که خود
+        // هسته در همان لحظه `no answer` برایشان می نوشت.
+        final bool? verdict = await _clashTunnelVerdict();
+        if (verdict == false) {
+          final String coreLog = _coreLogPath(plan);
+          _log.add(
+            'خود هسته گفت این گره جواب نمی دهد؛ اتصال معتبر نیست.',
+            level: 'error',
+            details: await _coreDiagnostics(
+              plan.cores.first,
+              coreLog,
+              plan: plan,
+              node: node,
+            ),
+          );
+          await _stopCores();
+          await _disableProxy();
+          continue;
+        }
         // پیش از سنجش، شمارنده های کارت شبکه تونل خوانده می شوند.
         final TunnelStats before =
             await _native.tunnelStats(hint: plan.tunnelHint);
@@ -1701,12 +1721,36 @@ class VpnController extends ChangeNotifier {
 
   /// آیا این گره با نوع انتقالش برای هسته آمبرلا قابل اجراست؟
   static bool transportSupported(VpnNode node) {
-    final String network =
-        JsonX.text(node.params['network']).trim().toLowerCase();
+    final String network = _networkOf(node);
     if (network.isEmpty) {
       return true;
     }
     return _coreTransports.contains(network);
+  }
+
+  /// نوع انتقال گره، از پارامترها یا از خود لینک.
+  ///
+  /// گرهی که از `all.txt` آمده، لینک خامش `type=xhttp` دارد ولی
+  /// `params['network']` خالی است؛ پس فقط خواندن پارامترها کافی نیست و
+  /// همان گره `xhttp` «قابل استفاده» شمرده می شد و به هسته می رفت.
+  static String _networkOf(VpnNode node) {
+    final String fromParams =
+        JsonX.text(node.params['network']).trim().toLowerCase();
+    if (fromParams.isNotEmpty) {
+      return fromParams;
+    }
+    final String raw = node.raw.trim();
+    if (!raw.contains('://')) {
+      return '';
+    }
+    try {
+      final Uri? uri = Uri.tryParse(raw);
+      final String type =
+          (uri?.queryParameters['type'] ?? '').trim().toLowerCase();
+      return type;
+    } on FormatException {
+      return '';
+    }
   }
 
   /// نوع انتقال لینک (`tcp`، `ws`، `grpc`، `http`، `h2`).
@@ -2494,6 +2538,108 @@ class VpnController extends ChangeNotifier {
     return _coreReportsWorkingTunnel(log);
   }
 
+  /// وضعیت واقعی تونل، از رابط کلش خود هسته.
+  ///
+  /// این دقیق ترین منبع است: خود هسته می داند کدام گره جواب می دهد. در
+  /// گزارش ۱٫۰۱۳ گره‌هایی مثل `h3_quic xhttp` «وصل» اعلام شدند در حالی که
+  /// هسته در همان لحظه `MONITORING vless § 0: no answer` می نوشت. یعنی ما
+  /// از روی یک خط «تلاش برای اتصال» نتیجه گرفتیم که تونل کار می کند.
+  ///
+  /// دو چیز پرسیده می شود:
+  ///  • `/proxies/<tag>/delay` — آیا گره واقعاً جواب می دهد و چند میلی ثانیه.
+  ///  • `/connections` — آیا همین حالا اتصال زنده ای از مسیر گره باز است.
+  ///
+  /// اگر رابط کلش جواب نداد (مثلاً کلید داشته باشد)، `null` برمی گردد تا
+  /// تصمیم به راه های دیگر بسپارند، نه به «موفق».
+  Future<bool?> _clashTunnelVerdict() async {
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final Uri base = Uri.parse(
+        'http://127.0.0.1:${AppConfig.coreClashPort}',
+      );
+      // ۱. آیا اتصال زنده ای از مسیر گره باز است؟
+      final Map<String, dynamic>? connections =
+          await _clashGet(client, base.resolve('/connections'));
+      if (connections != null) {
+        final Object? items = connections['connections'];
+        if (items is List && items.isNotEmpty) {
+          for (final Object? item in items) {
+            if (item is! Map) {
+              continue;
+            }
+            final Object? chains = item['chains'];
+            if (chains is List && chains.isNotEmpty) {
+              // زنجیره `direct` یعنی ترافیک از تونل نرفت.
+              final bool viaProxy = chains.any(
+                (Object? hop) =>
+                    hop is String &&
+                    hop.isNotEmpty &&
+                    !hop.toLowerCase().contains('direct'),
+              );
+              if (viaProxy) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      // ۲. خود گره چه تاخیری دارد؟ `null` یعنی جواب نداد.
+      final Map<String, dynamic>? proxies =
+          await _clashGet(client, base.resolve('/proxies'));
+      if (proxies != null) {
+        final Object? all = proxies['proxies'];
+        if (all is Map) {
+          for (final MapEntry<Object?, Object?> entry in all.entries) {
+            final Object? value = entry.value;
+            if (value is! Map) {
+              continue;
+            }
+            final Object? history = value['history'];
+            if (value['type'] == 'Selector' ||
+                value['type'] == 'URLTest' ||
+                value['type'] == 'Balancer' ||
+                value['type'] == 'Direct' ||
+                value['type'] == 'Reject') {
+              continue;
+            }
+            if (history is List && history.isNotEmpty) {
+              final Object? last = history.last;
+              if (last is Map && JsonX.integer(last['delay']) > 0) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      return false;
+    } on Exception {
+      // رابط کلش در دسترس نیست؛ این «ناموفق» نیست، «نمی دانم» است.
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _clashGet(HttpClient client, Uri url) async {
+    try {
+      final HttpClientRequest request = await client.getUrl(url);
+      // کلید رابط کلش در تنظیمات ما خالی است (`web-secret: ''`)، پس هدر
+      // احراز هویت لازم نیست. فرستادن «Bearer » خالی بعضی نسخه ها را رد
+      // می کند، برای همین فقط وقتی کلید داشتیم فرستاده می شود.
+      final HttpClientResponse response = await request.close();
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return null;
+      }
+      final String body = await response.transform(utf8.decoder).join();
+      final Object? decoded = jsonDecode(body);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on Exception {
+      return null;
+    }
+  }
+
   /// آیا خود هسته گفته است که تونل بالا آمد و کار کرد؟
   ///
   /// گزارش ۱٫۰٫۱۱ نشان داد سنجش وب تنها معیار بودن، خطرناک است: هسته بالا
@@ -2530,11 +2676,25 @@ class VpnController extends ChangeNotifier {
     if (!text.contains('sing-box started')) {
       return false;
     }
+    // اگر خود هسته گفت گره «جواب نداد»، مدرکِ «اتصال برقرار شد» باطل است.
+    //
+    // در گزارش ۱٫۰۱۳ این خط بارها بود:
+    //   MONITORING vless § 0: no answer after 1s: unavailable for now
+    // یعنی هسته خودش گره را ناسالم می دانست، ولی وجود یک خط
+    // `outbound/vless[...]: outbound connection to ...` کافی بود که ما اتصال
+    // را «معتبر» اعلام کنیم. آن خط فقط یعنی «تلاش کردم وصل شوم»، نه
+    // «وصل شدم». همین بود که کاربر می گفت «الکی وصل می شود».
+    final RegExp noAnswer = RegExp(
+      r'(no answer after [0-9.]+m?s|the attempt failed)',
+    );
+    if (noAnswer.hasMatch(text)) {
+      return false;
+    }
     // اتصال از مسیر خود گره (نه `direct`) — همان چیزی که ثابت می کند تونل
     // بیرون رفت.
     final RegExp outbound = RegExp(
       r'outbound/(vless|vmess|trojan|shadowsocks|hysteria2|tuic|wireguard|anytls|mieru)'
-      r'\[[^\]]*\]: outbound connection to ',
+      r'\[[^\]]*\]: outbound (multiplex )?(packet )?connection to ',
     );
     return outbound.hasMatch(text);
   }

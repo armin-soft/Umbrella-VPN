@@ -266,4 +266,41 @@ proxies:
       expect(settings['use-system-tls-engine'], isFalse);
     });
   });
+
+  group('گره‌ای که خود هسته رد می‌کند', () {
+    VpnNode rawNode(String raw) => VpnNode(
+          id: 'r1',
+          name: 'xhttp node',
+          protocol: NodeProtocol.vless,
+          host: 'proxy.umbrella-server.ir',
+          port: 443,
+          sourceId: 's',
+          params: <String, dynamic>{'id': 'u'},
+          raw: raw,
+        );
+
+    test('نوع انتقال از لینک خام هم خوانده می شود', () {
+      // گره‌های all.txt لینک خام دارند و params['network'] خالی است. پیش از
+      // ۱٫۰٫۱۴ فقط پارامترها خوانده می شد، پس گره xhttp «قابل استفاده»
+      // شمرده می شد و به هسته می رفت — همان «الکی وصل شدن».
+      const String raw =
+          'vless://u@proxy.umbrella-server.ir:443'
+          '?type=xhttp&security=tls&sni=a.example.com#h3_quic xhttp CDN vless';
+      expect(VpnController.transportSupported(rawNode(raw)), isFalse);
+      expect(VpnController.usable(rawNode(raw)), isFalse);
+    });
+
+    test('گره tcp از لینک خام همچنان قابل استفاده است', () {
+      const String raw =
+          'vless://u@direct.umbrella-server.ir:443'
+          '?type=tcp&security=reality&sni=www.informationsverige.se';
+      expect(VpnController.transportSupported(rawNode(raw)), isTrue);
+      expect(VpnController.usable(rawNode(raw)), isTrue);
+    });
+
+    test('لینک بدون type یعنی tcp و مشکلی نیست', () {
+      const String raw = 'vless://u@h:443?security=tls&sni=a.example.com';
+      expect(VpnController.transportSupported(rawNode(raw)), isTrue);
+    });
+  });
 }

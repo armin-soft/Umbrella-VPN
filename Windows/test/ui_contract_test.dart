@@ -145,6 +145,16 @@ void main() {
       expect(core.contains("'use-system-tls-engine': false"), isTrue);
     });
 
+    test('«وصل شدن» از روی حرف خود هسته سنجیده می شود، نه یک خط خوش بینانه', () {
+      // در ۱٫۰۱۳ گره‌هایی «وصل» اعلام شدند که خود هسته در همان لحظه برایشان
+      // `MONITORING ... no answer` می نوشت. آن خط outbound فقط یعنی «تلاش
+      // کردم»، نه «وصل شدم».
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('no answer after'), isTrue);
+      expect(controller.contains('_clashTunnelVerdict'), isTrue);
+      expect(controller.contains('خود هسته گفت این گره جواب نمی دهد'), isTrue);
+    });
+
     test('پورت های ثابت هسته پیش از اجرا آزاد می شوند', () {
       // دستور `run` هسته پورت ۱۷۰۷۸ و ۱۶۷۵۶ را همیشه می گیرد و پرچمی برای
       // عوض کردنشان ندارد؛ در ۱٫۰٫۵ فرستادن `--listen` هسته را با «unknown
