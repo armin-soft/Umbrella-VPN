@@ -1,5 +1,7 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <shellapi.h>
+#include <shobjidl_core.h>
 #include <windows.h>
 
 #include <string>
