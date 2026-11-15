@@ -518,6 +518,12 @@ class SideNav extends StatelessWidget {
                           selected: i == index,
                           compact: compact,
                           onTap: () => onSelect(i),
+                          // «خروج» آخرین خانه است و قرمز می ماند تا با
+                          // بقیه اشتباه نشود.
+                          tone: (exitIndex != null &&
+                                  destinations[i] == destinations[exitIndex!])
+                              ? colors.danger
+                              : null,
                         ),
                       // «خروج» بخش جداگانه ای در انتهای منو است، نه ته
                       // تنظیمات. یک خط جداکننده هم مرزش را نشان می دهد.
