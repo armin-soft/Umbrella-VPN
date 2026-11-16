@@ -1214,10 +1214,16 @@ void main() {
     test('۱۰. اجرای CLI مسیر اجرایی و آرگومان ها را جدا و امن می فرستد', () {
       final String cli = read('lib/vpn/cli_session.dart');
       expect(cli.contains('...file.args.map(_quote)'), isTrue);
-      expect(cli.contains("'Umbrella',"), isTrue);
+      expect(cli.contains('"\$title"'), isTrue);
       expect(cli.contains('_quote(file.exe)'), isTrue);
       expect(cli.contains('File(file.exe).existsSync()'), isTrue);
       expect(cli.contains('final String command ='), isFalse);
+    });
+
+    test('پس از نصب به روزرسانی شماره موبایل در فرم ورود باقی می ماند', () {
+      final String auth = read('lib/state/auth_controller.dart');
+      expect(auth.contains("_phone = _store.read(StoreKeys.lastPhone) ?? ''"), isTrue);
+      expect(auth.contains('await _store.write(StoreKeys.lastPhone, phone);'), isTrue);
     });
 
     test('۱۱. پرچم و نام کشور از کد یکسان در کنار IP نمایش داده می شوند', () {

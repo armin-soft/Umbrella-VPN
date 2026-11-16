@@ -139,7 +139,9 @@ class CliSession {
     final List<String> command = <String>[
       '/c',
       'start',
-      'Umbrella',
+      // `start` interprets its first unquoted word as the executable, not the
+      // window title. Quote the title or cmd.exe tries to launch `Umbrella`.
+      '"$title"',
       if (file.workDir.isNotEmpty) ...<String>['/D', _quote(file.workDir)],
       _quote(file.exe),
       ...file.args.map(_quote),

@@ -121,6 +121,9 @@ class AuthController extends ChangeNotifier {
     }
     _restored = true;
     _device = await _native.deviceInfo();
+    // Keep the phone field filled after an update or an expired server session.
+    // The sign-in token is restored separately below; never save an OTP.
+    _phone = _store.read(StoreKeys.lastPhone) ?? '';
     _deviceId = _store.read(StoreKeys.deviceId) ?? '';
     if (_deviceId.isEmpty) {
       _deviceId = _generateDeviceId();
