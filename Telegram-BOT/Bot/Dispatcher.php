@@ -15,7 +15,7 @@ require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 final class Dispatcher {
 private const ROUTES = [
 'منوی خدمات ربات' => [UserFlow::class, 'serviceMenu'],
-'منوی پشتیبانی' => [UserFlow::class, 'supportMenu'],
+'منوی پشتیبانی' => [UserFlow::class, 'serviceMenu'],
 'گزارش مصرف' => [UserFlow::class, 'usageAnalytics'],
 'ویرایش و ثبت پروفایل' => [ProfileFlow::class, 'begin'],
 'ویرایش پروفایل' => [ProfileFlow::class, 'begin'],
@@ -30,13 +30,13 @@ private const ROUTES = [
 'مدیریت' => [AdminFlow::class, 'menu'],
 'آمار کلی' => [AdminFlow::class, 'globalStats'],
 'تنظیمات' => [AdminFlow::class, 'menu'],
-'اعتبار حساب کاربری' => [AdminFlow::class, 'creditMenu'],
-'پیکربندی سرور' => [AdminFlow::class, 'serverConfig'],
-'اطلاعات سرور' => [AdminFlow::class, 'serverHealthMenu'],
-'همگام سازی سرور' => [AdminFlow::class, 'serverSyncMenu'],
-'عملیات کلاینت سرور' => [AdminFlow::class, 'serverClientsMenu'],
+'اعتبار حساب کاربری' => [AdminFlow::class, 'menu'],
+'پیکربندی سرور' => [AdminFlow::class, 'menu'],
+'اطلاعات سرور' => [AdminFlow::class, 'menu'],
+'همگام سازی سرور' => [AdminFlow::class, 'menu'],
+'عملیات کلاینت سرور' => [AdminFlow::class, 'menu'],
 'بروز رسانی' => [AdminFlow::class, 'updateMenu'],
-'جرایم' => [AdminFlow::class, 'crimes'],
+'جرایم' => [AdminFlow::class, 'menu'],
 'رتبه بندی' => [AdminFlow::class, 'userRanking'],
 'گزارش روزانه' => [AdminFlow::class, 'dailyReport'],
 'رتبه بندی کاربران' => [UserFlow::class, 'usageRanking'],
@@ -289,24 +289,24 @@ match($Data) {
 'اطلاع رسانی هر دو اول' => AdminFlow::startInputNotifyUid($Context, 'both'),
 'افزودن نسخه جدید اول' => AdminFlow::startInput($Context, 'admin:version_number', '👌شماره نسخه جدید ربات را وارد کنید.'),
 'اطلاع رسانی اول' => AdminFlow::notifySingleMenu($Context),
-'اطلاع رسانی سرور' => AdminFlow::serverNotifyMenu($Context),
-'اطلاع رسانی' => AdminFlow::serverNotifyMenu($Context),
+'اطلاع رسانی سرور' => AdminFlow::menu($Context),
+'اطلاع رسانی' => AdminFlow::menu($Context),
 'اطلاع رسانی سفارشی اول' => AdminFlow::serverNotifyCustomStart($Context),
 'اطلاع رسانی عدم استفاده' => AdminFlow::serverNotifyIdle($Context),
 'تایید اطلاع رسانی غیرفعال' => AdminFlow::serverNotifyIdleSend($Context),
-'منوی کاربران' => AdminFlow::usersMenu($Context),
+'منوی کاربران' => AdminFlow::menu($Context),
 'admin_devices' => AdminFlow::appDevicesMenu($Context),
-'اطلاعات سرور' => AdminFlow::serverHealthMenu($Context),
-'همگام سازی سرور' => AdminFlow::serverSyncMenu($Context),
-'عملیات کلاینت سرور' => AdminFlow::serverClientsMenu($Context),
-'منوی سیستم' => AdminFlow::systemMenu($Context),
-'دیتابیس' => AdminFlow::databaseMenu($Context),
+'اطلاعات سرور' => AdminFlow::menu($Context),
+'همگام سازی سرور' => AdminFlow::menu($Context),
+'عملیات کلاینت سرور' => AdminFlow::menu($Context),
+'منوی سیستم' => AdminFlow::menu($Context),
+'دیتابیس' => AdminFlow::menu($Context),
 'پشتیبان گیری دیتابیس' => AdminFlow::databaseBackup($Context),
 'تنظیم مجدد دیتابیس' => AdminFlow::databaseReset($Context),
 'تایید تنظیم مجدد دیتابیس' => AdminFlow::databaseResetConfirm($Context),
-'منوی گزارش' => AdminFlow::reportMenu($Context),
+'منوی گزارش' => AdminFlow::menu($Context),
 'رتبه بندی' => AdminFlow::userRanking($Context),
-'منوی پیامک' => AdminFlow::smsMenu($Context),
+'منوی پیامک' => AdminFlow::menu($Context),
 'گزارش مالی' => AdminFlow::financialReport($Context),
 'مدیریت تیکت ها' => AdminFlow::ticketAdminMenu($Context),
 'لیست تیکت باز' => AdminFlow::ticketAdminList($Context),
@@ -350,7 +350,7 @@ match($Data) {
 'تیکت های من' => UserFlow::ticketMenu($Context),
 'پروفایل کاربری' => UserFlow::profile($Context),
 'toggle_auto_renew' => UserFlow::toggleAutoRenew($Context),
-'منوی تمدید خودکار' => UserFlow::toggleAutoRenew($Context),
+'منوی تمدید خودکار' => UserFlow::autoRenewMenu($Context),
 'auto_renew_off' => UserFlow::disableAutoRenew($Context),
 'تغییرات نسخه' => UserFlow::changes($Context),
 default => null,
@@ -505,9 +505,9 @@ $Text = $Ok
 : Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
 : Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n🔁از برنامه دوباره وارد شوید." . Helper::userFooter();
 
-$Markup = TelegramClient::inlineKeyboard([[
-['text' => '📱 حساب آمبرلا', 'callback_data' => 'app_menu'],
-]]);
+$Markup = TelegramClient::inlineKeyboard([
+Menu::userHome(),
+]);
 
 if ($Context->MessageId !== null) {
 try {
@@ -606,7 +606,7 @@ AdminFlow::handleInput($Context, $Flow, $Text);
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Admin-Input] Flow=' . $Flow . ' | ' . $E->getMessage());
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'خطای ورودی') . '❌خطا در پردازش ورودی مدیریتی؛ لطفاً دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -633,12 +633,14 @@ $Typed_Routes = [
 'اشتراک من' => fn() => SubscriptionFlow::mySubscription($Context),
 'منوی خدمات کاربری' => fn() => UserFlow::serviceMenu($Context),
 'منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
+'بازگشت به منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
 'پروفایل کاربری' => fn() => UserFlow::profile($Context),
 'شارژ اعتبار حساب کاربری' => fn() => SubscriptionFlow::walletTopupStart($Context),
 'سابقه اشتراک' => fn() => UserFlow::subscriptionHistory($Context),
 'گزارش مصرف' => fn() => UserFlow::usageAnalytics($Context),
-'پشتیبانی' => fn() => UserFlow::supportMenu($Context),
-'تیکت ها و پشتیبانی' => fn() => UserFlow::supportMenu($Context),
+'پشتیبانی' => fn() => UserFlow::ticketUserList($Context),
+'تیکت ها و پشتیبانی' => fn() => UserFlow::ticketUserList($Context),
+'تیکت های من' => fn() => UserFlow::ticketUserList($Context),
 'تغییرات نسخه' => fn() => UserFlow::changes($Context),
 'حساب آمبرلا' => fn() => AppFlow::menu($Context),
 'کنترل محتوا' => fn() => AppFlow::filterMenu($Context),

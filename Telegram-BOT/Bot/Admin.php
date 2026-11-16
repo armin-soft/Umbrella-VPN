@@ -40,11 +40,10 @@ private function __construct() {
 }
 
 /**
- * منوی اصلی مدیریت.
+ * منوی اصلی مدیریت (مسطح و بدون زیرمنو).
  *
- * دکمه ها در گروه های موضوعی چیده شده اند تا ادمین به جای خواندن یک فهرست
- * دوازده ردیفی، بخش مورد نظرش را پیدا کند. وضعیت ربات و تعداد تیکت های در
- * انتظار هم بالای پیام آمده تا بدون باز کردن هیچ بخشی معلوم باشد.
+ * تمام امکانات مدیریتی مستقیماً در همین صفحه در ردیف های دو دکمه ای قرار دارند
+ * تا مدیر بدون ورود به زیرمنوهای تو در تو مستقیماً عملیات مورد نظرش را اجرا کند.
  */
 public static function menu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
@@ -54,38 +53,47 @@ $Robot_On = Common::isRobotOn();
 try {
 $Waiting_Tickets = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')", [], 0);
 $Active_Users = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Is_Blocked` = 0', [], 0);
+$Blocked_Users = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Is_Blocked` = 1', [], 0);
 }
 
 catch (Throwable) {
 $Waiting_Tickets = 0;
 $Active_Users = 0;
+$Blocked_Users = 0;
 }
 $Text = Helper::adminGreeting($Context, 'منوی مدیریت')
 . Menu::section('📊', 'وضعیت کلی', [
 '🚦وضعیت ربات: *' . ($Robot_On ? '🟢روشن' : '🔴خاموش') . '*',
 '👥کاربران فعال: *' . Helper::toPersian((string)$Active_Users) . '*',
+'🚫کاربران مسدود: *' . Helper::toPersian((string)$Blocked_Users) . '*',
 '🎫تیکت در انتظار پاسخ: *' . Helper::toPersian((string)$Waiting_Tickets) . '*',
 ])
-. Menu::section('🗂', 'گروه های منو', [
-'👥کاربران: اعتبار، مسدودیت، تیکت ها و محدودیت دستگاه',
-'📲دستگاه‌های برنامه: فهرست همه دستگاه‌ها و صدور یا لغو مجوز',
-'⚙️سرور: وضعیت و سرویس ها، مصرف و داده کاربران، کلاینت ها',
-'📊گزارش: آمار کلی، گزارش روزانه، گزارش مالی، رتبه بندی',
-'📨پیامک و اطلاع رسانی: پیامک تکی و همگانی، اطلاع رسانی به کاربران',
-'🧰سیستم: بروزرسانی، دیتابیس، تعرفه، لینک ها، تنظیمات ربات',
-])
-. '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
+. '📌*امکان مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
 $Markup = [];
 
 // وضعیت ربات، تنها دکمه ای که خود ربات را خاموش و روشن می کند.
 $Markup[] = [Menu::button($Robot_On ? '🔴خاموش کردن ربات' : '🟢روشن کردن ربات', $Robot_On ? 'خاموش کردن ربات' : 'روشن کردن ربات')];
 
-// هر گروه یک زیرمنوی مخصوص خودش را باز می کند: آیتم های بی ربط دیگر در یک
-// صفحه کنار هم نمی آیند و هر عملیات صفحه و ناوبری خودش را دارد.
+// تمام بخش های مدیریتی بدون زیرمنو و به صورت مستقیم.
 $Markup = array_merge($Markup, Menu::rows([
-[['👥کاربران', 'منوی کاربران'], ['📲دستگاه‌های برنامه', 'admin_devices']],
-[['⚙️سرور', 'پیکربندی سرور'], ['📊گزارش و مالی', 'منوی گزارش']],
-[['📨پیامک و اطلاع رسانی', 'منوی پیامک'], ['🧰سیستم', 'منوی سیستم']],
+[['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']],
+[['👁مشاهده اعتبار', 'مشاهده اعتبار اول'], ['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
+[['🚫🔒مسدود کردن کاربر', 'مسدودیت اول'], ['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
+[['👁مشاهده مسدودی ها', 'مشاهده مسدودی ها']],
+[['📲دستگاه‌های برنامه', 'admin_devices'], ['🔐سقف دستگاه حساب', 'device_limit_menu']],
+[['📊وضعیت سرور', 'وضعیت سرور'], ['🔌سرویس های سرور', 'سرویس های سرور']],
+[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول'], ['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
+[['✅فعالسازی کلاینت', 'فعالسازی کلاینت اول'], ['🚫غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول']],
+[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
+[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
+[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
+[['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
+[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
+[['📱اعلان برنامه ها', 'app_push_start'], ['📣تلگرام و برنامه', 'notify_all_start']],
+[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده']],
+[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
+[['🚱کانفیگ اضطراری', 'تنظیمات ربات'], ['🔄بروزرسانی نسخه', 'بروز رسانی']],
+[['💾پشتیبان گیری دیتابیس', 'پشتیبان گیری دیتابیس'], ['🔄تنظیم مجدد دیتابیس', 'تنظیم مجدد دیتابیس']],
 ]));
 
 self::logMenuProblems('menu', $Markup);
@@ -108,22 +116,9 @@ error_log('[Umbrella-Bot][Menu-' . $Screen . '] ' . implode(' | ', $Problems));
 }
 }
 
-/** زیرمنوی اختصاصی مدیریت کاربران. */
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function usersMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Text = Helper::adminGreeting($Context, 'مدیریت کاربران')
-. Menu::section('👥', 'عملیات کاربران', [
-'💳اعتبار حساب کاربران',
-'🚨مسدودیت و رفع مسدودیت',
-'🎫تیکت های پشتیبانی',
-])
-. '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(Menu::rows([
-[['💳اعتبار حساب کاربری', 'اعتبار حساب کاربری'], ['🚨جرایم', 'جرایم']],
-[['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
-]), [Menu::adminHome()]);
-self::logMenuProblems('users', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
 /** مدیریت یکپارچه فهرست دستگاه‌ها و مجوز ورود برنامه. */
@@ -175,7 +170,7 @@ if ($Page + 1 < $Page_Count) $Nav[] = ['text' => 'بعدی➡️', 'callback_dat
 $Buttons[] = $Nav;
 }
 $Buttons[] = [Menu::button('🔐تنظیم سقف دستگاه حساب', 'device_limit_menu')];
-$Buttons[] = [Menu::adminHome()];
+$Buttons[] = Menu::adminHome();
 self::logMenuProblems('app-devices', $Buttons);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
@@ -218,25 +213,9 @@ if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context-
 self::appDevicesMenu($Context, $Page);
 }
 
-/** زیرمنوی اختصاصی ابزارها و پیکربندی سیستم. */
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function systemMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Text = Helper::adminGreeting($Context, 'مدیریت سیستم')
-. Menu::section('🧰', 'ابزارهای سیستم', [
-'🔄بروزرسانی نسخه ربات',
-'🗄️پشتیبان گیری و مدیریت دیتابیس',
-'💰تعرفه و پلن ها',
-'🔗لینک ها و کانال',
-'⚙️تنظیمات ربات',
-])
-. '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(Menu::rows([
-[['🔄بروزرسانی نسخه', 'بروز رسانی'], ['🗄️دیتابیس', 'دیتابیس']],
-[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
-[['🚱کانفیگ اضطراری', 'تنظیمات ربات']],
-]), [Menu::adminHome()]);
-self::logMenuProblems('system', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
 public static function globalStats(Context $Context): void {
@@ -342,8 +321,7 @@ $Text = Helper::adminGreeting($Context, 'آمار کلی') . "\n➖➖➖➖➖�
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی آمار', 'callback_data' => 'آمار کلی']],
 [['text' => '📅گزارش روزانه دقیق', 'callback_data' => 'گزارش روزانه']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی گزارش']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -431,7 +409,7 @@ $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 $Markup = array_merge(Menu::rows([
 [['🚱روشن / خاموش کانفیگ اضطراری', 'emergency_toggle']],
 [['🔗آدرس کانفیگ اضطراری', 'emergency_url_start']],
-]), [Menu::back('منوی سیستم', 'منوی سیستم'), Menu::adminHome()]);
+]), [Menu::adminHome()]);
 self::logMenuProblems('settings', $Markup);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -470,27 +448,20 @@ $Value = trim($Text);
 
 if (in_array(mb_strtolower($Value), ['حذف', 'پاک', 'delete', 'clear', '-'], true)) {
 BotConfig::setEmergencyUrl('');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش‌فرض (تنظیمات سرور یا آدرس داخلی) دوباره استفاده می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('🔙بازگشت', 'تنظیمات ربات')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش‌فرض (تنظیمات سرور یا آدرس داخلی) دوباره استفاده می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات')));
 return;
 }
 
 if (!preg_match('#^https?://[^\s<>]+$#i', $Value)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️آدرس نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n🔗آدرس باید کامل باشد و با `https://` شروع شود.\n👌مثال: `https://example.com/emergency.txt`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('🔗تلاش دوباره', 'emergency_url_start')],
-[Common::backTo('🔙بازگشت', 'تنظیمات ربات')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️آدرس نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n🔗آدرس باید کامل باشد و با `https://` شروع شود.\n👌مثال: `https://example.com/emergency.txt`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
+Common::backTo('🔗تلاش دوباره', 'emergency_url_start'),
+], Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات'))));
 return;
 }
 
 BotConfig::setEmergencyUrl($Value);
 Repository::logAdminAction($Context->UserId, 'emergency_config_url', null, 'url=' . $Value, '');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری ثبت شد:\n<code>{$Value}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('🔙بازگشت', 'تنظیمات ربات')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری ثبت شد:\n<code>{$Value}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات')));
 }
 
 /** Subscription prices and the limits of the custom plan. */
@@ -535,7 +506,6 @@ Menu::rows([
 [['✏️حداقل روز', 'cfg_set:Custom_Min_Days'], ['✏️حداکثر روز', 'cfg_set:Custom_Max_Days']],
 [['✏️حداقل حجم', 'cfg_set:Custom_Min_GB'], ['✏️حداکثر حجم', 'cfg_set:Custom_Max_GB']],
 ]),
-[Menu::button('🔙بازگشت', 'منوی سیستم')],
 [Menu::adminHome()]
 );
 self::logMenuProblems('pricing', $Markup);
@@ -567,7 +537,6 @@ Menu::rows([
 [['✏️لینک کانال', 'cfg_set:Channel_Url']],
 [['✏️آی دی کانال', 'cfg_set:Telegram_Channel_ID']],
 ]),
-[Menu::button('🔙بازگشت', 'منوی سیستم')],
 [Menu::adminHome()]
 );
 self::logMenuProblems('links', $Markup);
@@ -695,19 +664,14 @@ $Error = '❓نوع مقدار ناشناخته است.';
 }
 
 if ($Error !== '') {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️{$Error}\n➖➖➖➖➖➖➖➖➖\n🔁لطفاً مقدار درست را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('✏️تلاش دوباره', 'cfg_set:' . $Key)],
-[Common::backTo('🔙بازگشت', $Meta['screen'] === 'pricing' ? 'cfg_pricing' : 'cfg_links')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️{$Error}\n➖➖➖➖➖➖➖➖➖\n🔁لطفاً مقدار درست را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
+Common::backTo('✏️تلاش دوباره', 'cfg_set:' . $Key),
+], Menu::adminNav('تنظیمات', $Meta['screen'] === 'pricing' ? 'cfg_pricing' : 'cfg_links'))));
 return;
 }
 
 Repository::logAdminAction($Context->UserId, 'cfg_' . $Key, null, 'value=' . mb_substr($Stored, 0, 190), '');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅«{$Meta['label']}» ثبت شد:\n<code>{$Stored}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Common::backTo('🔁مشاهده مقادیر', $Meta['screen'] === 'pricing' ? 'cfg_pricing' : 'cfg_links')],
-[Common::backTo('🔙بازگشت', 'منوی سیستم')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅«{$Meta['label']}» ثبت شد:\n<code>{$Stored}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات', $Meta['screen'] === 'pricing' ? 'cfg_pricing' : 'cfg_links')));
 }
 
 /** The value in use for one CFG_KEYS entry, formatted for a prompt. */
@@ -742,25 +706,9 @@ return;
 TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function reportMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Text = Helper::adminGreeting($Context, 'گزارش ها و آمار')
-. Menu::section('📊', 'انواع گزارش', [
-'📊آمار کلی: کاربران، مصرف، درآمد و پیامک',
-'📅گزارش روزانه: عملکرد امروز به تفکیک بخش ها',
-'💰گزارش مالی: درآمد، کیف پول و خریدها',
-'🏆رتبه بندی: پر مصرف ترین کاربران',
-])
-. '📌*نوع گزارش را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
-[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
-]),
-[Menu::adminHome()]
-);
-self::logMenuProblems('reports', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
 public static function dailyReport(Context $Context): void {
@@ -783,8 +731,8 @@ $Text = Scheduler::buildDailyReportText(false);
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Daily-Report][Admin] ' . $E->getMessage());
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'گزارش روزانه') . "❌خطا در تهیه گزارش روزانه.\n⚠️علت: " . mb_substr($E->getMessage(), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی گزارش']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+[['text' => '🔁تلاش مجدد', 'callback_data' => 'گزارش روزانه']],
+Menu::adminHome(),
 ]));
 return;
 }
@@ -793,8 +741,7 @@ $Text = Helper::adminGreeting($Context, 'گزارش روزانه') . $Text . Hel
 $Markup = TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی گزارش', 'callback_data' => 'گزارش روزانه']],
 [['text' => '🏆رتبه بندی کاربران', 'callback_data' => 'رتبه بندی']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی گزارش']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]);
 
 $Chunks = self::splitMessage($Text);
@@ -844,27 +791,9 @@ if ($Buffer !== '') $Chunks[] = $Buffer;
 return $Chunks === [] ? [$Text] : $Chunks;
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function smsMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
-
-$Text = Helper::adminGreeting($Context, 'پیامک و اطلاع رسانی')
-. Menu::section('📨', 'روش ارسال', [
-'📨پیامک تکی: ارسال پیامک به یک کاربر مشخص',
-'📢پیامک همگانی: ارسال پیامک به همه کاربران',
-'🗣اطلاع رسانی: پیام تلگرام، پیامک یا هر دو',
-'📣اطلاع رسانی سرور: ارسال پیام عمومی و اعلان به کاربران',
-])
-. '📌*روش ارسال را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
-[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['📣اطلاع رسانی سرور', 'اطلاع رسانی سرور']],
-]),
-[Menu::adminHome()]
-);
-self::logMenuProblems('sms', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
 public static function serverServices(Context $Context): void {
@@ -881,8 +810,7 @@ if (($Response['StatusCode'] ?? 0) >= 300 || !is_array($Json['chconfigs'][0] ?? 
 self::notifyAdminServerError('دریافت سرویس های سرور', $Context->UserId, (string)$Context->profileName(), $Response['StatusCode'] ?? 0, (string)($Response['Body'] ?? ''));
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'سرویس های سرور') . "❌خطا: دریافت سرویس های سرور ناموفق بود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔄بروزرسانی', 'callback_data' => 'سرویس های سرور']],
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاعات سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 return;
 }
@@ -950,100 +878,33 @@ $Text = Helper::adminGreeting($Context, 'سرویس های سرور')
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔄بروزرسانی', 'callback_data' => 'سرویس های سرور']],
 [['text' => '📊وضعیت سرور', 'callback_data' => 'وضعیت سرور']],
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاعات سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function serverConfig(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-$Text = Helper::adminGreeting($Context, 'پیکربندی سرور')
-. Menu::section('⚙️', 'مدیریت سرور', [
-'📊وضعیت و سرویس ها: مشاهده سلامت و پورت های سرور',
-'🔄همگام سازی: بروزرسانی مصرف و داده کاربران',
-'👤مدیریت کلاینت: فعالسازی، غیرفعالسازی، حذف و انقضا',
-])
-. '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(Menu::rows([
-[['📊وضعیت و سرویس ها', 'اطلاعات سرور'], ['🔄همگام سازی کاربران', 'همگام سازی سرور']],
-[['👤مدیریت کلاینت ها', 'عملیات کلاینت سرور']],
-]), [Menu::adminHome()]);
-self::logMenuProblems('server', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
-/** زیرمنوی سلامت و سرویس های سرور. */
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function serverHealthMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Text = Helper::adminGreeting($Context, 'وضعیت و سرویس های سرور')
-. Menu::section('📊', 'اطلاعات سرور', ['📊وضعیت منابع، شبکه و مصرف', '🔌فهرست سرویس ها و پورت های فعال'])
-. '📌*مورد را انتخاب کنید:*' . Helper::adminFooter();
-$Rows = array_merge(Menu::rows([
-[['📊وضعیت سرور', 'وضعیت سرور'], ['🔌سرویس های سرور', 'سرویس های سرور']],
-]), [Menu::back('پیکربندی سرور', 'پیکربندی سرور'), Menu::adminHome()]);
-self::logMenuProblems('server-health', $Rows);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+self::menu($Context);
 }
 
-/** زیرمنوی همگام سازی اطلاعات کاربران. */
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function serverSyncMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Text = Helper::adminGreeting($Context, 'همگام سازی کاربران سرور')
-. Menu::section('🔄', 'همگام سازی کاربران', ['📊به روزرسانی مصرف کاربران', '🧾دریافت دوباره اطلاعات کاربران'])
-. '📌*مورد را انتخاب کنید:*' . Helper::adminFooter();
-$Rows = array_merge(Menu::rows([
-[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول'], ['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
-]), [Menu::back('پیکربندی سرور', 'پیکربندی سرور'), Menu::adminHome()]);
-self::logMenuProblems('server-sync', $Rows);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+self::menu($Context);
 }
 
-/** زیرمنوی عملیات تغییردهنده وضعیت کلاینت. */
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function serverClientsMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Text = Helper::adminGreeting($Context, 'مدیریت کلاینت های سرور')
-. Menu::section('👤', 'عملیات کلاینت', ['✅فعال سازی', '🚫غیرفعال سازی', '🗑حذف کاربر', '⌛️منقضی کردن اشتراک'])
-. '📌*عملیات مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Rows = array_merge(Menu::rows([
-[['✅فعالسازی کلاینت', 'فعالسازی کلاینت اول'], ['🚫غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول']],
-[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
-]), [Menu::back('پیکربندی سرور', 'پیکربندی سرور'), Menu::adminHome()]);
-self::logMenuProblems('server-clients', $Rows);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+self::menu($Context);
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function databaseMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-$Menu_Text = Helper::adminGreeting($Context, 'مدیریت دیتابیس')
-. Menu::section('🗄️', 'عملیات دیتابیس', [
-'💾پشتیبان گیری: دریافت فایل پشتیبان از دیتابیس',
-'🔄تنظیم مجدد: بازسازی جدول ها',
-])
-. "⚠️توجه: عملیات تنظیم مجدد غیرقابل بازگشت است.\n"
-. '📌*عملیات مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Menu_Rows = array_merge(
-Menu::rows([
-[['💾پشتیبان گیری', 'پشتیبان گیری دیتابیس'], ['🔄تنظیم مجدد', 'تنظیم مجدد دیتابیس']],
-]),
-[Menu::back('منوی سیستم', 'منوی سیستم'), Menu::adminHome()]
-);
-self::logMenuProblems('database', $Menu_Rows);
-$Menu_Markup = TelegramClient::inlineKeyboard($Menu_Rows);
-
-if ($Context->IsCallback && $Context->MessageId !== null) {
-try {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Menu_Text, $Menu_Markup);
-return;
-}
-
-catch (Throwable) {
-try { TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId); } catch (Throwable) {}
-}
-}
-
-TelegramClient::sendMessage($Context->ChatId, $Menu_Text, $Menu_Markup);
+self::menu($Context);
 }
 
 public static function databaseBackup(Context $Context): void {
@@ -1083,8 +944,8 @@ exec($Command, $Output, $Return_Var);
 if ($Return_Var !== 0 || !file_exists($Filepath) || filesize($Filepath) === 0) {
 $Error_Msg = implode("\n", array_slice($Output, 0, 5));
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تهیه نسخه پشتیبان ناموفق بود.\n⚠️علت: ابزار پشتیبان‌گیری دیتابیس با خطا مواجه شد.\n💬جزئیات: " . mb_substr($Error_Msg, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'دیتابیس']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+[['text' => '🔁تلاش مجدد', 'callback_data' => 'پشتیبان گیری دیتابیس']],
+Menu::adminHome(),
 ]));
 return;
 }
@@ -1096,8 +957,7 @@ $Backup_Caption = Helper::adminGreeting($Context, 'مدیریت دیتابیس')
 . Helper::adminFooter();
 
 $Backup_Markup = TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'دیتابیس']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]);
 
 $Send_Result = TelegramClient::sendDocument($Context->ChatId, $Filepath, $Backup_Caption, $Backup_Markup);
@@ -1114,10 +974,9 @@ TelegramClient::sendMessage($Context->ChatId, $Backup_Caption . "\n⚠️توج�
 public static function databaseReset(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'تنظیم مجدد دیتابیس') . "⚠️هشدار: تنظیم مجدد دیتابیس\n\n⛔️این عملیات تمام جداول را حذف و مجدداً ایجاد می کند.\n🚨تمام اطلاعات کاربران، اشتراک ها، تراکنش ها و... از بین خواهند رفت.\n\n⚠️آیا از انجام این عملیات اطمینان دارید؟" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'تنظیم مجدد دیتابیس') . "⚠️هشدار: تنظیم مجدد دیتابیس\n\n⛔️این عملیات تمام جداول را حذف و مجدداً ایجاد می کند.\n🚨تمام اطلاعات کاربران، اشتراک ها، تراکنش ها و... از بین خواهند رفت.\n\n⚠️آیا از انجام این عملیات اطمینان دارید؟" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '✅بله، تنظیم مجدد انجام شود', 'callback_data' => 'تایید تنظیم مجدد دیتابیس']],
-[['text' => '❌انصراف', 'callback_data' => 'دیتابیس']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -1132,8 +991,7 @@ $Schema_File = __DIR__ . '/../Database/Schema.SQL';
 
 if (!file_exists($Schema_File)) {
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . '❌خطا: فایل ساختار دیتابیس یافت نشد.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'دیتابیس']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 return;
 }
@@ -1165,15 +1023,13 @@ $Count++;
 $PDO->exec('SET FOREIGN_KEY_CHECKS = 1');
 
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "🗑تنظیم مجدد دیتابیس با موفقیت انجام گردید.\n📄تعداد جداول حذف شده: " . Helper::toPersian((string)$Dropped_Tables) . "\n📄تعداد جداول ایجاد شده: " . Helper::toPersian((string)$Count) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'دیتابیس']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
 catch (Throwable $e) {
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تنظیم مجدد دیتابیس ناموفق بود.\n⚠️علت: " . mb_substr($e->getMessage(), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'دیتابیس']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 }
@@ -1268,7 +1124,6 @@ $Ranking_Text .= "🔹👥" . Helper::toPersian((string)$No_Mention) . " کار�
 $Ranking_Text .= Helper::adminFooter();
 $Ranking_Markup = TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی']],
-Menu::back('گزارش ها', 'منوی گزارش'),
 Menu::adminHome(),
 ]);
 
@@ -1297,27 +1152,9 @@ TelegramClient::sendMessage($Context->ChatId, "🔽ادامه رتبه بندی:
 }
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function serverNotifyMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-$Text = Helper::adminGreeting($Context, 'اطلاع رسانی سرور')
-. Menu::section('🗣', 'روش اطلاع رسانی', [
-'✏️سفارشی: متن آزاد برای کاربران',
-'📱برنامه ها: اعلان در برنامه کاربران',
-'📣تلگرام و برنامه: ارسال همزمان',
-'🚫عدم استفاده: یادآوری به کاربران بی مصرف',
-])
-. '📌*روش اطلاع رسانی را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['✏️سفارشی', 'اطلاع رسانی سفارشی اول'], ['📱برنامه ها', 'app_push_start']],
-[['📣تلگرام و برنامه', 'notify_all_start'], ['🚫عدم استفاده', 'اطلاع رسانی عدم استفاده']],
-]),
-[Menu::back('منوی پیامک', 'منوی پیامک')],
-[Menu::adminHome()]
-);
-self::logMenuProblems('notify', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
 public static function serverNotifyCustomStart(Context $Context): void {
@@ -1335,19 +1172,9 @@ $Text = Helper::adminGreeting($Context, 'اطلاع رسانی سفارشی')
 . "📤این متن برای تمام کاربران از طریق تلگرام و پیامک ارسال می شود.\n"
 . "ℹ️فقط متن را ارسال کنید؛ هیچ دکمه ای را نزنید." . Helper::adminFooter();
 
-if ($Context->MessageId !== null) {
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-Menu::back('اطلاع رسانی سرور', 'اطلاع رسانی سرور'),
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard([
-Menu::back('اطلاع رسانی سرور', 'اطلاع رسانی سرور'),
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
-}
 }
 
 public static function serverNotifyIdle(Context $Context): void {
@@ -1410,9 +1237,8 @@ $Users_List[] = [
 }
 
 if (empty($Users_List)) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'عدم استفاده از سرور') . "🚫⭕️هیچ کاربر فعالی وجود ندارد که بیش از " . Helper::toPersian((string)$Threshold_Days) . " روز از آخرین اتصالش گذشته باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاع رسانی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'عدم استفاده از سرور') . "🚫⭕️هیچ کاربر فعالی وجود ندارد که بیش از " . Helper::toPersian((string)$Threshold_Days) . " روز از آخرین اتصالش گذشته باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+Menu::adminHome(),
 ]));
 return;
 }
@@ -1432,9 +1258,9 @@ $Preview .= "├─" . Helper::toPersian((string)$Count) . ". " . ($U['Full_Name
 }
 
 $Preview .= "\n⚠️<b>پس از تایید، پیام به تمام این کاربران (هم تلگرام و هم پیامک) ارسال خواهد شد.</b>" . Helper::adminFooter();
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'پیش نمایش اطلاع رسانی') . $Preview, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'پیش نمایش اطلاع رسانی') . $Preview, TelegramClient::inlineKeyboard([
 [['text' => '✅بله، ارسال شود', 'callback_data' => 'تایید اطلاع رسانی غیرفعال']],
-[['text' => '❌انصراف', 'callback_data' => 'اطلاع رسانی']],
+Menu::adminHome(),
 ]));
 }
 
@@ -1450,9 +1276,7 @@ $Users_Json = (string)($Session['Idle_Notify_Users'] ?? '');
 $Users_List = json_decode($Users_Json, true);
 
 if (!is_array($Users_List) || empty($Users_List)) {
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی به کاربران غیرفعال') . '❌خطا: لیست کاربران منقضی شده است. لطفاً مجدد اقدام کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاع رسانی']],
-]));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی به کاربران غیرفعال') . '❌خطا: لیست کاربران منقضی شده است. لطفاً مجدد اقدام کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده')));
 return;
 }
 
@@ -1539,10 +1363,7 @@ $Summary = "✅تعداد موفق تلگرام: " . Helper::toPersian($Sent_Tg)
 $Summary .= "✅تعداد موفق پیامک: " . Helper::toPersian($Sent_Sms) . " پیامک\n";
 $Summary .= "⛔️تعداد ناموفق پیامک: " . Helper::toPersian($Failed_Sms) . " پیامک";
 
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی به کاربران غیرفعال') . '✅اطلاع رسانی با موفقیت انجام شد.' . "\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاع رسانی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی به کاربران غیرفعال') . '✅اطلاع رسانی با موفقیت انجام شد.' . "\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده')));
 }
 
 private static function renderIdleSms(string $Template, string $Name, string $Duration, string $Last_Online_Label = 'نامشخص', string $Days_Label = ''): string {
@@ -1579,9 +1400,9 @@ $Json = $Response['Json'] ?? null;
 
 if (!is_array($Json) || ($Response['StatusCode'] ?? 0) >= 300) {
 self::notifyAdminServerError('دریافت وضعیت سرور', $Context->UserId, (string)$Context->profileName(), $Response['StatusCode'] ?? 0, (string)($Response['Body'] ?? ''));
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'اطلاعات سرور') . '❌خطا: دریافت وضعیت سرور ناموفق بود.' . "\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاعات سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'اطلاعات سرور') . '❌خطا: دریافت وضعیت سرور ناموفق بود.' . "\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[['text' => '🔄بروز رسانی', 'callback_data' => 'وضعیت سرور']],
+Menu::adminHome(),
 ]));
 return;
 }
@@ -1675,55 +1496,20 @@ $Text = Helper::adminGreeting($Context, 'وضعیت سرور') . ""
 . "└─📚ترافیک کل: `" . $Total_Usage_Human . "`"
 . Helper::adminFooter();
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔄بروز رسانی', 'callback_data' => 'وضعیت سرور']],
-[['text' => '🔙بازگشت', 'callback_data' => 'اطلاعات سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function creditMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-$Text = Helper::adminGreeting($Context, 'کاربران و اعتبار')
-. Menu::section('👥', 'عملیات اعتبار', [
-'➕افزایش اعتبار کیف پول کاربر',
-'➖کسر اعتبار کیف پول کاربر',
-'👁مشاهده موجودی و مشخصات کاربر',
-])
-. '📌*عملیات مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']],
-[['👁مشاهده اعتبار', 'مشاهده اعتبار اول']],
-]),
-[Menu::back('منوی کاربران', 'منوی کاربران'), Menu::adminHome()]
-);
-self::logMenuProblems('credit', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت مستقیم به منوی اصلی مدیریت. */
 public static function crimes(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-$Blocked_Count = count(Repository::getBlockedUsers(1000));
-$Text = Helper::adminGreeting($Context, 'مسدودیت کاربران')
-. Menu::section('🚨', 'عملیات مسدودیت', [
-'🚫🔒مسدود کردن کاربر متخلف',
-'✅🔓رفع مسدودیت کاربر',
-'👁مشاهده فهرست مسدود شده ها',
-'📊تعداد مسدود شده: *' . Helper::toPersian((string)$Blocked_Count) . '* نفر',
-])
-. '📌*عملیات مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['🚫🔒مسدود کردن', 'مسدودیت اول'], ['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
-[['👁مشاهده مسدودی ها', 'مشاهده مسدودی ها']],
-]),
-[Menu::back('منوی کاربران', 'منوی کاربران'), Menu::adminHome()]
-);
-self::logMenuProblems('crimes', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::menu($Context);
 }
 
 public static function blockedList(Context $Context): void {
@@ -1755,8 +1541,7 @@ $Text .= "\n📊تعداد کل مسدود شده ها: *" . Helper::toPersian((
 $Text .= Helper::adminFooter();
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'جرایم']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -1777,7 +1562,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 Menu::rows([
 [['🔄افزودن نسخه جدید', 'افزودن نسخه جدید اول']],
 ]),
-[Menu::back('منوی سیستم', 'منوی سیستم'), Menu::adminHome()]
+[Menu::adminHome()]
 )));
 }
 
@@ -1788,26 +1573,17 @@ Repository::updateUserSession($Context->UserId, ['Flow' => $State]);
 $Flow = str_starts_with($State, 'admin:') ? substr($State, 6) : $State;
 $Back_Call = match (true) {
 str_starts_with($Flow, 'cfg:') => (self::CFG_KEYS[substr($Flow, 4)]['screen'] ?? '') === 'pricing' ? 'cfg_pricing' : 'cfg_links',
-str_starts_with($Flow, 'credit_'), $Flow === 'view_uid' => 'اعتبار حساب کاربری',
-in_array($Flow, ['block_uid', 'unblock_uid'], true) => 'جرایم',
-in_array($Flow, ['activate_uid', 'deactivate_uid', 'deactivate_msg', 'delete_uid', 'expire_uid'], true) => 'عملیات کلاینت سرور',
 in_array($Flow, ['version_number', 'version_changes'], true) => 'بروز رسانی',
 $Flow === 'emergency_url' => 'تنظیمات ربات',
 default => 'مدیریت',
 };
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . $Prompt . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-Menu::back('منوی قبلی', $Back_Call),
-Menu::adminHome(),
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . $Prompt . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('منوی قبلی', $Back_Call)));
 }
 
 public static function startInputBroadcast(Context $Context, string $Mode, string $Prompt): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:notify_broadcast_text', 'Broadcast_Mode' => $Mode]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . $Prompt . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-Menu::back('منوی پیامک', 'منوی پیامک'),
-Menu::adminHome(),
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . $Prompt . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک همگانی', 'ارسال پیامک همگانی اول')));
 }
 
 
@@ -1862,23 +1638,22 @@ default => self::unknownAdminInput($Context),
 private static function unknownAdminInput(Context $Context): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ورودی شما با هیچ عملیات در انتظاری مطابقت نداشت و نادیده گرفته شد.\n👌لطفاً برای ادامه از دکمه‌های منو استفاده کنید یا دستور `/panel` را ارسال نمایید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::adminHome()],
+Menu::adminHome(),
 ]));
 }
 
 /**
  * پیدا کردن کاربر از شناسه یا شماره موبایل.
  *
- * `$BackTo` مقصد دکمه بازگشت است. `$Back_Label` فقط برای سازگاری با فراخوانی
- * های قدیمی نگه داشته شده و دیگر استفاده نمی شود؛ برچسب همه دکمه های بازگشت
- * «🔙بازگشت» است.
+ * `$BackTo` مقصد دکمه بازگشت به منوی قبل است. `$Back_Label` فقط برای سازگاری با
+ * فراخوانی های قدیمی نگه داشته شده و دیگر استفاده نمی شود.
  */
 private static function resolveTarget(Context $Context, string $Target_Input, string $BackTo = 'مدیریت', string $Back_Label = 'منوی مدیریت'): ?array {
 unset($Back_Label);
 $Target_Input = trim($Target_Input);
 
 if ($Target_Input === '') {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: شناسه کاربر خالی است.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه عددی کاربر یا شماره موبایل را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([Common::backTo(Menu::BACK_LABEL, $BackTo)]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: شناسه کاربر خالی است.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه عددی کاربر یا شماره موبایل را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('منوی قبلی', $BackTo)));
 return null;
 }
 
@@ -1889,7 +1664,7 @@ $User = self::findUserOnServer($Target_Input);
 }
 
 if ($User === null) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: کاربری با شناسه `" . Helper::toPersian($Target_Input) . "` در سیستم یافت نشد.\n➖➖➖➖➖➖➖➖➖\n⚠️دلایل ممکن: کاربر ربات را استارت نکرده، شناسه اشتباه وارد شده یا شماره موبایل در پروفایل یا کلاینت سرور ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard([Common::backTo(Menu::BACK_LABEL, $BackTo)]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: کاربری با شناسه `" . Helper::toPersian($Target_Input) . "` در سیستم یافت نشد.\n➖➖➖➖➖➖➖➖➖\n⚠️دلایل ممکن: کاربر ربات را استارت نکرده، شناسه اشتباه وارد شده یا شماره موبایل در پروفایل یا کلاینت سرور ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('منوی قبلی', $BackTo)));
 return null;
 }
 
@@ -1936,16 +1711,13 @@ public static function versionNumber(Context $Context, string $Version): void {
 $Version = trim($Version);
 
 if (!preg_match('/^\d+\.\d+\.\d+$/', $Version)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فرمت نسخه نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️مثال صحیح: `1.0.0`\n🔁لطفاً شماره نسخه را با فرمت درست وارد کنید.\n👇مثلاً `1.0.1`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'بروز رسانی']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فرمت نسخه نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️مثال صحیح: `1.0.0`\n🔁لطفاً شماره نسخه را با فرمت درست وارد کنید.\n👇مثلاً `1.0.1`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
 return;
 }
 
 BotConfig::setRobotVersion($Version);
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:version_changes']);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅نسخه `" . Helper::toPersian($Version) . "` ثبت شد.\n\n👌حالا تغییرات این نسخه را وارد کنید." . Helper::adminFooter());
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅نسخه `" . Helper::toPersian($Version) . "` ثبت شد.\n\n👌حالا تغییرات این نسخه را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
 }
 
 private static function versionChanges(Context $Context, string $Changes): void {
@@ -1953,10 +1725,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 Repository::setSetting('Robot_Changes', $Changes);
 $Version = BotConfig::robotVersion();
 
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅ربات با موفقیت به نسخه `" . Helper::toPersian($Version) . "` بروزرسانی گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'بروز رسانی']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅ربات با موفقیت به نسخه `" . Helper::toPersian($Version) . "` بروزرسانی گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
 
 $Channell_ID = (string)BotConfig::getTelegramChannelId();
 
@@ -2024,8 +1793,10 @@ TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Reposito
 }
 
 private static function creditStep(Context $Context, string $Flow, string $Text, bool $Add): void {
+$Start_Call = $Add ? 'افزایش اعتبار اول' : 'کسر اعتبار اول';
+
 if (str_ends_with($Flow, '_uid')) {
-$User = self::resolveTarget($Context, $Text, 'اعتبار حساب کاربری', 'کاربران و اعتبار');
+$User = self::resolveTarget($Context, $Text, $Start_Call, 'کاربران و اعتبار');
 
 if ($User === null) {
 return;
@@ -2035,7 +1806,7 @@ $Target = (int)($User['Telegram_ID'] ?? 0);
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target]);
 Repository::updateUserSession($Context->UserId, ['Flow' => $Add ? 'admin:credit_add_amount' : 'admin:credit_sub_amount']);
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "👌مبلغ اعتبار به تومان برای کاربر {$Name} را وارد کنید." . Helper::adminFooter());
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "👌مبلغ اعتبار به تومان برای کاربر {$Name} را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعتبار کاربر', $Start_Call)));
 return;
 }
 
@@ -2045,10 +1816,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => null]);
 
 if ($Target <= 0 || $Amount <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: مبلغ وارد شده معتبر نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا یک مبلغ صحیح به تومان وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اعتبار حساب کاربری']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: مبلغ وارد شده معتبر نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا یک مبلغ صحیح به تومان وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعتبار کاربر', $Start_Call)));
 return;
 }
 
@@ -2058,10 +1826,7 @@ $Name = self::targetDisplayName($Target, $User);
 
 if ($Add) {
 Repository::addMoney($Target, $Amount);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *💰مبلغ {$Amount_Persian} اعتبار حساب کاربری کاربر {$Name} با موفقیت شارژ گردید.\n➖➖➖➖➖➖➖➖➖\n💳اعتبار کنونی: " . Helper::formatCurrency(Repository::getBalance($Target)) . "*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اعتبار حساب کاربری']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *💰مبلغ {$Amount_Persian} اعتبار حساب کاربری کاربر {$Name} با موفقیت شارژ گردید.\n➖➖➖➖➖➖➖➖➖\n💳اعتبار کنونی: " . Helper::formatCurrency(Repository::getBalance($Target)) . "*" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعتبار کاربر', $Start_Call)));
 
 $User_Notify = TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Name, 'اعتبار حساب کاربری', $Target) . "💳لحظاتی پیش مبلغ {$Amount_Persian} اعتبار حساب کاربری شما توسط مدیریت شارژ گردید.\n\n➖➖➖➖➖➖➖➖➖\n🌎ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی:" . Helper::formatCurrency(Repository::getBalance($Target)) . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 
@@ -2073,17 +1838,11 @@ return;
 }
 
 if (!Repository::removeMoney($Target, $Amount)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: اعتبار حساب کاربری کاربر {$Name} برای کسر این مبلغ کافی نمی باشد.\n\n🌏ارز کنونی کاربر:🇮🇷ایران - تومان\n💳اعتبار کنونی کاربر:" . Helper::formatCurrency(Repository::getBalance($Target)) . "*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اعتبار حساب کاربری']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: اعتبار حساب کاربری کاربر {$Name} برای کسر این مبلغ کافی نمی باشد.\n\n🌏ارز کنونی کاربر:🇮🇷ایران - تومان\n💳اعتبار کنونی کاربر:" . Helper::formatCurrency(Repository::getBalance($Target)) . "*" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعتبار کاربر', $Start_Call)));
 return;
 }
 
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *💳مبلغ {$Amount_Persian} اعتبار حساب کاربری کاربر {$Name} با موفقیت کسر گردید. ✅" . "*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اعتبار حساب کاربری']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *💳مبلغ {$Amount_Persian} اعتبار حساب کاربری کاربر {$Name} با موفقیت کسر گردید. ✅" . "*" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعتبار کاربر', $Start_Call)));
 $User_Notify = TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Name, 'اعتبار حساب کاربری', $Target) . "💳لحظاتی پیش مبلغ {$Amount_Persian} اعتبار حساب کاربری شما توسط مدیریت کسر گردید.\n\n➖➖➖➖➖➖➖➖➖\n🌎ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی:" . Helper::formatCurrency(Repository::getBalance($Target)) . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 
 if (!($User_Notify['ok'] ?? false)) {
@@ -2093,7 +1852,7 @@ error_log("[Umbrella-Bot][CreditNotify] User {$Target} notification failed: " . 
 
 private static function showCredit(Context $Context, string $Target_Input): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$User = self::resolveTarget($Context, $Target_Input);
+$User = self::resolveTarget($Context, $Target_Input, 'مشاهده اعتبار اول');
 
 if ($User === null) {
 return;
@@ -2102,15 +1861,13 @@ return;
 $Target = (int)($User['Telegram_ID'] ?? 0);
 $Balance = Helper::formatCurrency(Repository::getBalance($Target));
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *💳اعتبار حساب کاربر {$Name} بدین شرح است.\n\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی:{$Balance}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'اعتبار حساب کاربری']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *💳اعتبار حساب کاربر {$Name} بدین شرح است.\n\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی:{$Balance}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مشاهده اعتبار', 'مشاهده اعتبار اول')));
 }
 
 private static function blockUser(Context $Context, string $Target_Input, bool $Block): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$User = self::resolveTarget($Context, $Target_Input, 'جرایم', 'مسدودیت کاربران');
+$Start_Call = $Block ? 'مسدودیت اول' : 'رفع مسدودیت اول';
+$User = self::resolveTarget($Context, $Target_Input, $Start_Call, 'مسدودیت کاربران');
 
 if ($User === null) {
 return;
@@ -2121,19 +1878,13 @@ $Is_Blocked = (bool)($User['Is_Blocked'] ?? false);
 
 if ($Block && $Is_Blocked) {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⛔️*کاربر {$Name} در حال حاضر مسدود است.*\n⏳تا زمان رفع مسدودی، امکان فعالسازی کلاینت و خرید اشتراک وجود ندارد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'جرایم']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⛔️*کاربر {$Name} در حال حاضر مسدود است.*\n⏳تا زمان رفع مسدودی، امکان فعالسازی کلاینت و خرید اشتراک وجود ندارد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مسدودیت کاربر', $Start_Call)));
 return;
 }
 
 if (!$Block && !$Is_Blocked) {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅*کاربر {$Name} در حال حاضر مسدود نیست.*\nℹ️برای مسدود کردن او، از بخش «مسدود کردن کاربر» استفاده کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'جرایم']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅*کاربر {$Name} در حال حاضر مسدود نیست.*\nℹ️برای مسدود کردن او، از بخش «مسدود کردن کاربر» استفاده کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('رفع مسدودیت', $Start_Call)));
 return;
 }
 
@@ -2141,14 +1892,11 @@ Repository::setBlocked($Target, $Block);
 $Action = $Block ? 'مسدود' : 'آزاد';
 $Name = self::targetDisplayName($Target, $User);
 $Action_Mark = $Block ? '⛔️' : '🔓';
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *{$Action_Mark}کاربر {$Name} با موفقیت {$Action} گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'جرایم']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *{$Action_Mark}کاربر {$Name} با موفقیت {$Action} گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مسدودیت کاربران', $Start_Call)));
 
 TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Name, 'وضعیت حساب کاربری', $Target) . ($Block ? "⛔️با عرض پوزش شما به طور دائمی مسدود شده اید.\n\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter() . "*" : "✅🔓مسدودیت شما رفع گردید. خوش آمدید!") . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+Menu::userHome(),
 ]));
 }
 
@@ -2176,7 +1924,8 @@ return str_contains((string)($User['Client_Status'] ?? ''), 'فعال')
 
 private static function clientStatusStep(Context $Context, string $Target_Input, bool $Activate): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$User = self::resolveTarget($Context, $Target_Input, 'عملیات کلاینت سرور', 'عملیات کلاینت سرور');
+$Start_Call = $Activate ? 'فعالسازی کلاینت اول' : 'غیر فعالسازی کلاینت اول';
+$User = self::resolveTarget($Context, $Target_Input, $Start_Call, 'عملیات کلاینت سرور');
 
 if ($User === null) {
 return;
@@ -2188,10 +1937,7 @@ $Client_ID = (string)($User['Client_ID'] ?? '');
 
 if ($Client_ID === '' || $Client_ID === '_') {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: شناسه کلاینت برای کاربر {$Name} ثبت نشده است.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: این کاربر هنوز اشتراک فعالی ندارد یا کلاینت سرور برای او ایجاد نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: شناسه کلاینت برای کاربر {$Name} ثبت نشده است.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: این کاربر هنوز اشتراک فعالی ندارد یا کلاینت سرور برای او ایجاد نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('کلاینت سرور', $Start_Call)));
 return;
 }
 
@@ -2199,19 +1945,13 @@ $Is_Currently_Active = self::clientIsActive($Client_ID, $User);
 
 if ($Activate && $Is_Currently_Active) {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *⚠️کلاینت کاربر {$Name} از قبل در سرور فعال است.\n➖➖➖➖➖➖➖➖➖\nℹ️نیازی به فعالسازی مجدد نیست." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *⚠️کلاینت کاربر {$Name} از قبل در سرور فعال است.\n➖➖➖➖➖➖➖➖➖\nℹ️نیازی به فعالسازی مجدد نیست." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('کلاینت سرور', $Start_Call)));
 return;
 }
 
 if (!$Activate && !$Is_Currently_Active) {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *⚠️کلاینت کاربر {$Name} از قبل در سرور غیرفعال است.\n➖➖➖➖➖➖➖➖➖\nℹ️نیازی به غیرفعالسازی مجدد نیست." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *⚠️کلاینت کاربر {$Name} از قبل در سرور غیرفعال است.\n➖➖➖➖➖➖➖➖➖\nℹ️نیازی به غیرفعالسازی مجدد نیست." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('کلاینت سرور', $Start_Call)));
 return;
 }
 
@@ -2222,10 +1962,7 @@ if (($Response['StatusCode'] ?? 0) >= 300) {
 $Error = $Response['Body'] ?? 'خطا در ارتباط با سرور';
 $Name = self::targetDisplayName($Target, $User);
 self::notifyAdminServerError($Activate ? 'فعالسازی کلاینت' : 'غیرفعالسازی کلاینت', $Target, $Name, $Response['StatusCode'] ?? 0, $Error);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: به روزرسانی کلاینت کاربر {$Name} روی سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr($Error, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: به روزرسانی کلاینت کاربر {$Name} روی سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr($Error, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('کلاینت سرور', $Start_Call)));
 return;
 }
 
@@ -2233,10 +1970,7 @@ if ($Activate) {
 Repository::updateUser($Target, ['Client_Status' => '✅فعال']);
 Repository::updateUser($Target, ['Deactivation_Message' => null]);
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅کلاینت کاربر {$Name} در سرور فعال گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅کلاینت کاربر {$Name} در سرور فعال گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('فعالسازی کلاینت', 'فعالسازی کلاینت اول')));
 
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
 TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Full_Name, 'فعالسازی کلاینت', $Target) . "✅🔓کلاینت شما در سرور فعال گردید.\n\n➖➖➖➖➖➖➖➖➖\n⚠️📋نکته: قوانین مانیتورینگ سرور را رعایت فرمایید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
@@ -2254,7 +1988,7 @@ return;
 }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:deactivate_msg']);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "👌متن غیرفعالسازی کلاینت را وارد کنید." . Helper::adminFooter());
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "👌متن غیرفعالسازی کلاینت را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول')));
 }
 
 private static function clientDeactivateMessage(Context $Context, string $Message): void {
@@ -2263,9 +1997,7 @@ $Target = (int)(Repository::getUserSession($Context->UserId)['Temp_UID'] ?? 0);
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => null]);
 
 if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'غیرفعالسازی کلاینت') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('عملیات کلاینت سرور', 'عملیات کلاینت سرور')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'غیرفعالسازی کلاینت') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول')));
 return;
 }
 
@@ -2277,10 +2009,7 @@ $Response = ServerClient::updateUser($Client_ID, ['is_active' => false, 'enable'
 if (($Response['StatusCode'] ?? 0) >= 300) {
 $Name = self::targetDisplayName($Target, Repository::getUser($Target));
 self::notifyAdminServerError('غیرفعالسازی کلاینت', $Target, $Name, $Response['StatusCode'] ?? 0, (string)($Response['Body'] ?? ''));
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: غیرفعالسازی کلاینت در سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: غیرفعالسازی کلاینت در سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول')));
 return;
 }
 }
@@ -2290,13 +2019,13 @@ Repository::addSubscriptionLog($Target, 'deactivate', null, null, null, $Message
 Repository::updateUser($Target, ['Deactivation_Message' => $Message]);
 $User = Repository::getUser($Target);
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *🚫کلاینت کاربر {$Name} در سرور غیرفعال گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *🚫کلاینت کاربر {$Name} در سرور غیرفعال گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول')));
 
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
-TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Full_Name, 'غیرفعالسازی کلاینت', $Target) . "🚫کلاینت شما در سرور غیرفعال گردید.\n\n➖➖➖➖➖➖➖➖➖\n⚠️علت: {$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::backTo('💎اشتراک من', 'اشتراک من')]));
+TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Full_Name, 'غیرفعالسازی کلاینت', $Target) . "🚫کلاینت شما در سرور غیرفعال گردید.\n\n➖➖➖➖➖➖➖➖➖\n⚠️علت: {$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
+Common::backTo('💎اشتراک من', 'اشتراک من'),
+Menu::userHome(),
+]));
 $Phone = (string)($User['Phone'] ?? '');
 
 if (Helper::validatePhone($Phone)) {
@@ -2315,10 +2044,7 @@ $Target = (int)(Repository::getUserSession($Context->UserId)['Temp_UID'] ?? 0);
 
 if ($Target <= 0) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: کاربری برای حذف انتخاب نشده است.\n➖➖➖➖➖➖➖➖➖\n⚠️ابتدا از بخش «حذف کاربر از سرور» شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: کاربری برای حذف انتخاب نشده است.\n➖➖➖➖➖➖➖➖➖\n⚠️ابتدا از بخش «حذف کاربر از سرور» شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
 return;
 }
 
@@ -2327,7 +2053,7 @@ self::deleteUser($Context, (string)$Target);
 
 private static function deleteUser(Context $Context, string $Target_Input): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$User = self::resolveTarget($Context, $Target_Input, 'عملیات کلاینت سرور', 'عملیات کلاینت سرور');
+$User = self::resolveTarget($Context, $Target_Input, 'حذف کاربر اول', 'عملیات کلاینت سرور');
 
 if ($User === null) {
 return;
@@ -2342,10 +2068,7 @@ $Subscription = (string)($User['Subscription'] ?? '');
 if ($Client_ID === '' || $Client_ID === '_') {
 if ($Full_Name === '' && $Phone === '' && $Subscription === '') {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'حذف کاربر از سرور') . "❌خطا: کاربر {$Name} قبلاً حذف شده است.\n➖➖➖➖➖➖➖➖➖\n⚠️این کاربر در سیستم ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'حذف کاربر از سرور') . "❌خطا: کاربر {$Name} قبلاً حذف شده است.\n➖➖➖➖➖➖➖➖➖\n⚠️این کاربر در سیستم ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
 return;
 }
 
@@ -2359,10 +2082,7 @@ Repository::updateUser($Target, [
 'WireGuard_Private_Key' => null, 'WireGuard_Public_Key' => null,
 ]);
 
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅اطلاعات ربات برای کاربر {$Name} پاک شد.\n➖➖➖➖➖➖➖➖➖\n⚠️توجه: کاربر می تواند دوباره اشتراک جدید خریداری کند*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅اطلاعات ربات برای کاربر {$Name} پاک شد.\n➖➖➖➖➖➖➖➖➖\n⚠️توجه: کاربر می تواند دوباره اشتراک جدید خریداری کند*" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
 
 $User_Notify = TelegramClient::sendMessage($Target, Helper::frame('کاربر', $Name, 'حذف اطلاعات کاربری', $Target) . "✅اطلاعات حساب کاربری شما توسط مدیریت پاک شد.\n➖➖➖➖➖➖➖➖➖\n⚠️در صورت تمایل می توانید دوباره اشتراک خریداری کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 
@@ -2379,10 +2099,7 @@ if (($Delete_Response['StatusCode'] ?? 0) >= 300) {
 $Delete_Error = $Delete_Response['Body'] ?? 'خطا در ارتباط با سرور';
 $Name = self::targetDisplayName($Target, $User);
 self::notifyAdminServerError('حذف کاربر', $Target, $Name, $Delete_Response['StatusCode'] ?? 0, $Delete_Error);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: حذف کاربر {$Name} از سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr($Delete_Error, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: حذف کاربر {$Name} از سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr($Delete_Error, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
 return;
 }
 
@@ -2405,7 +2122,7 @@ Helper::frame('کاربر', $Name, 'حذف اشتراک', $Target) . "🚫اشت
 "⚠️در صورت نیاز می توانید مجدداً از طریق ربات اقدام به خرید اشتراک نمایید.\n" .
 Helper::userFooter(),
 TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+Menu::userHome(),
 ])
 );
 }
@@ -2414,15 +2131,12 @@ TelegramClient::sendMessage($Context->ChatId,
 self::header($Context) .
 "👤کاربر {$Name} با شناسه کلاینت {$Client_ID} با موفقیت حذف گردید." .
 Helper::adminFooter(),
-TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-])
+TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول'))
 );
 }
 
 private static function notifyUidStep(Context $Context, string $UidText): void {
-$User = self::resolveTarget($Context, $UidText, 'منوی پیامک', 'پیامک و اطلاع رسانی');
+$User = self::resolveTarget($Context, $UidText, 'اطلاع رسانی اول', 'اطلاع رسانی به کاربر');
 
 if ($User === null) {
 return;
@@ -2444,10 +2158,7 @@ default => 'پیامک',
 
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target, 'Flow' => 'admin:notify_text', 'Broadcast_Mode' => $Mode]);
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "👌متن اطلاع رسانی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . Helper::toPersian((string)$Target) . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('اطلاع رسانی', 'اطلاع رسانی اول')],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "👌متن اطلاع رسانی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . Helper::toPersian((string)$Target) . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 }
 
 private static function notifyUser(Context $Context, string $Message): void {
@@ -2458,10 +2169,7 @@ $Mode = (string)($Session['Broadcast_Mode'] ?? 'both');
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => null, 'Broadcast_Mode' => null]);
 
 if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('اطلاع رسانی', 'اطلاع رسانی اول')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 return;
 }
 
@@ -2474,7 +2182,7 @@ $Sent_Sms = false;
 if ($Mode === 'telegram' || $Mode === 'both') {
 if ($Chat_ID > 0) {
 $Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'اطلاع رسانی', $Target) . "📣یک اطلاعیه برای شما ارسال شده است.\n\n" . "\n➖➖➖➖➖➖➖➖➖\n🔔اطلاع رسانی: {$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+Menu::userHome(),
 ]));
 if (($Result['ok'] ?? false) === true) $Sent_Tg = true;
 }
@@ -2493,9 +2201,7 @@ $Reasons = self::deliveryFailureReasons($Mode, $Phone, $Chat_ID, $Sent_Sms);
 $Reason_Text = $Reasons === []
 ? '⚠️دلیل نامشخص است؛ لطفاً تنظیمات پنل پیامک و اطلاعات کاربر را بررسی کنید.'
 : "⚠️دلایل:\n- " . implode("\n- ", $Reasons);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌اطلاع رسانی ارسال نشد.\n{$Reason_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌اطلاع رسانی ارسال نشد.\n{$Reason_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 return;
 }
 
@@ -2504,9 +2210,7 @@ $Summary = '';
 if ($Sent_Tg) $Summary .= "📨تلگرام: ارسال موفق\n";
 if ($Sent_Sms) $Summary .= "📱پیامک: ارسال موفق\n";
 
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅اطلاع رسانی به کاربر {$Full_Name} ارسال گردید.*\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅اطلاع رسانی به کاربر {$Full_Name} ارسال گردید.*\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 }
 
 public static function singleSmsMenu(Context $Context): void {
@@ -2525,7 +2229,7 @@ Menu::rows([
 [['📨تلگرام', 'ارسال پیامک تکی تلگران اول'], ['📱پیامک', 'ارسال پیامک تکی پیامک اول']],
 [['📨📱هر دو', 'ارسال پیامک تکی هر دو اول']],
 ]),
-Menu::adminNav('پیامک و اطلاع رسانی', 'منوی پیامک')
+[Menu::adminHome()]
 );
 self::logMenuProblems('single-sms', $Markup);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
@@ -2542,11 +2246,10 @@ public static function appPushStart(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_target', 'Temp_UID' => null]);
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به برنامه')
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به برنامه')
 . "👌شناسه عددی کاربر، شماره موبایل یا کلمه «همه» را بفرستید.\n"
 . 'ℹ️ پیام در برنامه آمبرلا به دستگاه همان کاربر نمایش داده می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('اطلاع رسانی سرور', 'اطلاع رسانی سرور')],
-[Menu::adminHome()],
+Menu::adminHome(),
 ]));
 }
 
@@ -2559,20 +2262,20 @@ $Input = trim($Input);
 if ($Input === 'همه' || mb_strtolower($Input) === 'all') {
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_text', 'Temp_UID' => 0]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '📝 حالا متن پیام را بفرستید؛ برای همه دستگاه‌ها ارسال می‌شود.' . Helper::adminFooter());
+. '📝 حالا متن پیام را بفرستید؛ برای همه دستگاه‌ها ارسال می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 return;
 }
 
 $User = Repository::findUserByIdentifier($Input);
 
 if ($User === null) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter());
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 return;
 }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_text', 'Temp_UID' => (int)$User['Telegram_ID']]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '📝 حالا متن پیام را بفرستید؛ برای دستگاه‌های کاربر ' . Helper::toPersian((string)$User['Telegram_ID']) . ' ارسال می‌شود.' . Helper::adminFooter());
+. '📝 حالا متن پیام را بفرستید؛ برای دستگاه‌های کاربر ' . Helper::toPersian((string)$User['Telegram_ID']) . ' ارسال می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 }
 
 /** Third step: stores (and queues) the message. */
@@ -2589,9 +2292,7 @@ $Count = self::queueAppPush($Target, $Text, (int)$Context->UserId);
 
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '✅ پیام ثبت شد و تا ' . Helper::toPersian((string)$Count) . ' دستگاه تحویل داده می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+. '✅ پیام ثبت شد و تا ' . Helper::toPersian((string)$Count) . ' دستگاه تحویل داده می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 }
 
 /**
@@ -2647,13 +2348,12 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:notify_all_text', 'Temp_UID' => null]);
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع به تلگرام و برنامه')
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع به تلگرام و برنامه')
 . "📣*پیام همزمان آماده ارسال است.*\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "👌متن دلخواه خود را در یک پیام بفرستید.\n"
 . "📤این متن برای همهٔ کاربران ربات (تلگرام) و همهٔ دستگاه‌های برنامهٔ «آمبرلا» به‌عنوان اعلان برنامه ارسال می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('اطلاع رسانی سرور', 'اطلاع رسانی سرور')],
-[Menu::adminHome()],
+Menu::adminHome(),
 ]));
 }
 
@@ -2665,10 +2365,10 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 $Text = trim($Text);
 
 if ($Text === '') {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع به تلگرام و برنامه') . "❌متن ارسالی خالی است؛ لطفاً متنی وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔄تلاش دوباره', 'callback_data' => 'notify_all_start']],
-[Menu::back('اطلاع رسانی سرور', 'اطلاع رسانی سرور')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع به تلگرام و برنامه') . "❌متن ارسالی خالی است؛ لطفاً متنی وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge(
+[[['text' => '🔄تلاش دوباره', 'callback_data' => 'notify_all_start']]],
+Menu::adminNav('تلگرام و برنامه', 'notify_all_start')
+)));
 return;
 }
 
@@ -2688,7 +2388,7 @@ if ($User_ID <= 0) continue;
 if ($Chat_ID > 0) {
 try {
 $Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Name, 'اطلاع رسانی', $User_ID) . "📣پیام اطلاع‌رسانی سرور آمبرلا:\n\n{$Text}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+Menu::userHome(),
 ]));
 
 if (($Result['ok'] ?? false) === true) {
@@ -2715,7 +2415,7 @@ $Markup = array_merge(
 Menu::rows([
 [['🔄ارسال پیام دیگر', 'notify_all_start']],
 ]),
-Menu::adminNav('اطلاع رسانی سرور', 'اطلاع رسانی سرور')
+Menu::adminNav('تلگرام و برنامه', 'notify_all_start')
 );
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع به تلگرام و برنامه') . "📣ارسال همزمان انجام شد.\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard($Markup));
 }
@@ -2732,7 +2432,9 @@ $Text = self::header($Context, 'مجوز دستگاه کاربران')
 'ℹ️به صورت پیش فرض هر کاربر فقط روی یک دستگاه فعال است.',
 ])
 . '👇شناسه را همین حالا بفرستید:' . Helper::adminFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::adminNav('مدیریت دستگاه‌های برنامه', 'admin_devices')));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+Menu::adminHome(),
+]));
 }
 
 /** Second step: show the current state and let the admin pick the new cap. */
@@ -2742,10 +2444,7 @@ if (!$Context->isAdmin()) { return; }
 $User = Repository::findUserByIdentifier($Input);
 
 if ($User === null) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('مجوز دستگاه', 'device_limit_menu')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مجوز دستگاه', 'device_limit_menu')));
 return;
 }
 
@@ -2781,7 +2480,7 @@ $Text = self::header($Context, 'مجوز دستگاه کاربران')
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:device_limit_pick', 'Temp_UID' => $Telegram_Id]);
 
-TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [
 ['text' => '1️⃣یک دستگاه', 'callback_data' => 'device_limit_set_1'],
 ['text' => '2️⃣دو دستگاه', 'callback_data' => 'device_limit_set_2'],
@@ -2793,9 +2492,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), Tel
 [
 ['text' => '🔟ده دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
-[Menu::back('مجوز دستگاه', 'device_limit_menu')],
-[Menu::adminHome()],
-]));
+], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
 }
 
 /** دومین گام، وقتی مدیر تعداد را تایپ می کند (به جای انتخاب از دکمه ها). */
@@ -2811,7 +2508,7 @@ return;
 
 // «لغو» و هر ورودی نامعتبر: همان صفحه با دکمه ها دوباره نمایش داده می شود.
 if (!preg_match('/^\d{1,2}$/', $Number) || (int)$Number < 1) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⚠️فقط یک عدد بین ۱ تا ۹۹ مجاز است؛ یکی از دکمه های زیر را انتخاب کنید یا عدد را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⚠️فقط یک عدد بین ۱ تا ۹۹ مجاز است؛ یکی از دکمه های زیر را انتخاب کنید یا عدد را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [
 ['text' => '1️⃣یک دستگاه', 'callback_data' => 'device_limit_set_1'],
 ['text' => '2️⃣دو دستگاه', 'callback_data' => 'device_limit_set_2'],
@@ -2823,8 +2520,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز �
 [
 ['text' => '🔟ده دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
-[Menu::back('مجوز دستگاه', 'device_limit_menu'), Menu::adminHome()[0]],
-]));
+], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
 return;
 }
 
@@ -2843,10 +2539,7 @@ $Session = Repository::getUserSession($Context->UserId);
 $Telegram_Id = (int)($Session['Temp_UID'] ?? 0);
 
 if ($Telegram_Id <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⌛️این عملیات منقضی شده است؛ دوباره از منو شروع کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📱مجوز دستگاه کاربران', 'callback_data' => 'device_limit_menu']],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⌛️این عملیات منقضی شده است؛ دوباره از منو شروع کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مجوز دستگاه کاربران', 'device_limit_menu')));
 return;
 }
 
@@ -2855,23 +2548,20 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => n
 Repository::logAdminAction((int)$Context->UserId, 'device_limit_set', $Telegram_Id, 'max=' . $Max);
 
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران')
-. "✅*انجام شد.*\n📱از این به بعد کاربر " . Helper::toPersian((string)$Telegram_Id) . " می‌تواند روی *" . Helper::toPersian((string)$Max) . " دستگاه* به‌طور همزمان فعال باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+. "✅*انجام شد.*\n📱از این به بعد کاربر " . Helper::toPersian((string)$Telegram_Id) . " می‌تواند روی *" . Helper::toPersian((string)$Max) . " دستگاه* به‌طور همزمان فعال باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [['text' => '📲فهرست دستگاه‌ها', 'callback_data' => 'admin_devices']],
-[['text' => '📱تنظیم مجوز حساب دیگر', 'callback_data' => 'device_limit_menu']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
 }
 
 public static function notifySingleMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به کاربر') . '📨لطفاً روش ارسال را انتخاب کنید:*' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به کاربر') . '📨لطفاً روش ارسال را انتخاب کنید:*' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📨ارسال از تلگرام', 'callback_data' => 'اطلاع رسانی تلگران اول']],
 [['text' => '📱ارسال از پیامک', 'callback_data' => 'اطلاع رسانی پیامک اول']],
 [['text' => '📨📱ارسال از هر دو', 'callback_data' => 'اطلاع رسانی هر دو اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی پیامک']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -2879,31 +2569,24 @@ public static function startInputSingleSmsUid(Context $Context, string $Mode): v
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:sms_single_uid', 'Broadcast_Mode' => $Mode, 'Temp_UID' => null]);
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'ارسال پیامک تکی') . '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک تکی', 'ارسال پیامک تکی اول')],
-[Menu::adminHome()],
-]));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'ارسال پیامک تکی') . '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 }
 
 public static function startInputNotifyUid(Context $Context, string $Mode): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:notify_uid', 'Broadcast_Mode' => $Mode, 'Temp_UID' => null]);
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به کاربر') . '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('اطلاع رسانی', 'اطلاع رسانی اول')],
-[Menu::adminHome()],
-]));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به کاربر') . '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 }
 
 public static function broadcastMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'ارسال پیامک همگانی') . '📨لطفاً روش ارسال را انتخاب کنید:*' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'ارسال پیامک همگانی') . '📨لطفاً روش ارسال را انتخاب کنید:*' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📨ارسال از تلگرام', 'callback_data' => 'ارسال پیامک همگانی تلگرام اول']],
 [['text' => '📱ارسال از پیامک', 'callback_data' => 'ارسال پیامک همگانی پیامک اول']],
 [['text' => '📨📱ارسال از هر دو', 'callback_data' => 'ارسال پیامک همگانی هر دو اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی پیامک']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -2912,11 +2595,10 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 $Message = trim($Message);
 
 if ($Message === '') {
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی همگانی') . "❌متن ارسالی خالی است؛ لطفاً متنی وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔄تلاش دوباره', 'callback_data' => 'اطلاع رسانی سفارشی اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی پیامک']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی همگانی') . "❌متن ارسالی خالی است؛ لطفاً متنی وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge(
+[[['text' => '🔄تلاش دوباره', 'callback_data' => 'اطلاع رسانی سفارشی اول']]],
+Menu::adminNav('پیامک همگانی', 'ارسال پیامک همگانی اول')
+)));
 return;
 }
 
@@ -2944,7 +2626,7 @@ if ($Mode === 'telegram' || $Mode === 'both') {
 if ($Chat_ID > 0) {
 try {
 $Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Name, 'اطلاع رسانی همگانی', $User_ID) . "📨پیام همگانی سرور آمبرلا:\n\n{$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+Menu::userHome(),
 ]));
 
 if (($Result['ok'] ?? false) === true) {
@@ -3007,11 +2689,10 @@ if (($Mode === 'sms' || $Mode === 'both') && trim((string)Environment::getSmsApi
 $Summary .= "\n⚠️کلید سرویس پیامک در تنظیمات ثبت نشده است؛ پیامک‌ها ارسال نشدند.";
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی سفارشی') . "📨ارسال انجام شد.\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔄ارسال پیام دیگر', 'callback_data' => 'اطلاع رسانی سفارشی اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی پیامک']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی سفارشی') . "📨ارسال انجام شد.\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge(
+[[['text' => '🔄ارسال پیام دیگر', 'callback_data' => 'اطلاع رسانی سفارشی اول']]],
+Menu::adminNav('پیامک همگانی', 'ارسال پیامک همگانی اول')
+)));
 }
 
 private static function singleSmsStep(Context $Context, string $UidText): void {
@@ -3037,10 +2718,7 @@ default => 'پیامک',
 
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target, 'Flow' => 'admin:sms_single_text', 'Broadcast_Mode' => $Mode]);
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "👌متن پیامک تکی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . Helper::toPersian((string)$Target) . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک تکی', 'ارسال پیامک تکی اول')],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "👌متن پیامک تکی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . Helper::toPersian((string)$Target) . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 }
 
 private static function singleSmsModeRetry(Context $Context): void {
@@ -3049,20 +2727,15 @@ $Target = (int)($Session['Temp_UID'] ?? 0);
 
 if ($Target <= 0) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📨ارسال پیامک تکی', 'callback_data' => 'ارسال پیامک تکی اول']],
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 return;
 }
 
 $Name = self::targetDisplayName($Target, Repository::getUser($Target));
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️لطفاً حالت ارسال را از دکمه های زیر انتخاب کنید (متن به صورت پیام ارسال نشود).\n👤کاربر: {$Name}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️لطفاً حالت ارسال را از دکمه های زیر انتخاب کنید (متن به صورت پیام ارسال نشود).\n👤کاربر: {$Name}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [['text' => '📨از تلگرام', 'callback_data' => 'ارسال پیامک تکی تلگران اول'], ['text' => '📱از پیامک', 'callback_data' => 'ارسال پیامک تکی پیامک اول']],
 [['text' => '📨📱از هر دو', 'callback_data' => 'ارسال پیامک تکی هر دو اول']],
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-]));
+], Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول'))));
 }
 
 private static function notifyModeRetry(Context $Context): void {
@@ -3071,20 +2744,15 @@ $Target = (int)($Session['Temp_UID'] ?? 0);
 
 if ($Target <= 0) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🗣اطلاع رسانی به کاربر', 'callback_data' => 'اطلاع رسانی اول']],
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 return;
 }
 
 $Name = self::targetDisplayName($Target, Repository::getUser($Target));
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️لطفاً حالت اطلاع رسانی را از دکمه های زیر انتخاب کنید (متن به صورت پیام ارسال نشود).\n👤کاربر: {$Name}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️لطفاً حالت اطلاع رسانی را از دکمه های زیر انتخاب کنید (متن به صورت پیام ارسال نشود).\n👤کاربر: {$Name}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [['text' => '📨از تلگرام', 'callback_data' => 'اطلاع رسانی تلگران اول'], ['text' => '📱از پیامک', 'callback_data' => 'اطلاع رسانی پیامک اول']],
 [['text' => '📨📱از هر دو', 'callback_data' => 'اطلاع رسانی هر دو اول']],
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-]));
+], Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول'))));
 }
 
 private static function deliveryFailureReasons(string $Mode, string $Phone, int $Chat_ID, bool $Sent_Sms): array {
@@ -3123,10 +2791,7 @@ $Mode = (string)($Session['Broadcast_Mode'] ?? 'sms');
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => null, 'Broadcast_Mode' => null]);
 
 if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک تکی', 'ارسال پیامک تکی اول')],
-[Menu::adminHome()],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 return;
 }
 
@@ -3141,7 +2806,7 @@ $Sent_Sms = false;
 if ($Mode === 'telegram' || $Mode === 'both') {
 if ($Chat_ID > 0) {
 $Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'اطلاع رسانی', $Target) . "📨یک پیامک ارسال شده است.\n\n" . "\n➖➖➖➖➖➖➖➖➖\n🔔پیامک: {$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
+Menu::userHome(),
 ]));
 
 if (($Result['ok'] ?? false) === true) $Sent_Tg = true;
@@ -3161,9 +2826,7 @@ $Reasons = self::deliveryFailureReasons($Mode, $Phone, $Chat_ID, $Sent_Sms);
 $Reason_Text = $Reasons === []
 ? '⚠️دلیل نامشخص است؛ لطفاً تنظیمات پنل پیامک و اطلاعات کاربر را بررسی کنید.'
 : "⚠️دلایل:\n- " . implode("\n- ", $Reasons);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌ارسال انجام نشد.\n{$Reason_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌ارسال انجام نشد.\n{$Reason_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 return;
 }
 
@@ -3172,14 +2835,12 @@ $Summary = '';
 if ($Sent_Tg) $Summary .= "📨تلگرام: ارسال موفق\n";
 if ($Sent_Sms) $Summary .= "📱پیامک: ارسال موفق\n";
 
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅پیامک تکی برای کاربر {$Display_Name} ارسال گردید.*\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[Menu::back('پیامک و اطلاع رسانی', 'منوی پیامک')],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅پیامک تکی برای کاربر {$Display_Name} ارسال گردید.*\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 }
 
 private static function manualExpire(Context $Context, string $Target_Input): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$User = self::resolveTarget($Context, $Target_Input, 'عملیات کلاینت سرور', 'عملیات کلاینت سرور');
+$User = self::resolveTarget($Context, $Target_Input, 'منقضی اشتراک اول', 'منقضی کردن اشتراک');
 
 if ($User === null) {
 return;
@@ -3190,10 +2851,7 @@ $Subscription = (string)($User['Subscription'] ?? '');
 
 if ($Subscription === '') {
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: اشتراک فعالی برای کاربر {$Name} ثبت نشده است.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: این کاربر در حال حاضر اشتراک فعالی ندارد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: اشتراک فعالی برای کاربر {$Name} ثبت نشده است.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: این کاربر در حال حاضر اشتراک فعالی ندارد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('منقضی کردن اشتراک', 'منقضی اشتراک اول')));
 return;
 }
 
@@ -3205,10 +2863,7 @@ $Response = ServerClient::updateUser($Client_ID, ['is_active' => false, 'enable'
 if (($Response['StatusCode'] ?? 0) >= 300) {
 $Name = self::targetDisplayName($Target, Repository::getUser($Target));
 self::notifyAdminServerError('غیرفعالسازی کلاینت', $Target, $Name, $Response['StatusCode'] ?? 0, (string)($Response['Body'] ?? ''));
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: غیرفعالسازی کلاینت در سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌خطا: غیرفعالسازی کلاینت در سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('منقضی کردن اشتراک', 'منقضی اشتراک اول')));
 return;
 }
 }
@@ -3244,10 +2899,7 @@ IppanelClient::send($Target, $Phone, $Sms_Text);
 }
 
 $Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *⏰اشتراک کاربر {$Name} منقضی گردید.\n➖➖➖➖➖➖➖➖➖\n⚠️وضعیت: کلاینت در سرور غیرفعال شد و اطلاعات کاربری محفوظ ماند." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'عملیات کلاینت سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *⏰اشتراک کاربر {$Name} منقضی گردید.\n➖➖➖➖➖➖➖➖➖\n⚠️وضعیت: کلاینت در سرور غیرفعال شد و اطلاعات کاربری محفوظ ماند." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('منقضی کردن اشتراک', 'منقضی اشتراک اول')));
 }
 
 public static function updateAllUsages(Context $Context): void {
@@ -3264,19 +2916,10 @@ if (!is_array($Update_Json) || ($Update_Response['StatusCode'] ?? 0) >= 300 || (
 self::notifyAdminServerError('بروزرسانی مصرف سرور', $Context->UserId, (string)$Context->profileName(), $Update_Response['StatusCode'] ?? 0, (string)($Update_Response['Body'] ?? ''));
 $Error_Text = self::header($Context) . " *❌خطا: بروز رسانی میزان استفاده در سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Update_Response['Body'] ?? ''), 0, 200) . Helper::adminFooter();
 
-if ($Context->MessageId !== null) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Error_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Error_Text, TelegramClient::inlineKeyboard([
+[['text' => '🔁بروز رسانی مجدد', 'callback_data' => 'بروز رسانی میزان استفاده اول']],
+Menu::adminHome(),
 ]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
-}
 
 return;
 }
@@ -3286,21 +2929,10 @@ $Synced = (int)Scheduler::refreshUsagesNow();
 if ($Synced <= 0) {
 $Sync_Error = self::header($Context) . " *⚠️بروزرسانی مصرف در سرور انجام شد اما دریافت فهرست کاربران از سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n🔄لطفا چند لحظه دیگر دوباره تلاش کنید." . Helper::adminFooter();
 
-if ($Context->MessageId !== null) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Sync_Error, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Sync_Error, TelegramClient::inlineKeyboard([
 [['text' => '🔁بروز رسانی مجدد', 'callback_data' => 'بروز رسانی میزان استفاده اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, $Sync_Error, TelegramClient::inlineKeyboard([
-[['text' => '🔁بروز رسانی مجدد', 'callback_data' => 'بروز رسانی میزان استفاده اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
-}
 
 return;
 }
@@ -3315,21 +2947,10 @@ Repository::updateUsageSnapshotValues();
 catch (Throwable) {}
 $Success_Text = Helper::adminGreeting($Context, 'میزان استفاده کاربران') . '✅بروز رسانی میزان استفاده کاربران از سرور با موفقیت انجام شد.' . "\n👥تعداد بروز رسانی شده: `" . Helper::toPersian((string)$Synced) . "` کاربر\n📊مجموع مصرف: `" . $Total_Usage_Human . "`\n\n" . Helper::adminFooter();
 
-if ($Context->MessageId !== null) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Success_Text, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Success_Text, TelegramClient::inlineKeyboard([
 [['text' => '🔁بروز رسانی مجدد', 'callback_data' => 'بروز رسانی میزان استفاده اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, $Success_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔁بروز رسانی مجدد', 'callback_data' => 'بروز رسانی میزان استفاده اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
-}
 }
 
 public static function askUpdateUserData(Context $Context): void {
@@ -3341,19 +2962,9 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال با�
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:update_uid']);
 $Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . '👌فرمت ورودی (تک یا گروهی — بدون محدودیت):' . "\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه تک:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\nنمونه گروهی:\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n\n⚠️نکته: هر شناسه کاربر با نزدیک‌ترین شناسه کلاینت جفت می‌شود. ترتیب مهم نیست و تعداد جفت‌ها محدودیتی ندارد.\n📱به جای شناسه کاربر می‌توانید شماره موبایل کاربر را نیز وارد کنید." . Helper::adminFooter();
 
-if ($Context->MessageId !== null) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+Menu::adminHome(),
 ]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
-}
 }
 
 private static function refreshUserData(Context $Context, string $Identifier): void {
@@ -3392,10 +3003,7 @@ $Pending_Num = $Line;
 
 if ($Pairs === []) {
 $Error_Text = self::header($Context) . " *❌خطا: فرمت وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه کاربر و شناسه کلاینت را (تک یا گروهی) وارد کنید:\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه گروهی:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n`123456789`\n`0d2585be-89a1-4a42-9d5e-2c9a4fcb51aa`" . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard(Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')));
 return;
 }
 
@@ -3407,7 +3015,7 @@ $Loading_Text = self::header($Context) . " *🔄در حال دریافت اطل�
 
 if ($Context->MessageId !== null) {
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Loading_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
+Menu::adminHome(),
 ]));
 }
 
@@ -3423,11 +3031,10 @@ $Results[] = self::processUpdatePair($Context, (string)$Pair[0], (string)$Pair[1
 
 if (count($Pairs) > 1) {
 $Summary_Text = Helper::adminGreeting($Context, 'بروز رسانی گروهی کاربران') . "📦نتایج بروز رسانی گروهی (" . Helper::toPersian((string)count($Pairs)) . " کاربر):\n➖➖➖➖➖➖➖➖➖\n" . implode("\n", $Results) . "\n➖➖➖➖➖➖➖➖➖\n✅عملیات گروهی پایان یافت." . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, mb_substr($Summary_Text, 0, 4000), TelegramClient::inlineKeyboard([
-[['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, mb_substr($Summary_Text, 0, 4000), TelegramClient::inlineKeyboard(array_merge(
+[[['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']]],
+Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')
+)));
 }
 }
 
@@ -3446,7 +3053,7 @@ $Loading_Text = self::header($Context) . " *🔄در حال دریافت اطل�
 
 if ($Context->MessageId !== null) {
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Loading_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
+Menu::adminHome(),
 ]));
 }
 
@@ -3463,10 +3070,7 @@ $Data = $Response['Json'] ?? null;
 if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300 || !isset($Data['uuid'])) {
 self::notifyAdminServerError('بروزرسانی داده های کاربر', $Target_Telegram_ID, self::targetDisplayName($Target_Telegram_ID, $Local_User ?? []), $Response['StatusCode'] ?? 0, (string)($Response['Body'] ?? ''));
 $Error_Text = self::header($Context) . " *❌خطا: دریافت داده های سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard(Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')));
 return "❌خطا در دریافت از سرور — `{$Client_ID}`";
 }
 
@@ -3693,14 +3297,13 @@ $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده ه�
 // The 4096-character limit would cut the footer off mid-way, so the body is
 // trimmed first and the standard footer is added after it.
 $Detail_Text = mb_substr($Detail_Text, 0, 3800) . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, $Detail_Text, TelegramClient::inlineKeyboard([
-[['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']],
-[['text' => '🔙بازگشت', 'callback_data' => 'همگام سازی سرور']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, $Detail_Text, TelegramClient::inlineKeyboard(array_merge(
+[[['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']]],
+Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')
+)));
 
 if ($Target_Telegram_ID > 0) {
-TelegramClient::sendMessage($Target_Telegram_ID, Common::greet(new Context([], $Target_Telegram_ID, $Target_Telegram_ID, $Display_Name, false, null, null, null, null), 'بروز رسانی اشتراک') . "🔄لحظاتی پیش اطلاعات اشتراک شما توسط مدیریت بروزرسانی گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::backTo('💎مشاهده اشتراک', 'اشتراک من')]));
+TelegramClient::sendMessage($Target_Telegram_ID, Common::greet(new Context([], $Target_Telegram_ID, $Target_Telegram_ID, $Display_Name, false, null, null, null, null), 'بروز رسانی اشتراک') . "🔄لحظاتی پیش اطلاعات اشتراک شما توسط مدیریت بروزرسانی گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::backTo('💎مشاهده اشتراک', 'اشتراک من'), Menu::userHome()]));
 }
 
 return "✅{$Display_Name} — `{$Server_UUID}`" . ($Target_Telegram_ID > 0 ? ' (ID: ' . Helper::toPersian((string)$Target_Telegram_ID) . ')' : '');
@@ -3763,11 +3366,10 @@ $Top_Text .= "├─" . Helper::rankLine($Rank, $Name_Link, Helper::formatCurren
 
 if ($Top_Text === '') $Top_Text = "└─❌داده ای موجود نیست\n";
 $Text = Helper::adminGreeting($Context, 'گزارش مالی پیشرفته') . '💰*درآمد (تومان):*' . "\n├─📅امروز: *" . Helper::formatCurrency($Stats['revenue_today']) . "* (" . Helper::toPersian((string)$Stats['revenue_today_count']) . " تراکنش)\n├─🗓هفت روز اخیر: *" . Helper::formatCurrency($Stats['revenue_week']) . "*\n├─📆سی روز اخیر: *" . Helper::formatCurrency($Stats['revenue_month']) . "* (" . Helper::toPersian((string)$Stats['revenue_month_count']) . " تراکنش)\n└─💎کل: *" . Helper::formatCurrency($Stats['revenue_total']) . "*\n\n🏆*۵ کاربر برتر (مجموع شارژ):*\n" . $Top_Text . "\n💳*کیف پول:*\n├─💵مجموع موجودی: *" . Helper::formatCurrency($Stats['total_balance']) . "*\n├─📊میانگین: *" . Helper::formatCurrency($Stats['avg_balance']) . "*\n└─👥دارای موجودی: *" . Helper::toPersian((string)$Stats['users_with_balance']) . "* نفر\n\n🧾*جمع کل مالی:*\n├─📥مجموع شارژ کاربران: *" . Helper::formatCurrency($Stats['total_recharge']) . "*\n├─📤مجموع خرید اشتراک: *" . Helper::formatCurrency($Stats['total_spent']) . "*\n└─🧮کل تراکنش ها: *" . Helper::toPersian((string)$Stats['total_transactions']) . "*\n\n📈*مصرف سرور:*\n├─📦سهمیه کل: *" . Helper::formatGB((float)$Stats['server_quota']) . "*\n├─📥مصرف کل: *" . Helper::formatGB((float)$Stats['server_used']) . "*\n└─💎اشتراک های فعال: *" . Helper::toPersian((string)$Stats['active_subscriptions']) . "*" . Helper::adminFooter();
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی', 'callback_data' => 'گزارش مالی']],
 [['text' => '📅گزارش روزانه دقیق', 'callback_data' => 'گزارش روزانه']],
-[['text' => '🔙بازگشت', 'callback_data' => 'منوی گزارش']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -3777,48 +3379,39 @@ $Waiting_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tic
 $Answered_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'answered'");
 $Closed_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'closed'");
 $Total_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets`");
+$Tickets = Repository::openTickets(20);
+
 $Text = Helper::adminGreeting($Context, 'مدیریت تیکت ها')
 . Menu::section('🎫', 'آمار تیکت ها', [
 '🟡در انتظار پاسخ: *' . Helper::toPersian((string)$Waiting_Count) . '*',
 '🟢پاسخ داده شده: *' . Helper::toPersian((string)$Answered_Count) . '*',
 '⚫بسته شده: *' . Helper::toPersian((string)$Closed_Count) . '*',
 '📋کل تیکت ها: *' . Helper::toPersian((string)$Total_Count) . '*',
-])
-. '📌*برای دیدن و پاسخ دادن، فهرست تیکت های باز را باز کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['📋تیکت های باز', 'لیست تیکت باز']],
-]),
-[Menu::back('منوی کاربران', 'منوی کاربران'), Menu::adminHome()]
-);
-self::logMenuProblems('tickets', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
-}
-
-public static function ticketAdminList(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-$Tickets = Repository::openTickets(20);
-
-if (empty($Tickets)) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'مدیریت تیکت ها') . "\n➖➖➖➖➖➖➖➖➖\n❌هیچ تیکت بازی وجود ندارد.*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'مدیریت تیکت ها']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
-return;
-}
+]);
 
 $Buttons = [];
+
+if (empty($Tickets)) {
+$Text .= '✅*هیچ تیکت بازی وجود ندارد.*' . Helper::adminFooter();
+}
+
+else {
+$Text .= '📌*برای مشاهده و پاسخ دادن، تیکت مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
 
 foreach ($Tickets as $T) {
 $Priority_Icon = ['low' => '🟢', 'medium' => '🟡', 'high' => '🟠', 'urgent' => '🔴'][$T['Priority']] ?? '🟡';
 $Buttons[] = [['text' => "{$Priority_Icon} #{$T['ID']} - " . mb_substr((string)$T['Subject'], 0, 30), 'callback_data' => 'ticket_view:' . $T['ID']]];
 }
+}
 
-$Buttons[] = [['text' => '🔙بازگشت', 'callback_data' => 'مدیریت تیکت ها']];
-$Buttons[] = [['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']];
+$Buttons[] = Menu::adminHome();
+self::logMenuProblems('tickets', $Buttons);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));
+}
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'مدیریت تیکت ها') . "📋لیست تیکت های باز" . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+/** سازگاری با دکمه های قدیمی: هدایت به صفحه یکپارچه مدیریت تیکت ها. */
+public static function ticketAdminList(Context $Context): void {
+self::ticketAdminMenu($Context);
 }
 
 public static function ticketAdminView(Context $Context, int $Ticket_ID): void {
@@ -3856,12 +3449,10 @@ $Text .= "📎[پیوست تصویری]\n";
 }
 
 $Text .= Helper::adminFooter();
-$Buttons = [
+$Buttons = array_merge([
 [['text' => '✏️پاسخ', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 [['text' => '✅بستن تیکت', 'callback_data' => 'ticket_close:' . $Ticket_ID]],
-[['text' => '🔙بازگشت', 'callback_data' => 'لیست تیکت باز']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-];
+], Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها'));
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -3869,10 +3460,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function ticketAdminReplyStart(Context $Context, int $Ticket_ID): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:ticket_reply_text', 'Temp_Ticket_ID' => $Ticket_ID]);
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . "\n➖➖➖➖➖➖➖➖➖\n✏️📝پاسخ خود را وارد کنید:" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-Menu::back('مدیریت تیکت ها', 'مدیریت تیکت ها'),
-Menu::adminHome(),
-]));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . "\n➖➖➖➖➖➖➖➖➖\n✏️📝پاسخ خود را وارد کنید:" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تیکت', 'ticket_view:' . $Ticket_ID)));
 }
 
 public static function ticketAdminReplySend(Context $Context, string $Text): void {
@@ -3896,32 +3484,29 @@ Menu::userHome(),
 ]));
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . "\n➖➖➖➖➖➖➖➖➖\n✅پاسخ شما با موفقیت ارسال شد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🔙بازگشت', 'callback_data' => 'لیست تیکت باز']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
-]));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . "\n➖➖➖➖➖➖➖➖➖\n✅پاسخ شما با موفقیت ارسال شد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها')));
 }
 
 public static function ticketAdminClose(Context $Context, int $Ticket_ID): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::closeTicket($Ticket_ID);
 TelegramClient::answerCallbackQuery($Context->CallbackId, '✅تیکت بسته شد', false);
-self::ticketAdminList($Context);
+self::ticketAdminMenu($Context);
 }
 
 public static function smsTemplateMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context) . " *❌این بخش غیرفعال شده است.*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context) . " *❌این بخش غیرفعال شده است.*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+Menu::adminHome(),
 ]));
 }
 
 public static function smsTemplateEdit(Context $Context, string $Code): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, self::header($Context) . " *❌این بخش غیرفعال شده است.*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context) . " *❌این بخش غیرفعال شده است.*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+Menu::adminHome(),
 ]));
 }
 
@@ -3929,7 +3514,7 @@ public static function smsTemplateUpdate(Context $Context, string $Text): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Template_Code' => null]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *❌این بخش غیرفعال شده است.*" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 }

@@ -32,18 +32,25 @@ $Checks = [
         str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 1") &&
         str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 0") &&
         str_contains($Admin, "'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP"),
-    'admin device controls and user app account are routed from their menus' =>
+    'admin device controls and user app actions are routed directly from their flat menus' =>
         str_contains($Dispatcher, "'admin_devices' => AdminFlow::appDevicesMenu(\$Context)") &&
         str_contains($Dispatcher, "str_starts_with(\$Data, 'admin_device_toggle:')") &&
         str_contains($User, "'📱حساب آمبرلا', 'app_menu'") &&
+        str_contains($User, "'📱دستگاه‌های من', 'app_devices'") &&
+        str_contains($User, "'🛡کنترل محتوا', 'app_filter'") &&
+        str_contains($User, "'🔗دامنه‌های دلخواه', 'app_filter_domains'") &&
+        str_contains($User, "'🔐تأیید دومرحله‌ای', 'app_2fa'") &&
+        str_contains($User, "'🔔اعلان‌های برنامه', 'app_notifications'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
         str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'"),
-    'nested app screens provide back-to-account and main-menu navigation' =>
+    'flat app screens return directly to the Bot Services menu without intermediate submenus' =>
         str_contains($AppLink, 'TelegramClient::inlineKeyboard([Menu::userHome()])') &&
-        str_contains($AppLink, "Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()") &&
-        str_contains($AppLink, "Menu::back('کنترل محتوا', 'app_filter')"),
-    'ticket submenus and ticket-description step have back and main routes' =>
-        str_contains($User, "Menu::userNav('تیکت ها و پشتیبانی', 'منوی پشتیبانی')") &&
+        !str_contains($AppLink, "Menu::back('حساب آمبرلا', 'app_menu')") &&
+        !str_contains($AppLink, "Menu::back('کنترل محتوا', 'app_filter')"),
+    'direct ticket actions and ticket-description step have proper back and main routes' =>
+        str_contains($User, "'➕ایجاد تیکت جدید', 'تیکت جدید'") &&
+        str_contains($User, "'🎫تیکت های من', 'لیست تیکت های من'") &&
+        !str_contains($User, "'🎫تیکت ها و پشتیبانی', 'منوی پشتیبانی'") &&
         str_contains($User, "Menu::back('ویرایش توضیحات', 'ویرایش توضیحات تیکت')") &&
         str_contains($Dispatcher, "'ویرایش توضیحات تیکت' => UserFlow::ticketDescriptionStart(\$Context)")
 ];

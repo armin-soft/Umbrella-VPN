@@ -50,7 +50,7 @@ $this->test_footer_is_kept_with_real_menu();
 $this->test_footer_is_dropped_for_navigation_only_keyboard();
 $this->test_footer_is_kept_for_link_buttons();
 $this->test_separator_length_is_uniform();
-$this->test_back_buttons_have_no_destination();
+$this->test_navigation_button_labels_are_uniform();
 $this->test_key_texts_keep_their_emoji();
 
 if ($this->Failures !== []) {
@@ -138,19 +138,35 @@ $this->check(str_contains($this->trim($Text, $Markup), 'جهت استفاده ا
 }
 
 /**
- * در هیچ دکمه ای «بازگشت به <مقصد>» نمانده باشد: برچسب همه دکمه های بازگشت
- * فقط «🔙بازگشت» است.
+ * برچسب همه دکمه های بازگشت و منوی اصلی در کل ربات یکدست است:
+ * «🔙بازگشت به منوی قبل» و «🏠بازگشت به منوی اصلی».
  */
-private function test_back_buttons_have_no_destination(): void {
+private function test_navigation_button_labels_are_uniform(): void {
+$this->check(Menu::BACK_LABEL === '🔙بازگشت به منوی قبل', 'Menu::BACK_LABEL is «🔙بازگشت به منوی قبل»');
+$this->check(Menu::HOME_LABEL === '🏠بازگشت به منوی اصلی', 'Menu::HOME_LABEL is «🏠بازگشت به منوی اصلی»');
+
 $Files = glob(dirname(__DIR__) . '/Bot/*.php') ?: [];
+$Allowed = ['🔙بازگشت به منوی قبل', '🏠بازگشت به منوی اصلی', "'بازگشت به منوی اصلی'"];
 
 foreach ($Files as $File) {
 $Source = (string)file_get_contents($File);
 $Lines = explode("\n", $Source);
 
 foreach ($Lines as $Index => $Line) {
-if (str_contains($Line, 'بازگشت به ') && !str_starts_with(trim($Line), '*') && !str_starts_with(trim($Line), '//')) {
-$this->check(false, basename($File) . ':' . ($Index + 1) . ': a back button still names a destination');
+$Trimmed = trim($Line);
+if (str_starts_with($Trimmed, '*') || str_starts_with($Trimmed, '//') || str_starts_with($Trimmed, '/*')) {
+continue;
+}
+
+if (str_contains($Line, "'🔙بازگشت'") || str_contains($Line, '🏠منوی مدیریت') || str_contains($Line, '🏠منوی اصلی')) {
+$this->check(false, basename($File) . ':' . ($Index + 1) . ': legacy back/home button label remains');
+}
+
+if (str_contains($Line, 'بازگشت به ')) {
+$Cleaned = str_replace($Allowed, '', $Line);
+if (str_contains($Cleaned, 'بازگشت به ')) {
+$this->check(false, basename($File) . ':' . ($Index + 1) . ': a back button names a custom destination');
+}
 }
 }
 }

@@ -53,12 +53,7 @@ $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 ])
 . $Summary
 . \Helper::userFooter();
-$Rows = Menu::rows([
-[['🛡کنترل محتوا', 'app_filter'], ['📱دستگاه‌های من', 'app_devices']],
-[['🔔اعلان‌های برنامه', 'app_notifications'], ['🔐تأیید دومرحله‌ای', 'app_2fa']],
-]);
-$Rows[] = Menu::userHome();
-self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
+self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 /** The filter menu: one button per category, toggling on press. */
@@ -84,10 +79,7 @@ $Row = [];
 if ($Row !== []) $Rows[] = $Row;
 
 $Rows[] = [['text' => $Settings['enabled'] ? '🔴خاموش کردن کنترل محتوا' : '🟢روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
-$Rows = array_merge($Rows, Menu::rows([
-[['🔗افزودن دامنه دلخواه', 'app_filter_domains']],
-]));
-$Rows = array_merge($Rows, [Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()]);
+$Rows[] = Menu::userHome();
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
@@ -145,8 +137,6 @@ $Context,
 . "📥لینک یا دامنه ها را بفرستید؛ هر خط یک مورد.\n🧹برای پاک کردن همه، فقط «-» بفرستید."
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([
-Menu::back('کنترل محتوا', 'app_filter'),
-Menu::back('حساب آمبرلا', 'app_menu'),
 Menu::userHome(),
 ])
 );
@@ -168,7 +158,10 @@ AppFilter::save((string)$Account['uuid'], [
 ], 'bot');
 
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-self::filterMenu($Context);
+self::reply($Context, \Helper::userGreeting($Context, 'دامنه‌های دلخواه')
+. '✅دامنه‌های دلخواه ذخیره شدند.'
+. AppFilter::summary(AppFilter::load((string)$Account['uuid']))
+. \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 /** The devices that ever signed in, with trust state and paging. */
@@ -190,7 +183,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()])
+TelegramClient::inlineKeyboard([Menu::userHome()])
 );
 return;
 }
@@ -244,7 +237,6 @@ $Navigation[] = ['text' => 'بعدی ➡️', 'callback_data' => 'app_devices_pa
 $Buttons[] = $Navigation;
 }
 
-$Buttons[] = Menu::back('حساب آمبرلا', 'app_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
@@ -364,7 +356,7 @@ $Icon = match((string)$Row['Level']) { 'warning' => '⚠️', 'error' => '⛔️
 $Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '') . "\n🕐 " . (string)$Row['Sent_At'] . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
-self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()]));
+self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 /** The switch that decides whether a sign-in also needs a tap here. */
@@ -409,10 +401,7 @@ $Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورو
 $Rows = $On
 ? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
 : [[['text' => '✅فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
-$Rows = array_merge($Rows, Menu::rows([
-[['📱دستگاه‌های من', 'app_devices'], ['🔔اعلان‌های برنامه', 'app_notifications']],
-]));
-$Rows = array_merge($Rows, [Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()]);
+$Rows[] = Menu::userHome();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
@@ -441,7 +430,7 @@ $Context,
 '📱 حسابی پیدا نشد',
 'برای دیدن این بخش، شماره موبایل شما باید در برنامه یا پنل ثبت شده باشد.'
 ) . \Helper::userFooter(),
-[]
+TelegramClient::inlineKeyboard([Menu::userHome()])
 );
 }
 

@@ -13,8 +13,11 @@ declare(strict_types=1);
  * بسازد.
  */
 final class Menu {
-/** تنها برچسب دکمه بازگشت در کل ربات. */
-public const BACK_LABEL = '🔙بازگشت';
+/** تنها برچسب دکمه بازگشت به منوی قبل در کل ربات. */
+public const BACK_LABEL = '🔙بازگشت به منوی قبل';
+
+/** تنها برچسب دکمه بازگشت به منوی اصلی در کل ربات. */
+public const HOME_LABEL = '🏠بازگشت به منوی اصلی';
 
 private function __construct() {
 }
@@ -92,10 +95,9 @@ return $Out;
 /**
  * دکمه بازگشت به منوی قبل.
  *
- * برچسب همه دکمه های بازگشت در کل ربات یکی است: «🔙بازگشت». نام مقصد روی دکمه
- * نمی آید تا دکمه کوتاه بماند و در موبایل بریده نشود؛ خود مقصد با صفحه ای که
- * باز می شود و دکمه خانه مشخص است. `$Title` فقط برای سازگاری با فراخوانی های
- * موجود نگه داشته شده و استفاده نمی شود.
+ * برچسب همه دکمه های بازگشت به منوی قبل در کل ربات یکی است:
+ * «🔙بازگشت به منوی قبل». `$Title` فقط برای سازگاری با فراخوانی های موجود نگه
+ * داشته شده و استفاده نمی شود.
  */
 public static function back(string $Title, string $Call): array {
 unset($Title);
@@ -103,14 +105,14 @@ unset($Title);
 return [self::button(self::BACK_LABEL, $Call)];
 }
 
-/** دکمه خانه ادمین. */
+/** دکمه بازگشت به منوی اصلی مدیریت. */
 public static function adminHome(): array {
-return [self::button('🏠منوی مدیریت', self::ADMIN_HOME_CALL)];
+return [self::button(self::HOME_LABEL, self::ADMIN_HOME_CALL)];
 }
 
-/** دکمه خانه کاربر. */
+/** دکمه بازگشت به منوی اصلی کاربر. */
 public static function userHome(): array {
-return [self::button('🏠منوی اصلی', self::USER_HOME_CALL)];
+return [self::button(self::HOME_LABEL, self::USER_HOME_CALL)];
 }
 
 /**

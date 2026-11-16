@@ -66,7 +66,8 @@ $this->test_problems_reports_long_callback();
 $this->test_problems_reports_duplicate_button();
 $this->test_problems_reports_blank_row();
 $this->test_shared_keyboards_are_healthy();
-$this->test_server_notifications_live_in_messaging_menu();
+$this->test_user_service_menu_is_flat_without_submenus();
+$this->test_admin_menu_is_flat_without_submenus();
 $this->test_certificate_bundle_is_preserved();
 $this->test_navigation_only_keyboard_is_detected();
 
@@ -113,21 +114,23 @@ $this->check(count($Rows[1]) === Menu::ROW_LIMIT, 'rows(): the third button of a
 }
 
 /**
- * برچسب دکمه بازگشت در همه صفحه ها یکی است: «🔙بازگشت». نام مقصد روی دکمه
- * نمی آید؛ مقصد با خود صفحه و دکمه خانه مشخص می شود.
+ * برچسب دکمه بازگشت به منوی قبل و منوی اصلی در همه صفحه ها یکدست است:
+ * «🔙بازگشت به منوی قبل» و «🏠بازگشت به منوی اصلی».
  */
 private function test_back_label_is_uniform(): void {
 $Row = Menu::back('گزارش ها', 'منوی گزارش');
 $this->check(count($Row) === 1, 'back(): one button');
-$this->check($Row[0]['text'] === Menu::BACK_LABEL, 'back(): label is the shared «🔙بازگشت»');
-$this->check($Row[0]['text'] === '🔙بازگشت', 'back(): label text is exactly «🔙بازگشت»');
+$this->check($Row[0]['text'] === Menu::BACK_LABEL, 'back(): label is the shared Menu::BACK_LABEL');
+$this->check($Row[0]['text'] === '🔙بازگشت به منوی قبل', 'back(): label text is exactly «🔙بازگشت به منوی قبل»');
 $this->check($Row[0]['callback_data'] === 'منوی گزارش', 'back(): callback is untouched');
 
 $Other = Menu::back('پیکربندی سرور', 'پیکربندی سرور');
 $this->check($Other[0]['text'] === $Row[0]['text'], 'back(): the destination does not change the label');
 
-$Nav = Menu::adminNav('دیتابیس', 'دیتابیس');
-$this->check($Nav[0][0]['text'] === '🔙بازگشت', 'adminNav(): the back row uses the shared label');
+$Nav = Menu::adminNav('بروز رسانی', 'بروز رسانی');
+$this->check($Nav[0][0]['text'] === '🔙بازگشت به منوی قبل', 'adminNav(): the back row uses «🔙بازگشت به منوی قبل»');
+$this->check($Nav[1][0]['text'] === '🏠بازگشت به منوی اصلی', 'adminNav(): the home row uses «🏠بازگشت به منوی اصلی»');
+$this->check(Menu::userHome()[0]['text'] === '🏠بازگشت به منوی اصلی', 'userHome(): uses «🏠بازگشت به منوی اصلی»');
 }
 
 private function test_nav_rows_have_home(): void {
@@ -208,31 +211,93 @@ $Problems = Menu::problems($Rows);
 $this->check(count($Problems) === 1, 'problems(): an empty row is reported');
 }
 
-/** اطلاع رسانی سرور از زیرمنوی سرور جدا و در منوی پیامک قرار دارد. */
-private function test_server_notifications_live_in_messaging_menu(): void {
+/** منوی خدمات ربات مسطح است و تمام امکانات کاربری بدون زیرمنو مستقیماً در صفحه اصلی قرار دارند. */
+private function test_user_service_menu_is_flat_without_submenus(): void {
+$Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/User.php');
+$Menu_Start = strpos($Source, 'public static function serviceMenu(');
+$Menu_End = strpos($Source, 'public static function supportMenu(', $Menu_Start ?: 0);
+
+$this->check($Menu_Start !== false && $Menu_End !== false, 'user serviceMenu source boundaries exist');
+
+if ($Menu_Start !== false && $Menu_End !== false) {
+$Service_Menu = substr($Source, $Menu_Start, $Menu_End - $Menu_Start);
+
+$Direct_Actions = [
+'اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول',
+'منوی تمدید خودکار', 'شارژ اعتبار حساب کاربری',
+'پروفایل کاربری', 'ویرایش پروفایل',
+'سابقه تراکنش', 'سابقه اشتراک',
+'گزارش مصرف', 'رتبه بندی کاربران',
+'app_menu', 'app_devices', 'app_filter', 'app_filter_domains', 'app_2fa', 'app_notifications',
+'تیکت جدید', 'لیست تیکت های من', 'تغییرات نسخه',
+];
+
+foreach ($Direct_Actions as $Call) {
+$this->check(str_contains($Service_Menu, "'{$Call}'"), 'user service menu directly includes «' . $Call . '»');
+}
+
+// Validate the actual production rows, not only a copied fixture.
+if (preg_match('/\$Menu_Rows = Menu::rows\((\[.*?\])\);/s', $Service_Menu, $Match)) {
+$Rows = Menu::rows(eval('return ' . $Match[1] . ';'));
+$this->check(Menu::problems($Rows) === [], 'production service keyboard is valid');
+$Calls = array_column(array_merge(...$Rows), 'callback_data');
+$this->check(count($Calls) === 21, 'production service menu has exactly 21 direct actions');
+$this->check(array_diff($Direct_Actions, $Calls) === [], 'every feature is a production button');
+foreach ($Rows as $Row) {
+$this->check(count($Row) <= 2, 'production service menu uses at most two buttons per row');
+}
+} else {
+$this->check(false, 'production service keyboard could not be extracted');
+}
+$this->check(str_contains($Service_Menu, "['Flow' => null]"), 'returning home cancels input mode');
+
+$Removed_Submenus = ['منوی پشتیبانی', 'تیکت های من'];
+
+foreach ($Removed_Submenus as $Submenu_Call) {
+$this->check(!str_contains($Service_Menu, "'{$Submenu_Call}'"), 'user service menu does not link to removed submenu «' . $Submenu_Call . '»');
+}
+}
+}
+
+/** منوی مدیریت مسطح است و تمام گزینه ها بدون زیرمنو مستقیماً در منوی اصلی قرار دارند. */
+private function test_admin_menu_is_flat_without_submenus(): void {
 $Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
-$Server_Start = strpos($Source, 'public static function serverConfig(');
-$Server_End = strpos($Source, 'public static function databaseMenu(', $Server_Start ?: 0);
-$Notify_Start = strpos($Source, 'public static function serverNotifyMenu(');
-$Notify_End = strpos($Source, 'public static function serverNotifyCustomStart(', $Notify_Start ?: 0);
+$Menu_Start = strpos($Source, 'public static function menu(');
+$Menu_End = strpos($Source, 'public static function usersMenu(', $Menu_Start ?: 0);
 
-$this->check($Server_Start !== false && $Server_End !== false, 'server menu source boundaries exist');
-$this->check($Notify_Start !== false && $Notify_End !== false, 'server notification menu source boundaries exist');
+$this->check($Menu_Start !== false && $Menu_End !== false, 'admin menu source boundaries exist');
 
-if ($Server_Start !== false && $Server_End !== false) {
-$Server_Menu = substr($Source, $Server_Start, $Server_End - $Server_Start);
-$this->check(!str_contains($Server_Menu, "'اطلاع رسانی'"), 'server menu no longer contains the notification submenu');
-$this->check(str_contains($Server_Menu, 'Menu::adminHome()'), 'server menu has home navigation');
-$this->check(str_contains($Server_Menu, "'اطلاعات سرور'") && str_contains($Server_Menu, "'همگام سازی سرور'") && str_contains($Server_Menu, "'عملیات کلاینت سرور'"), 'server functions are separated into dedicated menus');
-$this->check(str_contains($Server_Menu, "public static function serverHealthMenu(") && str_contains($Server_Menu, "public static function serverSyncMenu(") && str_contains($Server_Menu, "public static function serverClientsMenu("), 'dedicated server submenu handlers exist');
+if ($Menu_Start !== false && $Menu_End !== false) {
+$Admin_Menu = substr($Source, $Menu_Start, $Menu_End - $Menu_Start);
+
+$Direct_Actions = [
+'افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول', 'مدیریت تیکت ها',
+'مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها',
+'admin_devices', 'device_limit_menu',
+'وضعیت سرور', 'سرویس های سرور',
+'بروز رسانی میزان استفاده اول', 'بروز رسانی داده های کاربران اول',
+'فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'حذف کاربر اول', 'منقضی اشتراک اول',
+'آمار کلی', 'گزارش روزانه', 'گزارش مالی', 'رتبه بندی',
+'ارسال پیامک تکی اول', 'ارسال پیامک همگانی اول', 'اطلاع رسانی اول',
+'اطلاع رسانی سفارشی اول', 'app_push_start', 'notify_all_start', 'اطلاع رسانی عدم استفاده',
+'cfg_pricing', 'cfg_links', 'تنظیمات ربات', 'بروز رسانی',
+'پشتیبان گیری دیتابیس', 'تنظیم مجدد دیتابیس',
+];
+
+foreach ($Direct_Actions as $Call) {
+$this->check(str_contains($Admin_Menu, "'{$Call}'"), 'admin menu directly includes «' . $Call . '»');
 }
 
-if ($Notify_Start !== false && $Notify_End !== false) {
-$Notify_Menu = substr($Source, $Notify_Start, $Notify_End - $Notify_Start);
-$this->check(str_contains($Notify_Menu, "Menu::back('منوی پیامک', 'منوی پیامک')"), 'server notifications return to messaging');
-}
+$Removed_Submenus = [
+'منوی کاربران', 'اعتبار حساب کاربری', 'جرایم',
+'پیکربندی سرور', 'اطلاعات سرور', 'همگام سازی سرور', 'عملیات کلاینت سرور',
+'منوی گزارش', 'منوی پیامک', 'اطلاع رسانی سرور', 'منوی سیستم', 'دیتابیس',
+];
 
-$this->check(str_contains($Source, "['📣اطلاع رسانی سرور', 'اطلاع رسانی سرور']"), 'messaging menu links to server notifications');
+foreach ($Removed_Submenus as $Submenu_Call) {
+$this->check(!str_contains($Admin_Menu, "'{$Submenu_Call}'"), 'admin menu does not link to removed submenu «' . $Submenu_Call . '»');
+}
+}
 }
 
 /** گواهی محلی ربات باید همراه ساختار منو و بسته ربات حفظ شود. */
@@ -278,43 +343,43 @@ $this->check(!Menu::isNavigationOnly([]), 'an empty keyboard is not navigation-o
 private function test_shared_keyboards_are_healthy(): void {
 $Keys = [
 'user-home' => Menu::rows([
-[['👤پروفایل کاربری', 'پروفایل کاربری'], ['💎اشتراک من', 'اشتراک من']],
-[['📊گزارش مصرف', 'گزارش مصرف'], ['📱حساب آمبرلا', 'app_menu']],
-[['🎫تیکت ها و پشتیبانی', 'منوی پشتیبانی'], ['🔄تغییرات نسخه', 'تغییرات نسخه']],
+[['💎اشتراک من', 'اشتراک من'], ['💎اشتراک های آماده', 'اشتراک آماده']],
+[['🛠اشتراک دلخواه', 'اشتراک دلخواه'], ['🎁اشتراک رایگان', 'اشتراک رایگان اول']],
+[['🔄تمدید خودکار', 'منوی تمدید خودکار'], ['💰شارژ کیف پول', 'شارژ اعتبار حساب کاربری']],
+[['👤پروفایل کاربری', 'پروفایل کاربری'], ['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
+[['📋سابقه تراکنش', 'سابقه تراکنش'], ['📋سابقه اشتراک', 'سابقه اشتراک']],
+[['📊گزارش مصرف', 'گزارش مصرف'], ['🏆رتبه بندی کاربران', 'رتبه بندی کاربران']],
+[['📱حساب آمبرلا', 'app_menu'], ['📱دستگاه‌های من', 'app_devices']],
+[['🛡کنترل محتوا', 'app_filter'], ['🔗دامنه‌های دلخواه', 'app_filter_domains']],
+[['🔐تأیید دومرحله‌ای', 'app_2fa'], ['🔔اعلان‌های برنامه', 'app_notifications']],
+[['➕ایجاد تیکت جدید', 'تیکت جدید'], ['🎫تیکت های من', 'لیست تیکت های من']],
+[['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]),
-'app-account' => array_merge(
-Menu::rows([
-[['🛡کنترل محتوا', 'app_filter'], ['📱دستگاه‌های من', 'app_devices']],
-[['🔔اعلان‌های برنامه', 'app_notifications'], ['🔐تأیید دومرحله‌ای', 'app_2fa']],
-]),
-[Menu::userHome()]
-),
-'app-settings' => array_merge(
-Menu::rows([
-[['🔗افزودن دامنه دلخواه', 'app_filter_domains']],
-]),
-[Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()]
-),
-'ticket-menu' => array_merge(
-Menu::rows([
-[['➕ایجاد تیکت جدید', 'تیکت جدید'], ['📋تیکت های من', 'لیست تیکت های من']],
-]),
-Menu::userNav('تیکت ها و پشتیبانی', 'منوی پشتیبانی')
-),
+'app-account' => [Menu::userHome()],
+'app-settings' => [Menu::userHome()],
+'ticket-menu' => [Menu::userHome()],
 'admin-home' => array_merge(
 [[Menu::button('🔴خاموش کردن ربات', 'خاموش کردن ربات')]],
 Menu::rows([
-[['👥کاربران', 'منوی کاربران'], ['📲دستگاه‌های برنامه', 'admin_devices']],
-[['⚙️سرور', 'پیکربندی سرور'], ['📊گزارش و مالی', 'منوی گزارش']],
-[['📨پیامک و اطلاع رسانی', 'منوی پیامک'], ['🧰سیستم', 'منوی سیستم']],
+[['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']],
+[['👁مشاهده اعتبار', 'مشاهده اعتبار اول'], ['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
+[['🚫🔒مسدود کردن کاربر', 'مسدودیت اول'], ['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
+[['👁مشاهده مسدودی ها', 'مشاهده مسدودی ها']],
+[['📲دستگاه‌های برنامه', 'admin_devices'], ['🔐سقف دستگاه حساب', 'device_limit_menu']],
+[['📊وضعیت سرور', 'وضعیت سرور'], ['🔌سرویس های سرور', 'سرویس های سرور']],
+[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول'], ['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
+[['✅فعالسازی کلاینت', 'فعالسازی کلاینت اول'], ['🚫غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول']],
+[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
+[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
+[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
+[['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
+[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
+[['📱اعلان برنامه ها', 'app_push_start'], ['📣تلگرام و برنامه', 'notify_all_start']],
+[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده']],
+[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
+[['🚱کانفیگ اضطراری', 'تنظیمات ربات'], ['🔄بروزرسانی نسخه', 'بروز رسانی']],
+[['💾پشتیبان گیری دیتابیس', 'پشتیبان گیری دیتابیس'], ['🔄تنظیم مجدد دیتابیس', 'تنظیم مجدد دیتابیس']],
 ])
-),
-'users' => array_merge(
-Menu::rows([
-[['💳اعتبار حساب کاربری', 'اعتبار حساب کاربری'], ['🚨جرایم', 'جرایم']],
-[['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
-]),
-[Menu::adminHome()]
 ),
 'app-devices' => array_merge(
 Menu::rows([
@@ -324,65 +389,10 @@ Menu::rows([
 ]),
 [Menu::adminHome()]
 ),
-'system' => array_merge(
-Menu::rows([
-[['🔄بروزرسانی نسخه', 'بروز رسانی'], ['🗄️دیتابیس', 'دیتابیس']],
-[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
-[['🚱کانفیگ اضطراری', 'تنظیمات ربات']],
-]),
-[Menu::adminHome()]
-),
 'settings' => array_merge(
 Menu::rows([
 [['🚱روشن / خاموش کانفیگ اضطراری', 'emergency_toggle']],
 [['🔗آدرس کانفیگ اضطراری', 'emergency_url_start']],
-]),
-[Menu::back('منوی سیستم', 'منوی سیستم'), Menu::adminHome()]
-),
-'server' => array_merge(
-Menu::rows([
-[['📊وضعیت و سرویس ها', 'اطلاعات سرور'], ['🔄همگام سازی کاربران', 'همگام سازی سرور']],
-[['👤مدیریت کلاینت ها', 'عملیات کلاینت سرور']],
-]),
-[Menu::adminHome()]
-),
-'server-health' => array_merge(
-Menu::rows([
-[['📊وضعیت سرور', 'وضعیت سرور'], ['🔌سرویس های سرور', 'سرویس های سرور']],
-]),
-[Menu::back('پیکربندی سرور', 'پیکربندی سرور'), Menu::adminHome()]
-),
-'server-sync' => array_merge(
-Menu::rows([
-[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول'], ['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
-]),
-[Menu::back('پیکربندی سرور', 'پیکربندی سرور'), Menu::adminHome()]
-),
-'server-clients' => array_merge(
-Menu::rows([
-[['✅فعالسازی کلاینت', 'فعالسازی کلاینت اول'], ['🚫غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول']],
-[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
-]),
-[Menu::back('پیکربندی سرور', 'پیکربندی سرور'), Menu::adminHome()]
-),
-'sms' => array_merge(
-Menu::rows([
-[['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
-[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['📣اطلاع رسانی سرور', 'اطلاع رسانی سرور']],
-]),
-[Menu::adminHome()]
-),
-'server-notify' => array_merge(
-Menu::rows([
-[['✏️سفارشی', 'اطلاع رسانی سفارشی اول'], ['📱برنامه ها', 'app_push_start']],
-[['📣تلگرام و برنامه', 'notify_all_start'], ['🚫عدم استفاده', 'اطلاع رسانی عدم استفاده']],
-]),
-[Menu::back('منوی پیامک', 'منوی پیامک'), Menu::adminHome()]
-),
-'reports' => array_merge(
-Menu::rows([
-[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
-[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
 ]),
 [Menu::adminHome()]
 ),

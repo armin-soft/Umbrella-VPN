@@ -37,7 +37,6 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, "⛔️ویرایش پ
 
 else {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "⛔️ویرایش پروفایل کاربری هر ۳۰ روز یکبار مجاز می باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️تعداد روزهای باقی مانده تا ویرایش بعدی: `{$Remaining_Fa}` روز." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
 Menu::userHome(),
 ]));
 }
@@ -54,17 +53,17 @@ Repository::updateUserSession($Context->UserId, ['Flow' => self::FLOW_NAME]);
 $Welcome_Text = $Profile_Is_Complete
 ? "🙇‍♂️لطفا به پرسش هایی که از شما پرسیده می شود به دقت پاسخ دهید."
 : "🙇‍♂️لطفا به پرسش هایی که از شما پرسیده می شود به دقت پاسخ دهید.\n\n⚠️نکته:وارد کردن اطلاعات کاربری الزامی می باشد.";
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Common::greet($Context, 'پروفایل کاربری') . $Welcome_Text . Helper::userFooter());
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Common::greet($Context, 'پروفایل کاربری') . $Welcome_Text . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 self::askName($Context);
 }
 
 private static function askName(Context $Context): void {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش اول:نام و نام خانوادگی خود را وارد کنید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش اول:نام و نام خانوادگی خود را وارد کنید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 public static function processName(Context $Context, string $Text): void {
 if (!Helper::validateFullName($Text)) {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: نام و نام خانوادگی وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: نام و نام خانوادگی وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 self::askName($Context);
 return;
 }
@@ -83,9 +82,8 @@ self::pushProfileToServer($Old_Client_ID, $Full_Name, $Old_Phone);
 
 if ($Old_Has_Phone) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش نام با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
 Menu::userHome()
 ]));
 
@@ -93,14 +91,14 @@ return;
 }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => self::FLOW_PHONE]);
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش دوم:شماره موبایل معتبر خود را وارد کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش دوم:شماره موبایل معتبر خود را وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 public static function processPhone(Context $Context, string $Text): void {
 if (!Helper::validatePhone($Text)) {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: شماره موبایل وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید یکی از اپراتور های (همراه اول،ایرانسل،رایتل) باشد." . Helper::userFooter());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: شماره موبایل وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید یکی از اپراتور های (همراه اول،ایرانسل،رایتل) باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -108,8 +106,8 @@ $Phone = Helper::normalizePhone($Text);
 $Operator = Helper::detectOperator($Phone);
 
 if ($Operator === 'نامعتبر' || !in_array($Operator, ['همراه اول', 'ایرانسل', 'رایتل'], true)) {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: شماره موبایل وارد شده متعلق به اپراتور مورد تایید نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:تنها اپراتورهای مجاز (همراه اول، ایرانسل، رایتل) قابل ثبت می باشند." . Helper::userFooter());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: شماره موبایل وارد شده متعلق به اپراتور مورد تایید نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:تنها اپراتورهای مجاز (همراه اول، ایرانسل، رایتل) قابل ثبت می باشند." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -117,8 +115,8 @@ $Existing = Repository::findUserByPhone($Phone, $Context->UserId);
 
 if (!empty($Existing)) {
 $Existing_Name = (string)($Existing['Full_Name'] ?? 'کاربر دیگر');
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⛔️این شماره موبایل قبلاً در سیستم ثبت شده است و مجاز به استفاده مجدد از آن نمی باشید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:در صورتی که فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌لطفاً شماره موبایل دیگری وارد کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⛔️این شماره موبایل قبلاً در سیستم ثبت شده است و مجاز به استفاده مجدد از آن نمی باشید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:در صورتی که فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌لطفاً شماره موبایل دیگری وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -134,13 +132,8 @@ if ($Has_Client) {
 self::pushProfileToServer($Client_ID, $Full_Name, $Phone);
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره موبایل صحیح و مربوط به اپراتور {$Operator} می باشد." . Helper::userFooter());
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard(array_merge(
-Menu::rows([
-[['👤پروفایل کاربری', 'پروفایل کاربری'], ['💎اشتراک من', 'اشتراک من']],
-]),
-[Menu::userHome()]
-)));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره موبایل صحیح و مربوط به اپراتور {$Operator} می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
 private static function pushProfileToServer(string $Client_ID, string $Full_Name, string $Phone): void {
