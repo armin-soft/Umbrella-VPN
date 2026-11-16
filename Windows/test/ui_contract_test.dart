@@ -1176,7 +1176,7 @@ void main() {
     test('۵. IP در پیام های ورود تلگرام فارسی سازی می شود', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
       expect(gateway.contains('آی‌پی:'), isTrue);
-      expect(gateway.contains('\\Helper::toPersian($IP)'), isTrue);
+      expect(gateway.contains(r'\Helper::toPersian($IP)'), isTrue);
     });
 
     test('۶. تایید دستگاه و فیلتر اعلان لغو مجوز کهنه اتمیک است', () {
