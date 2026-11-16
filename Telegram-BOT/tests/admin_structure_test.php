@@ -6,6 +6,9 @@ require_once dirname(__DIR__) . '/Bot/Menu.php';
 if (!function_exists('mb_strlen')) {
 function mb_strlen(string $Text): int { return count(preg_split('//u', $Text, -1, PREG_SPLIT_NO_EMPTY) ?: []); }
 }
+if (!function_exists('mb_substr')) {
+function mb_substr(string $Text, int $Start, ?int $Length = null): string { return implode('', array_slice(preg_split('//u', $Text, -1, PREG_SPLIT_NO_EMPTY) ?: [], $Start, $Length)); }
+}
 final class Context {
 public int $UserId = 1;
 public int $ChatId = 1;
@@ -29,7 +32,15 @@ public static function isRobotOn(): bool { return (Repository::$Settings['Robot_
 }
 final class Database {
 public static function getInstance(): self { return new self(); }
-public function scalar(string $Query, array $Params, int $Default): int { return 0; }
+public static array $Devices = [];
+public static string $LastQuery = '';
+public static array $LastParams = [];
+public function scalar(string $Query, array $Params, int $Default): int { return str_contains($Query, 'App_Devices') ? count(self::$Devices) : 0; }
+public function fetchAll(string $Query, array $Params): array {
+self::$LastQuery = $Query;
+self::$LastParams = $Params;
+return array_slice(self::$Devices, $Params[1], $Params[0]);
+}
 }
 final class Helper {
 public static function adminGreeting(Context $Context, string $Section): string { return $Section; }
@@ -39,9 +50,10 @@ public static function toPersian(string $Value): string { return $Value; }
 }
 final class TelegramClient {
 public static array $Last = [];
+public static string $Text = "";
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
-public static function sendMessage(int $ChatId, string $Text, array $Markup = []): void { self::$Last = $Markup; }
-public static function editOrSendMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): void { self::$Last = $Markup; }
+public static function sendMessage(int $ChatId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
+public static function editOrSendMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
 public static function sendChatAction(int $ChatId): void {}
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
 }
@@ -66,7 +78,7 @@ foreach ($Rows as $Row) check(count($Row) === 1, 'one button per row');
 return $Rows === [] ? [] : array_column(array_merge(...$Rows), 'callback_data');
 }
 $Menus = [
-'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی', 'admin_devices']],
+'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['مشاهده اعتبار اول', 'افزایش اعتبار اول', 'کسر اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
 'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu']],
@@ -191,4 +203,44 @@ check(str_contains($Body, "Menu::back('منوی قبلی', '{$Parent}')"), $Meth
 check(str_contains($Body, 'Menu::userHome()'), $Method . ': keeps user home');
 }
 }
+// Device cards: owner links, safe display, stable numbering and bounded pagination.
+AdminFlow::devicesMenu($Context);
+check(TelegramClient::$Text === "مدیریت دستگاه ها\n📌*بخش مورد نظر را انتخاب کنید:*", 'device category uses plain greeting section and separate prompt');
+check(calls() === ['admin_devices', 'device_limit_menu', 'مدیریت'], 'device limit lives only in device management');
+for ($Index = 0; $Index < 7; $Index++) {
+Database::$Devices[] = [
+'Device_ID' => str_pad((string)$Index, 64, 'a'),
+'Device_Name' => 'Same device <b>name</b>', 'Platform' => 'Android',
+'App_Version' => '1.2.3', 'Phone' => '09123456789',
+'Owner_Name' => 'علی رضایی', 'Owner_Telegram_ID' => 123456789,
+'Last_Seen_At' => '2026-11-16 12:30:00', 'Last_IP' => '192.0.2.1',
+'Is_Trusted' => $Index % 2,
+];
+}
+Database::$Devices[1]['Owner_Telegram_ID'] = null;
+Database::$Devices[1]['Owner_Name'] = null;
+Database::$Devices[1]['Last_Seen_At'] = null;
+AdminFlow::appDevicesMenu($Context, -1);
+$DeviceCalls = calls();
+check(Database::$LastParams === [3, 0], 'negative device page clamps to first');
+check(str_contains(TelegramClient::$Text, '<a href="tg://user?id=123456789">علی رضایی</a>'), 'full owner name opens correct Telegram profile');
+check(!str_contains(TelegramClient::$Text, 'tg://user?id=0'), 'unknown owner is not linked to invented ID');
+check(str_contains(TelegramClient::$Text, 'نام کامل ثبت نشده') && str_contains(TelegramClient::$Text, 'منشن در دسترس نیست'), 'missing identity is explicit');
+check(str_contains(TelegramClient::$Text, 'آخرین فعالیت: ثبت نشده'), 'missing activity is not invented');
+check(str_contains(TelegramClient::$Text, '&lt;b&gt;name&lt;/b&gt;'), 'device markup is escaped');
+check(substr_count(TelegramClient::$Text, '📱دستگاه شماره') === 3, 'three clearly separated device cards');
+check(!in_array('device_limit_menu', $DeviceCalls, true), 'no duplicate device limit shortcut in list');
+check(in_array('admin_devices_page:1', $DeviceCalls, true), 'first page has next page');
+check(!in_array('admin_devices_page:-1', $DeviceCalls, true), 'first page has no previous page');
+check(str_contains(Database::$LastQuery, 'HAVING COUNT(*) = 1') && str_contains(Database::$LastQuery, 'COALESCE(`D`.`Telegram_ID`, 0) <= 0'), 'owner fallback is unique and cannot override Telegram identity');
+AdminFlow::appDevicesMenu($Context, 999);
+check(Database::$LastParams === [3, 6], 'oversized device page clamps to last');
+$DeviceCalls = calls();
+check(str_contains(TelegramClient::$Text, '📱دستگاه شماره 7'), 'numbering continues across pages');
+check(in_array('admin_devices_page:1', $DeviceCalls, true) && !in_array('admin_devices_page:3', $DeviceCalls, true), 'last page has previous only');
+check(str_ends_with($DeviceCalls[0], ':2'), 'toggle preserves page');
+Database::$Devices = [];
+AdminFlow::appDevicesMenu($Context, 4);
+check(calls() === ['admin_devices_menu', 'مدیریت'], 'empty device list retains only parent and home');
+check(str_contains(TelegramClient::$Text, 'هنوز دستگاهی'), 'empty device message');
 echo "OK menu structure tests ({$Passed} assertions)\n";

@@ -77,7 +77,6 @@ $Markup = Menu::rows([
 [['💰مدیریت تعرفه و اشتراک', 'admin_subscriptions_menu']],
 [['🗄مدیریت دیتابیس', 'منوی سیستم']],
 [['🔄بروزرسانی نسخه', 'بروز رسانی']],
-[['📲دستگاه‌های برنامه', 'admin_devices']],
 ]);
 array_unshift($Markup, [Menu::button($Robot_On ? '🔴خاموش کردن ربات' : '🟢روشن کردن ربات', $Robot_On ? 'خاموش کردن ربات' : 'روشن کردن ربات')]);
 
@@ -99,7 +98,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => n
 $Rows = array_merge($Rows, Menu::adminNav('منوی قبلی', $Parent));
 self::logMenuProblems($Title, $Rows);
 $Text = Helper::adminGreeting($Context, $Title)
-. '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
+. "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::adminFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
@@ -109,7 +108,7 @@ $Rows = Menu::rows([
 [['📲دستگاه‌های برنامه', 'admin_devices']],
 [['🔐سقف دستگاه حساب', 'device_limit_menu']],
 ]);
-self::categoryMenu($Context, '📱 مدیریت دستگاه ها', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
 }
 
 public static function accountsMenu(Context $Context): void {
@@ -156,41 +155,68 @@ self::menu($Context);
 public static function appDevicesMenu(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Database = Database::getInstance();
-$Page_Size = 5;
+// سه دستگاه در هر صفحه: اطلاعات کامل و نام‌های بلند در محدودیت پیام تلگرام جا می‌شوند.
+$Page_Size = 3;
 $Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices`', [], 0);
 $Page_Count = max(1, (int)ceil($Total / $Page_Size));
 $Page = max(0, min($Page, $Page_Count - 1));
+// نام و منشن از یک رکورد واحد می‌آیند. شناسه تلگرام اولویت دارد؛
+// شماره فقط وقتی شناسه نداریم و دقیقاً یک کاربر منطبق است استفاده می‌شود.
 $Rows = $Database->fetchAll(
 'SELECT `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
-. '(SELECT `U`.`Full_Name` FROM `Users` AS `U` WHERE (`D`.`Telegram_ID` IS NOT NULL AND `U`.`Telegram_ID` = `D`.`Telegram_ID`) OR (`D`.`Phone` IS NOT NULL AND `D`.`Phone` <> \'\' AND `U`.`Phone` = `D`.`Phone`) ORDER BY (`U`.`Telegram_ID` = `D`.`Telegram_ID`) DESC LIMIT 1) AS `Owner_Name`, '
-. 'COALESCE(`D`.`Telegram_ID`, (SELECT `U`.`Telegram_ID` FROM `Users` AS `U` WHERE `D`.`Phone` IS NOT NULL AND `U`.`Phone` = `D`.`Phone` LIMIT 1)) AS `Owner_Telegram_ID` '
-. 'FROM `App_Devices` AS `D` ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC LIMIT ? OFFSET ?',
+. '`U`.`Full_Name` AS `Owner_Name`, '
+. 'CASE WHEN `D`.`Telegram_ID` > 0 THEN `D`.`Telegram_ID` ELSE `U`.`Telegram_ID` END AS `Owner_Telegram_ID` '
+. 'FROM `App_Devices` AS `D` LEFT JOIN `Users` AS `U` ON `U`.`ID` = ('
+. 'SELECT MIN(`O`.`ID`) FROM `Users` AS `O` WHERE '
+. '(`D`.`Telegram_ID` > 0 AND `O`.`Telegram_ID` = `D`.`Telegram_ID`) OR '
+. '(COALESCE(`D`.`Telegram_ID`, 0) <= 0 AND `D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `O`.`Phone` = `D`.`Phone`) '
+. 'HAVING COUNT(*) = 1) '
+. 'ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC LIMIT ? OFFSET ?',
 [$Page_Size, $Page * $Page_Size]
 );
 $Text = Helper::adminGreeting($Context, 'مدیریت دستگاه‌های برنامه')
-. Menu::section('📲', 'مجوزها و فهرست دستگاه‌ها', [
-'🔐با دکمه هر دستگاه، دسترسی همان دستگاه را صادر یا لغو کنید.',
-'👤برای تغییر سقف مجاز هر حساب، گزینه تنظیم سقف دستگاه را بزنید.',
-'📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$Page_Count) . ' · ' . Helper::toPersian((string)$Total) . ' دستگاه',
+. Menu::section('📲', 'فهرست دستگاه‌های ثبت‌شده', [
+'📊تعداد کل: ' . Helper::toPersian((string)$Total) . ' دستگاه',
+'📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$Page_Count),
+'🔐دکمه شماره‌دار هر دستگاه، مجوز ورود همان دستگاه را تغییر می‌دهد.',
+'ℹ️مجاز بودن دستگاه به معنی آنلاین بودن آن نیست؛ زمان آخرین فعالیت، زمان ثبت‌شده سرور است.',
 ]);
+// داده‌های دریافتی از دستگاه نباید قالب پیام یا لینک‌های آن را تغییر دهند.
+$Plain = static function (string $Value, int $Limit = 64): string {
+$Value = trim((string)preg_replace('/[\s\p{C}]+/u', ' ', $Value));
+$Value = mb_substr($Value, 0, $Limit);
+$Value = str_replace(['*', '`', '[', ']'], ['＊', '｀', '［', '］'], $Value);
+return htmlspecialchars($Value !== '' ? $Value : 'ثبت نشده', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+};
 $Buttons = [];
 if ($Rows === []) {
 $Text .= "\n📭هنوز دستگاهی در برنامه ثبت نشده است.\n";
 }
 foreach ($Rows as $Index => $Row) {
+$Number = Helper::toPersian((string)($Page * $Page_Size + $Index + 1));
 $Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
 $Device_Name = trim((string)($Row['Device_Name'] ?? '')) ?: 'دستگاه بی‌نام';
-$Owner = trim((string)($Row['Owner_Name'] ?? '')) ?: 'کاربر نامشخص';
+$Owner = trim((string)($Row['Owner_Name'] ?? '')) ?: 'نام کامل ثبت نشده';
 $Owner_Id = (int)($Row['Owner_Telegram_ID'] ?? 0);
-$When = trim((string)($Row['Last_Seen_At'] ?? '')) ?: '—';
-$Text .= '📱*' . Helper::toPersian((string)($Page * $Page_Size + $Index + 1)) . '. ' . $Device_Name . "*\n"
-. '   👤' . $Owner . ($Owner_Id > 0 ? ' · 🆔' . Helper::toPersian((string)$Owner_Id) : '') . "\n"
-. '   🖥' . trim((string)($Row['Platform'] ?? '—')) . ' · 🏷' . trim((string)($Row['App_Version'] ?? '—')) . "\n"
-. '   📞' . trim((string)($Row['Phone'] ?? '—')) . ' · 🌐' . trim((string)($Row['Last_IP'] ?? '—')) . "\n"
-. '   🕓' . $When . ' · ' . ($Trusted ? '✅مجاز' : '⛔️غیرمجاز') . "\n";
+$Owner_Label = $Plain($Owner, 190);
+if ($Owner_Id > 0) {
+$Owner_Label = '<a href="tg://user?id=' . $Owner_Id . '">' . $Owner_Label . '</a>';
+}
+$When = trim((string)($Row['Last_Seen_At'] ?? ''));
+if ($When === '0000-00-00 00:00:00') $When = '';
+$Text .= "\n📱دستگاه شماره {$Number}\n"
+. '👤نام کامل کاربر: ' . $Owner_Label . "\n"
+. '🆔شناسه تلگرام: ' . ($Owner_Id > 0 ? '<code>' . $Owner_Id . '</code>' : 'ثبت نشده؛ منشن در دسترس نیست') . "\n"
+. '💻نام دستگاه: ' . $Plain($Device_Name, 64) . "\n"
+. '🖥سیستم‌عامل: ' . $Plain((string)($Row['Platform'] ?? ''), 40) . "\n"
+. '🏷نسخه برنامه: ' . $Plain((string)($Row['App_Version'] ?? ''), 40) . "\n"
+. '📞شماره ثبت‌شده دستگاه: ' . $Plain((string)($Row['Phone'] ?? ''), 20) . "\n"
+. '🌐آخرین آی‌پی: ' . $Plain((string)($Row['Last_IP'] ?? ''), 45) . "\n"
+. '🕓آخرین فعالیت: ' . $Plain($When, 25) . "\n"
+. '🔐مجوز ورود: ' . ($Trusted ? '✅مجاز' : '⛔️غیرمجاز') . "\n➖➖➖➖➖➖➖➖➖\n";
 $Prefix = substr((string)$Row['Device_ID'], 0, 32);
 $Buttons[] = [[
-'text' => ($Trusted ? '⛔️لغو مجوز · ' : '✅صدور مجوز · ') . mb_substr($Device_Name, 0, 18),
+'text' => ($Trusted ? '⛔️لغو مجوز دستگاه ' : '✅صدور مجوز دستگاه ') . $Number,
 'callback_data' => 'admin_device_toggle:' . $Prefix . ':' . $Page,
 ]];
 }
@@ -200,7 +226,6 @@ if ($Page > 0) $Nav[] = ['text' => '⬅️قبلی', 'callback_data' => 'admin_d
 if ($Page + 1 < $Page_Count) $Nav[] = ['text' => 'بعدی➡️', 'callback_data' => 'admin_devices_page:' . ($Page + 1)];
 $Buttons[] = $Nav;
 }
-$Buttons[] = [Menu::button('🔐تنظیم سقف دستگاه حساب', 'device_limit_menu')];
 $Buttons[] = Menu::back('منوی قبلی', 'admin_devices_menu');
 $Buttons[] = Menu::adminHome();
 self::logMenuProblems('app-devices', $Buttons);
