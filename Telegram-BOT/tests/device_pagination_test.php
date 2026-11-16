@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 $Root = dirname(__DIR__);
 $AppLink = (string)file_get_contents($Root . '/Bot/App-Link.php');
+$Admin = (string)file_get_contents($Root . '/Bot/Admin.php');
+$User = (string)file_get_contents($Root . '/Bot/User.php');
 $Dispatcher = (string)file_get_contents($Root . '/Bot/Dispatcher.php');
 
 $Checks = [
@@ -20,6 +22,22 @@ $Checks = [
     'revocation confirmation preserves the current page' =>
         str_contains($AppLink, "'app_device_revoke_confirm:' . \$Prefix . ':' . \$Page") &&
         str_contains($AppLink, 'self::devices($Context, $Page);'),
+    'admin device section lists all devices with pagination and owner details' =>
+        str_contains($Admin, 'public static function appDevicesMenu(Context $Context, int $Page = 0)') &&
+        str_contains($Admin, "SELECT COUNT(*) FROM `App_Devices`") &&
+        str_contains($Admin, 'LIMIT ? OFFSET ?') &&
+        str_contains($Admin, '`Owner_Telegram_ID`'),
+    'admin can grant or revoke a device permission and invalidate sessions on revoke' =>
+        str_contains($Admin, 'public static function toggleAppDevice') &&
+        str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 1") &&
+        str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 0") &&
+        str_contains($Admin, "'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP"),
+    'admin device controls and user app account are routed from their menus' =>
+        str_contains($Dispatcher, "'admin_devices' => AdminFlow::appDevicesMenu(\$Context)") &&
+        str_contains($Dispatcher, "str_starts_with(\$Data, 'admin_device_toggle:')") &&
+        str_contains($User, "'📱حساب آمبرلا', 'app_menu'") &&
+        !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
+        str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'")
 ];
 
 $Failed = false;

@@ -302,16 +302,11 @@ return;
 }
 
 $Text = Common::greet($Context, 'منوی خدمات ربات') . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
-$Menu_Rows = array_merge(
-Menu::rows([
+$Menu_Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری'], ['💎اشتراک من', 'اشتراک من']],
-[['📊گزارش مصرف', 'گزارش مصرف'], ['🎫تیکت ها و پشتیبانی', 'منوی پشتیبانی']],
-]),
-Menu::rows([
-[['📱حساب و تنظیمات برنامه', 'app_menu']],
-[['🔄تغییرات نسخه', 'تغییرات نسخه']],
-])
-);
+[['📊گزارش مصرف', 'گزارش مصرف'], ['📱حساب آمبرلا', 'app_menu']],
+[['🎫تیکت ها و پشتیبانی', 'منوی پشتیبانی'], ['🔄تغییرات نسخه', 'تغییرات نسخه']],
+]);
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -559,7 +554,7 @@ $Profile_Buttons = array_merge($Profile_Buttons, Menu::rows([
 
 $Profile_Buttons = array_merge($Profile_Buttons, Menu::rows([
 [['📋سابقه تراکنش', 'سابقه تراکنش'], ['📋سابقه اشتراک', 'سابقه اشتراک']],
-[['📱حساب و تنظیمات برنامه', 'app_menu']],
+[['📱حساب آمبرلا', 'app_menu']],
 ]));
 
 $Profile_Buttons[] = Menu::userHome();

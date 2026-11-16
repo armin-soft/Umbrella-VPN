@@ -67,7 +67,8 @@ $Text = Helper::adminGreeting($Context, 'منوی مدیریت')
 '🎫تیکت در انتظار پاسخ: *' . Helper::toPersian((string)$Waiting_Tickets) . '*',
 ])
 . Menu::section('🗂', 'گروه های منو', [
-'👥کاربران: اعتبار، مسدودیت، مجوز دستگاه، تیکت ها',
+'👥کاربران: اعتبار، مسدودیت، تیکت ها و محدودیت دستگاه',
+'📲دستگاه‌های برنامه: فهرست همه دستگاه‌ها و صدور یا لغو مجوز',
 '⚙️سرور: وضعیت و سرویس ها، مصرف و داده کاربران، کلاینت ها',
 '📊گزارش: آمار کلی، گزارش روزانه، گزارش مالی، رتبه بندی',
 '📨پیامک و اطلاع رسانی: پیامک تکی و همگانی، اطلاع رسانی به کاربران',
@@ -82,9 +83,9 @@ $Markup[] = [Menu::button($Robot_On ? '🔴خاموش کردن ربات' : '🟢
 // هر گروه یک زیرمنوی مخصوص خودش را باز می کند: آیتم های بی ربط دیگر در یک
 // صفحه کنار هم نمی آیند و هر عملیات صفحه و ناوبری خودش را دارد.
 $Markup = array_merge($Markup, Menu::rows([
-[['👥کاربران', 'منوی کاربران'], ['⚙️سرور', 'پیکربندی سرور']],
-[['📊گزارش و مالی', 'منوی گزارش'], ['📨پیامک و اطلاع رسانی', 'منوی پیامک']],
-[['🧰سیستم', 'منوی سیستم']],
+[['👥کاربران', 'منوی کاربران'], ['📲دستگاه‌های برنامه', 'admin_devices']],
+[['⚙️سرور', 'پیکربندی سرور'], ['📊گزارش و مالی', 'منوی گزارش']],
+[['📨پیامک و اطلاع رسانی', 'منوی پیامک'], ['🧰سیستم', 'منوی سیستم']],
 ]));
 
 self::logMenuProblems('menu', $Markup);
@@ -114,16 +115,107 @@ $Text = Helper::adminGreeting($Context, 'مدیریت کاربران')
 . Menu::section('👥', 'عملیات کاربران', [
 '💳اعتبار حساب کاربران',
 '🚨مسدودیت و رفع مسدودیت',
-'📱محدودیت دستگاه ها',
 '🎫تیکت های پشتیبانی',
 ])
 . '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
 $Markup = array_merge(Menu::rows([
 [['💳اعتبار حساب کاربری', 'اعتبار حساب کاربری'], ['🚨جرایم', 'جرایم']],
-[['📱مجوز دستگاه', 'device_limit_menu'], ['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
+[['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
 ]), [Menu::adminHome()]);
 self::logMenuProblems('users', $Markup);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+}
+
+/** مدیریت یکپارچه فهرست دستگاه‌ها و مجوز ورود برنامه. */
+public static function appDevicesMenu(Context $Context, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Database = Database::getInstance();
+$Page_Size = 5;
+$Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices`', [], 0);
+$Page_Count = max(1, (int)ceil($Total / $Page_Size));
+$Page = max(0, min($Page, $Page_Count - 1));
+$Rows = $Database->fetchAll(
+'SELECT `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
+. '(SELECT `U`.`Full_Name` FROM `Users` AS `U` WHERE (`D`.`Telegram_ID` IS NOT NULL AND `U`.`Telegram_ID` = `D`.`Telegram_ID`) OR (`D`.`Phone` IS NOT NULL AND `D`.`Phone` <> \'\' AND `U`.`Phone` = `D`.`Phone`) ORDER BY (`U`.`Telegram_ID` = `D`.`Telegram_ID`) DESC LIMIT 1) AS `Owner_Name`, '
+. 'COALESCE(`D`.`Telegram_ID`, (SELECT `U`.`Telegram_ID` FROM `Users` AS `U` WHERE `D`.`Phone` IS NOT NULL AND `U`.`Phone` = `D`.`Phone` LIMIT 1)) AS `Owner_Telegram_ID` '
+. 'FROM `App_Devices` AS `D` ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC LIMIT ? OFFSET ?',
+[$Page_Size, $Page * $Page_Size]
+);
+$Text = Helper::adminGreeting($Context, 'مدیریت دستگاه‌های برنامه')
+. Menu::section('📲', 'مجوزها و فهرست دستگاه‌ها', [
+'🔐با دکمه هر دستگاه، دسترسی همان دستگاه را صادر یا لغو کنید.',
+'👤برای تغییر سقف مجاز هر حساب، گزینه تنظیم سقف دستگاه را بزنید.',
+'📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$Page_Count) . ' · ' . Helper::toPersian((string)$Total) . ' دستگاه',
+]);
+$Buttons = [];
+if ($Rows === []) {
+$Text .= "\n📭هنوز دستگاهی در برنامه ثبت نشده است.\n";
+}
+foreach ($Rows as $Index => $Row) {
+$Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
+$Device_Name = trim((string)($Row['Device_Name'] ?? '')) ?: 'دستگاه بی‌نام';
+$Owner = trim((string)($Row['Owner_Name'] ?? '')) ?: 'کاربر نامشخص';
+$Owner_Id = (int)($Row['Owner_Telegram_ID'] ?? 0);
+$When = trim((string)($Row['Last_Seen_At'] ?? '')) ?: '—';
+$Text .= '📱*' . Helper::toPersian((string)($Page * $Page_Size + $Index + 1)) . '. ' . $Device_Name . "*\n"
+. '   👤' . $Owner . ($Owner_Id > 0 ? ' · 🆔' . Helper::toPersian((string)$Owner_Id) : '') . "\n"
+. '   🖥' . trim((string)($Row['Platform'] ?? '—')) . ' · 🏷' . trim((string)($Row['App_Version'] ?? '—')) . "\n"
+. '   📞' . trim((string)($Row['Phone'] ?? '—')) . ' · 🌐' . trim((string)($Row['Last_IP'] ?? '—')) . "\n"
+. '   🕓' . $When . ' · ' . ($Trusted ? '✅مجاز' : '⛔️غیرمجاز') . "\n";
+$Prefix = substr((string)$Row['Device_ID'], 0, 32);
+$Buttons[] = [[
+'text' => ($Trusted ? '⛔️لغو مجوز · ' : '✅صدور مجوز · ') . mb_substr($Device_Name, 0, 18),
+'callback_data' => 'admin_device_toggle:' . $Prefix . ':' . $Page,
+]];
+}
+if ($Page_Count > 1) {
+$Nav = [];
+if ($Page > 0) $Nav[] = ['text' => '⬅️قبلی', 'callback_data' => 'admin_devices_page:' . ($Page - 1)];
+if ($Page + 1 < $Page_Count) $Nav[] = ['text' => 'بعدی➡️', 'callback_data' => 'admin_devices_page:' . ($Page + 1)];
+$Buttons[] = $Nav;
+}
+$Buttons[] = [Menu::button('🔐تنظیم سقف دستگاه حساب', 'device_limit_menu')];
+$Buttons[] = [Menu::adminHome()];
+self::logMenuProblems('app-devices', $Buttons);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+/** تغییر مجوز یک دستگاه؛ شناسه کامل به کاربر نمایش داده نمی‌شود. */
+public static function toggleAppDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Prefix = preg_replace('/[^A-Za-z0-9_-]/', '', $Device_Prefix) ?? '';
+$Database = Database::getInstance();
+$Matches = $Database->fetchAll(
+'SELECT `Device_ID`, `User_UUID`, `Telegram_ID`, `Phone`, `Is_Trusted` FROM `App_Devices` WHERE `Device_ID` LIKE ? LIMIT 2',
+[$Prefix . '%']
+);
+if ($Prefix === '' || count($Matches) !== 1) {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه پیدا نشد؛ فهرست را تازه‌سازی کنید.', true);
+self::appDevicesMenu($Context, $Page);
+return;
+}
+$Device = $Matches[0];
+$Device_Id = (string)$Device['Device_ID'];
+$Grant = (int)$Device['Is_Trusted'] !== 1;
+if ($Grant) {
+$Database->execute('UPDATE `App_Devices` SET `Is_Trusted` = 1 WHERE `Device_ID` = ?', [$Device_Id]);
+$Action = 'app_device_grant';
+$Notice = 'مجوز دستگاه صادر شد';
+}
+else {
+$Title = 'مجوز دستگاه لغو شد';
+$Body = 'دسترسی این دستگاه به درخواست مدیر سامانه لغو شد.';
+$Database->transaction(static function (Database $Database) use ($Device, $Device_Id, $Title, $Body): void {
+$Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (?, ?, ?, ?, ?)', [trim((string)($Device['User_UUID'] ?? '')) ?: null, $Device_Id, $Title, $Body, 'warning']);
+$Database->execute('UPDATE `App_Devices` SET `Is_Trusted` = 0 WHERE `Device_ID` = ?', [$Device_Id]);
+$Database->execute('UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP WHERE `Device_ID` = ? AND `Revoked_At` IS NULL', [$Device_Id]);
+});
+$Action = 'app_device_revoke';
+$Notice = 'مجوز لغو شد؛ نشست دستگاه نیز باطل شد.';
+}
+Repository::logAdminAction((int)$Context->UserId, $Action, (int)($Device['Telegram_ID'] ?? 0) ?: null, 'device=' . substr(hash('sha256', $Device_Id), 0, 16));
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, $Notice);
+self::appDevicesMenu($Context, $Page);
 }
 
 /** زیرمنوی اختصاصی ابزارها و پیکربندی سیستم. */
@@ -2639,7 +2731,7 @@ $Text = self::header($Context, 'مجوز دستگاه کاربران')
 'ℹ️به صورت پیش فرض هر کاربر فقط روی یک دستگاه فعال است.',
 ])
 . '👇شناسه را همین حالا بفرستید:' . Helper::adminFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::adminNav('منوی کاربران', 'منوی کاربران')));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::adminNav('مدیریت دستگاه‌های برنامه', 'admin_devices')));
 }
 
 /** Second step: show the current state and let the admin pick the new cap. */
@@ -2761,7 +2853,8 @@ Repository::logAdminAction((int)$Context->UserId, 'device_limit_set', $Telegram_
 
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران')
 . "✅*انجام شد.*\n📱از این به بعد کاربر " . Helper::toPersian((string)$Telegram_Id) . " می‌تواند روی *" . Helper::toPersian((string)$Max) . " دستگاه* به‌طور همزمان فعال باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📱مجوز دیگری', 'callback_data' => 'device_limit_menu']],
+[['text' => '📲فهرست دستگاه‌ها', 'callback_data' => 'admin_devices']],
+[['text' => '📱تنظیم مجوز حساب دیگر', 'callback_data' => 'device_limit_menu']],
 [['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
 ]));
 }

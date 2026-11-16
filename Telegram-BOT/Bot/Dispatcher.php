@@ -295,6 +295,7 @@ match($Data) {
 'اطلاع رسانی عدم استفاده' => AdminFlow::serverNotifyIdle($Context),
 'تایید اطلاع رسانی غیرفعال' => AdminFlow::serverNotifyIdleSend($Context),
 'منوی کاربران' => AdminFlow::usersMenu($Context),
+'admin_devices' => AdminFlow::appDevicesMenu($Context),
 'اطلاعات سرور' => AdminFlow::serverHealthMenu($Context),
 'همگام سازی سرور' => AdminFlow::serverSyncMenu($Context),
 'عملیات کلاینت سرور' => AdminFlow::serverClientsMenu($Context),
@@ -431,6 +432,17 @@ return;
 
 if (str_starts_with($Data, 'app_filter_toggle:')) {
 AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_devices_page:')) {
+AdminFlow::appDevicesMenu($Context, (int)substr($Data, strlen('admin_devices_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_device_toggle:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('admin_device_toggle:')), 2), 2, '0');
+AdminFlow::toggleAppDevice($Context, $Prefix, (int)$Page);
 return;
 }
 
