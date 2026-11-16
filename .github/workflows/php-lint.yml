@@ -66,6 +66,9 @@ jobs:
             exit 1
           fi
 
+      - name: Admin category navigation and access checks
+        run: php Telegram-BOT/tests/admin_structure_test.php
+
       - name: Every menu button has a handler
         shell: bash
         env:

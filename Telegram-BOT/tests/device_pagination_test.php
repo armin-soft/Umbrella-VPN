@@ -32,7 +32,7 @@ $Checks = [
         str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 1") &&
         str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 0") &&
         str_contains($Admin, "'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP"),
-    'admin device controls and user app actions are routed directly from their flat menus' =>
+    'admin device controls and flat user app actions remain reachable' =>
         str_contains($Dispatcher, "'admin_devices' => AdminFlow::appDevicesMenu(\$Context)") &&
         str_contains($Dispatcher, "str_starts_with(\$Data, 'admin_device_toggle:')") &&
         str_contains($User, "'📱حساب آمبرلا', 'app_menu'") &&

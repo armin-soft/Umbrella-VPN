@@ -67,7 +67,7 @@ $this->test_problems_reports_duplicate_button();
 $this->test_problems_reports_blank_row();
 $this->test_shared_keyboards_are_healthy();
 $this->test_user_service_menu_is_flat_without_submenus();
-$this->test_admin_menu_is_flat_without_submenus();
+$this->test_admin_menu_has_seven_categories();
 $this->test_certificate_bundle_is_preserved();
 $this->test_navigation_only_keyboard_is_detected();
 
@@ -259,45 +259,26 @@ $this->check(!str_contains($Service_Menu, "'{$Submenu_Call}'"), 'user service me
 }
 }
 
-/** منوی مدیریت مسطح است و تمام گزینه ها بدون زیرمنو مستقیماً در منوی اصلی قرار دارند. */
-private function test_admin_menu_is_flat_without_submenus(): void {
+/** هفت دسته اصلی، بدون تکرار عملیات در صفحه اصلی مدیریت. */
+private function test_admin_menu_has_seven_categories(): void {
 $Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
-$Menu_Start = strpos($Source, 'public static function menu(');
-$Menu_End = strpos($Source, 'public static function usersMenu(', $Menu_Start ?: 0);
-
-$this->check($Menu_Start !== false && $Menu_End !== false, 'admin menu source boundaries exist');
-
-if ($Menu_Start !== false && $Menu_End !== false) {
-$Admin_Menu = substr($Source, $Menu_Start, $Menu_End - $Menu_Start);
-
-$Direct_Actions = [
-'افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول', 'مدیریت تیکت ها',
-'مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها',
-'admin_devices', 'device_limit_menu',
-'وضعیت سرور', 'سرویس های سرور',
-'بروز رسانی میزان استفاده اول', 'بروز رسانی داده های کاربران اول',
-'فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'حذف کاربر اول', 'منقضی اشتراک اول',
-'آمار کلی', 'گزارش روزانه', 'گزارش مالی', 'رتبه بندی',
-'ارسال پیامک تکی اول', 'ارسال پیامک همگانی اول', 'اطلاع رسانی اول',
-'اطلاع رسانی سفارشی اول', 'app_push_start', 'notify_all_start', 'اطلاع رسانی عدم استفاده',
-'cfg_pricing', 'cfg_links', 'تنظیمات ربات', 'بروز رسانی',
-'پشتیبان گیری دیتابیس', 'تنظیم مجدد دیتابیس',
-];
-
-foreach ($Direct_Actions as $Call) {
-$this->check(str_contains($Admin_Menu, "'{$Call}'"), 'admin menu directly includes «' . $Call . '»');
+$Start = strpos($Source, 'public static function menu(');
+$End = strpos($Source, 'private static function categoryMenu(', $Start);
+$Body = substr($Source, $Start, $End - $Start);
+if (!preg_match('/\$Markup = Menu::rows\((\[.*?\])\);/s', $Body, $Match)) {
+$this->check(false, 'production admin menu rows must exist');
+return;
 }
-
-$Removed_Submenus = [
-'منوی کاربران', 'اعتبار حساب کاربری', 'جرایم',
-'پیکربندی سرور', 'اطلاعات سرور', 'همگام سازی سرور', 'عملیات کلاینت سرور',
-'منوی گزارش', 'منوی پیامک', 'اطلاع رسانی سرور', 'منوی سیستم', 'دیتابیس',
-];
-
-foreach ($Removed_Submenus as $Submenu_Call) {
-$this->check(!str_contains($Admin_Menu, "'{$Submenu_Call}'"), 'admin menu does not link to removed submenu «' . $Submenu_Call . '»');
+$Rows = Menu::rows(eval('return ' . $Match[1] . ';'));
+$this->check(Menu::problems($Rows) === [], 'production admin keyboard is valid');
+$this->check(array_column(array_merge(...$Rows), 'callback_data') === [
+'منوی کاربران', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک',
+'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم',
+], 'admin home contains exactly the seven categories in order');
+foreach ($Rows as $Row) {
+$this->check(count($Row) <= 2, 'admin menu has at most two buttons per row');
 }
-}
+$this->check(!str_contains($Body, "'خاموش کردن ربات'"), 'robot toggle belongs to system settings, not home');
 }
 
 /** گواهی محلی ربات باید همراه ساختار منو و بسته ربات حفظ شود. */
@@ -358,29 +339,6 @@ $Keys = [
 'app-account' => [Menu::userHome()],
 'app-settings' => [Menu::userHome()],
 'ticket-menu' => [Menu::userHome()],
-'admin-home' => array_merge(
-[[Menu::button('🔴خاموش کردن ربات', 'خاموش کردن ربات')]],
-Menu::rows([
-[['➕افزایش اعتبار', 'افزایش اعتبار اول'], ['➖کسر اعتبار', 'کسر اعتبار اول']],
-[['👁مشاهده اعتبار', 'مشاهده اعتبار اول'], ['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
-[['🚫🔒مسدود کردن کاربر', 'مسدودیت اول'], ['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
-[['👁مشاهده مسدودی ها', 'مشاهده مسدودی ها']],
-[['📲دستگاه‌های برنامه', 'admin_devices'], ['🔐سقف دستگاه حساب', 'device_limit_menu']],
-[['📊وضعیت سرور', 'وضعیت سرور'], ['🔌سرویس های سرور', 'سرویس های سرور']],
-[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول'], ['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
-[['✅فعالسازی کلاینت', 'فعالسازی کلاینت اول'], ['🚫غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول']],
-[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
-[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
-[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
-[['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
-[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
-[['📱اعلان برنامه ها', 'app_push_start'], ['📣تلگرام و برنامه', 'notify_all_start']],
-[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده']],
-[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
-[['🚱کانفیگ اضطراری', 'تنظیمات ربات'], ['🔄بروزرسانی نسخه', 'بروز رسانی']],
-[['💾پشتیبان گیری دیتابیس', 'پشتیبان گیری دیتابیس'], ['🔄تنظیم مجدد دیتابیس', 'تنظیم مجدد دیتابیس']],
-])
-),
 'app-devices' => array_merge(
 Menu::rows([
 [['✅صدور مجوز · دستگاه اول', 'admin_device_toggle:device-one:0']],
