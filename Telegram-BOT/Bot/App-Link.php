@@ -169,18 +169,21 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 self::filterMenu($Context);
 }
 
-/** The devices that ever signed in, with trust state. */
-public static function devices(Context $Context): void {
+/** The devices that ever signed in, with trust state and paging. */
+public static function devices(Context $Context, int $Page = 0): void {
 $Account = self::accountOrPrompt($Context);
 
 if ($Account === null) return;
 
-$Rows = \Database::getInstance()->fetchAll(
-'SELECT * FROM `App_Devices` WHERE `User_UUID` = ? OR `Telegram_ID` = ? ORDER BY `Last_Seen_At` DESC LIMIT 10',
-[(string)$Account['uuid'], $Context->UserId]
+$Database = \Database::getInstance();
+$Parameters = [(string)$Account['uuid'], $Context->UserId];
+$Total = (int)$Database->scalar(
+'SELECT COUNT(*) FROM `App_Devices` WHERE `User_UUID` = ? OR `Telegram_ID` = ?',
+$Parameters,
+0
 );
 
-if ($Rows === []) {
+if ($Total <= 0) {
 self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
@@ -190,11 +193,26 @@ TelegramClient::inlineKeyboard([[Menu::button('🔙حساب آمبرلا', 'app_
 return;
 }
 
+$PageSize = 5;
+$PageCount = max(1, (int)ceil($Total / $PageSize));
+$Page = max(0, min($Page, $PageCount - 1));
+$Offset = $Page * $PageSize;
+$Rows = $Database->fetchAll(
+'SELECT * FROM `App_Devices`
+WHERE `User_UUID` = ? OR `Telegram_ID` = ?
+ORDER BY `Last_Seen_At` DESC LIMIT ? OFFSET ?',
+[...$Parameters, $PageSize, $Offset]
+);
+
 $Text = \Helper::userGreeting($Context, 'دستگاه‌های من');
+if ($PageCount > 1) {
+$Text .= '📄صفحه ' . \Helper::toPersian((string)($Page + 1))
+. ' از ' . \Helper::toPersian((string)$PageCount) . "\n➖➖➖➖➖➖➖➖➖\n";
+}
 
 foreach ($Rows as $Index => $Row) {
 $Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
-$Text .= (\Helper::toPersian((string)($Index + 1))) . ') '
+$Text .= (\Helper::toPersian((string)($Offset + $Index + 1))) . ') '
 . '📱 ' . (string)($Row['Device_Name'] ?? 'دستگاه')
 . "\n   🖥 " . (string)($Row['Platform'] ?? '')
 . "\n   🌐 " . (string)($Row['Last_IP'] ?? '')
@@ -205,12 +223,23 @@ $Text .= (\Helper::toPersian((string)($Index + 1))) . ') '
 $Text .= 'ℹ️ برای لغو اعتماد یک دستگاه، دکمه آن را بزنید.' . \Helper::userFooter();
 $Buttons = [];
 
-foreach (array_slice($Rows, 0, 6) as $Row) {
+foreach ($Rows as $Row) {
 $Id = (string)$Row['Device_ID'];
 $Buttons[] = [[
 'text' => '⛔️ لغو اعتماد ' . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
-'callback_data' => 'app_device_revoke:' . substr($Id, 0, 24),
+'callback_data' => 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page,
 ]];
+}
+
+if ($PageCount > 1) {
+$Navigation = [];
+if ($Page > 0) {
+$Navigation[] = ['text' => '⬅️ قبلی', 'callback_data' => 'app_devices_page:' . ($Page - 1)];
+}
+if ($Page + 1 < $PageCount) {
+$Navigation[] = ['text' => 'بعدی ➡️', 'callback_data' => 'app_devices_page:' . ($Page + 1)];
+}
+$Buttons[] = $Navigation;
 }
 
 $Buttons[] = [Menu::button('🔙حساب آمبرلا', 'app_menu')];
@@ -218,7 +247,7 @@ $Buttons[] = [Menu::button('🔙حساب آمبرلا', 'app_menu')];
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
 
-public static function revokeDevice(Context $Context, string $Device_Prefix): void {
+public static function revokeDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {
 $Account = self::accountOrPrompt($Context);
 
 if ($Account === null) return;
@@ -243,14 +272,14 @@ $Context,
 . "با تأیید، برنامه از حساب خارج می‌شود و برای استفاده دوباره باید مجدداً وارد شوید."
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
-['text' => '⛔️ بله، لغو دسترسی', 'callback_data' => 'app_device_revoke_confirm:' . $Prefix],
-Menu::button('انصراف', 'app_devices'),
+['text' => '⛔️ بله، لغو دسترسی', 'callback_data' => 'app_device_revoke_confirm:' . $Prefix . ':' . $Page],
+['text' => 'انصراف', 'callback_data' => 'app_devices_page:' . $Page],
 ]])
 );
 }
 
 /** Executes a device revocation only after the explicit confirmation step. */
-public static function confirmRevokeDevice(Context $Context, string $Device_Prefix): void {
+public static function confirmRevokeDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {
 $Account = self::accountOrPrompt($Context);
 
 if ($Account === null) return;
@@ -275,7 +304,7 @@ if ($Devices === []) {
 if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه مجاز پیدا نشد یا قبلاً لغو شده است', true);
 }
-self::devices($Context);
+self::devices($Context, $Page);
 return;
 }
 
@@ -309,7 +338,7 @@ if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد؛ برنامه از حساب خارج خواهد شد.');
 }
 
-self::devices($Context);
+self::devices($Context, $Page);
 }
 
 /** The messages the app has been sent, newest first. */

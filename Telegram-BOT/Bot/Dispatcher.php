@@ -434,13 +434,20 @@ AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
 return;
 }
 
+if (str_starts_with($Data, 'app_devices_page:')) {
+AppFlow::devices($Context, (int)substr($Data, strlen('app_devices_page:')));
+return;
+}
+
 if (str_starts_with($Data, 'app_device_revoke_confirm:')) {
-AppFlow::confirmRevokeDevice($Context, substr($Data, strlen('app_device_revoke_confirm:')));
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_revoke_confirm:')), 2), 2, '0');
+AppFlow::confirmRevokeDevice($Context, $Prefix, (int)$Page);
 return;
 }
 
 if (str_starts_with($Data, 'app_device_revoke:')) {
-AppFlow::revokeDevice($Context, substr($Data, strlen('app_device_revoke:')));
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_revoke:')), 2), 2, '0');
+AppFlow::revokeDevice($Context, $Prefix, (int)$Page);
 return;
 }
 }
