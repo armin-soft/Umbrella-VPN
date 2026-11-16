@@ -73,7 +73,7 @@ $Markup = Menu::rows([
 [['🖥مدیریت سرور', 'پیکربندی سرور']],
 [['📊آمار و گزارشات', 'منوی گزارش']],
 [['📨پیام رسانی و اطلاع رسانی', 'منوی پیامک']],
-[['🎫پشتیبانی و تیکت ها', 'admin_support_menu']],
+[['🎫تیکت ها', 'مدیریت تیکت ها']],
 [['💰مدیریت تعرفه و اشتراک', 'admin_subscriptions_menu']],
 [['🗄مدیریت دیتابیس', 'منوی سیستم']],
 [['🔄بروزرسانی نسخه', 'بروز رسانی']],
@@ -105,7 +105,8 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function devicesMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📲دستگاه‌های برنامه', 'admin_devices'], ['🔐سقف دستگاه حساب', 'device_limit_menu']],
+[['📲دستگاه‌های برنامه', 'admin_devices']],
+[['🔐سقف دستگاه حساب', 'device_limit_menu']],
 ]);
 self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
 }
@@ -113,23 +114,22 @@ self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیر�
 public static function accountsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
+[['🗑حذف کاربر', 'حذف کاربر اول']],
+[['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
 ]);
 self::categoryMenu($Context, 'مدیریت حساب کاربری', $Rows, 'مدیریت');
 }
 
+/** سازگاری با دکمه قدیمی پشتیبانی؛ بدون صفحه واسطه به تیکت‌ها می‌رود. */
 public static function supportMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Rows = Menu::rows([
-[['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
-]);
-self::categoryMenu($Context, 'پشتیبانی و تیکت ها', $Rows, 'مدیریت');
+self::ticketAdminMenu($Context);
 }
 
 public static function subscriptionsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
+[['💰تعرفه و پلن ها', 'cfg_pricing']],
+[['🔗لینک ها و کانال', 'cfg_links']],
 ]);
 self::categoryMenu($Context, 'مدیریت تعرفه و اشتراک', $Rows, 'مدیریت');
 }
@@ -769,8 +769,10 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 public static function reportMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
-[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
+[['📊آمار کلی', 'آمار کلی']],
+[['📅گزارش روزانه', 'گزارش روزانه']],
+[['💰گزارش مالی', 'گزارش مالی']],
+[['🏆رتبه بندی', 'رتبه بندی']],
 ]);
 self::categoryMenu($Context, 'آمار و گزارشات', $Rows, 'مدیریت');
 }
@@ -3469,6 +3471,7 @@ Menu::back('منوی قبلی', 'منوی گزارش'), Menu::adminHome(),
 
 public static function ticketAdminMenu(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 $Waiting_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')");
 $Answered_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'answered'");
 $Closed_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'closed'");
@@ -3502,7 +3505,6 @@ $Buttons[] = [['text' => "{$Priority_Icon} #{$T['ID']} - " . mb_substr((string)$
 
 $Text .= Menu::pageLabel($Page, $PageCount);
 $Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'admin_tickets_page:'));
-$Buttons[] = Menu::back('منوی قبلی', 'admin_support_menu');
 $Buttons[] = Menu::adminHome();
 self::logMenuProblems('tickets', $Buttons);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));

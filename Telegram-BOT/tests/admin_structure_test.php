@@ -97,7 +97,7 @@ if (in_array($Button['text'], [Menu::BACK_LABEL, Menu::HOME_LABEL, Menu::ADMIN_H
 return $Rows === [] ? [] : array_column(array_merge(...$Rows), 'callback_data');
 }
 $Menus = [
-'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
+'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
 'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu']],
@@ -106,17 +106,18 @@ $Menus = [
 'serverConfig' => ['پیکربندی سرور', 'مدیریت', ['وضعیت سرور', 'سرویس های سرور', 'بروز رسانی میزان استفاده اول', 'تنظیمات ربات']],
 'reportMenu' => ['منوی گزارش', 'مدیریت', ['آمار کلی', 'گزارش روزانه', 'گزارش مالی', 'رتبه بندی']],
 'smsMenu' => ['منوی پیامک', 'مدیریت', ['ارسال پیامک تکی اول', 'ارسال پیامک همگانی اول', 'اطلاع رسانی اول', 'اطلاع رسانی سفارشی اول', 'اطلاع رسانی عدم استفاده', 'notify_all_start', 'app_push_start']],
-'supportMenu' => ['admin_support_menu', 'مدیریت', ['مدیریت تیکت ها']],
+'supportMenu' => ['admin_support_menu', 'مدیریت', []],
+'ticketAdminMenu' => ['مدیریت تیکت ها', 'مدیریت', []],
 'subscriptionsMenu' => ['admin_subscriptions_menu', 'مدیریت', ['cfg_pricing', 'cfg_links']],
 'systemMenu' => ['منوی سیستم', 'مدیریت', ['پشتیبان گیری دیتابیس', 'تنظیم مجدد دیتابیس']],
 ];
 $AdminWidths = [
 'menu' => array_fill(0, 13, 1),
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
-'devicesMenu' => [2, 1], 'accountsMenu' => [2, 1],
+'devicesMenu' => [1, 1, 1], 'accountsMenu' => [1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
-'reportMenu' => [2, 2, 1], 'smsMenu' => [2, 2, 1, 2, 1],
-'supportMenu' => [1, 1], 'subscriptionsMenu' => [2, 1], 'systemMenu' => [1, 1, 1],
+'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 1, 2, 1],
+'supportMenu' => [1], 'ticketAdminMenu' => [1], 'subscriptionsMenu' => [1, 1, 1], 'systemMenu' => [1, 1, 1],
 ];
 $Context = new Context();
 $Route = new ReflectionMethod(Dispatcher::class, 'routeCallbackInner');
@@ -163,6 +164,16 @@ $Expected = $Menus['menu'][2];
 $Expected[0] = $On ? 'خاموش کردن ربات' : 'روشن کردن ربات';
 check(calls() === $Expected, 'toggle stays on main admin menu');
 }
+// Direct home entry and legacy support button open the same ticket list.
+$Context->CallbackData = 'مدیریت تیکت ها';
+$Route->invoke(null, $Context);
+$DirectTickets = TelegramClient::$Last;
+$DirectText = TelegramClient::$Text;
+$Context->CallbackData = 'admin_support_menu';
+$Route->invoke(null, $Context);
+check(TelegramClient::$Last === $DirectTickets && TelegramClient::$Text === $DirectText, 'legacy support skips removed category');
+check(!str_contains($DirectText, 'پشتیبانی و تیکت ها'), 'removed support category is not rendered');
+check(TelegramClient::$Last['inline_keyboard'][0][0]['text'] === Menu::ADMIN_HOME_LABEL, 'ticket list retains correct admin home label');
 // Reset is still a confirmation screen; merely opening it must not reset anything.
 $Context->CallbackData = 'تنظیم مجدد دیتابیس';
 $Route->invoke(null, $Context);
@@ -182,7 +193,6 @@ $LeafParents = [
 'singleSmsMenu' => 'منوی پیامک', 'broadcastMenu' => 'منوی پیامک',
 'notifySingleMenu' => 'منوی پیامک', 'serverNotifyCustomStart' => 'منوی پیامک',
 'serverNotifyIdle' => 'منوی پیامک', 'appPushStart' => 'منوی پیامک', 'notifyAllStart' => 'منوی پیامک',
-'ticketAdminMenu' => 'admin_support_menu',
 ];
 foreach ($LeafParents as $Method => $Parent) {
 $Start = strpos($AdminSource, 'public static function ' . $Method . '(');
@@ -202,8 +212,8 @@ $UserMenus = [
 ];
 $UserWidths = [
 'serviceMenu' => [1, 1, 1, 1, 1, 1],
-'subscriptionsMenu' => [1, 2, 1, 1, 1], 'walletMenu' => [2, 1],
-'accountMenu' => [2, 2, 2, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [2, 1],
+'subscriptionsMenu' => [1, 2, 1, 1, 1], 'walletMenu' => [1, 1, 1],
+'accountMenu' => [1, 1, 1, 1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);
@@ -321,7 +331,7 @@ check(in_array($Prefix . ($Page + 1), $Calls, true) === ($Page < 3), $Method . '
 }
 Repository::$Tickets = [];
 AdminFlow::ticketAdminMenu($Context, 99);
-check(calls() === ['admin_support_menu', 'مدیریت'], 'empty admin ticket list only parent and home');
+check(calls() === ['مدیریت'], 'direct admin ticket list returns only to admin home');
 UserFlow::ticketUserList($UserContext, 99);
 check(calls() === ['منوی پشتیبانی', 'منوی خدمات ربات'], 'empty user ticket list only parent and home');
 AdminFlow::blockedList($Context, 99);

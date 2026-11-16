@@ -357,16 +357,20 @@ self::categoryMenu($Context, 'مدیریت اشتراک', $Rows);
 
 public static function walletMenu(Context $Context): void {
 $Rows = Menu::rows([
-[['💰شارژ کیف پول', 'شارژ اعتبار حساب کاربری'], ['📋سابقه تراکنش', 'سابقه تراکنش']],
+[['💰شارژ کیف پول', 'شارژ اعتبار حساب کاربری']],
+[['📋سابقه تراکنش', 'سابقه تراکنش']],
 ]);
 self::categoryMenu($Context, 'کیف پول و مالی', $Rows);
 }
 
 public static function accountMenu(Context $Context): void {
 $Rows = Menu::rows([
-[['👤پروفایل کاربری', 'پروفایل کاربری'], ['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
-[['🛡کنترل محتوا', 'app_filter'], ['🔔اعلان های برنامه', 'app_notifications']],
-[['📱دستگاه های من', 'app_devices'], ['🔐تأیید دومرحله‌ای', 'app_2fa']],
+[['👤پروفایل کاربری', 'پروفایل کاربری']],
+[['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
+[['🛡کنترل محتوا', 'app_filter']],
+[['🔔اعلان های برنامه', 'app_notifications']],
+[['📱دستگاه های من', 'app_devices']],
+[['🔐تأیید دومرحله‌ای', 'app_2fa']],
 ]);
 self::categoryMenu($Context, 'حساب کاربری', $Rows);
 }
@@ -382,7 +386,8 @@ self::categoryMenu($Context, 'سوابق و آمار', $Rows);
 /** دسته پشتیبانی و تیکت‌ها. */
 public static function supportMenu(Context $Context): void {
 $Rows = Menu::rows([
-[['🎫تیکت های من', 'لیست تیکت های من'], ['➕ایجاد تیکت جدید', 'تیکت جدید']],
+[['🎫تیکت های من', 'لیست تیکت های من']],
+[['➕ایجاد تیکت جدید', 'تیکت جدید']],
 ]);
 self::categoryMenu($Context, 'پشتیبانی', $Rows);
 }

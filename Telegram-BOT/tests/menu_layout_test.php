@@ -232,7 +232,7 @@ $Body = substr($Source, $Start, $End - $Start);
 $this->check_main_rows($Body, 'Markup', [
 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu',
 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک',
-'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی',
+'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی',
 ]);
 $this->check(str_contains($Body, 'array_unshift($Markup, [Menu::button($Robot_On'), 'robot toggle is the first row');
 }
