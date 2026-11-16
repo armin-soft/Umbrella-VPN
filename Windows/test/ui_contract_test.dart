@@ -1215,10 +1215,11 @@ void main() {
 
     test('۱۰. اجرای CLI مسیر اجرایی و آرگومان ها را جدا و امن می فرستد', () {
       final String cli = read('lib/vpn/cli_session.dart');
-      expect(cli.contains('...file.args.map(_quote)'), isTrue);
-      expect(cli.contains('"\$title"'), isTrue);
-      expect(cli.contains('_quote(file.exe)'), isTrue);
+      expect(cli.contains('title,'), isTrue);
+      expect(cli.contains('...file.args,'), isTrue);
+      expect(cli.contains('file.exe,'), isTrue);
       expect(cli.contains('File(file.exe).existsSync()'), isTrue);
+      expect(cli.contains('_quote('), isFalse);
       expect(cli.contains('final String command ='), isFalse);
     });
 

@@ -133,18 +133,17 @@ class CliSession {
     if (file == null || file.exe.isEmpty || !File(file.exe).existsSync()) {
       return false;
     }
-    // `start` treats the first quoted token as a window title. Passing the
-    // executable and each argument separately avoids splitting paths such as
-    // "Umbrella CLI.exe" (the source of Windows' "cannot find CLI" error).
+    // `Process.start` adds the required Windows quotes around
+    // values containing spaces. Do not embed quote characters ourselves:
+    // nested quotes make `start` treat the title as a command and try to launch
+    // a program literally named `Umbrella`.
     final List<String> command = <String>[
       '/c',
       'start',
-      // `start` interprets its first unquoted word as the executable, not the
-      // window title. Quote the title or cmd.exe tries to launch `Umbrella`.
-      '"$title"',
-      if (file.workDir.isNotEmpty) ...<String>['/D', _quote(file.workDir)],
-      _quote(file.exe),
-      ...file.args.map(_quote),
+      title,
+      if (file.workDir.isNotEmpty) ...<String>['/D', file.workDir],
+      file.exe,
+      ...file.args,
     ];
     try {
       final Process shell = await Process.start(
@@ -158,10 +157,6 @@ class CliSession {
       return false;
     }
   }
-
-  /// نقل قول یک آرگومان برای خط فرمان ویندوز.
-  static String _quote(String arg) =>
-      arg.contains(' ') ? '"$arg"' : arg;
 
   /// عنوان پنجره.
   static String titleFor(VpnNode node, AppSettings settings) {
