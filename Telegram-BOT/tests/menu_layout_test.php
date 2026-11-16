@@ -220,7 +220,7 @@ $Body = substr($Source, $Start, $End - $Start);
 $this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
 $this->check_main_rows($Body, 'Menu_Rows', [
 'user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu',
-'user_security_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
+'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
 ]);
 }
 
@@ -291,7 +291,6 @@ $this->check(!Menu::isNavigationOnly([]), 'an empty keyboard is not navigation-o
 private function test_shared_keyboards_are_healthy(): void {
 $Keys = [
 'app-account' => Menu::userNav('حساب کاربری', 'user_account_menu'),
-'app-security' => Menu::userNav('امنیت', 'user_security_menu'),
 'support' => Menu::userNav('پشتیبانی', 'منوی پشتیبانی'),
 'app-devices' => array_merge(
 Menu::rows([

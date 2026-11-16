@@ -307,7 +307,6 @@ $Menu_Rows = Menu::rows([
 [['💎مدیریت اشتراک', 'user_subscriptions_menu']],
 [['💰کیف پول و مالی', 'user_wallet_menu']],
 [['👤حساب کاربری', 'user_account_menu']],
-[['🔐امنیت', 'user_security_menu']],
 [['📊سوابق و آمار', 'user_stats_menu']],
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
@@ -336,13 +335,24 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 }
 
 public static function subscriptionsMenu(Context $Context): void {
+if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
+$User = Repository::getUser($Context->UserId);
+$Subscription = trim((string)($User['Subscription'] ?? ''));
+$Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
+// توقف کلاینت، مالکیت اشتراک را از بین نمی‌برد. تاریخ نامشخص نیز
+// نباید باعث نمایش خرید مجدد برای اشتراک ثبت‌شده شود.
+$Has_Subscription = $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
 $Rows = Menu::rows([
 [['💎اشتراک من', 'اشتراک من']],
+]);
+if (!$Has_Subscription) {
+$Rows = array_merge($Rows, Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده']],
 [['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
 [['🎁اشتراک رایگان', 'اشتراک رایگان اول']],
-[['🔄تمدید خودکار', 'منوی تمدید خودکار']],
-]);
+]));
+}
+$Rows[] = [Menu::button('🔄تمدید خودکار', 'منوی تمدید خودکار')];
 self::categoryMenu($Context, 'مدیریت اشتراک', $Rows);
 }
 
@@ -361,16 +371,10 @@ $Rows = Menu::rows([
 [['🛡کنترل محتوا', 'app_filter']],
 [['🔗دامنه های دلخواه', 'app_filter_domains']],
 [['🔔اعلان های برنامه', 'app_notifications']],
-]);
-self::categoryMenu($Context, 'حساب کاربری', $Rows);
-}
-
-public static function securityMenu(Context $Context): void {
-$Rows = Menu::rows([
 [['📱دستگاه های من', 'app_devices']],
 [['🔐تأیید دومرحله‌ای', 'app_2fa']],
 ]);
-self::categoryMenu($Context, 'امنیت', $Rows);
+self::categoryMenu($Context, 'حساب کاربری', $Rows);
 }
 
 public static function statsMenu(Context $Context): void {

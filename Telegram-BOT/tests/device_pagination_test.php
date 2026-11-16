@@ -42,8 +42,8 @@ $Checks = [
         str_contains($User, "'🔔اعلان های برنامه', 'app_notifications'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
         str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'"),
-    'app screens return to their account or security category' =>
-        str_contains($AppLink, "Menu::back('منوی قبلی', 'user_security_menu')") &&
+    'app screens return to the account category' =>
+        !str_contains($AppLink, "'user_security_menu'") &&
         str_contains($AppLink, "Menu::back('منوی قبلی', 'user_account_menu')") &&
         !str_contains($AppLink, "Menu::back('حساب آمبرلا', 'app_menu')") &&
         !str_contains($AppLink, "Menu::back('کنترل محتوا', 'app_filter')"),

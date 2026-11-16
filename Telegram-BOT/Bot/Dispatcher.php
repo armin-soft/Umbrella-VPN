@@ -18,7 +18,8 @@ private const ROUTES = [
 'user_subscriptions_menu' => [UserFlow::class, 'subscriptionsMenu'],
 'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
 'user_account_menu' => [UserFlow::class, 'accountMenu'],
-'user_security_menu' => [UserFlow::class, 'securityMenu'],
+// سازگاری با پیام‌های قدیمی؛ دسته امنیت دیگر نمایش داده نمی‌شود.
+'user_security_menu' => [UserFlow::class, 'accountMenu'],
 'user_stats_menu' => [UserFlow::class, 'statsMenu'],
 'منوی پشتیبانی' => [UserFlow::class, 'supportMenu'],
 'گزارش مصرف' => [UserFlow::class, 'usageAnalytics'],
@@ -642,7 +643,7 @@ $Typed_Routes = [
 'مدیریت اشتراک' => fn() => UserFlow::subscriptionsMenu($Context),
 'کیف پول و مالی' => fn() => UserFlow::walletMenu($Context),
 'حساب کاربری' => fn() => UserFlow::accountMenu($Context),
-'امنیت' => fn() => UserFlow::securityMenu($Context),
+'امنیت' => fn() => UserFlow::accountMenu($Context),
 'سوابق و آمار' => fn() => UserFlow::statsMenu($Context),
 'اشتراک من' => fn() => SubscriptionFlow::mySubscription($Context),
 'منوی خدمات کاربری' => fn() => UserFlow::serviceMenu($Context),

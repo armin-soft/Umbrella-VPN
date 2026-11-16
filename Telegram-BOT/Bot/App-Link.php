@@ -167,7 +167,7 @@ self::reply($Context, \Helper::userGreeting($Context, 'دامنه‌های دل�
 
 /** The devices that ever signed in, with trust state and paging. */
 public static function devices(Context $Context, int $Page = 0): void {
-$Account = self::accountOrPrompt($Context, 'user_security_menu');
+$Account = self::accountOrPrompt($Context, 'user_account_menu');
 
 if ($Account === null) return;
 
@@ -184,7 +184,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_security_menu'), Menu::userHome()])
+TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()])
 );
 return;
 }
@@ -238,7 +238,7 @@ $Navigation[] = ['text' => 'بعدی ➡️', 'callback_data' => 'app_devices_pa
 $Buttons[] = $Navigation;
 }
 
-$Buttons[] = Menu::back('منوی قبلی', 'user_security_menu');
+$Buttons[] = Menu::back('منوی قبلی', 'user_account_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
@@ -363,7 +363,7 @@ self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeybo
 
 /** The switch that decides whether a sign-in also needs a tap here. */
 public static function twoStepMenu(Context $Context): void {
-if (self::accountOrPrompt($Context, 'user_security_menu') === null) {
+if (self::accountOrPrompt($Context, 'user_account_menu') === null) {
 return;
 }
 
@@ -403,7 +403,7 @@ $Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورو
 $Rows = $On
 ? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
 : [[['text' => '✅فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
-$Rows[] = Menu::back('منوی قبلی', 'user_security_menu');
+$Rows[] = Menu::back('منوی قبلی', 'user_account_menu');
 $Rows[] = Menu::userHome();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }

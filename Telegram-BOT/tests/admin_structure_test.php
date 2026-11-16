@@ -22,6 +22,8 @@ public function isAdmin(): bool { return $this->Admin; }
 final class Repository {
 public static array $Session = [];
 public static array $Settings = [];
+public static array $User = [];
+public static function getUser(int $Id): array { return self::$User; }
 public static function updateUserSession(int $Id, array $Values): void { self::$Session = array_replace(self::$Session, $Values); }
 public static function getUserSession(int $Id): array { return self::$Session; }
 public static function setSetting(string $Key, string $Value): void { self::$Settings[$Key] = $Value; }
@@ -165,11 +167,10 @@ check(str_contains($Body, "Menu::back('منوی قبلی', '{$Parent}')"), $Meth
 check(str_contains($Body, 'Menu::adminHome()'), $Method . ': leaf keeps main menu');
 }
 $UserMenus = [
-'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_security_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
+'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول', 'منوی تمدید خودکار']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
-'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_filter_domains', 'app_notifications']],
-'securityMenu' => ['user_security_menu', ['app_devices', 'app_2fa']],
+'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_filter_domains', 'app_notifications', 'app_devices', 'app_2fa']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
@@ -188,9 +189,40 @@ $UserContext->CallbackData = $Call;
 $Route->invoke(null, $UserContext);
 check(calls() === $Expected, 'user ' . $Method . ': dispatcher routes category');
 }
+// Old security callbacks now open account settings, never a separate category.
+$UserContext->CallbackData = 'user_security_menu';
+$Route->invoke(null, $UserContext);
+check(calls() === array_merge($UserMenus['accountMenu'][1], ['منوی خدمات ربات']), 'legacy security callback redirects to account');
+$Now = time();
+foreach ([
+'active' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400], true],
+'no subscription' => [[], false],
+'expired' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now - 1], false],
+'expiry boundary' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now], false],
+'unknown expiry' => [['Subscription' => '۱ ماهه'], true],
+'blank subscription' => [['Subscription' => '  ', 'Expiration_Time_Stamp' => $Now + 86400], false],
+'paused client' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400, 'Server_Enable' => 0], true],
+] as $Label => [$User, $HasSubscription]) {
+Repository::$User = $User;
+foreach ([true, false] as $Callback) {
+$UserContext->IsCallback = $Callback;
+Repository::$Session = ['Flow' => 'custom_plan_days', 'Pending_Payment' => 'preserved'];
+UserFlow::subscriptionsMenu($UserContext);
+$Expected = $HasSubscription ? ['اشتراک من', 'منوی تمدید خودکار', 'منوی خدمات ربات'] : array_merge($UserMenus['subscriptionsMenu'][1], ['منوی خدمات ربات']);
+check(calls() === $Expected, $Label . ': correct subscription actions');
+check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], $Label . ': navigation preserves payment');
+}
+}
+Repository::$User = [];
+$UserContext->IsCallback = true;
+$SubscriptionSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
+preg_match('/public static function mySubscriptionActive\b.*?(?=(?:public|private) static function |\z)/s', $SubscriptionSource, $Match);
+foreach (['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول'] as $PurchaseAction) {
+check(!str_contains($Match[0], "'callback_data' => '" . $PurchaseAction . "'"), 'active subscription details have no purchase action: ' . $PurchaseAction);
+}
 $UserLeafParents = [
 'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'usageRanking' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],
-'App-Link.php' => ['filterMenu' => 'user_account_menu', 'filterDomainsStart' => 'user_account_menu', 'notifications' => 'user_account_menu', 'devices' => 'user_security_menu', 'renderTwoStep' => 'user_security_menu'],
+'App-Link.php' => ['filterMenu' => 'user_account_menu', 'filterDomainsStart' => 'user_account_menu', 'notifications' => 'user_account_menu', 'devices' => 'user_account_menu', 'renderTwoStep' => 'user_account_menu'],
 'Subscription.php' => ['mySubscription' => 'user_subscriptions_menu', 'mySubscriptionActive' => 'user_subscriptions_menu', 'buyMenu' => 'user_subscriptions_menu', 'readyPlansMenu' => 'user_subscriptions_menu', 'customPlansMenu' => 'user_subscriptions_menu', 'walletTopupStart' => 'user_wallet_menu'],
 'Profile.php' => ['begin' => 'user_account_menu', 'askName' => 'user_account_menu'],
 ];
