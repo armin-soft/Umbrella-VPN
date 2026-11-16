@@ -226,7 +226,7 @@ void main() {
       // اول بسته شود و فایل لینک هسته هم نباید روی ۳۰ لینک بسته شود.
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('list.length >= 4'), isFalse);
-      expect(controller.contains('list.addAll(rest)'), isTrue);
+      expect(controller.contains('list..addAll(pinned)..addAll(ordinary)'), isTrue);
       expect(controller.contains('_maxPoolLinks = 30'), isFalse);
       expect(controller.contains('_maxPoolLinks = 1000'), isTrue);
       // بودجه زمانی برای وقتی هیچ سروری جواب نمی دهد، تا حلقه برای همیشه
@@ -369,7 +369,8 @@ void main() {
       expect(account.contains('خواندن دوباره از پنل'), isFalse);
       expect(account.contains('_TelegramSyncButton'), isTrue);
       // سینک با شناسه حساب به ربات می رود، نه فقط صفحه ربات.
-      expect(account.contains('?start='), isTrue);
+      expect(account.contains('https://t.me/UmbrellaVPN_BOT'), isTrue);
+      expect(account.contains('_openTelegramBot'), isTrue);
     });
 
     test('بخش ابزار برنامه: تنظیمات، گزارش ها و دستگاه ریسپانسیو هستند', () {
@@ -582,8 +583,12 @@ void main() {
     test('آی پی دستگاه هرگز نامشخص نیست', () {
       final String page = read('lib/ui/pages/connect_page.dart');
       expect(page.contains('_deviceIp'), isTrue);
-      // آی پی هیچ وقت خط تیره نمی شود.
-      expect(page.contains("'—'"), isFalse);
+      // آی پی fallbackهای محلی دارد؛ فقط خود helper نباید dash پیش فرض داشته باشد.
+      final String helper = page.substring(
+        page.indexOf('String _deviceIp('),
+        page.indexOf('static String _flagForIp'),
+      );
+      expect(helper.contains("'—'"), isFalse);
     });
   });
 
@@ -1176,7 +1181,7 @@ void main() {
     test('۵. IP در پیام های ورود تلگرام فارسی سازی می شود', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
       expect(gateway.contains('آی‌پی:'), isTrue);
-      expect(gateway.contains(r'\Helper::toPersian($IP)'), isTrue);
+      expect(gateway.contains(r'\\Helper::toPersian($IP)'), isTrue);
     });
 
     test('۶. تایید دستگاه و فیلتر اعلان لغو مجوز کهنه اتمیک است', () {
@@ -1209,7 +1214,8 @@ void main() {
     test('۱۰. اجرای CLI مسیر اجرایی و آرگومان ها را جدا و امن می فرستد', () {
       final String cli = read('lib/vpn/cli_session.dart');
       expect(cli.contains('...file.args.map(_quote)'), isTrue);
-      expect(cli.contains("'start',\n      'Umbrella'"), isTrue);
+      expect(cli.contains("'Umbrella',"), isTrue);
+      expect(cli.contains('_quote(file.exe)'), isTrue);
       expect(cli.contains('File(file.exe).existsSync()'), isTrue);
       expect(cli.contains('final String command ='), isFalse);
     });

@@ -690,23 +690,26 @@ class _ConnectionStatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space2,
+      ),
       decoration: BoxDecoration(
         color: colors.surfaceHigh.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         border: Border.all(color: colors.border),
       ),
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 18, color: accent),
-          const SizedBox(width: 9),
+          Icon(icon, size: AppMetrics.iconMd, color: accent),
+          const SizedBox(width: AppMetrics.space2),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(Fa.num(label), style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.textSecondary)),
-                const SizedBox(height: 2),
+                const SizedBox(height: AppMetrics.space1),
                 Text(Fa.num(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800)),
               ],
             ),
@@ -1030,8 +1033,8 @@ class _RegionProxyDialogState extends State<_RegionProxyDialog> {
                     onPressed: _refreshing ? null : _refresh,
                     icon: _refreshing
                         ? const SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: AppMetrics.iconMd,
+                            height: AppMetrics.iconMd,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.refresh_rounded),
@@ -1080,7 +1083,7 @@ class _RegionProxyDialogState extends State<_RegionProxyDialog> {
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
                             if (code != 'unknown') ...<Widget>[
-                              FlagView(code: code, width: 23),
+                              FlagView(code: code, width: AppMetrics.flagWidthSmall),
                               const SizedBox(width: AppMetrics.space2),
                             ],
                             Text(
@@ -1160,7 +1163,7 @@ class _RegionProxyDialogState extends State<_RegionProxyDialog> {
                             child: Row(
                               children: <Widget>[
                                 if (node.flagCode.isNotEmpty) ...<Widget>[
-                                  FlagView(code: node.flagCode, width: 30),
+                                  FlagView(code: node.flagCode, width: AppMetrics.flagWidthSmall),
                                   const SizedBox(width: AppMetrics.space3),
                                 ],
                                 Expanded(
@@ -1176,7 +1179,7 @@ class _RegionProxyDialogState extends State<_RegionProxyDialog> {
                                             .labelMedium
                                             ?.copyWith(fontWeight: FontWeight.w800),
                                       ),
-                                      const SizedBox(height: 2),
+                                      const SizedBox(height: AppMetrics.space1),
                                       Text(
                                         Fa.num(
                                           '${node.protocol.name.toUpperCase()} · '

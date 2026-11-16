@@ -598,57 +598,68 @@ return false;
 }
 
 $Next = $Approved ? 'approved' : 'denied';
+$Token = '';
 
-if ((int)($Row['Expires_At'] ?? 0) > 0 && (int)$Row['Expires_At'] < time()) {
-error_log('[Umbrella-Bot][Gateway] decision on an expired challenge ' . $Challenge);
-return false;
-}
-
-// The stage flip is the one thing the app waits for, so it goes first and its
-// failure is reported plainly; every bookkeeping step after it is best-effort
-// and may never strand the app on the waiting screen.
+// The client polls Stage. Commit device trust and the approved stage together,
+// so a fast poll can never obtain a session while Is_Trusted is still false.
 try {
-Database::getInstance()->execute(
-'UPDATE `App_SignIn_Requests` SET `Stage` = ?, `Decided_At` = ? WHERE `Challenge` = ?',
-[$Next, time(), $Challenge]
+$Committed = Database::getInstance()->transaction(static function (Database $Database) use ($Approved, $Next, $Row, $Challenge, $Telegram_Id, &$Token): bool {
+$Current = $Database->fetch(
+'SELECT `Stage`, `Telegram_ID`, `Expires_At` FROM `App_SignIn_Requests` WHERE `Challenge` = ? FOR UPDATE',
+[$Challenge]
 );
-}
-
-catch (Throwable $Error) {
-error_log('[Umbrella-Bot][Gateway] decision update failed for ' . $Challenge . ': ' . $Error->getMessage());
+if ($Current === null ||
+    (int)$Current['Telegram_ID'] !== $Telegram_Id ||
+    !in_array((string)$Current['Stage'], ['code_sent', 'awaiting_telegram'], true) ||
+    (int)($Current['Expires_At'] ?? 0) < time()) {
 return false;
 }
 
 if ($Approved) {
-try {
-$Token = self::issueToken($Row);
-Database::getInstance()->execute(
-'UPDATE `App_SignIn_Requests` SET `Token` = ? WHERE `Challenge` = ?',
-[$Token, $Challenge]
+$Device = $Database->fetch(
+'SELECT `Device_ID` FROM `App_Devices` WHERE `Device_ID` = ? FOR UPDATE',
+[(string)$Row['Device_ID']]
 );
+if ($Device === null) {
+throw new RuntimeException('The approved sign-in device is not registered.');
 }
-
-catch (Throwable $Error) {
-// auth/session issues a token on demand, so this can never block the sign-in.
-error_log('[Umbrella-Bot][Gateway] token issue failed for ' . $Challenge . ': ' . $Error->getMessage());
-}
-
-try {
-Database::getInstance()->execute(
+$Database->execute(
 'UPDATE `App_Devices`
 SET `Is_Trusted` = 1, `Last_Seen_At` = ?,
 `Telegram_ID` = COALESCE(`Telegram_ID`, ?),
-`User_UUID` = CASE WHEN `User_UUID` IS NULL OR `User_UUID` = \'\' THEN ? ELSE `User_UUID` END
+`User_UUID` = CASE WHEN `User_UUID` IS NULL OR LENGTH(`User_UUID`) = 0 THEN ? ELSE `User_UUID` END
 WHERE `Device_ID` = ?',
 [time(), $Telegram_Id, (string)$Row['User_UUID'], (string)$Row['Device_ID']]
 );
 }
 
+$Changed = $Database->execute(
+'UPDATE `App_SignIn_Requests` SET `Stage` = ?, `Decided_At` = ? WHERE `Challenge` = ?',
+[$Next, time(), $Challenge]
+)->rowCount();
+if ($Changed < 1) {
+throw new RuntimeException('The sign-in decision could not be stored.');
+}
+
+if ($Approved) {
+$Token = self::issueToken($Row);
+$Database->execute(
+'UPDATE `App_SignIn_Requests` SET `Token` = ? WHERE `Challenge` = ?',
+[$Token, $Challenge]
+);
+}
+return true;
+});
+if (!$Committed) return false;
+}
+
 catch (Throwable $Error) {
-error_log('[Umbrella-Bot][Gateway] device trust update failed for ' . $Challenge . ': ' . $Error->getMessage());
+error_log('[Umbrella-Bot][Gateway] decision transaction failed for ' . $Challenge . ': ' . $Error->getMessage());
+return false;
 }
 
 error_log('[Umbrella-Bot][Gateway] decision ' . ($Approved ? 'approved' : 'denied') . ' for challenge ' . $Challenge . ' from telegram ' . $Telegram_Id);
+if ($Approved) {
 try {
 Repository::addNotification(
 $Telegram_Id,
@@ -729,16 +740,25 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 
 $Rows = Database::getInstance()->fetchAll(
 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications`
-WHERE `Delivered_At` IS NULL AND (`Device_ID` = ? OR `User_UUID` = ?)
+WHERE `Delivered_At` IS NULL
+AND (`Device_ID` = ? OR (`Device_ID` IS NULL AND `User_UUID` = ?))
 ORDER BY `ID` ASC LIMIT 20',
 [(string)$Session['Device_ID'], (string)$Session['User_UUID']]
 );
 
+$VisibleRows = [];
 foreach ($Rows as $Row) {
 Database::getInstance()->execute(
 'UPDATE `App_Notifications` SET `Delivered_At` = ? WHERE `ID` = ?',
 [time(), (int)$Row['ID']]
 );
+$Notice = (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '');
+// The current session is trusted; a queued revoke warning is stale after re-approval.
+if (str_contains($Notice, 'مجوز این دستگاه لغو شد') ||
+    str_contains($Notice, 'دسترسی این دستگاه به نرم افزار آمبرلا لغو شد')) {
+continue;
+}
+$VisibleRows[] = $Row;
 }
 
 self::ok([
@@ -748,7 +768,7 @@ self::ok([
 'body' => (string)($Row['Body'] ?? ''),
 'level' => (string)$Row['Level'],
 'sent_at' => (string)$Row['Sent_At'],
-], $Rows),
+], $VisibleRows),
 ]);
 }
 
@@ -1073,7 +1093,7 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . "📱 دستگاه: {$Device}\n"
 . ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. ($IP !== '' ? "🌐 IP: " . \Helper::toPersian($IP) . "\n" : '')
+. ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: {$At}\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "اگر این درخواست از طرف خودتان است «خودم بودم» را بزنید؛ در غیر این صورت «نبودم» را بزنید تا ورود مسدود شود."
@@ -1095,7 +1115,7 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
 . ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. ($IP !== '' ? "🌐 IP: " . \Helper::toPersian($IP) . "\n" : '')
+. ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "تأیید دومرحله‌ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در پروفایل آن دستگاه را حذف کنید و تأیید دومرحله‌ای را روشن کنید."
@@ -1150,12 +1170,15 @@ $Telegram_Id,
 . "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
 . ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. "🌐 IP: " . \Helper::toPersian($IP) . "\n"
+. "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n"
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "🔎 دلیل: " . ($Labels[$Reason] ?? $Reason) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در پروفایل، دستگاه‌های ناشناس را حذف کنید."
-. \Helper::userFooter()
+. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در پروفایل، دستگاه‌های ناشناس را حذف کنید.**"
+. \Helper::userFooter(),
+TelegramClient::inlineKeyboard([[
+['text' => '📱 دستگاه من', 'callback_data' => 'app_devices'],
+]])
 );
 }
 

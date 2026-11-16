@@ -33,9 +33,7 @@ $Text = \Helper::userGreeting($Context, 'فیلترشکن آمبرلا')
 'برای دیدن اطلاعات حساب و تنظیمات فیلتر، ابتدا در برنامه با همین شماره وارد شوید و ربات را باز کنید.',
 'ℹ️ بعد از ورود اول، همه‌چیز به‌صورت خودکار اینجا نمایش داده می‌شود.'
 ) . \Helper::userFooter();
-self::reply($Context, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']],
-]));
+self::reply($Context, $Text, []);
 return;
 }
 
@@ -55,13 +53,10 @@ $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 ])
 . $Summary
 . \Helper::userFooter();
-$Rows = array_merge(
-Menu::rows([
+$Rows = Menu::rows([
 [['🛡کنترل محتوا', 'app_filter'], ['📱دستگاه‌های من', 'app_devices']],
 [['🔔اعلان‌های برنامه', 'app_notifications'], ['🔐تأیید دومرحله‌ای', 'app_2fa']],
-]),
-[Menu::userHome()]
-);
+]);
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
@@ -91,7 +86,7 @@ $Rows[] = [['text' => $Settings['enabled'] ? '🔴خاموش کردن کنترل
 $Rows = array_merge($Rows, Menu::rows([
 [['🔗افزودن دامنه دلخواه', 'app_filter_domains']],
 ]));
-$Rows = array_merge($Rows, Menu::userNav('حساب آمبرلا', 'app_menu'));
+$Rows = array_merge($Rows, [[Menu::button('🔙حساب آمبرلا', 'app_menu')]]);
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
@@ -150,7 +145,7 @@ $Context,
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
 Menu::button('🔙بازگشت', 'app_filter'),
-Menu::userHome()[0],
+Menu::button('🔙حساب آمبرلا', 'app_menu'),
 ]])
 );
 }
@@ -190,7 +185,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()])
+TelegramClient::inlineKeyboard([[Menu::button('🔙حساب آمبرلا', 'app_menu')]])
 );
 return;
 }
@@ -199,12 +194,10 @@ $Text = \Helper::userGreeting($Context, 'دستگاه‌های من');
 
 foreach ($Rows as $Index => $Row) {
 $Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
-$Seen = (int)($Row['Last_Seen_At'] ?? 0);
 $Text .= (\Helper::toPersian((string)($Index + 1))) . ') '
 . '📱 ' . (string)($Row['Device_Name'] ?? 'دستگاه')
 . "\n   🖥 " . (string)($Row['Platform'] ?? '')
 . "\n   🌐 " . (string)($Row['Last_IP'] ?? '')
-. "\n   🕐 " . ($Seen > 0 ? \Helper::formatPersianDate($Seen, true) : '—')
 . "\n   " . ($Trusted ? '✅ تأییدشده' : '⚪️ تأییدنشده')
 . "\n➖➖➖➖➖➖➖➖➖\n";
 }
@@ -220,7 +213,7 @@ $Buttons[] = [[
 ]];
 }
 
-$Buttons = array_merge($Buttons, Menu::userNav('حساب آمبرلا', 'app_menu'));
+$Buttons[] = [Menu::button('🔙حساب آمبرلا', 'app_menu')];
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -307,7 +300,7 @@ $Icon = match((string)$Row['Level']) { 'warning' => '⚠️', 'error' => '⛔️
 $Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '') . "\n🕐 " . (string)$Row['Sent_At'] . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
-self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('حساب آمبرلا', 'app_menu')));
+self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([[Menu::button('🔙حساب آمبرلا', 'app_menu')]]));
 }
 
 /** The switch that decides whether a sign-in also needs a tap here. */
@@ -355,7 +348,7 @@ $Rows = $On
 $Rows = array_merge($Rows, Menu::rows([
 [['📱دستگاه‌های من', 'app_devices'], ['🔔اعلان‌های برنامه', 'app_notifications']],
 ]));
-$Rows = array_merge($Rows, Menu::userNav('حساب آمبرلا', 'app_menu'));
+$Rows = array_merge($Rows, [[Menu::button('🔙حساب آمبرلا', 'app_menu')]]);
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
@@ -384,7 +377,7 @@ $Context,
 '📱 حسابی پیدا نشد',
 'برای دیدن این بخش، شماره موبایل شما باید در برنامه یا پنل ثبت شده باشد.'
 ) . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([[['text' => '🏠منوی اصلی', 'callback_data' => 'منوی خدمات ربات']]])
+[]
 );
 }
 
@@ -392,10 +385,13 @@ return $Account;
 }
 
 /** Renders into the message a callback came from, or sends a new one. */
-private static function reply(Context $Context, string $Text, array $Markup): void {
+private static function reply(Context $Context, string $Text, array $Markup = []): void {
 if ($Context->IsCallback && $Context->MessageId !== null) {
 try {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $Markup);
+// Telegram keeps an old inline keyboard when `reply_markup` is omitted;
+// explicitly clear it when rendering a destination with no buttons.
+$EditMarkup = $Markup === [] ? ['inline_keyboard' => []] : $Markup;
+TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $EditMarkup);
 return;
 }
 
