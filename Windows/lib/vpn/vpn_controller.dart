@@ -845,7 +845,15 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    final List<VpnNode> fitting = usableNodes
+    final List<VpnNode> regionalNodes =
+        usableNodes.where(_matchesServerRegion).toList();
+    if (regionalNodes.isEmpty) {
+      final String region = _serverRegionLabel(_settings.serverRegionCode);
+      final String message = 'در منطقه $region سرور سازگار و فعالی پیدا نشد.';
+      _setStatus(VpnStatus.failed, message);
+      return ConnectOutcome(ok: false, message: message);
+    }
+    final List<VpnNode> fitting = regionalNodes
         .where(_fitsPreference)
         .toList();
     if (fitting.isEmpty) {
@@ -968,6 +976,21 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  /// آیا کشور این سرور با فیلتر منطقه انتخاب شده هماهنگ است؟
+  bool _matchesServerRegion(VpnNode node) {
+    final String selected = _settings.serverRegionCode;
+    if (selected == 'all' || selected.isEmpty) return true;
+    final String code = node.flagCode.toLowerCase();
+    if (selected == 'unknown') return code.isEmpty;
+    return code == selected.toLowerCase();
+  }
+
+  static String _serverRegionLabel(String code) {
+    if (code == 'unknown') return 'نامشخص';
+    if (code == 'all' || code.isEmpty) return 'همه کشورها';
+    return countryNameFa(code).isEmpty ? code.toUpperCase() : countryNameFa(code);
+  }
+
   /// آیا این سرور با هسته انتخابی کاربر اجرا می شود؟
   bool _fitsPreference(VpnNode node) =>
       fitsPreference(_settings.corePreference, node);
@@ -1004,6 +1027,7 @@ class VpnController extends ChangeNotifier {
             !node.disabled &&
             usable(node) &&
             !_unusableInThisRun.contains(node.id) &&
+            _matchesServerRegion(node) &&
             _fitsPreference(node))
         .toList();
     switch (_settings.selectionMode) {
@@ -1017,7 +1041,10 @@ class VpnController extends ChangeNotifier {
             final VpnNode candidate = _nodes[(start + step) % _nodes.length];
             if (candidate.id != first.id &&
                 !candidate.disabled &&
-                usable(candidate)) {
+                usable(candidate) &&
+                !_unusableInThisRun.contains(candidate.id) &&
+                _matchesServerRegion(candidate) &&
+                _fitsPreference(candidate)) {
               rotation.add(candidate);
             }
           }
@@ -1043,8 +1070,11 @@ class VpnController extends ChangeNotifier {
       case SelectionMode.manual:
         rest.sort(_byPing);
     }
+    // پین ها پیش از سایر گزینه های failover می آیند تا اولویت کاربر حفظ شود.
+    final List<VpnNode> pinned = rest.where((VpnNode node) => node.favorite).toList();
+    final List<VpnNode> ordinary = rest.where((VpnNode node) => !node.favorite).toList();
     // همه سرورهای سازگار اشتراک به امتحان می آیند، نه چند تای اول.
-    list.addAll(rest);
+    list..addAll(pinned)..addAll(ordinary);
     return list;
   }
 
@@ -1754,13 +1784,19 @@ class VpnController extends ChangeNotifier {
     }
 
     add(chosen);
-    // بعد از گره انتخاب شده، سرورهای سالم به ترتیب پینگ.
+    // بعد از انتخاب فعلی، پین ها اول به هسته داده می شوند تا در مجموعه
+    // keep-top شانس ماندن داشته باشند؛ سپس بقیه سرورها به ترتیب پینگ می آیند.
     final List<VpnNode> rest = _nodes
-        .where((VpnNode n) => n.id != chosen.id && !n.disabled && n != chosen)
+        .where((VpnNode n) =>
+            n.id != chosen.id &&
+            !n.disabled &&
+            n != chosen &&
+            _matchesServerRegion(n))
         .toList()
       ..sort((VpnNode a, VpnNode b) {
         final int pa = a.pingMs <= 0 ? 1 << 30 : a.pingMs;
         final int pb = b.pingMs <= 0 ? 1 << 30 : b.pingMs;
+        if (a.favorite != b.favorite) return a.favorite ? -1 : 1;
         return pa.compareTo(pb);
       });
     for (final VpnNode n in rest) {

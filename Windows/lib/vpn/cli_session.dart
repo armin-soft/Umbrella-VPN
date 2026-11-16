@@ -87,7 +87,7 @@ class CliSession {
       if (Platform.isWindows) {
         final Process process = await Process.start(
           'cmd.exe',
-          <String>['/c', 'start', '"${UmbrellaCli.title}"', '"$exe"', ...args],
+          <String>['/c', 'start', 'Umbrella', '"$exe"', ...args],
           mode: ProcessStartMode.detached,
         );
         instance.adopt(process);
@@ -130,22 +130,24 @@ class CliSession {
     final CliSessionFile? file = CliSessionFile.parse(
       await File(session).readAsString(),
     );
-    if (file == null || file.exe.isEmpty) {
+    if (file == null || file.exe.isEmpty || !File(file.exe).existsSync()) {
       return false;
     }
-    // نقل قول هر آرگومان جدا انجام می شود تا مسیرهای دارای فاصله سالم بمانند.
-    final String command = '"${file.exe}" '
-        '${file.args.map(_quote).join(' ')}';
+    // `start` treats the first quoted token as a window title. Passing the
+    // executable and each argument separately avoids splitting paths such as
+    // "Umbrella CLI.exe" (the source of Windows' "cannot find CLI" error).
+    final List<String> command = <String>[
+      '/c',
+      'start',
+      'Umbrella',
+      if (file.workDir.isNotEmpty) ...<String>['/D', _quote(file.workDir)],
+      _quote(file.exe),
+      ...file.args.map(_quote),
+    ];
     try {
       final Process shell = await Process.start(
         'cmd.exe',
-        <String>[
-          '/c',
-          'start',
-          '"${title.isEmpty ? UmbrellaCli.title : title}"',
-          if (file.workDir.isNotEmpty) ...<String>['/D', file.workDir],
-          command,
-        ],
+        command,
         mode: ProcessStartMode.detached,
       );
       instance.adopt(shell);

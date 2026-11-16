@@ -315,19 +315,13 @@ void main() {
       expect(bar.contains('Center('), isTrue);
     });
 
-    test('خروج منوی جداگانه در انتهای نوار کناری است، نه ته تنظیمات', () {
+    test('منوی خروج کامل برنامه از پوسته و نوار کناری حذف شده است', () {
       final String appShell = read('lib/ui/shell/app_shell.dart');
-      expect(appShell.contains('ExitPage('), isTrue);
-      expect(appShell.contains('_exitIndex'), isTrue);
+      expect(appShell.contains('ExitPage('), isFalse);
+      expect(appShell.contains("label: 'خروج'"), isFalse);
       final String nav = read('lib/ui/widgets/shell_widgets.dart');
-      expect(nav.contains('exitIndex'), isTrue);
-      final String exit = read('lib/ui/pages/exit_page.dart');
-      // صفحه خروج یک پرسش ساده است: «از برنامه خارج می شوید؟» با بله/نه.
-      expect(exit.contains('از برنامه خارج می شوید؟'), isTrue);
-      // تنظیمات دیگر دکمه خروج ندارد.
-      // تنظیمات دیگر دکمه خروج ندارد؛ فقط «درباره» می ماند.
-      final String settings = read('lib/ui/pages/settings_page.dart');
-      expect(settings.contains('context.read<WindowService>().quit()'), isFalse);
+      expect(nav.contains('exitIndex'), isFalse);
+      expect(nav.contains("label: 'خروج'"), isFalse);
     });
 
     test('اعلان ویندوز آیکون خود برنامه را دارد و آیکون سینی را پاک نمی کند', () {
@@ -624,15 +618,15 @@ void main() {
       }
     });
 
-    test('اطلاعات اتصال جای مخصوص خودش را دارد', () {
-      final String page = read('lib/ui/pages/connection_page.dart');
-      expect(page.contains('وضعیت اتصال'), isTrue);
-      // کارت «سرور و اتصال» جای «هسته اتصال» را گرفته است.
-      expect(page.contains('سرور و اتصال'), isTrue);
-      expect(page.contains('حالت اتصال'), isTrue);
-      // فراموش شدن این واردات، ساخت ویندوز را با «VpnController isn't a type»
-      // می شکست؛ حالا آزمون هم جلوی آن را می گیرد.
-      expect(page.contains("import '../../vpn/vpn_controller.dart';"), isTrue);
+    test('آمار اتصال در صفحه اتصال اصلی است و صفحه منوی جداگانه ندارد', () {
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(page.contains('_ConnectionStats'), isTrue);
+      expect(page.contains('مدت اتصال'), isTrue);
+      expect(page.contains('دریافتی'), isTrue);
+      expect(page.contains('ارسالی'), isTrue);
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      expect(shell.contains('ConnectionPage('), isFalse);
+      expect(shell.contains("label: 'وضعیت اتصال'"), isFalse);
     });
   });
 
@@ -853,7 +847,6 @@ void main() {
     test('همه صفحه ها هدر یکسان دارند', () {
       for (final String page in <String>[
         'device_page',
-        'connection_page',
         'account_page',
         'logs_page',
         'updates_page',
@@ -946,35 +939,30 @@ void main() {
       expect(models.contains('_withoutManual'), isTrue);
     });
 
-    test('«خروج» فقط یک بار در نوار کناری است', () {
-      // «خروج» یک خانه از فهرست منوها است (app_shell)؛ نوار کناری نباید
-      // خانه دومی برایش بسازد.
+    test('منوی خروج برنامه نمایش داده نمی شود', () {
       final String shell = read('lib/ui/widgets/shell_widgets.dart');
-      final RegExp exitLabel = RegExp("label: 'خروج'");
-      expect(exitLabel.allMatches(shell).length, 0,
-          reason: 'نوار کناری خودش «خروج» نمی سازد');
       final String appShell = read('lib/ui/shell/app_shell.dart');
-      expect(exitLabel.allMatches(appShell).length, 1,
-          reason: 'فقط یک «خروج» در فهرست منوها');
-      // صفحه خروج هم یک تایید ساده بله/نه دارد.
-      final String exit = read('lib/ui/pages/exit_page.dart');
-      expect(exit.contains('بله، خارج شو'), isTrue);
-      expect(exit.contains('نه، بمان'), isTrue);
+      expect(shell.contains("label: 'خروج'"), isFalse);
+      expect(appShell.contains("label: 'خروج'"), isFalse);
+      expect(appShell.contains('ExitPage('), isFalse);
     });
 
-    test('سه صفحه اصلی پوسته مدرن دارند: هدر، کارت آماری و زمان زنده', () {
+    test('صفحه های اصلی پوسته مدرن و ریسپانسیو هستند', () {
       for (final String path in <String>[
         'lib/ui/pages/device_page.dart',
-        'lib/ui/pages/connection_page.dart',
         'lib/ui/pages/account_page.dart',
       ]) {
         final String text = read(path);
         expect(text.contains('GlassCard'), isTrue, reason: path);
         expect(text.contains('SectionHeader'), isTrue, reason: path);
-        expect(text.contains('LiveDateTimeLine'), isTrue, reason: path);
-        expect(text.contains('LayoutBuilder'), isTrue,
-            reason: '$path باید ریسپانسیو باشد');
+        expect(text.contains('LayoutBuilder'), isTrue, reason: path);
       }
+      final String device = read('lib/ui/pages/device_page.dart');
+      expect(device.contains('LiveDateTimeLine'), isFalse);
+      final String connect = read('lib/ui/pages/connect_page.dart');
+      expect(connect.contains('GlassCard'), isTrue);
+      expect(connect.contains('LayoutBuilder'), isTrue);
+      expect(connect.contains('LiveDateTimeLine'), isTrue);
     });
   });
 
@@ -1157,6 +1145,128 @@ void main() {
         expect(text.contains('نسخه ۱٫۰٫۰'), isFalse, reason: path);
         expect(text.contains('AppConfig.versionLabel'), isTrue, reason: path);
       }
+    });
+  });
+
+  group('درخواست های ۱۸گانه رابط ورود و منوها', () {
+    test('۱. صفحه ورود از تم روشن و تاریک پوسته پیروی می کند', () {
+      final String login = read('lib/ui/pages/login_page.dart');
+      expect(login.contains('Theme.of(context)'), isTrue);
+      expect(login.contains('AppTheme'), isTrue);
+    });
+
+    test('۲. فوتر حقوق محفوظ از صفحات ورود و معرفی حذف شده است', () {
+      expect(read('lib/ui/pages/landing_page.dart').contains('حقوق محفوظ'), isFalse);
+      expect(read('lib/ui/pages/about_page.dart').contains('حقوق محفوظ'), isFalse);
+    });
+
+    test('۳. کد ورود پس از تکمیل شش رقم خودکار تایید می شود', () {
+      final String login = read('lib/ui/pages/login_page.dart');
+      expect(login.contains('_onCodeChanged'), isTrue);
+      expect(login.contains('value.length != 6'), isTrue);
+      expect(login.contains('await auth.verifyCode(value)'), isTrue);
+    });
+
+    test('۴. ورود ناموفق پیام امنیتی دقیق و دکمه دستگاه من دارد', () {
+      final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
+      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در پروفایل، دستگاه‌های ناشناس را حذف کنید.'), isTrue);
+      expect(gateway.contains("'text' => '📱 دستگاه من'"), isTrue);
+    });
+
+    test('۵. IP در پیام های ورود تلگرام فارسی سازی می شود', () {
+      final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
+      expect(gateway.contains('آی‌پی:'), isTrue);
+      expect(gateway.contains('\\Helper::toPersian($IP)'), isTrue);
+    });
+
+    test('۶. تایید دستگاه و فیلتر اعلان لغو مجوز کهنه اتمیک است', () {
+      final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
+      expect(gateway.contains('Database::getInstance()->transaction'), isTrue);
+      expect(gateway.contains('FOR UPDATE'), isTrue);
+      expect(gateway.contains('queued revoke warning is stale after re-approval'), isTrue);
+    });
+
+    test('۷. زیر پیام حساب آمبرلا منوی اصلی ناخواسته قرار نمی گیرد', () {
+      final String link = read('../Telegram-BOT/Bot/App-Link.php');
+      expect(link.contains("Menu::section('👤', 'حساب کاربری'"), isTrue);
+      expect(link.contains("TelegramClient::inlineKeyboard(\$Rows)"), isTrue);
+      expect(link.contains('main_menu'), isFalse);
+      expect(link.contains("['inline_keyboard' => []]"), isTrue);
+    });
+
+    test('۸. کارت اتصال دست کم به اندازه تمام فضای صفحه است', () {
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(page.contains('minHeight: constraints.maxHeight - 42'), isTrue);
+      expect(page.contains('LayoutBuilder('), isTrue);
+    });
+
+    test('۹. نام آمبرلا در سمت چپ نوار عنوان قرار گرفته است', () {
+      final String shell = read('lib/ui/widgets/shell_widgets.dart');
+      final String bar = shell.substring(shell.indexOf('class TitleBar'), shell.indexOf('class _HeaderIconButton'));
+      expect(bar.indexOf('Text(Fa.num(AppConfig.appName)'), greaterThan(bar.indexOf('onToggleTheme')));
+    });
+
+    test('۱۰. اجرای CLI مسیر اجرایی و آرگومان ها را جدا و امن می فرستد', () {
+      final String cli = read('lib/vpn/cli_session.dart');
+      expect(cli.contains('...file.args.map(_quote)'), isTrue);
+      expect(cli.contains("'start',\n      'Umbrella'"), isTrue);
+      expect(cli.contains('File(file.exe).existsSync()'), isTrue);
+      expect(cli.contains('final String command ='), isFalse);
+    });
+
+    test('۱۱. پرچم و نام کشور از کد یکسان در کنار IP نمایش داده می شوند', () {
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(page.contains('FlagView(code: flagCode'), isTrue);
+      expect(page.contains('vpn.geo.ip == ip'), isTrue);
+      expect(page.contains('CountryNames.fa(flagCode)'), isTrue);
+    });
+
+    test('۱۲. تاریخ و ساعت از صفحه دستگاه من حذف شده است', () {
+      expect(read('lib/ui/pages/device_page.dart').contains('LiveDateTimeLine'), isFalse);
+    });
+
+    test('۱۳. منوی وضعیت اتصال حذف و آمار به صفحه اتصال منتقل شده است', () {
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      final String page = read('lib/ui/pages/connect_page.dart');
+      expect(shell.contains('ConnectionPage('), isFalse);
+      expect(shell.contains("label: 'وضعیت اتصال'"), isFalse);
+      for (final String label in <String>['پینگ', 'مدت اتصال', 'دریافتی', 'ارسالی']) {
+        expect(page.contains(label), isTrue, reason: label);
+      }
+    });
+
+    test('۱۴. حساب لینک ربات رسمی دارد و دکمه خروج حساب ندارد', () {
+      final String account = read('lib/ui/pages/account_page.dart');
+      expect(account.contains('https://t.me/UmbrellaVPN_BOT'), isTrue);
+      expect(account.contains('signOut('), isFalse);
+    });
+
+    test('۱۵. تنظیمات مدرن است و ارجاع درباره در آن نیست', () {
+      final String settings = read('lib/ui/pages/settings_page.dart');
+      expect(settings.contains('class _Section'), isTrue);
+      expect(settings.contains('GlassCard'), isTrue);
+      expect(settings.contains('درباره'), isFalse);
+    });
+
+    test('۱۶. منوی به روزرسانی آخر است و نوار درصد دارد', () {
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      expect(shell.indexOf("label: 'به روز رسانی'"), greaterThan(shell.indexOf("label: 'درباره'")));
+      expect(read('lib/ui/pages/updates_page.dart').contains('ProgressLine('), isTrue);
+      expect(read('lib/ui/widgets/common.dart').contains('Fa.percent(value * 100)'), isTrue);
+    });
+
+    test('۱۷. صفحه درباره از کارت های مدرن استفاده می کند', () {
+      final String about = read('lib/ui/pages/about_page.dart');
+      expect(about.contains('GlassCard'), isTrue);
+      expect(about.contains('LayoutBuilder'), isTrue);
+    });
+
+    test('۱۸. منوی خروج کل برنامه از پوسته حذف شده است', () {
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      final String nav = read('lib/ui/widgets/shell_widgets.dart');
+      expect(shell.contains("label: 'خروج'"), isFalse);
+      expect(shell.contains('ExitPage('), isFalse);
+      expect(nav.contains('exitIndex'), isFalse);
     });
   });
 }

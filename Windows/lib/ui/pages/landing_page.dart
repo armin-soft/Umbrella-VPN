@@ -190,19 +190,6 @@ class _LandingPageState extends State<LandingPage>
               ),
             ),
           ),
-          Positioned(
-            bottom: 18,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Text(
-                Fa.num('${AppConfig.company} | همه حقوق محفوظ است'),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary.withValues(alpha: 0.7),
-                    ),
-              ),
-            ),
-          ),
               ],
             ),
           ),

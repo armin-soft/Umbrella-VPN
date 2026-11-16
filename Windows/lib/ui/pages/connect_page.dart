@@ -57,8 +57,11 @@ class _ConnectPageState extends State<ConnectPage> {
   /// • قطع: پرچم کشور واقعی دستگاه از `geo`.
   static String _flagForIp(VpnController vpn, bool connected, String ip) {
     if (connected) {
-      // سرور متصل: اول پرچم خود گره؛ اگر نام گره هیچ کشوری را نشان نمی داد،
-      // کشور واقعی خروجی از داده جغرافیایی همان آی پی.
+      // اگر سرویس جغرافیایی همین IP را تشخیص داده، همان دقیق ترین منبع است.
+      if (vpn.geo.ip.isNotEmpty && vpn.geo.ip == ip && vpn.geo.flagCode.isNotEmpty) {
+        return vpn.geo.flagCode;
+      }
+      // در نبود داده منطبق با IP، از شناسه کشور خود گره استفاده می کنیم.
       final String fromNode = vpn.activeNode?.flagCode ?? '';
       if (fromNode.isNotEmpty) {
         return fromNode;
@@ -123,6 +126,12 @@ class _ConnectPageState extends State<ConnectPage> {
         unawaited(vpn.refreshPings());
       }
     });
+  }
+
+  static String _regionLabel(String code) {
+    if (code == 'all' || code.isEmpty) return 'همه';
+    if (code == 'unknown') return 'نامشخص';
+    return CountryNames.fa(code).isEmpty ? code.toUpperCase() : CountryNames.fa(code);
   }
 
   /// خط دوم اعلان اتصال، بدون نام سرور: فقط پینگ و حالت.
@@ -261,6 +270,43 @@ class _ConnectPageState extends State<ConnectPage> {
       );
     } else {
       toasts.error('اتصال برقرار نشد', outcome.message);
+    }
+  }
+
+  Future<void> _pickServerRegion(
+    VpnController vpn,
+    SubscriptionController subscriptions,
+    SettingsController settings,
+    ToastController toasts,
+  ) async {
+    final String previousRegion = settings.settings.serverRegionCode;
+    final String previousNode = settings.settings.lastNodeId;
+    final String? picked = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => _RegionProxyDialog(
+        selectedRegion: previousRegion,
+        onRefresh: subscriptions.fetchAll,
+        onTogglePin: vpn.toggleFavorite,
+        onPrefer: (VpnNode node) async {
+          await settings.rememberNode(node.id);
+        },
+      ),
+    );
+    if (picked == null || !mounted) return;
+    if (picked != previousRegion) {
+      await settings.setServerRegion(picked);
+    }
+    final bool preferenceChanged = settings.settings.lastNodeId != previousNode;
+    if (picked == previousRegion && !preferenceChanged) return;
+    if (picked != previousRegion) {
+      toasts.info('منطقه سرور: ${_regionLabel(picked)}');
+    } else if (preferenceChanged) {
+      toasts.info('سرور به عنوان گزینه ترجیحی ثبت شد.');
+    }
+    if (vpn.status.active && !vpn.status.busy) {
+      await vpn.disconnect();
+      final ConnectOutcome outcome = await vpn.connect();
+      if (!outcome.ok) toasts.error('اتصال دوباره برقرار نشد', outcome.message);
     }
   }
 
@@ -566,22 +612,107 @@ class _ConnectPageState extends State<ConnectPage> {
                             enabled: !status.busy,
                             onTap: () => _pickMode(vpn, settings, toasts),
                           ),
+                          _PickerChip(
+                            label: 'منطقه و سرورها',
+                            value: _regionLabel(settings.settings.serverRegionCode),
+                            icon: Icons.public_rounded,
+                            enabled: !status.busy,
+                            onTap: () => _pickServerRegion(
+                              vpn,
+                              subs,
+                              settings,
+                              toasts,
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ),
 
-                  // نوار پایین عمدا حذف شده است: کارت پایین صفحه دیگر
-                  // سرور فعال را نشان نمی دهد، چون کاربر نخواست نام سرور
-                  // اینجا نمایش داده شود. آمار اتصال در «دستگاه من» و
-                  // گزارش ها هست.
-                  const SizedBox.shrink(),
+                  // آمار اتصال به همین صفحه منتقل شده و منوی جداگانه حذف است.
+                  _ConnectionStats(vpn: vpn, connected: connected),
                 ],
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// آمار زنده اتصال که قبلا در صفحه جداگانه وضعیت اتصال نمایش داده می شد.
+class _ConnectionStats extends StatelessWidget {
+  const _ConnectionStats({required this.vpn, required this.connected});
+
+  final VpnController vpn;
+  final bool connected;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<(String, String, IconData, Color)> values = <(String, String, IconData, Color)>[
+      ('پینگ', vpn.activePingMs > 0 ? Fa.ms(vpn.activePingMs) : '—', Icons.speed_rounded, context.colors.success),
+      ('مدت اتصال', connected ? Fa.duration(vpn.stats.connectedFor) : '—', Icons.timer_outlined, context.colors.info),
+      ('دریافتی', vpn.stats.available ? Fa.bytes(vpn.stats.rx) : '—', Icons.south_rounded, context.colors.primary),
+      ('ارسالی', vpn.stats.available ? Fa.bytes(vpn.stats.tx) : '—', Icons.north_rounded, context.colors.warning),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool narrow = constraints.maxWidth < 760;
+        final double tileWidth = narrow ? (constraints.maxWidth - 12) / 2 : (constraints.maxWidth - 36) / 4;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          children: values.map((value) => SizedBox(
+            width: tileWidth,
+            child: _ConnectionStatTile(
+              label: value.$1,
+              value: value.$2,
+              icon: value.$3,
+              accent: value.$4,
+            ),
+          )).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _ConnectionStatTile extends StatelessWidget {
+  const _ConnectionStatTile({required this.label, required this.value, required this.icon, required this.accent});
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: accent),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(Fa.num(label), style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.textSecondary)),
+                const SizedBox(height: 2),
+                Text(Fa.num(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -808,6 +939,317 @@ class _PickerChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// پنجره منطقه و پروکسی ها: کشور را محدود کنید، داده cached را فوری ببینید
+/// و با نگه داشتن یک ردیف آن گره را پین/آزاد کنید.
+class _RegionProxyDialog extends StatefulWidget {
+  const _RegionProxyDialog({
+    required this.selectedRegion,
+    required this.onRefresh,
+    required this.onTogglePin,
+    required this.onPrefer,
+  });
+
+  final String selectedRegion;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function(VpnNode node) onTogglePin;
+  final Future<void> Function(VpnNode node) onPrefer;
+
+  @override
+  State<_RegionProxyDialog> createState() => _RegionProxyDialogState();
+}
+
+class _RegionProxyDialogState extends State<_RegionProxyDialog> {
+  late String _region = widget.selectedRegion;
+  bool _refreshing = false;
+  String _refreshError = '';
+
+  Future<void> _refresh() async {
+    setState(() {
+      _refreshing = true;
+      _refreshError = '';
+    });
+    try {
+      await widget.onRefresh();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _refreshError =
+              'تازه سازی انجام نشد؛ سرورهای cache شده همچنان قابل استفاده اند.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  Future<void> _togglePin(VpnNode node) async {
+    await widget.onTogglePin(node);
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 660, maxHeight: 700),
+        child: Padding(
+          padding: const EdgeInsets.all(AppMetrics.space4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  IconSquare(icon: Icons.public_rounded, color: colors.primary),
+                  const SizedBox(width: AppMetrics.space3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'منطقه و سرورها',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          'فهرست cache شده فوری نمایش داده می شود.',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: colors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'تازه سازی اشتراک',
+                    onPressed: _refreshing ? null : _refresh,
+                    icon: _refreshing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'بستن',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppMetrics.space3),
+              Container(
+                padding: const EdgeInsets.all(AppMetrics.space3),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                  border: Border.all(color: colors.border),
+                ),
+                child: Text(
+                  'آمبرلا تا ۸ سرور کم تاخیر را فعال نگه می دارد. سرورهای پین شده '
+                  'در انتخاب خودکار و تلاش های جایگزین اولویت می گیرند.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textSecondary, height: 1.6),
+                ),
+              ),
+              const SizedBox(height: AppMetrics.space3),
+              Consumer<VpnController>(
+                builder: (BuildContext context, VpnController vpn, Widget? child) {
+                  final List<String> regions = _regionCodes(vpn.nodes);
+                  if (_region != 'all' && !regions.contains(_region)) {
+                    regions.add(_region);
+                  }
+                  final List<DropdownMenuItem<String>> items =
+                      <DropdownMenuItem<String>>[
+                    const DropdownMenuItem<String>(
+                      value: 'all',
+                      child: Text('همه کشورها'),
+                    ),
+                    for (final String code in regions)
+                      DropdownMenuItem<String>(
+                        value: code,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (code != 'unknown') ...<Widget>[
+                              FlagView(code: code, width: 23),
+                              const SizedBox(width: AppMetrics.space2),
+                            ],
+                            Text(
+                              code == 'unknown'
+                                  ? 'کشور نامشخص'
+                                  : _countryLabel(code),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ];
+                  return DropdownButtonFormField<String>(
+                    value: _region,
+                    decoration: const InputDecoration(
+                      labelText: 'فیلتر کشور',
+                      isDense: true,
+                    ),
+                    items: items,
+                    onChanged: (String? value) {
+                      if (value != null) setState(() => _region = value);
+                    },
+                  );
+                },
+              ),
+              if (_refreshError.isNotEmpty) ...<Widget>[
+                const SizedBox(height: AppMetrics.space2),
+                Text(
+                  _refreshError,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.warning),
+                ),
+              ],
+              const SizedBox(height: AppMetrics.space2),
+              Expanded(
+                child: Consumer<VpnController>(
+                  builder: (BuildContext context, VpnController vpn, Widget? child) {
+                    final List<VpnNode> nodes = vpn.nodes.where((VpnNode node) {
+                      if (_region == 'all') return true;
+                      final String code = node.flagCode.toLowerCase();
+                      return _region == 'unknown' ? code.isEmpty : code == _region;
+                    }).toList()
+                      ..sort((VpnNode a, VpnNode b) {
+                        if (a.favorite != b.favorite) return a.favorite ? -1 : 1;
+                        if (a.hasPing != b.hasPing) return a.hasPing ? -1 : 1;
+                        return a.pingMs.compareTo(b.pingMs);
+                      });
+                    if (nodes.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'در این منطقه سروری در cache نیست.',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colors.textSecondary),
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      itemCount: nodes.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: colors.border),
+                      itemBuilder: (BuildContext context, int index) {
+                        final VpnNode node = nodes[index];
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                          onTap: () async {
+                            await widget.onPrefer(node);
+                            if (context.mounted) Navigator.of(context).pop(_region);
+                          },
+                          onLongPress: () => _togglePin(node),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppMetrics.space2,
+                              vertical: AppMetrics.space2,
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                if (node.flagCode.isNotEmpty) ...<Widget>[
+                                  FlagView(code: node.flagCode, width: 30),
+                                  const SizedBox(width: AppMetrics.space3),
+                                ],
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        Fa.num(node.name),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(fontWeight: FontWeight.w800),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        Fa.num(
+                                          '${node.protocol.name.toUpperCase()} · '
+                                          '${node.hasPing ? Fa.ms(node.pingMs) : 'در انتظار سنجش'}',
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(color: colors.textSecondary),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: node.favorite
+                                      ? 'برداشتن پین'
+                                      : 'پین کردن برای اولویت اتصال',
+                                  onPressed: () => _togglePin(node),
+                                  icon: Icon(
+                                    node.favorite
+                                        ? Icons.push_pin_rounded
+                                        : Icons.push_pin_outlined,
+                                    color: node.favorite
+                                        ? colors.primary
+                                        : colors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: AppMetrics.space2),
+              Text(
+                'برای انتخاب ترجیحی یک بار بزنید؛ برای پین، ردیف را نگه دارید '
+                'یا آیکون پین را بزنید.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: colors.textSecondary),
+              ),
+              const SizedBox(height: AppMetrics.space2),
+              GradientButton(
+                label: 'اعمال منطقه انتخاب شده',
+                icon: Icons.check_rounded,
+                height: AppMetrics.controlHeightSmall,
+                onPressed: () => Navigator.of(context).pop(_region),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static List<String> _regionCodes(List<VpnNode> nodes) {
+    final Set<String> codes = <String>{
+      for (final VpnNode node in nodes)
+        if (node.flagCode.isNotEmpty) node.flagCode.toLowerCase(),
+    };
+    final List<String> sorted = codes.toList()
+      ..sort((String a, String b) => _countryLabel(a).compareTo(_countryLabel(b)));
+    if (nodes.any((VpnNode node) => node.flagCode.isEmpty)) sorted.add('unknown');
+    return sorted;
+  }
+
+  static String _countryLabel(String code) =>
+      CountryNames.fa(code).isEmpty ? code.toUpperCase() : CountryNames.fa(code);
 }
 
 /// منوی کوچک انتخاب حالت اتصال (توضیح هر حالت زیر نامش می آید).

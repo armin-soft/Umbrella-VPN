@@ -15,10 +15,8 @@ import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';
 import '../pages/account_page.dart';
 import '../pages/connect_page.dart';
-import '../pages/connection_page.dart';
 import '../pages/logs_page.dart';
 import '../pages/device_page.dart';
-import '../pages/exit_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
 import '../widgets/common.dart';
@@ -34,81 +32,45 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _index = 0;
+  bool _appVisible = true;
   StreamSubscription<String>? _traySub;
 
   static const List<NavDestination> _destinations = <NavDestination>[
-    NavDestination(
-      label: 'اتصال',
-      icon: Icons.shield_outlined,
-      activeIcon: Icons.shield_rounded,
-    ),
-    NavDestination(
-      label: 'دستگاه من',
-      icon: Icons.computer_outlined,
-      activeIcon: Icons.computer_rounded,
-    ),
-    NavDestination(
-      label: 'وضعیت اتصال',
-      icon: Icons.monitor_heart_outlined,
-      activeIcon: Icons.monitor_heart_rounded,
-    ),
-    NavDestination(
-      label: 'حساب من',
-      icon: Icons.person_outline_rounded,
-      activeIcon: Icons.person_rounded,
-    ),
-    NavDestination(
-      label: 'تنظیمات',
-      icon: Icons.settings_outlined,
-      activeIcon: Icons.settings_rounded,
-    ),
-    NavDestination(
-      label: 'به روز رسانی',
-      icon: Icons.system_update_outlined,
-      activeIcon: Icons.system_update_rounded,
-    ),
-    NavDestination(
-      label: 'گزارش ها',
-      icon: Icons.receipt_long_outlined,
-      activeIcon: Icons.receipt_long_rounded,
-    ),
-    NavDestination(
-      label: 'درباره',
-      icon: Icons.info_outline_rounded,
-      activeIcon: Icons.info_rounded,
-    ),
-    // «خروج» در همین فهرست است تا اندیس صفحه اش با بقیه یکی بماند، ولی
-    // نوار کناری آن را با خط جداکننده و رنگ قرمز، جدا از منوها می کشد.
-    NavDestination(
-      label: 'خروج',
-      icon: Icons.logout_rounded,
-      activeIcon: Icons.logout_rounded,
-    ),
+    NavDestination(label: 'اتصال', icon: Icons.shield_outlined, activeIcon: Icons.shield_rounded),
+    NavDestination(label: 'دستگاه من', icon: Icons.computer_outlined, activeIcon: Icons.computer_rounded),
+    NavDestination(label: 'حساب من', icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded),
+    NavDestination(label: 'تنظیمات', icon: Icons.settings_outlined, activeIcon: Icons.settings_rounded),
+    NavDestination(label: 'گزارش ها', icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long_rounded),
+    NavDestination(label: 'درباره', icon: Icons.info_outline_rounded, activeIcon: Icons.info_rounded),
+    // به روزرسانی همیشه آخر فهرست می ماند.
+    NavDestination(label: 'به روز رسانی', icon: Icons.system_update_outlined, activeIcon: Icons.system_update_rounded),
   ];
-
-  /// اندیس صفحه «خروج» در فهرست بالا.
-  static const int _exitIndex = 8;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appVisible = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
-    // «نه، بمان» در صفحه خروج به صفحه اتصال برمی گردد.
-    ExitPage.onCancel = () {
-      if (mounted) {
-        setState(() => _index = 0);
-      }
-    };
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _traySub?.cancel();
-    ExitPage.onCancel = null;
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool visible = state == AppLifecycleState.resumed;
+    if (_appVisible != visible && mounted) {
+      setState(() => _appVisible = visible);
+    }
   }
 
   Future<void> _handleTrayEvent(String event) async {
@@ -123,8 +85,7 @@ class _AppShellState extends State<AppShell> {
         break;
       case 'settings':
         await widget.windowService.show();
-        // «تنظیمات» پس از افزودن «وضعیت اتصال» یک خانه جلو رفته است.
-        setState(() => _index = 4);
+        setState(() => _index = 3);
         break;
       case 'toggle':
         if (vpn.status.active) {
@@ -163,17 +124,11 @@ class _AppShellState extends State<AppShell> {
     final List<Widget> pages = <Widget>[
       const ConnectPage(),
       const DevicePage(),
-      const ConnectionPage(),
-      AccountPage(onSignedOut: () => setState(() => _index = 0)),
-      SettingsPage(onOpenAbout: () => setState(() => _index = 7)),
-      const UpdatesPage(),
+      const AccountPage(),
+      const SettingsPage(),
       const LogsPage(),
       const AboutPage(),
-      ExitPage(
-        onExit: () async {
-          await widget.windowService.quit();
-        },
-      ),
+      const UpdatesPage(),
     ];
 
     return Scaffold(
@@ -203,7 +158,6 @@ class _AppShellState extends State<AppShell> {
                   status: vpn.status,
                   onStatusTap: () => setState(() => _index = 0),
                   updateAvailable: updates.available != null,
-                  exitIndex: _exitIndex,
                 ),
                 Expanded(
                   // در پنجره های بسیار پهن (مثلا روی مانیتور ۲۷ اینچ) خط متن بی
@@ -217,7 +171,10 @@ class _AppShellState extends State<AppShell> {
                       ),
                       child: IndexedStack(
                         index: _index,
-                        children: pages,
+                        children: <Widget>[
+                          for (int i = 0; i < pages.length; i++)
+                            TickerMode(enabled: _appVisible && i == _index, child: pages[i]),
+                        ],
                       ),
                     ),
                   ),

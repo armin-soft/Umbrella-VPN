@@ -1255,6 +1255,7 @@ class AppSettings {
     this.lastName = '',
     this.phone = '',
     this.lastNodeId = '',
+    this.serverRegionCode = 'all',
     this.gatewayBase = '',
     this.pingIntervalSeconds = 120,
     this.turboMode = false,
@@ -1300,6 +1301,8 @@ class AppSettings {
   final String lastName;
   final String phone;
   final String lastNodeId;
+  /// فیلتر منطقه ای اتصال؛ all یعنی همه کشورها و unknown یعنی بدون کشور مشخص.
+  final String serverRegionCode;
   final String gatewayBase;
   final int pingIntervalSeconds;
   final bool turboMode;
@@ -1339,6 +1342,7 @@ class AppSettings {
     String? lastName,
     String? phone,
     String? lastNodeId,
+    String? serverRegionCode,
     String? gatewayBase,
     int? pingIntervalSeconds,
     bool? turboMode,
@@ -1373,6 +1377,7 @@ class AppSettings {
       lastName: lastName ?? this.lastName,
       phone: phone ?? this.phone,
       lastNodeId: lastNodeId ?? this.lastNodeId,
+      serverRegionCode: serverRegionCode ?? this.serverRegionCode,
       gatewayBase: gatewayBase ?? this.gatewayBase,
       pingIntervalSeconds: pingIntervalSeconds ?? this.pingIntervalSeconds,
       turboMode: turboMode ?? this.turboMode,
@@ -1409,6 +1414,7 @@ class AppSettings {
         'lastName': lastName,
         'phone': phone,
         'lastNodeId': lastNodeId,
+        'serverRegionCode': serverRegionCode,
         'gatewayBase': gatewayBase,
         'pingIntervalSeconds': pingIntervalSeconds,
         'turboMode': turboMode,
@@ -1471,6 +1477,7 @@ class AppSettings {
       lastName: JsonX.text(json['lastName']),
       phone: JsonX.text(json['phone']),
       lastNodeId: JsonX.text(json['lastNodeId']),
+      serverRegionCode: JsonX.text(json['serverRegionCode'], 'all'),
       gatewayBase: JsonX.text(json['gatewayBase']),
       pingIntervalSeconds: JsonX.integer(json['pingIntervalSeconds'], 120),
       turboMode: JsonX.boolean(json['turboMode']),

@@ -9,8 +9,8 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.20';
-  static const int buildNumber = 1;
+  static const String version = '1.0.21';
+  static const int buildNumber = 22;
   /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.18`.
   ///
   /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
@@ -28,7 +28,7 @@ class AppConfig {
   static const String channelUrl = 'https://t.me/UmbrellaChannel';
   static const String botUsername = String.fromEnvironment(
     'UMBRELLA_BOT',
-    defaultValue: 'UmbrellaServerBot',
+    defaultValue: 'UmbrellaVPN_BOT',
   );
 
   /// درگاه برنامه (همان AppGateway ربات). مسیرها به آن اضافه می شوند:

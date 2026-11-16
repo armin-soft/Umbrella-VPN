@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -15,9 +14,7 @@ import '../widgets/content_control.dart';
 /// تنظیمات: چیدمان دو ستونی، هر کارت یک موضوع روشن.
 /// «کنترل محتوا» هم اینجا زندگی می کند.
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.onOpenAbout});
-
-  final VoidCallback onOpenAbout;
+  const SettingsPage({super.key});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -44,6 +41,38 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.tune_rounded,
           ),
           const SizedBox(height: AppMetrics.space5),
+          GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space5, vertical: AppMetrics.space4),
+            radius: AppMetrics.radiusXl,
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.centerStart,
+              end: AlignmentDirectional.centerEnd,
+              colors: <Color>[colors.primary.withValues(alpha: 0.14), colors.surface],
+            ),
+            child: Row(
+              children: <Widget>[
+                IconSquare(icon: Icons.auto_awesome_rounded, color: colors.primary, size: AppMetrics.iconXl),
+                const SizedBox(width: AppMetrics.space4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('مرکز کنترل آمبرلا', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: AppMetrics.space1),
+                      Text('ظاهر، اتصال، امنیت و رفتار ویندوز را یک‌جا مدیریت کنید.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.textSecondary)),
+                    ],
+                  ),
+                ),
+                Pill(
+                  label: vpn.status.active ? 'محافظت فعال' : 'آماده اتصال',
+                  icon: vpn.status.active ? Icons.shield_rounded : Icons.shield_outlined,
+                  color: vpn.status.active ? colors.success : colors.info,
+                  dense: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppMetrics.space4),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -230,7 +259,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     _Section(
                       icon: Icons.person_rounded,
                       title: 'حساب و سرویس',
-                      subtitle: 'کاربر، دسترسی و خروج',
+                      subtitle: 'کاربر و وضعیت دسترسی',
                       color: colors.primary,
                       children: <Widget>[
                         InfoRow(
@@ -263,31 +292,12 @@ class _SettingsPageState extends State<SettingsPage> {
                               onPressed: () => settings.requestElevation(),
                             ),
                           ),
-                        TextButton.icon(
-                          onPressed: widget.onOpenAbout,
-                          icon: const Icon(Icons.info_outline_rounded, size: AppMetrics.iconSm),
-                          label: const Text('درباره برنامه و توسعه دهنده'),
-                        ),
-                        // «خروج کامل از برنامه» عمدا اینجا نیست: منوی خروج
-                        // بخش جداگانه ای در انتهای نوار کناری است.
                       ],
                     ),
                   ],
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: AppMetrics.space5),
-          Center(
-            child: Text(
-              Fa.num(
-                '${AppConfig.appName} | ${AppConfig.versionPhrase} | ${AppConfig.developer}',
-              ),
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(color: colors.textSecondary),
-            ),
           ),
         ],
       ),

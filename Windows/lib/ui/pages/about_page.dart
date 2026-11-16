@@ -62,20 +62,6 @@ class AboutPage extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: AppMetrics.space5),
-              Center(
-                child: Text(
-                  Fa.num(
-                    'تمام حقوق محفوظ است. استفاده از برنامه به معنای پذیرش '
-                    'شرایط سرویس آمبرلا است.',
-                  ),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textSecondary,
-                        height: 1.8,
-                      ),
-                ),
-              ),
             ],
           ),
         ),

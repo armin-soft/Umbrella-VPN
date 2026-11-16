@@ -111,6 +111,15 @@ class NodeBalancer {
         );
       case SelectionMode.auto:
         final VpnNode? current = _byId(usable, preferredNodeId);
+        final VpnNode? bestPinned = _bestAuto(
+          usable.where((VpnNode node) => node.favorite).toList(),
+        );
+        if (bestPinned != null) {
+          return SelectionResult(
+            node: bestPinned,
+            reason: 'سرور پین شده شما برای نگه داشتن در مجموعه سریع انتخاب شد.',
+          );
+        }
         final VpnNode? best = _bestAuto(usable);
         if (best == null) {
           return SelectionResult(

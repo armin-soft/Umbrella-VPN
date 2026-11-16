@@ -10,6 +10,7 @@ import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/settings_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/gateway_dialog.dart';
 import '../widgets/common.dart';
@@ -31,6 +32,7 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _code = TextEditingController();
   final FocusNode _codeFocus = FocusNode();
   MobileOperator _operator = MobileOperator.unknown;
+  bool _autoSubmittingCode = false;
 
   @override
   void initState() {
@@ -65,6 +67,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
+    final SettingsController settings = context.watch<SettingsController>();
     final WindowService window = context.read<WindowService>();
     final UmbrellaColors colors = context.colors;
     return Scaffold(
@@ -76,6 +79,8 @@ class _LoginPageState extends State<LoginPage> {
             onMinimize: window.minimize,
             onMaximize: window.toggleMaximize,
             onClose: window.quit,
+            onToggleTheme: settings.toggleTheme,
+            darkTheme: settings.themeMode != ThemeMode.light,
           ),
           Expanded(
             child: Stack(
@@ -424,6 +429,7 @@ class _LoginPageState extends State<LoginPage> {
             fontFamily: AppTheme.fontFamily,
           ),
           decoration: const InputDecoration(hintText: 'ــــــ'),
+          onChanged: (String value) => _onCodeChanged(value, auth),
           onSubmitted: (String value) => auth.verifyCode(value),
         ),
         const SizedBox(height: AppMetrics.space4),
@@ -535,6 +541,17 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _onCodeChanged(String value, AuthController auth) async {
+    if (value.length < 6) {
+      _autoSubmittingCode = false;
+      return;
+    }
+    if (value.length != 6 || auth.busy || _autoSubmittingCode) return;
+    _autoSubmittingCode = true;
+    await auth.verifyCode(value);
+    _autoSubmittingCode = false;
   }
 
   Future<void> _submitPhone(AuthController auth) async {

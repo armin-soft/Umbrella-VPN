@@ -222,75 +222,38 @@ class TitleBar extends StatelessWidget {
           _WindowButton(icon: Icons.crop_square_rounded, onTap: onMaximize),
           _WindowButton(icon: Icons.remove_rounded, onTap: onMinimize),
 
-          // ── وسط: لوگو، نام، وضعیت ────────────────────────────────
+          // وضعیت اتصال در مرکز می ماند؛ نام برنامه در لبه چپ است.
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onPanStart: (_) => onDragStart(),
               onDoubleTap: onMaximize,
               child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    ClipOval(
-                      child: Image.asset(
-                        BrandAssets.logo,
-                        width: AppMetrics.iconLg,
-                        height: AppMetrics.iconLg,
-                        errorBuilder: (BuildContext context, Object error,
-                                StackTrace? stack) =>
-                            Icon(
-                          Icons.beach_access_rounded,
-                          size: AppMetrics.iconMd,
-                          color: colors.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppMetrics.space2),
-                    Flexible(
-                      child: Text(
-                        Fa.num(AppConfig.appName),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: colors.textPrimary,
+                child: current == null
+                    ? const SizedBox.shrink()
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Container(
+                            width: AppMetrics.space2,
+                            height: AppMetrics.space2,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: tone,
+                              boxShadow: <BoxShadow>[BoxShadow(color: tone.withValues(alpha: 0.6), blurRadius: 8)],
                             ),
-                      ),
-                    ),
-                    if (current != null) ...<Widget>[
-                      const SizedBox(width: AppMetrics.space3),
-                      // نقطه رنگی وضعیت، در پنجره باریک فقط همین می ماند.
-                      Container(
-                        width: AppMetrics.space2,
-                        height: AppMetrics.space2,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: tone,
-                          boxShadow: <BoxShadow>[
-                            BoxShadow(
-                              color: tone.withValues(alpha: 0.6),
-                              blurRadius: 8,
+                          ),
+                          const SizedBox(width: AppMetrics.space2),
+                          Flexible(
+                            child: Text(
+                              Fa.num(current.label),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800, color: tone),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppMetrics.space2),
-                      Flexible(
-                        child: Text(
-                          Fa.num(current.label),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: tone,
-                                  ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
               ),
             ),
           ),
@@ -321,6 +284,29 @@ class TitleBar extends StatelessWidget {
                 onTap: onToggleTheme!,
               ),
             ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: AppMetrics.space3, end: AppMetrics.space4),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (_) => onDragStart(),
+              onDoubleTap: onMaximize,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  ClipOval(
+                    child: Image.asset(
+                      BrandAssets.logo,
+                      width: AppMetrics.iconLg,
+                      height: AppMetrics.iconLg,
+                      errorBuilder: (BuildContext context, Object error, StackTrace? stack) => Icon(Icons.shield_rounded, size: AppMetrics.iconMd, color: colors.primary),
+                    ),
+                  ),
+                  const SizedBox(width: AppMetrics.space2),
+                  Text(Fa.num(AppConfig.appName), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: colors.textPrimary)),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -489,7 +475,6 @@ class SideNav extends StatelessWidget {
     required this.status,
     this.onStatusTap,
     this.updateAvailable = false,
-    this.exitIndex,
   });
 
   final List<NavDestination> destinations;
@@ -498,10 +483,6 @@ class SideNav extends StatelessWidget {
   final VpnStatus status;
   final VoidCallback? onStatusTap;
   final bool updateAvailable;
-
-  /// اندیس گزینه «خروج» در [destinations]؛ اگر داده نشود، خروج نمایش داده
-  /// نمی شود. جدا از بقیه منوها کشیده می شود تا با آن ها اشتباه نشود.
-  final int? exitIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -540,29 +521,6 @@ class SideNav extends StatelessWidget {
                           selected: i == index,
                           compact: compact,
                           onTap: () => onSelect(i),
-                          // «خروج» آخرین خانه است و قرمز می ماند تا با
-                          // بقیه اشتباه نشود.
-                          tone: (exitIndex != null &&
-                                  destinations[i] == destinations[exitIndex!])
-                              ? colors.danger
-                              : null,
-                        ),
-                      // «خروج» بخش جداگانه ای در انتهای منو است، نه ته
-                      // تنظیمات. یک خط جداکننده هم مرزش را نشان می دهد.
-                      // «خروج» دیگر یک خانه جداگانه نیست: خودش در فهرست
-                      // `destinations` هست و بالا با آن کشیده می شود.
-                      //
-                      // **اشکال گزارش ۱٫۰۱۷:** اینجا یک خانه «خروج» هم دستی
-                      // ساخته می شد، پس کاربر دو «خروج» می دید — یکی وسط
-                      // منو و یکی پایین با خط جداکننده. تنها چیزی که اینجا
-                      // لازم است همان خط جداکننده پیش از «خروج» است.
-                      if (exitIndex != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppMetrics.space1,
-                            vertical: AppMetrics.space2,
-                          ),
-                          child: Divider(height: 1, color: colors.border),
                         ),
                     ],
                   ),

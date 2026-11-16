@@ -9,6 +9,7 @@ void main() {
     String id,
     int ping, {
     double stability = 0.8,
+    bool favorite = false,
   }) {
     return VpnNode(
       id: id,
@@ -22,6 +23,7 @@ void main() {
       },
       pingMs: ping,
       stability: stability,
+      favorite: favorite,
       checkedAt: DateTime.now(),
     );
   }
@@ -40,6 +42,24 @@ void main() {
       deviceSeed: 'device-1',
     );
     expect(result.node?.id, 'b');
+  });
+
+  test('حالت خودکار سرور پین شده را حتی اگر کندتر باشد در اولویت می گذارد', () {
+    final SelectionResult result = NodeBalancer().pick(
+      nodes: <VpnNode>[
+        node('fast', 35),
+        node('pinned', 180, favorite: true),
+      ],
+      mode: SelectionMode.auto,
+      deviceSeed: 'device-1',
+    );
+    expect(result.node?.id, 'pinned');
+  });
+
+  test('وضعیت پین سرور در cache JSON حفظ می شود', () {
+    final VpnNode pinned = node('pinned', 90, favorite: true);
+    final VpnNode restored = VpnNode.fromJson(pinned.toJson());
+    expect(restored.favorite, isTrue);
   });
 
   test('حالت گردشی نوبت ها را عوض می کند و همه سرورها را می چرخاند', () {

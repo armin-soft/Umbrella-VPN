@@ -8,7 +8,6 @@ import '../../platform/native.dart';
 import '../../state/auth_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
-import '../widgets/live_clock.dart';
 
 /// صفحه «دستگاه من»: مشخصات همین کامپیوتر و شبکه آن.
 ///
@@ -232,13 +231,6 @@ class _DevicePageState extends State<DevicePage> {
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: AppMetrics.space4),
-                LiveDateTimeLine(
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: colors.textSecondary),
                 ),
               ],
             ),

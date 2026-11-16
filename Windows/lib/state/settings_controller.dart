@@ -164,6 +164,10 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(selectionMode: mode));
   }
 
+  Future<void> setServerRegion(String countryCode) async {
+    await update(_settings.copyWith(serverRegionCode: countryCode));
+  }
+
   Future<void> setStickyMinutes(int minutes) async {
     await update(_settings.copyWith(stickyMinutes: minutes));
   }

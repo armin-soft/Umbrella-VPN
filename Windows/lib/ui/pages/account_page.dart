@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -15,9 +14,7 @@ import '../widgets/live_clock.dart';
 /// حساب کاربری: هویت، مصرف دقیق (همان اعدادی که پنل نشان می دهد) و وضعیت
 /// اشتراک. کنترل محتوا در تنظیمات و مشخصات دستگاه در «دستگاه من» است.
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key, required this.onSignedOut});
-
-  final VoidCallback onSignedOut;
+  const AccountPage({super.key});
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -77,53 +74,12 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  Future<void> _signOut(AuthController auth, ToastController toasts) async {
-    final bool? sure = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('خروج از حساب'),
-        content: const Text('برای دریافت اشتراک باید دوباره وارد شوی. مطمئنی؟'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('انصراف'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('خروج'),
-          ),
-        ],
-      ),
-    );
-    if (sure != true) {
-      return;
-    }
-    await auth.signOut();
-    widget.onSignedOut();
-    toasts.info('از حساب خارج شدی');
-  }
-
-  /// باز کردن ربات تلگرام با شناسه همین حساب.
-  ///
-  /// ربات همان سرور و دیتابیس برنامه را دارد، پس با `?start=<uuid>` حساب
-  /// ویندوز را می شناسد و سینک می کند. اگر شناسه نباشد، فقط ربات باز می شود.
-  Future<void> _openTelegramBot(Account account, ToastController toasts) async {
-    final String id = account.uuid.trim();
-    final String url = id.isEmpty
-        ? 'https://t.me/${AppConfig.botUsername}'
-        : 'https://t.me/${AppConfig.botUsername}?start=$id';
-    final Uri? uri = Uri.tryParse(url);
-    if (uri == null) {
-      toasts.error('نشانی ربات نامعتبر است');
-      return;
-    }
+  /// باز کردن ربات رسمی حساب آمبرلا.
+  Future<void> _openTelegramBot(ToastController toasts) async {
+    final Uri uri = Uri.parse('https://t.me/UmbrellaVPN_BOT');
     try {
-      final bool ok =
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) {
-        toasts.error('مرورگر باز نشد',
-            'دستی به آدرس t.me/${AppConfig.botUsername} بروید.');
-      }
+      final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) toasts.error('مرورگر باز نشد', 'https://t.me/UmbrellaVPN_BOT');
     } on Exception {
       toasts.error('باز کردن تلگرام ناموفق بود');
     }
@@ -278,19 +234,7 @@ class _AccountPageState extends State<AccountPage> {
                     const SizedBox(height: AppMetrics.space4),
                     _TelegramSyncButton(
                       account: account,
-                      onOpen: () => _openTelegramBot(account, toasts),
-                    ),
-                    const SizedBox(height: AppMetrics.space3),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: TextButton.icon(
-                        onPressed: () => _signOut(auth, toasts),
-                        icon: const Icon(Icons.logout_rounded, size: AppMetrics.iconSm),
-                        label: const Text('خروج از حساب'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: colors.danger,
-                        ),
-                      ),
+                      onOpen: () => _openTelegramBot(toasts),
                     ),
                   ],
                 ),
@@ -770,8 +714,8 @@ class _TelegramSyncButton extends StatelessWidget {
                   Text(
                     Fa.num(
                       linked
-                          ? 'حساب و اشتراک شما در ربات به روز است.'
-                          : 'با یک کلیک، حساب را به ربات آمبرلا وصل کنید.',
+                          ? 'حساب و اشتراک همگام شده‌اند.\nhttps://t.me/UmbrellaVPN_BOT'
+                          : 'با یک کلیک به ربات رسمی متصل شوید.\nhttps://t.me/UmbrellaVPN_BOT',
                     ),
                     style: Theme.of(context)
                         .textTheme

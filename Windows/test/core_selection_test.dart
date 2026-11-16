@@ -115,6 +115,10 @@ void main() {
           settings.copyWith(corePreference: CorePreference.tun);
       final AppSettings restored = AppSettings.fromJson(saved.toJson());
       expect(restored.corePreference, CorePreference.tun);
+      final AppSettings regional = settings.copyWith(serverRegionCode: 'ca');
+      final AppSettings restoredRegion = AppSettings.fromJson(regional.toJson());
+      expect(restoredRegion.serverRegionCode, 'ca');
+      expect(const AppSettings().serverRegionCode, 'all');
     });
   });
 
