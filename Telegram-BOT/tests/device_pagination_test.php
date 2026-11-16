@@ -37,7 +37,15 @@ $Checks = [
         str_contains($Dispatcher, "str_starts_with(\$Data, 'admin_device_toggle:')") &&
         str_contains($User, "'📱حساب آمبرلا', 'app_menu'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
-        str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'")
+        str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'"),
+    'nested app screens provide back-to-account and main-menu navigation' =>
+        str_contains($AppLink, 'TelegramClient::inlineKeyboard([Menu::userHome()])') &&
+        str_contains($AppLink, "Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()") &&
+        str_contains($AppLink, "Menu::back('کنترل محتوا', 'app_filter')"),
+    'ticket submenus and ticket-description step have back and main routes' =>
+        str_contains($User, "Menu::userNav('تیکت ها و پشتیبانی', 'منوی پشتیبانی')") &&
+        str_contains($User, "Menu::back('ویرایش توضیحات', 'ویرایش توضیحات تیکت')") &&
+        str_contains($Dispatcher, "'ویرایش توضیحات تیکت' => UserFlow::ticketDescriptionStart(\$Context)")
 ];
 
 $Failed = false;

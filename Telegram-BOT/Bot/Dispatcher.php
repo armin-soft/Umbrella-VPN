@@ -344,6 +344,7 @@ match($Data) {
 'سابقه تراکنش' => UserFlow::transactionHistory($Context),
 'سابقه اشتراک' => UserFlow::subscriptionHistory($Context),
 'تیکت جدید' => UserFlow::ticketNewStart($Context),
+'ویرایش توضیحات تیکت' => UserFlow::ticketDescriptionStart($Context),
 'انتخاب دسته تیکت' => UserFlow::ticketCategoryMenu($Context),
 'لیست تیکت های من' => UserFlow::ticketUserList($Context),
 'تیکت های من' => UserFlow::ticketMenu($Context),

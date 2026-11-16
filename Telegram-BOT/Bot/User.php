@@ -886,7 +886,7 @@ $Markup = array_merge(
 Menu::rows([
 [['➕ایجاد تیکت جدید', 'تیکت جدید'], ['📋تیکت های من', 'لیست تیکت های من']],
 ]),
-[Menu::userHome()]
+Menu::userNav('تیکت ها و پشتیبانی', 'منوی پشتیبانی')
 );
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
 }
@@ -931,6 +931,7 @@ foreach (Helper::ticketCategories() as $Key => $Label) {
 $Rows[] = [['text' => $Label, 'callback_data' => 'دسته تیکت:' . $Key]];
 }
 
+$Rows[] = Menu::back('ویرایش توضیحات', 'ویرایش توضیحات تیکت');
 $Rows[] = Menu::userHome();
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
 . "📋موضوع: {$Subject}\n"
@@ -938,6 +939,25 @@ $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
 . "➖➖➖➖➖➖➖➖➖\n"
 . "📂*مرحله ۱ از ۲ — انتخاب دسته تیکت*" . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function ticketDescriptionStart(Context $Context): void {
+$Session = Repository::getUserSession($Context->UserId);
+$Subject = trim((string)($Session['Ticket_Subject'] ?? ''));
+if ($Subject === '') {
+self::ticketNewStart($Context);
+return;
+}
+Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_description']);
+$Description = trim((string)($Session['Ticket_Description'] ?? ''));
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
+. "📋موضوع: {$Subject}\n\n📝توضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n"
+. ($Description !== '' ? "✏️توضیحات قبلی: {$Description}\n" : '')
+. "➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+Menu::back('ویرایش موضوع', 'تیکت جدید'),
+Menu::userHome(),
+]));
 }
 
 public static function ticketCategoryCallback(Context $Context, string $Category): void {
@@ -1084,6 +1104,7 @@ $Tickets = Repository::userTickets($Context->UserId);
 if (empty($Tickets)) {
 TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Common::greet($Context, 'تیکت های من') . "❌هیچ تیکتی ندارید.\n➖➖➖➖➖➖➖➖➖\n⚠️ابتدا یک تیکت جدید ایجاد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '➕ایجاد تیکت جدید', 'callback_data' => 'تیکت جدید']],
+Menu::back('تیکت ها و پشتیبانی', 'تیکت های من'),
 Menu::userHome(),
 ]));
 return;

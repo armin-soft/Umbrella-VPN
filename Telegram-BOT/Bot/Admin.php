@@ -1268,7 +1268,8 @@ $Ranking_Text .= "🔹👥" . Helper::toPersian((string)$No_Mention) . " کار�
 $Ranking_Text .= Helper::adminFooter();
 $Ranking_Markup = TelegramClient::inlineKeyboard([
 [['text' => '🔁بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی']],
-[['text' => '🏠منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::back('گزارش ها', 'منوی گزارش'),
+Menu::adminHome(),
 ]);
 
 $Chunks = self::splitMessage($Ranking_Text, 3400);
@@ -2793,6 +2794,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), Tel
 ['text' => '🔟ده دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
 [Menu::back('مجوز دستگاه', 'device_limit_menu')],
+[Menu::adminHome()],
 ]));
 }
 
@@ -2821,7 +2823,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز �
 [
 ['text' => '🔟ده دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
-[Menu::back('مجوز دستگاه', 'device_limit_menu'), Menu::userHome()[0]],
+[Menu::back('مجوز دستگاه', 'device_limit_menu'), Menu::adminHome()[0]],
 ]));
 return;
 }
@@ -2843,6 +2845,7 @@ $Telegram_Id = (int)($Session['Temp_UID'] ?? 0);
 if ($Telegram_Id <= 0) {
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⌛️این عملیات منقضی شده است؛ دوباره از منو شروع کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📱مجوز دستگاه کاربران', 'callback_data' => 'device_limit_menu']],
+[Menu::adminHome()],
 ]));
 return;
 }

@@ -282,6 +282,25 @@ $Keys = [
 [['📊گزارش مصرف', 'گزارش مصرف'], ['📱حساب آمبرلا', 'app_menu']],
 [['🎫تیکت ها و پشتیبانی', 'منوی پشتیبانی'], ['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]),
+'app-account' => array_merge(
+Menu::rows([
+[['🛡کنترل محتوا', 'app_filter'], ['📱دستگاه‌های من', 'app_devices']],
+[['🔔اعلان‌های برنامه', 'app_notifications'], ['🔐تأیید دومرحله‌ای', 'app_2fa']],
+]),
+[Menu::userHome()]
+),
+'app-settings' => array_merge(
+Menu::rows([
+[['🔗افزودن دامنه دلخواه', 'app_filter_domains']],
+]),
+[Menu::back('حساب آمبرلا', 'app_menu'), Menu::userHome()]
+),
+'ticket-menu' => array_merge(
+Menu::rows([
+[['➕ایجاد تیکت جدید', 'تیکت جدید'], ['📋تیکت های من', 'لیست تیکت های من']],
+]),
+Menu::userNav('تیکت ها و پشتیبانی', 'منوی پشتیبانی')
+),
 'admin-home' => array_merge(
 [[Menu::button('🔴خاموش کردن ربات', 'خاموش کردن ربات')]],
 Menu::rows([
