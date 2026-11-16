@@ -66,8 +66,8 @@ $this->test_problems_reports_long_callback();
 $this->test_problems_reports_duplicate_button();
 $this->test_problems_reports_blank_row();
 $this->test_shared_keyboards_are_healthy();
-$this->test_user_service_menu_is_flat_without_submenus();
-$this->test_admin_menu_has_seven_categories();
+$this->test_user_service_menu_categories();
+$this->test_admin_menu_is_vertical();
 $this->test_certificate_bundle_is_preserved();
 $this->test_navigation_only_keyboard_is_detected();
 
@@ -211,74 +211,41 @@ $Problems = Menu::problems($Rows);
 $this->check(count($Problems) === 1, 'problems(): an empty row is reported');
 }
 
-/** منوی خدمات ربات مسطح است و تمام امکانات کاربری بدون زیرمنو مستقیماً در صفحه اصلی قرار دارند. */
-private function test_user_service_menu_is_flat_without_submenus(): void {
+/** Validate actual production main menu rows instead of copied fixtures. */
+private function test_user_service_menu_categories(): void {
 $Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/User.php');
-$Menu_Start = strpos($Source, 'public static function serviceMenu(');
-$Menu_End = strpos($Source, 'public static function supportMenu(', $Menu_Start ?: 0);
-
-$this->check($Menu_Start !== false && $Menu_End !== false, 'user serviceMenu source boundaries exist');
-
-if ($Menu_Start !== false && $Menu_End !== false) {
-$Service_Menu = substr($Source, $Menu_Start, $Menu_End - $Menu_Start);
-
-$Direct_Actions = [
-'اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول',
-'منوی تمدید خودکار', 'شارژ اعتبار حساب کاربری',
-'پروفایل کاربری', 'ویرایش پروفایل',
-'سابقه تراکنش', 'سابقه اشتراک',
-'گزارش مصرف', 'رتبه بندی کاربران',
-'app_menu', 'app_devices', 'app_filter', 'app_filter_domains', 'app_2fa', 'app_notifications',
-'تیکت جدید', 'لیست تیکت های من', 'تغییرات نسخه',
-];
-
-foreach ($Direct_Actions as $Call) {
-$this->check(str_contains($Service_Menu, "'{$Call}'"), 'user service menu directly includes «' . $Call . '»');
+$Start = strpos($Source, 'public static function serviceMenu(');
+$End = strpos($Source, 'private static function categoryMenu(', $Start);
+$Body = substr($Source, $Start, $End - $Start);
+$this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
+$this->check_main_rows($Body, 'Menu_Rows', [
+'user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu',
+'user_security_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
+]);
 }
 
-// Validate the actual production rows, not only a copied fixture.
-if (preg_match('/\$Menu_Rows = Menu::rows\((\[.*?\])\);/s', $Service_Menu, $Match)) {
-$Rows = Menu::rows(eval('return ' . $Match[1] . ';'));
-$this->check(Menu::problems($Rows) === [], 'production service keyboard is valid');
-$Calls = array_column(array_merge(...$Rows), 'callback_data');
-$this->check(count($Calls) === 21, 'production service menu has exactly 21 direct actions');
-$this->check(array_diff($Direct_Actions, $Calls) === [], 'every feature is a production button');
-foreach ($Rows as $Row) {
-$this->check(count($Row) <= 2, 'production service menu uses at most two buttons per row');
-}
-} else {
-$this->check(false, 'production service keyboard could not be extracted');
-}
-$this->check(str_contains($Service_Menu, "['Flow' => null]"), 'returning home cancels input mode');
-
-$Removed_Submenus = ['منوی پشتیبانی', 'تیکت های من'];
-
-foreach ($Removed_Submenus as $Submenu_Call) {
-$this->check(!str_contains($Service_Menu, "'{$Submenu_Call}'"), 'user service menu does not link to removed submenu «' . $Submenu_Call . '»');
-}
-}
-}
-
-/** هفت دسته اصلی، بدون تکرار عملیات در صفحه اصلی مدیریت. */
-private function test_admin_menu_has_seven_categories(): void {
+private function test_admin_menu_is_vertical(): void {
 $Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
 $Start = strpos($Source, 'public static function menu(');
 $End = strpos($Source, 'private static function categoryMenu(', $Start);
 $Body = substr($Source, $Start, $End - $Start);
-if (!preg_match('/\$Markup = Menu::rows\((\[.*?\])\);/s', $Body, $Match)) {
-$this->check(false, 'production admin menu rows must exist');
+$this->check_main_rows($Body, 'Markup', [
+'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu',
+'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک',
+'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی', 'admin_devices',
+]);
+$this->check(str_contains($Body, 'array_unshift($Markup, [Menu::button($Robot_On'), 'robot toggle is the first row');
+}
+
+private function check_main_rows(string $Body, string $Variable, array $Expected): void {
+if (!preg_match('/\$' . $Variable . ' = Menu::rows\((\[.*?\])\);/s', $Body, $Match)) {
+$this->check(false, 'production main menu rows must exist');
 return;
 }
 $Rows = Menu::rows(eval('return ' . $Match[1] . ';'));
-$this->check(Menu::problems($Rows) === [], 'production admin keyboard is valid');
-$this->check(array_column(array_merge(...$Rows), 'callback_data') === [
-'منوی کاربران', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک',
-'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم',
-], 'admin home contains exactly the seven categories in order');
-foreach ($Rows as $Row) {
-$this->check(count($Row) <= 2, 'admin menu has at most two buttons per row');
-}
-$this->check(!str_contains($Body, "'خاموش کردن ربات'"), 'robot toggle belongs to system settings, not home');
+$this->check(Menu::problems($Rows) === [], 'production keyboard is valid');
+$this->check(array_column(array_merge(...$Rows), 'callback_data') === $Expected, 'exact main menu order');
+foreach ($Rows as $Row) $this->check(count($Row) === 1, 'main menu is single-column');
 }
 
 /** گواهی محلی ربات باید همراه ساختار منو و بسته ربات حفظ شود. */
@@ -323,22 +290,9 @@ $this->check(!Menu::isNavigationOnly([]), 'an empty keyboard is not navigation-o
  */
 private function test_shared_keyboards_are_healthy(): void {
 $Keys = [
-'user-home' => Menu::rows([
-[['💎اشتراک من', 'اشتراک من'], ['💎اشتراک های آماده', 'اشتراک آماده']],
-[['🛠اشتراک دلخواه', 'اشتراک دلخواه'], ['🎁اشتراک رایگان', 'اشتراک رایگان اول']],
-[['🔄تمدید خودکار', 'منوی تمدید خودکار'], ['💰شارژ کیف پول', 'شارژ اعتبار حساب کاربری']],
-[['👤پروفایل کاربری', 'پروفایل کاربری'], ['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
-[['📋سابقه تراکنش', 'سابقه تراکنش'], ['📋سابقه اشتراک', 'سابقه اشتراک']],
-[['📊گزارش مصرف', 'گزارش مصرف'], ['🏆رتبه بندی کاربران', 'رتبه بندی کاربران']],
-[['📱حساب آمبرلا', 'app_menu'], ['📱دستگاه‌های من', 'app_devices']],
-[['🛡کنترل محتوا', 'app_filter'], ['🔗دامنه‌های دلخواه', 'app_filter_domains']],
-[['🔐تأیید دومرحله‌ای', 'app_2fa'], ['🔔اعلان‌های برنامه', 'app_notifications']],
-[['➕ایجاد تیکت جدید', 'تیکت جدید'], ['🎫تیکت های من', 'لیست تیکت های من']],
-[['🔄تغییرات نسخه', 'تغییرات نسخه']],
-]),
-'app-account' => [Menu::userHome()],
-'app-settings' => [Menu::userHome()],
-'ticket-menu' => [Menu::userHome()],
+'app-account' => Menu::userNav('حساب کاربری', 'user_account_menu'),
+'app-security' => Menu::userNav('امنیت', 'user_security_menu'),
+'support' => Menu::userNav('پشتیبانی', 'منوی پشتیبانی'),
 'app-devices' => array_merge(
 Menu::rows([
 [['✅صدور مجوز · دستگاه اول', 'admin_device_toggle:device-one:0']],

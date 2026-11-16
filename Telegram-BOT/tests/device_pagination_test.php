@@ -32,19 +32,19 @@ $Checks = [
         str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 1") &&
         str_contains($Admin, "'UPDATE `App_Devices` SET `Is_Trusted` = 0") &&
         str_contains($Admin, "'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP"),
-    'admin device controls and flat user app actions remain reachable' =>
+    'admin device controls and grouped user app actions remain reachable' =>
         str_contains($Dispatcher, "'admin_devices' => AdminFlow::appDevicesMenu(\$Context)") &&
         str_contains($Dispatcher, "str_starts_with(\$Data, 'admin_device_toggle:')") &&
-        str_contains($User, "'📱حساب آمبرلا', 'app_menu'") &&
-        str_contains($User, "'📱دستگاه‌های من', 'app_devices'") &&
+        str_contains($User, "'📱دستگاه های من', 'app_devices'") &&
         str_contains($User, "'🛡کنترل محتوا', 'app_filter'") &&
-        str_contains($User, "'🔗دامنه‌های دلخواه', 'app_filter_domains'") &&
+        str_contains($User, "'🔗دامنه های دلخواه', 'app_filter_domains'") &&
         str_contains($User, "'🔐تأیید دومرحله‌ای', 'app_2fa'") &&
-        str_contains($User, "'🔔اعلان‌های برنامه', 'app_notifications'") &&
+        str_contains($User, "'🔔اعلان های برنامه', 'app_notifications'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
         str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'"),
-    'flat app screens return directly to the Bot Services menu without intermediate submenus' =>
-        str_contains($AppLink, 'TelegramClient::inlineKeyboard([Menu::userHome()])') &&
+    'app screens return to their account or security category' =>
+        str_contains($AppLink, "Menu::back('منوی قبلی', 'user_security_menu')") &&
+        str_contains($AppLink, "Menu::back('منوی قبلی', 'user_account_menu')") &&
         !str_contains($AppLink, "Menu::back('حساب آمبرلا', 'app_menu')") &&
         !str_contains($AppLink, "Menu::back('کنترل محتوا', 'app_filter')"),
     'direct ticket actions and ticket-description step have proper back and main routes' =>

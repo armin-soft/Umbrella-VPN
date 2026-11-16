@@ -172,19 +172,18 @@ $Failures[] = 'Dispatcher: required route is missing: «' . $Call . '»';
 
 // Old callback messages stay usable, and opening auto-renew must not toggle it.
 $Expected_Routes = [
-"'منوی پشتیبانی' => [UserFlow::class, 'serviceMenu']",
+"'منوی پشتیبانی' => [UserFlow::class, 'supportMenu']",
 "'منوی تمدید خودکار' => UserFlow::autoRenewMenu(\$Context)",
 "'toggle_auto_renew' => UserFlow::toggleAutoRenew(\$Context)",
 "'اشتراک دلخواه' => [SubscriptionFlow::class, 'customPlansMenu']",
 "'ساخت اشتراک دلخواه' => [SubscriptionFlow::class, 'startCustomPlan']",
 ];
 foreach ($Expected_Routes as $Route) {
-if (!str_contains($Dispatcher, $Route)) $Failures[] = 'Incorrect flat-menu route: ' . $Route;
+if (!str_contains($Dispatcher, $Route)) $Failures[] = 'Incorrect menu route: ' . $Route;
 }
 $User = (string)file_get_contents($Root . '/Bot/User.php');
 $Subscription = (string)file_get_contents($Root . '/Bot/Subscription.php');
 $Aliases = [
-[$User, 'supportMenu', 'serviceMenu'],
 [$User, 'ticketMenu', 'ticketUserList'],
 [$Subscription, 'startCustomPlan', 'customPlansMenu'],
 ];

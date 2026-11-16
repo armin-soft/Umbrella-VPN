@@ -39,7 +39,7 @@ private const CFG_KEYS = [
 private function __construct() {
 }
 
-/** منوی اصلی مدیریت با هفت دسته؛ عملیات در زیرمنوی مربوط به خود قرار دارند. */
+/** منوی اصلی مدیریت تک‌ستونه؛ هر دسته یا میانبر در یک ردیف مستقل. */
 public static function menu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
@@ -65,11 +65,21 @@ $Text = Helper::adminGreeting($Context, 'منوی مدیریت')
 ])
 . '📌*امکان مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
 $Markup = Menu::rows([
-[['⚙️ مدیریت کاربران و حساب ها', 'منوی کاربران'], ['🖥 مدیریت سرور و سرویس ها', 'پیکربندی سرور']],
-[['📊 آمار و گزارشات', 'منوی گزارش'], ['📨 پیام رسانی و اطلاع رسانی', 'منوی پیامک']],
-[['🎫 پشتیبانی و تیکت ها', 'admin_support_menu'], ['💰 مدیریت تعرفه و اشتراک', 'admin_subscriptions_menu']],
-[['🗄 مدیریت دیتابیس و تنظیمات', 'منوی سیستم']],
+[['💳مدیریت اعتبار', 'اعتبار حساب کاربری']],
+[['🔒مسدود سازی کاربران', 'جرایم']],
+[['📱مدیریت دستگاه ها', 'admin_devices_menu']],
+[['👤مدیریت حساب کاربری', 'admin_accounts_menu']],
+[['🖥مدیریت کلاینت', 'عملیات کلاینت سرور']],
+[['🖥مدیریت سرور', 'پیکربندی سرور']],
+[['📊آمار و گزارشات', 'منوی گزارش']],
+[['📨پیام رسانی و اطلاع رسانی', 'منوی پیامک']],
+[['🎫پشتیبانی و تیکت ها', 'admin_support_menu']],
+[['💰مدیریت تعرفه و اشتراک', 'admin_subscriptions_menu']],
+[['🗄مدیریت دیتابیس', 'منوی سیستم']],
+[['🔄بروزرسانی نسخه', 'بروز رسانی']],
+[['📲دستگاه‌های برنامه', 'admin_devices']],
 ]);
+array_unshift($Markup, [Menu::button($Robot_On ? '🔴خاموش کردن ربات' : '🟢روشن کردن ربات', $Robot_On ? 'خاموش کردن ربات' : 'روشن کردن ربات')]);
 
 self::logMenuProblems('menu', $Markup);
 
@@ -96,17 +106,19 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function devicesMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📲دستگاه‌های برنامه', 'admin_devices'], ['🔐سقف دستگاه حساب', 'device_limit_menu']],
+[['📲دستگاه‌های برنامه', 'admin_devices']],
+[['🔐سقف دستگاه حساب', 'device_limit_menu']],
 ]);
-self::categoryMenu($Context, '📱 مدیریت دستگاه ها', $Rows, 'منوی کاربران');
+self::categoryMenu($Context, '📱 مدیریت دستگاه ها', $Rows, 'مدیریت');
 }
 
 public static function accountsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['🗑حذف کاربر', 'حذف کاربر اول'], ['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
+[['🗑حذف کاربر', 'حذف کاربر اول']],
+[['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
 ]);
-self::categoryMenu($Context, '👤 مدیریت حساب کاربری', $Rows, 'منوی کاربران');
+self::categoryMenu($Context, '👤 مدیریت حساب کاربری', $Rows, 'مدیریت');
 }
 
 public static function supportMenu(Context $Context): void {
@@ -120,7 +132,8 @@ self::categoryMenu($Context, '🎫 پشتیبانی و تیکت ها', $Rows, '�
 public static function subscriptionsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['💰تعرفه و پلن ها', 'cfg_pricing'], ['🔗لینک ها و کانال', 'cfg_links']],
+[['💰تعرفه و پلن ها', 'cfg_pricing']],
+[['🔗لینک ها و کانال', 'cfg_links']],
 ]);
 self::categoryMenu($Context, '💰 مدیریت تعرفه و اشتراک', $Rows, 'مدیریت');
 }
@@ -136,13 +149,7 @@ error_log('[Umbrella-Bot][Menu-' . $Screen . '] ' . implode(' | ', $Problems));
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
 public static function usersMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Rows = Menu::rows([
-[['💳مدیریت اعتبار', 'اعتبار حساب کاربری'], ['🔒مسدودسازی کاربران', 'جرایم']],
-[['📱مدیریت دستگاه ها', 'admin_devices_menu'], ['👤مدیریت حساب کاربری', 'admin_accounts_menu']],
-[['🖥مدیریت کلاینت', 'عملیات کلاینت سرور']],
-]);
-self::categoryMenu($Context, '⚙️ مدیریت کاربران و حساب ها', $Rows, 'مدیریت');
+self::menu($Context);
 }
 
 /** مدیریت یکپارچه فهرست دستگاه‌ها و مجوز ورود برنامه. */
@@ -242,11 +249,10 @@ self::appDevicesMenu($Context, $Page);
 public static function systemMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['💾پشتیبان گیری دیتابیس', 'پشتیبان گیری دیتابیس'], ['🔄تنظیم مجدد دیتابیس', 'تنظیم مجدد دیتابیس']],
+[['💾پشتیبان گیری دیتابیس', 'پشتیبان گیری دیتابیس']],
+[['🔄تنظیم مجدد دیتابیس', 'تنظیم مجدد دیتابیس']],
 ]);
-$Robot_On = Common::isRobotOn();
-$Rows[] = [Menu::button($Robot_On ? '🔴خاموش کردن ربات' : '🟢روشن کردن ربات', $Robot_On ? 'خاموش کردن ربات' : 'روشن کردن ربات')];
-self::categoryMenu($Context, '🗄 مدیریت دیتابیس و تنظیمات', $Rows, 'مدیریت');
+self::categoryMenu($Context, '🗄 مدیریت دیتابیس', $Rows, 'مدیریت');
 }
 
 public static function globalStats(Context $Context): void {
@@ -741,8 +747,10 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 public static function reportMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📊آمار کلی', 'آمار کلی'], ['📅گزارش روزانه', 'گزارش روزانه']],
-[['💰گزارش مالی', 'گزارش مالی'], ['🏆رتبه بندی', 'رتبه بندی']],
+[['📊آمار کلی', 'آمار کلی']],
+[['📅گزارش روزانه', 'گزارش روزانه']],
+[['💰گزارش مالی', 'گزارش مالی']],
+[['🏆رتبه بندی', 'رتبه بندی']],
 ]);
 self::categoryMenu($Context, '📊 آمار و گزارشات', $Rows, 'مدیریت');
 }
@@ -831,9 +839,12 @@ return $Chunks === [] ? [$Text] : $Chunks;
 public static function smsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
-[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
-[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده'], ['📣تلگرام و برنامه', 'notify_all_start']],
+[['📨پیامک تکی', 'ارسال پیامک تکی اول']],
+[['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
+[['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول']],
+[['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
+[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده']],
+[['📣تلگرام و برنامه', 'notify_all_start']],
 [['📱اعلان برنامه ها', 'app_push_start']],
 ]);
 self::categoryMenu($Context, '📨 پیام رسانی و اطلاع رسانی', $Rows, 'مدیریت');
@@ -929,11 +940,12 @@ Menu::back('منوی قبلی', 'پیکربندی سرور'), Menu::adminHome(),
 public static function serverConfig(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📊وضعیت سرور', 'وضعیت سرور'], ['🔌سرویس های سرور', 'سرویس های سرور']],
-[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول'], ['🚱کانفیگ اضطراری', 'تنظیمات ربات']],
-[['🔄بروزرسانی نسخه', 'بروز رسانی']],
+[['📊وضعیت سرور', 'وضعیت سرور']],
+[['🔌سرویس های سرور', 'سرویس های سرور']],
+[['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول']],
+[['🚱کانفیگ اضطراری', 'تنظیمات ربات']],
 ]);
-self::categoryMenu($Context, '🖥 مدیریت سرور و سرویس ها', $Rows, 'مدیریت');
+self::categoryMenu($Context, '🖥 مدیریت سرور', $Rows, 'مدیریت');
 }
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
@@ -950,10 +962,11 @@ self::serverConfig($Context);
 public static function serverClientsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['🟢فعال سازی کلاینت', 'فعالسازی کلاینت اول'], ['🔴غیرفعال سازی کلاینت', 'غیر فعالسازی کلاینت اول']],
+[['🟢فعال سازی کلاینت', 'فعالسازی کلاینت اول']],
+[['🔴غیرفعال سازی کلاینت', 'غیر فعالسازی کلاینت اول']],
 [['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
 ]);
-self::categoryMenu($Context, '🖥 مدیریت کلاینت', $Rows, 'منوی کاربران');
+self::categoryMenu($Context, '🖥 مدیریت کلاینت', $Rows, 'مدیریت');
 }
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
@@ -1560,20 +1573,22 @@ Menu::back('منوی قبلی', 'پیکربندی سرور'), Menu::adminHome(),
 public static function creditMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['👁مشاهده اعتبار', 'مشاهده اعتبار اول'], ['➕افزایش اعتبار', 'افزایش اعتبار اول']],
+[['👁مشاهده اعتبار', 'مشاهده اعتبار اول']],
+[['➕افزایش اعتبار', 'افزایش اعتبار اول']],
 [['➖کسر اعتبار', 'کسر اعتبار اول']],
 ]);
-self::categoryMenu($Context, '💳 مدیریت اعتبار', $Rows, 'منوی کاربران');
+self::categoryMenu($Context, '💳 مدیریت اعتبار', $Rows, 'مدیریت');
 }
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
 public static function crimes(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['🚫🔒مسدود کردن کاربر', 'مسدودیت اول'], ['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
+[['🚫🔒مسدود کردن کاربر', 'مسدودیت اول']],
+[['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
 [['👁مشاهده مسدودی ها', 'مشاهده مسدودی ها']],
 ]);
-self::categoryMenu($Context, '🔒 مسدودسازی کاربران', $Rows, 'منوی کاربران');
+self::categoryMenu($Context, '🔒 مسدودسازی کاربران', $Rows, 'مدیریت');
 }
 
 public static function blockedList(Context $Context): void {
@@ -1626,7 +1641,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 Menu::rows([
 [['🔄افزودن نسخه جدید', 'افزودن نسخه جدید اول']],
 ]),
-[Menu::back('منوی قبلی', 'پیکربندی سرور'), Menu::adminHome()]
+[Menu::adminHome()]
 )));
 }
 
@@ -1664,7 +1679,7 @@ if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, $On ? '🤖ربات روشن شد' : '🤖ربات خاموش شد', false);
 }
 
-self::systemMenu($Context);
+self::menu($Context);
 }
 
 public static function handleInput(Context $Context, string $Flow, string $Text): void {

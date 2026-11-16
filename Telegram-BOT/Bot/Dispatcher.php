@@ -15,7 +15,12 @@ require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 final class Dispatcher {
 private const ROUTES = [
 'منوی خدمات ربات' => [UserFlow::class, 'serviceMenu'],
-'منوی پشتیبانی' => [UserFlow::class, 'serviceMenu'],
+'user_subscriptions_menu' => [UserFlow::class, 'subscriptionsMenu'],
+'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
+'user_account_menu' => [UserFlow::class, 'accountMenu'],
+'user_security_menu' => [UserFlow::class, 'securityMenu'],
+'user_stats_menu' => [UserFlow::class, 'statsMenu'],
+'منوی پشتیبانی' => [UserFlow::class, 'supportMenu'],
 'گزارش مصرف' => [UserFlow::class, 'usageAnalytics'],
 'ویرایش و ثبت پروفایل' => [ProfileFlow::class, 'begin'],
 'ویرایش پروفایل' => [ProfileFlow::class, 'begin'],
@@ -634,6 +639,11 @@ if (!$Has_Media) {
 $Typed = preg_replace('/[\x{200B}-\x{200F}\x{2060}\x{FEFF}]/u', '', $Text);
 $Typed = trim((string)$Typed);
 $Typed_Routes = [
+'مدیریت اشتراک' => fn() => UserFlow::subscriptionsMenu($Context),
+'کیف پول و مالی' => fn() => UserFlow::walletMenu($Context),
+'حساب کاربری' => fn() => UserFlow::accountMenu($Context),
+'امنیت' => fn() => UserFlow::securityMenu($Context),
+'سوابق و آمار' => fn() => UserFlow::statsMenu($Context),
 'اشتراک من' => fn() => SubscriptionFlow::mySubscription($Context),
 'منوی خدمات کاربری' => fn() => UserFlow::serviceMenu($Context),
 'منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
@@ -642,8 +652,8 @@ $Typed_Routes = [
 'شارژ اعتبار حساب کاربری' => fn() => SubscriptionFlow::walletTopupStart($Context),
 'سابقه اشتراک' => fn() => UserFlow::subscriptionHistory($Context),
 'گزارش مصرف' => fn() => UserFlow::usageAnalytics($Context),
-'پشتیبانی' => fn() => UserFlow::ticketUserList($Context),
-'تیکت ها و پشتیبانی' => fn() => UserFlow::ticketUserList($Context),
+'پشتیبانی' => fn() => UserFlow::supportMenu($Context),
+'تیکت ها و پشتیبانی' => fn() => UserFlow::supportMenu($Context),
 'تیکت های من' => fn() => UserFlow::ticketUserList($Context),
 'تغییرات نسخه' => fn() => UserFlow::changes($Context),
 'حساب آمبرلا' => fn() => AppFlow::menu($Context),

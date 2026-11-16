@@ -33,7 +33,7 @@ $Text = \Helper::userGreeting($Context, 'فیلترشکن آمبرلا')
 'برای دیدن اطلاعات حساب و تنظیمات فیلتر، ابتدا در برنامه با همین شماره وارد شوید و ربات را باز کنید.',
 'ℹ️ بعد از ورود اول، همه‌چیز به‌صورت خودکار اینجا نمایش داده می‌شود.'
 ) . \Helper::userFooter();
-self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::userHome()]));
+self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 return;
 }
 
@@ -53,7 +53,7 @@ $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 ])
 . $Summary
 . \Helper::userFooter();
-self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::userHome()]));
+self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 }
 
 /** The filter menu: one button per category, toggling on press. */
@@ -79,6 +79,7 @@ $Row = [];
 if ($Row !== []) $Rows[] = $Row;
 
 $Rows[] = [['text' => $Settings['enabled'] ? '🔴خاموش کردن کنترل محتوا' : '🟢روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
+$Rows[] = Menu::back('منوی قبلی', 'user_account_menu');
 $Rows[] = Menu::userHome();
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
@@ -137,7 +138,7 @@ $Context,
 . "📥لینک یا دامنه ها را بفرستید؛ هر خط یک مورد.\n🧹برای پاک کردن همه، فقط «-» بفرستید."
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([
-Menu::userHome(),
+Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome(),
 ])
 );
 }
@@ -161,12 +162,12 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 self::reply($Context, \Helper::userGreeting($Context, 'دامنه‌های دلخواه')
 . '✅دامنه‌های دلخواه ذخیره شدند.'
 . AppFilter::summary(AppFilter::load((string)$Account['uuid']))
-. \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+. \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 }
 
 /** The devices that ever signed in, with trust state and paging. */
 public static function devices(Context $Context, int $Page = 0): void {
-$Account = self::accountOrPrompt($Context);
+$Account = self::accountOrPrompt($Context, 'user_security_menu');
 
 if ($Account === null) return;
 
@@ -183,7 +184,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([Menu::userHome()])
+TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_security_menu'), Menu::userHome()])
 );
 return;
 }
@@ -237,6 +238,7 @@ $Navigation[] = ['text' => 'بعدی ➡️', 'callback_data' => 'app_devices_pa
 $Buttons[] = $Navigation;
 }
 
+$Buttons[] = Menu::back('منوی قبلی', 'user_security_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
@@ -356,12 +358,12 @@ $Icon = match((string)$Row['Level']) { 'warning' => '⚠️', 'error' => '⛔️
 $Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '') . "\n🕐 " . (string)$Row['Sent_At'] . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
-self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 }
 
 /** The switch that decides whether a sign-in also needs a tap here. */
 public static function twoStepMenu(Context $Context): void {
-if (self::accountOrPrompt($Context) === null) {
+if (self::accountOrPrompt($Context, 'user_security_menu') === null) {
 return;
 }
 
@@ -401,6 +403,7 @@ $Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورو
 $Rows = $On
 ? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
 : [[['text' => '✅فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
+$Rows[] = Menu::back('منوی قبلی', 'user_security_menu');
 $Rows[] = Menu::userHome();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
@@ -419,7 +422,7 @@ if ($Found !== null) return $Found;
 return \PanelClient::findByTelegramId($Context->UserId);
 }
 
-private static function accountOrPrompt(Context $Context): ?array {
+private static function accountOrPrompt(Context $Context, string $Parent = 'user_account_menu'): ?array {
 $Account = self::account($Context);
 
 if ($Account === null) {
@@ -430,7 +433,7 @@ $Context,
 '📱 حسابی پیدا نشد',
 'برای دیدن این بخش، شماره موبایل شما باید در برنامه یا پنل ثبت شده باشد.'
 ) . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([Menu::userHome()])
+TelegramClient::inlineKeyboard(Menu::userNav('منوی قبلی', $Parent))
 );
 }
 
