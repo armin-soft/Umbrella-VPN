@@ -37,7 +37,7 @@ $Checks = [
         str_contains($Dispatcher, "str_starts_with(\$Data, 'admin_device_toggle:')") &&
         str_contains($User, "'📱دستگاه های من', 'app_devices'") &&
         str_contains($User, "'🛡کنترل محتوا', 'app_filter'") &&
-        str_contains($User, "'🔗دامنه های دلخواه', 'app_filter_domains'") &&
+        !str_contains($User, "'app_filter_domains'") &&
         str_contains($User, "'🔐تأیید دومرحله‌ای', 'app_2fa'") &&
         str_contains($User, "'🔔اعلان های برنامه', 'app_notifications'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&

@@ -369,7 +369,6 @@ $Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری']],
 [['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
 [['🛡کنترل محتوا', 'app_filter']],
-[['🔗دامنه های دلخواه', 'app_filter_domains']],
 [['🔔اعلان های برنامه', 'app_notifications']],
 [['📱دستگاه های من', 'app_devices']],
 [['🔐تأیید دومرحله‌ای', 'app_2fa']],
@@ -771,9 +770,10 @@ $Page = (int)($Parts[1] ?? 1);
 }
 
 if ($Page <= 0) $Page = 1;
-$Transactions = Repository::getTransactions($Context->UserId, $Page, 5);
 $Total = Repository::countTransactions($Context->UserId);
 $Total_Pages = max(1, (int)ceil($Total / 5));
+$Page = min($Page, $Total_Pages);
+$Transactions = Repository::getTransactions($Context->UserId, $Page, 5);
 $Text = Helper::userGreeting($Context, 'سابقه تراکنش های اعتبار');
 
 if (empty($Transactions)) {
@@ -790,7 +790,7 @@ $Source_Label = Helper::sourceLabel((string)($Tx['Source'] ?? ''), (string)($Tx[
 $Type_Label = Helper::actionLabel((string)($Tx['Type'] ?? ''));
 $Sign_Icon = (float)$Tx['Amount'] >= 0 ? '➕' : '➖';
 $Balance_After = Helper::formatCurrency((float)($Tx['Balance_After'] ?? 0));
-$Text .= "📋تراکنش #" . Helper::toPersian((string)($Index + 1)) . ":\n";
+$Text .= "📋تراکنش #" . Helper::toPersian((string)(($Page - 1) * 5 + $Index + 1)) . ":\n";
 $Text .= "🔸{$Type_Label}\n";
 $Text .= "🏷️انجام شده توسط: <b>{$Source_Label}</b>\n";
 $Text .= "📝{$Desc}\n";
@@ -804,6 +804,7 @@ $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper:
 }
 
 $Buttons = [];
+if ($Page > 1) $Buttons[] = [Menu::button('⬅️صفحه قبل', 'سابقه تراکنش|' . ($Page - 1))];
 
 if ($Page < $Total_Pages) {
 $Buttons[] = [['text' => '📄صفحه بعد', 'callback_data' => 'سابقه تراکنش|' . ($Page + 1)]];
@@ -826,9 +827,10 @@ $Page = (int)($Parts[1] ?? 1);
 }
 
 if ($Page <= 0) $Page = 1;
-$Logs = Repository::getSubscriptionLogs($Context->UserId, $Page, 5);
 $Total = Repository::countSubscriptionLogs($Context->UserId);
 $Total_Pages = max(1, (int)ceil($Total / 5));
+$Page = min($Page, $Total_Pages);
+$Logs = Repository::getSubscriptionLogs($Context->UserId, $Page, 5);
 $Text = Helper::userGreeting($Context, 'سابقه اشتراک ها');
 
 if (empty($Logs)) {
@@ -846,7 +848,7 @@ $Days = ($Log['Days'] ?? null) !== null ? (int)$Log['Days'] : 0;
 
 $Plan = $Log['Plan_Name'] !== '' ? $Log['Plan_Name'] : 'اشتراک';
 $Usage = $Log['Usage_GB'] !== null ? Helper::formatGB((float)$Log['Usage_GB']) : '';
-$Text .= "📋سابقه #" . Helper::toPersian((string)($Index + 1)) . ":\n";
+$Text .= "📋سابقه #" . Helper::toPersian((string)(($Page - 1) * 5 + $Index + 1)) . ":\n";
 $Text .= "🔸{$Action}: {$Plan}\n";
 $Text .= "🏷️انجام شده توسط: <b>{$Source_Label}</b>\n";
 
@@ -868,6 +870,7 @@ $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper:
 }
 
 $Buttons = [];
+if ($Page > 1) $Buttons[] = [Menu::button('⬅️صفحه قبل', 'سابقه اشتراک|' . ($Page - 1))];
 
 if ($Page < $Total_Pages) {
 $Buttons[] = [['text' => '📄صفحه بعد', 'callback_data' => 'سابقه اشتراک|' . ($Page + 1)]];
@@ -1102,9 +1105,11 @@ Menu::userHome(),
 ]));
 }
 
-public static function ticketUserList(Context $Context): void {
+public static function ticketUserList(Context $Context, int $Page = 0): void {
 TelegramClient::sendChatAction($Context->ChatId);
 $Tickets = Repository::userTickets($Context->UserId);
+$PageCount = max(1, (int)ceil(count($Tickets) / 8));
+$Page = max(0, min($Page, $PageCount - 1));
 $Open_Count = 0;
 
 foreach ($Tickets as $T) {
@@ -1128,17 +1133,19 @@ return;
 $Text .= '📌*برای مشاهده جزئیات و پاسخ، تیکت مورد نظر را انتخاب کنید:*' . Helper::userFooter();
 $Buttons = [];
 
-foreach (array_slice($Tickets, 0, 10) as $T) {
+foreach (array_slice($Tickets, $Page * 8, 8) as $T) {
 $Status_Icon = ['open' => '🟡', 'pending' => '🟠', 'answered' => '🟢', 'closed' => '⚫'][$T['Status']] ?? '🟡';
 $Buttons[] = [['text' => "{$Status_Icon} #{$T['ID']} - " . mb_substr((string)$T['Subject'], 0, 30), 'callback_data' => 'ticket_user_view:' . $T['ID']]];
 }
 
+$Text .= Menu::pageLabel($Page, $PageCount);
+$Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'user_tickets_page:'));
 $Buttons[] = Menu::back('منوی قبلی', 'منوی پشتیبانی');
 $Buttons[] = Menu::userHome();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
 
-public static function ticketUserView(Context $Context, int $Ticket_ID): void {
+public static function ticketUserView(Context $Context, int $Ticket_ID, int $Page = 0): void {
 $Ticket = Repository::getTicket($Ticket_ID);
 
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) {
@@ -1155,6 +1162,7 @@ $Text .= "📋موضوع: " . $Ticket['Subject'] . "\n";
 $Text .= "📂دسته: *{$Persian_Category}*\n";
 $Text .= "📊وضعیت: *{$Persian_Status}*\n\n";
 
+$Thread = '';
 foreach ($Messages as $Msg) {
 $Sender = ($Msg['Sender_Type'] ?? 'user') === 'admin' ? '🛡ادمین' : '👤شما';
 $Msg_Text = (string)($Msg['Message'] ?? '');
@@ -1163,14 +1171,17 @@ if ($Msg_Text === '') {
 $Msg_Text = ($Msg['Photo_File_ID'] ?? null) !== null ? '[📎تصویر]' : '[💬هیچ متنی]';
 }
 
-$Text .= "{$Sender}: {$Msg_Text}\n";
+$Thread .= "{$Sender}: {$Msg_Text}\n";
 
 if (!empty($Msg['Photo_File_ID'])) {
-$Text .= "📎[پیوست تصویری]\n";
+$Thread .= "📎[پیوست تصویری]\n";
 }
 }
 
-$Buttons = [];
+[$ThreadPage, $Page, $PageCount] = Menu::textPage($Thread, $Page);
+$Text .= Menu::pageLabel($Page, $PageCount) . $ThreadPage;
+
+$Buttons = Menu::pages($Page, $PageCount, 'user_ticket_messages:' . $Ticket_ID . ':');
 
 if ($Ticket['Status'] !== 'closed') {
 $Buttons[] = [['text' => '✏️پاسخ', 'callback_data' => 'ticket_user_reply:' . $Ticket_ID]];
@@ -1312,7 +1323,7 @@ Menu::rows([
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
 }
 
-public static function usageRanking(Context $Context): void {
+public static function usageRanking(Context $Context, int $Page = 0): void {
 TelegramClient::sendChatAction($Context->ChatId);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -1351,12 +1362,13 @@ $Text = Common::greet($Context, 'رتبه بندی کاربران') . "🏆👑*
 $Text .= "👥کاربران سرور: *" . Helper::toPersian((string)$Board_Count) . "* |📥مجموع مصرف: *" . Helper::formatGB($Board_Total) . "* |🧮میانگین: *" . Helper::formatGB($Board_Avg) . "*\n";
 $Text .= "🥇جایگاه اول |🥈دوم |🥉سوم |🔥سهم بیش از ۲۵٪ |⭐️ردیف خود شما\n";
 $Text .= "➖➖➖➖➖➖➖➖➖\n";
-$Shown = 0;
+$PageCount = max(1, (int)ceil($Board_Count / 10));
+$Page = max(0, min($Page, $PageCount - 1));
+$Text .= Menu::pageLabel($Page, $PageCount);
+$Shown = $Page * 10;
 
-foreach ($Board as $Row) {
+foreach (array_slice($Board, $Page * 10, 10) as $Row) {
 $Shown++;
-
-if ($Shown > 10) break;
 $Name = trim((string)($Row['Full_Name'] ?? '')) ?: (trim((string)($Row['First_Name'] ?? '')) ?: 'کاربر');
 $Name_Link = Helper::mention($Name, (int)($Row['Telegram_ID'] ?? 0), trim((string)($Row['Username'] ?? '')));
 $Usage = (float)($Row['Value'] ?? 0);
@@ -1386,10 +1398,10 @@ $Text .= "📌رتبه شما: *هنوز مصرفی روی سرور ثبت نش�
 }
 
 $Text .= Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(array_merge(Menu::pages($Page, $PageCount, 'user_ranking_page:'), [
 [['text' => '🔄بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی کاربران']],
 Menu::back('منوی قبلی', 'user_stats_menu'), Menu::userHome(),
-]));
+])));
 }
 }
 ?>

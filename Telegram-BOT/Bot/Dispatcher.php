@@ -457,6 +457,54 @@ AdminFlow::toggleAppDevice($Context, $Prefix, (int)$Page);
 return;
 }
 
+if (str_starts_with($Data, 'admin_ranking_page:')) {
+AdminFlow::userRanking($Context, (int)substr($Data, strlen('admin_ranking_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'user_ticket_messages:')) {
+$Parts = explode(':', $Data);
+UserFlow::ticketUserView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0));
+return;
+}
+
+if (str_starts_with($Data, 'admin_ticket_messages:')) {
+$Parts = explode(':', $Data);
+AdminFlow::ticketAdminView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0));
+return;
+}
+
+if (str_starts_with($Data, 'app_notifications_page:')) {
+AppFlow::notifications($Context, (int)substr($Data, strlen('app_notifications_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'user_tickets_page:')) {
+UserFlow::ticketUserList($Context, (int)substr($Data, strlen('user_tickets_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'user_ranking_page:')) {
+UserFlow::usageRanking($Context, (int)substr($Data, strlen('user_ranking_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_blocked_page:')) {
+AdminFlow::blockedList($Context, (int)substr($Data, strlen('admin_blocked_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_tickets_page:')) {
+AdminFlow::ticketAdminMenu($Context, (int)substr($Data, strlen('admin_tickets_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'app_notification:')) {
+$Parts = explode(':', $Data);
+AppFlow::notificationView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0), (int)($Parts[3] ?? 0));
+return;
+}
+
 if (str_starts_with($Data, 'app_devices_page:')) {
 AppFlow::devices($Context, (int)substr($Data, strlen('app_devices_page:')));
 return;

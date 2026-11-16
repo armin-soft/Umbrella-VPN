@@ -11,6 +11,14 @@ require_once __DIR__ . '/../Database/Database.php';
  * The category names match `ContentCategory` in the Flutter code.
  */
 final class AppFilter {
+/** دسته‌های قابل تنظیم در ربات؛ تنظیمات دیگر برنامه بدون حذف داده حفظ می‌شوند. */
+public const BOT_CATEGORIES = [
+'adult' => 'محتوای بزرگسال',
+'gambling' => 'شرط‌بندی',
+'ads' => 'تبلیغات',
+'dating' => 'دوست‌یابی',
+];
+
 public const CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'social' => 'شبکه‌های اجتماعی',
@@ -190,19 +198,13 @@ return '⚪️ کنترل محتوا خاموش است.';
 $Labels = [];
 
 foreach ($Settings['categories'] as $Key) {
-$Labels[] = self::CATEGORIES[$Key] ?? $Key;
+if (isset(self::BOT_CATEGORIES[$Key])) $Labels[] = self::BOT_CATEGORIES[$Key];
 }
-
-$Domains = count($Settings['custom_domains'] ?? []);
 
 $Text = '🟢 کنترل محتوا روشن است.';
 
 if ($Labels !== []) {
 $Text .= "\n📂 دسته‌ها: " . implode('، ', $Labels);
-}
-
-if ($Domains > 0) {
-$Text .= "\n🔗 دامنه‌های دلخواه: " . \Helper::toPersian((string)$Domains) . ' مورد';
 }
 
 return $Text;

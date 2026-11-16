@@ -16,8 +16,9 @@ final class Menu {
 /** تنها برچسب دکمه بازگشت به منوی قبل در کل ربات. */
 public const BACK_LABEL = '🔙بازگشت به منوی قبل';
 
-/** تنها برچسب دکمه بازگشت به منوی اصلی در کل ربات. */
+/** برچسب خانه در بخش کاربری؛ بخش مدیریت برچسب جدا دارد. */
 public const HOME_LABEL = '🏠بازگشت به منوی اصلی';
+public const ADMIN_HOME_LABEL = '🏠بازگشت به منوی مدیریت';
 
 private function __construct() {
 }
@@ -107,7 +108,7 @@ return [self::button(self::BACK_LABEL, $Call)];
 
 /** دکمه بازگشت به منوی اصلی مدیریت. */
 public static function adminHome(): array {
-return [self::button(self::HOME_LABEL, self::ADMIN_HOME_CALL)];
+return [self::button(self::ADMIN_HOME_LABEL, self::ADMIN_HOME_CALL)];
 }
 
 /** دکمه بازگشت به منوی اصلی کاربر. */
@@ -136,6 +137,27 @@ return [self::userHome()];
 }
 
 return [self::back($Back_Title, $Back_Call), self::userHome()];
+}
+
+/** ناوبری صفحه‌های صفرمبنا؛ در فهرست تک‌صفحه‌ای دکمه‌ای نمی‌سازد. */
+public static function pages(int $Page, int $PageCount, string $Prefix): array {
+$Rows = [];
+if ($Page > 0) $Rows[] = [self::button('⬅️صفحه قبل', $Prefix . ($Page - 1))];
+if ($Page + 1 < $PageCount) $Rows[] = [self::button('صفحه بعد➡️', $Prefix . ($Page + 1))];
+return $Rows;
+}
+
+/** صفحه‌بندی متن خام قبل از escape؛ تگ یا entity در میانه شکسته نمی‌شود. */
+public static function textPage(string $Text, int $Page): array {
+$Count = max(1, (int)ceil(mb_strlen($Text) / 1800));
+$Page = max(0, min($Page, $Count - 1));
+$Part = mb_substr($Text, $Page * 1800, 1800);
+$Part = str_replace(['*', '`', '[', ']'], ['＊', '｀', '［', '］'], $Part);
+return [htmlspecialchars($Part, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8'), $Page, $Count];
+}
+
+public static function pageLabel(int $Page, int $PageCount): string {
+return "\n📄صفحه " . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$PageCount) . "\n";
 }
 
 /**

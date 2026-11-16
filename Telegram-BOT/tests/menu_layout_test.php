@@ -129,7 +129,7 @@ $this->check($Other[0]['text'] === $Row[0]['text'], 'back(): the destination doe
 
 $Nav = Menu::adminNav('بروز رسانی', 'بروز رسانی');
 $this->check($Nav[0][0]['text'] === '🔙بازگشت به منوی قبل', 'adminNav(): the back row uses «🔙بازگشت به منوی قبل»');
-$this->check($Nav[1][0]['text'] === '🏠بازگشت به منوی اصلی', 'adminNav(): the home row uses «🏠بازگشت به منوی اصلی»');
+$this->check($Nav[1][0]['text'] === '🏠بازگشت به منوی مدیریت', 'adminNav(): the home row uses «🏠بازگشت به منوی مدیریت»');
 $this->check(Menu::userHome()[0]['text'] === '🏠بازگشت به منوی اصلی', 'userHome(): uses «🏠بازگشت به منوی اصلی»');
 }
 

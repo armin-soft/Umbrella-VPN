@@ -66,11 +66,11 @@ $Settings = AppFilter::load((string)$Account['uuid']);
 $Rows = [];
 $Row = [];
 
-foreach (AppFilter::CATEGORIES as $Key => $Label) {
+foreach (AppFilter::BOT_CATEGORIES as $Key => $Label) {
 $On = in_array($Key, $Settings['categories'], true);
 $Row[] = ['text' => ($On ? '✅ ' : '⚪️ ') . $Label, 'callback_data' => 'app_filter_toggle:' . $Key];
 
-if (count($Row) === 2) {
+if (count($Row) === 1) {
 $Rows[] = $Row;
 $Row = [];
 }
@@ -98,6 +98,10 @@ $Account = self::accountOrPrompt($Context);
 if ($Account === null) return;
 
 $UUID = (string)$Account['uuid'];
+if ($Category !== 'enabled' && !isset(AppFilter::BOT_CATEGORIES[$Category])) {
+self::filterMenu($Context);
+return;
+}
 
 if ($Category === 'enabled') {
 $Current = AppFilter::load($UUID);
@@ -119,50 +123,13 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'ذخیره شد ✅')
 self::filterMenu($Context);
 }
 
-/** Asks for a domain list, handled by AppFlow::filterDomainsInput(). */
+/** پیام‌ها و ورودی‌های قدیمی دامنه‌ها فقط به حساب کاربری بازمی‌گردند. */
 public static function filterDomainsStart(Context $Context): void {
-$Account = self::accountOrPrompt($Context);
-
-if ($Account === null) return;
-
-Repository::updateUserSession($Context->UserId, ['Flow' => 'app:filter_domains']);
-$Current = AppFilter::load((string)$Account['uuid']);
-$Existing = implode('\n', $Current['custom_domains']);
-
-self::reply(
-$Context,
-\Helper::userGreeting($Context, 'دامنه‌های دلخواه')
-. AppFilter::summary($Current)
-. "\n➖➖➖➖➖➖➖➖➖\n"
-. ($Existing !== '' ? "📄فهرست فعلی:\n<code>{$Existing}</code>\n" : '')
-. "📥لینک یا دامنه ها را بفرستید؛ هر خط یک مورد.\n🧹برای پاک کردن همه، فقط «-» بفرستید."
-. \Helper::userFooter(),
-TelegramClient::inlineKeyboard([
-Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome(),
-])
-);
+UserFlow::accountMenu($Context);
 }
 
 public static function filterDomainsInput(Context $Context, string $Text): void {
-$Account = self::accountOrPrompt($Context);
-
-if ($Account === null) return;
-
-$Text = trim($Text);
-$Domains = $Text === '-' ? [] : preg_split('/[\s,;]+/', $Text);
-$Current = AppFilter::load((string)$Account['uuid']);
-
-AppFilter::save((string)$Account['uuid'], [
-'enabled' => true,
-'categories' => $Current['categories'],
-'custom_domains' => implode('\n', is_array($Domains) ? $Domains : []),
-], 'bot');
-
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-self::reply($Context, \Helper::userGreeting($Context, 'دامنه‌های دلخواه')
-. '✅دامنه‌های دلخواه ذخیره شدند.'
-. AppFilter::summary(AppFilter::load((string)$Account['uuid']))
-. \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+UserFlow::accountMenu($Context);
 }
 
 /** The devices that ever signed in, with trust state and paging. */
@@ -338,27 +305,51 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد�
 self::devices($Context, $Page);
 }
 
-/** The messages the app has been sent, newest first. */
-public static function notifications(Context $Context): void {
-$Rows = \Database::getInstance()->fetchAll(
-'SELECT `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications`
-WHERE `Device_ID` IN (SELECT `Device_ID` FROM `App_Devices` WHERE `Telegram_ID` = ?)
-ORDER BY `ID` DESC LIMIT 10',
-[$Context->UserId]
-);
-
-$Text = \Helper::userGreeting($Context, 'اعلان‌های برنامه');
-
-if ($Rows === []) {
-$Text .= '🔔اعلانی برای برنامه شما ثبت نشده است.';
-}
-
+/** اعلان‌ها فقط برای دستگاه‌های خود کاربر، جدیدترین ابتدا. */
+public static function notifications(Context $Context, int $Page = 0): void {
+$Database = Database::getInstance();
+$Where = 'WHERE `Device_ID` IN (SELECT `Device_ID` FROM `App_Devices` WHERE `Telegram_ID` = ?)';
+$Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Notifications` ' . $Where, [$Context->UserId], 0);
+$PageCount = max(1, (int)ceil($Total / 3));
+$Page = max(0, min($Page, $PageCount - 1));
+$Rows = $Database->fetchAll('SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications` ' . $Where . ' ORDER BY `ID` DESC LIMIT ? OFFSET ?', [$Context->UserId, 3, $Page * 3]);
+$Text = Helper::userGreeting($Context, 'اعلان‌های برنامه') . Menu::pageLabel($Page, $PageCount);
+$Buttons = [];
+if ($Rows === []) $Text .= '🔔اعلانی برای برنامه شما ثبت نشده است.';
 foreach ($Rows as $Row) {
-$Icon = match((string)$Row['Level']) { 'warning' => '⚠️', 'error' => '⛔️', 'success' => '✅', default => '🔔' };
-$Text .= "{$Icon} " . (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '') . "\n🕐 " . (string)$Row['Sent_At'] . "\n➖➖➖➖➖➖➖➖➖\n";
+$Body = (string)($Row['Body'] ?? '');
+$Text .= self::notificationText($Row, mb_substr($Body, 0, 650) . (mb_strlen($Body) > 650 ? '…' : ''));
+if (mb_strlen($Body) > 650) {
+$Buttons[] = [Menu::button('📄متن کامل اعلان #' . $Row['ID'], 'app_notification:' . $Row['ID'] . ':' . $Page . ':0')];
+}
+}
+$Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'app_notifications_page:'));
+$Buttons[] = Menu::back('منوی قبلی', 'user_account_menu');
+$Buttons[] = Menu::userHome();
+self::reply($Context, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
 
-self::reply($Context, $Text . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+/** متن بلند اعلان بدون حذف محتوا در صفحه‌های جدا خوانده می‌شود. */
+public static function notificationView(Context $Context, int $Id, int $ListPage = 0, int $Part = 0): void {
+$Row = Database::getInstance()->fetch('SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications` WHERE `ID` = ? AND `Device_ID` IN (SELECT `Device_ID` FROM `App_Devices` WHERE `Telegram_ID` = ?) LIMIT 1', [$Id, $Context->UserId]);
+if ($Row === null) { self::notifications($Context, $ListPage); return; }
+$Body = (string)($Row['Body'] ?? '');
+$Count = max(1, (int)ceil(mb_strlen($Body) / 2200));
+$Part = max(0, min($Part, $Count - 1));
+$ListPage = max(0, $ListPage);
+$Text = Helper::userGreeting($Context, 'متن اعلان') . Menu::pageLabel($Part, $Count)
+. self::notificationText($Row, mb_substr($Body, $Part * 2200, 2200));
+$Buttons = Menu::pages($Part, $Count, 'app_notification:' . $Id . ':' . $ListPage . ':');
+$Buttons[] = Menu::back('اعلان‌ها', 'app_notifications_page:' . $ListPage);
+$Buttons[] = Menu::userHome();
+self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
+}
+
+private static function notificationText(array $Row, string $Body): string {
+$Safe = static fn(string $Value): string => htmlspecialchars(str_replace(['*', '`', '[', ']'], ['＊', '｀', '［', '］'], $Value), ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$Icon = match((string)($Row['Level'] ?? '')) { 'warning' => '⚠️', 'error' => '⛔️', 'success' => '✅', default => '🔔' };
+return $Icon . ' ' . $Safe(mb_substr((string)($Row['Title'] ?? ''), 0, 190)) . "\n"
+. $Safe($Body) . "\n🕐 " . $Safe((string)($Row['Sent_At'] ?? '')) . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
 /** The switch that decides whether a sign-in also needs a tap here. */

@@ -807,9 +807,9 @@ return Database::getInstance()->fetchAll(
 );
 }
 
-public static function openTickets(int $Limit = 100): array {
+public static function openTickets(int $Limit = 100, int $Offset = 0): array {
 return Database::getInstance()->fetchAll(
-'SELECT * FROM `Tickets` WHERE `Status` IN (\'open\',\'pending\',\'answered\') ORDER BY `Priority` DESC, `ID` DESC LIMIT ' . max(1, $Limit)
+'SELECT * FROM `Tickets` WHERE `Status` IN (\'open\',\'pending\',\'answered\') ORDER BY `Priority` DESC, `ID` DESC LIMIT ' . max(1, $Limit) . ' OFFSET ' . max(0, $Offset)
 );
 }
 

@@ -23,6 +23,12 @@ final class Repository {
 public static array $Session = [];
 public static array $Settings = [];
 public static array $User = [];
+public static array $Tickets = [];
+public static function getTicket(int $Id): ?array { return $Id === 42 ? ['ID' => 42, 'User_ID' => 1, 'Subject' => 'subject', 'Status' => 'open', 'Category' => 'other', 'Priority' => 'medium'] : null; }
+public static function getTicketMessages(int $Id): array { return [['Sender_Type' => 'user', 'Message' => str_repeat('متن ', 1500), 'Photo_File_ID' => null]]; }
+public static function userTickets(int $Id): array { return self::$Tickets; }
+public static function openTickets(int $Limit = 100, int $Offset = 0): array { return array_slice(self::$Tickets, $Offset, $Limit); }
+public static function getBlockedUsers(): array { return []; }
 public static function getUser(int $Id): array { return self::$User; }
 public static function updateUserSession(int $Id, array $Values): void { self::$Session = array_replace(self::$Session, $Values); }
 public static function getUserSession(int $Id): array { return self::$Session; }
@@ -37,7 +43,10 @@ public static function getInstance(): self { return new self(); }
 public static array $Devices = [];
 public static string $LastQuery = '';
 public static array $LastParams = [];
-public function scalar(string $Query, array $Params, int $Default): int { return str_contains($Query, 'App_Devices') ? count(self::$Devices) : 0; }
+public function scalar(string $Query, array $Params = [], int $Default = 0): int {
+if (str_contains($Query, 'Tickets')) return str_contains($Query, "'answered'") || str_contains($Query, "'closed'") ? 0 : count(Repository::$Tickets);
+return str_contains($Query, 'App_Devices') ? count(self::$Devices) : 0;
+}
 public function fetchAll(string $Query, array $Params): array {
 self::$LastQuery = $Query;
 self::$LastParams = $Params;
@@ -45,6 +54,9 @@ return array_slice(self::$Devices, $Params[1], $Params[0]);
 }
 }
 final class Helper {
+public static function ticketCategoryLabel(string $Value): string { return $Value; }
+public static function ticketPriorityLabel(string $Value): string { return $Value; }
+public static function userGreeting(Context $Context, string $Section): string { return $Section; }
 public static function adminGreeting(Context $Context, string $Section): string { return $Section; }
 public static function adminFooter(): string { return ''; }
 public static function userFooter(): string { return ''; }
@@ -170,7 +182,7 @@ $UserMenus = [
 'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول', 'منوی تمدید خودکار']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
-'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_filter_domains', 'app_notifications', 'app_devices', 'app_2fa']],
+'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_notifications', 'app_devices', 'app_2fa']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
@@ -222,7 +234,7 @@ check(!str_contains($Match[0], "'callback_data' => '" . $PurchaseAction . "'"), 
 }
 $UserLeafParents = [
 'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'usageRanking' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],
-'App-Link.php' => ['filterMenu' => 'user_account_menu', 'filterDomainsStart' => 'user_account_menu', 'notifications' => 'user_account_menu', 'devices' => 'user_account_menu', 'renderTwoStep' => 'user_account_menu'],
+'App-Link.php' => ['filterMenu' => 'user_account_menu', 'notifications' => 'user_account_menu', 'devices' => 'user_account_menu', 'renderTwoStep' => 'user_account_menu'],
 'Subscription.php' => ['mySubscription' => 'user_subscriptions_menu', 'mySubscriptionActive' => 'user_subscriptions_menu', 'buyMenu' => 'user_subscriptions_menu', 'readyPlansMenu' => 'user_subscriptions_menu', 'customPlansMenu' => 'user_subscriptions_menu', 'walletTopupStart' => 'user_wallet_menu'],
 'Profile.php' => ['begin' => 'user_account_menu', 'askName' => 'user_account_menu'],
 ];
@@ -275,4 +287,36 @@ Database::$Devices = [];
 AdminFlow::appDevicesMenu($Context, 4);
 check(calls() === ['admin_devices_menu', 'مدیریت'], 'empty device list retains only parent and home');
 check(str_contains(TelegramClient::$Text, 'هنوز دستگاهی'), 'empty device message');
+// Both ticket panels must expose every ticket, including beyond old hard limits.
+for ($Id = 1; $Id <= 25; $Id++) Repository::$Tickets[] = ['ID' => $Id, 'Subject' => 'test', 'Status' => 'open', 'Priority' => 'medium'];
+foreach ([['UserFlow', 'ticketUserList', 'user_tickets_page:', 'ticket_user_view:'], ['AdminFlow', 'ticketAdminMenu', 'admin_tickets_page:', 'ticket_view:']] as [$Class, $Method, $Prefix, $View]) {
+foreach ([-1 => 0, 1 => 1, 99 => 3] as $Requested => $Page) {
+$Class::$Method($Context, $Requested);
+$Calls = calls();
+check(in_array($View . ($Page * 8 + 1), $Calls, true), $Method . ': correct first row on page');
+check(in_array($Prefix . ($Page - 1), $Calls, true) === ($Page > 0), $Method . ': previous boundary');
+check(in_array($Prefix . ($Page + 1), $Calls, true) === ($Page < 3), $Method . ': next boundary');
+}
+}
+Repository::$Tickets = [];
+AdminFlow::ticketAdminMenu($Context, 99);
+check(calls() === ['admin_support_menu', 'مدیریت'], 'empty admin ticket list only parent and home');
+UserFlow::ticketUserList($UserContext, 99);
+check(calls() === ['منوی پشتیبانی', 'منوی خدمات ربات'], 'empty user ticket list only parent and home');
+AdminFlow::blockedList($Context, 99);
+check(calls() === ['جرایم', 'مدیریت'], 'empty blocked list has no false next page');
+foreach ([['UserFlow', 'ticketUserView', 'user_ticket_messages:'], ['AdminFlow', 'ticketAdminView', 'admin_ticket_messages:']] as [$Class, $Method, $Prefix]) {
+$Class::$Method($Context, 42, 0);
+check(in_array($Prefix . '42:1', calls(), true), $Method . ': long conversation has next');
+$Class::$Method($Context, 42, 999);
+check(in_array($Prefix . '42:2', calls(), true) && !in_array($Prefix . '42:4', calls(), true), $Method . ': final conversation page clamps');
+}
+$OtherUser = new Context(false);
+$OtherUser->UserId = 2;
+TelegramClient::$Text = 'unchanged';
+UserFlow::ticketUserView($OtherUser, 42, 1);
+check(TelegramClient::$Text === 'unchanged', 'ticket pagination cannot expose another user conversation');
+TelegramClient::$Text = 'unchanged';
+AdminFlow::ticketAdminView($OtherUser, 42, 1);
+check(!str_contains(TelegramClient::$Text, 'متن متن'), 'admin thread pagination denies non-admin access');
 echo "OK menu structure tests ({$Passed} assertions)\n";

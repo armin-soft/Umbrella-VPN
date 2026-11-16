@@ -1126,7 +1126,7 @@ Menu::back('منوی قبلی', 'منوی سیستم'), Menu::adminHome(),
 }
 }
 
-public static function userRanking(Context $Context): void {
+public static function userRanking(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -1138,7 +1138,9 @@ catch (Throwable) { $Live_Users = []; }
 $Top_Users = $Live_Users;
 $Stats = ServerClient::liveServerStats($Top_Users);
 $Rank_Total = (float)$Stats['total_used'];
-$Rank_Number = 0;
+$PageCount = max(1, (int)ceil(count($Top_Users) / 5));
+$Page = max(0, min($Page, $PageCount - 1));
+$Rank_Number = $Page * 5;
 $Shown = 0;
 $No_Mention = 0;
 $Top_Usage = 0.0;
@@ -1155,7 +1157,7 @@ $Ranking_Text .= "🥇جایگاه اول |🥈دوم |🥉سوم |🏅چهار�
 $Ranking_Text .= "📊درصد = سهم هر کاربر از مصرف کل | نوار = مصرف نسبت به پرمصرف ترین کاربر\n";
 $Ranking_Text .= "➖➖➖➖➖➖➖➖➖\n";
 
-foreach ($Top_Users as $User) {
+foreach (array_slice($Top_Users, $Page * 5, 5) as $User) {
 $Rank_Number++;
 $FullName = trim((string)($User['Full_Name'] ?? ''));
 
@@ -1184,12 +1186,6 @@ $Bar_Percent = $Top_Usage > 0 ? min(100.0, ($Usage / $Top_Usage) * 100.0) : 0.0;
 $Line = Helper::rankLine($Rank_Number, $Name_Link, $Usage_Short, $Share, $Bar_Percent, $Marks);
 $Ranking_Text .= $Line . "\n";
 $Shown++;
-
-if (mb_strlen($Ranking_Text) > 3600) {
-$Remaining = max(0, count($Top_Users) - $Rank_Number);
-$Ranking_Text .= "ℹ️و " . Helper::toPersian((string)$Remaining) . " کاربر دیگر در پیام بعدی ارسال می شود.\n";
-break;
-}
 }
 
 if (empty($Top_Users)) {
@@ -1213,11 +1209,11 @@ if ($No_Mention > 0) {
 $Ranking_Text .= "🔹👥" . Helper::toPersian((string)$No_Mention) . " کاربر بدون منشن نمایش داده شده اند (هنوز ربات را استارت نکرده یا نام کاربری تلگرام ندارند).";
 }
 
-$Ranking_Text .= Helper::adminFooter();
-$Ranking_Markup = TelegramClient::inlineKeyboard([
+$Ranking_Text .= Menu::pageLabel($Page, $PageCount) . Helper::adminFooter();
+$Ranking_Markup = TelegramClient::inlineKeyboard(array_merge(Menu::pages($Page, $PageCount, 'admin_ranking_page:'), [
 [['text' => '🔁بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی']],
 Menu::back('منوی قبلی', 'منوی گزارش'), Menu::adminHome(),
-]);
+]));
 
 $Chunks = self::splitMessage($Ranking_Text, 3400);
 $First_Chunk = $Chunks[0];
@@ -1616,10 +1612,12 @@ $Rows = Menu::rows([
 self::categoryMenu($Context, '🔒 مسدودسازی کاربران', $Rows, 'مدیریت');
 }
 
-public static function blockedList(Context $Context): void {
+public static function blockedList(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 
 $Blocked_Users = Repository::getBlockedUsers();
+$PageCount = max(1, (int)ceil(count($Blocked_Users) / 10));
+$Page = max(0, min($Page, $PageCount - 1));
 $Text = Helper::adminGreeting($Context, 'مشاهده مسدودی ها') . '🚫🔒*لیست کاربران مسدود شده:*' . "\n➖➖➖➖➖➖➖➖➖\n";
 
 if (empty($Blocked_Users)) {
@@ -1627,9 +1625,9 @@ $Text .= '✅هیچ کاربری مسدود نشده است.';
 }
 
 else {
-$Rank = 0;
+$Rank = $Page * 10;
 
-foreach ($Blocked_Users as $Row) {
+foreach (array_slice($Blocked_Users, $Page * 10, 10) as $Row) {
 $Rank++;
 $Full_Name = trim((string)($Row['Full_Name'] ?? ''));
 $Display = $Full_Name !== '' ? $Full_Name : ((trim((string)($Row['First_Name'] ?? '')) !== '') ? trim((string)($Row['First_Name'] ?? '')) : 'بدون نام');
@@ -1642,11 +1640,11 @@ $Text .= Helper::toPersian((string)$Rank) . ".🔴{$Name_Mention} —🆔" . Hel
 $Text .= "\n📊تعداد کل مسدود شده ها: *" . Helper::toPersian((string)count($Blocked_Users)) . "* نفر";
 }
 
-$Text .= Helper::adminFooter();
+$Text .= Menu::pageLabel($Page, $PageCount) . Helper::adminFooter();
 
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(array_merge(Menu::pages($Page, $PageCount, 'admin_blocked_page:'), [
 Menu::back('منوی قبلی', 'جرایم'), Menu::adminHome(),
-]));
+])));
 }
 
 public static function updateMenu(Context $Context): void {
@@ -3481,13 +3479,15 @@ Menu::back('منوی قبلی', 'منوی گزارش'), Menu::adminHome(),
 ]));
 }
 
-public static function ticketAdminMenu(Context $Context): void {
+public static function ticketAdminMenu(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Waiting_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')");
 $Answered_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'answered'");
 $Closed_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` = 'closed'");
 $Total_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets`");
-$Tickets = Repository::openTickets(20);
+$PageCount = max(1, (int)ceil(($Waiting_Count + $Answered_Count) / 8));
+$Page = max(0, min($Page, $PageCount - 1));
+$Tickets = Repository::openTickets(8, $Page * 8);
 
 $Text = Helper::adminGreeting($Context, 'مدیریت تیکت ها')
 . Menu::section('🎫', 'آمار تیکت ها', [
@@ -3512,6 +3512,8 @@ $Buttons[] = [['text' => "{$Priority_Icon} #{$T['ID']} - " . mb_substr((string)$
 }
 }
 
+$Text .= Menu::pageLabel($Page, $PageCount);
+$Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'admin_tickets_page:'));
 $Buttons[] = Menu::back('منوی قبلی', 'admin_support_menu');
 $Buttons[] = Menu::adminHome();
 self::logMenuProblems('tickets', $Buttons);
@@ -3523,7 +3525,7 @@ public static function ticketAdminList(Context $Context): void {
 self::ticketAdminMenu($Context);
 }
 
-public static function ticketAdminView(Context $Context, int $Ticket_ID): void {
+public static function ticketAdminView(Context $Context, int $Ticket_ID, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Ticket = Repository::getTicket($Ticket_ID);
 
@@ -3547,18 +3549,22 @@ $Persian_Status = $Status_Map[$Ticket['Status']] ?? '🟡باز';
 $Text .= "📊وضعیت: *{$Persian_Status}*\n\n";
 $Count = 0;
 
+$Thread = '';
 foreach ($Messages as $Msg) {
 $Count++;
 $Sender = $Msg['Sender_Type'] === 'admin' ? '🛡ادمین' : '👤کاربر';
-$Text .= "{$Sender}: " . ($Msg['Message'] ?? '[مدیا]') . "\n";
+$Thread .= "{$Sender}: " . ($Msg['Message'] ?? '[مدیا]') . "\n";
 
 if ($Msg['Photo_File_ID'] !== null && $Msg['Photo_File_ID'] !== '') {
-$Text .= "📎[پیوست تصویری]\n";
+$Thread .= "📎[پیوست تصویری]\n";
 }
 }
 
+[$ThreadPage, $Page, $PageCount] = Menu::textPage($Thread, $Page);
+$Text .= Menu::pageLabel($Page, $PageCount) . $ThreadPage;
+
 $Text .= Helper::adminFooter();
-$Buttons = array_merge([
+$Buttons = array_merge(Menu::pages($Page, $PageCount, 'admin_ticket_messages:' . $Ticket_ID . ':'), [
 [['text' => '✏️پاسخ', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 [['text' => '✅بستن تیکت', 'callback_data' => 'ticket_close:' . $Ticket_ID]],
 ], Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها'));
