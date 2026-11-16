@@ -117,7 +117,7 @@ $Rows = Menu::rows([
 [['🗑حذف کاربر', 'حذف کاربر اول']],
 [['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
 ]);
-self::categoryMenu($Context, '👤 مدیریت حساب کاربری', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت حساب کاربری', $Rows, 'مدیریت');
 }
 
 public static function supportMenu(Context $Context): void {
@@ -125,7 +125,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
 [['🎫مدیریت تیکت ها', 'مدیریت تیکت ها']],
 ]);
-self::categoryMenu($Context, '🎫 پشتیبانی و تیکت ها', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'پشتیبانی و تیکت ها', $Rows, 'مدیریت');
 }
 
 public static function subscriptionsMenu(Context $Context): void {
@@ -134,7 +134,7 @@ $Rows = Menu::rows([
 [['💰تعرفه و پلن ها', 'cfg_pricing']],
 [['🔗لینک ها و کانال', 'cfg_links']],
 ]);
-self::categoryMenu($Context, '💰 مدیریت تعرفه و اشتراک', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت تعرفه و اشتراک', $Rows, 'مدیریت');
 }
 
 /** بررسی سلامت کیبورد و ثبت خطاها در لاگ؛ چیزی به کاربر نشان داده نمی شود. */
@@ -277,7 +277,7 @@ $Rows = Menu::rows([
 [['💾پشتیبان گیری دیتابیس', 'پشتیبان گیری دیتابیس']],
 [['🔄تنظیم مجدد دیتابیس', 'تنظیم مجدد دیتابیس']],
 ]);
-self::categoryMenu($Context, '🗄 مدیریت دیتابیس', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت دیتابیس', $Rows, 'مدیریت');
 }
 
 public static function globalStats(Context $Context): void {
@@ -777,7 +777,7 @@ $Rows = Menu::rows([
 [['💰گزارش مالی', 'گزارش مالی']],
 [['🏆رتبه بندی', 'رتبه بندی']],
 ]);
-self::categoryMenu($Context, '📊 آمار و گزارشات', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'آمار و گزارشات', $Rows, 'مدیریت');
 }
 
 public static function dailyReport(Context $Context): void {
@@ -872,7 +872,7 @@ $Rows = Menu::rows([
 [['📣تلگرام و برنامه', 'notify_all_start']],
 [['📱اعلان برنامه ها', 'app_push_start']],
 ]);
-self::categoryMenu($Context, '📨 پیام رسانی و اطلاع رسانی', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'پیام رسانی و اطلاع رسانی', $Rows, 'مدیریت');
 }
 
 public static function serverServices(Context $Context): void {
@@ -970,7 +970,7 @@ $Rows = Menu::rows([
 [['📊بروزرسانی مصرف', 'بروز رسانی میزان استفاده اول']],
 [['🚱کانفیگ اضطراری', 'تنظیمات ربات']],
 ]);
-self::categoryMenu($Context, '🖥 مدیریت سرور', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت سرور', $Rows, 'مدیریت');
 }
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
@@ -991,7 +991,7 @@ $Rows = Menu::rows([
 [['🔴غیرفعال سازی کلاینت', 'غیر فعالسازی کلاینت اول']],
 [['🧾بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول']],
 ]);
-self::categoryMenu($Context, '🖥 مدیریت کلاینت', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت کلاینت', $Rows, 'مدیریت');
 }
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
@@ -1598,7 +1598,7 @@ $Rows = Menu::rows([
 [['➕افزایش اعتبار', 'افزایش اعتبار اول']],
 [['➖کسر اعتبار', 'کسر اعتبار اول']],
 ]);
-self::categoryMenu($Context, '💳 مدیریت اعتبار', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مدیریت اعتبار', $Rows, 'مدیریت');
 }
 
 /** دسته مدیریت یا مسیر سازگار با دکمه های قدیمی. */
@@ -1609,7 +1609,7 @@ $Rows = Menu::rows([
 [['✅🔓رفع مسدودیت', 'رفع مسدودیت اول']],
 [['👁مشاهده مسدودی ها', 'مشاهده مسدودی ها']],
 ]);
-self::categoryMenu($Context, '🔒 مسدودسازی کاربران', $Rows, 'مدیریت');
+self::categoryMenu($Context, 'مسدودسازی کاربران', $Rows, 'مدیریت');
 }
 
 public static function blockedList(Context $Context, int $Page = 0): void {

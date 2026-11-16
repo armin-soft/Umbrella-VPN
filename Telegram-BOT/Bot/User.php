@@ -330,7 +330,7 @@ if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بارگذاری...', false);
 }
 $Rows[] = Menu::userHome();
-$Text = Common::greet($Context, $Title) . '📌*بخش مورد نظر را انتخاب کنید:*' . Helper::userFooter();
+$Text = Common::greet($Context, $Title) . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 

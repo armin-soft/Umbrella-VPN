@@ -824,6 +824,11 @@ return true;
 public static function greetingFrame(string $Type, string $Name, string $Section, ?int $User_ID = null): string {
 $Name = trim($Name) !== '' ? trim($Name) : $Type;
 $Name = self::mention($Name, $User_ID);
+// عنوان دکمه ممکن است ایموجی داشته باشد، اما داخل جمله خوشامد فقط نام بخش می‌آید.
+// این قاعده مشترک برای عنوان‌های ثابت و پویا و هر دو بخش کاربر/مدیر است.
+$Section = preg_replace('/^[\s\p{So}\p{Sk}\x{FE0F}\x{200D}]+/u', '', $Section) ?? $Section;
+$Section = trim(preg_replace('/\s+/u', ' ', $Section) ?? $Section);
+if ($Section === '') $Section = 'منوی اصلی';
 
 // حتی اگر سرویس تاریخ و زمان و حافظه پنهان هر دو در دسترس نباشند، هدر با
 // تاریخ محلی پر می شود؛ متن خطای تاریخ و زمان دیگر در هیچ پیامی نمی آید.
@@ -838,7 +843,7 @@ $Date_Time_Block = static::localDateTimeLabel();
 return "🌹" . $Type . " گرامی " . $Name . " به بخش " . $Section . " خوش آمدید.\n"
 . self::SEPARATOR . "\n"
 . $Date_Time_Block . "\n"
-. self::SEPARATOR;
+. self::SEPARATOR . "\n";
 }
 
 public static function mention(string $Name, ?int $User_ID = null, string $Username = ''): string {
