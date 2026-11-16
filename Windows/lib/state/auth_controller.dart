@@ -622,7 +622,12 @@ class AuthController extends ChangeNotifier {
       return;
     }
     try {
-      final List<AppNotification> items = await _gateway.notifications(session.token);
+      final List<AppNotification> items = (await _gateway.notifications(session.token))
+          // A revoke warning can be queued immediately before this same device
+          // is re-approved. The gateway filters it too; keep older deployments
+          // and delayed responses from showing that stale warning after approval.
+          .where((AppNotification item) => !_isStaleDeviceRevocation(item))
+          .toList();
       final List<AppNotification> fresh = items
           .where((AppNotification item) => !_announced.contains(_keyOf(item)))
           .toList();
@@ -645,6 +650,12 @@ class AuthController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  static bool _isStaleDeviceRevocation(AppNotification item) {
+    final String notice = '${item.title}\n${item.body}';
+    return notice.contains('مجوز این دستگاه لغو شد') ||
+        notice.contains('دسترسی این دستگاه به نرم افزار آمبرلا لغو شد');
   }
 
   static String _keyOf(AppNotification item) => '${item.id}|${item.sentAt?.toIso8601String() ?? ''}';

@@ -30,6 +30,8 @@ void main() {
       expect(auth.contains('Duration(seconds: 30)'), isTrue);
       expect(auth.contains('_handleDeviceRevoked(error.message)'), isTrue);
       expect(auth.contains("_tray?.balloon('مجوز این دستگاه لغو شد'"), isTrue);
+      expect(auth.contains('_isStaleDeviceRevocation(item)'), isTrue);
+      expect(auth.contains('مجوز این دستگاه لغو شد'), isTrue);
       expect(auth.contains('await signOut(callServer: false);'), isTrue);
       final String app = read('lib/main.dart');
       expect(app.contains('onSessionRevoked'), isTrue);

@@ -211,16 +211,17 @@ if (!Repository::tryCronLock('expiry_warnings', 3600)) return;
 
 try {
 $Warn_3 = (string)Repository::getSetting('Expiry_Warning_3Days', '1') === '1';
+$Warn_2 = (string)Repository::getSetting('Expiry_Warning_2Days', '1') === '1';
 $Warn_1 = (string)Repository::getSetting('Expiry_Warning_1Day', '1') === '1';
-$Warn_0 = (string)Repository::getSetting('Expiry_Warning_Today', '1') === '1';
 $Boundaries = [];
 
 if ($Warn_3) $Boundaries[] = 3;
+if ($Warn_2) $Boundaries[] = 2;
 if ($Warn_1) $Boundaries[] = 1;
-if ($Warn_0) $Boundaries[] = 0;
 
 foreach ($Boundaries as $Days) {
-$Lower = ($Days) * 86400;
+$Now = time();
+$Lower = $Days * 86400;
 $Upper = ($Days + 1) * 86400;
 $Rows = Database::getInstance()->fetchAll(
 "SELECT `Telegram_ID` FROM `Users`
@@ -228,10 +229,10 @@ WHERE `Subscription` IS NOT NULL AND `Subscription` != ''
 AND `Expiration_Time_Stamp` IS NOT NULL
 AND `Expiration_Time_Stamp` > ?
 AND `Expiration_Time_Stamp` <= ?",
-[time() + $Lower, time() + $Upper]
+[$Now + $Lower, $Now + $Upper]
 );
 
-$Code = $Days === 0 ? 'expire_today' : "expire_warn_{$Days}";
+$Code = "expire_warn_{$Days}";
 $Template = Repository::getSmsTemplate($Code);
 
 foreach ($Rows as $Row) {
@@ -245,25 +246,46 @@ $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
 $Subscription = (string)($User['Subscription'] ?? '');
 $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Remaining_Label = Helper::remainingDuration($Exp_Stamp);
+$Event = implode(':', [$User_ID, $Exp_Stamp, $Days]);
 
+// The scheduler runs frequently, so a one-hour cron lock alone does not stop
+// repeats. A stable key per user + exact expiry + boundary makes each warning
+// a one-time event; a renewed subscription naturally gets a new set of keys.
 if ($Chat_ID > 0) {
-$Message = $Days > 0
-? "⚠️اشتراک {$Subscription} شما " . Helper::toPersian((string)$Days) . " روز دیگر منقضی می شود.\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\n⏳برای جلوگیری از قطع، همین الان تمدید کنید."
-: "⚠️اشتراک {$Subscription} شما امروز منقضی می شود!\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\n⏳برای جلوگیری از قطع، فوراً تمدید کنید.";
-TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'تمدید اشتراک', $User_ID) . "📨{$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
+$Telegram_Key = 'ExpiryNotice_' . hash('sha256', $Event . ':telegram');
+if ((string)Repository::getSetting($Telegram_Key, '') !== '1') {
+$Message = "⚠️اشتراک {$Subscription} شما " . Helper::toPersian((string)$Days)
+. " روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\n⏳برای جلوگیری از قطع، همین الان تمدید کنید.";
+$Result = TelegramClient::sendMessage(
+$Chat_ID,
+Helper::frame('کاربر', $Full_Name, 'تمدید اشتراک', $User_ID) . "📨{$Message}" . Helper::userFooter(),
+TelegramClient::inlineKeyboard([
 [['text' => '💎تمدید اشتراک', 'callback_data' => 'اشتراک من']],
 Common::mainButton(),
-]));
+])
+);
+if (($Result['ok'] ?? false) === true) {
+Repository::setSetting($Telegram_Key, '1');
+}
+else {
+error_log('[Umbrella-Bot][Scheduler] expiry Telegram warning failed | User=' . $User_ID . ' Days=' . $Days);
+}
+}
 }
 
 if (Helper::validatePhone($Phone) && $Template !== null) {
+$Sms_Key = 'ExpiryNotice_' . hash('sha256', $Event . ':sms');
+if ((string)Repository::getSetting($Sms_Key, '') !== '1') {
 $Sms_Text = strtr($Template, [
 '{full_name}' => $Full_Name,
 '{days}' => Helper::toPersian((string)$Days),
 '{plan}' => Helper::smsPlan($Subscription),
 '{remaining}' => $Remaining_Label,
 ]);
-IppanelClient::send($User_ID, $Phone, $Sms_Text);
+if (IppanelClient::send($User_ID, $Phone, $Sms_Text) === true) {
+Repository::setSetting($Sms_Key, '1');
+}
+}
 }
 }
 }

@@ -232,6 +232,38 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'شناسه دستگا
 return;
 }
 
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'برای لغو دسترسی، تأیید نهایی لازم است.');
+}
+
+self::reply(
+$Context,
+\Helper::userGreeting($Context, 'تأیید لغو دستگاه')
+. "⚠️آیا مطمئن هستید دسترسی این دستگاه را لغو کنید؟\n"
+. "با تأیید، برنامه از حساب خارج می‌شود و برای استفاده دوباره باید مجدداً وارد شوید."
+. \Helper::userFooter(),
+TelegramClient::inlineKeyboard([[
+['text' => '⛔️ بله، لغو دسترسی', 'callback_data' => 'app_device_revoke_confirm:' . $Prefix],
+Menu::button('انصراف', 'app_devices'),
+]])
+);
+}
+
+/** Executes a device revocation only after the explicit confirmation step. */
+public static function confirmRevokeDevice(Context $Context, string $Device_Prefix): void {
+$Account = self::accountOrPrompt($Context);
+
+if ($Account === null) return;
+
+$Prefix = preg_replace('/[^A-Za-z0-9_-]/', '', $Device_Prefix) ?? '';
+
+if ($Prefix === '') {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'شناسه دستگاه معتبر نیست', true);
+}
+return;
+}
+
 $Database = \Database::getInstance();
 $Devices = $Database->fetchAll(
 'SELECT `Device_ID`, `User_UUID` FROM `App_Devices`

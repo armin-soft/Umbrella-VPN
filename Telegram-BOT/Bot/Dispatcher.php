@@ -434,6 +434,11 @@ AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
 return;
 }
 
+if (str_starts_with($Data, 'app_device_revoke_confirm:')) {
+AppFlow::confirmRevokeDevice($Context, substr($Data, strlen('app_device_revoke_confirm:')));
+return;
+}
+
 if (str_starts_with($Data, 'app_device_revoke:')) {
 AppFlow::revokeDevice($Context, substr($Data, strlen('app_device_revoke:')));
 return;

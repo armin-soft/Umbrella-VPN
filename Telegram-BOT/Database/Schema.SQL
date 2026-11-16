@@ -139,6 +139,7 @@ INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES
 ('Daily_Report_Enabled', '1'),
 ('Daily_Report_Time', '00:00'),
 ('Expiry_Warning_3Days', '1'),
+('Expiry_Warning_2Days', '1'),
 ('Expiry_Warning_1Day', '1'),
 ('Expiry_Warning_Today', '1'),
 ('Auto_Ban_Inactive_Days', '180'),
