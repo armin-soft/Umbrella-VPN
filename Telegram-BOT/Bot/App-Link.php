@@ -70,7 +70,7 @@ foreach (AppFilter::BOT_CATEGORIES as $Key => $Label) {
 $On = in_array($Key, $Settings['categories'], true);
 $Row[] = ['text' => ($On ? '✅ ' : '⚪️ ') . $Label, 'callback_data' => 'app_filter_toggle:' . $Key];
 
-if (count($Row) === 1) {
+if (count($Row) === 2) {
 $Rows[] = $Row;
 $Row = [];
 }

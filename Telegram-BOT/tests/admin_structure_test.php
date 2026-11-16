@@ -88,12 +88,17 @@ $Passed++;
 function calls(): array {
 $Rows = TelegramClient::$Last['inline_keyboard'] ?? [];
 check(Menu::problems($Rows) === [], 'valid rendered keyboard');
-foreach ($Rows as $Row) check(count($Row) === 1, 'one button per row');
+foreach ($Rows as $Row) {
+check(count($Row) >= 1 && count($Row) <= 2, 'at most two buttons per row');
+foreach ($Row as $Button) {
+if (in_array($Button['text'], [Menu::BACK_LABEL, Menu::HOME_LABEL, Menu::ADMIN_HOME_LABEL], true)) check(count($Row) === 1, 'navigation stays on its own row');
+}
+}
 return $Rows === [] ? [] : array_column(array_merge(...$Rows), 'callback_data');
 }
 $Menus = [
 'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'admin_support_menu', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
-'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['مشاهده اعتبار اول', 'افزایش اعتبار اول', 'کسر اعتبار اول']],
+'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
 'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu']],
 'accountsMenu' => ['admin_accounts_menu', 'مدیریت', ['حذف کاربر اول', 'منقضی اشتراک اول']],
@@ -104,6 +109,14 @@ $Menus = [
 'supportMenu' => ['admin_support_menu', 'مدیریت', ['مدیریت تیکت ها']],
 'subscriptionsMenu' => ['admin_subscriptions_menu', 'مدیریت', ['cfg_pricing', 'cfg_links']],
 'systemMenu' => ['منوی سیستم', 'مدیریت', ['پشتیبان گیری دیتابیس', 'تنظیم مجدد دیتابیس']],
+];
+$AdminWidths = [
+'menu' => array_fill(0, 13, 1),
+'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
+'devicesMenu' => [2, 1], 'accountsMenu' => [2, 1],
+'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
+'reportMenu' => [2, 2, 1], 'smsMenu' => [2, 2, 1, 2, 1],
+'supportMenu' => [1, 1], 'subscriptionsMenu' => [2, 1], 'systemMenu' => [1, 1, 1],
 ];
 $Context = new Context();
 $Route = new ReflectionMethod(Dispatcher::class, 'routeCallbackInner');
@@ -116,6 +129,7 @@ $Context->IsCallback = $Callback;
 Repository::$Session = ['Flow' => 'admin:credit_add_uid', 'Temp_UID' => 123, 'Broadcast_Mode' => 'sms'];
 AdminFlow::$Method($Context);
 check(calls() === $Expected, $Method . ': exact actions and parent navigation');
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === $AdminWidths[$Method], $Method . ': exact row grouping');
 check(Repository::$Session === ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null], $Method . ': cancels stale input');
 check(Repository::$Settings === [], $Method . ': opening menu does not mutate settings');
 }
@@ -186,6 +200,11 @@ $UserMenus = [
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
+$UserWidths = [
+'serviceMenu' => [1, 1, 1, 1, 1, 1],
+'subscriptionsMenu' => [1, 2, 1, 1, 1], 'walletMenu' => [2, 1],
+'accountMenu' => [2, 2, 2, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [2, 1],
+];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);
 foreach ([true, false] as $Callback) {
@@ -194,6 +213,7 @@ $UserContext->IsCallback = $Callback;
 Repository::$Session = ['Flow' => 'custom_plan_days', 'Pending_Payment' => 'preserved'];
 UserFlow::$Method($UserContext);
 check(calls() === $Expected, 'user ' . $Method . ': correct ordered menu');
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === $UserWidths[$Method], $Method . ': exact user row grouping');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], 'user category cancels input but preserves payment');
 }
 $UserContext->IsCallback = true;
@@ -222,6 +242,7 @@ Repository::$Session = ['Flow' => 'custom_plan_days', 'Pending_Payment' => 'pres
 UserFlow::subscriptionsMenu($UserContext);
 $Expected = $HasSubscription ? ['اشتراک من', 'منوی تمدید خودکار', 'منوی خدمات ربات'] : array_merge($UserMenus['subscriptionsMenu'][1], ['منوی خدمات ربات']);
 check(calls() === $Expected, $Label . ': correct subscription actions');
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === ($HasSubscription ? [1, 1, 1] : [1, 2, 1, 1, 1]), $Label . ': subscription row grouping');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], $Label . ': navigation preserves payment');
 }
 }
