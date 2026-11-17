@@ -293,7 +293,7 @@ proxies:
     );
     expect(auto['default-proxy'], 'lowest');
     expect(auto.containsKey('balancer-strategy'), isFalse);
-    expect(auto['independent-dns-cache'], isTrue);
+    expect(auto['independent-dns-cache'], isFalse);
     expect(auto['url-test-interval'], 180);
     expect(auto['keep-top-batch'], 16);
 

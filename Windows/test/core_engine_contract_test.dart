@@ -17,7 +17,12 @@ void main() {
   final String? binary = Platform.environment['UMBRELLA_CORE_SMOKE'];
   final bool enabled = Platform.isWindows && binary != null;
 
-  Future<Map<String, dynamic>> generate(ChainSettings chain, {bool startRuntime = false}) async {
+  Future<Map<String, dynamic>> generate(
+    ChainSettings chain, {
+    bool startRuntime = false,
+    SelectionMode selectionMode = SelectionMode.auto,
+    int? clashApiPort,
+  }) async {
     final String executable = binary!;
     final Directory temp = await Directory.systemTemp.createTemp('umbrella-core-contract-');
     Process? process;
@@ -29,17 +34,31 @@ void main() {
       ], lookup: (_) async => <InternetAddress>[InternetAddress('192.0.2.1')],
         resolveEndpoints: chain.position != ChainPosition.unblocker);
       await links.writeAsString('${prepared.links.single}\n');
-      final Map<String, dynamic> options = UmbrellaCore.settingsJson(tun: !startRuntime, systemProxy: false, port: 12334,
-        logFile: '${temp.path}/core.log', networkSettings: AppSettings(chain: chain, mtu: 1400,
+      final Map<String, dynamic> options = UmbrellaCore.settingsJson(
+        tun: !startRuntime,
+        systemProxy: false,
+        port: 12334,
+        logFile: '${temp.path}/core.log',
+        networkSettings: AppSettings(
+          chain: chain,
+          mtu: 1400,
+          selectionMode: selectionMode,
           appRoutes: const <AppRouteRule>[
             AppRouteRule(process: 'offline-direct.exe', action: AppRouteAction.direct),
             AppRouteRule(process: r'C:\Offline\blocked.exe', action: AppRouteAction.block),
-          ]));
+          ],
+        ),
+      );
       await settings.writeAsString(jsonEncode(options));
       final File output = await CoreRuntime.compile(
-        executable: executable, workDir: File(executable).parent.path,
-        runDir: temp.path, linksPath: links.path, settingsPath: settings.path,
-        cancelled: () => false, onStarted: (Process value) { process = value; },
+        executable: executable,
+        workDir: File(executable).parent.path,
+        runDir: temp.path,
+        linksPath: links.path,
+        settingsPath: settings.path,
+        clashApiPort: clashApiPort,
+        cancelled: () => false,
+        onStarted: (Process value) { process = value; },
         onFinished: (_) { process = null; },
       );
       if (startRuntime) {
@@ -90,7 +109,19 @@ void main() {
 
   test('full compiled runtime starts in a fresh directory with cache and authenticated Clash API', () async {
     await generate(const ChainSettings(), startRuntime: true);
-  }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 45)));
+    await generate(
+      const ChainSettings(),
+      startRuntime: true,
+      selectionMode: SelectionMode.roundRobin,
+    );
+    for (final SelectionMode mode in SelectionModeList.visible) {
+      await generate(
+        const ChainSettings(),
+        selectionMode: mode,
+        clashApiPort: mode == SelectionMode.auto ? 0 : null,
+      );
+    }
+  }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 60)));
 
   test('bundled srun starts lazy monitoring and resolves XHTTP split download with an IP upload', () async {
     final Directory temp = await Directory.systemTemp.createTemp('umbrella-srun-');

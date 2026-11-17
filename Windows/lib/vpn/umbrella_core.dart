@@ -312,7 +312,9 @@ class UmbrellaCore {
       'direct-dns-address': networkSettings == null ? directDns : NetworkDns.normalize(networkSettings.directDns),
       'remote-dns-domain-strategy': 'as_is',
       'direct-dns-domain-strategy': 'as_is',
-      'independent-dns-cache': true,
+      // در sing-box 1.14+ کش هر سرور DNS به صورت پیش فرض مستقل است و کلید
+      // قدیمی `independent_cache: true` منسوخ شده و در `srun` خطای FATAL می دهد.
+      'independent-dns-cache': false,
       'enable-fake-dns': false,
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
       'region': 'other',
