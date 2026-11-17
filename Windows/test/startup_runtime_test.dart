@@ -91,6 +91,13 @@ void main() {
       expect((config['outbounds'] as List<dynamic>).length, 2);
     }
   });
+  test('srun enables only the pinned builder DNS compatibility before loading Go', () {
+    final String native = File('native/umbrella_launcher.c').readAsStringSync();
+    expect(native, contains('strcmp(argv[1], "srun") == 0'));
+    expect(native, contains('ENABLE_DEPRECATED_LEGACY_DNS_RULE_STRATEGY'));
+    expect(native.indexOf('L"ENABLE_DEPRECATED_LEGACY_DNS_RULE_STRATEGY"'),
+        lessThan(native.indexOf('parse_cli_fn parse_cli = load_parse_cli();')));
+  });
   test('cancellation stays latched and automatic mode cannot restart a pool per node', () {
     final String source = File('lib/vpn/vpn_controller.dart').readAsStringSync();
     final String finish = source.split('void _finishCancel()').last.split('Future<ConnectOutcome> connect').first;

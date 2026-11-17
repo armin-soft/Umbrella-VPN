@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wchar.h>
 
 #ifdef _WIN32
@@ -186,6 +187,18 @@ static int run(int argc, char **argv) {
   if (!argv) {
     report(L"Umbrella: the command line could not be read.");
     return 1;
+  }
+  // The pinned 5.9.1 builder still emits DNS rule `strategy`. libbox's
+  // application context accepts it, whereas srun's stderr deprecation manager
+  // exits unless this specific compatibility flag is set. Keep the builder's
+  // DNS semantics (do not remove IPv4 policy or disable validation wholesale).
+  // Set before loading Go's DLL: Go snapshots the process environment at init.
+  if (argc > 1 && strcmp(argv[1], "srun") == 0) {
+    if (!SetEnvironmentVariableW(
+            L"ENABLE_DEPRECATED_LEGACY_DNS_RULE_STRATEGY", L"true")) {
+      report(L"Umbrella: could not prepare the core compatibility environment.");
+      return 1;
+    }
   }
   parse_cli_fn parse_cli = load_parse_cli();
   if (!parse_cli) {
