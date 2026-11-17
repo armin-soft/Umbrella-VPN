@@ -810,7 +810,7 @@ void main() {
         ),
         isTrue,
       );
-      expect(config.contains("'/sub/'"), isTrue);
+      expect(config.contains(r"'$subscriptionRoot/sub/'"), isTrue);
     });
 
     test('منوی منطقه و سرورها از صفحه اتصال کامل حذف شده و دو گزینه اتصال مرتب اند', () {
