@@ -152,7 +152,11 @@ class AppRouteRule {
     if (isPath && !RegExp(r'^[a-zA-Z]:\\').hasMatch(value)) return 'مسیر باید کامل باشد، مانند C:\\Apps\\app.exe';
     if (!isPath && value.contains(':')) return 'نام برنامه نامعتبر است';
     final String name = value.replaceAll('/', '\\').split('\\').last.toLowerCase();
-    if (name.startsWith('umbrella') || name.startsWith('hiddify')) return 'برای پردازش خود آمبرلا و هسته قانون جدا نسازید';
+    const List<String> corePrefixes = <String>[
+      'umbrella',
+      'hiddify',
+    ];
+    if (corePrefixes.any(name.startsWith)) return 'برای پردازش خود آمبرلا و هسته قانون جدا نسازید';
     return null;
   }
   Map<String, dynamic> toJson() => <String, dynamic>{'process': process.trim(), 'action': action.name, 'enabled': enabled};

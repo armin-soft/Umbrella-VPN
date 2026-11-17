@@ -36,7 +36,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
         subtitle: const Text('فقط تونل؛ اولین قانون منطبق اجرا می‌شود'),
         childrenPadding: const EdgeInsets.all(AppMetrics.space3),
         children: <Widget>[
-          const Text('برنامه‌های بدون قانون از تونل عبور می‌کنند. قانون مستقیم عمداً ترافیک و DNS آن برنامه را خارج از تونل می‌فرستد. در پروکسی سیستمی این قواعد اعمال نمی‌شوند. پس از تغییر، دوباره متصل شوید.'),
+          const Text('برنامه‌های بدون قانون از تونل عبور می‌کنند. قانون مستقیم عمداً ترافیک و DNS آن برنامه را خارج از تونل می‌فرستد. با قواعد فعال، اتصال فقط در تونل با دسترسی مدیر مجاز است؛ fallback به پروکسی انجام نمی‌شود. پس از تغییر، دوباره متصل شوید.'),
           for (int i = 0; i < settings.appRoutes.length; i++)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),

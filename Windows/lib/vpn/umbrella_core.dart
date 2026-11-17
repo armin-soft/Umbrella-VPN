@@ -324,7 +324,10 @@ class UmbrellaCore {
               networkSettings.appRoutes[i].toCoreRule(i),
           ],
         },
-      'ipv6-mode': networkSettings?.blockIpv6 == true ? 'ipv4_only' : 'as_is',
+      // In this core as_is still disables IPv6 for clients. PreferIPv4 allows
+      // both families, while ipv4_only requests IPv4 client destinations.
+      'ipv6-mode': networkSettings == null ? 'as_is'
+          : networkSettings.blockIpv6 ? 'ipv4_only' : 'prefer_ipv4',
       'resolve-destination': false,
       'bypass-lan': false,
       'allow-connection-from-lan': false,

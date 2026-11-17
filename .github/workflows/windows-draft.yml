@@ -35,6 +35,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
       - name: Analyze and test
         run: |
+          $parseErrors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'diagnostics/Test-NetworkPath.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
           flutter analyze --no-fatal-infos 2>&1 | Tee-Object -Variable analysis
           if ($LASTEXITCODE -ne 0) {
             $detail = ($analysis | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
@@ -77,6 +81,15 @@ jobs:
           }
           Copy-Item THIRD-PARTY-NOTICES.txt "$bundle/THIRD-PARTY-NOTICES.txt"
           Copy-Item licenses "$bundle/licenses" -Recurse
+      - name: Verify generated configuration using the bundled core
+        run: |
+          $env:UMBRELLA_CORE_SMOKE = (Resolve-Path 'build/windows/x64/runner/Release/UmbrellaCli.exe').Path
+          flutter test test/core_engine_contract_test.dart --reporter expanded 2>&1 | Tee-Object -Variable coreTests
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($coreTests | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Bundled core contract tests failed'
+          }
       - name: Compile installer
         run: |
           $iscc = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'

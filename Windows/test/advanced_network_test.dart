@@ -65,6 +65,12 @@ void main() {
       expect(invalid.toCoreOptions, throwsFormatException);
     }
   });
+  test('unknown saved chain mode is not silently downgraded to off', () {
+    final ChainSettings invalid = ChainSettings.fromJson(<String, dynamic>{'position': 'unknown'});
+    expect(invalid.enabled, true);
+    expect(invalid.toCoreOptions, throwsFormatException);
+    expect(ChainSettings.fromJson(invalid.toJson()).toCoreOptions, throwsFormatException);
+  });
   test('ordered process rules use protobuf JSON names; proxy mode omits them', () {
     const AppSettings settings = AppSettings(appRoutes: <AppRouteRule>[
       AppRouteRule(process: 'browser.exe', action: AppRouteAction.direct),
@@ -105,6 +111,10 @@ void main() {
     expect(connect.indexOf('accessGuard?.call()'), lessThan(connect.indexOf('_settings.chain')));
     expect(connect, contains('if (_nodes.isEmpty)'));
     expect(controller, contains('networkSettings: _settings'));
+    expect(controller, contains('(!_settings.tunMode || !_device.elevated)'));
+    expect(controller, contains('if (_healthInFlight || _status != VpnStatus.connected) return;'));
+    expect(controller, contains('epoch != _connectionEpoch'));
+    expect(controller, contains('cancelSpeedTest();'));
     expect(controller, contains('VerifiedProbe.check(proxyPort: _umbrellaPort'));
     expect(controller, isNot(contains('return _coreReportsWorkingTunnel')));
     final String source = File('lib/state/subscription_controller.dart').readAsStringSync();

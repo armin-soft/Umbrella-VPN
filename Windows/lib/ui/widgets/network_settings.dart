@@ -58,8 +58,8 @@ class NetworkSettings extends StatelessWidget {
         ),
         ToggleRow(
           icon: Icons.language_rounded,
-          title: 'ترجیح IPv4 در هسته',
-          subtitle: 'در شبکه فقط IPv6، هسته ممکن است IPv6 را حفظ کند؛ این گزینه مسدودسازی IPv6 ویندوز نیست',
+          title: 'IPv4 برای برنامه‌ها',
+          subtitle: 'خاموش: اجازه IPv6 با ترجیح IPv4. در شبکه فقط IPv6، هسته ممکن است سیاست را تطبیق دهد؛ این گزینه firewall ویندوز نیست',
           value: current.blockIpv6,
           onChanged: controller.setBlockIpv6,
         ),

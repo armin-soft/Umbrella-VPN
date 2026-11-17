@@ -356,6 +356,8 @@ class VpnController extends ChangeNotifier {
   /// می دید (گزارش ۱٫۰۶). این مجموعه در هر connect پاک می شود.
   final Set<String> _unusableInThisRun = <String>{};
   bool _disposed = false;
+  bool _healthInFlight = false;
+  int _connectionEpoch = 0;
 
   bool get isConnected => _status == VpnStatus.connected;
   bool get isBusy => _status.busy;
@@ -834,6 +836,11 @@ class VpnController extends ChangeNotifier {
         .map((AppRouteRule rule) => rule.validationError).whereType<String>().firstOrNull;
     if (chainError != null || routeError != null || _settings.appRoutes.length > 64) {
       return ConnectOutcome(ok: false, message: chainError ?? routeError ?? 'حداکثر ۶۴ قانون برنامه مجاز است');
+    }
+    if (_settings.appRoutes.any((AppRouteRule rule) => rule.enabled) &&
+        (!_settings.tunMode || !_device.elevated)) {
+      return ConnectOutcome(ok: false, needsElevation: _settings.tunMode && !_device.elevated,
+          message: 'قواعد برنامه فعال است؛ تونل را روشن و برنامه را با دسترسی مدیر اجرا کنید، یا قواعد را غیرفعال کنید.');
     }
     if (_nodes.isEmpty) {
       return const ConnectOutcome(
@@ -2932,11 +2939,13 @@ class VpnController extends ChangeNotifier {
       return;
     }
     _verifyInFlight = true;
+    final int epoch = _connectionEpoch;
     try {
       final GeoInfo geo = await _ip.fetch(
         force: true,
         proxy: _proxyPort > 0 ? '127.0.0.1:$_proxyPort' : '',
       );
+      if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       _geo = geo;
       _exitIp = geo.ip;
       // اگر آی پی خوانده نشد، این هیچ چیزی را درباره تونل ثابت نمی کند.
@@ -2955,6 +2964,7 @@ class VpnController extends ChangeNotifier {
         // هیچی باز نمی کند»: تونل مرده بود، ولی ما فقط هشدار می دادیم و
         // همان گره مرده را نگه می داشتیم.
         final bool alive = await _trafficReturns();
+        if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
         if (alive) {
           _log.add(
             'آی پی خروجی خوانده نشد، ولی ترافیک واقعی از تونل برگشت؛ '
@@ -2990,6 +3000,7 @@ class VpnController extends ChangeNotifier {
       // دو پاسخ ۲xx مستقل. اگر تونل جواب ندهد، پرچم تایید برداشته می شود و
       // در صورت فعال بودن جابه جایی خودکار، گره بعدی امتحان می شود.
       final bool passes = await _trafficReturns();
+      if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       _tunnelVerified = ipChanged && passes;
       if (!ipChanged) {
         _log.add(
@@ -3214,6 +3225,13 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _tickHealth() async {
+    if (_healthInFlight || _status != VpnStatus.connected) return;
+    _healthInFlight = true;
+    try { await _tickHealthInner(); } finally { _healthInFlight = false; }
+  }
+
+  Future<void> _tickHealthInner() async {
+    final int epoch = _connectionEpoch;
     if (!_status.active) {
       return;
     }
@@ -3224,6 +3242,7 @@ class VpnController extends ChangeNotifier {
     final bool alive = _runningBinaries.isEmpty
         ? true
         : await _native.isRunning(_runningBinaries.first);
+    if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
     if (!alive) {
       _healthFailures++;
       _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی...', level: 'warning');
@@ -3233,6 +3252,7 @@ class VpnController extends ChangeNotifier {
       // Three consecutive failed races are required before failover. A raw
       // byte counter or dial log cannot override failed HTTPS validation.
       final bool flows = await _tunnelFlowsNow();
+      if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       if (flows) {
         if (_healthFailures > 0) {
           _log.add('تونل دوباره سالم شد.');
@@ -3324,6 +3344,7 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCores() async {
+    _connectionEpoch++;
     cancelSpeedTest();
     _activeChain = const ChainSettings();
     _stoppingOwnCore = true;

@@ -40,7 +40,7 @@ void main() {
       expect(json['allow-connection-from-lan'], false);
       expect(json['chain-status'], 'off');
     }
-    expect(build(original.copyWith(blockIpv6: false))['ipv6-mode'], 'as_is');
+    expect(build(original.copyWith(blockIpv6: false))['ipv6-mode'], 'prefer_ipv4');
   });
 
   test('invalid persisted options cannot produce invalid core options', () {
