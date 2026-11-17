@@ -210,14 +210,22 @@ $Text .= "\n📂 دسته‌ها: " . implode('، ', $Labels);
 return $Text;
 }
 
-/** The subset of the panel account the app stores and shows. */
+/** The subset of the panel account the app stores and shows (never private keys). */
 public static function accountPayload(array $Account): array {
+$Phone = trim((string)($Account['phone'] ?? ''));
+$Comment = trim((string)($Account['comment'] ?? ''));
+
+if ($Phone === '' && preg_match('/^(?:\+?98|0)?9\d{9}$/', $Comment) === 1) {
+$Phone = $Comment;
+}
+
 return [
+'id' => (int)($Account['id'] ?? 0),
 'uuid' => (string)($Account['uuid'] ?? ''),
 'name' => (string)($Account['name'] ?? ''),
-'phone' => (string)($Account['phone'] ?? ''),
+'phone' => $Phone,
 'telegram_id' => (string)($Account['telegram_id'] ?? ''),
-'comment' => (string)($Account['comment'] ?? ''),
+'comment' => $Comment,
 'enable' => (bool)($Account['enable'] ?? true),
 'is_active' => (bool)($Account['is_active'] ?? false),
 'usage_limit_GB' => (float)($Account['usage_limit_GB'] ?? 0),
@@ -225,9 +233,14 @@ return [
 'package_days' => (int)($Account['package_days'] ?? 0),
 'start_date' => $Account['start_date'] ?? null,
 'expiry_date' => $Account['expiry_date'] ?? ($Account['end_date'] ?? null),
+'last_reset_time' => $Account['last_reset_time'] ?? null,
 'last_online' => (string)($Account['last_online'] ?? ''),
 'mode' => (string)($Account['mode'] ?? ''),
 'lang' => (string)($Account['lang'] ?? 'fa'),
+'wg_ipv4' => (string)($Account['wg_ipv4'] ?? ''),
+'wg_ipv6' => (string)($Account['wg_ipv6'] ?? ''),
+'awg_ipv4' => (string)($Account['awg_ipv4'] ?? ''),
+'awg_ipv6' => (string)($Account['awg_ipv6'] ?? ''),
 'subscription_url' => (string)($Account['subscription_url'] ?? ($Account['sub_link'] ?? '')),
 ];
 }

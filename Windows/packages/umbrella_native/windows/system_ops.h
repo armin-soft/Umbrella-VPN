@@ -34,9 +34,18 @@ struct DeviceInfo {
   std::string hostname;
   std::string username;
   std::string os;
+  std::string os_edition;
+  std::string os_display_version;
+  int os_build = 0;
   std::string arch;
   std::string machine_id;
   std::string cpu;
+  int cpu_cores = 0;
+  int64_t ram_total_mb = 0;
+  int64_t ram_used_mb = 0;
+  int ram_load_percent = 0;
+  int64_t uptime_seconds = 0;
+  std::string adapter_name;
   std::string local_ip;
   std::string adapter_mac;
   bool elevated = false;

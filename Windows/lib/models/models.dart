@@ -604,6 +604,7 @@ class VpnNode {
 /// پروفایل و مصرف کاربر، همان شکلی که پنل برمی گرداند.
 class Account {
   const Account({
+    this.panelId = 0,
     this.uuid = '',
     this.name = '',
     this.phone = '',
@@ -616,12 +617,19 @@ class Account {
     this.packageDays = 0,
     this.startDate,
     this.expiryDate,
+    this.lastResetTime,
     this.lastOnline,
     this.mode = '',
+    this.lang = 'fa',
+    this.wgIpv4 = '',
+    this.wgIpv6 = '',
+    this.awgIpv4 = '',
+    this.awgIpv6 = '',
     this.subscriptionUrl = '',
     this.accountBase = '',
   });
 
+  final int panelId;
   final String uuid;
   final String name;
   final String phone;
@@ -634,12 +642,19 @@ class Account {
   final int packageDays;
   final DateTime? startDate;
   final DateTime? expiryDate;
+  final DateTime? lastResetTime;
   final DateTime? lastOnline;
   final String mode;
+  final String lang;
+  final String wgIpv4;
+  final String wgIpv6;
+  final String awgIpv4;
+  final String awgIpv6;
   final String subscriptionUrl;
   final String accountBase;
 
   Account copyWith({
+    int? panelId,
     String? uuid,
     String? name,
     String? phone,
@@ -652,12 +667,20 @@ class Account {
     int? packageDays,
     DateTime? startDate,
     DateTime? expiryDate,
+    bool clearExpiryDate = false,
+    DateTime? lastResetTime,
     DateTime? lastOnline,
     String? mode,
+    String? lang,
+    String? wgIpv4,
+    String? wgIpv6,
+    String? awgIpv4,
+    String? awgIpv6,
     String? subscriptionUrl,
     String? accountBase,
   }) {
     return Account(
+      panelId: panelId ?? this.panelId,
       uuid: uuid ?? this.uuid,
       name: name ?? this.name,
       phone: phone ?? this.phone,
@@ -669,9 +692,15 @@ class Account {
       currentUsageGb: currentUsageGb ?? this.currentUsageGb,
       packageDays: packageDays ?? this.packageDays,
       startDate: startDate ?? this.startDate,
-      expiryDate: expiryDate ?? this.expiryDate,
+      expiryDate: clearExpiryDate ? null : (expiryDate ?? this.expiryDate),
+      lastResetTime: lastResetTime ?? this.lastResetTime,
       lastOnline: lastOnline ?? this.lastOnline,
       mode: mode ?? this.mode,
+      lang: lang ?? this.lang,
+      wgIpv4: wgIpv4 ?? this.wgIpv4,
+      wgIpv6: wgIpv6 ?? this.wgIpv6,
+      awgIpv4: awgIpv4 ?? this.awgIpv4,
+      awgIpv6: awgIpv6 ?? this.awgIpv6,
       subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       accountBase: accountBase ?? this.accountBase,
     );
@@ -698,22 +727,157 @@ class Account {
     return ((currentUsageGb / usageLimitGb) * 100).clamp(0, 100);
   }
 
-  int get daysLeft {
-    if (expiryDate == null) {
-      return 0;
+  double get remainingPercent {
+    if (usageLimitGb <= 0) {
+      return 100;
     }
-    final int days = expiryDate!.difference(DateTime.now()).inHours ~/ 24;
-    return days < 0 ? 0 : days;
+    return (100 - usagePercent).clamp(0, 100);
   }
 
-  bool get expired => expiryDate != null && expiryDate!.isBefore(DateTime.now());
+  /// تاریخ انقضای موثر: اگر سرور تاریخ صریح نداده باشد، دقیقاً از
+  /// `start_date + package_days` در تقویم رسمی تهران محاسبه می شود.
+  DateTime? get effectiveExpiryDate {
+    if (expiryDate != null) {
+      return expiryDate;
+    }
+    if (startDate != null && packageDays > 0) {
+      final DateTime s = Fa.toTehran(startDate!);
+      return DateTime.utc(
+        s.year,
+        s.month,
+        s.day + packageDays,
+        s.hour,
+        s.minute,
+        s.second,
+      ).subtract(Fa.tehranOffset);
+    }
+    return null;
+  }
 
-  String get displayName => name.isNotEmpty ? name : (comment.isNotEmpty ? comment : 'کاربر آمبرلا');
+  /// زمان دقیق باقی مانده تا پایان اعتبار اشتراک.
+  Duration remainingDuration([DateTime? now]) {
+    final DateTime? end = effectiveExpiryDate;
+    if (end == null) {
+      return Duration.zero;
+    }
+    final Duration diff = end.toUtc().difference((now ?? DateTime.now()).toUtc());
+    return diff.isNegative ? Duration.zero : diff;
+  }
 
-  /// نوع سرویس بر اساس اطلاعات پنل: بسته زمانی یا حجمی.
+  /// زمان دقیق سپری شده از تاریخ شروع اشتراک.
+  Duration elapsedDuration([DateTime? now]) {
+    if (startDate == null) {
+      return Duration.zero;
+    }
+    final Duration diff =
+        (now ?? DateTime.now()).toUtc().difference(startDate!.toUtc());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  int daysLeftAt([DateTime? now]) {
+    final DateTime? end = effectiveExpiryDate;
+    if (end == null) {
+      return 0;
+    }
+    final Duration rem = remainingDuration(now);
+    if (rem <= Duration.zero) {
+      return 0;
+    }
+    return rem.inHours ~/ 24;
+  }
+
+  int get daysLeft => daysLeftAt();
+
+  int daysElapsedAt([DateTime? now]) => elapsedDuration(now).inDays;
+
+  /// درصد زمان سپری شده از کل دوره بسته (۰ تا ۱۰۰).
+  double timeElapsedPercent([DateTime? now]) {
+    final DateTime? end = effectiveExpiryDate;
+    if (startDate == null || end == null) {
+      return 0;
+    }
+    final int totalSeconds =
+        end.toUtc().difference(startDate!.toUtc()).inSeconds;
+    if (totalSeconds <= 0) {
+      return 100;
+    }
+    final int usedSeconds = elapsedDuration(now).inSeconds;
+    return ((usedSeconds / totalSeconds) * 100).clamp(0, 100);
+  }
+
+  /// درصد اعتبار زمانی باقی مانده از کل دوره بسته (۰ تا ۱۰۰).
+  double timeRemainingPercent([DateTime? now]) {
+    if (effectiveExpiryDate == null) {
+      return 100;
+    }
+    if (startDate == null) {
+      return isExpiredAt(now) ? 0 : 100;
+    }
+    return (100 - timeElapsedPercent(now)).clamp(0, 100);
+  }
+
+  /// میانگین مصرف روزانه بر حسب گیگابایت از تاریخ شروع بسته.
+  double dailyAverageGb([DateTime? now]) {
+    if (currentUsageGb <= 0 || startDate == null) {
+      return 0;
+    }
+    final double days = elapsedDuration(now).inSeconds / 86400.0;
+    if (days < 1) {
+      return currentUsageGb;
+    }
+    return currentUsageGb / days;
+  }
+
+  bool isExpiredAt([DateTime? now]) {
+    final DateTime? end = effectiveExpiryDate;
+    if (end == null) {
+      return false;
+    }
+    return end.toUtc().isBefore((now ?? DateTime.now()).toUtc());
+  }
+
+  bool get expired => isExpiredAt();
+
+  /// آیا حساب طی ۵ دقیقه اخیر در پنل آنلاین گزارش شده است؟
+  bool isOnlineRecently([DateTime? now]) {
+    if (lastOnline == null) {
+      return false;
+    }
+    final int diff =
+        (now ?? DateTime.now()).toUtc().difference(lastOnline!.toUtc()).inSeconds;
+    return diff >= -300 && diff <= 300;
+  }
+
+  static bool _looksLikePhone(String text) {
+    final String digits = Fa.toEn(text).replaceAll(RegExp(r'[\s\-()]'), '').trim();
+    return RegExp(r'^(?:\+?98|0)?9\d{9}$').hasMatch(digits);
+  }
+
+  /// شماره همراه موثر کاربر (از فیلد phone یا comment پنل).
+  String get effectivePhone {
+    if (phone.trim().isNotEmpty) {
+      return phone.trim();
+    }
+    if (_looksLikePhone(comment)) {
+      return comment.trim();
+    }
+    return '';
+  }
+
+  String get displayName {
+    if (name.trim().isNotEmpty) {
+      return Fa.num(name.trim());
+    }
+    if (comment.trim().isNotEmpty && !_looksLikePhone(comment)) {
+      return Fa.num(comment.trim());
+    }
+    return 'کاربر آمبرلا';
+  }
+
+  /// نوع سرویس بر اساس اطلاعات پنل، کاملاً فارسی.
   String get planLabel {
-    if (comment.isNotEmpty) {
-      return comment;
+    if (comment.trim().isNotEmpty && !_looksLikePhone(comment)) {
+      return Fa.num(comment.trim());
     }
     if (packageDays > 0) {
       return 'بسته ${Fa.num(packageDays)} روزه';
@@ -721,11 +885,72 @@ class Account {
     if (usageLimitGb > 0) {
       return 'بسته حجمی';
     }
-    return 'نامشخص';
+    return 'اشتراک استاندارد';
+  }
+
+  /// عنوان کامل فارسی مدت بسته (مثلاً «یک ساله (۳۶۵ روز)»).
+  String get packageDurationLabel => Fa.packageTitleFa(packageDays);
+
+  /// برچسب کاملاً فارسی حالت بازنشانی حجم در پنل.
+  String get modeLabelFa {
+    switch (mode.trim().toLowerCase()) {
+      case 'no_reset':
+        return 'بدون بازنشانی دوره ای';
+      case 'monthly':
+        return 'بازنشانی ماهانه';
+      case 'weekly':
+        return 'بازنشانی هفتگی';
+      case 'daily':
+        return 'بازنشانی روزانه';
+      case 'on_first_use':
+        return 'شروع با اولین اتصال';
+      case '':
+        return 'استاندارد';
+      default:
+        return 'اختصاصی';
+    }
+  }
+
+  /// برچسب کاملاً فارسی زبان حساب کاربری در پنل.
+  String get langLabelFa {
+    switch (lang.trim().toLowerCase()) {
+      case 'fa':
+      case '':
+        return 'فارسی';
+      case 'en':
+        return 'انگلیسی';
+      case 'ar':
+        return 'عربی';
+      case 'tr':
+        return 'ترکی';
+      case 'ru':
+        return 'روسی';
+      case 'zh':
+        return 'چینی';
+      default:
+        return 'فارسی';
+    }
+  }
+
+  /// وضعیت خلاصه و کاملاً فارسی اشتراک.
+  String get statusLabelFa {
+    if (!enable) {
+      return 'مسدود شده';
+    }
+    if (expired) {
+      return 'منقضی شده';
+    }
+    if (quotaFinished) {
+      return 'اتمام حجم';
+    }
+    if (!isActive) {
+      return 'غیرفعال';
+    }
+    return 'فعال و مجاز';
   }
 
   /// نشان می دهد حساب سالم است: فعال، منقضی نشده و غیرفعال نشده.
-  bool get healthy => enable && !expired;
+  bool get healthy => enable && !expired && !quotaFinished;
 
   /// حجم بسته تمام شده است.
   bool get quotaFinished => usageLimitGb > 0 && currentUsageGb >= usageLimitGb;
@@ -756,6 +981,7 @@ class Account {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': panelId,
         'uuid': uuid,
         'name': name,
         'phone': phone,
@@ -766,31 +992,46 @@ class Account {
         'usage_limit_GB': usageLimitGb,
         'current_usage_GB': currentUsageGb,
         'package_days': packageDays,
-        'start_date': startDate?.toIso8601String(),
-        'expiry_date': expiryDate?.toIso8601String(),
-        'last_online': lastOnline?.toIso8601String(),
+        'start_date': startDate?.toUtc().toIso8601String(),
+        'expiry_date': expiryDate?.toUtc().toIso8601String(),
+        'last_reset_time': lastResetTime?.toUtc().toIso8601String(),
+        'last_online': lastOnline?.toUtc().toIso8601String(),
         'mode': mode,
+        'lang': lang,
+        'wg_ipv4': wgIpv4,
+        'wg_ipv6': wgIpv6,
+        'awg_ipv4': awgIpv4,
+        'awg_ipv6': awgIpv6,
         'subscription_url': subscriptionUrl,
         'account_base': accountBase,
       };
 
   factory Account.fromJson(Map<String, dynamic> json) {
-    final Object? expiry = json['expiry_date'] ?? json['end_date'];
+    final Object? expiry =
+        json['expiry_date'] ?? json['expire_date'] ?? json['end_date'];
+    final String rawTelegram = JsonX.text(json['telegram_id']);
     return Account(
+      panelId: JsonX.integer(json['id']),
       uuid: JsonX.text(json['uuid']),
       name: JsonX.text(json['name']),
       phone: JsonX.text(json['phone']),
-      telegramId: JsonX.text(json['telegram_id']),
+      telegramId: rawTelegram == '0' ? '' : rawTelegram,
       comment: JsonX.text(json['comment']),
       enable: JsonX.boolean(json['enable'], fallback: true),
       isActive: JsonX.boolean(json['is_active']),
       usageLimitGb: JsonX.number(json['usage_limit_GB']),
       currentUsageGb: JsonX.number(json['current_usage_GB']),
       packageDays: JsonX.integer(json['package_days']),
-      startDate: JsonX.dateTime(json['start_date']),
-      expiryDate: JsonX.dateTime(expiry),
-      lastOnline: JsonX.dateTime(json['last_online']),
+      startDate: Fa.parseServerDateTime(json['start_date']),
+      expiryDate: Fa.parseServerDateTime(expiry),
+      lastResetTime: Fa.parseServerDateTime(json['last_reset_time']),
+      lastOnline: Fa.parseServerDateTime(json['last_online']),
       mode: JsonX.text(json['mode']),
+      lang: JsonX.text(json['lang'], 'fa'),
+      wgIpv4: JsonX.text(json['wg_ipv4']),
+      wgIpv6: JsonX.text(json['wg_ipv6']),
+      awgIpv4: JsonX.text(json['awg_ipv4']),
+      awgIpv6: JsonX.text(json['awg_ipv6']),
       subscriptionUrl: JsonX.text(
         json['subscription_url'] ?? json['sub_link'],
       ),
@@ -1727,9 +1968,18 @@ class DeviceProfile {
     this.hostname = '',
     this.username = '',
     this.os = '',
+    this.osEdition = '',
+    this.osDisplayVersion = '',
+    this.osBuild = 0,
     this.arch = 'x64',
     this.machineId = '',
     this.cpu = '',
+    this.cpuCores = 0,
+    this.ramTotalMb = 0,
+    this.ramUsedMb = 0,
+    this.ramLoadPercent = 0,
+    this.uptimeSeconds = 0,
+    this.adapterName = '',
     this.localIp = '',
     this.mac = '',
     this.elevated = false,
@@ -1741,9 +1991,18 @@ class DeviceProfile {
   final String hostname;
   final String username;
   final String os;
+  final String osEdition;
+  final String osDisplayVersion;
+  final int osBuild;
   final String arch;
   final String machineId;
   final String cpu;
+  final int cpuCores;
+  final int ramTotalMb;
+  final int ramUsedMb;
+  final int ramLoadPercent;
+  final int uptimeSeconds;
+  final String adapterName;
   final String localIp;
   final String mac;
   final bool elevated;
@@ -1751,24 +2010,257 @@ class DeviceProfile {
   final String city;
   final String country;
 
-  String get deviceName => hostname.isNotEmpty ? hostname : 'کامپیوتر ویندوز';
+  String get deviceName => hostname.isNotEmpty ? hostname : 'رایانه ویندوز';
 
-  String get platformLabel {
-    final String system = os.isNotEmpty ? os : 'Windows';
-    return '$system | $arch';
+  /// معماری پردازنده کاملاً به فارسی.
+  String get archLabelFa {
+    switch (arch.trim().toLowerCase()) {
+      case 'x64':
+      case 'amd64':
+      case 'x86_64':
+        return '۶۴ بیتی';
+      case 'arm64':
+      case 'aarch64':
+        return 'آرم ۶۴ بیتی';
+      case 'x86':
+      case 'i386':
+        return '۳۲ بیتی';
+      default:
+        return '۶۴ بیتی';
+    }
+  }
+
+  /// ویرایش ویندوز کاملاً به فارسی.
+  String get osEditionLabelFa {
+    final String low = '${osEdition.toLowerCase()} ${os.toLowerCase()}';
+    if (low.contains('enterprise')) {
+      return 'سازمانی';
+    }
+    if (low.contains('education')) {
+      return 'آموزشی';
+    }
+    if (low.contains('professional') || low.contains(' pro')) {
+      return 'حرفه ای';
+    }
+    if (low.contains('core') || low.contains('home')) {
+      return 'خانگی';
+    }
+    if (low.contains('server')) {
+      return 'سرور';
+    }
+    return '';
+  }
+
+  /// شماره ساخت ویندوز استخراج شده از اطلاعات بومی یا متن سیستم عامل.
+  int get resolvedOsBuild {
+    if (osBuild > 0) {
+      return osBuild;
+    }
+    final RegExpMatch? match =
+        RegExp(r'build\s+(\d+)', caseSensitive: false).firstMatch(os);
+    if (match != null) {
+      return int.tryParse(match.group(1)!) ?? 0;
+    }
+    return 0;
+  }
+
+  /// نگارش سالانه ویندوز کاملاً به فارسی (مثلاً 24H2 → نگارش ۲۴ نیمه دوم).
+  String get osVersionLabelFa {
+    final String raw = osDisplayVersion.trim().toUpperCase();
+    if (raw.isEmpty) {
+      return '';
+    }
+    final RegExpMatch? half = RegExp(r'^(\d{2})H([12])$').firstMatch(raw);
+    if (half != null) {
+      final String year = Fa.num(half.group(1));
+      final String part = half.group(2) == '1' ? 'نیمه اول' : 'نیمه دوم';
+      return 'نگارش $year $part';
+    }
+    if (raw == 'DEV') {
+      return 'نسخه توسعه';
+    }
+    if (raw == 'BETA') {
+      return 'نسخه پیش نمایش';
+    }
+    if (raw == 'CANARY') {
+      return 'نسخه آزمایشی';
+    }
+    final String digits = raw.replaceAll(RegExp(r'[^0-9.]'), '');
+    if (digits.isEmpty) {
+      return '';
+    }
+    return 'نگارش ${Fa.num(digits)}';
+  }
+
+  /// نام کامل و کاملاً فارسی سیستم عامل ویندوز با شماره ساخت.
+  String get osLabelFa {
+    final int build = resolvedOsBuild;
+    final String base;
+    if (build >= 22000 || os.contains('Windows 11')) {
+      base = 'ویندوز ۱۱';
+    } else if (build >= 10240 || os.contains('Windows 10')) {
+      base = 'ویندوز ۱۰';
+    } else {
+      base = 'ویندوز';
+    }
+    final String edition = osEditionLabelFa;
+    final String title = edition.isEmpty ? base : '$base $edition';
+    if (build > 0) {
+      return '$title • ساخت ${Fa.grouped(build)}';
+    }
+    return title;
+  }
+
+  String get platformLabel => '$osLabelFa • $archLabelFa';
+
+  /// نام و مشخصات پردازنده کاملاً به فارسی با ارقام فارسی.
+  String get cpuLabelFa {
+    final String raw = cpu.trim();
+    if (raw.isEmpty) {
+      return cpuCores > 0
+          ? 'پردازنده مرکزی (${Fa.num(cpuCores)} هسته)'
+          : 'پردازنده مرکزی سیستم';
+    }
+    final String low = raw.toLowerCase();
+    final List<String> parts = <String>[];
+    if (low.contains('intel')) {
+      final RegExpMatch? ultra =
+          RegExp(r'core(?:\(tm\))?\s+ultra\s+(\d+)\s*(\d+[a-z]*)?', caseSensitive: false)
+              .firstMatch(raw);
+      final RegExpMatch? coreI =
+          RegExp(r'i([3579])[-\s]?(\d{3,5})', caseSensitive: false)
+              .firstMatch(raw);
+      final RegExpMatch? gen =
+          RegExp(r'(\d+)(?:th|st|nd|rd)\s+gen', caseSensitive: false)
+              .firstMatch(raw);
+      if (ultra != null) {
+        parts.add('اینتل کور اولترا ${Fa.num(ultra.group(1))}');
+        final String modelDigits =
+            (ultra.group(2) ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+        if (modelDigits.isNotEmpty) {
+          parts.add('مدل ${Fa.num(modelDigits)}');
+        }
+      } else if (coreI != null) {
+        parts.add('اینتل کور آی ${Fa.num(coreI.group(1))}');
+        if (gen != null) {
+          parts.add('نسل ${Fa.num(gen.group(1))}');
+        }
+        parts.add('مدل ${Fa.num(coreI.group(2))}');
+      } else if (low.contains('xeon')) {
+        parts.add('اینتل زئون');
+      } else if (low.contains('pentium')) {
+        parts.add('اینتل پنتیوم');
+      } else if (low.contains('celeron')) {
+        parts.add('اینتل سلرون');
+      } else {
+        parts.add('پردازنده اینتل');
+      }
+    } else if (low.contains('amd')) {
+      final RegExpMatch? ryzen =
+          RegExp(r'ryzen\s+(\d+)\s*(\d{3,5})?', caseSensitive: false)
+              .firstMatch(raw);
+      final RegExpMatch? epyc =
+          RegExp(r'epyc\s+(\d{3,5})', caseSensitive: false).firstMatch(raw);
+      if (ryzen != null) {
+        parts.add('ای ام دی رایزن ${Fa.num(ryzen.group(1))}');
+        if ((ryzen.group(2) ?? '').isNotEmpty) {
+          parts.add('مدل ${Fa.num(ryzen.group(2))}');
+        }
+      } else if (epyc != null) {
+        parts.add('ای ام دی اپیک مدل ${Fa.num(epyc.group(1))}');
+      } else if (low.contains('athlon')) {
+        parts.add('ای ام دی اتلون');
+      } else {
+        parts.add('پردازنده ای ام دی');
+      }
+    } else if (low.contains('snapdragon') || low.contains('qualcomm')) {
+      parts.add('پردازنده کوالکام اسنپدراگون');
+    } else if (low.contains('apple')) {
+      parts.add('پردازنده اپل');
+    } else if (low.contains('virtual') || low.contains('kvm') || low.contains('qemu')) {
+      parts.add('پردازنده مجازی سیستم');
+    } else {
+      parts.add('پردازنده مرکزی سیستم');
+    }
+
+    final RegExpMatch? ghz =
+        RegExp(r'(\d+(?:\.\d+)?)\s*ghz', caseSensitive: false).firstMatch(raw);
+    if (ghz != null) {
+      final double? freq = double.tryParse(ghz.group(1)!);
+      if (freq != null && freq > 0) {
+        parts.add('${Fa.decimal(freq, fraction: 2)} گیگاهرتز');
+      }
+    }
+    return parts.join(' • ');
+  }
+
+  double get ramTotalGb => ramTotalMb > 0 ? ramTotalMb / 1024.0 : 0;
+  double get ramUsedGb => ramUsedMb > 0 ? ramUsedMb / 1024.0 : 0;
+  double get ramFreeGb {
+    final double free = ramTotalGb - ramUsedGb;
+    return free < 0 ? 0 : free;
+  }
+
+  double get ramPercent {
+    if (ramLoadPercent > 0) {
+      return ramLoadPercent.toDouble().clamp(0, 100);
+    }
+    if (ramTotalMb > 0) {
+      return ((ramUsedMb / ramTotalMb) * 100).clamp(0, 100);
+    }
+    return 0;
+  }
+
+  Duration get uptimeDuration =>
+      uptimeSeconds > 0 ? Duration(seconds: uptimeSeconds) : Duration.zero;
+
+  /// زمان دقیق روشن شدن سیستم بر اساس مدت کارکرد ویندوز.
+  DateTime? estimatedBootTime([DateTime? now]) {
+    if (uptimeSeconds <= 0) {
+      return null;
+    }
+    return (now ?? DateTime.now()).toUtc().subtract(uptimeDuration);
+  }
+
+  /// نوع کارت شبکه فعال سیستم کاملاً به فارسی.
+  String get adapterLabelFa {
+    final String low = adapterName.trim().toLowerCase();
+    if (low.isEmpty) {
+      return localIp.isNotEmpty ? 'کارت شبکه اصلی ویندوز' : 'شناسایی نشده';
+    }
+    if (low.contains('wi-fi') ||
+        low.contains('wifi') ||
+        low.contains('wireless') ||
+        low.contains('wlan') ||
+        low.contains('802.11')) {
+      return 'کارت شبکه بی سیم';
+    }
+    if (low.contains('bluetooth')) {
+      return 'شبکه بلوتوث';
+    }
+    if (low.contains('virtual') ||
+        low.contains('vethernet') ||
+        low.contains('hyper-v') ||
+        low.contains('vmware') ||
+        low.contains('tap') ||
+        low.contains('wintun')) {
+      return 'کارت شبکه مجازی';
+    }
+    if (low.contains('mobile') || low.contains('lte') || low.contains('cellular')) {
+      return 'مودم همراه';
+    }
+    return 'کارت شبکه کابلی';
   }
 
   String get summary {
     final StringBuffer buffer = StringBuffer();
-    buffer.write('دستگاه: $deviceName');
+    buffer.write('دستگاه: ${Fa.num(deviceName)}');
     if (username.isNotEmpty) {
-      buffer.write(' | کاربر: $username');
+      buffer.write(' | کاربر: ${Fa.num(username)}');
     }
-    if (os.isNotEmpty) {
-      buffer.write(' | $os');
-    }
+    buffer.write(' | $platformLabel');
     if (localIp.isNotEmpty) {
-      buffer.write(' | IP داخلی: ${Fa.num(localIp)}');
+      buffer.write(' | نشانی داخلی: ${Fa.num(localIp)}');
     }
     if (city.isNotEmpty || country.isNotEmpty) {
       buffer.write(' | موقعیت: ${Fa.num(country)} ${Fa.num(city)}');
@@ -1776,14 +2268,28 @@ class DeviceProfile {
     return buffer.toString();
   }
 
-  DeviceProfile copyWith({String? ip, String? city, String? country, bool? elevated}) {
+  DeviceProfile copyWith({
+    String? ip,
+    String? city,
+    String? country,
+    bool? elevated,
+  }) {
     return DeviceProfile(
       hostname: hostname,
       username: username,
       os: os,
+      osEdition: osEdition,
+      osDisplayVersion: osDisplayVersion,
+      osBuild: osBuild,
       arch: arch,
       machineId: machineId,
       cpu: cpu,
+      cpuCores: cpuCores,
+      ramTotalMb: ramTotalMb,
+      ramUsedMb: ramUsedMb,
+      ramLoadPercent: ramLoadPercent,
+      uptimeSeconds: uptimeSeconds,
+      adapterName: adapterName,
       localIp: localIp,
       mac: mac,
       elevated: elevated ?? this.elevated,
@@ -1798,9 +2304,18 @@ class DeviceProfile {
       hostname: JsonX.text(json['hostname']),
       username: JsonX.text(json['username']),
       os: JsonX.text(json['os']),
+      osEdition: JsonX.text(json['osEdition']),
+      osDisplayVersion: JsonX.text(json['osDisplayVersion']),
+      osBuild: JsonX.integer(json['osBuild']),
       arch: JsonX.text(json['arch'], 'x64'),
       machineId: JsonX.text(json['machineId']),
       cpu: JsonX.text(json['cpu']),
+      cpuCores: JsonX.integer(json['cpuCores']),
+      ramTotalMb: JsonX.integer(json['ramTotalMb']),
+      ramUsedMb: JsonX.integer(json['ramUsedMb']),
+      ramLoadPercent: JsonX.integer(json['ramLoadPercent']),
+      uptimeSeconds: JsonX.integer(json['uptimeSeconds']),
+      adapterName: JsonX.text(json['adapterName']),
       localIp: JsonX.text(json['localIp']),
       mac: JsonX.text(json['mac']),
       elevated: JsonX.boolean(json['elevated']),

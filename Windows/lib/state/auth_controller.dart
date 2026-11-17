@@ -560,17 +560,29 @@ class AuthController extends ChangeNotifier {
       return false;
     }
     final Account merged = session.account.copyWith(
+      panelId: panel.panelId > 0 ? panel.panelId : null,
       name: panel.name.isNotEmpty ? panel.name : null,
-      phone: panel.phone.isNotEmpty ? panel.phone : null,
+      phone: panel.effectivePhone.isNotEmpty ? panel.effectivePhone : null,
+      telegramId: panel.telegramId.isNotEmpty ? panel.telegramId : null,
+      comment: panel.comment.isNotEmpty ? panel.comment : null,
       enable: panel.enable,
       isActive: panel.isActive,
-      usageLimitGb: panel.usageLimitGb > 0 ? panel.usageLimitGb : null,
+      usageLimitGb: panel.usageLimitGb >= 0 ? panel.usageLimitGb : null,
       currentUsageGb: panel.currentUsageGb,
       packageDays: panel.packageDays > 0 ? panel.packageDays : null,
       startDate: panel.startDate,
       expiryDate: panel.expiryDate,
+      clearExpiryDate: panel.expiryDate == null &&
+          panel.startDate != null &&
+          panel.packageDays > 0,
+      lastResetTime: panel.lastResetTime,
       lastOnline: panel.lastOnline,
       mode: panel.mode.isNotEmpty ? panel.mode : null,
+      lang: panel.lang.isNotEmpty ? panel.lang : null,
+      wgIpv4: panel.wgIpv4.isNotEmpty ? panel.wgIpv4 : null,
+      wgIpv6: panel.wgIpv6.isNotEmpty ? panel.wgIpv6 : null,
+      awgIpv4: panel.awgIpv4.isNotEmpty ? panel.awgIpv4 : null,
+      awgIpv6: panel.awgIpv6.isNotEmpty ? panel.awgIpv6 : null,
     );
     _session = session.copyWith(account: merged, filter: session.filter);
     await _store.writeJson(StoreKeys.session, _session!.toJson());
@@ -593,7 +605,17 @@ class AuthController extends ChangeNotifier {
     }
     try {
       final SessionData fresh = await _gateway.refresh(session.token);
-      _session = session.copyWith(account: fresh.account, filter: fresh.filter);
+      final Account prev = session.account;
+      final Account next = fresh.account;
+      final Account preserved = next.copyWith(
+        panelId: next.panelId > 0 ? next.panelId : prev.panelId,
+        lastResetTime: next.lastResetTime ?? prev.lastResetTime,
+        wgIpv4: next.wgIpv4.isNotEmpty ? next.wgIpv4 : prev.wgIpv4,
+        wgIpv6: next.wgIpv6.isNotEmpty ? next.wgIpv6 : prev.wgIpv6,
+        awgIpv4: next.awgIpv4.isNotEmpty ? next.awgIpv4 : prev.awgIpv4,
+        awgIpv6: next.awgIpv6.isNotEmpty ? next.awgIpv6 : prev.awgIpv6,
+      );
+      _session = session.copyWith(account: preserved, filter: fresh.filter);
       await _syncNotificationOwner(_session!.ownerKey);
       await _store.writeJson(StoreKeys.session, _session!.toJson());
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());

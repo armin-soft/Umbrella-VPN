@@ -112,11 +112,9 @@ class _AccountPageState extends State<AccountPage> {
     final String name = account.displayName;
     final String trimmed = name.trim();
     final String initial =
-        trimmed.isEmpty ? 'U' : String.fromCharCode(trimmed.runes.first);
+        trimmed.isEmpty ? 'آ' : String.fromCharCode(trimmed.runes.first);
 
-    final String statusText = !account.enable
-        ? 'مسدود شده'
-        : (account.expired ? 'منقضی شده' : 'فعال');
+    final String statusText = account.statusLabelFa;
     final Color statusTone =
         account.healthy ? colors.success : colors.danger;
 
@@ -169,8 +167,8 @@ class _AccountPageState extends State<AccountPage> {
               ),
             ),
             title: name,
-            subtitle: account.phone.isNotEmpty
-                ? 'سرویس ${account.planLabel} • شماره ${account.phone}'
+            subtitle: account.effectivePhone.isNotEmpty
+                ? 'سرویس ${account.planLabel} • شماره ${Fa.phoneFa(account.effectivePhone)}'
                 : 'سرویس ${account.planLabel}',
             badges: <Widget>[
               Pill(
@@ -260,15 +258,17 @@ class _AccountPageState extends State<AccountPage> {
                     InfoRow(
                       icon: Icons.phone_rounded,
                       label: 'شماره موبایل',
-                      value: account.phone.isEmpty
+                      value: account.effectivePhone.isEmpty
                           ? 'ثبت نشده'
-                          : Fa.num(account.phone),
+                          : Fa.phoneFa(account.effectivePhone),
                     ),
                     const Divider(height: AppMetrics.space2),
                     InfoRow(
                       icon: Icons.fingerprint_rounded,
                       label: 'شناسه حساب',
-                      value: account.uuid.isEmpty ? 'نامشخص' : account.uuid,
+                      value: account.uuid.isEmpty
+                          ? 'نامشخص'
+                          : Fa.num(account.uuid),
                       ltr: account.uuid.isNotEmpty,
                       tooltip: true,
                       trailing: account.uuid.isEmpty
@@ -285,8 +285,17 @@ class _AccountPageState extends State<AccountPage> {
                       const Divider(height: AppMetrics.space2),
                       InfoRow(
                         icon: Icons.tune_rounded,
-                        label: 'حالت حساب',
-                        value: Fa.num(account.mode),
+                        label: 'الگوی بازنشانی حجم',
+                        value: account.modeLabelFa,
+                      ),
+                    ],
+                    if (account.lastResetTime != null) ...<Widget>[
+                      const Divider(height: AppMetrics.space2),
+                      InfoRow(
+                        icon: Icons.history_rounded,
+                        label: 'آخرین بازنشانی حجم',
+                        value: Fa.tehranFullDate(account.lastResetTime),
+                        tooltip: true,
                       ),
                     ],
                   ],
@@ -321,8 +330,7 @@ class _AccountPageState extends State<AccountPage> {
                       label: 'شناسه تلگرام',
                       value: account.telegramId.isEmpty
                           ? 'ثبت نشده'
-                          : account.telegramId,
-                      ltr: account.telegramId.isNotEmpty,
+                          : Fa.num(account.telegramId),
                     ),
                     const Divider(height: AppMetrics.space2),
                     const InfoRow(
@@ -586,7 +594,8 @@ class _DaysCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasDate = account.expiryDate != null;
+    final DateTime? expiry = account.effectiveExpiryDate;
+    final bool hasDate = expiry != null;
     final bool expired = account.expired;
     final bool soon = hasDate && !expired && account.daysLeft <= 3;
     final Color tone =
@@ -604,7 +613,7 @@ class _DaysCard extends StatelessWidget {
           SectionHeader(
             icon: Icons.event_available_rounded,
             title: 'اعتبار زمانی اشتراک',
-            subtitle: 'روزهای باقی مانده و زمان بندی سرویس',
+            subtitle: 'محاسبه دقیق تاریخ شمسی و زمان باقی مانده',
             trailing: Pill(label: pillLabel, color: tone, dense: true),
           ),
           const Divider(height: AppMetrics.space5),
@@ -613,25 +622,29 @@ class _DaysCard extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: <Widget>[
               Text(
-                Fa.num(
-                  hasDate ? (expired ? '0' : '${account.daysLeft}') : '∞',
-                ),
+                hasDate
+                    ? (expired ? '۰' : Fa.grouped(account.daysLeft))
+                    : '∞',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w900,
                       color: tone,
                     ),
               ),
               const SizedBox(width: AppMetrics.space2),
-              Text(
-                Fa.num(
+              Flexible(
+                child: Text(
                   !hasDate
                       ? 'بدون تاریخ انقضا'
-                      : (expired ? 'روز (منقضی شده)' : 'روز باقی مانده'),
+                      : (expired
+                          ? 'روز (منقضی شده)'
+                          : 'روز باقی مانده (${account.packageDurationLabel})'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: colors.textSecondary),
                 ),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textSecondary),
               ),
             ],
           ),
@@ -639,19 +652,24 @@ class _DaysCard extends StatelessWidget {
           InfoRow(
             icon: Icons.event_rounded,
             label: 'تاریخ انقضا',
-            value: Fa.dateTime(account.expiryDate),
+            value: expiry == null ? 'نامحدود' : Fa.tehranFullDate(expiry),
+            tooltip: true,
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.play_circle_outline_rounded,
             label: 'تاریخ شروع',
-            value: Fa.dateTime(account.startDate),
+            value: Fa.tehranFullDate(account.startDate),
+            tooltip: true,
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.schedule_rounded,
-            label: 'آخرین اتصال',
-            value: Fa.relative(account.lastOnline),
+            label: 'آخرین فعالیت آنلاین',
+            value: account.lastOnline == null
+                ? 'ثبت نشده'
+                : '${Fa.relative(account.lastOnline)} (${Fa.tehranCompactDateTime(account.lastOnline)})',
+            tooltip: true,
           ),
         ],
       ),

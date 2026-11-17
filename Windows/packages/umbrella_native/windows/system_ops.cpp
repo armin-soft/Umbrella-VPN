@@ -187,23 +187,34 @@ bool SystemOps::RelaunchElevated(const std::string& extra_args) {
 std::string SystemOps::ExecutablePath() { return ToUtf8(ExePathW()); }
 
 std::string SystemOps::LocalIpv4() {
-  ULONG size = 16384;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return std::string();
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  IP_ADAPTER_ADDRESSES* addresses = nullptr;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG res = GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size);
+    if (res == NO_ERROR) break;
+    addresses = nullptr;
+    if (res != ERROR_BUFFER_OVERFLOW) return std::string();
   }
+  if (addresses == nullptr) return std::string();
+
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp) continue;
     if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
     for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr;
          unicast = unicast->Next) {
+      if (unicast->Address.lpSockaddr == nullptr) continue;
       if (unicast->Address.lpSockaddr->sa_family != AF_INET) continue;
       auto* ipv4 =
           reinterpret_cast<sockaddr_in*>(unicast->Address.lpSockaddr);
+      // Skip the local TUN subnet (172.19.0.0/28) so physical LAN IP wins.
+      if ((ntohl(ipv4->sin_addr.s_addr) & 0xFFFFFFF0u) == 0xAC130000u) {
+        continue;
+      }
       char text[INET_ADDRSTRLEN] = {0};
       if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text)) == nullptr) {
         continue;
@@ -216,40 +227,70 @@ std::string SystemOps::LocalIpv4() {
 }
 
 std::string SystemOps::DefaultAdapterName() {
-  ULONG size = 16384;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return std::string();
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  IP_ADAPTER_ADDRESSES* addresses = nullptr;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG res = GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size);
+    if (res == NO_ERROR) break;
+    addresses = nullptr;
+    if (res != ERROR_BUFFER_OVERFLOW) return std::string();
   }
+  if (addresses == nullptr) return std::string();
+
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp) continue;
     if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
-    if (adapter->FirstUnicastAddress == nullptr) continue;
+    bool has_physical_ipv4 = false;
+    for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr;
+         unicast = unicast->Next) {
+      if (unicast->Address.lpSockaddr == nullptr) continue;
+      if (unicast->Address.lpSockaddr->sa_family != AF_INET) continue;
+      auto* ipv4 =
+          reinterpret_cast<sockaddr_in*>(unicast->Address.lpSockaddr);
+      if ((ntohl(ipv4->sin_addr.s_addr) & 0xFFFFFFF0u) == 0xAC130000u) {
+        continue;
+      }
+      char text[INET_ADDRSTRLEN] = {0};
+      if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text)) == nullptr) {
+        continue;
+      }
+      if (strncmp(text, "169.254.", 8) == 0) continue;
+      has_physical_ipv4 = true;
+      break;
+    }
+    if (!has_physical_ipv4) continue;
     return ToUtf8(adapter->FriendlyName);
   }
   return std::string();
 }
 
 std::string SystemOps::DefaultAdapterMac() {
-  ULONG size = 16384;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return std::string();
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  IP_ADAPTER_ADDRESSES* addresses = nullptr;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG res = GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size);
+    if (res == NO_ERROR) break;
+    addresses = nullptr;
+    if (res != ERROR_BUFFER_OVERFLOW) return std::string();
   }
+  if (addresses == nullptr) return std::string();
+
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp) continue;
     if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
     if (adapter->PhysicalAddressLength < 6) continue;
     char text[32] = {0};
-    snprintf(text, sizeof(text), "%02X%02X%02X%02X%02X%02X",
+    snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X",
              adapter->PhysicalAddress[0], adapter->PhysicalAddress[1],
              adapter->PhysicalAddress[2], adapter->PhysicalAddress[3],
              adapter->PhysicalAddress[4], adapter->PhysicalAddress[5]);
@@ -277,15 +318,34 @@ DeviceInfo SystemOps::CollectDeviceInfo() {
         reinterpret_cast<RtlGetVersionPtr>(GetProcAddress(ntdll, "RtlGetVersion"));
     if (rtl_get_version != nullptr &&
         rtl_get_version(reinterpret_cast<PRTL_OSVERSIONINFOW>(&version)) == 0) {
+      info.os_build = static_cast<int>(version.dwBuildNumber);
+      const int display_major =
+          (version.dwMajorVersion == 10 && version.dwBuildNumber >= 22000)
+              ? 11
+              : static_cast<int>(version.dwMajorVersion);
       std::ostringstream os;
-      os << "Windows " << version.dwMajorVersion << "." << version.dwMinorVersion
+      os << "Windows " << display_major
          << " (build " << version.dwBuildNumber << ")";
       info.os = os.str();
     }
   }
 
+  std::wstring edition_id;
+  if (ReadRegistryString(HKEY_LOCAL_MACHINE,
+                         L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                         L"EditionID", &edition_id)) {
+    info.os_edition = ToUtf8(edition_id);
+  }
+  std::wstring display_ver;
+  if (ReadRegistryString(HKEY_LOCAL_MACHINE,
+                         L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                         L"DisplayVersion", &display_ver)) {
+    info.os_display_version = ToUtf8(display_ver);
+  }
+
   SYSTEM_INFO system_info;
   GetNativeSystemInfo(&system_info);
+  info.cpu_cores = static_cast<int>(system_info.dwNumberOfProcessors);
   switch (system_info.wProcessorArchitecture) {
     case PROCESSOR_ARCHITECTURE_AMD64:
       info.arch = "x64";
@@ -313,6 +373,18 @@ DeviceInfo SystemOps::CollectDeviceInfo() {
                          L"ProcessorNameString", &cpu)) {
     info.cpu = ToUtf8(cpu);
   }
+  MEMORYSTATUSEX mem_status = {0};
+  mem_status.dwLength = sizeof(mem_status);
+  if (GlobalMemoryStatusEx(&mem_status)) {
+    const uint64_t total_mb = mem_status.ullTotalPhys / (1024ULL * 1024ULL);
+    const uint64_t avail_mb = mem_status.ullAvailPhys / (1024ULL * 1024ULL);
+    info.ram_total_mb = static_cast<int64_t>(total_mb);
+    info.ram_used_mb = static_cast<int64_t>(
+        total_mb > avail_mb ? (total_mb - avail_mb) : 0ULL);
+    info.ram_load_percent = static_cast<int>(mem_status.dwMemoryLoad);
+  }
+  info.uptime_seconds = static_cast<int64_t>(GetTickCount64() / 1000ULL);
+  info.adapter_name = DefaultAdapterName();
   info.local_ip = LocalIpv4();
   info.adapter_mac = DefaultAdapterMac();
   info.elevated = IsElevated();

@@ -279,6 +279,7 @@ class PanelClient {
 
   Map<String, String> get _headers => <String, String>{
         'Accept': 'application/json',
+        'Watashi-API-Key': _apiKey,
         'X-API-Key': _apiKey,
         'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
       };
