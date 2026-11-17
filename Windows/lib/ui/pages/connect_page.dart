@@ -209,22 +209,14 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
-  /// انتخاب حالت اتصال (خودکار / تونل کامل / پروکسی سیستمی).
-  Future<void> _pickConnectionMode(
+  /// تغییر مستقیم حالت اتصال از فهرست بازشوی استاندارد (خودکار / تونل کامل / پروکسی سیستمی).
+  Future<void> _changeConnectionMode(
+    CorePreference picked,
     VpnController vpn,
     SettingsController settings,
     ToastController toasts,
   ) async {
-    final CorePreference? picked = await showDialog<CorePreference>(
-      context: context,
-      builder: (BuildContext context) => _ConnectionModeDialog(
-        current: settings.settings.corePreference,
-      ),
-    );
-    if (picked == null || !mounted) {
-      return;
-    }
-    if (picked == settings.settings.corePreference) {
+    if (!mounted || picked == settings.settings.corePreference) {
       return;
     }
     await settings.setCorePreference(picked);
@@ -247,22 +239,14 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
-  /// انتخاب حالت انتخاب سرور از منوی اتصال.
-  Future<void> _pickMode(
+  /// تغییر مستقیم حالت انتخاب سرور از فهرست بازشوی استاندارد.
+  Future<void> _changeSelectionMode(
+    SelectionMode picked,
     VpnController vpn,
     SettingsController settings,
     ToastController toasts,
   ) async {
-    final SelectionMode? picked = await showDialog<SelectionMode>(
-      context: context,
-      builder: (BuildContext context) => _ModeDialog(
-        current: settings.settings.selectionMode,
-      ),
-    );
-    if (picked == null || !mounted) {
-      return;
-    }
-    if (picked == settings.settings.selectionMode) {
+    if (!mounted || picked == settings.settings.selectionMode) {
       return;
     }
     await settings.setSelectionMode(picked);
@@ -587,17 +571,21 @@ class _ConnectPageState extends State<ConnectPage> {
                           ),
                         const SizedBox(height: AppMetrics.space5),
 
-                        // ── منوی مرتب تنظیمات اتصال (دو گزینه خوانا و متقارن) ──
+                        // ── کنترل های استاندارد حالت اتصال و حالت انتخاب سرور ──
                         _ConnectionOptionsBar(
                           connectionMode: settings.settings.corePreference,
                           selectionMode: settings.settings.selectionMode,
                           enabled: !status.busy,
-                          onPickConnectionMode: () => _pickConnectionMode(
+                          onConnectionModeChanged: (CorePreference picked) =>
+                              _changeConnectionMode(
+                            picked,
                             vpn,
                             settings,
                             toasts,
                           ),
-                          onPickSelectionMode: () => _pickMode(
+                          onSelectionModeChanged: (SelectionMode picked) =>
+                              _changeSelectionMode(
+                            picked,
                             vpn,
                             settings,
                             toasts,
@@ -619,64 +607,85 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 }
 
-/// نوار متقارن و خوانای منوی اتصال در زیر دکمه اصلی: فقط «حالت اتصال» و
-/// «حالت انتخاب سرور» بدون فهرست شلوغ سرورها.
+/// دو فهرست بازشوی استاندارد، هم تراز و خوانا برای «حالت اتصال» و «حالت انتخاب سرور»
+/// که مستقیماً زیر خود فیلد باز می شوند (بدون پنجره پاپ آپ وسط صفحه).
 class _ConnectionOptionsBar extends StatelessWidget {
   const _ConnectionOptionsBar({
     required this.connectionMode,
     required this.selectionMode,
     required this.enabled,
-    required this.onPickConnectionMode,
-    required this.onPickSelectionMode,
+    required this.onConnectionModeChanged,
+    required this.onSelectionModeChanged,
   });
 
   final CorePreference connectionMode;
   final SelectionMode selectionMode;
   final bool enabled;
-  final VoidCallback onPickConnectionMode;
-  final VoidCallback onPickSelectionMode;
+  final ValueChanged<CorePreference> onConnectionModeChanged;
+  final ValueChanged<SelectionMode> onSelectionModeChanged;
 
   @override
   Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
+    final Widget connectionSelect = AnchoredSelectField<CorePreference>(
+      key: const ValueKey<String>('connect-mode-select'),
+      label: 'حالت اتصال',
+      value: connectionMode,
+      enabled: enabled,
+      options: <SelectOption<CorePreference>>[
+        for (final CorePreference pref in CorePreference.values)
+          SelectOption<CorePreference>(
+            value: pref,
+            label: pref.faName,
+            subtitle: pref.description,
+            icon: pref.icon,
+            enabled: pref.available,
+          ),
+      ],
+      onChanged: onConnectionModeChanged,
+    );
+
+    final Widget serverModeSelect = AnchoredSelectField<SelectionMode>(
+      key: const ValueKey<String>('selection-mode-select'),
+      label: 'حالت انتخاب سرور',
+      value: SelectionModeList.visible.contains(selectionMode)
+          ? selectionMode
+          : SelectionMode.auto,
+      enabled: enabled,
+      options: <SelectOption<SelectionMode>>[
+        for (final SelectionMode mode in SelectionModeList.visible)
+          SelectOption<SelectionMode>(
+            value: mode,
+            label: mode.label,
+            subtitle: mode.description,
+            icon: mode.icon,
+          ),
+      ],
+      onChanged: onSelectionModeChanged,
+    );
+
     return ConstrainedBox(
       constraints: const BoxConstraints(
         maxWidth: AppMetrics.breakpointCompact,
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final Widget first = _PickerChip(
-            label: 'حالت اتصال',
-            value: connectionMode.faName,
-            icon: connectionMode.icon,
-            accent: colors.primary,
-            enabled: enabled,
-            onTap: onPickConnectionMode,
-          );
-          final Widget second = _PickerChip(
-            label: 'حالت انتخاب سرور',
-            value: selectionMode.faName,
-            icon: selectionMode.icon,
-            accent: colors.info,
-            enabled: enabled,
-            onTap: onPickSelectionMode,
-          );
           if (constraints.maxWidth < AppMetrics.controlMaxWidth) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                first,
-                const SizedBox(height: AppMetrics.space2),
-                second,
+                connectionSelect,
+                const SizedBox(height: AppMetrics.space3),
+                serverModeSelect,
               ],
             );
           }
           return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(child: first),
+              Expanded(child: connectionSelect),
               const SizedBox(width: AppMetrics.space3),
-              Expanded(child: second),
+              Expanded(child: serverModeSelect),
             ],
           );
         },
@@ -991,334 +1000,6 @@ class _IpChip extends StatelessWidget {
                 color: colors.textSecondary,
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// کارت انتخاب گزینه اتصال: آیکون رنگی، عنوان روشن، مقدار فعلی خوانا و فلش بازشو.
-class _PickerChip extends StatelessWidget {
-  const _PickerChip({
-    required this.label,
-    required this.value,
-    required this.accent,
-    required this.enabled,
-    required this.onTap,
-    this.icon,
-  });
-
-  final String label;
-  final String value;
-  final IconData? icon;
-  final Color accent;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return Opacity(
-      opacity: enabled ? 1 : 0.55,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-        onTap: enabled ? onTap : null,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppMetrics.space3,
-            vertical: AppMetrics.space2,
-          ),
-          decoration: BoxDecoration(
-            color: colors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-            border: Border.all(color: colors.border),
-          ),
-          child: Row(
-            children: <Widget>[
-              IconSquare(
-                icon: icon ?? Icons.tune_rounded,
-                color: accent,
-                size: AppMetrics.iconBoxMd,
-                radius: AppMetrics.radiusMd,
-              ),
-              const SizedBox(width: AppMetrics.space3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      Fa.num(label),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                    const SizedBox(height: AppMetrics.space1),
-                    Text(
-                      Fa.num(value),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space1),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: AppMetrics.iconMd,
-                color: colors.textSecondary,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// پنجره مرتب و خوانای انتخاب حالت اتصال.
-class _ConnectionModeDialog extends StatelessWidget {
-  const _ConnectionModeDialog({required this.current});
-
-  final CorePreference current;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return Dialog(
-      insetPadding: const EdgeInsets.all(AppMetrics.space6),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
-        child: Padding(
-          padding: AppMetrics.cardPadding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _DialogHeader(
-                icon: Icons.lan_rounded,
-                accent: colors.primary,
-                title: 'حالت اتصال',
-                subtitle: 'نحوه هدایت ترافیک شبکه روی ویندوز را انتخاب کنید.',
-              ),
-              const SizedBox(height: AppMetrics.space4),
-              for (final CorePreference pref in CorePreference.values)
-                _MenuTile(
-                  selected: pref == current,
-                  enabled: pref.available,
-                  title: pref.faName,
-                  subtitle: pref.description,
-                  icon: pref.icon,
-                  accent: colors.primary,
-                  onTap: () => Navigator.of(context).pop(pref),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// پنجره مرتب و خوانای انتخاب شیوه گزینش سرور.
-class _ModeDialog extends StatelessWidget {
-  const _ModeDialog({required this.current});
-
-  final SelectionMode current;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return Dialog(
-      insetPadding: const EdgeInsets.all(AppMetrics.space6),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
-        child: Padding(
-          padding: AppMetrics.cardPadding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _DialogHeader(
-                icon: Icons.auto_awesome_rounded,
-                accent: colors.info,
-                title: 'حالت انتخاب سرور',
-                subtitle:
-                    'آمبرلا سرورهای اشتراک را خودکار مدیریت و بهترین گزینه را فعال می کند.',
-              ),
-              const SizedBox(height: AppMetrics.space4),
-              for (final SelectionMode mode in SelectionModeList.visible)
-                _MenuTile(
-                  selected: mode == current,
-                  title: mode.faName,
-                  subtitle: mode.description,
-                  icon: mode.icon,
-                  accent: colors.info,
-                  onTap: () => Navigator.of(context).pop(mode),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DialogHeader extends StatelessWidget {
-  const _DialogHeader({
-    required this.icon,
-    required this.accent,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final Color accent;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return Row(
-      children: <Widget>[
-        IconSquare(icon: icon, color: accent, size: AppMetrics.iconBoxLg),
-        const SizedBox(width: AppMetrics.space3),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                Fa.num(title),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: AppMetrics.space1),
-              Text(
-                Fa.num(subtitle),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: colors.textSecondary, height: 1.5),
-              ),
-            ],
-          ),
-        ),
-        IconButton(
-          tooltip: 'بستن',
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close_rounded, size: AppMetrics.iconMd),
-        ),
-      ],
-    );
-  }
-}
-
-class _MenuTile extends StatelessWidget {
-  const _MenuTile({
-    required this.selected,
-    required this.title,
-    required this.icon,
-    required this.accent,
-    required this.onTap,
-    this.subtitle = '',
-    this.enabled = true,
-  });
-
-  final bool selected;
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color accent;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return Opacity(
-      opacity: enabled ? 1 : 0.5,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: AppMetrics.space2),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-          onTap: enabled ? onTap : null,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppMetrics.space4,
-              vertical: AppMetrics.space3,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-              color: selected
-                  ? accent.withValues(alpha: 0.12)
-                  : colors.surfaceHigh.withValues(alpha: 0.65),
-              border: Border.all(
-                color: selected ? accent : colors.border,
-              ),
-            ),
-            child: Row(
-              children: <Widget>[
-                IconSquare(
-                  icon: icon,
-                  color: selected ? accent : colors.textSecondary,
-                  size: AppMetrics.iconBoxMd,
-                  radius: AppMetrics.radiusMd,
-                ),
-                const SizedBox(width: AppMetrics.space3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        Fa.num(title),
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: selected ? accent : colors.textPrimary,
-                            ),
-                      ),
-                      if (subtitle.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppMetrics.space1),
-                        Text(
-                          Fa.num(subtitle),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                color: colors.textSecondary,
-                                height: 1.5,
-                              ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppMetrics.space2),
-                Icon(
-                  selected
-                      ? Icons.check_circle_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: AppMetrics.iconMd,
-                  color: selected ? accent : colors.textSecondary,
-                ),
-              ],
-            ),
           ),
         ),
       ),

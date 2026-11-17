@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 import 'package:umbrella_vpn/core/theme.dart';
+import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/network_settings.dart';
 import 'package:umbrella_vpn/ui/widgets/advanced_network_settings.dart';
 
@@ -159,6 +160,97 @@ void main() {
       await tester.tap(find.text('ذخیره قانون'));
       await tester.pumpAndSettle();
       expect(find.text('نام فایل exe یا مسیر کامل ویندوز را وارد کنید'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('connect mode and server selection dropdowns open anchored in RTL $brightness', (WidgetTester tester) async {
+      final ThemeData theme = brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light();
+      CorePreference pickedConnection = CorePreference.auto;
+      SelectionMode pickedSelection = SelectionMode.auto;
+      await tester.pumpWidget(MaterialApp(
+        theme: theme,
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) => Scaffold(
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: AppMetrics.pagePadding,
+                  child: SizedBox(
+                    width: AppMetrics.breakpointCompact,
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: AnchoredSelectField<CorePreference>(
+                            key: const ValueKey<String>('test-conn'),
+                            label: 'حالت اتصال',
+                            value: pickedConnection,
+                            options: <SelectOption<CorePreference>>[
+                              for (final CorePreference p in CorePreference.values)
+                                SelectOption<CorePreference>(
+                                  value: p,
+                                  label: p.faName,
+                                  subtitle: p.description,
+                                  icon: p.icon,
+                                ),
+                            ],
+                            onChanged: (CorePreference next) =>
+                                setState(() => pickedConnection = next),
+                          ),
+                        ),
+                        const SizedBox(width: AppMetrics.space3),
+                        Expanded(
+                          child: AnchoredSelectField<SelectionMode>(
+                            key: const ValueKey<String>('test-sel'),
+                            label: 'حالت انتخاب سرور',
+                            value: pickedSelection,
+                            options: <SelectOption<SelectionMode>>[
+                              for (final SelectionMode m in SelectionModeList.visible)
+                                SelectOption<SelectionMode>(
+                                  value: m,
+                                  label: m.label,
+                                  subtitle: m.description,
+                                  icon: m.icon,
+                                ),
+                            ],
+                            onChanged: (SelectionMode next) =>
+                                setState(() => pickedSelection = next),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Open connection mode dropdown: must open anchored right below field, never as a Dialog.
+      await tester.tap(find.text('خودکار'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
+      final Rect fieldRect = tester.getRect(find.byKey(const ValueKey<String>('test-conn')));
+      final Rect optionRect = tester.getRect(find.text('تونل کامل'));
+      expect((optionRect.right - fieldRect.right).abs(), lessThan(60));
+      expect(optionRect.top, greaterThanOrEqualTo(fieldRect.bottom - 4));
+      expect(optionRect.top, lessThan(fieldRect.bottom + 140));
+      await tester.tap(find.text('تونل کامل'));
+      await tester.pumpAndSettle();
+      expect(pickedConnection, CorePreference.tun);
+      expect(tester.takeException(), isNull);
+
+      // Open server selection dropdown and select round-robin cleanly.
+      await tester.tap(find.text('خودکار (کمترین پینگ)'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
+      await tester.tap(find.text('گردشی'));
+      await tester.pumpAndSettle();
+      expect(pickedSelection, SelectionMode.roundRobin);
       expect(tester.takeException(), isNull);
     });
   }

@@ -8,8 +8,7 @@ import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
 import 'common.dart';
 
-/// کنترل محتوا: انتخاب دسته هایی که باید مسدود شوند. این بخش قبلا در صفحه
-/// حساب بود و حالا در تنظیمات قرار دارد.
+/// کارت کنترل محتوا با ساختار کاملاً یکدست با کارت های تنظیمات.
 class ContentControlCard extends StatefulWidget {
   const ContentControlCard({super.key});
 
@@ -57,90 +56,122 @@ class _ContentControlCardState extends State<ContentControlCard> {
     final UmbrellaColors colors = context.colors;
     return GlassCard(
       padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           SectionHeader(
+            icon: Icons.block_rounded,
             title: 'کنترل محتوا',
-            subtitle: 'دسته هایی که باید مسدود شوند؛ با حساب شما همگام است.',
+            subtitle: 'مسدودسازی دسته های انتخابی روی حساب شما',
             trailing: Switch.adaptive(
               value: _enabled,
               onChanged: (bool value) => setState(() => _enabled = value),
             ),
           ),
-          const SizedBox(height: AppMetrics.space3),
+          const Divider(height: AppMetrics.space5),
           Wrap(
             spacing: AppMetrics.space2,
             runSpacing: AppMetrics.space2,
             children: <Widget>[
               for (final MapEntry<String, String> entry
                   in FilterSettings.categoryLabels.entries)
-                InkWell(
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                  onTap: !_enabled
-                      ? null
-                      : () => setState(() {
-                            if (_categories.contains(entry.key)) {
-                              _categories.remove(entry.key);
-                            } else {
-                              _categories.add(entry.key);
-                            }
-                          }),
-                  child: Opacity(
-                    opacity: _enabled ? 1 : 0.5,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppMetrics.space3,
-                        vertical: AppMetrics.space2,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                        color: _categories.contains(entry.key)
-                            ? colors.primary.withValues(alpha: 0.14)
-                            : colors.backgroundAlt,
-                        border: Border.all(
-                          color: _categories.contains(entry.key)
-                              ? colors.primary
-                              : colors.border,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(
-                            _categories.contains(entry.key)
-                                ? Icons.check_circle_rounded
-                                : Icons.circle_outlined,
-                            size: AppMetrics.iconSm,
-                            color: _categories.contains(entry.key)
-                                ? colors.primary
-                                : colors.textSecondary,
-                          ),
-                          const SizedBox(width: AppMetrics.space2),
-                          Text(
-                            Fa.num(entry.value),
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                _CategoryChip(
+                  label: entry.value,
+                  selected: _categories.contains(entry.key),
+                  enabled: _enabled,
+                  colors: colors,
+                  onTap: () => setState(() {
+                    if (_categories.contains(entry.key)) {
+                      _categories.remove(entry.key);
+                    } else {
+                      _categories.add(entry.key);
+                    }
+                  }),
                 ),
             ],
           ),
           const SizedBox(height: AppMetrics.space4),
-          GradientButton(
-            label: 'ذخیره تنظیمات کنترل محتوا',
-            icon: Icons.save_rounded,
+          SizedBox(
             height: AppMetrics.controlHeightSmall,
-            expand: false,
-            loading: _saving,
-            onPressed: _saving ? null : _save,
+            child: OutlinedButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(
+                      width: AppMetrics.iconXs,
+                      height: AppMetrics.iconXs,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_rounded, size: AppMetrics.iconSm),
+              label: const Text('ذخیره کنترل محتوا'),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.colors,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final UmbrellaColors colors;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: Material(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.12)
+            : colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          onTap: enabled ? onTap : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppMetrics.space3,
+              vertical: AppMetrics.space2,
+            ),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+              border: Border.all(
+                color: selected ? colors.primary : colors.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.circle_outlined,
+                  size: AppMetrics.iconSm,
+                  color: selected ? colors.primary : colors.textSecondary,
+                ),
+                const SizedBox(width: AppMetrics.space2),
+                Text(
+                  Fa.num(label),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: colors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

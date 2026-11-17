@@ -820,9 +820,33 @@ void main() {
       expect(connect.contains('منطقه و سرورها'), isFalse);
       expect(connect.contains('_RegionProxyDialog'), isFalse);
       expect(connect.contains('_pickServerRegion'), isFalse);
+      expect(connect.contains('showDialog'), isFalse);
+      expect(connect.contains('_ConnectionModeDialog'), isFalse);
+      expect(connect.contains('_ModeDialog'), isFalse);
       expect(connect.contains("'حالت اتصال'"), isTrue);
       expect(connect.contains("'حالت انتخاب سرور'"), isTrue);
       expect(connect.contains('_ConnectionOptionsBar'), isTrue);
+      expect(connect.contains('AnchoredSelectField<CorePreference>'), isTrue);
+      expect(connect.contains('AnchoredSelectField<SelectionMode>'), isTrue);
+    });
+
+    test('چهار منوی دستگاه من، حساب من، تنظیمات و درباره ساختار یکدست دارند', () {
+      for (final String page in <String>[
+        'device_page',
+        'account_page',
+        'settings_page',
+        'about_page',
+      ]) {
+        final String text = read('lib/ui/pages/$page.dart');
+        expect(text.contains('PageHeader('), isTrue, reason: page);
+        expect(text.contains('PageBanner('), isTrue, reason: page);
+        expect(text.contains('SectionHeader('), isTrue, reason: page);
+        expect(text.contains('AppMetrics.radiusXl'), isTrue, reason: page);
+      }
+      expect(
+        read('lib/ui/pages/settings_page.dart').contains('ResponsiveColumns('),
+        isTrue,
+      );
     });
   });
 

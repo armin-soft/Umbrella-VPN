@@ -410,6 +410,10 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surface,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
+          side: BorderSide(color: palette.border),
+        ),
         titleTextStyle: text.titleLarge?.copyWith(fontFamily: fontFamily, fontSize: 20),
         contentTextStyle: text.bodyMedium?.copyWith(fontFamily: fontFamily, fontSize: 14),
       ),
@@ -421,7 +425,50 @@ class AppTheme {
       popupMenuTheme: PopupMenuThemeData(
         color: palette.surface,
         surfaceTintColor: Colors.transparent,
+        elevation: 10,
+        shadowColor: palette.shadow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          side: BorderSide(color: palette.border),
+        ),
         textStyle: TextStyle(fontFamily: fontFamily, color: palette.textPrimary),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll<Color>(palette.surface),
+          surfaceTintColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+          shadowColor: WidgetStatePropertyAll<Color>(palette.shadow),
+          elevation: const WidgetStatePropertyAll<double>(12),
+          padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+            EdgeInsets.all(AppMetrics.space2),
+          ),
+          shape: WidgetStatePropertyAll<OutlinedBorder>(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+              side: BorderSide(color: palette.border),
+            ),
+          ),
+        ),
+      ),
+      expansionTileTheme: ExpansionTileThemeData(
+        backgroundColor: palette.surfaceHigh.withValues(alpha: 0.55),
+        collapsedBackgroundColor: palette.surfaceHigh.withValues(alpha: 0.4),
+        iconColor: palette.textSecondary,
+        collapsedIconColor: palette.textSecondary,
+        textColor: palette.textPrimary,
+        collapsedTextColor: palette.textPrimary,
+        tilePadding: const EdgeInsets.symmetric(
+          horizontal: AppMetrics.space4,
+          vertical: AppMetrics.space1,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          side: BorderSide(color: palette.border),
+        ),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          side: BorderSide(color: palette.border),
+        ),
       ),
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: palette.primary,
@@ -457,27 +504,41 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: palette.surfaceHigh,
+        isDense: true,
         hintStyle: TextStyle(color: palette.textSecondary, fontFamily: fontFamily),
-        labelStyle: TextStyle(color: palette.textSecondary, fontFamily: fontFamily),
+        labelStyle: TextStyle(
+          color: palette.textSecondary,
+          fontFamily: fontFamily,
+          fontSize: AppMetrics.fontBody,
+        ),
+        helperStyle: TextStyle(
+          color: palette.textSecondary,
+          fontFamily: fontFamily,
+          fontSize: AppMetrics.fontCaption,
+        ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppMetrics.space5,
-          vertical: AppMetrics.space5,
+          horizontal: AppMetrics.space4,
+          vertical: AppMetrics.space3,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           borderSide: BorderSide(color: palette.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           borderSide: BorderSide(color: palette.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-          borderSide: BorderSide(color: palette.primary, width: 1.6),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          borderSide: BorderSide(color: palette.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           borderSide: BorderSide(color: palette.danger),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          borderSide: BorderSide(color: palette.danger, width: 1.5),
         ),
         errorStyle: TextStyle(
           fontFamily: fontFamily,

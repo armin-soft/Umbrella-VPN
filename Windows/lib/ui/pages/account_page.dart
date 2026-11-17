@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,10 +10,8 @@ import '../../state/auth_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
 import '../widgets/common.dart';
-import '../widgets/live_clock.dart';
 
-/// حساب کاربری: هویت، مصرف دقیق (همان اعدادی که پنل نشان می دهد) و وضعیت
-/// اشتراک. کنترل محتوا در تنظیمات و مشخصات دستگاه در «دستگاه من» است.
+/// صفحه «حساب من»: وضعیت اشتراک، حجم مصرفی، زمان باقی مانده و همگام سازی تلگرام.
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
 
@@ -30,7 +29,6 @@ class _AccountPageState extends State<AccountPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPanel(true));
   }
 
-  /// خواندن اعداد دقیق از پنل؛ اگر پنل جواب نداد، همان داده درگاه می ماند.
   Future<void> _loadPanel(bool silent) async {
     final AuthController auth = context.read<AuthController>();
     final bool ok = await auth.refreshFromPanel();
@@ -41,9 +39,9 @@ class _AccountPageState extends State<AccountPage> {
     if (!silent) {
       final ToastController toasts = context.read<ToastController>();
       if (ok) {
-        toasts.success('اطلاعات پنل به روز شد');
+        toasts.success('اطلاعات حساب به روز شد');
       } else {
-        toasts.info('پنل پاسخ نداد', 'همان اطلاعات سرور نمایش داده می شود.');
+        toasts.info('اطلاعات ذخیره شده سرور نمایش داده می شود');
       }
     }
   }
@@ -74,12 +72,26 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  Future<void> _copy(ToastController toasts, String label, String value) async {
+    if (value.trim().isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: value.trim()));
+    if (!mounted) {
+      return;
+    }
+    toasts.success('$label کپی شد');
+  }
+
   /// باز کردن ربات رسمی حساب آمبرلا.
   Future<void> _openTelegramBot(ToastController toasts) async {
     final Uri uri = Uri.parse('https://t.me/UmbrellaVPN_BOT');
     try {
-      final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) toasts.error('مرورگر باز نشد', 'https://t.me/UmbrellaVPN_BOT');
+      final bool ok =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        toasts.error('مرورگر باز نشد', 'https://t.me/UmbrellaVPN_BOT');
+      }
     } on Exception {
       toasts.error('باز کردن تلگرام ناموفق بود');
     }
@@ -97,27 +109,90 @@ class _AccountPageState extends State<AccountPage> {
     final bool unlimited = limit <= 0;
     final double remaining = account.remainingGb;
     final double percent = account.usagePercent;
+    final String name = account.displayName;
+    final String trimmed = name.trim();
+    final String initial =
+        trimmed.isEmpty ? 'U' : String.fromCharCode(trimmed.runes.first);
+
+    final String statusText = !account.enable
+        ? 'مسدود شده'
+        : (account.expired ? 'منقضی شده' : 'فعال');
+    final Color statusTone =
+        account.healthy ? colors.success : colors.danger;
 
     return SingleChildScrollView(
       padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const PageHeader(
+          PageHeader(
             title: 'حساب من',
-            subtitle: 'هویت، مصرف دقیق و زمان اشتراک شما.',
+            subtitle: 'حجم مصرفی، اعتبار زمانی و مشخصات کاربری شما',
             icon: Icons.person_rounded,
-          ),
-          const SizedBox(height: AppMetrics.space4),
-          _AccountHero(
-            account: account,
-            colors: colors,
-            refreshing: _refreshing,
-            onRefresh: () => _refreshFromServer(auth, subs, toasts),
+            actions: <Widget>[
+              OutlinedButton.icon(
+                onPressed: _refreshing
+                    ? null
+                    : () => _refreshFromServer(auth, subs, toasts),
+                icon: _refreshing
+                    ? const SizedBox(
+                        width: AppMetrics.iconXs,
+                        height: AppMetrics.iconXs,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync_rounded, size: AppMetrics.iconSm),
+                label: const Text('به روز رسانی'),
+              ),
+            ],
           ),
           const SizedBox(height: AppMetrics.space4),
 
-          // ── مصرف و روزهای باقی مانده در یک نگاه ──────────────────
+          // ── نوار هویتی یکدست حساب ────────────────────────────────────
+          PageBanner(
+            leading: Container(
+              width: AppMetrics.iconBoxHero,
+              height: AppMetrics.iconBoxHero,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+                border: Border.all(
+                  color: colors.primary.withValues(alpha: 0.32),
+                ),
+              ),
+              child: Text(
+                initial,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: colors.primary,
+                    ),
+              ),
+            ),
+            title: name,
+            subtitle: account.phone.isNotEmpty
+                ? 'سرویس ${account.planLabel} • شماره ${account.phone}'
+                : 'سرویس ${account.planLabel}',
+            badges: <Widget>[
+              Pill(
+                label: account.healthy ? 'حساب فعال' : 'نیازمند بررسی',
+                icon: account.healthy
+                    ? Icons.verified_rounded
+                    : Icons.error_outline_rounded,
+                color: statusTone,
+                dense: true,
+              ),
+              if (account.telegramId.isNotEmpty)
+                Pill(
+                  label: 'متصل به تلگرام',
+                  icon: Icons.send_rounded,
+                  color: colors.info,
+                  dense: true,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppMetrics.space4),
+
+          // ── ردیف اول: دو کارت هم اندازه مصرف ترافیک و زمان اشتراک ────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget usage = _UsageCard(
@@ -130,7 +205,7 @@ class _AccountPageState extends State<AccountPage> {
                 colors: colors,
               );
               final Widget days = _DaysCard(account: account, colors: colors);
-              if (constraints.maxWidth < 820) {
+              if (constraints.maxWidth < AppMetrics.breakpointColumns) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -144,9 +219,9 @@ class _AccountPageState extends State<AccountPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Expanded(flex: 3, child: usage),
+                    Expanded(child: usage),
                     const SizedBox(width: AppMetrics.space4),
-                    Expanded(flex: 2, child: days),
+                    Expanded(child: days),
                   ],
                 ),
               );
@@ -154,42 +229,60 @@ class _AccountPageState extends State<AccountPage> {
           ),
           const SizedBox(height: AppMetrics.space4),
 
-          // ── جزئیات حساب و ارتباط ──────────────────────────────────
+          // ── ردیف دوم: دو کارت هم اندازه مشخصات حساب و ارتباط تلگرام ──
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget details = GlassCard(
-                padding: const EdgeInsets.all(AppMetrics.space5),
+                padding: AppMetrics.cardPadding,
+                radius: AppMetrics.radiusXl,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     const SectionHeader(
-                      title: 'جزئیات سرویس',
-                      subtitle: 'نوع و حالت اشتراک',
+                      icon: Icons.badge_rounded,
+                      title: 'مشخصات حساب و سرویس',
+                      subtitle: 'اطلاعات کاربری و وضعیت بسته فعال',
                     ),
-                    const SizedBox(height: AppMetrics.space3),
+                    const Divider(height: AppMetrics.space5),
                     InfoRow(
                       icon: Icons.category_rounded,
                       label: 'نوع سرویس',
                       value: Fa.num(account.planLabel),
                     ),
-                    const Divider(height: AppMetrics.space4),
+                    const Divider(height: AppMetrics.space2),
                     InfoRow(
-                      icon: Icons.event_available_rounded,
-                      label: 'روزهای باقی مانده',
-                      value: account.expiryDate == null
-                          ? 'نامشخص'
-                          : (account.expired
-                              ? 'منقضی شده'
-                              : Fa.num('${Fa.num(account.daysLeft)} روز')),
-                      valueColor: account.expired
-                          ? colors.danger
-                          : (account.daysLeft <= 3 &&
-                                  account.expiryDate != null
-                              ? colors.warning
-                              : colors.textPrimary),
+                      icon: Icons.verified_user_rounded,
+                      label: 'وضعیت سرویس',
+                      value: statusText,
+                      valueColor: statusTone,
+                    ),
+                    const Divider(height: AppMetrics.space2),
+                    InfoRow(
+                      icon: Icons.phone_rounded,
+                      label: 'شماره موبایل',
+                      value: account.phone.isEmpty
+                          ? 'ثبت نشده'
+                          : Fa.num(account.phone),
+                    ),
+                    const Divider(height: AppMetrics.space2),
+                    InfoRow(
+                      icon: Icons.fingerprint_rounded,
+                      label: 'شناسه حساب',
+                      value: account.uuid.isEmpty ? 'نامشخص' : account.uuid,
+                      ltr: account.uuid.isNotEmpty,
+                      tooltip: true,
+                      trailing: account.uuid.isEmpty
+                          ? null
+                          : IconAction(
+                              icon: Icons.copy_rounded,
+                              tooltip: 'کپی شناسه حساب',
+                              size: AppMetrics.iconBoxSm,
+                              onTap: () =>
+                                  _copy(toasts, 'شناسه حساب', account.uuid),
+                            ),
                     ),
                     if (account.mode.isNotEmpty) ...<Widget>[
-                      const Divider(height: AppMetrics.space4),
+                      const Divider(height: AppMetrics.space2),
                       InfoRow(
                         icon: Icons.tune_rounded,
                         label: 'حالت حساب',
@@ -199,37 +292,44 @@ class _AccountPageState extends State<AccountPage> {
                   ],
                 ),
               );
-              final Widget identity = GlassCard(
-                padding: const EdgeInsets.all(AppMetrics.space5),
+
+              final Widget telegram = GlassCard(
+                padding: AppMetrics.cardPadding,
+                radius: AppMetrics.radiusXl,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     const SectionHeader(
-                      title: 'حساب و ارتباط',
-                      subtitle: 'شناسه و راه های تماس',
-                    ),
-                    const SizedBox(height: AppMetrics.space3),
-                    InfoRow(
-                      icon: Icons.badge_rounded,
-                      label: 'شناسه حساب',
-                      value: account.uuid.isEmpty ? 'نامشخص' : account.uuid,
-                    ),
-                    const Divider(height: AppMetrics.space4),
-                    InfoRow(
-                      icon: Icons.phone_rounded,
-                      label: 'شماره موبایل',
-                      value: account.phone.isEmpty ? 'ثبت نشده' : account.phone,
-                    ),
-                    const Divider(height: AppMetrics.space4),
-                    InfoRow(
                       icon: Icons.send_rounded,
-                      label: 'تلگرام',
+                      title: 'همگام سازی با تلگرام',
+                      subtitle: 'مدیریت تمدید، اعلان ها و دستگاه ها در ربات رسمی',
+                    ),
+                    const Divider(height: AppMetrics.space5),
+                    InfoRow(
+                      icon: Icons.link_rounded,
+                      label: 'وضعیت اتصال',
                       value: account.telegramId.isEmpty
                           ? 'متصل نشده'
-                          : account.telegramId,
+                          : 'متصل و همگام',
                       valueColor: account.telegramId.isEmpty
                           ? colors.textSecondary
                           : colors.success,
+                    ),
+                    const Divider(height: AppMetrics.space2),
+                    InfoRow(
+                      icon: Icons.alternate_email_rounded,
+                      label: 'شناسه تلگرام',
+                      value: account.telegramId.isEmpty
+                          ? 'ثبت نشده'
+                          : account.telegramId,
+                      ltr: account.telegramId.isNotEmpty,
+                    ),
+                    const Divider(height: AppMetrics.space2),
+                    const InfoRow(
+                      icon: Icons.smart_toy_rounded,
+                      label: 'ربات رسمی',
+                      value: '@UmbrellaVPN_BOT',
+                      ltr: true,
                     ),
                     const SizedBox(height: AppMetrics.space4),
                     _TelegramSyncButton(
@@ -239,13 +339,14 @@ class _AccountPageState extends State<AccountPage> {
                   ],
                 ),
               );
-              if (constraints.maxWidth < 820) {
+
+              if (constraints.maxWidth < AppMetrics.breakpointColumns) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     details,
                     const SizedBox(height: AppMetrics.space4),
-                    identity,
+                    telegram,
                   ],
                 );
               }
@@ -253,164 +354,21 @@ class _AccountPageState extends State<AccountPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Expanded(flex: 3, child: details),
+                    Expanded(child: details),
                     const SizedBox(width: AppMetrics.space4),
-                    Expanded(flex: 2, child: identity),
+                    Expanded(child: telegram),
                   ],
                 ),
               );
             },
           ),
-          const SizedBox(height: AppMetrics.space4),
-          Center(
-            child: LiveDateTimeLine(
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(color: colors.textSecondary),
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-/// هدر حساب: آواتار حرف اول، نام، شناسه و دکمه به روز رسانی.
-class _AccountHero extends StatelessWidget {
-  const _AccountHero({
-    required this.account,
-    required this.colors,
-    required this.refreshing,
-    required this.onRefresh,
-  });
-
-  final Account account;
-  final UmbrellaColors colors;
-  final bool refreshing;
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final String name = account.displayName;
-    final String trimmed = name.trim();
-    final String initial =
-        trimmed.isEmpty ? 'U' : String.fromCharCode(trimmed.runes.first);
-    return GlassCard(
-      padding: AppMetrics.pagePadding,
-      radius: AppMetrics.radiusXl,
-      gradient: LinearGradient(
-        begin: Alignment.topRight,
-        end: Alignment.bottomLeft,
-        colors: <Color>[
-          colors.primary.withValues(alpha: 0.16),
-          colors.surface,
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool narrow = constraints.maxWidth < 520;
-          final Widget avatar = Container(
-            width: AppMetrics.iconBoxHero,
-            height: AppMetrics.iconBoxHero,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colors.primary.withValues(alpha: 0.16),
-              border: Border.all(color: colors.primary.withValues(alpha: 0.45)),
-            ),
-            child: Text(
-              initial,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: colors.primary,
-                  ),
-            ),
-          );
-          final Widget text = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                Fa.num(name),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-              ),
-              const SizedBox(height: AppMetrics.space1),
-              Text(
-                Fa.num(
-                  account.phone.isNotEmpty
-                      ? account.phone
-                      : (account.uuid.isEmpty ? 'بدون شناسه' : account.uuid),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: colors.textSecondary),
-              ),
-            ],
-          );
-          final Widget actions = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Pill(
-                label: account.healthy ? 'حساب فعال' : 'نیازمند بررسی',
-                icon: account.healthy
-                    ? Icons.verified_rounded
-                    : Icons.error_outline_rounded,
-                color: account.healthy ? colors.success : colors.danger,
-                dense: true,
-              ),
-              const SizedBox(width: AppMetrics.space3),
-              OutlinedButton.icon(
-                onPressed: refreshing ? null : onRefresh,
-                icon: refreshing
-                    ? const SizedBox(
-                        width: AppMetrics.iconXs,
-                        height: AppMetrics.iconXs,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync_rounded, size: AppMetrics.iconSm),
-                label: const Text('به روز رسانی'),
-              ),
-            ],
-          );
-          if (narrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    avatar,
-                    const SizedBox(width: AppMetrics.space4),
-                    Expanded(child: text),
-                  ],
-                ),
-                const SizedBox(height: AppMetrics.space3),
-                actions,
-              ],
-            );
-          }
-          return Row(
-            children: <Widget>[
-              avatar,
-              const SizedBox(width: AppMetrics.space5),
-              Expanded(child: text),
-              actions,
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// کارت مصرف: حلقه درصد + نوار پیشرفت + باقی مانده.
+/// کارت مصرف ترافیک: حلقه درصد، عدد خوانا، نوار پیشرفت و حجم باقی مانده.
 class _UsageCard extends StatelessWidget {
   const _UsageCard({
     required this.used,
@@ -432,116 +390,138 @@ class _UsageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color tone = percent >= 90
-        ? colors.danger
-        : (percent >= 70 ? colors.warning : colors.success);
+    final Color tone = unlimited
+        ? colors.success
+        : (percent >= 90
+            ? colors.danger
+            : (percent >= 70 ? colors.warning : colors.success));
     return GlassCard(
-      padding: const EdgeInsets.all(AppMetrics.space5),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          SectionHeader(
-            title: 'مصرف ترافیک',
-            subtitle: panelFresh
-                ? 'اعداد مستقیم از پنل خوانده می شوند.'
-                : 'منبع: سرور برنامه (پنل پاسخ نداد).',
-          ),
-          const SizedBox(height: AppMetrics.space4),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              _UsageRing(
-                percent: percent,
-                unlimited: unlimited,
-                tone: tone,
-                colors: colors,
+              SectionHeader(
+                icon: Icons.data_usage_rounded,
+                title: 'مصرف ترافیک',
+                subtitle: panelFresh
+                    ? 'همگام با پنل کاربری'
+                    : 'همگام با سرور آمبرلا',
+                trailing: Pill(
+                  label: unlimited
+                      ? 'نامحدود'
+                      : '${Fa.decimal(percent, fraction: 0)}٪ مصرف',
+                  color: tone,
+                  dense: true,
+                ),
               ),
-              const SizedBox(width: AppMetrics.space5),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
+              const Divider(height: AppMetrics.space5),
+              Row(
+                children: <Widget>[
+                  _UsageRing(
+                    percent: percent,
+                    unlimited: unlimited,
+                    tone: tone,
+                    colors: colors,
+                  ),
+                  const SizedBox(width: AppMetrics.space5),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        Text(
-                          Fa.decimal(used, fraction: 2),
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: tone,
-                              ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: <Widget>[
+                            Text(
+                              Fa.decimal(used, fraction: 2),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    color: colors.textPrimary,
+                                  ),
+                            ),
+                            const SizedBox(width: AppMetrics.space2),
+                            Text(
+                              Fa.num('گیگابایت'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: colors.textSecondary),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: AppMetrics.space2),
+                        const SizedBox(height: AppMetrics.space1),
                         Text(
-                          Fa.num('گیگابایت'),
+                          Fa.num(
+                            unlimited
+                                ? 'بدون محدودیت حجم'
+                                : 'از مجموع ${Fa.decimal(limit, fraction: 2)} گیگابایت',
+                          ),
                           style: Theme.of(context)
                               .textTheme
-                              .labelSmall
+                              .labelMedium
                               ?.copyWith(color: colors.textSecondary),
                         ),
                       ],
                     ),
-                    const SizedBox(height: AppMetrics.space1),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: AppMetrics.space5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
+                  child: LinearProgressIndicator(
+                    value:
+                        unlimited ? 0 : (percent.clamp(0, 100) / 100).toDouble(),
+                    minHeight: AppMetrics.space2,
+                    backgroundColor: colors.surfaceHigh,
+                    valueColor: AlwaysStoppedAnimation<Color>(tone),
+                  ),
+                ),
+                const SizedBox(height: AppMetrics.space3),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
                     Text(
                       Fa.num(
                         unlimited
-                            ? 'اشتراک نامحدود'
-                            : 'از ${Fa.decimal(limit, fraction: 2)} گیگابایت',
+                            ? 'ترافیک آزاد'
+                            : '${Fa.decimal(percent, fraction: 1)}٪ استفاده شده',
                       ),
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
                           ?.copyWith(color: colors.textSecondary),
                     ),
+                    Text(
+                      Fa.num(
+                        unlimited
+                            ? 'باقی مانده: نامحدود'
+                            : 'باقی مانده: ${Fa.gb(remaining)}',
+                      ),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
+                          ),
+                    ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppMetrics.space4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
-            child: LinearProgressIndicator(
-              value: unlimited ? 0 : (percent.clamp(0, 100) / 100).toDouble(),
-              minHeight: 10,
-              backgroundColor: colors.backgroundAlt,
-              valueColor: AlwaysStoppedAnimation<Color>(tone),
+              ],
             ),
-          ),
-          const SizedBox(height: AppMetrics.space2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              Text(
-                Fa.num(
-                  unlimited
-                      ? 'بدون سقف حجم'
-                      : '${Fa.decimal(percent, fraction: 1)} درصد استفاده شده',
-                ),
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: colors.textSecondary),
-              ),
-              Text(
-                Fa.num(
-                  unlimited
-                      ? 'باقی مانده: نامحدود'
-                      : 'باقی مانده: ${Fa.gb(remaining)}',
-                ),
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: colors.primary,
-                    ),
-              ),
-            ],
           ),
         ],
       ),
@@ -549,7 +529,6 @@ class _UsageCard extends StatelessWidget {
   }
 }
 
-/// حلقه درصد مصرف؛ با نامحدود بودن، حلقه خالی و برچسب «∞» است.
 class _UsageRing extends StatelessWidget {
   const _UsageRing({
     required this.percent,
@@ -565,7 +544,8 @@ class _UsageRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double value = unlimited ? 0 : (percent.clamp(0, 100) / 100).toDouble();
+    final double value =
+        unlimited ? 0 : (percent.clamp(0, 100) / 100).toDouble();
     return SizedBox(
       width: AppMetrics.logoLg,
       height: AppMetrics.logoLg,
@@ -577,8 +557,8 @@ class _UsageRing extends StatelessWidget {
             height: AppMetrics.logoLg,
             child: CircularProgressIndicator(
               value: value,
-              strokeWidth: 9,
-              backgroundColor: colors.backgroundAlt,
+              strokeWidth: 8,
+              backgroundColor: colors.surfaceHigh,
               valueColor: AlwaysStoppedAnimation<Color>(tone),
             ),
           ),
@@ -597,7 +577,7 @@ class _UsageRing extends StatelessWidget {
   }
 }
 
-/// کارت روزهای باقی مانده: عدد بزرگ + تاریخ انقضا.
+/// کارت زمان اشتراک: روزهای باقی مانده و تاریخ های کلیدی.
 class _DaysCard extends StatelessWidget {
   const _DaysCard({required this.account, required this.colors});
 
@@ -611,52 +591,63 @@ class _DaysCard extends StatelessWidget {
     final bool soon = hasDate && !expired && account.daysLeft <= 3;
     final Color tone =
         expired ? colors.danger : (soon ? colors.warning : colors.success);
+    final String pillLabel = !hasDate
+        ? 'نامحدود'
+        : (expired ? 'منقضی' : (soon ? 'رو به پایان' : 'معتبر'));
+
     return GlassCard(
-      padding: const EdgeInsets.all(AppMetrics.space5),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const SectionHeader(
-            title: 'زمان اشتراک',
-            subtitle: 'تا پایان سرویس چقدر مانده',
+          SectionHeader(
+            icon: Icons.event_available_rounded,
+            title: 'اعتبار زمانی اشتراک',
+            subtitle: 'روزهای باقی مانده و زمان بندی سرویس',
+            trailing: Pill(label: pillLabel, color: tone, dense: true),
           ),
-          const SizedBox(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space5),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: <Widget>[
               Text(
                 Fa.num(
-                  hasDate ? (expired ? '0' : '${account.daysLeft}') : '—',
+                  hasDate ? (expired ? '0' : '${account.daysLeft}') : '∞',
                 ),
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w900,
                       color: tone,
                     ),
               ),
               const SizedBox(width: AppMetrics.space2),
               Text(
-                Fa.num(expired ? 'منقضی شده' : 'روز باقی مانده'),
+                Fa.num(
+                  !hasDate
+                      ? 'بدون تاریخ انقضا'
+                      : (expired ? 'روز (منقضی شده)' : 'روز باقی مانده'),
+                ),
                 style: Theme.of(context)
                     .textTheme
-                    .labelSmall
+                    .bodySmall
                     ?.copyWith(color: colors.textSecondary),
               ),
             ],
           ),
-          const SizedBox(height: AppMetrics.space4),
+          const SizedBox(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.event_rounded,
             label: 'تاریخ انقضا',
             value: Fa.dateTime(account.expiryDate),
           ),
-          const Divider(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.play_circle_outline_rounded,
-            label: 'شروع سرویس',
+            label: 'تاریخ شروع',
             value: Fa.dateTime(account.startDate),
           ),
-          const Divider(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.schedule_rounded,
             label: 'آخرین اتصال',
@@ -668,7 +659,7 @@ class _DaysCard extends StatelessWidget {
   }
 }
 
-/// دکمه «سینک با تلگرام»: حساب ویندوز را به ربات همان سرویس وصل می کند.
+/// دکمه مرتب و استاندارد همگام سازی حساب با ربات رسمی تلگرام.
 class _TelegramSyncButton extends StatelessWidget {
   const _TelegramSyncButton({required this.account, required this.onOpen});
 
@@ -679,54 +670,52 @@ class _TelegramSyncButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final bool linked = account.telegramId.isNotEmpty;
-    final Color tone = linked ? colors.success : const Color(0xFF29A9EB);
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-      onTap: onOpen,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4, vertical: AppMetrics.space3),
-        decoration: BoxDecoration(
-          color: tone.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-          border: Border.all(color: tone.withValues(alpha: 0.42)),
-        ),
-        child: Row(
-          children: <Widget>[
-            IconSquare(
-              icon: linked ? Icons.verified_rounded : Icons.send_rounded,
-              color: tone,
-              size: AppMetrics.iconBoxMd,
-            ),
-            const SizedBox(width: AppMetrics.space3),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    Fa.num(linked ? 'به تلگرام سینک شده' : 'سینک با تلگرام'),
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: tone,
-                        ),
-                  ),
-                  const SizedBox(height: AppMetrics.space1),
-                  Text(
-                    Fa.num(
-                      linked
-                          ? 'حساب و اشتراک همگام شده‌اند.\nhttps://t.me/UmbrellaVPN_BOT'
-                          : 'با یک کلیک به ربات رسمی متصل شوید.\nhttps://t.me/UmbrellaVPN_BOT',
-                    ),
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: colors.textSecondary, height: 1.5),
-                  ),
-                ],
+    final Color tone = linked ? colors.success : colors.primary;
+    return Material(
+      color: tone.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        onTap: onOpen,
+        child: Container(
+          height: AppMetrics.controlHeightSmall,
+          padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+            border: Border.all(color: tone.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(
+                linked ? Icons.verified_rounded : Icons.send_rounded,
+                size: AppMetrics.iconSm,
+                color: tone,
               ),
-            ),
-            Icon(Icons.open_in_new_rounded, size: AppMetrics.iconSm, color: tone),
-          ],
+              const SizedBox(width: AppMetrics.space2),
+              Flexible(
+                child: Text(
+                  Fa.num(
+                    linked
+                        ? 'باز کردن ربات تلگرام (همگام شده)'
+                        : 'اتصال و سینک حساب در تلگرام',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: tone,
+                      ),
+                ),
+              ),
+              const SizedBox(width: AppMetrics.space2),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: AppMetrics.iconXs,
+                color: tone,
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -293,43 +293,178 @@ class SectionHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.icon,
+    this.accent,
     this.trailing,
   });
 
   final String title;
   final String? subtitle;
+  final IconData? icon;
+  final Color? accent;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
+        if (icon != null) ...<Widget>[
+          IconSquare(
+            icon: icon!,
+            color: accent ?? colors.primary,
+            size: AppMetrics.iconBoxLg,
+            radius: AppMetrics.radiusMd,
+          ),
+          const SizedBox(width: AppMetrics.space3),
+        ],
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(
                 Fa.num(title),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colors.textPrimary,
                       fontWeight: FontWeight.w800,
                     ),
               ),
-              if (subtitle != null) ...<Widget>[
+              if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
                 const SizedBox(height: AppMetrics.space1),
                 Text(
                   Fa.num(subtitle!),
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: colors.textSecondary),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.5,
+                      ),
                 ),
               ],
             ],
           ),
         ),
-        if (trailing != null) trailing!,
+        if (trailing != null) ...<Widget>[
+          const SizedBox(width: AppMetrics.space3),
+          trailing!,
+        ],
       ],
+    );
+  }
+}
+
+/// نوار هویتی یکدست بالای همه منوها (دستگاه من، حساب من، تنظیمات، درباره).
+class PageBanner extends StatelessWidget {
+  const PageBanner({
+    super.key,
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    this.subtitleLtr = false,
+    this.badges = const <Widget>[],
+  });
+
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final bool subtitleLtr;
+  final List<Widget> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return GlassCard(
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
+      borderColor: colors.primary.withValues(alpha: 0.24),
+      gradient: LinearGradient(
+        begin: AlignmentDirectional.centerStart,
+        end: AlignmentDirectional.centerEnd,
+        colors: <Color>[
+          Color.alphaBlend(
+            colors.primary.withValues(alpha: 0.12),
+            colors.surface,
+          ),
+          colors.surface,
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool compact =
+              constraints.maxWidth < AppMetrics.breakpointCompact;
+          final Widget subtitleWidget = Text(
+            subtitleLtr ? subtitle : Fa.num(subtitle),
+            textDirection: subtitleLtr ? TextDirection.ltr : null,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.6,
+                ),
+          );
+          final Widget identity = Row(
+            children: <Widget>[
+              leading,
+              const SizedBox(width: AppMetrics.space4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      Fa.num(title),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: AppMetrics.space1),
+                    if (subtitleLtr)
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: subtitleWidget,
+                      )
+                    else
+                      subtitleWidget,
+                  ],
+                ),
+              ),
+            ],
+          );
+          if (badges.isEmpty) {
+            return identity;
+          }
+          final Widget badgeWrap = Wrap(
+            spacing: AppMetrics.space2,
+            runSpacing: AppMetrics.space2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: badges,
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                identity,
+                const SizedBox(height: AppMetrics.space3),
+                badgeWrap,
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: identity),
+              const SizedBox(width: AppMetrics.space4),
+              badgeWrap,
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -397,6 +532,7 @@ class StatTile extends StatelessWidget {
     this.accent,
     this.hint,
     this.compact = false,
+    this.ltr = false,
   });
 
   final String label;
@@ -405,6 +541,7 @@ class StatTile extends StatelessWidget {
   final Color? accent;
   final String? hint;
   final bool compact;
+  final bool ltr;
 
   @override
   Widget build(BuildContext context) {
@@ -412,9 +549,9 @@ class StatTile extends StatelessWidget {
     final Color tone = accent ?? colors.primary;
     return GlassCard(
       padding: EdgeInsets.all(
-        compact ? AppMetrics.space3 : AppMetrics.space4,
+        compact ? AppMetrics.space4 : AppMetrics.space5,
       ),
-      radius: AppMetrics.radiusLg,
+      radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -424,7 +561,8 @@ class StatTile extends StatelessWidget {
               IconSquare(
                 icon: icon,
                 color: tone,
-                size: compact ? AppMetrics.iconBoxSm : AppMetrics.iconBoxMd,
+                size: AppMetrics.iconBoxMd,
+                radius: AppMetrics.radiusMd,
               ),
               const SizedBox(width: AppMetrics.space3),
               Expanded(
@@ -432,6 +570,7 @@ class StatTile extends StatelessWidget {
                   Fa.num(label),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: colors.textSecondary,
+                        fontWeight: FontWeight.w600,
                       ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -444,11 +583,13 @@ class StatTile extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
             child: Text(
-              Fa.num(value),
+              ltr ? value : Fa.num(value),
+              textDirection: ltr ? TextDirection.ltr : null,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: colors.textPrimary,
                     fontWeight: FontWeight.w800,
                     fontSize: compact
-                        ? AppMetrics.fontBody
+                        ? AppMetrics.fontButton
                         : AppMetrics.fontEmphasis,
                   ),
             ),
@@ -508,6 +649,8 @@ class InfoRow extends StatelessWidget {
     this.onTap,
     this.valueColor,
     this.trailing,
+    this.ltr = false,
+    this.tooltip = false,
   });
 
   final IconData icon;
@@ -516,59 +659,76 @@ class InfoRow extends StatelessWidget {
   final VoidCallback? onTap;
   final Color? valueColor;
   final Widget? trailing;
+  final bool ltr;
+  final bool tooltip;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    return MouseRegion(
-      cursor: onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
-      child: GestureDetector(
+    final String display = ltr ? value : Fa.num(value);
+    Widget valueText = Text(
+      display,
+      textDirection: ltr ? TextDirection.ltr : null,
+      textAlign: ltr ? TextAlign.left : TextAlign.end,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: valueColor ?? colors.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+    );
+    if (tooltip && display.isNotEmpty) {
+      valueText = Tooltip(message: display, child: valueText);
+    }
+    final Widget row = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space2,
+        vertical: AppMetrics.space3,
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
+          const SizedBox(width: AppMetrics.space3),
+          Text(
+            Fa.num(label),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+          ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: valueText,
+            ),
+          ),
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: AppMetrics.space2),
+            trailing!,
+          ],
+          if (onTap != null) ...<Widget>[
+            const SizedBox(width: AppMetrics.space2),
+            Icon(
+              Icons.open_in_new_rounded,
+              size: AppMetrics.iconXs,
+              color: colors.textSecondary,
+            ),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) {
+      return row;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppMetrics.space1,
-            vertical: AppMetrics.space3,
-          ),
-          child: Row(
-            children: <Widget>[
-              Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
-              const SizedBox(width: AppMetrics.space3),
-              Expanded(
-                child: Text(
-                  Fa.num(label),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Flexible(
-                child: Text(
-                  Fa.num(value),
-                  textAlign: TextAlign.end,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: valueColor ?? colors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-              if (trailing != null) ...<Widget>[
-                const SizedBox(width: AppMetrics.space2),
-                trailing!,
-              ],
-              if (onTap != null) ...<Widget>[
-                const SizedBox(width: AppMetrics.space1),
-                Icon(
-                  Icons.chevron_left_rounded,
-                  size: AppMetrics.iconSm,
-                  color: colors.border,
-                ),
-              ],
-            ],
-          ),
-        ),
+        child: row,
       ),
     );
   }
@@ -979,41 +1139,394 @@ class ToggleRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),
-      child: Row(
-        children: <Widget>[
-          IconSquare(
-            icon: icon,
-            color: accent ?? colors.primary,
-            size: AppMetrics.iconBoxMd,
+    final Color tone =
+        value ? (accent ?? colors.primary) : colors.textSecondary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppMetrics.space1,
+            vertical: AppMetrics.space2,
           ),
-          const SizedBox(width: AppMetrics.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  Fa.num(title),
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+          child: Row(
+            children: <Widget>[
+              IconSquare(
+                icon: icon,
+                color: tone,
+                size: AppMetrics.iconBoxMd,
+                radius: AppMetrics.radiusMd,
+              ),
+              const SizedBox(width: AppMetrics.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      Fa.num(title),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppMetrics.space1),
+                      Text(
+                        Fa.num(subtitle!),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: colors.textSecondary,
+                              height: 1.55,
+                            ),
                       ),
+                    ],
+                  ],
                 ),
-                if (subtitle != null) ...<Widget>[
-                  const SizedBox(height: AppMetrics.space1),
-                  Text(
-                    Fa.num(subtitle!),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
+              ),
+              const SizedBox(width: AppMetrics.space3),
+              Switch.adaptive(value: value, onChanged: onChanged),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// گزینه استاندارد فهرست بازشوی دسکتاپ.
+class SelectOption<T> {
+  const SelectOption({
+    required this.value,
+    required this.label,
+    this.subtitle = '',
+    this.icon,
+    this.enabled = true,
+  });
+
+  final T value;
+  final String label;
+  final String subtitle;
+  final IconData? icon;
+  final bool enabled;
+}
+
+/// کنترل انتخاب بازشوی استاندارد ویندوز (متصل به خود فیلد، بدون پنجره وسط صفحه).
+class AnchoredSelectField<T> extends StatefulWidget {
+  const AnchoredSelectField({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.enabled = true,
+    this.leadingIcon,
+  });
+
+  final String label;
+  final T value;
+  final List<SelectOption<T>> options;
+  final ValueChanged<T> onChanged;
+  final bool enabled;
+  final IconData? leadingIcon;
+
+  @override
+  State<AnchoredSelectField<T>> createState() => _AnchoredSelectFieldState<T>();
+}
+
+class _AnchoredSelectFieldState<T> extends State<AnchoredSelectField<T>> {
+  final MenuController _menuController = MenuController();
+  bool _hovered = false;
+
+  SelectOption<T> get _selected {
+    for (final SelectOption<T> option in widget.options) {
+      if (option.value == widget.value) {
+        return option;
+      }
+    }
+    return widget.options.first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final SelectOption<T> active = _selected;
+    final IconData? icon = active.icon ?? widget.leadingIcon;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsetsDirectional.only(
+            start: AppMetrics.space1,
+            bottom: AppMetrics.space1,
+          ),
+          child: Text(
+            Fa.num(widget.label),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double menuWidth = constraints.maxWidth > AppMetrics.buttonMaxWidth
+                ? constraints.maxWidth
+                : AppMetrics.buttonMaxWidth;
+            final double itemWidth = menuWidth - (AppMetrics.space2 * 2);
+            return MenuAnchor(
+              controller: _menuController,
+              alignmentOffset: const Offset(0, AppMetrics.space1),
+              style: MenuStyle(
+                backgroundColor: WidgetStatePropertyAll<Color>(colors.surface),
+                surfaceTintColor:
+                    const WidgetStatePropertyAll<Color>(Colors.transparent),
+                shadowColor: WidgetStatePropertyAll<Color>(colors.shadow),
+                elevation: const WidgetStatePropertyAll<double>(14),
+                minimumSize: WidgetStatePropertyAll<Size>(
+                  Size(menuWidth, 0),
+                ),
+                maximumSize: WidgetStatePropertyAll<Size>(
+                  Size(menuWidth, AppMetrics.dialogMaxHeight),
+                ),
+                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.all(AppMetrics.space2),
+                ),
+                shape: WidgetStatePropertyAll<OutlinedBorder>(
+                  RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+                    side: BorderSide(color: colors.border),
+                  ),
+                ),
+              ),
+              menuChildren: <Widget>[
+                for (int i = 0; i < widget.options.length; i++)
+                  _SelectMenuItem<T>(
+                    option: widget.options[i],
+                    width: itemWidth,
+                    isLast: i == widget.options.length - 1,
+                    selected: widget.options[i].value == widget.value,
+                    onSelect: () {
+                      final T next = widget.options[i].value;
+                      _menuController.close();
+                      if (next != widget.value) {
+                        widget.onChanged(next);
+                      }
+                    },
+                  ),
+              ],
+              builder: (
+                BuildContext context,
+                MenuController controller,
+                Widget? child,
+              ) {
+                final bool open = controller.isOpen;
+                final Color borderColor = !widget.enabled
+                    ? colors.border
+                    : (open
+                        ? colors.primary
+                        : (_hovered
+                            ? colors.textSecondary.withValues(alpha: 0.55)
+                            : colors.border));
+                return Opacity(
+                  opacity: widget.enabled ? 1 : 0.55,
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _hovered = true),
+                    onExit: (_) => setState(() => _hovered = false),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius:
+                            BorderRadius.circular(AppMetrics.radiusMd),
+                        onTap: !widget.enabled
+                            ? null
+                            : () {
+                                if (controller.isOpen) {
+                                  controller.close();
+                                } else {
+                                  controller.open();
+                                }
+                              },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          height: AppMetrics.controlHeightSmall,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppMetrics.space3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.surfaceHigh,
+                            borderRadius:
+                                BorderRadius.circular(AppMetrics.radiusMd),
+                            border: Border.all(
+                              color: borderColor,
+                              width: open ? 1.4 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              if (icon != null) ...<Widget>[
+                                Icon(
+                                  icon,
+                                  size: AppMetrics.iconSm,
+                                  color: open
+                                      ? colors.primary
+                                      : colors.textSecondary,
+                                ),
+                                const SizedBox(width: AppMetrics.space2),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  Fa.num(active.label),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: AppMetrics.space2),
+                              AnimatedRotation(
+                                turns: open ? 0.5 : 0,
+                                duration: const Duration(milliseconds: 160),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  size: AppMetrics.iconMd,
+                                  color: open
+                                      ? colors.primary
+                                      : colors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _SelectMenuItem<T> extends StatelessWidget {
+  const _SelectMenuItem({
+    required this.option,
+    required this.width,
+    required this.isLast,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final SelectOption<T> option;
+  final double width;
+  final bool isLast;
+  final bool selected;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: isLast
+            ? EdgeInsets.zero
+            : const EdgeInsets.only(bottom: AppMetrics.space1),
+        child: Material(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          onTap: option.enabled ? onSelect : null,
+          child: Opacity(
+            opacity: option.enabled ? 1 : 0.45,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3,
+                vertical: AppMetrics.space2,
+              ),
+              child: Row(
+                children: <Widget>[
+                  if (option.icon != null) ...<Widget>[
+                    Icon(
+                      option.icon,
+                      size: AppMetrics.iconSm,
+                      color: selected ? colors.primary : colors.textSecondary,
+                    ),
+                    const SizedBox(width: AppMetrics.space3),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          Fa.num(option.label),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: colors.textPrimary,
+                                    fontWeight: selected
+                                        ? FontWeight.w800
+                                        : FontWeight.w700,
+                                  ),
+                        ),
+                        if (option.subtitle.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: AppMetrics.space1),
+                          Text(
+                            Fa.num(option.subtitle),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: colors.textSecondary,
+                                  height: 1.45,
+                                ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppMetrics.space2),
+                  SizedBox(
+                    width: AppMetrics.iconMd,
+                    child: selected
+                        ? Icon(
+                            Icons.check_rounded,
+                            size: AppMetrics.iconSm,
+                            color: colors.primary,
+                          )
+                        : null,
                   ),
                 ],
-              ],
+              ),
             ),
           ),
-          Switch.adaptive(value: value, onChanged: onChanged),
-        ],
+        ),
       ),
+    ),
     );
   }
 }
