@@ -50,7 +50,6 @@ if (strlen($Stored) < 32) {
 try {
 $Stored = bin2hex(random_bytes(32));
 Repository::setSetting(self::SECRET_KEY, $Stored);
-error_log('[Umbrella-Bot][Webhook] generated a new webhook secret.');
 }
 catch (Throwable $Error) {
 $Stored = '';
@@ -163,7 +162,6 @@ $Result = TelegramClient::call('setWebhook', [
 
 if (($Result['ok'] ?? false) === true) {
 self::writeState($Fingerprint, $Url);
-error_log('[Umbrella-Bot][Webhook] registered: ' . $Url);
 return;
 }
 

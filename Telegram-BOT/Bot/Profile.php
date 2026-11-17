@@ -106,7 +106,7 @@ $Phone = Helper::normalizePhone($Text);
 $Operator = Helper::detectOperator($Phone);
 
 if ($Operator === 'نامعتبر' || !in_array($Operator, ['همراه اول', 'ایرانسل', 'رایتل'], true)) {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: شماره موبایل وارد شده متعلق به اپراتور مورد تایید نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:تنها اپراتورهای مجاز (همراه اول، ایرانسل، رایتل) قابل ثبت می باشند." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌پیش‌شماره این شماره در فهرست سه اپراتور پشتیبانی‌شده نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:تنها اپراتورهای مجاز (همراه اول، ایرانسل، رایتل) قابل ثبت می باشند." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 return;
 }
@@ -132,7 +132,7 @@ if ($Has_Client) {
 self::pushProfileToServer($Client_ID, $Full_Name, $Phone);
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره موبایل صحیح و مربوط به اپراتور {$Operator} می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره ثبت شد؛ اپراتور پایه بر اساس پیش‌شماره: {$Operator}.\nℹ️در شماره ترابردشده، اپراتور فعلی ممکن است متفاوت باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 }
 

@@ -342,7 +342,7 @@ $Text = Helper::adminGreeting($Context, 'آمار کلی') . "\n➖➖➖➖➖�
 . "├─✅فعال: *" . Helper::toPersian((string)$Client_Status['active']) . "* نفر\n"
 . "├─🚫غیرفعال: *" . Helper::toPersian((string)$Client_Status['inactive']) . "* نفر\n"
 . "└─⏰ منقضی: *" . Helper::toPersian((string)$Stats['expired_users']) . "* نفر\n\n"
-. "📶*توزیع اپراتور:*\n"
+. "📶*توزیع اپراتور پایه (پیش‌شماره، نه استعلام ترابرد):*\n"
 . $Operator_Text . "\n"
 . "💎*توزیع اشتراک:*\n"
 . $Subscription_Text . "\n"
@@ -3084,15 +3084,7 @@ if ($Phone === '' && $Server_Comment !== '') {
 $Phone = $Server_Comment;
 }
 
-$Operator = (string)($Local_User['Operator'] ?? '');
-
-if ($Phone !== '' && Helper::validatePhone($Phone)) {
-$Detected = Helper::detectOperator($Phone);
-
-if ($Detected !== 'نامعتبر') {
-$Operator = $Detected;
-}
-}
+$Operator = Helper::detectOperator($Phone);
 
 $Operator_Label = $Operator !== '' ? $Operator : 'نا مشخص';
 $Update_Payload = [
@@ -3178,7 +3170,7 @@ $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده ه�
 . "👤*نام کامل:* " . Helper::mention((string)$Display_Name, (int)$Target_Telegram_ID) . "\n"
 . "🆔*شناسه تلگرام:* `" . Helper::toPersian((string)$Target_Telegram_ID) . "`\n"
 . "📱*شماره تماس:* {$Phone_Label}\n"
-. "📶*اپراتور:* {$Operator_Label}\n"
+. "📶*اپراتور پایه (پیش‌شماره):* {$Operator_Label}\n"
 . "🔑*شناسه کلاینت:* `{$Server_UUID}`\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "💎*اطلاعات اشتراک:*\n"

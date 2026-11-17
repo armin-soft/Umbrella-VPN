@@ -17,13 +17,13 @@ private const OPERATORS = [
 '0918' => 'همراه اول', '0919' => 'همراه اول', '0990' => 'همراه اول', '0991' => 'همراه اول',
 '0992' => 'همراه اول', '0993' => 'همراه اول', '0994' => 'همراه اول',
 '0900' => 'ایرانسل', '0901' => 'ایرانسل', '0902' => 'ایرانسل', '0903' => 'ایرانسل',
-'0904' => 'ایرانسل', '0905' => 'ایرانسل', '0930' => 'ایرانسل', '0931' => 'ایرانسل',
-'0932' => 'ایرانسل', '0933' => 'ایرانسل', '0934' => 'ایرانسل', '0935' => 'ایرانسل',
+'0904' => 'ایرانسل', '0905' => 'ایرانسل', '0930' => 'ایرانسل',
+'0933' => 'ایرانسل', '0935' => 'ایرانسل',
 '0936' => 'ایرانسل', '0937' => 'ایرانسل', '0938' => 'ایرانسل', '0939' => 'ایرانسل',
 '0941' => 'ایرانسل',
 '0920' => 'رایتل', '0921' => 'رایتل', '0922' => 'رایتل', '0923' => 'رایتل',
-'0924' => 'رایتل', '0925' => 'رایتل', '0926' => 'رایتل', '0927' => 'رایتل',
-'0928' => 'رایتل', '0929' => 'رایتل',
+// 0931/0932/0934 belong to other allocations; 0924–0929 are not assumed Rightel.
+'0931' => 'اسپادان', '0932' => 'تالیا', '0934' => 'کیش',
 ];
 
 private function __construct() {
@@ -678,91 +678,65 @@ $Number = static::trimZeros(number_format($Value, $Precision, '.', ''));
 return self::unitConvert(static::toPersian($Number), $Units[$Power]);
 }
 
+/** Exact normalized words/phrases, not arbitrary substrings of innocent words. */
 public static function containsProfanity(string $Text): bool {
-$Dict = self::profanityDictionary();
-
-if ($Dict === []) return false;
-$Normalize = static function (string $S): string {
-$S = mb_strtolower(trim($S));
-$S = strtr($S, ['ي' => 'ی', 'ك' => 'ک', 'ؤ' => 'و', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ة' => 'ه']);
-return preg_replace('/[\x{200B}-\x{200F}\x{064B}-\x{065F}\x{0670}\x{0640}]/u', '', $S) ?? $S;
-};
-
-$Normalized = $Normalize($Text);
-$Compact = preg_replace('/[\\x{0020}\\x{200C}\\x{200D}]+/u', '', $Normalized) ?? $Normalized;
-$Long_Roots = [];
-$Short_Words = [];
-
-foreach ($Dict as $Word) {
-$W = $Normalize((string)$Word);
-$W_Compact = preg_replace('/[\\x{0020}\\x{200C}\\x{200D}]+/u', '', $W) ?? $W;
-
-if ($W_Compact === '') continue;
-if (mb_strlen($W_Compact, 'UTF-8') >= 5) $Long_Roots[] = $W_Compact;
-else $Short_Words[] = $W;
-}
-
-foreach ($Long_Roots as $Bad) {
-if (mb_stripos($Normalized, $Bad, 0, 'UTF-8') !== false) return true;
-if (mb_stripos($Compact, $Bad, 0, 'UTF-8') !== false) return true;
-}
-
-$Tokens = preg_split('/[\x{0020}\x{200C}\x{200D}]+/u', $Normalized) ?: [];
-$All_Single = $Tokens !== [] && $Tokens !== [''];
-$Joined = '';
-
-foreach ($Tokens as $Token) {
-if ($Token === '') continue;
-if (in_array($Token, $Short_Words, true)) return true;
-if (mb_strlen($Token, 'UTF-8') > 4) {
-foreach ($Long_Roots as $Bad) {
-if (mb_stripos($Token, $Bad, 0, 'UTF-8') !== false) return true;
+if ($Text === '' || preg_match('//u', $Text) !== 1) return false;
+$Words = self::profanityDictionary();
+$Tokens = preg_split('/[^\p{L}]+/u', self::normalizeProfanity($Text), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+// Join bounded token windows: punctuation, digits and spaced-out spelling can
+// separate an insult, but letters inside a normal word are never searched.
+$Count = count($Tokens);
+for ($I = 0; $I < $Count; $I++) {
+$Candidate = '';
+for ($J = $I; $J < min($Count, $I + 16); $J++) {
+$Candidate .= $Tokens[$J];
+$Candidate = preg_replace('/(\p{L})\1+/u', '$1', $Candidate) ?? $Candidate;
+if (mb_strlen($Candidate, 'UTF-8') > 32) break;
+if (isset($Words[$Candidate])) return true;
 }
 }
-
-if (mb_strlen($Token, 'UTF-8') !== 1) $All_Single = false;
-$Joined .= $Token;
-}
-
-if ($All_Single && $Joined !== '') {
-if (in_array($Joined, $Short_Words, true)) return true;
-foreach ($Long_Roots as $Bad) {
-if (mb_stripos($Joined, $Bad, 0, 'UTF-8') !== false) return true;
-}
-}
-
 return false;
+}
+
+private static function normalizeProfanity(string $Text): string {
+// Presentation forms used by Arabic/Persian keyboards, independent of intl.
+static $Forms = null;
+if ($Forms === null) {
+$FormsFile = dirname(__DIR__, 2) . '/Resources/Persian-Forms.json';
+$Forms = is_file($FormsFile) ? json_decode((string)file_get_contents($FormsFile), true) : null;
+if (!is_array($Forms)) {
+error_log('[Umbrella-Bot][Profanity] presentation-form resource missing/invalid; base normalization still active.');
+$Forms = [];
+}
+}
+$Text = strtr(mb_strtolower($Text, 'UTF-8'), $Forms);
+$Text = strtr($Text, ['ي' => 'ی', 'ى' => 'ی', 'ك' => 'ک', 'ؤ' => 'و', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا', 'ة' => 'ه', 'ۀ' => 'ه', 'ئ' => 'ی']);
+$Text = preg_replace('/[\p{Cf}\p{M}\x{0640}]/u', '', $Text) ?? $Text;
+// Elongated letters are normalized equally in the text and the dictionary.
+return preg_replace('/(\p{L})\1+/u', '$1', $Text) ?? $Text;
 }
 
 private static function profanityDictionary(): array {
 static $Cache = null;
-
 if ($Cache !== null) return $Cache;
+// Keep a small conservative fallback: a missing resource must not disable
+// moderation, and must not cause every message to be rejected either.
+$Words = ['کسکش', 'کصکش', 'مادرجنده', 'حرومزاده', 'کیر', 'گاییدم', 'دیوث', 'بی شرف'];
 $File = dirname(__DIR__, 2) . '/Resources/Forbidden-Word.json';
-
-if (!is_file($File)) {
-error_log('[Umbrella-Bot][Profanity] Forbidden-Word.json not found; profanity filter is inactive.');
+$Decoded = is_file($File) ? json_decode((string)file_get_contents($File), true) : null;
+$Decoded = is_array($Decoded) ? array_filter($Decoded, static fn(mixed $Word): bool => is_string($Word) && trim($Word) !== '') : [];
+if ($Decoded === []) {
+error_log('[Umbrella-Bot][Profanity] dictionary missing/invalid; conservative fallback active.');
+} else {
+$Words = array_merge($Words, $Decoded);
+}
 $Cache = [];
-return $Cache;
+foreach ($Words as $Word) {
+if (!is_string($Word) || trim($Word) === '') continue;
+$Key = preg_replace('/[^\p{L}]+/u', '', self::normalizeProfanity($Word)) ?? '';
+$Key = preg_replace('/(\p{L})\1+/u', '$1', $Key) ?? $Key;
+if ($Key !== '' && mb_strlen($Key, 'UTF-8') <= 32) $Cache[$Key] = true;
 }
-
-$Decoded = json_decode((string)file_get_contents($File), true);
-
-if (!is_array($Decoded) || $Decoded === []) {
-error_log('[Umbrella-Bot][Profanity] Forbidden-Word.json is empty or invalid JSON; profanity filter is inactive.');
-$Cache = [];
-return $Cache;
-}
-
-$Words = [];
-
-foreach ($Decoded as $Word) {
-if (is_string($Word) && trim($Word) !== '') {
-$Words[] = trim($Word);
-}
-}
-
-$Cache = array_values(array_unique($Words));
 return $Cache;
 }
 
@@ -772,13 +746,13 @@ return $Number . ' ' . $Unit;
 
 public static function normalizePhone(string $Phone): string {
 $Phone = static::toEnglish(trim($Phone));
-$Phone = (string)preg_replace('/[^\d+]/', '', $Phone);
-
+$Phone = preg_replace('/[\p{Z}\s\p{Cf}()\-]+/u', '', $Phone) ?? '';
+if (preg_match('/^(?:\+98|0098|98|0)?9[0-9]{9}$/D', $Phone) !== 1) return '';
 if (str_starts_with($Phone, '+98')) $Phone = '0' . substr($Phone, 3);
 elseif (str_starts_with($Phone, '0098')) $Phone = '0' . substr($Phone, 4);
 elseif (str_starts_with($Phone, '98') && strlen($Phone) === 12) $Phone = '0' . substr($Phone, 2);
-elseif (str_starts_with($Phone, '9') && strlen($Phone) === 10) $Phone = '0' . $Phone;
-return (string)preg_replace('/\D/', '', $Phone);
+elseif (strlen($Phone) === 10) $Phone = '0' . $Phone;
+return $Phone;
 }
 
 public static function validatePhone(string $Phone): bool {
@@ -791,7 +765,7 @@ $Phone = static::normalizePhone($Phone);
 if (!static::validatePhone($Phone)) return 'نامعتبر';
 $Prefix4 = substr($Phone, 0, 4);
 
-return self::OPERATORS[$Prefix4] ?? 'نامعتبر';
+return self::OPERATORS[$Prefix4] ?? 'ناشناخته';
 }
 
 public static function toE164(string $Phone): string {

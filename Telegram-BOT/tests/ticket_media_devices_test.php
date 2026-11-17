@@ -7,7 +7,9 @@ public static function getAdminUserId(): int { return 99; }
 public static function getAdminFullName(): string { return 'admin'; }
 }
 final class Repository {
-public static array $Sessions = [], $Messages = [], $Settings = [], $Tickets = [];
+public static array $Sessions = [], $Messages = [], $Settings = [], $Tickets = [], $Blocked = [];
+public static bool $FailBlocking = false;
+public static function setBlocked(int $Id, bool $Value): void { if (self::$FailBlocking) throw new RuntimeException("simulated write failure"); self::$Blocked[$Id] = $Value; }
 public static function getSetting(string $K, mixed $Default = null): mixed { return self::$Settings[$K] ?? $Default; }
 public static function setSetting(string $K, mixed $Value): void { self::$Settings[$K] = $Value; }
 public static function getUser(int $Id): array { return ['Chat_ID' => $Id, 'Full_Name' => 'user', 'Phone' => '']; }
@@ -30,12 +32,13 @@ public static function addNotification(...$Args): void {}
 }
 final class Common { public static function greet(Context $C, string $S): string { return $S . "\n"; } }
 final class Helper {
+public static bool $Profane = false;
 public static function __callStatic(string $Name, array $Args): mixed {
 return match ($Name) {
 'normalizePhone' => '', 'userFooter', 'adminFooter' => '',
 'userGreeting', 'adminGreeting' => (string)$Args[1] . "\n",
 'adminGreetingNamed' => (string)$Args[1] . "\n", 'frame' => (string)$Args[2] . "\n",
-'isTicketCategory', 'isTicketPriority' => true, 'containsProfanity' => false,
+'isTicketCategory', 'isTicketPriority' => true, 'containsProfanity' => self::$Profane,
 'ticketCategories' => ['other' => 'other'], 'ticketPriorities' => ['medium' => 'medium'],
 default => (string)($Args[0] ?? ''),
 };
@@ -166,4 +169,18 @@ check(str_contains(end(TelegramClient::$Calls)[1]['text'], 'قابل ثبت'), '
 Repository::$Sessions[1] = ['Flow' => 'user:ticket_category', 'Ticket_Subject' => 'test', 'Ticket_Description' => 'original text'];
 UserFlow::ticketDescriptionInput(ctx(1, ['document' => ['file_id' => 'extra']]), '');
 check(Repository::$Sessions[1]['Ticket_Description'] === 'original text', 'additional attachments do not erase the draft description');
+// Dispatcher must inspect media captions, retain the admin exemption, and not
+// announce a permanent block when persistence failed.
+final class BotConfig { public static function getSupportUrl(): string { return 'https://example.test/support'; } }
+Helper::$Profane = true;
+Repository::$FailBlocking = false;
+$Before = count(Repository::$Messages);
+$Route->invoke(null, ctx(1, ['document' => ['file_id' => 'attachment'], 'caption' => 'profanity']));
+check((Repository::$Blocked[1] ?? false) && count(Repository::$Messages) === $Before, 'caption moderation blocks before ticket handling');
+Repository::$Sessions[99] = ['Flow' => 'user:ticket_reply_text', 'Temp_Ticket_ID' => 1];
+$Route->invoke(null, ctx(99, ['text' => 'profanity']));
+check(!isset(Repository::$Blocked[99]), 'existing admin moderation exemption retained');
+Repository::$FailBlocking = true; TelegramClient::$Calls = [];
+$Route->invoke(null, ctx(2, ['text' => 'profanity']));
+check(!isset(Repository::$Blocked[2]) && count(TelegramClient::$Calls) === 1 && str_contains(TelegramClient::$Calls[0][1]['text'], 'خطای موقت'), 'failed block has no false success/admin notification');
 echo "OK ticket media/device cards ({$N} assertions)\n";

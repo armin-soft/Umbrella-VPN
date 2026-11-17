@@ -151,3 +151,6 @@ jobs:
 
       - name: Ticket attachments and device pictures
         run: php Telegram-BOT/tests/ticket_media_devices_test.php
+
+      - name: Persian moderation, operator allocations and error-only logs
+        run: php Telegram-BOT/tests/moderation_operator_logging_test.php

@@ -522,13 +522,14 @@ VALUES (?, ?, ?, ?, NOW())',
 
 public static function operatorDistribution(): array {
 $Rows = Database::getInstance()->fetchAll(
-"SELECT `Operator` AS `Operator`, COUNT(*) AS `Count` FROM `Users` WHERE `Operator` IS NOT NULL AND `Operator` != '' GROUP BY `Operator`"
+"SELECT `Phone`, COUNT(*) AS `Count` FROM `Users` WHERE `Phone` IS NOT NULL AND `Phone` != '' GROUP BY `Phone`"
 );
 
 $Result = [];
 
 foreach ($Rows as $Row) {
-$Result[(string)($Row['Operator'] ?? 'ناشناخته')] = (int)$Row['Count'];
+$Operator = Helper::detectOperator((string)($Row['Phone'] ?? ''));
+$Result[$Operator] = ($Result[$Operator] ?? 0) + (int)$Row['Count'];
 }
 
 return $Result;

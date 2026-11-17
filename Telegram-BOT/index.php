@@ -37,8 +37,7 @@ require_once __DIR__ . '/Bot/Scheduler.php';
 header('Content-Type: text/plain; charset=UTF-8');
 
 if ($Command === 'nightlydiag') {
-\Scheduler::diagnoseNightly();
-echo "DIAG DONE - see error log for [Nightly-DIAG] lines\n";
+echo implode(PHP_EOL, \Scheduler::diagnoseNightly()) . PHP_EOL;
 }
 
 else {

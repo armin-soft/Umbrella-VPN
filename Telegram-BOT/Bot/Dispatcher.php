@@ -647,6 +647,8 @@ $CleanText = trim((string)$CleanText);
 if (!$Context->isAdmin() && Helper::containsProfanity($CleanText)) {
 try { Repository::setBlocked($Context->UserId, true); } catch (Throwable $E) {
 error_log('[Umbrella-Bot][Profanity-Block] setBlocked failed: ' . $E->getMessage());
+TelegramClient::sendMessage($Context->ChatId, '⚠️این پیام قابل پردازش نیست؛ خطای موقت در ثبت وضعیت حساب رخ داد.');
+return;
 }
 
 $Name = $Context->profileName();

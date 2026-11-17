@@ -131,7 +131,6 @@ self::fail(403, 'device_limit', 'این حساب قبلاً روی دستگاه 
 $Exists = $Known !== null;
 $List_Error = $Exists ? null : PanelClient::lastListError();
 
-error_log('[Umbrella-Bot][App-Auth] start | phone=' . $Phone . ' | exists=' . ($Exists ? '1' : '0') . ' | source=' . $Lookup_Source . ' | panel_rows=' . PanelClient::lastListCount());
 
 // When the panel cannot even be listed we must not conclude «account does
 // not exist» — that would mint duplicate accounts and lock existing ones
@@ -317,7 +316,6 @@ if ($UUID === '') {
 error_log('[Umbrella-Bot][App-Auth] verify: panel account creation failed for challenge ' . $Challenge);
 self::fail(502, 'panel_unavailable', 'ساخت حساب در پنل ناموفق بود؛ کمی بعد دوباره تلاش کنید.');
 }
-error_log('[Umbrella-Bot][App-Auth] verify: panel account created for challenge ' . $Challenge);
 
 $Telegram_Id = (int)($Account['telegram_id'] ?? 0);
 
@@ -658,7 +656,6 @@ error_log('[Umbrella-Bot][Gateway] decision transaction failed for ' . $Challeng
 return false;
 }
 
-error_log('[Umbrella-Bot][Gateway] decision ' . ($Approved ? 'approved' : 'denied') . ' for challenge ' . $Challenge . ' from telegram ' . $Telegram_Id);
 if ($Approved) {
 try {
 Repository::addNotification(

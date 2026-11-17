@@ -18,7 +18,7 @@ final class Scheduler {
 private const REPORT_TIME = '00:00';
 private function __construct() {
 }
-public static function diagnoseNightly(): void {
+public static function diagnoseNightly(): array {
 $Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
 $Today = $Now->format('Y-m-d');
 $Out = [];
@@ -41,6 +41,7 @@ $Out[] = 'Server liveUsers = ' . count($Live);
 }
 catch (Throwable $E) {
 $Out[] = 'Server liveUsers FAILED = ' . $E->getMessage();
+error_log('[Umbrella-Bot][Nightly-DIAG] Server liveUsers failed: ' . $E->getMessage());
 }
 
 try {
@@ -54,9 +55,10 @@ $Out[] = 'Eligible active subscribers = ' . (is_array($Rows) ? count($Rows) : 'q
 }
 catch (Throwable $E) {
 $Out[] = 'Eligible query FAILED = ' . $E->getMessage();
+error_log('[Umbrella-Bot][Nightly-DIAG] Eligible query failed: ' . $E->getMessage());
 }
 
-error_log('[Umbrella-Bot][Nightly-DIAG] ' . implode(PHP_EOL . '[Nightly-DIAG] ', $Out));
+return $Out;
 }
 
 public static function run(string $Mode = 'all'): void {
@@ -130,46 +132,9 @@ error_log('[Umbrella-Bot][Scheduler] automatic tick failed: ' . $Error->getMessa
 }
 }
 
-public static function debugDailyReport(): void {
-$Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
-$Today = $Now->format('Y-m-d');
-$Enabled = strtolower(trim((string)Repository::getSetting('Daily_Report_Enabled', '1')));
-$Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
-$Report_Time = self::reportTime();
-$Last_Report = (string)Repository::getSetting('Last_Daily_Report', '');
-$Last_Users = (string)Repository::getSetting('Last_User_Usage_Report', '');
-
-error_log('[Umbrella-Bot][Daily-Report][DEBUG]'
-. ' | Now=' . $Now->format('Y-m-d H:i')
-. ' | Enabled=' . ($Enabled === '' ? 'empty' : $Enabled)
-. ' | ReportTime=' . $Report_Time
-. ' | IsDue=' . var_export(self::isReportDue($Now), true)
-. ' | Admin=' . $Admin
-. ' | LastDaily=' . ($Last_Report === '' ? 'never' : $Last_Report)
-. ' | LastDailyIsToday=' . var_export($Last_Report === $Today, true)
-. ' | LastUsersReport=' . ($Last_Users === '' ? 'never' : $Last_Users)
-. ' | UsersReportAlreadySentToday=' . var_export($Last_Users === $Today, true));
-
-try {
-$Lock = Repository::tryCronLock('daily_report', 300);
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] CronLock daily_report acquired=' . var_export($Lock, true));
-if ($Lock) Repository::releaseCronLock('daily_report');
-}
-
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] CronLock threw: ' . $E->getMessage());
-}
-
-try {
-$Rows = Database::getInstance()->fetchAll(
-"SELECT `Telegram_ID`, `Chat_ID` FROM `Users`
-WHERE `Is_Blocked` = 0 AND `Chat_ID` > 0 AND " . Repository::CLIENT_CONDITION);
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] Eligible user rows=' . (is_array($Rows) ? count($Rows) : 'query-failed'));
-}
-
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] User query failed: ' . $E->getMessage());
-}
+/** Manual diagnostics are returned to the caller, never mixed into error_log. */
+public static function debugDailyReport(): array {
+return self::diagnoseNightly();
 }
 
 private static function purgeStaleCronLocks(): void {
@@ -663,12 +628,6 @@ $Failed_Count = $Failed_Transient ?? 0;
 if ($Failed_Count > 0) {
 error_log('[Umbrella-Bot][Daily-Report] خطای موقت در ارسال: ' . $Failed_Count . ' مورد.');
 }
-
-error_log('[Umbrella-Bot][Daily-Report] نتیجه ارسال | واجد شرایط: ' . count($Rows)
-. ' | موفق: ' . $Sent
-. ' | غیرقابل پیام: ' . count($Dead_Chats)
-. ' | بدون اشتراک فعال: ' . $Skipped_No_Subscription
-. ' | خطای موقت: ' . $Failed_Count);
 
 Repository::setSetting('Last_User_Usage_Report', $Today);
 }

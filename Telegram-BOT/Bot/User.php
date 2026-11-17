@@ -428,11 +428,7 @@ $Subscription = $User['Subscription'] ?? null;
 $Client_ID = (string)($User['Client_ID'] ?? '');
 $Client_Status = (string)($User['Client_Status'] ?? 'نامشخص');
 $Last_Online = (string)($User['Last_Online'] ?? '');
-$Operator = (string)($User['Operator'] ?? '');
-
-if ($Operator === '') {
 $Operator = Helper::detectOperator((string)$Phone);
-}
 
 $Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Package_Start_Date = (string)($User['Package_Start_Date'] ?? '');
@@ -576,7 +572,7 @@ $Auto_Renew_Label = '*🔴غیرفعال*';
 }
 
 $Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((string)$FullName, $Context->UserId) . "*\n"
-. "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*{$Operator}*)\n"
+. "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*اپراتور پایه: {$Operator}*)\n"
 . "💳اعتبار حساب: *{$Balance_Formatted}*\n"
 . "🆔شناسه تلگرام: `" . Helper::toPersian((string)$Context->UserId) . "`\n"
 . $Rank_Line
