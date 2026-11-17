@@ -502,13 +502,26 @@ void main() {
       // جزئیات باید خروجی کامل هسته را بیاورد.
       expect(controller.contains('_coreDiagnostics'), isTrue);
       expect(controller.contains('خروجی کامل هسته'), isTrue);
-      // فرمان، مسیرها، سرور و وضعیت پورت ها هم بخشی از جزئیات اند.
+      // فرمان، مسیرهای محلی و وضعیت پورت ها بخشی از جزئیات اند؛ اما مشخصات
+      // سرور و لینک اشتراک هرگز در گزارش ثبت نمی شود.
       expect(controller.contains('فرمان اجرا و مسیرها'), isTrue);
-      expect(controller.contains('سروری که با آن تلاش شد'), isTrue);
+      expect(controller.contains('سروری که با آن تلاش شد'), isFalse);
+      expect(controller.contains(r'اتصال به ${node.name}'), isFalse);
+      expect(controller.contains(r'میزبان: ${node.host}'), isFalse);
+      expect(controller.contains(r'تغییر سرور به ${node.name}'), isFalse);
+      expect(controller.contains('فایل لینک سرور:'), isFalse);
       expect(controller.contains('پورت های هسته در همین لحظه'), isTrue);
       // خلاصه دیگر نباید متن چسبیده ۶۰۰ نویسه ای باشد.
       expect(controller.contains('maxChars = 300'), isTrue);
       expect(controller.contains('maxChars = 600'), isFalse);
+      // اشتراک، بالانسر و پنجره خط فرمان هم لینک ساب یا نام سرور را لو نمی دهند.
+      final String subs = read('lib/state/subscription_controller.dart');
+      expect(subs.contains(r'): $uri'), isFalse);
+      expect(subs.contains(r'| ${state.source.url}'), isFalse);
+      expect(subs.contains(r'منبع ${uri.host}'), isFalse);
+      expect(read('lib/vpn/balancer.dart').contains(r'${node.name}'), isFalse);
+      expect(read('lib/vpn/cli_session.dart').contains(r'${node.name}'), isFalse);
+      expect(read('lib/platform/services.dart').contains('static String redact('), isTrue);
     });
 
     test('خطاهای مهم جزئیات دارند', () {
@@ -1312,9 +1325,11 @@ void main() {
       expect(account.contains('signOut('), isFalse);
     });
 
-    test('۱۵. تنظیمات مدرن است و ارجاع درباره در آن نیست', () {
+    test('۱۵. تنظیمات مدرن و دسته بندی شده است و ارجاع درباره در آن نیست', () {
       final String settings = read('lib/ui/pages/settings_page.dart');
       expect(settings.contains('class _Section'), isTrue);
+      expect(settings.contains('class _SettingsTabBar'), isTrue);
+      expect(settings.contains('class _ThemeCardSelector'), isTrue);
       expect(settings.contains('GlassCard'), isTrue);
       expect(settings.contains('درباره'), isFalse);
     });

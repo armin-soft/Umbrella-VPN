@@ -711,6 +711,101 @@ class AppLogger extends ChangeNotifier {
   final List<LogLine> _lines = <LogLine>[];
   List<LogLine> get lines => List<LogLine>.unmodifiable(_lines.reversed.toList());
 
+  static final RegExp _proxyUriPattern = RegExp(
+    r'\b(?:vless|vmess|trojan|ssr?|hysteria2?|hy2|tuic|wireguard|wg|warp|socks5?|anytls|ssh|mieru)://[^\s\)\]>"\x27،؛]+',
+    caseSensitive: false,
+  );
+  static final RegExp _webUriPattern = RegExp(
+    r'\b(?:https?|wss?|quic|h3|tls)://[^\s\)\]>"\x27،؛]+',
+    caseSensitive: false,
+  );
+  static final RegExp _subPathPattern = RegExp(
+    r'(?:/[A-Za-z0-9_-]{3,})*/sub(?:/[^\s\)\]>"\x27،؛]*|\b)',
+    caseSensitive: false,
+  );
+  static final RegExp _uuidPattern = RegExp(
+    r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b',
+  );
+  static final RegExp _outboundTagPattern = RegExp(
+    r'\boutbound/[A-Za-z0-9_-]+(?:\[[^\]]*\])?',
+    caseSensitive: false,
+  );
+  static final RegExp _hostPortPattern = RegExp(
+    r'\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24}:[0-9\u06F0-\u06F9\u0660-\u0669]{1,5}(?![0-9\u06F0-\u06F9\u0660-\u0669])',
+    caseSensitive: false,
+  );
+  static final RegExp _domainPattern = RegExp(
+    r'\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+(?:ir|com|net|org|io|co|me|xyz|top|site|online|cloud|dev|app|pro|info|biz|cc|gg|tv|ru|de|nl|uk|fr|us|ca|tr|ae|fi|se|ch|pl|cz|at|es|it|jp|sg|hk|kr|in|au|br|pw|club|shop|store|tech|space|live|link|click|work|fun|cfd|sbs|cyou|icu|vip|win|one|host|server|network|services|digital|world)\b(?::[0-9\u06F0-\u06F9\u0660-\u0669]{1,5})?(?:/[^\s\)\]>"\x27،؛]*)?',
+    caseSensitive: false,
+  );
+  static final RegExp _ipv4Pattern = RegExp(
+    r'(?<![0-9\u06F0-\u06F9\u0660-\u0669.])([0-9\u06F0-\u06F9\u0660-\u0669]{1,3}(?:\.[0-9\u06F0-\u06F9\u0660-\u0669]{1,3}){3})(?::[0-9\u06F0-\u06F9\u0660-\u0669]{1,5})?(?![0-9\u06F0-\u06F9\u0660-\u0669.])',
+  );
+  static final RegExp _ipv6PortPattern = RegExp(
+    r'\[([0-9a-fA-F:]{2,})\]:[0-9\u06F0-\u06F9\u0660-\u0669]{1,5}',
+  );
+  static final RegExp _protocolTokenPattern = RegExp(
+    r'\b(?:vmess|vless|trojan|shadowsocks|hysteria2?|hy2|tuic|httpupgrade|splithttp|xhttp|reality|shadowtls|anytls|mieru|tls|cdn)\b',
+    caseSensitive: false,
+  );
+  static final RegExp _linkFilePattern = RegExp(
+    r'[^\s"\x27]*umbrella-core-link\.txt',
+    caseSensitive: false,
+  );
+  static final RegExp _inlineSpacesPattern = RegExp(r'[ \t]{2,}');
+
+  /// پاک سازی خودکار اطلاعات محرمانه سرور و لینک اشتراک از تمام گزارش ها.
+  static String redact(String input) {
+    if (input.isEmpty) {
+      return input;
+    }
+    String text = input;
+    text = text.replaceAll(_proxyUriPattern, '[محافظت شده]');
+    text = text.replaceAll(_webUriPattern, '[لینک محافظت شده]');
+    text = text.replaceAll(_subPathPattern, '[اشتراک محافظت شده]');
+    text = text.replaceAll(_uuidPattern, '[شناسه محافظت شده]');
+    text = text.replaceAll(_outboundTagPattern, 'outbound[محافظت شده]');
+    text = text.replaceAll(_linkFilePattern, '[محافظت شده]');
+    text = text.replaceAll(_hostPortPattern, '[سرور محافظت شده]');
+    text = text.replaceAll(_domainPattern, '[سرور محافظت شده]');
+    text = text.replaceAllMapped(_ipv4Pattern, (Match match) {
+      final String full = match.group(0)!;
+      final String ip = Fa.toEn(match.group(1)!);
+      final List<String> parts = ip.split('.');
+      if (parts.length != 4) {
+        return full;
+      }
+      for (final String part in parts) {
+        final int? octet = int.tryParse(part);
+        if (octet == null || octet < 0 || octet > 255) {
+          return full;
+        }
+      }
+      if (ip == '127.0.0.1' || ip == '0.0.0.0') {
+        return full;
+      }
+      return '[سرور محافظت شده]';
+    });
+    text = text.replaceAllMapped(_ipv6PortPattern, (Match match) {
+      final String host = match.group(1)!.toLowerCase();
+      if (host == '::1' || host == '::') {
+        return match.group(0)!;
+      }
+      return '[سرور محافظت شده]';
+    });
+    text = text.replaceAll(_protocolTokenPattern, '');
+    return text
+        .split('\n')
+        .map((String line) {
+          final int indentEnd = line.length - line.trimLeft().length;
+          final String indent = line.substring(0, indentEnd);
+          final String body =
+              line.substring(indentEnd).replaceAll(_inlineSpacesPattern, ' ').trimRight();
+          return '$indent$body';
+        })
+        .join('\n');
+  }
+
   /// تکرارِ بی وقفه یک پیام، گزارش را ناخوانا می کند و کاربر را به این باور
   /// می برد که برنامه در حال «تلاش بی پایان» است. خط تکراری پشت سر هم فقط
   /// یک بار می ماند و بعد از آن تعدادش کنار همان خط می آید.
@@ -719,10 +814,21 @@ class AppLogger extends ChangeNotifier {
     String level = 'info',
     List<LogDetail> details = const <LogDetail>[],
   }) {
-    final String clean = message.trim();
+    final String clean = redact(message).trim();
     if (clean.isEmpty) {
       return;
     }
+    final List<LogDetail> safeDetails = details.isEmpty
+        ? const <LogDetail>[]
+        : details
+            .map(
+              (LogDetail detail) => LogDetail(
+                title: redact(detail.title).trim(),
+                text: redact(detail.text).trim(),
+              ),
+            )
+            .where((LogDetail detail) => detail.text.isNotEmpty)
+            .toList(growable: false);
     if (_lines.isNotEmpty &&
         _lines.last.message == clean &&
         _lines.last.level == level) {
@@ -733,7 +839,7 @@ class AppLogger extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    _lines.add(LogLine(clean, level: level, details: details));
+    _lines.add(LogLine(clean, level: level, details: safeDetails));
     if (_lines.length > 2000) {
       _lines.removeRange(0, _lines.length - 2000);
     }
@@ -855,16 +961,18 @@ class AppLogger extends ChangeNotifier {
     final StringBuffer buffer = StringBuffer()
       ..writeln('${Fa.date(line.time)} — ${Fa.clock(line.time)}')
       ..writeln('سطح: ${line.level}')
-      ..writeln('پیام: ${line.message}');
+      ..writeln('پیام: ${redact(line.message)}');
     for (final LogDetail detail in line.details) {
-      if (detail.text.trim().isEmpty) {
+      final String detailText = redact(detail.text).trim();
+      if (detailText.isEmpty) {
         continue;
       }
       buffer.writeln();
-      if (detail.title.isNotEmpty) {
-        buffer.writeln('── ${detail.title} ──');
+      final String detailTitle = redact(detail.title).trim();
+      if (detailTitle.isNotEmpty) {
+        buffer.writeln('── $detailTitle ──');
       }
-      buffer.writeln(detail.text.trim());
+      buffer.writeln(detailText);
     }
     return buffer.toString();
   }

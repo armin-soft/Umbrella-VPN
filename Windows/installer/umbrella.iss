@@ -9,7 +9,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.35"
+#define AppVersion "1.0.36"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"

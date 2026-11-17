@@ -1289,7 +1289,6 @@ class VpnController extends ChangeNotifier {
             plan.cores.first,
             coreLog,
             plan: plan,
-            node: node,
           ),
         );
         final String full = await _readLogFull(coreLog);
@@ -1417,7 +1416,6 @@ class VpnController extends ChangeNotifier {
             plan.cores.first,
             coreLog,
             plan: plan,
-            node: node,
           ),
         );
         await _stopCores();
@@ -1522,8 +1520,8 @@ class VpnController extends ChangeNotifier {
       );
       _preferredCore[node.id] = plan.cores.first.name;
       _log.add(
-        'اتصال به ${node.name} (${node.host}:${node.port}) با هسته '
-        '${plan.primaryBinary} برقرار شد.',
+        'اتصال امن آمبرلا با موفقیت برقرار شد '
+        '(${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}).',
       );
       _settings = _settings.copyWith(lastNodeId: node.id);
       onSettingsChanged?.call(_settings);
@@ -2335,15 +2333,8 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// نام سرور برای گزارش ها. بعضی نام ها خودشان با واژه سرور شروع می شوند و
-  /// تکرار آن واژه در گزارش ها زشت و گمراه کننده بود.
-  static String _nodeLabel(VpnNode node) {
-    final String name = node.name.trim();
-    if (name.startsWith('سرور')) {
-      return name;
-    }
-    return 'سرور $name';
-  }
+  /// برچسب عمومی سرور برای گزارش ها بدون افشای نام، پروتکل یا نشانی سرور.
+  static String _nodeLabel(VpnNode node) => 'مسیر انتخابی آمبرلا';
 
   String _dirOf(String path) {
     final int index = path.lastIndexOf(Platform.pathSeparator);
@@ -2542,7 +2533,7 @@ class VpnController extends ChangeNotifier {
         '${_provisioner.binDir}${Platform.pathSeparator}$binary',
       ];
 
-  /// توضیح اینکه چرا هیچ سروری برای اجرا قبول نشد.
+  /// توضیح اینکه چرا هیچ سروری برای اجرا قبول نشد (بدون افشای نام یا پروتکل سرور).
   String _whyNoUsableServer() {
     final List<VpnNode> disabled =
         _nodes.where((VpnNode node) => node.disabled).toList();
@@ -2551,30 +2542,24 @@ class VpnController extends ChangeNotifier {
     final List<VpnNode> notUsable =
         _nodes.where((VpnNode node) => !usable(node)).toList();
     return <String>[
-      'کل سرورها: ${Fa.num(_nodes.length)}',
+      'کل مسیرها: ${Fa.num(_nodes.length)}',
       'غیرفعال شده: ${Fa.num(disabled.length)}',
-      'بدون میزبان: ${Fa.num(noHost.length)}',
-      'پروتکل پشتیبانی نشده: ${Fa.num(notUsable.length)}',
-      if (notUsable.isNotEmpty)
-        'اولین سرور پشتیبانی نشده: ${notUsable.first.name} '
-            '(${notUsable.first.protocol.name})',
+      'ناقص: ${Fa.num(noHost.length)}',
+      'ناسازگار با این نسخه: ${Fa.num(notUsable.length)}',
     ].join('\n');
   }
 
-  /// چند سرور از هر پروتکل در اشتراک هست.
+  /// خلاصه وضعیت مسیرهای اشتراک بدون افشای نوع پروتکل یا مشخصات سرور.
   String _protocolBreakdown() {
-    final Map<String, int> counts = <String, int>{};
-    for (final VpnNode node in _nodes) {
-      counts[node.protocol.name] = (counts[node.protocol.name] ?? 0) + 1;
+    if (_nodes.isEmpty) {
+      return 'هیچ مسیری خوانده نشده است.';
     }
-    if (counts.isEmpty) {
-      return 'هیچ سروری خوانده نشده است.';
-    }
-    final List<String> rows = counts.entries
-        .map((MapEntry<String, int> e) => '${e.key}: ${Fa.num(e.value)}')
-        .toList()
-      ..sort();
-    return rows.join('\n');
+    final int ready =
+        _nodes.where((VpnNode node) => usable(node) && !node.disabled).length;
+    return <String>[
+      'مسیرهای دریافت شده: ${Fa.num(_nodes.length)}',
+      'مسیرهای قابل استفاده: ${Fa.num(ready)}',
+    ].join('\n');
   }
 
   /// وضعیت فایل اجرایی هسته: هست یا نه، چه اندازه ای دارد، آخرین تغییرش کِی
@@ -3007,7 +2992,6 @@ class VpnController extends ChangeNotifier {
     String coreLog, {
     int? code,
     LaunchPlan? plan,
-    VpnNode? node,
   }) async {
     final List<LogDetail> details = <LogDetail>[];
 
@@ -3024,7 +3008,7 @@ class VpnController extends ChangeNotifier {
       ),
     );
 
-    // ۲. فرمان اجرا و مسیرها؛ برای بازتولید همان اجرا بیرون از برنامه.
+    // ۲. فرمان اجرا و مسیرهای محلی (بدون مسیر فایل لینک یا مشخصات سرور).
     details.add(
       LogDetail(
         title: 'فرمان اجرا و مسیرها',
@@ -3033,8 +3017,8 @@ class VpnController extends ChangeNotifier {
           'مسیر: ${core.exe}',
           'پوشه اجرا: ${core.workDir}',
           'فایل گزارش هسته: $coreLog',
-          if (plan != null) 'فایل لینک سرور: ${plan.linksPath}',
-          if (plan != null) 'حالت اتصال: ${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}',
+          if (plan != null)
+            'حالت اتصال: ${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}',
           if (plan != null && plan.proxyPort > 0)
             'پورت محلی: ${Fa.num(plan.proxyPort)}',
           if (code != null) 'کد خروج: ${Fa.num(code)}',
@@ -3042,21 +3026,7 @@ class VpnController extends ChangeNotifier {
       ),
     );
 
-    // ۳. سروری که با آن تلاش شد؛ بدون رمز و شناسه، فقط آنچه برای تشخیص لازم
-    // است. نام و میزبان برای پیدا کردن سرور مشکل دار کافی است.
-    if (node != null) {
-      details.add(
-        LogDetail(
-          title: 'سروری که با آن تلاش شد',
-          text: <String>[
-            'نام: ${node.name}',
-            'پروتکل: ${node.protocol.name}',
-            'میزبان: ${node.host}',
-            'پورت: ${Fa.num(node.port)}',
-          ].join('\n'),
-        ),
-      );
-    }
+    // ۳. مشخصات سرور، دامنه، آی پی، پورت و پروتکل هرگز در گزارش ثبت نمی شود.
 
     // ۴. وضعیت پورت های ثابت هسته؛ اگر گرفته باشند، صاحبش.
     //
@@ -3509,8 +3479,7 @@ class VpnController extends ChangeNotifier {
       if (!passes) {
         _healthFailures++;
         _log.add(
-          'سنجش کمکی پس از خواندن آی پی (${Fa.num(geo.ip)}) موقتاً کند بود؛ '
-          'پایش سلامت ادامه دارد.',
+          'سنجش کمکی مسیر موقتاً کند بود؛ پایش سلامت ادامه دارد.',
           level: 'warning',
         );
         _notify();
@@ -3518,25 +3487,20 @@ class VpnController extends ChangeNotifier {
       }
       _healthFailures = 0;
       if (geo.ip != previousExitIp) {
-        _log.add(
-          'آی پی خروجی: ${Fa.num(geo.ip)}'
-          '${geo.flagEmojiFreeLabel.isEmpty ? '' : ' | ${geo.flagEmojiFreeLabel}'}',
-        );
+        _log.add('مسیر امن اتصال تایید و فعال شد.');
         if (_settings.notificationsEnabled) {
           final String where = countryNameFa(geo.flagCode);
           unawaited(
             _tray.balloon(
-              'آی پی جدید شما',
-              where.isEmpty
-                  ? Fa.num(geo.ip)
-                  : '${Fa.num(geo.ip)} | $where',
+              'اتصال امن برقرار است',
+              where.isEmpty ? 'ترافیک شما از مسیر امن عبور می کند' : 'موقعیت فعال: $where',
             ),
           );
         }
       }
       _notify();
-    } on Exception catch (error) {
-      _log.add('بررسی آی پی ناموفق: $error', level: 'warning');
+    } on Exception {
+      _log.add('بررسی دوره ای سلامت مسیر موقتاً پاسخ نداد.', level: 'warning');
     } finally {
       _verifyInFlight = false;
     }
@@ -3905,7 +3869,7 @@ class VpnController extends ChangeNotifier {
       return connect(requested: node);
     }
     final int generation = _cancelGeneration;
-    _setStatus(VpnStatus.switching, 'تغییر سرور به ${node.name}...');
+    _setStatus(VpnStatus.switching, 'در حال جابه جایی مسیر اتصال...');
     await _stopCores();
     await _disableProxy();
     await Future<void>.delayed(const Duration(milliseconds: 600));

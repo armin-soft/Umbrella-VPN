@@ -158,11 +158,11 @@ class CliSession {
     }
   }
 
-  /// عنوان پنجره.
+  /// عنوان پنجره بدون افشای نام یا مشخصات سرور.
   static String titleFor(VpnNode node, AppSettings settings) {
     final String mode =
         settings.tunMode ? 'تونل کامل' : 'پروکسی سیستمی';
-    return 'Umbrella CLI — ${node.name} — $mode';
+    return 'Umbrella CLI — $mode';
   }
 
   /// پورت نشانی gRPC که پنجره هسته روی آن گوش می دهد.

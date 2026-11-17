@@ -110,15 +110,13 @@ class SubscriptionDiagnostics {
         bytes: body.length,
         problem: report.problems.take(1).join(' '),
       );
-    } on Exception catch (error) {
-      // متن واقعی خطا در گزارش می آید تا معلوم شود مشکل شبکه دستگاه است یا
-      // خود نشانی؛ پیش از این همه چیز «خطای شبکه» بود.
+    } on Exception {
       return EndpointCheck(
         title: source.title,
         url: source.url,
         status: 0,
         nodes: 0,
-        problem: 'خطای شبکه: $error',
+        problem: 'خطای ارتباط با شبکه',
       );
     }
   }

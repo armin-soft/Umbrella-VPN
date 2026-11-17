@@ -1151,8 +1151,8 @@ class ToggleRow extends StatelessWidget {
         onTap: () => onChanged(!value),
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppMetrics.space1,
-            vertical: AppMetrics.space2,
+            horizontal: AppMetrics.space2,
+            vertical: AppMetrics.space3,
           ),
           child: Row(
             children: <Widget>[

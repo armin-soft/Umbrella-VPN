@@ -275,12 +275,12 @@ class SubscriptionController extends ChangeNotifier {
       notifyListeners();
     }
     _log.add(
-      'اشتراک `/sub/` کاربر خوانده شد: ${Fa.num(uniqueCount)} سرور.',
+      'اشتراک کاربر به روز شد: ${Fa.num(uniqueCount)} مسیر آماده اتصال.',
     );
   }
 
-  /// اگر نشانی اختصاصی کاربر پاسخ نداد، تنها نشانی پشتیبان پیش فرض (`/sub/`)
-  /// امتحان می شود تا کاربر بدون سرور نماند.
+  /// اگر نشانی اختصاصی کاربر پاسخ نداد، منبع پشتیبان پیش فرض امتحان می شود
+  /// تا کاربر بدون مسیر اتصال نماند.
   Future<void> _activateFallbackSources() async {
     if (_fallbackActive) {
       return;
@@ -291,13 +291,13 @@ class SubscriptionController extends ChangeNotifier {
         .toList();
     notifyListeners();
     _log.add(
-      'نشانی اشتراک حساب پاسخ نداد؛ اشتراک پیش فرض `/sub/` برنامه بارگذاری می شود.',
+      'اشتراک حساب پاسخ نداد؛ در حال بارگذاری پیکربندی پشتیبان برنامه.',
       level: 'warning',
     );
     final _BatchFetch batch = await _fetchMany(_sources);
     final List<VpnNode> nodes = batch.nodes;
     if (nodes.isEmpty) {
-      _log.add('اشتراک پیش فرض `/sub/` هم سروری برنگرداند.', level: 'error');
+      _log.add('دریافت پیکربندی اشتراک ناموفق بود.', level: 'error');
       if (_needsLogin) {
         _log.add(
           'فهرست سرورهای قبلی پاک شد؛ پس از ورود به حساب، اشتراک دوباره '
@@ -437,7 +437,7 @@ class SubscriptionController extends ChangeNotifier {
         if (seenIds.add(node.id)) node,
     ];
     if (nextNodes.isEmpty) {
-      _log.add('هیچ سروری از اشتراک `/sub/` خوانده نشد.', level: 'warning');
+      _log.add('هیچ مسیر فعالی از اشتراک دریافت نشد.', level: 'warning');
       return 0;
     }
     await _vpn.applyNodes(nextNodes);
@@ -590,9 +590,9 @@ class SubscriptionController extends ChangeNotifier {
     try {
       final Uri uri = Uri.parse(state.source.url);
       if (!_hostAllowed(uri, personal: state.source.personal)) {
-        state.error = 'نشانی اشتراک از طرف سرور مجاز نیست.';
+        state.error = 'منبع اشتراک مجاز نیست.';
         _log.add(
-          'منبع ${uri.host} در فهرست مجاز نیست؛ اشتراک خوانده نشد.',
+          'منبع اشتراک در فهرست مجاز نیست و خوانده نشد.',
           level: 'error',
         );
         state.loading = false;
@@ -602,9 +602,9 @@ class SubscriptionController extends ChangeNotifier {
       final http.Response response = await _getWithRetry(uri);
       state.lastStatus = response.statusCode;
       if (response.statusCode >= 300) {
-        state.error = 'پاسخ سرور: کد ${response.statusCode}';
+        state.error = 'پاسخ ناموفق اشتراک (کد ${Fa.num(response.statusCode)})';
         _log.add(
-          'دریافت اشتراک ناموفق (کد ${response.statusCode}): $uri',
+          'دریافت اشتراک ناموفق بود (کد ${Fa.num(response.statusCode)}).',
           level: 'error',
         );
         state.loading = false;
@@ -625,12 +625,12 @@ class SubscriptionController extends ChangeNotifier {
             : '';
       notifyListeners();
       return report;
-    } on Exception catch (error) {
+    } on Exception {
       state
         ..loading = false
-        ..error = 'دریافت اشتراک ناموفق بود: $error';
+        ..error = 'دریافت اشتراک ناموفق بود.';
       _log.add(
-        'دریافت اشتراک ناموفق بود: $error | ${state.source.url}',
+        'دریافت اشتراک ناموفق بود؛ اتصال اینترنت را بررسی کنید.',
         level: 'error',
       );
       notifyListeners();

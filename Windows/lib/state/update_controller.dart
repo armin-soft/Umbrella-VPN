@@ -160,11 +160,11 @@ class UpdateController extends ChangeNotifier {
     try {
       final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok) {
-        _log.add('مرورگر صفحه انتشار را باز نکرد: $url', level: 'warning');
+        _log.add('مرورگر صفحه انتشار را باز نکرد.', level: 'warning');
       }
       return ok;
-    } on Exception catch (error) {
-      _log.add('باز کردن صفحه انتشار ناموفق بود: $error', level: 'error');
+    } on Exception {
+      _log.add('باز کردن صفحه انتشار ناموفق بود.', level: 'error');
       return false;
     }
   }

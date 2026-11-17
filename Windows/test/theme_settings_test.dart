@@ -11,6 +11,7 @@ import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/ui/widgets/advanced_network_settings.dart';
 
 import 'package:umbrella_vpn/core/storage.dart';
+import 'package:umbrella_vpn/core/utils.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/native.dart';
 import 'package:umbrella_vpn/platform/services.dart';
@@ -550,6 +551,92 @@ void main() {
     expect(shortHeader.right, fixedHeader.right);
     expect(shortHeader.left, tallHeader.left);
     expect(shortBanner.top, tallBanner.top);
+  });
+
+  testWidgets('network controls render spacious 2-column grid on desktop width', (WidgetTester tester) async {
+    final SettingsController controller = create();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider<SettingsController>.value(
+      value: controller,
+      child: MaterialApp(
+        theme: AppTheme.dark(),
+        home: const Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 960,
+                child: SingleChildScrollView(child: NetworkSettings()),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('پشته کارت شبکه تونل'), findsOneWidget);
+    expect(find.text('اندازه بسته (MTU)'), findsOneWidget);
+    expect(find.text('دی‌ان‌اس ترافیک تونل'), findsOneWidget);
+    expect(find.text('WARP و اتصال زنجیره‌ای'), findsOneWidget);
+    expect(find.text('مسیریابی برنامه‌های ویندوز'), findsOneWidget);
+  });
+
+  test('AppLogger.redact strips server hosts, ports, protocols, IPs and subscription URLs', () {
+    // 1. Exact server disclosure line reported by user (mixed case + Persian port).
+    final String serverLine = AppLogger.redact(
+      'اتصال به سرور آمبرلا (خودکار) tls httpupgrade CDN vmess (proXY.UMBReLla-serVER.IR:۴۴۳)',
+    );
+    expect(serverLine.toLowerCase(), isNot(contains('umbrella-server')));
+    expect(serverLine.toLowerCase(), isNot(contains('proxy.')));
+    expect(serverLine, isNot(contains('۴۴۳')));
+    expect(serverLine, isNot(contains('443')));
+    expect(serverLine.toLowerCase(), isNot(contains('vmess')));
+    expect(serverLine.toLowerCase(), isNot(contains('httpupgrade')));
+    expect(serverLine.toLowerCase(), isNot(contains('tls')));
+    expect(serverLine.toLowerCase(), isNot(contains('cdn')));
+
+    // 2. Full subscription URL and ClientException leaking /sub/ token + UUID.
+    final String subError = AppLogger.redact(
+      'ClientException: Failed host lookup: user.umbrella-server.ir, '
+      'uri=https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11/sub/',
+    );
+    expect(subError, isNot(contains('https://')));
+    expect(subError, isNot(contains('umbrella-server')));
+    expect(subError, isNot(contains('D6qnVQXRwa')));
+    expect(subError, isNot(contains('9b9d9f5d')));
+    expect(subError, isNot(contains('/sub/')));
+
+    // 3. Raw proxy links and core outbound logs with server domain and IP.
+    AppLogger.instance.clear();
+    AppLogger.instance.add(
+      'vless://9b9d9f5d-9841-45bf-a6b9-0479de273c11@edge.example.ir:2053?type=ws&security=tls#Node1',
+      level: 'error',
+      details: const <LogDetail>[
+        LogDetail(
+          title: 'خروجی کامل هسته',
+          text: 'INFO outbound/vmess[auto-1]: outbound connection to proXY.UMBReLla-serVER.IR:443\n'
+              'WARN dial tcp 185.143.233.12:8443: i/o timeout\n'
+              'INFO inbound/mixed: listening at 127.0.0.1:12334',
+        ),
+      ],
+    );
+    final String exported = AppLogger.instance.exportText();
+    expect(exported.toLowerCase(), isNot(contains('vless://')));
+    expect(exported.toLowerCase(), isNot(contains('example.ir')));
+    expect(exported.toLowerCase(), isNot(contains('umbrella-server')));
+    expect(exported, isNot(contains('185.143.233.12')));
+    expect(exported, isNot(contains('8443')));
+    expect(exported, isNot(contains('2053')));
+    expect(exported, isNot(contains('9b9d9f5d')));
+    // Local loopback & harmless binary/status lines stay intact.
+    expect(exported, contains('127.0.0.1:12334'));
+    final String localReady = AppLogger.redact(
+      r'هسته آمبرلا آماده است: C:\Program Files\Umbrella\UmbrellaCoreEngine.exe',
+    );
+    expect(localReady, contains('هسته آمبرلا آماده است'));
+    expect(localReady, contains('UmbrellaCoreEngine.exe'));
+    AppLogger.instance.clear();
   });
 
 }
