@@ -203,10 +203,10 @@ $Buttons[] = [[
 if ($PageCount > 1) {
 $Navigation = [];
 if ($Page > 0) {
-$Navigation[] = ['text' => '⬅️ قبلی', 'callback_data' => 'app_devices_page:' . ($Page - 1)];
+$Navigation[] = ['text' => '⬅️صفحه قبل', 'callback_data' => 'app_devices_page:' . ($Page - 1)];
 }
 if ($Page + 1 < $PageCount) {
-$Navigation[] = ['text' => 'بعدی ➡️', 'callback_data' => 'app_devices_page:' . ($Page + 1)];
+$Navigation[] = ['text' => 'صفحه بعد➡️', 'callback_data' => 'app_devices_page:' . ($Page + 1)];
 }
 $Buttons[] = $Navigation;
 }

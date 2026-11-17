@@ -319,6 +319,7 @@ match($Data) {
 'تایید اطلاع رسانی غیرفعال' => AdminFlow::serverNotifyIdleSend($Context),
 'منوی کاربران' => AdminFlow::usersMenu($Context),
 'admin_devices' => AdminFlow::appDevicesMenu($Context),
+'admin_users' => AdminFlow::accountUsers($Context),
 'اطلاعات سرور' => AdminFlow::serverHealthMenu($Context),
 'همگام سازی سرور' => AdminFlow::serverSyncMenu($Context),
 'عملیات کلاینت سرور' => AdminFlow::serverClientsMenu($Context),
@@ -470,6 +471,25 @@ return;
 if (str_starts_with($Data, 'app_filter_toggle:')) {
 AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
 return;
+}
+
+if (preg_match('/^admin_device_delete:([1-9][0-9]*):([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesPrompt($Context, (int)$Match[1], (int)$Match[2]); return;
+}
+if (preg_match('/^admin_devices_delete_page:([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesPrompt($Context, 0, (int)$Match[1]); return;
+}
+if (preg_match('/^admin_devices_delete_cancel:([a-f0-9]{24})$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesConfirm($Context, $Match[1], true); return;
+}
+if (preg_match('/^admin_devices_delete_confirm:([a-f0-9]{24})$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesConfirm($Context, $Match[1]); return;
+}
+if (preg_match('/^admin_users_page:([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::accountUsers($Context, (int)$Match[1]); return;
+}
+if (preg_match('/^admin_user_view:([1-9][0-9]*):([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::accountUserView($Context, (int)$Match[1], (int)$Match[2]); return;
 }
 
 if (str_starts_with($Data, 'admin_devices_page:')) {

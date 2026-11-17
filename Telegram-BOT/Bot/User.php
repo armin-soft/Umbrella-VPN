@@ -857,7 +857,7 @@ $Buttons = [];
 if ($Page > 1) $Buttons[] = [Menu::button('⬅️صفحه قبل', 'سابقه تراکنش|' . ($Page - 1))];
 
 if ($Page < $Total_Pages) {
-$Buttons[] = [['text' => '📄صفحه بعد', 'callback_data' => 'سابقه تراکنش|' . ($Page + 1)]];
+$Buttons[] = [['text' => 'صفحه بعد➡️', 'callback_data' => 'سابقه تراکنش|' . ($Page + 1)]];
 }
 
 $Buttons[] = Menu::back('منوی قبلی', 'user_wallet_menu');
@@ -923,7 +923,7 @@ $Buttons = [];
 if ($Page > 1) $Buttons[] = [Menu::button('⬅️صفحه قبل', 'سابقه اشتراک|' . ($Page - 1))];
 
 if ($Page < $Total_Pages) {
-$Buttons[] = [['text' => '📄صفحه بعد', 'callback_data' => 'سابقه اشتراک|' . ($Page + 1)]];
+$Buttons[] = [['text' => 'صفحه بعد➡️', 'callback_data' => 'سابقه اشتراک|' . ($Page + 1)]];
 }
 
 $Buttons[] = Menu::back('منوی قبلی', 'user_stats_menu');

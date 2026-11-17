@@ -116,7 +116,7 @@ $Menus = [
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
 'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu']],
-'accountsMenu' => ['admin_accounts_menu', 'مدیریت', ['حذف کاربر اول', 'منقضی اشتراک اول']],
+'accountsMenu' => ['admin_accounts_menu', 'مدیریت', ['admin_users', 'حذف کاربر اول', 'منقضی اشتراک اول']],
 'serverClientsMenu' => ['عملیات کلاینت سرور', 'مدیریت', ['فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'بروز رسانی داده های کاربران اول']],
 'serverConfig' => ['پیکربندی سرور', 'مدیریت', ['وضعیت سرور', 'سرویس های سرور', 'بروز رسانی میزان استفاده اول', 'تنظیمات ربات']],
 'reportMenu' => ['منوی گزارش', 'مدیریت', ['آمار کلی', 'گزارش روزانه', 'گزارش مالی', 'رتبه بندی']],
@@ -129,7 +129,7 @@ $Menus = [
 $AdminWidths = [
 'menu' => array_fill(0, 13, 1),
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
-'devicesMenu' => [1, 1, 1], 'accountsMenu' => [1, 1, 1],
+'devicesMenu' => [1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
 'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 1, 1],
 'supportMenu' => [1], 'ticketAdminMenu' => [1], 'subscriptionsMenu' => [1, 1, 1], 'systemMenu' => [1, 1, 1],
@@ -326,7 +326,7 @@ check(TelegramClient::$Text === "مدیریت دستگاه ها\n📌*بخش م�
 check(calls() === ['admin_devices', 'device_limit_menu', 'مدیریت'], 'device limit lives only in device management');
 for ($Index = 0; $Index < 7; $Index++) {
 Database::$Devices[] = [
-'Device_ID' => str_pad((string)$Index, 64, 'a'),
+'ID' => $Index + 1, 'Device_ID' => str_pad((string)$Index, 64, 'a'),
 'Device_Name' => 'Same device <b>name</b>', 'Platform' => 'Android',
 'App_Version' => '1.2.3', 'Phone' => '09123456789',
 'Owner_Name' => 'علی رضایی', 'Owner_Telegram_ID' => 123456789,

@@ -160,3 +160,6 @@ jobs:
 
       - name: Once-only system SMS and active-only nightly reports
         run: php Telegram-BOT/tests/sms_once_nightly_test.php
+
+      - name: Admin device deletion and paginated users
+        run: php Telegram-BOT/tests/admin_devices_users_test.php

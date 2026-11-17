@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/../Core/App/Device-Deletion.php';
 require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
@@ -115,6 +116,7 @@ self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیر�
 public static function accountsMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
+[['👥لیست کاربران', 'admin_users']],
 [['🗑حذف کاربر', 'حذف کاربر اول']],
 [['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
 ]);
@@ -161,7 +163,7 @@ $Page = max(0, min($Page, $Page_Count - 1));
 // نام و منشن از یک رکورد واحد می‌آیند. شناسه تلگرام اولویت دارد؛
 // شماره فقط وقتی شناسه نداریم و دقیقاً یک کاربر منطبق است استفاده می‌شود.
 $Rows = $Database->fetchAll(
-'SELECT `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
+'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
 . '`U`.`Full_Name` AS `Owner_Name`, '
 . 'CASE WHEN `D`.`Telegram_ID` > 0 THEN `D`.`Telegram_ID` ELSE `U`.`Telegram_ID` END AS `Owner_Telegram_ID` '
 . 'FROM `App_Devices` AS `D` LEFT JOIN `Users` AS `U` ON `U`.`ID` = ('
@@ -217,17 +219,113 @@ $Buttons[] = [[
 'text' => ($Trusted ? '⛔️لغو مجوز دستگاه ' : '✅صدور مجوز دستگاه ') . $Number,
 'callback_data' => 'admin_device_toggle:' . $Prefix . ':' . $Page,
 ]];
+$Buttons[] = [Menu::button('🗑حذف دستگاه ' . $Number, 'admin_device_delete:' . (int)$Row['ID'] . ':' . $Page)];
 }
-if ($Page_Count > 1) {
-$Nav = [];
-if ($Page > 0) $Nav[] = ['text' => '⬅️قبلی', 'callback_data' => 'admin_devices_page:' . ($Page - 1)];
-if ($Page + 1 < $Page_Count) $Nav[] = ['text' => 'بعدی➡️', 'callback_data' => 'admin_devices_page:' . ($Page + 1)];
-$Buttons[] = $Nav;
-}
+if ($Rows !== []) $Buttons[] = [Menu::button('🗑حذف گروهی دستگاه‌های این صفحه', 'admin_devices_delete_page:' . $Page)];
+$Buttons = array_merge($Buttons, Menu::pages($Page, $Page_Count, 'admin_devices_page:'));
 $Buttons[] = Menu::back('منوی قبلی', 'admin_devices_menu');
 $Buttons[] = Menu::adminHome();
 self::logMenuProblems('app-devices', $Buttons);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+/** Preview either one row or this page's bounded batch; never delete on first tap. */
+public static function deleteDevicesPrompt(Context $Context, int $Id = 0, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Page = max(0, $Page);
+$Db = Database::getInstance();
+if ($Id <= 0) $Page = min($Page, max(0, (int)ceil((int)$Db->scalar('SELECT COUNT(*) FROM `App_Devices`', [], 0) / 3) - 1));
+$Rows = $Id > 0
+? $Db->fetchAll('SELECT `ID`, `Device_Name` FROM `App_Devices` WHERE `ID` = ? LIMIT 1', [$Id])
+: $Db->fetchAll('SELECT `ID`, `Device_Name` FROM `App_Devices` ORDER BY `Last_Seen_At` DESC, `ID` DESC LIMIT 3 OFFSET ?', [$Page * 3]);
+if ($Rows === []) { self::appDevicesMenu($Context, $Page); return; }
+$Token = DeviceDeletion::prepare($Context->UserId, $Context->ChatId, array_column($Rows, 'ID'), $Page);
+$Text = Helper::adminGreeting($Context, 'تأیید حذف دستگاه')
+. '⚠️حذف ' . Helper::toPersian((string)count($Rows)) . " دستگاه زیر از فهرست مدیر و کاربر:
+";
+foreach ($Rows as $Row) $Text .= '• ' . self::listText((string)($Row['Device_Name'] ?? 'دستگاه')) . "
+";
+$Text .= "
+نشست‌ها و درخواست‌های ورود این دستگاه‌ها باطل می‌شوند. برای استفاده دوباره، ورود و تأیید مجدد لازم است. اشتراک کاربر حذف نمی‌شود.";
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[Menu::button('🗑تأیید حذف', 'admin_devices_delete_confirm:' . $Token)],
+Menu::back('انصراف', 'admin_devices_delete_cancel:' . $Token), Menu::adminHome(),
+]));
+}
+
+public static function deleteDevicesConfirm(Context $Context, string $Token, bool $Cancel = false): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+try {
+$Result = DeviceDeletion::confirm($Context->UserId, $Context->ChatId, $Token, $Cancel);
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Device-Delete] ' . $Error->getMessage());
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, '❌حذف انجام نشد؛ دوباره تلاش کنید.', true);
+return;
+}
+if (!($Result['valid'] ?? false)) {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, '⚠️تأیید منقضی یا قبلاً استفاده شده؛ دوباره از فهرست انتخاب کنید.', true);
+return;
+}
+if (!$Cancel) Repository::logAdminAction($Context->UserId, 'app_devices_delete', null, 'count=' . (int)$Result['count']);
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, $Cancel ? 'حذف لغو شد.' : '✅تعداد دستگاه حذف‌شده: ' . Helper::toPersian((string)$Result['count']));
+self::appDevicesMenu($Context, (int)$Result['page']);
+}
+
+private static function listText(string $Text): string {
+$Text = mb_substr(trim((string)preg_replace('/[\s\p{C}]+/u', ' ', $Text)), 0, 100);
+return htmlspecialchars(str_replace(['*', '`', '[', ']'], ['＊', '｀', '［', '］'], $Text !== '' ? $Text : 'ثبت نشده'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+public static function accountUsers(Context $Context, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Db = Database::getInstance();
+$Total = (int)$Db->scalar('SELECT COUNT(*) FROM `Users`', [], 0);
+$Count = max(1, (int)ceil($Total / 5));
+$Page = max(0, min($Page, $Count - 1));
+$Users = $Db->fetchAll('SELECT `Telegram_ID`, `Full_Name`, `First_Name`, `Username`, `Is_Blocked` FROM `Users` ORDER BY `ID` DESC LIMIT ? OFFSET ?', [5, $Page * 5]);
+$Text = Helper::adminGreeting($Context, 'لیست کاربران') . Menu::pageLabel($Page, $Count);
+$Buttons = [];
+if ($Users === []) $Text .= '📭کاربری ثبت نشده است.';
+foreach ($Users as $Index => $User) {
+$Id = (int)$User['Telegram_ID'];
+$Name = trim((string)($User['Full_Name'] ?? '')) ?: (string)($User['First_Name'] ?? 'کاربر');
+$Username = ltrim(trim((string)($User['Username'] ?? '')), '@');
+$Number = Helper::toPersian((string)($Page * 5 + $Index + 1));
+$Text .= "
+{$Number}. " . '<a href="tg://user?id=' . $Id . '">' . self::listText($Name) . '</a>'
+. "
+نام کاربری: " . ($Username !== '' ? '@' . self::listText($Username) : 'ثبت نشده')
+. "
+شناسه: <code>" . $Id . '</code> | ' . ((int)($User['Is_Blocked'] ?? 0) === 1 ? '🚫مسدود' : '✅غیرمسدود') . "
+";
+$Buttons[] = [Menu::button($Number . '. ' . mb_substr((string)preg_replace('/[\s\p{C}]+/u', ' ', $Name), 0, 40), 'admin_user_view:' . $Id . ':' . $Page)];
+}
+$Buttons = array_merge($Buttons, Menu::pages($Page, $Count, 'admin_users_page:'), [Menu::back('حساب کاربری', 'admin_accounts_menu'), Menu::adminHome()]);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+public static function accountUserView(Context $Context, int $Id, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$User = $Id > 0 ? Repository::getUser($Id) : null;
+if (!$User) { self::accountUsers($Context, $Page); return; }
+$Text = Helper::adminGreeting($Context, 'اطلاعات کاربر')
+. '👤نام کامل: ' . self::listText((string)($User['Full_Name'] ?? $User['First_Name'] ?? ''))
+. "
+نام کاربری: " . self::listText((string)($User['Username'] ?? ''))
+. "
+شناسه: <code>" . $Id . '</code>'
+. "
+📞شماره: " . self::listText((string)($User['Phone'] ?? ''))
+. "
+💎اشتراک: " . self::listText((string)($User['Subscription'] ?? ''))
+. "
+وضعیت کلاینت: " . self::listText((string)($User['Client_Status'] ?? ''))
+. "
+" . ((int)($User['Is_Blocked'] ?? 0) === 1 ? '🚫حساب مسدود است' : '✅حساب مسدود نیست');
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+[['text' => '👤پروفایل تلگرام', 'url' => 'tg://user?id=' . $Id]],
+Menu::back('لیست کاربران', 'admin_users_page:' . max(0, $Page)), Menu::adminHome(),
+]));
 }
 
 /** تغییر مجوز یک دستگاه؛ شناسه کامل به کاربر نمایش داده نمی‌شود. */
