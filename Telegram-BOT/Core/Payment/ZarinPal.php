@@ -7,6 +7,7 @@ require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 final class Zarinpal {
 public const CODE_OK = 100;
 public const CODE_ALREADY_VERIFIED = 101;
+public const CODE_NOT_PAID = -51;
 private const BASE_PRODUCTION = 'https://payment.zarinpal.com/pg/';
 private const BASE_SANDBOX = 'https://sandbox.zarinpal.com/pg/';
 private function __construct() {
@@ -170,7 +171,12 @@ $Json = $Response['Json'];
 
 if (isset($Json['errors']) && is_array($Json['errors']) && $Json['errors'] !== []) {
 $API_Error = $Json['errors'];
+// An unpaid attempt is an expected result of background recovery, not an API outage.
+// It is NEVER successful, and must not invalidate a link the user may still pay.
+if ((int)($API_Error['code'] ?? 0) !== self::CODE_NOT_PAID
+|| (int)($Response['StatusCode'] ?? 0) < 200 || (int)($Response['StatusCode'] ?? 0) >= 500) {
 error_log('[Umbrella-Bot][Zarinpal] Verify API error: ' . ($API_Error['message'] ?? 'unknown') . ' (code ' . ($API_Error['code'] ?? '?') . ')');
+}
 return ['Ok' => false, 'Code' => (int)($API_Error['code'] ?? -1), 'RefId' => '', 'CardPan' => ''];
 }
 
@@ -183,8 +189,14 @@ return ['Ok' => false, 'Code' => -1, 'RefId' => '', 'CardPan' => ''];
 
 $Code = (int)($Data['code'] ?? 0);
 
+$Ok = (int)($Response['StatusCode'] ?? 0) >= 200 && (int)($Response['StatusCode'] ?? 0) < 300
+&& in_array($Code, [self::CODE_OK, self::CODE_ALREADY_VERIFIED], true)
+&& trim((string)($Data['ref_id'] ?? '')) !== '';
+if (!$Ok && ($Code !== self::CODE_NOT_PAID || (int)($Response['StatusCode'] ?? 0) >= 500)) {
+error_log('[Umbrella-Bot][Zarinpal] Verify failed: invalid confirmation | HTTP=' . (int)($Response['StatusCode'] ?? 0) . ' Code=' . $Code);
+}
 return [
-'Ok' => in_array($Code, [self::CODE_OK, self::CODE_ALREADY_VERIFIED], true),
+'Ok' => $Ok,
 'Code' => $Code,
 'RefId' => (string)($Data['ref_id'] ?? ''),
 'CardPan' => (string)($Data['card_pan'] ?? ''),

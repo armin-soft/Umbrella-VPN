@@ -102,7 +102,7 @@ $Status = strtoupper((string)($_GET['Status'] ?? 'NOK'));
 $User_ID = (int)($_GET['Uid'] ?? 0);
 
 try {
-\SubscriptionFlow::handleGatewayCallback($User_ID, $Status);
+\SubscriptionFlow::handleGatewayCallback($User_ID, $Status, (string)$_GET['Authority']);
 }
 
 catch (Throwable $Error) {

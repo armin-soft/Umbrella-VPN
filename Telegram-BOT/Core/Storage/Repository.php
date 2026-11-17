@@ -854,7 +854,7 @@ public static function claimPendingPayment(int $User_ID, string $Pending): bool 
 if ($User_ID <= 0 || $Pending === '') return false;
 
 return Database::getInstance()->execute(
-'UPDATE `User_Sessions` SET `Pending_Payment` = NULL WHERE `Telegram_ID` = ? AND `Pending_Payment` = ?',
+'UPDATE `User_Sessions` SET `Pending_Payment` = NULL, `Pending_Topup` = NULL, `Pending_Plan` = NULL, `Pending_Custom_Plan` = NULL WHERE `Telegram_ID` = ? AND `Pending_Payment` = ?',
 [$User_ID, $Pending]
 )->rowCount() > 0;
 }

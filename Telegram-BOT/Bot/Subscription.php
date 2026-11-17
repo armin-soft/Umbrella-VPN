@@ -1096,17 +1096,20 @@ if (empty($Verify['Ok'])) return false;
 
 $User = Repository::getUser($User_ID);
 $Chat_ID = (int)($User['Chat_ID'] ?? $User_ID);
-$First_Name = (string)($User['First_Name'] ?: 'کاربر');
+$First_Name = (string)(($User['First_Name'] ?? '') ?: 'کاربر');
 $Context = new Context([], $User_ID, $Chat_ID ?: $User_ID, $First_Name, false, null, null, null, null);
 
-return self::settleGatewayPayment($Context);
+return self::settleGatewayPayment($Context, $Pending_Payment, $Verify);
 }
 
-private static function settleGatewayPayment(Context $Context): bool {
-$Pending_Payment = (string)(Repository::getUserSession($Context->UserId)['Pending_Payment'] ?? '');
-$Pending_Plan = (string)(Repository::getUserSession($Context->UserId)['Pending_Plan'] ?? '');
-$Pending_Custom = (string)(Repository::getUserSession($Context->UserId)['Pending_Custom_Plan'] ?? '');
-$Pending_Topup = (string)(Repository::getUserSession($Context->UserId)['Pending_Topup'] ?? '');
+private static function settleGatewayPayment(Context $Context, ?string $Expected_Payment = null, ?array $Verified = null): bool {
+$Session = Repository::getUserSession($Context->UserId);
+$Pending_Payment = (string)($Session['Pending_Payment'] ?? '');
+// A new order may have replaced this one while verify was in flight.
+if ($Expected_Payment !== null && $Expected_Payment !== $Pending_Payment) return false;
+$Pending_Plan = (string)($Session['Pending_Plan'] ?? '');
+$Pending_Custom = (string)($Session['Pending_Custom_Plan'] ?? '');
+$Pending_Topup = (string)($Session['Pending_Topup'] ?? '');
 
 if ($Pending_Payment === '') {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: سفارش پرداخت فعالی یافت نشد.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: شما پرداخت را به پایان نرساندید یا آن را لغو کردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
@@ -1121,28 +1124,23 @@ $Payment_Type = $Parts[0];
 $Amount = (float)$Parts[1];
 $Authority = $Parts[2];
 
-if (!Zarinpal::isConfigured() || $Authority === '') {
+if (!Zarinpal::isConfigured() || $Authority === '' || $Amount <= 0) {
 return false;
 }
 
-$Verify = Zarinpal::verify($Amount, $Authority);
+$Verify = $Verified ?? Zarinpal::verify($Amount, $Authority);
 
 if (!$Verify['Ok']) {
 $Code = (int)($Verify['Code'] ?? 0);
 $Reason = self::zarinpalErrorMessage($Code);
-$Is_Stale_Authority = in_array($Code, [-50, -51, -52], true);
-
-if ($Is_Stale_Authority) {
-Repository::updateUserSession($Context->UserId, [
-'Pending_Payment' => null,
-'Pending_Topup' => null,
-'Pending_Plan' => null,
-'Pending_Custom_Plan' => null,
-]);
-
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌این لینک پرداخت منقضی یا تکراری است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: {$Reason}\n🧾کد خطا: `{$Code}`\n\n👌لطفاً مجدداً اشتراک مورد نظر را انتخاب و پرداخت را تکرار کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک آماده']],
-Menu::back('اشتراک من', 'اشتراک من'),
+if ($Code === Zarinpal::CODE_NOT_PAID) {
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت')
+. "⏳پرداخت این سفارش هنوز توسط درگاه تأیید نشده است.
+"
+. "اگر پرداخت را انجام نداده‌اید از دکمه پرداخت استفاده کنید. اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ کمی بعد بررسی مجدد را بزنید و در صورت ادامه مشکل با پشتیبانی تماس بگیرید."
+. Helper::userFooter(), TelegramClient::inlineKeyboard([
+[['text' => '💳ادامه پرداخت', 'url' => Zarinpal::payLink(['BridgeUrl' => Zarinpal::bridgeUrl($Authority, $Context->UserId), 'RedirectUrl' => Zarinpal::startPayUrl($Authority)])]],
+[['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
 Menu::userHome(),
 ]));
 return false;
@@ -1151,7 +1149,7 @@ return false;
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: پرداخت ناموفق بود.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️علت: {$Reason}\n"
-. "🔄در صورت کسر وجه حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود.\n"
+. "⚠️اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ بررسی مجدد یا پیگیری از پشتیبانی لازم است.\n"
 . "🧾کد خطا: `{$Code}`" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
 Menu::back('اشتراک من', 'اشتراک من'),
@@ -1168,12 +1166,7 @@ if (!Repository::claimPendingPayment($Context->UserId, $Pending_Payment)) {
 return true;
 }
 
-Repository::updateUserSession($Context->UserId, [
-'Pending_Payment' => null,
-'Pending_Topup' => null,
-'Pending_Plan' => null,
-'Pending_Custom_Plan' => null,
-]);
+// The conditional claim clears this order atomically; never clear a newer one here.
 
 try {
 Repository::recordGatewayPayment(
@@ -1407,7 +1400,9 @@ return match ($Code) {
 -40 => 'پارامترهای اضافی نامعتبر.',
 -41 => 'شناسه پرداخت نامعتبر است.',
 -42 => 'مدت زمان معتبر طولانی تر از حد مجاز.',
--50, -51 => 'شناسه پرداخت منقضی، تکراری یا نامعتبر است. لطفاً مجدداً اقدام به پرداخت کنید.',
+-50 => 'مبلغ تأیید با مبلغ سفارش درگاه مطابقت ندارد؛ با پشتیبانی تماس بگیرید.',
+-51 => 'پرداخت این سفارش هنوز توسط درگاه تأیید نشده است.',
+-52 => 'درگاه نتوانست تراکنش را تأیید کند؛ بررسی مجدد یا پیگیری از پشتیبانی لازم است.',
 52 => 'تراکنش یافت نشد.',
 53 => 'تراکنش قبلا وریفای شده است.',
 54 => 'تراکنش وریفای نشده.',
@@ -1589,11 +1584,15 @@ public static function verifyPayment(Context $Context): void {
 self::settleGatewayPayment($Context);
 }
 
-public static function handleGatewayCallback(int $User_ID, string $Status): void {
-Repository::createUserIfMissing($User_ID);
+public static function handleGatewayCallback(int $User_ID, string $Status, string $Authority): void {
+if ($User_ID <= 0 || $Authority === '') return;
+$Pending = (string)(Repository::getUserSession($User_ID)['Pending_Payment'] ?? '');
+$Parts = array_pad(explode('|', $Pending, 3), 3, '');
+// Ignore replayed/foreign callbacks; never verify a different current order.
+if ($Pending === '' || !hash_equals($Parts[2], $Authority)) return;
 $User = Repository::getUser($User_ID);
 $Chat_ID = (int)($User['Chat_ID'] ?? $User_ID);
-$First_Name = (string)($User['First_Name'] ?: 'کاربر');
+$First_Name = (string)(($User['First_Name'] ?? '') ?: 'کاربر');
 $Full_Name = trim((string)($User['Full_Name'] ?? ''));
 $Display_Name = $Full_Name !== '' ? $Full_Name : $First_Name;
 $Phone = (string)($User['Phone'] ?? '');
@@ -1618,7 +1617,7 @@ return;
 }
 
 $Context = new Context([], $User_ID, $Chat_ID, $First_Name, false, null, null, null, null);
-self::settleGatewayPayment($Context);
+self::settleGatewayPayment($Context, $Pending);
 }
 
 private static function activateSubscription(Context $Context, array $Data, string $Name, int $Gb, int $Days): void {
