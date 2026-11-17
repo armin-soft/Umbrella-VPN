@@ -781,20 +781,46 @@ void main() {
     });
   });
 
-  group('اشتراک', () {
-    test('مسیر مرده mihomo جایی ساخته نمی شود', () {
+  group('اشتراک و منوی اتصال', () {
+    test('فقط مسیر `/sub/` در تنظیمات و سازنده اشتراک وجود دارد و هیچ منبع اضافه ای نیست', () {
       for (final String path in <String>[
         'lib/core/app_config.dart',
         'lib/data/subscription_endpoints.dart',
       ]) {
         final String text = read(path);
-        expect(text.contains("'mihomo/all.yml'"), isFalse, reason: path);
+        for (final String forbidden in <String>[
+          'mihomo/all.yml',
+          'clash/meta/all.yml',
+          'full-singbox.json',
+          'sub64/',
+          'all.txt',
+          'wireguard/?asn=',
+          'amnezia/?asn=',
+          'mieru/?asn=',
+        ]) {
+          expect(text.contains(forbidden), isFalse, reason: '$path → $forbidden');
+        }
       }
+      final String endpoints = read('lib/data/subscription_endpoints.dart');
+      expect(endpoints.contains("'sub/'"), isTrue);
+      final String config = read('lib/core/app_config.dart');
+      expect(
+        config.contains(
+          'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11',
+        ),
+        isTrue,
+      );
+      expect(config.contains("'/sub/'"), isTrue);
     });
 
-    test('مسیر درست کلش متا در فهرست است', () {
-      final String endpoints = read('lib/data/subscription_endpoints.dart');
-      expect(endpoints.contains("'clash/meta/all.yml'"), isTrue);
+    test('منوی منطقه و سرورها از صفحه اتصال کامل حذف شده و دو گزینه اتصال مرتب اند', () {
+      final String connect = read('lib/ui/pages/connect_page.dart');
+      expect(connect.contains('منطقه و سرورها'), isFalse);
+      expect(connect.contains('_RegionProxyDialog'), isFalse);
+      expect(connect.contains('_pickServerRegion'), isFalse);
+      expect(connect.contains("'حالت اتصال'"), isTrue);
+      expect(connect.contains("'حالت انتخاب سرور'"), isTrue);
+      expect(connect.contains('_ConnectionOptionsBar'), isTrue);
     });
   });
 

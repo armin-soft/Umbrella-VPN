@@ -150,24 +150,12 @@ class SubscriptionController extends ChangeNotifier {
       accountBase: _auth.account.accountBase,
       uuid: _auth.account.uuid,
     );
-    final List<SubscriptionSource> next = <SubscriptionSource>[
-      ...personal,
-      if (personal.isEmpty) ...AppConfig.subscriptionSources,
-      // اگر نشانی سرور مسیر راز پنل را نداشته باشد (نتیجه: کد ۴۰۴)، همان
-      // پنج مسیر با پایه کامل خود برنامه هم امتحان می شوند.
-      if (personal.isNotEmpty && _missingPanelPath(personal))
-        ...AppConfig.subscriptionSources.map(
-          (SubscriptionSource source) => SubscriptionSource(
-            id: 'builtin-${source.id}',
-            title: source.title,
-            url: source.url,
-            format: source.format,
-            icon: source.icon,
-          ),
-        ),
-    ];
-    final String signature =
-        next.map((SubscriptionSource item) => '${item.id}|${item.url}').join('\n');
+    final List<SubscriptionSource> next = personal.isNotEmpty
+        ? personal
+        : AppConfig.subscriptionSources;
+    final String signature = next
+        .map((SubscriptionSource item) => '${item.id}|${item.url}')
+        .join('\n');
     if (signature == _signature && _sources.isNotEmpty) {
       return false;
     }
@@ -186,16 +174,6 @@ class SubscriptionController extends ChangeNotifier {
       return SourceState(source: source);
     }).toList();
     return true;
-  }
-
-  /// آیا نشانی ساخته شده مسیر پنل را ندارد؟ (مثل `/{uuid}/all.txt`)
-  bool _missingPanelPath(List<SubscriptionSource> sources) {
-    final Uri? uri = Uri.tryParse(sources.first.url);
-    if (uri == null) {
-      return false;
-    }
-    // دو بخش یعنی /<شناسه>/all.txt ؛ مسیر راز پنل جا افتاده است.
-    return uri.pathSegments.length <= 2;
   }
 
   void _onAccountChanged() {
@@ -223,8 +201,17 @@ class SubscriptionController extends ChangeNotifier {
   Future<void> loadCached() async {
     await _vpn.bootstrap();
     if (_vpn.nodes.isNotEmpty) {
-      final List<VpnNode> cleaned = deduplicateNodes(_vpn.nodes);
-      if (cleaned.length != _vpn.nodes.length) {
+      // فقط گره های متعلق به تنها مسیر مجاز `/sub/` نگه داشته می شوند؛ هر کش
+      // بازمانده از مسیرهای حذف شده نسخه های پیشین بی درنگ پاک می شود.
+      final Set<String> allowedIds =
+          _sources.map((SourceState item) => item.source.id).toSet();
+      final List<VpnNode> cleaned = _vpn.nodes
+          .where((VpnNode node) => allowedIds.contains(node.sourceId))
+          .map((VpnNode node) =>
+              node.disabled ? node.copyWith(disabled: false) : node)
+          .toList();
+      if (cleaned.length != _vpn.nodes.length ||
+          _vpn.nodes.any((VpnNode node) => node.disabled)) {
         await _vpn.applyNodes(cleaned, measure: false);
       }
       for (final SourceState state in _sources) {
@@ -288,15 +275,12 @@ class SubscriptionController extends ChangeNotifier {
       notifyListeners();
     }
     _log.add(
-      'اشتراک کاربر از سرور خوانده شد: ${Fa.num(uniqueCount)} سرور یکتا از '
-      '${Fa.num(personal.where((SourceState item) => item.loaded).length)} '
-      'منبع از ${Fa.num(personal.length)}.',
+      'اشتراک `/sub/` کاربر خوانده شد: ${Fa.num(uniqueCount)} سرور.',
     );
   }
 
-  /// اگر نشانی هایی که سرور داد پاسخ ندادند، منابع عمومی خود برنامه امتحان
-  /// می شوند تا کاربر بدون سرور نماند. نشانی هر خطا کامل در گزارش ها ثبت شده
-  /// است تا معلوم شود کدام مسیر اشتباه است.
+  /// اگر نشانی اختصاصی کاربر پاسخ نداد، تنها نشانی پشتیبان پیش فرض (`/sub/`)
+  /// امتحان می شود تا کاربر بدون سرور نماند.
   Future<void> _activateFallbackSources() async {
     if (_fallbackActive) {
       return;
@@ -307,22 +291,20 @@ class SubscriptionController extends ChangeNotifier {
         .toList();
     notifyListeners();
     _log.add(
-      'نشانی های اشتراک سرور پاسخ ندادند؛ منابع عمومی برنامه امتحان می شوند.',
+      'نشانی اشتراک حساب پاسخ نداد؛ اشتراک پیش فرض `/sub/` برنامه بارگذاری می شود.',
       level: 'warning',
     );
     final _BatchFetch batch = await _fetchMany(_sources);
     final List<VpnNode> nodes = batch.nodes;
     if (nodes.isEmpty) {
-      _log.add('منابع عمومی هم سروری ندادند.', level: 'error');
+      _log.add('اشتراک پیش فرض `/sub/` هم سروری برنگرداند.', level: 'error');
       if (_needsLogin) {
-        // سرورها با کد ۴۰۴/۴۰۱ پاسخ داده اند؛ فهرست قدیمی و مرده نگه داشته
-        // نمی شود تا برنامه بی دلیل صدها سرور بی جواب را امتحان نکند.
         _log.add(
           'فهرست سرورهای قبلی پاک شد؛ پس از ورود به حساب، اشتراک دوباره '
           'خوانده می شود.',
           level: 'warning',
         );
-        await _vpn.applyNodes(<VpnNode>[]);
+        await _vpn.applyNodes(<VpnNode>[], measure: false);
       }
       notifyListeners();
       return;
@@ -447,16 +429,19 @@ class SubscriptionController extends ChangeNotifier {
             !refreshedSourceIds.contains(node.sourceId) &&
             !fetchedIds.contains(node.id))
         .toList();
-    // اول گره های تازه می آیند تا اگر سرور پارامتری را عوض کرده باشد، نسخه تازه
-    // بر کش قدیمی ترجیح داشته باشد.
-    final List<VpnNode> deduped =
-        deduplicateNodes(<VpnNode>[...fetched, ...keep]);
-    if (deduped.isEmpty) {
-      _log.add('هیچ سروری از اشتراک ها خوانده نشد.', level: 'warning');
+    // تمام آیتم های معتبر اشتراک `/sub/` به همان ترتیب اصلی حفظ می شوند و هر
+    // سرور قدیمی از منابع قبلی کنار گذاشته می شود.
+    final Set<String> seenIds = <String>{};
+    final List<VpnNode> nextNodes = <VpnNode>[
+      for (final VpnNode node in <VpnNode>[...fetched, ...keep])
+        if (seenIds.add(node.id)) node,
+    ];
+    if (nextNodes.isEmpty) {
+      _log.add('هیچ سروری از اشتراک `/sub/` خوانده نشد.', level: 'warning');
       return 0;
     }
-    await _vpn.applyNodes(deduped);
-    return deduped.length;
+    await _vpn.applyNodes(nextNodes);
+    return nextNodes.length;
   }
 
   /// حذف کپی های کاملاً یکسان یک سرور در قالب های مختلف پنل بدون ادغام کلاینت ها
@@ -534,8 +519,13 @@ class SubscriptionController extends ChangeNotifier {
       norm(p['password']),
       norm(p['username']),
       norm(p['publicKey']),
-      norm(p['privateKey']),
+      norm(p['privateKey'] ?? p['pk'] ?? p['private_key']),
+      norm(p['hostKey'] ?? p['hk']),
       normLower(p['method'] ?? p['cipher']),
+      normLower(p['plugin']),
+      normLower(p['obfs']),
+      normLower(p['obfs-host'] ?? p['obfs_host']),
+      norm(p['mport']),
       transport,
       normLower(p['mode']),
       norm(p['path'] ?? p['serviceName']),
@@ -549,6 +539,7 @@ class SubscriptionController extends ChangeNotifier {
       normLower(p['flow']),
       normLower(p['alpn']),
       norm(p['encryption']),
+      norm(p['fragment']),
       extra,
     ].join('\x1f');
   }
@@ -577,7 +568,7 @@ class SubscriptionController extends ChangeNotifier {
   /// دریافت اشتراک بدون دخالت کاربر تکرار می شود.
   Future<http.Response> _getWithRetry(Uri uri) async {
     final Map<String, String> headers = <String, String>{
-      'Accept': '*/*',
+      'Accept': 'text/plain, */*',
       'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
     };
     try {
@@ -622,13 +613,8 @@ class SubscriptionController extends ChangeNotifier {
       }
       final String body = utf8.decode(response.bodyBytes, allowMalformed: true);
       state.body = body;
-      final ParseReport report = state.source.personal
-          ? SubscriptionParser.parseAuto(body, state.source.id)
-          : SubscriptionParser.parse(body, state.source);
-      if (state.source.format == SubscriptionFormat.clash &&
-          body.contains('proxies:')) {
-        await _vpn.applyClashProfile(body);
-      }
+      final ParseReport report =
+          SubscriptionParser.parseAuto(body, state.source.id);
       state
         ..loading = false
         ..loaded = report.nodes.isNotEmpty

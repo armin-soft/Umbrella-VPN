@@ -120,14 +120,21 @@ class SettingsController extends ChangeNotifier {
     );
   }
 
-  /// مایگریشن یک باره: نسخه قبلی به طور پیش فرض پروکسی سیستمی بود و کاربر
-  /// گزینه ای انتخاب نکرده بود. حالا تونل کامل پیش فرض است تا
-  /// سرعت و پایداری بیشتر شود؛ اگر کاربر خودش انتخابی کرده باشد دست نمی زنیم.
+  /// مایگریشن تنظیمات نسخه های پیشین: پیش فرض اتصال روی تونل کامل است و هر
+  /// فیلتر منطقه قدیمی (از منوی حذف شده «منطقه و سرورها») به «همه» برمی گردد
+  /// تا تمام سرورهای اشتراک `/sub/` کاربر فعال باشند.
   Future<void> migrateConnectionMode() async {
-    if (_settings.modeChoiceExplicit || _settings.tunMode) {
+    final bool needsTun = !_settings.modeChoiceExplicit && !_settings.tunMode;
+    final bool needsRegionReset = _settings.serverRegionCode != 'all';
+    if (!needsTun && !needsRegionReset) {
       return;
     }
-    await update(_settings.copyWith(tunMode: true));
+    await update(
+      _settings.copyWith(
+        tunMode: needsTun ? true : _settings.tunMode,
+        serverRegionCode: 'all',
+      ),
+    );
   }
 
   /// ثبت حالت اتصال. `tunMode` هم به روز می شود تا این دو هیچ وقت ناهماهنگ

@@ -495,20 +495,24 @@ class SideNav extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // ریسپانسیو: در پنجره باریک نوار کناری باریک می شود و متن منوها
-        // کوتاه می شود تا محتوا جا شود؛ هیچ گزینه ای حذف نمی شود.
-        final double width = constraints.maxWidth < AppMetrics.breakpointNav
+        // ریسپانسیو: در پنجره باریک نوار کناری جمع و جور می شود و متن منوها در
+        // Tooltip می آید؛ در پنجره متوسط و پهن نام هر منو خوانا و مرتب می نشیند.
+        final double windowWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final double width = windowWidth < AppMetrics.breakpointNav
             ? AppMetrics.navWidthCompact
-            : (constraints.maxWidth < AppMetrics.breakpointNavWide
+            : (windowWidth < AppMetrics.breakpointNavWide
                 ? AppMetrics.navWidthMedium
                 : AppMetrics.navWidthWide);
         final bool compact = width < AppMetrics.navWidthMedium;
+        final Color statusTone = VpnVisuals.color(context, status);
         return Container(
           width: width,
           decoration: BoxDecoration(
             color: colors.backgroundAlt,
             border: BorderDirectional(
-              start: BorderSide(color: colors.border),
+              end: BorderSide(color: colors.border),
             ),
           ),
           child: Column(
@@ -542,8 +546,11 @@ class SideNav extends StatelessWidget {
                     if (!compact)
                       GlassCard(
                         onTap: onStatusTap,
-                        padding: const EdgeInsets.all(AppMetrics.space3),
-                        radius: AppMetrics.radiusMd,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppMetrics.space3,
+                          vertical: AppMetrics.space3,
+                        ),
+                        radius: AppMetrics.radiusLg,
                         child: Row(
                           children: <Widget>[
                             Container(
@@ -551,11 +558,10 @@ class SideNav extends StatelessWidget {
                               height: AppMetrics.space2,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: VpnVisuals.color(context, status),
+                                color: statusTone,
                                 boxShadow: <BoxShadow>[
                                   BoxShadow(
-                                    color: VpnVisuals.color(context, status)
-                                        .withValues(alpha: 0.6),
+                                    color: statusTone.withValues(alpha: 0.55),
                                     blurRadius: 8,
                                   ),
                                 ],
@@ -563,16 +569,40 @@ class SideNav extends StatelessWidget {
                             ),
                             const SizedBox(width: AppMetrics.space2),
                             Expanded(
-                              child: Text(
-                                Fa.num(status.label),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    Fa.num('اتصال'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(color: colors.textSecondary),
+                                  ),
+                                  Text(
+                                    Fa.num(status.label),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          color: statusTone,
+                                        ),
+                                  ),
+                                ],
                               ),
                             ),
+                            if (index != 0)
+                              Icon(
+                                Icons.chevron_left_rounded,
+                                size: AppMetrics.iconSm,
+                                color: colors.textSecondary,
+                              ),
                           ],
                         ),
                       )
@@ -580,12 +610,19 @@ class SideNav extends StatelessWidget {
                       Center(
                         child: Tooltip(
                           message: Fa.num(status.label),
-                          child: Container(
-                            width: AppMetrics.space3,
-                            height: AppMetrics.space3,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: VpnVisuals.color(context, status),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: onStatusTap,
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppMetrics.space2),
+                              child: Container(
+                                width: AppMetrics.space3,
+                                height: AppMetrics.space3,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: statusTone,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -703,21 +740,23 @@ class _NavItemState extends State<_NavItem> {
             ),
           ),
           child: Row(
+            mainAxisAlignment: widget.compact
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: <Widget>[
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: AppMetrics.space1,
-                height: AppMetrics.iconSm,
-                decoration: BoxDecoration(
-                  color: widget.selected
-                      ? colors.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
+              if (!widget.compact) ...<Widget>[
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: AppMetrics.space1,
+                  height: AppMetrics.iconSm,
+                  decoration: BoxDecoration(
+                    color:
+                        widget.selected ? colors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: widget.compact ? AppMetrics.space2 : AppMetrics.space3,
-              ),
+                const SizedBox(width: AppMetrics.space3),
+              ],
               Icon(
                 widget.selected
                     ? widget.destination.activeIcon

@@ -1,109 +1,91 @@
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/data/subscription_endpoints.dart';
 import 'package:umbrella_vpn/models/models.dart';
 
-/// آزمون ساخت نشانی پنج اشتراک کاربر از داده ای که سرور می دهد. هیچ نشانی از
-/// کاربر پرسیده نمی شود و همه مسیرها باید با مسیرهای واقعی پنل یکی باشند.
 void main() {
   const String base = 'https://user.umbrella-server.ir/D6qnVQXRwa/';
   const String uuid = '9b9d9f5d-9841-45bf-a6b9-0479de273c11';
 
-  test('هشت نشانی واقعی پنل ساخته می شود (به ترتیب مستندات)', () {
+  test('فقط یک نشانی `/sub/` اختصاصی کاربر ساخته می شود و مسیرهای اضافه حذف شده اند', () {
     final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
       subscriptionUrl: '$base$uuid/sub/',
       accountBase: base,
       uuid: uuid,
     );
+    expect(sources, hasLength(1));
+    expect(sources.single.id, 'user-sub');
+    expect(sources.single.title, 'اشتراک خودکار');
+    expect(sources.single.url, '$base$uuid/sub/');
+    expect(sources.single.format, SubscriptionFormat.xray);
+    expect(sources.single.personal, isTrue);
+    expect(SubscriptionEndpoints.isComplete(sources), isTrue);
+  });
 
-    final List<String> urls =
-        sources.map((SubscriptionSource item) => item.url).toList();
-    // مسیرهای اصلی، همان هایی که پنل مستند کرده است.
-    expect(urls.take(8).toList(), <String>[
-      '$base$uuid/sub/',
+  test('اگر سرور نشانی قدیمی all.txt یا کلش بفرستد باز هم فقط به `/sub/` تبدیل می شود', () {
+    for (final String legacy in <String>[
       '$base$uuid/all.txt',
       '$base$uuid/sub64/',
       '$base$uuid/clash/meta/all.yml',
       '$base$uuid/full-singbox.json',
-      '$base$uuid/wireguard',
-      '$base$uuid/amnezia',
-      '$base$uuid/mieru',
-    ]);
-    // مسیرهای جایگزین هم پشتیبان هستند؛ مسیر ۴۰۴ قدیمی کلش دیگر ساخته
-    // نمی شود و مسیر درست کلش متا در فهرست اصلی است.
-    expect(urls, isNot(contains('$base$uuid/mihomo/all.yml')));
-    expect(urls, contains('$base$uuid/clash/meta/all.yml'));
-    expect(urls, contains('$base$uuid/wireguard/?asn=unknown'));
-    expect(sources.every((SubscriptionSource item) => item.personal), isTrue);
+      '$base$uuid/wireguard/?asn=unknown',
+      '$base$uuid/sub',
+    ]) {
+      final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
+        subscriptionUrl: legacy,
+        accountBase: '',
+        uuid: uuid,
+      );
+      expect(sources, hasLength(1), reason: legacy);
+      expect(sources.single.url, '$base$uuid/sub/', reason: legacy);
+      expect(sources.single.personal, isTrue, reason: legacy);
+    }
   });
 
-  test('عنوان هر نشانی همان نام مستند پنل است', () {
+  test('بدون پارامتر uuid هم شناسه را از نشانی بیرون می کشد و به `/sub/` نرمال می کند', () {
     final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
-      subscriptionUrl: '$base$uuid/sub/',
-      accountBase: base,
-      uuid: uuid,
-    );
-    expect(
-      sources.take(8).map((SubscriptionSource item) => item.title).toList(),
-      <String>[
-        'خودکار',
-        'فهرست ساده',
-        'فهرست Base 64',
-        'کلش متا',
-        'سینگ باکس',
-        'وایرگارد',
-        'آمنزیا',
-        'میرو',
-      ],
-    );
-  });
-
-  test('پایه از خود نشانی اشتراک هم درست استخراج می شود', () {
-    final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
-      subscriptionUrl: '$base$uuid/sub/',
-      accountBase: 'https://user.umbrella-server.ir/',
-      uuid: uuid,
-    );
-
-    expect(sources.first.url, '$base$uuid/sub/');
-  });
-
-  test('بدون شناسه کاربر فقط نشانی خام سرور استفاده می شود', () {
-    final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
-      subscriptionUrl: '$base$uuid/sub/',
-      accountBase: base,
+      subscriptionUrl: '$base$uuid/all.txt',
+      accountBase: '',
       uuid: '',
     );
-
     expect(sources, hasLength(1));
-    expect(sources.first.url, '$base$uuid/sub/');
-    expect(sources.first.personal, isTrue);
+    expect(sources.single.id, 'user-sub');
+    expect(sources.single.url, '$base$uuid/sub/');
+    expect(sources.single.personal, isTrue);
   });
 
-  test('نشانی بدون مسیر راز پنل با پایه کامل برنامه اصلاح می شود', () {
+  test('مسیر راز پنل را از accountBase جایگزین می کند وقتی در نشانی جا افتاده است', () {
     final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
       subscriptionUrl: 'https://user.umbrella-server.ir/$uuid/sub/',
-      accountBase: 'https://user.umbrella-server.ir/',
+      accountBase: base,
       uuid: uuid,
     );
-
-    // آدرس نباید فقط /<شناسه>/sub/ باشد؛ مسیر پنل هم لازم است.
-    expect(
-      Uri.parse(sources.first.url).pathSegments.length,
-      greaterThan(2),
-    );
-    expect(sources.first.url, endsWith('/$uuid/sub/'));
+    expect(sources, hasLength(1));
+    expect(sources.single.url, '$base$uuid/sub/');
   });
 
-  test('اگر سرور هیچ نشانی ندهد پایه خود برنامه استفاده می شود', () {
+  test('نشانی پیش فرض برنامه را به کار می برد اگر سرور مسیر راز پنل را ندهد', () {
+    const String otherUuid = '11111111-2222-4333-8444-555555555555';
     final List<SubscriptionSource> sources = SubscriptionEndpoints.build(
-      subscriptionUrl: '',
+      subscriptionUrl: 'https://user.umbrella-server.ir/$otherUuid/sub/',
       accountBase: '',
-      uuid: uuid,
+      uuid: otherUuid,
     );
+    expect(sources, hasLength(1));
+    expect(sources.single.url, '$base$otherUuid/sub/');
+  });
 
-    expect(sources, isNotEmpty);
-    expect(sources.first.url, contains(uuid));
-    expect(Uri.parse(sources.first.url).pathSegments.length, greaterThan(2));
-    expect(sources.first.url, endsWith('/$uuid/sub/'));
+  test('منبع پیش فرض پشتیبان برنامه دقیقا همان نشانی `/sub/` است', () {
+    expect(AppConfig.subscriptionSources, hasLength(1));
+    expect(AppConfig.subscriptionSources.single.id, 'sub');
+    expect(
+      AppConfig.subscriptionSources.single.url,
+      'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11/sub/',
+    );
+    expect(
+      AppConfig.defaultSubscriptionUrl,
+      'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11/sub/',
+    );
   });
 }

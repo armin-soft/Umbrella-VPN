@@ -122,6 +122,17 @@ class LocalStore {
       // نوشتن فایل اختیاری است؛ نبود آن نباید برنامه را متوقف کند.
     }
   }
+
+  Future<void> deleteFile(String name) async {
+    try {
+      final File target = await file(name);
+      if (await target.exists()) {
+        await target.delete();
+      }
+    } on FileSystemException {
+      // پاک کردن فایل اختیاری است؛ نبود یا قفل بودن آن برنامه را متوقف نمی کند.
+    }
+  }
 }
 
 /// کلیدهای ذخیره سازی در یک جا، تا غلط تایپی کلیدها پیش نیاید.
@@ -144,7 +155,7 @@ class StoreKeys {
   /// پنجره Umbrella CLI هنگام اتصال باز شود.
   static const String showCli = 'cli.show';
 
-  /// پیکربندی کاملی که خود پنل می دهد (کلش، ایکس ری یا سینگ باکس)؛ نگه
-  /// داشته می شود تا هر بار از نو گرفته نشود.
-  static const String panelProfile = 'panel-profile.yml';
+  /// فایل قدیمی پروفایل کلش که در نسخه های پیشین ذخیره می شد و هنگام راه اندازی
+  /// پاک سازی می شود تا هیچ اثری از منابع اضافه باقی نماند.
+  static const String legacyPanelProfile = 'panel-profile.yml';
 }

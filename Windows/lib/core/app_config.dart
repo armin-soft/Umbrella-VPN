@@ -9,8 +9,8 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.30';
-  static const int buildNumber = 31;
+  static const String version = '1.0.31';
+  static const int buildNumber = 32;
   /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.18`.
   ///
   /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
@@ -57,6 +57,10 @@ class AppConfig {
   static const String subscriptionRoot =
       'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11';
 
+  /// نشانی پیش فرض و پشتیبان اشتراک؛ تنها مسیر مجاز `/sub/` است و برای هر کاربر
+  /// نسخه اختصاصی همان حساب از همین مسیر خوانده می شود.
+  static const String defaultSubscriptionUrl = '$subscriptionRoot/sub/';
+
   /// تنها میزبان هایی که برنامه اجازه دانلود اشتراک از آن ها را دارد.
   static const List<String> allowedSubscriptionHosts = <String>[
     'user.umbrella-server.ir',
@@ -65,55 +69,16 @@ class AppConfig {
   /// شناسه اشتراک شخصی کاربر که نشانی اش از سرور می آید.
   static const String personalSourceId = 'user';
 
-  /// منابع عمومی برنامه؛ فقط پشتیبان هستند تا پیش از ورود هم سروری نمایش داده
-  /// شود. اشتراک اصلی هر کاربر همان است که سرور می دهد.
+  /// تنها منبع پشتیبان اشتراک (مسیر `/sub/`)؛ هیچ فایل اضافه ای خوانده نمی شود.
   static const List<SubscriptionSource> subscriptionSources =
       <SubscriptionSource>[
     SubscriptionSource(
-      id: 'xray',
-      title: 'ایکس ری',
-      url: '$subscriptionRoot/all.txt',
+      id: 'sub',
+      title: 'اشتراک خودکار',
+      url: defaultSubscriptionUrl,
       format: SubscriptionFormat.xray,
-      icon: 'bolt',
+      icon: 'auto',
     ),
-    SubscriptionSource(
-      id: 'clash',
-      title: 'کلش متا',
-      url: '$subscriptionRoot/clash/meta/all.yml',
-      format: SubscriptionFormat.clash,
-      icon: 'grid',
-    ),
-    SubscriptionSource(
-      id: 'wireguard',
-      title: 'وایرگارد',
-      url: '$subscriptionRoot/wireguard/?asn=unknown',
-      format: SubscriptionFormat.wireguard,
-      icon: 'shield',
-    ),
-    SubscriptionSource(
-      id: 'amnezia',
-      title: 'آمنزیا',
-      url: '$subscriptionRoot/amnezia/?asn=unknown',
-      format: SubscriptionFormat.amnezia,
-      icon: 'lock',
-    ),
-    SubscriptionSource(
-      id: 'mieru',
-      title: 'میرو',
-      url: '$subscriptionRoot/mieru/?asn=unknown',
-      format: SubscriptionFormat.mieru,
-      icon: 'route',
-    ),
-  ];
-
-  /// فایل های استاندارد حساب کاربر روی پنل (نتایج واقعی آزمایش، ۹ آبان):
-  /// sub/ خودکار، all.txt فهرست ساده، sub64/ فهرست base64،
-  /// clash/meta/all.yml کلش متا، full-singbox.json سینگ باکس،
-  /// wireguard، amnezia و mieru فایل های مستقیم.
-  /// تنها مسیر درست کلش متا در این پنل `clash/meta/all.yml` است؛ مسیر قدیمی
-  /// `mihomo/all.yml` با کد ۴۰۴ پاسخ می دهد و دیگر امتحان نمی شود.
-  static const List<String> mihomoPaths = <String>[
-    'clash/meta/all.yml',
   ];
 
   static const String ipCheckPrimary = 'https://api.ipify.org?format=json';

@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/link_preparation.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
+import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 /// Exercises the actual bundled DLL through our native launcher. `build` only
 /// compiles configuration: it never starts a VPN, enrolls WARP or changes routes.
@@ -120,6 +122,173 @@ void main() {
         selectionMode: mode,
         clashApiPort: mode == SelectionMode.auto ? 0 : null,
       );
+    }
+  }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 60)));
+
+  test('bundled core compiles and starts all 9 /sub/ protocols together without fatal error', () async {
+    const String subId = '00000000-0000-4000-8000-000000000099';
+    const String ssUser =
+        'MjAyMi1ibGFrZTMtYWVzLTI1Ni1nY206Ky84K0FBRUNBd1FGQmdjSUNRb0xEQTBPRHhBUkVoTVVGUllYR0JrYUd4dz06UC83N0Nnc01EUTRQRUJFU0V4UVZGaGNZR1JvYkhCMGVIeUFoSWlNa0pTWT0=';
+    const String sshPk =
+        '-----BEGIN%20OPENSSH%20PRIVATE%20KEY-----'
+        'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQAAACAmSNL4l8dIef4GYSZPSsyAOWHWkRewEPH4wPmYxRDjzwAAAIg8nAPcPJwD3AAAAAtzc2gtZWQyNTUxOQAAACAmSNL4l8dIef4GYSZPSsyAOWHWkRewEPH4wPmYxRDjzwAAAEDq%2FGSaM6bh5FjaXbl259%2FcSf2PwIlmeHrDklne%2BnnlcyZI0viXx0h5%2FgZhJk9KzIA5YdaRF7AQ8fjA%2BZjFEOPPAAAAAAECAwQF'
+        '-----END%20OPENSSH%20PRIVATE%20KEY-----';
+    const String sshHk =
+        'ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAICZI0viXx0h5%2FgZhJk9KzIA5YdaRF7AQ8fjA%2BZjFEOPP%2C%0A';
+    final String vmessXhttp = base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
+      'v': '2',
+      'ps': 'sub-vmess-xhttp',
+      'add': 'edge.example.invalid',
+      'port': 443,
+      'id': subId,
+      'aid': 0,
+      'scy': 'auto',
+      'net': 'xhttp',
+      'type': 'packet-up',
+      'host': 'edge.example.invalid',
+      'path': '/vx',
+      'tls': 'tls',
+      'sni': 'edge.example.invalid',
+      'alpn': 'h3',
+      'fp': 'chrome',
+      'extra': <String, dynamic>{
+        'scMaxEachPostBytes': 1000000,
+        'downloadSettings': <String, dynamic>{
+          'address': 'dl.example.invalid',
+          'port': 443,
+          'network': 'xhttp',
+          'security': 'tls',
+          'tlsSettings': <String, dynamic>{
+            'serverName': 'dl.example.invalid',
+            'alpn': <String>['h3'],
+            'fingerprint': 'chrome',
+          },
+          'xhttpSettings': <String, dynamic>{
+            'path': '/vx',
+            'host': 'dl.example.invalid',
+            'mode': 'auto',
+          },
+        },
+      },
+    })));
+    final String subFeed = <String>[
+      'trojan://1@127.0.0.1?sni=fake_ip_for_sub_link#InfoHeader',
+      '#Watashi auto ip: 198.51.100.1',
+      'vless://$subId@direct.example.invalid:443?sni=www.speedtest.net&security=reality&pbk=AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA&sid=01234567&type=tcp&flow=xtls-rprx-vision&fp=chrome#sub-vless-reality',
+      'vless://$subId@cdn.example.invalid:443?sni=cdn.example.invalid&type=xhttp&security=tls&path=%2Fx&host=cdn.example.invalid&mode=packet-up&alpn=h3&fp=chrome#sub-vless-xhttp',
+      'vmess://$vmessXhttp',
+      'trojan://$subId@direct.example.invalid:443?sni=direct.example.invalid&type=grpc&security=tls&mode=gun&serviceName=%2Fgrpc&authority=direct.example.invalid&alpn=h2&fp=chrome#sub-trojan-grpc',
+      'ss://$ssUser@direct.example.invalid:20443?udp-over-tcp=true#sub-ss-direct',
+      'ss://$ssUser@direct.example.invalid:443?plugin=obfs-local&obfs-host=www.wechat.com&obfs=http&udp-over-tcp=true#sub-ss-faketls',
+      'ssh://$subId@direct.example.invalid:55240/?file=ssh&hk=$sshHk&pk=$sshPk#sub-ssh',
+      'tuic://$subId:$subId@direct.example.invalid:54053?congestion_control=bbr&udp_relay_mode=native&sni=www.speedtest.net&alpn=h3#sub-tuic',
+      'hysteria2://$subId@direct.example.invalid:443?obfs=salamander&obfs-password=testobfs&sni=www.speedtest.net&alpn=h3&mport=61001-62000#sub-hysteria2',
+      'naive://$subId@direct.example.invalid:443?sni=direct.example.invalid&type=custom&security=tls&alpn=http%2F1.1&fp=chrome#sub-naive',
+      'anytls://$subId@direct.example.invalid:443/?alpn=http%2F1.1&sni=direct.example.invalid#sub-anytls',
+    ].join('\n');
+
+    final ParseReport parsed = SubscriptionParser.parseAuto(subFeed, 'user-sub');
+    expect(parsed.problems, isEmpty);
+    expect(parsed.nodes, hasLength(11));
+    expect(parsed.nodes.every(VpnController.usable), isTrue);
+
+    final PreparedLinks prepared = await LinkPreparation.prepare(
+      parsed.nodes.map(VpnController.linkFor).toList(),
+      lookup: (_) async => <InternetAddress>[InternetAddress('192.0.2.10')],
+    );
+
+    final String executable = binary!;
+    final Directory temp = await Directory.systemTemp.createTemp('umbrella-sub-all9-');
+    Process? process;
+    try {
+      final File links = File('${temp.path}/links.txt');
+      final File settings = File('${temp.path}/settings.json');
+      await links.writeAsString('${prepared.links.join('\n')}\n');
+      final Map<String, dynamic> options = UmbrellaCore.settingsJson(
+        tun: false,
+        systemProxy: false,
+        port: 12334,
+        logFile: '${temp.path}/core.log',
+      );
+      await settings.writeAsString(jsonEncode(options));
+      final File output = await CoreRuntime.compile(
+        executable: executable,
+        workDir: File(executable).parent.path,
+        runDir: temp.path,
+        linksPath: links.path,
+        settingsPath: settings.path,
+        cancelled: () => false,
+        onStarted: (Process value) => process = value,
+        onFinished: (_) => process = null,
+      );
+      final Map<String, dynamic> compiled =
+          jsonDecode(await output.readAsString()) as Map<String, dynamic>;
+      final List<Map<String, dynamic>> outbounds =
+          (compiled['outbounds'] as List<dynamic>).cast<Map<String, dynamic>>();
+      final Set<String> types =
+          outbounds.map((Map<String, dynamic> o) => '${o['type']}').toSet();
+      expect(
+        types,
+        containsAll(<String>[
+          'vless',
+          'vmess',
+          'trojan',
+          'shadowsocks',
+          'ssh',
+          'tuic',
+          'hysteria2',
+          'naive',
+          'anytls',
+        ]),
+      );
+
+      final Map<String, dynamic> naiveOut =
+          outbounds.firstWhere((Map<String, dynamic> o) => o['type'] == 'naive');
+      final Map<String, dynamic> naiveTls =
+          (naiveOut['tls'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+      expect(naiveTls['server_name'], 'direct.example.invalid');
+      expect(naiveTls['alpn'], isNull);
+      expect(naiveTls['utls'], isNull);
+
+      final Map<String, dynamic> fakeTlsOut = outbounds.firstWhere(
+        (Map<String, dynamic> o) =>
+            o['type'] == 'shadowsocks' && o['plugin'] == 'obfs-local',
+      );
+      expect(fakeTlsOut['plugin_opts'], 'obfs=http;obfs-host=www.wechat.com');
+
+      // Actually boot sing-box (`srun`) with ALL 11 outbounds across all 9 protocols!
+      final Process running = await Process.start(
+        executable,
+        <String>['srun', '-c', output.path, '-D', temp.path],
+        workingDirectory: File(executable).parent.path,
+        runInShell: false,
+      );
+      process = running;
+      final StringBuffer logs = StringBuffer();
+      running.stdout.transform(utf8.decoder).listen(logs.write);
+      running.stderr.transform(utf8.decoder).listen(logs.write);
+      CoreProxySnapshot snapshot = const CoreProxySnapshot.unreachable();
+      for (int i = 0; i < 15; i++) {
+        snapshot = await ClashApi.status(secret: '${options['web-secret']}');
+        if (snapshot.reachable) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+      expect(snapshot.reachable, isTrue, reason: logs.toString());
+      expect(snapshot.totalCount, 11, reason: logs.toString());
+      final int? earlyExit = await Future.any<int?>(<Future<int?>>[
+        running.exitCode,
+        Future<int?>.delayed(const Duration(milliseconds: 500), () => null),
+      ]);
+      expect(earlyExit, isNull, reason: logs.toString());
+    } finally {
+      process?.kill();
+      if (process != null) {
+        await process!.exitCode
+            .timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      }
+      await temp.delete(recursive: true);
     }
   }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 60)));
 

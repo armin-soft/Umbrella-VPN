@@ -18,7 +18,6 @@ import 'balancer.dart';
 import 'clash_api.dart';
 import 'core_runtime.dart';
 import 'startup_verification.dart';
-import 'clash_config.dart';
 import 'cli_session.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
@@ -408,18 +407,9 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _loadCachedNodes() async {
-    // پیکربندی کلش پنل هم مثل فهرست سرورها نگه داشته می شود تا پس از اجرای
-    // دوباره برنامه، بدون اینترنت دوباره در دسترس باشد.
-    try {
-      final String? yaml =
-          await LocalStore.instance.readFile(StoreKeys.panelProfile);
-      if (yaml != null && yaml.trim().isNotEmpty) {
-        _panelProfile = yaml;
-        _clashNames = ClashConfig.nodeNames(yaml).toSet();
-      }
-    } on Exception {
-      // پیکربندی ذخیره نشده است؛ هسته از لینک ها استفاده می کند.
-    }
+    // هر فایل پروفایل کلش بازمانده از نسخه های پیشین پاک می شود تا فقط
+    // سرورهای مسیر `/sub/` در برنامه بمانند.
+    await LocalStore.instance.deleteFile(StoreKeys.legacyPanelProfile);
     try {
       final String? raw = await LocalStore.instance.readFile(StoreKeys.nodesCache);
       if (raw == null || raw.isEmpty) {
@@ -464,7 +454,6 @@ class VpnController extends ChangeNotifier {
         stability: old.stability,
         checkedAt: old.checkedAt,
         favorite: old.favorite,
-        disabled: old.disabled,
       );
     }).toList();
     await _cacheNodes();
@@ -902,33 +891,16 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    final List<VpnNode> regionalNodes =
-        usableNodes.where(_matchesServerRegion).toList();
-    if (regionalNodes.isEmpty) {
-      final String region = _serverRegionLabel(_settings.serverRegionCode);
-      final String message = 'در منطقه $region سرور سازگار و فعالی پیدا نشد.';
-      _setStatus(VpnStatus.failed, message);
-      return ConnectOutcome(ok: false, message: message);
-    }
-    final List<VpnNode> fitting = regionalNodes
-        .where(_fitsPreference)
-        .toList();
+    final List<VpnNode> fitting = usableNodes.where(_fitsPreference).toList();
     if (fitting.isEmpty) {
       const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
     }
     _log.add(
-      'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
+      'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در اشتراک، '
       'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',
     );
-    if (_clashNames.isNotEmpty) {
-      _log.add(
-        'پیکربندی پنل ${Fa.num(_clashNames.length)} گره دارد و نگه داشته '
-        'شده است؛ اگر سرورها با این پروفایل جواب ندهند، همان ها با لینک '
-        'اجرا می شوند.',
-      );
-    }
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
     try {
       if (_native.available && !_device.elevated) {
@@ -1038,21 +1010,6 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// آیا کشور این سرور با فیلتر منطقه انتخاب شده هماهنگ است؟
-  bool _matchesServerRegion(VpnNode node) {
-    final String selected = _settings.serverRegionCode;
-    if (selected == 'all' || selected.isEmpty) return true;
-    final String code = node.flagCode.toLowerCase();
-    if (selected == 'unknown') return code.isEmpty;
-    return code == selected.toLowerCase();
-  }
-
-  static String _serverRegionLabel(String code) {
-    if (code == 'unknown') return 'نامشخص';
-    if (code == 'all' || code.isEmpty) return 'همه کشورها';
-    return countryNameFa(code).isEmpty ? code.toUpperCase() : countryNameFa(code);
-  }
-
   /// آیا این سرور با هسته انتخابی کاربر اجرا می شود؟
   bool _fitsPreference(VpnNode node) =>
       fitsPreference(_settings.corePreference, node);
@@ -1088,7 +1045,6 @@ class VpnController extends ChangeNotifier {
             !node.disabled &&
             usable(node) &&
             !_unusableInThisRun.contains(node.id) &&
-            _matchesServerRegion(node) &&
             _fitsPreference(node))
         .toList();
     switch (_settings.selectionMode) {
@@ -1104,7 +1060,6 @@ class VpnController extends ChangeNotifier {
                 !candidate.disabled &&
                 usable(candidate) &&
                 !_unusableInThisRun.contains(candidate.id) &&
-                _matchesServerRegion(candidate) &&
                 _fitsPreference(candidate)) {
               rotation.add(candidate);
             }
@@ -1498,6 +1453,9 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.vmess:
       case NodeProtocol.trojan:
       case NodeProtocol.shadowsocks:
+      case NodeProtocol.ssh:
+      case NodeProtocol.naive:
+      case NodeProtocol.anytls:
       case NodeProtocol.socks:
       case NodeProtocol.mieru:
       case NodeProtocol.hysteria2:
@@ -1541,10 +1499,20 @@ class VpnController extends ChangeNotifier {
             JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.trojan:
       case NodeProtocol.hysteria2:
+      case NodeProtocol.anytls:
         return JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.shadowsocks:
         return JsonX.text(params['password']).isNotEmpty &&
             JsonX.text(params['method'] ?? params['cipher']).isNotEmpty;
+      case NodeProtocol.ssh:
+        return JsonX.text(params['username']).isNotEmpty &&
+            (JsonX.text(params['password']).isNotEmpty ||
+                JsonX.text(
+                  params['privateKey'] ?? params['pk'] ?? params['private_key'],
+                ).isNotEmpty);
+      case NodeProtocol.naive:
+        return JsonX.text(params['username']).isNotEmpty ||
+            JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.mieru:
         return JsonX.text(params['username']).isNotEmpty &&
             JsonX.text(params['password']).isNotEmpty;
@@ -1559,40 +1527,6 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.clash:
         return false;
     }
-  }
-
-  /// نام گره هایی که در پیکربندی خود پنل هستند.
-  ///
-  /// فقط برای همین گره ها نام پنل با نام سرور یکی است، پس در گزارش ها می شود
-  /// هر دو را به هم نسبت داد.
-  Set<String> _clashNames = <String>{};
-
-  /// نام گره های پنل (برای گزارش ها: کاربر می بیند کدام سرور همان گره پنل
-  /// است). وقتی پنل پروفایل کاملی داده باشد پر می شود.
-  Set<String> get panelNodeNames => Set<String>.unmodifiable(_clashNames);
-
-  /// آخرین پیکربندی کاملی که خود پنل داد (کلش یا قالب کامل موتور).
-  ///
-  /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
-  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. خود هسته این فایل
-  /// را درست می شناسد، پس نگه داشته می شود تا اگر کاربر خواست همان پروفایل
-  /// اجرا شود، آماده باشد.
-  String _panelProfile = '';
-
-  String get panelProfile => _panelProfile;
-
-  /// ذخیره پیکربندی خود پنل (متن YAML یا JSON).
-  Future<void> applyClashProfile(String yaml) async {
-    if (yaml.trim().isEmpty || yaml.trim() == _panelProfile.trim()) {
-      return;
-    }
-    _panelProfile = yaml;
-    try {
-      _clashNames = ClashConfig.nodeNames(yaml).toSet();
-    } on Exception {
-      _clashNames = <String>{};
-    }
-    await LocalStore.instance.writeFile(StoreKeys.panelProfile, yaml);
   }
 
   /// پوشه هسته: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
@@ -1783,7 +1717,12 @@ class VpnController extends ChangeNotifier {
   static String linkFor(VpnNode node) {
     final String raw = node.raw.trim();
     if (raw.contains('://')) {
-      return _normalizeLegacyTransportLink(raw);
+      final String normalized =
+          node.protocol == NodeProtocol.vless ||
+                  node.protocol == NodeProtocol.trojan
+              ? _normalizeLegacyTransportLink(raw)
+              : raw;
+      return LinkPreparation.normalizeLink(normalized);
     }
     return _linkFromNode(node);
   }
@@ -1834,7 +1773,7 @@ class VpnController extends ChangeNotifier {
       // یک سرور (رایج ترین حالت: یک سرور با چند شناسه کاربر) به یکی
       // کاهش می یافتند و فقط یکی از آن ها به هسته می رسید. حالا هر لینک
       // یکتا یک کلاینت است و همه شان امتحان می شوند.
-      final String key = link.split('#').first;
+      final String key = LinkPreparation.canonicalTarget(link);
       if (!seen.add(key)) {
         return;
       }
@@ -1846,13 +1785,9 @@ class VpnController extends ChangeNotifier {
     // over the entire subscription or silently select a different server.
     if (_singleNodeSession) return pool;
     // بعد از انتخاب فعلی، پین ها اول به هسته داده می شوند تا در مجموعه
-    // keep-top شانس ماندن داشته باشند؛ سپس بقیه سرورها به ترتیب پینگ می آیند.
+    // keep-top شانس ماندن داشته باشند؛ سپس بقیه سرورهای اشتراک به ترتیب پینگ.
     final List<VpnNode> rest = _nodes
-        .where((VpnNode n) =>
-            n.id != chosen.id &&
-            !n.disabled &&
-            n != chosen &&
-            _matchesServerRegion(n))
+        .where((VpnNode n) => n.id != chosen.id && !n.disabled && n != chosen)
         .toList()
       ..sort((VpnNode a, VpnNode b) {
         final int pa = a.pingMs <= 0 ? 1 << 30 : a.pingMs;
@@ -1973,6 +1908,14 @@ class VpnController extends ChangeNotifier {
 
   /// آیا این گره با نوع انتقالش برای هسته آمبرلا قابل اجراست؟
   static bool transportSupported(VpnNode node) {
+    // فقط پروتکل های خانواده V2Ray از پارامتر انتقال (`tcp`/`ws`/`grpc`/`xhttp`)
+    // استفاده می کنند؛ پروتکل های مستقل مثل `naive` (با `type=custom`)، `ssh`،
+    // `anytls`، `ss`، `tuic` و `hysteria2` انتقال داخلی خودشان را دارند.
+    if (node.protocol != NodeProtocol.vless &&
+        node.protocol != NodeProtocol.vmess &&
+        node.protocol != NodeProtocol.trojan) {
+      return true;
+    }
     final String network = _networkOf(node);
     if (network.isEmpty) {
       return true;
@@ -2078,9 +2021,41 @@ class VpnController extends ChangeNotifier {
         return 'hysteria2://${Uri.encodeComponent(JsonX.text(params['password']))}'
             '@$host:$port?sni=${JsonX.text(params['sni'], host)}#$name';
       case NodeProtocol.tuic:
-        return 'tuic://${JsonX.text(params['id'])}:'
+        return 'tuic://${JsonX.text(params['id'] ?? params['uuid'])}:'
             '${Uri.encodeComponent(JsonX.text(params['password']))}'
             '@$host:$port?sni=${JsonX.text(params['sni'], host)}#$name';
+      case NodeProtocol.ssh:
+        final String user = Uri.encodeComponent(JsonX.text(params['username']));
+        final String pass = JsonX.text(params['password']);
+        final String auth =
+            pass.isEmpty ? user : '$user:${Uri.encodeComponent(pass)}';
+        final List<String> sshQuery = <String>[];
+        final String pk = JsonX.text(
+          params['privateKey'] ?? params['pk'] ?? params['private_key'],
+        );
+        final String hk = JsonX.text(params['hostKey'] ?? params['hk']);
+        if (pk.isNotEmpty) {
+          sshQuery.add('pk=${Uri.encodeQueryComponent(pk)}');
+        }
+        if (hk.isNotEmpty) {
+          sshQuery.add('hk=${Uri.encodeQueryComponent(hk)}');
+        }
+        final String sshSuffix =
+            sshQuery.isEmpty ? '' : '?${sshQuery.join('&')}';
+        return 'ssh://$auth@$host:$port$sshSuffix#$name';
+      case NodeProtocol.naive:
+        final String user = Uri.encodeComponent(JsonX.text(params['username']));
+        final String pass = JsonX.text(params['password']);
+        final String auth =
+            pass.isEmpty ? user : '$user:${Uri.encodeComponent(pass)}';
+        final String sni = JsonX.text(params['sni'], host);
+        final String scheme =
+            JsonX.boolean(params['quic']) ? 'naive+quic' : 'naive+https';
+        return '$scheme://$auth@$host:$port?sni=${Uri.encodeQueryComponent(sni)}#$name';
+      case NodeProtocol.anytls:
+        final String sni = JsonX.text(params['sni'], host);
+        return 'anytls://${Uri.encodeComponent(JsonX.text(params['password']))}'
+            '@$host:$port?sni=${Uri.encodeQueryComponent(sni)}#$name';
       case NodeProtocol.mieru:
         return 'mieru://${JsonX.text(params['username'])}:'
             '${Uri.encodeComponent(JsonX.text(params['password']))}'

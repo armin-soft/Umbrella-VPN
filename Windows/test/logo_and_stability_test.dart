@@ -125,10 +125,11 @@ proxies:
 
     final List<VpnNode> unique = SubscriptionController.deduplicateNodes(combined);
     expect(unique.length, 2);
-    // Native share link wins over lossy Clash reconstruction even when Clash came first.
+    // Native share link wins over lossy Clash reconstruction even when Clash came first,
+    // and preserves `#fragment` so the core names each outbound accurately.
     expect(unique.first.sourceId, 'user-all.txt');
-    expect(unique.first.raw, share.split('#').first);
-    expect(unique.last.raw, secondClient.split('#').first);
+    expect(unique.first.raw, share);
+    expect(unique.last.raw, secondClient);
   });
 
   test('ClashApi parses session delays, ignores stale cache, and serves loopback checks', () async {

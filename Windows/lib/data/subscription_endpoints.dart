@@ -1,88 +1,37 @@
 import '../core/app_config.dart';
 import '../models/models.dart';
 
-/// ساخت نشانی پنج اشتراک کاربر از داده ای که سرور می دهد.
+/// ساخت تنها نشانی اشتراک مجاز هر کاربر (`<base><uuid>/sub/`).
 ///
-/// سرور پایه اشتراک هر کاربر را می فرستد (مثلا
-/// `https://user.umbrella-server.ir/<token>/<uuid>/sub/`) و برنامه همان پایه را
-/// با مسیرهای استاندارد پنل ترکیب می کند:
-///
-/// * `all.txt` (ایکس ری)
-/// * `clash/meta/all.yml` (کلش متا)
-/// * `wireguard/?asn=unknown`
-/// * `amnezia/?asn=unknown`
-/// * `mieru/?asn=unknown`
-///
-/// هیچ نشانی از کاربر پرسیده نمی شود؛ اگر سرور داده کافی ندهد فقط همان نشانی
-/// خام به عنوان یک منبع برگردانده می شود.
+/// برنامه هیچ فایل یا قالب اضافه ای غیر از مسیر `/sub/` دانلود نمی کند؛ اگر سرور
+/// نشانی قدیمی تری برگرداند یا مسیر راز پنل در نشانی جا افتاده باشد، همین کلاس
+/// آن را به نشانی استاندارد `<base><uuid>/sub/` تبدیل می کند و در صورت نبود
+/// اشتراک شخصی، منبع پیش فرض [AppConfig.defaultSubscriptionUrl] به کار می رود.
 class SubscriptionEndpoints {
   const SubscriptionEndpoints._();
 
-  static const List<String> paths = <String>[
-    // «خودکار»: پنل خودش قالب مناسب را می دهد.
-    'sub/',
-    'all.txt',
-    'sub64/',
-    'clash/meta/all.yml',
-    'full-singbox.json',
-    'wireguard',
-    'amnezia',
-    'mieru',
-  ];
+  /// تنها مسیر اشتراک مجاز روی پنل.
+  static const String subPath = 'sub/';
 
-  /// مسیرهای جایگزین هر قالب؛ پنل های مختلف یکی از این ها را دارند.
-  ///
-  /// مسیر `mihomo/all.yml` عمدا حذف شده است: پنل همین سرور آن را با کد ۴۰۴
-  /// رد می کند و هر بار یک درخواست بی نتیجه در گزارش ها می نوشت. مسیر درست
-  /// کلش متا همان `clash/meta/all.yml` است.
-  static const Map<String, List<String>> alternates = <String, List<String>>{
-    'clash': <String>['clash/meta/all.yml'],
-    'wireguard': <String>['wireguard', 'wireguard/', 'wireguard/?asn=unknown'],
-    'amnezia': <String>['amnezia', 'amnezia/', 'amnezia/?asn=unknown'],
-    'mieru': <String>['mieru', 'mieru/', 'mieru/?asn=unknown'],
-  };
+  static const List<String> paths = <String>[subPath];
 
-  /// قالب هر مسیر، دقیقا هم ترتیب با [paths].
   static const List<SubscriptionFormat> formats = <SubscriptionFormat>[
-    SubscriptionFormat.xray, // sub/  (خودکار)
-    SubscriptionFormat.xray, // all.txt
-    SubscriptionFormat.xray, // sub64/
-    SubscriptionFormat.clash,
-    SubscriptionFormat.clash, // full-singbox.json
-    SubscriptionFormat.wireguard,
-    SubscriptionFormat.amnezia,
-    SubscriptionFormat.mieru,
+    SubscriptionFormat.xray,
   ];
 
-  static const List<String> titles = <String>[
-    'خودکار',
-    'فهرست ساده',
-    'فهرست Base 64',
-    'کلش متا',
-    'سینگ باکس',
-    'وایرگارد',
-    'آمنزیا',
-    'میرو',
-  ];
+  static const List<String> titles = <String>['اشتراک خودکار'];
 
-  static const List<String> icons = <String>[
-    'auto',
-    'bolt',
-    'code',
-    'grid',
-    'box',
-    'shield',
-    'lock',
-    'route',
-  ];
+  static const List<String> icons = <String>['auto'];
 
-  /// نشانی پایه اشتراک: هر چه پیش از بخش شناسه کاربر در نشانی باشد.
+  static final RegExp _uuidPattern = RegExp(
+    r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+  );
+
+  /// نشانی پایه اشتراک: هر چه پیش از شناسه کاربر در نشانی باشد.
   ///
   /// اگر سرور نشانی ای بدهد که مسیر راز پنل را ندارد (مثل
-  /// `https://host/<uuid>/sub/`)، همان نشانی کد ۴۰۴ می دهد؛ پنل ها معمولا
-  /// یک بخش راز پیش از شناسه دارند. بنابراین پایه ای که مسیر دارد بر پایه
-  /// «فقط میزبان» ترجیح داده می شود و در آخرین مرحله نشانی پایه خود برنامه
-  /// (که همان مسیر کامل پنل را دارد) امتحان می شود.
+  /// `https://host/<uuid>/sub/`)، پایه ای که مسیر راز دارد از `accountBase`
+  /// یا [AppConfig.defaultSubscriptionUrl] جایگزین می شود تا خطای ۴۰۴ رخ ندهد.
   static String baseFrom({
     required String subscriptionUrl,
     required String accountBase,
@@ -91,7 +40,7 @@ class SubscriptionEndpoints {
     final List<String> candidates = <String>[
       subscriptionUrl.trim(),
       accountBase.trim(),
-      AppConfig.subscriptionRoot.trim(),
+      AppConfig.defaultSubscriptionUrl.trim(),
     ];
     String fallback = '';
     for (final String candidate in candidates) {
@@ -101,7 +50,6 @@ class SubscriptionEndpoints {
       }
       final String path = Uri.tryParse(base)?.path ?? '';
       if (path.isEmpty || path == '/') {
-        // این پایه هیچ مسیری ندارد؛ فقط اگر چیز بهتری پیدا نشد استفاده می شود.
         if (fallback.isEmpty) {
           fallback = base;
         }
@@ -117,98 +65,98 @@ class SubscriptionEndpoints {
       return '';
     }
     if (uuid.isNotEmpty) {
-      final int index = candidate.indexOf(uuid);
+      final int index = candidate.toLowerCase().indexOf(uuid.toLowerCase());
       if (index > 0) {
-        return candidate.substring(0, index);
+        return _ensureTrailingSlash(candidate.substring(0, index));
       }
     }
-    // نشانی بدون شناسه اما با مسیر اشتراک، پایه حساب است.
+    final RegExpMatch? anyUuid = _uuidPattern.firstMatch(candidate);
+    if (anyUuid != null && anyUuid.start > 0) {
+      return _ensureTrailingSlash(candidate.substring(0, anyUuid.start));
+    }
     final int sub = candidate.lastIndexOf('/sub');
     if (sub > 0) {
       final int cut = candidate.lastIndexOf('/', sub - 1);
       if (cut > 0) {
-        return candidate.substring(0, cut + 1);
+        return _ensureTrailingSlash(candidate.substring(0, cut + 1));
       }
+    }
+    final Uri? uri = Uri.tryParse(candidate);
+    if (uri != null &&
+        uri.hasScheme &&
+        uri.host.isNotEmpty &&
+        uri.path.isNotEmpty &&
+        uri.path != '/') {
+      return _ensureTrailingSlash(candidate);
     }
     return '';
   }
 
-  /// فهرست منابع اشتراک همین کاربر. اگر شناسه کاربر مشخص نباشد، فقط نشانی خام
-  /// سرور به عنوان یک منبع با تشخیص خودکار قالب برگردانده می شود.
+  static String _ensureTrailingSlash(String value) =>
+      value.endsWith('/') ? value : '$value/';
+
+  static String _normalizeRawSubUrl(String raw) {
+    final Uri? uri = Uri.tryParse(raw);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      return raw;
+    }
+    final List<String> segments = uri.pathSegments
+        .where((String segment) => segment.isNotEmpty)
+        .toList();
+    if (segments.isEmpty) {
+      return uri.replace(path: '/$subPath', query: '', fragment: '').toString();
+    }
+    final int subIndex = segments.lastIndexOf('sub');
+    if (subIndex >= 0) {
+      final String cleanPath = '/${segments.take(subIndex + 1).join('/')}/';
+      return uri.replace(path: cleanPath, query: '', fragment: '').toString();
+    }
+    return raw;
+  }
+
+  /// تنها منبع اشتراک `/sub/` همین کاربر را می سازد.
   static List<SubscriptionSource> build({
     required String subscriptionUrl,
     required String accountBase,
     required String uuid,
   }) {
     final String raw = subscriptionUrl.trim();
+    final String resolvedUuid = uuid.trim().isNotEmpty
+        ? uuid.trim()
+        : (_uuidPattern.firstMatch(raw)?.group(0) ?? '');
     final String base = baseFrom(
       subscriptionUrl: raw,
       accountBase: accountBase,
-      uuid: uuid,
+      uuid: resolvedUuid,
     );
-    if (uuid.isEmpty || base.isEmpty) {
+    if (resolvedUuid.isEmpty || base.isEmpty) {
       if (raw.isEmpty) {
         return const <SubscriptionSource>[];
       }
       return <SubscriptionSource>[
         SubscriptionSource(
-          id: 'user',
-          title: 'اشتراک من',
-          url: raw,
+          id: 'user-sub',
+          title: titles.first,
+          url: _normalizeRawSubUrl(raw),
           format: SubscriptionFormat.xray,
-          icon: 'user',
+          icon: icons.first,
           personal: true,
         ),
       ];
     }
-    final List<SubscriptionSource> sources = <SubscriptionSource>[
-      for (int index = 0; index < paths.length; index++)
-        SubscriptionSource(
-          id: 'user-${_slug(paths[index])}',
-          title: titles[index],
-          url: '$base$uuid/${paths[index]}',
-          format: formats[index],
-          icon: icons[index],
-          personal: true,
-        ),
+    return <SubscriptionSource>[
+      SubscriptionSource(
+        id: 'user-sub',
+        title: titles.first,
+        url: '$base$resolvedUuid/$subPath',
+        format: SubscriptionFormat.xray,
+        icon: icons.first,
+        personal: true,
+      ),
     ];
-    // مسیرهای جایگزین هر قالب (پنل های مختلف یکی را دارند) به عنوان منبع
-    // پشتیبان اضافه می شوند؛ فقط اگر مسیر اصلی جواب ندهد استفاده می شوند.
-    alternates.forEach((String format, List<String> candidates) {
-      final SubscriptionFormat kind = format == 'clash'
-          ? SubscriptionFormat.clash
-          : (format == 'wireguard'
-              ? SubscriptionFormat.wireguard
-              : (format == 'amnezia'
-                  ? SubscriptionFormat.amnezia
-                  : SubscriptionFormat.mieru));
-      for (final String path in candidates) {
-        if (paths.contains(path)) {
-          continue;
-        }
-        sources.add(
-          SubscriptionSource(
-            id: 'user-${_slug(path)}',
-            title: '${titles[formats.indexOf(kind)]} (مسیر جایگزین)',
-            url: '$base$uuid/$path',
-            format: kind,
-            icon: icons[formats.indexOf(kind)],
-            personal: true,
-          ),
-        );
-      }
-    });
-    return sources;
   }
 
-  /// شناسه کوتاه و پایدار برای هر مسیر.
-  static String _slug(String path) => path
-      .replaceAll('/', '-')
-      .replaceAll('?', '-')
-      .replaceAll('=', '-')
-      .replaceAll(RegExp(r'-+$'), '');
-
-  /// آیا این نشانی از سرور آمده و کامل است (برای نمایش در گزارش ها).
+  /// آیا منبع اشتراک `/sub/` کاربر آماده است.
   static bool isComplete(List<SubscriptionSource> sources) =>
-      sources.length >= paths.length;
+      sources.length == 1 && sources.first.url.endsWith('/$subPath');
 }

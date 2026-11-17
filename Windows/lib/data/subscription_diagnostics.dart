@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
+import '../core/app_config.dart';
 import '../core/persian.dart';
 import '../models/models.dart';
 import 'parsers.dart';
@@ -39,11 +40,7 @@ class EndpointCheck {
   }
 }
 
-/// بررسی زنده همه نشانی های اشتراک یک حساب.
-///
-/// این کار برای عیب یابی است: هر هشت نشانی پنل (خودکار، فهرست ساده،
-/// Base64، کلش متا، سینگ باکس، وایرگارد، آمنزیا، میرو) دانلود و خوانده
-/// می شوند و تعداد سرورهای هر کدام در گزارش ها نوشته می شود.
+/// بررسی زنده نشانی اشتراک `/sub/` یک حساب.
 class SubscriptionDiagnostics {
   SubscriptionDiagnostics({http.Client? client})
       : _client = client ?? _directClient();
@@ -86,8 +83,8 @@ class SubscriptionDiagnostics {
           .get(
             Uri.parse(source.url),
             headers: <String, String>{
-              'Accept': '*/*',
-              'User-Agent': 'Umbrella-Windows/1.0',
+              'Accept': 'text/plain, */*',
+              'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
             },
           )
           .timeout(const Duration(seconds: 20));

@@ -72,6 +72,9 @@ enum NodeProtocol {
   vmess,
   trojan,
   shadowsocks,
+  ssh,
+  naive,
+  anytls,
   wireguard,
   amnezia,
   mieru,
@@ -92,6 +95,12 @@ extension NodeProtocolX on NodeProtocol {
         return 'تروجان';
       case NodeProtocol.shadowsocks:
         return 'شادوساکس';
+      case NodeProtocol.ssh:
+        return 'اس اس اچ';
+      case NodeProtocol.naive:
+        return 'نایو پروکسی';
+      case NodeProtocol.anytls:
+        return 'انی تی ال اس';
       case NodeProtocol.wireguard:
         return 'وایرگارد';
       case NodeProtocol.amnezia:
@@ -122,6 +131,9 @@ extension NodeProtocolX on NodeProtocol {
         return 'amnezia';
       case NodeProtocol.mieru:
         return 'mieru';
+      case NodeProtocol.ssh:
+      case NodeProtocol.naive:
+      case NodeProtocol.anytls:
       case NodeProtocol.hysteria2:
       case NodeProtocol.tuic:
       case NodeProtocol.socks:

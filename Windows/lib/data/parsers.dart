@@ -132,7 +132,13 @@ class SubscriptionParser {
     int index = 0;
     for (final String line in const LineSplitter().convert(text)) {
       final String uri = line.trim();
-      if (uri.isEmpty || !uri.contains('://')) {
+      if (uri.isEmpty ||
+          uri.startsWith('#') ||
+          uri.startsWith('//') ||
+          !uri.contains('://')) {
+        continue;
+      }
+      if (_isInfoPlaceholderUri(uri)) {
         continue;
       }
       index++;
@@ -148,6 +154,12 @@ class SubscriptionParser {
     }
     return report;
   }
+
+  /// ردیف اطلاعاتی پنل در ابتدای `/sub/` (با `sni=fake_ip_for_sub_link`) سرور
+  /// واقعی نیست؛ بی سر و صدا رد می شود تا نه وارد فهرست سرورها شود و نه خطای
+  /// ساختگی در گزارش تجزیه ثبت کند.
+  static bool _isInfoPlaceholderUri(String uri) =>
+      uri.toLowerCase().contains('fake_ip_for_sub_link');
 
   static void _collectUris(Object? value, List<String> out) {
     if (value is String) {
@@ -171,24 +183,62 @@ class SubscriptionParser {
 
   static VpnNode? parseUri(String uri, String sourceId, [int index = 0]) {
     try {
-      final String scheme = uri.split('://').first.toLowerCase();
-      final String payload = uri.substring(scheme.length + 3);
-      final String fragment = _fragment(payload);
+      final String trimmed = uri.trim();
+      final int sep = trimmed.indexOf('://');
+      if (sep <= 0 || _isInfoPlaceholderUri(trimmed)) {
+        return null;
+      }
+      final String scheme = trimmed.substring(0, sep).toLowerCase();
+      final String payload = trimmed.substring(sep + 3);
+      final int hash = payload.indexOf('#');
+      final String fragment = hash < 0 ? '' : payload.substring(hash + 1);
       final String withoutFragment =
-          fragment.isEmpty ? payload : payload.substring(0, payload.lastIndexOf('#'));
+          hash < 0 ? payload : payload.substring(0, hash);
       final String name = fragment.isEmpty ? '' : _decode(fragment).trim();
+      final String rawLink = fragment.isEmpty
+          ? '$scheme://$withoutFragment'
+          : '$scheme://$withoutFragment#$fragment';
 
       switch (scheme) {
         case 'vless':
+        case 'svless':
         case 'trojan':
+        case 'strojan':
         case 'hysteria2':
         case 'hy2':
+        case 'hysteria':
         case 'tuic':
         case 'socks':
+        case 'socks5':
         case 'ss':
-          return _parseStandard(scheme, withoutFragment, name, sourceId, index);
+        case 'ssh':
+        case 'naive':
+        case 'naive+https':
+        case 'naive+quic':
+        case 'anytls':
+        case 'wg':
+        case 'wireguard':
+        case 'awg':
+        case 'mieru':
+        case 'mierus':
+          return _parseStandard(
+            scheme,
+            withoutFragment,
+            name,
+            sourceId,
+            index,
+            rawLink: rawLink,
+          );
         case 'vmess':
-          return _parseVmess(withoutFragment, name, sourceId, index);
+        case 'svmess':
+          return _parseVmess(
+            withoutFragment,
+            name,
+            sourceId,
+            index,
+            scheme: scheme,
+            rawLink: rawLink,
+          );
         default:
           return null;
       }
@@ -207,9 +257,29 @@ class SubscriptionParser {
     }
   }
 
-  static String _fragment(String payload) {
-    final int hash = payload.indexOf('#');
-    return hash < 0 ? '' : payload.substring(hash + 1);
+  static Uri? _tryParseShareUri(String scheme, String decoded) {
+    final Uri? direct = Uri.tryParse('$scheme://$decoded');
+    if (direct != null && direct.host.isNotEmpty) {
+      return direct;
+    }
+    // بعضی لینک های هیستریا بازه پورت را در بخش میزبان می نویسند
+    // (`host:443,61001-62000?sni=...`)؛ پورت اول جدا و بازه به `mport` منتقل می شود.
+    final RegExpMatch? hopped = RegExp(
+      r'^([^/?#]*@)?(\[[^\]]+\]|[^:/?#]+):(\d+),([0-9,-]+)(.*)$',
+    ).firstMatch(decoded);
+    if (hopped != null) {
+      final String userPrefix = hopped.group(1) ?? '';
+      final String hostPart = hopped.group(2)!;
+      final String primaryPort = hopped.group(3)!;
+      final String extraPorts = hopped.group(4)!;
+      final String rest = hopped.group(5) ?? '';
+      final String sep = rest.contains('?') ? '&' : '?';
+      final String normalized = rest.contains('mport=')
+          ? '$userPrefix$hostPart:$primaryPort$rest'
+          : '$userPrefix$hostPart:$primaryPort$rest${sep}mport=${Uri.encodeQueryComponent(extraPorts)}';
+      return Uri.tryParse('$scheme://$normalized');
+    }
+    return null;
   }
 
   static VpnNode? _parseStandard(
@@ -217,10 +287,12 @@ class SubscriptionParser {
     String payload,
     String name,
     String sourceId,
-    int index,
-  ) {
-    final String decoded = scheme == 'ss' ? _decodeSs(payload) ?? payload : payload;
-    final Uri? parsed = Uri.tryParse('$scheme://$decoded');
+    int index, {
+    required String rawLink,
+  }) {
+    final String decoded =
+        scheme == 'ss' ? (_decodeSs(payload) ?? payload) : payload;
+    final Uri? parsed = _tryParseShareUri(scheme, decoded);
     if (parsed == null) {
       return null;
     }
@@ -230,6 +302,9 @@ class SubscriptionParser {
       return null;
     }
     final Map<String, String> query = parsed.queryParameters;
+    if ((query['sni'] ?? '').toLowerCase() == 'fake_ip_for_sub_link') {
+      return null;
+    }
     final String user = parsed.userInfo;
     final Map<String, dynamic> params = <String, dynamic>{...query};
 
@@ -237,34 +312,152 @@ class SubscriptionParser {
     String titlePrefix;
     switch (scheme) {
       case 'vless':
+      case 'svless':
         protocol = NodeProtocol.vless;
         titlePrefix = 'وی لس';
         params['id'] = _decode(user);
         break;
       case 'trojan':
+      case 'strojan':
         protocol = NodeProtocol.trojan;
         titlePrefix = 'تروجان';
         params['password'] = _decode(user);
         break;
       case 'hysteria2':
       case 'hy2':
+      case 'hysteria':
         protocol = NodeProtocol.hysteria2;
         titlePrefix = 'هیستریا';
-        params['password'] = _decode(user);
+        params['password'] = _decode(user.isNotEmpty
+            ? user
+            : (query['auth'] ?? query['auth_str'] ?? ''));
         break;
       case 'tuic':
         protocol = NodeProtocol.tuic;
         titlePrefix = 'توئیک';
-        final List<String> parts = user.split(':');
-        params['uuid'] = parts.isNotEmpty ? parts.first : '';
-        params['password'] = parts.length > 1 ? parts.sublist(1).join(':') : '';
+        final int split = user.indexOf(':');
+        final String uuid =
+            split < 0 ? _decode(user) : _decode(user.substring(0, split));
+        final String password =
+            split < 0 ? '' : _decode(user.substring(split + 1));
+        params['uuid'] = uuid;
+        params['id'] = uuid;
+        params['password'] = password;
+        break;
+      case 'ssh':
+        protocol = NodeProtocol.ssh;
+        titlePrefix = 'اس اس اچ';
+        final int split = user.indexOf(':');
+        params['username'] =
+            split < 0 ? _decode(user) : _decode(user.substring(0, split));
+        final String inlinePassword =
+            split < 0 ? '' : _decode(user.substring(split + 1));
+        params['password'] = inlinePassword.isNotEmpty
+            ? inlinePassword
+            : (query['password'] ?? '');
+        final String privateKey =
+            query['pk'] ?? query['private_key'] ?? query['privateKey'] ?? '';
+        if (privateKey.isNotEmpty) {
+          params['privateKey'] = privateKey;
+        }
+        final String hostKey =
+            query['hk'] ?? query['host_key'] ?? query['hostKey'] ?? '';
+        if (hostKey.isNotEmpty) {
+          params['hostKey'] = hostKey;
+        }
+        break;
+      case 'naive':
+      case 'naive+https':
+      case 'naive+quic':
+        protocol = NodeProtocol.naive;
+        titlePrefix = 'نایو پروکسی';
+        final int split = user.indexOf(':');
+        params['username'] =
+            split < 0 ? _decode(user) : _decode(user.substring(0, split));
+        final String inlinePassword =
+            split < 0 ? '' : _decode(user.substring(split + 1));
+        params['password'] = inlinePassword.isNotEmpty
+            ? inlinePassword
+            : (query['password'] ?? '');
+        params['security'] ??= 'tls';
+        if (scheme == 'naive+quic') {
+          params['quic'] = 'true';
+        }
+        break;
+      case 'anytls':
+        protocol = NodeProtocol.anytls;
+        titlePrefix = 'انی تی ال اس';
+        final int split = user.indexOf(':');
+        if (split >= 0) {
+          final String first = _decode(user.substring(0, split));
+          final String rest = _decode(user.substring(split + 1));
+          params['password'] = rest.isNotEmpty ? rest : first;
+        } else {
+          params['password'] = _decode(user);
+        }
+        params['security'] ??= 'tls';
+        break;
+      case 'wg':
+      case 'wireguard':
+        protocol = NodeProtocol.wireguard;
+        titlePrefix = 'وایرگارد';
+        final String privateKey = query['privatekey'] ??
+            query['private_key'] ??
+            query['privateKey'] ??
+            query['pk'] ??
+            _decode(user);
+        final String publicKey = query['publickey'] ??
+            query['public_key'] ??
+            query['publicKey'] ??
+            query['pbk'] ??
+            '';
+        if (privateKey.isNotEmpty) {
+          params['privateKey'] = privateKey;
+        }
+        if (publicKey.isNotEmpty) {
+          params['publicKey'] = publicKey;
+        }
+        break;
+      case 'awg':
+        protocol = NodeProtocol.amnezia;
+        titlePrefix = 'آمنزیا';
+        final String privateKey = query['privatekey'] ??
+            query['private_key'] ??
+            query['privateKey'] ??
+            query['pk'] ??
+            _decode(user);
+        final String publicKey = query['publickey'] ??
+            query['public_key'] ??
+            query['publicKey'] ??
+            query['pbk'] ??
+            '';
+        if (privateKey.isNotEmpty) {
+          params['privateKey'] = privateKey;
+        }
+        if (publicKey.isNotEmpty) {
+          params['publicKey'] = publicKey;
+        }
+        break;
+      case 'mieru':
+      case 'mierus':
+        protocol = NodeProtocol.mieru;
+        titlePrefix = 'میرو';
+        final int split = user.indexOf(':');
+        params['username'] =
+            split < 0 ? _decode(user) : _decode(user.substring(0, split));
+        params['password'] = split < 0
+            ? (query['password'] ?? '')
+            : _decode(user.substring(split + 1));
         break;
       case 'socks':
+      case 'socks5':
         protocol = NodeProtocol.socks;
         titlePrefix = 'سوکس';
-        final List<String> parts = user.split(':');
-        params['username'] = parts.isNotEmpty ? parts.first : '';
-        params['password'] = parts.length > 1 ? parts.sublist(1).join(':') : '';
+        final int split = user.indexOf(':');
+        params['username'] =
+            split < 0 ? _decode(user) : _decode(user.substring(0, split));
+        params['password'] =
+            split < 0 ? '' : _decode(user.substring(split + 1));
         break;
       case 'ss':
       default:
@@ -272,10 +465,10 @@ class SubscriptionParser {
         titlePrefix = 'شادوساکس';
         if (user.contains(':')) {
           final int split = user.indexOf(':');
-          params['method'] = user.substring(0, split);
-          params['password'] = user.substring(split + 1);
+          params['method'] = _decode(user.substring(0, split));
+          params['password'] = _decode(user.substring(split + 1));
         } else if (user.isNotEmpty) {
-          final String? basic = B64.tryDecode(user);
+          final String? basic = B64.tryDecode(_decode(user));
           if (basic != null && basic.contains(':')) {
             final int split = basic.indexOf(':');
             params['method'] = basic.substring(0, split);
@@ -293,57 +486,73 @@ class SubscriptionParser {
     }
     _normalizeSecurity(params);
 
-    // پنل یک ردیف «اطلاعات اشتراک» هم می فرستد (با sni=fake_ip_for_sub_link)
-    // که سرور نیست و هیچ وقت وصل نمی شود. اگر نگه داشته شود، در فهرست
-    // سرورها می نشیند و اتصال خودکار روی آن وقت تلف می کند.
-    if ((query['sni'] ?? '').toString() == 'fake_ip_for_sub_link') {
-      return null;
-    }
-    final String label = name.isNotEmpty
-        ? name
-        : '$titlePrefix ${Fa.num(host)}';
+    final String label =
+        name.isNotEmpty ? name : '$titlePrefix ${Fa.num(host)}';
+    final String idSeed = name.isNotEmpty
+        ? '$sourceId|$scheme|$payload|$name'
+        : '$sourceId|$scheme|$payload';
     return VpnNode(
-      id: stableId('$sourceId|$scheme|$payload'),
+      id: stableId(idSeed),
       name: label,
       protocol: protocol,
       host: host,
       port: port,
       sourceId: sourceId,
       params: params,
-      raw: '$scheme://$payload',
+      raw: rawLink,
     );
+  }
+
+  static String _encodeSsUserInfo(String userInfo) {
+    final int split = userInfo.indexOf(':');
+    if (split < 0) {
+      return Uri.encodeComponent(userInfo);
+    }
+    final String method = userInfo.substring(0, split);
+    final String password = userInfo.substring(split + 1);
+    return '${Uri.encodeComponent(method)}:${Uri.encodeComponent(password)}';
   }
 
   static String? _decodeSs(String payload) {
     final int at = payload.indexOf('@');
     if (at > 0) {
       final String head = payload.substring(0, at);
+      final String tail = payload.substring(at);
       if (head.contains(':')) {
-        return payload;
+        // اگر کلید SS2022 به صورت متنی و دارای کاراکتر `/` باشد، کدگذاری می شود
+        // تا `Uri.tryParse` بخش میزبان را با مسیر اشتباه نگیرد.
+        final String rawUser = _decode(head);
+        return '${_encodeSsUserInfo(rawUser)}$tail';
       }
-      final String? decoded = B64.tryDecode(head);
+      final String? decoded = B64.tryDecode(_decode(head));
       if (decoded != null && decoded.contains(':')) {
-        return '$decoded${payload.substring(at)}';
+        return '${_encodeSsUserInfo(decoded)}$tail';
       }
       return payload;
     }
     // ss://base64(method:password@host:port)
     final int queryStart = payload.indexOf('?');
-    final String body = queryStart >= 0 ? payload.substring(0, queryStart) : payload;
+    final String body =
+        queryStart >= 0 ? payload.substring(0, queryStart) : payload;
     final String query = queryStart >= 0 ? payload.substring(queryStart) : '';
-    final String? decoded = B64.tryDecode(body);
+    final String? decoded = B64.tryDecode(_decode(body));
     if (decoded == null || !decoded.contains('@')) {
       return null;
     }
-    return '$decoded$query';
+    final int lastAt = decoded.lastIndexOf('@');
+    final String userPart = decoded.substring(0, lastAt);
+    final String hostPart = decoded.substring(lastAt);
+    return '${_encodeSsUserInfo(userPart)}$hostPart$query';
   }
 
   static VpnNode? _parseVmess(
     String payload,
     String name,
     String sourceId,
-    int index,
-  ) {
+    int index, {
+    String scheme = 'vmess',
+    String? rawLink,
+  }) {
     final String? decoded = B64.tryDecode(payload);
     if (decoded == null) {
       return null;
@@ -358,43 +567,68 @@ class SubscriptionParser {
     if (host.isEmpty || port <= 0) {
       return null;
     }
+    if (JsonX.text(data['sni']).toLowerCase() == 'fake_ip_for_sub_link') {
+      return null;
+    }
+    final Object? rawExtra = data['extra'];
+    final String extraText = rawExtra is Map || rawExtra is List
+        ? jsonEncode(rawExtra)
+        : JsonX.text(rawExtra);
     final Map<String, dynamic> params = <String, dynamic>{
       'id': JsonX.text(data['id']),
       'alterId': JsonX.integer(data['aid'] ?? data['alterId']),
       'security': JsonX.text(data['scy'] ?? data['security'], 'auto'),
       'network': JsonX.text(data['net'] ?? data['network'], 'tcp'),
+      'type': JsonX.text(data['type']),
       'tls': JsonX.text(data['tls']),
       'sni': JsonX.text(data['sni'] ?? data['host']),
       'host': JsonX.text(data['host']),
       'path': JsonX.text(data['path']),
       'serviceName': JsonX.text(data['path']),
-      'allowInsecure': JsonX.boolean(data['allowInsecure'] ?? data['verify_cert']),
+      'alpn': JsonX.text(data['alpn']),
+      'fp': JsonX.text(data['fp']),
+      if (extraText.isNotEmpty) 'extra': extraText,
+      if (JsonX.text(data['fragment']).isNotEmpty)
+        'fragment': JsonX.text(data['fragment']),
+      'allowInsecure':
+          JsonX.boolean(data['allowInsecure'] ?? data['verify_cert']),
     };
     final String label = name.isNotEmpty
         ? name
         : JsonX.text(data['ps'], 'وی مس ${Fa.num(host)}');
     return VpnNode(
-      id: stableId('$sourceId|vmess|$payload'),
+      id: stableId('$sourceId|$scheme|$payload'),
       name: label,
       protocol: NodeProtocol.vmess,
       host: host,
       port: port,
       sourceId: sourceId,
       params: params,
-      raw: 'vmess://$payload',
+      raw: rawLink ?? '$scheme://$payload',
     );
   }
 
   static int _defaultPort(String scheme) {
     switch (scheme) {
+      case 'ssh':
+        return 22;
+      case 'socks':
+      case 'socks5':
+        return 1080;
+      case 'wg':
+      case 'wireguard':
+      case 'awg':
+        return 51820;
       case 'trojan':
+      case 'strojan':
       case 'hysteria2':
       case 'hy2':
-        return 443;
+      case 'hysteria':
       case 'tuic':
-        return 443;
-      case 'socks':
-        return 1080;
+      case 'naive':
+      case 'naive+https':
+      case 'naive+quic':
+      case 'anytls':
       default:
         return 443;
     }
@@ -717,10 +951,22 @@ class SubscriptionParser {
       case 'ss':
       case 'shadowsocks':
         return NodeProtocol.shadowsocks;
+      case 'ssh':
+        return NodeProtocol.ssh;
+      case 'naive':
+        return NodeProtocol.naive;
+      case 'anytls':
+        return NodeProtocol.anytls;
       case 'wireguard':
         return NodeProtocol.wireguard;
+      case 'amnezia':
+      case 'awg':
+        return NodeProtocol.amnezia;
+      case 'mieru':
+        return NodeProtocol.mieru;
       case 'hysteria2':
       case 'hy2':
+      case 'hysteria':
         return NodeProtocol.hysteria2;
       case 'tuic':
         return NodeProtocol.tuic;

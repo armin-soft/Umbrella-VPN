@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/vpn/link_preparation.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 /// آزمون خواندن اشتراکی که سرور می دهد: قالب از روی خود پاسخ تشخیص داده
@@ -207,6 +209,162 @@ AllowedIPs = 0.0.0.0/0
       expect(node.port, 51820);
       expect(node.params['publicKey'], 'd29ybGQ=');
       expect(VpnController.usable(node), isTrue);
+    });
+
+    test('خروجی کامل مسیر `/sub/` با هر ۹ پروتکل بدون اتلاف و بدون خطا خوانده و نرمال می شود', () async {
+      const String subId = '00000000-0000-4000-8000-000000000042';
+      // Synthetic SS2022 key containing both `+` and `/` so base64 userInfo decoding
+      // never breaks host parsing.
+      const String ssUser =
+          'MjAyMi1ibGFrZTMtYWVzLTI1Ni1nY206Ky84K0FBRUNBd1FGQmdjSUNRb0xEQTBPRHhBUkVoTVVGUllYR0JrYUd4dz06UC83N0Nnc01EUTRQRUJFU0V4UVZGaGNZR1JvYkhCMGVIeUFoSWlNa0pTWT0=';
+      const String sshPk =
+          '-----BEGIN%20OPENSSH%20PRIVATE%20KEY-----'
+          'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQAAACAmSNL4l8dIef4GYSZPSsyAOWHWkRewEPH4wPmYxRDjzwAAAIg8nAPcPJwD3AAAAAtzc2gtZWQyNTUxOQAAACAmSNL4l8dIef4GYSZPSsyAOWHWkRewEPH4wPmYxRDjzwAAAEDq%2FGSaM6bh5FjaXbl259%2FcSf2PwIlmeHrDklne%2BnnlcyZI0viXx0h5%2FgZhJk9KzIA5YdaRF7AQ8fjA%2BZjFEOPPAAAAAAECAwQF'
+          '-----END%20OPENSSH%20PRIVATE%20KEY-----';
+      const String sshHk =
+          'ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAICZI0viXx0h5%2FgZhJk9KzIA5YdaRF7AQ8fjA%2BZjFEOPP%2C%0A';
+      final String vmessXhttp = base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
+        'v': '2',
+        'ps': 'سرور آمبرلا tls_h2 xhttp dl=h2 vmess',
+        'add': 'edge.umbrella.invalid',
+        'port': 443,
+        'id': subId,
+        'aid': 0,
+        'scy': 'auto',
+        'net': 'xhttp',
+        'type': 'packet-up',
+        'host': 'edge.umbrella.invalid',
+        'path': '/xhttp-vmess',
+        'tls': 'tls',
+        'sni': 'edge.umbrella.invalid',
+        'alpn': 'h2',
+        'fp': 'chrome',
+        'extra': <String, dynamic>{
+          'scMaxEachPostBytes': 1000000,
+          'downloadSettings': <String, dynamic>{
+            'address': 'dl.umbrella.invalid',
+            'port': 443,
+            'network': 'xhttp',
+            'security': 'tls',
+            'tlsSettings': <String, dynamic>{
+              'serverName': 'dl.umbrella.invalid',
+              'alpn': <String>['h2'],
+              'fingerprint': 'chrome',
+            },
+            'xhttpSettings': <String, dynamic>{
+              'path': '/xhttp-vmess',
+              'host': 'dl.umbrella.invalid',
+              'mode': 'auto',
+            },
+          },
+        },
+      })));
+      final String subBody = <String>[
+        'trojan://1@127.0.0.1?sni=fake_ip_for_sub_link#%F0%9F%91%A4%20TestUser',
+        '#Watashi auto ip: 198.51.100.10',
+        'vless://$subId@direct.umbrella.invalid:443?sni=www.speedtest.net&security=reality&pbk=AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA&sid=01234567&type=tcp&flow=xtls-rprx-vision&fp=chrome#Reality%20VLESS',
+        'vless://$subId@ProxY.uMbrella.invalid:443?sni=proxy.umbrella.invalid&type=httpupgrade&security=tls&path=%2Fup&host=proxy.umbrella.invalid&headers=%7B%27User-Agent%27%3A%20%27Mozilla%2F5.0%27%7D&fp=chrome#HTTPUpgrade%20VLESS',
+        'vmess://$vmessXhttp',
+        'trojan://$subId@direct.umbrella.invalid:443?sni=direct.umbrella.invalid&type=grpc&security=tls&mode=gun&serviceName=%2Fgrpc&authority=direct.umbrella.invalid&alpn=h2&fp=chrome#gRPC%20Trojan',
+        'ss://$ssUser@direct.umbrella.invalid:20443?udp-over-tcp=true#Direct%20SS2022',
+        'ss://$ssUser@direct.umbrella.invalid:443?plugin=obfs-local&obfs-host=www.wechat.com&obfs=http&udp-over-tcp=true#FakeTLS%20SS2022',
+        'ssh://$subId@direct.umbrella.invalid:55240/?file=ssh&hk=$sshHk&pk=$sshPk#Direct%20SSH',
+        'tuic://$subId:$subId@direct.umbrella.invalid:54053?congestion_control=bbr&udp_relay_mode=native&sni=www.speedtest.net&alpn=h3#Direct%20TUIC',
+        'hysteria2://$subId@direct.umbrella.invalid:443?obfs=salamander&obfs-password=testobfs&sni=www.speedtest.net&alpn=h3&mport=61001-62000#Direct%20Hysteria2',
+        'naive://$subId@direct.umbrella.invalid:443?sni=direct.umbrella.invalid&type=custom&security=tls&alpn=http%2F1.1&fp=chrome#Direct%20Naive',
+        'anytls://$subId@direct.umbrella.invalid:443/?alpn=http%2F1.1&sni=direct.umbrella.invalid#Direct%20AnyTLS',
+      ].join('\n');
+
+      final ParseReport report = SubscriptionParser.parse(
+        subBody,
+        const SubscriptionSource(
+          id: 'user-sub',
+          title: 'اشتراک خودکار',
+          url: 'https://user.umbrella-server.ir/secret/00000000-0000-4000-8000-000000000042/sub/',
+          format: SubscriptionFormat.xray,
+          icon: 'auto',
+          personal: true,
+        ),
+      );
+      expect(report.problems, isEmpty);
+      expect(report.nodes, hasLength(11));
+
+      final Set<NodeProtocol> protocols =
+          report.nodes.map((VpnNode n) => n.protocol).toSet();
+      expect(
+        protocols,
+        containsAll(<NodeProtocol>[
+          NodeProtocol.vless,
+          NodeProtocol.vmess,
+          NodeProtocol.trojan,
+          NodeProtocol.shadowsocks,
+          NodeProtocol.ssh,
+          NodeProtocol.tuic,
+          NodeProtocol.hysteria2,
+          NodeProtocol.naive,
+          NodeProtocol.anytls,
+        ]),
+      );
+
+      for (final VpnNode node in report.nodes) {
+        expect(VpnController.usable(node), isTrue, reason: '${node.protocol}: ${node.name}');
+        expect(VpnController.linkFor(node), isNotEmpty, reason: node.name);
+      }
+
+      // NaiveProxy link strips `alpn` and `fp` (fatal in sing-box naive) while preserving `sni`.
+      final VpnNode naive =
+          report.nodes.firstWhere((VpnNode n) => n.protocol == NodeProtocol.naive);
+      final Uri naiveUri = Uri.parse(VpnController.linkFor(naive));
+      expect(naiveUri.queryParameters.containsKey('alpn'), isFalse);
+      expect(naiveUri.queryParameters.containsKey('fp'), isFalse);
+      expect(naiveUri.queryParameters['sni'], 'direct.umbrella.invalid');
+
+      // Shadowsocks obfs-local folds split `obfs` and `obfs-host` into SIP002 `plugin`,
+      // and plain SS2022 translates `udp-over-tcp=true` to `uot=1`.
+      final List<VpnNode> ssNodes = report.nodes
+          .where((VpnNode n) => n.protocol == NodeProtocol.shadowsocks)
+          .toList();
+      expect(ssNodes, hasLength(2));
+      final Uri plainSsUri = Uri.parse(VpnController.linkFor(ssNodes[0]));
+      expect(plainSsUri.queryParameters['uot'], '1');
+      final Uri fakeTlsSsUri = Uri.parse(VpnController.linkFor(ssNodes[1]));
+      expect(
+        fakeTlsSsUri.queryParameters['plugin'],
+        'obfs-local;obfs=http;obfs-host=www.wechat.com',
+      );
+      expect(fakeTlsSsUri.queryParameters.containsKey('uot'), isFalse);
+
+      // DNS IP bootstrap resolves all 9 protocols while keeping TLS SNI untouched
+      // and never adding spurious `sni`/`host` parameters to `ss` or `ssh`.
+      final PreparedLinks prepared = await LinkPreparation.prepare(
+        report.nodes.map(VpnController.linkFor).toList(),
+        lookup: (_) async => <InternetAddress>[InternetAddress('198.51.100.25')],
+      );
+      expect(prepared.links, hasLength(11));
+      expect(prepared.resolvedHosts, greaterThanOrEqualTo(3));
+      final Uri resolvedSsh = Uri.parse(
+        prepared.links.firstWhere((String l) => l.startsWith('ssh://')),
+      );
+      expect(resolvedSsh.host, '198.51.100.25');
+      expect(resolvedSsh.port, 55240);
+      expect(resolvedSsh.queryParameters.containsKey('sni'), isFalse);
+      expect(resolvedSsh.queryParameters.containsKey('host'), isFalse);
+      expect(resolvedSsh.queryParameters['pk'], startsWith('-----BEGIN OPENSSH PRIVATE KEY-----'));
+
+      final Uri resolvedNaive = Uri.parse(
+        prepared.links.firstWhere((String l) => l.startsWith('naive://')),
+      );
+      expect(resolvedNaive.host, '198.51.100.25');
+      expect(resolvedNaive.queryParameters['sni'], 'direct.umbrella.invalid');
+      expect(resolvedNaive.queryParameters.containsKey('alpn'), isFalse);
+      expect(resolvedNaive.queryParameters.containsKey('fp'), isFalse);
+      expect(resolvedNaive.queryParameters.containsKey('host'), isFalse);
+
+      final Uri resolvedAnytls = Uri.parse(
+        prepared.links.firstWhere((String l) => l.startsWith('anytls://')),
+      );
+      expect(resolvedAnytls.host, '198.51.100.25');
+      expect(resolvedAnytls.queryParameters['sni'], 'direct.umbrella.invalid');
     });
   });
 }
