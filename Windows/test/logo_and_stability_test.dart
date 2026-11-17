@@ -126,8 +126,9 @@ proxies:
     final List<VpnNode> unique = SubscriptionController.deduplicateNodes(combined);
     expect(unique.length, 2);
     // Native share link wins over lossy Clash reconstruction even when Clash came first.
-    expect(unique.first.raw, share);
-    expect(unique.last.raw, secondClient);
+    expect(unique.first.sourceId, 'user-all.txt');
+    expect(unique.first.raw, share.split('#').first);
+    expect(unique.last.raw, secondClient.split('#').first);
   });
 
   test('ClashApi parses session delays, ignores stale cache, and serves loopback checks', () async {
@@ -249,6 +250,11 @@ proxies:
       await req.response.close();
     });
 
+    final HttpOverrides? previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() {
+      HttpOverrides.global = previousOverrides;
+    });
     final CoreProxySnapshot live = await ClashApi.status(
       port: server.port,
       secret: 'test-secret',
