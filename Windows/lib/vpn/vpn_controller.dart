@@ -15,6 +15,8 @@ import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
 import 'balancer.dart';
+import 'core_runtime.dart';
+import 'startup_verification.dart';
 import 'clash_config.dart';
 import 'cli_session.dart';
 import 'cores.dart';
@@ -761,7 +763,7 @@ class VpnController extends ChangeNotifier {
 
   /// لغو فوری اتصال در حال انجام (دکمه «لغو اتصال»).
   Future<void> cancel() async {
-    if (!_status.busy && _status != VpnStatus.connected) {
+    if (!_connectInFlight && !_status.busy && _status != VpnStatus.connected) {
       return;
     }
     _cancelRequested = true;
@@ -781,7 +783,8 @@ class VpnController extends ChangeNotifier {
     _stats = TunnelStats.empty;
     _tunnelVerified = false;
     _exitIp = '';
-    _cancelRequested = false;
+    // Keep cancellation latched until the in-flight connect has unwound.
+    if (!_connectInFlight) _cancelRequested = false;
     _activeNode = null;
     _setStatus(VpnStatus.disconnected, 'اتصال قطع شد.');
     unawaited(
@@ -815,9 +818,16 @@ class VpnController extends ChangeNotifier {
     }
     _connectInFlight = true;
     try {
-      return await _connectInner(requested: requested);
+      final ConnectOutcome outcome = await _connectInner(requested: requested);
+      return _cancelRequested ? const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.') : outcome;
     } finally {
+      if (_cancelRequested) {
+        await _stopCores();
+        await _disableProxy();
+        _finishCancel();
+      }
       _connectInFlight = false;
+      _cancelRequested = false;
     }
   }
 
@@ -828,6 +838,7 @@ class VpnController extends ChangeNotifier {
     // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
     // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
     await _stopProbes();
+    if (_cancelRequested) return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     // دسترسی حساب: اشتراک منقضی، مسدود یا تمام شده حق اتصال ندارد.
     final String blocked = accessGuard?.call() ?? '';
     if (blocked.isNotEmpty) {
@@ -918,7 +929,9 @@ class VpnController extends ChangeNotifier {
         );
       }
 
-      _realIp = await _ip.fetchIp(force: true);
+      // Real-IP discovery already runs at initialization. It is diagnostic,
+      // not a prerequisite for opening the VPN (blocked geo APIs took ~19s).
+      if (_cancelRequested) return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
 
       final SelectionResult selection = requested != null
           ? SelectionResult(node: requested, reason: 'سرور انتخابی شما.')
@@ -940,7 +953,10 @@ class VpnController extends ChangeNotifier {
       }
 
       _unusableInThisRun.clear();
-      final List<VpnNode> candidates = _candidates(node, selection.reason);
+      // Automatic mode gives the entire pool to one core. Recreating that
+      // same pool for each candidate erases every selection result.
+      final List<VpnNode> candidates = _singleNodeSession
+          ? _candidates(node, selection.reason) : <VpnNode>[node];
       // کل اشتراک امتحان می شود، نه چند سرور اول. بودجه زمانی فقط برای وقتی
       // است که هیچ کدام جواب نمی دهند؛ در آن حالت برنامه نباید برای همیشه
       // روی «تلاش N از M» بماند و باید به کاربر بگوید چه کرد.
@@ -1158,6 +1174,7 @@ class VpnController extends ChangeNotifier {
       // سوم و چهارم همگی با «port 17078 is already in use» برمی گشتند؛ یعنی
       // هر بار همان پورت خودمان جلوی خودمان را می گرفت.
       await _stopCores();
+      if (_cancelRequested) return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       final bool portFree = await _freeCorePortsWithRetry();
       if (!portFree) {
         _log.add(
@@ -1166,6 +1183,7 @@ class VpnController extends ChangeNotifier {
         );
         continue;
       }
+      if (_cancelRequested) return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
       final bool started = await _launch(plan);
       if (!started) {
@@ -1227,10 +1245,22 @@ class VpnController extends ChangeNotifier {
 
       // Open sockets, byte counters and dial log entries are not evidence of
       // successful traffic. Require authenticated HTTPS with an expected body.
-      final Duration probeTimeout = Duration(seconds: _activeChain.enabled ? 30 : 8);
-      final bool proxyFlows = await VerifiedProbe.check(proxyPort: _umbrellaPort, timeout: probeTimeout);
-      final bool flows = proxyFlows && (!plan.tun ||
-          await VerifiedProbe.check(proxyPort: 0, timeout: probeTimeout));
+      _setStatus(VpnStatus.connecting, 'انتخاب مسیر سالم و تأیید عبور HTTPS...');
+      final bool flows = await StartupVerification.wait(
+        cancelled: () => _cancelRequested || _disposed,
+        alive: () async => _coreProcesses.isNotEmpty ||
+            await _native.isRunning(plan.primaryBinary),
+        budget: _singleNodeSession && !_activeChain.enabled
+            ? const Duration(seconds: 30) : const Duration(minutes: 2),
+        probe: (Duration timeout) async {
+          final Stopwatch clock = Stopwatch()..start();
+          final bool proxy = await VerifiedProbe.check(proxyPort: _umbrellaPort, timeout: timeout);
+          if (!proxy || _cancelRequested || _disposed) return false;
+          final Duration remaining = timeout - clock.elapsed;
+          return !plan.tun || (remaining > Duration.zero &&
+              await VerifiedProbe.check(proxyPort: 0, timeout: remaining));
+        },
+      );
       if (_cancelRequested) {
         await _stopCores();
         await _disableProxy();
@@ -1287,6 +1317,11 @@ class VpnController extends ChangeNotifier {
           await _disableProxy();
           continue;
         }
+      }
+      if (_cancelRequested || _disposed) {
+        await _stopCores();
+        await _disableProxy();
+        return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       }
       _connectedAt = DateTime.now();
       _healthFailures = 0;
@@ -1664,25 +1699,12 @@ class VpnController extends ChangeNotifier {
   /// سریع ترین را نگه دارد و هنگام افتادن یکی، به بعدی سوییچ کند — همان
   /// کاری که کاربر از یک فیلترشکن انتظار دارد.
   ///
-  /// بیشترین تعداد لینکی که در یک اجرا به هسته داده می شود.
-  ///
-  /// **شکایت کاربر (۱٫۰٫۱۹):** این عدد تا ۱٫۰٫۱۹ روی ۳۰ بود، پس از ۳۳۱
-  /// سرور اشتراک فقط ۳۰ تای اول (بعد از مرتب سازی بر اساس پینگ) به هسته
-  /// می رسید و خود هسته هم نمی توانست سرورهای دیگر را امتحان کند. حالا این
-  /// عدد فقط یک سقف ایمنیتی برای اشتراک های بی نهایت بزرگ است، نه سقف
-  /// رفتاری: هر لینک معتبر اشتراک — از هر منبع، از جمله لینک های ایکس ری —
-  /// در فایل لینک هسته می آید تا خود هسته همه را با `lowest-delay` بسنجد.
-  /// `keep-top` هم چند گره زنده نگه می دارد، ولی سنجش روی همه انجام می شود.
-  static const int _maxPoolLinks = 1000;
-
+  /// همه لینک‌های یکتای مجاز حفظ می‌شوند؛ keep-top مصرف همزمان را محدود می‌کند.
   List<String> _linkPool(VpnNode chosen) {
     final List<String> pool = <String>[];
     final Set<String> seen = <String>{};
 
     void add(VpnNode n) {
-      if (pool.length >= _maxPoolLinks) {
-        return;
-      }
       if (!usable(n)) {
         return;
       }
@@ -1725,14 +1747,6 @@ class VpnController extends ChangeNotifier {
       });
     for (final VpnNode n in rest) {
       add(n);
-    }
-    if (pool.length >= _maxPoolLinks) {
-      _log.add(
-        'اشتراک لینک بیشتری دارد ولی فایل لینک هسته به سقف '
-        '${Fa.num(_maxPoolLinks)} لینک رسید؛ سرور انتخاب شده و کم پینگ '
-        'ترین ها به هسته داده می شوند.',
-        level: 'warning',
-      );
     }
     // اگر هیچ کدام سازگار نبود، لااقل همان یکی.
     return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
@@ -1993,7 +2007,10 @@ class VpnController extends ChangeNotifier {
   /// `UmbrellaCli.exe` (همان `HiddifyCli.exe`) اجرا می شود و کاربر گزارش زنده
   /// را در همان پنجره می بیند. اگر باز کردن پنجره ممکن نشد، هسته بی صدا و
   /// بدون پنجره اجرا می شود تا اتصال از دست نرود.
+  final Set<Process> _preparingProcesses = <Process>{};
+
   Future<bool> _launch(LaunchPlan plan) async {
+    if (_cancelRequested || _disposed) return false;
     _lastLaunchUnusable = false;
     await _stopCores();
     final int preparationEpoch = _connectionEpoch;
@@ -2049,10 +2066,20 @@ class VpnController extends ChangeNotifier {
     // با `-d` هسته همه تنظیمات را از فایل می خواند و پرچم های تونل و پورت را
     // نادیده می گیرد؛ پس فایل کامل نوشته می شود (UmbrellaCore.settingsJson) و
     // فقط مسیر فایل به آرگومان ها اضافه می شود.
-    final List<String> args = <String>[
-      for (final String arg in core.args) arg == plan.linksPath ? sessionLinks.path : arg,
-      '-d', settingsPath,
-    ];
+    final File runtime;
+    try {
+      runtime = await CoreRuntime.compile(
+        executable: core.exe, workDir: core.workDir, runDir: plan.runDir,
+        linksPath: sessionLinks.path, settingsPath: settingsPath,
+        cancelled: () => _cancelRequested || _disposed || preparationEpoch != _connectionEpoch,
+        onStarted: _preparingProcesses.add,
+        onFinished: _preparingProcesses.remove,
+      );
+    } on Exception catch (error) {
+      if (!_cancelRequested) _log.add('ساخت پیکربندی اجرایی هسته ناموفق بود: $error', level: 'error');
+      return false;
+    }
+    final List<String> args = <String>['srun', '-c', runtime.path, '-D', plan.runDir];
     if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) return false;
 
     try {
@@ -2102,6 +2129,11 @@ class VpnController extends ChangeNotifier {
         workingDirectory: core.workDir,
         runInShell: false,
       );
+      if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) {
+        process.kill();
+        await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
+        return false;
+      }
       final bool started = await _track(process, core, coreLog);
       _log.add('فایل تنظیمات هسته: $settingsPath');
       return started;
@@ -2233,6 +2265,9 @@ class VpnController extends ChangeNotifier {
     CoreLaunch core,
     String coreLog,
   ) async {
+    _coreProcesses[core.name] = process;
+    _runningPids.add(process.pid);
+    _runningBinaries.add(core.binaryName);
     final File logFile = File(coreLog);
     await logFile.parent.create(recursive: true);
     // هر اجرا گزارش تازه خودش را دارد.
@@ -2250,6 +2285,8 @@ class VpnController extends ChangeNotifier {
       Future<int?>.delayed(const Duration(milliseconds: 1500), () => null),
     ]);
     if (exited != null) {
+      if (identical(_coreProcesses[core.name], process)) _coreProcesses.remove(core.name);
+      _runningPids.remove(process.pid);
       await _reportCoreExit(core, coreLog, exited);
       // جریان خروجی هم بسته می شود تا فایل گزارش نیمه باز نماند.
       await sink.flush();
@@ -2284,9 +2321,7 @@ class VpnController extends ChangeNotifier {
         );
       }),
     );
-    _coreProcesses[core.name] = process;
-    _runningPids.add(process.pid);
-    _runningBinaries.add(core.binaryName);
+    if (_cancelRequested || _disposed) return false;
     _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
     return true;
   }
@@ -3372,8 +3407,17 @@ class VpnController extends ChangeNotifier {
     _log.add('اتصال قطع شد و تنظیمات شبکه به حالت عادی بازگشت.');
   }
 
+  Future<void>? _stopInFlight;
   Future<void> _stopCores() async {
     _connectionEpoch++;
+    final Future<void>? pending = _stopInFlight;
+    if (pending != null) return pending;
+    final Future<void> stopping = _stopCoresOwned();
+    _stopInFlight = stopping;
+    try { await stopping; } finally { _stopInFlight = null; }
+  }
+
+  Future<void> _stopCoresOwned() async {
     cancelSpeedTest();
     _activeChain = const ChainSettings();
     _stoppingOwnCore = true;
@@ -3385,14 +3429,19 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCoresInner() async {
+    for (final Process process in List<Process>.of(_preparingProcesses)) {
+      process.kill();
+      await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
+    }
     await _sweepOrphanChildren();
     // اگر هسته در پنجره CLI اجرا شده باشد، اول همان بسته می شود تا هیچ هسته
     // ای بیرون از برنامه نماند و پروکسی سیستمی به حالت عادی برگردد.
     await _stopCliCore();
     await CliSession.instance.close();
-    for (final Process process in _coreProcesses.values) {
+    for (final Process process in List<Process>.of(_coreProcesses.values)) {
       try {
         process.kill();
+        await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
       } on Exception {
         // فرایند از قبل بسته شده است.
       }

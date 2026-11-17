@@ -209,7 +209,7 @@ void main() {
       // می توانست همان یک گره را بشناسد.
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('_linkPool'), isTrue);
-      expect(controller.contains('_maxPoolLinks'), isTrue);
+      expect(controller.contains('pool.length >= '), isFalse);
       // گره انتخاب شده اول فهرست است تا اولویت کاربر حفظ شود.
       expect(controller.contains('add(chosen);'), isTrue);
     });
@@ -232,7 +232,7 @@ void main() {
       expect(controller.contains('list.length >= 4'), isFalse);
       expect(controller.contains('list..addAll(pinned)..addAll(ordinary)'), isTrue);
       expect(controller.contains('_maxPoolLinks = 30'), isFalse);
-      expect(controller.contains('_maxPoolLinks = 1000'), isTrue);
+      expect(controller.contains('_maxPoolLinks = 1000'), isFalse);
       // بودجه زمانی برای وقتی هیچ سروری جواب نمی دهد، تا حلقه برای همیشه
       // روی «تلاش N از M» نماند.
       expect(controller.contains('_connectBudget'), isTrue);

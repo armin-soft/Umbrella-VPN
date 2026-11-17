@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/link_preparation.dart';
+import 'package:umbrella_vpn/vpn/core_runtime.dart';
+import 'package:umbrella_vpn/vpn/runtime_config.dart';
 
 /// Exercises the actual bundled DLL through our native launcher. `build` only
 /// compiles configuration: it never starts a VPN, enrolls WARP or changes routes.
@@ -21,7 +23,6 @@ void main() {
     try {
       final File links = File('${temp.path}/links.txt');
       final File settings = File('${temp.path}/settings.json');
-      final File output = File('${temp.path}/generated.json');
       final PreparedLinks prepared = await LinkPreparation.prepare(<String>[
         'vless://00000000-0000-4000-8000-000000000001@proxy.example.invalid:443?security=tls&sni=example.invalid&type=xhttp&mode=packet-up&path=%2Fupload&extra=%7B%22noGRPCHeader%22%3Atrue%7D&muxtype=h2mux&muxup=100&muxdown=100#offline-fixture',
       ], lookup: (_) async => <InternetAddress>[InternetAddress('192.0.2.1')],
@@ -34,25 +35,12 @@ void main() {
             AppRouteRule(process: r'C:\Offline\blocked.exe', action: AppRouteAction.block),
           ]));
       await settings.writeAsString(jsonEncode(options));
-      Future<void> command(List<String> arguments, File expected) async {
-        final Process running = await Process.start(executable, <String>[...arguments, '-D', temp.path],
-          workingDirectory: File(executable).parent.path, runInShell: false);
-        process = running;
-        final Future<String> stdout = running.stdout.transform(utf8.decoder).join();
-        final Future<String> stderr = running.stderr.transform(utf8.decoder).join();
-        final int code = await running.exitCode.timeout(const Duration(seconds: 30));
-        final String logs = '${await stdout}\n${await stderr}';
-        expect(code, 0, reason: logs);
-        // A library-level error can return 0: require the actual output too.
-        expect(await expected.exists(), true, reason: logs);
-      }
-      // `run` combines parsing and building. The offline CLI separates them:
-      // `parse` accepts share links; `build` accepts parsed sing-box JSON only.
-      final File parsed = File('${temp.path}/parsed.json');
-      // The core joins output with -D itself (including on Windows). Absolute
-      // output paths would be joined twice by its filepath.Join implementation.
-      await command(<String>['parse', links.path, '-o', 'parsed.json'], parsed);
-      await command(<String>['build', '-c', parsed.path, '-d', settings.path, '-o', 'generated.json'], output);
+      final File output = await CoreRuntime.compile(
+        executable: executable, workDir: File(executable).parent.path,
+        runDir: temp.path, linksPath: links.path, settingsPath: settings.path,
+        cancelled: () => false, onStarted: (Process value) { process = value; },
+        onFinished: (_) { process = null; },
+      );
       return jsonDecode(await output.readAsString()) as Map<String, dynamic>;
     } finally {
       process?.kill();
@@ -60,6 +48,72 @@ void main() {
       await temp.delete(recursive: true);
     }
   }
+
+  test('bundled srun starts lazy monitoring and resolves XHTTP split download with an IP upload', () async {
+    final Directory temp = await Directory.systemTemp.createTemp('umbrella-srun-');
+    final HttpServer endpoint = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final Completer<void> downloadReached = Completer<void>();
+    endpoint.listen((HttpRequest request) async {
+      if (request.uri.path.startsWith('/download') && !downloadReached.isCompleted) {
+        expect(request.headers.value('host'), 'download-host.test');
+        downloadReached.complete();
+      }
+      request.response.statusCode = request.uri.path == '/test' ? 204 : 200;
+      try { await request.response.close(); } on Exception { /* core closed test */ }
+    });
+    final ServerSocket reservation = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final int port = reservation.port;
+    await reservation.close();
+    Process? process;
+    final StringBuffer logs = StringBuffer();
+    try {
+      final Map<String, dynamic> config = <String, dynamic>{
+        'log': <String, dynamic>{'level': 'debug', 'disabled': false},
+        'inbounds': <dynamic>[<String, dynamic>{'type': 'mixed', 'tag': 'mixed', 'listen': '127.0.0.1', 'listen_port': port}],
+        'dns': <String, dynamic>{'servers': <dynamic>[<String, dynamic>{'type': 'local', 'tag': 'local'}]},
+        'route': <String, dynamic>{'default_domain_resolver': <String, dynamic>{'server': 'local', 'strategy': 'ipv4_only'}, 'final': 'split'},
+        'experimental': <String, dynamic>{'monitoring': <String, dynamic>{'urls': <String>['http://127.0.0.1:${endpoint.port}/test'], 'interval': '10m'}},
+        'outbounds': <dynamic>[
+          <String, dynamic>{'type': 'vless', 'tag': 'split', 'server': '127.0.0.1', 'server_port': endpoint.port,
+            'uuid': '00000000-0000-4000-8000-000000000001',
+            'transport': <String, dynamic>{'type': 'xhttp', 'mode': 'packet-up', 'path': '/upload',
+              'download': <String, dynamic>{'server': 'localhost', 'server_port': endpoint.port,
+                'path': '/download', 'host': 'download-host.test'},
+            },
+          },
+        ],
+      };
+      RuntimeConfig.finalize(config, profileTags: <String>{'split'});
+      final File file = File('${temp.path}/runtime.json');
+      await file.writeAsString(jsonEncode(config));
+      process = await Process.start(binary!, <String>['srun', '-c', file.path, '-D', temp.path],
+        workingDirectory: File(binary).parent.path, runInShell: false);
+      process.stdout.transform(utf8.decoder).listen(logs.write);
+      process.stderr.transform(utf8.decoder).listen(logs.write);
+      bool ready = false;
+      for (int i = 0; i < 60; i++) {
+        try {
+          final Socket socket = await Socket.connect('127.0.0.1', port, timeout: const Duration(milliseconds: 100));
+          socket.destroy(); ready = true; break;
+        } on SocketException { await Future<void>.delayed(const Duration(milliseconds: 100)); }
+      }
+      expect(ready, true, reason: logs.toString());
+      // A VLESS server is NOT simulated here. Only prove the split transport
+      // reaches its hostname download endpoint, rather than failing in 1ms.
+      final HttpClient client = HttpClient()..findProxy = (_) => 'PROXY 127.0.0.1:$port';
+      try {
+        final HttpClientRequest request = await client.getUrl(Uri.parse('http://192.0.2.1/test'));
+        unawaited(request.close().then<void>((HttpClientResponse response) async { await response.drain<void>(); }).catchError((Object _) {}));
+        await downloadReached.future.timeout(const Duration(seconds: 10));
+      } finally { client.close(force: true); }
+      expect(logs.toString(), isNot(contains('domain not resolved')));
+    } finally {
+      process?.kill();
+      if (process != null) await process.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      await endpoint.close(force: true);
+      await temp.delete(recursive: true);
+    }
+  }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 30)));
 
   for (final ChainPosition position in <ChainPosition>[ChainPosition.off, ChainPosition.extraSecurity, ChainPosition.unblocker]) {
     for (final ChainTransport transport in position == ChainPosition.off ? <ChainTransport>[ChainTransport.automatic] : ChainTransport.values) {
@@ -77,6 +131,9 @@ void main() {
         expect(vless['server'], position == ChainPosition.unblocker ? 'proxy.example.invalid' : '192.0.2.1');
         expect(vless['tls']['server_name'], 'example.invalid');
         expect(vless['multiplex'], isNull, reason: 'mux=false must remove inherited mux/brutal');
+        expect(vless['lazy'], true);
+        expect(output['experimental']['monitoring']['keep_top']['batch'], 4);
+        expect(output['experimental']['cache_file']['enabled'], true);
         expect(vless['transport']['type'], 'xhttp');
         expect(vless['transport']['mode'], 'packet-up');
         expect(vless['transport']['path'], '/upload');
