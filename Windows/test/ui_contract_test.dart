@@ -294,8 +294,9 @@ void main() {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('متصل به \${node.name}'), isFalse);
       expect(controller.contains('\${node.name} | \${Fa.ms(node.pingMs)}'), isFalse);
-      // ولی در گزارش، سرور و مشخصاتش هست.
-      expect(controller.contains('اتصال به \${node.name}'), isTrue);
+      // در گزارش ها هم نام، میزبان، پورت و پروتکل سرور فاش نمی شود.
+      expect(controller.contains('اتصال به \${node.name}'), isFalse);
+      expect(controller.contains('\${node.host}:\${node.port}'), isFalse);
     });
 
     test('پینگ سرور متصل زیر وضعیت اتصال نشان داده می شود', () {
