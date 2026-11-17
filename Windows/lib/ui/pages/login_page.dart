@@ -80,7 +80,7 @@ class _LoginPageState extends State<LoginPage> {
             onMaximize: window.toggleMaximize,
             onClose: window.quit,
             onToggleTheme: settings.toggleTheme,
-            darkTheme: settings.themeMode != ThemeMode.light,
+            darkTheme: Theme.of(context).brightness == Brightness.dark,
           ),
           Expanded(
             child: Stack(

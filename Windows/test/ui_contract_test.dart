@@ -1148,6 +1148,8 @@ void main() {
       final String login = read('lib/ui/pages/login_page.dart');
       expect(login.contains('Theme.of(context)'), isTrue);
       expect(login.contains('AppTheme'), isTrue);
+      expect(login.contains('darkTheme: Theme.of(context).brightness == Brightness.dark'), isTrue);
+      expect(read('lib/ui/shell/app_shell.dart').contains('darkTheme: Theme.of(context).brightness == Brightness.dark'), isTrue);
     });
 
     test('۲. فوتر حقوق محفوظ از صفحات ورود و معرفی حذف شده است', () {
@@ -1164,7 +1166,7 @@ void main() {
 
     test('۴. ورود ناموفق پیام امنیتی دقیق و دکمه دستگاه من دارد', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
-      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در پروفایل، دستگاه‌های ناشناس را حذف کنید.'), isTrue);
+      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه‌های ناشناس را حذف کنید.'), isTrue);
       expect(gateway.contains("'text' => '📱 دستگاه من'"), isTrue);
     });
 
