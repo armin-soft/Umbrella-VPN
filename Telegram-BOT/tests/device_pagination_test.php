@@ -39,7 +39,7 @@ $Checks = [
         str_contains($User, "'🛡کنترل محتوا', 'app_filter'") &&
         !str_contains($User, "'app_filter_domains'") &&
         str_contains($User, "'🔐تأیید دومرحله‌ای', 'app_2fa'") &&
-        str_contains($User, "'🔔اعلان های برنامه', 'app_notifications'") &&
+        !str_contains($User, "'🔔اعلان های برنامه', 'app_notifications'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
         str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'"),
     'app screens return to the account category' =>

@@ -32,7 +32,7 @@ private const CFG_KEYS = [
 'Custom_Min_GB' => ['label' => 'حداقل حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، حداقل ۰.۱'],
 'Custom_Max_GB' => ['label' => 'حداکثر حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، مثلاً 1000'],
 'Support_Url' => ['label' => 'لینک پشتیبانی', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا نام کاربری با @'],
-'Channel_Url' => ['label' => 'لینک کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا نام کاربری با @'],
+'Channel_Url' => ['label' => 'نام کاربری کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'نام کاربری عمومی کانال، مانند @channel_name یا https://t.me/channel_name؛ شناسه عددی خودکار دریافت می‌شود'],
 'Telegram_Channel_ID' => ['label' => 'آی دی کانال تلگرام', 'type' => 'channel', 'screen' => 'links', 'hint' => 'آی دی عددی و معمولاً منفی، مثال: -1001833514833'],
 ];
 
@@ -580,6 +580,9 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '📣لینک ها د�
 }
 
 $Support = BotConfig::getSupportUrl() ?: 'ثبت نشده';
+$ChannelNotice = '';
+try { BotConfig::configureChannel(BotConfig::getChannelUrl(), false); }
+catch (Throwable $Error) { $ChannelNotice = '⚠️دریافت خودکار شناسه کانال انجام نشد؛ نام کاربری و دسترسی ربات را بررسی کنید.' . "\n"; }
 $Channel = BotConfig::getChannelUrl() ?: 'ثبت نشده';
 $Channel_Id = BotConfig::getTelegramChannelId() ?: 'ثبت نشده';
 $Source_Label = static fn (string $Key): string => BotConfig::source($Key) === 'panel' ? '📝پنل' : '🌱فایل تنظیمات';
@@ -588,13 +591,13 @@ $Text = Helper::adminGreeting($Context, 'لینک ها و کانال')
 . "🧑‍💻لینک پشتیبانی ({$Source_Label('Support_Url')}):\n<code>{$Support}</code>\n\n"
 . "📣لینک کانال ({$Source_Label('Channel_Url')}):\n<code>{$Channel}</code>\n\n"
 . "🆔آی دی کانال ({$Source_Label('Telegram_Channel_ID')}):\n<code>{$Channel_Id}</code>\n\n"
+. $ChannelNotice
 . "ℹ️لینک پشتیبانی در دکمه های «ارتباط با پشتیبانی» و لینک کانال در دکمه عضویت کانال استفاده می شود.\n"
 . Helper::adminFooter();
 $Markup = array_merge(
 Menu::rows([
 [['✏️لینک پشتیبانی', 'cfg_set:Support_Url']],
-[['✏️لینک کانال', 'cfg_set:Channel_Url']],
-[['✏️آی دی کانال', 'cfg_set:Telegram_Channel_ID']],
+[['✏️نام کاربری کانال', 'cfg_set:Channel_Url']],
 ]),
 [Menu::back('منوی قبلی', 'admin_subscriptions_menu'), Menu::adminHome()]
 );
@@ -606,6 +609,7 @@ self::renderCfgScreen($Context, $Text, $Markup);
 public static function cfgStart(Context $Context, string $Key): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Key = trim($Key);
+if ($Key === 'Telegram_Channel_ID') $Key = 'Channel_Url';
 
 if (!isset(self::CFG_KEYS[$Key])) {
 self::unknownAdminInput($Context);
@@ -626,6 +630,7 @@ $Context,
 private static function cfgSave(Context $Context, string $Key, string $Text): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 $Key = trim($Key);
+if ($Key === 'Telegram_Channel_ID') $Key = 'Channel_Url';
 
 if (!isset(self::CFG_KEYS[$Key])) {
 self::unknownAdminInput($Context);
@@ -694,6 +699,11 @@ else { BotConfig::setCustomMaxGB($GB); }
 $Stored = Helper::formatGB($GB);
 break;
 case 'link':
+if ($Key === 'Channel_Url') {
+try { $Id = BotConfig::configureChannel(trim($Text)); $Stored = BotConfig::getChannelUrl() . "\n🆔" . $Id; }
+catch (Throwable $Exception) { $Error = 'نام کاربری کانال معتبر نیست یا دریافت شناسه از تلگرام ممکن نشد؛ تنظیمات قبلی تغییر نکرد.'; }
+break;
+}
 if ($Value !== '' && str_starts_with($Value, '@')) {
 $Value = 'https://t.me/' . substr($Value, 1);
 }
@@ -864,7 +874,6 @@ $Rows = Menu::rows([
 [['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
 [['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
 [['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده']],
-[['📣تلگرام و برنامه', 'notify_all_start'], ['📱اعلان برنامه ها', 'app_push_start']],
 ]);
 self::categoryMenu($Context, 'پیام رسانی و اطلاع رسانی', $Rows, 'مدیریت');
 }
@@ -1238,23 +1247,7 @@ self::smsMenu($Context);
 }
 
 public static function serverNotifyCustomStart(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-
-if ($Context->IsCallback && $Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, '✏️در حال آماده سازی اطلاع رسانی سفارشی...', false);
-}
-
-Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:notify_broadcast_text', 'Broadcast_Mode' => 'both']);
-$Text = Helper::adminGreeting($Context, 'اطلاع رسانی سفارشی')
-. "✏️*اطلاع رسانی سفارشی آماده ارسال است.*\n"
-. "➖➖➖➖➖➖➖➖➖\n"
-. "👌متن دلخواه خود را در یک پیام بفرستید.\n"
-. "📤این متن برای تمام کاربران از طریق تلگرام و پیامک ارسال می شود.\n"
-. "ℹ️فقط متن را ارسال کنید؛ هیچ دکمه ای را نزنید." . Helper::adminFooter();
-
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome(),
-]));
+self::deliveryMenu($Context, 'custom', 'اطلاع رسانی سفارشی');
 }
 
 public static function serverNotifyIdle(Context $Context): void {
@@ -2242,15 +2235,11 @@ $Target = (int)($User['Telegram_ID'] ?? 0);
 $Session = Repository::getUserSession($Context->UserId);
 $Mode = (string)($Session['Broadcast_Mode'] ?? 'both');
 
-if (!in_array($Mode, ['telegram', 'sms', 'both'], true)) {
+if (!in_array($Mode, ['telegram', 'sms', 'app', 'all', 'both'], true)) {
 $Mode = 'both';
 }
 
-$Mode_Label = match ($Mode) {
-'telegram' => 'تلگرام',
-'both' => 'تلگرام + پیامک',
-default => 'پیامک',
-};
+$Mode_Label = self::deliveryModeLabel($Mode);
 
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target, 'Flow' => 'admin:notify_text', 'Broadcast_Mode' => $Mode]);
 $Name = self::targetDisplayName($Target, $User);
@@ -2258,77 +2247,84 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع
 }
 
 private static function notifyUser(Context $Context, string $Message): void {
+self::sendSingleMessage($Context, $Message, 'اطلاع رسانی اول');
+}
+
+/** چهار روش مشترک برای پیام تکی، همگانی و اطلاع‌رسانی. */
+private static function deliveryMenu(Context $Context, string $Scope, string $Title): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+$Rows = [];
+foreach (['telegram' => '📨تلگرام', 'sms' => '📱پیامک', 'app' => '💻نرم افزار/ اپلیکیشن', 'all' => '📣همه موارد'] as $Mode => $Label) {
+$Rows[] = [Menu::button($Label, 'delivery_mode:' . $Scope . ':' . $Mode)];
+}
+$Rows[] = Menu::back('منوی قبلی', 'منوی پیامک');
+$Rows[] = Menu::adminHome();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, $Title) . '📨روش ارسال را انتخاب کنید:' . Helper::adminFooter(), TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function selectDeliveryMode(Context $Context, string $Scope, string $Mode): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+if (!in_array($Mode, ['telegram', 'sms', 'app', 'all'], true)) return;
+if ($Scope === 'single') { self::startInputSingleSmsUid($Context, $Mode); return; }
+if ($Scope === 'notify') { self::startInputNotifyUid($Context, $Mode); return; }
+if (!in_array($Scope, ['broadcast', 'custom'], true)) return;
+Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:notify_broadcast_text', 'Broadcast_Mode' => $Mode, 'Temp_UID' => null]);
+$Parent = $Scope === 'custom' ? 'اطلاع رسانی سفارشی اول' : 'ارسال پیامک همگانی اول';
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'ارسال پیام') . '📝متن پیام (' . self::deliveryModeLabel($Mode) . ') را بفرستید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('روش ارسال', $Parent)));
+}
+
+private static function deliveryModeLabel(string $Mode): string {
+return match ($Mode) { 'telegram' => 'تلگرام', 'sms' => 'پیامک', 'app' => 'نرم افزار/ اپلیکیشن', 'all' => 'همه موارد', 'both' => 'تلگرام و پیامک', default => 'نامعتبر' };
+}
+
+/** شکست یک روش، ارسال روش‌های دیگر را متوقف نمی‌کند. برنامه فقط صف می‌شود. */
+private static function deliverMessage(array $User, string $Message, string $Mode, int $AdminId): array {
+$Result = [];
+$UserId = (int)($User['Telegram_ID'] ?? 0);
+if ($UserId <= 0) return $Result;
+foreach (['telegram', 'sms', 'app'] as $Channel) {
+$Selected = $Mode === $Channel || $Mode === 'all' || ($Mode === 'both' && $Channel !== 'app');
+if (!$Selected) continue;
+$Ok = false;
+try {
+if ($Channel === 'telegram' && (int)($User['Chat_ID'] ?? 0) > 0) {
+$Response = TelegramClient::sendMessage((int)$User['Chat_ID'], Helper::frame('کاربر', (string)($User['Full_Name'] ?? 'کاربر'), 'اطلاع رسانی', $UserId) . "\n📨" . $Message . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+$Ok = ($Response['ok'] ?? false) === true;
+} elseif ($Channel === 'sms' && Helper::validatePhone((string)($User['Phone'] ?? ''))) {
+$Ok = IppanelClient::send($UserId, (string)$User['Phone'], $Message) === true;
+} elseif ($Channel === 'app') {
+$Ok = self::queueAppPush($UserId, $Message, $AdminId) > 0;
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Delivery-' . $Channel . '] user=' . $UserId . ' ' . $Error->getMessage());
+}
+$Result[$Channel] = $Ok;
+}
+return $Result;
+}
+
+private static function sendSingleMessage(Context $Context, string $Message, string $Parent): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Session = Repository::getUserSession($Context->UserId);
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Mode = (string)($Session['Broadcast_Mode'] ?? 'telegram');
 $Target = (int)($Session['Temp_UID'] ?? 0);
-$Mode = (string)($Session['Broadcast_Mode'] ?? 'both');
-Repository::updateUserSession($Context->UserId, ['Temp_UID' => null, 'Broadcast_Mode' => null]);
-
-if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
+if (trim($Message) === '') {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . '⚠️متن پیام خالی است؛ دوباره بفرستید.', TelegramClient::inlineKeyboard(Menu::adminNav('روش ارسال', $Parent)));
 return;
 }
-
-$Full_Name = (string)(Repository::getUser($Target)['Full_Name'] ?: 'کاربر گرامی');
-$Chat_ID = (int)(Repository::getUser($Target)['Chat_ID'] ?? 0);
-$Phone = (string)(Repository::getUser($Target)['Phone'] ?? '');
-$Sent_Tg = false;
-$Sent_Sms = false;
-
-if ($Mode === 'telegram' || $Mode === 'both') {
-if ($Chat_ID > 0) {
-$Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'اطلاع رسانی', $Target) . "📣یک اطلاعیه برای شما ارسال شده است.\n\n" . "\n➖➖➖➖➖➖➖➖➖\n🔔اطلاع رسانی: {$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Menu::userHome(),
-]));
-if (($Result['ok'] ?? false) === true) $Sent_Tg = true;
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+$User = $Target > 0 ? Repository::getUser($Target) : [];
+$Results = self::deliverMessage($User, $Message, $Mode, $Context->UserId);
+$Summary = $Results === [] ? '❌کاربر یا روش ارسال معتبر نیست.' : '📋نتیجه ارسال:';
+foreach ($Results as $Channel => $Ok) {
+$Summary .= "\n" . ($Ok ? '✅' : '❌') . self::deliveryModeLabel($Channel) . ': ' . ($Ok ? ($Channel === 'app' ? 'در صف دریافت برنامه ثبت شد' : 'ارسال موفق') : 'ارسال نشد؛ مشخصات مخاطب و تنظیمات سرویس را بررسی کنید');
 }
-}
-
-if ($Mode === 'sms' || $Mode === 'both') {
-if (Helper::validatePhone($Phone)) {
-if (IppanelClient::send($Target, $Phone, $Message) === true) {
-$Sent_Sms = true;
-}
-}
-}
-
-if (!$Sent_Tg && !$Sent_Sms) {
-$Reasons = self::deliveryFailureReasons($Mode, $Phone, $Chat_ID, $Sent_Sms);
-$Reason_Text = $Reasons === []
-? '⚠️دلیل نامشخص است؛ لطفاً تنظیمات پنل پیامک و اطلاعات کاربر را بررسی کنید.'
-: "⚠️دلایل:\n- " . implode("\n- ", $Reasons);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌اطلاع رسانی ارسال نشد.\n{$Reason_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
-return;
-}
-
-$Summary = '';
-
-if ($Sent_Tg) $Summary .= "📨تلگرام: ارسال موفق\n";
-if ($Sent_Sms) $Summary .= "📱پیامک: ارسال موفق\n";
-
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅اطلاع رسانی به کاربر {$Full_Name} ارسال گردید.*\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'نتیجه ارسال') . $Summary . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('روش ارسال', $Parent)));
 }
 
 public static function singleSmsMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
-
-$Text = self::header($Context, 'ارسال پیامک تکی')
-. Menu::section('📨', 'روش ارسال', [
-'📨تلگرام: ارسال پیام در تلگرام کاربر',
-'📱پیامک: ارسال پیامک به شماره کاربر',
-'📨📱هر دو: ارسال همزمان',
-])
-. '📌*روش ارسال را انتخاب کنید:*' . Helper::adminFooter();
-$Markup = array_merge(
-Menu::rows([
-[['📨تلگرام', 'ارسال پیامک تکی تلگران اول'], ['📱پیامک', 'ارسال پیامک تکی پیامک اول']],
-[['📨📱هر دو', 'ارسال پیامک تکی هر دو اول']],
-]),
-[Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome()]
-);
-self::logMenuProblems('single-sms', $Markup);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+self::deliveryMenu($Context, 'single', 'ارسال پیامک تکی');
 }
 
 /**
@@ -2419,10 +2415,8 @@ Repository::logAdminAction($Admin_ID, 'app_push_user_deferred', $Target_Telegram
 return 1;
 }
 
-// Unknown uuid: broadcast to the installed base rather than drop it.
-$Database->execute('INSERT INTO `App_Notifications` (`Device_ID`, `Title`, `Body`, `Level`) SELECT `Device_ID`, ?, ?, \'info\' FROM `App_Devices` WHERE `Is_Trusted` = 1', [$Title, $Body]);
-Repository::logAdminAction($Admin_ID, 'app_push_broadcast_fallback', $Target_Telegram_ID, null);
-return (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1');
+// هیچ مقصدی برای این کاربر وجود ندارد؛ پیام خصوصی نباید همگانی شود.
+return 0;
 }
 
 foreach ($Rows as $Row) {
@@ -2650,15 +2644,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز �
 }
 
 public static function notifySingleMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
-
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به کاربر') . '📨لطفاً روش ارسال را انتخاب کنید:*' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📨ارسال از تلگرام', 'callback_data' => 'اطلاع رسانی تلگران اول']],
-[['text' => '📱ارسال از پیامک', 'callback_data' => 'اطلاع رسانی پیامک اول']],
-[['text' => '📨📱ارسال از هر دو', 'callback_data' => 'اطلاع رسانی هر دو اول']],
-Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome(),
-]));
+self::deliveryMenu($Context, 'notify', 'اطلاع رسانی به کاربر');
 }
 
 public static function startInputSingleSmsUid(Context $Context, string $Mode): void {
@@ -2676,119 +2662,28 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::h
 }
 
 public static function broadcastMenu(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::adminGreeting($Context, 'ارسال پیامک همگانی') . '📨لطفاً روش ارسال را انتخاب کنید:*' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📨ارسال از تلگرام', 'callback_data' => 'ارسال پیامک همگانی تلگرام اول']],
-[['text' => '📱ارسال از پیامک', 'callback_data' => 'ارسال پیامک همگانی پیامک اول']],
-[['text' => '📨📱ارسال از هر دو', 'callback_data' => 'ارسال پیامک همگانی هر دو اول']],
-Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome(),
-]));
+self::deliveryMenu($Context, 'broadcast', 'ارسال پیامک همگانی');
 }
 
 private static function broadcastNotify(Context $Context, string $Message, string $Mode = 'telegram'): void {
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$Message = trim($Message);
-
-if ($Message === '') {
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی همگانی') . "❌متن ارسالی خالی است؛ لطفاً متنی وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge(
-[[['text' => '🔄تلاش دوباره', 'callback_data' => 'اطلاع رسانی سفارشی اول']]],
-Menu::adminNav('پیامک همگانی', 'ارسال پیامک همگانی اول')
-)));
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+if (trim($Message) === '' || !in_array($Mode, ['telegram', 'sms', 'app', 'all', 'both'], true)) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . '⚠️متن یا روش ارسال معتبر نیست؛ دوباره تلاش کنید.', TelegramClient::inlineKeyboard(Menu::adminNav('روش ارسال', 'ارسال پیامک همگانی اول')));
 return;
 }
-
-if (!in_array($Mode, ['telegram', 'sms', 'both'], true)) {
-$Mode = 'both';
-}
-
-$Sent_Tg = 0;
-$Sent_Sms = 0;
-$Failed_Sms = 0;
-$Failed_Tg = 0;
-$Rows = Database::getInstance()->fetchAll("SELECT `Telegram_ID`, `Chat_ID`, `Phone`, `Full_Name` FROM `Users` WHERE `Is_Blocked` = 0 ORDER BY `Telegram_ID` ASC");
-
-if (!is_array($Rows)) $Rows = [];
-
-foreach ($Rows as $Row) {
-$User_ID = (int)($Row['Telegram_ID'] ?? 0);
-$Chat_ID = (int)($Row['Chat_ID'] ?? 0);
-$Phone = trim((string)($Row['Phone'] ?? ''));
-$Name = trim((string)($Row['Full_Name'] ?? ''));
-
-if ($Name === '') $Name = 'کاربر';
-if ($User_ID <= 0) continue;
-if ($Mode === 'telegram' || $Mode === 'both') {
-if ($Chat_ID > 0) {
-try {
-$Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Name, 'اطلاع رسانی همگانی', $User_ID) . "📨پیام همگانی سرور آمبرلا:\n\n{$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Menu::userHome(),
-]));
-
-if (($Result['ok'] ?? false) === true) {
-$Sent_Tg++;
-}
-else {
-$Failed_Tg++;
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+$Rows = Database::getInstance()->fetchAll('SELECT `Telegram_ID`, `Chat_ID`, `Phone`, `Full_Name` FROM `Users` WHERE `Is_Blocked` = 0 ORDER BY `Telegram_ID` ASC');
+$Counts = [];
+foreach ($Rows as $User) {
+foreach (self::deliverMessage($User, $Message, $Mode, $Context->UserId) as $Channel => $Ok) {
+$Counts[$Channel][$Ok ? 'ok' : 'failed'] = ($Counts[$Channel][$Ok ? 'ok' : 'failed'] ?? 0) + 1;
 }
 }
-
-catch (Throwable) {
-$Failed_Tg++;
+$Summary = '👥تعداد مخاطبان: ' . Helper::toPersian((string)count($Rows));
+foreach ($Counts as $Channel => $Count) {
+$Summary .= "\n" . self::deliveryModeLabel($Channel) . ': ✅' . ($Channel === 'app' ? 'ثبت در صف دریافت: ' : 'ارسال موفق: ') . Helper::toPersian((string)($Count['ok'] ?? 0)) . ' | ❌ناموفق: ' . Helper::toPersian((string)($Count['failed'] ?? 0));
 }
-}
-}
-
-if ($Mode === 'sms' || $Mode === 'both') {
-if (Helper::validatePhone($Phone)) {
-try {
-if (IppanelClient::send($User_ID, $Phone, $Message) === true) {
-$Sent_Sms++;
-}
-
-else {
-$Failed_Sms++;
-}
-}
-
-catch (Throwable) {
-$Failed_Sms++;
-}
-}
-
-else {
-$Failed_Sms++;
-}
-}
-}
-
-$Summary = '';
-
-if ($Mode === 'telegram') {
-$Summary = "✅ارسال موفق تلگرام: " . Helper::toPersian($Sent_Tg) . " نفر\n⛔️ارسال ناموفق تلگرام: " . Helper::toPersian($Failed_Tg) . " نفر";
-}
-
-elseif ($Mode === 'sms') {
-$Summary = "✅ارسال موفق پیامک: " . Helper::toPersian($Sent_Sms) . " پیامک\n⛔️ارسال ناموفق پیامک: " . Helper::toPersian($Failed_Sms) . " پیامک";
-}
-
-else {
-$Summary = "✅ارسال موفق تلگرام: " . Helper::toPersian($Sent_Tg) . " نفر\n"
-. "⛔️ارسال ناموفق تلگرام: " . Helper::toPersian($Failed_Tg) . " نفر\n"
-. "✅ارسال موفق پیامک: " . Helper::toPersian($Sent_Sms) . " پیامک\n"
-. "⛔️ارسال ناموفق پیامک: " . Helper::toPersian($Failed_Sms) . " پیامک";
-}
-
-$Summary .= "\n👥تعداد کل مخاطبین: " . Helper::toPersian((string)count($Rows)) . " نفر";
-
-if (($Mode === 'sms' || $Mode === 'both') && trim((string)Environment::getSmsApiKey()) === '') {
-$Summary .= "\n⚠️کلید سرویس پیامک در تنظیمات ثبت نشده است؛ پیامک‌ها ارسال نشدند.";
-}
-
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'اطلاع رسانی سفارشی') . "📨ارسال انجام شد.\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge(
-[[['text' => '🔄ارسال پیام دیگر', 'callback_data' => 'اطلاع رسانی سفارشی اول']]],
-Menu::adminNav('پیامک همگانی', 'ارسال پیامک همگانی اول')
-)));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'نتیجه ارسال همگانی') . $Summary . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیام رسانی', 'منوی پیامک')));
 }
 
 private static function singleSmsStep(Context $Context, string $UidText): void {
@@ -2802,15 +2697,11 @@ $Target = (int)($User['Telegram_ID'] ?? 0);
 $Session = Repository::getUserSession($Context->UserId);
 $Mode = (string)($Session['Broadcast_Mode'] ?? 'sms');
 
-if (!in_array($Mode, ['telegram', 'sms', 'both'], true)) {
+if (!in_array($Mode, ['telegram', 'sms', 'app', 'all', 'both'], true)) {
 $Mode = 'sms';
 }
 
-$Mode_Label = match ($Mode) {
-'telegram' => 'تلگرام',
-'both' => 'تلگرام + پیامک',
-default => 'پیامک',
-};
+$Mode_Label = self::deliveryModeLabel($Mode);
 
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target, 'Flow' => 'admin:sms_single_text', 'Broadcast_Mode' => $Mode]);
 $Name = self::targetDisplayName($Target, $User);
@@ -2818,37 +2709,11 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال
 }
 
 private static function singleSmsModeRetry(Context $Context): void {
-$Session = Repository::getUserSession($Context->UserId);
-$Target = (int)($Session['Temp_UID'] ?? 0);
-
-if ($Target <= 0) {
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
-return;
-}
-
-$Name = self::targetDisplayName($Target, Repository::getUser($Target));
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️لطفاً حالت ارسال را از دکمه های زیر انتخاب کنید (متن به صورت پیام ارسال نشود).\n👤کاربر: {$Name}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
-[['text' => '📨از تلگرام', 'callback_data' => 'ارسال پیامک تکی تلگران اول'], ['text' => '📱از پیامک', 'callback_data' => 'ارسال پیامک تکی پیامک اول']],
-[['text' => '📨📱از هر دو', 'callback_data' => 'ارسال پیامک تکی هر دو اول']],
-], Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول'))));
+self::singleSmsMenu($Context);
 }
 
 private static function notifyModeRetry(Context $Context): void {
-$Session = Repository::getUserSession($Context->UserId);
-$Target = (int)($Session['Temp_UID'] ?? 0);
-
-if ($Target <= 0) {
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ابتدا شناسه عددی یا شماره موبایل کاربر را وارد کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
-return;
-}
-
-$Name = self::targetDisplayName($Target, Repository::getUser($Target));
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️لطفاً حالت اطلاع رسانی را از دکمه های زیر انتخاب کنید (متن به صورت پیام ارسال نشود).\n👤کاربر: {$Name}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
-[['text' => '📨از تلگرام', 'callback_data' => 'اطلاع رسانی تلگران اول'], ['text' => '📱از پیامک', 'callback_data' => 'اطلاع رسانی پیامک اول']],
-[['text' => '📨📱از هر دو', 'callback_data' => 'اطلاع رسانی هر دو اول']],
-], Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول'))));
+self::notifySingleMenu($Context);
 }
 
 private static function deliveryFailureReasons(string $Mode, string $Phone, int $Chat_ID, bool $Sent_Sms): array {
@@ -2880,58 +2745,7 @@ return $Reasons;
 }
 
 private static function singleSmsSend(Context $Context, string $Message): void {
-$Session = Repository::getUserSession($Context->UserId);
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$Target = (int)($Session['Temp_UID'] ?? 0);
-$Mode = (string)($Session['Broadcast_Mode'] ?? 'sms');
-Repository::updateUserSession($Context->UserId, ['Temp_UID' => null, 'Broadcast_Mode' => null]);
-
-if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . '❌شناسه کاربر معتبر نیست؛ دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
-return;
-}
-
-$User = Repository::getUser($Target);
-$Phone = (string)($User['Phone'] ?? '');
-$Chat_ID = (int)($User['Chat_ID'] ?? 0);
-$Full_Name = trim((string)($User['Full_Name'] ?? ''));
-$Display_Name = $Full_Name !== '' ? $Full_Name : 'کاربر';
-$Sent_Tg = false;
-$Sent_Sms = false;
-
-if ($Mode === 'telegram' || $Mode === 'both') {
-if ($Chat_ID > 0) {
-$Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'اطلاع رسانی', $Target) . "📨یک پیامک ارسال شده است.\n\n" . "\n➖➖➖➖➖➖➖➖➖\n🔔پیامک: {$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Menu::userHome(),
-]));
-
-if (($Result['ok'] ?? false) === true) $Sent_Tg = true;
-}
-}
-
-if ($Mode === 'sms' || $Mode === 'both') {
-if (Helper::validatePhone($Phone)) {
-if (IppanelClient::send($Target, $Phone, $Message) === true) {
-$Sent_Sms = true;
-}
-}
-}
-
-if (!$Sent_Tg && !$Sent_Sms) {
-$Reasons = self::deliveryFailureReasons($Mode, $Phone, $Chat_ID, $Sent_Sms);
-$Reason_Text = $Reasons === []
-? '⚠️دلیل نامشخص است؛ لطفاً تنظیمات پنل پیامک و اطلاعات کاربر را بررسی کنید.'
-: "⚠️دلایل:\n- " . implode("\n- ", $Reasons);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌ارسال انجام نشد.\n{$Reason_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
-return;
-}
-
-$Summary = '';
-
-if ($Sent_Tg) $Summary .= "📨تلگرام: ارسال موفق\n";
-if ($Sent_Sms) $Summary .= "📱پیامک: ارسال موفق\n";
-
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅پیامک تکی برای کاربر {$Display_Name} ارسال گردید.*\n{$Summary}" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
+self::sendSingleMessage($Context, $Message, 'ارسال پیامک تکی اول');
 }
 
 private static function manualExpire(Context $Context, string $Target_Input): void {

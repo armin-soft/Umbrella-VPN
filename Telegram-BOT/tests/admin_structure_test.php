@@ -22,6 +22,8 @@ public function isAdmin(): bool { return $this->Admin; }
 final class Repository {
 public static array $Session = [];
 public static array $Settings = [];
+public static function nightlyReportEnabled(int $Id): bool { return (self::$Settings['nightly_' . $Id] ?? '1') !== '0'; }
+public static function setNightlyReportEnabled(int $Id, bool $On): void { self::$Settings['nightly_' . $Id] = $On ? '1' : '0'; }
 public static array $User = [];
 public static array $Tickets = [];
 public static function getTicket(int $Id): ?array { return $Id === 42 ? ['ID' => 42, 'User_ID' => 1, 'Subject' => 'subject', 'Status' => 'open', 'Category' => 'other', 'Priority' => 'medium'] : null; }
@@ -105,7 +107,7 @@ $Menus = [
 'serverClientsMenu' => ['عملیات کلاینت سرور', 'مدیریت', ['فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'بروز رسانی داده های کاربران اول']],
 'serverConfig' => ['پیکربندی سرور', 'مدیریت', ['وضعیت سرور', 'سرویس های سرور', 'بروز رسانی میزان استفاده اول', 'تنظیمات ربات']],
 'reportMenu' => ['منوی گزارش', 'مدیریت', ['آمار کلی', 'گزارش روزانه', 'گزارش مالی', 'رتبه بندی']],
-'smsMenu' => ['منوی پیامک', 'مدیریت', ['ارسال پیامک تکی اول', 'ارسال پیامک همگانی اول', 'اطلاع رسانی اول', 'اطلاع رسانی سفارشی اول', 'اطلاع رسانی عدم استفاده', 'notify_all_start', 'app_push_start']],
+'smsMenu' => ['منوی پیامک', 'مدیریت', ['ارسال پیامک تکی اول', 'ارسال پیامک همگانی اول', 'اطلاع رسانی اول', 'اطلاع رسانی سفارشی اول', 'اطلاع رسانی عدم استفاده']],
 'supportMenu' => ['admin_support_menu', 'مدیریت', []],
 'ticketAdminMenu' => ['مدیریت تیکت ها', 'مدیریت', []],
 'subscriptionsMenu' => ['admin_subscriptions_menu', 'مدیریت', ['cfg_pricing', 'cfg_links']],
@@ -116,7 +118,7 @@ $AdminWidths = [
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
 'devicesMenu' => [1, 1, 1], 'accountsMenu' => [1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
-'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 1, 2, 1],
+'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 1, 1],
 'supportMenu' => [1], 'ticketAdminMenu' => [1], 'subscriptionsMenu' => [1, 1, 1], 'systemMenu' => [1, 1, 1],
 ];
 $Context = new Context();
@@ -190,8 +192,6 @@ $LeafParents = [
 'updateAllUsages' => 'پیکربندی سرور', 'configMenu' => 'پیکربندی سرور',
 'pricingMenu' => 'admin_subscriptions_menu', 'linksMenu' => 'admin_subscriptions_menu',
 'databaseBackup' => 'منوی سیستم', 'databaseReset' => 'منوی سیستم',
-'singleSmsMenu' => 'منوی پیامک', 'broadcastMenu' => 'منوی پیامک',
-'notifySingleMenu' => 'منوی پیامک', 'serverNotifyCustomStart' => 'منوی پیامک',
 'serverNotifyIdle' => 'منوی پیامک', 'appPushStart' => 'منوی پیامک', 'notifyAllStart' => 'منوی پیامک',
 ];
 foreach ($LeafParents as $Method => $Parent) {
@@ -206,7 +206,7 @@ $UserMenus = [
 'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول', 'منوی تمدید خودکار']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
-'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_notifications', 'app_devices', 'app_2fa']],
+'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_devices', 'app_2fa', 'nightly_report_off']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
@@ -231,6 +231,29 @@ $UserContext->CallbackData = $Call;
 $Route->invoke(null, $UserContext);
 check(calls() === $Expected, 'user ' . $Method . ': dispatcher routes category');
 }
+foreach (['singleSmsMenu' => 'single', 'notifySingleMenu' => 'notify', 'broadcastMenu' => 'broadcast', 'serverNotifyCustomStart' => 'custom'] as $Method => $Scope) {
+AdminFlow::$Method($Context);
+check(calls() === ['delivery_mode:' . $Scope . ':telegram', 'delivery_mode:' . $Scope . ':sms', 'delivery_mode:' . $Scope . ':app', 'delivery_mode:' . $Scope . ':all', 'منوی پیامک', 'مدیریت'], $Scope . ': four delivery channels and navigation');
+foreach (['telegram', 'sms', 'app', 'all'] as $Mode) {
+$Context->CallbackData = 'delivery_mode:' . $Scope . ':' . $Mode;
+$Route->invoke(null, $Context);
+check(Repository::$Session['Broadcast_Mode'] === $Mode, $Scope . ': selected channel preserved');
+check(Repository::$Session['Flow'] === match ($Scope) { 'single' => 'admin:sms_single_uid', 'notify' => 'admin:notify_uid', default => 'admin:notify_broadcast_text' }, $Scope . ': correct next step');
+}
+$Guest = new Context(false);
+Repository::$Session = ['Flow' => 'untouched'];
+AdminFlow::selectDeliveryMode($Guest, $Scope, 'all');
+check(Repository::$Session === ['Flow' => 'untouched'], 'delivery selection admin-only');
+}
+$UserContext->CallbackData = 'nightly_report_off';
+$Route->invoke(null, $UserContext);
+check(!Repository::nightlyReportEnabled($UserContext->UserId), 'nightly preference saved off');
+check(in_array('nightly_report_on', calls(), true), 'off state offers enable');
+$Route->invoke(null, $UserContext);
+check(!Repository::nightlyReportEnabled($UserContext->UserId), 'repeated off callback is idempotent');
+$UserContext->CallbackData = 'nightly_report_on';
+$Route->invoke(null, $UserContext);
+check(Repository::nightlyReportEnabled($UserContext->UserId) && in_array('nightly_report_off', calls(), true), 'nightly preference saved on');
 // Old security callbacks now open account settings, never a separate category.
 $UserContext->CallbackData = 'user_security_menu';
 $Route->invoke(null, $UserContext);

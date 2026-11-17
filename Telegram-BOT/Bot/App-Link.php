@@ -189,8 +189,8 @@ $Buttons = [];
 foreach ($Rows as $Row) {
 $Id = (string)$Row['Device_ID'];
 $Buttons[] = [[
-'text' => '⛔️ لغو اعتماد ' . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
-'callback_data' => 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page,
+'text' => ((int)($Row['Is_Trusted'] ?? 0) === 1 ? '⛔️ لغو اعتماد ' : '⚪️ اعتماد لغو شده · ') . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
+'callback_data' => (int)($Row['Is_Trusted'] ?? 0) === 1 ? 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page : 'app_device_status:' . substr($Id, 0, 24) . ':' . $Page,
 ]];
 }
 

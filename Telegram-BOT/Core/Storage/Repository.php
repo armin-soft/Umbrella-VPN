@@ -466,6 +466,14 @@ public static function totalUsers(): int {
 return (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users`');
 }
 
+public static function nightlyReportEnabled(int $UserId): bool {
+return (string)self::getSetting('Nightly_Report_User_' . $UserId, '1') !== '0';
+}
+
+public static function setNightlyReportEnabled(int $UserId, bool $Enabled): void {
+self::setSetting('Nightly_Report_User_' . $UserId, $Enabled ? '1' : '0');
+}
+
 public static function getSetting(string $Key, mixed $Default = null): mixed {
 $Value = Database::getInstance()->scalar(
 'SELECT `Value` FROM `Settings` WHERE `Key` = ? LIMIT 1',

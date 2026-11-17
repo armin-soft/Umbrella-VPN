@@ -564,6 +564,7 @@ $User_ID = (int)($U['Telegram_ID'] ?? 0);
 $Chat_ID = (int)($U['Chat_ID'] ?? 0);
 
 if ($User_ID <= 0 || $Chat_ID <= 0) continue;
+if (!Repository::nightlyReportEnabled($User_ID)) continue;
 $Has_Subscription = trim((string)($U['Subscription'] ?? '')) !== '';
 $Expiry_Stamp = (int)($U['Expiration_Time_Stamp'] ?? 0);
 

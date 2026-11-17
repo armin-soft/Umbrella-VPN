@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../Storage/Repository.php';
+require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 /**
@@ -152,6 +153,36 @@ return $Stored !== '' ? $Stored : Environment::getChannelUrl();
 
 public static function setChannelUrl(string $Url): void {
 Repository::setSetting('Channel_Url', trim($Url));
+}
+
+/** نام کاربری عمومی کانال، نه لینک دعوت یا نام کاربری یک شخص. */
+public static function channelUsername(string $Input): string {
+$Input = trim($Input);
+if (preg_match('~^(?:https?://)?(?:www\.)?t\.me/([A-Za-z][A-Za-z0-9_]{3,31})/?$~i', $Input, $Match)) return $Match[1];
+if (preg_match('/^@?([A-Za-z][A-Za-z0-9_]{3,31})$/', $Input, $Match)) return $Match[1];
+throw new InvalidArgumentException('نام کاربری عمومی کانال را مانند @channel_name یا https://t.me/channel_name بفرستید.');
+}
+
+/** هر دو مقدار فقط پس از پاسخ معتبر getChat و در یک تراکنش ذخیره می‌شوند. */
+public static function configureChannel(string $Input, bool $Force = true): string {
+$Username = self::channelUsername($Input);
+if (!$Force && strtolower((string)Repository::getSetting('Resolved_Channel_Username', '')) === strtolower($Username)
+&& preg_match('/^-100[0-9]+$/', (string)Repository::getSetting('Telegram_Channel_ID', ''))) {
+return (string)Repository::getSetting('Telegram_Channel_ID', '');
+}
+$Response = TelegramClient::call('getChat', ['chat_id' => '@' . $Username]);
+$Chat = $Response['result'] ?? [];
+$Id = (string)($Chat['id'] ?? '');
+if (($Response['ok'] ?? false) !== true || ($Chat['type'] ?? '') !== 'channel'
+|| !preg_match('/^-100[0-9]+$/', $Id) || strcasecmp((string)($Chat['username'] ?? ''), $Username) !== 0) {
+throw new RuntimeException('شناسه کانال دریافت نشد؛ نام کاربری و دسترسی ربات به کانال را بررسی کنید. تنظیمات قبلی تغییر نکرد.');
+}
+Database::getInstance()->transaction(static function () use ($Username, $Id): void {
+Repository::setSetting('Channel_Url', 'https://t.me/' . $Username);
+Repository::setSetting('Telegram_Channel_ID', $Id);
+Repository::setSetting('Resolved_Channel_Username', strtolower($Username));
+});
+return $Id;
 }
 
 /** Channel id used for membership checks and notices (numeric, may be negative). */

@@ -368,11 +368,17 @@ $Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری']],
 [['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
 [['🛡کنترل محتوا', 'app_filter']],
-[['🔔اعلان های برنامه', 'app_notifications']],
 [['📱دستگاه های من', 'app_devices']],
 [['🔐تأیید دومرحله‌ای', 'app_2fa']],
 ]);
+$On = Repository::nightlyReportEnabled($Context->UserId);
+$Rows[] = [Menu::button($On ? '🔔گزارش شبانه: روشن — خاموش کردن' : '🔕گزارش شبانه: خاموش — روشن کردن', $On ? 'nightly_report_off' : 'nightly_report_on')];
 self::categoryMenu($Context, 'حساب کاربری', $Rows);
+}
+
+public static function setNightlyReport(Context $Context, bool $Enabled): void {
+Repository::setNightlyReportEnabled($Context->UserId, $Enabled);
+self::accountMenu($Context);
 }
 
 public static function statsMenu(Context $Context): void {

@@ -334,16 +334,18 @@ match($Data) {
 'app_2fa_on' => AppFlow::setTwoStep($Context, true),
 'app_2fa_off' => AppFlow::setTwoStep($Context, false),
 'app_devices' => AppFlow::devices($Context),
-'app_notifications' => AppFlow::notifications($Context),
+'app_notifications' => UserFlow::accountMenu($Context),
+'nightly_report_on' => UserFlow::setNightlyReport($Context, true),
+'nightly_report_off' => UserFlow::setNightlyReport($Context, false),
 'app_filter_domains' => AppFlow::filterDomainsStart($Context),
-'app_push_start' => AdminFlow::appPushStart($Context),
+'app_push_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
 'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
 'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
 'cfg_pricing' => AdminFlow::pricingMenu($Context),
 'cfg_links' => AdminFlow::linksMenu($Context),
-'notify_all_start' => AdminFlow::notifyAllStart($Context),
+'notify_all_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_set_1' => AdminFlow::deviceLimitSet($Context, 1),
 'device_limit_set_2' => AdminFlow::deviceLimitSet($Context, 2),
 'device_limit_set_3' => AdminFlow::deviceLimitSet($Context, 3),
@@ -474,6 +476,12 @@ AdminFlow::ticketAdminView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0
 return;
 }
 
+if (str_starts_with($Data, 'delivery_mode:')) {
+$Parts = explode(':', $Data);
+AdminFlow::selectDeliveryMode($Context, $Parts[1] ?? '', $Parts[2] ?? '');
+return;
+}
+
 if (str_starts_with($Data, 'app_notifications_page:')) {
 AppFlow::notifications($Context, (int)substr($Data, strlen('app_notifications_page:')));
 return;
@@ -502,6 +510,12 @@ return;
 if (str_starts_with($Data, 'app_notification:')) {
 $Parts = explode(':', $Data);
 AppFlow::notificationView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0), (int)($Parts[3] ?? 0));
+return;
+}
+
+if (str_starts_with($Data, 'app_device_status:')) {
+$Parts = explode(':', $Data);
+AppFlow::devices($Context, (int)($Parts[2] ?? 0));
 return;
 }
 
