@@ -28,6 +28,9 @@ public static array $Settings = [];
 public static function nightlyReportEnabled(int $Id): bool { return (self::$Settings['nightly_' . $Id] ?? '1') !== '0'; }
 public static function setNightlyReportEnabled(int $Id, bool $On): void { self::$Settings['nightly_' . $Id] = $On ? '1' : '0'; }
 public static array $User = [];
+public static array $Updates = [];
+public static function updateUser(int $Id, array $Fields): void { self::$Updates[] = $Fields; self::$User = array_replace(self::$User, $Fields); }
+public static function getBalance(int $Id): float { return 1000000; }
 public static array $Tickets = [];
 public static function getTicket(int $Id): ?array { return $Id === 42 ? ['ID' => 42, 'User_ID' => 1, 'Subject' => 'subject', 'Status' => 'open', 'Category' => 'other', 'Priority' => 'medium'] : null; }
 public static function getTicketMessages(int $Id): array { return [['Sender_Type' => 'user', 'Message' => str_repeat('متن ', 1500), 'Photo_File_ID' => null]]; }
@@ -38,6 +41,10 @@ public static function getUser(int $Id): array { return self::$User; }
 public static function updateUserSession(int $Id, array $Values): void { self::$Session = array_replace(self::$Session, $Values); }
 public static function getUserSession(int $Id): array { return self::$Session; }
 public static function setSetting(string $Key, string $Value): void { self::$Settings[$Key] = $Value; }
+}
+final class ServerClient {
+public static ?array $Response = null;
+public static function getUser(string $Id): array { return self::$Response ?? ['StatusCode' => 200, 'Json' => ['uuid' => $Id, 'is_active' => true, 'enable' => true, 'usage_limit_GB' => 10, 'current_usage_GB' => 1]]; }
 }
 final class Common {
 public static function greet(Context $Context, string $Section): string { return $Section; }
@@ -58,7 +65,10 @@ self::$LastParams = $Params;
 return array_slice(self::$Devices, $Params[1], $Params[0]);
 }
 }
+final class BotConfig { public static function getPlanPrice(int|string $Key): float { return 1000; } }
 final class Helper {
+public static function formatCurrency(float $Value): string { return (string)$Value; }
+public static function remainingDuration(int $Stamp): string { return (string)$Stamp; }
 public static function ticketCategoryLabel(string $Value): string { return $Value; }
 public static function ticketPriorityLabel(string $Value): string { return $Value; }
 public static function userGreeting(Context $Context, string $Section): string { return $Section; }
@@ -207,17 +217,17 @@ check(str_contains($Body, 'Menu::adminHome()'), $Method . ': leaf keeps main men
 }
 $UserMenus = [
 'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
-'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول', 'منوی تمدید خودکار']],
+'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
-'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'nightly_report_off']],
+'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل']],
 'deviceMenu' => ['user_device_menu', ['app_filter', 'app_2fa', 'app_device_info', 'app_devices']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
 $UserWidths = [
 'serviceMenu' => [1, 1, 1, 1, 1, 1, 1],
-'subscriptionsMenu' => [1, 2, 1, 1, 1], 'walletMenu' => [1, 1, 1],
-'accountMenu' => [1, 1, 1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
+'subscriptionsMenu' => [1, 2, 1, 1], 'walletMenu' => [1, 1, 1],
+'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);
@@ -249,6 +259,7 @@ Repository::$Session = ['Flow' => 'untouched'];
 AdminFlow::selectDeliveryMode($Guest, $Scope, 'all');
 check(Repository::$Session === ['Flow' => 'untouched'], 'delivery selection admin-only');
 }
+Repository::$User = ['Client_ID' => 'test', 'Subscription' => 'monthly', 'Client_Status' => 'فعال', 'Expiration_Time_Stamp' => time() + 86400];
 $UserContext->CallbackData = 'nightly_report_off';
 $Route->invoke(null, $UserContext);
 check(!Repository::nightlyReportEnabled($UserContext->UserId), 'nightly preference saved off');
@@ -258,6 +269,7 @@ check(!Repository::nightlyReportEnabled($UserContext->UserId), 'repeated off cal
 $UserContext->CallbackData = 'nightly_report_on';
 $Route->invoke(null, $UserContext);
 check(Repository::nightlyReportEnabled($UserContext->UserId) && in_array('nightly_report_off', calls(), true), 'nightly preference saved on');
+Repository::$User = [];
 // Old security callbacks now open account settings, never a separate category.
 $UserContext->CallbackData = 'user_security_menu';
 $Route->invoke(null, $UserContext);
@@ -272,14 +284,17 @@ foreach ([
 'blank subscription' => [['Subscription' => '  ', 'Expiration_Time_Stamp' => $Now + 86400], false],
 'paused client' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400, 'Server_Enable' => 0], true],
 ] as $Label => [$User, $HasSubscription]) {
-Repository::$User = $User;
+Repository::$User = $User + ['Client_ID' => 'test'];
+$RenewVisible = trim((string)($User['Subscription'] ?? '')) !== '' && (int)($User['Expiration_Time_Stamp'] ?? 0) > 0 && (int)$User['Expiration_Time_Stamp'] <= time() + 3 * 86400;
 foreach ([true, false] as $Callback) {
 $UserContext->IsCallback = $Callback;
 Repository::$Session = ['Flow' => 'custom_plan_days', 'Pending_Payment' => 'preserved'];
 UserFlow::subscriptionsMenu($UserContext);
-$Expected = $HasSubscription ? ['اشتراک من', 'منوی تمدید خودکار', 'منوی خدمات ربات'] : array_merge($UserMenus['subscriptionsMenu'][1], ['منوی خدمات ربات']);
+$Expected = $HasSubscription ? ['اشتراک من'] : $UserMenus['subscriptionsMenu'][1];
+if ($RenewVisible) $Expected[] = 'منوی تمدید خودکار';
+$Expected[] = 'منوی خدمات ربات';
 check(calls() === $Expected, $Label . ': correct subscription actions');
-check(array_map('count', TelegramClient::$Last['inline_keyboard']) === ($HasSubscription ? [1, 1, 1] : [1, 2, 1, 1, 1]), $Label . ': subscription row grouping');
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === array_merge($HasSubscription ? [1] : [1, 2, 1], $RenewVisible ? [1, 1] : [1]), $Label . ': subscription row grouping');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], $Label . ': navigation preserves payment');
 }
 }
@@ -377,4 +392,66 @@ check(TelegramClient::$Text === 'unchanged', 'ticket pagination cannot expose an
 TelegramClient::$Text = 'unchanged';
 AdminFlow::ticketAdminView($OtherUser, 42, 1);
 check(!str_contains(TelegramClient::$Text, 'متن متن'), 'admin thread pagination denies non-admin access');
+// Visibility and old-callback authorization share the same policy.
+$Base = ['Client_ID' => 'test', 'Subscription' => 'monthly', 'Is_Blocked' => 0,
+'Client_Status' => 'فعال', 'Expiration_Time_Stamp' => time() + 10 * 86400];
+$Live = ['uuid' => 'test', 'is_active' => true, 'enable' => true, 'usage_limit_GB' => 10, 'current_usage_GB' => 1];
+$Cases = [
+'healthy long subscription' => [$Base, $Live, true, false],
+'exactly three days' => [array_replace($Base, ['Expiration_Time_Stamp' => time() + 3 * 86400]), $Live, true, true],
+'over three days' => [array_replace($Base, ['Expiration_Time_Stamp' => time() + 3 * 86400 + 60]), $Live, true, false],
+'under three days' => [array_replace($Base, ['Expiration_Time_Stamp' => time() + 1]), $Live, true, true],
+'elapsed retained subscription' => [array_replace($Base, ['Expiration_Time_Stamp' => time() - 1]), $Live, false, true],
+'no subscription' => [array_replace($Base, ['Subscription' => null]), $Live, false, false],
+'unknown expiry' => [array_replace($Base, ['Expiration_Time_Stamp' => null]), $Live, false, false],
+'blocked' => [array_replace($Base, ['Is_Blocked' => 1]), $Live, false, false],
+'admin hold' => [array_replace($Base, ['Deactivation_Message' => 'hold']), $Live, false, false],
+'channel suspension' => [array_replace($Base, ['Channel_Client_Disabled_At' => time()]), $Live, false, false],
+'local disabled' => [array_replace($Base, ['Client_Status' => 'غیرفعال']), $Live, false, false],
+'server disabled' => [$Base, array_replace($Live, ['enable' => false]), false, false],
+'exhausted long plan' => [$Base, array_replace($Live, ['current_usage_GB' => 10, 'is_active' => false]), false, true],
+'over quota' => [$Base, array_replace($Live, ['current_usage_GB' => 11]), false, true],
+'zero quota not proof of exhaustion' => [$Base, array_replace($Live, ['usage_limit_GB' => 0, 'current_usage_GB' => 0]), true, false],
+'unknown usage' => [$Base, array_diff_key($Live, ['current_usage_GB' => 1]), false, false],
+'stale local zero remaining' => [array_replace($Base, ['Remaining_Usage_GB' => 0, 'Used_Usage_GB' => 10, 'Total_Usage_GB' => 10]), $Live, true, false],
+'no live data' => [$Base, null, false, false],
+'near expiry with unavailable live data' => [array_replace($Base, ['Expiration_Time_Stamp' => time() + 86400]), null, false, true],
+'wrong UUID' => [$Base, array_replace($Live, ['uuid' => 'someone-else']), false, false],
+];
+foreach ($Cases as $Name => [$Account, $LiveRow, $Nightly, $Renew]) {
+Repository::$User = $Account;
+ServerClient::$Response = ['StatusCode' => $LiveRow === null ? 503 : 200, 'Json' => $LiveRow];
+foreach ([true, false] as $Callback) {
+$UserContext->IsCallback = $Callback;
+UserFlow::accountMenu($UserContext);
+check(in_array('nightly_report_off', calls(), true) === $Nightly, $Name . ': nightly control visibility');
+UserFlow::subscriptionsMenu($UserContext);
+check(in_array('منوی تمدید خودکار', calls(), true) === $Renew, $Name . ': auto-renew visibility');
+}
+}
+$UserContext->IsCallback = true;
+Repository::$User = [];
+Repository::$Settings['nightly_1'] = '1';
+UserFlow::setNightlyReport($UserContext, false);
+check(Repository::nightlyReportEnabled(1), 'old nightly callback cannot change preference without active subscription');
+Repository::$User = $Base; ServerClient::$Response = ['StatusCode' => 200, 'Json' => $Live];
+Repository::$Updates = [];
+$UserContext->CallbackData = 'auto_renew_on_1';
+UserFlow::enableAutoRenew($UserContext);
+check(Repository::$Updates === [] && !in_array('auto_renew_on_1', calls(), true), 'old enable callback denied outside renewal window');
+UserFlow::toggleAutoRenew($UserContext);
+check(Repository::$Updates === [], 'legacy toggle cannot enable outside window');
+UserFlow::autoRenewMenu($UserContext);
+check(!in_array('auto_renew_on_1', calls(), true), 'direct old menu callback cannot reveal hidden controls');
+Repository::$User = array_replace($Base, ['Expiration_Time_Stamp' => time() + 86400]);
+UserFlow::autoRenewMenu($UserContext);
+check(in_array('auto_renew_on_1', calls(), true), 'eligible menu renders plan controls');
+UserFlow::enableAutoRenew($UserContext);
+check((string)Repository::$User['Auto_Renew_Plan'] === '1', 'eligible enable still works');
+Repository::$User['Expiration_Time_Stamp'] = time() + 10 * 86400;
+UserFlow::subscriptionsMenu($UserContext);
+check(!in_array('منوی تمدید خودکار', calls(), true) && (string)Repository::$User['Auto_Renew_Plan'] === '1', 'hiding menu preserves existing renewal setting');
+UserFlow::disableAutoRenew($UserContext);
+check(Repository::$User['Auto_Renew_Plan'] === null, 'cancellation remains available through old callback outside window');
+ServerClient::$Response = null;
 echo "OK menu structure tests ({$Passed} assertions)\n";

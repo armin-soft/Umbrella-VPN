@@ -317,9 +317,60 @@ $Text = Common::greet($Context, $Title) . "\n📌*بخش مورد نظر را ا
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
+/** Menu eligibility uses the current subscription, not merely a leftover UUID. */
+private static function subscriptionMenuState(int $UserId): array {
+$User = Repository::getUser($UserId) ?? [];
+$Live = null;
+$Client = trim((string)($User['Client_ID'] ?? ''));
+if ($Client !== '' && $Client !== '_' && trim((string)($User['Subscription'] ?? '')) !== '') {
+try {
+$Response = ServerClient::getUser($Client);
+$Code = (int)($Response['StatusCode'] ?? 0);
+$Data = $Response['Json'] ?? null;
+if ($Code >= 200 && $Code < 300 && is_array($Data)
+&& (!isset($Data['uuid']) || (string)$Data['uuid'] === $Client)) $Live = $Data;
+} catch (Throwable $Error) { error_log('[Umbrella-Bot][Menu-Subscription] ' . $Error->getMessage()); }
+}
+return [$User, $Live];
+}
+
+private static function hasMenuSubscription(array $User): bool {
+$Client = trim((string)($User['Client_ID'] ?? ''));
+return $Client !== '' && $Client !== '_' && trim((string)($User['Subscription'] ?? '')) !== ''
+&& (int)($User['Is_Blocked'] ?? 0) === 0
+&& trim((string)($User['Deactivation_Message'] ?? '')) === ''
+&& (int)($User['Channel_Client_Disabled_At'] ?? 0) <= 0;
+}
+
+private static function nightlyMenuVisible(array $User, ?array $Live): bool {
+if (!self::hasMenuSubscription($User) || (int)($User['Expiration_Time_Stamp'] ?? 0) <= time()
+|| !in_array((string)($User['Client_Status'] ?? ''), ['فعال', '✅فعال'], true)
+|| $Live === null || (int)($Live['is_active'] ?? 0) !== 1 || (int)($Live['enable'] ?? 0) !== 1) return false;
+$Limit = (float)($Live['usage_limit_GB'] ?? 0);
+return $Limit <= 0 || (isset($Live['current_usage_GB']) && (float)$Live['current_usage_GB'] < $Limit);
+}
+
+private static function autoRenewMenuVisible(array $User, ?array $Live): bool {
+if (!self::hasMenuSubscription($User)) return false;
+$Expires = (int)($User['Expiration_Time_Stamp'] ?? 0);
+// Exact inclusive 72-hour boundary; unknown/zero dates are not "due".
+$Due = $Expires > 0 && $Expires <= time() + 3 * 86400;
+$Limit = (float)($Live['usage_limit_GB'] ?? 0);
+$Exhausted = $Live !== null && $Limit > 0 && isset($Live['current_usage_GB'])
+&& (float)$Live['current_usage_GB'] >= $Limit;
+return $Due || $Exhausted;
+}
+
+private static function guardAutoRenewMenu(Context $Context): bool {
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+if (self::autoRenewMenuVisible($User, $Live)) return true;
+self::subscriptionsMenu($Context);
+return false;
+}
+
 public static function subscriptionsMenu(Context $Context): void {
 if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
-$User = Repository::getUser($Context->UserId);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
 $Subscription = trim((string)($User['Subscription'] ?? ''));
 $Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
 // توقف کلاینت، مالکیت اشتراک را از بین نمی‌برد. تاریخ نامشخص نیز
@@ -334,7 +385,9 @@ $Rows = array_merge($Rows, Menu::rows([
 [['🎁اشتراک رایگان', 'اشتراک رایگان اول']],
 ]));
 }
+if (self::autoRenewMenuVisible($User, $Live)) {
 $Rows[] = [Menu::button('🔄تمدید خودکار', 'منوی تمدید خودکار')];
+}
 self::categoryMenu($Context, 'مدیریت اشتراک', $Rows);
 }
 
@@ -351,8 +404,11 @@ $Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری']],
 [['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
 ]);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+if (self::nightlyMenuVisible($User, $Live)) {
 $On = Repository::nightlyReportEnabled($Context->UserId);
 $Rows[] = [Menu::button($On ? '🔔گزارش شبانه: روشن — خاموش کردن' : '🔕گزارش شبانه: خاموش — روشن کردن', $On ? 'nightly_report_off' : 'nightly_report_on')];
+}
 self::categoryMenu($Context, 'حساب کاربری', $Rows);
 }
 
@@ -366,7 +422,8 @@ self::categoryMenu($Context, 'دستگاه من', Menu::rows([
 }
 
 public static function setNightlyReport(Context $Context, bool $Enabled): void {
-Repository::setNightlyReportEnabled($Context->UserId, $Enabled);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+if (self::nightlyMenuVisible($User, $Live)) Repository::setNightlyReportEnabled($Context->UserId, $Enabled);
 self::accountMenu($Context);
 }
 
@@ -576,6 +633,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeti
 }
 
 public static function autoRenewMenu(Context $Context): void {
+if (!self::guardAutoRenewMenu($Context)) return;
 TelegramClient::sendChatAction($Context->ChatId);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -614,6 +672,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text .
 }
 
 public static function enableAutoRenew(Context $Context): void {
+if (!self::guardAutoRenewMenu($Context)) return;
 $Plan = str_replace('auto_renew_on_', '', trim((string)($Context->CallbackData ?? '')));
 $Plan_Name = self::AUTO_RENEW_PLANS[$Plan] ?? '';
 
@@ -675,6 +734,8 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️تمدید خو
 self::profile($Context, false);
 return;
 }
+
+if (!self::guardAutoRenewMenu($Context)) return;
 
 $Duration = (int)($User['Package_Duration'] ?? 0);
 $Has_Subscription = $Duration > 0 || trim((string)($User['Client_ID'] ?? '')) !== '';
