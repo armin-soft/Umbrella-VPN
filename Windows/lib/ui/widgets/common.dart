@@ -100,6 +100,8 @@ class GradientButton extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     final bool active = enabled && !loading && onPressed != null;
     final Color base = tone ?? colors.primary;
+    final Color end = Color.lerp(base, Colors.black, 0.35)!;
+    final Color foreground = AppTheme.gradientForeground(base, end);
     final Widget child = AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       height: height,
@@ -109,7 +111,7 @@ class GradientButton extends StatelessWidget {
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
           colors: active
-              ? <Color>[base, Color.lerp(base, Colors.black, 0.35)!]
+              ? <Color>[base, end]
               : <Color>[colors.surfaceHigh, colors.surfaceHigh],
         ),
         borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
@@ -142,21 +144,23 @@ class GradientButton extends StatelessWidget {
               size: AppMetrics.iconMd,
               color: !active
                   ? colors.textSecondary
-                  : (tone == null ? colors.onPrimary : colors.textPrimary),
+                  : foreground,
             ),
           if (loading || icon != null) const SizedBox(width: AppMetrics.space3),
-          Text(
+          Flexible(
+            child: Text(
             Fa.num(label),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   // دکمه کم رنگ (tone) رنگ روشن دارد؛ متن سفید روی آن
                   // خوانده نمی شود.
                   color: !active
                       ? colors.textSecondary
-                      : (tone == null
-                          ? colors.onPrimary
-                          : colors.textPrimary),
+                      : foreground,
                   fontWeight: FontWeight.w800,
                 ),
+            ),
           ),
         ],
       ),

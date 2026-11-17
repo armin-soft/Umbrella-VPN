@@ -15,7 +15,8 @@
       "url": "https://github.com/hiddify/hiddify-core/releases/download/v5.9.1/hiddify-lib-windows-amd64.tar.gz",
       "archive": "tgz",
       "inside": "UmbrellaCore.dll",
-      "required": true
+      "required": true,
+      "sha256": "3c8084a520797e99d2e44dd2e111af10c37539d24f37fada0345bd7f1721240a"
     }
   ]
 }

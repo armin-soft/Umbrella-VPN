@@ -144,7 +144,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             unread: auth.unreadCount,
             onNotifications: _openNotifications,
             onToggleTheme: settings.toggleTheme,
-            darkTheme: settings.themeMode != ThemeMode.light,
+            darkTheme: Theme.of(context).brightness == Brightness.dark,
           ),
           Expanded(
             // در چیدمان راست به چپ، فرزند اول سمت راست می نشیند؛ پس نوار کنار

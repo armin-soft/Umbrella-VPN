@@ -20,6 +20,7 @@ class SettingsController extends ChangeNotifier {
   final SoundService _sound;
   final WindowService _window;
 
+  Future<void> _pendingSave = Future<void>.value();
   AppSettings _settings = const AppSettings();
   AppSettings get settings => _settings;
 
@@ -62,10 +63,18 @@ class SettingsController extends ChangeNotifier {
   Future<void> update(AppSettings next, {bool applyNative = true}) async {
     final AppSettings previous = _settings;
     _settings = next;
-    await LocalStore.instance.writeJson(StoreKeys.settings, next.toJson());
     _sound.enabled = next.soundEnabled;
     _window.closeToTray = next.closeToTray;
+    // Apply appearance immediately; serialize disk writes so fast toggles cannot
+    // persist an older theme after a newer one.
     notifyListeners();
+    final Future<void> save = _pendingSave.then(
+      (_) => LocalStore.instance.writeJson(StoreKeys.settings, next.toJson()),
+    );
+    _pendingSave = save.catchError((Object error) {
+      AppLogger.instance.add('ذخیره تنظیمات ناموفق بود: $error', level: 'error');
+    });
+    await save;
     if (!applyNative) {
       return;
     }
@@ -82,7 +91,10 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> toggleTheme() async {
-    final ThemePreference next = _settings.theme == ThemePreference.dark
+    final bool isDark = _settings.theme == ThemePreference.dark ||
+        (_settings.theme == ThemePreference.system &&
+            WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
+    final ThemePreference next = isDark
         ? ThemePreference.light
         : ThemePreference.dark;
     await setTheme(next);

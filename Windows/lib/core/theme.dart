@@ -53,8 +53,8 @@ class UmbrellaColors extends ThemeExtension<UmbrellaColors> {
     primaryDeep: Color(0xFF8E0E1B),
     success: Color(0xFF22C55E),
     warning: Color(0xFFF59E0B),
-    danger: Color(0xFFEF4444),
-    info: Color(0xFF3B82F6),
+    danger: Color(0xFFFF6B6B),
+    info: Color(0xFF60A5FA),
     glass: Color(0x14FFFFFF),
     shadow: Color(0x99000000),
     onPrimary: Color(0xFFFFFFFF),
@@ -71,8 +71,8 @@ class UmbrellaColors extends ThemeExtension<UmbrellaColors> {
     primary: Color(0xFFD21027),
     primarySoft: Color(0xFFFDE7EA),
     primaryDeep: Color(0xFF9B0C1D),
-    success: Color(0xFF16A34A),
-    warning: Color(0xFFD97706),
+    success: Color(0xFF15803D),
+    warning: Color(0xFF92400E),
     danger: Color(0xFFDC2626),
     info: Color(0xFF2563EB),
     glass: Color(0x0F000000),
@@ -151,7 +151,10 @@ class UmbrellaColors extends ThemeExtension<UmbrellaColors> {
 
 extension UmbrellaThemeX on BuildContext {
   UmbrellaColors get colors =>
-      Theme.of(this).extension<UmbrellaColors>() ?? UmbrellaColors.dark;
+      Theme.of(this).extension<UmbrellaColors>() ??
+      (Theme.of(this).brightness == Brightness.dark
+          ? UmbrellaColors.dark
+          : UmbrellaColors.light);
 
   LinearGradient get brandGradient => LinearGradient(
         begin: Alignment.topRight,
@@ -304,6 +307,20 @@ class AppTheme {
 
   static const String fontFamily = 'Vazirmatn';
 
+  static Color gradientForeground(Color start, Color end) {
+    double contrast(Color a, Color b) {
+      final double x = a.computeLuminance();
+      final double y = b.computeLuminance();
+      return x > y ? (x + 0.05) / (y + 0.05) : (y + 0.05) / (x + 0.05);
+    }
+    double worst(Color foreground) {
+      final double a = contrast(foreground, start);
+      final double b = contrast(foreground, end);
+      return a < b ? a : b;
+    }
+    return worst(Colors.white) >= worst(Colors.black) ? Colors.white : Colors.black;
+  }
+
   static ThemeData dark() {
     const UmbrellaColors palette = UmbrellaColors.dark;
     return _base(
@@ -345,7 +362,6 @@ class AppTheme {
     required Brightness brightness,
     required ColorScheme scheme,
   }) {
-    final bool isDark = brightness == Brightness.dark;
     final TextTheme text = TextTheme(
       displayLarge: TextStyle(fontWeight: FontWeight.w900, color: palette.textPrimary, height: 1.25),
       displayMedium: TextStyle(fontWeight: FontWeight.w900, color: palette.textPrimary, height: 1.25),
@@ -376,7 +392,42 @@ class AppTheme {
         'Segoe UI Symbol',
         'Tahoma',
       ],
-      colorScheme: scheme,
+      colorScheme: scheme.copyWith(
+        primaryContainer: palette.primarySoft,
+        onPrimaryContainer: palette.textPrimary,
+        secondaryContainer: palette.surfaceHigh,
+        onSecondaryContainer: palette.textPrimary,
+        surfaceContainerLowest: palette.background,
+        surfaceContainerLow: palette.surface,
+        surfaceContainer: palette.surface,
+        surfaceContainerHigh: palette.surfaceHigh,
+        surfaceContainerHighest: palette.surfaceHigh,
+        onSurfaceVariant: palette.textSecondary,
+        outline: palette.textSecondary,
+        outlineVariant: palette.border,
+        surfaceTint: Colors.transparent,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: palette.surface,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: text.titleLarge?.copyWith(fontFamily: fontFamily, fontSize: 20),
+        contentTextStyle: text.bodyMedium?.copyWith(fontFamily: fontFamily, fontSize: 14),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: palette.surface,
+        modalBackgroundColor: palette.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: palette.surface,
+        surfaceTintColor: Colors.transparent,
+        textStyle: TextStyle(fontFamily: fontFamily, color: palette.textPrimary),
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: palette.primary,
+        selectionColor: palette.primary.withValues(alpha: 0.25),
+        selectionHandleColor: palette.primary,
+      ),
       scaffoldBackgroundColor: palette.background,
       canvasColor: palette.background,
       splashFactory: InkSparkle.splashFactory,
@@ -405,7 +456,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isDark ? palette.surfaceHigh : palette.surfaceHigh,
+        fillColor: palette.surfaceHigh,
         hintStyle: TextStyle(color: palette.textSecondary, fontFamily: fontFamily),
         labelStyle: TextStyle(color: palette.textSecondary, fontFamily: fontFamily),
         contentPadding: const EdgeInsets.symmetric(
