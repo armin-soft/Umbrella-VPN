@@ -98,11 +98,11 @@ exit;
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && isset($_GET['Authority'])) {
-$Status = strtoupper((string)($_GET['Status'] ?? 'NOK'));
-$User_ID = (int)($_GET['Uid'] ?? 0);
+$Status = is_string($_GET['Status'] ?? null) ? strtoupper($_GET['Status']) : '';
+$User_ID = is_string($_GET['Uid'] ?? null) && ctype_digit($_GET['Uid']) ? (int)$_GET['Uid'] : 0;
 
 try {
-\SubscriptionFlow::handleGatewayCallback($User_ID, $Status, (string)$_GET['Authority']);
+if (is_string($_GET['Authority'])) \SubscriptionFlow::handleGatewayCallback($User_ID, $Status, (string)$_GET['Authority']);
 }
 
 catch (Throwable $Error) {

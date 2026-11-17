@@ -849,6 +849,27 @@ Database::getInstance()->execute(
 );
 }
 
+/** Commit receipt, wallet credit and claim together; database failures keep the order retryable. */
+public static function settleGatewayFunds(int $User_ID, array $Snapshot, float $Amount, string $Reference, float $Credit): bool {
+$Pending = (string)($Snapshot['Pending_Payment'] ?? '');
+if ($User_ID <= 0 || $Pending === '' || !is_finite($Amount) || $Amount <= 0
+|| !is_finite($Credit) || $Credit < 0 || $Credit > $Amount || !preg_match('/^[1-9][0-9]*$/D', $Reference)) {
+throw new InvalidArgumentException('Invalid gateway settlement');
+}
+return Database::getInstance()->transaction(static function ($Db) use ($User_ID, $Snapshot, $Amount, $Reference, $Credit, $Pending): bool {
+$Current = $Db->fetch('SELECT * FROM `User_Sessions` WHERE `Telegram_ID` = ? FOR UPDATE', [$User_ID]);
+foreach (['Pending_Payment', 'Pending_Topup', 'Pending_Plan', 'Pending_Custom_Plan'] as $Key) {
+if ((string)($Current[$Key] ?? '') !== (string)($Snapshot[$Key] ?? '')) return false;
+}
+$User = $Db->fetch('SELECT `Balance` FROM `Users` WHERE `Telegram_ID` = ? FOR UPDATE', [$User_ID]);
+if ($User === null) throw new RuntimeException('Gateway user missing');
+if (!self::claimPendingPayment($User_ID, $Pending)) return false;
+self::recordGatewayPayment($User_ID, $Amount, $Reference);
+if ($Credit > 0) self::addMoney($User_ID, $Credit, 'شارژ اعتبار از طریق درگاه پرداخت زرین پال', 'gateway');
+return true;
+});
+}
+
 /** سفارش پرداخت را به صورت اتمی تصاحب می کند؛ فقط یک مسیر تسویه می کند. */
 public static function claimPendingPayment(int $User_ID, string $Pending): bool {
 if ($User_ID <= 0 || $Pending === '') return false;

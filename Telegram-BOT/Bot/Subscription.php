@@ -302,7 +302,7 @@ $Direct_Url = '';
 if (Zarinpal::isConfigured() && $Phone !== '') {
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 $Call_Back_Url = $Call_Back_Base . (str_contains($Call_Back_Base, '?') ? '&' : '?') . 'Uid=' . $Context->UserId;
-$Pre = Zarinpal::request($Need, $Call_Back_Url, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
+$Pre = self::preflightGateway($Context, $Need, $Call_Back_Url, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
 
 if (is_array($Pre) && isset($Pre['Authority'], $Pre['RedirectUrl'])) {
 $Direct_Url = Zarinpal::payLink($Pre);
@@ -355,12 +355,12 @@ $Pre = null;
 if (Zarinpal::isConfigured() && $Phone !== '') {
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 $Call_Back_Url = $Call_Back_Base . (str_contains($Call_Back_Base, '?') ? '&' : '?') . 'Uid=' . $Context->UserId;
-$Pre = Zarinpal::request($Need, $Call_Back_Url, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
+$Pre = self::preflightGateway($Context, $Need, $Call_Back_Url, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
 
 if (is_array($Pre) && isset($Pre['Authority'], $Pre['RedirectUrl'])) {
 $Direct_Url = Zarinpal::payLink($Pre);
 $Final_Amount = (float)($Pre['Amount'] ?? $Need);
-$Fee_Label = Helper::formatCurrency((float)($Pre['Fee'] ?? ($Final_Amount - $Need)));
+$Fee_Label = self::paymentAmount((float)($Pre['Fee'] ?? ($Final_Amount - $Need)));
 Repository::updateUserSession($Context->UserId, [
 'Pending_Custom_Plan' => $Days . '|' . $Total . '|' . $GB,
 'Pending_Topup' => (string)$Need,
@@ -370,7 +370,7 @@ Repository::updateUserSession($Context->UserId, [
 }
 }
 
-$Final_Amount_Label = $Final_Amount > 0 ? Helper::formatCurrency($Final_Amount) : $Need_Label;
+$Final_Amount_Label = $Final_Amount > 0 ? self::paymentAmount($Final_Amount) : $Need_Label;
 $Pay_Button = $Direct_Url !== ''
 ? [['text' => '💳پرداخت ' . $Final_Amount_Label . ' از درگاه', 'url' => $Direct_Url]]
 : [['text' => '💳پرداخت ' . $Need_Label . ' از درگاه', 'callback_data' => 'پرداخت کسری کیف پول']];
@@ -385,7 +385,7 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . "⚠️موجود
 . "├─💰مبلغ کل: *{$Total_Label}*\n"
 . "├─💳موجودی کیف پول: *{$Balance_Label}*\n"
 . $Fee_Line
-. "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد)\n\n"
+. "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
 . "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
@@ -484,12 +484,12 @@ $Fee_Label = '';
 if (Zarinpal::isConfigured()) {
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 $Call_Back_Url = $Call_Back_Base . (str_contains($Call_Back_Base, '?') ? '&' : '?') . 'Uid=' . $Context->UserId;
-$Pre = Zarinpal::request($Need_Gateway_Amount, $Call_Back_Url, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
+$Pre = self::preflightGateway($Context, $Need_Gateway_Amount, $Call_Back_Url, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
 
 if (is_array($Pre) && isset($Pre['Authority'], $Pre['RedirectUrl'])) {
 $Direct_Url = Zarinpal::payLink($Pre);
 $Final_Amount = (float)($Pre['Amount'] ?? $Need_Gateway_Amount);
-$Fee_Label = Helper::formatCurrency((float)($Pre['Fee'] ?? ($Final_Amount - $Need_Gateway_Amount)));
+$Fee_Label = self::paymentAmount((float)($Pre['Fee'] ?? ($Final_Amount - $Need_Gateway_Amount)));
 Repository::updateUserSession($Context->UserId, [
 'Pending_Custom_Plan' => $Days . '|' . $Amount . '|' . $GB,
 'Pending_Topup' => (string)$Need_Gateway_Amount,
@@ -507,7 +507,7 @@ Repository::updateUserSession($Context->UserId, [
 ]);
 }
 
-$Final_Amount_Label = $Final_Amount > 0 ? Helper::formatCurrency($Final_Amount) : $Need_Label;
+$Final_Amount_Label = $Final_Amount > 0 ? self::paymentAmount($Final_Amount) : $Need_Label;
 $Pay_Button = $Direct_Url !== ''
 ? [['text' => '💳پرداخت ' . $Final_Amount_Label . ' از درگاه', 'url' => $Direct_Url]]
 : [['text' => '💳پرداخت ' . $Need_Label . ' از درگاه', 'callback_data' => 'پرداخت کسری کیف پول']];
@@ -519,7 +519,7 @@ $Text = $Greeting . "⚠️موجودی کیف پول برای خرید کافی
 . "├─💳موجودی: *{$Balance_Label}*\n"
 . "├─📉کسری: *{$Need_Label}*\n"
 . $Fee_Line
-. "└─🏦قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد)\n\n"
+. "└─🏦قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
 . "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
@@ -909,18 +909,18 @@ $Call_Back_Base = Environment::getPaymentCallbackUrl();
 
 if ($Call_Back_Base !== '') {
 $Call_Back_Url = $Call_Back_Base . (str_contains($Call_Back_Base, '?') ? '&' : '?') . 'Uid=' . $Context->UserId;
-$Pre_Payment = Zarinpal::request((float)$Need_Gateway_Amount, $Call_Back_Url, 'خرید اشتراک ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone((string)($User['Phone'] ?? '')));
+$Pre_Payment = self::preflightGateway($Context, (float)$Need_Gateway_Amount, $Call_Back_Url, 'خرید اشتراک ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone((string)($User['Phone'] ?? '')));
 
 if (is_array($Pre_Payment) && isset($Pre_Payment['Authority'], $Pre_Payment['RedirectUrl'])) {
 $Direct_Url = Zarinpal::payLink($Pre_Payment);
 $Final_Amount = (float)($Pre_Payment['Amount'] ?? (float)$Need_Gateway_Amount);
-$Fee_Label = Helper::formatCurrency((float)($Pre_Payment['Fee'] ?? ($Final_Amount - (float)$Need_Gateway_Amount)));
+$Fee_Label = self::paymentAmount((float)($Pre_Payment['Fee'] ?? ($Final_Amount - (float)$Need_Gateway_Amount)));
 Repository::updateUserSession($Context->UserId, ['Pending_Payment' => $Month_Key . '|' . $Final_Amount . '|' . $Pre_Payment['Authority']]);
 }
 }
 }
 
-$Final_Amount_Label = $Final_Amount > 0 ? Helper::formatCurrency($Final_Amount) : Helper::formatCurrency($Need_Gateway_Amount);
+$Final_Amount_Label = $Final_Amount > 0 ? self::paymentAmount($Final_Amount) : Helper::formatCurrency($Need_Gateway_Amount);
 $Pay_Button = $Direct_Url !== ''
 ? [['text' => '💳پرداخت ' . $Final_Amount_Label . ' از درگاه', 'url' => $Direct_Url]]
 : [['text' => '💳پرداخت ' . $Final_Amount_Label . ' از درگاه', 'callback_data' => 'پرداخت کسری کیف پول']];
@@ -933,7 +933,7 @@ TelegramClient::sendMessage($Context->ChatId, $Greeting . " *⚠️موجودی 
 . "├─💳موجودی کیف پول: *{$Balance_Label}*\n"
 . "├─📉کسری از کیف پول: *" . Helper::formatCurrency($Need_Gateway_Amount) . "*\n"
 . $Fee_Line
-. "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد)\n\n"
+. "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
 . "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
@@ -1018,6 +1018,29 @@ return;
 self::purchase($Context, $Type === '' ? 'free' : $Type);
 }
 
+private static function paymentAmount(float $Toman): string {
+$Rial = (int)round($Toman * 10);
+return Helper::toPersian(number_format($Rial / 10, $Rial % 10 === 0 ? 0 : 1, '.', '٬')) . ' تومان';
+}
+
+private static function paymentSummary(array $Payment): string {
+return "💰مبلغ اصلی: " . self::paymentAmount((float)$Payment['Original_Amount'])
+. "\n💸کارمزد پرداختی خریدار: " . self::paymentAmount((float)$Payment['Fee'])
+. "\n💳جمع پرداخت: " . self::paymentAmount((float)$Payment['Amount'])
+. "\nℹ️کارمزد در همین جمع لحاظ شده و نباید در صفحه درگاه دوباره اضافه شود.\n";
+}
+
+private static function preflightGateway(Context $Context, float $Amount, string $Callback, string $Description, string $Phone): ?array {
+$Payment = Zarinpal::request($Amount, $Callback, $Description, $Phone);
+if ($Payment === null) {
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال')
+. '⚠️ساخت درخواست پرداخت انجام نشد: ' . Zarinpal::requestErrorMessage() . Helper::userFooter());
+} else {
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . self::paymentSummary($Payment) . Helper::userFooter());
+}
+return $Payment;
+}
+
 private static function startGatewayPayment(Context $Context, string $Month_Key, string $Name, float $Amount): void {
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 
@@ -1038,7 +1061,7 @@ $Payment = Zarinpal::request($Amount, $Call_Back_Url, 'خرید اشتراک ' .
 if ($Payment === null) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "❌خطا: اتصال به درگاه پرداخت ناموفق بود.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "⚠️علت: سرور زرین پال پاسخ نداد یا مرچنت کد نامعتبر است.\n"
+. "⚠️علت: " . Zarinpal::requestErrorMessage() . "\n"
 . "🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n"
 . "📞در صورت ادامه مشکل با پشتیبانی تماس بگیرید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'پرداخت کسری کیف پول']],
@@ -1050,7 +1073,7 @@ return;
 
 $Final_Amount = (float)($Payment['Amount'] ?? $Amount);
 Repository::updateUserSession($Context->UserId, ['Pending_Payment' => $Month_Key . '|' . $Final_Amount . '|' . $Payment['Authority']]);
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "➖➖➖➖➖➖➖➖➖\n💎اشتراک انتخابی: {$Name}\n💳مبلغ قابل پرداخت: " . Helper::formatCurrency($Final_Amount) . " (شامل کارمزد)\n➖➖➖➖➖➖➖➖➖\n👌برای تکمیل خرید بر روی دکمه پرداخت کلیک کنید.\n⚠️نکته:پس از بازگشت از درگاه،اشتراک شما به صورت خودکار فعال می گردد." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "➖➖➖➖➖➖➖➖➖\n💎اشتراک انتخابی: {$Name}\n" . self::paymentSummary($Payment) . "\n➖➖➖➖➖➖➖➖➖\n👌برای تکمیل خرید بر روی دکمه پرداخت کلیک کنید.\n⚠️نکته:پس از بازگشت از درگاه،اشتراک شما به صورت خودکار فعال می گردد." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💳پرداخت امن', 'url' => Zarinpal::payLink($Payment)]],
 [['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']],
 Menu::userHome(),
@@ -1099,20 +1122,25 @@ $Chat_ID = (int)($User['Chat_ID'] ?? $User_ID);
 $First_Name = (string)(($User['First_Name'] ?? '') ?: 'کاربر');
 $Context = new Context([], $User_ID, $Chat_ID ?: $User_ID, $First_Name, false, null, null, null, null);
 
-return self::settleGatewayPayment($Context, $Pending_Payment, $Verify);
+return self::settleGatewayPayment($Context, $Pending_Payment, $Verify, $Session);
 }
 
-private static function settleGatewayPayment(Context $Context, ?string $Expected_Payment = null, ?array $Verified = null): bool {
+private static function settleGatewayPayment(Context $Context, ?string $Expected_Payment = null, ?array $Verified = null, ?array $Expected_Session = null): bool {
 $Session = Repository::getUserSession($Context->UserId);
 $Pending_Payment = (string)($Session['Pending_Payment'] ?? '');
 // A new order may have replaced this one while verify was in flight.
 if ($Expected_Payment !== null && $Expected_Payment !== $Pending_Payment) return false;
+if ($Expected_Session !== null) {
+foreach (['Pending_Topup', 'Pending_Plan', 'Pending_Custom_Plan'] as $Key) {
+if ((string)($Expected_Session[$Key] ?? '') !== (string)($Session[$Key] ?? '')) return false;
+}
+}
 $Pending_Plan = (string)($Session['Pending_Plan'] ?? '');
 $Pending_Custom = (string)($Session['Pending_Custom_Plan'] ?? '');
 $Pending_Topup = (string)($Session['Pending_Topup'] ?? '');
 
 if ($Pending_Payment === '') {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: سفارش پرداخت فعالی یافت نشد.\n➖➖➖➖➖➖➖➖➖\n⚠️دلیل: شما پرداخت را به پایان نرساندید یا آن را لغو کردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: سفارش پرداخت فعالی یافت نشد.\n➖➖➖➖➖➖➖➖➖\nℹ️ممکن است سفارش قبلاً پردازش شده باشد؛ موجودی و اشتراک خود را بررسی کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
 Menu::userHome(),
 ]));
@@ -1146,7 +1174,7 @@ Menu::userHome(),
 return false;
 }
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: پرداخت ناموفق بود.\n"
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "⚠️تأیید پرداخت انجام نشد.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️علت: {$Reason}\n"
 . "⚠️اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ بررسی مجدد یا پیگیری از پشتیبانی لازم است.\n"
@@ -1160,33 +1188,19 @@ return false;
 
 $Topup_Amount = $Pending_Topup !== '' ? (float)$Pending_Topup : 0.0;
 
-// سفارش را اتمی تصاحب می کنیم تا اگر کرون و بازگشت درگاه همزمان برسند،
-// اشتراک یا کیف پول دو بار شارژ نشود.
-if (!Repository::claimPendingPayment($Context->UserId, $Pending_Payment)) {
-return true;
-}
-
-// The conditional claim clears this order atomically; never clear a newer one here.
-
 try {
-Repository::recordGatewayPayment(
-$Context->UserId,
-(float)$Amount,
-(string)($Verify['RefId'] ?? ''),
-'پرداخت موفق درگاه زرین پال'
-);
+if (!Repository::settleGatewayFunds($Context->UserId, $Session, $Amount, (string)($Verify['RefId'] ?? ''), $Topup_Amount)) return false;
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Payment-Settlement] User=' . $Context->UserId . ' | ' . $Error->getMessage());
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت')
+. '⚠️درگاه پرداخت را تأیید کرده اما ثبت داخلی کامل نشد. دوباره پرداخت نکنید؛ بررسی مجدد پرداخت را بزنید یا با پشتیبانی تماس بگیرید.'
+. Helper::userFooter(), TelegramClient::inlineKeyboard([
+[['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']], Menu::userHome(),
+]));
+return false;
 }
-
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Payment-Record] ثبت تراکنش درآمد ناموفق بود: ' . $E->getMessage());
-}
-
 $Success_Notes = [];
-
-if ($Topup_Amount > 0) {
-Repository::addMoney($Context->UserId, $Topup_Amount, 'شارژ اعتبار از طریق درگاه پرداخت زرین پال', 'gateway');
-$Success_Notes[] = "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount);
-}
+if ($Topup_Amount > 0) $Success_Notes[] = "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount);
 
 $Plan_Name = 'اشتراک';
 $Is_Custom = false;
@@ -1275,6 +1289,10 @@ $Wallet_Balance = max(0.0, $Wallet_Balance - $Wallet_Share);
 
 else {
 error_log('[Umbrella-Bot][Payment-Wallet] کسر ' . $Wallet_Share . ' تومان از کیف پول کاربر ' . $Context->UserId . ' انجام نشد؛ بررسی دستی لازم است.');
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت')
+. '⚠️پرداخت درگاه ثبت شد، اما کسر هزینه اشتراک از کیف پول انجام نشد؛ اشتراک فعال نشد. دوباره از درگاه پرداخت نکنید و موجودی را بررسی یا با پشتیبانی پیگیری کنید.'
+. Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+return false;
 }
 }
 
@@ -1384,32 +1402,7 @@ return true;
 }
 
 private static function zarinpalErrorMessage(int $Code): string {
-return match ($Code) {
--1 => 'ارتباط با درگاه پرداخت برقرار نشد. لطفا مجدد تلاش کنید.',
--9 => 'خطای اعتبارسنجی درگاه. با پشتیبانی تماس بگیرید.',
--10 => 'آی پی سرور بلاک شده است. با پشتیبانی تماس بگیرید.',
--11 => 'مرچنت کد صحیح نیست. با پشتیبانی تماس بگیرید.',
--12 => 'درخواست نامعتبر است. لطفا مجدد تلاش کنید.',
--15 => 'درگاه پرداخت غیرفعال است. با پشتیبانی تماس بگیرید.',
--16 => 'سطح پایین تر از سطح نقره ای.',
--30 => 'دسترسی حساب مرچنت بسته شده است. با پشتیبانی زرین پال تماس بگیرید.',
--31 => 'تسویه حساب مرچنت انجام نشده است. با پشتیبانی زرین پال تماس بگیرید.',
--32 => 'مرچنت در لیست مسدول قرار دارد.',
--33 => 'دامنه سایت شما در زرین پال مجاز نیست. دامنه «' . Zarinpal::callbackHost() . '» را در پنل زرین پال ثبت یا تمدید کنید.',
--34 => 'سقف مبلغ مجاز حساب شما رد شده است. با پشتیبانی زرین پال تماس بگیرید.',
--40 => 'پارامترهای اضافی نامعتبر.',
--41 => 'شناسه پرداخت نامعتبر است.',
--42 => 'مدت زمان معتبر طولانی تر از حد مجاز.',
--50 => 'مبلغ تأیید با مبلغ سفارش درگاه مطابقت ندارد؛ با پشتیبانی تماس بگیرید.',
--51 => 'پرداخت این سفارش هنوز توسط درگاه تأیید نشده است.',
--52 => 'درگاه نتوانست تراکنش را تأیید کند؛ بررسی مجدد یا پیگیری از پشتیبانی لازم است.',
-52 => 'تراکنش یافت نشد.',
-53 => 'تراکنش قبلا وریفای شده است.',
-54 => 'تراکنش وریفای نشده.',
-55 => 'تراکنش ناموفق.',
-101 => 'این تراکنش قبلا وریفای شده است.',
-default => 'خطای نامشخص از درگاه پرداخت (کد ' . Helper::toPersian((string)$Code) . ').',
-};
+return Zarinpal::errorMessage($Code);
 }
 
 public static function payTopup(Context $Context): void {
@@ -1444,7 +1437,10 @@ if ($Context->IsCallback && $Context->MessageId !== null) {
 try { TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId); } catch (Throwable) {}
 }
 
-TelegramClient::sendMessage($Context->ChatId, $Greeting . " *🔄در حال انتقال به درگاه پرداخت...*" . Helper::userFooter() . "*");
+TelegramClient::sendMessage($Context->ChatId, $Greeting . " *برای پرداخت از دکمه زیر استفاده کنید.*" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+[['text' => '💳پرداخت امن', 'url' => $Custom['Url']]],
+[['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']], Menu::userHome(),
+]));
 }
 
 return;
@@ -1469,7 +1465,7 @@ return ['Url' => ''];
 
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 $Call_Back_Url = $Call_Back_Base . (str_contains($Call_Back_Base, '?') ? '&' : '?') . 'Uid=' . $Context->UserId;
-$Pre = Zarinpal::request($Need, $Call_Back_Url, 'خرید اشتراک دلخواه - سرور آمبرلا', Helper::normalizePhone($Phone));
+$Pre = self::preflightGateway($Context, $Need, $Call_Back_Url, 'خرید اشتراک دلخواه - سرور آمبرلا', Helper::normalizePhone($Phone));
 
 if (is_array($Pre) && isset($Pre['Authority'], $Pre['RedirectUrl'])) {
 $Final_Amount = (float)($Pre['Amount'] ?? $Need);
@@ -1495,7 +1491,7 @@ $Text = Common::greet($Context, 'شارژ اعتبار حساب کاربری')
 . "👌لطفاً مبلغ شارژ مورد نظر را به *تومان* وارد کرده و ارسال کنید.\n"
 . "⚠️حداقل مبلغ شارژ: " . Helper::formatCurrency((float)self::MIN_TOPUP) . "\n"
 . "💳پس از ثبت مبلغ، به درگاه امن زرین پال هدایت می شوید.\n"
-. "💡نکته: مبلغ وارد شده به عنوان اعتبار کیف پول شما ثبت می گردد و کارمزد درگاه به آن اضافه می شود."
+. "💡نکته: مبلغ وارد شده به عنوان اعتبار کیف پول شما ثبت می گردد و کارمزد دقیق از زرین پال استعلام و پیش از پرداخت به مبلغ اضافه می شود؛ کارمزد به اعتبار کیف پول اضافه نمی شود."
 . Helper::userFooter();
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
@@ -1556,7 +1552,7 @@ $Payment = Zarinpal::request($Amount, $Call_Back_Url, 'شارژ اعتبار ک�
 if ($Payment === null) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: اتصال به درگاه پرداخت ناموفق بود.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "⚠️علت: سرور زرین پال پاسخ نداد یا مرچنت کد نامعتبر است.\n"
+. "⚠️علت: " . Zarinpal::requestErrorMessage() . "\n"
 . "🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n"
 . "📞در صورت ادامه مشکل با پشتیبانی تماس بگیرید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'شارژ اعتبار حساب کاربری']],
@@ -1573,7 +1569,7 @@ Repository::updateUserSession($Context->UserId, [
 'Pending_Custom_Plan' => null,
 ]);
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "➖➖➖➖➖➖➖➖➖\n💳شارژ اعتبار کیف پول\n💰مبلغ شارژ: " . Helper::formatCurrency($Amount) . "\n💳مبلغ قابل پرداخت: " . Helper::formatCurrency($Final_Amount) . " (شامل کارمزد)\n➖➖➖➖➖➖➖➖➖\n👌برای تکمیل شارژ بر روی دکمه پرداخت کلیک کنید.\n⚠️نکته:پس از بازگشت از درگاه، اعتبار شما به صورت خودکار شارژ می گردد." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "➖➖➖➖➖➖➖➖➖\n💳شارژ اعتبار کیف پول\n💰مبلغ شارژ: " . Helper::formatCurrency($Amount) . "\n" . self::paymentSummary($Payment) . "\n➖➖➖➖➖➖➖➖➖\n👌برای تکمیل شارژ بر روی دکمه پرداخت کلیک کنید.\n⚠️نکته:پس از بازگشت از درگاه، اعتبار شما به صورت خودکار شارژ می گردد." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💳پرداخت امن', 'url' => Zarinpal::payLink($Payment)]],
 [['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']],
 Menu::userHome(),
@@ -1585,7 +1581,7 @@ self::settleGatewayPayment($Context);
 }
 
 public static function handleGatewayCallback(int $User_ID, string $Status, string $Authority): void {
-if ($User_ID <= 0 || $Authority === '') return;
+if ($User_ID <= 0 || !Zarinpal::validAuthority($Authority) || !in_array(strtoupper($Status), ['OK', 'NOK'], true)) return;
 $Pending = (string)(Repository::getUserSession($User_ID)['Pending_Payment'] ?? '');
 $Parts = array_pad(explode('|', $Pending, 3), 3, '');
 // Ignore replayed/foreign callbacks; never verify a different current order.
@@ -1600,7 +1596,7 @@ $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAd
 $User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone !== '' ? "\n📞موبایل: `{$Phone}`" : '');
 
 if (strtoupper($Status) !== 'OK') {
-TelegramClient::sendSystemMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "❌خطا: پرداخت توسط شما لغو شد.\n➖➖➖➖➖➖➖➖➖\n⚠️در صورت کسر وجه، مبلغ حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendSystemMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "⚠️بازگشت از درگاه با وضعیت ناموفق یا لغوشده دریافت شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر وجه کسر شده، دوباره پرداخت نکنید؛ وضعیت را از درگاه یا پشتیبانی پیگیری کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin) . "❌پرداخت ناموفق / لغو شده توسط کاربر\n\n"
 . "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"

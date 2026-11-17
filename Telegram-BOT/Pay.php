@@ -69,10 +69,10 @@ setTimeout(function(){clearInterval(timer);go();},20000);
 })();
 JS;
 
-$Authority = preg_replace('/[^A-Za-z0-9]/', '', (string)($_GET['a'] ?? '')) ?? '';
+$Authority = is_string($_GET['a'] ?? null) ? $_GET['a'] : '';
 $User_Id = (int)($_GET['u'] ?? 0);
 
-if ($Authority === '' || !Zarinpal::isConfigured()) {
+if (!Zarinpal::validAuthority($Authority) || !Zarinpal::isConfigured()) {
 http_response_code(400);
 header('Content-Type: text/html; charset=UTF-8');
 header('X-Robots-Tag: noindex, nofollow');
