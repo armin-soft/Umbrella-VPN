@@ -343,7 +343,8 @@ match($Data) {
 'حساب آمبرلا' => AppFlow::menu($Context),
 'برنامه آمبرلا' => AppFlow::menu($Context),
 'app_menu' => AppFlow::menu($Context),
-'app_device_info' => AppFlow::deviceInfo($Context),
+// Legacy shortcut: the removed information/photo screen is never reopened.
+'app_device_info' => UserFlow::deviceMenu($Context),
 'app_filter' => AppFlow::filterMenu($Context),
 'app_2fa' => AppFlow::twoStepMenu($Context),
 'app_2fa_on' => AppFlow::setTwoStep($Context, true),
@@ -557,21 +558,13 @@ AppFlow::notificationView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0)
 return;
 }
 
-if (str_starts_with($Data, 'app_device_card:')) {
-[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_card:')), 2), 2, '0');
-AppFlow::deviceCard($Context, $Prefix, max(0, (int)$Page));
-return;
-}
-
-if (str_starts_with($Data, 'app_device_photo:')) {
-[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_photo:')), 2), 2, '0');
-AppFlow::devicePhotoStart($Context, $Prefix, max(0, (int)$Page));
-return;
-}
-
-if (str_starts_with($Data, 'app_device_art:')) {
-[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_art:')), 2), 2, '0');
-AppFlow::devicePhotoReset($Context, $Prefix, max(0, (int)$Page));
+// Old messages may still carry these callbacks. Clear any pending upload and
+// return to the remaining device controls without reading/sending an image.
+if (str_starts_with($Data, 'app_device_card:')
+|| str_starts_with($Data, 'app_device_photo:')
+|| str_starts_with($Data, 'app_device_art:')) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+UserFlow::deviceMenu($Context);
 return;
 }
 
@@ -756,8 +749,8 @@ return;
 if ($Flow === 'profile_name') { ProfileFlow::processName($Context, $Text); return; }
 if ($Flow === 'profile_phone') { ProfileFlow::processPhone($Context, $Text); return; }
 if (str_starts_with($Flow, 'app:device_photo:')) {
-[$Prefix, $Page] = array_pad(explode(':', substr($Flow, strlen('app:device_photo:')), 2), 2, '0');
-AppFlow::devicePhotoInput($Context, $Prefix, (int)$Page);
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+UserFlow::deviceMenu($Context);
 return;
 }
 if ($Flow === 'app:filter_domains') { AppFlow::filterDomainsInput($Context, $Text); return; }

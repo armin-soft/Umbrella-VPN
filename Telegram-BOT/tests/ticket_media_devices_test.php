@@ -30,7 +30,7 @@ return $Id;
 }
 public static function addNotification(...$Args): void {}
 }
-final class Common { public static function greet(Context $C, string $S): string { return $S . "\n"; } }
+final class Common { public static function isRobotOn(): bool { return true; } public static function greet(Context $C, string $S): string { return $S . "\n"; } }
 final class Helper {
 public static bool $Profane = false;
 public static function __callStatic(string $Name, array $Args): mixed {
@@ -134,24 +134,28 @@ check(count(Repository::$Messages) === $Before, 'closed ticket rejects new attac
 $Items = []; for ($I = 1; $I <= 13; $I++) $Items[] = ['ID' => $I, 'Photo_File_ID' => 'photo'];
 [$Rows, $Page, $Count] = TicketMedia::buttons($Items, 999);
 check(count($Rows) === 3 && $Page === 2 && $Count === 3, 'attachment pagination bounded and clamped');
-check(AppFlow::deviceArt('Android') === 'mobile' && AppFlow::deviceArt('WINDOWS') === 'computer' && AppFlow::deviceArt('mystery') === 'unknown', 'art uses platform, never guesses hardware model');
-Database::$Devices = [['Device_ID' => 'my-device', 'User_UUID' => 'owner-1', 'Telegram_ID' => 1, 'Device_Name' => 'My PC', 'Platform' => 'Windows', 'Is_Trusted' => 0]];
-TelegramClient::$Calls = []; AppFlow::deviceCard(ctx(2, [], true), 'my-device');
-check(!array_filter(TelegramClient::$Calls, fn($C) => $C[0] === 'sendPhoto'), 'foreign device picture denied');
-AppFlow::deviceCard(ctx(1, [], true), 'my-device'); $Last = end(TelegramClient::$Calls);
-check(str_ends_with($Last[1]['photo'], '/computer.png') && str_contains($Last[1]['caption'], 'شماتیک') && str_contains($Last[1]['caption'], 'لغو شده'), 'default art labelled schematic with current trust state');
-AppFlow::devicePhotoStart(ctx(1, [], true), 'my-device', 2);
-AppFlow::devicePhotoInput(ctx(1, ['photo' => [['file_id' => 'real-photo']]]), 'my-device', 2);
-check(str_ends_with(end(TelegramClient::$Calls)[1]['photo'], '/computer.png') && Repository::$Sessions[1]['Flow'] === null, 'legacy upload no longer saves or displays user photos');
-check(!str_contains(json_encode(end(TelegramClient::$Calls)), 'app_device_photo:'), 'no upload button');
-$SavedSettings = Repository::$Settings;
-AppFlow::devicePhotoReset(ctx(2, [], true), 'my-device');
-check(Repository::$Settings === $SavedSettings, 'other user cannot reset picture');
-AppFlow::devicePhotoReset(ctx(1, [], true), 'my-device');
-check(str_ends_with(end(TelegramClient::$Calls)[1]['photo'], '/computer.png'), 'owner restores schematic');
-Database::$Devices[] = Database::$Devices[0]; Database::$Devices[1]['Device_ID'] = 'my-device-2';
-TelegramClient::$Calls = []; AppFlow::deviceCard(ctx(1, [], true), 'my-device');
-check(!array_filter(TelegramClient::$Calls, fn($C) => $C[0] === 'sendPhoto'), 'ambiguous prefix fails closed');
+$DeviceSource = file_get_contents(__DIR__ . '/../Bot/App-Link.php');
+check(!str_contains($DeviceSource, 'function deviceCard') && !str_contains($DeviceSource, 'function deviceArt') && !str_contains($DeviceSource, 'function devicePhoto'), 'device photo implementation removed');
+check(!str_contains($DeviceSource, 'app_device_card:') && !str_contains($DeviceSource, 'app_device_photo:'), 'device list has no image or upload button');
+check(!is_dir(__DIR__ . '/../Assets') && !is_file(__DIR__ . '/../tools/device-art.py'), 'bot images and generator removed');
+$CallbackRoute = new ReflectionMethod(Dispatcher::class, 'routeCallbackInner');
+foreach (['app_device_info', 'app_device_card:my-device:2', 'app_device_photo:my-device:2', 'app_device_art:my-device:2'] as $Callback) {
+$OldContext = Context::fromUpdate(['callback_query' => ['id' => 'old', 'from' => ['id' => 1], 'message' => ['message_id' => 20, 'chat' => ['id' => 1]], 'data' => $Callback]]);
+Repository::$Sessions[1] = ['Flow' => 'app:device_photo:my-device:2'];
+TelegramClient::$Calls = []; $SavedSettings = Repository::$Settings;
+$CallbackRoute->invoke(null, $OldContext);
+check(Repository::$Sessions[1]['Flow'] === null, 'old photo callback clears upload state');
+check(Repository::$Settings === $SavedSettings && !array_filter(TelegramClient::$Calls, fn($Call) => $Call[0] === 'sendPhoto'), 'old callback does not save/display photo');
+$Last = end(TelegramClient::$Calls);
+$Actions = array_column(array_merge(...$Last[1]['reply_markup']['inline_keyboard']), 'callback_data');
+check($Actions === ['app_filter', 'app_2fa', 'app_devices', 'منوی خدمات ربات'], 'old callback returns to remaining device menu');
+}
+Repository::$Sessions[1] = ['Flow' => 'app:device_photo:my-device:2'];
+TelegramClient::$Calls = []; $SavedSettings = Repository::$Settings;
+$MessageRoute = new ReflectionMethod(Dispatcher::class, 'routeMessage');
+$MessageRoute->invoke(null, ctx(1, ['photo' => [['file_id' => 'ignored-photo']]]));
+check(Repository::$Sessions[1]['Flow'] === null && Repository::$Settings === $SavedSettings, 'stale upload input discarded safely');
+check(!array_filter(TelegramClient::$Calls, fn($Call) => $Call[0] === 'sendPhoto'), 'stale upload never sends an image');
 TelegramClient::$Fail = true;
 check(!TicketMedia::send(99, ['type' => 'document', 'file_id' => 'bad']), 'Telegram media failure propagated');
 TelegramClient::$Calls = []; TicketMedia::show(ctx(1, [], true), 3);
@@ -185,4 +189,4 @@ check(!isset(Repository::$Blocked[99]), 'existing admin moderation exemption ret
 Repository::$FailBlocking = true; TelegramClient::$Calls = [];
 $Route->invoke(null, ctx(2, ['text' => 'profanity']));
 check(!isset(Repository::$Blocked[2]) && count(TelegramClient::$Calls) === 1 && str_contains(TelegramClient::$Calls[0][1]['text'], 'خطای موقت'), 'failed block has no false success/admin notification');
-echo "OK ticket media/device cards ({$N} assertions)\n";
+echo "OK ticket media/removed device images ({$N} assertions)\n";

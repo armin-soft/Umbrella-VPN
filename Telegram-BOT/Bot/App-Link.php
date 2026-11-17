@@ -134,10 +134,6 @@ UserFlow::accountMenu($Context);
 }
 
 /** The devices that ever signed in, with trust state and paging. */
-public static function deviceInfo(Context $Context): void {
-self::devices($Context);
-}
-
 public static function devices(Context $Context, int $Page = 0): void {
 $Account = self::accountOrPrompt($Context, 'user_device_menu');
 
@@ -193,7 +189,6 @@ $Buttons = [];
 
 foreach ($Rows as $Row) {
 $Id = (string)$Row['Device_ID'];
-$Buttons[] = [Menu::button('💻اطلاعات و تصویر ' . mb_substr((string)($Row['Device_Name'] ?? 'دستگاه'), 0, 20), 'app_device_card:' . substr($Id, 0, 24) . ':' . $Page)];
 $Buttons[] = [[
 'text' => ((int)($Row['Is_Trusted'] ?? 0) === 1 ? '⛔️ لغو اعتماد ' : '⚪️ اعتماد لغو شده · ') . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
 'callback_data' => (int)($Row['Is_Trusted'] ?? 0) === 1 ? 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page : 'app_device_status:' . substr($Id, 0, 24) . ':' . $Page,
@@ -215,61 +210,6 @@ $Buttons[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
-}
-
-/** Scope first, then match prefix; ambiguous/forged prefixes never pick a device. */
-private static function ownedDevice(Context $Context, string $Prefix): ?array {
-if (!preg_match('/^[A-Za-z0-9_-]{1,24}$/D', $Prefix)) return null;
-$Account = self::account($Context);
-if ($Account === null) return null;
-$Rows = Database::getInstance()->fetchAll(
-'SELECT * FROM `App_Devices` WHERE LEFT(`Device_ID`, ?) = ? AND (`User_UUID` = ? OR `Telegram_ID` = ?) LIMIT 2',
-[strlen($Prefix), $Prefix, (string)$Account['uuid'], $Context->UserId]
-);
-return count($Rows) === 1 ? $Rows[0] : null;
-}
-
-public static function deviceArt(string $Platform): string {
-$Platform = strtolower(trim($Platform));
-if (in_array($Platform, ['android', 'ios', 'iphone', 'ipad', 'ipados'], true)) return 'mobile';
-if (in_array($Platform, ['windows', 'macos', 'mac', 'linux'], true)) return 'computer';
-return 'unknown';
-}
-
-public static function deviceCard(Context $Context, string $Prefix, int $Page = 0): void {
-$Device = self::ownedDevice($Context, $Prefix);
-if ($Device === null) {
-if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه یافت نشد یا شناسه مبهم است.', true);
-return;
-}
-$Photo = __DIR__ . '/../Assets/devices/' . self::deviceArt((string)($Device['Platform'] ?? '')) . '.png';
-$Escape = static fn(string $Value): string => htmlspecialchars(mb_substr($Value, 0, 120), ENT_QUOTES, 'UTF-8');
-$Text = Helper::userGreeting($Context, 'تصویر دستگاه')
-. '📱نام ثبت‌شده: ' . $Escape((string)($Device['Device_Name'] ?? 'نامشخص'))
-. "\n🖥سیستم: " . $Escape((string)($Device['Platform'] ?? 'نامشخص'))
-. "\n" . ((int)($Device['Is_Trusted'] ?? 0) === 1 ? '✅اعتماد فعال' : '⚪️اعتماد لغو شده')
-. "\n🌐آخرین IP: " . $Escape((string)($Device['Last_IP'] ?? 'نامشخص'))
-. "\n🕒آخرین فعالیت: " . $Escape((string)($Device['Last_Seen_At'] ?? 'نامشخص'))
-. "\n\n🎨تصویر خودکار و شماتیک متناسب با سیستم‌عامل است، نه عکس مدل دقیق سخت‌افزار.";
-$Markup = TelegramClient::inlineKeyboard([
-Menu::back('دستگاه‌ها', 'app_devices_page:' . max(0, $Page)), Menu::userHome(),
-]);
-try { $Result = TelegramClient::sendPhoto($Context->ChatId, $Photo, $Text, $Markup); }
-catch (Throwable) { $Result = ['ok' => false]; }
-if (($Result['ok'] ?? false) !== true) TelegramClient::sendReadableMessage($Context->ChatId, null, $Text . "\n⚠️نمایش تصویر ناموفق بود؛ دوباره تلاش کنید.", $Markup);
-}
-
-/** Legacy photo callbacks never accept or persist uploads anymore. */
-public static function devicePhotoStart(Context $Context, string $Prefix, int $Page = 0): void {
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-self::deviceCard($Context, $Prefix, $Page);
-}
-public static function devicePhotoInput(Context $Context, string $Prefix, int $Page = 0): void {
-Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-self::deviceCard($Context, $Prefix, $Page);
-}
-public static function devicePhotoReset(Context $Context, string $Prefix, int $Page = 0): void {
-self::deviceCard($Context, $Prefix, $Page);
 }
 
 public static function revokeDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {

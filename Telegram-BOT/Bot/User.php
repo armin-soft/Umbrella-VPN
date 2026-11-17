@@ -416,7 +416,6 @@ public static function deviceMenu(Context $Context): void {
 self::categoryMenu($Context, 'دستگاه من', Menu::rows([
 [['🛡کنترل محتوا', 'app_filter']],
 [['🔐تأیید دومرحله‌ای', 'app_2fa']],
-[['💻اطلاعات دستگاه', 'app_device_info']],
 [['📱دستگاه های من', 'app_devices']],
 ]));
 }
