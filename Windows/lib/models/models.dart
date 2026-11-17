@@ -1212,19 +1212,43 @@ extension ThemePreferenceX on ThemePreference {
   }
 }
 
-enum TunStack { mixed, gvisor, system }
+enum TunStack { auto, mixed, gvisor, system }
 
 extension TunStackX on TunStack {
   String get label {
     switch (this) {
+      case TunStack.auto:
+        return 'پیش فرض هسته (sing-tun)';
       case TunStack.mixed:
-        return 'ترکیبی (سریع ترین)';
+        return 'ترکیبی (قدیمی)';
       case TunStack.gvisor:
         return 'کاربرفضا';
       case TunStack.system:
         return 'سیستم';
     }
   }
+}
+
+/// Values accepted by the pinned core log parser.
+class CoreLogLevel {
+  const CoreLogLevel._();
+  static const List<String> values = <String>['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic'];
+  static String normalize(String value) => values.contains(value) ? value : 'info';
+}
+
+/// Resolver presets only; these are DNS endpoints, never subscription sources.
+class NetworkDns {
+  const NetworkDns._();
+  static const String fallback = '1.1.1.1';
+  static const Map<String, String> presets = <String, String>{
+    '1.1.1.1': 'Cloudflare — UDP',
+    '8.8.8.8': 'Google — UDP',
+    '9.9.9.9': 'Quad9 — UDP',
+    'https://1.1.1.1/dns-query': 'Cloudflare — HTTPS',
+    'https://8.8.8.8/dns-query': 'Google — HTTPS',
+    'https://9.9.9.9/dns-query': 'Quad9 — HTTPS',
+  };
+  static String normalize(String value) => presets.containsKey(value.trim()) ? value.trim() : fallback;
 }
 
 class AppSettings {
@@ -1243,11 +1267,13 @@ class AppSettings {
     this.corePreference = CorePreference.auto,
     this.autoFailover = true,
     this.stickyMinutes = 30,
-    this.tunStack = TunStack.mixed,
+    this.tunStack = TunStack.auto,
     this.mtu = 9000,
     this.blockIpv6 = true,
     this.strictRoute = true,
     this.dnsOverTunnel = true,
+    this.remoteDns = NetworkDns.fallback,
+    this.directDns = NetworkDns.fallback,
     this.showSpeedInTray = true,
     this.occasionEffects = true,
     this.checkUpdatesOnStart = true,
@@ -1293,7 +1319,11 @@ class AppSettings {
   final int mtu;
   final bool blockIpv6;
   final bool strictRoute;
+  // Legacy persisted value. The pinned core always routes remote DNS through
+  // the selected proxy; it exposes no boolean for changing that behavior.
   final bool dnsOverTunnel;
+  final String remoteDns;
+  final String directDns;
   final bool showSpeedInTray;
   final bool occasionEffects;
   final bool checkUpdatesOnStart;
@@ -1335,6 +1365,8 @@ class AppSettings {
     bool? blockIpv6,
     bool? strictRoute,
     bool? dnsOverTunnel,
+    String? remoteDns,
+    String? directDns,
     bool? showSpeedInTray,
     bool? occasionEffects,
     bool? checkUpdatesOnStart,
@@ -1370,6 +1402,8 @@ class AppSettings {
       blockIpv6: blockIpv6 ?? this.blockIpv6,
       strictRoute: strictRoute ?? this.strictRoute,
       dnsOverTunnel: dnsOverTunnel ?? this.dnsOverTunnel,
+      remoteDns: remoteDns ?? this.remoteDns,
+      directDns: directDns ?? this.directDns,
       showSpeedInTray: showSpeedInTray ?? this.showSpeedInTray,
       occasionEffects: occasionEffects ?? this.occasionEffects,
       checkUpdatesOnStart: checkUpdatesOnStart ?? this.checkUpdatesOnStart,
@@ -1407,6 +1441,8 @@ class AppSettings {
         'blockIpv6': blockIpv6,
         'strictRoute': strictRoute,
         'dnsOverTunnel': dnsOverTunnel,
+        'remoteDns': remoteDns,
+        'directDns': directDns,
         'showSpeedInTray': showSpeedInTray,
         'occasionEffects': occasionEffects,
         'checkUpdatesOnStart': checkUpdatesOnStart,
@@ -1464,11 +1500,13 @@ class AppSettings {
           pick(CorePreference.values, json['corePreference'], CorePreference.auto),
       autoFailover: JsonX.boolean(json['autoFailover'], fallback: true),
       stickyMinutes: JsonX.integer(json['stickyMinutes'], 30),
-      tunStack: pick(TunStack.values, json['tunStack'], TunStack.mixed),
-      mtu: JsonX.integer(json['mtu'], 9000),
+      tunStack: pick(TunStack.values, json['tunStack'], TunStack.auto),
+      mtu: JsonX.integer(json['mtu'], 9000).clamp(1280, 9000),
       blockIpv6: JsonX.boolean(json['blockIpv6'], fallback: true),
       strictRoute: JsonX.boolean(json['strictRoute'], fallback: true),
       dnsOverTunnel: JsonX.boolean(json['dnsOverTunnel'], fallback: true),
+      remoteDns: NetworkDns.normalize(JsonX.text(json['remoteDns'])),
+      directDns: NetworkDns.normalize(JsonX.text(json['directDns'])),
       showSpeedInTray: JsonX.boolean(json['showSpeedInTray'], fallback: true),
       occasionEffects: JsonX.boolean(json['occasionEffects'], fallback: true),
       checkUpdatesOnStart:

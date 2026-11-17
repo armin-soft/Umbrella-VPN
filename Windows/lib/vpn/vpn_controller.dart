@@ -1474,10 +1474,8 @@ class VpnController extends ChangeNotifier {
     // پروتکل در جای نوع انتقال نشسته؛ لینک ساز آن را به `tcp` عادی می کند
     // (`_transportOf`).
     //
-    // ولی گرهی که واقعا `network: xhttp` یا `splithttp` دارد با این هسته
-    // اجرا نمی شود: این دو مخصوص زیکس‌ری هستند. اگر امتحان شوند، هسته بالا
-    // نمی آید و کاربر یک خطای نامفهوم می بیند؛ بهتر است از اول در فهرست
-    // قابل انتخاب نباشند.
+    // Match the pinned core's transport capabilities; XHTTP is implemented in
+    // hiddify-core 5.9.1 and its pinned ray2sing converter.
     if (!transportSupported(node)) {
       return false;
     }
@@ -1692,7 +1690,7 @@ class VpnController extends ChangeNotifier {
   ///
   /// `run -c <links>` همان دستوری است که مستندات هسته برای «فقط لینک ها دارم»
   /// می دهد: هسته خودش پیکربندی، دی ان اس و مسیرها را می سازد.
-  static List<String> _umbrellaArgs({
+  List<String> _umbrellaArgs({
     required String exe,
     required String links,
     required String runDir,
@@ -1704,6 +1702,7 @@ class VpnController extends ChangeNotifier {
       port: _umbrellaPort,
       tun: tun,
       systemProxy: !tun,
+      logLevel: CoreLogLevel.normalize(_settings.logLevel),
     );
   }
 
@@ -1843,7 +1842,7 @@ class VpnController extends ChangeNotifier {
         transport == 'xhttp' ||
         transport == 'splithttp';
     final List<String> query = <String>[
-      'encryption=none',
+      'encryption=${Uri.encodeComponent(JsonX.text(params['encryption'], 'none'))}',
       'security=$security',
       'type=$transport',
       'sni=${Uri.encodeComponent(sni)}',
@@ -1854,6 +1853,13 @@ class VpnController extends ChangeNotifier {
       final String streamHost = JsonX.text(params['host'], sni);
       if (streamHost.isNotEmpty) {
         query.add('host=${Uri.encodeComponent(streamHost)}');
+      }
+    }
+    if (transport == 'xhttp' || transport == 'splithttp') {
+      for (final String key in <String>['mode', 'extra']) {
+        final dynamic value = params[key];
+        final String text = value is Map || value is List ? jsonEncode(value) : JsonX.text(value);
+        if (text.isNotEmpty) query.add('$key=${Uri.encodeComponent(text)}');
       }
     }
     if (transport == 'grpc') {
@@ -1895,12 +1901,8 @@ class VpnController extends ChangeNotifier {
     return 'vless://$id@$host:${node.port}?${query.join('&')}#$name';
   }
 
-  /// نوع انتقال هایی که این هسته واقعا پیاده کرده است.
-  ///
-  /// `xhttp` و `splithttp` مخصوص زیکس‌ری هستند و هسته آمبرلا (سینگ باکس)
-  /// هیچ کدام را نمی شناسد. نساختنشان بهتر از ساختن یک `tcp` حدسی است:
-  /// `tcp` حدسی یعنی اتصال با تنظیمات غلط انجام می شود، سرور جواب نمی دهد و
-  /// کاربر فکر می کند سرور خراب است.
+  /// Supported by hiddify-core 5.9.1 / ray2sing 6974ad6. Unknown transports
+  /// still fail closed; known XHTTP must not be rewritten as TCP or filtered out.
   static const List<String> _coreTransports = <String>[
     'tcp',
     'ws',
@@ -1909,6 +1911,9 @@ class VpnController extends ChangeNotifier {
     'h2',
     'quic',
     'httpupgrade',
+    'xhttp',
+    'splithttp',
+    'mkcp',
     'kcp',
   ];
 
@@ -1923,9 +1928,8 @@ class VpnController extends ChangeNotifier {
 
   /// نوع انتقال گره، از پارامترها یا از خود لینک.
   ///
-  /// گرهی که از `all.txt` آمده، لینک خامش `type=xhttp` دارد ولی
-  /// `params['network']` خالی است؛ پس فقط خواندن پارامترها کافی نیست و
-  /// همان گره `xhttp` «قابل استفاده» شمرده می شد و به هسته می رفت.
+  /// Raw subscription links can specify the transport without a parsed
+  /// network field. Inspect both so unknown values are still rejected.
   static String _networkOf(VpnNode node) {
     final String fromParams =
         JsonX.text(node.params['network']).trim().toLowerCase();
@@ -2090,6 +2094,7 @@ class VpnController extends ChangeNotifier {
           systemProxy: plan.usesSystemProxy,
           port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
           logFile: coreLog,
+          networkSettings: _settings,
         ),
       ),
       flush: true,

@@ -625,6 +625,19 @@ class SubscriptionParser {
         params['host'] = JsonX.text(JsonX.asMap(ws['headers'])['Host']);
         params['network'] = 'ws';
       }
+      // Preserve the pinned core's XHTTP options when the panel supplies Clash.
+      final dynamic xhttpOptions = proxy['xhttp-opts'] ?? proxy['splithttp-opts'];
+      if (xhttpOptions is Map) {
+        final Map<String, dynamic> xhttp = JsonX.asMap(xhttpOptions);
+        params['network'] = 'xhttp';
+        for (final String key in <String>['path', 'host', 'mode']) {
+          if (xhttp[key] != null) params[key] = JsonX.text(xhttp[key]);
+        }
+        if (xhttp['extra'] != null) {
+          params['extra'] = xhttp['extra'] is Map
+              ? jsonEncode(xhttp['extra']) : JsonX.text(xhttp['extra']);
+        }
+      }
       if (proxy['reality-opts'] is Map) {
         final Map<String, dynamic> reality = JsonX.asMap(proxy['reality-opts']);
         params['pbk'] = JsonX.text(

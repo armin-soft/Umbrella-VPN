@@ -181,11 +181,8 @@ void main() {
     });
   });
 
-  group('نوع انتقال پشتیبانی نشده', () {
-    test('xhttp و splithttp برای این هسته قابل اجرا نیستند', () {
-      // این دو مخصوص زیکس‌ری هستند؛ هسته آمبرلا (سینگ باکس) نمی شناسدشان.
-      // ساختن `tcp` حدسی یعنی اتصال با تنظیمات غلط و سرور «خراب» به نظر
-      // می رسد.
+  group('نوع انتقال در هسته ۵٫۹٫۱', () {
+    test('XHTTP aliases are supported; unknown transports remain rejected', () {
       VpnNode withNetwork(String network) => VpnNode(
             id: 'x',
             name: 'node',
@@ -195,11 +192,12 @@ void main() {
             sourceId: 's',
             params: <String, dynamic>{'id': 'u', 'network': network},
           );
-      expect(VpnController.transportSupported(withNetwork('xhttp')), isFalse);
+      expect(VpnController.transportSupported(withNetwork('xhttp')), isTrue);
       expect(
         VpnController.transportSupported(withNetwork('splithttp')),
-        isFalse,
+        isTrue,
       );
+      expect(VpnController.transportSupported(withNetwork('unknown')), isFalse);
       expect(VpnController.transportSupported(withNetwork('tcp')), isTrue);
       expect(VpnController.transportSupported(withNetwork('ws')), isTrue);
       expect(VpnController.transportSupported(withNetwork('grpc')), isTrue);
@@ -213,7 +211,7 @@ void main() {
       expect(VpnController.transportSupported(withNetwork('')), isTrue);
     });
 
-    test('گره xhttp از فهرست قابل استفاده کنار گذاشته می شود', () {
+    test('گره xhttp در فهرست قابل استفاده باقی می ماند', () {
       final VpnNode node = VpnNode(
         id: 'x',
         name: 'سرور آمبرلا xhttp',
@@ -223,7 +221,7 @@ void main() {
         sourceId: 's',
         params: <String, dynamic>{'id': 'u', 'network': 'xhttp'},
       );
-      expect(VpnController.usable(node), isFalse);
+      expect(VpnController.usable(node), isTrue);
     });
   });
 
@@ -301,14 +299,11 @@ proxies:
         );
 
     test('نوع انتقال از لینک خام هم خوانده می شود', () {
-      // گره‌های all.txt لینک خام دارند و params['network'] خالی است. پیش از
-      // ۱٫۰٫۱۴ فقط پارامترها خوانده می شد، پس گره xhttp «قابل استفاده»
-      // شمرده می شد و به هسته می رفت — همان «الکی وصل شدن».
       const String raw =
           'vless://u@proxy.umbrella-server.ir:443'
           '?type=xhttp&security=tls&sni=a.example.com#h3_quic xhttp CDN vless';
-      expect(VpnController.transportSupported(rawNode(raw)), isFalse);
-      expect(VpnController.usable(rawNode(raw)), isFalse);
+      expect(VpnController.transportSupported(rawNode(raw)), isTrue);
+      expect(VpnController.usable(rawNode(raw)), isTrue);
     });
 
     test('گره tcp از لینک خام همچنان قابل استفاده است', () {

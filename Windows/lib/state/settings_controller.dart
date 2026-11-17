@@ -204,6 +204,16 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(strictRoute: value));
   }
 
+  Future<void> setRemoteDns(String value) async {
+    if (!NetworkDns.presets.containsKey(value)) throw ArgumentError.value(value, 'remoteDns');
+    await update(_settings.copyWith(remoteDns: value));
+  }
+
+  Future<void> setDirectDns(String value) async {
+    if (!NetworkDns.presets.containsKey(value)) throw ArgumentError.value(value, 'directDns');
+    await update(_settings.copyWith(directDns: value));
+  }
+
   Future<void> setDnsOverTunnel(bool value) async {
     await update(_settings.copyWith(dnsOverTunnel: value));
   }

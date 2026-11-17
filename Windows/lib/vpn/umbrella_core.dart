@@ -3,6 +3,7 @@ import 'dart:io';
 import '../core/app_config.dart';
 import '../core/persian.dart';
 import '../platform/native.dart';
+import '../models/models.dart';
 
 /// تنها هسته اتصال برنامه: موتور هسته (کتابخانه هسته به همراه لانچرهای آمبرلا).
 ///
@@ -279,10 +280,11 @@ class UmbrellaCore {
     String logFile = '',
     String remoteDns = defaultDns,
     String directDns = defaultDns,
+    AppSettings? networkSettings,
   }) {
     return <String, dynamic>{
       // ── گزارش ──────────────────────────────────────────────────────────
-      'log-level': logLevel,
+      'log-level': CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel),
       'log-file': logFile,
       // ── ورودی ها (تونل یا پروکسی سیستمی) ───────────────────────────────
       'enable-tun': tun,
@@ -299,14 +301,15 @@ class UmbrellaCore {
       'local-proxy-in-vpn': false,
       // پیش فرض خود هسته: `sing15` یعنی پشته پیش فرض sing-tun و `9000` همان
       // ام تی یو خودش. صفر گذاشتن این دو، تونل را بی بسته می کند.
-      'tun-implementation': 'sing15',
-      'mtu': 9000,
-      'strict-route': true,
+      'tun-implementation': networkSettings == null || networkSettings.tunStack == TunStack.auto
+          ? 'sing15' : networkSettings.tunStack.name,
+      'mtu': (networkSettings?.mtu ?? 9000).clamp(1280, 9000),
+      'strict-route': networkSettings?.strictRoute ?? true,
       'auto-redirect': true,
       'router-mode': false,
       // ── دی ان اس: خالی گذاشتن این دو، هسته را با «نشانی نامعتبر» می بندد ──
-      'remote-dns-address': remoteDns,
-      'direct-dns-address': directDns,
+      'remote-dns-address': networkSettings == null ? remoteDns : NetworkDns.normalize(networkSettings.remoteDns),
+      'direct-dns-address': networkSettings == null ? directDns : NetworkDns.normalize(networkSettings.directDns),
       'remote-dns-domain-strategy': 'as_is',
       'direct-dns-domain-strategy': 'as_is',
       'independent-dns-cache': false,
@@ -316,7 +319,7 @@ class UmbrellaCore {
       // زنجیره (chain) خاموش: مقدار خالی «off» است؛ با ایمن سازی، دی ان اس
       // گروه اضافه ای می سازد که این نسخه لازم ندارد.
       'chain-status': 'off',
-      'ipv6-mode': 'as_is',
+      'ipv6-mode': networkSettings?.blockIpv6 == true ? 'ipv4_only' : 'as_is',
       'resolve-destination': false,
       'bypass-lan': false,
       'allow-connection-from-lan': false,

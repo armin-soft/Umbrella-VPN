@@ -163,7 +163,7 @@ class CorePinger {
     // هسته `log-file` را نسبت به همین پوشه می نویسد و پیش از هر کاری آن را
     // باز می کند؛ اگر پوشه اش نباشد یا قابل نوشتن نباشد، اجرا بی هیچ پیامی
     // می میرد و سنجش خالی می ماند.
-    final File settings = File(
+    final File settingsFile = File(
       '$workDir${Platform.pathSeparator}${AppConfig.coreSettingsFile}',
     );
     final File log = File(
@@ -175,17 +175,15 @@ class CorePinger {
       // هسته خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
       await config.writeAsString('$link\n', flush: true);
       await log.parent.create(recursive: true);
-      await settings.writeAsString(
+      await settingsFile.writeAsString(
         jsonEncode(
           UmbrellaCore.settingsJson(
             tun: false,
             systemProxy: false,
             port: port,
-            logLevel: 'info',
+            networkSettings: settings,
             logFile: log.path,
-            // دی ان اس داخل تونل در سنجش، آماده شدن پورت را عقب می اندازد.
-            remoteDns: VpnController.pingDns,
-            directDns: VpnController.pingDns,
+            // Use the same resolver and IPv6 policy as an actual connection.
           ),
         ),
         flush: true,
@@ -205,8 +203,8 @@ class CorePinger {
           port: port,
           tun: false,
           systemProxy: false,
-          logLevel: 'info',
-          settingsPath: settings.path,
+          logLevel: CoreLogLevel.normalize(settings.logLevel),
+          settingsPath: settingsFile.path,
           remoteDns: VpnController.pingDns,
           directDns: VpnController.pingDns,
         ),

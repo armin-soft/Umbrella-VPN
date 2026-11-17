@@ -10,6 +10,7 @@ import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 import '../widgets/content_control.dart';
+import '../widgets/network_settings.dart';
 
 /// تنظیمات: چیدمان دو ستونی، هر کارت یک موضوع روشن.
 /// «کنترل محتوا» هم اینجا زندگی می کند.
@@ -184,6 +185,14 @@ class _SettingsPageState extends State<SettingsPage> {
               Expanded(
                 child: Column(
                   children: <Widget>[
+                    _Section(
+                      icon: Icons.settings_ethernet_rounded,
+                      title: 'تنظیمات پیشرفته شبکه',
+                      subtitle: 'TUN و DNS؛ اعمال در اتصال بعدی',
+                      color: colors.info,
+                      children: const <Widget>[NetworkSettings()],
+                    ),
+                    const SizedBox(height: AppMetrics.space4),
                     _Section(
                       icon: Icons.window_rounded,
                       title: 'ویندوز و سینی سیستم',
