@@ -370,7 +370,7 @@ self::ok([
 // so a bookkeeping problem can never turn into «cannot sign in».
 if (!AppTwoStep::enabled($Telegram_Id) && self::decide($Challenge, true, $Telegram_Id)) {
 try {
-TelegramClient::sendMessage($Telegram_Id, self::signedInMessage($Row));
+TelegramClient::sendSystemMessage($Telegram_Id, self::signedInMessage($Row));
 }
 
 catch (Throwable $Error) {
@@ -738,9 +738,9 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $Rows = Database::getInstance()->fetchAll(
 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications`
 WHERE `Delivered_At` IS NULL
-AND (`Device_ID` = ? OR (`Device_ID` IS NULL AND `User_UUID` = ?))
+AND ((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))
 ORDER BY `ID` ASC LIMIT 20',
-[(string)$Session['Device_ID'], (string)$Session['User_UUID']]
+[(string)$Session['Device_ID'], (string)$Session['User_UUID'], (string)$Session['User_UUID']]
 );
 
 $VisibleRows = [];
@@ -912,7 +912,7 @@ return false;
 }
 
 try {
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 $Telegram_Id,
 self::deviceMessage($Row),
 TelegramClient::inlineKeyboard([[
@@ -1115,7 +1115,7 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "تأیید دومرحله‌ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در پروفایل آن دستگاه را حذف کنید و تأیید دومرحله‌ای را روشن کنید."
+. "تأیید دومرحله‌ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در منوی خدمات ربات آن دستگاه را حذف کنید و تأیید دومرحله‌ای را روشن کنید."
 . \Helper::userFooter();
 }
 
@@ -1160,7 +1160,7 @@ if ($IP === '') {
 $IP = self::clientIp();
 }
 
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 $Telegram_Id,
 \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Telegram_Id)
 . "⚠️ ورود ناموفق به فیلترشکن آمبرلا\n"
@@ -1171,7 +1171,7 @@ $Telegram_Id,
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "🔎 دلیل: " . ($Labels[$Reason] ?? $Reason) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در پروفایل، دستگاه‌های ناشناس را حذف کنید.**"
+. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه‌های ناشناس را حذف کنید.**"
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
 ['text' => '📱 دستگاه من', 'callback_data' => 'app_devices'],

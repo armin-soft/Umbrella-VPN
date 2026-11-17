@@ -90,7 +90,7 @@ $Existing = [];
 try {
 foreach ($Database->fetchAll(
 "SELECT table_name AS t, column_name AS c FROM information_schema.columns
-WHERE table_schema = DATABASE() AND table_name IN ('Users', 'User_Sessions', 'Transactions', 'Subscription_Logs')"
+WHERE table_schema = DATABASE() AND table_name IN ('Users', 'User_Sessions', 'Transactions', 'Subscription_Logs', 'Ticket_Messages')"
 ) as $Row) {
 $Existing[strtolower((string)($Row['t'] ?? ''))][strtolower((string)($Row['c'] ?? ''))] = true;
 }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/../Core/App/System-Notifications.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/App/App-Filter.php';
 require_once __DIR__ . '/../Core/App/App-Two-Step.php';
@@ -33,7 +34,7 @@ $Text = \Helper::userGreeting($Context, 'فیلترشکن آمبرلا')
 'برای دیدن اطلاعات حساب و تنظیمات فیلتر، ابتدا در برنامه با همین شماره وارد شوید و ربات را باز کنید.',
 'ℹ️ بعد از ورود اول، همه‌چیز به‌صورت خودکار اینجا نمایش داده می‌شود.'
 ) . \Helper::userFooter();
-self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()]));
 return;
 }
 
@@ -53,7 +54,7 @@ $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 ])
 . $Summary
 . \Helper::userFooter();
-self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()]));
 }
 
 /** The filter menu: one button per category, toggling on press. */
@@ -79,7 +80,7 @@ $Row = [];
 if ($Row !== []) $Rows[] = $Row;
 
 $Rows[] = [['text' => $Settings['enabled'] ? '🔴خاموش کردن کنترل محتوا' : '🟢روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
-$Rows[] = Menu::back('منوی قبلی', 'user_account_menu');
+$Rows[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Rows[] = Menu::userHome();
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
@@ -133,8 +134,12 @@ UserFlow::accountMenu($Context);
 }
 
 /** The devices that ever signed in, with trust state and paging. */
+public static function deviceInfo(Context $Context): void {
+self::devices($Context);
+}
+
 public static function devices(Context $Context, int $Page = 0): void {
-$Account = self::accountOrPrompt($Context, 'user_account_menu');
+$Account = self::accountOrPrompt($Context, 'user_device_menu');
 
 if ($Account === null) return;
 
@@ -151,7 +156,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه‌های من')
 . '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
-TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()])
+TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()])
 );
 return;
 }
@@ -188,7 +193,7 @@ $Buttons = [];
 
 foreach ($Rows as $Row) {
 $Id = (string)$Row['Device_ID'];
-$Buttons[] = [Menu::button('🖼تصویر ' . mb_substr((string)($Row['Device_Name'] ?? 'دستگاه'), 0, 20), 'app_device_card:' . substr($Id, 0, 24) . ':' . $Page)];
+$Buttons[] = [Menu::button('💻اطلاعات و تصویر ' . mb_substr((string)($Row['Device_Name'] ?? 'دستگاه'), 0, 20), 'app_device_card:' . substr($Id, 0, 24) . ':' . $Page)];
 $Buttons[] = [[
 'text' => ((int)($Row['Is_Trusted'] ?? 0) === 1 ? '⛔️ لغو اعتماد ' : '⚪️ اعتماد لغو شده · ') . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
 'callback_data' => (int)($Row['Is_Trusted'] ?? 0) === 1 ? 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page : 'app_device_status:' . substr($Id, 0, 24) . ':' . $Page,
@@ -206,7 +211,7 @@ $Navigation[] = ['text' => 'بعدی ➡️', 'callback_data' => 'app_devices_pa
 $Buttons[] = $Navigation;
 }
 
-$Buttons[] = Menu::back('منوی قبلی', 'user_account_menu');
+$Buttons[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
@@ -224,10 +229,6 @@ $Rows = Database::getInstance()->fetchAll(
 return count($Rows) === 1 ? $Rows[0] : null;
 }
 
-private static function devicePhotoKey(Context $Context, array $Device): string {
-return 'Device_Photo_' . $Context->UserId . '_' . hash('sha256', (string)$Device['Device_ID']);
-}
-
 public static function deviceArt(string $Platform): string {
 $Platform = strtolower(trim($Platform));
 if (in_array($Platform, ['android', 'ios', 'iphone', 'ipad', 'ipados'], true)) return 'mobile';
@@ -241,18 +242,16 @@ if ($Device === null) {
 if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه یافت نشد یا شناسه مبهم است.', true);
 return;
 }
-$Photo = Repository::getSetting(self::devicePhotoKey($Context, $Device), '') ?: '';
-$Uploaded = $Photo !== '';
-if (!$Uploaded) $Photo = __DIR__ . '/../Assets/devices/' . self::deviceArt((string)($Device['Platform'] ?? '')) . '.png';
+$Photo = __DIR__ . '/../Assets/devices/' . self::deviceArt((string)($Device['Platform'] ?? '')) . '.png';
 $Escape = static fn(string $Value): string => htmlspecialchars(mb_substr($Value, 0, 120), ENT_QUOTES, 'UTF-8');
 $Text = Helper::userGreeting($Context, 'تصویر دستگاه')
 . '📱نام ثبت‌شده: ' . $Escape((string)($Device['Device_Name'] ?? 'نامشخص'))
 . "\n🖥سیستم: " . $Escape((string)($Device['Platform'] ?? 'نامشخص'))
 . "\n" . ((int)($Device['Is_Trusted'] ?? 0) === 1 ? '✅اعتماد فعال' : '⚪️اعتماد لغو شده')
-. "\n\n" . ($Uploaded ? '📷عکس ارسالی شما؛ تطبیق مدل به‌صورت خودکار بررسی نشده است.' : '🎨تصویر شماتیک متناسب با سیستم‌عامل است، نه عکس مدل دقیق دستگاه. برای نمایش عکس واقعی، آن را ثبت کنید.');
+. "\n🌐آخرین IP: " . $Escape((string)($Device['Last_IP'] ?? 'نامشخص'))
+. "\n🕒آخرین فعالیت: " . $Escape((string)($Device['Last_Seen_At'] ?? 'نامشخص'))
+. "\n\n🎨تصویر خودکار و شماتیک متناسب با سیستم‌عامل است، نه عکس مدل دقیق سخت‌افزار.";
 $Markup = TelegramClient::inlineKeyboard([
-[Menu::button('📷ثبت یا تغییر عکس دستگاه', 'app_device_photo:' . $Prefix . ':' . max(0, $Page))],
-[Menu::button('🎨استفاده از تصویر شماتیک', 'app_device_art:' . $Prefix . ':' . max(0, $Page))],
 Menu::back('دستگاه‌ها', 'app_devices_page:' . max(0, $Page)), Menu::userHome(),
 ]);
 try { $Result = TelegramClient::sendPhoto($Context->ChatId, $Photo, $Text, $Markup); }
@@ -260,25 +259,16 @@ catch (Throwable) { $Result = ['ok' => false]; }
 if (($Result['ok'] ?? false) !== true) TelegramClient::sendReadableMessage($Context->ChatId, null, $Text . "\n⚠️نمایش تصویر ناموفق بود؛ دوباره تلاش کنید.", $Markup);
 }
 
+/** Legacy photo callbacks never accept or persist uploads anymore. */
 public static function devicePhotoStart(Context $Context, string $Prefix, int $Page = 0): void {
-if (self::ownedDevice($Context, $Prefix) === null) return;
-Repository::updateUserSession($Context->UserId, ['Flow' => 'app:device_photo:' . $Prefix . ':' . max(0, $Page)]);
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'عکس دستگاه') . '📷عکس واقعی دستگاه را به‌صورت عکس تلگرام بفرستید، با کپشن یا بدون کپشن. برای انصراف «لغو» را بفرستید.', TelegramClient::inlineKeyboard([Menu::back('دستگاه‌ها', 'app_devices_page:' . max(0, $Page)), Menu::userHome()]));
-}
-
-public static function devicePhotoInput(Context $Context, string $Prefix, int $Page = 0): void {
-$Device = self::ownedDevice($Context, $Prefix);
-if ($Device === null) { Repository::updateUserSession($Context->UserId, ['Flow' => null]); return; }
-if ($Context->Photo === null) { TelegramClient::sendMessage($Context->ChatId, '⚠️لطفاً عکس را به‌صورت Photo بفرستید، نه فایل.'); return; }
-Repository::setSetting(self::devicePhotoKey($Context, $Device), $Context->Photo);
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 self::deviceCard($Context, $Prefix, $Page);
 }
-
+public static function devicePhotoInput(Context $Context, string $Prefix, int $Page = 0): void {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+self::deviceCard($Context, $Prefix, $Page);
+}
 public static function devicePhotoReset(Context $Context, string $Prefix, int $Page = 0): void {
-$Device = self::ownedDevice($Context, $Prefix);
-if ($Device === null) return;
-Repository::setSetting(self::devicePhotoKey($Context, $Device), '');
 self::deviceCard($Context, $Prefix, $Page);
 }
 
@@ -369,6 +359,7 @@ WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
 }
 });
 
+SystemNotifications::queue($Context->UserId, 'امنیت دستگاه', '⚠️مجوز یکی از دستگاه‌های حساب شما لغو شد. اگر کار شما نبود، حساب را بررسی کنید.');
 if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد؛ برنامه از حساب خارج خواهد شد.');
 }
@@ -395,7 +386,7 @@ $Buttons[] = [Menu::button('📄متن کامل اعلان #' . $Row['ID'], 'app
 }
 }
 $Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'app_notifications_page:'));
-$Buttons[] = Menu::back('منوی قبلی', 'user_account_menu');
+$Buttons[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Buttons[] = Menu::userHome();
 self::reply($Context, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
@@ -425,7 +416,7 @@ return $Icon . ' ' . $Safe(mb_substr((string)($Row['Title'] ?? ''), 0, 190)) . "
 
 /** The switch that decides whether a sign-in also needs a tap here. */
 public static function twoStepMenu(Context $Context): void {
-if (self::accountOrPrompt($Context, 'user_account_menu') === null) {
+if (self::accountOrPrompt($Context, 'user_device_menu') === null) {
 return;
 }
 
@@ -465,7 +456,7 @@ $Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورو
 $Rows = $On
 ? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
 : [[['text' => '✅فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
-$Rows[] = Menu::back('منوی قبلی', 'user_account_menu');
+$Rows[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Rows[] = Menu::userHome();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
 }
@@ -484,7 +475,7 @@ if ($Found !== null) return $Found;
 return \PanelClient::findByTelegramId($Context->UserId);
 }
 
-private static function accountOrPrompt(Context $Context, string $Parent = 'user_account_menu'): ?array {
+private static function accountOrPrompt(Context $Context, string $Parent = 'user_device_menu'): ?array {
 $Account = self::account($Context);
 
 if ($Account === null) {

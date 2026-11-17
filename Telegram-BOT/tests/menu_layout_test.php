@@ -219,7 +219,7 @@ $End = strpos($Source, 'private static function categoryMenu(', $Start);
 $Body = substr($Source, $Start, $End - $Start);
 $this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
 $this->check_main_rows($Body, 'Menu_Rows', [
-'user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu',
+'user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu',
 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
 ]);
 }

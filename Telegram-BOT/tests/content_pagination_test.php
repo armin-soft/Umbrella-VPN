@@ -74,7 +74,7 @@ return TelegramClient::$Rows === [] ? [] : array_column(array_merge(...TelegramC
 }
 $Context = new Context();
 AppFlow::filterMenu($Context);
-check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_toggle:ads', 'app_filter_toggle:dating', 'app_filter_toggle:enabled', 'user_account_menu', 'منوی خدمات ربات'], 'exact four categories, ordered and no duplicate ads');
+check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_toggle:ads', 'app_filter_toggle:dating', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact four categories, ordered and no duplicate ads');
 check(array_map('count', TelegramClient::$Rows) === [2, 2, 1, 1, 1], 'filter categories are paired; switch and navigation remain separate');
 check(!str_contains(TelegramClient::$Text, 'دامنه') && !str_contains(TelegramClient::$Text, 'اجتماعی'), 'removed items absent from summary');
 $Before = Database::$Filter;
@@ -116,7 +116,7 @@ if (str_contains($Query, 'App_Notifications')) check(str_contains($Query, '`Tele
 }
 Database::$Notices = [];
 AppFlow::notifications($Context, 100);
-check(calls() === ['user_account_menu', 'منوی خدمات ربات'], 'empty list has parent and home only');
+check(calls() === ['user_device_menu', 'منوی خدمات ربات'], 'empty list has parent and home only');
 check(str_contains(TelegramClient::$Text, 'اعلانی'), 'empty notification text');
 $Original = str_repeat('متن آزمایشی <unsafe> & ', 250);
 $Rebuilt = '';

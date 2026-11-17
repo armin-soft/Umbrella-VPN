@@ -54,7 +54,7 @@ if ($Final_Price <= 0) {
 error_log('[Umbrella-Bot][AutoRenew] Plan price is not configured for key ' . $Plan);
 
 try {
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 Environment::getAdminUserId(),
 Helper::adminGreetingNamed('', 'تمدید خودکار')
 . "⚠️*تمدید خودکار انجام نشد.*\n"
@@ -71,7 +71,7 @@ continue;
 
 if ($Balance < $Final_Price) {
 $User_Now = Repository::getUser($User_ID);
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 (int)($User_Now['Chat_ID'] ?? 0),
 Helper::frame('کاربر', (string)($User_Now['Full_Name'] ?? ''), 'تمدید خودکار', $User_ID)
 . "⚠️*تمدید خودکار ناموفق بود.*\n"
@@ -107,7 +107,7 @@ $Payload = [
 
 $Response = ServerClient::updateUser($Client_ID, $Payload);
 
-if (($Response['StatusCode'] ?? 0) < 300) {
+if ((int)($Response['StatusCode'] ?? 0) >= 200 && (int)($Response['StatusCode'] ?? 0) < 300) {
 Repository::updateUser($User_ID, [
 'Expiration_Time_Stamp' => $New_Expire->getTimestamp(),
 'Expiration_Date' => Helper::formatExpiration($New_Expire->getTimestamp()),
@@ -119,12 +119,13 @@ Repository::updateUser($User_ID, [
 'Remaining_Usage_GB' => (float)self::PLAN_GB,
 'Percent_Usage' => 0.0,
 'Client_Status' => 'فعال',
+'Channel_Client_Disabled_At' => null,
 ]);
 
 $User_Now = Repository::getUser($User_ID);
 $Full_Name = (string)($User_Now['Full_Name'] ?? '');
 
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 (int)($User_Now['Chat_ID'] ?? 0),
 Helper::frame('کاربر', $Full_Name, 'تمدید خودکار', $User_ID)
 . "✨*تمدید خودکار اشتراک با موفقیت انجام شد.*\n"
@@ -150,7 +151,7 @@ $Admin_Text = Helper::adminGreetingNamed($Admin_Name, 'تمدید خودکار',
 . "└─📅انقضای جدید: " . Helper::formatExpirationShort($New_Expire->getTimestamp())
 . Helper::adminFooter();
 
-TelegramClient::sendMessage(Environment::getAdminUserId(), $Admin_Text, TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage(Environment::getAdminUserId(), $Admin_Text, TelegramClient::inlineKeyboard([
 [['text' => '👁👤مشاهده کاربر', 'url' => 'tg://user?id=' . $User_ID]],
 ]));
 }

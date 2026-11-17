@@ -340,6 +340,7 @@ CREATE TABLE IF NOT EXISTS `App_Notifications` (
 `Level` VARCHAR(20) NOT NULL DEFAULT 'info',
 `Sent_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 `Delivered_At` INT UNSIGNED NULL,
+`Event_Key` CHAR(64) NULL UNIQUE,
 PRIMARY KEY (`ID`),
 KEY `IDX_App_Notifications_User` (`User_UUID`),
 KEY `IDX_App_Notifications_Device` (`Device_ID`)

@@ -154,3 +154,6 @@ jobs:
 
       - name: Persian moderation, operator allocations and error-only logs
         run: php Telegram-BOT/tests/moderation_operator_logging_test.php
+
+      - name: System app notifications and safe channel restoration
+        run: php Telegram-BOT/tests/system_notifications_channel_test.php

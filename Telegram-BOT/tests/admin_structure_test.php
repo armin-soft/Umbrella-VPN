@@ -206,17 +206,18 @@ check(str_contains($Body, "Menu::back('منوی قبلی', '{$Parent}')"), $Meth
 check(str_contains($Body, 'Menu::adminHome()'), $Method . ': leaf keeps main menu');
 }
 $UserMenus = [
-'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
+'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول', 'منوی تمدید خودکار']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
-'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'app_filter', 'app_devices', 'app_2fa', 'nightly_report_off']],
+'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل', 'nightly_report_off']],
+'deviceMenu' => ['user_device_menu', ['app_filter', 'app_2fa', 'app_device_info', 'app_devices']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
 $UserWidths = [
-'serviceMenu' => [1, 1, 1, 1, 1, 1],
+'serviceMenu' => [1, 1, 1, 1, 1, 1, 1],
 'subscriptionsMenu' => [1, 2, 1, 1, 1], 'walletMenu' => [1, 1, 1],
-'accountMenu' => [1, 1, 1, 1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
+'accountMenu' => [1, 1, 1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);
@@ -291,7 +292,7 @@ check(!str_contains($Match[0], "'callback_data' => '" . $PurchaseAction . "'"), 
 }
 $UserLeafParents = [
 'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'usageRanking' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],
-'App-Link.php' => ['filterMenu' => 'user_account_menu', 'notifications' => 'user_account_menu', 'devices' => 'user_account_menu', 'renderTwoStep' => 'user_account_menu'],
+'App-Link.php' => ['filterMenu' => 'user_device_menu', 'notifications' => 'user_device_menu', 'devices' => 'user_device_menu', 'renderTwoStep' => 'user_device_menu'],
 'Subscription.php' => ['mySubscription' => 'user_subscriptions_menu', 'mySubscriptionActive' => 'user_subscriptions_menu', 'buyMenu' => 'user_subscriptions_menu', 'readyPlansMenu' => 'user_subscriptions_menu', 'customPlansMenu' => 'user_subscriptions_menu', 'walletTopupStart' => 'user_wallet_menu'],
 'Profile.php' => ['begin' => 'user_account_menu', 'askName' => 'user_account_menu'],
 ];

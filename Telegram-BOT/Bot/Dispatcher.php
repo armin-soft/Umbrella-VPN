@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/../Core/App/System-Notifications.php';
 require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/Admin.php';
@@ -19,6 +20,7 @@ private const ROUTES = [
 'user_subscriptions_menu' => [UserFlow::class, 'subscriptionsMenu'],
 'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
 'user_account_menu' => [UserFlow::class, 'accountMenu'],
+'user_device_menu' => [UserFlow::class, 'deviceMenu'],
 // سازگاری با پیام‌های قدیمی؛ دسته امنیت دیگر نمایش داده نمی‌شود.
 'user_security_menu' => [UserFlow::class, 'accountMenu'],
 'user_stats_menu' => [UserFlow::class, 'statsMenu'],
@@ -56,6 +58,11 @@ private function __construct() {
 }
 
 public static function dispatch(Context $Context): void {
+if (isset($Context->Raw['chat_member'])) {
+require_once __DIR__ . '/Scheduler.php';
+Scheduler::channelMembershipChanged($Context->Raw);
+return;
+}
 if ($Context->UserId <= 0) return;
 $Context->saveUser();
 
@@ -161,6 +168,7 @@ $Text = $Greeting . Helper::noticeBlock(
 ) . Helper::userFooter();
 }
 
+SystemNotifications::queue($Context->UserId, 'عضویت کانال', '⚠️شما عضو کانال اطلاع‌رسانی نیستید؛ برای ادامه سرویس عضو شوید: ' . $Channel_Url, 'channel-warning:' . (int)($Grace_Started_At ?? 0) . ':first', 'warning');
 if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️ابتدا عضو کانال شوید.', true);
 }
@@ -334,6 +342,7 @@ match($Data) {
 'حساب آمبرلا' => AppFlow::menu($Context),
 'برنامه آمبرلا' => AppFlow::menu($Context),
 'app_menu' => AppFlow::menu($Context),
+'app_device_info' => AppFlow::deviceInfo($Context),
 'app_filter' => AppFlow::filterMenu($Context),
 'app_2fa' => AppFlow::twoStepMenu($Context),
 'app_2fa_on' => AppFlow::setTwoStep($Context, true),
@@ -665,7 +674,7 @@ TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Reposito
 catch (Throwable) {}
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
+TelegramClient::sendSystemMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
 . "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
 TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
@@ -753,6 +762,7 @@ $Typed_Routes = [
 'مدیریت اشتراک' => fn() => UserFlow::subscriptionsMenu($Context),
 'کیف پول و مالی' => fn() => UserFlow::walletMenu($Context),
 'حساب کاربری' => fn() => UserFlow::accountMenu($Context),
+'دستگاه من' => fn() => UserFlow::deviceMenu($Context),
 'امنیت' => fn() => UserFlow::accountMenu($Context),
 'سوابق و آمار' => fn() => UserFlow::statsMenu($Context),
 'اشتراک من' => fn() => SubscriptionFlow::mySubscription($Context),

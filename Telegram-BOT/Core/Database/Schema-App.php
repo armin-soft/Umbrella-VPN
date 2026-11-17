@@ -30,6 +30,10 @@ catch (Throwable $Error) {
 error_log('[Umbrella-Bot][AppSchema] ' . $Name . ': ' . $Error->getMessage());
 }
 }
+try {
+$Exists = $Database->scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'App_Notifications' AND column_name = 'Event_Key'");
+if (!(int)$Exists) $Database->connection()->exec('ALTER TABLE `App_Notifications` ADD COLUMN `Event_Key` CHAR(64) NULL UNIQUE');
+} catch (Throwable $Error) { error_log('[Umbrella-Bot][AppSchema] notification event key: ' . $Error->getMessage()); }
 }
 
 private static function statements(): array {
@@ -106,6 +110,7 @@ KEY `IDX_App_Sessions_Device` (`Device_ID`)
 `Level` VARCHAR(20) NOT NULL DEFAULT 'info',
 `Sent_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 `Delivered_At` INT UNSIGNED NULL,
+`Event_Key` CHAR(64) NULL UNIQUE,
 PRIMARY KEY (`ID`),
 KEY `IDX_App_Notifications_User` (`User_UUID`),
 KEY `IDX_App_Notifications_Device` (`Device_ID`)

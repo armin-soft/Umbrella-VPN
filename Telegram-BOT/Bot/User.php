@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Channel-Membership.php';
 require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
@@ -91,34 +92,14 @@ return;
 }
 
 if ($Is_Member) {
-$User = Repository::getUser($Context->UserId);
-$Was_Disabled = ($User['Channel_Client_Disabled_At'] ?? null) !== null;
-Repository::updateUser($Context->UserId, ['Channel_Grace_Started_At' => null, 'Channel_Client_Disabled_At' => null, 'Channel_Member_Check_At' => time()]);
-
-if ($Was_Disabled) {
-$Client_ID = (string)($User['Client_ID'] ?? '');
-
-if ($Client_ID !== '' && $Client_ID !== '_') {
-$Update_Response = ServerClient::updateUser($Client_ID, ['is_active' => true, 'enable' => true]);
-
-if (($Update_Response['StatusCode'] ?? 0) >= 300) {
-AdminFlow::notifyAdminServerError('فعالسازی کلاینت (کانال)', $Context->UserId, $Context->profileName(), $Update_Response['StatusCode'] ?? 0, (string)($Update_Response['Body'] ?? ''));
-}
-}
-
-Repository::updateUser($Context->UserId, ['Client_Status' => 'فعال']);
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🎉عضویت شما در کانال مجددا تایید گردید و کلاینت شما فعال شد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-Menu::userHome(),
-]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}✅عضویت شما در کانال تایید گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Menu::userHome(),
-]));
-}
-
+$Result = ChannelMembership::restore($Context->UserId);
+$Notice = match ($Result) {
+'restored' => '✅عضویت تأیید و کلاینت دوباره فعال شد.',
+'pending' => '⚠️عضویت تأیید شد، اما فعال‌سازی هنوز موفق نشده؛ دوباره تلاش کنید. بررسی خودکار نیز تکرار می‌شود.',
+'ineligible' => '✅عضویت تأیید شد؛ اشتراک منقضی یا محدودیت دیگری مانع فعال‌سازی خودکار است. با پشتیبانی تماس بگیرید.',
+default => '✅عضویت شما در کانال تأیید گردید.',
+};
+TelegramClient::sendMessage($Context->ChatId, $Greeting . $Notice . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -148,7 +129,7 @@ $Last_Check = (int)($User['Channel_Member_Check_At'] ?? 0);
 $Grace_Started_At = (int)($User['Channel_Grace_Started_At'] ?? 0);
 $Is_Disabled = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0;
 $TTL = 1800;
-$Should_Call = $Last_Check <= 0 || (time() - $Last_Check) >= $TTL || ($Grace_Started_At > 0 && !$Is_Disabled);
+$Should_Call = $Last_Check <= 0 || (time() - $Last_Check) >= $TTL || $Grace_Started_At > 0 || $Is_Disabled;
 
 if (!$Should_Call) return true;
 $Status = self::membershipStatus($UserId);
@@ -168,7 +149,7 @@ Repository::updateUser($UserId, ['Channel_Grace_Started_At' => time()]);
 return false;
 }
 
-Repository::updateUser($UserId, ['Channel_Member_Check_At' => time()]);
+ChannelMembership::restore($UserId);
 return true;
 }
 
@@ -204,7 +185,7 @@ $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAd
 if ($Admin <= 0) return;
 
 try {
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 $Admin,
 Helper::adminGreetingNamed(
 (string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()),
@@ -308,6 +289,7 @@ $Menu_Rows = Menu::rows([
 [['💎مدیریت اشتراک', 'user_subscriptions_menu']],
 [['💰کیف پول و مالی', 'user_wallet_menu']],
 [['👤حساب کاربری', 'user_account_menu']],
+[['📱دستگاه من', 'user_device_menu']],
 [['📊سوابق و آمار', 'user_stats_menu']],
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
@@ -368,13 +350,19 @@ public static function accountMenu(Context $Context): void {
 $Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری']],
 [['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
-[['🛡کنترل محتوا', 'app_filter']],
-[['📱دستگاه های من', 'app_devices']],
-[['🔐تأیید دومرحله‌ای', 'app_2fa']],
 ]);
 $On = Repository::nightlyReportEnabled($Context->UserId);
 $Rows[] = [Menu::button($On ? '🔔گزارش شبانه: روشن — خاموش کردن' : '🔕گزارش شبانه: خاموش — روشن کردن', $On ? 'nightly_report_off' : 'nightly_report_on')];
 self::categoryMenu($Context, 'حساب کاربری', $Rows);
+}
+
+public static function deviceMenu(Context $Context): void {
+self::categoryMenu($Context, 'دستگاه من', Menu::rows([
+[['🛡کنترل محتوا', 'app_filter']],
+[['🔐تأیید دومرحله‌ای', 'app_2fa']],
+[['💻اطلاعات دستگاه', 'app_device_info']],
+[['📱دستگاه های من', 'app_devices']],
+]));
 }
 
 public static function setNightlyReport(Context $Context, bool $Enabled): void {
@@ -1108,7 +1096,7 @@ if (!TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠
 
 }
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تیکت های من') . "✅تیکت #" . Helper::toPersian((string)$Ticket_ID) . " ایجاد شد.\n➖➖➖➖➖➖➖➖➖\n📋موضوع: {$Subject}\n📂دسته: {$Category_Label}\n🚦اولویت: {$Priority_Label}\n\n⚠️ادمین به زودی پاسخ خواهد داد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'تیکت های من') . "✅تیکت #" . Helper::toPersian((string)$Ticket_ID) . " ایجاد شد.\n➖➖➖➖➖➖➖➖➖\n📋موضوع: {$Subject}\n📂دسته: {$Category_Label}\n🚦اولویت: {$Priority_Label}\n\n⚠️ادمین به زودی پاسخ خواهد داد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🎫تیکت های من', 'callback_data' => 'لیست تیکت های من']],
 Menu::userHome(),
 ]));

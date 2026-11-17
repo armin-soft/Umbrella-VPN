@@ -42,9 +42,9 @@ $Checks = [
         !str_contains($User, "'🔔اعلان های برنامه', 'app_notifications'") &&
         !str_contains($User, "'📱حساب و تنظیمات برنامه'") &&
         str_contains($Admin, "'📲دستگاه‌های برنامه', 'admin_devices'"),
-    'app screens return to the account category' =>
+    'app screens return to the device category' =>
         !str_contains($AppLink, "'user_security_menu'") &&
-        str_contains($AppLink, "Menu::back('منوی قبلی', 'user_account_menu')") &&
+        str_contains($AppLink, "Menu::back('منوی قبلی', 'user_device_menu')") &&
         !str_contains($AppLink, "Menu::back('حساب آمبرلا', 'app_menu')") &&
         !str_contains($AppLink, "Menu::back('کنترل محتوا', 'app_filter')"),
     'direct ticket actions and ticket-description step have proper back and main routes' =>

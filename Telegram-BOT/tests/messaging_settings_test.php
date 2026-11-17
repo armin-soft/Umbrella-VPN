@@ -12,6 +12,7 @@ public static function userGreeting(Context $C, string $S): string { return $S; 
 public static function toPersian(string $S): string { return $S; }
 public static function normalizePhone(string $S): string { return $S; }
 }
+final class SystemNotifications { public static function queue(...$Args): int { return 0; } }
 final class PanelClient { public static function findByTelegramId(int $Id): array { return ['uuid' => 'owner']; } public static function findByPhone(string $Phone): array { return ['uuid' => 'owner']; } }
 final class TelegramClient {
 public static array $Response = []; public static array $ApiCalls = []; public static array $Sent = []; public static bool $FailSend = false; public static array $Rows = [];

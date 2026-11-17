@@ -221,6 +221,13 @@ if (!class_exists('Menu', false)) return false;
 return Menu::isNavigationOnly($Markup);
 }
 
+/** App queue is independent of Telegram availability. Never use for manual text. */
+public static function sendSystemMessage(int $Chat_ID, string $Text, array $Markup = []): array {
+require_once __DIR__ . '/../App/System-Notifications.php';
+SystemNotifications::mirrorChat($Chat_ID, $Text);
+return self::sendMessage($Chat_ID, $Text, $Markup);
+}
+
 public static function sendMessage(int $Chat_ID, string $Text, array $Markup = [], string $Parse_Mode = 'HTML', ?int $Reply_To = null): array {
 $Payload = [
 'chat_id' => $Chat_ID,

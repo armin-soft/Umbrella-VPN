@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Channel-Membership.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
@@ -212,6 +213,7 @@ $Subscription = (string)($User['Subscription'] ?? '');
 $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Remaining_Label = Helper::remainingDuration($Exp_Stamp);
 $Event = implode(':', [$User_ID, $Exp_Stamp, $Days]);
+SystemNotifications::queue($User_ID, 'یادآور تمدید اشتراک', '⚠️اشتراک ' . $Subscription . ' شما ' . Helper::toPersian((string)$Days) . ' روز دیگر به اتمام می‌رسد. زمان باقی‌مانده: ' . $Remaining_Label, 'expiry-warning:' . $Event, 'warning');
 
 // The scheduler runs frequently, so a one-hour cron lock alone does not stop
 // repeats. A stable key per user + exact expiry + boundary makes each warning
@@ -463,7 +465,7 @@ Repository::releaseCronLock('daily_report');
 return;
 }
 
-$Result = TelegramClient::sendMessage($Admin, $Text);
+$Result = TelegramClient::sendSystemMessage($Admin, $Text);
 
 if (is_array($Result) && ($Result['ok'] ?? false) !== true) {
 error_log('[Umbrella-Bot][Daily-Report] ارسال گزارش روزانه ناموفق بود: ' . json_encode($Result, JSON_UNESCAPED_UNICODE));
@@ -509,7 +511,7 @@ $Rows = Database::getInstance()->fetchAll(
 `Total_Usage_GB`, `Used_Usage_GB`, `Remaining_Usage_GB`, `Percent_Usage`,
 `Expiration_Time_Stamp`
 FROM `Users`
-WHERE `Is_Blocked` = 0 AND `Chat_ID` > 0
+WHERE `Is_Blocked` = 0
 AND `Subscription` IS NOT NULL AND `Subscription` != ''
 AND `Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > ?
 AND " . Repository::CLIENT_CONDITION,
@@ -528,7 +530,7 @@ foreach ($Rows as $U) {
 $User_ID = (int)($U['Telegram_ID'] ?? 0);
 $Chat_ID = (int)($U['Chat_ID'] ?? 0);
 
-if ($User_ID <= 0 || $Chat_ID <= 0) continue;
+if ($User_ID <= 0) continue;
 if (!Repository::nightlyReportEnabled($User_ID)) continue;
 $Has_Subscription = trim((string)($U['Subscription'] ?? '')) !== '';
 $Expiry_Stamp = (int)($U['Expiration_Time_Stamp'] ?? 0);
@@ -594,6 +596,8 @@ $Text = Helper::frame('کاربر', $Name, 'گزارش شبانه مصرف', $Us
 . "\n💡<b>نکته:</b> با مدیریت هوشمند مصرف، اتصال پایدارتری خواهید داشت."
 . Helper::userFooter();
 
+SystemNotifications::queue($User_ID, 'گزارش شبانه مصرف', $Text, 'nightly:' . $Today);
+if ($Chat_ID <= 0) continue;
 $Result = TelegramClient::sendMessage($Chat_ID, $Text, TelegramClient::inlineKeyboard([
 [['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من'], ['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
 Common::mainButton(),
@@ -654,6 +658,7 @@ $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
 $Chat_ID = (int)($User['Chat_ID'] ?? 0);
 $Phone = (string)($User['Phone'] ?? '');
 $Message = strtr($Template, ['{full_name}' => $Full_Name]);
+SystemNotifications::queue((int)$User_ID, 'تبریک سال نو', $Message, 'nowruz:' . $Current_Year);
 
 if ($Chat_ID > 0) {
 TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'تبریک سال نو', (int)$User_ID) . "🌷{$Message}" . Helper::userFooter());
@@ -696,7 +701,7 @@ $Interval_Hours = (int)Repository::getSetting('Channel_Check_Interval_Hours', '1
 $Interval = max(1, $Interval_Hours > 0 ? $Interval_Hours : 12) * 3600;
 $Last_Check = (int)Repository::getSetting('Last_Channel_Check_At', 0);
 
-if (!$Force && $Last_Check > 0 && (time() - $Last_Check) < $Interval) return;
+$Full_Check = $Force || $Last_Check <= 0 || (time() - $Last_Check) >= $Interval;
 if (!Repository::tryCronLock('channel_membership', 3600)) return;
 
 try {
@@ -705,10 +710,12 @@ $Channel_Name = self::extractChannelName($Channel_Url);
 $Channel_ID = BotConfig::getTelegramChannelId();
 
 if ($Channel_Name === '' && $Channel_ID === '') return;
-Repository::setSetting('Last_Channel_Check_At', (string)time());
+if ($Full_Check) Repository::setSetting('Last_Channel_Check_At', (string)time());
 $Grace_Seconds = Environment::getChannelGraceSeconds();
-
-foreach (Repository::allUserIds() as $User_ID) {
+$Ids = $Full_Check ? Repository::allUserIds() : array_column(Database::getInstance()->fetchAll(
+'SELECT `Telegram_ID` FROM `Users` WHERE (`Channel_Grace_Started_At` > 0 OR `Channel_Client_Disabled_At` > 0) AND (`Channel_Member_Check_At` IS NULL OR `Channel_Member_Check_At` < ?) ORDER BY `Channel_Member_Check_At` ASC LIMIT 200', [time() - 60]
+), 'Telegram_ID');
+foreach ($Ids as $User_ID) {
 $User_ID = (int)$User_ID;
 
 if ($User_ID <= 0) continue;
@@ -721,6 +728,16 @@ Repository::releaseCronLock('channel_membership');
 }
 }
 
+public static function channelMembershipChanged(array $Update): void {
+$Channel = (string)BotConfig::getTelegramChannelId();
+$Member = $Update['chat_member'] ?? [];
+if ($Channel === '' || (string)($Member['chat']['id'] ?? '') !== $Channel) return;
+$UserId = (int)($Member['new_chat_member']['user']['id'] ?? 0);
+if ($UserId <= 0) return;
+// Recheck through Telegram; do not trust a callback or a different channel.
+self::checkMembership($UserId, self::extractChannelName(BotConfig::getChannelUrl()), $Channel, Environment::getChannelGraceSeconds());
+}
+
 private static function checkMembership(int $User_ID, string $Channel_Name, string $Channel_ID, int $Grace_Seconds): void {
 $User = Repository::getUser($User_ID);
 $Chat_ID = (int)($User['Chat_ID'] ?? 0);
@@ -728,15 +745,11 @@ $Client_ID = (string)($User['Client_ID'] ?? '');
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
 $Has_Client = $Client_ID !== '' && $Client_ID !== '_';
 
-if ($Chat_ID === 0) {
-return;
-}
-
 $Status = ($Channel_Name === '' && $Channel_ID === '')
 ? 'unknown'
 : TelegramClient::channelMemberStatus($User_ID, $Channel_Name, $Channel_ID);
-$Grace_Started_At = $User['Channel_Grace_Started_At'] !== null ? (int)$User['Channel_Grace_Started_At'] : 0;
-$Disabled_At = $User['Channel_Client_Disabled_At'] !== null ? (int)$User['Channel_Client_Disabled_At'] : 0;
+$Grace_Started_At = (int)($User['Channel_Grace_Started_At'] ?? 0);
+$Disabled_At = (int)($User['Channel_Client_Disabled_At'] ?? 0);
 $Channel_Url = BotConfig::getChannelUrl();
 $Minutes = (int)ceil($Grace_Seconds / 60);
 
@@ -753,20 +766,7 @@ Repository::updateUser($User_ID, ['Channel_Member_Check_At' => time()]);
 $Is_Member = $Status === 'member';
 
 if ($Is_Member) {
-if ($Disabled_At > 0 || $Grace_Started_At > 0) {
-Repository::updateUser($User_ID, ['Channel_Grace_Started_At' => null, 'Channel_Client_Disabled_At' => null]);
-
-if ($Has_Client && $Disabled_At > 0) {
-$Update_Response = ServerClient::updateUser($Client_ID, ['is_active' => true, 'enable' => true]);
-
-if (($Update_Response['StatusCode'] ?? 0) >= 300) {
-AdminFlow::notifyAdminServerError('فعالسازی کلاینت (کانال)', $User_ID, $Full_Name, $Update_Response['StatusCode'] ?? 0, (string)($Update_Response['Body'] ?? ''));
-}
-
-Repository::updateUser($User_ID, ['Client_Status' => 'فعال']);
-}
-}
-
+ChannelMembership::restore($User_ID);
 return;
 }
 
@@ -797,14 +797,8 @@ self::sendLeaveWarning($Chat_ID, $User_ID, $Full_Name, $Channel_Url, $Rem_Min, f
 return;
 }
 
-Repository::updateUser($User_ID, ['Channel_Client_Disabled_At' => time()]);
-$Disable_Response = ServerClient::updateUser($Client_ID, ['is_active' => false, 'enable' => false]);
-
-if (($Disable_Response['StatusCode'] ?? 0) >= 300) {
-AdminFlow::notifyAdminServerError('غیرفعالسازی کلاینت (کانال)', $User_ID, $Full_Name, $Disable_Response['StatusCode'] ?? 0, (string)($Disable_Response['Body'] ?? ''));
-}
-
-Repository::updateUser($User_ID, ['Client_Status' => '🚫قطع به دلیل عدم عضویت']);
+if (!ChannelMembership::suspend($User_ID)) return;
+SystemNotifications::queue($User_ID, 'قطع به دلیل عضویت کانال', '⛔️مهلت عضویت تمام شد؛ کلاینت به دلیل عدم عضویت قطع شد. برای اتصال دوباره عضو شوید: ' . $Channel_Url, 'channel-disabled:' . $Grace_Started_At, 'warning');
 
 $Phone = (string)($User['Phone'] ?? '');
 self::sendChannelDisabledSms($User_ID, $Phone, $Channel_Url);
@@ -848,6 +842,7 @@ private static function sendLeaveWarning(int $Chat_ID, int $User_ID, string $Ful
 $User = Repository::getUser($User_ID);
 $Phone = (string)($User['Phone'] ?? '');
 $Remaining_Label = Helper::humanDuration(max(0, $Minutes) * 60);
+SystemNotifications::queue($User_ID, 'هشدار عضویت کانال', '⚠️شما عضو کانال نیستید. مهلت باقی‌مانده: ' . self::graceLabel(max(0, $Minutes) * 60) . ' — ' . $Channel_Url, 'channel-warning:' . (int)($User['Channel_Grace_Started_At'] ?? 0) . ':' . ($First ? 'first' : 'reminder'), 'warning');
 
 if ($First) {
 self::sendChannelWarningSms($User_ID, $Phone, $Channel_Url, $Minutes);
@@ -933,16 +928,18 @@ if ($Client_ID !== '' && $Client_ID !== '_') {
 $Disable_Response = ServerClient::updateUser($Client_ID, ['is_active' => false, 'enable' => false]);
 $Status = (int)($Disable_Response['StatusCode'] ?? 0);
 
-if ($Status >= 300) {
+if ($Status < 200 || $Status >= 300) {
 $Server_Disabled = false;
 AdminFlow::notifyAdminServerError('منقضی اشتراک (خودکار)', $User_ID, $Full_Name, $Status, (string)($Disable_Response['Body'] ?? ''));
 }
 }
 
 if ($Server_Disabled) {
-Repository::updateUser($User_ID, ['Client_Status' => '🚫غیر فعال']);
+Repository::updateUser($User_ID, ['Client_Status' => '🚫غیر فعال', 'Channel_Client_Disabled_At' => null]);
 Repository::addSubscriptionLog($User_ID, 'expire', $Subscription, null, null, 'انقضای خودکار اشتراک (زمان بند خودکار)', 'scheduler');
 }
+
+SystemNotifications::queue($User_ID, 'انقضای اشتراک', '⏳اشتراک ' . $Subscription . ' شما به پایان رسید؛ برای ادامه سرویس تمدید کنید.', 'expired:' . (int)($Row['Expiration_Time_Stamp'] ?? 0), 'warning');
 
 if ($Chat_ID > 0) {
 $Status_Notice = $Server_Disabled ? '⚠️اتصال شما از سرور قطع گردید.' : '⚠️سرور موقتاً در دسترس نیست. اشتراک شما به زودی در سرور نیز غیرفعال خواهد شد.';
@@ -1006,7 +1003,7 @@ Repository::setSetting('Usage_Sync_Alert_At', $Hour);
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 if ($Admin <= 0) return;
 
-TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin)
+TelegramClient::sendSystemMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin)
 . '❌خطای همگام‌سازی مصرف کاربران' . "\n\n"
 . '📡وضعیت: ' . ($Status > 0 ? 'HTTP ' . $Status : 'خطا در ارتباط') . "\n"
 . '⚠️پاسخ: ' . mb_substr($Detail !== '' ? $Detail : 'نامشخص', 0, 500) . "\n"

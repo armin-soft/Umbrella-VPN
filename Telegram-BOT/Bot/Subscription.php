@@ -568,7 +568,7 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 }
 
 AdminFlow::notifyAdminServerError('ایجاد اشتراک سفارشی', $User_ID, $Name, $Response['StatusCode'] ?? 0, $Api_Error);
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌اشتراک {$Name} شما فعال نشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌اشتراک {$Name} شما فعال نشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'تایید اشتراک دلخواه']],
 Menu::userHome(),
 ]));
@@ -638,7 +638,7 @@ $Server_Active = (bool)($Data['is_active'] ?? true);
 $Server_Enabled = (bool)($Data['enable'] ?? true);
 
 if (!$Server_Active || !$Server_Enabled) {
-$Client_Status = '🚫غیر فعال';
+$Client_Status = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0 ? '🚫قطع به دلیل عدم عضویت' : '🚫غیر فعال';
 $Updates['Client_Status'] = $Client_Status;
 }
 
@@ -986,7 +986,7 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 }
 
 AdminFlow::notifyAdminServerError('ایجاد اشتراک', $Context->UserId, $Name, $Response['StatusCode'] ?? 0, $Api_Error);
-TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌اشتراک {$Name} شما فعال نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Context->ChatId, $Greeting . " *❌اشتراک {$Name} شما فعال نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'ایجاد کلاینت']],
 Menu::userHome()
@@ -1297,7 +1297,7 @@ catch (Throwable) {}
 $Payment_Type_Label = $Is_Pure_Topup
 ? '💳شارژ کیف پول'
 : '💎خرید اشتراک (درگاه زرین پال)';
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "✅پرداخت شما با موفقیت انجام شد.\n"
+TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "✅پرداخت شما با موفقیت انجام شد.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🧾نوع تراکنش: {$Payment_Type_Label}\n"
 . "🧾کد رهگیری: `{$Verify['RefId']}`\n"
@@ -1347,7 +1347,7 @@ $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_
 . ($Is_Pure_Topup ? "*✅اعتبار کیف پول کاربر شارژ شد.*" : "*🔄اشتراک {$Plan_Name} در حال فعال سازی...*")
 . Helper::adminFooter();
 
-$Admin_Result = TelegramClient::sendMessage($Admin_ID, $Admin_Text);
+$Admin_Result = TelegramClient::sendSystemMessage($Admin_ID, $Admin_Text);
 
 if (!is_array($Admin_Result) || ($Admin_Result['ok'] ?? false) !== true) {
 error_log('[Umbrella-Bot][Payment-Notify] ارسال گزارش پرداخت موفق به ادمین ناموفق | Admin=' . $Admin_ID . ' Response=' . json_encode($Admin_Result, JSON_UNESCAPED_UNICODE));
@@ -1601,7 +1601,7 @@ $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAd
 $User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone !== '' ? "\n📞موبایل: `{$Phone}`" : '');
 
 if (strtoupper($Status) !== 'OK') {
-TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "❌خطا: پرداخت توسط شما لغو شد.\n➖➖➖➖➖➖➖➖➖\n⚠️در صورت کسر وجه، مبلغ حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendSystemMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "❌خطا: پرداخت توسط شما لغو شد.\n➖➖➖➖➖➖➖➖➖\n⚠️در صورت کسر وجه، مبلغ حداکثر تا ۷۲ ساعت آینده بازگشت داده می شود." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin) . "❌پرداخت ناموفق / لغو شده توسط کاربر\n\n"
 . "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"
@@ -1611,7 +1611,7 @@ $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️کاربر پرداخت را لغو کرده یا تراکنش ناموفق بوده است."
 . Helper::adminFooter();
-TelegramClient::sendMessage($Admin, $Admin_Text, TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Admin, $Admin_Text, TelegramClient::inlineKeyboard([
 [['text' => '👁👤مشاهده کاربر', 'url' => 'tg://user?id=' . $User_ID]],
 ]));
 return;
@@ -1646,6 +1646,7 @@ Repository::updateUser($User_ID, [
 'Remaining_Usage_GB'  => (float)$Gb,
 'Percent_Usage'  => 0.0,
 'Client_Status'  => 'فعال',
+'Channel_Client_Disabled_At' => null,
 'ED_25519_Private_Key' => (string)($Data['ed25519_private_key'] ?? '-'),
 'ED_25519_Public_Key'  => (string)($Data['ed25519_public_key'] ?? '-'),
 'WireGuard_Private_Key'   => (string)($Data['wg_pk'] ?? '-'),
@@ -1661,7 +1662,7 @@ ServerClient::updateUser((string)($Data['uuid'] ?? ''), [
 
 $Greeting = Common::greet($Context, 'فعالسازی اشتراک');
 
-TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت فعال گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت فعال گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👁نمایش اشتراک', 'callback_data' => 'اشتراک من']],
 Menu::userHome()
 ]));
@@ -1669,7 +1670,7 @@ Menu::userHome()
 Repository::seedUsageSnapshot($Context->UserId);
 Repository::addSubscriptionLog($Context->UserId, 'activate', $Name, $Days, (float)$Gb, isset($Data['uuid']) ? $Data['uuid'] : null, 'user', $Context->UserId);
 
-TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'فعالسازی اشتراک', $Admin) . "🎁✅لحظاتی پیش اشتراک {$Name} فعال گردید.\n👤نام: " . Helper::mention((string)$Full_Name, (int)$User_ID) . "\n📞شماره موبایل: {$Phone} (" . Helper::detectOperator($Phone) . ")\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n🚀شناسه کلاینت: `" . ($Data['uuid'] ?? '') . "`\n📆تاریخ انقضا:\n{$Expiration_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'فعالسازی اشتراک', $Admin) . "🎁✅لحظاتی پیش اشتراک {$Name} فعال گردید.\n👤نام: " . Helper::mention((string)$Full_Name, (int)$User_ID) . "\n📞شماره موبایل: {$Phone} (" . Helper::detectOperator($Phone) . ")\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n🚀شناسه کلاینت: `" . ($Data['uuid'] ?? '') . "`\n📆تاریخ انقضا:\n{$Expiration_Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '👁👤مشاهده کاربر', 'url' => 'tg://user?id=' . $User_ID]],
 ]));
 
@@ -1723,7 +1724,7 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 }
 
 AdminFlow::notifyAdminServerError('تمدید اشتراک', $User_ID, $Full_Name, $Response['StatusCode'] ?? 0, $Api_Error);
-TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *❌اشتراک {$Name} شما با موفقیت تمدید نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *❌اشتراک {$Name} شما با موفقیت تمدید نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'اشتراک من']],
 Menu::userHome()
@@ -1745,11 +1746,12 @@ Repository::updateUser($User_ID, [
 'Remaining_Usage_GB'  => $Usage_Limit,
 'Percent_Usage'  => 0.0,
 'Client_Status'  => 'فعال',
+'Channel_Client_Disabled_At' => null,
 'Deactivation_Message'   => null,
 ]);
 Repository::updateUserSession($User_ID, ['Pending_Plan' => null]);
 
-TelegramClient::sendMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت تمدید گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت تمدید گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '👁نمایش اشتراک', 'callback_data' => 'اشتراک من']],
 Menu::userHome()
 ]));

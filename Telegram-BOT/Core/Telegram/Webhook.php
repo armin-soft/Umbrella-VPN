@@ -126,7 +126,7 @@ if ($Host === '' || (filter_var($Host, FILTER_VALIDATE_IP) && !in_array($Host, [
 return;
 }
 
-$Fingerprint = hash('sha256', $Url . '|' . $Secret);
+$Fingerprint = hash('sha256', $Url . '|' . $Secret . '|chat-member-v1');
 $Now = time();
 $State = self::readState();
 $Known_Url = (string)($State['url'] ?? '');
@@ -158,6 +158,7 @@ $Result = TelegramClient::call('setWebhook', [
 'secret_token' => $Secret,
 'max_connections' => 40,
 'drop_pending_updates' => false,
+'allowed_updates' => ['message', 'edited_message', 'callback_query', 'chat_member'],
 ]);
 
 if (($Result['ok'] ?? false) === true) {

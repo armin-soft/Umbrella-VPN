@@ -47,6 +47,7 @@ default => (string)($Args[0] ?? ''),
 final class TelegramClient {
 public static array $Calls = []; public static bool $Fail = false;
 public static function call(string $M, array $P): array { self::$Calls[] = [$M, $P]; return ['ok' => !self::$Fail]; }
+public static function sendSystemMessage(int $Id, string $Text, array $Markup = []): array { return self::sendMessage($Id, $Text, $Markup); }
 public static function sendPhoto(int $Id, string $Photo, string $Caption = '', array $Markup = []): array { return self::call('sendPhoto', ['chat_id' => $Id, 'photo' => $Photo, 'caption' => $Caption, 'reply_markup' => $Markup]); }
 public static function sendMessage(int $Id, string $Text, array $Markup = []): array { return self::call('sendMessage', ['chat_id' => $Id, 'text' => $Text, 'reply_markup' => $Markup]); }
 public static function sendReadableMessage(int $Id, ?int $Message, string $Text, array $Markup = []): bool { self::sendMessage($Id, $Text, $Markup); return !self::$Fail; }
@@ -141,7 +142,8 @@ AppFlow::deviceCard(ctx(1, [], true), 'my-device'); $Last = end(TelegramClient::
 check(str_ends_with($Last[1]['photo'], '/computer.png') && str_contains($Last[1]['caption'], 'شماتیک') && str_contains($Last[1]['caption'], 'لغو شده'), 'default art labelled schematic with current trust state');
 AppFlow::devicePhotoStart(ctx(1, [], true), 'my-device', 2);
 AppFlow::devicePhotoInput(ctx(1, ['photo' => [['file_id' => 'real-photo']]]), 'my-device', 2);
-check(end(TelegramClient::$Calls)[1]['photo'] === 'real-photo' && Repository::$Sessions[1]['Flow'] === null, 'user supplied picture persists per device');
+check(str_ends_with(end(TelegramClient::$Calls)[1]['photo'], '/computer.png') && Repository::$Sessions[1]['Flow'] === null, 'legacy upload no longer saves or displays user photos');
+check(!str_contains(json_encode(end(TelegramClient::$Calls)), 'app_device_photo:'), 'no upload button');
 $SavedSettings = Repository::$Settings;
 AppFlow::devicePhotoReset(ctx(2, [], true), 'my-device');
 check(Repository::$Settings === $SavedSettings, 'other user cannot reset picture');
