@@ -20,6 +20,7 @@ import 'cli_session.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
 import 'core_ping.dart';
+import 'link_preparation.dart';
 import 'ping.dart';
 import 'tunnel_probe.dart';
 import 'speed_test.dart';
@@ -755,6 +756,7 @@ class VpnController extends ChangeNotifier {
   /// با زدن دکمه قطع، این پرچم بالا می رود، حلقه تلاش هسته ها می شکند و همه
   /// چیز تمیز بسته می شود.
   bool _cancelRequested = false;
+  bool _singleNodeSession = false;
   bool get cancelling => _cancelRequested;
 
   /// لغو فوری اتصال در حال انجام (دکمه «لغو اتصال»).
@@ -821,6 +823,8 @@ class VpnController extends ChangeNotifier {
 
   Future<ConnectOutcome> _connectInner({VpnNode? requested}) async {
     _cancelRequested = false;
+    _singleNodeSession = requested != null ||
+        _settings.selectionMode == SelectionMode.manual || !_settings.autoFailover;
     // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
     // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
     await _stopProbes();
@@ -1044,8 +1048,7 @@ class VpnController extends ChangeNotifier {
   /// مانع می شود درخواست برای همیشه روی همین حلقه بماند.
   List<VpnNode> _candidates(VpnNode first, String reason) {
     final List<VpnNode> list = <VpnNode>[first];
-    if (_settings.selectionMode == SelectionMode.manual ||
-        !_settings.autoFailover) {
+    if (_singleNodeSession) {
       return list;
     }
     final List<VpnNode> rest = _nodes
@@ -1486,8 +1489,8 @@ class VpnController extends ChangeNotifier {
     if (!usable(node)) {
       return <LaunchPlan>[];
     }
-    final CoreInfo? core = _provisioner.info(umbrellaCoreId);
-    final String binary = core?.binary ?? umbrellaCliBinary;
+    final String binary = CliSession.wanted(_settings)
+        ? umbrellaCliBinary : UmbrellaCore.engineBinary;
     final String? exe = await _provisioner.locateBinary(binary);
     if (exe == null || exe.isEmpty) {
       _lastPlanNeedsCore = true;
@@ -1702,6 +1705,9 @@ class VpnController extends ChangeNotifier {
     }
 
     add(chosen);
+    // An explicit selection (or disabled failover) must not launch a monitor
+    // over the entire subscription or silently select a different server.
+    if (_singleNodeSession) return pool;
     // بعد از انتخاب فعلی، پین ها اول به هسته داده می شوند تا در مجموعه
     // keep-top شانس ماندن داشته باشند؛ سپس بقیه سرورها به ترتیب پینگ می آیند.
     final List<VpnNode> rest = _nodes
@@ -2021,10 +2027,33 @@ class VpnController extends ChangeNotifier {
       flush: true,
     );
 
+    final int preparationEpoch = _connectionEpoch;
+    final List<String> originalLinks = await File(plan.linksPath).readAsLines();
+    final PreparedLinks prepared = await LinkPreparation.prepare(
+      originalLinks.where((String line) => line.trim().isNotEmpty).toList(),
+      // With an unblocker chain the endpoint may intentionally be resolved by
+      // the hop. Do not replace that name using the local network's answer.
+      resolveEndpoints: _settings.chain.position != ChainPosition.unblocker,
+    );
+    if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) return false;
+    final File sessionLinks = File('${plan.runDir}${Platform.pathSeparator}prepared-links.txt');
+    await sessionLinks.writeAsString('${prepared.links.join('\n')}\n', flush: true);
+    if (prepared.resolvedHosts > 0) {
+      _log.add('نشانی ${Fa.num(prepared.resolvedHosts)} میزبان سرور پیش از فعال شدن تونل آماده شد.');
+    }
+    if (prepared.unresolvedHosts > 0) {
+      _log.add('نشانی ${Fa.num(prepared.unresolvedHosts)} میزبان پیش از اتصال پیدا نشد؛ '
+          'هسته با DNS مستقیم تنظیم‌شده دوباره تلاش می‌کند.', level: 'warning');
+    }
+
     // با `-d` هسته همه تنظیمات را از فایل می خواند و پرچم های تونل و پورت را
     // نادیده می گیرد؛ پس فایل کامل نوشته می شود (UmbrellaCore.settingsJson) و
     // فقط مسیر فایل به آرگومان ها اضافه می شود.
-    final List<String> args = <String>[...core.args, '-d', settingsPath];
+    final List<String> args = <String>[
+      for (final String arg in core.args) arg == plan.linksPath ? sessionLinks.path : arg,
+      '-d', settingsPath,
+    ];
+    if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) return false;
 
     try {
       if (CliSession.wanted(_settings) && Platform.isWindows) {

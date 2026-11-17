@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
+import 'package:umbrella_vpn/vpn/link_preparation.dart';
 
 /// Exercises the actual bundled DLL through our native launcher. `build` only
 /// compiles configuration: it never starts a VPN, enrolls WARP or changes routes.
@@ -21,7 +22,11 @@ void main() {
       final File links = File('${temp.path}/links.txt');
       final File settings = File('${temp.path}/settings.json');
       final File output = File('${temp.path}/generated.json');
-      await links.writeAsString('vless://00000000-0000-4000-8000-000000000001@192.0.2.1:443?security=tls&sni=example.invalid&type=xhttp&mode=packet-up&path=%2Fupload&extra=%7B%22noGRPCHeader%22%3Atrue%7D#offline-fixture\n');
+      final PreparedLinks prepared = await LinkPreparation.prepare(<String>[
+        'vless://00000000-0000-4000-8000-000000000001@proxy.example.invalid:443?security=tls&sni=example.invalid&type=xhttp&mode=packet-up&path=%2Fupload&extra=%7B%22noGRPCHeader%22%3Atrue%7D&muxtype=h2mux&muxup=100&muxdown=100#offline-fixture',
+      ], lookup: (_) async => <InternetAddress>[InternetAddress('192.0.2.1')],
+        resolveEndpoints: chain.position != ChainPosition.unblocker);
+      await links.writeAsString('${prepared.links.single}\n');
       final Map<String, dynamic> options = UmbrellaCore.settingsJson(tun: true, systemProxy: false, port: 12334,
         logFile: '${temp.path}/core.log', networkSettings: AppSettings(chain: chain, mtu: 1400,
           appRoutes: const <AppRouteRule>[
@@ -69,6 +74,9 @@ void main() {
         expect(mixed.every((Map<String, dynamic> item) => <String>['127.0.0.1', '::1'].contains(item['listen'])), true);
         final List<Map<String, dynamic>> outbounds = (output['outbounds'] as List<dynamic>).cast<Map<String, dynamic>>();
         final Map<String, dynamic> vless = outbounds.firstWhere((Map<String, dynamic> item) => item['type'] == 'vless');
+        expect(vless['server'], position == ChainPosition.unblocker ? 'proxy.example.invalid' : '192.0.2.1');
+        expect(vless['tls']['server_name'], 'example.invalid');
+        expect(vless['multiplex'], isNull, reason: 'mux=false must remove inherited mux/brutal');
         expect(vless['transport']['type'], 'xhttp');
         expect(vless['transport']['mode'], 'packet-up');
         expect(vless['transport']['path'], '/upload');

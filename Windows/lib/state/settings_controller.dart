@@ -145,9 +145,7 @@ class SettingsController extends ChangeNotifier {
 
   /// پنجره CLI هسته هنگام اتصال باز شود یا نه.
   ///
-  /// پیش فرض روشن است: پنجره هسته گزارش زنده اتصال را نشان می دهد و
-  /// گزارش زنده همان جاست. کسی که پنجره را نمی خواهد، از همین کلید خاموشش
-  /// می کند؛ اتصال در هر دو حالت یکی است.
+  /// پیش فرض خاموش است؛ فقط برای عیب‌یابی با انتخاب کاربر باز می‌شود.
   Future<void> setShowCli(bool value) async {
     await update(_settings.copyWith(showCli: value));
   }

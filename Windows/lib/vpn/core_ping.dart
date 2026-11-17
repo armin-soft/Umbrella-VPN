@@ -6,6 +6,7 @@ import '../core/app_config.dart';
 import '../models/models.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
+import 'link_preparation.dart';
 import 'vpn_controller.dart';
 import 'tunnel_probe.dart';
 import 'verified_probe.dart';
@@ -174,7 +175,11 @@ class CorePinger {
     IOSink? sink;
     try {
       // هسته خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
-      await config.writeAsString('$link\n', flush: true);
+      final PreparedLinks prepared = await LinkPreparation.prepare(
+        <String>[link], resolveEndpoints: false,
+      );
+      if (_stopped) return -1;
+      await config.writeAsString('${prepared.links.single}\n', flush: true);
       await log.parent.create(recursive: true);
       await settingsFile.writeAsString(
         jsonEncode(

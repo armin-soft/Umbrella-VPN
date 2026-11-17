@@ -1291,7 +1291,7 @@ class AppSettings {
     this.turboMode = false,
     this.logLevel = 'info',
     this.modeChoiceExplicit = false,
-    this.showCli = true,
+    this.showCli = false,
   });
 
   final ThemePreference theme;
@@ -1469,6 +1469,7 @@ class AppSettings {
         'logLevel': logLevel,
         'modeChoiceExplicit': modeChoiceExplicit,
         'showCli': showCli,
+        'cliPreferenceVersion': 1,
       };
 
   /// اگر تنظیم ذخیره شده `manual` باشد، به `auto` برمی گردد.
@@ -1537,7 +1538,8 @@ class AppSettings {
       turboMode: JsonX.boolean(json['turboMode']),
       logLevel: JsonX.text(json['logLevel'], 'info'),
       modeChoiceExplicit: JsonX.boolean(json['modeChoiceExplicit']),
-      showCli: JsonX.boolean(json['showCli']),
+      // Reset the old default-on console once. New explicit choices persist.
+      showCli: json['cliPreferenceVersion'] == 1 && JsonX.boolean(json['showCli']),
     );
   }
 

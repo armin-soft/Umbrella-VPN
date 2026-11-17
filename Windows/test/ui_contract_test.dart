@@ -214,6 +214,15 @@ void main() {
       expect(controller.contains('add(chosen);'), isTrue);
     });
 
+    test('explicit server selection and disabled failover isolate the runtime pool', () {
+      final String controller = read('lib/vpn/vpn_controller.dart');
+      expect(controller.contains('_singleNodeSession = requested != null ||'), isTrue);
+      expect(controller.contains('if (_singleNodeSession) return pool;'), isTrue);
+      expect(controller.contains('? umbrellaCliBinary : UmbrellaCore.engineBinary'), isTrue);
+      expect(controller.contains('preparationEpoch != _connectionEpoch'), isTrue);
+      expect(read('lib/vpn/umbrella_core.dart').contains("'keep-top-batch': 4"), isTrue);
+    });
+
     test('کل اشتراک امتحان می شود، نه چهار سرور اول', () {
       // شکایت کاربر ۱٫۰٫۱۹: رابط «تلاش ۱ از ۴» می نویشت و از ۳۳۱ سروری که
       // اشتراک خوانده بود فقط چهار تای اول امتحان می شد؛ هدیفای همه لینک

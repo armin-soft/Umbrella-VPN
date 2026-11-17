@@ -172,7 +172,7 @@ class CliSession {
   static String baseDirOf(String dataDir) =>
       '$dataDir${Platform.pathSeparator}core';
 
-  /// آیا کاربر پنجره خط فرمان را خواسته است؟ پیش فرض بله.
+  /// آیا کاربر پنجره خط فرمان را خواسته است؟ پیش فرض خیر.
   static bool wanted(AppSettings settings) => settings.showCli;
 
   /// کلید ذخیره سازی انتخاب کاربر.

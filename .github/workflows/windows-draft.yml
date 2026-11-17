@@ -125,7 +125,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Draft update failed' }
             gh release upload $tag $installer --repo $env:REPO
           } else {
-            gh release create $tag $installer --repo $env:REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows" --notes "Windows x64 installer. Adds WARP/Psiphon auxiliary chains, Windows process routing, cancellable download/upload measurement and strict HTTPS connection verification. Account/device/subscription restrictions unchanged. Not full Hiddify feature parity. Automated unit/widget tests and compilation do not replace live VPN and installation testing. Unsigned installer."
+            gh release create $tag $installer --repo $env:REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows" --notes "Windows x64 installer. Connection recovery: bounded pre-TUN endpoint lookup, inherited mux disabled to match app settings, explicit node selection respected, bounded discovery batches, console opt-in. Bootstrap currently covers VLESS/Trojan/VMess; unresolved names retain core DNS. Account/device/subscription restrictions unchanged. Not full Hiddify feature parity. Automated unit/widget tests and compilation do not replace live VPN and installation testing. Unsigned installer."
           }
           if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
           gh release view $tag --repo $env:REPO --json url,isDraft,assets
