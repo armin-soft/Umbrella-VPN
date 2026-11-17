@@ -1,7 +1,7 @@
 name: Windows installer draft
 on:
   push:
-    branches: [arena/6a01f008-umbrella-vpn]
+    branches: ['arena/**', Default]
     paths: ['Windows/**', '.github/workflows/windows-draft.yml']
   workflow_dispatch:
 permissions:
