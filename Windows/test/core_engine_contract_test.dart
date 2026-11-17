@@ -52,12 +52,12 @@ void main() {
         final HttpClient client = HttpClient()..connectionTimeout = const Duration(seconds: 1);
         bool ready = false;
         try {
-          for (int i = 0; i < 60; i++) {
+          for (int i = 0; i < 8; i++) {
             try {
-              final HttpClientRequest request = await client.getUrl(Uri.parse('http://127.0.0.1:16756/version'));
+              final HttpClientRequest request = await client.getUrl(Uri.parse('http://127.0.0.1:16756/version')).timeout(const Duration(milliseconds: 700));
               request.headers.set('authorization', 'Bearer ${options['web-secret']}');
-              final HttpClientResponse response = await request.close();
-              await response.drain<void>();
+              final HttpClientResponse response = await request.close().timeout(const Duration(milliseconds: 700));
+              await response.drain<void>().timeout(const Duration(milliseconds: 700));
               if (response.statusCode == 200) { ready = true; break; }
             } on Exception { /* wait for initialized core, not merely Process.start */ }
             await Future<void>.delayed(const Duration(milliseconds: 100));

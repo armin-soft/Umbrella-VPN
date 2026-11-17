@@ -757,6 +757,7 @@ class VpnController extends ChangeNotifier {
   /// ساخت تونل چند ثانیه طول می کشد و کاربر باید هر لحظه بتواند پشیمان شود؛
   /// با زدن دکمه قطع، این پرچم بالا می رود، حلقه تلاش هسته ها می شکند و همه
   /// چیز تمیز بسته می شود.
+  int _cancelGeneration = 0;
   bool _cancelRequested = false;
   bool _singleNodeSession = false;
   bool get cancelling => _cancelRequested;
@@ -766,6 +767,7 @@ class VpnController extends ChangeNotifier {
     if (!_connectInFlight && !_status.busy && _status != VpnStatus.connected) {
       return;
     }
+    _cancelGeneration++;
     _cancelRequested = true;
     _log.add('درخواست لغو اتصال از طرف کاربر.', level: 'warning');
     _setStatus(VpnStatus.disconnecting, 'لغو اتصال...');
@@ -3343,13 +3345,15 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _reconnect() async {
+    final int generation = _cancelGeneration;
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
     await _disableProxy();
     await Future<void>.delayed(const Duration(seconds: 2));
+    if (_disposed || generation != _cancelGeneration) return;
     _status = VpnStatus.disconnected;
     final ConnectOutcome outcome = await connect();
-    if (!outcome.ok) {
+    if (!outcome.ok && !outcome.cancelled) {
       await _failAndCleanup(outcome.message);
     }
   }
@@ -3365,19 +3369,25 @@ class VpnController extends ChangeNotifier {
     if (!_status.active) {
       return connect(requested: node);
     }
+    final int generation = _cancelGeneration;
     _setStatus(VpnStatus.switching, 'تغییر سرور به ${node.name}...');
     await _stopCores();
     await _disableProxy();
     await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (_disposed || generation != _cancelGeneration) {
+      return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+    }
     _status = VpnStatus.disconnected;
     final ConnectOutcome outcome = await connect(requested: node);
-    if (!outcome.ok) {
+    if (!outcome.ok && !outcome.cancelled) {
       await _failAndCleanup(outcome.message);
     }
     return outcome;
   }
 
   Future<void> disconnect({bool silent = false}) async {
+    _cancelGeneration++;
+    if (_connectInFlight) { await cancel(); return; }
     if (_status == VpnStatus.disconnected && _runningPids.isEmpty) {
       return;
     }

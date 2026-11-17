@@ -98,5 +98,7 @@ void main() {
     expect(source, contains('? _candidates(node, selection.reason) : <VpnNode>[node]'));
     expect(source, contains('await process.exitCode.timeout'));
     expect(source, contains('if (pending != null) return pending;'));
+    expect(source, contains('generation != _cancelGeneration'));
+    expect(source, contains('if (_connectInFlight) { await cancel(); return; }'));
   });
 }
