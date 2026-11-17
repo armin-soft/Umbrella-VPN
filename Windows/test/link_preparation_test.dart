@@ -22,7 +22,7 @@ void main() {
     expect(first.host, '192.0.2.10');
     expect(first.userInfo, 'test');
     expect(first.queryParameters['sni'], 'proxy.example');
-    expect(first.queryParameters['host'], 'proxy.example');
+    expect(first.queryParameters['host'], 'proxy.example:443');
     expect(first.queryParameters['path'], '/a?ed=2048');
     final Uri second = Uri.parse(result.links.last);
     expect(second.userInfo, 'p%40ss');
@@ -58,6 +58,19 @@ void main() {
     expect(uri.queryParameters.containsKey('host'), false);
     expect(uri.queryParameters.containsKey('mux-type'), false);
     expect(uri.queryParameters.containsKey('mux_up'), false);
+  });
+
+  test('XHTTP and HTTPUpgrade TLS Host still falls back to SNI, not endpoint', () async {
+    for (final String transport in <String>['xhttp', 'httpupgrade']) {
+      final PreparedLinks result = await LinkPreparation.prepare(<String>[
+        'vless://test@proxy.example:8443?security=tls&type=$transport&sni=cdn.example',
+      ], lookup: lookup);
+      final Uri uri = Uri.parse(result.links.single);
+      expect(uri.host, '192.0.2.10');
+      expect(uri.queryParameters['sni'], 'cdn.example');
+      expect(uri.queryParameters.containsKey('host'), false);
+      expect(uri.port, 8443);
+    }
   });
 
   test('vmess retains fields, explicit Host and implicit SNI', () async {
@@ -111,7 +124,7 @@ void main() {
     final Uri uri = Uri.parse(result.links.single);
     expect(uri.host, '2001:db8::1');
     expect(uri.queryParameters['sni'], 'proxy.example');
-    expect(uri.queryParameters['host'], 'proxy.example');
+    expect(uri.queryParameters['host'], 'proxy.example:443');
     expect(uri.queryParameters.containsKey('allowInsecure'), false);
   });
 

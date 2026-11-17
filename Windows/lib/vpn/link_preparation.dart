@@ -141,10 +141,24 @@ class _EndpointLink {
       final Uri? authority = Uri.tryParse('https://$transportHost');
       values['sni'] = transportHost.isEmpty ? host : (authority?.host ?? transportHost);
     }
-    final String transport = '${values['net'] ?? values['type'] ?? ''}'.toLowerCase();
-    if ('${values['host'] ?? ''}'.isEmpty &&
-        <String>['ws', 'http', 'h2', 'httpupgrade', 'xhttp', 'splithttp'].contains(transport)) {
-      values['host'] = host;
+    String transport = '${values['net'] ?? values['type'] ?? ''}'.toLowerCase();
+    if ((transport == 'tcp' || transport == 'raw') &&
+        (values['headertype'] == 'http' || values['type'] == 'http')) transport = 'http';
+    final bool tls = values['tls'] == 'tls' || values['security'] == 'tls' ||
+        values['security'] == 'reality' || (uri.scheme == 'trojan' &&
+        !values.containsKey('security') && '${values['tls'] ?? ''}'.isEmpty);
+    final int port = data == null ? (uri.hasPort ? uri.port : 443)
+        : int.tryParse('${values['port']}') ?? 443;
+    final String authority = host.contains(':') ? '[$host]:$port' : '$host:$port';
+    if ('${values['host'] ?? ''}'.isEmpty) {
+      // Preserve the pinned core's transport-specific Host fallback, including
+      // ports. XHTTP/HTTPUpgrade over TLS already fall back to preserved SNI;
+      // overriding them with the endpoint would break CDN virtual-host routing.
+      if (<String>['ws', 'http', 'h2'].contains(transport) || (transport == 'httpupgrade' && !tls)) {
+        values['host'] = authority;
+      } else if (<String>['xhttp', 'splithttp'].contains(transport) && !tls) {
+        values['host'] = host;
+      }
     }
   }
 }
