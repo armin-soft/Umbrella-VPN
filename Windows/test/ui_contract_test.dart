@@ -67,7 +67,8 @@ void main() {
       // تنظیمات جلسه هم باید همان فایل کامل را بنویسد.
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('UmbrellaCore.settingsJson('), isTrue);
-      expect(controller.contains("'-d',"), isTrue);
+      expect(controller.contains("settingsPath: settingsPath"), isTrue);
+      expect(read('lib/vpn/core_runtime.dart').contains("'-d', settingsPath"), isTrue);
     });
 
     test('آمادگی تونل با نشانی درست کارت شبکه سنجیده می شود', () {
@@ -178,8 +179,10 @@ void main() {
 
     test('HTTP verification cannot be bypassed by stale core statistics', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
-      expect(controller.contains('final bool proxyFlows = await VerifiedProbe.check'), isTrue);
-      expect(controller.contains('final bool flows = proxyFlows && (!plan.tun ||'), isTrue);
+      expect(controller.contains('final bool flows = await StartupVerification.wait'), isTrue);
+      expect(controller.contains('final bool proxy = await VerifiedProbe.check'), isTrue);
+      expect(controller.contains('return !plan.tun || (remaining > Duration.zero &&'), isTrue);
+      expect(controller.contains('await VerifiedProbe.check(proxyPort: 0, timeout: remaining)'), isTrue);
       expect(controller.contains('_coreReportsWorkingTunnel'), isFalse);
       expect(controller.contains('_clashTunnelVerdict'), isFalse);
     });
