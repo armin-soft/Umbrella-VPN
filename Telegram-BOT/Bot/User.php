@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
@@ -907,12 +908,14 @@ self::ticketUserList($Context);
 }
 
 public static function ticketNewStart(Context $Context): void {
-Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_subject']);
+Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_subject', 'Ticket_Media_JSON' => null, 'Ticket_Description' => null]);
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📝موضوع تیکت را وارد کنید:\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'منوی پشتیبانی'), Menu::userHome()]));
 }
 
 public static function ticketCreate(Context $Context, string $Subject): void {
+$Media = TicketMedia::extract($Context);
+if ($Media !== null && trim($Subject) === '') $Subject = 'پشتیبانی با پیوست';
 $Subject = mb_substr(trim($Subject), 0, 200);
 
 if ($Subject === '') {
@@ -921,13 +924,23 @@ return;
 }
 
 Repository::updateUserSession($Context->UserId, ['Ticket_Subject' => $Subject, 'Flow' => 'user:ticket_description']);
-$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\n📝توضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+if ($Media !== null) { self::ticketDescriptionInput($Context, (string)($Context->Caption ?? '')); return; }
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\n📝توضیحات یا عکس، ویدیو، فایل، صدا یا استیکر را با کپشن یا بدون کپشن بفرستید (یا «ندارد»):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::userNav('ویرایش موضوع', 'تیکت جدید')));
 }
 
 public static function ticketDescriptionInput(Context $Context, string $Text): void {
+$Media = TicketMedia::extract($Context);
+$Draft = Repository::getUserSession($Context->UserId);
 $Description = mb_substr(trim($Text), 0, 1000);
-$Session_Subject = (string)(Repository::getUserSession($Context->UserId)['Ticket_Subject'] ?? '');
+if ($Media !== null && ($Draft['Flow'] ?? '') === 'user:ticket_category' && !empty($Draft['Ticket_Description'])) $Description = (string)$Draft['Ticket_Description'];
+if ($Media !== null) {
+$Saved = json_decode((string)($Draft['Ticket_Media_JSON'] ?? ''), true) ?: [];
+if (count($Saved) >= 10) { TelegramClient::sendMessage($Context->ChatId, '⚠️حداکثر ۱۰ پیوست برای ایجاد تیکت؛ موارد بیشتر را پس از ثبت در پاسخ تیکت بفرستید.'); return; }
+$Saved[] = $Media;
+Repository::updateUserSession($Context->UserId, ['Ticket_Media_JSON' => json_encode($Saved, JSON_UNESCAPED_UNICODE)]);
+if ($Description === '') $Description = '📎پیوست بدون کپشن';
+}
 Repository::updateUserSession($Context->UserId, ['Ticket_Description' => $Description, 'Flow' => 'user:ticket_category']);
 self::ticketCategoryMenu($Context);
 }
@@ -936,7 +949,7 @@ public static function ticketCategoryMenu(Context $Context): void {
 $Session = Repository::getUserSession($Context->UserId);
 $Subject = (string)($Session['Ticket_Subject'] ?? '');
 $Description = (string)($Session['Ticket_Description'] ?? '');
-$Rows = [['text' => '👇دسته تیکت را انتخاب کنید:', 'callback_data' => 'تیکت بدون تغییر']];
+$Rows = [];
 
 foreach (Helper::ticketCategories() as $Key => $Label) {
 $Rows[] = [['text' => $Label, 'callback_data' => 'دسته تیکت:' . $Key]];
@@ -962,7 +975,7 @@ return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_description']);
 $Description = trim((string)($Session['Ticket_Description'] ?? ''));
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
-. "📋موضوع: {$Subject}\n\n📝توضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n"
+. "📋موضوع: {$Subject}\n\n📝توضیحات یا عکس، ویدیو، فایل، صدا یا استیکر را با کپشن یا بدون کپشن بفرستید (یا «ندارد»):\n"
 . ($Description !== '' ? "✏️توضیحات قبلی: {$Description}\n" : '')
 . "➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
@@ -994,7 +1007,7 @@ $Session = Repository::getUserSession($Context->UserId);
 $Subject = (string)($Session['Ticket_Subject'] ?? '');
 $Description = (string)($Session['Ticket_Description'] ?? '');
 $Category = (string)($Session['Ticket_Category'] ?? 'other');
-$Rows = [['text' => '🚦اولویت تیکت را انتخاب کنید:', 'callback_data' => 'اولویت تیکت:medium']];
+$Rows = [];
 
 foreach (Helper::ticketPriorities() as $Key => $Label) {
 $Rows[] = [['text' => $Label, 'callback_data' => 'اولویت تیکت:' . $Key]];
@@ -1041,7 +1054,10 @@ $Session = Repository::getUserSession($Context->UserId);
 $Subject = (string)($Session['Ticket_Subject'] ?? '');
 $Description = (string)($Session['Ticket_Description'] ?? '');
 $Media_Text = trim((string)($Context->Caption ?? $Context->Text ?? ''));
-$Has_Media = $Context->Photo !== null || ($Media_Text !== '' && $Media_Text !== 'ندارد');
+$Attachments = json_decode((string)($Session['Ticket_Media_JSON'] ?? ''), true) ?: [];
+$NewMedia = TicketMedia::extract($Context);
+if ($NewMedia !== null) $Attachments[] = $NewMedia;
+$Has_Media = $Attachments !== [];
 
 if ($Subject === '') {
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null]);
@@ -1064,13 +1080,11 @@ if ($Description !== '' && $Description !== 'ندارد') {
 Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', "📝توضیحات: {$Description}");
 }
 
-if ($Has_Media) {
-$Photo_File_ID = $Context->Photo !== null ? $Context->Photo : null;
-$Caption = $Media_Text !== '' ? "📎پیوست: {$Media_Text}" : '📎پیوست';
-Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Caption, $Photo_File_ID);
+foreach ($Attachments as $Media) {
+Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', (string)($Media['caption'] ?? '📎پیوست'), null, json_encode($Media, JSON_UNESCAPED_UNICODE));
 }
 
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null, 'Ticket_Category' => 'other', 'Ticket_Priority' => 'medium']);
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null, 'Ticket_Media_JSON' => null, 'Ticket_Category' => 'other', 'Ticket_Priority' => 'medium']);
 Repository::addNotification($Context->UserId, 'ticket', '🎫تیکت ایجاد شد', "🎫تیکت #{$Ticket_ID}: {$Subject}");
 
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
@@ -1088,19 +1102,14 @@ $Admin_Text .= "📎دارای پیوست (عکس/فایل)\n";
 
 $Admin_Text .= Helper::adminFooter();
 
-if ($Context->Photo !== null) {
-TelegramClient::sendPhoto($Admin, $Context->Photo, $Admin_Text, TelegramClient::inlineKeyboard([
+TelegramClient::sendReadableMessage($Admin, null, $Admin_Text, TelegramClient::inlineKeyboard([
 [['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
 [['text' => '✏️پاسخ به تیکت', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 ]));
+foreach ($Attachments as $Media) {
+if (!TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️ارسال پیوست ناموفق بود؛ از بخش پیوست‌های تیکت دوباره تلاش کنید.');
 }
 
-else {
-TelegramClient::sendMessage($Admin, $Admin_Text, TelegramClient::inlineKeyboard([
-[['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
-[['text' => '✏️پاسخ به تیکت', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
-]));
-}
 }
 
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تیکت های من') . "✅تیکت #" . Helper::toPersian((string)$Ticket_ID) . " ایجاد شد.\n➖➖➖➖➖➖➖➖➖\n📋موضوع: {$Subject}\n📂دسته: {$Category_Label}\n🚦اولویت: {$Priority_Label}\n\n⚠️ادمین به زودی پاسخ خواهد داد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
@@ -1172,13 +1181,13 @@ $Sender = ($Msg['Sender_Type'] ?? 'user') === 'admin' ? '🛡ادمین' : '👤
 $Msg_Text = (string)($Msg['Message'] ?? '');
 
 if ($Msg_Text === '') {
-$Msg_Text = ($Msg['Photo_File_ID'] ?? null) !== null ? '[📎تصویر]' : '[💬هیچ متنی]';
+$Msg_Text = TicketMedia::decode($Msg) !== null ? '[📎پیوست]' : '[💬هیچ متنی]';
 }
 
 $Thread .= "{$Sender}: {$Msg_Text}\n";
 
-if (!empty($Msg['Photo_File_ID'])) {
-$Thread .= "📎[پیوست تصویری]\n";
+if (TicketMedia::decode($Msg) !== null) {
+$Thread .= "📎[پیوست؛ از دکمه پیوست‌های تیکت باز کنید]\n";
 }
 }
 
@@ -1191,15 +1200,28 @@ if ($Ticket['Status'] !== 'closed') {
 $Buttons[] = [['text' => '✏️پاسخ', 'callback_data' => 'ticket_user_reply:' . $Ticket_ID]];
 }
 
+$Buttons[] = [Menu::button('📎پیوست‌های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')];
 $Buttons = array_merge($Buttons, Menu::userNav('لیست تیکت های من', 'لیست تیکت های من'));
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+public static function ticketAttachments(Context $Context, int $TicketId, int $Page = 0): void {
+$Ticket = Repository::getTicket($TicketId);
+if ($Ticket === null || (!$Context->isAdmin() && (int)$Ticket['User_ID'] !== $Context->UserId)) return;
+[$Rows, $Page, $Count] = TicketMedia::buttons(Repository::getTicketMessages($TicketId), $Page);
+$Empty = $Rows === [];
+$Rows = array_merge($Rows, Menu::pages($Page, $Count, 'ticket_attachments:' . $TicketId . ':'));
+$Rows[] = Menu::back('تیکت', ($Context->isAdmin() ? 'ticket_view:' : 'ticket_user_view:') . $TicketId);
+$Rows[] = $Context->isAdmin() ? Menu::adminHome() : Menu::userHome();
+$Text = ($Context->isAdmin() ? Helper::adminGreeting($Context, 'پیوست‌های تیکت') : Helper::userGreeting($Context, 'پیوست‌های تیکت')) . Menu::pageLabel($Page, $Count) . ($Empty ? '📭پیوستی ثبت نشده است.' : '📎پیوست مورد نظر را انتخاب کنید.');
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
 public static function ticketUserReplyStart(Context $Context, int $Ticket_ID): void {
 $Ticket = Repository::getTicket($Ticket_ID);
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_reply_text', 'Temp_Ticket_ID' => $Ticket_ID]);
-$Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . '✏️📝پاسخ خود را وارد کنید:' . Helper::userFooter();
+$Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . '✏️📝پاسخ یا رسانه را با کپشن یا بدون کپشن بفرستید؛ برای پایان از بازگشت استفاده کنید:' . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::userNav('مشاهده تیکت', 'ticket_user_view:' . $Ticket_ID)));
 }
 
@@ -1209,18 +1231,23 @@ $Ticket_ID = (int)($Session['Temp_Ticket_ID'] ?? 0);
 $Ticket = Repository::getTicket($Ticket_ID);
 
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) return;
-Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Text);
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null]);
+if ($Ticket['Status'] === 'closed') return;
+$Media = TicketMedia::extract($Context);
+if (trim($Text) === '' && $Media === null) return;
+Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Text, null, $Media !== null ? json_encode($Media, JSON_UNESCAPED_UNICODE) : null);
+// حالت پاسخ باز می‌ماند تا فایل‌های پشت‌سرهم/آلبوم گم نشوند؛ بازگشت آن را لغو می‌کند.
+
 
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 
 if ($Admin > 0) {
-TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'مدیریت تیکت ها', $Admin) . "📨پاسخ جدید به تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendReadableMessage($Admin, null, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'مدیریت تیکت ها', $Admin) . "📨پاسخ جدید به تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
 ]));
+if ($Media !== null && !TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️پیوست دریافت نشد؛ از پیوست‌های تیکت دوباره تلاش کنید.');
 }
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پاسخ به تیکت') . "✅پاسخ شما ارسال شد." . Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('لیست تیکت های من', 'لیست تیکت های من')));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پاسخ به تیکت') . "✅پاسخ در تیکت ثبت شد. می‌توانید پیام یا پیوست بعدی را بفرستید؛ برای پایان دکمه بازگشت را بزنید." . Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('لیست تیکت های من', 'لیست تیکت های من')));
 }
 
 public static function usageAnalytics(Context $Context): void {

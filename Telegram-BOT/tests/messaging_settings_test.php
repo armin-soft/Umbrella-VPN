@@ -18,7 +18,7 @@ public static array $Response = []; public static array $ApiCalls = []; public s
 public static function call(string $Method, array $Args): array { self::$ApiCalls[] = [$Method, $Args]; return self::$Response; }
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function sendMessage(int $Chat, string $Text, array $Markup): array { self::$Sent[] = $Chat; if (self::$FailSend) throw new RuntimeException('simulated Telegram failure'); return ['ok' => true]; }
-public static function editMessageText(int $Chat, ?int $Id, string $Text, array $Markup): void { self::$Rows = $Markup['inline_keyboard']; }
+public static function editMessageText(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
 }
 final class IppanelClient { public static array $Sent = []; public static bool $Fail = false; public static function send(int $Id, string $Phone, string $Text): bool { self::$Sent[] = $Id; return !self::$Fail; } }
@@ -90,11 +90,11 @@ check(AdminFlow::queueAppPush(1, 'private', 99) === 0 && Database::$Queued === [
 $Context = new Context();
 Database::$Devices = [['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1, 'Device_Name' => 'phone', 'Platform' => 'Android']];
 AppFlow::devices($Context);
-check(str_contains(TelegramClient::$Rows[0][0]['text'], '⛔️ لغو اعتماد'), 'trusted device has revoke action');
+check(str_contains(TelegramClient::$Rows[1][0]['text'], '⛔️ لغو اعتماد'), 'trusted device has revoke action');
 AppFlow::confirmRevokeDevice($Context, 'device-one');
 check(Database::$Devices[0]['Is_Trusted'] === 0 && Database::$Revoked === ['device-one'], 'revocation clears trust and invalidates sessions');
-check(str_contains(TelegramClient::$Rows[0][0]['text'], '⚪️ اعتماد لغو شده'), 'revoked device button changes icon and text');
-check(str_starts_with(TelegramClient::$Rows[0][0]['callback_data'], 'app_device_status:'), 'revoked button cannot re-grant or repeat revoke');
+check(str_contains(TelegramClient::$Rows[1][0]['text'], '⚪️ اعتماد لغو شده'), 'revoked device button changes icon and text');
+check(str_starts_with(TelegramClient::$Rows[1][0]['callback_data'], 'app_device_status:'), 'revoked button cannot re-grant or repeat revoke');
 $Queued = count(Database::$Queued); AppFlow::confirmRevokeDevice($Context, 'device-one');
 check(count(Database::$Queued) === $Queued, 'repeat revoke does not queue duplicate notice');
 $Scheduler = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/Admin.php';
 require_once __DIR__ . '/User.php';
@@ -244,6 +245,10 @@ TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خ
 
 private static function routeCallbackInner(Context $Context): void {
 $Data = trim((string)$Context->CallbackData);
+$SessionFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
+if (str_starts_with($SessionFlow, 'app:device_photo:') || in_array($SessionFlow, ['user:ticket_reply_text', 'admin:ticket_reply_text'], true)) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null]);
+}
 
 if ($Data === '' || $Data === 'start' || $Data === '/start') {
 UserFlow::start($Context);
@@ -424,6 +429,16 @@ if ($ID > 0) AdminFlow::ticketAdminClose($Context, $ID);
 return;
 }
 
+if (str_starts_with($Data, 'ticket_attachment:')) {
+TicketMedia::show($Context, (int)substr($Data, strlen('ticket_attachment:')));
+return;
+}
+if (str_starts_with($Data, 'ticket_attachments:')) {
+$Parts = explode(':', $Data);
+UserFlow::ticketAttachments($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0));
+return;
+}
+
 if (str_starts_with($Data, 'ticket_user_view:')) {
 $ID = (int)substr($Data, strlen('ticket_user_view:'));
 
@@ -513,6 +528,24 @@ AppFlow::notificationView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0)
 return;
 }
 
+if (str_starts_with($Data, 'app_device_card:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_card:')), 2), 2, '0');
+AppFlow::deviceCard($Context, $Prefix, max(0, (int)$Page));
+return;
+}
+
+if (str_starts_with($Data, 'app_device_photo:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_photo:')), 2), 2, '0');
+AppFlow::devicePhotoStart($Context, $Prefix, max(0, (int)$Page));
+return;
+}
+
+if (str_starts_with($Data, 'app_device_art:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_art:')), 2), 2, '0');
+AppFlow::devicePhotoReset($Context, $Prefix, max(0, (int)$Page));
+return;
+}
+
 if (str_starts_with($Data, 'app_device_status:')) {
 $Parts = explode(':', $Data);
 AppFlow::devices($Context, (int)($Parts[2] ?? 0));
@@ -595,11 +628,15 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 }
 
 private static function routeMessage(Context $Context): void {
-$Text = trim((string)$Context->Text);
-$Has_Media = $Context->Photo !== null || ($Context->Caption ?? '') !== '';
+$Text = trim((string)($Context->Text ?? $Context->Caption ?? ''));
+$Has_Media = TicketMedia::extract($Context) !== null;
 
-if (!$Has_Media && $Text === '') return;
-if ($Text === '/start' || mb_strtolower($Text) === 'start') {
+if (!$Has_Media && $Text === '') {
+$InputFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
+if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به‌صورت عکس، فایل یا متن ارسال کنید.');
+return;
+}
+if (!$Has_Media && ($Text === '/start' || mb_strtolower($Text) === 'start')) {
 UserFlow::start($Context);
 return;
 }
@@ -634,7 +671,7 @@ TelegramClient::inlineKeyboard([
 return;
 }
 
-if ($CleanText === 'مدیریت' || mb_strtolower($CleanText) === '/admin' || mb_strtolower($CleanText) === '/panel' || $CleanText === 'admin' || $CleanText === 'panel') {
+if (!$Has_Media && ($CleanText === 'مدیریت' || mb_strtolower($CleanText) === '/admin' || mb_strtolower($CleanText) === '/panel' || $CleanText === 'admin' || $CleanText === 'panel')) {
 if ($Context->isAdmin()) {
 try {
 AdminFlow::menu($Context);
@@ -657,12 +694,12 @@ $Session = Repository::getUserSession($Context->UserId);
 $Flow = (string)($Session['Flow'] ?? '');
 
 if ($Flow !== '') {
-if ($Context->isAdmin() && in_array($CleanText, ['مدیریت', '/admin', '/panel', 'admin', 'panel'], true)) {
+if (!$Has_Media && $Context->isAdmin() && in_array($CleanText, ['مدیریت', '/admin', '/panel', 'admin', 'panel'], true)) {
 AdminFlow::menu($Context);
 return;
 }
 
-if (!str_starts_with($Flow, 'admin:') && in_array($CleanText, ['لغو', 'انصراف', '/cancel', 'cancel'], true)) {
+if (!$Has_Media && !str_starts_with($Flow, 'admin:') && in_array($CleanText, ['لغو', 'انصراف', '/cancel', 'cancel'], true)) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null]);
 UserFlow::serviceMenu($Context);
 return;
@@ -687,6 +724,11 @@ return;
 
 if ($Flow === 'profile_name') { ProfileFlow::processName($Context, $Text); return; }
 if ($Flow === 'profile_phone') { ProfileFlow::processPhone($Context, $Text); return; }
+if (str_starts_with($Flow, 'app:device_photo:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Flow, strlen('app:device_photo:')), 2), 2, '0');
+AppFlow::devicePhotoInput($Context, $Prefix, (int)$Page);
+return;
+}
 if ($Flow === 'app:filter_domains') { AppFlow::filterDomainsInput($Context, $Text); return; }
 if ($Flow === 'custom_plan_days' || $Flow === 'custom_plan_gb') { SubscriptionFlow::handleCustomPlanInput($Context, $Text); return; }
 if ($Flow === 'wallet_topup_amount') { SubscriptionFlow::handleWalletTopupInput($Context, $Text); return; }
@@ -695,7 +737,11 @@ if ($Flow === 'user:ticket_description') { UserFlow::ticketDescriptionInput($Con
 if ($Flow === 'user:ticket_media') { UserFlow::ticketMediaInput($Context); return; }
 if ($Flow === 'user:ticket_reply_text') { UserFlow::ticketUserReplySend($Context, $Text); return; }
 // انتخاب دسته تیکت فقط با دکمه انجام می شود؛ متن فرستاده شده دوباره همان صفحه را نشان می دهد.
-if ($Flow === 'user:ticket_category') { UserFlow::ticketCategoryMenu($Context); return; }
+if ($Flow === 'user:ticket_category') {
+if ($Has_Media) UserFlow::ticketDescriptionInput($Context, $Text);
+else UserFlow::ticketCategoryMenu($Context);
+return;
+}
 }
 
 if (!$Has_Media) {

@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS `User_Sessions` (
 `Temp_Ticket_ID` BIGINT NULL,
 `Ticket_Subject` VARCHAR(255) NULL,
 `Ticket_Description` TEXT NULL,
+`Ticket_Media_JSON` TEXT NULL,
 `Custom_Days` INT NULL,
 `Template_Code` VARCHAR(50) NULL,
 `Pending_Plan` VARCHAR(100) NULL,
@@ -185,6 +186,7 @@ CREATE TABLE IF NOT EXISTS `Ticket_Messages` (
 `Sender_Type` ENUM('user','admin') NOT NULL,
 `Message` TEXT NULL,
 `Photo_File_ID` VARCHAR(255) NULL,
+`Media_JSON` TEXT NULL,
 `Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 PRIMARY KEY (`ID`),
 KEY `IDX_Ticket_Messages_Ticket_ID` (`Ticket_ID`)

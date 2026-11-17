@@ -1,5 +1,8 @@
 <?php
 declare(strict_types=1);
+$MediaSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Ticket-Media.php');
+eval(substr($MediaSource, strpos($MediaSource, 'final class TicketMedia {')));
+
 
 // Exercise production menu and routing methods with in-memory dependencies only.
 require_once dirname(__DIR__) . '/Bot/Menu.php';

@@ -69,12 +69,27 @@ $Text = str_replace($Key, $Replacement, $Text);
 
 $Text = static::sanitizeHtml($Text);
 $Text = preg_replace('/&(?!(?:amp|lt|gt|quot|#039);)/', '&amp;', $Text) ?? $Text;
-// Every message the bot sends is bold. Inner <b> tags add nothing once the
-// whole text is bold, so they are dropped and a single pair wraps the message;
-// links, code blocks and blockquotes nest inside it, which Telegram accepts.
+// Telegram forbids bold entities overlapping code/pre entities. Keep the
+// ordinary prose bold, but render copyable keys and URLs outside bold spans.
 $Text = str_replace(['<b>', '</b>'], '', $Text);
+return self::boldProse($Text);
+}
 
-return '<b>' . $Text . '</b>';
+private static function boldProse(string $Text): string {
+$Parts = preg_split('/(<[^>]+>)/s', $Text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+$CodeDepth = 0;
+$Result = '';
+foreach ($Parts as $Part) {
+if ($Part === '') continue;
+if ($Part[0] === '<') {
+if (preg_match('/^<(pre|code)>$/', $Part)) $CodeDepth++;
+if (preg_match('/^<\/(pre|code)>$/', $Part)) $CodeDepth = max(0, $CodeDepth - 1);
+$Result .= $Part;
+} else {
+$Result .= $CodeDepth > 0 || trim($Part) === '' ? $Part : '<b>' . $Part . '</b>';
+}
+}
+return $Result;
 }
 
 /**
@@ -217,6 +232,47 @@ $Payload = [
 if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
 if ($Reply_To !== null) $Payload['reply_to_message_id'] = $Reply_To;
 return self::call('sendMessage', $Payload);
+}
+
+/** تحویل متن بلند با عقب‌گرد به متن ساده؛ خطای قالب نباید صفحه را بی‌پاسخ بگذارد. */
+public static function sendReadableMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): bool {
+$Html = self::md(self::trimFooterWithoutKeyboard($Text, $Markup));
+// Keep hyperlink destinations in the plain-text fallback too.
+$FallbackHtml = preg_replace_callback('/<a href="([^"]*)">(.*?)<\/a>/su', static fn(array $M): string => $M[2] . ' (' . $M[1] . ')', $Html) ?? $Html;
+$Plain = html_entity_decode(strip_tags($FallbackHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+if (mb_strlen($Plain) <= 3000) {
+try {
+$Result = $MessageId !== null ? self::editMessageText($ChatId, $MessageId, $Text, $Markup) : self::sendMessage($ChatId, $Text, $Markup);
+if (($Result['ok'] ?? false) === true || str_contains((string)($Result['description'] ?? ''), 'message is not modified')) return true;
+} catch (Throwable) {}
+}
+// قطعه‌بندی متن ساده، ترجیحاً در پایان خط، بدون حذف هیچ بخشی از متن.
+$Parts = [];
+while (mb_strlen($Plain) > 1800) {
+$Head = mb_substr($Plain, 0, 1800);
+$Cut = mb_strrpos($Head, "\n");
+if ($Cut === false || $Cut < 500) $Cut = 1800;
+$Parts[] = mb_substr($Plain, 0, $Cut);
+$Plain = mb_substr($Plain, $Cut);
+}
+$Parts[] = $Plain;
+foreach ($Parts as $Index => $Part) {
+$Payload = ['chat_id' => $ChatId, 'text' => $Part, 'disable_web_page_preview' => true];
+$Payload['reply_markup'] = $Index === count($Parts) - 1 ? $Markup : ['inline_keyboard' => []];
+try {
+if ($Index === 0 && $MessageId !== null) {
+try { $Result = self::call('editMessageText', $Payload + ['message_id' => $MessageId]); }
+catch (Throwable) { $Result = ['ok' => false]; }
+if (str_contains((string)($Result['description'] ?? ''), 'message is not modified')) $Result = ['ok' => true];
+if (($Result['ok'] ?? false) !== true) $Result = self::call('sendMessage', $Payload);
+} else { $Result = self::call('sendMessage', $Payload); }
+} catch (Throwable) { $Result = ['ok' => false]; }
+if (($Result['ok'] ?? false) !== true) {
+error_log('[Umbrella-Telegram][Readable] delivery failed code=' . (int)($Result['error_code'] ?? 0));
+return false;
+}
+}
+return true;
 }
 
 public static function editMessageText(int $Chat_ID, int $Message_ID, string $Text, array $Markup = []): array {

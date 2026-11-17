@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
@@ -3359,8 +3360,8 @@ $Count++;
 $Sender = $Msg['Sender_Type'] === 'admin' ? '🛡ادمین' : '👤کاربر';
 $Thread .= "{$Sender}: " . ($Msg['Message'] ?? '[مدیا]') . "\n";
 
-if ($Msg['Photo_File_ID'] !== null && $Msg['Photo_File_ID'] !== '') {
-$Thread .= "📎[پیوست تصویری]\n";
+if (TicketMedia::decode($Msg) !== null) {
+$Thread .= "📎[پیوست؛ از دکمه پیوست‌های تیکت باز کنید]\n";
 }
 }
 
@@ -3369,6 +3370,7 @@ $Text .= Menu::pageLabel($Page, $PageCount) . $ThreadPage;
 
 $Text .= Helper::adminFooter();
 $Buttons = array_merge(Menu::pages($Page, $PageCount, 'admin_ticket_messages:' . $Ticket_ID . ':'), [
+[Menu::button('📎پیوست‌های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')],
 [['text' => '✏️پاسخ', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 [['text' => '✅بستن تیکت', 'callback_data' => 'ticket_close:' . $Ticket_ID]],
 ], Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها'));
@@ -3391,19 +3393,22 @@ if ($Ticket_ID <= 0) return;
 $Ticket = Repository::getTicket($Ticket_ID);
 
 if ($Ticket === null) return;
-Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'admin', $Text);
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null]);
+if ($Ticket['Status'] === 'closed') return;
+$Media = TicketMedia::extract($Context);
+if (trim($Text) === '' && $Media === null) return;
+Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'admin', $Text, null, $Media !== null ? json_encode($Media, JSON_UNESCAPED_UNICODE) : null);
 $User = Repository::getUser((int)$Ticket['User_ID']);
 $Chat_ID = (int)($User['Chat_ID'] ?? 0);
 
 if ($Chat_ID > 0) {
-TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', (string)($User['Full_Name'] ?? ''), 'پاسخ تیکت', (int)$Ticket['User_ID']) . "📨پاسخ تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}\n➖➖➖➖➖➖➖➖➖\n👇برای مشاهده و پاسخ به منوی تیکت بروید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendReadableMessage($Chat_ID, null, Helper::frame('کاربر', (string)($User['Full_Name'] ?? ''), 'پاسخ تیکت', (int)$Ticket['User_ID']) . "📨پاسخ تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}\n➖➖➖➖➖➖➖➖➖\n👇برای مشاهده و پاسخ به منوی تیکت بروید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🎫تیکت های من', 'callback_data' => 'تیکت های من']],
 Menu::userHome(),
 ]));
+if ($Media !== null && !TicketMedia::send($Chat_ID, $Media)) TelegramClient::sendMessage($Context->ChatId, '⚠️ارسال پیوست به کاربر ناموفق بود؛ پیوست در تیکت ذخیره شده است.');
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . "\n➖➖➖➖➖➖➖➖➖\n✅پاسخ شما با موفقیت ارسال شد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها')));
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . "\n➖➖➖➖➖➖➖➖➖\n✅پاسخ در تیکت ثبت شد. برای افزودن پیوست بعدی آن را ارسال کنید؛ برای پایان دکمه بازگشت را بزنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها')));
 }
 
 public static function ticketAdminClose(Context $Context, int $Ticket_ID): void {

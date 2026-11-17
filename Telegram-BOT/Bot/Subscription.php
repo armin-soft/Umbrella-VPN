@@ -53,22 +53,12 @@ $Subscription = $User['Subscription'] ?? null;
 $Client_ID = $User['Client_ID'] ?? null;
 $Is_Callback = $Context->IsCallback && $Context->MessageId !== null;
 $Send = static function (string $Text, array $Keyboard) use ($Context, $Is_Callback): void {
-
-if ($Is_Callback) {
-try {
-$Res = TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $Keyboard);
-
-if (($Res['ok'] ?? false) === true) return;
-}
-
-catch (Throwable) {}
-}
-
-TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
+$Ok = TelegramClient::sendReadableMessage($Context->ChatId, $Is_Callback ? $Context->MessageId : null, $Text, $Keyboard);
+if (!$Ok && $Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'نمایش اشتراک ناموفق بود؛ دوباره تلاش کنید.', true);
 };
 
 if ($Phone === '') {
-$Send(Common::greet($Context, 'اشتراک من') . "⚠️برای دریافت اشتراک، ابتدا اطلاعات پروفایل کاربری خود را کامل کنید؛ بدون شماره موبایل امکان صدور اشتراک نیست." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+$Send(Common::greet($Context, 'اشتراک من') . "⚠️برای دریافت اشتراک، ابتدا اطلاعات پروفایل کاربری خود را کامل کنید؛ بدون شماره موبایل امکان صدور اشتراک نیست." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📝👤ثبت اطلاعات پروفایل کاربری', 'callback_data' => 'ویرایش و ثبت پروفایل']],
 Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
 ]));
@@ -81,7 +71,7 @@ return;
 }
 
 if (!is_string($Client_ID) || $Client_ID === '' || $Client_ID === '_') {
-$Send(Common::greet($Context, 'اشتراک من') . "⚠️داده های سرور با ربات هماهنگ نیست.\n🔁لطفاً چند لحظه بعد دوباره تلاش کنید یا به پشتیبانی اطلاع دهید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+$Send(Common::greet($Context, 'اشتراک من') . "⚠️داده های سرور با ربات هماهنگ نیست.\n🔁لطفاً چند لحظه بعد دوباره تلاش کنید یا به پشتیبانی اطلاع دهید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome(),
 ]));
 return;
@@ -109,7 +99,7 @@ $Rows = [
 Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome(),
 ];
 
-$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\nℹ️برای تهیه اشتراک، از بخش مدیریت اشتراک یکی از گزینه‌های «💎اشتراک های آماده»، «🛠اشتراک دلخواه» یا «🎁اشتراک رایگان» را انتخاب کنید.\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter() . "*";
+$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\nℹ️برای تهیه اشتراک، از بخش مدیریت اشتراک یکی از گزینه‌های «💎اشتراک های آماده»، «🛠اشتراک دلخواه» یا «🎁اشتراک رایگان» را انتخاب کنید.\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter();
 
 if ($Send !== null) { $Send($Text, TelegramClient::inlineKeyboard($Rows)); return; }
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -585,6 +575,9 @@ Menu::userHome(),
 }
 
 public static function mySubscriptionActive(Context $Context, ?\Closure $Send = null): void {
+$Send ??= static function (string $Text, array $Markup) use ($Context): void {
+TelegramClient::sendReadableMessage($Context->ChatId, $Context->IsCallback ? $Context->MessageId : null, $Text, $Markup);
+};
 $Greeting = Common::greet($Context, 'اشتراک من');
 $User = Repository::getUser($Context->UserId);
 $Client_ID = (string)($User['Client_ID'] ?? '');
@@ -607,8 +600,10 @@ $WG_Private = (string)($User['WireGuard_Private_Key'] ?? '');
 $WG_Public = (string)($User['WireGuard_Public_Key'] ?? '');
 $WG_PSK = (string)($User['WireGuard_PSK'] ?? '');
 $Server_Comment = (string)($User['Server_Comment'] ?? '');
-$Response = ServerClient::getUser($Client_ID);
+try { $Response = ServerClient::getUser($Client_ID); }
+catch (Throwable) { $Response = ['StatusCode' => 503]; }
 $Data = $Response['Json'] ?? null;
+if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده می‌شود.\n";
 
 if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300) {
 $Usage_Limit = (float)($Data['usage_limit_GB'] ?? 0);

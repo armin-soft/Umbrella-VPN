@@ -188,6 +188,7 @@ $Buttons = [];
 
 foreach ($Rows as $Row) {
 $Id = (string)$Row['Device_ID'];
+$Buttons[] = [Menu::button('🖼تصویر ' . mb_substr((string)($Row['Device_Name'] ?? 'دستگاه'), 0, 20), 'app_device_card:' . substr($Id, 0, 24) . ':' . $Page)];
 $Buttons[] = [[
 'text' => ((int)($Row['Is_Trusted'] ?? 0) === 1 ? '⛔️ لغو اعتماد ' : '⚪️ اعتماد لغو شده · ') . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
 'callback_data' => (int)($Row['Is_Trusted'] ?? 0) === 1 ? 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page : 'app_device_status:' . substr($Id, 0, 24) . ':' . $Page,
@@ -209,6 +210,76 @@ $Buttons[] = Menu::back('منوی قبلی', 'user_account_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
+}
+
+/** Scope first, then match prefix; ambiguous/forged prefixes never pick a device. */
+private static function ownedDevice(Context $Context, string $Prefix): ?array {
+if (!preg_match('/^[A-Za-z0-9_-]{1,24}$/D', $Prefix)) return null;
+$Account = self::account($Context);
+if ($Account === null) return null;
+$Rows = Database::getInstance()->fetchAll(
+'SELECT * FROM `App_Devices` WHERE LEFT(`Device_ID`, ?) = ? AND (`User_UUID` = ? OR `Telegram_ID` = ?) LIMIT 2',
+[strlen($Prefix), $Prefix, (string)$Account['uuid'], $Context->UserId]
+);
+return count($Rows) === 1 ? $Rows[0] : null;
+}
+
+private static function devicePhotoKey(Context $Context, array $Device): string {
+return 'Device_Photo_' . $Context->UserId . '_' . hash('sha256', (string)$Device['Device_ID']);
+}
+
+public static function deviceArt(string $Platform): string {
+$Platform = strtolower(trim($Platform));
+if (in_array($Platform, ['android', 'ios', 'iphone', 'ipad', 'ipados'], true)) return 'mobile';
+if (in_array($Platform, ['windows', 'macos', 'mac', 'linux'], true)) return 'computer';
+return 'unknown';
+}
+
+public static function deviceCard(Context $Context, string $Prefix, int $Page = 0): void {
+$Device = self::ownedDevice($Context, $Prefix);
+if ($Device === null) {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه یافت نشد یا شناسه مبهم است.', true);
+return;
+}
+$Photo = Repository::getSetting(self::devicePhotoKey($Context, $Device), '') ?: '';
+$Uploaded = $Photo !== '';
+if (!$Uploaded) $Photo = __DIR__ . '/../Assets/devices/' . self::deviceArt((string)($Device['Platform'] ?? '')) . '.png';
+$Escape = static fn(string $Value): string => htmlspecialchars(mb_substr($Value, 0, 120), ENT_QUOTES, 'UTF-8');
+$Text = Helper::userGreeting($Context, 'تصویر دستگاه')
+. '📱نام ثبت‌شده: ' . $Escape((string)($Device['Device_Name'] ?? 'نامشخص'))
+. "\n🖥سیستم: " . $Escape((string)($Device['Platform'] ?? 'نامشخص'))
+. "\n" . ((int)($Device['Is_Trusted'] ?? 0) === 1 ? '✅اعتماد فعال' : '⚪️اعتماد لغو شده')
+. "\n\n" . ($Uploaded ? '📷عکس ارسالی شما؛ تطبیق مدل به‌صورت خودکار بررسی نشده است.' : '🎨تصویر شماتیک متناسب با سیستم‌عامل است، نه عکس مدل دقیق دستگاه. برای نمایش عکس واقعی، آن را ثبت کنید.');
+$Markup = TelegramClient::inlineKeyboard([
+[Menu::button('📷ثبت یا تغییر عکس دستگاه', 'app_device_photo:' . $Prefix . ':' . max(0, $Page))],
+[Menu::button('🎨استفاده از تصویر شماتیک', 'app_device_art:' . $Prefix . ':' . max(0, $Page))],
+Menu::back('دستگاه‌ها', 'app_devices_page:' . max(0, $Page)), Menu::userHome(),
+]);
+try { $Result = TelegramClient::sendPhoto($Context->ChatId, $Photo, $Text, $Markup); }
+catch (Throwable) { $Result = ['ok' => false]; }
+if (($Result['ok'] ?? false) !== true) TelegramClient::sendReadableMessage($Context->ChatId, null, $Text . "\n⚠️نمایش تصویر ناموفق بود؛ دوباره تلاش کنید.", $Markup);
+}
+
+public static function devicePhotoStart(Context $Context, string $Prefix, int $Page = 0): void {
+if (self::ownedDevice($Context, $Prefix) === null) return;
+Repository::updateUserSession($Context->UserId, ['Flow' => 'app:device_photo:' . $Prefix . ':' . max(0, $Page)]);
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'عکس دستگاه') . '📷عکس واقعی دستگاه را به‌صورت عکس تلگرام بفرستید، با کپشن یا بدون کپشن. برای انصراف «لغو» را بفرستید.', TelegramClient::inlineKeyboard([Menu::back('دستگاه‌ها', 'app_devices_page:' . max(0, $Page)), Menu::userHome()]));
+}
+
+public static function devicePhotoInput(Context $Context, string $Prefix, int $Page = 0): void {
+$Device = self::ownedDevice($Context, $Prefix);
+if ($Device === null) { Repository::updateUserSession($Context->UserId, ['Flow' => null]); return; }
+if ($Context->Photo === null) { TelegramClient::sendMessage($Context->ChatId, '⚠️لطفاً عکس را به‌صورت Photo بفرستید، نه فایل.'); return; }
+Repository::setSetting(self::devicePhotoKey($Context, $Device), $Context->Photo);
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+self::deviceCard($Context, $Prefix, $Page);
+}
+
+public static function devicePhotoReset(Context $Context, string $Prefix, int $Page = 0): void {
+$Device = self::ownedDevice($Context, $Prefix);
+if ($Device === null) return;
+Repository::setSetting(self::devicePhotoKey($Context, $Device), '');
+self::deviceCard($Context, $Prefix, $Page);
 }
 
 public static function revokeDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {
@@ -438,8 +509,8 @@ try {
 // Telegram keeps an old inline keyboard when `reply_markup` is omitted;
 // explicitly clear it when rendering a destination with no buttons.
 $EditMarkup = $Markup === [] ? ['inline_keyboard' => []] : $Markup;
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $EditMarkup);
-return;
+$Result = TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, $EditMarkup);
+if (($Result['ok'] ?? false) === true || str_contains((string)($Result['description'] ?? ''), 'message is not modified')) return;
 }
 
 catch (Throwable) {

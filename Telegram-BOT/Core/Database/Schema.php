@@ -53,6 +53,8 @@ public static function migrate(): void {
 $Database = Database::getInstance();
 
 $Migrations = [
+['table' => 'Ticket_Messages', 'column' => 'Media_JSON', 'definition' => 'TEXT NULL'],
+['table' => 'User_Sessions', 'column' => 'Ticket_Media_JSON', 'definition' => 'TEXT NULL'],
 ['table' => 'Users', 'column' => 'Channel_Member_Check_At', 'definition' => 'INT UNSIGNED NULL'],
 ['table' => 'Users', 'column' => 'Channel_Grace_Started_At', 'definition' => 'INT UNSIGNED NULL'],
 ['table' => 'Users', 'column' => 'Channel_Client_Disabled_At', 'definition' => 'INT UNSIGNED NULL'],
@@ -316,6 +318,7 @@ KEY `IDX_Tickets_Priority` (`Priority`)
 `Sender_Type` ENUM('user','admin') NOT NULL,
 `Message` TEXT NULL,
 `Photo_File_ID` VARCHAR(255) NULL,
+`Media_JSON` TEXT NULL,
 `Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 PRIMARY KEY (`ID`),
 KEY `IDX_Ticket_Messages_Ticket_ID` (`Ticket_ID`)

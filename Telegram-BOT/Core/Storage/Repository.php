@@ -24,7 +24,7 @@ private const USER_COLUMNS = [
 'Last_Login_At', 'Auto_Renew_Plan', 'Username',
 ];
 
-private const SESSION_COLUMNS = ['Flow', 'Temp_UID', 'Temp_Ticket_ID', 'Ticket_Subject', 'Ticket_Description', 'Ticket_Category', 'Ticket_Priority', 'Custom_Days', 'Custom_GB', 'Template_Code', 'Pending_Plan', 'Pending_Payment', 'Pending_Custom_Plan', 'Pending_Topup', 'Broadcast_Mode', 'Idle_Notify_Users', 'Is_In_Support'];
+private const SESSION_COLUMNS = ['Flow', 'Temp_UID', 'Temp_Ticket_ID', 'Ticket_Subject', 'Ticket_Description', 'Ticket_Media_JSON', 'Ticket_Category', 'Ticket_Priority', 'Custom_Days', 'Custom_GB', 'Template_Code', 'Pending_Plan', 'Pending_Payment', 'Pending_Custom_Plan', 'Pending_Topup', 'Broadcast_Mode', 'Idle_Notify_Users', 'Is_In_Support'];
 public const CLIENT_CONDITION = "`Client_ID` IS NOT NULL AND `Client_ID` != '' AND `Client_ID` != '_'";
 
 public static function createUserIfMissing(int $User_Id): void {
@@ -785,10 +785,10 @@ self::addTicketMessage($ID, $User_ID, 'user', $Subject, null);
 return $ID;
 }
 
-public static function addTicketMessage(int $Ticket_ID, int $Sender_ID, string $Sender_Type, ?string $Message, ?string $Photo_File_ID = null): void {
+public static function addTicketMessage(int $Ticket_ID, int $Sender_ID, string $Sender_Type, ?string $Message, ?string $Photo_File_ID = null, ?string $Media_JSON = null): void {
 Database::getInstance()->execute(
-'INSERT INTO `Ticket_Messages` (`Ticket_ID`, `Sender_ID`, `Sender_Type`, `Message`, `Photo_File_ID`) VALUES (?, ?, ?, ?, ?)',
-[$Ticket_ID, $Sender_ID, $Sender_Type, $Message, $Photo_File_ID]
+'INSERT INTO `Ticket_Messages` (`Ticket_ID`, `Sender_ID`, `Sender_Type`, `Message`, `Photo_File_ID`, `Media_JSON`) VALUES (?, ?, ?, ?, ?, ?)',
+[$Ticket_ID, $Sender_ID, $Sender_Type, $Message, $Photo_File_ID, $Media_JSON]
 );
 Database::getInstance()->execute(
 'UPDATE `Tickets` SET `Last_Reply_At` = NOW(), `Last_Reply_By` = ?, `Status` = ? WHERE `ID` = ?',
@@ -799,6 +799,10 @@ Database::getInstance()->execute(
 public static function getTicket(int $ID): ?array {
 $Row = Database::getInstance()->fetch('SELECT * FROM `Tickets` WHERE `ID` = ? LIMIT 1', [$ID]);
 return $Row === null ? null : $Row;
+}
+
+public static function getTicketMessage(int $Id): ?array {
+return Database::getInstance()->fetch('SELECT * FROM `Ticket_Messages` WHERE `ID` = ? LIMIT 1', [$Id]);
 }
 
 public static function getTicketMessages(int $Ticket_ID): array {
