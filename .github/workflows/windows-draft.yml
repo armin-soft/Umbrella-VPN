@@ -35,10 +35,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
       - name: Analyze and test
         run: |
-          flutter analyze --no-fatal-infos
-          if ($LASTEXITCODE -ne 0) { throw 'Analysis failed' }
-          flutter test --reporter expanded
-          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          flutter analyze --no-fatal-infos 2>&1 | Tee-Object -Variable analysis
+          if ($LASTEXITCODE -ne 0) {
+            foreach ($line in $analysis) { Write-Output "::error::$line" }
+            throw 'Analysis failed'
+          }
+          flutter test --reporter expanded 2>&1 | Tee-Object -Variable tests
+          if ($LASTEXITCODE -ne 0) {
+            foreach ($line in $tests) { Write-Output "::error::$line" }
+            throw 'Tests failed'
+          }
       - name: Build Windows and bundle verified engine
         run: |
           flutter build windows --release
