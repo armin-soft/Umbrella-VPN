@@ -231,17 +231,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   updateAvailable: hasUpdate,
                 ),
                 Expanded(
-                  // فقط صفحه فعال ساخته و رسم می شود تا تغییر تم روشن/تاریک و
-                  // به روز رسانی لحظه ای آمار، شش صفحه پنهان دیگر را بازسازی نکند.
+                  // همه صفحات با `SizedBox.expand` تمام ارتفاع ناحیه محتوا را
+                  // پر می کنند تا صفحات کوتاه تر (مثل «دستگاه من» و «درباره»)
+                  // به وسط پنجره نیفتند و سربرگ تمام منوها دقیقاً از یک خط بالا
+                  // با فاصله یکسان شروع شود.
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
                         maxWidth: AppMetrics.maxContentWidth,
                       ),
-                      child: RepaintBoundary(
-                        child: TickerMode(
-                          enabled: _appVisible,
-                          child: _buildActivePage(_index),
+                      child: SizedBox.expand(
+                        child: RepaintBoundary(
+                          child: TickerMode(
+                            enabled: _appVisible,
+                            child: _buildActivePage(_index),
+                          ),
                         ),
                       ),
                     ),

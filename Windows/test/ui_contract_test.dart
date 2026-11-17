@@ -857,6 +857,25 @@ void main() {
         read('lib/ui/pages/settings_page.dart').contains('ResponsiveColumns('),
         isTrue,
       );
+      // پوسته اصلی باید صفحه فعال را به کل ارتفاع گسترش دهد تا صفحات کوتاه تر
+      // مثل «دستگاه من» و «درباره» بالایشان فضای خالی نیفتد.
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      expect(shell.contains('SizedBox.expand('), isTrue);
+      for (final String page in <String>[
+        'device_page',
+        'account_page',
+        'settings_page',
+        'logs_page',
+        'about_page',
+        'updates_page',
+      ]) {
+        expect(
+          read('lib/ui/pages/$page.dart')
+              .contains('padding: AppMetrics.pagePadding'),
+          isTrue,
+          reason: page,
+        );
+      }
     });
   });
 

@@ -54,7 +54,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
               ),
             ],
           ),
-          const SizedBox(height: AppMetrics.space5),
+          const SizedBox(height: AppMetrics.space4),
           GlassCard(
             padding: AppMetrics.pagePadding,
             radius: AppMetrics.radiusXxl,

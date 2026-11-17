@@ -420,4 +420,136 @@ void main() {
     expect(step3.merged.firstWhere((AppNotification e) => e.id == 5).read, isTrue);
   });
 
+  testWidgets('short and tall menu pages start at identical top and right offsets with zero top gap', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1080);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    Widget shellFrame(Widget page) {
+      return MaterialApp(
+        theme: AppTheme.light(),
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: Column(
+              children: <Widget>[
+                const SizedBox(height: AppMetrics.titleBarHeight),
+                Expanded(
+                  child: Row(
+                    children: <Widget>[
+                      const SizedBox(width: AppMetrics.navWidthWide),
+                      Expanded(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: AppMetrics.maxContentWidth,
+                            ),
+                            child: SizedBox.expand(child: page),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 1. Short scrollable page (like DevicePage / AboutPage).
+    await tester.pumpWidget(shellFrame(
+      SingleChildScrollView(
+        padding: AppMetrics.pagePadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            PageHeader(
+              key: const ValueKey<String>('hdr'),
+              title: 'دستگاه من',
+              subtitle: 'مشخصات سیستم، شناسه و شبکه فعال این کامپیوتر',
+              icon: Icons.computer_rounded,
+              actions: <Widget>[
+                OutlinedButton(onPressed: () {}, child: const Text('به روز رسانی')),
+              ],
+            ),
+            const SizedBox(height: AppMetrics.space4),
+            const PageBanner(
+              key: ValueKey<String>('bnr'),
+              leading: IconSquare(icon: Icons.computer_rounded, color: Colors.red),
+              title: 'DESKTOP',
+              subtitle: 'Windows 11',
+            ),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+    final Rect shortHeader = tester.getRect(find.byKey(const ValueKey<String>('hdr')));
+    final Rect shortBanner = tester.getRect(find.byKey(const ValueKey<String>('bnr')));
+
+    // 2. Tall scrollable page without header actions (like SettingsPage).
+    await tester.pumpWidget(shellFrame(
+      const SingleChildScrollView(
+        padding: AppMetrics.pagePadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            PageHeader(
+              key: ValueKey<String>('hdr'),
+              title: 'تنظیمات',
+              subtitle: 'مدیریت اتصال، شبکه، ظاهر برنامه و رفتار ویندوز',
+              icon: Icons.settings_rounded,
+            ),
+            SizedBox(height: AppMetrics.space4),
+            PageBanner(
+              key: ValueKey<String>('bnr'),
+              leading: IconSquare(icon: Icons.settings_rounded, color: Colors.red),
+              title: 'مرکز تنظیمات آمبرلا',
+              subtitle: 'تمام تغییرات بلافاصله ذخیره می شوند',
+            ),
+            SizedBox(height: 1600),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+    final Rect tallHeader = tester.getRect(find.byKey(const ValueKey<String>('hdr')));
+    final Rect tallBanner = tester.getRect(find.byKey(const ValueKey<String>('bnr')));
+
+    // 3. Fixed full-height page (like LogsPage).
+    await tester.pumpWidget(shellFrame(
+      const Padding(
+        padding: AppMetrics.pagePadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            PageHeader(
+              key: ValueKey<String>('hdr'),
+              title: 'گزارش ها',
+              subtitle: 'همه رویدادها',
+              icon: Icons.receipt_long_rounded,
+            ),
+            Expanded(child: SizedBox.shrink()),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+    final Rect fixedHeader = tester.getRect(find.byKey(const ValueKey<String>('hdr')));
+
+    const double expectedTop = AppMetrics.titleBarHeight + AppMetrics.space6;
+    expect(shortHeader.top, expectedTop);
+    expect(tallHeader.top, expectedTop);
+    expect(fixedHeader.top, expectedTop);
+    expect(shortHeader.right, tallHeader.right);
+    expect(shortHeader.right, fixedHeader.right);
+    expect(shortHeader.left, tallHeader.left);
+    expect(shortBanner.top, tallBanner.top);
+  });
+
 }

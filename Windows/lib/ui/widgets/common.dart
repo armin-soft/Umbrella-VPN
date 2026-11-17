@@ -252,10 +252,10 @@ class PageHeader extends StatelessWidget {
           ],
         );
         if (actions.isEmpty) {
-          // حاشیه پایین یکسان: صفحه هایی که دکمه در هدر ندارند هم نباید به
-          // محتوای زیرین بچسبند. بدون این، سه صفحه فاصله داشتند و بقیه نه.
-          return Padding(
-            padding: const EdgeInsets.only(bottom: AppMetrics.space1),
+          return ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: AppMetrics.controlHeight,
+            ),
             child: heading,
           );
         }
@@ -273,13 +273,18 @@ class PageHeader extends StatelessWidget {
             ],
           );
         }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Expanded(child: heading),
-            const SizedBox(width: AppMetrics.space3),
-            ...actions,
-          ],
+        return ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: AppMetrics.controlHeight,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Expanded(child: heading),
+              const SizedBox(width: AppMetrics.space3),
+              ...actions,
+            ],
+          ),
         );
       },
     );
