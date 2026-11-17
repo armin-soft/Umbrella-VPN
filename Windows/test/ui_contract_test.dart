@@ -559,19 +559,7 @@ void main() {
       expect(config.contains('static String get versionLabel'), isTrue);
       expect(config.contains('نسخه ۱٫۰٫۰'), isFalse);
 
-      final String installer = read('tools/build-installer.ps1');
-      expect(installer.contains('app_config.dart'), isTrue);
-      expect(installer.contains('Select-String'), isTrue);
-      // عدد نسخه نباید در اسکریپت نوشته شده باشد، نه به عنوان مقدار و نه
-      // به عنوان پشتیبان.
-      expect(RegExp(r"\$Version = '1\.0\.\d").hasMatch(installer), isFalse);
 
-      final String workflow =
-          read('../.github/workflows/build-windows-installer.yml');
-      expect(workflow.contains('app_config.dart'), isTrue);
-      expect(workflow.contains("steps.version.outputs.version"), isTrue);
-      // پوشه setup/<version> از همان خروجی گام نسخه ساخته می شود.
-      expect(workflow.contains('../setup/\$version'), isTrue);
     });
   });
 

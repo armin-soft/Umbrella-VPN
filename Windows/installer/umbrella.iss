@@ -4,8 +4,7 @@
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
 ;
-; Build it with: tools\build-installer.ps1
-; Or open this file in Inno Setup 6 and press Compile (requires Inno 6.0+).
+; Open this file in Inno Setup 6 and press Compile (requires Inno 6.0+).
 ; ---------------------------------------------------------------------------
 
 #define AppName "Umbrella VPN"
@@ -65,8 +64,8 @@ Name: "autostart"; Description: "Start {#AppNameEn} when Windows starts (minimis
 [Files]
 ; Flutter release bundle: exe, flutter_windows.dll, plugin dll, data folder.
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; The core ships inside the installer: tools\fetch-cores.ps1 puts the engine
-; library and its dependency in cores\umbrella next to the build output, so the
+; The core must be prepared manually: put the engine library and its
+; dependency in cores\umbrella inside the release bundle, so the
 ; rule above carries them into {app}\cores\umbrella, where the launchers load
 ; them from. They stay in that folder on purpose: copying 109 MB twice would
 ; only make the installer bigger.

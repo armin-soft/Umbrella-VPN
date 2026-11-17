@@ -152,12 +152,8 @@ if ($Ini !== '' && is_file($Ini)) {
 return $Path = $Ini;
 }
 
-$Local = dirname(__DIR__, 2) . '/Cert/Cacert.Pem';
-
-if (is_file($Local)) {
-return $Path = $Local;
-}
-
+// Without an explicit CA file, cURL uses the host's trusted certificate store.
+// Never disable peer/hostname verification to work around a missing CA store.
 return $Path = null;
 }
 }

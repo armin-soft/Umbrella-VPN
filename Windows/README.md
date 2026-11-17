@@ -35,7 +35,6 @@ Windows/
   windows/                    فایل های بومی برنامه (runner، مانیفست ادمین، آیکون)
   assets/                     فونت، آیکون، تصاویر وضعیت، صداها، مانیفست هسته ها، مناسبت ها
   installer/                  اسکریپت نصب Inno Setup
-  tools/                      اسکریپت های آماده سازی و اجرا
 ```
 
 ## پیش نیازهای ساخت
@@ -50,31 +49,27 @@ Windows/
 
 ## ساخت و اجرا
 
-```powershell
-cd Windows
-powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Release
-```
+پوشه ابزارهای کمکی حذف شده است. ساخت فقط به صورت دستی روی ویندوز انجام می‌شود.
+اگر `windows/flutter/CMakeLists.txt` موجود نیست، با همان نسخه Flutter یک پروژه
+موقت ویندوز بسازید و فقط همین فایل را از آن به پروژه کپی کنید. پوشه runner،
+مانیفست و آیکون سفارشی را با قالب Flutter جایگزین نکنید.
 
-این اسکریپت فایل های تولیدی ویندوز را می سازد، وابستگی ها را می گیرد و خروجی
-ریلیز را در `build\windows\x64\runner\Release` قرار می دهد.
-
-برای اجرای سریع در حالت دیباگ:
+پس از آماده‌سازی زیرساخت، از پوشه `Windows`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\run.ps1
+flutter pub get
+flutter build windows --release
 ```
 
-نکته: پوشه `windows/flutter` و فایل `windows/flutter/generated_plugins.cmake`
-محصول ابزار فلوتر هستند و در مخزن نگه داشته نمی شوند. `bootstrap.ps1` آن ها را
-از روی `pubspec.yaml` و پلاگین محلی می سازد. فایل های سفارشی پروژه
-(`windows/runner/*`، مانیفست ادمین، آیکون، پلاگین) بازنویسی نمی شوند.
+خروجی در `build\windows\x64\runner\Release` است. برای اجرای دیباگ از
+`flutter run -d windows` استفاده کنید. فایل‌های تولیدی پلاگین‌ها را Flutter می‌سازد.
 
 ## هسته های اتصال
 
 هسته ها به صورت باینری در مخزن نیستند، اما برنامه هم هیچ هسته ای را دانلود
-نمی کند. هنگام ساخت روی ماشین سازنده، `tools\fetch-cores.ps1` فهرست
-`assets/cores/manifest.json` را می خواند و باینری ها را در `cores\bin` می ریزد؛
-نصب کننده همان پوشه را در `{app}\cores` کنار فایل اجرایی برنامه نصب می کند.
+نمی کند. باینری‌های لازم را باید هنگام بسته‌بندی به صورت دستی و بر اساس
+`assets/cores/manifest.json` آماده کنید و در پوشه هسته‌های خروجی ریلیز قرار دهید.
+نصب کننده همان خروجی را کنار فایل اجرایی برنامه نصب می‌کند.
 
 ```
 <محل نصب>\cores\bin\xray.exe
@@ -179,27 +174,10 @@ http://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11/m
 
 ## نصب کننده
 
-فایل نصبی هم با گیت هاب ساخته شده و آماده دانلود است:
-
-- اجرای ساخت: https://github.com/armin-soft/Umbrella-VPN/actions/runs/43160010414
-- در بخش Artifacts فایل `UmbrellaVPN-Setup-1.0.0-x64.zip` را دانلود کنید؛
-  شامل `UmbrellaVPN-Setup-1.0.0-x64.exe`، نسخه قابل حمل و `SHA256SUMS.txt`.
-- اندازه فایل نصبی: حدود ۱۹ مگابایت
-- چکسام ساخته شده: `AEB692DD0A5E0EF2CB5DF9BBC1C34C0EAC2E73E783D4E296A3D79695F63A5A3E`
-
-ورک فلو در `.github/workflows/build-windows-installer.yml` است و در هر تغییر
-پوشه `Windows` خودکار اجرا می شود. مراحل آن: تحلیل کد، ساخت ریلیز ویندوز،
-بررسی مانیفست ادمین در فایل اجرایی، نصب Inno Setup، کامپایل نصب کننده، ساخت
-نسخه قابل حمل و بارگذاری خروجی.
-
-
-نصب کننده با Inno Setup 6 ساخته می شود و با یک فرمان آماده است:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
-```
-
-خروجی: `dist\UmbrellaVPN-Setup-1.0.0-x64.exe`
+ورک‌فلوها و خروجی‌های قبلی GitHub حذف شده‌اند؛ لینک دانلود ساخت خودکار موجود نیست.
+بعد از ساخت دستی خروجی ریلیز و آماده‌سازی هسته‌ها، فایل
+`installer/umbrella.iss` را در Inno Setup 6 باز و Compile کنید.
+خروجی در `installer/output` قرار می‌گیرد. جزئیات در `installer/README.md` است.
 
 ویژگی ها:
 
@@ -209,7 +187,6 @@ powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
 - میانبر منو شروع، میانبر دسکتاپ و گزینه اجرای خودکار با ویندوز.
 - حذف امن: فقط قاعده های فایروال با پیشوند `Umbrella-` پاک می شوند.
 - گزینه نصب بی صدای Visual C++ Runtime در صورت وجود `installer\redist\VC_redist.x64.exe`.
-- سوئیچ `-Portable` نسخه قابل حمل ZIP را هم می سازد.
 
 برنامه نیز مانیفست خود را با `requireAdministrator` و پشتیبانی از ویندوز ۱۰ و
 ۱۱ در `windows/runner/runner.exe.manifest` دارد، پس بدون اجازه مدیر اجرا
@@ -238,7 +215,7 @@ powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
 - باینری هسته ها در مخزن نیست و در زمان اجرا نصب می شود.
 - ساخت خروجی ویندوز به Visual Studio و فلوتر روی ماشین ویندوز نیاز دارد؛ در
   محیط ساخت این مخزن ابزار فلوتر موجود نبود، پس کامپایل نهایی روی ویندوز باید
-  با `tools\bootstrap.ps1` انجام شود.
+  به صورت دستی مطابق بخش ساخت و اجرا انجام شود.
 - سرویس `https://user.umbrella-server.ir/5mkVYdBkp8OS/api/docs` از محیط ساخت
   در دسترس نبود؛ قرارداد درگاه بر اساس کدهای وب سرویس و ربات در مخزن پیاده
   شده و در `docs/API.md` مستند شده است. اگر پاسخ واقعی سرور نام فیلد متفاوتی

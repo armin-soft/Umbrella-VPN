@@ -3,54 +3,21 @@
 این پوشه اسکریپت Inno Setup و تصاویر جادوگر نصب را دارد. نصب کننده ۶۴ بیتی،
 مخصوص ویندوز ۱۰ و ۱۱ است و همیشه با دسترسی مدیر اجرا می شود.
 
-## ساخت با یک فرمان
-
-روی ویندوز، در پوشه `Windows`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
-```
-
-مراحل این اسکریپت:
-
-1. اگر خروجی ریلیز نباشد، `tools\bootstrap.ps1 -Release` را اجرا می کند.
-2. Inno Setup 6 را در مسیرهای معمول یا PATH پیدا می کند (با سوئیچ
-   `-InstallInno` از winget نصب می شود).
-3. وجود آیکون و تصاویر جادوگر را بررسی می کند.
-4. `umbrella.iss` را کامپایل می کند.
-5. خروجی را با نام `dist\UmbrellaVPN-Setup-1.0.0-x64.exe` کپی می کند و
-   SHA256 را چاپ می کند.
-
-سوئیچ ها:
-
-| سوئیچ | کار |
-| --- | --- |
-| `-SkipBuild` | از خروجی ساخته شده قبلی استفاده می کند |
-| `-Portable` | علاوه بر نصب کننده، نسخه قابل حمل ZIP هم می سازد |
-| `-InstallInno` | در صورت نبود، Inno Setup را با winget نصب می کند |
-| `-InnoPath <path>` | مسیر دستی `ISCC.exe` |
-
-## ساخت روی گیت هاب بدون ماشین ویندوز
-
-ورک فلو `.github/workflows/build-windows-installer.yml` در مخزن فعال است و با
-هر تغییر در پوشه `Windows` اجرا می شود. خروجی آن در بخش Artifacts همان اجرا
-قابل دانلود است. نسخه قالب این ورک فلو در
-`tools/github-workflow-build-installer.yml` نگه داشته می شود.
-
-آخرین ساخت موفق: https://github.com/armin-soft/Umbrella-VPN/actions/runs/43160010414
-
 ## ساخت دستی
 
-1. `tools\bootstrap.ps1 -Release`
-2. `installer\umbrella.iss` را در Inno Setup 6 باز و Compile کنید.
-3. خروجی در `installer\output\UmbrellaVPN-Setup-1.0.0-x64.exe` است.
+اسکریپت‌های کمکی و قالب ورک‌فلو حذف شده‌اند؛ ساخت خودکار GitHub و خروجی‌های
+قدیمی آن نیز دیگر موجود نیستند.
+
+1. پیش‌نیازها و زیرساخت Flutter را طبق `../README.md` آماده کنید.
+2. در پوشه `Windows` فرمان‌های `flutter pub get` و
+   `flutter build windows --release` را اجرا کنید.
+3. باینری موتور و وابستگی‌های لازم را در خروجی ریلیز، زیر `cores/umbrella`،
+   آماده کنید؛ ابزار دانلود/بسته‌بندی خودکار دیگر همراه مخزن نیست.
+4. `installer/umbrella.iss` را در Inno Setup 6 باز و Compile کنید.
+5. خروجی در `installer/output` با نسخه تعریف‌شده در `AppVersion` ساخته می‌شود.
 
 ## نکته ها
 
-- `tools\bootstrap.ps1` هیچ فایل سفارشی را بازنویسی نمی کند: یک پروژه موقت
-  با همان نسخه فلوتر می سازد و فقط `windows\flutter\CMakeLists.txt` را از آن
-  کپی می کند. فایل های تولیدی پلاگین ها هنگام ساخت توسط خود فلوتر ساخته
-  می شوند.
 - نام محصول فارسی است و متن های نصب کننده انگلیسی، مطابق خواسته پروژه.
 - نصب در `C:\Program Files\Umbrella VPN` انجام می شود و در فایروال فقط
   قاعده های با پیشوند `Umbrella-` ساخته می شوند؛ هنگام حذف برنامه فقط همان
@@ -63,9 +30,8 @@ powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
   `%APPDATA%\Umbrella` و کلید رجیستری اجرای خودکار هم برداشته می شوند.
 - گزینه «اجرای خودکار با ویندوز» ثبت رجیستری کاربر جاری با سوئیچ
   `--minimized` می سازد تا برنامه در نوتبار باز شود.
-- برای همراه کردن هسته ها با نصب کننده، پوشه `Windows\cores` را کنار پروژه
-  بگذارید؛ نصب کننده آن را در `{app}\cores` کپی می کند. در غیر این صورت
-  برنامه هسته ها را در اولین اجرا دانلود می کند.
+- موتور و وابستگی‌های آن باید همراه خروجی ریلیز باشند؛ برنامه آن‌ها را
+  خودکار دانلود نمی‌کند. بسته بدون هسته امکان اتصال ندارد.
 - برای نصب بی صدای Visual C++ Runtime، فایل `VC_redist.x64.exe` را در
   `installer\redist` بگذارید.
 - امضای دیجیتال: پس از ساخت، فایل را با `signtool sign /fd sha256` امضا کنید

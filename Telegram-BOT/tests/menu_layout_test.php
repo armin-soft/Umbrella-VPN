@@ -68,7 +68,7 @@ $this->test_problems_reports_blank_row();
 $this->test_shared_keyboards_are_healthy();
 $this->test_user_service_menu_categories();
 $this->test_admin_menu_is_vertical();
-$this->test_certificate_bundle_is_preserved();
+$this->test_system_certificates_are_used();
 $this->test_navigation_only_keyboard_is_detected();
 
 foreach ($this->Failures as $Failure) {
@@ -248,13 +248,20 @@ $this->check(array_column(array_merge(...$Rows), 'callback_data') === $Expected,
 foreach ($Rows as $Row) $this->check(count($Row) === 1, 'main menu is single-column');
 }
 
-/** گواهی محلی ربات باید همراه ساختار منو و بسته ربات حفظ شود. */
-private function test_certificate_bundle_is_preserved(): void {
+/** حذف بسته گواهی نباید اعتبارسنجی TLS را خاموش کند. */
+private function test_system_certificates_are_used(): void {
 $Root = dirname(__DIR__);
-$Certificate = $Root . '/Cert/Cacert.Pem';
 $Http_Source = (string)file_get_contents($Root . '/Core/Support/Http.php');
-$this->check(is_file($Certificate) && filesize($Certificate) > 0, 'Telegram-BOT/Cert/Cacert.Pem exists and is non-empty');
-$this->check(str_contains($Http_Source, "'/Cert/Cacert.Pem'"), 'HTTP client still falls back to the bundled certificate');
+$this->check(!is_dir($Root . '/Cert'), 'bundled certificate directory removed');
+$this->check(!str_contains($Http_Source, '/Cert/'), 'HTTP does not reference removed certificates');
+$this->check(substr_count($Http_Source, 'CURLOPT_SSL_VERIFYPEER => true') === 2, 'ordinary and multipart requests verify peers');
+$this->check(substr_count($Http_Source, 'CURLOPT_SSL_VERIFYHOST => 2') === 2, 'ordinary and multipart requests verify hostnames');
+$this->check(str_contains($Http_Source, "ini_get('curl.cainfo')") && str_contains($Http_Source, "ini_get('openssl.cafile')"), 'explicit server CA configuration retained');
+require_once $Root . '/Core/Support/Http.php';
+$Method = new ReflectionMethod(HttpClient::class, 'certificateBundle');
+$Method->setAccessible(true);
+$Ini = (string)(ini_get('curl.cainfo') ?: ini_get('openssl.cafile') ?: '');
+$this->check($Method->invoke(null) === ($Ini !== '' && is_file($Ini) ? $Ini : null), 'configured CA file or system default selected');
 }
 
 /**
