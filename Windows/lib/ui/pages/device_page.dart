@@ -299,7 +299,7 @@ class _DeviceHero extends StatelessWidget {
               ),
               const SizedBox(height: AppMetrics.space1),
               Text(
-                Fa.num('${device.platformLabel} • ${accountName}'),
+                Fa.num('${device.platformLabel} • $accountName'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context)

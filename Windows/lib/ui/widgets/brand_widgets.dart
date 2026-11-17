@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../platform/services.dart';

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_config.dart';
-import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../platform/services.dart';

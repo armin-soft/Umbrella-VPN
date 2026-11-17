@@ -1096,7 +1096,7 @@ class _RegionProxyDialogState extends State<_RegionProxyDialog> {
                       ),
                   ];
                   return DropdownButtonFormField<String>(
-                    value: _region,
+                    initialValue: _region,
                     decoration: const InputDecoration(
                       labelText: 'فیلتر کشور',
                       isDense: true,

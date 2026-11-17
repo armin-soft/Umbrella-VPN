@@ -219,7 +219,7 @@ class SubscriptionParser {
     String sourceId,
     int index,
   ) {
-    final String? decoded = scheme == 'ss' ? _decodeSs(payload) ?? payload : payload;
+    final String decoded = scheme == 'ss' ? _decodeSs(payload) ?? payload : payload;
     final Uri? parsed = Uri.tryParse('$scheme://$decoded');
     if (parsed == null) {
       return null;

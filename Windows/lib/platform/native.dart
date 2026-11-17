@@ -386,7 +386,7 @@ class NativeBridge {
           '-NoProfile',
           '-NonInteractive',
           '-Command',
-          "(Get-Process -Id $pid -ErrorAction SilentlyContinue).Path",
+          '(Get-Process -Id $pid -ErrorAction SilentlyContinue).Path',
         ],
         runInShell: false,
       );

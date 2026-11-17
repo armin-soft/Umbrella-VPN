@@ -640,7 +640,6 @@ class _NavItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.compact = false,
-    this.tone,
   });
 
   final NavDestination destination;
@@ -650,8 +649,6 @@ class _NavItem extends StatefulWidget {
   /// در پنجره باریک فقط آیکون نشان داده می شود و متن در Tooltip می آید.
   final bool compact;
 
-  /// رنگ دلخواه؛ «خروج» قرمز است تا از گزینه های معمولی جدا باشد.
-  final Color? tone;
 
   @override
   State<_NavItem> createState() => _NavItemState();
@@ -707,7 +704,7 @@ class _NavItemState extends State<_NavItem> {
                 height: AppMetrics.iconSm,
                 decoration: BoxDecoration(
                   color: widget.selected
-                      ? (widget.tone ?? colors.primary)
+                      ? colors.primary
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
                 ),
@@ -721,7 +718,7 @@ class _NavItemState extends State<_NavItem> {
                     : widget.destination.icon,
                 size: AppMetrics.iconMd,
                 color: widget.selected
-                    ? (widget.tone ?? colors.primary)
+                    ? colors.primary
                     : (highlight ? colors.textPrimary : colors.textSecondary),
               ),
               if (!widget.compact) ...<Widget>[

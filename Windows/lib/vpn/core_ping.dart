@@ -164,7 +164,7 @@ class CorePinger {
     // باز می کند؛ اگر پوشه اش نباشد یا قابل نوشتن نباشد، اجرا بی هیچ پیامی
     // می میرد و سنجش خالی می ماند.
     final File settings = File(
-      '${workDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}',
+      '$workDir${Platform.pathSeparator}${AppConfig.coreSettingsFile}',
     );
     final File log = File(
       '$workDir${Platform.pathSeparator}data${Platform.pathSeparator}box.log',
