@@ -267,7 +267,7 @@ void main() {
       final StringBuffer logs = StringBuffer();
       running.stdout.transform(utf8.decoder).listen(logs.write);
       running.stderr.transform(utf8.decoder).listen(logs.write);
-      CoreProxySnapshot snapshot = const CoreProxySnapshot.unreachable();
+      CoreProxySnapshot snapshot = const CoreProxySnapshot(reachable: false);
       for (int i = 0; i < 15; i++) {
         snapshot = await ClashApi.status(secret: '${options['web-secret']}');
         if (snapshot.reachable) {
