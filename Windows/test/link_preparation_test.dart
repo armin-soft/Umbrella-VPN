@@ -47,6 +47,19 @@ void main() {
     expect(uri.queryParameters['fp'], 'chrome');
   });
 
+  test('case and spelling aliases match the core without overriding explicit SNI', () async {
+    final PreparedLinks result = await LinkPreparation.prepare(<String>[
+      'vless://test@proxy.example:443?security=tls&TYPE=ws&SNI=cdn.example&HOST=edge.example&mux-type=smux&amp;mux_up=10',
+    ], lookup: lookup);
+    final Uri uri = Uri.parse(result.links.single);
+    expect(uri.queryParameters['SNI'], 'cdn.example');
+    expect(uri.queryParameters.containsKey('sni'), false);
+    expect(uri.queryParameters['HOST'], 'edge.example');
+    expect(uri.queryParameters.containsKey('host'), false);
+    expect(uri.queryParameters.containsKey('mux-type'), false);
+    expect(uri.queryParameters.containsKey('mux_up'), false);
+  });
+
   test('vmess retains fields, explicit Host and implicit SNI', () async {
     final Map<String, dynamic> source = <String, dynamic>{
       'v': '2', 'add': 'proxy.example', 'port': 443, 'id': 'test', 'aid': 0,

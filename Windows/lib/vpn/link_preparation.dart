@@ -11,6 +11,8 @@ import 'dart:io';
 class LinkPreparation {
   const LinkPreparation._();
 
+  static String _key(String value) => value.trim().toLowerCase().replaceAll(RegExp(r'[_-]'), '');
+
   static const Set<String> _muxKeys = <String>{
     'muxtype', 'muxmaxc', 'muxsmax', 'mux', 'muxpad', 'muxup', 'muxdown',
   };
@@ -88,7 +90,7 @@ class _EndpointLink {
             base64.decode(base64.normalize(link.substring(8))))) as Map<String, dynamic>;
         return _EndpointLink(Uri(scheme: 'vmess'), data, '${data['add'] ?? ''}');
       }
-      final Uri uri = Uri.parse(link);
+      final Uri uri = Uri.parse(link.replaceAll('&amp;', '&'));
       if (uri.scheme != 'vless' && uri.scheme != 'trojan') return null;
       if (!uri.hasAuthority || uri.host.isEmpty) return null;
       // Validate percent-encoding now so one malformed link cannot abort the pool.
@@ -102,7 +104,7 @@ class _EndpointLink {
   String render(String? address) {
     if (data != null) {
       final Map<String, dynamic> result = Map<String, dynamic>.of(data!);
-      result.removeWhere((String key, dynamic _) => LinkPreparation._muxKeys.contains(key.toLowerCase()));
+      result.removeWhere((String key, dynamic _) => LinkPreparation._muxKeys.contains(LinkPreparation._key(key)));
       if (address != null) {
         _preserveNames(result);
         result['add'] = address;
@@ -113,13 +115,17 @@ class _EndpointLink {
     // Only remove the core's optional protocol mux, matching mux.enable=false.
     final List<String> query = uri.query.isEmpty ? <String>[] : uri.query.split('&');
     query.removeWhere((String part) => LinkPreparation._muxKeys.contains(
-        Uri.decodeQueryComponent(part.split('=').first).toLowerCase()));
+        LinkPreparation._key(Uri.decodeQueryComponent(part.split('=').first))));
     if (address != null) {
-      final Map<String, dynamic> names = <String, dynamic>{...uri.queryParameters};
+      final Map<String, dynamic> originalNames = <String, dynamic>{
+        for (final MapEntry<String, List<String>> entry in uri.queryParametersAll.entries)
+          LinkPreparation._key(entry.key): entry.value.join(','),
+      };
+      final Map<String, dynamic> names = Map<String, dynamic>.of(originalNames);
       _preserveNames(names);
       for (final String key in <String>['sni', 'host']) {
-        if ((uri.queryParameters[key] ?? '').isEmpty && names.containsKey(key)) {
-          query.removeWhere((String part) => Uri.decodeQueryComponent(part.split('=').first) == key);
+        if ('${originalNames[key] ?? ''}'.trim().isEmpty && names.containsKey(key)) {
+          query.removeWhere((String part) => LinkPreparation._key(Uri.decodeQueryComponent(part.split('=').first)) == key);
           query.add('$key=${Uri.encodeQueryComponent('${names[key]}')}');
         }
       }

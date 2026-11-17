@@ -1996,6 +1996,7 @@ class VpnController extends ChangeNotifier {
   Future<bool> _launch(LaunchPlan plan) async {
     _lastLaunchUnusable = false;
     await _stopCores();
+    final int preparationEpoch = _connectionEpoch;
     // _freeCorePorts خودش دلیل و نتیجه را گزارش می کند، پس اینجا تکرار
     // نمی شود.
     if (!await _freeCorePorts()) {
@@ -2027,7 +2028,6 @@ class VpnController extends ChangeNotifier {
       flush: true,
     );
 
-    final int preparationEpoch = _connectionEpoch;
     final List<String> originalLinks = await File(plan.linksPath).readAsLines();
     final PreparedLinks prepared = await LinkPreparation.prepare(
       originalLinks.where((String line) => line.trim().isNotEmpty).toList(),
