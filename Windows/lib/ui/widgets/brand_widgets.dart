@@ -45,6 +45,7 @@ class OperatorBadge extends StatelessWidget {
               operator.logoAsset,
               height: compact ? AppMetrics.iconSm : AppMetrics.iconLg,
               fit: BoxFit.contain,
+              gaplessPlayback: true,
               filterQuality: FilterQuality.high,
               errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
                   _FallbackMark(operator: operator, compact: compact),
@@ -174,18 +175,23 @@ class StateGallery extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     ClipOval(
-                      child: Image.asset(
-                        chip.image,
-                        width: size,
-                        height: size,
-                        fit: BoxFit.cover,
-                        color: active ? null : Colors.white.withValues(alpha: 0.72),
-                        colorBlendMode: active ? null : BlendMode.modulate,
-                        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-                            Icon(
-                          Icons.shield_outlined,
-                          size: size * 0.6,
-                          color: colors.textSecondary,
+                      child: TickerMode(
+                        enabled: true,
+                        child: Image.asset(
+                          chip.image,
+                          width: size,
+                          height: size,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.medium,
+                          color: active ? null : Colors.white.withValues(alpha: 0.72),
+                          colorBlendMode: active ? null : BlendMode.modulate,
+                          errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+                              Icon(
+                            Icons.shield_outlined,
+                            size: size * 0.6,
+                            color: colors.textSecondary,
+                          ),
                         ),
                       ),
                     ),
@@ -344,12 +350,18 @@ class BrandMark extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         ClipOval(
-          child: Image.asset(
-            BrandAssets.logo,
-            width: size,
-            height: size,
-            errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-                Icon(Icons.beach_access_rounded, size: size * 0.8, color: colors.primary),
+          child: TickerMode(
+            enabled: true,
+            child: Image.asset(
+              BrandAssets.logo,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+                  Icon(Icons.beach_access_rounded, size: size * 0.8, color: colors.primary),
+            ),
           ),
         ),
         if (showTitle) ...<Widget>[

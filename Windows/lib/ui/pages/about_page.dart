@@ -195,15 +195,20 @@ class _DeveloperCard extends StatelessWidget {
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  BrandAssets.logo,
-                  fit: BoxFit.cover,
-                  errorBuilder: (BuildContext context, Object error,
-                          StackTrace? stack) =>
-                      Icon(
-                    Icons.verified_rounded,
-                    size: AppMetrics.iconXl,
-                    color: colors.primary,
+                child: TickerMode(
+                  enabled: true,
+                  child: Image.asset(
+                    BrandAssets.logo,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                    errorBuilder: (BuildContext context, Object error,
+                            StackTrace? stack) =>
+                        Icon(
+                      Icons.verified_rounded,
+                      size: AppMetrics.iconXl,
+                      color: colors.primary,
+                    ),
                   ),
                 ),
               ),

@@ -354,7 +354,14 @@ class _ConnectPageState extends State<ConnectPage> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: <Color>[
-                  tone.withValues(alpha: 0.10),
+                  Color.alphaBlend(
+                    tone.withValues(
+                      alpha: Theme.of(context).brightness == Brightness.light
+                          ? 0.08
+                          : 0.12,
+                    ),
+                    colors.surface,
+                  ),
                   colors.surface,
                   colors.backgroundAlt,
                 ],

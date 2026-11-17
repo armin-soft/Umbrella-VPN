@@ -11,7 +11,15 @@ class RuntimeConfig {
     'snell', 'trusttunnel', 'sudoku',
   };
 
-  static void finalize(Map<String, dynamic> config, {required Set<String> profileTags}) {
+  static const int keepTopCount = 8;
+  static const int keepTopBatch = 16;
+  static const int monitoringWorkers = 16;
+
+  static void finalize(
+    Map<String, dynamic> config, {
+    required Set<String> profileTags,
+    int? clashApiPort,
+  }) {
     if (config['outbounds'] is! List || config['experimental'] is! Map ||
         config['experimental']['monitoring'] is! Map) {
       throw const FormatException('Built runtime has no outbound monitoring configuration');
@@ -19,11 +27,25 @@ class RuntimeConfig {
     final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
     final Map<String, dynamic> experimental = config['experimental'] as Map<String, dynamic>;
     final Map<String, dynamic> monitoring = experimental['monitoring'] as Map<String, dynamic>;
-    monitoring['keep_top'] = <String, dynamic>{'count': 8, 'batch': 4, 'quick': true};
+    monitoring['workers'] = monitoringWorkers;
+    monitoring['debounce_window'] = '250ms';
+    monitoring['url_test_timeout'] = '4s';
+    monitoring['keep_top'] = <String, dynamic>{
+      'count': keepTopCount,
+      'batch': keepTopBatch,
+      'quick': true,
+    };
     // No dashboard download on the connection path. Clash API remains loopback.
     final Map<String, dynamic>? clash = experimental['clash_api'] as Map<String, dynamic>?;
     clash?.remove('external_ui');
     clash?.remove('external_ui_download_url');
+    if (clash != null && clashApiPort != null) {
+      if (clashApiPort <= 0) {
+        experimental.remove('clash_api');
+      } else {
+        clash['external_controller'] = '127.0.0.1:$clashApiPort';
+      }
+    }
     // The controller captures stdout; do not let two writers truncate one log.
     (config['log'] as Map<String, dynamic>?)?.remove('output');
     final List<Map<String, dynamic>> extra = <Map<String, dynamic>>[];

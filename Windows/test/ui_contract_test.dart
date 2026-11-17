@@ -223,7 +223,7 @@ void main() {
       expect(controller.contains('if (_singleNodeSession) return pool;'), isTrue);
       expect(controller.contains('? umbrellaCliBinary : UmbrellaCore.engineBinary'), isTrue);
       expect(controller.contains('preparationEpoch != _connectionEpoch'), isTrue);
-      expect(read('lib/vpn/umbrella_core.dart').contains("'keep-top-batch': 4"), isTrue);
+      expect(read('lib/vpn/umbrella_core.dart').contains("'keep-top-batch': 16"), isTrue);
     });
 
     test('کل اشتراک امتحان می شود، نه چهار سرور اول', () {

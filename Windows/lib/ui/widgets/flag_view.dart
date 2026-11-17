@@ -33,14 +33,19 @@ class FlagView extends StatelessWidget {
           border: Border.all(color: colors.border),
           borderRadius: BorderRadius.circular(radius),
         ),
-        child: Image.asset(
-          'assets/flags/$normalized.png',
-          fit: BoxFit.cover,
-          errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-              Center(
-            child: Text(
-              normalized.toUpperCase(),
-              style: Theme.of(context).textTheme.labelSmall,
+        child: TickerMode(
+          enabled: true,
+          child: Image.asset(
+            'assets/flags/$normalized.png',
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+                Center(
+              child: Text(
+                normalized.toUpperCase(),
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
             ),
           ),
         ),

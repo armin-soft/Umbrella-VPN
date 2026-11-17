@@ -223,6 +223,10 @@ class SubscriptionController extends ChangeNotifier {
   Future<void> loadCached() async {
     await _vpn.bootstrap();
     if (_vpn.nodes.isNotEmpty) {
+      final List<VpnNode> cleaned = deduplicateNodes(_vpn.nodes);
+      if (cleaned.length != _vpn.nodes.length) {
+        await _vpn.applyNodes(cleaned, measure: false);
+      }
       for (final SourceState state in _sources) {
         final int count = _vpn.nodes
             .where((VpnNode node) => node.sourceId == state.source.id)
@@ -255,13 +259,8 @@ class SubscriptionController extends ChangeNotifier {
       );
       return;
     }
-    final List<VpnNode> fetched = <VpnNode>[];
-    for (final SourceState state in personal) {
-      final ParseReport? report = await _fetch(state);
-      if (report != null) {
-        fetched.addAll(report.nodes);
-      }
-    }
+    final _BatchFetch batch = await _fetchMany(personal);
+    final List<VpnNode> fetched = batch.nodes;
     if (fetched.isEmpty) {
       _needsLogin = personal.every((SourceState item) => item.unauthorized);
       if (_needsLogin) {
@@ -277,12 +276,19 @@ class SubscriptionController extends ChangeNotifier {
     }
     _fallbackActive = false;
     _needsLogin = false;
-    await _applyNodes(fetched);
+    // همه منبع های شخصی بازخوانی شدند؛ سرورهای حذف شده قدیمی از کش پاک می شوند
+    // تا فهرست اتصال با سرورهای ازکارافتاده انباشته نشود.
+    final int uniqueCount = await _applyNodes(
+      fetched,
+      refreshedSourceIds: personal
+          .map((SourceState item) => item.source.id)
+          .toSet(),
+    );
     if (!_disposed) {
       notifyListeners();
     }
     _log.add(
-      'اشتراک کاربر از سرور خوانده شد: ${Fa.num(fetched.length)} سرور از '
+      'اشتراک کاربر از سرور خوانده شد: ${Fa.num(uniqueCount)} سرور یکتا از '
       '${Fa.num(personal.where((SourceState item) => item.loaded).length)} '
       'منبع از ${Fa.num(personal.length)}.',
     );
@@ -304,13 +310,8 @@ class SubscriptionController extends ChangeNotifier {
       'نشانی های اشتراک سرور پاسخ ندادند؛ منابع عمومی برنامه امتحان می شوند.',
       level: 'warning',
     );
-    final List<VpnNode> nodes = <VpnNode>[];
-    for (final SourceState state in _sources) {
-      final ParseReport? report = await _fetch(state);
-      if (report != null) {
-        nodes.addAll(report.nodes);
-      }
-    }
+    final _BatchFetch batch = await _fetchMany(_sources);
+    final List<VpnNode> nodes = batch.nodes;
     if (nodes.isEmpty) {
       _log.add('منابع عمومی هم سروری ندادند.', level: 'error');
       if (_needsLogin) {
@@ -326,7 +327,12 @@ class SubscriptionController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    await _applyNodes(nodes);
+    await _applyNodes(
+      nodes,
+      refreshedSourceIds: _sources
+          .map((SourceState item) => item.source.id)
+          .toSet(),
+    );
     if (!_disposed) {
       notifyListeners();
     }
@@ -343,53 +349,212 @@ class SubscriptionController extends ChangeNotifier {
       ...personalSources,
       ..._sources.where((SourceState item) => !item.personal),
     ];
-    final List<VpnNode> all = <VpnNode>[];
-    int done = 0;
-    for (final SourceState state in order) {
-      final ParseReport? report = await _fetch(state);
-      if (report != null) {
-        all.addAll(report.nodes);
-      }
-      done++;
-      _progress = order.isEmpty ? 1 : done / order.length;
-      notifyListeners();
-    }
+    final _BatchFetch batch = await _fetchMany(
+      order,
+      onProgress: (int done, int total) {
+        _progress = total == 0 ? 1 : done / total;
+        if (!_disposed) {
+          notifyListeners();
+        }
+      },
+    );
 
-    await _applyNodes(all);
+    await _applyNodes(
+      batch.nodes,
+      refreshedSourceIds: batch.nodes.isNotEmpty
+          ? batch.settledSourceIds
+          : const <String>{},
+    );
     _loadingAll = false;
     _progress = 1;
-    notifyListeners();
+    if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   Future<void> refreshOne(SourceState state) async {
     final ParseReport? report = await _fetch(state);
     if (report != null) {
-      await _applyNodes(report.nodes);
+      await _applyNodes(
+        report.nodes,
+        refreshedSourceIds: <String>{state.source.id},
+      );
     }
     if (!_disposed) {
       notifyListeners();
     }
   }
 
-  /// گره های تازه را با گره های منابع دیگر جمع می کند و به کنترلر اتصال می دهد.
-  Future<void> _applyNodes(List<VpnNode> fetched) async {
+  /// دریافت همزمان کنترل شده (تا ۳ منبع با هم) تا بازخوانی ۸ مسیر پنل به جای
+  /// ده ها ثانیه در چند ثانیه تمام شود و ترتیب منبع ها حفظ بماند.
+  Future<_BatchFetch> _fetchMany(
+    List<SourceState> items, {
+    int concurrency = 3,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    if (items.isEmpty) {
+      return const _BatchFetch(<VpnNode>[], <String>{});
+    }
+    final List<ParseReport?> reports =
+        List<ParseReport?>.filled(items.length, null);
+    final Set<String> settled = <String>{};
+    int cursor = 0;
+    int done = 0;
+    final int workers = concurrency.clamp(1, items.length);
+
+    Future<void> worker() async {
+      while (!_disposed) {
+        final int index = cursor++;
+        if (index >= items.length) {
+          return;
+        }
+        final SourceState state = items[index];
+        final ParseReport? report = await _fetch(state);
+        reports[index] = report;
+        if (report != null ||
+            (state.lastStatus >= 200 && state.lastStatus < 500)) {
+          settled.add(state.source.id);
+        }
+        done++;
+        onProgress?.call(done, items.length);
+      }
+    }
+
+    await Future.wait<void>(<Future<void>>[
+      for (int i = 0; i < workers; i++) worker(),
+    ]);
+    final List<VpnNode> combined = <VpnNode>[
+      for (final ParseReport? report in reports)
+        if (report != null) ...report.nodes,
+    ];
+    return _BatchFetch(combined, settled);
+  }
+
+  /// گره های تازه را با گره های منابع بازخوانی نشده جمع، گره های تکراری بین
+  /// قالب های هم پوشان پنل (`sub/`، `all.txt`، `sub64/`، کلش و سینگ باکس) را
+  /// یکی، و نتیجه تمیز را به کنترلر اتصال می دهد.
+  Future<int> _applyNodes(
+    List<VpnNode> fetched, {
+    Set<String> refreshedSourceIds = const <String>{},
+  }) async {
     final Set<String> currentIds =
         _sources.map((SourceState item) => item.source.id).toSet();
     final Set<String> fetchedIds =
         fetched.map((VpnNode node) => node.id).toSet();
     final List<VpnNode> keep = _vpn.nodes
         .where((VpnNode node) =>
-            currentIds.contains(node.sourceId) && !fetchedIds.contains(node.id))
+            currentIds.contains(node.sourceId) &&
+            !refreshedSourceIds.contains(node.sourceId) &&
+            !fetchedIds.contains(node.id))
         .toList();
-    final Map<String, VpnNode> unique = <String, VpnNode>{};
-    for (final VpnNode node in <VpnNode>[...keep, ...fetched]) {
-      unique[node.id] = node;
-    }
-    if (unique.isEmpty) {
+    // اول گره های تازه می آیند تا اگر سرور پارامتری را عوض کرده باشد، نسخه تازه
+    // بر کش قدیمی ترجیح داشته باشد.
+    final List<VpnNode> deduped =
+        deduplicateNodes(<VpnNode>[...fetched, ...keep]);
+    if (deduped.isEmpty) {
       _log.add('هیچ سروری از اشتراک ها خوانده نشد.', level: 'warning');
-      return;
+      return 0;
     }
-    await _vpn.applyNodes(unique.values.toList());
+    await _vpn.applyNodes(deduped);
+    return deduped.length;
+  }
+
+  /// حذف کپی های کاملاً یکسان یک سرور در قالب های مختلف پنل بدون ادغام کلاینت ها
+  /// یا مسیرهای متفاوت. لینک خام اصلی (`scheme://...`) همیشه بر بازسازی کلش یا
+  /// سینگ باکس اولویت دارد تا تمام پارامترهای دقیق سرور دست نخورده بماند.
+  static List<VpnNode> deduplicateNodes(List<VpnNode> nodes) {
+    if (nodes.length <= 1) {
+      return List<VpnNode>.of(nodes);
+    }
+    final Map<String, int> indexByKey = <String, int>{};
+    final List<VpnNode> result = <VpnNode>[];
+
+    for (final VpnNode node in nodes) {
+      final String key = endpointIdentity(node);
+      final int? existingIndex = indexByKey[key];
+      if (existingIndex == null) {
+        indexByKey[key] = result.length;
+        result.add(node);
+        continue;
+      }
+      final VpnNode existing = result[existingIndex];
+      final bool preferIncoming =
+          !_hasNativeShareLink(existing) && _hasNativeShareLink(node);
+      final VpnNode winner = preferIncoming ? node : existing;
+      final VpnNode other = preferIncoming ? existing : node;
+      final int bestPing = winner.hasPing && other.hasPing
+          ? (winner.pingMs <= other.pingMs ? winner.pingMs : other.pingMs)
+          : (winner.hasPing ? winner.pingMs : other.pingMs);
+      result[existingIndex] = winner.copyWith(
+        favorite: winner.favorite || other.favorite,
+        disabled: winner.disabled && other.disabled,
+        pingMs: bestPing,
+        countryCode: winner.countryCode.isNotEmpty
+            ? winner.countryCode
+            : other.countryCode,
+        city: winner.city.isNotEmpty ? winner.city : other.city,
+      );
+    }
+    return result;
+  }
+
+  static bool _hasNativeShareLink(VpnNode node) =>
+      node.raw.trim().contains('://');
+
+  /// کلید یکتای بدون اتلاف برای یک نقطه اتصال؛ هر تفاوتی در شناسه کاربر، رمز،
+  /// پورت، انتقال، مسیر، SNI، کلید ریلیتی یا تنظیمات XHTTP دو کلید جدا می سازد.
+  static String endpointIdentity(VpnNode node) {
+    final Map<String, dynamic> p = node.params;
+    String norm(Object? value) => JsonX.text(value).trim();
+    String normLower(Object? value) => norm(value).toLowerCase();
+    String transport = normLower(p['network'] ?? p['type']);
+    if (transport.isEmpty || transport == 'raw') {
+      transport = 'tcp';
+    } else if (transport == 'h2') {
+      transport = 'http';
+    } else if (transport == 'splithttp') {
+      transport = 'xhttp';
+    }
+    String security = normLower(p['security']);
+    if (security.isEmpty && JsonX.boolean(p['tls'])) {
+      security = 'tls';
+    }
+    if (security.isEmpty && norm(p['pbk'] ?? p['publicKey']).isNotEmpty &&
+        node.protocol == NodeProtocol.vless) {
+      security = 'reality';
+    }
+    if (security.isEmpty && node.protocol == NodeProtocol.trojan) {
+      security = 'tls';
+    }
+    final Object? rawExtra = p['extra'];
+    final String extra = rawExtra == null
+        ? ''
+        : (rawExtra is String ? rawExtra.trim() : jsonEncode(rawExtra));
+    return <String>[
+      node.protocol.name,
+      node.host.trim().toLowerCase(),
+      '${node.port}',
+      norm(p['id'] ?? p['uuid']),
+      norm(p['password']),
+      norm(p['username']),
+      norm(p['publicKey']),
+      norm(p['privateKey']),
+      normLower(p['method'] ?? p['cipher']),
+      transport,
+      normLower(p['mode']),
+      norm(p['path'] ?? p['serviceName']),
+      normLower(p['host']),
+      normLower(p['headerType']),
+      security,
+      normLower(p['sni'] ?? p['servername']),
+      norm(p['pbk']),
+      norm(p['sid']),
+      norm(p['spx']),
+      normLower(p['flow']),
+      normLower(p['alpn']),
+      norm(p['encryption']),
+      extra,
+    ].join('\x1f');
   }
 
   /// آیا میزبان این نشانی قابل اعتماد است؟ نشانی اشتراک از خود سرور می آید،
@@ -422,12 +587,12 @@ class SubscriptionController extends ChangeNotifier {
     try {
       return await _client
           .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 25));
+          .timeout(const Duration(seconds: 12));
     } on Exception {
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      await Future<void>.delayed(const Duration(milliseconds: 700));
       return await _client
           .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 25));
+          .timeout(const Duration(seconds: 12));
     }
   }
 
@@ -502,4 +667,11 @@ class SubscriptionController extends ChangeNotifier {
     unawaited(close());
     super.dispose();
   }
+}
+
+class _BatchFetch {
+  const _BatchFetch(this.nodes, this.settledSourceIds);
+
+  final List<VpnNode> nodes;
+  final Set<String> settledSourceIds;
 }

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/link_preparation.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
@@ -64,6 +65,15 @@ void main() {
           }
           expect(ready, true, reason: logs.toString());
           expect(await File('${temp.path}/data/clash.db').exists(), true, reason: logs.toString());
+          final CoreProxySnapshot snapshot = await ClashApi.status(
+            secret: '${options['web-secret']}',
+          );
+          expect(snapshot.reachable, true, reason: logs.toString());
+          expect(snapshot.totalCount, greaterThanOrEqualTo(1), reason: logs.toString());
+          final CoreTrafficTotals? traffic = await ClashApi.trafficTotals(
+            secret: '${options['web-secret']}',
+          );
+          expect(traffic, isNotNull, reason: logs.toString());
           final int? exit = await Future.any<int?>(<Future<int?>>[
             running.exitCode, Future<int?>.delayed(const Duration(milliseconds: 500), () => null),
           ]);
@@ -165,7 +175,8 @@ void main() {
         expect(vless['tls']['server_name'], 'example.invalid');
         expect(vless['multiplex'], isNull, reason: 'mux=false must remove inherited mux/brutal');
         expect(vless['lazy'], true);
-        expect(output['experimental']['monitoring']['keep_top']['batch'], 4);
+        expect(output['experimental']['monitoring']['keep_top']['batch'], 16);
+        expect(output['experimental']['monitoring']['workers'], 16);
         expect(output['experimental']['cache_file']['enabled'], true);
         expect(vless['transport']['type'], 'xhttp');
         expect(vless['transport']['mode'], 'packet-up');

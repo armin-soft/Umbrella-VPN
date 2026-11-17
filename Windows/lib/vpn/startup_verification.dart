@@ -10,6 +10,7 @@ class StartupVerification {
     required Future<bool> Function() alive,
     Duration budget = const Duration(minutes: 2),
     Duration interval = const Duration(milliseconds: 500),
+    Duration attemptTimeout = const Duration(seconds: 8),
   }) async {
     final Stopwatch clock = Stopwatch()..start();
     final Completer<bool> stopped = Completer<bool>();
@@ -21,8 +22,8 @@ class StartupVerification {
         if (!await alive() || cancelled()) return false;
         final Duration remaining = budget - clock.elapsed;
         if (remaining <= Duration.zero) return false;
-        final Duration timeout = remaining < const Duration(seconds: 8)
-            ? remaining : const Duration(seconds: 8);
+        final Duration timeout =
+            remaining < attemptTimeout ? remaining : attemptTimeout;
         final bool ok = await Future.any(<Future<bool>>[
           probe(timeout).timeout(timeout, onTimeout: () => false), stopped.future,
         ]);

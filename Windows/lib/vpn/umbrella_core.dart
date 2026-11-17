@@ -166,13 +166,13 @@ class UmbrellaCore {
 
   /// پورت های رزروشده ای که همین حالا گرفته اند.
   static Future<List<int>> heldReservedPorts() async {
-    final List<int> held = <int>[];
-    for (final int port in reservedPorts) {
-      if (await inUse(port)) {
-        held.add(port);
-      }
-    }
-    return held;
+    final List<bool> states = await Future.wait<bool>(
+      reservedPorts.map(inUse),
+    );
+    return <int>[
+      for (int i = 0; i < reservedPorts.length; i++)
+        if (states[i]) reservedPorts[i],
+    ];
   }
 
   /// نام برنامه ای که این پورت ها را گرفته است.
@@ -312,7 +312,7 @@ class UmbrellaCore {
       'direct-dns-address': networkSettings == null ? directDns : NetworkDns.normalize(networkSettings.directDns),
       'remote-dns-domain-strategy': 'as_is',
       'direct-dns-domain-strategy': 'as_is',
-      'independent-dns-cache': false,
+      'independent-dns-cache': true,
       'enable-fake-dns': false,
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
       'region': 'other',
@@ -347,8 +347,10 @@ class UmbrellaCore {
       // ایران ۳۰۱/۴۰۳ می دهد، پس هسته گره سالم را «no answer» می خواند.
       'connection-test-url': AppConfig.connectionTestUrls.first,
       'connection-test-urls': AppConfig.connectionTestUrls,
-      // هر ۳۰ ثانیه به جای ۶۰۰ تا گره تازه وصل‌شده سریع دیده شود.
-      'url-test-interval': 30,
+      // پایش اولیه در لحظه شروع اجرا بی درنگ انجام می شود؛ دوره بازسنجی
+      // ۱۸۰ ثانیه است تا اتصال های باز کاربر هر ۳۰ ثانیه با سوییچ بی مورد قطع
+      // نشوند ولی اگر گرهی افت کرد به موقع جایگزین شود.
+      'url-test-interval': 180,
       // نشانی خواندن آی پی و موقعیت خروجی.
       //
       // این کلید در گزارش های پیشین تنظیم نشده بود، پس هسته خط
@@ -367,21 +369,18 @@ class UmbrellaCore {
       // تمام است و کاربر فقط «سرور عوض کن» می بیند. ۸ تعادل است بین
       // سرعت اجرا و داشتن جایگزین.
       'keep-top': 8,
-      // Bound discovery pressure; retain all authorized candidates for later batches.
-      'keep-top-batch': 4,
+      // Discover responsive proxies in fast parallel waves without opening
+      // hundreds of simultaneous connections.
+      'keep-top-batch': 16,
       // مانند Hiddify، انتخاب سریع فعال است: هسته می تواند با تکیه بر سنجش های
       // تازه، زودتر مجموعه گزینه های سریع را برگزیند و پایش گره های اشتراک را
       // ادامه دهد. این گزینه لینک های جدید را از سنجش حذف نمی کند.
       'keep-top-quick': true,
-      // انتخاب پیش فرض روی گروه «کم ترین تاخیر» باشد، نه گره اول.
-      //
-      // در `setOutbounds` خود هسته (`v2/config/builder.go`) مقدار `lowest`
-      // یعنی `DefaultProxyLowest` و گروه انتخاب را روی بالانسر
-      // `lowest-delay` می گذارد. یعنی سریع ترین گره برمی دارد و تا وقتی
-      // یکی افت نکرده، همان می ماند؛ هنگام افتادن هم خودش به بعدی می رود.
-      // `balancer-strategy` را عمداً نمی گذاریم: مقدارش در این نسخه هسته
-      // با `lowest-delay` یکی نیست و پیکربندی را رد می کند.
-      'default-proxy': 'lowest',
+      // انتخاب پیش فرض روی گروه «کم ترین تاخیر» (`lowest`) است تا سریع ترین
+      // گره سالم برداشته شود و هنگام افتادن بی درنگ به بعدی برود؛ اگر کاربر
+      // یکی از حالت های توزیع بار را برگزیده باشد روی گروه `balance` با همان
+      // راهبرد می رود.
+      ..._selectionOptions(networkSettings?.selectionMode),
       // ── بقیه پیش فرض های هسته، تا صفر نشوند ───────────────────────────
       'enable-ntp': true,
       // موتور TLS ویندوز باید خاموش بماند.
@@ -412,6 +411,33 @@ class UmbrellaCore {
       },
       'rules': <dynamic>[],
     };
+  }
+
+  /// نگاشت حالت انتخاب کاربر به کلیدهای واقعی گروه خروجی هسته.
+  static Map<String, dynamic> _selectionOptions(SelectionMode? mode) {
+    switch (mode) {
+      case SelectionMode.roundRobin:
+        return const <String, dynamic>{
+          'default-proxy': 'balance',
+          'balancer-strategy': 'round-robin',
+        };
+      case SelectionMode.consistentHash:
+        return const <String, dynamic>{
+          'default-proxy': 'balance',
+          'balancer-strategy': 'consistent-hashing',
+        };
+      case SelectionMode.stickySession:
+        return const <String, dynamic>{
+          'default-proxy': 'balance',
+          'balancer-strategy': 'sticky-sessions',
+        };
+      case SelectionMode.auto:
+      case SelectionMode.manual:
+      case null:
+        return const <String, dynamic>{
+          'default-proxy': 'lowest',
+        };
+    }
   }
 
   /// پوشه هسته در نسخه نصب: همه فایل های هسته باید کنار هم بمانند.

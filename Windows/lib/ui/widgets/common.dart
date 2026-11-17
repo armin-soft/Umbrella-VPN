@@ -769,20 +769,44 @@ class _StatusOrbState extends State<StatusOrb>
                   ),
                 ),
               ClipOval(
-                child: Image.asset(
-                  widget.image,
-                  width: widget.size * 0.66,
-                  height: widget.size * 0.66,
-                  fit: BoxFit.cover,
-                  errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-                      Container(
+                // بارگذاری تصویر وضعیت هرگز نباید با خاموش شدن تیکر پس زمینه
+                // متوقف شود (حتی اگر وضعیت در حالت کوچک شده در سینی عوض شود).
+                child: TickerMode(
+                  enabled: true,
+                  child: Image.asset(
+                    widget.image,
                     width: widget.size * 0.66,
                     height: widget.size * 0.66,
-                    color: colors.surfaceHigh,
-                    child: Icon(
-                      Icons.shield_outlined,
-                      size: widget.size * 0.28,
-                      color: widget.color,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                    errorBuilder: (
+                      BuildContext context,
+                      Object error,
+                      StackTrace? stack,
+                    ) =>
+                        Image.asset(
+                      BrandAssets.logo,
+                      width: widget.size * 0.66,
+                      height: widget.size * 0.66,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.medium,
+                      errorBuilder: (
+                        BuildContext context,
+                        Object fallbackError,
+                        StackTrace? fallbackStack,
+                      ) =>
+                          Container(
+                        width: widget.size * 0.66,
+                        height: widget.size * 0.66,
+                        color: colors.surfaceHigh,
+                        child: Icon(
+                          Icons.shield_outlined,
+                          size: widget.size * 0.28,
+                          color: widget.color,
+                        ),
+                      ),
                     ),
                   ),
                 ),

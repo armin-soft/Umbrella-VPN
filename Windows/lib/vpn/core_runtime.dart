@@ -17,6 +17,7 @@ class CoreRuntime {
     required bool Function() cancelled,
     required void Function(Process) onStarted,
     required void Function(Process) onFinished,
+    int? clashApiPort,
   }) async {
     // `build` enables data/clash.db, but srun does not perform hcore.Setup's
     // directory creation. A fresh installation must work without old files.
@@ -58,7 +59,11 @@ class CoreRuntime {
       'build', '-c', parsed.path, '-d', settingsPath, '-o', 'runtime.json',
     ], 'runtime.json');
     final Map<String, dynamic> config = jsonDecode(await built.readAsString()) as Map<String, dynamic>;
-    RuntimeConfig.finalize(config, profileTags: tags);
+    RuntimeConfig.finalize(
+      config,
+      profileTags: tags,
+      clashApiPort: clashApiPort,
+    );
     if (cancelled()) throw const FormatException('Core preparation cancelled');
     await built.writeAsString(jsonEncode(config), flush: true);
     return built;

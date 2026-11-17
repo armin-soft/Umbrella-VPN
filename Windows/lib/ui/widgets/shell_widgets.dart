@@ -294,11 +294,17 @@ class TitleBar extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   ClipOval(
-                    child: Image.asset(
-                      BrandAssets.logo,
-                      width: AppMetrics.iconLg,
-                      height: AppMetrics.iconLg,
-                      errorBuilder: (BuildContext context, Object error, StackTrace? stack) => Icon(Icons.shield_rounded, size: AppMetrics.iconMd, color: colors.primary),
+                    child: TickerMode(
+                      enabled: true,
+                      child: Image.asset(
+                        BrandAssets.logo,
+                        width: AppMetrics.iconLg,
+                        height: AppMetrics.iconLg,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (BuildContext context, Object error, StackTrace? stack) => Icon(Icons.shield_rounded, size: AppMetrics.iconMd, color: colors.primary),
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppMetrics.space2),

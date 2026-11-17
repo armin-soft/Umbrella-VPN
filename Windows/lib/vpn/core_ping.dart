@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../core/app_config.dart';
 import '../models/models.dart';
+import 'core_runtime.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
 import 'link_preparation.dart';
@@ -44,6 +45,10 @@ class CorePinger {
     for (final Process process in running) {
       try {
         process.kill();
+        await process.exitCode.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => -1,
+        );
       } on Exception {
         // فرایند از قبل بسته شده است.
       }
@@ -73,7 +78,8 @@ class CorePinger {
     final Map<String, int> delays = <String, int>{};
     _stopped = false;
     final String? exe =
-        await _provisioner.locateBinary(VpnController.umbrellaCliBinary);
+        await _provisioner.locateBinary(UmbrellaCore.engineBinary) ??
+            await _provisioner.locateBinary(VpnController.umbrellaCliBinary);
     if (exe == null || exe.isEmpty) {
       return delays;
     }
@@ -158,29 +164,30 @@ class CorePinger {
     if (link.isEmpty) {
       return -1;
     }
+    // پوشه کاملاً جدا در مسیر داده کاربر (نه پوشه نصب برنامه و نه پوشه جلسه
+    // اصلی)، و اجرای `srun` بدون پورت های ثابت ۱۷۰۷۸/۱۶۷۵۶ تا هیچ وقت با
+    // اتصال اصلی تداخل نکند یا کش پایش را پاک نکند.
+    final Directory slotDir = Directory(
+      '${runDir.path}${Platform.pathSeparator}ping-$slot',
+    );
     final File config = File(
-      '${runDir.path}${Platform.pathSeparator}ping-$slot.txt',
+      '${slotDir.path}${Platform.pathSeparator}ping-$slot.txt',
     );
-    // فایل تنظیمات کامل، کنار همان پوشه ای که هسته در آن اجرا می شود.
-    // هسته `log-file` را نسبت به همین پوشه می نویسد و پیش از هر کاری آن را
-    // باز می کند؛ اگر پوشه اش نباشد یا قابل نوشتن نباشد، اجرا بی هیچ پیامی
-    // می میرد و سنجش خالی می ماند.
     final File settingsFile = File(
-      '$workDir${Platform.pathSeparator}${AppConfig.coreSettingsFile}',
-    );
-    final File log = File(
-      '$workDir${Platform.pathSeparator}data${Platform.pathSeparator}box.log',
+      '${slotDir.path}${Platform.pathSeparator}${AppConfig.coreSettingsFile}',
     );
     Process? process;
     IOSink? sink;
     try {
-      // هسته خودش پیکربندی را از لینک می سازد؛ یک لینک کافی است.
+      await slotDir.create(recursive: true);
       final PreparedLinks prepared = await LinkPreparation.prepare(
-        <String>[link], resolveEndpoints: false,
+        <String>[link],
+        resolveEndpoints: false,
       );
-      if (_stopped) return -1;
+      if (_stopped) {
+        return -1;
+      }
       await config.writeAsString('${prepared.links.single}\n', flush: true);
-      await log.parent.create(recursive: true);
       await settingsFile.writeAsString(
         jsonEncode(
           UmbrellaCore.settingsJson(
@@ -188,32 +195,30 @@ class CorePinger {
             systemProxy: false,
             port: port,
             networkSettings: settings,
-            logFile: log.path,
-            // Use the same resolver and IPv6 policy as an actual connection.
           ),
         ),
         flush: true,
       );
-      // هر نمونه سنجش هم پورت های ثابت هسته (۱۷۰۷۸ و ۱۶۷۵۶) را می خواهد؛
-      // اگر نمونه قبلی هنوز زنده باشد، این یکی با «already in use» می میرد و
-      // هیچ عددی به دست نمی آید. پس پیش از هر نمونه، پورت ها آزاد می شوند.
-      await UmbrellaCore.releasePorts();
+      if (_stopped) {
+        return -1;
+      }
+      final File runtime = await CoreRuntime.compile(
+        executable: exe,
+        workDir: workDir,
+        runDir: slotDir.path,
+        linksPath: config.path,
+        settingsPath: settingsFile.path,
+        clashApiPort: 0,
+        cancelled: () => _stopped,
+        onStarted: _running.add,
+        onFinished: _running.remove,
+      );
       if (_stopped) {
         return -1;
       }
       process = await Process.start(
         exe,
-        UmbrellaCore.args(
-          links: config.path,
-          runDir: runDir.path,
-          port: port,
-          tun: false,
-          systemProxy: false,
-          logLevel: CoreLogLevel.normalize(settings.logLevel),
-          settingsPath: settingsFile.path,
-          remoteDns: VpnController.pingDns,
-          directDns: VpnController.pingDns,
-        ),
+        <String>['srun', '-c', runtime.path, '-D', slotDir.path],
         workingDirectory: workDir,
         runInShell: false,
       );
@@ -224,20 +229,29 @@ class CorePinger {
       process.stdout.listen(sink.add);
       process.stderr.listen(sink.add);
 
-      if (!await _waitForPort(port, const Duration(milliseconds: 6000))) {
+      if (!await _waitForPort(port, const Duration(milliseconds: 5000))) {
         return -1;
       }
-      if (!await VerifiedProbe.check(proxyPort: port,
-          timeout: Duration(seconds: settings.chain.enabled ? 30 : 6)) || _stopped) return -1;
+      if (!await VerifiedProbe.check(
+            proxyPort: port,
+            timeout: Duration(seconds: settings.chain.enabled ? 30 : 5),
+          ) ||
+          _stopped) {
+        return -1;
+      }
       return await TunnelProbe.latency(
         proxyPort: port,
-        timeout: const Duration(seconds: 5),
+        timeout: const Duration(seconds: 4),
       );
     } catch (_) {
       return -1;
     } finally {
-      process?.kill();
       if (process != null) {
+        process.kill();
+        await process.exitCode.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => -1,
+        );
         _running.remove(process);
       }
       if (sink != null) {

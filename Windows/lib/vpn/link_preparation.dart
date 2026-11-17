@@ -21,6 +21,7 @@ class LinkPreparation {
     List<String> links, {
     Future<List<InternetAddress>> Function(String)? lookup,
     Duration budget = const Duration(seconds: 8),
+    Duration perHostTimeout = const Duration(milliseconds: 1500),
     bool resolveEndpoints = true,
   }) async {
     final List<_EndpointLink?> parsed = links.map(_EndpointLink.parse).toList();
@@ -40,7 +41,12 @@ class LinkPreparation {
         try {
           final Duration remaining = budget - clock.elapsed;
           if (remaining <= Duration.zero) break;
-          final List<InternetAddress> result = await resolve(host).timeout(remaining);
+          final Duration lookupLimit =
+              perHostTimeout > Duration.zero && perHostTimeout < remaining
+                  ? perHostTimeout
+                  : remaining;
+          final List<InternetAddress> result =
+              await resolve(host).timeout(lookupLimit);
           // Prefer IPv4 but allow an IPv6-only endpoint. Ignore unspecified,
           // loopback and the known filtering response (not a usable endpoint).
           final List<InternetAddress> usable = result.where((InternetAddress ip) =>

@@ -28,6 +28,17 @@ class AppShell extends StatefulWidget {
 
   final WindowService windowService;
 
+  /// پنجره روی دسکتاپ ویندوز وقتی تمرکز را از دست بدهد (مثلاً کلیک روی نوار
+  /// وظیفه، دیالوگ سیستم یا پنجره دیگر) وارد وضعیت `inactive` می شود ولی
+  /// همچنان کاملاً مقابل چشم کاربر است. فقط در `hidden`/`paused`/`detached`
+  /// واقعاً پنهان است؛ خاموش کردن تیکرها در `inactive` بارگذاری تصویر وضعیت
+  /// (لوگوی وسط صفحه اتصال) و انیمیشن تغییر رنگ کارت/دکمه را متوقف می کرد.
+  static bool isLifecycleVisible(AppLifecycleState? state) {
+    return state == null ||
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+  }
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -35,6 +46,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _index = 0;
   bool _appVisible = true;
+  bool _assetsPrecached = false;
   StreamSubscription<String>? _traySub;
 
   static const List<NavDestination> _destinations = <NavDestination>[
@@ -52,10 +64,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _appVisible = WidgetsBinding.instance.lifecycleState == null ||
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    _appVisible = AppShell.isLifecycleVisible(
+      WidgetsBinding.instance.lifecycleState,
+    );
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_assetsPrecached) {
+      return;
+    }
+    _assetsPrecached = true;
+    // پیش بارگذاری لوگو و تصویرهای وضعیت تا هنگام جابه جایی بین «قطع»،
+    // «در حال اتصال»، «متصل» و «خطا» هیچ فریم خالی دیده نشود.
+    for (final String asset in <String>[
+      BrandAssets.logo,
+      ...BrandAssets.all,
+    ]) {
+      unawaited(
+        precacheImage(AssetImage(asset), context).catchError((Object _) {}),
+      );
+    }
   }
 
   @override
@@ -67,7 +99,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final bool visible = state == AppLifecycleState.resumed;
+    final bool visible = AppShell.isLifecycleVisible(state);
     if (_appVisible != visible && mounted) {
       setState(() => _appVisible = visible);
     }
@@ -78,14 +110,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     switch (event) {
       case 'show':
         await widget.windowService.show();
+        if (mounted && !_appVisible) {
+          setState(() => _appVisible = true);
+        }
         break;
       case 'servers':
         await widget.windowService.show();
-        setState(() => _index = 0);
+        if (mounted) {
+          setState(() {
+            _appVisible = true;
+            _index = 0;
+          });
+        }
         break;
       case 'settings':
         await widget.windowService.show();
-        setState(() => _index = 3);
+        if (mounted) {
+          setState(() {
+            _appVisible = true;
+            _index = 3;
+          });
+        }
         break;
       case 'toggle':
         if (vpn.status.active) {

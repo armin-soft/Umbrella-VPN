@@ -9,7 +9,8 @@ class VerifiedProbe {
   static const Map<String, String> endpoints = <String, String>{
     'https://cp.cloudflare.com/generate_204': '',
     'https://www.gstatic.com/generate_204': '',
-    'https://www.msftconnecttest.com/connecttest.txt': 'Microsoft Connect Test',
+    'https://clients3.google.com/generate_204': '',
+    'https://detectportal.firefox.com/success.txt': 'success\n',
   };
 
   static bool matches(int status, String body, String expected) =>

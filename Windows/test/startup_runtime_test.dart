@@ -65,7 +65,13 @@ void main() {
     expect(outbounds.length, 1103); // all nodes + hop + resolving download dialer
     expect(outbounds.where((dynamic out) => out['lazy'] == true).length, 1101);
     expect(outbounds.firstWhere((dynamic out) => out['tag'] == 'chain-hop')['lazy'], isNull);
-    expect(config['experimental']['monitoring']['keep_top'], <String, dynamic>{'count': 8, 'batch': 4, 'quick': true});
+    expect(
+      config['experimental']['monitoring']['keep_top'],
+      <String, dynamic>{'count': 8, 'batch': 16, 'quick': true},
+    );
+    expect(config['experimental']['monitoring']['workers'], 16);
+    expect(config['experimental']['monitoring']['debounce_window'], '250ms');
+    expect(config['experimental']['monitoring']['url_test_timeout'], '4s');
     expect(config['experimental']['cache_file']['enabled'], true);
     expect(config['experimental']['clash_api']['external_ui'], isNull);
     expect(config['log']['output'], isNull);

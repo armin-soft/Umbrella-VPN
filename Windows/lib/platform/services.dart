@@ -229,16 +229,17 @@ class IpService {
     // ایران باز هستند.
     final List<String> endpoints = <String>[
       'https://ipwho.is/',
+      'https://api.ip.sb/geoip',
+      'https://ipinfo.io/json',
+      'https://api.myip.com',
       'https://api.ipify.org?format=json',
-      'http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,timezone,lat,lon,query',
-      'https://ifconfig.co/json',
     ];
     http.Client? temporary;
     http.Client client = _client;
     if (proxy.isNotEmpty) {
       final HttpClient inner = HttpClient();
       inner.findProxy = (Uri _) => 'PROXY $proxy';
-      inner.connectionTimeout = const Duration(seconds: 8);
+      inner.connectionTimeout = const Duration(seconds: 5);
       temporary = IOClient(inner);
       client = temporary;
     }
@@ -253,14 +254,22 @@ class IpService {
                   'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
                 },
               )
-              .timeout(const Duration(seconds: 8));
+              .timeout(const Duration(seconds: 5));
           if (response.statusCode >= 300) {
             continue;
           }
           final Map<String, dynamic> json = JsonX.asMap(
             jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
           );
+          // ipwho.is هنگام محدودیت نرخ با کد ۲۰۰ و `success: false` جواب می دهد.
+          if (json['success'] == false || json['status'] == 'fail') {
+            continue;
+          }
           final Map<String, dynamic> connection = JsonX.asMap(json['connection']);
+          final Object? rawTz = json['timezone'];
+          final String timezone = rawTz is Map
+              ? JsonX.text(rawTz['id'])
+              : JsonX.text(rawTz ?? json['timezone_id']);
           // api.ipify.org پاسخ تخت `{"ip": "..."}` می دهد و بقیه فیلدها را
           // ندارد؛ همان آی پی برای نمایش کافی است.
           final GeoInfo geo = GeoInfo.fromJson(<String, dynamic>{
@@ -270,19 +279,23 @@ class IpService {
                 json['ip_address'],
             'city': json['city'],
             'country': json['country'] ?? json['country_name'],
-            'countryCode': json['country_code'] ?? json['countryCode'],
+            'countryCode': json['country_code'] ??
+                json['countryCode'] ??
+                json['cc'],
             'region': json['region'] ?? json['regionName'] ?? json['region_name'],
             'isp': json['isp'] ??
                 json['org'] ??
                 connection['isp'] ??
                 JsonX.asMap(json['asn'])['org'],
-            'timezone': json['timezone'] ?? json['timezone_id'],
+            'timezone': timezone,
             'latitude': json['latitude'] ?? json['lat'],
             'longitude': json['longitude'] ?? json['lon'],
           });
           if (geo.ip.isNotEmpty) {
-            _cache = geo;
-            _cachedAt = DateTime.now();
+            if (proxy.isEmpty) {
+              _cache = geo;
+              _cachedAt = DateTime.now();
+            }
             return geo;
           }
         } on Exception {
@@ -292,13 +305,11 @@ class IpService {
     } finally {
       temporary?.close();
     }
-    // **تله ۱٫۰۱۸:** وقتی درخواست از مسیر تونل می رفت و هیچ سرویسی جواب
-    // نمی داد، اینجا مقدار **کش قبلی** برگردانده می شد؛ یعنی آی پی واقعی
-    // کاربر پیش از اتصال. بعد بالاتر `geo.ip != _realIp` همین را «شکست»
-    // می دید، ولی بدتر از آن، اگر آی پی کش با آی پی جدید تصادفاً یکی می شد
-    // اتصال بی ترافیک «تایید» می شد. پاسخ درست: اگر مسیر پرسش عوض شده باشد
-    // (پروکسی)، مقدار کش را برنگردان؛ ناشناخته را ناشناخته بگویید.
-    if (proxy.isNotEmpty) {
+    // وقتی درخواست اجباری (`force`) یا از مسیر پروکسی/تونل بوده و هیچ سرویسی
+    // جواب نداده، هرگز کش قبلی (آی پی واقعی پیش از اتصال) برگردانده نمی شود؛
+    // برگرداندن آی پی قبلی در حالت تونل باعث می شد `_verifyTunnel` به اشتباه
+    // تصور کند آی پی عوض نشده و اتصال سالم را قطع کند.
+    if (proxy.isNotEmpty || force) {
       return GeoInfo.empty;
     }
     return _cache;
