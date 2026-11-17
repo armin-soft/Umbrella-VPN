@@ -28,7 +28,6 @@ class _SettingsPageState extends State<SettingsPage> {
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
     final AppSettings current = settings.settings;
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SingleChildScrollView(
       padding: AppMetrics.pagePadding,
@@ -136,17 +135,32 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: 'ظاهر و ویندوز',
                   subtitle: 'تم نمایش، اعلان ها و رفتار پنجره در سینی سیستم',
                   children: <Widget>[
-                    InfoRow(
-                      icon: isDark
-                          ? Icons.dark_mode_rounded
-                          : Icons.light_mode_rounded,
+                    AnchoredSelectField<ThemePreference>(
                       label: 'پوسته برنامه',
-                      value: isDark ? 'تاریک' : 'روشن',
-                      trailing: OutlinedButton(
-                        onPressed: settings.toggleTheme,
-                        child: Text(isDark ? 'تم روشن' : 'تم تاریک'),
-                      ),
+                      value: current.theme,
+                      options: <SelectOption<ThemePreference>>[
+                        SelectOption<ThemePreference>(
+                          value: ThemePreference.dark,
+                          label: ThemePreference.dark.label,
+                          subtitle: 'زمینه تیره با کنتراست بالا برای کار طولانی',
+                          icon: Icons.dark_mode_rounded,
+                        ),
+                        SelectOption<ThemePreference>(
+                          value: ThemePreference.light,
+                          label: ThemePreference.light.label,
+                          subtitle: 'زمینه روشن و خوانا برای محیط های پرنور',
+                          icon: Icons.light_mode_rounded,
+                        ),
+                        SelectOption<ThemePreference>(
+                          value: ThemePreference.system,
+                          label: ThemePreference.system.label,
+                          subtitle: 'تغییر خودکار بر اساس تنظیم رنگ ویندوز',
+                          icon: Icons.brightness_auto_rounded,
+                        ),
+                      ],
+                      onChanged: settings.setTheme,
                     ),
+                    const SizedBox(height: AppMetrics.space2),
                     const Divider(height: AppMetrics.space2),
                     ToggleRow(
                       icon: Icons.rocket_launch_rounded,

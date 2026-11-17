@@ -143,6 +143,7 @@ class StoreKeys {
   static const String settings = 'settings.v1';
   static const String nodes = 'nodes.v1';
   static const String notifications = 'notifications.v1';
+  static const String notificationsOwner = 'notifications.owner.v1';
   static const String landingSeen = 'landing.seen';
   static const String lastPhone = 'auth.lastPhone';
   static const String lastNode = 'vpn.lastNode';

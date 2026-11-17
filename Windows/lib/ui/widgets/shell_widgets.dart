@@ -348,18 +348,22 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
     final bool hasBadge = widget.badge > 0;
     return Tooltip(
       message: Fa.num(widget.tooltip),
-      waitDuration: const Duration(milliseconds: 350),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
+      waitDuration: const Duration(milliseconds: 500),
+      triggerMode: TooltipTriggerMode.manual,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           onTap: widget.onTap,
+          onHover: (bool value) {
+            if (_hover != value) {
+              setState(() => _hover = value);
+            }
+          },
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           child: Stack(
             clipBehavior: Clip.none,
             children: <Widget>[
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+              Container(
                 width: AppMetrics.iconButton,
                 height: AppMetrics.iconButton,
                 decoration: BoxDecoration(
@@ -709,9 +713,9 @@ class _NavItemState extends State<_NavItem> {
       onExit: (_) => setState(() => _hover = false),
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+        child: Container(
           constraints: const BoxConstraints(
             minHeight: AppMetrics.navItemHeight,
           ),
@@ -745,8 +749,7 @@ class _NavItemState extends State<_NavItem> {
                 : MainAxisAlignment.start,
             children: <Widget>[
               if (!widget.compact) ...<Widget>[
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
+                Container(
                   width: AppMetrics.space1,
                   height: AppMetrics.iconSm,
                   decoration: BoxDecoration(

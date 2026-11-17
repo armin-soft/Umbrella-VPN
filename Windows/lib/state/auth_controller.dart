@@ -103,10 +103,17 @@ class AuthController extends ChangeNotifier {
   DeviceProfile _device = DeviceProfile.empty;
   DeviceProfile get device => _device;
 
+  static const int maxStoredNotifications = 100;
+
   List<AppNotification> _notifications = <AppNotification>[];
   List<AppNotification> get notifications => List<AppNotification>.unmodifiable(_notifications);
   int get unreadCount =>
       _notifications.where((AppNotification item) => !item.read).length;
+
+  bool _loadingNotifications = false;
+  bool get loadingNotifications => _loadingNotifications;
+  Future<void>? _notificationsFetch;
+  bool _historySynced = false;
 
   Timer? _pollTimer;
   Timer? _clockTimer;
@@ -129,6 +136,18 @@ class AuthController extends ChangeNotifier {
       _deviceId = _generateDeviceId();
       await _store.write(StoreKeys.deviceId, _deviceId);
     }
+    // اعلان های ذخیره شده پیش از شروع پایش دوره ای بارگذاری می شوند تا هیچ
+    // درخواست همزمانی تاریخچه قبلی را جا نیندازد یا دوباره صدا ندهد.
+    final List<dynamic> cached = _store.readJsonList(StoreKeys.notifications);
+    _notifications = _sortAndTrim(
+      cached
+          .map((Object? item) => AppNotification.fromJson(JsonX.asMap(item)))
+          .where((AppNotification item) => !_isStaleDeviceRevocation(item))
+          .toList(),
+    );
+    for (final AppNotification item in _notifications) {
+      _announced.add(_keyOf(item));
+    }
     final Map<String, dynamic> json = _store.readJson(StoreKeys.session);
     if (json.isNotEmpty) {
       _session = SessionData.fromJson(json);
@@ -137,16 +156,10 @@ class AuthController extends ChangeNotifier {
       } else {
         _phase = AuthPhase.done;
         _phone = _session!.account.phone;
+        await _syncNotificationOwner(_session!.ownerKey);
         _startHeartbeat();
         unawaited(refreshAccount(silent: true));
       }
-    }
-    final List<dynamic> cached = _store.readJsonList(StoreKeys.notifications);
-    _notifications =
-        cached.map((Object? item) => AppNotification.fromJson(JsonX.asMap(item))).toList();
-    // اعلان های ذخیره شده قبلی دیگر «تازه» نیستند و با شروع برنامه صدا نمی دهند.
-    for (final AppNotification item in _notifications) {
-      _announced.add(_keyOf(item));
     }
     notifyListeners();
   }
@@ -388,11 +401,12 @@ class AuthController extends ChangeNotifier {
       _session = session;
       _phase = AuthPhase.done;
       _phone = session.account.phone.isNotEmpty ? session.account.phone : _phone;
+      _historySynced = false;
+      await _syncNotificationOwner(session.ownerKey);
       await _store.writeJson(StoreKeys.session, session.toJson());
       await _store.writeJson(StoreKeys.filter, session.filter.toJson());
       _startHeartbeat();
       _log.add('ورود موفق؛ خوش آمدید ${session.account.displayName}.');
-      unawaited(fetchNotifications());
       notifyListeners();
       // نشست فقط خلاصه حساب را دارد؛ پروفایل کامل و نشانی اشتراک از همین
       // مسیر از سرور گرفته می شود.
@@ -478,7 +492,8 @@ class AuthController extends ChangeNotifier {
     _checkingDeviceAccess = true;
     try {
       await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
-      await fetchNotifications();
+      final bool wantHistory = !_historySynced;
+      await fetchNotifications(includeHistory: wantHistory);
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
         await _handleDeviceRevoked(error.message);
@@ -579,6 +594,7 @@ class AuthController extends ChangeNotifier {
     try {
       final SessionData fresh = await _gateway.refresh(session.token);
       _session = session.copyWith(account: fresh.account, filter: fresh.filter);
+      await _syncNotificationOwner(_session!.ownerKey);
       await _store.writeJson(StoreKeys.session, _session!.toJson());
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());
       notifyListeners();
@@ -616,32 +632,209 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchNotifications() async {
+  Future<void> _syncNotificationOwner(String ownerKey) async {
+    if (ownerKey.isEmpty) {
+      return;
+    }
+    final String previousOwner =
+        (_store.read(StoreKeys.notificationsOwner) ?? '').trim();
+    if (previousOwner.isNotEmpty && previousOwner != ownerKey) {
+      _notifications = <AppNotification>[];
+      _announced.clear();
+      _historySynced = false;
+      await _store.writeJsonList(StoreKeys.notifications, const <dynamic>[]);
+    }
+    if (previousOwner != ownerKey) {
+      await _store.write(StoreKeys.notificationsOwner, ownerKey);
+    }
+  }
+
+  /// ادغام اعلان های دریافتی از درگاه با تاریخچه ذخیره شده محلی.
+  ///
+  /// درگاه در حالت عادی فقط اعلان های تحویل نشده را برمی گرداند و بلافاصله
+  /// `Delivered_At` را پر می کند؛ بنابراین جایگزینی مستقیم لیست باعث پاک شدن
+  /// تمام اعلان های قبلی در درخواست بعدی می شد. این متد اعلان های قبلی را حفظ
+  /// می کند، وضعیت خوانده شدن هر اعلان را نگه می دارد، و اعلان های تاریخی
+  /// بازیابی شده (`delivered == true`) را بدون پخش مجدد صدا در فهرست قرار می دهد.
+  static ({List<AppNotification> merged, List<AppNotification> fresh})
+      mergeNotificationHistory({
+    required List<AppNotification> existing,
+    required List<AppNotification> incoming,
+    required Set<String> announced,
+    int maxItems = maxStoredNotifications,
+  }) {
+    final Map<String, AppNotification> byKey = <String, AppNotification>{};
+    for (final AppNotification item in existing) {
+      if (_isStaleDeviceRevocation(item)) {
+        continue;
+      }
+      byKey[_keyOf(item)] = item.copyWith(clearDelivered: true);
+    }
+
+    final List<AppNotification> fresh = <AppNotification>[];
+    final Set<String> freshKeys = <String>{};
+
+    for (final AppNotification item in incoming) {
+      if (_isStaleDeviceRevocation(item)) {
+        continue;
+      }
+      final String key = _keyOf(item);
+      final AppNotification? previous = byKey[key];
+      if (previous != null) {
+        byKey[key] = previous.copyWith(
+          title: item.title.isNotEmpty ? item.title : previous.title,
+          body: item.body.isNotEmpty ? item.body : previous.body,
+          level: item.level.isNotEmpty ? item.level : previous.level,
+          sentAt: item.sentAt ?? previous.sentAt,
+          read: previous.read,
+          clearDelivered: true,
+        );
+        announced.add(key);
+        continue;
+      }
+
+      if (item.delivered == true) {
+        // اعلان قدیمی بازیابی شده از تاریخچه سرور: نمایش در فهرست بدون هشدار مجدد.
+        byKey[key] = item.copyWith(read: true, clearDelivered: true);
+        announced.add(key);
+      } else {
+        final AppNotification normalized = item.copyWith(clearDelivered: true);
+        byKey[key] = normalized;
+        if (!normalized.read &&
+            !announced.contains(key) &&
+            freshKeys.add(key)) {
+          fresh.add(normalized);
+        }
+      }
+    }
+
+    final List<AppNotification> merged = _sortAndTrim(
+      byKey.values.toList(),
+      maxItems: maxItems,
+    );
+    return (merged: merged, fresh: fresh);
+  }
+
+  static List<AppNotification> _sortAndTrim(
+    List<AppNotification> items, {
+    int maxItems = maxStoredNotifications,
+  }) {
+    items.sort((AppNotification a, AppNotification b) {
+      final DateTime? ta = a.sentAt;
+      final DateTime? tb = b.sentAt;
+      if (ta != null && tb != null) {
+        final int byTime = tb.compareTo(ta);
+        if (byTime != 0) {
+          return byTime;
+        }
+      } else if (tb != null) {
+        return 1;
+      } else if (ta != null) {
+        return -1;
+      }
+      return b.id.abs().compareTo(a.id.abs());
+    });
+    if (items.length > maxItems) {
+      return items.sublist(0, maxItems);
+    }
+    return items;
+  }
+
+  static bool _sameNotificationList(
+    List<AppNotification> a,
+    List<AppNotification> b,
+  ) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (int i = 0; i < a.length; i++) {
+      final AppNotification x = a[i];
+      final AppNotification y = b[i];
+      if (x.id != y.id ||
+          x.read != y.read ||
+          x.title != y.title ||
+          x.body != y.body ||
+          x.level != y.level ||
+          x.sentAt != y.sentAt) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> fetchNotifications({bool includeHistory = false}) async {
+    if (_session == null) {
+      return;
+    }
+    final Future<void>? inFlight = _notificationsFetch;
+    if (inFlight != null) {
+      await inFlight;
+      if (!includeHistory || _session == null) {
+        return;
+      }
+    }
+    final Future<void> run =
+        _performFetchNotifications(includeHistory: includeHistory);
+    _notificationsFetch = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_notificationsFetch, run)) {
+        _notificationsFetch = null;
+      }
+    }
+  }
+
+  Future<void> _performFetchNotifications({
+    required bool includeHistory,
+  }) async {
     final SessionData? session = _session;
     if (session == null) {
       return;
     }
+    if (includeHistory && !_loadingNotifications) {
+      _loadingNotifications = true;
+      notifyListeners();
+    }
     try {
-      final List<AppNotification> items = (await _gateway.notifications(session.token))
+      final List<AppNotification> items = (await _gateway.notifications(
+        session.token,
+        includeHistory: includeHistory,
+      ))
           // A revoke warning can be queued immediately before this same device
           // is re-approved. The gateway filters it too; keep older deployments
           // and delayed responses from showing that stale warning after approval.
           .where((AppNotification item) => !_isStaleDeviceRevocation(item))
           .toList();
-      final List<AppNotification> fresh = items
-          .where((AppNotification item) => !_announced.contains(_keyOf(item)))
-          .toList();
-      _notifications = items;
-      await _store.writeJsonList(
-        StoreKeys.notifications,
-        items.map((AppNotification item) => item.toJson()).toList(),
+      if (includeHistory) {
+        _historySynced = true;
+      }
+      final ({List<AppNotification> merged, List<AppNotification> fresh})
+          result = mergeNotificationHistory(
+        existing: _notifications,
+        incoming: items,
+        announced: _announced,
       );
-      notifyListeners();
+      final bool changed = !_sameNotificationList(_notifications, result.merged);
+      if (changed) {
+        _notifications = result.merged;
+        await _persistNotifications();
+      }
+      if (_loadingNotifications) {
+        _loadingNotifications = false;
+      }
+      if (changed || includeHistory) {
+        notifyListeners();
+      }
       // اعلان تازه باید هم صدا داشته باشد و هم در گوشه ویندوز دیده شود.
-      if (fresh.isNotEmpty) {
-        await _announce(fresh);
+      if (result.fresh.isNotEmpty) {
+        await _announce(result.fresh);
       }
     } on ApiError catch (error) {
+      if (_loadingNotifications) {
+        _loadingNotifications = false;
+        notifyListeners();
+      }
       if (error.code == 'device_revoked') {
         await _handleDeviceRevoked(error.message);
       } else if (error.needsLogin) {
@@ -649,7 +842,19 @@ class AuthController extends ChangeNotifier {
         _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
         notifyListeners();
       }
+    } catch (_) {
+      if (_loadingNotifications) {
+        _loadingNotifications = false;
+        notifyListeners();
+      }
     }
+  }
+
+  Future<void> _persistNotifications() {
+    return _store.writeJsonList(
+      StoreKeys.notifications,
+      _notifications.map((AppNotification item) => item.toJson()).toList(),
+    );
   }
 
   static bool _isStaleDeviceRevocation(AppNotification item) {
@@ -658,7 +863,45 @@ class AuthController extends ChangeNotifier {
         notice.contains('دسترسی این دستگاه به نرم افزار آمبرلا لغو شد');
   }
 
-  static String _keyOf(AppNotification item) => '${item.id}|${item.sentAt?.toIso8601String() ?? ''}';
+  static String _keyOf(AppNotification item) => item.identityKey;
+
+  /// ثبت اعلان مهم محلی (مثل اتمام اشتراک) در مرکز اعلان ها تا بعداً هم قابل
+  /// مشاهده باشد.
+  void recordLocalNotification({
+    required String title,
+    String body = '',
+    String level = 'info',
+  }) {
+    final String cleanTitle = title.trim();
+    final String cleanBody = body.trim();
+    if (cleanTitle.isEmpty) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    // جلوگیری از ثبت تکراری یک اعلان محلی یکسان در بازه کوتاه.
+    final bool duplicate = _notifications.any(
+      (AppNotification item) =>
+          item.id < 0 &&
+          item.title == cleanTitle &&
+          item.body == cleanBody &&
+          item.sentAt != null &&
+          now.difference(item.sentAt!).inMinutes.abs() < 10,
+    );
+    if (duplicate) {
+      return;
+    }
+    final AppNotification entry = AppNotification(
+      id: -now.microsecondsSinceEpoch,
+      title: cleanTitle,
+      body: cleanBody,
+      level: level,
+      sentAt: now,
+    );
+    _announced.add(_keyOf(entry));
+    _notifications = _sortAndTrim(<AppNotification>[entry, ..._notifications]);
+    unawaited(_persistNotifications());
+    notifyListeners();
+  }
 
   /// اعلام اعلان تازه: صدا و بالون سینی سیستم.
   ///
@@ -682,16 +925,31 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  void markNotificationRead(AppNotification target) {
+    final String key = _keyOf(target);
+    bool changed = false;
+    _notifications = _notifications.map((AppNotification item) {
+      if (!item.read && _keyOf(item) == key) {
+        changed = true;
+        return item.copyWith(read: true);
+      }
+      return item;
+    }).toList();
+    if (!changed) {
+      return;
+    }
+    unawaited(_persistNotifications());
+    notifyListeners();
+  }
+
   void markNotificationsRead() {
+    if (_notifications.every((AppNotification item) => item.read)) {
+      return;
+    }
     _notifications = _notifications
         .map((AppNotification item) => item.copyWith(read: true))
         .toList();
-    unawaited(
-      _store.writeJsonList(
-        StoreKeys.notifications,
-        _notifications.map((AppNotification item) => item.toJson()).toList(),
-      ),
-    );
+    unawaited(_persistNotifications());
     notifyListeners();
   }
 

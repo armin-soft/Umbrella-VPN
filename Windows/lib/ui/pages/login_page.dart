@@ -79,7 +79,9 @@ class _LoginPageState extends State<LoginPage> {
             onMinimize: window.minimize,
             onMaximize: window.toggleMaximize,
             onClose: window.quit,
-            onToggleTheme: settings.toggleTheme,
+            onToggleTheme: () => settings.toggleTheme(
+              effectiveBrightness: Theme.of(context).brightness,
+            ),
             darkTheme: Theme.of(context).brightness == Brightness.dark,
           ),
           Expanded(

@@ -158,37 +158,55 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildActivePage(int index) {
+    switch (index) {
+      case 1:
+        return const DevicePage();
+      case 2:
+        return const AccountPage();
+      case 3:
+        return const SettingsPage();
+      case 4:
+        return const LogsPage();
+      case 5:
+        return const AboutPage();
+      case 6:
+        return const UpdatesPage();
+      case 0:
+      default:
+        return const ConnectPage();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final VpnController vpn = context.watch<VpnController>();
-    final AuthController auth = context.watch<AuthController>();
-    final UpdateController updates = context.watch<UpdateController>();
-    final SettingsController settings = context.watch<SettingsController>();
+    final VpnStatus vpnStatus = context.select<VpnController, VpnStatus>(
+      (VpnController v) => v.status,
+    );
+    final int unreadCount = context.select<AuthController, int>(
+      (AuthController a) => a.unreadCount,
+    );
+    final bool hasUpdate = context.select<UpdateController, bool>(
+      (UpdateController u) => u.available != null,
+    );
+    final SettingsController settings = context.read<SettingsController>();
     final UmbrellaColors colors = context.colors;
-
-    final List<Widget> pages = <Widget>[
-      const ConnectPage(),
-      const DevicePage(),
-      const AccountPage(),
-      const SettingsPage(),
-      const LogsPage(),
-      const AboutPage(),
-      const UpdatesPage(),
-    ];
 
     return Scaffold(
       backgroundColor: colors.background,
       body: Column(
         children: <Widget>[
           TitleBar(
-            status: vpn.status,
+            status: vpnStatus,
             onDragStart: widget.windowService.startDragging,
             onMinimize: widget.windowService.minimize,
             onMaximize: widget.windowService.toggleMaximize,
             onClose: () => widget.windowService.onWindowClose(),
-            unread: auth.unreadCount,
+            unread: unreadCount,
             onNotifications: _openNotifications,
-            onToggleTheme: settings.toggleTheme,
+            onToggleTheme: () => settings.toggleTheme(
+              effectiveBrightness: Theme.of(context).brightness,
+            ),
             darkTheme: Theme.of(context).brightness == Brightness.dark,
           ),
           Expanded(
@@ -199,27 +217,32 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 SideNav(
                   destinations: _destinations,
                   index: _index,
-                  onSelect: (int value) => setState(() => _index = value),
-                  status: vpn.status,
-                  onStatusTap: () => setState(() => _index = 0),
-                  updateAvailable: updates.available != null,
+                  onSelect: (int value) {
+                    if (_index != value) {
+                      setState(() => _index = value);
+                    }
+                  },
+                  status: vpnStatus,
+                  onStatusTap: () {
+                    if (_index != 0) {
+                      setState(() => _index = 0);
+                    }
+                  },
+                  updateAvailable: hasUpdate,
                 ),
                 Expanded(
-                  // در پنجره های بسیار پهن (مثلا روی مانیتور ۲۷ اینچ) خط متن بی
-                  // اندازه بلند می شد و منو ها از هم فاصله می گرفتند. محتوا حالا
-                  // حداکثر به [AppMetrics.maxContentWidth] پهن می شود و در
-                  // وسط پنجره می ایستد؛ نوار کناری همچنان لبه راست پنجره است.
+                  // فقط صفحه فعال ساخته و رسم می شود تا تغییر تم روشن/تاریک و
+                  // به روز رسانی لحظه ای آمار، شش صفحه پنهان دیگر را بازسازی نکند.
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
                         maxWidth: AppMetrics.maxContentWidth,
                       ),
-                      child: IndexedStack(
-                        index: _index,
-                        children: <Widget>[
-                          for (int i = 0; i < pages.length; i++)
-                            TickerMode(enabled: _appVisible && i == _index, child: pages[i]),
-                        ],
+                      child: RepaintBoundary(
+                        child: TickerMode(
+                          enabled: _appVisible,
+                          child: _buildActivePage(_index),
+                        ),
                       ),
                     ),
                   ),
@@ -242,19 +265,17 @@ class _NotificationsDialog extends StatefulWidget {
   State<_NotificationsDialog> createState() => _NotificationsDialogState();
 }
 
-/// مرکز اعلان ها: فهرست زمان بندی شده، فیلتر «خوانده نشده»، و شمارش.
-///
-/// نسخه پیشین یک لیست ساده بود. اینجا هر اعلان سرصفحه رنگی بر اساس سطح،
-/// زمان نسبی و نقطه «خوانده نشده» دارد، و بالای صفحه شمارنده و دکمه
-/// «همه خوانده شد» هست.
+/// مرکز اعلان ها: نمایش اعلان های تازه و تمام اعلان های قبلی به ترتیب زمان،
+/// همراه با فیلتر «همه / خوانده نشده»، باز کردن متن کامل و به روز رسانی.
 class _NotificationsDialogState extends State<_NotificationsDialog> {
   bool _unreadOnly = false;
+  final Set<String> _expandedKeys = <String>{};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.auth.fetchNotifications();
+      unawaited(widget.auth.fetchNotifications(includeHistory: true));
     });
   }
 
@@ -286,6 +307,26 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
     }
   }
 
+  void _onTapItem(AppNotification item) {
+    final String key = item.identityKey;
+    widget.auth.markNotificationRead(item);
+    setState(() {
+      if (!_expandedKeys.remove(key)) {
+        _expandedKeys.add(key);
+      }
+    });
+  }
+
+  static String _headerSubtitle(int total, int unread) {
+    if (total == 0) {
+      return 'هنوز اعلانی ثبت نشده است';
+    }
+    if (unread > 0) {
+      return '${Fa.num(unread)} اعلان خوانده نشده از ${Fa.num(total)} اعلان';
+    }
+    return '${Fa.num(total)} اعلان ثبت شده (همه خوانده شده)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
@@ -308,6 +349,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
             builder: (BuildContext context, Widget? child) {
               final List<AppNotification> all = widget.auth.notifications;
               final int unread = widget.auth.unreadCount;
+              final bool loading = widget.auth.loadingNotifications;
               final List<AppNotification> items = _unreadOnly
                   ? all.where((AppNotification n) => !n.read).toList()
                   : all;
@@ -337,13 +379,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                   ?.copyWith(fontWeight: FontWeight.w900),
                             ),
                             Text(
-                              Fa.num(
-                                unread > 0
-                                    ? '${Fa.num(unread)} اعلان خوانده نشده از '
-                                        '${Fa.num(all.length)}'
-                                    : 'همه ${Fa.num(all.length)} اعلان خوانده '
-                                        'شده است',
-                              ),
+                              Fa.num(_headerSubtitle(all.length, unread)),
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall
@@ -352,8 +388,35 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                           ],
                         ),
                       ),
+                      if (loading)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppMetrics.space2,
+                          ),
+                          child: SizedBox(
+                            width: AppMetrics.iconSm,
+                            height: AppMetrics.iconSm,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.primary,
+                            ),
+                          ),
+                        )
+                      else
+                        IconAction(
+                          icon: Icons.refresh_rounded,
+                          tooltip: 'به روز رسانی اعلان ها',
+                          size: AppMetrics.iconBoxSm,
+                          onTap: () => unawaited(
+                            widget.auth.fetchNotifications(
+                              includeHistory: true,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: AppMetrics.space2),
                       IconAction(
                         icon: Icons.close_rounded,
+                        tooltip: 'بستن',
                         size: AppMetrics.iconBoxSm,
                         onTap: () => Navigator.of(context).pop(),
                       ),
@@ -390,8 +453,10 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                     ],
                   ),
                   const SizedBox(height: AppMetrics.space3),
+                  const Divider(height: AppMetrics.space1),
+                  const SizedBox(height: AppMetrics.space3),
 
-                  // ── فهرست ───────────────────────────────────────────
+                  // ── فهرست اعلان های تازه و قبلی ─────────────────────
                   Expanded(
                     child: items.isEmpty
                         ? EmptyState(
@@ -402,9 +467,8 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                 ? 'اعلان خوانده نشده ای نیست'
                                 : 'اعلانی وجود ندارد',
                             message: _unreadOnly
-                                ? 'همه اعلان ها خوانده شده اند.'
-                                : 'اعلان های حساب، اشتراک و اتصال اینجا نمایش '
-                                    'داده می شوند.',
+                                ? 'برای مشاهده اعلان های قبلی روی بخش «همه» بزنید.'
+                                : 'اعلان های تازه و قبلی حساب و اشتراک شما اینجا نگهداری و نمایش داده می شوند.',
                           )
                         : ListView.separated(
                             itemCount: items.length,
@@ -414,9 +478,15 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                             itemBuilder: (BuildContext context, int index) {
                               final AppNotification item = items[index];
                               final Color tone = _tone(colors, item.level);
+                              final bool expanded =
+                                  _expandedKeys.contains(item.identityKey);
                               return GlassCard(
+                                onTap: () => _onTapItem(item),
                                 padding: const EdgeInsets.all(AppMetrics.space3),
                                 radius: AppMetrics.radiusMd,
+                                borderColor: !item.read
+                                    ? colors.primary.withValues(alpha: 0.4)
+                                    : colors.border,
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
@@ -436,8 +506,8 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                             children: <Widget>[
                                               if (!item.read) ...<Widget>[
                                                 Container(
-                                                  width: AppMetrics.space1,
-                                                  height: AppMetrics.space1,
+                                                  width: AppMetrics.space2,
+                                                  height: AppMetrics.space2,
                                                   decoration: BoxDecoration(
                                                     shape: BoxShape.circle,
                                                     color: colors.primary,
@@ -449,21 +519,29 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                               ],
                                               Expanded(
                                                 child: Text(
-                                                  Fa.num(item.title),
-                                                  maxLines: 1,
+                                                  Fa.num(
+                                                    item.title.isEmpty
+                                                        ? 'اعلان آمبرلا'
+                                                        : item.title,
+                                                  ),
+                                                  maxLines: expanded ? 3 : 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: Theme.of(context)
                                                       .textTheme
                                                       .titleSmall
                                                       ?.copyWith(
+                                                        color:
+                                                            colors.textPrimary,
                                                         fontWeight: !item.read
-                                                            ? FontWeight.w900
+                                                            ? FontWeight.w800
                                                             : FontWeight.w700,
                                                       ),
                                                 ),
                                               ),
-                                              const SizedBox(width: AppMetrics.space2),
+                                              const SizedBox(
+                                                width: AppMetrics.space2,
+                                              ),
                                               Text(
                                                 Fa.num(
                                                   Fa.relative(item.sentAt),
@@ -486,15 +564,37 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                             ),
                                             Text(
                                               Fa.num(item.body),
-                                              maxLines: 3,
-                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: expanded ? null : 3,
+                                              overflow: expanded
+                                                  ? TextOverflow.visible
+                                                  : TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colors.textSecondary,
+                                                    height: 1.55,
+                                                  ),
+                                            ),
+                                          ],
+                                          if (expanded &&
+                                              item.sentAt != null) ...<Widget>[
+                                            const SizedBox(
+                                              height: AppMetrics.space2,
+                                            ),
+                                            Text(
+                                              Fa.num(
+                                                Fa.dateTime(item.sentAt),
+                                              ),
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .labelSmall
                                                   ?.copyWith(
                                                     color:
                                                         colors.textSecondary,
-                                                    height: 1.5,
+                                                    fontSize:
+                                                        AppMetrics.fontMicro,
                                                   ),
                                             ),
                                           ],
@@ -546,8 +646,7 @@ class _FilterChip extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+      child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppMetrics.space3,
           vertical: AppMetrics.space2,

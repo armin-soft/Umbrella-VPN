@@ -321,41 +321,39 @@ class AppTheme {
     return worst(Colors.white) >= worst(Colors.black) ? Colors.white : Colors.black;
   }
 
-  static ThemeData dark() {
-    const UmbrellaColors palette = UmbrellaColors.dark;
-    return _base(
-      palette: palette,
-      brightness: Brightness.dark,
-      scheme: const ColorScheme.dark(
-        primary: Color(0xFFE11D2E),
-        onPrimary: Color(0xFFFFFFFF),
-        secondary: Color(0xFFFF5566),
-        onSecondary: Color(0xFF1A0306),
-        surface: Color(0xFF12141B),
-        onSurface: Color(0xFFF3F5F9),
-        error: Color(0xFFEF4444),
-        onError: Color(0xFFFFFFFF),
-      ),
-    );
-  }
+  static final ThemeData _darkCache = _base(
+    palette: UmbrellaColors.dark,
+    brightness: Brightness.dark,
+    scheme: const ColorScheme.dark(
+      primary: Color(0xFFE11D2E),
+      onPrimary: Color(0xFFFFFFFF),
+      secondary: Color(0xFFFF5566),
+      onSecondary: Color(0xFF1A0306),
+      surface: Color(0xFF12141B),
+      onSurface: Color(0xFFF3F5F9),
+      error: Color(0xFFEF4444),
+      onError: Color(0xFFFFFFFF),
+    ),
+  );
 
-  static ThemeData light() {
-    const UmbrellaColors palette = UmbrellaColors.light;
-    return _base(
-      palette: palette,
-      brightness: Brightness.light,
-      scheme: const ColorScheme.light(
-        primary: Color(0xFFD21027),
-        onPrimary: Color(0xFFFFFFFF),
-        secondary: Color(0xFFB00F22),
-        onSecondary: Color(0xFFFFFFFF),
-        surface: Color(0xFFFFFFFF),
-        onSurface: Color(0xFF10131C),
-        error: Color(0xFFDC2626),
-        onError: Color(0xFFFFFFFF),
-      ),
-    );
-  }
+  static final ThemeData _lightCache = _base(
+    palette: UmbrellaColors.light,
+    brightness: Brightness.light,
+    scheme: const ColorScheme.light(
+      primary: Color(0xFFD21027),
+      onPrimary: Color(0xFFFFFFFF),
+      secondary: Color(0xFFB00F22),
+      onSecondary: Color(0xFFFFFFFF),
+      surface: Color(0xFFFFFFFF),
+      onSurface: Color(0xFF10131C),
+      error: Color(0xFFDC2626),
+      onError: Color(0xFFFFFFFF),
+    ),
+  );
+
+  static ThemeData dark() => _darkCache;
+
+  static ThemeData light() => _lightCache;
 
   static ThemeData _base({
     required UmbrellaColors palette,

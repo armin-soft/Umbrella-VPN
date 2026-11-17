@@ -881,6 +881,15 @@ class SessionData {
   final FilterSettings filter;
   final DateTime? signedInAt;
 
+  /// کلید پایدار مالک نشست برای تفکیک تاریخچه اعلان ها بین حساب های متفاوت.
+  String get ownerKey {
+    final String acc = account.uuid.trim();
+    if (acc.isNotEmpty) {
+      return acc;
+    }
+    return uuid.trim();
+  }
+
   SessionData copyWith({Account? account, FilterSettings? filter}) {
     return SessionData(
       token: token,
@@ -921,6 +930,7 @@ class AppNotification {
     required this.level,
     required this.sentAt,
     this.read = false,
+    this.delivered,
   });
 
   final int id;
@@ -930,13 +940,33 @@ class AppNotification {
   final DateTime? sentAt;
   final bool read;
 
-  AppNotification copyWith({bool? read}) => AppNotification(
+  /// وضعیت تحویل قبلی در سرور؛ وقتی `true` است یعنی اعلان مربوط به گذشته بوده
+  /// و برای نمایش تاریخچه برگردانده شده است (نباید دوباره صدا یا بالون بدهد).
+  final bool? delivered;
+
+  String get identityKey {
+    if (id != 0) {
+      return 'id:$id';
+    }
+    return 'msg:${sentAt?.toUtc().toIso8601String() ?? ''}|$title|$body';
+  }
+
+  AppNotification copyWith({
+    String? title,
+    String? body,
+    String? level,
+    DateTime? sentAt,
+    bool? read,
+    bool clearDelivered = false,
+  }) =>
+      AppNotification(
         id: id,
-        title: title,
-        body: body,
-        level: level,
-        sentAt: sentAt,
+        title: title ?? this.title,
+        body: body ?? this.body,
+        level: level ?? this.level,
+        sentAt: sentAt ?? this.sentAt,
         read: read ?? this.read,
+        delivered: clearDelivered ? null : delivered,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -949,6 +979,8 @@ class AppNotification {
       };
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
+    final bool hasDelivered =
+        json.containsKey('delivered') && json['delivered'] != null;
     return AppNotification(
       id: JsonX.integer(json['id']),
       title: JsonX.text(json['title']),
@@ -956,6 +988,7 @@ class AppNotification {
       level: JsonX.text(json['level'], 'info'),
       sentAt: JsonX.dateTime(json['sent_at']),
       read: JsonX.boolean(json['read']),
+      delivered: hasDelivered ? JsonX.boolean(json['delivered']) : null,
     );
   }
 }

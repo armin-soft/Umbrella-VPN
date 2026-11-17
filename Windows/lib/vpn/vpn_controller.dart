@@ -748,22 +748,73 @@ class VpnController extends ChangeNotifier {
   }
 
   void updateSettings(AppSettings settings) {
+    final AppSettings previous = _settings;
     _settings = settings;
     _sound.enabled = settings.soundEnabled;
-    _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(
-      Duration(seconds: settings.pingIntervalSeconds.clamp(120, 3600)),
-      (_) {
-        // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
-        // بالا آوردن هسته سنجش، خود اتصال را می کشت.
-        if (_status.active) {
-          return;
-        }
-        unawaited(refreshPings(all: false));
-      },
-    );
-    _scheduleRuntimePrewarm();
-    _notify();
+    final bool pingChanged = _pingTimer == null ||
+        previous.pingIntervalSeconds != settings.pingIntervalSeconds;
+    if (pingChanged) {
+      _pingTimer?.cancel();
+      _pingTimer = Timer.periodic(
+        Duration(seconds: settings.pingIntervalSeconds.clamp(120, 3600)),
+        (_) {
+          // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
+          // بالا آوردن هسته سنجش، خود اتصال را می کشت.
+          if (_status.active) {
+            return;
+          }
+          unawaited(refreshPings(all: false));
+        },
+      );
+    }
+    final bool runtimeChanged = _runtimeSettingsChanged(previous, settings);
+    if (runtimeChanged) {
+      _scheduleRuntimePrewarm();
+    }
+    // تغییر صرفاً ظاهری (مثل جابه جایی تم روشن/تاریک) نباید همه مصرف کنندگان
+    // `VpnController` را دوباره بسازد یا پیش گرم سازی هسته را راه بیندازد.
+    if (runtimeChanged ||
+        pingChanged ||
+        previous.showSpeedInTray != settings.showSpeedInTray) {
+      _notify();
+    }
+  }
+
+  static bool _runtimeSettingsChanged(AppSettings a, AppSettings b) {
+    if (a.tunMode != b.tunMode ||
+        a.corePreference != b.corePreference ||
+        a.selectionMode != b.selectionMode ||
+        a.autoFailover != b.autoFailover ||
+        a.stickyMinutes != b.stickyMinutes ||
+        a.freeCorePorts != b.freeCorePorts ||
+        a.killSwitch != b.killSwitch ||
+        a.showCli != b.showCli ||
+        a.tunStack != b.tunStack ||
+        a.mtu != b.mtu ||
+        a.blockIpv6 != b.blockIpv6 ||
+        a.strictRoute != b.strictRoute ||
+        a.remoteDns != b.remoteDns ||
+        a.directDns != b.directDns ||
+        a.logLevel != b.logLevel ||
+        a.serverRegionCode != b.serverRegionCode ||
+        a.lastNodeId != b.lastNodeId ||
+        a.chain.position != b.chain.position ||
+        a.chain.warpKey != b.chain.warpKey ||
+        a.chain.warpEndpoint != b.chain.warpEndpoint ||
+        a.chain.proxyUri != b.chain.proxyUri ||
+        a.appRoutes.length != b.appRoutes.length) {
+      return true;
+    }
+    for (int i = 0; i < a.appRoutes.length; i++) {
+      final AppRouteRule x = a.appRoutes[i];
+      final AppRouteRule y = b.appRoutes[i];
+      if (x.target != y.target ||
+          x.action != y.action ||
+          x.isPath != y.isPath) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// درخواست لغو اتصال در حال انجام.

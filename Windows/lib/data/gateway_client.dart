@@ -208,9 +208,17 @@ class GatewayClient {
     );
   }
 
-  Future<List<AppNotification>> notifications(String token) async {
-    final Map<String, dynamic> json =
-        await _get('app/notifications', <String, String>{'token': token});
+  Future<List<AppNotification>> notifications(
+    String token, {
+    bool includeHistory = false,
+  }) async {
+    final Map<String, dynamic> json = await _get(
+      'app/notifications',
+      <String, String>{
+        'token': token,
+        if (includeHistory) 'history': '1',
+      },
+    );
     return JsonX.asList(json['items'])
         .map((Object? item) => AppNotification.fromJson(JsonX.asMap(item)))
         .toList();

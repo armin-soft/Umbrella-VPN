@@ -31,8 +31,7 @@ class GlassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final Widget content = AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
+    final Widget content = Container(
       padding: padding,
       decoration: BoxDecoration(
         gradient: gradient ??
@@ -102,8 +101,7 @@ class GradientButton extends StatelessWidget {
     final Color base = tone ?? colors.primary;
     final Color end = Color.lerp(base, Colors.black, 0.35)!;
     final Color foreground = AppTheme.gradientForeground(base, end);
-    final Widget child = AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+    final Widget child = Container(
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space6),
       decoration: BoxDecoration(
@@ -1356,8 +1354,7 @@ class _AnchoredSelectFieldState<T> extends State<AnchoredSelectField<T>> {
                                   controller.open();
                                 }
                               },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
+                        child: Container(
                           height: AppMetrics.controlHeightSmall,
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppMetrics.space3,

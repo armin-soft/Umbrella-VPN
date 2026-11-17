@@ -639,6 +639,16 @@ void main() {
       expect(auth.contains('_announce('), isTrue);
     });
 
+    test('اعلان های قبلی هنگام به روز رسانی پاک نمی شوند و تغییر تم بی وقفه است', () {
+      final String auth = read('lib/state/auth_controller.dart');
+      expect(auth.contains('mergeNotificationHistory('), isTrue);
+      expect(auth.contains('_notifications = items;'), isFalse);
+      final String app = read('lib/app.dart');
+      expect(app.contains('themeAnimationDuration: Duration.zero'), isTrue);
+      final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
+      expect(gateway.contains("\$_GET['history']"), isTrue);
+    });
+
     test('صدای اعلان در دارایی های برنامه هست', () {
       expect(File('assets/sounds/notify.wav').existsSync(), isTrue);
       final String pubspec = read('pubspec.yaml');

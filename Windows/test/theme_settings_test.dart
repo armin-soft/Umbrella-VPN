@@ -4,8 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 import 'package:umbrella_vpn/core/theme.dart';
+import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/network_settings.dart';
+import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/ui/widgets/advanced_network_settings.dart';
 
 import 'package:umbrella_vpn/core/storage.dart';
@@ -254,5 +256,168 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('title bar theme toggle flips dark and light in a single frame without lag', (WidgetTester tester) async {
+    expect(identical(AppTheme.dark(), AppTheme.dark()), isTrue);
+    expect(identical(AppTheme.light(), AppTheme.light()), isTrue);
+
+    final SettingsController controller = create();
+    await controller.load();
+    await controller.setTheme(ThemePreference.system);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsController>.value(
+        value: controller,
+        child: Builder(
+          builder: (BuildContext context) {
+            final ThemeMode mode = context.select<SettingsController, ThemeMode>(
+              (SettingsController s) => s.themeMode,
+            );
+            return MaterialApp(
+              theme: AppTheme.light(),
+              darkTheme: AppTheme.dark(),
+              themeMode: mode,
+              themeAnimationDuration: Duration.zero,
+              home: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Builder(
+                  builder: (BuildContext inner) {
+                    final bool isDark =
+                        Theme.of(inner).brightness == Brightness.dark;
+                    return Scaffold(
+                      backgroundColor: inner.colors.background,
+                      body: Column(
+                        children: <Widget>[
+                          TitleBar(
+                            onDragStart: () {},
+                            onMinimize: () {},
+                            onMaximize: () {},
+                            onClose: () {},
+                            darkTheme: isDark,
+                            onToggleTheme: () => controller.toggleTheme(
+                              effectiveBrightness: Theme.of(inner).brightness,
+                            ),
+                          ),
+                          const GlassCard(child: Text('آزمایش تم')),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    Brightness currentBrightness() =>
+        Theme.of(tester.element(find.text('آزمایش تم'))).brightness;
+
+    // Rapid consecutive taps: every single tap must flip brightness on the very next frame.
+    for (int i = 0; i < 4; i++) {
+      final Brightness before = currentBrightness();
+      final IconData expectedIcon = before == Brightness.dark
+          ? Icons.light_mode_rounded
+          : Icons.dark_mode_rounded;
+      await tester.tap(find.byIcon(expectedIcon));
+      await tester.pump();
+      expect(
+        currentBrightness(),
+        before == Brightness.dark ? Brightness.light : Brightness.dark,
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  test('notification history keeps previous items on empty polls and recovers server history silently', () {
+    final Set<String> announced = <String>{};
+    final AppNotification n1 = AppNotification(
+      id: 10,
+      title: 'تمدید اشتراک',
+      body: 'اشتراک شما با موفقیت تمدید شد.',
+      level: 'success',
+      sentAt: DateTime.utc(2026, 11, 15, 10),
+    );
+    final AppNotification n2 = AppNotification(
+      id: 11,
+      title: 'اطلاعیه سرور',
+      body: 'سرور جدید اضافه شد.',
+      level: 'info',
+      sentAt: DateTime.utc(2026, 11, 16, 12),
+    );
+
+    // 1. Initial delivery brings n1 & n2 sorted newest-first.
+    final step1 = AuthController.mergeNotificationHistory(
+      existing: const <AppNotification>[],
+      incoming: <AppNotification>[n1, n2],
+      announced: announced,
+    );
+    expect(step1.merged.map((AppNotification e) => e.id).toList(), <int>[11, 10]);
+    expect(step1.fresh.length, 2);
+    for (final AppNotification item in step1.fresh) {
+      announced.add(item.identityKey);
+    }
+
+    // 2. Subsequent poll (or opening the bell dialog) returns [] — previous items MUST remain.
+    final step2 = AuthController.mergeNotificationHistory(
+      existing: step1.merged,
+      incoming: const <AppNotification>[],
+      announced: announced,
+    );
+    expect(step2.merged.map((AppNotification e) => e.id).toList(), <int>[11, 10]);
+    expect(step2.fresh, isEmpty);
+
+    // 3. Mark n2 as read, then receive brand-new n3 + historical delivered n0 + stale revoke notice.
+    final List<AppNotification> afterRead = <AppNotification>[
+      step2.merged[0].copyWith(read: true),
+      step2.merged[1],
+    ];
+    final AppNotification n0Old = AppNotification(
+      id: 5,
+      title: 'خوش آمدید',
+      body: 'ورود اولیه ثبت شد.',
+      level: 'info',
+      sentAt: DateTime.utc(2026, 11, 10, 8),
+      delivered: true,
+    );
+    final AppNotification n3New = AppNotification(
+      id: 12,
+      title: 'هشدار حجم',
+      body: 'کمتر از ۱۰ درصد حجم باقی مانده است.',
+      level: 'warning',
+      sentAt: DateTime.utc(2026, 11, 17, 9),
+      delivered: false,
+    );
+    final AppNotification staleRevoke = AppNotification(
+      id: 13,
+      title: 'مجوز این دستگاه لغو شد',
+      body: 'دسترسی این دستگاه به نرم افزار آمبرلا لغو شد.',
+      level: 'warning',
+      sentAt: DateTime.utc(2026, 11, 17, 9, 5),
+    );
+    final step3 = AuthController.mergeNotificationHistory(
+      existing: afterRead,
+      incoming: <AppNotification>[
+        n3New,
+        n2.copyWith(),
+        n1.copyWith(),
+        n0Old,
+        staleRevoke,
+      ],
+      announced: announced,
+    );
+    expect(
+      step3.merged.map((AppNotification e) => e.id).toList(),
+      <int>[12, 11, 10, 5],
+    );
+    // Only brand-new n3 triggers sound/balloon; recovered n0Old is marked read silently.
+    expect(step3.fresh.map((AppNotification e) => e.id).toList(), <int>[12]);
+    expect(step3.merged.firstWhere((AppNotification e) => e.id == 12).read, isFalse);
+    expect(step3.merged.firstWhere((AppNotification e) => e.id == 11).read, isTrue);
+    expect(step3.merged.firstWhere((AppNotification e) => e.id == 10).read, isFalse);
+    expect(step3.merged.firstWhere((AppNotification e) => e.id == 5).read, isTrue);
+  });
 
 }

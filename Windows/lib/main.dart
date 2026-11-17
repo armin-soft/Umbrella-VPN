@@ -128,6 +128,11 @@ Future<void> main(List<String> arguments) async {
     if (vpn.status.active) {
       unawaited(vpn.disconnect());
     }
+    auth.recordLocalNotification(
+      title: 'دسترسی اشتراک قطع شد',
+      body: reason,
+      level: 'warning',
+    );
     toasts.error('دسترسی اشتراک قطع شد', reason);
   };
   auth.onSessionRevoked = (String reason) async {
@@ -191,7 +196,7 @@ Future<void> main(List<String> arguments) async {
       }());
     });
     if (auth.signedIn) {
-      unawaited(auth.fetchNotifications());
+      unawaited(auth.fetchNotifications(includeHistory: true));
       // اشتراک شخصی از سرور خوانده می شود؛ فقط اگر سرور چیزی نداد منابع عمومی
       // به عنوان پشتیبان بارگذاری می شوند.
       unawaited(() async {

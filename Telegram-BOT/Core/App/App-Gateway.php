@@ -735,26 +735,38 @@ if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
 
-$Rows = Database::getInstance()->fetchAll(
-'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications`
+$IncludeHistory = ((string)($_GET['history'] ?? '')) === '1';
+$Scope = '((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))';
+$Sql = $IncludeHistory
+? 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At`, `Delivered_At` FROM `App_Notifications`
+WHERE ' . $Scope . '
+ORDER BY (`Delivered_At` IS NULL) DESC, `ID` DESC LIMIT 50'
+: 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At`, `Delivered_At` FROM `App_Notifications`
 WHERE `Delivered_At` IS NULL
-AND ((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))
-ORDER BY `ID` ASC LIMIT 20',
+AND ' . $Scope . '
+ORDER BY `ID` ASC LIMIT 20';
+
+$Rows = Database::getInstance()->fetchAll(
+$Sql,
 [(string)$Session['Device_ID'], (string)$Session['User_UUID'], (string)$Session['User_UUID']]
 );
 
 $VisibleRows = [];
 foreach ($Rows as $Row) {
+$WasDelivered = ($Row['Delivered_At'] ?? null) !== null;
+if (!$WasDelivered) {
 Database::getInstance()->execute(
 'UPDATE `App_Notifications` SET `Delivered_At` = ? WHERE `ID` = ?',
 [time(), (int)$Row['ID']]
 );
+}
 $Notice = (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '');
 // The current session is trusted; a queued revoke warning is stale after re-approval.
 if (str_contains($Notice, 'مجوز این دستگاه لغو شد') ||
     str_contains($Notice, 'دسترسی این دستگاه به نرم افزار آمبرلا لغو شد')) {
 continue;
 }
+$Row['_delivered'] = $WasDelivered;
 $VisibleRows[] = $Row;
 }
 
@@ -765,6 +777,7 @@ self::ok([
 'body' => (string)($Row['Body'] ?? ''),
 'level' => (string)$Row['Level'],
 'sent_at' => (string)$Row['Sent_At'],
+'delivered' => (bool)$Row['_delivered'],
 ], $VisibleRows),
 ]);
 }

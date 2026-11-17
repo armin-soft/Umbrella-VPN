@@ -21,6 +21,7 @@ class SettingsController extends ChangeNotifier {
   final WindowService _window;
 
   Future<void> _pendingSave = Future<void>.value();
+  int _saveSeq = 0;
   AppSettings _settings = const AppSettings();
   AppSettings get settings => _settings;
 
@@ -65,12 +66,19 @@ class SettingsController extends ChangeNotifier {
     _settings = next;
     _sound.enabled = next.soundEnabled;
     _window.closeToTray = next.closeToTray;
-    // Apply appearance immediately; serialize disk writes so fast toggles cannot
-    // persist an older theme after a newer one.
+    // Apply appearance immediately; serialize and coalesce disk writes so rapid
+    // back-to-back theme clicks neither block rendering nor persist stale state.
     notifyListeners();
-    final Future<void> save = _pendingSave.then(
-      (_) => LocalStore.instance.writeJson(StoreKeys.settings, next.toJson()),
-    );
+    final int seq = ++_saveSeq;
+    final Future<void> save = _pendingSave.then((_) async {
+      if (seq != _saveSeq) {
+        return;
+      }
+      await LocalStore.instance.writeJson(
+        StoreKeys.settings,
+        _settings.toJson(),
+      );
+    });
     _pendingSave = save.catchError((Object error) {
       AppLogger.instance.add('ذخیره تنظیمات ناموفق بود: $error', level: 'error');
     });
@@ -87,16 +95,25 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setTheme(ThemePreference theme) async {
-    await update(_settings.copyWith(theme: theme));
+    if (_settings.theme == theme) {
+      return;
+    }
+    await update(_settings.copyWith(theme: theme), applyNative: false);
   }
 
-  Future<void> toggleTheme() async {
-    final bool isDark = _settings.theme == ThemePreference.dark ||
-        (_settings.theme == ThemePreference.system &&
-            WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
-    final ThemePreference next = isDark
-        ? ThemePreference.light
-        : ThemePreference.dark;
+  Future<void> toggleTheme({Brightness? effectiveBrightness}) async {
+    final bool isDark;
+    if (_settings.theme == ThemePreference.dark) {
+      isDark = true;
+    } else if (_settings.theme == ThemePreference.light) {
+      isDark = false;
+    } else {
+      final Brightness current = effectiveBrightness ??
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      isDark = current == Brightness.dark;
+    }
+    final ThemePreference next =
+        isDark ? ThemePreference.light : ThemePreference.dark;
     await setTheme(next);
   }
 
