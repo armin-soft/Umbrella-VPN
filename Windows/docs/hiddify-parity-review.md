@@ -9,11 +9,11 @@
 |---|---|
 | app/widget/app.dart و theme preferences | تم روشن/تاریک/سیستم موجود؛ toggle حالت سیستم، پالت کنترل‌های Material، به‌روزرسانی فوری و ترتیب ذخیره اصلاح شد |
 | settings/overview/settings_page.dart | تنظیمات آمبرلا زیرمجموعه متفاوتی است؛ واردکردن/صادرکردن همه گزینه‌های Hiddify پیاده نشده |
-| settings/overview/sections/chain_options_page.dart و chain | در options آمبرلا chain-status=off است؛ رابط Extra Security/Unblocker مشابه Hiddify وجود ندارد |
-| settings/widget/warp_hop_options.dart | پارامترهای پیشرفته WARP، اسکن endpoint و انتخاب transport در رابط آمبرلا هم‌ارز نیست |
-| app_based_routing و route_rules | برابری مسیریابی برنامه‌محور/ویرایش قواعد اثبات نشده و در این تغییر پیاده نشده |
-| profile و deep_link | آمبرلا به حساب و منابع اشتراک خودش وابسته است؛ مدیریت آزاد همه پروفایل‌ها/QR/deep-link معادل نیست |
-| proxy و stats | فهرست سرور و سنجش سلامت وجود دارد؛ تست سرعت upload/download برای هر پروکسی و تشخیص علت خرابی معادل کامل نیست |
+| settings/overview/sections/chain_options_page.dart و chain | ۱٫۰٫۲۶: هر دو جهت زنجیره با WARP/Psiphon و تنظیمات واقعی هسته اضافه شد؛ تغییر زنده hop و پروفایل واسط آزاد وجود ندارد |
+| settings/widget/warp_hop_options.dart | ۱٫۰٫۲۶: WireGuard/AWG/MASQUE/Auto، انتخاب endpoint، اسکن و MTU اضافه شد؛ همه پارامترهای سطح پایین AWG/MASQUE و نویز هنوز رابط ندارند |
+| app_based_routing و route_rules | ۱٫۰٫۲۶: قواعد مرتب نام/مسیر exe برای proxy/direct/block در TUN، ویرایش/حذف/خاموش‌کردن/اولویت پیاده شد؛ آزمون واقعی تشخیص پردازش لازم است |
+| profile و deep_link | طبق دستور کاربر، حساب و منابع مجاز دقیقاً حفظ شده‌اند؛ مدیریت آزاد پروفایل/QR/deep-link عمداً خارج از دامنه است |
+| proxy و stats | ۱٫۰٫۲۶: تست فعال دانلود/آپلود مسیر متصل با سقف حجم و لغو اضافه شد؛ benchmark چندجریانی همه پروکسی‌ها هم‌ارز نیست |
 | HISTORY.md نسخه 5.9.8 | تغییر نام launcher هسته در بالادست دیده شد؛ هسته آمبرلا فعلاً روی 5.9.1 ثابت ماند تا ABI بدون تست عوض نشود |
 | window/system_tray/app_update | پیاده‌سازی‌های مستقل آمبرلا موجود است؛ رفتار واقعی tray، UAC و updater نیازمند آزمایش روی ویندوز است |
 | platform_specific | درخواست فعلی ویندوز است؛ قابلیت‌های Android TV، iOS، macOS و Linux به این بسته افزوده نشده‌اند |
@@ -55,3 +55,16 @@ Workflow ساخت فقط روی شاخه فعلی یا با اجرای دستی 
 - gitlink زیرماژول ray2sing همان تگ: `6974ad6382d6eff1f1763d7f5df48ad3447e6f27`؛ `ray2sing/xray_common.go` نگاشت splithttp به xhttp و mode/extra را دارد؛ `ray2sing_test/xhttp_extra_test.go` و `xhttp_quic_test.go` نمونه‌های تبدیل دارند. ادعای قبلی «XHTTP فقط Xray است و این هسته نمی‌شناسد» برای این نسخه نادرست بود.
 
 تست‌های جدید: نگاشت تنظیمات، رفت‌وبرگشت ذخیره، داده نامعتبر، حفظ پارامتر XHTTP، parser کلش، رابط RTL در هر دو تم و ذخیره MTU. این تست‌ها اتصال واقعی به سرور، TLS handshake یا نشت DNS را نمی‌سنجند. WARP/chain، قواعد برنامه‌محور، سرعت‌سنج و سایر فاصله‌های جدول بالا هنوز کامل نشده‌اند.
+
+
+## مرحله زنجیره، قواعد برنامه و سنجش — 1.0.26
+
+- مدل ذخیره‌شونده و اعتبارسنجی‌شده برای chain-status و extra-security/unblocker بر اساس `v2/config/chain.go` هسته ۵٫۹٫۱؛ واسط WARP WG/AWG/MASQUE/Auto و Psiphon، endpoint اختصاص‌یافته/اسکن/IP، MTU، مهلت/تعداد/همزمانی/RTT اسکن، search-noise، نسخه HTTP در MASQUE و کلید اختیاری WARP+.
+- تنظیمات زنجیره نامعتبر اتصال را متوقف می‌کند، نه اینکه به اتصال بدون واسط تبدیل شود. حالت مستقل WARP و واردکردن پروفایل آزاد اضافه نشده؛ همان accessGuard و گره‌های اشتراک ورودی اجرای هسته هستند.
+- قواعد برنامه از `route-rule.proto` با process_name/process_path و list_order به هسته می‌روند؛ فقط TUN، با انتخاب proxy/direct/block. خود هسته در `route/router.go` زیرماژول sing-box با SHA `3eb646a1134e144cbe0bcf466fa62af21a0d587d` وجود process rule را تشخیص می‌دهد؛ FindProcess=false در builder مانع این قابلیت نیست.
+- تست سرعت واقعی کوتاه با دانلود ۴ MB و آپلود ۲ MB داده مصنوعی، TLS معتبر، بدون redirect یا fallback مستقیم، سقف زمان و حجم، لغو و جلوگیری از نتیجه قدیمی پس از قطع. listener محلی در TUN باز می‌ماند، فقط loopback طبق `inbound_ports.go`؛ اشتراک‌گذاری LAN خاموش است.
+- معیار نادرست موفقیت بر اساس رشد بایت، پیام dial یا تاریخچهٔ پروکسی از تصمیم اتصال حذف شد. تأیید از پاسخ HTTPS با بدنه مورد انتظار می‌آید؛ پروکسی واقعی هسته و در حالت TUN مسیر سیستم جدا بررسی می‌شوند. تست latency سبک HTTP دیگر مدرک اعتبار اتصال نیست.
+- اطلاعات حساس WARP+ و secret از متن تنظیمات/گزارش نمایشی حذف می‌شوند؛ فایل خام روی دیسک همچنان حساس است.
+- اسکریپت read-only `diagnostics/Test-NetworkPath.ps1` و چک‌لیست `network-acceptance.md` برای آزمون واقعی اضافه شد. دکمهٔ DNS، سرویس مستقل مرورگری را با توضیح حریم خصوصی باز می‌کند؛ نتیجهٔ آن خودکار «قبول» اعلام نمی‌شود.
+
+**محدودیت:** اجرای CI جای آزمون روی ویندوز واقعی با اشتراک مجاز، اپراتور کاربر و capture DNS را نمی‌گیرد. این مرحله تکمیل تمام قابلیت‌های Hiddify، تضمین بدون نشت یا kill switch نیست. ریزپارامترهای AWG/MASQUE، تغییر زنده hop و benchmark چندجریانی همچنان فاصله دارند؛ واردکردن آزاد منابع بنا بر خواست کاربر عمداً پیاده نشده است.

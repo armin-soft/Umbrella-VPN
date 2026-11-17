@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import 'common.dart';
+import 'advanced_network_settings.dart';
 
 /// Settings for the pinned core, not a profile/source editor.
 class NetworkSettings extends StatelessWidget {
@@ -67,6 +68,7 @@ class NetworkSettings extends StatelessWidget {
         const SizedBox(height: AppMetrics.space4),
         _dnsField('دی‌ان‌اس اتصال اولیه و مستقیم', 'direct', current.directDns, controller.setDirectDns),
         const SizedBox(height: AppMetrics.space3),
+        const AdvancedNetworkSettings(),
         const Text('هسته پرس‌وجوهای ترافیک پروکسی را از تونل می‌فرستد. برای یافتن آدرس سرور و مسیرهای مستقیم، DNS مستقیم لازم است. این تنظیم تضمین نبود نشت DNS نیست.'),
       ],
     );

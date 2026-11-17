@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
 import '../core/utils.dart';
+import 'advanced_network.dart';
+export 'advanced_network.dart';
 
 enum SubscriptionFormat { xray, clash, wireguard, amnezia, mieru }
 
@@ -1274,6 +1276,8 @@ class AppSettings {
     this.dnsOverTunnel = true,
     this.remoteDns = NetworkDns.fallback,
     this.directDns = NetworkDns.fallback,
+    this.chain = const ChainSettings(),
+    this.appRoutes = const <AppRouteRule>[],
     this.showSpeedInTray = true,
     this.occasionEffects = true,
     this.checkUpdatesOnStart = true,
@@ -1324,6 +1328,8 @@ class AppSettings {
   final bool dnsOverTunnel;
   final String remoteDns;
   final String directDns;
+  final ChainSettings chain;
+  final List<AppRouteRule> appRoutes;
   final bool showSpeedInTray;
   final bool occasionEffects;
   final bool checkUpdatesOnStart;
@@ -1367,6 +1373,8 @@ class AppSettings {
     bool? dnsOverTunnel,
     String? remoteDns,
     String? directDns,
+    ChainSettings? chain,
+    List<AppRouteRule>? appRoutes,
     bool? showSpeedInTray,
     bool? occasionEffects,
     bool? checkUpdatesOnStart,
@@ -1404,6 +1412,8 @@ class AppSettings {
       dnsOverTunnel: dnsOverTunnel ?? this.dnsOverTunnel,
       remoteDns: remoteDns ?? this.remoteDns,
       directDns: directDns ?? this.directDns,
+      chain: chain ?? this.chain,
+      appRoutes: appRoutes == null ? this.appRoutes : List<AppRouteRule>.unmodifiable(appRoutes),
       showSpeedInTray: showSpeedInTray ?? this.showSpeedInTray,
       occasionEffects: occasionEffects ?? this.occasionEffects,
       checkUpdatesOnStart: checkUpdatesOnStart ?? this.checkUpdatesOnStart,
@@ -1443,6 +1453,8 @@ class AppSettings {
         'dnsOverTunnel': dnsOverTunnel,
         'remoteDns': remoteDns,
         'directDns': directDns,
+        'chain': chain.toJson(),
+        'appRoutes': appRoutes.map((AppRouteRule rule) => rule.toJson()).toList(),
         'showSpeedInTray': showSpeedInTray,
         'occasionEffects': occasionEffects,
         'checkUpdatesOnStart': checkUpdatesOnStart,
@@ -1507,6 +1519,10 @@ class AppSettings {
       dnsOverTunnel: JsonX.boolean(json['dnsOverTunnel'], fallback: true),
       remoteDns: NetworkDns.normalize(JsonX.text(json['remoteDns'])),
       directDns: NetworkDns.normalize(JsonX.text(json['directDns'])),
+      chain: ChainSettings.fromJson(JsonX.asMap(json['chain'])),
+      appRoutes: List<AppRouteRule>.unmodifiable(json['appRoutes'] is List
+          ? (json['appRoutes'] as List).map((dynamic value) => AppRouteRule.fromJson(JsonX.asMap(value)))
+          : <AppRouteRule>[]),
       showSpeedInTray: JsonX.boolean(json['showSpeedInTray'], fallback: true),
       occasionEffects: JsonX.boolean(json['occasionEffects'], fallback: true),
       checkUpdatesOnStart:

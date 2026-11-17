@@ -8,6 +8,7 @@ import 'cores.dart';
 import 'umbrella_core.dart';
 import 'vpn_controller.dart';
 import 'tunnel_probe.dart';
+import 'verified_probe.dart';
 
 /// سنجش تاخیر واقعی هر سرور با موتور هسته.
 ///
@@ -221,6 +222,8 @@ class CorePinger {
       if (!await _waitForPort(port, const Duration(milliseconds: 6000))) {
         return -1;
       }
+      if (!await VerifiedProbe.check(proxyPort: port,
+          timeout: Duration(seconds: settings.chain.enabled ? 30 : 6)) || _stopped) return -1;
       return await TunnelProbe.latency(
         proxyPort: port,
         timeout: const Duration(seconds: 5),

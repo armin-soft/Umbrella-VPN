@@ -214,6 +214,21 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(directDns: value));
   }
 
+  Future<void> setChain(ChainSettings chain) async {
+    if (chain.enabled && chain.validationError != null) throw FormatException(chain.validationError!);
+    await update(_settings.copyWith(chain: chain));
+  }
+
+  Future<void> setAppRoutes(List<AppRouteRule> rules) async {
+    if (rules.length > 64) throw const FormatException('حداکثر ۶۴ قانون');
+    final Set<String> seen = <String>{};
+    for (final AppRouteRule rule in rules) {
+      if (rule.validationError != null) throw FormatException(rule.validationError!);
+      if (!seen.add(rule.process.trim().toLowerCase())) throw const FormatException('قانون تکراری برای برنامه');
+    }
+    await update(_settings.copyWith(appRoutes: rules));
+  }
+
   Future<void> setDnsOverTunnel(bool value) async {
     await update(_settings.copyWith(dnsOverTunnel: value));
   }

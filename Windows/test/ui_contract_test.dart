@@ -176,20 +176,12 @@ void main() {
       expect(core.contains("'use-system-tls-engine': false"), isTrue);
     });
 
-    test('گره ای که ترافیک رد می کند هرگز به خاطر یک سنجش رد نمی شود', () {
-      // داستان دو طرف دارد و هر دو باید در کد باشد:
-      //
-      // ۱٫۰۱۳: یک خط `no answer` نادیده گرفته شد و گره خراب «وصل» شد.
-      // ۱٫۰۱۴: همان خط مدرک خرابی شد و گره سالمی که گوگل و تلگرام را رد
-      //        می کرد رد شد — چون آن سنجش به `speed.cloudflare.com` می زد
-      //        که از ایران جواب نمی دهد.
-      //
-      // حالا: سنجش درونی هسته فقط «تأیید» است، هرگز «رد».
+    test('HTTP verification cannot be bypassed by stale core statistics', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
-      expect(controller.contains('_clashTunnelVerdict'), isTrue);
-      // جواب منفی دیگر باعث رد نمی شود؛ فقط جواب مثبت پذیرفته است.
-      expect(controller.contains('clashSays == true'), isTrue);
-      expect(controller.contains('خود هسته گفت این گره جواب نمی دهد'), isFalse);
+      expect(controller.contains('final bool proxyFlows = await VerifiedProbe.check'), isTrue);
+      expect(controller.contains('final bool flows = proxyFlows && (!plan.tun ||'), isTrue);
+      expect(controller.contains('_coreReportsWorkingTunnel'), isFalse);
+      expect(controller.contains('_clashTunnelVerdict'), isFalse);
     });
 
     test('نشانی سنجش سلامت گره، سنجش سرعت نیست', () {
@@ -801,8 +793,10 @@ void main() {
       final String probe = read('lib/vpn/tunnel_probe.dart');
       expect(probe.contains('code >= 200 && code < 400'), isTrue);
       final String text = read('lib/vpn/vpn_controller.dart');
-      expect(text.contains('if (response.statusCode >= 400)'), isTrue);
-      expect(text.contains('answered >= 2'), isTrue);
+      expect(text.contains('minimumSuccesses: 2'), isTrue);
+      final String verified = read('lib/vpn/verified_probe.dart');
+      expect(verified.contains('status == 204 && body.isEmpty'), isTrue);
+      expect(verified.contains('request.followRedirects = false'), isTrue);
     });
 
     test('تغییر آی پی به تنهایی اتصال را تایید نمی کند', () {
@@ -871,43 +865,21 @@ void main() {
   group('دور ۳۱ — تایید واقعی تونل', () {
     String controller() => read('lib/vpn/vpn_controller.dart');
 
-    test('معیار اتصال فقط رشد دریافت است، نه فرستاده', () {
-      // در ۱٫۰٫۱۷ فقط «رشد ترافیک» دلیل کافی بود؛ چون درخواست های دی ان اس
-      // خودمان فرستاده را بالا می بردند، تونل مرده هم «متصل» گزارش می شد و
-      // کاربر می گفت «متصل هست ولی هیچی باز نمی کند».
+    test('byte counters and log messages cannot mark a connection verified', () {
       final String text = controller();
-      expect(text.contains('grownRx > 0'), isTrue);
-      // ۱٫۰۱۹: نسبت نصف هم کافی نبود (دریافت ۷٫۸ در برابر ارسال ۱۳٫۹ در
-      // گزارش ۱٫۰۱۸)؛ حالا دریافت باید دست کم به اندازه ارسال باشد و نمونه
-      // دوم هم مثبت باشد.
-      expect(text.contains('grownRx >= grownTx'), isTrue);
-      expect(
-        text.contains('grownRx > 4096 || grownTx > 4096'),
-        isFalse,
-        reason: 'معیار قدیمی باید حذف شده باشد',
-      );
+      expect(text.contains('grownRx >= grownTx'), isFalse);
+      expect(text.contains('return _coreReportsWorkingTunnel'), isFalse);
       expect(text.contains('Future<bool> _trafficReturns('), isTrue);
+      expect(text.contains('VerifiedProbe.check'), isTrue);
     });
 
-    test('بررسی عبور ترافیک به نشانی های ۲۰۴ می رود', () {
-      final String text = controller();
-      expect(text.contains('cp.cloudflare.com/generate_204'), isTrue);
-      expect(text.contains('connectivitycheck.gstatic.com/generate_204'), isTrue);
-      expect(text.contains('findProxy'), isTrue,
-          reason: 'درخواست باید از همان پورت پروکسی برود');
-    });
-
-    test('نشانه های خرابی در گزارش هسته، «شروع شد» را باطل می کنند', () {
-      final String text = controller();
-      for (final String marker in <String>[
-        'unexpected status',
-        'connection reset',
-        'i/o timeout',
-        'context deadline exceeded',
-        'no route to host',
-      ]) {
-        expect(text.contains(marker), isTrue, reason: marker);
-      }
+    test('verification uses HTTPS and an explicit proxy, without redirects', () {
+      final String text = read('lib/vpn/verified_probe.dart');
+      expect(text.contains('https://cp.cloudflare.com/generate_204'), isTrue);
+      expect(text.contains('https://www.gstatic.com/generate_204'), isTrue);
+      expect(text.contains('findProxy'), isTrue);
+      expect(text.contains('request.followRedirects = false'), isTrue);
+      expect(text.contains('badCertificateCallback'), isFalse);
     });
   });
 

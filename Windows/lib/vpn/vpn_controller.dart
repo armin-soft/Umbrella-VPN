@@ -10,6 +10,7 @@ import '../core/persian.dart';
 import '../core/storage.dart';
 import '../core/theme.dart';
 import '../core/utils.dart';
+import '../core/network_redaction.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
@@ -21,6 +22,8 @@ import 'umbrella_core.dart';
 import 'core_ping.dart';
 import 'ping.dart';
 import 'tunnel_probe.dart';
+import 'speed_test.dart';
+import 'verified_probe.dart';
 
 enum VpnStatus {
   disconnected,
@@ -296,6 +299,17 @@ class VpnController extends ChangeNotifier {
   double get liveSpeed => _liveSpeed;
   DateTime? _speedMeasuredAt;
   DateTime? get speedMeasuredAt => _speedMeasuredAt;
+  SpeedTestRunner? _speedRunner;
+  SpeedTestResult? _speedResult;
+  SpeedTestResult? get speedResult => _speedResult;
+  bool get speedTesting => _speedRunner != null;
+  String _speedPhase = '';
+  String get speedPhase => _speedPhase;
+  String _speedError = '';
+  String get speedError => _speedError;
+  final Set<String> _networkSecrets = <String>{};
+  ChainSettings _activeChain = const ChainSettings();
+  ChainSettings get activeChain => _activeChain;
   ProxyLink? _link;
   Timer? _liveTimer;
 
@@ -815,6 +829,12 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, blocked);
       return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
+    final String? chainError = _settings.chain.enabled ? _settings.chain.validationError : null;
+    final String? routeError = _settings.appRoutes
+        .map((AppRouteRule rule) => rule.validationError).whereType<String>().firstOrNull;
+    if (chainError != null || routeError != null || _settings.appRoutes.length > 64) {
+      return ConnectOutcome(ok: false, message: chainError ?? routeError ?? 'حداکثر ۶۴ قانون برنامه مجاز است');
+    }
     if (_nodes.isEmpty) {
       return const ConnectOutcome(
         ok: false,
@@ -1195,124 +1215,16 @@ class VpnController extends ChangeNotifier {
         continue;
       }
 
-      // تایید واقعی: تا وقتی ترافیک از تونل رد نشود، «وصل شد» اعلام نمی شود.
-      // در حالت تونل، درخواست مستقیم هم از کارت شبکه مجازی رد می شود؛ پس
-      // معیار درست، عوض شدن آی پی خروجی است نه باز شدن پورت.
-      // تایید عبور ترافیک: در حالت پروکسی سیستمی، درخواست از همان پروکسی محلی
-      // می رود. در حالت تونل کامل، درخواست مستقیم هم از کارت شبکه مجازی رد
-      // می شود، پس بازگشت پاسخ ۲۰۴ خودش یعنی تونل کار می کند.
-      //
-      // پیش از این در حالت تونل فقط عوض شدن آی پی معیار بود و اگر سرویس
-      // خواندن آی پی جواب نمی داد، اتصال سالم هم رد می شد (همان خطای
-      // «هیچ هسته ای نتوانست تونل را بالا بیاورد»).
-      final Duration probeTimeout =
-          Duration(seconds: plans.length > 1 ? 6 : 8);
-      bool flows;
-      if (plan.usesSystemProxy) {
-        flows = await TunnelProbe.check(
-          proxyPort: plan.proxyPort,
-          timeout: probeTimeout,
-        );
-      } else {
-        // از خود هسته می پرسیم، ولی فقط برای **تأیید**، نه برای رد.
-        //
-        // در ۱٫۰۱۴ جواب منفی همین پرسش را مدرک خرابی گرفتیم و نتیجه اش
-        // فاجعه بود: در گزارش کاربر تونل واقعاً ترافیک رد می کرد (گوگل،
-        // تلگرام، DNS) ولی چون در همان لحظه هنوز اتصال زنده ای در
-        // `/connections` نبود و نشانی سنجش درونی هم جواب نمی داد، گره سالم
-        // رد شد و پیام «هیچ هسته ای نتوانست تونل را بالا بیاورد» آمد.
-        //
-        // راستش این است: نبودِ اتصال در `/connections` در ثانیه اول یعنی
-        // «هنوز کسی از تونل استفاده نکرده»، نه «تونل خراب است». پس جواب
-        // `true` را می پذیریم و `false`/`null` را نادیده می گیریم تا شواهد
-        // بعدی (ترافیک کارت شبکه، سنجش وب، لاگ خود هسته) حرف آخر را بزنند.
-        final bool? clashSays = await _clashTunnelVerdict();
-        if (clashSays == true) {
-          // زنده ترین مدرک: اتصالی که همین حالا از مسیر گره باز است.
-          // نیازی به سنجش دوباره نیست؛ مسیر عادی موفقیت پایین تر اجرا می شود.
-          _log.add('خود هسته اتصال زنده از مسیر گره را تأیید کرد.');
-          flows = true;
-        } else {
-          // پیش از سنجش، شمارنده های کارت شبکه تونل خوانده می شوند.
-          final TunnelStats before =
-              await _native.tunnelStats(hint: plan.tunnelHint);
-          final bool direct = await TunnelProbe.check(timeout: probeTimeout);
-          if (!direct) {
-            // سنجش وب شکست خورد.
-            //
-            // **خطایی که در ۱٫۰٫۱۷ «متصل ولی هیچی باز نمی کند» را ساخت:**
-            // اینجا فقط شمارش بایت ها را نگاه می کردیم و اگر بیش از ۴ کیلوبایت
-            // جابه جا شده بود اتصال را معتبر می گفتیم. اما آن بایت ها
-            // **ترافیک ارسالی خودمان** بود، نه ترافیک برگشته. در گزارش کاربر
-            // دو بار نوشت «دریافت ۶٫۰ کیلوبایت و ارسال ۱۶٫۶ کیلوبایت» —
-            // نسبت ۲٫۷ برابر به نفع ارسال. یعنی درخواست ها رفتند، DNS جواب
-            // نداد و خود برنامه دوباره تلاش کرد؛ هیچ پاسخی نیامد. بعدش سه
-            // بار «آی پی خروجی خوانده نشد» آمد که همان را تأیید می کند.
-            //
-            // قاعده درست: اتصال «وصل» است فقط اگر ترافیکی **برگشته** باشد.
-            // پس دریافت خالص باید هم مثبت باشد و هم دست کم به اندازه ارسال
-            // نباشد (یک پاسخ HTTP از یک درخواست کوچک بزرگ تر است). ارسال
-            // تنها هرگز مدرک موفقیت نیست.
-            final TunnelStats after =
-                await _native.tunnelStats(hint: plan.tunnelHint);
-            final int grownRx = after.rx - before.rx;
-            final int grownTx = after.tx - before.tx;
-            // **درس ۱٫۰٫۱۸:** در گزارش کاربر «دریافت ۷٫۸ و ارسال ۱۳٫۹
-            // کیلوبایت» آمد و ما آن را «اتصال معتبر» خواندیم، در حالی که یک
-            // ثانیه بعد خودمان نوشتیم «آی پی خروجی خوانده نشد و ترافیکی هم
-            // از تونل برنگشت» و «ترافیک از تونل رد نمی شود». یعنی معیار بایت
-            // دروغ می گفت. آن بایت ها ترافیک داخلی خود هسته (DNS و تلاش
-            // دوباره) بود، نه پاسخ سرور.
-            //
-            // قاعده تازه: شمارنده بایت به تنهایی **هرگز** مدرک اتصال نیست.
-            // فقط اگر ترافیک برگشته باشد و پس از یک ثانیه هم دوباره برگردد
-            // (یعنی پاسخ واقعی جریان دارد) قبول می شود.
-            bool responded = false;
-            if (after.available && before.available && grownRx > 0 &&
-                grownRx >= grownTx) {
-              final TunnelStats later =
-                  await _native.tunnelStats(hint: plan.tunnelHint);
-              final int secondRx = later.rx - after.rx;
-              responded = later.available &&
-                  secondRx > 0 &&
-                  secondRx >= (later.tx - after.tx);
-            }
-            final bool moved = responded;
-            if (moved) {
-              _log.add(
-                'سنجش وب پاسخ نداد ولی ترافیک واقعی از تونل رد شد '
-                '(دریافت ${Fa.bytes(grownRx)} و ارسال ${Fa.bytes(grownTx)})؛ '
-                'اتصال معتبر است.',
-                level: 'warning',
-              );
-            }
-            // مدرک سوم و قوی ترین: خود هسته در گزارشش چه گفت؟
-            //
-            // اگر هسته نوشته باشد «sing-box started» و برای همین سرور اتصال
-            // بیرونی برقرار کرده باشد، یعنی تونل کار می کند؛ حتی اگر هیچ
-            // درخواستی از برنامه هایی که اینجا سنجیده می شوند رد نشده باشد.
-            if (!moved) {
-              final bool coreSays = await _coreReportsWorkingTunnel(
-                _coreLogPath(plan),
-              );
-              if (coreSays) {
-                _log.add(
-                  'سنجش وب پاسخ نداد ولی خود هسته گزارش داد که تونل بالا آمد '
-                  'و برای این سرور اتصال بیرونی برقرار شد؛ اتصال معتبر است.',
-                  level: 'warning',
-                );
-              }
-              flows = coreSays;
-            } else {
-              flows = true;
-            }
-          } else {
-            // سنجش web جواب داد: یک پاسخ HTTP کامل برگشت. این به تنهایی
-            // کافی است؛ لازم نیست آی پی هم عوض شود، چون بعضی شبکه ها آی پی
-            // خروجی را به همان شکل برمی گردانند (CGNAT).
-            flows = true;
-          }
-        }
+      // Open sockets, byte counters and dial log entries are not evidence of
+      // successful traffic. Require authenticated HTTPS with an expected body.
+      final Duration probeTimeout = Duration(seconds: _activeChain.enabled ? 30 : 8);
+      final bool proxyFlows = await VerifiedProbe.check(proxyPort: _umbrellaPort, timeout: probeTimeout);
+      final bool flows = proxyFlows && (!plan.tun ||
+          await VerifiedProbe.check(proxyPort: 0, timeout: probeTimeout));
+      if (_cancelRequested) {
+        await _stopCores();
+        await _disableProxy();
+        return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       }
       if (!flows) {
         final String coreLog = '${_provisioner.dataDir}'
@@ -1320,7 +1232,7 @@ class VpnController extends ChangeNotifier {
             '${plan.cores.first.name}-core.log';
         final String tail = await _readLogTail(coreLog);
         _log.add(
-          'هسته بالا آمد ولی هیچ ترافیکی از تونل رد نشد؛ این اتصال معتبر نیست.'
+          'هسته بالا آمد ولی سنجش HTTPS پاسخ معتبر نگرفت؛ اتصال تأیید نشد.'
           '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
           details: await _coreDiagnostics(
@@ -2087,6 +1999,8 @@ class VpnController extends ChangeNotifier {
     // خودش استفاده می کند.
     final String settingsPath =
         '${plan.runDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
+    _activeChain = _settings.chain;
+    if (_activeChain.licenseKey.isNotEmpty) _networkSecrets.add(_activeChain.licenseKey);
     await File(settingsPath).writeAsString(
       jsonEncode(
         UmbrellaCore.settingsJson(
@@ -2763,149 +2677,13 @@ class VpnController extends ChangeNotifier {
     return details;
   }
 
-  /// آیا همین حالا ترافیک از تونل رد می شود؟
-  ///
-  /// سه مدرک، هر کدام کافی است:
-  ///  • پاسخ سنجش وب (از پروکسی محلی یا مسیر کارت شبکه تونل)
-  ///  • رشد شمارنده بایت روی کارت شبکه تونل در یک ثانیه
-  ///  • گزارش خود هسته (شروع موفق و اتصال بیرونی از مسیر گره، بدون خطای کشنده)
-  ///
-  /// سنجش وب تنها معیار بودن، در ۱٫۰۱۱ و ۱٫۰۱۲ اتصال سالم را کشت؛ بعضی
-  /// شبکه ها (و بعضی گره ها) به این سه نشانی سنجش اجازه نمی دهند.
+  /// A failed endpoint race is retried by the existing health-failure counter;
+  /// neither transmitted bytes nor a stale core log can override it.
   Future<bool> _tunnelFlowsNow() async {
-    final bool probe = await TunnelProbe.check(
-      proxyPort: _proxyPort,
-      attempts: 1,
-      timeout: const Duration(seconds: 6),
-    );
-    if (probe) {
-      return true;
-    }
-    // مدرک دوم: بایت روی کارت شبکه تونل.
-    final TunnelStats before = await _native.tunnelStats(
-      hint: AppConfig.tunAdapterHint,
-    );
-    await Future<void>.delayed(const Duration(seconds: 1));
-    final TunnelStats after = await _native.tunnelStats(
-      hint: AppConfig.tunAdapterHint,
-    );
-    if (before.available && after.available) {
-      if (after.rx > before.rx || after.tx > before.tx) {
-        return true;
-      }
-    }
-    // مدرک سوم: گزارش خود هسته.
-    final String log = '${_provisioner.dataDir}'
-        '${Platform.pathSeparator}run${Platform.pathSeparator}'
-        'umbrella-tun-core.log';
-    return _coreReportsWorkingTunnel(log);
-  }
-
-  /// وضعیت واقعی تونل، از رابط کلش خود هسته.
-  ///
-  /// این دقیق ترین منبع است: خود هسته می داند کدام گره جواب می دهد. در
-  /// گزارش ۱٫۰۱۳ گره‌هایی مثل `h3_quic xhttp` «وصل» اعلام شدند در حالی که
-  /// هسته در همان لحظه `MONITORING vless § 0: no answer` می نوشت. یعنی ما
-  /// از روی یک خط «تلاش برای اتصال» نتیجه گرفتیم که تونل کار می کند.
-  ///
-  /// دو چیز پرسیده می شود:
-  ///  • `/proxies/<tag>/delay` — آیا گره واقعاً جواب می دهد و چند میلی ثانیه.
-  ///  • `/connections` — آیا همین حالا اتصال زنده ای از مسیر گره باز است.
-  ///
-  /// اگر رابط کلش جواب نداد (مثلاً کلید داشته باشد)، `null` برمی گردد تا
-  /// تصمیم به راه های دیگر بسپارند، نه به «موفق».
-  Future<bool?> _clashTunnelVerdict() async {
-    final HttpClient client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 3);
-    try {
-      final Uri base = Uri.parse(
-        'http://127.0.0.1:${AppConfig.coreClashPort}',
-      );
-      // ۱. آیا اتصال زنده ای از مسیر گره باز است؟
-      final Map<String, dynamic>? connections =
-          await _clashGet(client, base.resolve('/connections'));
-      if (connections != null) {
-        final Object? items = connections['connections'];
-        if (items is List && items.isNotEmpty) {
-          for (final Object? item in items) {
-            if (item is! Map) {
-              continue;
-            }
-            final Object? chains = item['chains'];
-            if (chains is List && chains.isNotEmpty) {
-              // زنجیره `direct` یعنی ترافیک از تونل نرفت.
-              final bool viaProxy = chains.any(
-                (Object? hop) =>
-                    hop is String &&
-                    hop.isNotEmpty &&
-                    !hop.toLowerCase().contains('direct'),
-              );
-              if (viaProxy) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-      // ۲. خود گره چه تاخیری دارد؟ `null` یعنی جواب نداد.
-      final Map<String, dynamic>? proxies =
-          await _clashGet(client, base.resolve('/proxies'));
-      if (proxies != null) {
-        final Object? all = proxies['proxies'];
-        if (all is Map) {
-          for (final MapEntry<Object?, Object?> entry in all.entries) {
-            final Object? value = entry.value;
-            if (value is! Map) {
-              continue;
-            }
-            final Object? history = value['history'];
-            if (value['type'] == 'Selector' ||
-                value['type'] == 'URLTest' ||
-                value['type'] == 'Balancer' ||
-                value['type'] == 'Direct' ||
-                value['type'] == 'Reject') {
-              continue;
-            }
-            if (history is List && history.isNotEmpty) {
-              final Object? last = history.last;
-              if (last is Map && JsonX.integer(last['delay']) > 0) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-      return false;
-    } on Exception {
-      // رابط کلش در دسترس نیست؛ این «ناموفق» نیست، «نمی دانم» است.
-      return null;
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Future<Map<String, dynamic>?> _clashGet(HttpClient client, Uri url) async {
-    try {
-      final HttpClientRequest request = await client.getUrl(url);
-      // رمز رابط کلش را می فرستیم، چون در تنظیمات هم همان را به هسته داده
-      // ایم. اگر `web-secret` خالی بماند، هسته خودش رمز ناشناس می سازد و
-      // این درخواست ۴۰۱ می شود (همان چیزی که در ۱٫۰۱۴ پرسش از هسته را
-      // بی نتیجه گذاشت).
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer ${AppConfig.coreClashSecret}',
-      );
-      final HttpClientResponse response = await request.close();
-      if (response.statusCode != 200) {
-        await response.drain<void>();
-        return null;
-      }
-      final String body = await response.transform(utf8.decoder).join();
-      final Object? decoded = jsonDecode(body);
-      return decoded is Map<String, dynamic> ? decoded : null;
-    } on Exception {
-      return null;
-    }
+    final bool proxy = await VerifiedProbe.check(proxyPort: _umbrellaPort,
+        timeout: const Duration(seconds: 6));
+    return proxy && (_proxyPort > 0 || await VerifiedProbe.check(proxyPort: 0,
+        timeout: const Duration(seconds: 6)));
   }
 
   /// آی پی و کشور خروجی از سطر `MONITORING result` خود هسته.
@@ -2939,105 +2717,6 @@ class VpnController extends ChangeNotifier {
     return '';
   }
 
-  /// آیا خود هسته گفته است که تونل بالا آمد و کار کرد؟
-  ///
-  /// گزارش ۱٫۰٫۱۱ نشان داد سنجش وب تنها معیار بودن، خطرناک است: هسته بالا
-  /// آمده بود، `sing-box started` نوشته بود و برای همان سرور اتصال بیرونی
-  /// برقرار کرده بود (DNS به ۱٫۱٫۱٫۱ از مسیر همان گره)، ولی سنجش یک ثانیه ای
-  /// جواب نداد و برنامه تونل سالم را کشت. پس گزارش خود هسته هم خوانده می شود.
-  ///
-  /// نشانه های پذیرش:
-  ///  • `sing-box started` یعنی هسته بی خطا بالا آمد.
-  ///  • `outbound/vless[...]: outbound connection to ...` یعنی برای همان
-  ///    سرور اتصال واقعی برقرار شد (برخلاف `direct` که یعنی بدون تونل رفت).
-  ///
-  /// اگر خطای کشنده ای مثل `already in use` یا `unknown transport type` در
-  /// گزارش باشد، هیچ کدام از این ها پذیرفته نمی شود.
-  Future<bool> _coreReportsWorkingTunnel(String coreLog) async {
-    final String full = await _readLogFull(coreLog);
-    if (full.isEmpty) {
-      return false;
-    }
-    final String text = full.toLowerCase();
-    const List<String> fatal = <String>[
-      'already in use',
-      'unknown transport type',
-      'unable to determine config format',
-      'no outbounds found',
-      'failed to set up global configuration',
-      'invalid server address',
-    ];
-    for (final String marker in fatal) {
-      if (text.contains(marker)) {
-        return false;
-      }
-    }
-    if (!text.contains('sing-box started')) {
-      return false;
-    }
-    // نکته مهم: «no answer» در بخش monitoring به معنی خرابی گره **نیست**.
-    //
-    // در ۱٫۰۱۴ همین را مدرک خرابی گرفتیم و نتیجه اش این شد که در گزارش
-    // کاربر تونل واقعاً کار می کرد — گوگل، تلگرام، DNS همه از مسیر گره
-    // می رفتند — ولی هسته `MONITORING vless § 0: no answer after 1s` می نوشت
-    // و ما اتصال سالم را رد می کردیم. علتش این بود که نشانی سنجش خود هسته
-    // (`speed.cloudflare.com`) از ایران ۳۰۱ می داد.
-    //
-    // آن خط فقط می گوید «سنجش درونی من جواب نگرفت»، نه «ترافیک رد نمی شود».
-    // پس دیگر آن را مدرک خرابی نمی گیریم؛ نشانی سنجش هم عوض شد
-    // (`AppConfig.connectionTestUrls`).
-    //
-    // اتصال از مسیر خود گره (نه `direct`) — همان چیزی که ثابت می کند تونل
-    // بیرون رفت.
-    // باید ترافیک واقعی کاربر از مسیر گره رفته باشد، نه فقط سنجش خود هسته.
-    //
-    // سنجش خود هسته سه نشانی مشخص را امتحان می کند (`www.gstatic.com` و
-    // مانند آن). اگر فقط همان ها باشند، معلوم نیست مرورگر کاربر هم کار می
-    // کند. پس یک «اتصال ورودی» از کارت شبکه تونل هم لازم است:
-    //   inbound/tun[tun-in]: inbound connection from 172.19.0.1
-    // که یعنی برنامه ای روی همین دستگاه از تونل استفاده کرد.
-    // خطای کشنده ای که در همین تلاش رخ داده، هر مدرک دیگری را باطل می کند.
-    //
-    // در گزارش ۱٫۰٫۱۷ خط `unexpected status: 301 Moved Permanently` و
-    // `v2ray-http-upgrade` آمد: یعنی گره واقعاً جواب نداد. اگر همان تلاش
-    // «sing-box started» هم داشته باشد، نباید سالم حساب شود.
-    for (final String broken in <String>[
-      'unexpected status',
-      'connection reset',
-      'i/o timeout',
-      'context deadline exceeded',
-      'no route to host',
-      // نشانه هایی که در گزارش ۱٫۰۱۸ آمد و «وصل شدن الکی» را ساخت:
-      //   "code = PermissionDenied ... 403 (Forbidden)" از کلادفلر
-      //   "unexpected content-type "text/plain"" و 526
-      //   "the connection is draining"
-      // یعنی هسته بالا آمده ولی گره هیچ ترافیکی را رد نمی کند.
-      'permissiondenied',
-      'the connection is draining',
-      'transport: received unexpected content-type',
-      ' 526',
-      ' 403 (forbidden)',
-    ]) {
-      if (text.contains(broken)) {
-        return false;
-      }
-    }
-    final bool started = text.contains('sing-box started');
-    if (!started) {
-      return false;
-    }
-    final RegExp proxiedTraffic = RegExp(
-      r'outbound/(vless|vmess|trojan|shadowsocks|hysteria2|tuic|wireguard|anytls|mieru)'
-      r'\[[^\]]*\]: outbound (multiplex )?(packet )?connection to '
-      r'(?!1\.1\.1\.1|8\.8\.8\.8|8\.8\.4\.4)',
-    );
-    if (proxiedTraffic.hasMatch(text)) {
-      return true;
-    }
-    // گره ای که هیچ ترافیکی رد نکرد، سالم حساب نمی شود.
-    return false;
-  }
-
   /// متن کامل گزارش هسته (برای تصمیم گیری، بی برش).
   Future<String> _readLogFull(String path) async {
     try {
@@ -3045,7 +2724,7 @@ class VpnController extends ChangeNotifier {
       if (!await file.exists()) {
         return '';
       }
-      return await file.readAsString();
+      return redactNetworkSecrets(await file.readAsString(), knownSecrets: _networkSecrets);
     } on FileSystemException {
       return '';
     }
@@ -3121,7 +2800,7 @@ class VpnController extends ChangeNotifier {
       if (!await file.exists()) {
         return '';
       }
-      final String text = await file.readAsString();
+      final String text = redactNetworkSecrets(await file.readAsString(), knownSecrets: _networkSecrets);
       final List<String> rows = text
           .split(RegExp(r'\r?\n'))
           .map((String row) => row.trim())
@@ -3241,54 +2920,11 @@ class VpnController extends ChangeNotifier {
   /// کند» را ساخت.
   ///
   /// نشانی ها همان `generate_204` هستند: سبک، بدون بدنه بزرگ و در بیشتر
-  /// شبکه ها باز. ۲۰۴ و ۳۰۲ هر دو قبول است؛ فقط پاسخ HTTP لازم است.
+  /// شبکه ها باز. فقط پاسخ HTTPS معتبر با محتوای مورد انتظار پذیرفته است.
   Future<bool> _trafficReturns({Duration timeout = const Duration(seconds: 8)}) async {
-    const List<String> urls = <String>[
-      'http://cp.cloudflare.com/generate_204',
-      'http://connectivitycheck.gstatic.com/generate_204',
-      'http://www.msftconnecttest.com/connecttest.txt',
-    ];
-    // دو پاسخ مستقل لازم است: یک پاسخ می تواند از کش یا صفحه خطای میانی
-    // بیاید؛ دو پاسخ پشت سر هم یعنی مسیر واقعاً باز است.
-    int answered = 0;
-    for (final String url in urls) {
-      final Uri? uri = Uri.tryParse(url);
-      if (uri == null) {
-        continue;
-      }
-      HttpClient? client;
-      try {
-        client = HttpClient()..connectionTimeout = timeout;
-        // در حالت پروکسی سیستمی، درخواست از همان پروکسی محلی می رود.
-        if (_proxyPort > 0) {
-          client.findProxy = (Uri _) => 'PROXY 127.0.0.1:$_proxyPort';
-        }
-        final HttpClientRequest request = await client.getUrl(uri);
-        request.followRedirects = false;
-        request.headers.set(HttpHeaders.connectionHeader, 'close');
-        final HttpClientResponse response =
-            await request.close().timeout(timeout);
-        // بدنه را هم بخوان؛ رسیدن هدر به تنهایی کافی نیست، چون بعضی
-        // پروکسی ها هدر می فرستند و بعد اتصال را ببندند.
-        //
-        // **درس ۱٫۰٫۱۸:** در گزارش کاربر، هسته به `generate_204` پاسخ **۴۰۳
-        // کلادفلر** داد ("Attention Required!") و ما آن را پاسخ سالم شمردیم.
-        // هر پاسخ ۴xx/۵xx کلادفلر یعنی گره ترافیک را رد نکرده است.
-        if (response.statusCode >= 400) {
-          continue;
-        }
-        await response.drain<void>().timeout(timeout);
-        answered++;
-        if (answered >= 2) {
-          return true;
-        }
-      } on Exception {
-        // نشانی بعدی.
-      } finally {
-        client?.close(force: true);
-      }
-    }
-    return false;
+    final bool proxy = await VerifiedProbe.check(proxyPort: _umbrellaPort,
+        minimumSuccesses: 2, timeout: timeout);
+    return proxy && (_proxyPort > 0 || await VerifiedProbe.check(proxyPort: 0, timeout: timeout));
   }
 
   Future<void> _verifyTunnel() async {
@@ -3476,7 +3112,7 @@ class VpnController extends ChangeNotifier {
       return;
     }
     final int ms = await TunnelProbe.latency(
-      proxyPort: _proxyPort,
+      proxyPort: _umbrellaPort,
       timeout: const Duration(seconds: 4),
     );
     if (ms > 0) {
@@ -3488,60 +3124,52 @@ class VpnController extends ChangeNotifier {
   /// سنجش سرعت واقعی روی سرور متصل؛ از همان مسیری می رود که ترافیک کاربر
   /// می رود (تونل کامل یا پروکسی محلی).
   Future<void> measureSpeed() async {
-    if (!_status.active) {
-      _liveSpeed = 0;
-      return;
-    }
-    final HttpClient client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 8);
-    if (_proxyPort > 0) {
-      client.findProxy = (Uri _) => 'PROXY 127.0.0.1:$_proxyPort';
-    }
-    final Stopwatch watch = Stopwatch();
+    if (_status != VpnStatus.connected || _speedRunner != null ||
+        (accessGuard?.call() ?? '').isNotEmpty) return;
+    final SpeedTestRunner runner = SpeedTestRunner();
+    _speedRunner = runner;
+    _speedResult = null;
+    _speedError = '';
+    _liveSpeed = 0;
+    _speedMeasuredAt = null;
+    _notify();
     try {
-      final HttpClientRequest request = await client
-          .getUrl(Uri.parse(AppConfig.speedTestUrl))
-          .timeout(const Duration(seconds: 10));
-      final HttpClientResponse response =
-          await request.close().timeout(const Duration(seconds: 12));
-      if (response.statusCode >= 300) {
-        _liveSpeed = 0;
-        _notify();
-        return;
+      final SpeedTestResult result = await runner.run(
+        // The loopback mixed listener stays enabled in TUN mode too. Never
+        // measure through a system route which could escape during disconnect.
+        proxyPort: _umbrellaPort,
+        onPhase: (String phase) { _speedPhase = phase; _notify(); },
+      );
+      if (identical(_speedRunner, runner) && _status == VpnStatus.connected &&
+          (accessGuard?.call() ?? '').isEmpty) {
+        _speedResult = result;
+        _liveSpeed = result.download.bytesPerSecond;
+        _speedMeasuredAt = result.measuredAt;
       }
-      int bytes = 0;
-      int timedOutAfter = 0;
-      watch.start();
-      await for (final List<int> chunk in response.timeout(
-        const Duration(seconds: 8),
-        onTimeout: (EventSink<List<int>> sink) => sink.close(),
-      )) {
-        bytes += chunk.length;
-        timedOutAfter = watch.elapsedMilliseconds;
-        if (timedOutAfter > 8000) {
-          break;
-        }
+    } on SpeedTestCancelled {
+      // Explicit cancellation or a connection transition: never publish a result.
+    } catch (_) {
+      if (identical(_speedRunner, runner)) {
+        _speedError = 'سنجش کامل نشد؛ مسیر یا سرویس آزمایش پاسخ معتبر نداد.';
       }
-      final int ms = watch.elapsedMilliseconds;
-      if (bytes > 0 && ms > 0) {
-        _liveSpeed = bytes * 1000 / ms;
-        _speedMeasuredAt = DateTime.now();
-        _log.add(
-          'سنجش سرعت سرور متصل: ${Fa.speed(_liveSpeed)} '
-          '(${Fa.num((bytes / 1024).round())} کیلوبایت در '
-          '${Fa.num((ms / 1000).toStringAsFixed(1))} ثانیه)',
-        );
-      }
-    } catch (error) {
-      _liveSpeed = 0;
-      _log.add('سنجش سرعت ناموفق بود: $error', level: 'warning');
     } finally {
-      client.close(force: true);
+      runner.cancel();
+      if (identical(_speedRunner, runner)) { _speedRunner = null; _speedPhase = ''; }
       _notify();
     }
   }
 
+  void cancelSpeedTest() {
+    _speedRunner?.cancel();
+    _speedRunner = null;
+    _speedPhase = '';
+    _notify();
+  }
+
   void _stopLiveMeasurement() {
+    cancelSpeedTest();
+    _speedResult = null;
+    _speedError = '';
     _liveTimer?.cancel();
     _liveTimer = null;
     _link?.close();
@@ -3602,10 +3230,8 @@ class VpnController extends ChangeNotifier {
     } else {
       // زنده بودن فرایند کافی نیست؛ خود تونل هم باید جواب بدهد.
       //
-      // ولی سنجش وب تنها معیار نمی شود: در گزارش ۱٫۰۱۲ همین سنجش جواب
-      // نمی داد در حالی که ترافیک واقعی از تونل رد می شد، و هر ۱۰ ثانیه
-      // «ترافیک از تونل رد نمی شود» می نوشت تا در سومین بار اتصال سالم را
-      // عوض کند. پس رشد بایت کارت شبکه و گزارش خود هسته هم بررسی می شوند.
+      // Three consecutive failed races are required before failover. A raw
+      // byte counter or dial log cannot override failed HTTPS validation.
       final bool flows = await _tunnelFlowsNow();
       if (flows) {
         if (_healthFailures > 0) {
@@ -3698,6 +3324,8 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCores() async {
+    cancelSpeedTest();
+    _activeChain = const ChainSettings();
     _stoppingOwnCore = true;
     try {
       await _stopCoresInner();

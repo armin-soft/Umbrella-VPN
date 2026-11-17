@@ -298,7 +298,7 @@ class UmbrellaCore {
       'direct-port': 12337,
       'lan-sharing-port': 12338,
       'local-proxy-auth': false,
-      'local-proxy-in-vpn': false,
+      'local-proxy-in-vpn': true, // Loopback-only diagnostic path, also in TUN mode.
       // پیش فرض خود هسته: `sing15` یعنی پشته پیش فرض sing-tun و `9000` همان
       // ام تی یو خودش. صفر گذاشتن این دو، تونل را بی بسته می کند.
       'tun-implementation': networkSettings == null || networkSettings.tunStack == TunStack.auto
@@ -316,9 +316,14 @@ class UmbrellaCore {
       'enable-fake-dns': false,
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
       'region': 'other',
-      // زنجیره (chain) خاموش: مقدار خالی «off» است؛ با ایمن سازی، دی ان اس
-      // گروه اضافه ای می سازد که این نسخه لازم ندارد.
-      'chain-status': 'off',
+      ...(networkSettings?.chain ?? const ChainSettings()).toCoreOptions(),
+      if (tun && networkSettings != null && networkSettings.appRoutes.isNotEmpty)
+        'route-rule': <String, dynamic>{
+          'rules': <Map<String, dynamic>>[
+            for (int i = 0; i < networkSettings.appRoutes.length; i++)
+              networkSettings.appRoutes[i].toCoreRule(i),
+          ],
+        },
       'ipv6-mode': networkSettings?.blockIpv6 == true ? 'ipv4_only' : 'as_is',
       'resolve-destination': false,
       'bypass-lan': false,

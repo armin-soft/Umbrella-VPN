@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/ui/widgets/network_settings.dart';
+import 'package:umbrella_vpn/ui/widgets/advanced_network_settings.dart';
 
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/models/models.dart';
@@ -113,6 +114,51 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(controller.settings.mtu, 1400);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  test('chain and ordered application routes persist without altering account data', () async {
+    final SettingsController controller = create();
+    addTearDown(controller.dispose);
+    await controller.update(const AppSettings(phone: '09120000000', gatewayBase: 'https://account.example'));
+    await controller.setChain(const ChainSettings(position: ChainPosition.unblocker, transport: ChainTransport.awg));
+    await controller.setAppRoutes(const <AppRouteRule>[
+      AppRouteRule(process: 'browser.exe', action: AppRouteAction.direct),
+      AppRouteRule(process: 'game.exe', action: AppRouteAction.block),
+    ]);
+    await expectLater(controller.setAppRoutes(const <AppRouteRule>[
+      AppRouteRule(process: 'browser.exe'), AppRouteRule(process: 'BROWSER.EXE'),
+    ]), throwsFormatException);
+    await expectLater(controller.setChain(const ChainSettings(position: ChainPosition.unblocker, mtu: -1)), throwsFormatException);
+    final SettingsController reloaded = create();
+    addTearDown(reloaded.dispose);
+    await reloaded.load();
+    expect(reloaded.settings.chain.position, ChainPosition.unblocker);
+    expect(reloaded.settings.chain.transport, ChainTransport.awg);
+    expect(reloaded.settings.appRoutes.map((AppRouteRule rule) => rule.process), <String>['browser.exe', 'game.exe']);
+    expect(reloaded.settings.appRoutes.last.action, AppRouteAction.block);
+    expect(reloaded.settings.phone, '09120000000');
+    expect(reloaded.settings.gatewayBase, 'https://account.example');
+  });
+  for (final Brightness brightness in Brightness.values) {
+    testWidgets('chain and route dialogs validate in RTL $brightness', (WidgetTester tester) async {
+      final ThemeData theme = brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light();
+      await tester.pumpWidget(MaterialApp(theme: theme, home: const Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(body: ChainSettingsDialog(initial: ChainSettings(position: ChainPosition.unblocker))),
+      )));
+      await tester.pumpAndSettle();
+      expect(find.text('WARP و زنجیره اتصال'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(MaterialApp(theme: theme, home: const Directionality(
+        textDirection: TextDirection.rtl, child: Scaffold(body: AppRouteDialog()),
+      )));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '*.exe');
+      await tester.tap(find.text('ذخیره قانون'));
+      await tester.pumpAndSettle();
+      expect(find.text('نام فایل exe یا مسیر کامل ویندوز را وارد کنید'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

@@ -11,6 +11,7 @@ import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
+import '../widgets/speed_test_card.dart';
 
 /// وضعیت اتصال: یک نگاه کوتاه به این که تونل زنده است یا نه.
 ///
@@ -95,6 +96,13 @@ class ConnectionPage extends StatelessWidget {
               return _TileGrid(tiles: tiles, perRow: perRow);
             },
           ),
+          const SizedBox(height: AppMetrics.space4),
+
+          if (connected && vpn.activeChain.enabled) Padding(
+            padding: const EdgeInsets.only(bottom: AppMetrics.space4),
+            child: Text('زنجیره فعال: ${vpn.activeChain.position.label} — ${vpn.activeChain.transport.label}'),
+          ),
+          const SpeedTestCard(),
           const SizedBox(height: AppMetrics.space4),
 
           // ── سرور و برنامه ─────────────────────────────────────────
