@@ -1,8 +1,15 @@
 import 'dart:io';
 
-/// Finalize the pinned core's `build` output for `srun`. Unlike `run`, this
-/// preserves monitoring/cache settings and explicitly activates lazy keep-top.
-/// Source: hiddify-core v5.9.1 v2/hcore/keep_top.go and config/keep_top.go.
+/// Finalize the pinned core's `build` output for `srun`, matching official
+/// Hiddify (`hiddify-app` + `hiddify-core v5.9.1`) startup semantics:
+///
+/// * Leaf proxy outbounds use `lazy: true` (`adapter/outbound/h_lazy.go`) so
+///   box startup instantiates zero transports upfront and unloads idle ones.
+/// * Standard subscriptions (`<= autoKeepTopThreshold` proxies) run with
+///   `keep_top` disabled (matching Hiddify's default `keep-top: -1`), allowing
+///   `cycleOrder` to probe every proxy immediately without batch-stage stalls.
+/// * Very large subscriptions (`> autoKeepTopThreshold` proxies) automatically
+///   enable quick staged `keep_top` to keep memory and socket usage bounded.
 class RuntimeConfig {
   const RuntimeConfig._();
   static const Set<String> lazyTypes = <String>{
@@ -11,8 +18,11 @@ class RuntimeConfig {
     'snell', 'trusttunnel', 'sudoku',
   };
 
+  /// Profiles up to this size behave identically to Hiddify's default
+  /// `keep-top = -1` (immediate full-pool `cycleOrder` without batch gating).
+  static const int autoKeepTopThreshold = 128;
   static const int keepTopCount = 8;
-  static const int keepTopBatch = 16;
+  static const int keepTopBatch = 32;
   static const int monitoringWorkers = 16;
 
   static void finalize(
@@ -28,13 +38,8 @@ class RuntimeConfig {
     final Map<String, dynamic> experimental = config['experimental'] as Map<String, dynamic>;
     final Map<String, dynamic> monitoring = experimental['monitoring'] as Map<String, dynamic>;
     monitoring['workers'] = monitoringWorkers;
-    monitoring['debounce_window'] = '250ms';
+    monitoring['debounce_window'] = '200ms';
     monitoring['url_test_timeout'] = '4s';
-    monitoring['keep_top'] = <String, dynamic>{
-      'count': keepTopCount,
-      'batch': keepTopBatch,
-      'quick': true,
-    };
     // No dashboard download on the connection path. Clash API remains loopback.
     final Map<String, dynamic>? clash = experimental['clash_api'] as Map<String, dynamic>?;
     clash?.remove('external_ui');
@@ -48,11 +53,13 @@ class RuntimeConfig {
     }
     // The controller captures stdout; do not let two writers truncate one log.
     (config['log'] as Map<String, dynamic>?)?.remove('output');
+    int lazyCount = 0;
     final List<Map<String, dynamic>> extra = <Map<String, dynamic>>[];
     for (final dynamic value in outbounds) {
       final Map<String, dynamic> outbound = value as Map<String, dynamic>;
       if (profileTags.contains(outbound['tag']) && lazyTypes.contains(outbound['type'])) {
         outbound['lazy'] = true;
+        lazyCount++;
       }
       final dynamic transport = outbound['transport'];
       if (transport is! Map || transport['type'] != 'xhttp') continue;
@@ -86,6 +93,15 @@ class RuntimeConfig {
       }
       download['detour'] = tag;
       extra.add(resolver);
+    }
+    if (lazyCount > autoKeepTopThreshold) {
+      monitoring['keep_top'] = <String, dynamic>{
+        'count': keepTopCount,
+        'batch': keepTopBatch,
+        'quick': true,
+      };
+    } else {
+      monitoring.remove('keep_top');
     }
     // Download detours are looked up when a transport is constructed.
     outbounds.insertAll(0, extra);

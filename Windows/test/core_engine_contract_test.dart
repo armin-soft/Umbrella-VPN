@@ -64,6 +64,55 @@ void main() {
         onFinished: (_) { process = null; },
       );
       if (startRuntime) {
+        // Verify level-2 cache hit (even with a different log-file path) spawns
+        // zero core subprocesses, enabling Hiddify-speed instant `srun`.
+        int cacheHitSpawns = 0;
+        final Map<String, dynamic> rotatedLogOptions =
+            Map<String, dynamic>.from(options)
+              ..['log-file'] = '${temp.path}/session-2.log';
+        await settings.writeAsString(jsonEncode(rotatedLogOptions));
+        final File cachedOutput = await CoreRuntime.compile(
+          executable: executable,
+          workDir: File(executable).parent.path,
+          runDir: temp.path,
+          linksPath: links.path,
+          settingsPath: settings.path,
+          clashApiPort: clashApiPort,
+          cancelled: () => false,
+          onStarted: (_) { cacheHitSpawns++; },
+        );
+        expect(cacheHitSpawns, 0, reason: 'unchanged links+settings must hit runtime cache');
+        expect(cachedOutput.path, output.path);
+        // Changing settings while links stay identical hits level-1 parsed cache
+        // (runs only `build`, skipping `parse`).
+        int partialHitSpawns = 0;
+        final Map<String, dynamic> mtuChanged =
+            Map<String, dynamic>.from(rotatedLogOptions)..['mtu'] = 1420;
+        await settings.writeAsString(jsonEncode(mtuChanged));
+        await CoreRuntime.compile(
+          executable: executable,
+          workDir: File(executable).parent.path,
+          runDir: temp.path,
+          linksPath: links.path,
+          settingsPath: settings.path,
+          clashApiPort: clashApiPort,
+          cancelled: () => false,
+          onStarted: (_) { partialHitSpawns++; },
+        );
+        expect(partialHitSpawns, 1, reason: 'settings-only change must reuse parsed.json');
+        // Restore original 1400-MTU runtime so downstream assertions check exact output.
+        await settings.writeAsString(jsonEncode(options));
+        await CoreRuntime.compile(
+          executable: executable,
+          workDir: File(executable).parent.path,
+          runDir: temp.path,
+          linksPath: links.path,
+          settingsPath: settings.path,
+          clashApiPort: clashApiPort,
+          cancelled: () => false,
+        );
+      }
+      if (startRuntime) {
         final Process running = await Process.start(executable,
           <String>['srun', '-c', output.path, '-D', temp.path],
           workingDirectory: File(executable).parent.path, runInShell: false);
@@ -313,6 +362,16 @@ void main() {
             o['type'] == 'shadowsocks' && o['plugin'] == 'obfs-local',
       );
       expect(fakeTlsOut['plugin_opts'], 'obfs=http;obfs-host=www.wechat.com');
+      expect(compiled['experimental']['monitoring']['keep_top'], isNull);
+      final List<Map<String, dynamic>> dnsServers =
+          ((compiled['dns'] as Map<String, dynamic>)['servers'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      expect(
+        dnsServers.any(
+          (Map<String, dynamic> s) => s['type'] == 'tcp' && s['server'] == '8.8.8.8',
+        ),
+        isTrue,
+      );
 
       // Actually boot sing-box (`srun`) with ALL 11 outbounds across all 9 protocols!
       final Process running = await Process.start(
@@ -433,8 +492,9 @@ void main() {
         expect(vless['tls']['server_name'], 'example.invalid');
         expect(vless['multiplex'], isNull, reason: 'mux=false must remove inherited mux/brutal');
         expect(vless['lazy'], true);
-        expect(output['experimental']['monitoring']['keep_top']['batch'], 16);
+        expect(output['experimental']['monitoring']['keep_top'], isNull);
         expect(output['experimental']['monitoring']['workers'], 16);
+        expect(output['experimental']['monitoring']['debounce_window'], '200ms');
         expect(output['experimental']['cache_file']['enabled'], true);
         expect(vless['transport']['type'], 'xhttp');
         expect(vless['transport']['mode'], 'packet-up');

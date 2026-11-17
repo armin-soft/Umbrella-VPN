@@ -64,9 +64,11 @@ class NetworkSettings extends StatelessWidget {
           onChanged: controller.setBlockIpv6,
         ),
         const SizedBox(height: AppMetrics.space4),
-        _dnsField('دی‌ان‌اس ترافیک تونل', 'remote', current.remoteDns, controller.setRemoteDns),
+        _dnsField('دی‌ان‌اس ترافیک تونل', 'remote', current.remoteDns,
+            NetworkDns.defaultRemote, controller.setRemoteDns),
         const SizedBox(height: AppMetrics.space4),
-        _dnsField('دی‌ان‌اس اتصال اولیه و مستقیم', 'direct', current.directDns, controller.setDirectDns),
+        _dnsField('دی‌ان‌اس اتصال اولیه و مستقیم', 'direct', current.directDns,
+            NetworkDns.defaultDirect, controller.setDirectDns),
         const SizedBox(height: AppMetrics.space3),
         const AdvancedNetworkSettings(),
         const Text('هسته پرس‌وجوهای ترافیک پروکسی را از تونل می‌فرستد. برای یافتن آدرس سرور و مسیرهای مستقیم، DNS مستقیم لازم است. این تنظیم تضمین نبود نشت DNS نیست.'),
@@ -74,8 +76,15 @@ class NetworkSettings extends StatelessWidget {
     );
   }
 
-  Widget _dnsField(String label, String id, String value, ValueChanged<String> onChanged) {
-    final String normalized = NetworkDns.normalize(value);
+  Widget _dnsField(
+    String label,
+    String id,
+    String value,
+    String defaultValue,
+    ValueChanged<String> onChanged,
+  ) {
+    final String normalized =
+        NetworkDns.normalize(value, defaultValue: defaultValue);
     return DropdownButtonFormField<String>(
       key: ValueKey<String>('dns-$id-$normalized'),
       initialValue: normalized,

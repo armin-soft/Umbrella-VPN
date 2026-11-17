@@ -4,13 +4,58 @@ import 'dart:io';
 
 import '../core/app_config.dart';
 
-/// Snapshot of the running core's outbound monitoring state via loopback Clash API.
+/// Core connectivity states mirroring `hiddify-core v5.9.1`
+/// (`v2/hcore/connectivity.go` + `hiddify-app` `ConnectionRepositoryImpl`):
 ///
-/// Used strictly to coordinate startup timing, live delay display, and seamless
-/// in-core failover — never as a substitute for TLS-verified tunnel probes.
+/// * [offline] — loopback Clash controller has not started listening yet.
+/// * [waiting] — core is up (`CoreStates_WAITING`), outbound URL tests running.
+/// * [started] — `lowest` (or the active proxy leaf) has a fresh non-cached
+///   URL-test ping (`0 < delay < 65000`) -> immediately `CoreStates_STARTED`.
+/// * [noAvailableProxies] — every monitored proxy leaf timed out in this run
+///   (`CoreStates_NO_AVAILABLE_PROXIES`).
+enum CoreConnectivityState {
+  offline,
+  waiting,
+  started,
+  noAvailableProxies,
+}
+
+/// Live exit IP metadata populated by the core's built-in outbound monitoring
+/// (`adapter.URLTestHistory.IpInfo` in `hiddify-sing-box`).
+class CoreExitIpInfo {
+  const CoreExitIpInfo({
+    required this.ip,
+    this.countryCode = '',
+    this.region = '',
+    this.city = '',
+    this.org = '',
+    this.asn = 0,
+    this.fromCache = false,
+  });
+
+  final String ip;
+  final String countryCode;
+  final String region;
+  final String city;
+  final String org;
+  final int asn;
+  final bool fromCache;
+
+  Map<String, dynamic> toGeoJson() => <String, dynamic>{
+        'ip': ip,
+        if (countryCode.isNotEmpty) 'country_code': countryCode,
+        if (region.isNotEmpty) 'region': region,
+        if (city.isNotEmpty) 'city': city,
+        if (org.isNotEmpty) 'org': org,
+        if (asn > 0) 'asn': 'AS$asn',
+      };
+}
+
+/// Snapshot of the running core's outbound monitoring state via loopback Clash API.
 class CoreProxySnapshot {
   const CoreProxySnapshot({
     required this.reachable,
+    this.connectivity = CoreConnectivityState.offline,
     this.activeTag = '',
     this.activeDelayMs = 0,
     this.bestTag = '',
@@ -19,11 +64,16 @@ class CoreProxySnapshot {
     this.failedCount = 0,
     this.untestedCount = 0,
     this.totalCount = 0,
+    this.exitIpInfo,
   });
 
-  static const CoreProxySnapshot offline = CoreProxySnapshot(reachable: false);
+  static const CoreProxySnapshot offline = CoreProxySnapshot(
+    reachable: false,
+    connectivity: CoreConnectivityState.offline,
+  );
 
   final bool reachable;
+  final CoreConnectivityState connectivity;
   final String activeTag;
   final int activeDelayMs;
   final String bestTag;
@@ -32,19 +82,24 @@ class CoreProxySnapshot {
   final int failedCount;
   final int untestedCount;
   final int totalCount;
+  final CoreExitIpInfo? exitIpInfo;
 
   /// True once the running core has measured at least one responsive outbound
-  /// in the active session and can route through it immediately.
-  bool get hasLiveSelection => activeDelayMs > 0 || aliveCount > 0;
+  /// in the active session (`CoreStates_STARTED` in `connectivity.go`).
+  bool get hasLiveSelection =>
+      connectivity == CoreConnectivityState.started ||
+      activeDelayMs > 0 ||
+      aliveCount > 0;
 
   /// True only when every single outbound in the pool was freshly tested in the
-  /// current session and none of them answered.
+  /// current session and none of them answered (`CoreStates_NO_AVAILABLE_PROXIES`).
   bool get allTestedAndDead =>
-      reachable &&
-      totalCount > 0 &&
-      aliveCount == 0 &&
-      untestedCount == 0 &&
-      failedCount >= totalCount;
+      connectivity == CoreConnectivityState.noAvailableProxies ||
+      (reachable &&
+          totalCount > 0 &&
+          aliveCount == 0 &&
+          untestedCount == 0 &&
+          failedCount >= totalCount);
 }
 
 /// Cumulative byte counters reported by the local core's `/connections` endpoint.
@@ -65,16 +120,33 @@ class ClashApi {
   const ClashApi._();
 
   /// Delays at or above this value represent timeout sentinels in sing-box
-  /// (`monitoring.TimeoutDelay = 65535`).
+  /// (`monitoring.TimeoutDelay = 65535`, `connectivity.maxPing = 65000`).
   static const int maxValidDelayMs = 65000;
+
+  static const Set<String> _nonProxyTags = <String>{
+    'direct',
+    'bypass',
+    'block',
+    'direct §hide§',
+    'bypass §hide§',
+    'direct-fragment §hide§',
+  };
 
   static bool isAliveDelay(int delay) => delay > 0 && delay < maxValidDelayMs;
 
-  /// Pure parser for `GET /proxies` JSON payloads.
-  ///
-  /// When [since] is provided, only history entries recorded at or after
-  /// `since - 1s` count as current-session results (older entries come from
-  /// `data/clash.db` and stay treated as untested until re-measured).
+  static bool _isProxyTag(String tag, Map<String, dynamic> info) {
+    if (tag.isEmpty ||
+        tag == 'GLOBAL' ||
+        _nonProxyTags.contains(tag) ||
+        tag.contains('§hide§')) {
+      return false;
+    }
+    final String type = '${info['type'] ?? ''}'.toLowerCase();
+    return type != 'direct' && type != 'reject' && type != 'dns';
+  }
+
+  /// Pure parser for `GET /proxies` JSON payloads, implementing the exact
+  /// `decideConnectivity` semantics of `hiddify-core v5.9.1/v2/hcore/connectivity.go`.
   static CoreProxySnapshot parseProxies(
     Map<String, dynamic> payload, {
     DateTime? since,
@@ -93,22 +165,41 @@ class ClashApi {
       }
     });
     if (proxies.isEmpty) {
-      return const CoreProxySnapshot(reachable: true);
+      return const CoreProxySnapshot(
+        reachable: true,
+        connectivity: CoreConnectivityState.waiting,
+      );
     }
 
-    final DateTime? cutoff = since?.toUtc().subtract(const Duration(seconds: 1));
+    // Small 250ms clock skew allowance while rejecting stale cached histories.
+    final DateTime? cutoff =
+        since?.toUtc().subtract(const Duration(milliseconds: 250));
 
     bool isGroup(Map<String, dynamic> entry) => entry['all'] is List;
 
-    /// Returns positive ms when alive, `-1` when timed out in this session,
-    /// or `0` when not yet tested in this session.
-    int classifyDelay(Map<String, dynamic> entry) {
+    Map<String, dynamic>? latestHistory(Map<String, dynamic> entry) {
       final Object? rawHistory = entry['history'];
       if (rawHistory is! List || rawHistory.isEmpty) {
-        return 0;
+        return null;
       }
       final Object? last = rawHistory.last;
       if (last is! Map) {
+        return null;
+      }
+      return last.map(
+        (Object? k, Object? v) => MapEntry<String, dynamic>('$k', v),
+      );
+    }
+
+    /// Mirrors `connectivity.historyDelay`: returns positive ms when alive in
+    /// the current run, `-1` when timed out in this run, or `0` when untested
+    /// or loaded from `data/clash.db` (`from_cache == true`).
+    int classifyDelay(Map<String, dynamic> entry) {
+      final Map<String, dynamic>? last = latestHistory(entry);
+      if (last == null) {
+        return 0;
+      }
+      if (last['from_cache'] == true) {
         return 0;
       }
       if (cutoff != null) {
@@ -119,13 +210,43 @@ class ClashApi {
         }
       }
       final Object? rawDelay = last['delay'];
-      final int delay = rawDelay is num
-          ? rawDelay.round()
-          : int.tryParse('$rawDelay') ?? 0;
+      final int delay =
+          rawDelay is num ? rawDelay.round() : int.tryParse('$rawDelay') ?? 0;
       if (isAliveDelay(delay)) {
         return delay;
       }
+      // Both standard sing-box (`delay: 0`) and hiddify-sing-box
+      // (`delay: 65535`) record a history entry only after a completed test;
+      // untested outbounds have an empty `history` list (`last == null`).
       return -1;
+    }
+
+    CoreExitIpInfo? extractIpInfo(Map<String, dynamic> entry) {
+      final Map<String, dynamic>? last = latestHistory(entry);
+      if (last == null) return null;
+      final Object? rawIpInfo = last['ipinfo'];
+      if (rawIpInfo is! Map) return null;
+      final String ip = '${rawIpInfo['ip'] ?? ''}'.trim();
+      final String cc = '${rawIpInfo['country_code'] ?? ''}'.trim();
+      if (ip.isEmpty || cc.toLowerCase() == 'ir') {
+        return null;
+      }
+      final bool ipFromCache =
+          last['ipinfo_from_cache'] == true || last['from_cache'] == true;
+      if (since != null && ipFromCache) {
+        return null;
+      }
+      final Object? rawAsn = rawIpInfo['asn'];
+      final int asn = rawAsn is num ? rawAsn.toInt() : int.tryParse('$rawAsn') ?? 0;
+      return CoreExitIpInfo(
+        ip: ip,
+        countryCode: cc,
+        region: '${rawIpInfo['region'] ?? ''}'.trim(),
+        city: '${rawIpInfo['city'] ?? ''}'.trim(),
+        org: '${rawIpInfo['org'] ?? ''}'.trim(),
+        asn: asn,
+        fromCache: ipFromCache,
+      );
     }
 
     String resolveLeaf(String startTag) {
@@ -155,8 +276,7 @@ class ClashApi {
         return;
       }
       if (!isGroup(info)) {
-        final String type = '${info['type'] ?? ''}'.toLowerCase();
-        if (type != 'direct' && type != 'reject' && type != 'dns') {
+        if (_isProxyTag(tag, info)) {
           leafTags.add(tag);
         }
         return;
@@ -168,11 +288,15 @@ class ClashApi {
       }
     }
 
-    if (proxies.containsKey('select')) {
-      collectLeaves('select', <String>{});
-    } else if (proxies.containsKey('lowest')) {
+    // Match `connectivity.proxiesConnectivity`: inspect `lowest` first when
+    // built (multi-proxy profiles), falling back to `select` (1-proxy profiles).
+    if (proxies.containsKey('lowest')) {
       collectLeaves('lowest', <String>{});
-    } else {
+    }
+    if (leafTags.isEmpty && proxies.containsKey('select')) {
+      collectLeaves('select', <String>{});
+    }
+    if (leafTags.isEmpty) {
       for (final String tag in proxies.keys) {
         if (tag != 'GLOBAL') {
           collectLeaves(tag, <String>{});
@@ -191,6 +315,10 @@ class ClashApi {
             ? classifyDelay(proxies[activeTag]!)
             : 0;
     final int activeDelay = activeState > 0 ? activeState : 0;
+
+    final int lowestGroupDelay = proxies.containsKey('lowest')
+        ? classifyDelay(proxies['lowest']!)
+        : 0;
 
     int alive = 0;
     int failed = 0;
@@ -217,8 +345,36 @@ class ClashApi {
       }
     }
 
+    // Exact `decideConnectivity` rules from `hiddify-core/v2/hcore/connectivity.go`.
+    final CoreConnectivityState connectivity;
+    if (lowestGroupDelay > 0 || activeDelay > 0 || alive > 0) {
+      connectivity = CoreConnectivityState.started;
+    } else if (leafTags.isNotEmpty && untested == 0 && failed >= leafTags.length) {
+      connectivity = CoreConnectivityState.noAvailableProxies;
+    } else {
+      connectivity = CoreConnectivityState.waiting;
+    }
+
+    CoreExitIpInfo? exitIpInfo;
+    if (activeTag.isNotEmpty && proxies.containsKey(activeTag)) {
+      exitIpInfo = extractIpInfo(proxies[activeTag]!);
+    }
+    if (exitIpInfo == null && bestTag.isNotEmpty && proxies.containsKey(bestTag)) {
+      exitIpInfo = extractIpInfo(proxies[bestTag]!);
+    }
+    if (exitIpInfo == null && alive > 0) {
+      for (final String tag in leafTags) {
+        final Map<String, dynamic>? info = proxies[tag];
+        if (info != null && classifyDelay(info) > 0) {
+          exitIpInfo = extractIpInfo(info);
+          if (exitIpInfo != null) break;
+        }
+      }
+    }
+
     return CoreProxySnapshot(
       reachable: true,
+      connectivity: connectivity,
       activeTag: activeTag,
       activeDelayMs: activeDelay,
       bestTag: bestTag,
@@ -227,6 +383,7 @@ class ClashApi {
       failedCount: failed,
       untestedCount: untested,
       totalCount: leafTags.length,
+      exitIpInfo: exitIpInfo,
     );
   }
 
@@ -234,7 +391,7 @@ class ClashApi {
   static Future<CoreProxySnapshot> status({
     int port = AppConfig.coreClashPort,
     String secret = AppConfig.coreClashSecret,
-    Duration timeout = const Duration(milliseconds: 1200),
+    Duration timeout = const Duration(milliseconds: 900),
     DateTime? since,
   }) async {
     final Map<String, dynamic>? json = await _getJson(
@@ -249,7 +406,7 @@ class ClashApi {
     return parseProxies(json, since: since);
   }
 
-  /// Triggers an on-demand HTTPS URL test on [tag] via `GET /proxies/{tag}/delay`.
+  /// Triggers an on-demand URL test on [tag] via `GET /proxies/{tag}/delay`.
   ///
   /// Inside the core this updates monitoring history and immediately notifies
   /// `lowest`/`balance` groups, allowing seamless failover without restarting
@@ -258,7 +415,7 @@ class ClashApi {
     String tag, {
     int port = AppConfig.coreClashPort,
     String secret = AppConfig.coreClashSecret,
-    String testUrl = 'https://www.gstatic.com/generate_204',
+    String testUrl = 'http://connectivitycheck.gstatic.com/generate_204',
     Duration timeout = const Duration(milliseconds: 4000),
   }) async {
     if (tag.trim().isEmpty) {

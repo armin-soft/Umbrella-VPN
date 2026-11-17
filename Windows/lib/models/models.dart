@@ -1002,6 +1002,12 @@ class GeoInfo {
       'FR' => 'فرانسه',
       'GB' => 'بریتانیا',
       'SE' => 'سوئد',
+      'CA' => 'کانادا',
+      'CH' => 'سوئیس',
+      'AT' => 'اتریش',
+      'PL' => 'لهستان',
+      'SG' => 'سنگاپور',
+      'JP' => 'ژاپن',
       // کشور ناشناخته رشته خالی می دهد، نه «نامشخص»؛ وگرنه خط تاریخ و موقعیت
       // در صفحه اتصال به «نامشخص، نامشخص» تبدیل می شد.
       _ => '',
@@ -1246,15 +1252,26 @@ extension TunStackX on TunStack {
 /// Values accepted by the pinned core log parser.
 class CoreLogLevel {
   const CoreLogLevel._();
+  /// پیش فرض هم راستا با Hiddify (`warn`) تا تولید صدها خط لاگ پایش هنگام
+  /// شروع اتصال سربار اضافه ایجاد نکند.
+  static const String defaultLevel = 'warn';
   static const List<String> values = <String>['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic'];
-  static String normalize(String value) => values.contains(value) ? value : 'info';
+  static String normalize(String value) => values.contains(value) ? value : defaultLevel;
 }
 
 /// Resolver presets only; these are DNS endpoints, never subscription sources.
 class NetworkDns {
   const NetworkDns._();
-  static const String fallback = '1.1.1.1';
+  /// پیش فرض دی ان اس راه دور هم راستا با Hiddify (`tcp://8.8.8.8`): روی
+  /// پروکسی های CDN/HTTPUpgrade/XHTTP بسته UDP معطل تایم اوت می شود ولی TCP
+  /// بی درنگ پاسخ می دهد و گروه دی ان اس هسته خودش UDP/TLS پشتیبان را هم دارد.
+  static const String defaultRemote = 'tcp://8.8.8.8';
+  /// پیش فرض دی ان اس مستقیم هم راستا با Hiddify (`1.1.1.1` / `udp://1.1.1.1`).
+  static const String defaultDirect = '1.1.1.1';
+  static const String fallback = defaultDirect;
   static const Map<String, String> presets = <String, String>{
+    'tcp://8.8.8.8': 'Google — TCP',
+    'tcp://1.1.1.1': 'Cloudflare — TCP',
     '1.1.1.1': 'Cloudflare — UDP',
     '8.8.8.8': 'Google — UDP',
     '9.9.9.9': 'Quad9 — UDP',
@@ -1262,7 +1279,19 @@ class NetworkDns {
     'https://8.8.8.8/dns-query': 'Google — HTTPS',
     'https://9.9.9.9/dns-query': 'Quad9 — HTTPS',
   };
-  static String normalize(String value) => presets.containsKey(value.trim()) ? value.trim() : fallback;
+  static String normalize(String value, {String defaultValue = fallback}) {
+    final String clean = value.trim();
+    if (clean == 'udp://1.1.1.1') return '1.1.1.1';
+    if (clean == 'udp://8.8.8.8') return '8.8.8.8';
+    if (clean == 'udp://9.9.9.9') return '9.9.9.9';
+    return presets.containsKey(clean) ? clean : defaultValue;
+  }
+
+  static String normalizeRemote(String value) =>
+      normalize(value, defaultValue: defaultRemote);
+
+  static String normalizeDirect(String value) =>
+      normalize(value, defaultValue: defaultDirect);
 }
 
 class AppSettings {
@@ -1286,8 +1315,8 @@ class AppSettings {
     this.blockIpv6 = true,
     this.strictRoute = true,
     this.dnsOverTunnel = true,
-    this.remoteDns = NetworkDns.fallback,
-    this.directDns = NetworkDns.fallback,
+    this.remoteDns = NetworkDns.defaultRemote,
+    this.directDns = NetworkDns.defaultDirect,
     this.chain = const ChainSettings(),
     this.appRoutes = const <AppRouteRule>[],
     this.showSpeedInTray = true,
@@ -1301,7 +1330,7 @@ class AppSettings {
     this.gatewayBase = '',
     this.pingIntervalSeconds = 120,
     this.turboMode = false,
-    this.logLevel = 'info',
+    this.logLevel = CoreLogLevel.defaultLevel,
     this.modeChoiceExplicit = false,
     this.showCli = false,
   });
@@ -1443,6 +1472,8 @@ class AppSettings {
     );
   }
 
+  static const int currentCoreDefaultsVersion = 1;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'theme': theme.name,
         'autoConnect': autoConnect,
@@ -1482,6 +1513,7 @@ class AppSettings {
         'modeChoiceExplicit': modeChoiceExplicit,
         'showCli': showCli,
         'cliPreferenceVersion': 1,
+        'coreDefaultsVersion': currentCoreDefaultsVersion,
       };
 
   /// اگر تنظیم ذخیره شده `manual` باشد، به `auto` برمی گردد.
@@ -1530,8 +1562,14 @@ class AppSettings {
       blockIpv6: JsonX.boolean(json['blockIpv6'], fallback: true),
       strictRoute: JsonX.boolean(json['strictRoute'], fallback: true),
       dnsOverTunnel: JsonX.boolean(json['dnsOverTunnel'], fallback: true),
-      remoteDns: NetworkDns.normalize(JsonX.text(json['remoteDns'])),
-      directDns: NetworkDns.normalize(JsonX.text(json['directDns'])),
+      remoteDns: json['coreDefaultsVersion'] != currentCoreDefaultsVersion &&
+              const <String>{
+                '1.1.1.1',
+                'https://1.1.1.1/dns-query',
+              }.contains(JsonX.text(json['remoteDns']).trim())
+          ? NetworkDns.defaultRemote
+          : NetworkDns.normalizeRemote(JsonX.text(json['remoteDns'])),
+      directDns: NetworkDns.normalizeDirect(JsonX.text(json['directDns'])),
       chain: ChainSettings.fromJson(JsonX.asMap(json['chain'])),
       appRoutes: List<AppRouteRule>.unmodifiable(json['appRoutes'] is List
           ? (json['appRoutes'] as List).map((dynamic value) => AppRouteRule.fromJson(JsonX.asMap(value)))
@@ -1548,7 +1586,12 @@ class AppSettings {
       gatewayBase: JsonX.text(json['gatewayBase']),
       pingIntervalSeconds: JsonX.integer(json['pingIntervalSeconds'], 120),
       turboMode: JsonX.boolean(json['turboMode']),
-      logLevel: JsonX.text(json['logLevel'], 'info'),
+      logLevel: json['coreDefaultsVersion'] != currentCoreDefaultsVersion &&
+              JsonX.text(json['logLevel'], CoreLogLevel.defaultLevel).trim() == 'info'
+          ? CoreLogLevel.defaultLevel
+          : CoreLogLevel.normalize(
+              JsonX.text(json['logLevel'], CoreLogLevel.defaultLevel),
+            ),
       modeChoiceExplicit: JsonX.boolean(json['modeChoiceExplicit']),
       // Reset the old default-on console once. New explicit choices persist.
       showCli: json['cliPreferenceVersion'] == 1 && JsonX.boolean(json['showCli']),

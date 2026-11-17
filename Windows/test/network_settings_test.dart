@@ -46,19 +46,56 @@ void main() {
   test('invalid persisted options cannot produce invalid core options', () {
     expect(build(const AppSettings(mtu: -1))['mtu'], 1280);
     expect(build(const AppSettings(mtu: 99999))['mtu'], 9000);
-    expect(build(const AppSettings(logLevel: 'invalid'))['log-level'], 'info');
+    expect(build(const AppSettings(logLevel: 'invalid'))['log-level'], 'warn');
     final AppSettings settings = AppSettings.fromJson(<String, dynamic>{
-      'mtu': 99999, 'tunStack': 'invalid', 'remoteDns': 'https://unknown.invalid/dns-query', 'directDns': '',
+      'coreDefaultsVersion': AppSettings.currentCoreDefaultsVersion,
+      'mtu': 99999,
+      'tunStack': 'invalid',
+      'remoteDns': 'https://unknown.invalid/dns-query',
+      'directDns': '',
     });
     expect(settings.mtu, 9000);
     expect(settings.tunStack, TunStack.auto);
-    expect(build(settings)['remote-dns-address'], NetworkDns.fallback);
-    expect(build(settings)['direct-dns-address'], NetworkDns.fallback);
+    expect(build(settings)['remote-dns-address'], NetworkDns.defaultRemote);
+    expect(build(settings)['direct-dns-address'], NetworkDns.defaultDirect);
+    expect(
+      build(settings.copyWith(directDns: 'udp://1.1.1.1'))['direct-dns-address'],
+      '1.1.1.1',
+    );
     for (final String dns in NetworkDns.presets.keys) {
       expect(build(settings.copyWith(remoteDns: dns))['remote-dns-address'], dns);
     }
     // No invented enable-dns-routing key: the pinned core has no such toggle.
     expect(build(settings).containsKey('enable-dns-routing'), false);
+  });
+
+  test('legacy settings migrate untouched defaults to Hiddify TCP DNS while keeping custom choices', () {
+    final AppSettings migrated = AppSettings.fromJson(<String, dynamic>{
+      'remoteDns': 'https://1.1.1.1/dns-query',
+      'directDns': '1.1.1.1',
+      'logLevel': 'info',
+    });
+    expect(migrated.remoteDns, 'tcp://8.8.8.8');
+    expect(migrated.directDns, '1.1.1.1');
+    expect(migrated.logLevel, 'warn');
+    expect(migrated.toJson()['coreDefaultsVersion'], AppSettings.currentCoreDefaultsVersion);
+
+    // Explicit user choice after migration is never overwritten again.
+    final AppSettings reChosen = AppSettings.fromJson(
+      migrated.copyWith(remoteDns: 'https://1.1.1.1/dns-query', logLevel: 'info').toJson(),
+    );
+    expect(reChosen.remoteDns, 'https://1.1.1.1/dns-query');
+    expect(reChosen.logLevel, 'info');
+
+    // Legacy user who already customized DNS/log keeps their exact values.
+    final AppSettings customized = AppSettings.fromJson(<String, dynamic>{
+      'remoteDns': 'https://9.9.9.9/dns-query',
+      'directDns': '8.8.8.8',
+      'logLevel': 'debug',
+    });
+    expect(customized.remoteDns, 'https://9.9.9.9/dns-query');
+    expect(customized.directDns, '8.8.8.8');
+    expect(customized.logLevel, 'debug');
   });
 
   VpnNode node(Map<String, dynamic> params, {String raw = ''}) => VpnNode(

@@ -65,9 +65,9 @@ class UmbrellaCore {
     int? port,
     bool tun = false,
     bool systemProxy = false,
-    String logLevel = 'info',
+    String logLevel = CoreLogLevel.defaultLevel,
     String settingsPath = '',
-    String remoteDns = defaultDns,
+    String remoteDns = defaultRemoteDns,
     String directDns = defaultDns,
     bool disableColor = true,
   }) {
@@ -254,8 +254,10 @@ class UmbrellaCore {
     return native.killPid(pid);
   }
 
-  /// دی ان اس پیش فرض هسته (همان پیش فرض خودش در `DefaultHiddifyOptions`).
-  static const String defaultDns = '1.1.1.1';
+  /// دی ان اس پیش فرض هسته (هم راستا با Hiddify: راه دور `tcp://8.8.8.8` و
+  /// مستقیم `1.1.1.1` / `udp://1.1.1.1`).
+  static const String defaultRemoteDns = NetworkDns.defaultRemote;
+  static const String defaultDns = NetworkDns.defaultDirect;
 
   /// فایل تنظیمات کامل هسته (`-d`).
   ///
@@ -276,9 +278,9 @@ class UmbrellaCore {
     required bool tun,
     required bool systemProxy,
     required int port,
-    String logLevel = 'info',
+    String logLevel = CoreLogLevel.defaultLevel,
     String logFile = '',
-    String remoteDns = defaultDns,
+    String remoteDns = defaultRemoteDns,
     String directDns = defaultDns,
     AppSettings? networkSettings,
   }) {
@@ -293,6 +295,9 @@ class UmbrellaCore {
       'delegate-system-proxy': false,
       'mixed-port': port,
       'enable-mixed-port': true,
+      'enable-tproxy-port': false,
+      'enable-redirect-port': false,
+      'enable-direct-port': false,
       'tproxy-port': 12335,
       'redirect-port': 12336,
       'direct-port': 12337,
@@ -307,9 +312,13 @@ class UmbrellaCore {
       'strict-route': networkSettings?.strictRoute ?? true,
       'auto-redirect': true,
       'router-mode': false,
-      // ── دی ان اس: خالی گذاشتن این دو، هسته را با «نشانی نامعتبر» می بندد ──
-      'remote-dns-address': networkSettings == null ? remoteDns : NetworkDns.normalize(networkSettings.remoteDns),
-      'direct-dns-address': networkSettings == null ? directDns : NetworkDns.normalize(networkSettings.directDns),
+      // ── دی ان اس: هم راستا با Hiddify (`tcp://8.8.8.8` تونل + `1.1.1.1` مستقیم) ──
+      'remote-dns-address': networkSettings == null
+          ? remoteDns
+          : NetworkDns.normalizeRemote(networkSettings.remoteDns),
+      'direct-dns-address': networkSettings == null
+          ? directDns
+          : NetworkDns.normalizeDirect(networkSettings.directDns),
       'remote-dns-domain-strategy': 'as_is',
       'direct-dns-domain-strategy': 'as_is',
       // در sing-box 1.14+ کش هر سرور DNS به صورت پیش فرض مستقل است و کلید
@@ -326,9 +335,9 @@ class UmbrellaCore {
               networkSettings.appRoutes[i].toCoreRule(i),
           ],
         },
-      // In this core as_is still disables IPv6 for clients. PreferIPv4 allows
-      // both families, while ipv4_only requests IPv4 client destinations.
-      'ipv6-mode': networkSettings == null ? 'as_is'
+      // Match Hiddify's default `ipv4_only` (`verify_ipv6: false`) unless the
+      // user explicitly enables IPv6 (`prefer_ipv4`).
+      'ipv6-mode': networkSettings == null ? 'ipv4_only'
           : networkSettings.blockIpv6 ? 'ipv4_only' : 'prefer_ipv4',
       'resolve-destination': false,
       'bypass-lan': false,
@@ -352,7 +361,9 @@ class UmbrellaCore {
       // پایش اولیه در لحظه شروع اجرا بی درنگ انجام می شود؛ دوره بازسنجی
       // ۱۸۰ ثانیه است تا اتصال های باز کاربر هر ۳۰ ثانیه با سوییچ بی مورد قطع
       // نشوند ولی اگر گرهی افت کرد به موقع جایگزین شود.
-      'url-test-interval': 180,
+      // هم راستا با Hiddify (۱۰ دقیقه = ۶۰۰ ثانیه): پایش اولیه در لحظه شروع بی درنگ
+      // اجرا می شود و از بازسنجی های پرفشار میان اتصال جلوگیری می شود.
+      'url-test-interval': 600,
       // نشانی خواندن آی پی و موقعیت خروجی.
       //
       // این کلید در گزارش های پیشین تنظیم نشده بود، پس هسته خط
@@ -364,19 +375,17 @@ class UmbrellaCore {
       // نتیجه همان «آی پی خروجی خوانده نشد» بود که به کلادفلر و گره ربطی
       // نداشت. `ipwho.is` همان قالب را می دهد، کلید می خواهد نه توکن، و
       // از داخل ایران هم باز است.
-      'ipinfo-url': 'https://ipwho.is/',
+      // هم راستا با Hiddify: چرخش خودکار بین همه سرویس های ipinfo + پشتیبان Cloudflare trace.
+      'ipinfo-url': '',
       // چند گره زنده بمانند تا خود هسته بتواند سوییچ کند.
       //
       // ۳ خیلی کم بود: با ۳ گره، اگر دو تای اول کند یا افتاده باشند کار
       // تمام است و کاربر فقط «سرور عوض کن» می بیند. ۸ تعادل است بین
       // سرعت اجرا و داشتن جایگزین.
-      'keep-top': 8,
-      // Discover responsive proxies in fast parallel waves without opening
-      // hundreds of simultaneous connections.
-      'keep-top-batch': 16,
-      // مانند Hiddify، انتخاب سریع فعال است: هسته می تواند با تکیه بر سنجش های
-      // تازه، زودتر مجموعه گزینه های سریع را برگزیند و پایش گره های اشتراک را
-      // ادامه دهد. این گزینه لینک های جدید را از سنجش حذف نمی کند.
+      // هم راستا با پیش فرض Hiddify (`keep-top: -1`): بدون صف بندی مرحله ای روی
+      // اشتراک های متعارف تا سریع ترین گره در زیر یک ثانیه پاسخ دهد؛ روی اشتراک های
+      // بسیار بزرگ، `RuntimeConfig.finalize` خودکار `keep_top` مرحله ای می سازد.
+      'keep-top': -1,
       'keep-top-quick': true,
       // انتخاب پیش فرض روی گروه «کم ترین تاخیر» (`lowest`) است تا سریع ترین
       // گره سالم برداشته شود و هنگام افتادن بی درنگ به بعدی برود؛ اگر کاربر

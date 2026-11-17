@@ -180,9 +180,10 @@ void main() {
     test('HTTP verification cannot be bypassed by stale core statistics', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('final bool flows = await StartupVerification.wait'), isTrue);
+      expect(controller.contains('CoreConnectivityState.started'), isTrue);
+      expect(controller.contains('CoreConnectivityState.noAvailableProxies'), isTrue);
+      expect(controller.contains('since: sessionStart'), isTrue);
       expect(controller.contains('final bool proxy = await VerifiedProbe.check'), isTrue);
-      expect(controller.contains('return !plan.tun || (remaining > Duration.zero &&'), isTrue);
-      expect(controller.contains('await VerifiedProbe.check(proxyPort: 0, timeout: remaining)'), isTrue);
       expect(controller.contains('_coreReportsWorkingTunnel'), isFalse);
       expect(controller.contains('_clashTunnelVerdict'), isFalse);
     });
@@ -220,10 +221,11 @@ void main() {
     test('explicit server selection and disabled failover isolate the runtime pool', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('_singleNodeSession = requested != null ||'), isTrue);
-      expect(controller.contains('if (_singleNodeSession) return pool;'), isTrue);
+      expect(controller.contains('if (_singleNodeSession) {'), isTrue);
       expect(controller.contains('? umbrellaCliBinary : UmbrellaCore.engineBinary'), isTrue);
       expect(controller.contains('preparationEpoch != _connectionEpoch'), isTrue);
-      expect(read('lib/vpn/umbrella_core.dart').contains("'keep-top-batch': 16"), isTrue);
+      expect(controller.contains('resolveEndpoints: false'), isTrue);
+      expect(read('lib/vpn/runtime_config.dart').contains('autoKeepTopThreshold'), isTrue);
     });
 
     test('کل اشتراک امتحان می شود، نه چهار سرور اول', () {
@@ -241,11 +243,11 @@ void main() {
       expect(controller.contains('_connectBudget'), isTrue);
     });
 
-    test('هسته چند گره زنده نگه می دارد تا بتواند سوییچ کند', () {
-      // با `keep-top: 3` اگر دو گره اول کند بودند جایگزینی نمی ماند. ۸
-      // گره یعنی همیشه جای سوییچ هست.
+    test('هسته مانند Hiddify بدون صف مرحله ای سریع ترین گره را برمی گزیند و سوییچ می کند', () {
       final String core = read('lib/vpn/umbrella_core.dart');
-      expect(core.contains("'keep-top': 8"), isTrue);
+      expect(core.contains("'keep-top': -1"), isTrue);
+      expect(core.contains("'ipinfo-url': ''"), isTrue);
+      expect(core.contains("'url-test-interval': 600"), isTrue);
       // `lowest` یعنی گروه انتخاب روی بالانسر کم ترین تاخیر می رود، پس
       // خود هسته سریع ترین را برمی دارد و هنگام افتادن سوییچ می کند.
       expect(core.contains("'default-proxy': 'lowest'"), isTrue);

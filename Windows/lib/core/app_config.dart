@@ -9,8 +9,8 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.31';
-  static const int buildNumber = 32;
+  static const String version = '1.0.32';
+  static const int buildNumber = 33;
   /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.18`.
   ///
   /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
@@ -137,8 +137,9 @@ class AppConfig {
   /// بیشتر شبکه ها باز.
   static const List<String> connectionTestUrls = <String>[
     'http://connectivitycheck.gstatic.com/generate_204',
+    'http://captive.apple.com/hotspot-detect.html',
     'http://captive.apple.com/generate_204',
-    'https://cp.cloudflare.com/generate_204',
+    'http://cp.cloudflare.com/',
   ];
   /// پورت محلی هسته (پروکسی مختلط HTTP/SOCKS). همان پورتی که
   /// مستندات هسته پیش فرض می دهد.

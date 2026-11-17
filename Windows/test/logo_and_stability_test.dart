@@ -168,7 +168,87 @@ proxies:
     );
     expect(staleOnly.hasLiveSelection, isFalse);
     expect(staleOnly.allTestedAndDead, isFalse);
+    expect(staleOnly.connectivity, CoreConnectivityState.waiting);
     expect(staleOnly.untestedCount, 2);
+
+    // Direct fresh leaf response (even before `lowest` settles or when ipinfo
+    // is still pending / cached) transitions connectivity to STARTED immediately,
+    // matching `hcore/connectivity.go`.
+    final CoreProxySnapshot fastLeaf = ClashApi.parseProxies(
+      <String, dynamic>{
+        'proxies': <String, dynamic>{
+          'select': <String, dynamic>{
+            'type': 'Selector',
+            'now': 'lowest',
+            'all': <String>['lowest', 'p1', 'p2'],
+          },
+          'lowest': <String, dynamic>{
+            'type': 'Balancer',
+            'now': 'p2',
+            'all': <String>['p1', 'p2'],
+          },
+          'p1': <String, dynamic>{
+            'type': 'VLESS',
+            'history': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'time': freshTime,
+                'delay': 112,
+                'from_cache': true,
+              },
+            ],
+          },
+          'p2': <String, dynamic>{
+            'type': 'Hysteria2',
+            'history': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'time': freshTime,
+                'delay': 94,
+                'ipinfo': <String, dynamic>{
+                  'ip': '104.234.135.175',
+                  'country_code': 'CA',
+                  'region': 'Ontario',
+                  'city': 'Toronto',
+                  'org': 'Example Net',
+                  'asn': 64500,
+                },
+                'ipinfo_from_cache': false,
+              },
+            ],
+          },
+          '🔒 Extra Security §hide§': <String, dynamic>{
+            'type': 'WireGuard',
+            'history': <Object>[],
+          },
+        },
+      },
+      since: sessionStart,
+    );
+    expect(fastLeaf.connectivity, CoreConnectivityState.started);
+    expect(fastLeaf.activeDelayMs, 94);
+    expect(fastLeaf.exitIpInfo?.ip, '104.234.135.175');
+    expect(fastLeaf.exitIpInfo?.countryCode, 'CA');
+    expect(GeoInfo.fromJson(fastLeaf.exitIpInfo!.toGeoJson()).countryLabel, 'کانادا');
+    // Cached or IR ipinfo must never be surfaced as a live exit IP.
+    final CoreProxySnapshot cachedIp = ClashApi.parseProxies(
+      <String, dynamic>{
+        'proxies': <String, dynamic>{
+          'p1': <String, dynamic>{
+            'type': 'VLESS',
+            'history': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'time': freshTime,
+                'delay': 120,
+                'ipinfo': <String, dynamic>{'ip': '1.2.3.4', 'country_code': 'DE'},
+                'ipinfo_from_cache': true,
+              },
+            ],
+          },
+        },
+      },
+      since: sessionStart,
+    );
+    expect(cachedIp.connectivity, CoreConnectivityState.started);
+    expect(cachedIp.exitIpInfo, isNull);
 
     final CoreProxySnapshot allDead = ClashApi.parseProxies(
       <String, dynamic>{
@@ -200,6 +280,7 @@ proxies:
       since: sessionStart,
     );
     expect(allDead.allTestedAndDead, isTrue);
+    expect(allDead.connectivity, CoreConnectivityState.noAvailableProxies);
 
     final HttpServer server =
         await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -295,8 +376,12 @@ proxies:
     expect(auto['default-proxy'], 'lowest');
     expect(auto.containsKey('balancer-strategy'), isFalse);
     expect(auto['independent-dns-cache'], isFalse);
-    expect(auto['url-test-interval'], 180);
-    expect(auto['keep-top-batch'], 16);
+    expect(auto['url-test-interval'], 600);
+    expect(auto['keep-top'], -1);
+    expect(auto['ipinfo-url'], '');
+    expect(auto['remote-dns-address'], 'tcp://8.8.8.8');
+    expect(auto['direct-dns-address'], '1.1.1.1');
+    expect(auto['log-level'], 'warn');
 
     for (final (SelectionMode mode, String strategy) in <(SelectionMode, String)>[
       (SelectionMode.roundRobin, 'round-robin'),
