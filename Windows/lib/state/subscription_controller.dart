@@ -489,10 +489,6 @@ class SubscriptionController extends ChangeNotifier {
         favorite: winner.favorite || other.favorite,
         disabled: winner.disabled && other.disabled,
         pingMs: bestPing,
-        countryCode: winner.countryCode.isNotEmpty
-            ? winner.countryCode
-            : other.countryCode,
-        city: winner.city.isNotEmpty ? winner.city : other.city,
       );
     }
     return result;
