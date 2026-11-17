@@ -44,8 +44,10 @@ void main() {
       // `run` combines parsing and building. The offline CLI separates them:
       // `parse` accepts share links; `build` accepts parsed sing-box JSON only.
       final File parsed = File('${temp.path}/parsed.json');
-      await command(<String>['parse', links.path, '-o', parsed.path], parsed);
-      await command(<String>['build', '-c', parsed.path, '-d', settings.path, '-o', output.path], output);
+      // The core joins output with -D itself (including on Windows). Absolute
+      // output paths would be joined twice by its filepath.Join implementation.
+      await command(<String>['parse', links.path, '-o', 'parsed.json'], parsed);
+      await command(<String>['build', '-c', parsed.path, '-d', settings.path, '-o', 'generated.json'], output);
       return jsonDecode(await output.readAsString()) as Map<String, dynamic>;
     } finally {
       process?.kill();
