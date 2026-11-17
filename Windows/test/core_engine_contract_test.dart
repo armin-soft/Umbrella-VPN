@@ -16,7 +16,7 @@ void main() {
   final String? binary = Platform.environment['UMBRELLA_CORE_SMOKE'];
   final bool enabled = Platform.isWindows && binary != null;
 
-  Future<Map<String, dynamic>> generate(ChainSettings chain) async {
+  Future<Map<String, dynamic>> generate(ChainSettings chain, {bool startRuntime = false}) async {
     final String executable = binary!;
     final Directory temp = await Directory.systemTemp.createTemp('umbrella-core-contract-');
     Process? process;
@@ -28,7 +28,7 @@ void main() {
       ], lookup: (_) async => <InternetAddress>[InternetAddress('192.0.2.1')],
         resolveEndpoints: chain.position != ChainPosition.unblocker);
       await links.writeAsString('${prepared.links.single}\n');
-      final Map<String, dynamic> options = UmbrellaCore.settingsJson(tun: true, systemProxy: false, port: 12334,
+      final Map<String, dynamic> options = UmbrellaCore.settingsJson(tun: !startRuntime, systemProxy: false, port: 12334,
         logFile: '${temp.path}/core.log', networkSettings: AppSettings(chain: chain, mtu: 1400,
           appRoutes: const <AppRouteRule>[
             AppRouteRule(process: 'offline-direct.exe', action: AppRouteAction.direct),
@@ -41,6 +41,35 @@ void main() {
         cancelled: () => false, onStarted: (Process value) { process = value; },
         onFinished: (_) { process = null; },
       );
+      if (startRuntime) {
+        final Process running = await Process.start(executable,
+          <String>['srun', '-c', output.path, '-D', temp.path],
+          workingDirectory: File(executable).parent.path, runInShell: false);
+        process = running;
+        final StringBuffer logs = StringBuffer();
+        running.stdout.transform(utf8.decoder).listen(logs.write);
+        running.stderr.transform(utf8.decoder).listen(logs.write);
+        final HttpClient client = HttpClient()..connectionTimeout = const Duration(seconds: 1);
+        bool ready = false;
+        try {
+          for (int i = 0; i < 60; i++) {
+            try {
+              final HttpClientRequest request = await client.getUrl(Uri.parse('http://127.0.0.1:16756/version'));
+              request.headers.set('authorization', 'Bearer ${options['web-secret']}');
+              final HttpClientResponse response = await request.close();
+              await response.drain<void>();
+              if (response.statusCode == 200) { ready = true; break; }
+            } on Exception { /* wait for initialized core, not merely Process.start */ }
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+          expect(ready, true, reason: logs.toString());
+          expect(await File('${temp.path}/data/clash.db').exists(), true, reason: logs.toString());
+          final int? exit = await Future.any<int?>(<Future<int?>>[
+            running.exitCode, Future<int?>.delayed(const Duration(milliseconds: 500), () => null),
+          ]);
+          expect(exit, isNull, reason: logs.toString());
+        } finally { client.close(force: true); }
+      }
       return jsonDecode(await output.readAsString()) as Map<String, dynamic>;
     } finally {
       process?.kill();
@@ -48,6 +77,10 @@ void main() {
       await temp.delete(recursive: true);
     }
   }
+
+  test('full compiled runtime starts in a fresh directory with cache and authenticated Clash API', () async {
+    await generate(const ChainSettings(), startRuntime: true);
+  }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 45)));
 
   test('bundled srun starts lazy monitoring and resolves XHTTP split download with an IP upload', () async {
     final Directory temp = await Directory.systemTemp.createTemp('umbrella-srun-');

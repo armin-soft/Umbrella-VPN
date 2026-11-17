@@ -18,6 +18,9 @@ class CoreRuntime {
     required void Function(Process) onStarted,
     required void Function(Process) onFinished,
   }) async {
+    // `build` enables data/clash.db, but srun does not perform hcore.Setup's
+    // directory creation. A fresh installation must work without old files.
+    await Directory('$runDir${Platform.pathSeparator}data').create(recursive: true);
     Future<File> command(List<String> args, String output) async {
       final File file = File('$runDir${Platform.pathSeparator}$output');
       if (await file.exists()) await file.delete();
@@ -46,6 +49,7 @@ class CoreRuntime {
 
     final File parsed = await command(<String>['parse', linksPath, '-o', 'parsed.json'], 'parsed.json');
     final Map<String, dynamic> profile = jsonDecode(await parsed.readAsString()) as Map<String, dynamic>;
+    if (profile['outbounds'] is! List) throw const FormatException('Parsed profile has no outbound list');
     final Set<String> tags = <String>{
       for (final dynamic outbound in profile['outbounds'] as List<dynamic>)
         if (outbound['tag'] is String) outbound['tag'] as String,

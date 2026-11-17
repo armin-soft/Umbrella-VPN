@@ -12,6 +12,10 @@ class RuntimeConfig {
   };
 
   static void finalize(Map<String, dynamic> config, {required Set<String> profileTags}) {
+    if (config['outbounds'] is! List || config['experimental'] is! Map ||
+        config['experimental']['monitoring'] is! Map) {
+      throw const FormatException('Built runtime has no outbound monitoring configuration');
+    }
     final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
     final Map<String, dynamic> experimental = config['experimental'] as Map<String, dynamic>;
     final Map<String, dynamic> monitoring = experimental['monitoring'] as Map<String, dynamic>;
