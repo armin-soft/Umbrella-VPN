@@ -29,20 +29,27 @@ void main() {
             AppRouteRule(process: r'C:\Offline\blocked.exe', action: AppRouteAction.block),
           ]));
       await settings.writeAsString(jsonEncode(options));
-      process = await Process.start(executable, <String>['build', '-c', links.path, '-d', settings.path, '-o', output.path, '-D', temp.path],
-        workingDirectory: File(executable).parent.path, runInShell: false);
-      final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
-      final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
-      final int code = await process.exitCode.timeout(const Duration(seconds: 30));
-      final String logs = '${await stdout}\n${await stderr}';
-      expect(code, 0, reason: logs);
-      // The console launcher can return 0 for a library-level error; an actual
-      // output file and parsed structure are required, not the exit code alone.
-      expect(await output.exists(), true, reason: logs);
+      Future<void> command(List<String> arguments, File expected) async {
+        final Process running = await Process.start(executable, <String>[...arguments, '-D', temp.path],
+          workingDirectory: File(executable).parent.path, runInShell: false);
+        process = running;
+        final Future<String> stdout = running.stdout.transform(utf8.decoder).join();
+        final Future<String> stderr = running.stderr.transform(utf8.decoder).join();
+        final int code = await running.exitCode.timeout(const Duration(seconds: 30));
+        final String logs = '${await stdout}\n${await stderr}';
+        expect(code, 0, reason: logs);
+        // A library-level error can return 0: require the actual output too.
+        expect(await expected.exists(), true, reason: logs);
+      }
+      // `run` combines parsing and building. The offline CLI separates them:
+      // `parse` accepts share links; `build` accepts parsed sing-box JSON only.
+      final File parsed = File('${temp.path}/parsed.json');
+      await command(<String>['parse', links.path, '-o', parsed.path], parsed);
+      await command(<String>['build', '-c', parsed.path, '-d', settings.path, '-o', output.path], output);
       return jsonDecode(await output.readAsString()) as Map<String, dynamic>;
     } finally {
       process?.kill();
-      if (process != null) await process.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      if (process != null) await process!.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
       await temp.delete(recursive: true);
     }
   }
