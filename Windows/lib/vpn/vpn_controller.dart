@@ -798,23 +798,44 @@ class VpnController extends ChangeNotifier {
         a.logLevel != b.logLevel ||
         a.serverRegionCode != b.serverRegionCode ||
         a.lastNodeId != b.lastNodeId ||
-        a.chain.position != b.chain.position ||
-        a.chain.warpKey != b.chain.warpKey ||
-        a.chain.warpEndpoint != b.chain.warpEndpoint ||
-        a.chain.proxyUri != b.chain.proxyUri ||
+        _chainChanged(a.chain, b.chain) ||
         a.appRoutes.length != b.appRoutes.length) {
       return true;
+    }
+    if (identical(a.appRoutes, b.appRoutes)) {
+      return false;
     }
     for (int i = 0; i < a.appRoutes.length; i++) {
       final AppRouteRule x = a.appRoutes[i];
       final AppRouteRule y = b.appRoutes[i];
-      if (x.target != y.target ||
+      if (x.process != y.process ||
           x.action != y.action ||
-          x.isPath != y.isPath) {
+          x.enabled != y.enabled) {
         return true;
       }
     }
     return false;
+  }
+
+  static bool _chainChanged(ChainSettings a, ChainSettings b) {
+    if (identical(a, b)) {
+      return false;
+    }
+    return a.position != b.position ||
+        a.transport != b.transport ||
+        a.endpoint != b.endpoint ||
+        a.address != b.address ||
+        a.port != b.port ||
+        a.mtu != b.mtu ||
+        a.scanCount != b.scanCount ||
+        a.scanConcurrency != b.scanConcurrency ||
+        a.scanTimeout != b.scanTimeout ||
+        a.scanMaxRtt != b.scanMaxRtt ||
+        a.searchNoise != b.searchNoise ||
+        a.configurationInvalid != b.configurationInvalid ||
+        a.masqueProtocol != b.masqueProtocol ||
+        a.licenseKey != b.licenseKey ||
+        a.psiphonRegion != b.psiphonRegion;
   }
 
   /// درخواست لغو اتصال در حال انجام.
