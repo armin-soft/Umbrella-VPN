@@ -135,18 +135,74 @@ void main() {
         '-----END%20OPENSSH%20PRIVATE%20KEY-----';
     const String sshHk =
         'ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAICZI0viXx0h5%2FgZhJk9KzIA5YdaRF7AQ8fjA%2BZjFEOPP%2C%0A';
-    final String vmessXhttp = base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
+    final String vmessXhttpStringExtra = base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
       'v': '2',
-      'ps': 'sub-vmess-xhttp',
+      'ps': 'sub-vmess-xhttp-panel',
+      'add': 'proxY.EXaMpLe.invalid',
+      'port': 443,
+      'id': subId,
+      'aid': 0,
+      'scy': 'auto',
+      'net': 'xhttp',
+      'type': 'none',
+      'host': 'PROxy.ExAmPLe.invalid',
+      'alpn': 'h2',
+      'path': '/vx-panel',
+      'tls': 'tls',
+      'sni': 'pROxy.exAmPLe.invalid',
+      'fp': 'chrome',
+      'core': 'xray',
+      'extra': jsonEncode(<String, dynamic>{
+        'headers': <String, String>{
+          'User-Agent': 'Mozilla/5.0',
+          'Pragma': 'no-cache',
+        },
+        'downloadSettings': <String, dynamic>{
+          'address': 'dl.example.invalid',
+          'port': 443,
+          'network': 'xhttp',
+          'security': 'tls',
+          'tlsSettings': <String, dynamic>{
+            'serverName': 'dl.example.invalid',
+            'alpn': <String>['h2'],
+            'fingerprint': 'chrome',
+          },
+          'xhttpSettings': <String, dynamic>{
+            'path': '/vx-panel',
+            'host': 'dl.example.invalid',
+            'mode': 'auto',
+            'extra': <String, dynamic>{
+              'headers': <String, String>{
+                'User-Agent': 'Mozilla/5.0',
+                'Pragma': 'no-cache',
+              },
+            },
+          },
+        },
+      }),
+      'fragment': '10-100,50-200,tlshello',
+      'mc': 1,
+      'padsize': '50-200',
+      'muxtype': 'smux',
+      'muxmaxc': 4,
+      'mux': 4,
+      'muxsmax': 0,
+      'muxpad': false,
+      'muxup': 100,
+      'muxdown': 100,
+    })));
+    final String vmessXhttpMapExtra = base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
+      'v': '2',
+      'ps': 'sub-vmess-xhttp-map',
       'add': 'edge.example.invalid',
       'port': 443,
       'id': subId,
       'aid': 0,
       'scy': 'auto',
       'net': 'xhttp',
-      'type': 'packet-up',
+      'type': 'none',
       'host': 'edge.example.invalid',
-      'path': '/vx',
+      'path': '/vx-map',
       'tls': 'tls',
       'sni': 'edge.example.invalid',
       'alpn': 'h3',
@@ -164,7 +220,7 @@ void main() {
             'fingerprint': 'chrome',
           },
           'xhttpSettings': <String, dynamic>{
-            'path': '/vx',
+            'path': '/vx-map',
             'host': 'dl.example.invalid',
             'mode': 'auto',
           },
@@ -175,8 +231,10 @@ void main() {
       'trojan://1@127.0.0.1?sni=fake_ip_for_sub_link#InfoHeader',
       '#Watashi auto ip: 198.51.100.1',
       'vless://$subId@direct.example.invalid:443?sni=www.speedtest.net&security=reality&pbk=AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA&sid=01234567&type=tcp&flow=xtls-rprx-vision&fp=chrome#sub-vless-reality',
-      'vless://$subId@cdn.example.invalid:443?sni=cdn.example.invalid&type=xhttp&security=tls&path=%2Fx&host=cdn.example.invalid&mode=packet-up&alpn=h3&fp=chrome#sub-vless-xhttp',
-      'vmess://$vmessXhttp',
+      'vless://$subId@ProxY.eXaMpLe.invalid:443?sni=cdn.example.invalid&type=xhttp&security=tls&path=%2Fx&host=cdn.example.invalid&mode=packet-up&alpn=h3&fp=chrome&fragment=10-100,50-200,tlshello&mc=1&padsize=50-200#sub-vless-xhttp',
+      'vless://$subId@ProxY.eXaMpLe.invalid:443?sni=cdn.example.invalid&type=httpupgrade&security=tls&path=%2Fhu&host=cdn.example.invalid&headers=%7B%27User-Agent%27%3A%20%27Mozilla%2F5.0%27%2C%20%27Pragma%27%3A%20%27no-cache%27%7D&fp=chrome#sub-vless-httpupgrade',
+      'vmess://$vmessXhttpStringExtra',
+      'vmess://$vmessXhttpMapExtra',
       'trojan://$subId@direct.example.invalid:443?sni=direct.example.invalid&type=grpc&security=tls&mode=gun&serviceName=%2Fgrpc&authority=direct.example.invalid&alpn=h2&fp=chrome#sub-trojan-grpc',
       'ss://$ssUser@direct.example.invalid:20443?udp-over-tcp=true#sub-ss-direct',
       'ss://$ssUser@direct.example.invalid:443?plugin=obfs-local&obfs-host=www.wechat.com&obfs=http&udp-over-tcp=true#sub-ss-faketls',
@@ -189,7 +247,7 @@ void main() {
 
     final ParseReport parsed = SubscriptionParser.parseAuto(subFeed, 'user-sub');
     expect(parsed.problems, isEmpty);
-    expect(parsed.nodes, hasLength(11));
+    expect(parsed.nodes, hasLength(13));
     expect(parsed.nodes.every(VpnController.usable), isTrue);
 
     final PreparedLinks prepared = await LinkPreparation.prepare(
@@ -276,7 +334,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 150));
       }
       expect(snapshot.reachable, isTrue, reason: logs.toString());
-      expect(snapshot.totalCount, 11, reason: logs.toString());
+      expect(snapshot.totalCount, 13, reason: logs.toString());
       final int? earlyExit = await Future.any<int?>(<Future<int?>>[
         running.exitCode,
         Future<int?>.delayed(const Duration(milliseconds: 500), () => null),

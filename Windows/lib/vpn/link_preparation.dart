@@ -296,6 +296,9 @@ class _EndpointLink {
       final Map<String, dynamic> result = Map<String, dynamic>.of(data!);
       result.removeWhere((String key, dynamic _) =>
           LinkPreparation._muxKeys.contains(LinkPreparation._key(key)));
+      if (result['extra'] is Map || result['extra'] is List) {
+        result['extra'] = jsonEncode(result['extra']);
+      }
       if (address != null) {
         _preserveV2RayNames(result);
         result['add'] = address;
