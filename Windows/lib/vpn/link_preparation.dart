@@ -25,6 +25,7 @@ class LinkPreparation {
   }) async {
     final List<_EndpointLink?> parsed = links.map(_EndpointLink.parse).toList();
     final List<String> hosts = parsed.whereType<_EndpointLink>()
+        .where((_EndpointLink link) => link.canBootstrap)
         .map((_EndpointLink link) => link.host.toLowerCase())
         .where((String host) => host.isNotEmpty && InternetAddress.tryParse(host) == null)
         .toSet().toList();
@@ -83,12 +84,29 @@ class _EndpointLink {
   final Map<String, dynamic>? data;
   final String host;
 
+  bool get canBootstrap {
+    final Map<String, dynamic> values = data ?? <String, dynamic>{
+      for (final MapEntry<String, String> entry in uri.queryParameters.entries)
+        LinkPreparation._key(entry.key): entry.value,
+    };
+    final String transport = '${values['net'] ?? values['type'] ?? ''}';
+    // Plain gRPC has no share-link authority override in the pinned parser.
+    // Keep its endpoint name rather than silently changing HTTP/2 :authority.
+    return transport != 'grpc' || _hasTls(values);
+  }
+
+  bool _hasTls(Map<String, dynamic> values) =>
+      values['tls'] == 'tls' || values['security'] == 'tls' ||
+      values['security'] == 'reality' || (uri.scheme == 'trojan' &&
+      !values.containsKey('security') && '${values['tls'] ?? ''}'.isEmpty);
+
   static _EndpointLink? parse(String link) {
     try {
       if (link.startsWith('vmess://')) {
-        final Map<String, dynamic> data = jsonDecode(utf8.decode(
-            base64.decode(base64.normalize(link.substring(8))))) as Map<String, dynamic>;
-        return _EndpointLink(Uri(scheme: 'vmess'), data, '${data['add'] ?? ''}');
+        final Object? decoded = jsonDecode(utf8.decode(
+            base64.decode(base64.normalize(link.substring(8)))));
+        if (decoded is! Map<String, dynamic> || decoded['add'] is! String) return null;
+        return _EndpointLink(Uri(scheme: 'vmess'), decoded, decoded['add'] as String);
       }
       final Uri uri = Uri.parse(link.replaceAll('&amp;', '&'));
       if (uri.scheme != 'vless' && uri.scheme != 'trojan') return null;
@@ -102,6 +120,7 @@ class _EndpointLink {
   }
 
   String render(String? address) {
+    if (!canBootstrap) address = null;
     if (data != null) {
       final Map<String, dynamic> result = Map<String, dynamic>.of(data!);
       result.removeWhere((String key, dynamic _) => LinkPreparation._muxKeys.contains(LinkPreparation._key(key)));
@@ -144,9 +163,7 @@ class _EndpointLink {
     String transport = '${values['net'] ?? values['type'] ?? ''}'.toLowerCase();
     if ((transport == 'tcp' || transport == 'raw') &&
         (values['headertype'] == 'http' || values['type'] == 'http')) transport = 'http';
-    final bool tls = values['tls'] == 'tls' || values['security'] == 'tls' ||
-        values['security'] == 'reality' || (uri.scheme == 'trojan' &&
-        !values.containsKey('security') && '${values['tls'] ?? ''}'.isEmpty);
+    final bool tls = _hasTls(values);
     final int port = data == null ? (uri.hasPort ? uri.port : 443)
         : int.tryParse('${values['port']}') ?? 443;
     final String authority = host.contains(':') ? '[$host]:$port' : '$host:$port';

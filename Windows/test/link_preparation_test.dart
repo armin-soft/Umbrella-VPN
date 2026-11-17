@@ -144,6 +144,17 @@ void main() {
     expect(result.resolvedHosts, 20);
   });
 
+  test('plain gRPC authority and malformed vmess structures remain untouched', () async {
+    final PreparedLinks result = await LinkPreparation.prepare(<String>[
+      'vless://test@proxy.example:80?security=none&type=grpc&muxtype=smux',
+      'vmess://W10=', // JSON array, not an endpoint object.
+    ], lookup: (_) => throw StateError('cannot safely rewrite plain gRPC authority'));
+    expect(Uri.parse(result.links.first).host, 'proxy.example');
+    expect(Uri.parse(result.links.first).queryParameters.containsKey('muxtype'), false);
+    expect(result.links.last, 'vmess://W10=');
+    expect(result.unresolvedHosts, 0);
+  });
+
   test('console defaults off, migrates legacy default-on, and retains new explicit choices', () {
     expect(const AppSettings().showCli, false);
     expect(AppSettings.fromJson(<String, dynamic>{'showCli': true}).showCli, false);
