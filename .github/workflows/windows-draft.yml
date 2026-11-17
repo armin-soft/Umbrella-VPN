@@ -37,18 +37,24 @@ jobs:
         run: |
           flutter analyze --no-fatal-infos 2>&1 | Tee-Object -Variable analysis
           if ($LASTEXITCODE -ne 0) {
-            foreach ($line in $analysis) { Write-Output "::error::$line" }
+            $detail = ($analysis | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
             throw 'Analysis failed'
           }
           flutter test --reporter expanded 2>&1 | Tee-Object -Variable tests
           if ($LASTEXITCODE -ne 0) {
-            foreach ($line in $tests) { Write-Output "::error::$line" }
+            $detail = ($tests | Where-Object { "$_" -notmatch '^\d\d:\d\d ' -or "$_" -match '\[E\]|failed' } | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
             throw 'Tests failed'
           }
       - name: Build Windows and bundle verified engine
         run: |
-          flutter build windows --release
-          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+          flutter build windows --release 2>&1 | Tee-Object -Variable buildLog
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($buildLog | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Windows build failed'
+          }
           $bundle = 'build/windows/x64/runner/Release'
           foreach ($exe in @('UmbrellaVPN.exe','UmbrellaCli.exe','UmbrellaAdmin.exe','UmbrellaCoreEngine.exe')) {
             if (!(Test-Path "$bundle/$exe")) { throw "Missing launcher: $exe" }
@@ -78,8 +84,12 @@ jobs:
             choco install innosetup --yes --no-progress
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
           }
-          & $iscc installer/umbrella.iss
-          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          & $iscc installer/umbrella.iss 2>&1 | Tee-Object -Variable installerLog
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($installerLog | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Installer compilation failed'
+          }
           $files = @(Get-ChildItem installer/output -Filter '*.exe')
           if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
           Get-FileHash $files[0].FullName -Algorithm SHA256
