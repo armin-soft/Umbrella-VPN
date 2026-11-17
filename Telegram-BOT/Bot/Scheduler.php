@@ -249,7 +249,7 @@ $Sms_Text = strtr($Template, [
 '{plan}' => Helper::smsPlan($Subscription),
 '{remaining}' => $Remaining_Label,
 ]);
-if (IppanelClient::send($User_ID, $Phone, $Sms_Text) === true) {
+if (IppanelClient::sendOnce($User_ID, $Phone, $Sms_Text, 'expiry-warning:' . $Event) === true) {
 Repository::setSetting($Sms_Key, '1');
 }
 }
@@ -481,6 +481,22 @@ Repository::releaseCronLock('daily_report');
 }
 }
 
+private static function nightlyRecipientEligible(array $User, ?array $Live): bool {
+$Client = trim((string)($User['Client_ID'] ?? ''));
+if ((int)($User['Is_Blocked'] ?? 1) !== 0
+|| trim((string)($User['Subscription'] ?? '')) === ''
+|| (int)($User['Expiration_Time_Stamp'] ?? 0) <= time()
+|| !in_array((string)($User['Client_Status'] ?? ''), ['فعال', '✅فعال'], true)
+|| trim((string)($User['Deactivation_Message'] ?? '')) !== ''
+|| (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0
+|| $Client === '' || $Client === '_' || $Live === null) return false;
+if ((string)($Live['Client_ID'] ?? '') !== $Client
+|| (int)($Live['Server_Is_Active'] ?? 0) !== 1
+|| (int)($Live['Server_Enable'] ?? 0) !== 1) return false;
+$Limit = (float)($Live['Total_Usage_GB'] ?? 0);
+return $Limit <= 0 || (float)($Live['Used_Usage_GB'] ?? 0) < $Limit;
+}
+
 private static function sendUserUsageReportsIfDue(): void {
 $Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
 if (!self::isReportDue($Now)) return;
@@ -492,7 +508,9 @@ $Today = $Now->format('Y-m-d');
 
 if ((string)Repository::getSetting('Last_User_Usage_Report', '') === $Today) return;
 try { $Live_Users = ServerClient::liveUsers(); }
-catch (Throwable) { $Live_Users = []; }
+catch (Throwable $Error) { error_log('[Umbrella-Bot][Nightly] live status unavailable: ' . $Error->getMessage()); $Live_Users = []; }
+// Without confirmed live state, skip delivery and allow a later scheduler retry.
+if ($Live_Users === []) return;
 $Board = $Live_Users;
 $Rank_Map = [];
 $Live_Map = [];
@@ -512,6 +530,9 @@ $Rows = Database::getInstance()->fetchAll(
 `Expiration_Time_Stamp`
 FROM `Users`
 WHERE `Is_Blocked` = 0
+AND `Client_Status` IN ('فعال', '✅فعال')
+AND (`Deactivation_Message` IS NULL OR `Deactivation_Message` = '')
+AND (`Channel_Client_Disabled_At` IS NULL OR `Channel_Client_Disabled_At` = 0)
 AND `Subscription` IS NOT NULL AND `Subscription` != ''
 AND `Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > ?
 AND " . Repository::CLIENT_CONDITION,
@@ -532,6 +553,10 @@ $Chat_ID = (int)($U['Chat_ID'] ?? 0);
 
 if ($User_ID <= 0) continue;
 if (!Repository::nightlyReportEnabled($User_ID)) continue;
+$U = Repository::getUser($User_ID) ?? [];
+$Live = $Live_Map[$User_ID] ?? null;
+if (!self::nightlyRecipientEligible($U, $Live)) continue;
+$Chat_ID = (int)($U['Chat_ID'] ?? 0);
 $Has_Subscription = trim((string)($U['Subscription'] ?? '')) !== '';
 $Expiry_Stamp = (int)($U['Expiration_Time_Stamp'] ?? 0);
 
@@ -596,6 +621,9 @@ $Text = Helper::frame('کاربر', $Name, 'گزارش شبانه مصرف', $Us
 . "\n💡<b>نکته:</b> با مدیریت هوشمند مصرف، اتصال پایدارتری خواهید داشت."
 . Helper::userFooter();
 
+// Recheck local holds/preferences immediately before either transport.
+if (!Repository::nightlyReportEnabled($User_ID)
+|| !self::nightlyRecipientEligible(Repository::getUser($User_ID) ?? [], $Live)) continue;
 SystemNotifications::queue($User_ID, 'گزارش شبانه مصرف', $Text, 'nightly:' . $Today);
 if ($Chat_ID <= 0) continue;
 $Result = TelegramClient::sendMessage($Chat_ID, $Text, TelegramClient::inlineKeyboard([
@@ -665,7 +693,7 @@ TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, '�
 }
 
 if (Helper::validatePhone($Phone)) {
-IppanelClient::send((int)$User_ID, $Phone, $Message);
+IppanelClient::sendOnce((int)$User_ID, $Phone, $Message, 'nowruz:' . $Current_Year);
 }
 }
 
@@ -879,7 +907,7 @@ $Sms_Text = $Template !== null
 ])
 : "کاربر گرامی، شما از کانال اطلاع رسانی خارج شده اید.\nمهلت باقیمانده: " . $Remaining_Label . "\nدر غیر این صورت کلاینت شما قطع می گردد.\nلطفا از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا";
 
-if (!IppanelClient::send($User_ID, $Phone, trim($Sms_Text))) {
+if (!IppanelClient::sendOnce($User_ID, $Phone, trim($Sms_Text), 'channel-warning:' . (int)(Repository::getUser($User_ID)['Channel_Grace_Started_At'] ?? 0))) {
 error_log("[Umbrella-Bot][Scheduler][ChannelWarning] SMS failed for User={$User_ID} Phone={$Phone}");
 }
 }
@@ -895,7 +923,7 @@ $Sms_Text = $Template !== null
 ])
 : "کاربر گرامی، مهلت عضویت شما در کانال به اتمام رسید.\nکلاینت شما به دلیل عدم عضویت قطع گردید.\nبرای اتصال مجدد از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا";
 
-if (!IppanelClient::send($User_ID, $Phone, trim($Sms_Text))) {
+if (!IppanelClient::sendOnce($User_ID, $Phone, trim($Sms_Text), 'channel-disabled:' . (int)(Repository::getUser($User_ID)['Channel_Grace_Started_At'] ?? 0))) {
 error_log("[Umbrella-Bot][Scheduler][ChannelDisabled] SMS failed for User={$User_ID} Phone={$Phone}");
 }
 }
@@ -910,7 +938,12 @@ return trim($Template);
 }
 
 private static function expireSubscription(int $User_ID): void {
+$Lock = 'expire_user_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 3600)) return;
+try {
 $Row = Repository::getUser($User_ID);
+// Old scheduled jobs must never expire a renewed subscription.
+if ((int)($Row['Expiration_Time_Stamp'] ?? 0) > time()) return;
 $Subscription = $Row['Subscription'] ?? null;
 
 if (!is_string($Subscription) || $Subscription === '') {
@@ -955,7 +988,7 @@ $Template = Repository::getSmsTemplate('expired');
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan])
 : "{$Full_Name} گرامی اشتراک {$Plan} شما به اتمام رسید.\nاتصال شما از سرور قطع گردید.\n\nسرور آمبرلا";
-$Sent = IppanelClient::send($User_ID, $Phone, $Sms_Text);
+$Sent = IppanelClient::sendOnce($User_ID, $Phone, $Sms_Text, IppanelClient::subscriptionEvent('expired', $Row));
 
 if (!$Sent) {
 error_log("[Umbrella-Bot][Scheduler][Expire] SMS failed for User={$User_ID} Phone={$Phone}");
@@ -981,6 +1014,7 @@ Repository::updateUser($User_ID, [
 'Expiration_Time_Stamp' => $Keep_For_Auto_Renew ? (int)($Row['Expiration_Time_Stamp'] ?? 0) : time() - 1,
 ]);
 }
+} finally { Repository::releaseCronLock($Lock); }
 }
 
 private static function autoRefreshUsages(): void {

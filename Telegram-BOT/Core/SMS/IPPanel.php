@@ -24,6 +24,39 @@ usleep((int)round($Wait * 1000000));
 self::$Last_Send_At = microtime(true);
 }
 
+/** Durable at-most-once attempt per business event, across workers and restarts.
+ * An ambiguous timeout stays claimed: retrying could charge/send twice.
+ * false means failed/unknown, including a previous failed attempt; never success.
+ */
+public static function sendOnce(int $User_ID, string $Phone, string $Message, string $Event): bool {
+if ($User_ID <= 0 || trim($Event) === '' || !Helper::validatePhone($Phone)) return false;
+// Configuration errors happen before any network attempt; allow correction.
+if (trim(Environment::getSmsApiKey()) === '' || trim(Environment::getSmsSender()) === '') {
+error_log('[Umbrella-Bot][SMS-Once] missing configuration');
+return false;
+}
+$Key = 'SmsEvent_' . hash('sha256', $User_ID . ':' . $Event);
+try {
+$Db = Database::getInstance();
+$Claimed = $Db->execute('INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)', [$Key, 'attempted'])->rowCount() === 1;
+if (!$Claimed) return Repository::getSetting($Key) === 'sent';
+$Ok = self::send($User_ID, $Phone, $Message);
+Repository::setSetting($Key, $Ok ? 'sent' : 'failed');
+return $Ok;
+} catch (Throwable $Error) {
+// Never delete a claim after transport/logging/database failure.
+error_log('[Umbrella-Bot][SMS-Once] ' . $Error->getMessage());
+return false;
+}
+}
+
+/** Same subscription identity for scheduled and manual expiration. */
+public static function subscriptionEvent(string $Kind, array $User): string {
+return $Kind . ':' . hash('sha256', json_encode([
+(string)($User['Client_ID'] ?? ''), (int)($User['Expiration_Time_Stamp'] ?? 0),
+], JSON_UNESCAPED_UNICODE));
+}
+
 public static function send(int $User_ID, string $Phone, string $Message): bool {
 if (!Helper::validatePhone($Phone)) {
 error_log('[Umbrella-Bot][Ippanel] شماره نامعتبر: ' . $Phone);
@@ -98,11 +131,6 @@ $Meta_Message = (string)($Result['Json']['meta']['message'] ?? '');
 $Meta_Code = (string)($Result['Json']['meta']['message_code'] ?? '');
 $Body = (string)($Result['Body'] ?? '');
 $Ok = $Status >= 200 && $Status < 300 && $Meta_Status;
-
-if (!$Ok && ($Status === 429 || $Meta_Code === '400-1' || str_contains($Meta_Message, 'تکراری'))) {
-\Repository::logSms($User_ID, $Phone, $Message, true);
-return true;
-}
 
 if (!$Ok) {
 error_log(sprintf(

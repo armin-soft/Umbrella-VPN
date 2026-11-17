@@ -2759,6 +2759,7 @@ return;
 
 $Target = (int)($User['Telegram_ID'] ?? 0);
 $Subscription = (string)($User['Subscription'] ?? '');
+$Sms_Event = IppanelClient::subscriptionEvent('expired', $User);
 
 if ($Subscription === '') {
 $Name = self::targetDisplayName($Target, $User);
@@ -2806,7 +2807,7 @@ $Template = Repository::getSmsTemplate('expired');
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan])
 : "{$Full_Name} گرامی ⏰اشتراک {$Plan} شما به اتمام رسید.\n🔌اتصال شما از سرور قطع گردید.\n\nسرور آمبرلا";
-IppanelClient::send($Target, $Phone, $Sms_Text);
+IppanelClient::sendOnce($Target, $Phone, $Sms_Text, $Sms_Event);
 }
 
 $Name = self::targetDisplayName($Target, $User);

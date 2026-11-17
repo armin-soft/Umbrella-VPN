@@ -1680,7 +1680,7 @@ $Template = Repository::getSmsTemplate('activate');
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan, '{remaining}' => Helper::durationLabel($Days)])
 : "{$Full_Name} گرامی 🎉اشتراک {$Plan} شما با موفقیت فعال گردید.\n⏳مدت اعتبار: " . Helper::durationLabel($Days) . "\n\nسرور آمبرلا";
-\IppanelClient::send($User_ID, $Phone, $Sms_Text);
+\IppanelClient::sendOnce($User_ID, $Phone, $Sms_Text, IppanelClient::subscriptionEvent('subscription-started', Repository::getUser($User_ID)));
 }
 
 Repository::schedule('منقضی اشتراک', $User_ID, $Expire_Time_Stamp);
@@ -1765,7 +1765,7 @@ $Duration_Label = Helper::durationLabel($Days);
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan, '{remaining}' => $Duration_Label])
 : "{$Full_Name} گرامی 🎉اشتراک {$Plan} شما با موفقیت تمدید گردید.\n⏳مدت اعتبار: {$Duration_Label}\n\nسرور آمبرلا";
-IppanelClient::send($User_ID, $Phone, $Sms_Text);
+IppanelClient::sendOnce($User_ID, $Phone, $Sms_Text, IppanelClient::subscriptionEvent('subscription-renewed', Repository::getUser($User_ID)));
 }
 
 Repository::schedule('منقضی اشتراک', $User_ID, $Expire_Time_Stamp);
