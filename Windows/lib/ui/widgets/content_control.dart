@@ -115,11 +115,12 @@ class _ContentControlCardState extends State<ContentControlCard> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                StatusBadge(
+                Pill(
                   label: _enabled
                       ? '${Fa.num(_categories.length)} دسته فعال'
                       : 'غیرفعال',
                   color: _enabled ? colors.primary : colors.textSecondary,
+                  dense: true,
                 ),
                 const SizedBox(width: AppMetrics.space2),
                 Switch.adaptive(

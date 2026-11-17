@@ -57,23 +57,33 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: AppMetrics.space4),
           PageBanner(
-            icon: Icons.tune_rounded,
-            accent: colors.primary,
+            leading: IconSquare(
+              icon: Icons.tune_rounded,
+              color: colors.primary,
+              size: AppMetrics.iconBoxHero,
+              radius: AppMetrics.radiusLg,
+            ),
             title: 'مرکز کنترل پیشرفته آمبرلا',
             subtitle:
                 'تغییرات به صورت خودکار ذخیره می شوند؛ هر بخش را از نوار زیر انتخاب کنید.',
             badges: <Widget>[
-              StatusBadge(
+              Pill(
                 label: current.tunMode ? 'تونل کامل فعال' : 'پروکسی سیستمی',
+                icon: Icons.lan_rounded,
                 color: current.tunMode ? colors.success : colors.info,
+                dense: true,
               ),
-              StatusBadge(
+              Pill(
                 label: settings.elevated ? 'دسترسی مدیر فعال' : 'کاربر استاندارد',
+                icon: Icons.admin_panel_settings_rounded,
                 color: settings.elevated ? colors.success : colors.warning,
+                dense: true,
               ),
-              StatusBadge(
+              Pill(
                 label: 'پوسته ${current.theme.label}',
+                icon: Icons.palette_rounded,
                 color: colors.primary,
+                dense: true,
               ),
             ],
           ),
