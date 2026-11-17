@@ -134,13 +134,7 @@ class CoreRuntime {
     final String tempRuntimeName = 'runtime.$buildId.tmp.json';
     final File tempBuilt = await command(
       <String>[
-        'build',
-        '-c',
-        parsedFile.path,
-        '-d',
-        settingsPath,
-        '-o',
-        tempRuntimeName,
+        'build', '-c', parsedFile.path, '-d', settingsPath, '-o', tempRuntimeName,
       ],
       tempRuntimeName,
     );
