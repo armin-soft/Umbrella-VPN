@@ -248,25 +248,14 @@ class _MtuField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                'اندازه بسته (MTU)',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                    ),
+        Text(
+          'اندازه بسته (MTU)',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
               ),
-            ),
-            Text(
-              Fa.num('۱۲۸۰ تا ۹۰۰۰ • Enter برای ذخیره'),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.textSecondary,
-                    fontSize: AppMetrics.fontCaption,
-                  ),
-            ),
-          ],
         ),
         const SizedBox(height: AppMetrics.space2),
         TextFormField(
@@ -276,6 +265,8 @@ class _MtuField extends StatelessWidget {
           textDirection: TextDirection.ltr,
           decoration: InputDecoration(
             isDense: true,
+            helperText: Fa.num('بین ۱۲۸۰ تا ۹۰۰۰ (برای ذخیره Enter بزنید)'),
+            helperMaxLines: 2,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: AppMetrics.space4,
               vertical: AppMetrics.space3,
@@ -321,12 +312,17 @@ class _GroupCaption extends StatelessWidget {
       children: <Widget>[
         Icon(icon, size: AppMetrics.iconSm, color: colors.primary),
         const SizedBox(width: AppMetrics.space2),
-        Text(
-          title,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: colors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
+        Flexible(
+          flex: 4,
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
         ),
         const SizedBox(width: AppMetrics.space3),
         Expanded(child: Divider(height: AppMetrics.space1, color: colors.border)),
