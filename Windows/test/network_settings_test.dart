@@ -128,7 +128,11 @@ proxies:
     final String ping = File('lib/vpn/core_ping.dart').readAsStringSync();
     expect(controller, contains('networkSettings: _settings'));
     expect(ping, contains('networkSettings: settings'));
-    expect(controller, contains("[...core.args, '-d', settingsPath]"));
+    expect(controller, contains("'-d', settingsPath,"));
+    expect(controller, contains('arg == plan.linksPath ? sessionLinks.path : arg'));
+    expect(controller, contains('LinkPreparation.prepare('));
+    expect(ping, contains('LinkPreparation.prepare('));
+    expect(controller, contains('args: args,')); // CLI and background share arguments.
     expect(controller, contains('accessGuard?.call()'));
     // Existing account/source implementation is intentionally unchanged.
     final String subscriptions = File('lib/state/subscription_controller.dart').readAsStringSync();
