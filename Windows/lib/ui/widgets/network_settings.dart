@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import 'common.dart';
@@ -17,7 +18,7 @@ class NetworkSettings extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         const Text('تغییرات از اتصال بعدی اعمال می‌شوند. پشته، MTU و مسیر سخت‌گیرانه فقط در حالت تونل اثر دارند.'),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppMetrics.space4),
         DropdownButtonFormField<TunStack>(
           key: ValueKey<String>('stack-${current.tunStack.name}'),
           initialValue: current.tunStack,
@@ -31,7 +32,7 @@ class NetworkSettings extends StatelessWidget {
             if (value != null) controller.setTunStack(value);
           },
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppMetrics.space4),
         TextFormField(
           key: ValueKey<String>('mtu-${current.mtu}'),
           initialValue: '${current.mtu}',
@@ -61,11 +62,11 @@ class NetworkSettings extends StatelessWidget {
           value: current.blockIpv6,
           onChanged: controller.setBlockIpv6,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppMetrics.space4),
         _dnsField('دی‌ان‌اس ترافیک تونل', 'remote', current.remoteDns, controller.setRemoteDns),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppMetrics.space4),
         _dnsField('دی‌ان‌اس اتصال اولیه و مستقیم', 'direct', current.directDns, controller.setDirectDns),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppMetrics.space3),
         const Text('هسته پرس‌وجوهای ترافیک پروکسی را از تونل می‌فرستد. برای یافتن آدرس سرور و مسیرهای مستقیم، DNS مستقیم لازم است. این تنظیم تضمین نبود نشت DNS نیست.'),
       ],
     );

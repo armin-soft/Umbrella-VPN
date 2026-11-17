@@ -88,7 +88,8 @@ void main() {
       // می کشتند و سنجش «۰ سرور» می داد.
       final String ping = read('lib/vpn/core_ping.dart');
       expect(ping.contains('int concurrency = 1'), isTrue);
-      expect(ping.contains('settingsPath: settings.path'), isTrue);
+      expect(ping.contains('settingsPath: settingsFile.path'), isTrue);
+      expect(ping.contains('networkSettings: settings'), isTrue);
     });
 
     test('سنجش پینگ هیچ وقت هسته یتیم روی پورت ها نمی گذارد', () {
