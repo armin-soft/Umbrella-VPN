@@ -58,7 +58,7 @@ class _DevicePageState extends State<DevicePage> {
       unawaited(_refreshDevice());
     });
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => unawaited(_refreshDevice()),
+      (_) => unawaited(_refreshDevice(includePublicIp: true)),
     );
   }
 
@@ -69,7 +69,7 @@ class _DevicePageState extends State<DevicePage> {
     if (active && !_wasTabActive) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          unawaited(_refreshDevice());
+          unawaited(_refreshDevice(includePublicIp: true));
         }
       });
     }
@@ -83,7 +83,7 @@ class _DevicePageState extends State<DevicePage> {
     super.dispose();
   }
 
-  Future<void> _refreshDevice() async {
+  Future<void> _refreshDevice({bool includePublicIp = false}) async {
     if (_refreshing) {
       return;
     }
@@ -100,7 +100,7 @@ class _DevicePageState extends State<DevicePage> {
 
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
       native.deviceInfo().catchError((_) => DeviceProfile.empty),
-      if (!silent)
+      if (includePublicIp)
         vpn.refreshIp().then<Object?>((_) => true).catchError((_) => false),
     ]);
 
