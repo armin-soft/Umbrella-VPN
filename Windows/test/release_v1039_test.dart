@@ -359,12 +359,15 @@ void main() {
       final LocalStore storage = LocalStore.instance;
       await storage.init();
       expect(
-        UpdateChannel.fromCode(storage.getString(StoreKeys.updateChannel)),
+        UpdateChannelX.fromStorage(storage.read(StoreKeys.updateChannel)),
         UpdateChannel.stable,
       );
-      await storage.setString(StoreKeys.updateChannel, UpdateChannel.beta.code);
+      await storage.write(
+        StoreKeys.updateChannel,
+        UpdateChannel.beta.storageValue,
+      );
       expect(
-        UpdateChannel.fromCode(storage.getString(StoreKeys.updateChannel)),
+        UpdateChannelX.fromStorage(storage.read(StoreKeys.updateChannel)),
         UpdateChannel.beta,
       );
 
