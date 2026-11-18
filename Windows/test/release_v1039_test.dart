@@ -354,11 +354,19 @@ void main() {
     });
 
     test('کانال به روز رسانی ذخیره می شود و دانلود جریانی چک سام و لغو را رعایت می کند', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      final AppStorage storage = await AppStorage.create();
-      expect(storage.updateChannel, UpdateChannel.stable);
-      await storage.setUpdateChannel(UpdateChannel.beta);
-      expect(storage.updateChannel, UpdateChannel.beta);
+      final LocalStore storage = LocalStore.instance;
+      await storage.init();
+      expect(
+        UpdateChannel.fromCode(storage.getString(StoreKeys.updateChannel)),
+        UpdateChannel.stable,
+      );
+      await storage.setString(StoreKeys.updateChannel, UpdateChannel.beta.code);
+      expect(
+        UpdateChannel.fromCode(storage.getString(StoreKeys.updateChannel)),
+        UpdateChannel.beta,
+      );
 
       final Directory tempDir =
           await Directory.systemTemp.createTemp('umbrella-upd-test-');
