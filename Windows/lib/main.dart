@@ -141,7 +141,7 @@ Future<void> main(List<String> arguments) async {
     toasts.error('اشتراک متوقف شد', reason);
   };
   auth.onSessionRevoked = (String reason) async {
-    toasts.error('دسترسی دستگاه لغو شد', reason);
+    toasts.error('مجوز استفاده از این دستگاه لغو شد', reason);
     if (vpn.status.active) {
       await vpn.disconnect();
     }
