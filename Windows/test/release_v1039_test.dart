@@ -50,10 +50,10 @@ void main() {
 
       expect(launcher, contains('UMBRELLA_OWNER_PID'));
       expect(launcher, contains('owner_watchdog_thread'));
-      expect(launcher, contains('clear_stale_loopback_proxy'));
+      expect(launcher, contains('clear_loopback_proxy'));
       expect(systemOps, contains('JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE'));
       expect(systemOps, contains('ShutdownOwnedCores'));
-      expect(systemOps, contains('AttachPidToCoreJob'));
+      expect(systemOps, contains('AttachCoreJob'));
       expect(flutterWindow, contains('WM_QUERYENDSESSION'));
       expect(flutterWindow, contains('WM_ENDSESSION'));
       expect(flutterWindow, contains('ir.umbrella.app/session'));
