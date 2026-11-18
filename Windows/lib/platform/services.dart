@@ -790,14 +790,20 @@ class UpdateService {
     UpdateInfo info, {
     required void Function(double progress, int received, int total) onProgress,
     bool Function()? isCancelled,
+    Directory? targetDir,
   }) async {
     File? partFile;
     IOSink? sink;
     try {
-      final Directory base = await getTemporaryDirectory();
-      final Directory dir = Directory(
-        '${base.path}${Platform.pathSeparator}umbrella-updates',
-      );
+      final Directory dir;
+      if (targetDir != null) {
+        dir = targetDir;
+      } else {
+        final Directory base = await getTemporaryDirectory();
+        dir = Directory(
+          '${base.path}${Platform.pathSeparator}umbrella-updates',
+        );
+      }
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
@@ -829,7 +835,8 @@ class UpdateService {
       final int total = (response.contentLength ?? 0) > 0
           ? response.contentLength!
           : info.sizeBytes;
-      sink = partFile.openWrite();
+      final IOSink activeSink = partFile.openWrite();
+      sink = activeSink;
       final _DigestCapture capture = _DigestCapture();
       final ByteConversionSink hashSink =
           sha256.startChunkedConversion(capture);
@@ -838,7 +845,7 @@ class UpdateService {
       await for (final List<int> chunk
           in response.stream.timeout(const Duration(seconds: 45))) {
         if (isCancelled?.call() == true) {
-          await sink.close();
+          await activeSink.close();
           sink = null;
           hashSink.close();
           if (await partFile.exists()) {
@@ -846,7 +853,7 @@ class UpdateService {
           }
           return null;
         }
-        sink.add(chunk);
+        activeSink.add(chunk);
         hashSink.add(chunk);
         received += chunk.length;
         onProgress(
@@ -855,8 +862,8 @@ class UpdateService {
           total,
         );
       }
-      await sink.flush();
-      await sink.close();
+      await activeSink.flush();
+      await activeSink.close();
       sink = null;
       hashSink.close();
 

@@ -442,8 +442,8 @@ class VpnController extends ChangeNotifier {
   /// اتصال خودکار شروع کار با یک تلاش مجدد زمان بندی شده (هم راستا با 5.9.11)
   /// برای زمانی که شبکه ویندوز یا دریافت اشتراک چند ثانیه پس از بالا آمدن آماده می شود.
   Future<void> _runStartupAutoConnect() async {
-    final bool ok = await connect();
-    if (ok || _disposed || _shuttingDown || !_settings.autoConnect) {
+    final ConnectOutcome outcome = await connect();
+    if (outcome.ok || _disposed || _shuttingDown || !_settings.autoConnect) {
       return;
     }
     _autoConnectRetryTimer?.cancel();

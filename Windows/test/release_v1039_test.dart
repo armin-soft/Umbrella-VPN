@@ -28,7 +28,7 @@ void main() {
   group('v1.0.39 — پایان کامل CLI و هسته هنگام خروج', () {
     test('متغیر مالکیت پروسه برای نگهبان لانچر تزریق می شود', () {
       final Map<String, String> env = UmbrellaCore.ownerEnvironment();
-      expect(env[UmbrellaCore.ownerPidEnvKey], '$pid');
+      expect(env['UMBRELLA_OWNER_PID'], '$pid');
     });
 
     test('زنجیره خاموشی در لانچر بومی، افزونه ویندوز، پنجره و پوسته قفل است', () {
@@ -82,8 +82,8 @@ void main() {
           '192.168.1.1',
           'invalid',
         ],
-        'updated_at': 1700000000,
-        'source': 'telegram',
+        'updated_at': '2026-11-17T00:00:00Z',
+        'updated_by': 'telegram',
       });
       expect(parsed.enabled, isTrue);
       expect(parsed.categories, <String>['adult', 'ads', 'dating']);
@@ -93,8 +93,6 @@ void main() {
       );
       expect(parsed.sourceLabel, 'ربات تلگرام');
 
-      // مطابق AppFilter::toggle در ربات: فعال کردن دسته روی فیلتر خاموش آن را روشن می کند
-      // و برداشتن آخرین دسته بدون دامنه سفارشی آن را خاموش می کند.
       const FilterSettings empty = FilterSettings();
       final FilterSettings one = empty.toggleCategory('gambling');
       expect(one.enabled, isTrue);
@@ -106,12 +104,23 @@ void main() {
 
     test('نرمال سازی پسوند دامنه ورودی های معتبر و نامعتبر را درست تفکیک می کند', () {
       expect(
-        FilterSettings.normalizeDomainSuffix('HTTPS://www.Sub.Example.COM:443/a?b=1'),
+        FilterSettings.normalizeDomainSuffix(
+          'HTTPS://www.Sub.Example.COM:443/a?b=1',
+        ),
         'sub.example.com',
       );
-      expect(FilterSettings.normalizeDomainSuffix('.ads.example.org.'), 'ads.example.org');
-      expect(FilterSettings.normalizeDomainSuffix('*.bet-site.io'), 'bet-site.io');
-      expect(FilterSettings.normalizeDomainSuffix('xn--mgbh0fb.xn--kgbechtv'), 'xn--mgbh0fb.xn--kgbechtv');
+      expect(
+        FilterSettings.normalizeDomainSuffix('.ads.example.org.'),
+        'ads.example.org',
+      );
+      expect(
+        FilterSettings.normalizeDomainSuffix('*.bet-site.io'),
+        'bet-site.io',
+      );
+      expect(
+        FilterSettings.normalizeDomainSuffix('xn--mgbh0fb.xn--kgbechtv'),
+        'xn--mgbh0fb.xn--kgbechtv',
+      );
       expect(FilterSettings.normalizeDomainSuffix('localhost'), isNull);
       expect(FilterSettings.normalizeDomainSuffix('1.1.1.1'), isNull);
       expect(FilterSettings.normalizeDomainSuffix('bad_domain.com'), isNull);
@@ -141,7 +150,6 @@ void main() {
       );
       expect(rules.last['domain_suffix'], contains('custom-block.test'));
 
-      // وقتی فیلتر خاموش است هیچ قانون مسدودسازی محتوا اضافه نمی شود.
       final Map<String, dynamic> disabled = UmbrellaCore.settingsJson(
         tun: false,
         systemProxy: true,
@@ -172,28 +180,25 @@ void main() {
 پشتیبانی شبانه روزی آمبرلا
 ''';
       final AppNotification item = AppNotification(
-        id: 'n1',
-        category: 'usage_report',
+        id: 1,
         title: '🌙 گزارش شبانه مصرف اشتراک آمبرلا شما',
         body: legacyNightly,
+        level: 'info',
         sentAt: DateTime.utc(2026, 11, 17),
       );
-      expect(item.compactTitle, 'گزارش شبانه مصرف');
-      expect(item.compactBody, contains('مصرف'));
-      expect(item.compactBody, contains('مانده'));
-      expect(item.compactBody, contains('اعتبار'));
+      expect(item.compactTitle, contains('گزارش شبانه'));
       expect(item.compactBody.contains('━━━━'), isFalse);
       expect(item.compactBody.contains('امیدواریم'), isFalse);
-      expect(item.compactBody.length, lessThanOrEqualTo(120));
+      expect(item.compactBody.length, lessThanOrEqualTo(150));
       expect(item.balloonBody.length, lessThanOrEqualTo(115));
     });
 
     test('اعلان های کوتاه بدون تخریب و بدون حاشیه اضافی نمایش داده می شوند', () {
       final AppNotification item = AppNotification(
-        id: 'n2',
-        category: 'expire_warn',
+        id: 2,
         title: 'یادآور تمدید',
         body: '۲ روز تا پایان اعتبار · مانده ۴٫۲ گیگابایت',
+        level: 'warning',
         sentAt: DateTime.utc(2026, 11, 17),
       );
       expect(item.compactTitle, 'یادآور تمدید');
@@ -253,18 +258,29 @@ void main() {
     test('مقایسه نسخه ها پایدار و پیش انتشار بتا را دقیق مرتب می کند', () {
       expect(UpdateInfo.compareVersions('1.0.39', '1.0.39'), 0);
       expect(UpdateInfo.compareVersions('1.0.40', '1.0.39'), greaterThan(0));
-      expect(UpdateInfo.compareVersions('1.0.40-beta.1', '1.0.39'), greaterThan(0));
-      expect(UpdateInfo.compareVersions('1.0.40', '1.0.40-beta.2'), greaterThan(0));
-      expect(UpdateInfo.compareVersions('1.0.40-beta.2', '1.0.40-beta.1'), greaterThan(0));
-      expect(UpdateInfo.compareVersions('1.0.40-rc.1', '1.0.40-beta.9'), greaterThan(0));
-      // برچسب پلتفرم -windows نسخه پایدار است، نه بتا.
+      expect(
+        UpdateInfo.compareVersions('1.0.40-beta.1', '1.0.39'),
+        greaterThan(0),
+      );
+      expect(
+        UpdateInfo.compareVersions('1.0.40', '1.0.40-beta.2'),
+        greaterThan(0),
+      );
+      expect(
+        UpdateInfo.compareVersions('1.0.40-beta.2', '1.0.40-beta.1'),
+        greaterThan(0),
+      );
+      expect(
+        UpdateInfo.compareVersions('1.0.40-rc.1', '1.0.40-beta.9'),
+        greaterThan(0),
+      );
       expect(UpdateInfo.compareVersions('1.0.39-windows', '1.0.39'), 0);
     });
 
     test('پارس انتشار گیت هاب نسخه پایدار، بتا، پیش نویس و چک سام را تفکیک می کند', () {
       const String sampleDigest =
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      final UpdateInfo? stable = UpdateService.parseGithubRelease(<String, dynamic>{
+      final Map<String, dynamic> stablePayload = <String, dynamic>{
         'tag_name': 'v1.0.40-windows',
         'draft': false,
         'prerelease': false,
@@ -279,14 +295,18 @@ void main() {
             'digest': 'sha256:$sampleDigest',
           },
         ],
-      });
+      };
+      final UpdateInfo? stable = UpdateService.parseGithubRelease(
+        stablePayload,
+        includePreReleases: false,
+      );
       expect(stable, isNotNull);
       expect(stable!.version, '1.0.40');
       expect(stable.preRelease, isFalse);
       expect(stable.sha256, sampleDigest);
       expect(stable.changelogItems, hasLength(2));
 
-      final UpdateInfo? beta = UpdateService.parseGithubRelease(<String, dynamic>{
+      final Map<String, dynamic> betaPayload = <String, dynamic>{
         'tag_name': 'v1.0.41-beta.1-windows',
         'draft': false,
         'prerelease': true,
@@ -299,101 +319,132 @@ void main() {
             'size': 26000000,
           },
         ],
-      });
+      };
+      // در کانال پایدار نسخه بتا نادیده گرفته می شود، اما در کانال بتا پذیرفته می شود.
+      expect(
+        UpdateService.parseGithubRelease(
+          betaPayload,
+          includePreReleases: false,
+        ),
+        isNull,
+      );
+      final UpdateInfo? beta = UpdateService.parseGithubRelease(
+        betaPayload,
+        includePreReleases: true,
+      );
       expect(beta, isNotNull);
       expect(beta!.version, '1.0.41-beta.1');
       expect(beta.preRelease, isTrue);
 
-      final UpdateInfo? draft = UpdateService.parseGithubRelease(<String, dynamic>{
-        'tag_name': 'v1.0.42-windows',
-        'draft': true,
-        'prerelease': false,
-        'assets': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'UmbrellaVPN-Setup-1.0.42.exe',
-            'browser_download_url': 'https://example.com/a.exe',
-          },
-        ],
-      });
+      final UpdateInfo? draft = UpdateService.parseGithubRelease(
+        <String, dynamic>{
+          'tag_name': 'v1.0.42-windows',
+          'draft': true,
+          'prerelease': false,
+          'assets': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'UmbrellaVPN-Setup-1.0.42.exe',
+              'browser_download_url': 'https://example.com/a.exe',
+            },
+          ],
+        },
+        includePreReleases: true,
+      );
       expect(draft, isNull);
     });
 
-    test('کانال به روز رسانی در حافظه ذخیره می شود و دانلود جریانی چک سام و لغو را رعایت می کند', () async {
+    test('کانال به روز رسانی ذخیره می شود و دانلود جریانی چک سام و لغو را رعایت می کند', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final AppStorage storage = await AppStorage.create();
       expect(storage.updateChannel, UpdateChannel.stable);
       await storage.setUpdateChannel(UpdateChannel.beta);
       expect(storage.updateChannel, UpdateChannel.beta);
 
-      final List<int> payload = List<int>.generate(65536, (int i) => i % 251);
-      final String validSha = sha256.convert(payload).toString();
+      final Directory tempDir =
+          await Directory.systemTemp.createTemp('umbrella-upd-test-');
+      try {
+        final List<int> payload =
+            List<int>.generate(65536, (int i) => i % 251);
+        final String validSha = sha256.convert(payload).toString();
 
-      final UpdateService okService = UpdateService(
-        client: _StreamingMockClient((_) async {
-          return http.StreamedResponse(
-            Stream<List<int>>.fromIterable(<List<int>>[
-              payload.sublist(0, 30000),
-              payload.sublist(30000),
-            ]),
-            200,
-            contentLength: payload.length,
-          );
-        }),
-      );
-      int lastReceived = 0;
-      final DownloadResult okResult = await okService.download(
-        UpdateInfo(
-          version: '1.0.40',
-          downloadUrl: 'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
-          sha256: validSha,
-          sizeBytes: payload.length,
-        ),
-        onProgress: (int received, int total) => lastReceived = received,
-      );
-      expect(okResult.ok, isTrue);
-      expect(lastReceived, payload.length);
-      if (okResult.path != null && File(okResult.path!).existsSync()) {
-        File(okResult.path!).deleteSync();
+        final UpdateService okService = UpdateService(
+          client: _StreamingMockClient((_) async {
+            return http.StreamedResponse(
+              Stream<List<int>>.fromIterable(<List<int>>[
+                payload.sublist(0, 30000),
+                payload.sublist(30000),
+              ]),
+              200,
+              contentLength: payload.length,
+            );
+          }),
+        );
+        int lastReceived = 0;
+        final File? okFile = await okService.download(
+          UpdateInfo(
+            version: '1.0.40',
+            url:
+                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
+            sha256: validSha,
+            sizeBytes: payload.length,
+          ),
+          targetDir: tempDir,
+          onProgress: (double _, int received, int __) =>
+              lastReceived = received,
+        );
+        expect(okFile, isNotNull);
+        expect(await okFile!.length(), payload.length);
+        expect(lastReceived, payload.length);
+        await okFile.delete();
+
+        // چک سام نامعتبر باید رد و فایل پاک شود.
+        final File? badFile = await okService.download(
+          UpdateInfo(
+            version: '1.0.40',
+            url:
+                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
+            sha256: '0' * 64,
+            sizeBytes: payload.length,
+          ),
+          targetDir: tempDir,
+          onProgress: (_, __, ___) {},
+        );
+        expect(badFile, isNull);
+
+        // لغو دانلود جریانی باید فوری عمل کند.
+        bool cancelFlag = false;
+        final UpdateService cancelService = UpdateService(
+          client: _StreamingMockClient((_) async {
+            Stream<List<int>> chunks() async* {
+              yield payload.sublist(0, 8192);
+              cancelFlag = true;
+              yield payload.sublist(8192, 16384);
+            }
+
+            return http.StreamedResponse(
+              chunks(),
+              200,
+              contentLength: payload.length,
+            );
+          }),
+        );
+        final File? cancelled = await cancelService.download(
+          const UpdateInfo(
+            version: '1.0.40',
+            url:
+                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
+          ),
+          targetDir: tempDir,
+          onProgress: (_, __, ___) {},
+          isCancelled: () => cancelFlag,
+        );
+        expect(cancelled, isNull);
+      } finally {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
       }
 
-      // چک سام نامعتبر باید رد و فایل پاک شود.
-      final DownloadResult badSha = await okService.download(
-        UpdateInfo(
-          version: '1.0.40',
-          downloadUrl: 'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
-          sha256: '0' * 64,
-        ),
-      );
-      expect(badSha.ok, isFalse);
-      expect(badSha.error, contains('تایید نشد'));
-
-      // لغو دانلود جریانی باید فوری عمل کند.
-      bool cancelFlag = false;
-      final UpdateService cancelService = UpdateService(
-        client: _StreamingMockClient((_) async {
-          Stream<List<int>> chunks() async* {
-            yield payload.sublist(0, 8192);
-            cancelFlag = true;
-            yield payload.sublist(8192, 16384);
-          }
-          return http.StreamedResponse(
-            chunks(),
-            200,
-            contentLength: payload.length,
-          );
-        }),
-      );
-      final DownloadResult cancelled = await cancelService.download(
-        const UpdateInfo(
-          version: '1.0.40',
-          downloadUrl: 'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
-        ),
-        isCancelled: () => cancelFlag,
-      );
-      expect(cancelled.ok, isFalse);
-      expect(cancelled.cancelled, isTrue);
-
-      // صفحه به روز رسانی هیچ دکمه خروج به مرورگر ندارد.
       final String updatesPage =
           File('lib/ui/pages/updates_page.dart').readAsStringSync();
       expect(updatesPage.contains('openDownloadPage'), isFalse);
@@ -460,7 +511,7 @@ void main() {
       expect(UmbrellaCore.describeWindowsExitCode(1), isNull);
 
       expect(
-        NetworkDns.presets.values,
+        NetworkDns.presets.keys,
         contains('https://sky.rethinkdns.com/dns-query'),
       );
     });

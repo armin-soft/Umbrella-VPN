@@ -551,15 +551,12 @@ void main() {
           port: 12334,
           logFile: '${temp.path}/core.log',
           logLevel: 'debug',
-          dns: const NetworkDns(
-            remote: 'https://sky.rethinkdns.com/dns-query',
-            direct: 'https://dns.cloudflare.com/dns-query',
-          ),
+          remoteDns: 'https://sky.rethinkdns.com/dns-query',
           contentFilter: const FilterSettings(
             enabled: true,
             categories: <String>['adult', 'gambling', 'ads', 'dating'],
             customDomains: <String>['blocked.example.com'],
-            source: 'telegram',
+            updatedBy: 'telegram',
           ),
         );
         expect(options['log-level'], 'debug');
