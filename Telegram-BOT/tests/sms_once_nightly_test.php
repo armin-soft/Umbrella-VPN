@@ -73,12 +73,14 @@ public static function updateUser(...$Args): array { self::$Updates++; return ['
 }
 final class SystemNotifications {
 public static array $Sent = [];
-public static function queue(int $Id, ...$Args): int { self::$Sent[] = $Id; return 1; }
+public static array $Bodies = [];
+public static function queue(int $Id, ...$Args): int { self::$Sent[] = $Id; self::$Bodies[] = (string)($Args[1] ?? ''); return 1; }
 }
 final class TelegramClient {
 public static array $Sent = [];
+public static array $Bodies = [];
 public static function inlineKeyboard(array $Rows): array { return $Rows; }
-public static function sendMessage(int $Id, ...$Args): array { self::$Sent[] = $Id; return ['ok' => true]; }
+public static function sendMessage(int $Id, ...$Args): array { self::$Sent[] = $Id; self::$Bodies[] = (string)($Args[0] ?? ''); return ['ok' => true]; }
 }
 final class Common { public static function mainButton(): array { return []; } }
 loadProduction('Core/SMS/IPPanel.php');
@@ -136,6 +138,12 @@ ServerClient::$Live[] = array_replace($Live, ['Telegram_ID' => 21]); Repository:
 $Report = new ReflectionMethod(Scheduler::class, 'sendUserUsageReportsIfDue');
 $Report->invoke(null);
 check(TelegramClient::$Sent === [1] && SystemNotifications::$Sent === [1], 'actual report pipeline sends ONLY eligible user on both transports');
+// Telegram Bot receives and stores the complete, un-shortened nightly report;
+// summarization runs exclusively in SystemNotifications::formatForWindowsApp() for Windows.
+$TgReport = TelegramClient::$Bodies[0] ?? '';
+$StoredReport = SystemNotifications::$Bodies[0] ?? '';
+check(str_contains($TgReport, 'گزارش شبانه مصرف شما') && str_contains($TgReport, 'وضعیت مصرف:') && str_contains($TgReport, 'سهمیه کل:') && str_contains($TgReport, 'مصرف شده:') && str_contains($TgReport, 'باقیمانده:') && str_contains($TgReport, 'با مدیریت هوشمند مصرف'), 'Telegram nightly report remains complete and un-shortened');
+check($StoredReport === $TgReport, 'stored bot notification retains complete un-shortened report');
 $Report->invoke(null);
 check(TelegramClient::$Sent === [1], 'daily repeat suppressed');
 unset(Repository::$Settings['Last_User_Usage_Report']); Repository::$Reads = []; Repository::$LateBlock = true;

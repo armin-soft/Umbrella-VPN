@@ -788,22 +788,16 @@ $VisibleRows[] = $Row;
 
 self::ok([
 'items' => array_map(static function (array $Row): array {
-$Title = trim((string)$Row['Title']);
-$Body = (string)($Row['Body'] ?? '');
-$Level = (string)$Row['Level'];
-if ($Level !== 'notice' && (str_contains($Title, 'گزارش شبانه') || str_contains($Title, 'اعلان سیستمی') || mb_strlen($Body) > 220)) {
-$Body = SystemNotifications::compact($Body, 180);
-}
-if ($Title === 'گزارش شبانه مصرف') {
-$Title = 'گزارش شبانه';
-} elseif ($Title === 'اعلان سیستمی آمبرلا') {
-$Title = 'اعلان سیستم';
-}
+$Formatted = SystemNotifications::formatForWindowsApp(
+(string)$Row['Title'],
+(string)($Row['Body'] ?? ''),
+(string)$Row['Level']
+);
 return [
 'id' => (int)$Row['ID'],
-'title' => $Title,
-'body' => $Body,
-'level' => $Level,
+'title' => $Formatted['title'],
+'body' => $Formatted['body'],
+'level' => $Formatted['level'],
 'sent_at' => (string)$Row['Sent_At'],
 'delivered' => (bool)$Row['_delivered'],
 ];

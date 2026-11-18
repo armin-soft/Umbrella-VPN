@@ -1456,19 +1456,33 @@ class AppNotification {
       return '';
     }
 
-    // خلاصه سازی دقیق گزارش های شبانه قدیمی و چندخطی به یک خط کوتاه و کاربردی.
+    // خلاصه سازی دقیق گزارش های شبانه کامل تلگرام به یک خط کوتاه ویژه ویندوز.
     if (title.contains('گزارش شبانه') || normalized.contains('گزارش شبانه')) {
-      final String? total = _extractField(normalized, r'سهمیه کل:\s*([^\n]+)');
-      final String? used = _extractField(normalized, r'مصرف شده:\s*([^\n]+)');
+      final String? total =
+          _extractField(normalized, r'سهمیه\s*کل:\s*([^\n]+)');
+      final String? used = _extractField(
+        normalized,
+        r'(?:مصرف\s*شده|مصرف\s*کل(?:\s*تا\s*امشب)?):\s*([^\n]+)',
+      );
       final String? rem =
           _extractField(normalized, r'باقی\s*مانده:\s*([^\n]+)') ??
               _extractField(normalized, r'باقیمانده:\s*([^\n]+)');
-      final String? exp =
-          _extractField(normalized, r'(?:انقضا|اعتبار)[^:\n]*:\s*([^\n(]+)');
+      final String? exp = _extractField(
+        normalized,
+        r'(?:زمان\s*باقی\s*مانده(?:\s*اشتراک)?|زمان\s*باقیمانده(?:\s*اشتراک)?|اعتبار|تاریخ\s*انقضا):\s*([^\n(]+)',
+      );
+      final String? pct = _extractField(
+        normalized,
+        r'([۰-۹0-9]+(?:[٫.][۰-۹0-9]+)?)\s*٪',
+      );
       if (used != null || rem != null || total != null) {
         final List<String> parts = <String>[];
         if (used != null && total != null) {
-          parts.add('مصرف $used از $total');
+          parts.add(
+            pct != null
+                ? 'مصرف $used از $total ($pct٪)'
+                : 'مصرف $used از $total',
+          );
         } else if (used != null) {
           parts.add('مصرف $used');
         }

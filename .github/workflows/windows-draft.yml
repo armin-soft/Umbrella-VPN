@@ -138,10 +138,9 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             $release = $existing | ConvertFrom-Json
             if (!$release.isDraft) { throw 'Refusing to replace a published release' }
-            if (@($release.assets).Count -gt 0) { throw 'Existing draft has assets; inspect before replacing them' }
             gh release edit $tag --repo $env:REPO --target $env:COMMIT --draft
             if ($LASTEXITCODE -ne 0) { throw 'Draft update failed' }
-            gh release upload $tag $installer --repo $env:REPO
+            gh release upload $tag $installer --clobber --repo $env:REPO
           } else {
             gh release create $tag $installer --repo $env:REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows" --notes "- ارتقای هسته آمبرلا به نسخه 5.9.11 با بهینه سازی مصرف پردازنده و پایداری TUN`n- بستن کامل و قطعی CLI و پردازش های هسته هنگام خروج، آپدیت و خاموشی ویندوز`n- همگام سازی کامل و آنی کنترل محتوا با ربات تلگرام`n- فشرده سازی و بازطراحی گزارش شبانه و تمام اعلان ها`n- افزودن اشتراک رایگان یک بار مصرف و اشتراک نوروزی همگام با ربات در حساب کاربری`n- کانال به روز رسانی اصلی (پایدار) و بتا با دانلود و نصب خودکار کاملاً درون برنامه ای"
           }

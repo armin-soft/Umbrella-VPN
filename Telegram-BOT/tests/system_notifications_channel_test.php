@@ -155,4 +155,14 @@ $Start = strpos($Admin, 'private static function deliver');
 check(str_contains($Admin, "TelegramClient::sendMessage((int)\$User['Chat_ID']"), 'manual delivery keeps normal Telegram transport');
 check(!str_contains(substr($Source, strpos($Source, 'public static function sendMessage('), 800), 'SystemNotifications::'), 'ordinary Telegram sends are not mirrored');
 check(str_contains($Scheduler, 'LIMIT 200') && str_contains($Scheduler, 'time() - 60'), 'pending membership checks bounded and retried independently of full scan interval');
+// Verify Telegram Bot stores complete multi-line text while Windows gateway gets crisp single-line summary.
+resetState();
+$FullNightly = "👋سلام کاربر گرامی\n📈<b>گزارش شبانه مصرف شما</b>\n➖➖➖➖➖➖➖➖\n📊<b>وضعیت مصرف:</b>\n████████░░░░ ۲۵٪ 🟢 عادی\n├─📦<b>سهمیه کل:</b> <b>۵۰ گیگابایت</b>\n├─📥<b>مصرف شده:</b> <b>۱۲٫۵ گیگابایت</b>\n└─📤<b>باقیمانده:</b> <b>۳۷٫۵ گیگابایت</b>\n⏳زمان باقیمانده اشتراک: *۱۸ روز*\n📅تاریخ انقضا: *۱۴۰۵/۰۹/۱۰*\n💡<b>نکته:</b> با مدیریت هوشمند مصرف، اتصال پایدارتری خواهید داشت.";
+check(SystemNotifications::queue(7, 'گزارش شبانه مصرف', $FullNightly, 'nightly-full') === 2, 'full nightly queued');
+$StoredRow = array_values(Database::$Notices)[0];
+check($StoredRow[2] === 'گزارش شبانه مصرف' && str_contains($StoredRow[3], 'با مدیریت هوشمند مصرف') && str_contains($StoredRow[3], "\n"), 'Telegram/DB stores complete un-shortened nightly report');
+$WinNightly = SystemNotifications::formatForWindowsApp($StoredRow[2], $StoredRow[3], $StoredRow[4]);
+check($WinNightly['title'] === 'گزارش شبانه' && !str_contains($WinNightly['body'], "\n") && str_contains($WinNightly['body'], 'مصرف ۱۲٫۵ گیگابایت از ۵۰ گیگابایت (۲۵٪)') && str_contains($WinNightly['body'], 'مانده ۳۷٫۵ گیگابایت') && str_contains($WinNightly['body'], 'اعتبار ۱۸ روز'), 'Windows API receives concise single-line nightly summary');
+$WinSys = SystemNotifications::formatForWindowsApp('اعلان سیستمی آمبرلا', "👋سلام کاربر عزیز\n🎁*اشتراک یک ماهه شما با موفقیت تمدید گردید.*\n➖➖➖➖➖\n🌐سرور آمبرلا", 'info');
+check($WinSys['title'] === 'اشتراک تمدید شد' && $WinSys['level'] === 'success' && !str_contains($WinSys['body'], "\n") && !str_contains($WinSys['body'], 'سرور آمبرلا'), 'Windows API summarizes multi-line system notices cleanly');
 echo "OK system notices/channel restoration ($Count assertions)\n";

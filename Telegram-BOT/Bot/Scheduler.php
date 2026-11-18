@@ -213,7 +213,7 @@ $Subscription = (string)($User['Subscription'] ?? '');
 $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Remaining_Label = Helper::remainingDuration($Exp_Stamp);
 $Event = implode(':', [$User_ID, $Exp_Stamp, $Days]);
-SystemNotifications::queue($User_ID, 'تمدید اشتراک', 'اعتبار اشتراک ' . $Subscription . ': ' . $Remaining_Label . ' مانده.', 'expiry-warning:' . $Event, 'warning');
+SystemNotifications::queue($User_ID, 'یادآور تمدید اشتراک', '⚠️اشتراک ' . $Subscription . ' شما ' . Helper::toPersian((string)$Days) . ' روز دیگر به اتمام می‌رسد. زمان باقی‌مانده: ' . $Remaining_Label, 'expiry-warning:' . $Event, 'warning');
 
 // The scheduler runs frequently, so a one-hour cron lock alone does not stop
 // repeats. A stable key per user + exact expiry + boundary makes each warning
@@ -606,20 +606,25 @@ $Last_Online_Line = $Age_Seconds >= 0
 catch (Throwable) {}
 }
 
-$Short_Expire = $Exp_Stamp > time() ? Helper::remainingDuration($Exp_Stamp) : 'رو به پایان';
-$App_Summary = 'مصرف ' . Helper::formatGB($Used) . ' از ' . Helper::formatGB($Total)
-. ' (' . Helper::formatPercent($Percent) . '٪) · مانده ' . Helper::formatGB($Remaining)
-. ' · اعتبار ' . $Short_Expire;
 $Text = Helper::frame('کاربر', $Name, 'گزارش شبانه مصرف', $User_ID)
-. "📥مصرف: <b>" . Helper::formatGB($Used) . "</b> از <b>" . Helper::formatGB($Total) . "</b> (" . Helper::formatPercent($Percent) . "٪)\n"
-. "📤مانده: <b>" . Helper::formatGB($Remaining) . "</b> {$Status_Icon} {$Status_Label}\n"
-. "⏳اعتبار: <b>{$Short_Expire}</b>"
+. "📈<b>گزارش شبانه مصرف شما</b>\n"
+. self::SEPARATOR . "\n"
+. $Rank_Line
+. "📊<b>وضعیت مصرف:</b>\n"
+. "`{$Bar}` " . Helper::formatPercent($Percent) . "٪ " . "{$Status_Icon} {$Status_Label}\n"
+. "├─📦<b>سهمیه کل:</b> <b>" . Helper::formatGB($Total) . "</b>\n"
+. "├─📥<b>مصرف شده:</b> <b>" . Helper::formatGB($Used) . "</b>\n"
+. "└─📤<b>باقیمانده:</b> <b>" . Helper::formatGB($Remaining) . "</b>\n"
+. $Expire_Line
+. $Last_Online_Line
+. self::SEPARATOR
+. "\n💡<b>نکته:</b> با مدیریت هوشمند مصرف، اتصال پایدارتری خواهید داشت."
 . Helper::userFooter();
 
 // Recheck local holds/preferences immediately before either transport.
 if (!Repository::nightlyReportEnabled($User_ID)
 || !self::nightlyRecipientEligible(Repository::getUser($User_ID) ?? [], $Live)) continue;
-SystemNotifications::queue($User_ID, 'گزارش شبانه', $App_Summary, 'nightly:' . $Today);
+SystemNotifications::queue($User_ID, 'گزارش شبانه مصرف', $Text, 'nightly:' . $Today);
 if ($Chat_ID <= 0) continue;
 $Result = TelegramClient::sendMessage($Chat_ID, $Text, TelegramClient::inlineKeyboard([
 [['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من'], ['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
@@ -821,7 +826,7 @@ return;
 }
 
 if (!ChannelMembership::suspend($User_ID)) return;
-SystemNotifications::queue($User_ID, 'توقف اشتراک', 'مهلت عضویت کانال پایان یافت. پس از عضویت دوباره فعال می شود.', 'channel-disabled:' . $Grace_Started_At, 'warning');
+SystemNotifications::queue($User_ID, 'قطع به دلیل عضویت کانال', '⛔️مهلت عضویت تمام شد؛ کلاینت به دلیل عدم عضویت قطع شد. برای اتصال دوباره عضو شوید: ' . $Channel_Url, 'channel-disabled:' . $Grace_Started_At, 'warning');
 
 $Phone = (string)($User['Phone'] ?? '');
 self::sendChannelDisabledSms($User_ID, $Phone, $Channel_Url);
@@ -865,7 +870,7 @@ private static function sendLeaveWarning(int $Chat_ID, int $User_ID, string $Ful
 $User = Repository::getUser($User_ID);
 $Phone = (string)($User['Phone'] ?? '');
 $Remaining_Label = Helper::humanDuration(max(0, $Minutes) * 60);
-SystemNotifications::queue($User_ID, 'عضویت کانال', 'عضو کانال رسمی شوید · مهلت: ' . self::graceLabel(max(0, $Minutes) * 60), 'channel-warning:' . (int)($User['Channel_Grace_Started_At'] ?? 0) . ':' . ($First ? 'first' : 'reminder'), 'warning');
+SystemNotifications::queue($User_ID, 'هشدار عضویت کانال', '⚠️شما عضو کانال نیستید. مهلت باقی‌مانده: ' . self::graceLabel(max(0, $Minutes) * 60) . ' — ' . $Channel_Url, 'channel-warning:' . (int)($User['Channel_Grace_Started_At'] ?? 0) . ':' . ($First ? 'first' : 'reminder'), 'warning');
 
 if ($First) {
 self::sendChannelWarningSms($User_ID, $Phone, $Channel_Url, $Minutes);
@@ -967,7 +972,7 @@ Repository::updateUser($User_ID, ['Client_Status' => '🚫غیر فعال', 'Cha
 Repository::addSubscriptionLog($User_ID, 'expire', $Subscription, null, null, 'انقضای خودکار اشتراک (زمان بند خودکار)', 'scheduler');
 }
 
-SystemNotifications::queue($User_ID, 'پایان اشتراک', 'اشتراک ' . $Subscription . ' پایان یافت. برای اتصال تمدید کنید.', 'expired:' . (int)($Row['Expiration_Time_Stamp'] ?? 0), 'warning');
+SystemNotifications::queue($User_ID, 'انقضای اشتراک', '⏳اشتراک ' . $Subscription . ' شما به پایان رسید؛ برای ادامه سرویس تمدید کنید.', 'expired:' . (int)($Row['Expiration_Time_Stamp'] ?? 0), 'warning');
 
 if ($Chat_ID > 0) {
 $Status_Notice = $Server_Disabled ? '⚠️اتصال شما از سرور قطع گردید.' : '⚠️سرور موقتاً در دسترس نیست. اشتراک شما به زودی در سرور نیز غیرفعال خواهد شد.';
