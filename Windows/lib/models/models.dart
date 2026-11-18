@@ -1978,6 +1978,13 @@ class DeviceProfile {
     this.ramTotalMb = 0,
     this.ramUsedMb = 0,
     this.ramLoadPercent = 0,
+    this.diskTotalMb = 0,
+    this.diskFreeMb = 0,
+    this.screenWidth = 0,
+    this.screenHeight = 0,
+    this.hasBattery = false,
+    this.batteryPercent = -1,
+    this.powerPlugged = true,
     this.uptimeSeconds = 0,
     this.adapterName = '',
     this.localIp = '',
@@ -2001,6 +2008,13 @@ class DeviceProfile {
   final int ramTotalMb;
   final int ramUsedMb;
   final int ramLoadPercent;
+  final int diskTotalMb;
+  final int diskFreeMb;
+  final int screenWidth;
+  final int screenHeight;
+  final bool hasBattery;
+  final int batteryPercent;
+  final bool powerPlugged;
   final int uptimeSeconds;
   final String adapterName;
   final String localIp;
@@ -2092,8 +2106,8 @@ class DeviceProfile {
     return 'نگارش ${Fa.num(digits)}';
   }
 
-  /// نام کامل و کاملاً فارسی سیستم عامل ویندوز با شماره ساخت.
-  String get osLabelFa {
+  /// عنوان کوتاه فارسی سیستم عامل و ویرایش (بدون شماره ساخت).
+  String get osTitleFa {
     final int build = resolvedOsBuild;
     final String base;
     if (build >= 22000 || os.contains('Windows 11')) {
@@ -2104,12 +2118,22 @@ class DeviceProfile {
       base = 'ویندوز';
     }
     final String edition = osEditionLabelFa;
-    final String title = edition.isEmpty ? base : '$base $edition';
+    return edition.isEmpty ? base : '$base $edition';
+  }
+
+  /// نام کامل و کاملاً فارسی سیستم عامل ویندوز با شماره ساخت.
+  String get osLabelFa {
+    final int build = resolvedOsBuild;
+    final String title = osTitleFa;
     if (build > 0) {
       return '$title • ساخت ${Fa.grouped(build)}';
     }
     return title;
   }
+
+  /// نوع دستگاه به فارسی (رایانه همراه یا رایانه شخصی).
+  String get formFactorFa =>
+      hasBattery ? 'رایانه همراه ویندوز' : 'رایانه شخصی ویندوز';
 
   String get platformLabel => '$osLabelFa • $archLabelFa';
 
@@ -2211,6 +2235,42 @@ class DeviceProfile {
     return 0;
   }
 
+  double get diskTotalGb => diskTotalMb > 0 ? diskTotalMb / 1024.0 : 0;
+  double get diskFreeGb => diskFreeMb > 0 ? diskFreeMb / 1024.0 : 0;
+  double get diskUsedGb {
+    final double used = diskTotalGb - diskFreeGb;
+    return used < 0 ? 0 : used;
+  }
+
+  double get diskPercent {
+    if (diskTotalMb <= 0) {
+      return 0;
+    }
+    final int usedMb =
+        diskTotalMb > diskFreeMb ? (diskTotalMb - diskFreeMb) : 0;
+    return ((usedMb / diskTotalMb) * 100).clamp(0, 100);
+  }
+
+  /// وضوح نمایشگر اصلی به فارسی.
+  String get screenLabelFa {
+    if (screenWidth <= 0 || screenHeight <= 0) {
+      return 'شناسایی نشده';
+    }
+    return '${Fa.grouped(screenWidth)} در ${Fa.grouped(screenHeight)} پیکسل';
+  }
+
+  /// وضعیت منبع تغذیه و باتری سیستم به فارسی.
+  String get powerLabelFa {
+    if (!hasBattery) {
+      return 'برق مستقیم شهری';
+    }
+    if (batteryPercent >= 0 && batteryPercent <= 100) {
+      final String state = powerPlugged ? 'متصل به شارژر' : 'در حال استفاده از باتری';
+      return '${Fa.num(batteryPercent)} درصد ($state)';
+    }
+    return powerPlugged ? 'متصل به شارژر' : 'در حال استفاده از باتری';
+  }
+
   Duration get uptimeDuration =>
       uptimeSeconds > 0 ? Duration(seconds: uptimeSeconds) : Duration.zero;
 
@@ -2288,6 +2348,13 @@ class DeviceProfile {
       ramTotalMb: ramTotalMb,
       ramUsedMb: ramUsedMb,
       ramLoadPercent: ramLoadPercent,
+      diskTotalMb: diskTotalMb,
+      diskFreeMb: diskFreeMb,
+      screenWidth: screenWidth,
+      screenHeight: screenHeight,
+      hasBattery: hasBattery,
+      batteryPercent: batteryPercent,
+      powerPlugged: powerPlugged,
       uptimeSeconds: uptimeSeconds,
       adapterName: adapterName,
       localIp: localIp,
@@ -2314,6 +2381,13 @@ class DeviceProfile {
       ramTotalMb: JsonX.integer(json['ramTotalMb']),
       ramUsedMb: JsonX.integer(json['ramUsedMb']),
       ramLoadPercent: JsonX.integer(json['ramLoadPercent']),
+      diskTotalMb: JsonX.integer(json['diskTotalMb']),
+      diskFreeMb: JsonX.integer(json['diskFreeMb']),
+      screenWidth: JsonX.integer(json['screenWidth']),
+      screenHeight: JsonX.integer(json['screenHeight']),
+      hasBattery: JsonX.boolean(json['hasBattery']),
+      batteryPercent: JsonX.integer(json['batteryPercent'], -1),
+      powerPlugged: JsonX.boolean(json['powerPlugged'], fallback: true),
       uptimeSeconds: JsonX.integer(json['uptimeSeconds']),
       adapterName: JsonX.text(json['adapterName']),
       localIp: JsonX.text(json['localIp']),

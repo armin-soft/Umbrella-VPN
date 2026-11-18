@@ -176,6 +176,13 @@ void UmbrellaNativePlugin::HandleMethodCall(
     map[flutter::EncodableValue("ramTotalMb")] = flutter::EncodableValue(info.ram_total_mb);
     map[flutter::EncodableValue("ramUsedMb")] = flutter::EncodableValue(info.ram_used_mb);
     map[flutter::EncodableValue("ramLoadPercent")] = flutter::EncodableValue(info.ram_load_percent);
+    map[flutter::EncodableValue("diskTotalMb")] = flutter::EncodableValue(info.disk_total_mb);
+    map[flutter::EncodableValue("diskFreeMb")] = flutter::EncodableValue(info.disk_free_mb);
+    map[flutter::EncodableValue("screenWidth")] = flutter::EncodableValue(info.screen_width);
+    map[flutter::EncodableValue("screenHeight")] = flutter::EncodableValue(info.screen_height);
+    map[flutter::EncodableValue("hasBattery")] = flutter::EncodableValue(info.has_battery);
+    map[flutter::EncodableValue("batteryPercent")] = flutter::EncodableValue(info.battery_percent);
+    map[flutter::EncodableValue("powerPlugged")] = flutter::EncodableValue(info.power_plugged);
     map[flutter::EncodableValue("uptimeSeconds")] = flutter::EncodableValue(info.uptime_seconds);
     map[flutter::EncodableValue("adapterName")] = flutter::EncodableValue(info.adapter_name);
     map[flutter::EncodableValue("localIp")] = flutter::EncodableValue(info.local_ip);

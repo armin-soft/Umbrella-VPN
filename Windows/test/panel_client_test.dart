@@ -228,15 +228,60 @@ void main() {
       }
     });
 
-    test('صفحه دستگاه من بدون نیم فاصله و بدون افشای کلید خصوصی یا لینک اشتراک است', () {
-      final String device = File('lib/ui/pages/device_page.dart').readAsStringSync();
+    test('بخش دستگاه من و حساب من کاملاً از هم تفکیک شده و بدون نشت اطلاعات حساس هستند', () {
+      final String device =
+          File('lib/ui/pages/device_page.dart').readAsStringSync();
+      final String account =
+          File('lib/ui/pages/account_page.dart').readAsStringSync();
+
+      // صفحه دستگاه من: فقط سخت افزار، سیستم عامل، حافظه و شبکه رایانه؛
+      // بدون هیچ وابستگی به حساب کاربری یا اشتراک.
       expect(device.contains('\u200C'), isFalse);
-      expect(device.contains('subscriptionUrl'), isFalse);
-      expect(device.contains('wg_pk'), isFalse);
-      expect(device.contains('wg_psk'), isFalse);
-      expect(device.contains('ed25519_private_key'), isFalse);
-      expect(device.contains('refreshFromPanel'), isTrue);
-      expect(device.contains('Fa.tehranFullDate'), isTrue);
+      for (final String accountOnly in <String>[
+        'auth_controller.dart',
+        'AuthController',
+        'refreshFromPanel',
+        'usageLimitGb',
+        'currentUsageGb',
+        'effectiveExpiryDate',
+        'telegramId',
+        'wgIpv4',
+        'awgIpv4',
+        'subscriptionUrl',
+        'حجم قابل استفاده',
+        'تاریخ پایان اعتبار',
+        'شناسه تلگرام',
+        'شماره موبایل',
+      ]) {
+        expect(
+          device.contains(accountOnly),
+          isFalse,
+          reason: '$accountOnly نباید در صفحه دستگاه من باشد',
+        );
+      }
+
+      // صفحه حساب من: فقط حساب کاربری، اشتراک پنل، تقویم شمسی و تلگرام؛
+      // بدون مشخصات سخت افزاری رایانه و بدون کلیدهای خصوصی.
+      expect(account.contains('\u200C'), isFalse);
+      expect(account.contains('refreshFromPanel'), isTrue);
+      expect(account.contains('Fa.tehranFullDate'), isTrue);
+      for (final String forbidden in <String>[
+        'DeviceProfile',
+        'ramTotalMb',
+        'diskTotalMb',
+        'cpuLabelFa',
+        'machineId',
+        'subscriptionUrl',
+        'wg_pk',
+        'wg_psk',
+        'ed25519_private_key',
+      ]) {
+        expect(
+          account.contains(forbidden),
+          isFalse,
+          reason: '$forbidden نباید در صفحه حساب من باشد',
+        );
+      }
     });
   });
 }

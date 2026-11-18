@@ -44,6 +44,13 @@ struct DeviceInfo {
   int64_t ram_total_mb = 0;
   int64_t ram_used_mb = 0;
   int ram_load_percent = 0;
+  int64_t disk_total_mb = 0;
+  int64_t disk_free_mb = 0;
+  int screen_width = 0;
+  int screen_height = 0;
+  bool has_battery = false;
+  int battery_percent = -1;
+  bool power_plugged = true;
   int64_t uptime_seconds = 0;
   std::string adapter_name;
   std::string local_ip;

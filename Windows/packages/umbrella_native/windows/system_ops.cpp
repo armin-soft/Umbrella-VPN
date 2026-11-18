@@ -383,6 +383,38 @@ DeviceInfo SystemOps::CollectDeviceInfo() {
         total_mb > avail_mb ? (total_mb - avail_mb) : 0ULL);
     info.ram_load_percent = static_cast<int>(mem_status.dwMemoryLoad);
   }
+
+  wchar_t sys_dir[MAX_PATH] = {0};
+  UINT sys_len = GetSystemDirectoryW(sys_dir, MAX_PATH);
+  std::wstring root_drive = L"C:\\";
+  if (sys_len >= 3 && sys_dir[1] == L':') {
+    root_drive.assign(sys_dir, 3);
+  }
+  ULARGE_INTEGER free_avail = {0};
+  ULARGE_INTEGER total_bytes = {0};
+  ULARGE_INTEGER total_free = {0};
+  if (GetDiskFreeSpaceExW(root_drive.c_str(), &free_avail, &total_bytes,
+                          &total_free)) {
+    info.disk_total_mb =
+        static_cast<int64_t>(total_bytes.QuadPart / (1024ULL * 1024ULL));
+    info.disk_free_mb =
+        static_cast<int64_t>(total_free.QuadPart / (1024ULL * 1024ULL));
+  }
+
+  info.screen_width = GetSystemMetrics(SM_CXSCREEN);
+  info.screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+  SYSTEM_POWER_STATUS power = {0};
+  if (GetSystemPowerStatus(&power)) {
+    const bool no_system_battery = (power.BatteryFlag & 128) != 0 ||
+                                   power.BatteryFlag == 255;
+    info.has_battery = !no_system_battery;
+    if (power.BatteryLifePercent <= 100) {
+      info.battery_percent = static_cast<int>(power.BatteryLifePercent);
+    }
+    info.power_plugged = (power.ACLineStatus == 1) || !info.has_battery;
+  }
+
   info.uptime_seconds = static_cast<int64_t>(GetTickCount64() / 1000ULL);
   info.adapter_name = DefaultAdapterName();
   info.local_ip = LocalIpv4();
