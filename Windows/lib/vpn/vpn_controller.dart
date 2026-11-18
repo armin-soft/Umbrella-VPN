@@ -3974,10 +3974,7 @@ class VpnController extends ChangeNotifier {
     _cancelGeneration++;
     _filterReloadTimer?.cancel();
     _autoConnectRetryTimer?.cancel();
-    if (_connectInFlight) {
-      await cancel();
-      return;
-    }
+    if (_connectInFlight) { await cancel(); return; }
     if (_status == VpnStatus.disconnected && !_hasTrackedCoreProcesses) {
       return;
     }

@@ -1108,6 +1108,9 @@ class FilterSettings {
     while (value.endsWith('.')) {
       value = value.substring(0, value.length - 1);
     }
+    if (value.startsWith('www.') && value.indexOf('.', 4) > 4) {
+      value = value.substring(4);
+    }
     if (value.isEmpty || value.length > 253 || value.contains(' ')) {
       return null;
     }
@@ -1115,6 +1118,9 @@ class FilterSettings {
       return null;
     }
     final List<String> labels = value.split('.');
+    if (labels.length < 2) {
+      return null;
+    }
     final RegExp labelRule =
         RegExp(r'^(?:xn--)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$');
     for (final String label in labels) {
@@ -1145,8 +1151,8 @@ class FilterSettings {
       (activeBotCategories.isNotEmpty || normalizedCustomDomains.isNotEmpty);
 
   String get sourceLabel => switch (updatedBy.trim().toLowerCase()) {
-        'bot' => 'ربات تلگرام',
-        'app' => 'برنامه ویندوز',
+        'bot' || 'telegram' => 'ربات تلگرام',
+        'app' || 'windows' => 'برنامه ویندوز',
         _ => 'همگام با ربات',
       };
 

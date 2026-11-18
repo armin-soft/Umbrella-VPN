@@ -519,7 +519,7 @@ void main() {
         UmbrellaCore.describeWindowsExitCode(-1073740791),
         contains('0xC0000409'),
       );
-      expect(UmbrellaCore.describeWindowsExitCode(1), isNull);
+      expect(UmbrellaCore.describeWindowsExitCode(1), isEmpty);
 
       expect(
         NetworkDns.presets.keys,
