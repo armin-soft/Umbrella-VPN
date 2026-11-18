@@ -10,6 +10,7 @@ import '../../platform/native.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
+import '../../state/subscription_controller.dart';
 import '../../state/update_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';
@@ -97,11 +98,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  void _triggerAutoSync() {
+    if (!mounted) {
+      return;
+    }
+    final AuthController auth = context.read<AuthController>();
+    final SubscriptionController subs = context.read<SubscriptionController>();
+    final VpnController vpn = context.read<VpnController>();
+    if (auth.signedIn) {
+      unawaited(auth.autoSync());
+      if (!subs.personalLoading && !subs.loadingAll) {
+        unawaited(subs.syncPersonal());
+      }
+    }
+    unawaited(vpn.refreshIp());
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final bool visible = AppShell.isLifecycleVisible(state);
     if (_appVisible != visible && mounted) {
       setState(() => _appVisible = visible);
+    }
+    if (state == AppLifecycleState.resumed) {
+      _triggerAutoSync();
     }
   }
 
@@ -113,6 +133,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         if (mounted && !_appVisible) {
           setState(() => _appVisible = true);
         }
+        _triggerAutoSync();
         break;
       case 'servers':
         await widget.windowService.show();
@@ -274,6 +295,7 @@ class _NotificationsDialog extends StatefulWidget {
 class _NotificationsDialogState extends State<_NotificationsDialog> {
   bool _unreadOnly = false;
   final Set<String> _expandedKeys = <String>{};
+  Timer? _autoPollTimer;
 
   @override
   void initState() {
@@ -281,6 +303,17 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(widget.auth.fetchNotifications(includeHistory: true));
     });
+    _autoPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted && widget.auth.signedIn) {
+        unawaited(widget.auth.fetchNotifications(includeHistory: true));
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoPollTimer?.cancel();
+    super.dispose();
   }
 
   static Color _tone(UmbrellaColors colors, String level) {
@@ -403,17 +436,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: colors.primary,
-                            ),
-                          ),
-                        )
-                      else
-                        IconAction(
-                          icon: Icons.refresh_rounded,
-                          tooltip: 'به روز رسانی اعلان ها',
-                          size: AppMetrics.iconBoxSm,
-                          onTap: () => unawaited(
-                            widget.auth.fetchNotifications(
-                              includeHistory: true,
                             ),
                           ),
                         ),

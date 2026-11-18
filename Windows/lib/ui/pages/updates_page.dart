@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +9,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/toast_controller.dart';
 import '../../state/update_controller.dart';
+import '../shell/app_shell.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 
@@ -19,19 +22,56 @@ class UpdatesPage extends StatefulWidget {
 }
 
 class _UpdatesPageState extends State<UpdatesPage> {
+  Timer? _autoCheckTimer;
+  bool _wasTabActive = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSilently());
+    _autoCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!mounted ||
+          !AppShell.isLifecycleVisible(
+            WidgetsBinding.instance.lifecycleState,
+          ) ||
+          !TickerMode.of(context)) {
         return;
       }
-      final UpdateController updates = context.read<UpdateController>();
-      updates.loadSkipped().then((_) {
-        if (mounted) {
-          updates.check(silent: true);
-        }
-      });
+      _checkSilently();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool active = TickerMode.of(context);
+    if (active && !_wasTabActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkSilently());
+    }
+    _wasTabActive = active;
+  }
+
+  @override
+  void dispose() {
+    _autoCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  void _checkSilently() {
+    if (!mounted) {
+      return;
+    }
+    final UpdateController updates = context.read<UpdateController>();
+    if (updates.checking || updates.downloading || updates.installing) {
+      return;
+    }
+    updates.loadSkipped().then((_) {
+      if (mounted &&
+          !updates.checking &&
+          !updates.downloading &&
+          !updates.installing) {
+        updates.check(silent: true);
+      }
     });
   }
 
@@ -58,16 +98,15 @@ class _UpdatesPageState extends State<UpdatesPage> {
               '${updates.lastCheckedAt != null ? '  •  آخرین بررسی ${Fa.relative(updates.lastCheckedAt)}' : ''}',
             ),
             icon: Icons.system_update_rounded,
-            actions: <Widget>[
-              GradientButton(
-                label: updates.checking ? 'در حال بررسی...' : 'بررسی نسخه جدید',
-                icon: Icons.refresh_rounded,
-                expand: false,
-                height: AppMetrics.controlHeightSmall,
-                loading: updates.checking,
-                onPressed: _onCheckPressed(updates, toasts),
-              ),
-            ],
+            actions: updates.checking
+                ? <Widget>[
+                    Pill(
+                      label: 'بررسی خودکار...',
+                      color: colors.primary,
+                      dense: true,
+                    ),
+                  ]
+                : const <Widget>[],
           ),
           const SizedBox(height: AppMetrics.space4),
 
@@ -453,31 +492,6 @@ class _UpdatesPageState extends State<UpdatesPage> {
     } else if (updates.error.isEmpty) {
       toasts.success('کانال ${next.label} فعال شد');
     }
-  }
-
-  VoidCallback? _onCheckPressed(
-    UpdateController updates,
-    ToastController toasts,
-  ) {
-    if (updates.checking || updates.downloading || updates.installing) {
-      return null;
-    }
-    return () async {
-      final bool found = await updates.check(ignoreSkipped: true);
-      if (!mounted) {
-        return;
-      }
-      if (found && updates.available != null) {
-        toasts.info(
-          'نسخه جدید آماده نصب است',
-          Fa.num('نسخه ${updates.available!.version}'),
-        );
-      } else if (updates.error.isNotEmpty) {
-        toasts.error('بررسی انجام نشد', updates.error);
-      } else {
-        toasts.success('برنامه به روز است');
-      }
-    };
   }
 }
 

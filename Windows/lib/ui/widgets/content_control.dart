@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,9 +8,10 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
+import '../shell/app_shell.dart';
 import 'common.dart';
 
-/// کنترل محتوا؛ همگام دوطرفه و آنی با ربات تلگرام آمبرلا.
+/// کنترل محتوا؛ دقیقاً مطابق ربات تلگرام با ذخیره و اعمال کاملاً خودکار.
 class ContentControlCard extends StatefulWidget {
   const ContentControlCard({super.key});
 
@@ -24,30 +27,61 @@ class _ContentControlCardState extends State<ContentControlCard> {
     'dating': Icons.person_off_rounded,
   };
 
-  final TextEditingController _domainCtrl = TextEditingController();
-  String _domainError = '';
+  Timer? _autoPollTimer;
+  bool _wasTabActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pollSilently());
+    _autoPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted ||
+          !AppShell.isLifecycleVisible(
+            WidgetsBinding.instance.lifecycleState,
+          ) ||
+          !TickerMode.of(context)) {
+        return;
+      }
+      _pollSilently();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool active = TickerMode.of(context);
+    if (active && !_wasTabActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pollSilently());
+    }
+    _wasTabActive = active;
+  }
+
+  void _pollSilently() {
+    if (!mounted) {
+      return;
+    }
+    final AuthController auth = context.read<AuthController>();
+    if (auth.signedIn) {
+      unawaited(auth.syncFilter());
+    }
+  }
 
   @override
   void dispose() {
-    _domainCtrl.dispose();
+    _autoPollTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _applyAndSave(
     AuthController auth,
     ToastController toasts,
-    FilterSettings next, {
-    String? toastTitle,
-  }) async {
+    FilterSettings next,
+  ) async {
     final bool ok = await auth.saveFilter(next);
     if (!mounted) {
       return;
     }
-    if (ok) {
-      if (toastTitle != null && toastTitle.isNotEmpty) {
-        toasts.success(toastTitle);
-      }
-    } else if (auth.error.isNotEmpty) {
+    if (!ok && auth.error.isNotEmpty) {
       toasts.error('ذخیره کنترل محتوا ناموفق بود', auth.error);
     }
   }
@@ -59,17 +93,10 @@ class _ContentControlCardState extends State<ContentControlCard> {
   ) async {
     final FilterSettings current = auth.filter;
     final List<String> cats = current.activeBotCategories.toList();
-    // مشابه ربات تلگرام: روشن یا خاموش کردن کلید اصلی همان لحظه ذخیره و اعمال می شود.
-    final FilterSettings next = current.copyWith(
-      enabled: value,
-      categories: cats,
-    );
     await _applyAndSave(
       auth,
       toasts,
-      next,
-      toastTitle:
-          value ? 'کنترل محتوا روشن شد' : 'کنترل محتوا خاموش شد',
+      current.copyWith(enabled: value, categories: cats),
     );
   }
 
@@ -78,103 +105,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
     ToastController toasts,
     String key,
   ) async {
-    // دقیقاً مطابق منطق ربات تلگرام (`AppFilter::toggle`): لمس هر دسته آن را
-    // روشن/خاموش می کند و اگر حداقل یک دسته یا دامنه باقی ماند فیلتر فعال می ماند.
-    final FilterSettings next = auth.filter.toggleCategory(key);
-    await _applyAndSave(auth, toasts, next);
-  }
-
-  Future<void> _onToggleAll(
-    AuthController auth,
-    ToastController toasts,
-  ) async {
-    final FilterSettings current = auth.filter;
-    final List<String> allKeys = FilterSettings.categoryLabels.keys.toList();
-    final bool clearAll =
-        current.enabled && current.activeBotCategories.length == allKeys.length;
-    final FilterSettings next = clearAll
-        ? current.copyWith(
-            enabled: current.normalizedCustomDomains.isNotEmpty,
-            categories: const <String>[],
-          )
-        : current.copyWith(
-            enabled: true,
-            categories: allKeys,
-          );
-    await _applyAndSave(
-      auth,
-      toasts,
-      next,
-      toastTitle: clearAll
-          ? 'همه دسته ها غیرفعال شدند'
-          : 'همه دسته ها فعال و همگام شدند',
-    );
-  }
-
-  Future<void> _onAddDomain(
-    AuthController auth,
-    ToastController toasts,
-  ) async {
-    final String? normalized =
-        FilterSettings.normalizeDomainSuffix(_domainCtrl.text);
-    if (normalized == null) {
-      setState(() {
-        _domainError = 'دامنه معتبر وارد کنید (مانند example.com).';
-      });
-      return;
-    }
-    final FilterSettings current = auth.filter;
-    final List<String> domains = current.normalizedCustomDomains.toList();
-    if (domains.contains(normalized)) {
-      _domainCtrl.clear();
-      setState(() => _domainError = '');
-      return;
-    }
-    domains.add(normalized);
-    _domainCtrl.clear();
-    setState(() => _domainError = '');
-    await _applyAndSave(
-      auth,
-      toasts,
-      current.copyWith(enabled: true, customDomains: domains),
-      toastTitle: 'دامنه به فهرست مسدود اضافه شد',
-    );
-  }
-
-  Future<void> _onRemoveDomain(
-    AuthController auth,
-    ToastController toasts,
-    String domain,
-  ) async {
-    final FilterSettings current = auth.filter;
-    final List<String> domains = current.normalizedCustomDomains
-        .where((String item) => item != domain)
-        .toList();
-    final bool stayEnabled =
-        current.activeBotCategories.isNotEmpty || domains.isNotEmpty;
-    await _applyAndSave(
-      auth,
-      toasts,
-      current.copyWith(
-        enabled: current.enabled && stayEnabled,
-        customDomains: domains,
-      ),
-    );
-  }
-
-  Future<void> _onSyncFromBot(
-    AuthController auth,
-    ToastController toasts,
-  ) async {
-    final bool ok = await auth.syncFilter();
-    if (!mounted) {
-      return;
-    }
-    if (ok) {
-      toasts.success('کنترل محتوا با ربات همگام شد');
-    } else if (auth.error.isNotEmpty) {
-      toasts.error('همگام سازی ناموفق بود', auth.error);
-    }
+    await _applyAndSave(auth, toasts, auth.filter.toggleCategory(key));
   }
 
   @override
@@ -183,15 +114,11 @@ class _ContentControlCardState extends State<ContentControlCard> {
     final AuthController auth = context.watch<AuthController>();
     final ToastController toasts = context.read<ToastController>();
     final FilterSettings filter = auth.filter;
-    final bool busy = auth.savingFilter || auth.syncingFilter;
+    final bool busy = auth.savingFilter;
     final List<String> activeCategories = filter.activeBotCategories;
-    final List<String> customDomains = filter.normalizedCustomDomains;
     final List<MapEntry<String, String>> entries =
         FilterSettings.categoryLabels.entries.toList(growable: false);
-    final bool allSelected =
-        filter.enabled && activeCategories.length == entries.length;
-    final int activeCount =
-        filter.enabled ? activeCategories.length : 0;
+    final int activeCount = filter.enabled ? activeCategories.length : 0;
 
     return GlassCard(
       padding: AppMetrics.cardPadding,
@@ -203,7 +130,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
             icon: Icons.gpp_good_rounded,
             title: 'کنترل محتوا',
             subtitle:
-                'همگام خودکار با بخش کنترل محتوا در ربات تلگرام؛ هر تغییر در ربات یا برنامه بلافاصله روی هر دو اعمال می شود',
+                'هر تغییر به صورت کاملاً خودکار ذخیره و بی درنگ روی اتصال و ربات اعمال می شود',
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -298,138 +225,6 @@ class _ContentControlCardState extends State<ContentControlCard> {
                 children: rows,
               );
             },
-          ),
-          const SizedBox(height: AppMetrics.space4),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: _domainCtrl,
-                  enabled: !busy && auth.signedIn,
-                  textDirection: TextDirection.ltr,
-                  onSubmitted: (_) => _onAddDomain(auth, toasts),
-                  decoration: InputDecoration(
-                    hintText: 'افزودن دامنه سفارشی برای مسدودسازی (example.com)',
-                    prefixIcon: const Icon(
-                      Icons.block_rounded,
-                      size: AppMetrics.iconSm,
-                    ),
-                    errorText: _domainError.isEmpty ? null : _domainError,
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              SizedBox(
-                height: AppMetrics.controlHeightSmall,
-                child: OutlinedButton.icon(
-                  onPressed: busy || !auth.signedIn
-                      ? null
-                      : () => _onAddDomain(auth, toasts),
-                  icon: const Icon(Icons.add_rounded, size: AppMetrics.iconSm),
-                  label: const Text('افزودن'),
-                ),
-              ),
-            ],
-          ),
-          if (customDomains.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppMetrics.space3),
-            Wrap(
-              spacing: AppMetrics.space2,
-              runSpacing: AppMetrics.space2,
-              children: customDomains.map((String domain) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppMetrics.space3,
-                    vertical: AppMetrics.space1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceHigh.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-                    border: Border.all(color: colors.border),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        domain,
-                        textDirection: TextDirection.ltr,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const SizedBox(width: AppMetrics.space1),
-                      InkWell(
-                        borderRadius:
-                            BorderRadius.circular(AppMetrics.radiusPill),
-                        onTap: busy
-                            ? null
-                            : () => _onRemoveDomain(auth, toasts, domain),
-                        child: Icon(
-                          Icons.close_rounded,
-                          size: AppMetrics.iconXs,
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(growable: false),
-            ),
-          ],
-          const Divider(height: AppMetrics.space6),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppMetrics.space3,
-            runSpacing: AppMetrics.space2,
-            children: <Widget>[
-              Pill(
-                label: busy
-                    ? 'در حال همگام سازی با سرور...'
-                    : 'آخرین تغییر: ${filter.sourceLabel}',
-                icon: Icons.sync_rounded,
-                color: busy ? colors.info : colors.textSecondary,
-                dense: true,
-              ),
-              Wrap(
-                spacing: AppMetrics.space2,
-                runSpacing: AppMetrics.space2,
-                children: <Widget>[
-                  SizedBox(
-                    height: AppMetrics.controlHeightSmall,
-                    child: OutlinedButton.icon(
-                      onPressed: busy || !auth.signedIn
-                          ? null
-                          : () => _onToggleAll(auth, toasts),
-                      icon: Icon(
-                        allSelected
-                            ? Icons.deselect_rounded
-                            : Icons.done_all_rounded,
-                        size: AppMetrics.iconSm,
-                      ),
-                      label: Text(
-                        allSelected ? 'غیرفعال سازی همه' : 'انتخاب همه دسته ها',
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: AppMetrics.controlHeightSmall,
-                    child: OutlinedButton.icon(
-                      onPressed: busy || !auth.signedIn
-                          ? null
-                          : () => _onSyncFromBot(auth, toasts),
-                      icon: const Icon(
-                        Icons.refresh_rounded,
-                        size: AppMetrics.iconSm,
-                      ),
-                      label: const Text('همگام سازی با ربات'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ),
         ],
       ),

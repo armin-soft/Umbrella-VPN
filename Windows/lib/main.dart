@@ -197,18 +197,26 @@ Future<void> main(List<String> arguments) async {
     if (settings.settings.checkUpdatesOnStart) {
       unawaited(updates.check(silent: true));
     }
-    // به روز رسانی خودکار پروفایل و اشتراک هر نیم ساعت؛ کاربر کاری نمی کند.
-    Timer.periodic(const Duration(minutes: 30), (_) {
+    // بررسی خودکار دوره ای نسخه جدید در پس زمینه (کانال فعال کاربر).
+    Timer.periodic(const Duration(minutes: 60), (_) {
+      if (settings.settings.checkUpdatesOnStart) {
+        unawaited(updates.check(silent: true));
+      }
+    });
+    // همگام سازی کاملاً خودکار حساب، پنل، کنترل محتوا، طرح های هدیه و سرورها.
+    Timer.periodic(const Duration(minutes: 5), (_) {
       if (!auth.signedIn) {
         return;
       }
       unawaited(() async {
         await auth.refreshAccount(silent: true);
+        await auth.refreshFromPanel();
         await subscriptions.syncPersonal();
       }());
     });
     if (auth.signedIn) {
       unawaited(auth.fetchNotifications(includeHistory: true));
+      unawaited(auth.refreshFromPanel());
       // اشتراک شخصی از سرور خوانده می شود؛ فقط اگر سرور چیزی نداد منابع عمومی
       // به عنوان پشتیبان بارگذاری می شوند.
       unawaited(() async {

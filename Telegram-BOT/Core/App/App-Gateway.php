@@ -706,7 +706,15 @@ if ($Account === null || $Account === []) {
 self::fail(502, 'panel_unavailable', 'دریافت اطلاعات حساب ناموفق بود.');
 }
 
+$LinkedTg = self::autoLinkTelegramOwner(
+(string)$Session['Device_ID'],
+$UUID,
+(int)($Session['Telegram_ID'] ?? 0)
+);
 $Profile = AppFilter::accountPayload($Account);
+if (trim((string)($Profile['telegram_id'] ?? '')) === '' && $LinkedTg > 0) {
+$Profile['telegram_id'] = (string)$LinkedTg;
+}
 $Base = PanelClient::accountBase($Account);
 $Profile['account_base'] = $Base;
 $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
@@ -714,14 +722,15 @@ $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
 self::ok([
 'account' => $Profile,
 'filter' => AppFilter::load($UUID),
-'offers' => self::offersPayload($UUID, (int)($Session['Telegram_ID'] ?? 0), $Account),
+'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 'checked_at' => gmdate('c'),
 ]);
 }
 
 /**
- * Keeps the device row fresh AND delivers live filter + subscription offer
- * toggles from the Telegram bot so changes reflect automatically in the app.
+ * Keeps the device row fresh, automatically links Telegram ownership when the
+ * same UUID exists in `Users`, and delivers live filter + subscription offer
+ * toggles so everything stays synchronized with zero manual sync controls.
  */
 private static function heartbeat(array $Body): void {
 $Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
@@ -730,18 +739,45 @@ if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
 
+$DeviceId = (string)$Session['Device_ID'];
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
 Database::getInstance()->execute(
 'UPDATE `App_Devices` SET `Last_Seen_At` = ? WHERE `Device_ID` = ?',
-[time(), (string)$Session['Device_ID']]
+[time(), $DeviceId]
 );
 
-$UUID = trim((string)($Session['User_UUID'] ?? ''));
 $Payload = ['seen_at' => gmdate('c')];
 if ($UUID !== '') {
+$LinkedTg = self::autoLinkTelegramOwner(
+$DeviceId,
+$UUID,
+(int)($Session['Telegram_ID'] ?? 0)
+);
 $Payload['filter'] = AppFilter::load($UUID);
-$Payload['offers'] = self::offersPayload($UUID, (int)($Session['Telegram_ID'] ?? 0), null);
+$Payload['offers'] = self::offersPayload($UUID, $LinkedTg, null);
 }
 self::ok($Payload);
+}
+
+/** Automatically links a device row to its Telegram owner when unlinked. */
+private static function autoLinkTelegramOwner(string $DeviceId, string $UUID, int $TelegramId): int {
+if ($TelegramId > 0) {
+return $TelegramId;
+}
+if ($UUID === '' || $UUID === '_') {
+return 0;
+}
+$User = self::resolveBotUser($UUID, 0);
+$Found = (int)($User['Telegram_ID'] ?? 0);
+if ($Found > 0 && $DeviceId !== '') {
+try {
+Database::getInstance()->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `Device_ID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Found, $DeviceId]
+);
+} catch (Throwable) {}
+}
+return $Found;
 }
 
 private static function notifications(): void {

@@ -393,7 +393,6 @@ class _ConnectPageState extends State<ConnectPage> {
                             flagCode: flagCode,
                             country: connected ? countryName : '',
                             connected: connected,
-                            onRefresh: () => vpn.refreshIp(),
                           ),
                         ],
                       ),
@@ -925,14 +924,12 @@ class _IpChip extends StatelessWidget {
     required this.flagCode,
     required this.country,
     required this.connected,
-    required this.onRefresh,
   });
 
   final String ip;
   final String flagCode;
   final String country;
   final bool connected;
-  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -940,68 +937,55 @@ class _IpChip extends StatelessWidget {
     final String caption = connected
         ? (country.isNotEmpty ? 'آی پی اتصال · $country' : 'آی پی اتصال')
         : 'آی پی دستگاه';
-    return Tooltip(
-      message: 'به روز رسانی آی پی',
-      child: InkWell(
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-        onTap: onRefresh,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppMetrics.space3,
-            vertical: AppMetrics.space2,
-          ),
-          decoration: BoxDecoration(
-            color: colors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-            border: Border.all(
-              color: connected
-                  ? colors.success.withValues(alpha: 0.35)
-                  : colors.border,
-            ),
-          ),
-          child: Row(
+        border: Border.all(
+          color: connected
+              ? colors.success.withValues(alpha: 0.35)
+              : colors.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (flagCode.isNotEmpty) ...<Widget>[
+            FlagView(code: flagCode, width: AppMetrics.flagWidth),
+            const SizedBox(width: AppMetrics.space2),
+          ],
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (flagCode.isNotEmpty) ...<Widget>[
-                FlagView(code: flagCode, width: AppMetrics.flagWidth),
-                const SizedBox(width: AppMetrics.space2),
-              ],
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    Fa.num(caption),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color:
-                              connected ? colors.success : colors.textSecondary,
-                          fontWeight:
-                              connected ? FontWeight.w700 : FontWeight.w600,
-                        ),
-                  ),
-                  const SizedBox(height: AppMetrics.space1),
-                  Text(
-                    Fa.num(ip),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800),
-                  ),
-                ],
+              Text(
+                Fa.num(caption),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color:
+                          connected ? colors.success : colors.textSecondary,
+                      fontWeight:
+                          connected ? FontWeight.w700 : FontWeight.w600,
+                    ),
               ),
-              const SizedBox(width: AppMetrics.space2),
-              Icon(
-                Icons.refresh_rounded,
-                size: AppMetrics.iconSm,
-                color: colors.textSecondary,
+              const SizedBox(height: AppMetrics.space1),
+              Text(
+                Fa.num(ip),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }

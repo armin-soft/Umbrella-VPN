@@ -25,10 +25,12 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  bool _refreshing = false;
+  bool _syncInFlight = false;
   bool _panelFresh = false;
+  bool _wasTabActive = false;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
+  Timer? _autoSyncTimer;
 
   @override
   void initState() {
@@ -43,59 +45,65 @@ class _AccountPageState extends State<AccountPage> {
       }
       setState(() => _now = DateTime.now());
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPanel(true));
+    _autoSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!mounted ||
+          !AppShell.isLifecycleVisible(
+            WidgetsBinding.instance.lifecycleState,
+          ) ||
+          !TickerMode.of(context)) {
+        return;
+      }
+      unawaited(_autoSync());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_autoSync()));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool active = TickerMode.of(context);
+    if (active && !_wasTabActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_autoSync());
+        }
+      });
+    }
+    _wasTabActive = active;
   }
 
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _autoSyncTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadPanel(bool silent) async {
+  Future<void> _autoSync() async {
+    if (_syncInFlight || !mounted) {
+      return;
+    }
     final AuthController auth = context.read<AuthController>();
-    final bool ok = await auth.refreshFromPanel();
-    if (!mounted) {
+    final SubscriptionController subs = context.read<SubscriptionController>();
+    if (!auth.signedIn) {
       return;
     }
-    setState(() {
-      _panelFresh = ok;
-      _now = DateTime.now();
-    });
-    if (!silent) {
-      final ToastController toasts = context.read<ToastController>();
-      if (ok) {
-        toasts.success('اطلاعات حساب از پنل کاربری به روز شد');
-      } else {
-        toasts.info('اطلاعات ذخیره شده حساب نمایش داده می شود');
+    _syncInFlight = true;
+    try {
+      await auth.refreshAccount(silent: true);
+      final bool panel = await auth.refreshFromPanel();
+      await subs.syncPersonal();
+      if (!mounted) {
+        return;
       }
-    }
-  }
-
-  Future<void> _refreshFromServer(
-    AuthController auth,
-    SubscriptionController subs,
-    ToastController toasts,
-  ) async {
-    if (_refreshing) {
-      return;
-    }
-    setState(() => _refreshing = true);
-    await auth.refreshAccount();
-    final bool panel = await auth.refreshFromPanel();
-    await subs.syncPersonal();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _refreshing = false;
-      _panelFresh = panel;
-      _now = DateTime.now();
-    });
-    if (auth.error.isEmpty) {
-      toasts.success('اطلاعات حساب کاربری به روز شد');
-    } else {
-      toasts.error('به روز رسانی ناموفق بود', auth.error);
+      setState(() {
+        _panelFresh = panel;
+        _now = DateTime.now();
+      });
+    } catch (_) {
+      // به روز رسانی پس زمینه کاملاً خودکار و بی صداست.
+    } finally {
+      _syncInFlight = false;
     }
   }
 
@@ -172,7 +180,6 @@ class _AccountPageState extends State<AccountPage> {
   @override
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
-    final SubscriptionController subs = context.watch<SubscriptionController>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
 
@@ -256,7 +263,7 @@ class _AccountPageState extends State<AccountPage> {
                 ? 'آنلاین (همین حالا)'
                 : Fa.relative(account.lastOnline, now: _now)),
         caption: account.lastOnline == null
-            ? 'در انتظار همگام سازی'
+            ? 'پس از نخستین اتصال ثبت می شود'
             : '${Fa.tehranDate(account.lastOnline)} • ساعت ${Fa.tehranClock(account.lastOnline, seconds: false)}',
       ),
     ];
@@ -266,26 +273,11 @@ class _AccountPageState extends State<AccountPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          PageHeader(
+          const PageHeader(
             title: 'حساب من',
             subtitle:
-                'پایش زنده حجم مصرفی، تقویم دقیق شمسی سرویس، مشخصات کاربری و تلگرام',
+                'پایش زنده حجم مصرفی، تقویم دقیق شمسی سرویس و مشخصات حساب کاربری',
             icon: Icons.person_rounded,
-            actions: <Widget>[
-              OutlinedButton.icon(
-                onPressed: _refreshing
-                    ? null
-                    : () => _refreshFromServer(auth, subs, toasts),
-                icon: _refreshing
-                    ? const SizedBox(
-                        width: AppMetrics.iconXs,
-                        height: AppMetrics.iconXs,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync_rounded, size: AppMetrics.iconSm),
-                label: Text(_refreshing ? 'در حال دریافت...' : 'به روز رسانی'),
-              ),
-            ],
           ),
           const SizedBox(height: AppMetrics.space4),
 
@@ -478,215 +470,134 @@ class _AccountPageState extends State<AccountPage> {
           ),
           const SizedBox(height: AppMetrics.space5),
 
-          // ── ردیف دوم: مشخصات کاربری + همگام سازی با ربات تلگرام ────────
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final Widget details = GlassCard(
-                padding: AppMetrics.cardPadding,
-                radius: AppMetrics.radiusXl,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    SectionHeader(
-                      icon: Icons.badge_rounded,
-                      title: 'مشخصات حساب و سرویس',
-                      subtitle: 'اطلاعات ثبت شده کاربر در پنل کاربری آمبرلا',
-                      trailing: Pill(
-                        label: 'زبان ${account.langLabelFa}',
-                        color: colors.info,
-                        dense: true,
-                      ),
-                    ),
-                    const Divider(height: AppMetrics.space5),
-                    InfoRow(
-                      icon: Icons.person_rounded,
-                      label: 'نام صاحب حساب',
-                      value: name,
-                    ),
-                    const Divider(height: AppMetrics.space2),
-                    InfoRow(
-                      icon: Icons.phone_rounded,
-                      label: 'شماره موبایل',
-                      value: _phoneWithOperatorFa(account.effectivePhone),
-                      trailing: account.effectivePhone.isEmpty
-                          ? null
-                          : IconAction(
-                              icon: Icons.copy_rounded,
-                              tooltip: 'کپی شماره موبایل',
-                              size: AppMetrics.iconBoxSm,
-                              onTap: () => _copy(
-                                toasts,
-                                'شماره موبایل',
-                                account.effectivePhone,
-                              ),
-                            ),
-                    ),
-                    const Divider(height: AppMetrics.space2),
-                    InfoRow(
-                      icon: Icons.category_rounded,
-                      label: 'نوع بسته فعال',
-                      value: account.packageDurationLabel,
-                    ),
-                    const Divider(height: AppMetrics.space2),
-                    InfoRow(
-                      icon: Icons.fingerprint_rounded,
-                      label: 'شناسه یکتای حساب',
-                      value: _compactUuidFa(account.uuid),
-                      trailing: account.uuid.isEmpty
-                          ? null
-                          : IconAction(
-                              icon: Icons.copy_rounded,
-                              tooltip: 'کپی شناسه حساب',
-                              size: AppMetrics.iconBoxSm,
-                              onTap: () =>
-                                  _copy(toasts, 'شناسه حساب', account.uuid),
-                            ),
-                    ),
-                    if (account.wgIpv4.isNotEmpty) ...<Widget>[
-                      const Divider(height: AppMetrics.space2),
-                      InfoRow(
-                        icon: Icons.hub_rounded,
-                        label: 'نشانی اختصاصی تونل استاندارد',
-                        value: _tunnelIpv4Fa(account.wgIpv4),
-                        trailing: IconAction(
+          // ── ردیف دوم: مشخصات کامل حساب کاربری و سرویس ───────────────────
+          GlassCard(
+            padding: AppMetrics.cardPadding,
+            radius: AppMetrics.radiusXl,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SectionHeader(
+                  icon: Icons.badge_rounded,
+                  title: 'مشخصات حساب و سرویس',
+                  subtitle:
+                      'اطلاعات حساب کاربری به صورت کاملاً خودکار در پس زمینه به روز می شود',
+                  trailing: IconAction(
+                    icon: Icons.send_rounded,
+                    tooltip: 'باز کردن ربات رسمی آمبرلا',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _openTelegramBot(toasts),
+                  ),
+                ),
+                const Divider(height: AppMetrics.space5),
+                InfoRow(
+                  icon: Icons.person_rounded,
+                  label: 'نام صاحب حساب',
+                  value: name,
+                ),
+                const Divider(height: AppMetrics.space2),
+                InfoRow(
+                  icon: Icons.phone_rounded,
+                  label: 'شماره موبایل',
+                  value: _phoneWithOperatorFa(account.effectivePhone),
+                  trailing: account.effectivePhone.isEmpty
+                      ? null
+                      : IconAction(
                           icon: Icons.copy_rounded,
-                          tooltip: 'کپی نشانی تونل استاندارد',
+                          tooltip: 'کپی شماره موبایل',
                           size: AppMetrics.iconBoxSm,
                           onTap: () => _copy(
                             toasts,
-                            'نشانی تونل استاندارد',
-                            account.wgIpv4,
+                            'شماره موبایل',
+                            account.effectivePhone,
                           ),
                         ),
-                      ),
-                    ],
-                    if (account.awgIpv4.isNotEmpty) ...<Widget>[
-                      const Divider(height: AppMetrics.space2),
-                      InfoRow(
-                        icon: Icons.auto_fix_high_rounded,
-                        label: 'نشانی اختصاصی تونل پیشرفته',
-                        value: _tunnelIpv4Fa(account.awgIpv4),
-                        trailing: IconAction(
+                ),
+                const Divider(height: AppMetrics.space2),
+                InfoRow(
+                  icon: Icons.category_rounded,
+                  label: 'نوع بسته فعال',
+                  value: account.packageDurationLabel,
+                ),
+                const Divider(height: AppMetrics.space2),
+                InfoRow(
+                  icon: Icons.fingerprint_rounded,
+                  label: 'شناسه یکتای حساب',
+                  value: _compactUuidFa(account.uuid),
+                  trailing: account.uuid.isEmpty
+                      ? null
+                      : IconAction(
                           icon: Icons.copy_rounded,
-                          tooltip: 'کپی نشانی تونل پیشرفته',
+                          tooltip: 'کپی شناسه حساب',
                           size: AppMetrics.iconBoxSm,
-                          onTap: () => _copy(
-                            toasts,
-                            'نشانی تونل پیشرفته',
-                            account.awgIpv4,
-                          ),
+                          onTap: () =>
+                              _copy(toasts, 'شناسه حساب', account.uuid),
                         ),
-                      ),
-                    ],
-                  ],
                 ),
-              );
-
-              final Widget telegram = GlassCard(
-                padding: AppMetrics.cardPadding,
-                radius: AppMetrics.radiusXl,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: <Widget>[
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        const SectionHeader(
-                          icon: Icons.send_rounded,
-                          title: 'همگام سازی با تلگرام',
-                          subtitle:
-                              'مدیریت تمدید، اعلان ها و دستگاه های مجاز در ربات رسمی',
-                        ),
-                        const Divider(height: AppMetrics.space5),
-                        InfoRow(
-                          icon: Icons.link_rounded,
-                          label: 'وضعیت اتصال به تلگرام',
-                          value: account.telegramId.isEmpty
-                              ? 'متصل نشده'
-                              : 'متصل و همگام',
-                          valueColor: account.telegramId.isEmpty
-                              ? colors.textSecondary
-                              : colors.success,
-                        ),
-                        const Divider(height: AppMetrics.space2),
-                        InfoRow(
-                          icon: Icons.alternate_email_rounded,
-                          label: 'شناسه عددی تلگرام',
-                          value: account.telegramId.isEmpty
-                              ? 'ثبت نشده'
-                              : Fa.num(account.telegramId),
-                          trailing: account.telegramId.isEmpty
-                              ? null
-                              : IconAction(
-                                  icon: Icons.copy_rounded,
-                                  tooltip: 'کپی شناسه تلگرام',
-                                  size: AppMetrics.iconBoxSm,
-                                  onTap: () => _copy(
-                                    toasts,
-                                    'شناسه تلگرام',
-                                    account.telegramId,
-                                  ),
-                                ),
-                        ),
-                        if (account.panelId > 0) ...<Widget>[
-                          const Divider(height: AppMetrics.space2),
-                          InfoRow(
-                            icon: Icons.tag_rounded,
-                            label: 'شماره کاربری در پنل',
-                            value: 'کاربر شماره ${Fa.grouped(account.panelId)}',
-                          ),
-                        ],
-                        const Divider(height: AppMetrics.space2),
-                        InfoRow(
-                          icon: Icons.smart_toy_rounded,
-                          label: 'ربات رسمی آمبرلا',
-                          value: 'ربات تلگرام آمبرلا',
-                          trailing: IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی نشانی ربات تلگرام',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () => _copy(
-                              toasts,
-                              'نشانی ربات تلگرام',
-                              'https://t.me/UmbrellaVPN_BOT',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppMetrics.space4),
-                      child: _TelegramSyncButton(
-                        account: account,
-                        onOpen: () => _openTelegramBot(toasts),
+                if (account.telegramId.isNotEmpty) ...<Widget>[
+                  const Divider(height: AppMetrics.space2),
+                  InfoRow(
+                    icon: Icons.alternate_email_rounded,
+                    label: 'شناسه عددی تلگرام',
+                    value: Fa.num(account.telegramId),
+                    trailing: IconAction(
+                      icon: Icons.copy_rounded,
+                      tooltip: 'کپی شناسه تلگرام',
+                      size: AppMetrics.iconBoxSm,
+                      onTap: () => _copy(
+                        toasts,
+                        'شناسه تلگرام',
+                        account.telegramId,
                       ),
                     ),
-                  ],
-                ),
-              );
-
-              if (constraints.maxWidth < AppMetrics.breakpointColumns) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    details,
-                    const SizedBox(height: AppMetrics.space4),
-                    telegram,
-                  ],
-                );
-              }
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: details),
-                    const SizedBox(width: AppMetrics.space5),
-                    Expanded(child: telegram),
-                  ],
-                ),
-              );
-            },
+                  ),
+                ],
+                if (account.panelId > 0) ...<Widget>[
+                  const Divider(height: AppMetrics.space2),
+                  InfoRow(
+                    icon: Icons.tag_rounded,
+                    label: 'شماره کاربری در پنل',
+                    value: 'کاربر شماره ${Fa.grouped(account.panelId)}',
+                  ),
+                ],
+                if (account.wgIpv4.isNotEmpty) ...<Widget>[
+                  const Divider(height: AppMetrics.space2),
+                  InfoRow(
+                    icon: Icons.hub_rounded,
+                    label: 'نشانی اختصاصی تونل استاندارد',
+                    value: _tunnelIpv4Fa(account.wgIpv4),
+                    trailing: IconAction(
+                      icon: Icons.copy_rounded,
+                      tooltip: 'کپی نشانی تونل استاندارد',
+                      size: AppMetrics.iconBoxSm,
+                      onTap: () => _copy(
+                        toasts,
+                        'نشانی تونل استاندارد',
+                        account.wgIpv4,
+                      ),
+                    ),
+                  ),
+                ],
+                if (account.awgIpv4.isNotEmpty) ...<Widget>[
+                  const Divider(height: AppMetrics.space2),
+                  InfoRow(
+                    icon: Icons.auto_fix_high_rounded,
+                    label: 'نشانی اختصاصی تونل پیشرفته',
+                    value: _tunnelIpv4Fa(account.awgIpv4),
+                    trailing: IconAction(
+                      icon: Icons.copy_rounded,
+                      tooltip: 'کپی نشانی تونل پیشرفته',
+                      size: AppMetrics.iconBoxSm,
+                      onTap: () => _copy(
+                        toasts,
+                        'نشانی تونل پیشرفته',
+                        account.awgIpv4,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),
@@ -983,7 +894,7 @@ class _DaysCard extends StatelessWidget {
                     const SizedBox(height: AppMetrics.space1),
                     Text(
                       start == null
-                          ? 'تاریخ شروع پس از همگام سازی نمایش داده می شود'
+                          ? 'تاریخ شروع پس از نخستین اتصال ثبت می شود'
                           : 'سپری شده از شروع: ${Fa.spanFa(elapsed, includeMinutes: false)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1100,67 +1011,6 @@ class _PercentRing extends StatelessWidget {
                 ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// دکمه مرتب و استاندارد همگام سازی حساب با ربات رسمی تلگرام.
-class _TelegramSyncButton extends StatelessWidget {
-  const _TelegramSyncButton({required this.account, required this.onOpen});
-
-  final Account account;
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final bool linked = account.telegramId.isNotEmpty;
-    final Color tone = linked ? colors.success : colors.primary;
-    return Material(
-      color: tone.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-        onTap: onOpen,
-        child: Container(
-          height: AppMetrics.controlHeightSmall,
-          padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-            border: Border.all(color: tone.withValues(alpha: 0.35)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(
-                linked ? Icons.verified_rounded : Icons.send_rounded,
-                size: AppMetrics.iconSm,
-                color: tone,
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Flexible(
-                child: Text(
-                  linked
-                      ? 'باز کردن ربات تلگرام (همگام شده)'
-                      : 'اتصال و سینک حساب در تلگرام',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: tone,
-                      ),
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Icon(
-                Icons.open_in_new_rounded,
-                size: AppMetrics.iconXs,
-                color: tone,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

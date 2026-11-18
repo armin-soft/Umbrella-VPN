@@ -29,8 +29,10 @@ class _DevicePageState extends State<DevicePage> {
   DateTime _now = DateTime.now();
   DateTime? _lastCheckedAt;
   Timer? _uptimeTimer;
+  Timer? _autoRefreshTimer;
   bool _loading = true;
   bool _refreshing = false;
+  bool _wasTabActive = false;
 
   @override
   void initState() {
@@ -45,18 +47,43 @@ class _DevicePageState extends State<DevicePage> {
       }
       setState(() => _now = DateTime.now());
     });
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted ||
+          !AppShell.isLifecycleVisible(
+            WidgetsBinding.instance.lifecycleState,
+          ) ||
+          !TickerMode.of(context)) {
+        return;
+      }
+      unawaited(_refreshDevice());
+    });
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _refreshDevice(silent: true),
+      (_) => unawaited(_refreshDevice()),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool active = TickerMode.of(context);
+    if (active && !_wasTabActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_refreshDevice());
+        }
+      });
+    }
+    _wasTabActive = active;
   }
 
   @override
   void dispose() {
     _uptimeTimer?.cancel();
+    _autoRefreshTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _refreshDevice({bool silent = false}) async {
+  Future<void> _refreshDevice() async {
     if (_refreshing) {
       return;
     }
@@ -98,12 +125,6 @@ class _DevicePageState extends State<DevicePage> {
       _loading = false;
       _refreshing = false;
     });
-
-    if (!silent) {
-      context
-          .read<ToastController>()
-          .success('مشخصات سخت افزار و شبکه دستگاه به روز شد');
-    }
   }
 
   Future<void> _copy(String label, String value) async {
@@ -292,25 +313,15 @@ class _DevicePageState extends State<DevicePage> {
             subtitle:
                 'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه محلی و شناسه این رایانه',
             icon: Icons.devices_rounded,
-            actions: <Widget>[
-              OutlinedButton.icon(
-                onPressed: (_loading || _refreshing)
-                    ? null
-                    : () => _refreshDevice(silent: false),
-                icon: (_loading || _refreshing)
-                    ? const SizedBox(
-                        width: AppMetrics.iconXs,
-                        height: AppMetrics.iconXs,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded, size: AppMetrics.iconSm),
-                label: Text(
-                  (_loading || _refreshing)
-                      ? 'در حال بررسی...'
-                      : 'بروزرسانی دستگاه',
-                ),
-              ),
-            ],
+            actions: _loading
+                ? const <Widget>[
+                    SizedBox(
+                      width: AppMetrics.iconSm,
+                      height: AppMetrics.iconSm,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ]
+                : const <Widget>[],
           ),
           const SizedBox(height: AppMetrics.space4),
 

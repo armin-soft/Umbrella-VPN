@@ -703,18 +703,48 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// همگام سازی فوری کنترل محتوا با ربات تلگرام.
-  Future<bool> syncFilter() async {
+  /// همگام سازی کاملاً خودکار پس زمینه (کنترل محتوا، هدیه ها، حساب، پنل و اعلان ها).
+  DateTime? _lastAutoSyncAt;
+  bool _autoSyncInFlight = false;
+
+  Future<void> autoSync({bool includeAccount = true}) async {
+    if (!signedIn || _autoSyncInFlight || _revokingSession) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    if (_lastAutoSyncAt != null &&
+        now.difference(_lastAutoSyncAt!) < const Duration(seconds: 12)) {
+      return;
+    }
+    _autoSyncInFlight = true;
+    _lastAutoSyncAt = now;
+    try {
+      await _checkDeviceAccess();
+      if (includeAccount && signedIn && !_revokingSession) {
+        await refreshAccount(silent: true);
+        await refreshFromPanel();
+      }
+    } catch (_) {
+      // همگام سازی پس زمینه کاملاً بی صداست و خطای موقت شبکه کاربر را آزار نمی دهد.
+    } finally {
+      _autoSyncInFlight = false;
+    }
+  }
+
+  /// همگام سازی خودکار و بی صدای کنترل محتوا با ربات تلگرام.
+  Future<bool> syncFilter({bool silent = true}) async {
     final SessionData? session = _session;
-    if (session == null || _syncingFilter) {
+    if (session == null || _syncingFilter || _savingFilter) {
       return false;
     }
     _syncingFilter = true;
-    notifyListeners();
+    if (!silent) {
+      notifyListeners();
+    }
     try {
       final FilterSettings latest = await _gateway.getFilter(session.token);
       final SessionData? current = _session;
-      if (current != null) {
+      if (current != null && !_savingFilter && !current.filter.sameAs(latest)) {
         final bool effectChanged = !current.filter.sameEffectAs(latest);
         _session = current.copyWith(filter: latest);
         await _store.writeJson(StoreKeys.session, _session!.toJson());
@@ -722,6 +752,7 @@ class AuthController extends ChangeNotifier {
         if (effectChanged) {
           onFilterChanged?.call(latest);
         }
+        notifyListeners();
       }
       return true;
     } on ApiError catch (error) {
@@ -729,14 +760,16 @@ class AuthController extends ChangeNotifier {
         await _handleDeviceRevoked(error.message);
       } else if (error.needsLogin) {
         await signOut(callServer: false);
-      } else {
+      } else if (!silent) {
         _error = error.message;
         _logError(error.message);
       }
       return false;
     } finally {
       _syncingFilter = false;
-      notifyListeners();
+      if (!silent) {
+        notifyListeners();
+      }
     }
   }
 

@@ -372,13 +372,15 @@ void main() {
       expect(nav.contains('Tooltip'), isTrue);
     });
 
-    test('حساب من: اشتراک من و بررسی نشانی حذف شده، سینک تلگرام اضافه شده', () {
+    test('حساب من: منو و دکمه های همگام سازی دستی حذف شده و کاملاً خودکار است', () {
       final String account = read('lib/ui/pages/account_page.dart');
       expect(account.contains('اشتراک من'), isFalse);
       expect(account.contains('بررسی نشانی های اشتراک'), isFalse);
       expect(account.contains('خواندن دوباره از پنل'), isFalse);
-      expect(account.contains('_TelegramSyncButton'), isTrue);
-      // سینک با شناسه حساب به ربات می رود، نه فقط صفحه ربات.
+      expect(account.contains('همگام سازی با تلگرام'), isFalse);
+      expect(account.contains('_TelegramSyncButton'), isFalse);
+      expect(account.contains('اتصال و سینک حساب'), isFalse);
+      expect(account.contains('_autoSync'), isTrue);
       expect(account.contains('https://t.me/UmbrellaVPN_BOT'), isTrue);
       expect(account.contains('_openTelegramBot'), isTrue);
     });

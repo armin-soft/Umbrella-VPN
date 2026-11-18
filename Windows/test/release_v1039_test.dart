@@ -526,5 +526,48 @@ void main() {
         contains('https://sky.rethinkdns.com/dns-query'),
       );
     });
+
+    test('تمام منوها و دکمه های همگام سازی دستی حذف شده و همگام سازی خودکار است', () {
+      final String account =
+          File('lib/ui/pages/account_page.dart').readAsStringSync();
+      final String content =
+          File('lib/ui/widgets/content_control.dart').readAsStringSync();
+      final String device =
+          File('lib/ui/pages/device_page.dart').readAsStringSync();
+      final String shell =
+          File('lib/ui/shell/app_shell.dart').readAsStringSync();
+      final String updates =
+          File('lib/ui/pages/updates_page.dart').readAsStringSync();
+      final String connect =
+          File('lib/ui/pages/connect_page.dart').readAsStringSync();
+      final String auth =
+          File('lib/state/auth_controller.dart').readAsStringSync();
+
+      // هیچ منو یا دکمه همگام سازی و بروزرسانی دستی باقی نمانده است.
+      expect(account.contains('همگام سازی با تلگرام'), isFalse);
+      expect(account.contains('اتصال و سینک حساب'), isFalse);
+      expect(account.contains('_refreshFromServer'), isFalse);
+      expect(account.contains('Icons.sync_rounded'), isFalse);
+      expect(content.contains('همگام سازی با ربات'), isFalse);
+      expect(content.contains('_onSyncFromBot'), isFalse);
+      expect(content.contains('Icons.sync_rounded'), isFalse);
+      expect(content.contains('Icons.refresh_rounded'), isFalse);
+      expect(device.contains('بروزرسانی دستگاه'), isFalse);
+      expect(device.contains('Icons.refresh_rounded'), isFalse);
+      expect(shell.contains('به روز رسانی اعلان ها'), isFalse);
+      expect(shell.contains('Icons.refresh_rounded'), isFalse);
+      expect(updates.contains('بررسی نسخه جدید'), isFalse);
+      expect(updates.contains('Icons.refresh_rounded'), isFalse);
+      expect(connect.contains('به روز رسانی آی پی'), isFalse);
+      expect(connect.contains('Icons.refresh_rounded'), isFalse);
+
+      // چرخه همگام سازی کاملاً خودکار در تمام بخش ها فعال است.
+      expect(auth.contains('Future<void> autoSync('), isTrue);
+      expect(shell.contains('_triggerAutoSync'), isTrue);
+      expect(account.contains('_autoSyncTimer'), isTrue);
+      expect(content.contains('_autoPollTimer'), isTrue);
+      expect(device.contains('_autoRefreshTimer'), isTrue);
+      expect(updates.contains('_autoCheckTimer'), isTrue);
+    });
   });
 }
