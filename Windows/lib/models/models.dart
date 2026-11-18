@@ -1057,52 +1057,254 @@ class FilterSettings {
   final String updatedBy;
   final String updatedAt;
 
+  /// دسته های رسمی کنترل محتوا؛ دقیقاً یکسان با ربات تلگرام (`BOT_CATEGORIES`).
   static const Map<String, String> categoryLabels = <String, String>{
-  'adult': 'محتوای بزرگسال',
-  'social': 'شبکه های اجتماعی',
-  'gambling': 'شرط بندی',
-  'ads': 'تبلیغات',
-  'streaming': 'ویدیو و پخش',
-  'dating': 'دوستیابی',
-  'violence': 'محتوای خشن',
-  'messaging': 'پیام رسان ها',
-};
+    'adult': 'محتوای بزرگسال',
+    'gambling': 'شرط بندی',
+    'ads': 'تبلیغات',
+    'dating': 'دوستیابی',
+  };
+
+  static const Map<String, String> categorySubtitles = <String, String>{
+    'adult': 'مسدودسازی دامنه ها و سایت های بزرگسال',
+    'gambling': 'مسدودسازی سایت های قمار و شرط بندی',
+    'ads': 'حذف تبلیغات مزاحم و ردیاب ها',
+    'dating': 'مسدودسازی شبکه ها و سایت های دوستیابی',
+  };
+
+  /// دسته های فعال مطابق با چهار دسته ربات تلگرام.
+  List<String> get activeBotCategories =>
+      categoryLabels.keys.where(categories.contains).toList(growable: false);
+
+  /// نرمال سازی دامنه یا پسوند دامنه (مانند `example.com`، `.example.com`، `.ir` یا پونی کد).
+  static String? normalizeDomainSuffix(String input) {
+    String value = input.trim().toLowerCase();
+    if (value.isEmpty) {
+      return null;
+    }
+    final int scheme = value.indexOf('://');
+    if (scheme >= 0) {
+      value = value.substring(scheme + 3);
+    }
+    final int slash = value.indexOf('/');
+    if (slash >= 0) {
+      value = value.substring(0, slash);
+    }
+    final int query = value.indexOf('?');
+    if (query >= 0) {
+      value = value.substring(0, query);
+    }
+    final int hash = value.indexOf('#');
+    if (hash >= 0) {
+      value = value.substring(0, hash);
+    }
+    final int colon = value.indexOf(':');
+    if (colon >= 0) {
+      value = value.substring(0, colon);
+    }
+    while (value.startsWith('.') || value.startsWith('*')) {
+      value = value.substring(1);
+    }
+    while (value.endsWith('.')) {
+      value = value.substring(0, value.length - 1);
+    }
+    if (value.isEmpty || value.length > 253 || value.contains(' ')) {
+      return null;
+    }
+    if (RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(value)) {
+      return null;
+    }
+    final List<String> labels = value.split('.');
+    final RegExp labelRule =
+        RegExp(r'^(?:xn--)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$');
+    for (final String label in labels) {
+      if (label.isEmpty || label.length > 63 || !labelRule.hasMatch(label)) {
+        return null;
+      }
+    }
+    final String tld = labels.last;
+    if (RegExp(r'^\d+$').hasMatch(tld) || tld.length < 2) {
+      return null;
+    }
+    return value;
+  }
+
+  List<String> get normalizedCustomDomains {
+    final Set<String> seen = <String>{};
+    for (final String item in customDomains) {
+      final String? normalized = normalizeDomainSuffix(item);
+      if (normalized != null) {
+        seen.add(normalized);
+      }
+    }
+    return seen.toList(growable: false);
+  }
+
+  bool get hasActiveRules =>
+      enabled &&
+      (activeBotCategories.isNotEmpty || normalizedCustomDomains.isNotEmpty);
+
+  String get sourceLabel => switch (updatedBy.trim().toLowerCase()) {
+        'bot' => 'ربات تلگرام',
+        'app' => 'برنامه ویندوز',
+        _ => 'همگام با ربات',
+      };
+
+  String get effectSignature {
+    if (!enabled) {
+      return 'off';
+    }
+    final List<String> cats = activeBotCategories.toList()..sort();
+    final List<String> doms = normalizedCustomDomains.toList()..sort();
+    return 'on|${cats.join(',')}|${doms.join(',')}';
+  }
+
+  bool sameEffectAs(FilterSettings other) =>
+      effectSignature == other.effectSignature;
+
+  bool sameAs(FilterSettings other) =>
+      sameEffectAs(other) &&
+      updatedBy == other.updatedBy &&
+      updatedAt == other.updatedAt;
+
+  /// تغییر وضعیت یک دسته دقیقاً مشابه دکمه های کنترل محتوا در ربات تلگرام.
+  FilterSettings toggleCategory(String key) {
+    if (!categoryLabels.containsKey(key)) {
+      return this;
+    }
+    final List<String> next = activeBotCategories.toList();
+    if (next.contains(key)) {
+      next.remove(key);
+    } else {
+      next.add(key);
+    }
+    return copyWith(
+      enabled: next.isNotEmpty || normalizedCustomDomains.isNotEmpty,
+      categories: next,
+    );
+  }
 
   FilterSettings copyWith({
     bool? enabled,
     List<String>? categories,
     List<String>? customDomains,
+    String? updatedBy,
+    String? updatedAt,
   }) {
+    final List<String> rawCategories = categories ?? this.categories;
+    final List<String> cleanCategories =
+        categoryLabels.keys.where(rawCategories.contains).toList();
     return FilterSettings(
       enabled: enabled ?? this.enabled,
-      categories: categories ?? this.categories,
+      categories: cleanCategories,
       customDomains: customDomains ?? this.customDomains,
-      updatedBy: updatedBy,
-      updatedAt: updatedAt,
+      updatedBy: updatedBy ?? this.updatedBy,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'enabled': enabled,
-        'categories': categories,
-        'custom_domains': customDomains,
+        'categories': activeBotCategories,
+        'custom_domains': normalizedCustomDomains,
+        if (updatedBy.isNotEmpty) 'updated_by': updatedBy,
+        if (updatedAt.isNotEmpty) 'updated_at': updatedAt,
       };
 
   factory FilterSettings.fromJson(Map<String, dynamic> json) {
+    final Set<String> incoming = JsonX.asList(json['categories'])
+        .map((Object? item) => item.toString().trim().toLowerCase())
+        .toSet();
+    final List<String> botMatched =
+        categoryLabels.keys.where(incoming.contains).toList();
+    final List<String> domains = <String>[];
+    for (final Object? item in JsonX.asList(json['custom_domains'])) {
+      final String? clean = normalizeDomainSuffix(item.toString());
+      if (clean != null && !domains.contains(clean)) {
+        domains.add(clean);
+      }
+    }
     return FilterSettings(
       enabled: JsonX.boolean(json['enabled']),
-      categories: JsonX.asList(json['categories'])
-          .map((Object? item) => item.toString())
-          .toList(),
-      customDomains: JsonX.asList(json['custom_domains'])
-          .map((Object? item) => item.toString())
-          .toList(),
+      categories: botMatched,
+      customDomains: domains,
       updatedBy: JsonX.text(json['updated_by'], 'app'),
       updatedAt: JsonX.text(json['updated_at']),
     );
   }
 
   static const FilterSettings empty = FilterSettings();
+}
+
+/// وضعیت اشتراک رایگان خوش آمدگویی و اشتراک نوروزی (همگام با ربات تلگرام).
+class SubscriptionOffers {
+  const SubscriptionOffers({
+    this.freeAvailable = false,
+    this.freeClaimed = false,
+    this.freeGb = 1,
+    this.freeDays = 1,
+    this.nowruzMenuEnabled = false,
+    this.nowruzAvailable = false,
+    this.nowruzClaimed = false,
+    this.nowruzGb = 5,
+    this.nowruzDays = 13,
+  });
+
+  final bool freeAvailable;
+  final bool freeClaimed;
+  final int freeGb;
+  final int freeDays;
+  final bool nowruzMenuEnabled;
+  final bool nowruzAvailable;
+  final bool nowruzClaimed;
+  final int nowruzGb;
+  final int nowruzDays;
+
+  bool get showFree => freeAvailable && !freeClaimed;
+  bool get showNowruz => nowruzMenuEnabled && nowruzAvailable && !nowruzClaimed;
+  bool get hasVisibleOffer => showFree || showNowruz;
+
+  bool sameAs(SubscriptionOffers other) =>
+      freeAvailable == other.freeAvailable &&
+      freeClaimed == other.freeClaimed &&
+      freeGb == other.freeGb &&
+      freeDays == other.freeDays &&
+      nowruzMenuEnabled == other.nowruzMenuEnabled &&
+      nowruzAvailable == other.nowruzAvailable &&
+      nowruzClaimed == other.nowruzClaimed &&
+      nowruzGb == other.nowruzGb &&
+      nowruzDays == other.nowruzDays;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'free_available': freeAvailable,
+        'free_claimed': freeClaimed,
+        'free_gb': freeGb,
+        'free_days': freeDays,
+        'nowruz_menu_enabled': nowruzMenuEnabled,
+        'nowruz_available': nowruzAvailable,
+        'nowruz_claimed': nowruzClaimed,
+        'nowruz_gb': nowruzGb,
+        'nowruz_days': nowruzDays,
+      };
+
+  factory SubscriptionOffers.fromJson(Map<String, dynamic> json) {
+    if (json.isEmpty) {
+      return empty;
+    }
+    return SubscriptionOffers(
+      freeAvailable: JsonX.boolean(json['free_available']),
+      freeClaimed: JsonX.boolean(json['free_claimed']),
+      freeGb: JsonX.integer(json['free_gb'], 1),
+      freeDays: JsonX.integer(json['free_days'], 1),
+      nowruzMenuEnabled: JsonX.boolean(json['nowruz_menu_enabled']),
+      nowruzAvailable: JsonX.boolean(json['nowruz_available']),
+      nowruzClaimed: JsonX.boolean(json['nowruz_claimed']),
+      nowruzGb: JsonX.integer(json['nowruz_gb'], 5),
+      nowruzDays: JsonX.integer(json['nowruz_days'], 13),
+    );
+  }
+
+  static const SubscriptionOffers empty = SubscriptionOffers();
 }
 
 class SessionData {
@@ -1112,6 +1314,7 @@ class SessionData {
     required this.deviceId,
     required this.account,
     required this.filter,
+    this.offers = SubscriptionOffers.empty,
     this.signedInAt,
   });
 
@@ -1120,6 +1323,7 @@ class SessionData {
   final String deviceId;
   final Account account;
   final FilterSettings filter;
+  final SubscriptionOffers offers;
   final DateTime? signedInAt;
 
   /// کلید پایدار مالک نشست برای تفکیک تاریخچه اعلان ها بین حساب های متفاوت.
@@ -1131,13 +1335,18 @@ class SessionData {
     return uuid.trim();
   }
 
-  SessionData copyWith({Account? account, FilterSettings? filter}) {
+  SessionData copyWith({
+    Account? account,
+    FilterSettings? filter,
+    SubscriptionOffers? offers,
+  }) {
     return SessionData(
       token: token,
       uuid: uuid,
       deviceId: deviceId,
       account: account ?? this.account,
       filter: filter ?? this.filter,
+      offers: offers ?? this.offers,
       signedInAt: signedInAt,
     );
   }
@@ -1148,6 +1357,7 @@ class SessionData {
         'device_id': deviceId,
         'account': account.toJson(),
         'filter': filter.toJson(),
+        'offers': offers.toJson(),
         'signed_in_at': signedInAt?.toIso8601String(),
       };
 
@@ -1158,6 +1368,7 @@ class SessionData {
       deviceId: JsonX.text(json['device_id']),
       account: Account.fromJson(JsonX.asMap(json['account'])),
       filter: FilterSettings.fromJson(JsonX.asMap(json['filter'])),
+      offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
       signedInAt: JsonX.dateTime(json['signed_in_at']),
     );
   }
@@ -1184,6 +1395,138 @@ class AppNotification {
   /// وضعیت تحویل قبلی در سرور؛ وقتی `true` است یعنی اعلان مربوط به گذشته بوده
   /// و برای نمایش تاریخچه برگردانده شده است (نباید دوباره صدا یا بالون بدهد).
   final bool? delivered;
+
+  /// عنوان کوتاه و تمیز برای نمایش در لیست و اعلان ویندوز.
+  String get compactTitle => summarizeTitle(title, body);
+
+  /// متن کوتاه، مفید و بدون شلوغی (از جمله خلاصه سازی گزارش شبانه).
+  String get compactBody => summarizeBody(body, title: title, maxChars: 160);
+
+  /// متن فشرده ویژه بالون اعلان ویندوز.
+  String get balloonBody => summarizeBody(body, title: title, maxChars: 105);
+
+  static String summarizeTitle(String rawTitle, [String rawBody = '']) {
+    String clean = rawTitle
+        .replaceAll('\u200c', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (clean.contains('گزارش شبانه')) {
+      return 'گزارش شبانه';
+    }
+    if (clean == 'اعلان سیستمی آمبرلا' || clean.isEmpty) {
+      if (rawBody.contains('گزارش شبانه')) return 'گزارش شبانه';
+      if (rawBody.contains('تمدید گردید') || rawBody.contains('تمدید شد')) {
+        return 'اشتراک تمدید شد';
+      }
+      if (rawBody.contains('فعال گردید') || rawBody.contains('فعال شد')) {
+        return 'اشتراک فعال شد';
+      }
+      if (rawBody.contains('کیف پول')) return 'کیف پول';
+      return 'اعلان سیستم';
+    }
+    if (clean == 'یادآور تمدید اشتراک') return 'تمدید اشتراک';
+    if (clean == 'فعالسازی پس از عضویت کانال') return 'اشتراک فعال شد';
+    if (clean == 'قطع به دلیل عضویت کانال') return 'توقف اشتراک';
+    if (clean == 'هشدار عضویت کانال') return 'عضویت کانال';
+    if (clean.length > 48) {
+      clean = '${clean.substring(0, 47).trimRight()}…';
+    }
+    return clean;
+  }
+
+  static String summarizeBody(
+    String rawBody, {
+    String title = '',
+    int maxChars = 160,
+  }) {
+    final String normalized = rawBody
+        .replaceAll('\u200c', ' ')
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll('*', '')
+        .replaceAll('`', '')
+        .trim();
+    if (normalized.isEmpty) {
+      return '';
+    }
+
+    // خلاصه سازی دقیق گزارش های شبانه قدیمی و چندخطی به یک خط کوتاه و کاربردی.
+    if (title.contains('گزارش شبانه') || normalized.contains('گزارش شبانه')) {
+      final String? total = _extractField(normalized, r'سهمیه کل:\s*([^\n]+)');
+      final String? used = _extractField(normalized, r'مصرف شده:\s*([^\n]+)');
+      final String? rem =
+          _extractField(normalized, r'باقی\s*مانده:\s*([^\n]+)') ??
+              _extractField(normalized, r'باقیمانده:\s*([^\n]+)');
+      final String? exp =
+          _extractField(normalized, r'(?:انقضا|اعتبار)[^:\n]*:\s*([^\n(]+)');
+      if (used != null || rem != null || total != null) {
+        final List<String> parts = <String>[];
+        if (used != null && total != null) {
+          parts.add('مصرف $used از $total');
+        } else if (used != null) {
+          parts.add('مصرف $used');
+        }
+        if (rem != null) {
+          parts.add('مانده $rem');
+        }
+        if (exp != null && exp.isNotEmpty) {
+          parts.add('اعتبار $exp');
+        }
+        return _clip(parts.join(' · '), maxChars);
+      }
+    }
+
+    if (!normalized.contains('\n') && normalized.length <= maxChars) {
+      return _stripUrls(normalized.replaceAll(RegExp(r'\s{2,}'), ' ').trim());
+    }
+
+    final List<String> kept = <String>[];
+    for (final String rawLine in normalized.split('\n')) {
+      String line = rawLine
+          .replaceFirst(RegExp(r'^[├└│─━═➖•·\s]+'), '')
+          .replaceAll(RegExp(r'[█▓▒░]{3,}'), '')
+          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .trim();
+      line = _stripUrls(line);
+      if (line.isEmpty) continue;
+      if (RegExp(r'^[➖─━═_]{3,}$').hasMatch(line)) continue;
+      if (RegExp(r'^(?:👋|🌹|🌺)?\s*(?:سلام|درود)\b.*(?:گرامی|عزیز)')
+          .hasMatch(line)) {
+        continue;
+      }
+      if (RegExp(
+        r'^(?:👤|🆔|📌\s*بخش|📅\s*تاریخ|🕰\s*ساعت|🌐\s*سرور آمبرلا|سرور آمبرلا$|☂|آرمین سافت|💡\s*نکته|📊\s*وضعیت مصرف:$|📈\s*گزارش شبانه|👇|👌برای|🔄لطفا چند لحظه|📞در صورت ادامه|⚠\uFE0F?\s*در صورت ادامه)',
+      ).hasMatch(line)) {
+        continue;
+      }
+      kept.add(line);
+      if (kept.length == 3) break;
+    }
+
+    final String joined = kept.isNotEmpty
+        ? kept.join(' · ')
+        : _stripUrls(normalized.replaceAll(RegExp(r'\s+'), ' '));
+    return _clip(joined, maxChars);
+  }
+
+  static String? _extractField(String text, String pattern) {
+    final RegExpMatch? match = RegExp(pattern).firstMatch(text);
+    final String value = (match?.group(1) ?? '').trim();
+    return value.isEmpty ? null : value;
+  }
+
+  static String _stripUrls(String text) => text
+      .replaceAll(RegExp(r'\s*[—–-]?\s*https?://\S+'), '')
+      .replaceAll(RegExp(r'\s{2,}'), ' ')
+      .trim();
+
+  static String _clip(String text, int maxChars) {
+    final String clean = text.trim();
+    if (clean.length <= maxChars) {
+      return clean;
+    }
+    return '${clean.substring(0, maxChars - 1).trimRight()}…';
+  }
 
   String get identityKey {
     if (id != 0) {
@@ -1552,6 +1895,7 @@ class NetworkDns {
     'https://1.1.1.1/dns-query': 'Cloudflare — HTTPS',
     'https://8.8.8.8/dns-query': 'Google — HTTPS',
     'https://9.9.9.9/dns-query': 'Quad9 — HTTPS',
+    'https://sky.rethinkdns.com/dns-query': 'RethinkDNS — HTTPS',
   };
   static String normalize(String value, {String defaultValue = fallback}) {
     final String clean = value.trim();
@@ -2399,6 +2743,38 @@ class DeviceProfile {
   static const DeviceProfile empty = DeviceProfile();
 }
 
+/// کانال دریافت به روز رسانی: نسخه اصلی پایدار یا نسخه بتا (آزمایشی).
+enum UpdateChannel { stable, beta }
+
+extension UpdateChannelX on UpdateChannel {
+  String get storageValue => switch (this) {
+        UpdateChannel.stable => 'stable',
+        UpdateChannel.beta => 'beta',
+      };
+
+  String get label => switch (this) {
+        UpdateChannel.stable => 'اصلی (پایدار)',
+        UpdateChannel.beta => 'بتا (آزمایشی)',
+      };
+
+  String get shortLabel => switch (this) {
+        UpdateChannel.stable => 'پایدار',
+        UpdateChannel.beta => 'بتا',
+      };
+
+  String get subtitle => switch (this) {
+        UpdateChannel.stable =>
+          'فقط انتشارهای نهایی و تست شده برای استفاده روزمره',
+        UpdateChannel.beta =>
+          'دریافت زودتر قابلیت های جدید و بهینه سازی های آزمایشی پیش از انتشار نهایی',
+      };
+
+  static UpdateChannel fromStorage(String? raw) =>
+      raw?.trim().toLowerCase() == 'beta'
+          ? UpdateChannel.beta
+          : UpdateChannel.stable;
+}
+
 class UpdateInfo {
   const UpdateInfo({
     required this.version,
@@ -2408,6 +2784,9 @@ class UpdateInfo {
     this.mandatory = false,
     this.sizeBytes = 0,
     this.publishedAt,
+    this.preRelease = false,
+    this.tagName = '',
+    this.assetName = '',
   });
 
   final String version;
@@ -2417,37 +2796,136 @@ class UpdateInfo {
   final bool mandatory;
   final int sizeBytes;
   final DateTime? publishedAt;
+  final bool preRelease;
+  final String tagName;
+  final String assetName;
+
+  UpdateChannel get channel =>
+      preRelease ? UpdateChannel.beta : UpdateChannel.stable;
 
   factory UpdateInfo.fromJson(Map<String, dynamic> json) {
+    final String version = JsonX.text(json['version']);
+    final String tag = JsonX.text(json['tag_name'], version);
     return UpdateInfo(
-      version: JsonX.text(json['version']),
+      version: version,
       url: JsonX.text(json['url']),
       sha256: JsonX.text(json['sha256']),
       notes: JsonX.text(json['notes']),
       mandatory: JsonX.boolean(json['mandatory']),
       sizeBytes: JsonX.integer(json['size']),
       publishedAt: JsonX.dateTime(json['published_at']),
+      preRelease:
+          JsonX.boolean(json['prerelease']) || isPreReleaseTag(tag),
+      tagName: tag,
+      assetName: JsonX.text(json['asset_name']),
     );
   }
 
-  bool get isNewer {
-    final List<int> remote = _parts(version);
-    final List<int> local = _parts(AppConfig.version);
-    for (int i = 0; i < 3; i++) {
-      final int r = i < remote.length ? remote[i] : 0;
-      final int l = i < local.length ? local[i] : 0;
-      if (r != l) {
-        return r > l;
-      }
-    }
-    return false;
+  /// تشخیص برچسب پیش انتشار (مانند `v1.0.40-beta.1`، `v1.0.40-rc.1`، `1.0.40.dev`).
+  /// پسوند پلتفرمی `-windows` به تنهایی پیش انتشار محسوب نمی شود.
+  static bool isPreReleaseTag(String raw) {
+    final String clean = raw
+        .trim()
+        .toLowerCase()
+        .replaceFirst(RegExp(r'^v'), '')
+        .replaceFirst(RegExp(r'-windows$'), '');
+    return RegExp(r'(?:[-.](?:alpha|beta|rc|pre|preview|dev|nightly|canary))')
+        .hasMatch(clean);
   }
 
-  static List<int> _parts(String value) => value
-      .split(RegExp(r'[^0-9]'))
-      .where((String item) => item.isNotEmpty)
-      .map(int.parse)
-      .toList();
+  /// استخراج نسخه تمیز (با حفظ شناسه بتا در صورت وجود).
+  static String normalizeVersion(String raw) {
+    final String stripped = raw
+        .trim()
+        .replaceFirst(RegExp(r'^[vV]'), '')
+        .replaceFirst(RegExp(r'-windows$', caseSensitive: false), '');
+    final RegExpMatch? match = RegExp(
+      r'^(\d+\.\d+\.\d+(?:[-.](?:alpha|beta|rc|pre|preview|dev)(?:[.-]?\d+)?)?)',
+      caseSensitive: false,
+    ).firstMatch(stripped);
+    return match?.group(1) ?? stripped;
+  }
+
+  /// مقایسه کامل نسخه پایدار و بتا (مثلا `1.0.40 > 1.0.40-beta.2 > 1.0.40-beta.1 > 1.0.39`).
+  static int compareVersions(String a, String b) {
+    final ({List<int> core, String preLabel, int preNum}) pa = _parseSemver(a);
+    final ({List<int> core, String preLabel, int preNum}) pb = _parseSemver(b);
+    for (int i = 0; i < 3; i++) {
+      if (pa.core[i] != pb.core[i]) {
+        return pa.core[i].compareTo(pb.core[i]);
+      }
+    }
+    if (pa.preLabel.isEmpty && pb.preLabel.isEmpty) return 0;
+    if (pa.preLabel.isEmpty) return 1; // پایدار بالاتر از بتای همان نسخه است.
+    if (pb.preLabel.isEmpty) return -1;
+    final int rankCmp = _preRank(pa.preLabel).compareTo(_preRank(pb.preLabel));
+    if (rankCmp != 0) return rankCmp;
+    return pa.preNum.compareTo(pb.preNum);
+  }
+
+  static int _preRank(String label) => switch (label) {
+        'dev' || 'nightly' || 'canary' => 1,
+        'alpha' => 2,
+        'beta' || 'pre' || 'preview' => 3,
+        'rc' => 4,
+        _ => 0,
+      };
+
+  static ({List<int> core, String preLabel, int preNum}) _parseSemver(
+    String value,
+  ) {
+    final String clean = normalizeVersion(value).toLowerCase();
+    final RegExpMatch? coreMatch =
+        RegExp(r'(\d+)(?:\.(\d+))?(?:\.(\d+))?').firstMatch(clean);
+    final List<int> core = <int>[
+      int.tryParse(coreMatch?.group(1) ?? '') ?? 0,
+      int.tryParse(coreMatch?.group(2) ?? '') ?? 0,
+      int.tryParse(coreMatch?.group(3) ?? '') ?? 0,
+    ];
+    final RegExpMatch? preMatch = RegExp(
+      r'[-.](alpha|beta|rc|pre|preview|dev|nightly|canary)(?:[.-]?(\d+))?',
+    ).firstMatch(clean);
+    return (
+      core: core,
+      preLabel: preMatch?.group(1) ?? '',
+      preNum: int.tryParse(preMatch?.group(2) ?? '') ?? 0,
+    );
+  }
+
+  bool get isNewer => compareVersions(version, AppConfig.version) > 0;
+
+  bool get isCurrentVersion =>
+      compareVersions(version, AppConfig.version) == 0;
+
+  /// یادداشت های انتشار پاک سازی شده برای نمایش خوانا داخل برنامه.
+  List<String> get changelogItems {
+    if (notes.trim().isEmpty) {
+      return const <String>[];
+    }
+    final List<String> out = <String>[];
+    for (final String raw in notes.replaceAll('\r\n', '\n').split('\n')) {
+      String line = raw
+          .replaceAll('\u200c', ' ')
+          .replaceFirst(RegExp(r'^\s*#{1,6}\s*'), '')
+          .replaceFirst(RegExp(r'^\s*[-*•]\s*'), '')
+          .replaceAll('**', '')
+          .replaceAll('`', '')
+          .replaceAll(RegExp(r'https?://\S+'), '')
+          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .trim();
+      if (line.isEmpty || RegExp(r'^[-=_]{3,}$').hasMatch(line)) {
+        continue;
+      }
+      if (line.toLowerCase().startsWith('full changelog')) {
+        continue;
+      }
+      out.add(line);
+      if (out.length >= 8) {
+        break;
+      }
+    }
+    return out;
+  }
 }
 
 enum SignInStage {

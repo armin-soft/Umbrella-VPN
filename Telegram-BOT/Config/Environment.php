@@ -223,5 +223,11 @@ public static function getEmergencyConfigUrl(): string {
 $Url = self::get('EMERGENCY_CONFIG_URL');
 return $Url !== '' ? $Url : 'https://raw.githubusercontent.com/armin-soft/Umbrella-VPN-Config/refs/heads/main/Emergency-Configuration.txt';
 }
+
+/** Fallback for the Nowruz gift menu toggle controlled in «⚙️ تنظیمات ربات». */
+public static function showNowruzMenu(): bool {
+$Val = strtolower(self::get('SHOW_NOWRUZ_MENU', 'false'));
+return $Val === 'true' || $Val === '1';
+}
 }
 ?>

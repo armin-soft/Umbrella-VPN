@@ -115,6 +115,26 @@ class AuthController extends ChangeNotifier {
   Future<void>? _notificationsFetch;
   bool _historySynced = false;
 
+  bool _syncingFilter = false;
+  bool get syncingFilter => _syncingFilter;
+  bool _savingFilter = false;
+  bool get savingFilter => _savingFilter;
+
+  bool _claimingOffer = false;
+  bool get claimingOffer => _claimingOffer;
+  String _claimingPlanType = '';
+  String get claimingPlanType => _claimingPlanType;
+
+  SubscriptionOffers get offers => _session?.offers ?? SubscriptionOffers.empty;
+
+  /// وقتی کنترل محتوا تغییر کند (از برنامه یا مستقیم از ربات تلگرام) صدا زده
+  /// می شود تا هسته اتصال قوانین جدید را بلافاصله اعمال کند.
+  void Function(FilterSettings filter)? onFilterChanged;
+
+  /// پس از فعال سازی موفق اشتراک رایگان یا نوروزی صدا زده می شود تا سرورهای
+  /// شخصی کاربر بی درنگ دریافت شوند.
+  Future<void> Function()? onSubscriptionClaimed;
+
   Timer? _pollTimer;
   Timer? _clockTimer;
   Timer? _heartbeatTimer;
@@ -157,6 +177,7 @@ class AuthController extends ChangeNotifier {
         _phase = AuthPhase.done;
         _phone = _session!.account.phone;
         await _syncNotificationOwner(_session!.ownerKey);
+        onFilterChanged?.call(filter);
         _startHeartbeat();
         unawaited(refreshAccount(silent: true));
       }
@@ -405,6 +426,7 @@ class AuthController extends ChangeNotifier {
       await _syncNotificationOwner(session.ownerKey);
       await _store.writeJson(StoreKeys.session, session.toJson());
       await _store.writeJson(StoreKeys.filter, session.filter.toJson());
+      onFilterChanged?.call(session.filter);
       _startHeartbeat();
       _log.add('ورود موفق؛ خوش آمدید ${session.account.displayName}.');
       notifyListeners();
@@ -491,7 +513,9 @@ class AuthController extends ChangeNotifier {
 
     _checkingDeviceAccess = true;
     try {
-      await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
+      final ({FilterSettings? filter, SubscriptionOffers? offers}) beat =
+          await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
+      await _applyLiveServerState(filter: beat.filter, offers: beat.offers);
       final bool wantHistory = !_historySynced;
       await fetchNotifications(includeHistory: wantHistory);
     } on ApiError catch (error) {
@@ -615,10 +639,18 @@ class AuthController extends ChangeNotifier {
         awgIpv4: next.awgIpv4.isNotEmpty ? next.awgIpv4 : prev.awgIpv4,
         awgIpv6: next.awgIpv6.isNotEmpty ? next.awgIpv6 : prev.awgIpv6,
       );
-      _session = session.copyWith(account: preserved, filter: fresh.filter);
+      final FilterSettings previousFilter = session.filter;
+      _session = session.copyWith(
+        account: preserved,
+        filter: fresh.filter,
+        offers: fresh.offers,
+      );
       await _syncNotificationOwner(_session!.ownerKey);
       await _store.writeJson(StoreKeys.session, _session!.toJson());
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());
+      if (!previousFilter.sameEffectAs(fresh.filter)) {
+        onFilterChanged?.call(fresh.filter);
+      }
       notifyListeners();
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
@@ -631,16 +663,104 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> saveFilter(FilterSettings settings) async {
+  /// اعمال خودکار تغییرات دریافتی از ربات تلگرام (کنترل محتوا و وضعیت منوی
+  /// اشتراک رایگان / نوروزی) بدون نیاز به بستن یا ورود مجدد.
+  Future<void> _applyLiveServerState({
+    FilterSettings? filter,
+    SubscriptionOffers? offers,
+  }) async {
+    final SessionData? current = _session;
+    if (current == null) {
+      return;
+    }
+    FilterSettings nextFilter = current.filter;
+    bool filterChanged = false;
+    bool filterEffectChanged = false;
+    if (filter != null && !_savingFilter && !current.filter.sameAs(filter)) {
+      filterEffectChanged = !current.filter.sameEffectAs(filter);
+      nextFilter = filter;
+      filterChanged = true;
+    }
+
+    SubscriptionOffers nextOffers = current.offers;
+    bool offersChanged = false;
+    if (offers != null && !_claimingOffer && !current.offers.sameAs(offers)) {
+      nextOffers = offers;
+      offersChanged = true;
+    }
+
+    if (!filterChanged && !offersChanged) {
+      return;
+    }
+    _session = current.copyWith(filter: nextFilter, offers: nextOffers);
+    await _store.writeJson(StoreKeys.session, _session!.toJson());
+    if (filterChanged) {
+      await _store.writeJson(StoreKeys.filter, nextFilter.toJson());
+    }
+    if (filterEffectChanged) {
+      onFilterChanged?.call(nextFilter);
+    }
+    notifyListeners();
+  }
+
+  /// همگام سازی فوری کنترل محتوا با ربات تلگرام.
+  Future<bool> syncFilter() async {
     final SessionData? session = _session;
-    if (session == null) {
+    if (session == null || _syncingFilter) {
       return false;
     }
+    _syncingFilter = true;
+    notifyListeners();
     try {
-      final FilterSettings saved = await _gateway.saveFilter(session.token, settings);
-      _session = session.copyWith(filter: saved);
-      await _store.writeJson(StoreKeys.filter, saved.toJson());
+      final FilterSettings latest = await _gateway.getFilter(session.token);
+      final SessionData? current = _session;
+      if (current != null) {
+        final bool effectChanged = !current.filter.sameEffectAs(latest);
+        _session = current.copyWith(filter: latest);
+        await _store.writeJson(StoreKeys.session, _session!.toJson());
+        await _store.writeJson(StoreKeys.filter, latest.toJson());
+        if (effectChanged) {
+          onFilterChanged?.call(latest);
+        }
+      }
+      return true;
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+      } else {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return false;
+    } finally {
+      _syncingFilter = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> saveFilter(FilterSettings settings) async {
+    final SessionData? session = _session;
+    if (session == null || _savingFilter) {
+      return false;
+    }
+    _savingFilter = true;
+    _error = '';
+    notifyListeners();
+    try {
+      final FilterSettings previous = session.filter;
+      final FilterSettings saved =
+          await _gateway.saveFilter(session.token, settings);
+      final SessionData nextSession = (_session ?? session).copyWith(
+        filter: saved,
+      );
+      _session = nextSession;
+      await _store.writeJson(StoreKeys.session, nextSession.toJson());
+      await _store.writeJson(StoreKeys.filter, saved.toJson());
+      if (!previous.sameEffectAs(saved)) {
+        onFilterChanged?.call(saved);
+      }
       return true;
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
@@ -648,9 +768,78 @@ class AuthController extends ChangeNotifier {
       } else {
         _error = error.message;
         _logError(error.message);
-        notifyListeners();
       }
       return false;
+    } finally {
+      _savingFilter = false;
+      notifyListeners();
+    }
+  }
+
+  /// فعال سازی اشتراک رایگان (۱ گیگ / ۱ روز) یا نوروزی (۵ گیگ / ۱۳ روز) همگام با ربات.
+  Future<String?> claimSubscriptionOffer(String type) async {
+    final SessionData? session = _session;
+    if (session == null || _claimingOffer) {
+      return null;
+    }
+    _claimingOffer = true;
+    _claimingPlanType = type;
+    _error = '';
+    notifyListeners();
+    try {
+      final ({
+        String message,
+        Account account,
+        FilterSettings filter,
+        SubscriptionOffers offers,
+      }) res = await _gateway.claimSubscription(
+        token: session.token,
+        type: type,
+      );
+      final SessionData base = _session ?? session;
+      final Account prev = base.account;
+      final Account merged = res.account.copyWith(
+        panelId: res.account.panelId > 0 ? res.account.panelId : prev.panelId,
+        wgIpv4: res.account.wgIpv4.isNotEmpty ? res.account.wgIpv4 : prev.wgIpv4,
+        wgIpv6: res.account.wgIpv6.isNotEmpty ? res.account.wgIpv6 : prev.wgIpv6,
+        awgIpv4:
+            res.account.awgIpv4.isNotEmpty ? res.account.awgIpv4 : prev.awgIpv4,
+        awgIpv6:
+            res.account.awgIpv6.isNotEmpty ? res.account.awgIpv6 : prev.awgIpv6,
+      );
+      _session = base.copyWith(
+        account: merged,
+        filter: res.filter,
+        offers: res.offers,
+      );
+      await _store.writeJson(StoreKeys.session, _session!.toJson());
+      await _store.writeJson(StoreKeys.filter, res.filter.toJson());
+      notifyListeners();
+      if (onSubscriptionClaimed != null) {
+        unawaited(onSubscriptionClaimed!());
+      }
+      return res.message.isNotEmpty
+          ? res.message
+          : (type == 'nowruz'
+              ? 'اشتراک نوروزی با موفقیت فعال شد.'
+              : 'اشتراک رایگان با موفقیت فعال شد.');
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.code == 'already_claimed' ||
+          error.code == 'nowruz_disabled' ||
+          error.code == 'active_subscription') {
+        _error = error.message;
+        unawaited(refreshAccount(silent: true));
+      } else {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return null;
+    } finally {
+      _claimingOffer = false;
+      _claimingPlanType = '';
+      notifyListeners();
     }
   }
 
@@ -932,7 +1121,9 @@ class AuthController extends ChangeNotifier {
   Future<void> _announce(List<AppNotification> fresh) async {
     for (final AppNotification item in fresh) {
       _announced.add(_keyOf(item));
-      _log.add('اعلان تازه: ${item.title}${item.body.isEmpty ? '' : ' | ${item.body}'}');
+      final String shortTitle = item.compactTitle;
+      final String shortBody = item.balloonBody;
+      _log.add('اعلان: $shortTitle${shortBody.isEmpty ? '' : ' | $shortBody'}');
     }
     final AppNotification last = fresh.last;
     if (soundEnabled) {
@@ -940,8 +1131,8 @@ class AuthController extends ChangeNotifier {
     }
     if (notificationsEnabled) {
       await _tray?.balloon(
-        last.title.isEmpty ? 'اعلان تازه' : last.title,
-        last.body,
+        last.compactTitle,
+        last.balloonBody,
         warning: fresh.any((AppNotification item) => item.level == 'warning'),
       );
     }
@@ -981,6 +1172,7 @@ class AuthController extends ChangeNotifier {
     _heartbeatTimer?.cancel();
     final SessionData? session = _session;
     _session = null;
+    onFilterChanged?.call(FilterSettings.empty);
     _phase = AuthPhase.phone;
     _stage = SignInStage.unknown;
     _challenge = '';

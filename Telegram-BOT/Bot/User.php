@@ -382,8 +382,17 @@ $Rows = Menu::rows([
 if (!$Has_Subscription) {
 $Rows = array_merge($Rows, Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
-[['🎁اشتراک رایگان', 'اشتراک رایگان اول']],
 ]));
+if ((int)($User['Free_Plan_Claimed'] ?? 0) !== 1) {
+$Rows[] = [Menu::button('🎁اشتراک رایگان', 'اشتراک رایگان اول')];
+}
+$Client_Uuid = (string)($User['Client_ID'] ?? '');
+if (class_exists('BotConfig')
+&& method_exists(BotConfig::class, 'isNowruzMenuEnabled')
+&& BotConfig::isNowruzMenuEnabled()
+&& !BotConfig::hasClaimedNowruz($Context->UserId, $Client_Uuid)) {
+$Rows[] = [Menu::button('🌷اشتراک نوروزی', 'اشتراک نوروزی اول')];
+}
 }
 if (self::autoRenewMenuVisible($User, $Live)) {
 $Rows[] = [Menu::button('🔄تمدید خودکار', 'منوی تمدید خودکار')];

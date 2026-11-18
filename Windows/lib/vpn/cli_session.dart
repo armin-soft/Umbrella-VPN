@@ -31,28 +31,46 @@ class CliSession {
   static final CliSession instance = CliSession._();
 
   Process? _process;
+  bool _windowOpened = false;
 
   /// آیا پنجره خط فرمان باز است؟
-  bool get running => _process != null;
+  bool get running => _process != null || _windowOpened;
 
   /// ثبت فرایندی که خودمان باز کرده ایم تا هنگام قطع بسته شود.
-  void adopt(Process process) {
+  void adopt(Process process, {bool detachedWindow = false}) {
     _process = process;
+    if (detachedWindow) {
+      _windowOpened = true;
+    }
     process.exitCode.whenComplete(() {
-      _process = null;
+      if (identical(_process, process)) {
+        _process = null;
+      }
     });
   }
 
   Future<void> close() async {
     final Process? process = _process;
+    final bool hadWindow = _windowOpened;
     _process = null;
-    if (process == null) {
-      return;
+    _windowOpened = false;
+    if (process != null) {
+      try {
+        process.kill();
+      } on ProcessException {
+        // فرایند از قبل بسته شده است.
+      }
     }
-    try {
-      process.kill();
-    } on ProcessException {
-      // فرایند از قبل بسته شده است.
+    if (hadWindow && Platform.isWindows) {
+      try {
+        await Process.run(
+          'taskkill',
+          <String>['/F', '/T', '/IM', UmbrellaCore.cliBinary],
+          runInShell: false,
+        );
+      } on Exception {
+        // پنجره CLI قبلاً بسته شده است.
+      }
     }
   }
 
@@ -87,15 +105,20 @@ class CliSession {
       if (Platform.isWindows) {
         final Process process = await Process.start(
           'cmd.exe',
-          <String>['/c', 'start', 'Umbrella', '"$exe"', ...args],
+          <String>['/c', 'start', 'Umbrella CLI', '"$exe"', ...args],
+          environment: UmbrellaCore.ownerEnvironment(),
           mode: ProcessStartMode.detached,
         );
-        instance.adopt(process);
+        instance.adopt(process, detachedWindow: true);
         return true;
       }
-      final Process process =
-          await Process.start(exe, args, mode: ProcessStartMode.detached);
-      instance.adopt(process);
+      final Process process = await Process.start(
+        exe,
+        args,
+        environment: UmbrellaCore.ownerEnvironment(),
+        mode: ProcessStartMode.detached,
+      );
+      instance.adopt(process, detachedWindow: true);
       return true;
     } on ProcessException {
       return false;
@@ -149,9 +172,10 @@ class CliSession {
       final Process shell = await Process.start(
         'cmd.exe',
         command,
+        environment: UmbrellaCore.ownerEnvironment(file.env),
         mode: ProcessStartMode.detached,
       );
-      instance.adopt(shell);
+      instance.adopt(shell, detachedWindow: true);
       return true;
     } on ProcessException {
       return false;

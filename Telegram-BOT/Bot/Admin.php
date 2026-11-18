@@ -553,12 +553,16 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '⚙️تنظیمات 
 }
 
 $Show = BotConfig::showEmergency();
+$Nowruz_Show = BotConfig::isNowruzMenuEnabled();
 $Url = BotConfig::emergencyUrl();
 $Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل تنظیمات';
 $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 . Menu::section('🚱', 'کانفیگ اضطراری', [
 'وضعیت نمایش: *' . ($Show ? '🟢روشن' : '🔴خاموش') . '* (' . $Url_Source . ')',
 'آدرس: <code>' . $Url . '</code>',
+])
+. Menu::section('🌷', 'اشتراک نوروزی', [
+'وضعیت منو در ربات و نرم افزار: *' . ($Nowruz_Show ? '🟢روشن' : '🔴خاموش') . '*',
 ])
 . ($Show
 ? "ℹ️خط «اضطراری موقت» در پیام کانفیگ کاربران نمایش داده می شود.\n"
@@ -567,6 +571,7 @@ $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 $Markup = array_merge(Menu::rows([
 [['🚱روشن / خاموش کانفیگ اضطراری', 'emergency_toggle']],
 [['🔗آدرس کانفیگ اضطراری', 'emergency_url_start']],
+[['🌷روشن / خاموش اشتراک نوروزی', 'nowruz_menu_toggle']],
 ]), [Menu::back('منوی قبلی', 'پیکربندی سرور'), Menu::adminHome()]);
 self::logMenuProblems('settings', $Markup);
 
@@ -575,6 +580,18 @@ TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text, Te
 return;
 }
 TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeyboard($Markup));
+}
+
+public static function toggleNowruzMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Next = !BotConfig::isNowruzMenuEnabled();
+BotConfig::setNowruzMenuEnabled($Next);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, $Next ? '✅منوی اشتراک نوروزی روشن شد.' : '⛔️منوی اشتراک نوروزی خاموش شد.', false);
+}
+
+self::configMenu($Context);
 }
 
 public static function toggleEmergencyConfig(Context $Context): void {

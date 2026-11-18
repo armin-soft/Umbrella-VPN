@@ -36,8 +36,8 @@ if ($Limit > 0 && (float)($Data['current_usage_GB'] ?? 0) >= $Limit) return 'ine
 $Response = ServerClient::updateUser($Client, ['is_active' => true, 'enable' => true]);
 if (!self::success($Response)) { error_log('[Umbrella-Bot][Channel-Restore] server refused user=' . $UserId); return 'pending'; }
 Repository::updateUser($UserId, ['Channel_Grace_Started_At' => null, 'Channel_Client_Disabled_At' => null, 'Channel_Member_Check_At' => time(), 'Client_Status' => 'فعال', 'Server_Is_Active' => 1, 'Server_Enable' => 1]);
-$Text = '✅عضویت شما در کانال تأیید شد و کلاینتی که به دلیل خروج از کانال قطع شده بود، دوباره فعال شد.';
-SystemNotifications::queue($UserId, 'فعالسازی پس از عضویت کانال', $Text, 'channel-restored:' . $Disabled, 'success');
+$Text = '✅عضویت کانال تأیید شد و اشتراک دوباره فعال گردید.';
+SystemNotifications::queue($UserId, 'اشتراک فعال شد', 'عضویت کانال تأیید و اشتراک دوباره فعال شد.', 'channel-restored:' . $Disabled, 'success');
 $Chat = (int)($User['Chat_ID'] ?? 0);
 if ($Chat > 0) { try { TelegramClient::sendMessage($Chat, $Text); } catch (Throwable) {} }
 return 'restored';

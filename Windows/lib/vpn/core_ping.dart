@@ -220,6 +220,7 @@ class CorePinger {
         exe,
         <String>['srun', '-c', runtime.path, '-D', slotDir.path],
         workingDirectory: workDir,
+        environment: UmbrellaCore.ownerEnvironment(),
         runInShell: false,
       );
       _running.add(process);

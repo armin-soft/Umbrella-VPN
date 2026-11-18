@@ -107,7 +107,10 @@ UmbrellaNativePlugin::UmbrellaNativePlugin() {
   CreateDirectoryW((wide + L"\\cores").c_str(), nullptr);
 }
 
-UmbrellaNativePlugin::~UmbrellaNativePlugin() { tray_.Destroy(); }
+UmbrellaNativePlugin::~UmbrellaNativePlugin() {
+  tray_.Destroy();
+  ops_.ShutdownOwnedCores();
+}
 
 void UmbrellaNativePlugin::AttachTraySink(
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
@@ -219,6 +222,15 @@ void UmbrellaNativePlugin::HandleMethodCall(
   }
   if (method == "lastSpawnError") {
     result->Success(flutter::EncodableValue(ops_.LastSpawnError()));
+    return;
+  }
+  if (method == "attachCoreJob") {
+    result->Success(
+        flutter::EncodableValue(ops_.AttachCoreJob(IntOf(args, "pid", 0))));
+    return;
+  }
+  if (method == "shutdownCores") {
+    result->Success(flutter::EncodableValue(ops_.ShutdownOwnedCores()));
     return;
   }
   if (method == "killPid") {

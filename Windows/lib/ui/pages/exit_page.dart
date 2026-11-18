@@ -45,7 +45,7 @@ class _ExitPageState extends State<ExitPage> {
       // اتصال اول قطع می شود تا تنظیمات شبکه به حالت عادی برگردد و
       // کارت شبکه مجازی پاک شود؛ وگرنه بعد از خروج اینترنت کاربر خراب
       // می ماند.
-      await vpn.disconnect(silent: true);
+      await vpn.shutdownForExit();
       await widget.onExit();
     } finally {
       if (mounted) {

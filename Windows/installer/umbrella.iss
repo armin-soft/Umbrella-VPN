@@ -9,7 +9,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.38"
+#define AppVersion "1.0.39"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
@@ -102,12 +102,20 @@ Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; S
 ; with the elevated token Setup already holds. Inno's postinstall entries run as
 ; the original, unelevated user by default, which fails with CreateProcess 740.
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
+; When launched from the in-app updater (/VERYSILENT /RelaunchAfterUpdate=1),
+; automatically reopen the freshly upgraded application once copying finishes.
+Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent runascurrentuser; Check: ShouldRelaunchAfterUpdate
 
 [UninstallRun]
 ; Only the rules this client created are removed, the rest of the firewall stays untouched.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ""Get-NetFirewallRule -DisplayName 'Umbrella-*' | Remove-NetFirewallRule -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveUmbrellaFirewallRules"
 
 [Code]
+function ShouldRelaunchAfterUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:RelaunchAfterUpdate|0}') = '1';
+end;
+
 // برنامه در حال اجرا با فایل های نصب قفل می کند؛ قبل از کپی، هر نسخه در حال
 // اجرا و هسته های بازمانده بسته می شوند تا کاربر مجبور به تسک منیجر نشود.
 procedure KillRunning();
@@ -127,6 +135,8 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaAdmin.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCli.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCore.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(600);
 end;

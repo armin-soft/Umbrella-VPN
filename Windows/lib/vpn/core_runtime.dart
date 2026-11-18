@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v2';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v3';
 
   static int _nonce = 0;
 
@@ -76,6 +76,7 @@ class CoreRuntime {
         executable,
         <String>[...args, '-D', runDir],
         workingDirectory: workDir,
+        environment: <String, String>{'UMBRELLA_OWNER_PID': '$pid'},
         runInShell: false,
       );
       onStarted?.call(process);
@@ -167,7 +168,8 @@ class CoreRuntime {
       final Object? decoded = jsonDecode(utf8.decode(raw));
       if (decoded is Map<String, dynamic>) {
         final Map<String, dynamic> copy = Map<String, dynamic>.of(decoded)
-          ..remove('log-file');
+          ..remove('log-file')
+          ..remove('log-level-until');
         final List<String> keys = copy.keys.toList()..sort();
         return utf8.encode(
           jsonEncode(<String, dynamic>{

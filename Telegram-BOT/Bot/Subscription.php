@@ -749,13 +749,45 @@ return rtrim($Text);
 }
 
 public static function freePlan(Context $Context): void {
-if (self::hasAlreadyFree($Context)) return;
+if (self::hasAlreadyFree($Context) || self::hasActiveSubscriptionNow($Context)) return;
 self::purchase($Context, 'free');
 }
 
 public static function nowruzPlan(Context $Context): void {
-if (self::hasAlreadyFree($Context)) return;
+if (!BotConfig::isNowruzMenuEnabled()) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️اشتراک نوروزی در حال حاضر فعال نیست.', true);
+}
+return;
+}
+
+$User = Repository::getUser($Context->UserId);
+$Uuid = (string)($User['Client_ID'] ?? '');
+
+if (BotConfig::hasClaimedNowruz($Context->UserId, $Uuid)) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '❌اشتراک نوروزی را قبلاً دریافت کرده اید.', true);
+}
+return;
+}
+
+if (self::hasActiveSubscriptionNow($Context)) return;
 self::purchase($Context, 'nowruz');
+}
+
+private static function hasActiveSubscriptionNow(Context $Context): bool {
+$User = Repository::getUser($Context->UserId);
+$Subscription = trim((string)($User['Subscription'] ?? ''));
+$Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
+
+if ($Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time())) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '⚠️شما در حال حاضر اشتراک فعال دارید.', true);
+}
+return true;
+}
+
+return false;
 }
 
 public static function payPlan(Context $Context): void {
@@ -959,7 +991,7 @@ $Full_Name_User = trim((string)($User['Full_Name'] ?? ''));
 $Server_Name = $Full_Name_User !== '' ? $Full_Name_User : ('user-' . $Context->UserId);
 
 if ($Client_ID !== '' && $Client_ID !== '_') {
-self::renewSubscription($Context, $Name, $Gb, $Days, $Client_ID);
+self::renewSubscription($Context, $Name, $Gb, $Days, $Client_ID, $Type);
 return;
 }
 
@@ -968,11 +1000,18 @@ $Data = $Response['Json'] ?? null;
 
 if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300 && isset($Data['uuid'])) {
 $Gb = max($Gb, (int)round((float)($Data['usage_limit_GB'] ?? 0)));
+if ($Type === 'free') {
+Repository::updateUser($Context->UserId, ['Free_Plan_Claimed' => 1]);
+} elseif ($Type === 'nowruz') {
+BotConfig::markNowruzClaimed($Context->UserId, (string)$Data['uuid']);
+}
 self::activateSubscription($Context, $Data, $Name, $Gb, $Days);
 return;
 }
 
+if ($Type === 'free') {
 Repository::updateUser($Context->UserId, ['Free_Plan_Claimed' => 0]);
+}
 
 if ($Type === 'paid') Repository::addMoney($Context->UserId, $Amount, 'بازگشت وجه اشتراک (خطا در فعالسازی)', 'bot');
 $Api_Error = '';
@@ -1681,7 +1720,7 @@ $Sms_Text = $Template !== null
 Repository::schedule('منقضی اشتراک', $User_ID, $Expire_Time_Stamp);
 }
 
-private static function renewSubscription(Context $Context, string $Name, int $Gb, int $Days, string $Client_ID): void {
+private static function renewSubscription(Context $Context, string $Name, int $Gb, int $Days, string $Client_ID, string $Type = 'paid'): void {
 $Greeting = Common::greet($Context, 'تمدید اشتراک');
 $User_ID = $Context->UserId;
 $Full_Name = $Context->profileName();
@@ -1728,9 +1767,9 @@ return;
 }
 
 $Usage_Limit = (float)max($Gb, (float)($Data['usage_limit_GB'] ?? $Gb));
-
-Repository::updateUser($User_ID, [
-'Client_ID'  => (string)($Data['uuid'] ?? $Client_ID),
+$Resolved_Uuid = (string)($Data['uuid'] ?? $Client_ID);
+$User_Fields = [
+'Client_ID'  => $Resolved_Uuid,
 'Subscription'  => $Name,
 'Package_Duration'   => self::durationLabel($Days),
 'Package_Start_Date'  => $Package_Start,
@@ -1743,7 +1782,14 @@ Repository::updateUser($User_ID, [
 'Client_Status'  => 'فعال',
 'Channel_Client_Disabled_At' => null,
 'Deactivation_Message'   => null,
-]);
+];
+if ($Type === 'free') {
+$User_Fields['Free_Plan_Claimed'] = 1;
+}
+Repository::updateUser($User_ID, $User_Fields);
+if ($Type === 'nowruz') {
+BotConfig::markNowruzClaimed($User_ID, $Resolved_Uuid);
+}
 Repository::updateUserSession($User_ID, ['Pending_Plan' => null]);
 
 TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت تمدید گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([

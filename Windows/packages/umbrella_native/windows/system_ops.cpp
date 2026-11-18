@@ -136,7 +136,35 @@ const char* kForeignCores[] = {
     "shadowsocks.exe", "ss-local.exe", "trojan.exe",   "hysteria.exe",
     "naive.exe",     "tun2socks.exe", "warp-svc.exe",  "nekoray.exe",
     "v2rayn.exe",    "shadowrocket.exe", "outline.exe", "psiphon.exe",
+    "hiddifycli.exe", "hiddifycore.exe",
 };
+
+const char* kOwnedCores[] = {
+    "umbrellacli.exe",
+    "umbrellacoreengine.exe",
+    "umbrellaadmin.exe",
+    "hiddifycli.exe",
+    "hiddifycore.exe",
+};
+
+bool IsOwnedCoreExe(const std::string& exe) {
+  const std::string base = ToLowerAscii(ExtractFileName(exe));
+  for (const char* name : kOwnedCores) {
+    if (base == name) return true;
+  }
+  return false;
+}
+
+BOOL CALLBACK CloseUmbrellaCliWindowsProc(HWND hwnd, LPARAM /*param*/) {
+  if (!IsWindow(hwnd)) return TRUE;
+  wchar_t title[256] = {0};
+  const int length = GetWindowTextW(hwnd, title, 255);
+  if (length <= 0) return TRUE;
+  if (wcsncmp(title, L"Umbrella CLI", 12) == 0) {
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+  }
+  return TRUE;
+}
 
 }  // namespace
 
@@ -159,6 +187,13 @@ bool SystemOps::IsElevated() {
 }
 
 bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
+  const bool is_core = IsOwnedCoreExe(exe);
+  if (is_core) {
+    const std::wstring self_pid = std::to_wstring(GetCurrentProcessId());
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", self_pid.c_str());
+  } else {
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+  }
   std::wstring file = ToWide(exe);
   std::wstring parameters = ToWide(args);
   SHELLEXECUTEINFOW info = {0};
@@ -168,7 +203,9 @@ bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
   info.lpFile = file.c_str();
   info.lpParameters = parameters.empty() ? nullptr : parameters.c_str();
   info.nShow = SW_SHOWNORMAL;
-  if (!ShellExecuteExW(&info)) return false;
+  const BOOL ok = ShellExecuteExW(&info);
+  SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+  if (!ok) return false;
   if (info.hProcess) CloseHandle(info.hProcess);
   return true;
 }
@@ -570,6 +607,14 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
     }
   }
 
+  const bool is_core = IsOwnedCoreExe(exe);
+  if (is_core) {
+    const std::wstring self_pid = std::to_wstring(GetCurrentProcessId());
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", self_pid.c_str());
+  } else {
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+  }
+
   PROCESS_INFORMATION process = {0};
   std::wstring wdir = ToWide(work_dir);
   std::wstring buffer = command_line;
@@ -578,15 +623,115 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
       wexe.empty() ? nullptr : wexe.c_str(), buffer.data(), nullptr, nullptr,
       log != INVALID_HANDLE_VALUE ? TRUE : FALSE, flags, nullptr,
       work_dir.empty() ? nullptr : wdir.c_str(), &startup, &process);
+  SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
   if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
   if (!started) {
     last_spawn_error_ = GetLastError();
     return -1;
   }
   int pid = static_cast<int>(process.dwProcessId);
+  if (is_core) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    HANDLE job = EnsureCoreJobLocked();
+    if (job != nullptr) {
+      AssignProcessToJobObject(job, process.hProcess);
+    }
+  }
   CloseHandle(process.hThread);
   CloseHandle(process.hProcess);
   return pid;
+}
+
+HANDLE SystemOps::EnsureCoreJobLocked() {
+  if (core_job_ != nullptr) return core_job_;
+  HANDLE job = CreateJobObjectW(nullptr, nullptr);
+  if (job == nullptr) return nullptr;
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
+  info.BasicLimitInformation.LimitFlags =
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+  if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info,
+                               sizeof(info))) {
+    CloseHandle(job);
+    return nullptr;
+  }
+  core_job_ = job;
+  return core_job_;
+}
+
+bool SystemOps::AttachCoreJob(int pid) {
+  if (pid <= 0 || static_cast<DWORD>(pid) == GetCurrentProcessId()) {
+    return false;
+  }
+  HANDLE process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return false;
+  bool attached = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    HANDLE job = EnsureCoreJobLocked();
+    if (job != nullptr) {
+      attached = AssignProcessToJobObject(job, process) != 0;
+    }
+  }
+  CloseHandle(process);
+  return attached;
+}
+
+void SystemOps::ClearLoopbackProxyFast() {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet "
+                    L"Settings",
+                    0, KEY_READ | KEY_WRITE, &key) != ERROR_SUCCESS) {
+    return;
+  }
+  DWORD enabled = 0;
+  DWORD size = sizeof(enabled);
+  DWORD type = 0;
+  bool cleared = false;
+  if (RegQueryValueExW(key, L"ProxyEnable", nullptr, &type,
+                       reinterpret_cast<LPBYTE>(&enabled),
+                       &size) == ERROR_SUCCESS &&
+      type == REG_DWORD && enabled != 0) {
+    wchar_t server[256] = {0};
+    DWORD server_size = sizeof(server) - sizeof(wchar_t);
+    DWORD server_type = 0;
+    if (RegQueryValueExW(key, L"ProxyServer", nullptr, &server_type,
+                         reinterpret_cast<LPBYTE>(server),
+                         &server_size) == ERROR_SUCCESS &&
+        server_type == REG_SZ &&
+        (wcsstr(server, L"127.0.0.1:") != nullptr ||
+         wcsstr(server, L"localhost:") != nullptr)) {
+      DWORD zero = 0;
+      RegSetValueExW(key, L"ProxyEnable", 0, REG_DWORD,
+                     reinterpret_cast<const BYTE*>(&zero), sizeof(zero));
+      RegDeleteValueW(key, L"ProxyOverride");
+      cleared = true;
+    }
+  }
+  RegCloseKey(key);
+  if (cleared) {
+    InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
+    InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
+  }
+}
+
+int SystemOps::ShutdownOwnedCores() {
+  EnumWindows(CloseUmbrellaCliWindowsProc, 0);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (core_job_ != nullptr) {
+      CloseHandle(core_job_);
+      core_job_ = nullptr;
+    }
+  }
+  int killed = 0;
+  for (const char* name : kOwnedCores) {
+    killed += KillByName(name);
+  }
+  EnumWindows(CloseUmbrellaCliWindowsProc, 0);
+  ClearLoopbackProxyFast();
+  return killed;
 }
 
 std::string SystemOps::LastSpawnError() const {
@@ -634,9 +779,33 @@ std::vector<DWORD> SystemOps::FindProcessIds(const std::string& exe_name) {
 }
 
 bool SystemOps::KillPid(int pid) {
-  if (pid <= 0) return false;
-  HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE,
-                               static_cast<DWORD>(pid));
+  if (pid <= 0 || static_cast<DWORD>(pid) == GetCurrentProcessId()) {
+    return false;
+  }
+  const DWORD target = static_cast<DWORD>(pid);
+  // Also terminate any direct child processes (e.g. CLI host -> UmbrellaCli.exe)
+  // so detached console sessions never outlive the parent request.
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot != INVALID_HANDLE_VALUE) {
+    PROCESSENTRY32W entry = {0};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+      do {
+        if (entry.th32ParentProcessID == target &&
+            entry.th32ProcessID != target &&
+            entry.th32ProcessID != GetCurrentProcessId()) {
+          HANDLE child =
+              OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
+          if (child != nullptr) {
+            TerminateProcess(child, 0);
+            CloseHandle(child);
+          }
+        }
+      } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+  }
+  HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, target);
   if (process == nullptr) return false;
   bool ok = TerminateProcess(process, 0) != 0;
   CloseHandle(process);

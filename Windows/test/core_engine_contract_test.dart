@@ -496,6 +496,7 @@ void main() {
         expect(output['experimental']['monitoring']['workers'], 16);
         expect(output['experimental']['monitoring']['debounce_window'], '200ms');
         expect(output['experimental']['cache_file']['enabled'], true);
+        expect(output['experimental']['debug']?['procs']?['enabled'], true);
         expect(vless['transport']['type'], 'xhttp');
         expect(vless['transport']['mode'], 'packet-up');
         expect(vless['transport']['path'], '/upload');
@@ -531,4 +532,85 @@ void main() {
       }, skip: enabled ? false : 'Set UMBRELLA_CORE_SMOKE after bundling the Windows DLLs', timeout: const Timeout(Duration(seconds: 45)));
     }
   }
+
+  test(
+    'v5.9.11 core compiles bot-synced content control and custom domain block rules cleanly',
+    () async {
+      final String executable = binary!;
+      final Directory temp =
+          await Directory.systemTemp.createTemp('umbrella-filter-');
+      try {
+        final File links = File('${temp.path}/links.txt');
+        final File settings = File('${temp.path}/settings.json');
+        await links.writeAsString(
+          'vless://11111111-1111-1111-1111-111111111111@192.0.2.1:443?security=tls&sni=example.invalid&type=ws&path=%2Fws#filter-smoke\n',
+        );
+        final Map<String, dynamic> options = UmbrellaCore.settingsJson(
+          tun: false,
+          systemProxy: false,
+          port: 12334,
+          logFile: '${temp.path}/core.log',
+          logLevel: 'debug',
+          dns: const NetworkDns(
+            remote: 'https://sky.rethinkdns.com/dns-query',
+            direct: 'https://dns.cloudflare.com/dns-query',
+          ),
+          contentFilter: const FilterSettings(
+            enabled: true,
+            categories: <String>['adult', 'gambling', 'ads', 'dating'],
+            customDomains: <String>['blocked.example.com'],
+            source: 'telegram',
+          ),
+        );
+        expect(options['log-level'], 'debug');
+        expect(options['log-level-after'], 'warn');
+        expect(options['log-level-until'], isA<String>());
+        await settings.writeAsString(jsonEncode(options));
+
+        final File compiledFile = await CoreRuntime.compile(
+          executable: executable,
+          workDir: File(executable).parent.path,
+          runDir: temp.path,
+          linksPath: links.path,
+          settingsPath: settings.path,
+          cancelled: () => false,
+          onStarted: (_) {},
+          onFinished: (_) {},
+        );
+        final Map<String, dynamic> compiled =
+            jsonDecode(await compiledFile.readAsString())
+                as Map<String, dynamic>;
+        final List<Map<String, dynamic>> routeRules =
+            ((compiled['route'] as Map<String, dynamic>)['rules']
+                    as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        final List<Map<String, dynamic>> rejectRouteRules = routeRules
+            .where((Map<String, dynamic> item) => item['action'] == 'reject')
+            .toList();
+        expect(rejectRouteRules.length, greaterThanOrEqualTo(5));
+        expect(
+          jsonEncode(rejectRouteRules),
+          allOf(
+            contains('pornhub.com'),
+            contains('bet365.com'),
+            contains('doubleclick.net'),
+            contains('tinder.com'),
+            contains('blocked.example.com'),
+          ),
+        );
+        final List<Map<String, dynamic>> dnsRules =
+            ((compiled['dns'] as Map<String, dynamic>)['rules']
+                    as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        expect(
+          jsonEncode(dnsRules),
+          contains('blocked.example.com'),
+        );
+      } finally {
+        await temp.delete(recursive: true);
+      }
+    },
+    skip: enabled ? false : 'Set UMBRELLA_CORE_SMOKE after bundling the Windows DLLs',
+    timeout: const Timeout(Duration(seconds: 45)),
+  );
 }

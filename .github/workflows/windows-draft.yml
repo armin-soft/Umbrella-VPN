@@ -2,7 +2,7 @@ name: Windows installer draft
 on:
   push:
     branches: ['arena/**', Default]
-    paths: ['Windows/**', '.github/workflows/windows-draft.yml']
+    paths: ['Windows/**', 'Telegram-BOT/**', '.github/workflows/windows-draft.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -10,7 +10,25 @@ concurrency:
   group: windows-installer-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  telegram-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Lint and test Telegram-BOT
+        run: |
+          set -euo pipefail
+          find Telegram-BOT -name '*.php' -print0 | xargs -0 -n1 php -l
+          for test_file in Telegram-BOT/tests/*_test.php; do
+            echo "Running $test_file"
+            php "$test_file"
+          done
   installer:
+    needs: telegram-bot
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
@@ -125,7 +143,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Draft update failed' }
             gh release upload $tag $installer --repo $env:REPO
           } else {
-            gh release create $tag $installer --repo $env:REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows" --notes "Windows x64 installer. Connection recovery: bounded pre-TUN endpoint lookup, inherited mux disabled to match app settings, explicit node selection respected, bounded discovery batches, console opt-in. Bootstrap currently covers VLESS/Trojan/VMess; unresolved names retain core DNS. Account/device/subscription restrictions unchanged. Not full Hiddify feature parity. Automated unit/widget tests and compilation do not replace live VPN and installation testing. Unsigned installer."
+            gh release create $tag $installer --repo $env:REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows" --notes "- ارتقای هسته آمبرلا به نسخه 5.9.11 با بهینه سازی مصرف پردازنده و پایداری TUN`n- بستن کامل و قطعی CLI و پردازش های هسته هنگام خروج، آپدیت و خاموشی ویندوز`n- همگام سازی کامل و آنی کنترل محتوا با ربات تلگرام`n- فشرده سازی و بازطراحی گزارش شبانه و تمام اعلان ها`n- افزودن اشتراک رایگان یک بار مصرف و اشتراک نوروزی همگام با ربات در حساب کاربری`n- کانال به روز رسانی اصلی (پایدار) و بتا با دانلود و نصب خودکار کاملاً درون برنامه ای"
           }
           if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
           gh release view $tag --repo $env:REPO --json url,isDraft,assets

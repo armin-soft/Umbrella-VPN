@@ -88,6 +88,8 @@ class SystemOps {
 
   /// متن آخرین خطای CreateProcess برای گزارش دقیق؛ خالی یعنی خطایی نبوده.
   std::string LastSpawnError() const;
+  bool AttachCoreJob(int pid);
+  int ShutdownOwnedCores();
   bool KillPid(int pid);
   int KillByName(const std::string& exe_name);
 
@@ -121,9 +123,12 @@ class SystemOps {
   SystemOps() = default;
   bool RunAndWait(const std::wstring& command_line);
   std::vector<DWORD> FindProcessIds(const std::string& exe_name);
+  HANDLE EnsureCoreJobLocked();
+  void ClearLoopbackProxyFast();
 
   std::mutex mutex_;
   std::map<int, HANDLE> processes_;
+  HANDLE core_job_ = nullptr;
   mutable DWORD last_spawn_error_ = 0;
 };
 

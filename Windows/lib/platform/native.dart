@@ -266,6 +266,32 @@ class NativeBridge {
   Future<String> lastSpawnError() async =>
       await _invoke<String>('lastSpawnError') ?? '';
 
+  /// الصاق پردازش هسته به Job Object بومی ویندوز تا با بسته شدن برنامه (حتی از
+  /// Task Manager) هسته و CLI بلافاصله بسته شوند.
+  Future<bool> attachCoreJob(int pid) async {
+    if (pid <= 0) return false;
+    return await _invoke<bool>('attachCoreJob', <String, dynamic>{'pid': pid}) ??
+        false;
+  }
+
+  /// بستن قطعی همه پردازش های هسته و پنجره های CLI آمبرلا و پاک سازی پروکسی محلی.
+  Future<int> shutdownCores() async {
+    final int? count = await _invoke<int>('shutdownCores');
+    if (count != null) {
+      return count;
+    }
+    int killed = 0;
+    for (final String name in const <String>[
+      'UmbrellaCli.exe',
+      'UmbrellaCoreEngine.exe',
+      'UmbrellaAdmin.exe',
+    ]) {
+      killed += await _dartKillByName(name);
+    }
+    await _dartDisableSystemProxy();
+    return killed;
+  }
+
   Future<bool> killPid(int pid) async {
     final bool? ok =
         await _invoke<bool>('killPid', <String, dynamic>{'pid': pid});

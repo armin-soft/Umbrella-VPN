@@ -47,14 +47,28 @@ class SoundService {
 class WindowService with WindowListener {
   WindowService(this._native);
 
+  static const MethodChannel _sessionChannel =
+      MethodChannel('ir.umbrella.app/session');
+
   final NativeBridge _native;
   bool closeToTray = true;
   bool _initialized = false;
+  bool _quitting = false;
+
+  /// پیش از بستن کامل برنامه (دکمه بستن، خروج از سینی، نصب به روز رسانی یا
+  /// خاموشی ویندوز) صدا زده می شود تا هسته و CLI کامل و بی درنگ متوقف شوند.
+  Future<void> Function()? onBeforeQuit;
 
   Future<void> init({Size? size}) async {
     if (_initialized) {
       return;
     }
+    _sessionChannel.setMethodCallHandler((MethodCall call) async {
+      if (call.method == 'endSession') {
+        await quit();
+      }
+      return null;
+    });
     await windowManager.ensureInitialized();
     final WindowOptions options = WindowOptions(
       size: size ?? const Size(1280, 820),
@@ -99,6 +113,31 @@ class WindowService with WindowListener {
   }
 
   Future<void> quit() async {
+    if (_quitting) {
+      return;
+    }
+    _quitting = true;
+    try {
+      final Future<void> Function()? cleanup = onBeforeQuit;
+      if (cleanup != null) {
+        await cleanup().timeout(
+          const Duration(milliseconds: 3800),
+          onTimeout: () {},
+        );
+      }
+    } catch (_) {
+      // خطای پاک سازی نباید مانع بسته شدن برنامه و هسته شود.
+    }
+    try {
+      await _native.shutdownCores().timeout(
+            const Duration(milliseconds: 1200),
+            onTimeout: () => 0,
+          );
+      await _native.trayDestroy().timeout(
+            const Duration(milliseconds: 600),
+            onTimeout: () => false,
+          );
+    } catch (_) {}
     await windowManager.setPreventClose(false);
     await windowManager.destroy();
   }
@@ -109,16 +148,18 @@ class WindowService with WindowListener {
 
   @override
   void onWindowClose() async {
+    if (_quitting) {
+      return;
+    }
     if (closeToTray) {
       await windowManager.hide();
       await _native.trayBalloon(
-        title: 'فیلترشکن آمبرلا',
-        body: 'برنامه در سینی سیستم اجرا می شود؛ برای باز کردن روی آیکون کلیک کنید.',
+        title: AppConfig.appName,
+        body: 'در سینی سیستم فعال است.',
       );
       return;
     }
-    await windowManager.setPreventClose(false);
-    await windowManager.destroy();
+    await quit();
   }
 }
 
@@ -128,6 +169,9 @@ class TrayService {
 
   final NativeBridge _native;
   bool _initialized = false;
+  String? _lastState;
+  String? _lastTooltip;
+  bool? _lastConnected;
 
   static const Map<String, String> _iconFiles = <String, String>{
     'connected': 'state-connected.ico',
@@ -179,20 +223,41 @@ class TrayService {
     if (!_initialized) {
       return;
     }
-    await _native.trayIcon(_iconPath(state));
-    await _native.trayTooltip(tooltip);
-    await _native.trayMenu(
-      connectLabel: 'اتصال به فیلترشکن',
-      disconnectLabel: 'قطع اتصال',
-      connected: connected,
-    );
+    if (_lastState == state &&
+        _lastTooltip == tooltip &&
+        _lastConnected == connected) {
+      return;
+    }
+    if (_lastState != state) {
+      _lastState = state;
+      await _native.trayIcon(_iconPath(state));
+    }
+    if (_lastTooltip != tooltip) {
+      _lastTooltip = tooltip;
+      await _native.trayTooltip(tooltip);
+    }
+    if (_lastConnected != connected) {
+      _lastConnected = connected;
+      await _native.trayMenu(
+        connectLabel: 'اتصال به فیلترشکن',
+        disconnectLabel: 'قطع اتصال',
+        connected: connected,
+      );
+    }
   }
 
   Future<void> balloon(String title, String body, {bool warning = false}) async {
     if (!_initialized) {
       return;
     }
-    await _native.trayBalloon(title: title, body: body, warning: warning);
+    final String cleanTitle = AppNotification.summarizeTitle(title, body);
+    final String cleanBody =
+        AppNotification.summarizeBody(body, title: title, maxChars: 105);
+    await _native.trayBalloon(
+      title: cleanTitle,
+      body: cleanBody,
+      warning: warning,
+    );
   }
 
   Future<void> destroy() async {
@@ -201,6 +266,9 @@ class TrayService {
     }
     await _native.trayDestroy();
     _initialized = false;
+    _lastState = null;
+    _lastTooltip = null;
+    _lastConnected = null;
   }
 }
 
@@ -336,27 +404,88 @@ class IpService {
   void close() => _client.close();
 }
 
-/// بررسی و نصب به روز رسانی نسخه ویندوز با نمایش درصد پیشرفت.
+class _DigestCapture implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) {
+    value = data;
+  }
+
+  @override
+  void close() {}
+}
+
+/// بررسی، دانلود درون برنامه ای با تایید SHA-256 و نصب بی وقفه نسخه ویندوز
+/// در دو کانال اصلی (پایدار) و بتا (آزمایشی).
 class UpdateService {
   UpdateService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 
-  Future<UpdateInfo?> check() async {
-    // ۱. اگر نشانی فهرست دستی تنظیم نشده باشد، از صفحه انتشار گیت هاب
-    //    می خوانیم. نشانی پیشین روی سرور پنل بود و از داخل ایران باز نمی شد،
-    //    پس دکمه «به روز رسانی» عملا هیچ کاری نمی کرد.
+  Future<UpdateInfo?> check({
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    final ({UpdateInfo? available, List<UpdateInfo> releases}) catalog =
+        await fetchCatalog(channel: channel);
+    return catalog.available;
+  }
+
+  Future<({UpdateInfo? available, List<UpdateInfo> releases})> fetchCatalog({
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
     if (AppConfig.updateManifestUrl.isNotEmpty) {
-      final UpdateInfo? manual = await _checkManifest();
+      final UpdateInfo? manual = await _checkManifest(channel: channel);
       if (manual != null) {
-        return manual;
+        return (available: manual, releases: <UpdateInfo>[manual]);
       }
     }
-    return _checkGithubRelease();
+    final List<UpdateInfo> list = await _fetchGithubReleases(channel: channel);
+    if (list.isNotEmpty) {
+      UpdateInfo latest = list.first;
+      if (latest.isNewer && latest.sha256.isEmpty && latest.tagName.isNotEmpty) {
+        final String sha = await _shaForRelease(
+          tag: latest.tagName,
+          version: latest.version,
+          assetName: latest.assetName,
+        );
+        if (sha.isNotEmpty) {
+          latest = UpdateInfo(
+            version: latest.version,
+            url: latest.url,
+            sha256: sha,
+            notes: latest.notes,
+            mandatory: latest.mandatory,
+            sizeBytes: latest.sizeBytes,
+            publishedAt: latest.publishedAt,
+            preRelease: latest.preRelease,
+            tagName: latest.tagName,
+            assetName: latest.assetName,
+          );
+          list[0] = latest;
+        }
+      }
+      return (
+        available: latest.isNewer ? latest : null,
+        releases: list,
+      );
+    }
+    if (channel == UpdateChannel.stable) {
+      final UpdateInfo? single = await _checkGithubRelease();
+      if (single != null) {
+        return (
+          available: single.isNewer ? single : null,
+          releases: <UpdateInfo>[single],
+        );
+      }
+    }
+    return (available: null, releases: const <UpdateInfo>[]);
   }
 
   /// خواندن فهرست JSON دستی (اگر کسی تنظیم کرده باشد).
-  Future<UpdateInfo?> _checkManifest() async {
+  Future<UpdateInfo?> _checkManifest({
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
     try {
       final http.Response response = await _client
           .get(
@@ -370,17 +499,54 @@ class UpdateService {
       final Map<String, dynamic> json = JsonX.asMap(
         jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
       );
-      return _accept(json);
+      final UpdateInfo? candidate = _accept(json);
+      if (candidate == null) {
+        return null;
+      }
+      if (channel == UpdateChannel.stable && candidate.preRelease) {
+        return null;
+      }
+      return candidate;
     } on Exception {
       return null;
     }
   }
 
-  /// خواندن آخرین انتشار از API گیت هاب.
-  ///
-  /// هر انتشار این مخزن فایل نصب را با نام `UmbrellaVPN-Setup-<نسخه>-x64.exe`
-  /// و یک `SHA256SUMS.txt` در پوشه `setup/<نسخه>` دارد، پس نشانی دانلود و
-  /// اثر انگشت هر دو از همان تگ خوانده می شوند و دستی نگه داشته نمی شوند.
+  /// خواندن فهرست انتشارها از API گیت هاب برای هر دو کانال پایدار و بتا.
+  Future<List<UpdateInfo>> _fetchGithubReleases({
+    required UpdateChannel channel,
+  }) async {
+    try {
+      final http.Response response = await _client
+          .get(Uri.parse(AppConfig.releasesListApiUrl), headers: _headers)
+          .timeout(const Duration(seconds: 14));
+      if (response.statusCode >= 300) {
+        return <UpdateInfo>[];
+      }
+      final Object? decoded =
+          jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
+      final List<Object?> items = JsonX.asList(decoded);
+      final List<UpdateInfo> parsed = <UpdateInfo>[];
+      for (final Object? raw in items) {
+        final UpdateInfo? info = parseGithubRelease(
+          JsonX.asMap(raw),
+          includePreReleases: channel == UpdateChannel.beta,
+        );
+        if (info != null) {
+          parsed.add(info);
+        }
+      }
+      parsed.sort(
+        (UpdateInfo a, UpdateInfo b) =>
+            UpdateInfo.compareVersions(b.version, a.version),
+      );
+      return parsed;
+    } on Exception {
+      return <UpdateInfo>[];
+    }
+  }
+
+  /// خواندن آخرین انتشار پایدار از API گیت هاب (مسیر پشتیبان کانال اصلی).
   Future<UpdateInfo?> _checkGithubRelease() async {
     try {
       final http.Response response = await _client
@@ -392,35 +558,120 @@ class UpdateService {
       final Map<String, dynamic> json = JsonX.asMap(
         jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
       );
-      if (json.isEmpty) {
+      final UpdateInfo? info =
+          parseGithubRelease(json, includePreReleases: false);
+      if (info == null) {
         return null;
       }
-      // تگ به شکل `v1.0.18-windows` است؛ فقط شماره نسخه لازم است.
-      final String tag = JsonX.text(json['tag_name']);
-      final String version = _versionOf(tag);
-      if (version.isEmpty || !_isReleaseForWindows(tag)) {
-        return null;
+      if (info.sha256.isNotEmpty || !info.isNewer) {
+        return info;
       }
-      final bool draft = JsonX.boolean(json['draft']);
-      if (draft) {
-        return null;
-      }
-      final String url = _installerUrl(tag, version);
-      if (url.isEmpty) {
-        return null;
-      }
-      final String sha = await _shaForVersion(tag, version);
-      return _accept(<String, dynamic>{
-        'version': version,
-        'url': url,
-        'sha256': sha,
-        'notes': JsonX.text(json['body']),
-        'size': 0,
-        'published_at': JsonX.text(json['published_at']),
-      });
+      final String sha = await _shaForRelease(
+        tag: info.tagName,
+        version: info.version,
+        assetName: info.assetName,
+      );
+      return UpdateInfo(
+        version: info.version,
+        url: info.url,
+        sha256: sha,
+        notes: info.notes,
+        mandatory: info.mandatory,
+        sizeBytes: info.sizeBytes,
+        publishedAt: info.publishedAt,
+        preRelease: info.preRelease,
+        tagName: info.tagName,
+        assetName: info.assetName,
+      );
     } on Exception {
       return null;
     }
+  }
+
+  /// تجزیه یک انتشار گیت هاب، تشخیص دقیق بتا / پایدار و استخراج فایل نصبی و SHA-256.
+  static UpdateInfo? parseGithubRelease(
+    Map<String, dynamic> json, {
+    required bool includePreReleases,
+  }) {
+    if (json.isEmpty || JsonX.boolean(json['draft'])) {
+      return null;
+    }
+    final String tag = JsonX.text(json['tag_name']);
+    final String version = UpdateInfo.normalizeVersion(tag);
+    if (version.isEmpty || !RegExp(r'^\d+\.\d+\.\d+').hasMatch(version)) {
+      return null;
+    }
+    final List<Map<String, dynamic>> assets = JsonX.asList(json['assets'])
+        .map(JsonX.asMap)
+        .where((Map<String, dynamic> item) => item.isNotEmpty)
+        .toList();
+    final Map<String, dynamic>? installerAsset = _pickWindowsInstaller(assets);
+    if (installerAsset == null && !_isReleaseForWindows(tag)) {
+      return null;
+    }
+    final bool isPreRelease =
+        JsonX.boolean(json['prerelease']) || UpdateInfo.isPreReleaseTag(tag);
+    if (isPreRelease && !includePreReleases) {
+      return null;
+    }
+
+    String url = '';
+    String assetName = '';
+    int size = 0;
+    String sha = '';
+    if (installerAsset != null) {
+      url = JsonX.text(installerAsset['browser_download_url']);
+      assetName = JsonX.text(installerAsset['name']);
+      size = JsonX.integer(installerAsset['size']);
+      sha = _extractDigestSha256(JsonX.text(installerAsset['digest']));
+    }
+    if (url.isEmpty) {
+      final String coreVersion = _versionOf(tag);
+      if (coreVersion.isEmpty) {
+        return null;
+      }
+      assetName = 'UmbrellaVPN-Setup-$coreVersion-x64.exe';
+      url = _installerUrl(tag, coreVersion);
+    }
+    return UpdateInfo(
+      version: version,
+      url: url,
+      sha256: sha,
+      notes: JsonX.text(json['body']),
+      mandatory: false,
+      sizeBytes: size,
+      publishedAt: JsonX.dateTime(json['published_at']),
+      preRelease: isPreRelease,
+      tagName: tag,
+      assetName: assetName,
+    );
+  }
+
+  static Map<String, dynamic>? _pickWindowsInstaller(
+    List<Map<String, dynamic>> assets,
+  ) {
+    Map<String, dynamic>? fallbackExe;
+    for (final Map<String, dynamic> asset in assets) {
+      final String name = JsonX.text(asset['name']).toLowerCase();
+      final String url = JsonX.text(asset['browser_download_url']);
+      if (url.isEmpty) continue;
+      if (name.endsWith('.exe') &&
+          (name.contains('setup') || name.contains('umbrella'))) {
+        return asset;
+      }
+      if (fallbackExe == null &&
+          (name.endsWith('.exe') || name.endsWith('.msi'))) {
+        fallbackExe = asset;
+      }
+    }
+    return fallbackExe;
+  }
+
+  static String _extractDigestSha256(String digest) {
+    final RegExpMatch? match = RegExp(
+      r'^(?:sha256:)?([0-9a-fA-F]{64})$',
+    ).firstMatch(digest.trim());
+    return match?.group(1)?.toLowerCase() ?? '';
   }
 
   Map<String, String> get _headers => <String, String>{
@@ -432,42 +683,70 @@ class UpdateService {
   static bool _isReleaseForWindows(String tag) =>
       tag.toLowerCase().contains('windows');
 
-  /// `v1.0.18-windows` یا `1.0.18` → `1.0.18`.
+  /// `v1.0.39-windows` یا `1.0.39` → `1.0.39`.
   static String _versionOf(String tag) {
-    final RegExpMatch? match =
-        RegExp(r'(\d+\.\d+\.\d+)').firstMatch(tag);
+    final RegExpMatch? match = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(tag);
     return match?.group(1) ?? '';
   }
 
-  /// همان مسیری که نصب کننده همیشه در مخزن دارد.
+  /// مسیر پشتیبان فایل نصب در مخزن.
   static String _installerUrl(String tag, String version) =>
       'https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
       'setup/$version/UmbrellaVPN-Setup-$version-x64.exe';
 
-  /// اثر انگشت فایل نصب از `SHA256SUMS.txt` همان نسخه.
-  ///
-  /// اگر خوانده نشود، خالی برمی گردد: دانلود بدون بررسی هش بهتر از دانلود
-  /// نکردن نیست، ولی خود `download` هم فقط وقتی هش بدهیم بررسی می کند.
-  Future<String> _shaForVersion(String tag, String version) async {
-    try {
-      final http.Response response = await _client
-          .get(
-            Uri.parse('https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
-                'setup/$version/SHA256SUMS.txt'),
-            headers: _headers,
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode >= 300) {
-        return '';
+  /// اثر انگشت SHA-256 فایل نصب از `SHA256SUMS.txt` انتشار یا مخزن.
+  Future<String> _shaForRelease({
+    required String tag,
+    required String version,
+    String assetName = '',
+  }) async {
+    final String coreVersion = _versionOf(version);
+    final List<String> candidates = <String>[
+      'https://github.com/armin-soft/Umbrella-VPN/releases/download/$tag/SHA256SUMS.txt',
+      if (coreVersion.isNotEmpty)
+        'https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
+            'setup/$coreVersion/SHA256SUMS.txt',
+    ];
+    for (final String url in candidates) {
+      try {
+        final http.Response response = await _client
+            .get(Uri.parse(url), headers: _headers)
+            .timeout(const Duration(seconds: 10));
+        if (response.statusCode >= 300) {
+          continue;
+        }
+        final String body =
+            utf8.decode(response.bodyBytes, allowMalformed: true);
+        final String parsed = parseSha256Sums(body, assetName: assetName);
+        if (parsed.isNotEmpty) {
+          return parsed;
+        }
+      } on Exception {
+        // نشانی بعدی امتحان می شود.
       }
-      final String body = utf8.decode(response.bodyBytes, allowMalformed: true);
-      final RegExpMatch? match = RegExp(r'^([0-9a-fA-F]{64})',
-              multiLine: true)
-          .firstMatch(body);
-      return match?.group(1)?.toLowerCase() ?? '';
-    } on Exception {
-      return '';
     }
+    return '';
+  }
+
+  static String parseSha256Sums(String body, {String assetName = ''}) {
+    final String wanted = assetName.trim().toLowerCase();
+    String firstHash = '';
+    for (final String rawLine in body.split(RegExp(r'\r?\n'))) {
+      final RegExpMatch? match = RegExp(
+        r'^\s*([0-9a-fA-F]{64})(?:\s+[* ]?(.+))?$',
+      ).firstMatch(rawLine.trim());
+      if (match == null) continue;
+      final String hash = match.group(1)!.toLowerCase();
+      final String file = (match.group(2) ?? '').trim().toLowerCase();
+      firstHash = firstHash.isEmpty ? hash : firstHash;
+      if (wanted.isNotEmpty && file.endsWith(wanted)) {
+        return hash;
+      }
+      if (wanted.isEmpty && file.endsWith('.exe')) {
+        return hash;
+      }
+    }
+    return firstHash;
   }
 
   /// پذیرش فقط اگر نسخه واقعا تازه تر باشد.
@@ -482,60 +761,158 @@ class UpdateService {
     return info;
   }
 
+  static String _safeInstallerName(UpdateInfo info) {
+    final String raw = info.assetName.isNotEmpty
+        ? info.assetName
+        : Uri.tryParse(info.url)?.pathSegments.lastOrNull ?? '';
+    final String cleaned =
+        raw.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '').trim();
+    if (cleaned.toLowerCase().endsWith('.exe') ||
+        cleaned.toLowerCase().endsWith('.msi')) {
+      return cleaned;
+    }
+    return 'UmbrellaVPN-Setup-${info.version}-x64.exe';
+  }
+
+  Future<bool> _matchesSha256(File file, String expectedHex) async {
+    final _DigestCapture capture = _DigestCapture();
+    final ByteConversionSink hashSink =
+        sha256.startChunkedConversion(capture);
+    await for (final List<int> chunk in file.openRead()) {
+      hashSink.add(chunk);
+    }
+    hashSink.close();
+    final String actual = capture.value?.toString().toLowerCase() ?? '';
+    return actual == expectedHex.toLowerCase();
+  }
+
   Future<File?> download(
     UpdateInfo info, {
     required void Function(double progress, int received, int total) onProgress,
+    bool Function()? isCancelled,
   }) async {
+    File? partFile;
+    IOSink? sink;
     try {
-      final Directory dir = await getTemporaryDirectory();
-      final String name = info.url.split('/').last;
+      final Directory base = await getTemporaryDirectory();
+      final Directory dir = Directory(
+        '${base.path}${Platform.pathSeparator}umbrella-updates',
+      );
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final String name = _safeInstallerName(info);
       final File target = File('${dir.path}${Platform.pathSeparator}$name');
-      if (await target.exists()) {
+
+      // اگر فایل معتبر قبلاً کامل دریافت و تایید شده باشد، بی درنگ آماده نصب است.
+      if (info.sha256.isNotEmpty && await target.exists()) {
+        if (await _matchesSha256(target, info.sha256)) {
+          final int len = await target.length();
+          onProgress(1.0, len, len);
+          return target;
+        }
         await target.delete();
       }
+
+      partFile = File('${target.path}.part');
+      if (await partFile.exists()) {
+        await partFile.delete();
+      }
+
       final http.Request request = http.Request('GET', Uri.parse(info.url));
+      request.headers['User-Agent'] = 'Umbrella-Windows/${AppConfig.version}';
       final http.StreamedResponse response =
           await _client.send(request).timeout(const Duration(seconds: 30));
       if (response.statusCode >= 300) {
         return null;
       }
-      final int total = response.contentLength ?? info.sizeBytes;
-      final IOSink sink = target.openWrite();
+      final int total = (response.contentLength ?? 0) > 0
+          ? response.contentLength!
+          : info.sizeBytes;
+      sink = partFile.openWrite();
+      final _DigestCapture capture = _DigestCapture();
+      final ByteConversionSink hashSink =
+          sha256.startChunkedConversion(capture);
       int received = 0;
-      await for (final List<int> chunk in response.stream) {
+
+      await for (final List<int> chunk
+          in response.stream.timeout(const Duration(seconds: 45))) {
+        if (isCancelled?.call() == true) {
+          await sink.close();
+          sink = null;
+          hashSink.close();
+          if (await partFile.exists()) {
+            await partFile.delete();
+          }
+          return null;
+        }
         sink.add(chunk);
+        hashSink.add(chunk);
         received += chunk.length;
-        onProgress(total > 0 ? (received / total).clamp(0, 1) : 0, received, total);
+        onProgress(
+          total > 0 ? (received / total).clamp(0.0, 1.0) : 0.0,
+          received,
+          total,
+        );
       }
       await sink.flush();
       await sink.close();
+      sink = null;
+      hashSink.close();
+
+      if (received <= 0 || (total > 0 && received < total)) {
+        if (await partFile.exists()) {
+          await partFile.delete();
+        }
+        return null;
+      }
 
       if (info.sha256.isNotEmpty) {
-        final String hash =
-            sha256.convert(await target.readAsBytes()).toString().toLowerCase();
-        if (hash != info.sha256.toLowerCase()) {
-          await target.delete();
+        final String actual = capture.value?.toString().toLowerCase() ?? '';
+        if (actual != info.sha256.toLowerCase()) {
+          if (await partFile.exists()) {
+            await partFile.delete();
+          }
           return null;
         }
       }
-      return target;
+
+      if (await target.exists()) {
+        await target.delete();
+      }
+      return await partFile.rename(target.path);
     } on Exception {
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        if (partFile != null && await partFile.exists()) {
+          await partFile.delete();
+        }
+      } catch (_) {}
       return null;
     }
   }
 
-  Future<bool> install(File file, NativeBridge native) async {
-    final String path = file.path.toLowerCase();
-    if (path.endsWith('.msi')) {
-      final int pid = await native.spawn(
-        exe: 'msiexec.exe',
-        args: '/i "$path" /passive /norestart',
-        hidden: false,
+  /// نصب درون برنامه ای با ارتقای خودکار و بازگشایی مجدد برنامه پس از نصب.
+  Future<bool> install(
+    File file,
+    NativeBridge native, {
+    bool silentRelaunch = true,
+  }) async {
+    final String lower = file.path.toLowerCase();
+    if (lower.endsWith('.msi')) {
+      return native.runElevated(
+        'msiexec.exe',
+        args: '/i "${file.path}" /passive /norestart',
       );
-      return pid > 0;
     }
-    if (path.endsWith('.exe')) {
-      return native.runElevated(file.path);
+    if (lower.endsWith('.exe')) {
+      final String args = silentRelaunch
+          ? '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS '
+              '/SP- /RelaunchAfterUpdate=1'
+          : '';
+      return native.runElevated(file.path, args: args);
     }
     return native.openPath(file.path);
   }

@@ -348,6 +348,28 @@ class _AccountPageState extends State<AccountPage> {
           ),
           const SizedBox(height: AppMetrics.space4),
 
+          // ── طرح های هدیه همگام با ربات (اشتراک رایگان و نوروزی) ─────────
+          if (auth.offers.hasVisibleOffer) ...<Widget>[
+            _GiftPlansCard(
+              offers: auth.offers,
+              busy: auth.claimingOffer,
+              activePlanType: auth.claimingPlanType,
+              onClaim: (String planType) async {
+                final String? message =
+                    await auth.claimSubscriptionOffer(planType);
+                if (!context.mounted) {
+                  return;
+                }
+                if (message != null) {
+                  toasts.success(message);
+                } else if (auth.error.isNotEmpty) {
+                  toasts.error('فعال سازی انجام نشد', auth.error);
+                }
+              },
+            ),
+            const SizedBox(height: AppMetrics.space4),
+          ],
+
           // ── چهار کارت شاخص کلیدی حساب کاربری ──────────────────────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
@@ -1139,6 +1161,203 @@ class _TelegramSyncButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// کارت فعال سازی اشتراک رایگان (یک بار مصرف) و اشتراک نوروزی (هنگام فعال بودن
+/// منوی نوروزی در ربات تلگرام).
+class _GiftPlansCard extends StatelessWidget {
+  const _GiftPlansCard({
+    required this.offers,
+    required this.busy,
+    required this.activePlanType,
+    required this.onClaim,
+  });
+
+  final SubscriptionOffers offers;
+  final bool busy;
+  final String activePlanType;
+  final Future<void> Function(String planType) onClaim;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final List<Widget> tiles = <Widget>[
+      if (offers.showFree)
+        _GiftOfferTile(
+          icon: Icons.card_giftcard_rounded,
+          accent: colors.primary,
+          title: 'اشتراک رایگان',
+          badge: 'هدیه اول',
+          spec:
+              '${Fa.num(offers.freeGb)} گیگابایت ترافیک  •  ${Fa.num(offers.freeDays)} روز اعتبار',
+          note:
+              'یک بار برای شروع آشنایی با سرویس قابل دریافت است و پس از فعال سازی بسته می شود.',
+          buttonLabel: 'دریافت اشتراک رایگان',
+          loading: busy && activePlanType == 'free',
+          disabled: busy,
+          onTap: () => onClaim('free'),
+        ),
+      if (offers.showNowruz)
+        _GiftOfferTile(
+          icon: Icons.local_florist_rounded,
+          accent: colors.success,
+          title: 'اشتراک نوروزی',
+          badge: 'ویژه نوروز',
+          spec:
+              '${Fa.num(offers.nowruzGb)} گیگابایت ترافیک  •  ${Fa.num(offers.nowruzDays)} روز اعتبار',
+          note:
+              'هدیه مناسبتی نوروز همگام با ربات تلگرام؛ با یک کلیک روی همین حساب فعال می شود.',
+          buttonLabel: 'دریافت اشتراک نوروزی',
+          loading: busy && activePlanType == 'nowruz',
+          disabled: busy,
+          onTap: () => onClaim('nowruz'),
+        ),
+    ];
+
+    return GlassCard(
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
+      borderColor: colors.primary.withValues(alpha: 0.34),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SectionHeader(
+            icon: Icons.redeem_rounded,
+            title: 'طرح های هدیه قابل فعال سازی',
+            subtitle:
+                'همگام با ربات تلگرام؛ در صورت فعال سازی بی درنگ روی سرورهای شما اعمال می شود',
+            trailing: Pill(
+              label: '${Fa.num(tiles.length)} هدیه آماده',
+              color: colors.success,
+              icon: Icons.auto_awesome_rounded,
+              dense: true,
+            ),
+          ),
+          const SizedBox(height: AppMetrics.space4),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              if (tiles.length == 2 &&
+                  constraints.maxWidth >= AppMetrics.breakpointCompact) {
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: tiles[0]),
+                      const SizedBox(width: AppMetrics.space3),
+                      Expanded(child: tiles[1]),
+                    ],
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (int i = 0; i < tiles.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(height: AppMetrics.space3),
+                    tiles[i],
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GiftOfferTile extends StatelessWidget {
+  const _GiftOfferTile({
+    required this.icon,
+    required this.accent,
+    required this.title,
+    required this.badge,
+    required this.spec,
+    required this.note,
+    required this.buttonLabel,
+    required this.loading,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String badge;
+  final String spec;
+  final String note;
+  final String buttonLabel;
+  final bool loading;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppMetrics.space4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: accent.withValues(alpha: 0.32)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              IconSquare(
+                icon: icon,
+                color: accent,
+                size: AppMetrics.iconBoxMd,
+                radius: AppMetrics.radiusMd,
+              ),
+              const SizedBox(width: AppMetrics.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
+                          ),
+                    ),
+                    const SizedBox(height: AppMetrics.space1),
+                    Text(
+                      spec,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: accent,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Pill(label: badge, color: accent, dense: true),
+            ],
+          ),
+          const SizedBox(height: AppMetrics.space3),
+          Text(
+            note,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.6,
+                ),
+          ),
+          const SizedBox(height: AppMetrics.space4),
+          GradientButton(
+            label: loading ? 'در حال فعال سازی...' : buttonLabel,
+            icon: Icons.bolt_rounded,
+            loading: loading,
+            height: AppMetrics.controlHeightSmall,
+            onPressed: disabled ? null : onTap,
+          ),
+        ],
       ),
     );
   }

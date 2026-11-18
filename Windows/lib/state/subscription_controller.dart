@@ -572,11 +572,20 @@ class SubscriptionController extends ChangeNotifier {
       'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
     };
     try {
-      return await _client
+      final http.Response first = await _client
           .get(uri, headers: headers)
           .timeout(const Duration(seconds: 12));
+      // خطای دائمی کلاینت (۴۰۱/۴۰۳/۴۰۴/۴۱۰) با تلاش دوباره درست نمی شود؛
+      // خطای موقت سرور (۵xx یا ۴۲۹) یک بار دوباره امتحان می شود.
+      if (first.statusCode == 429 || first.statusCode >= 500) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        return await _client
+            .get(uri, headers: headers)
+            .timeout(const Duration(seconds: 12));
+      }
+      return first;
     } on Exception {
-      await Future<void>.delayed(const Duration(milliseconds: 700));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
       return await _client
           .get(uri, headers: headers)
           .timeout(const Duration(seconds: 12));

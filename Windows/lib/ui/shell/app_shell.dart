@@ -140,7 +140,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         }
         break;
       case 'quit':
-        await vpn.disconnect(silent: true);
+        await vpn.shutdownForExit();
         await widget.windowService.quit();
         break;
       default:
@@ -523,12 +523,8 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                               ],
                                               Expanded(
                                                 child: Text(
-                                                  Fa.num(
-                                                    item.title.isEmpty
-                                                        ? 'اعلان آمبرلا'
-                                                        : item.title,
-                                                  ),
-                                                  maxLines: expanded ? 3 : 1,
+                                                  Fa.num(item.compactTitle),
+                                                  maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: Theme.of(context)
@@ -562,23 +558,22 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                               ),
                                             ],
                                           ),
-                                          if (item.body.isNotEmpty) ...<Widget>[
+                                          if (item.compactBody.isNotEmpty) ...<
+                                              Widget>[
                                             const SizedBox(
                                               height: AppMetrics.space1,
                                             ),
                                             Text(
-                                              Fa.num(item.body),
-                                              maxLines: expanded ? null : 3,
-                                              overflow: expanded
-                                                  ? TextOverflow.visible
-                                                  : TextOverflow.ellipsis,
+                                              Fa.num(item.compactBody),
+                                              maxLines: expanded ? 4 : 2,
+                                              overflow: TextOverflow.ellipsis,
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .bodySmall
                                                   ?.copyWith(
                                                     color:
                                                         colors.textSecondary,
-                                                    height: 1.55,
+                                                    height: 1.5,
                                                   ),
                                             ),
                                           ],

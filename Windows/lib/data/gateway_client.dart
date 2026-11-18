@@ -182,6 +182,7 @@ class GatewayClient {
       'sign_in_at': json['sign_in_at'],
       'account': json['account'],
       'filter': json['filter'],
+      'offers': json['offers'],
     });
   }
 
@@ -205,6 +206,7 @@ class GatewayClient {
       deviceId: '',
       account: Account.fromJson(JsonX.asMap(json['account'])),
       filter: FilterSettings.fromJson(JsonX.asMap(json['filter'])),
+      offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
     );
   }
 
@@ -224,11 +226,21 @@ class GatewayClient {
         .toList();
   }
 
-  Future<void> heartbeat({required String token, required String deviceId}) async {
-    await _post('auth/device', <String, dynamic>{
+  Future<({FilterSettings? filter, SubscriptionOffers? offers})> heartbeat({
+    required String token,
+    required String deviceId,
+  }) async {
+    final Map<String, dynamic> json = await _post('auth/device', <String, dynamic>{
       'token': token,
       'device_id': deviceId,
     });
+    final Map<String, dynamic> filterMap = JsonX.asMap(json['filter']);
+    final Map<String, dynamic> offersMap = JsonX.asMap(json['offers']);
+    return (
+      filter: filterMap.isNotEmpty ? FilterSettings.fromJson(filterMap) : null,
+      offers:
+          offersMap.isNotEmpty ? SubscriptionOffers.fromJson(offersMap) : null,
+    );
   }
 
   Future<FilterSettings> getFilter(String token) async {
@@ -244,6 +256,35 @@ class GatewayClient {
       'settings': settings.toJson(),
     });
     return FilterSettings.fromJson(JsonX.asMap(json['settings']));
+  }
+
+  Future<SubscriptionOffers> subscriptionOffers(String token) async {
+    final Map<String, dynamic> json =
+        await _get('subscription/offers', <String, String>{'token': token});
+    return SubscriptionOffers.fromJson(JsonX.asMap(json['offers']));
+  }
+
+  Future<
+      ({
+        String message,
+        Account account,
+        FilterSettings filter,
+        SubscriptionOffers offers,
+      })> claimSubscription({
+    required String token,
+    required String type,
+  }) async {
+    final Map<String, dynamic> json =
+        await _post('subscription/claim', <String, dynamic>{
+      'token': token,
+      'type': type,
+    });
+    return (
+      message: JsonX.text(json['message']),
+      account: Account.fromJson(JsonX.asMap(json['account'])),
+      filter: FilterSettings.fromJson(JsonX.asMap(json['filter'])),
+      offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
+    );
   }
 
   Future<bool> ping() async {

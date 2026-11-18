@@ -139,10 +139,17 @@ class UmbrellaCore {
     }
   }
 
-  /// بستن نمونه های بازمانده با نام، پیش از اجرای یک نمونه تازه.
-  ///
-  /// سنجش پینگ و اجرای اصلی هر دو پورت های ثابت هسته را می خواهند؛ یک نمونه
-  /// که از دور قبل زنده مانده، پورت را گرفته و نمونه بعدی را می کشد.
+  /// متغیر محیطی مالک پردازش؛ لانچر بومی (`umbrella_launcher.c`) به محض بسته
+  /// شدن این PID همه پردازش های هسته و پنجره CLI را کامل می بندد.
+  static Map<String, String> ownerEnvironment([
+    Map<String, String> extra = const <String, String>{},
+  ]) =>
+      <String, String>{
+        ...extra,
+        'UMBRELLA_OWNER_PID': '$pid',
+      };
+
+  /// بستن نمونه های بازمانده و زیرشاخه هایشان پیش از اجرا یا هنگام خروج.
   static Future<void> releasePorts() async {
     if (!Platform.isWindows) {
       return;
@@ -155,7 +162,7 @@ class UmbrellaCore {
       try {
         await Process.run(
           'taskkill',
-          <String>['/F', '/IM', name],
+          <String>['/F', '/T', '/IM', name],
           runInShell: false,
         );
       } on Exception {
@@ -163,6 +170,182 @@ class UmbrellaCore {
       }
     }
   }
+
+  /// ترجمه کدهای خروج و استثناهای سطح پایین ویندوز (NTSTATUS) هسته به فارسی روشن.
+  static String describeWindowsExitCode(int code) {
+    final int unsigned = code & 0xFFFFFFFF;
+    if (unsigned < 0x80000000) {
+      return '';
+    }
+    final String hex =
+        '0x${unsigned.toRadixString(16).toUpperCase().padLeft(8, '0')}';
+    return switch (unsigned) {
+      0xC000013A => 'هسته با سیگنال توقف بسته شد ($hex).',
+      0xC0000135 =>
+        'کتابخانه مورد نیاز هسته پیدا نشد ($hex)؛ برنامه را با فایل نصب رسمی دوباره نصب کنید.',
+      0xC0000142 =>
+        'راه اندازی کتابخانه هسته ناموفق بود ($hex)؛ پوشه نصب را در استثنای آنتی ویروس بگذارید.',
+      0xC0000005 =>
+        'خطای غیرمنتظره دسترسی حافظه در هسته ($hex)؛ جزئیات در Event Viewer ویندوز ثبت شده است.',
+      0xC0000409 =>
+        'سرریز بافر محافظت شده در هسته ($hex)؛ دوباره متصل شوید.',
+      0xC00000FD => 'سرریز پشته در هسته ($hex)؛ دوباره متصل شوید.',
+      0xC0000374 => 'آسیب حافظه داخلی در هسته ($hex)؛ دوباره متصل شوید.',
+      0xC0000017 => 'حافظه آزاد سیستم برای اجرای هسته کافی نبود ($hex).',
+      0xC000001D => 'دستورالعمل پردازنده ناسازگار در هسته ($hex).',
+      _ => 'هسته به صورت غیرمنتظره متوقف شد (کد ویندوز $hex).',
+    };
+  }
+
+  /// قوانین مسدودسازی آفلاین و آنی کنترل محتوا برای چهار دسته همگام با ربات تلگرام
+  /// (`adult`, `gambling`, `ads`, `dating`) و دامنه های سفارشی کاربر.
+  static List<Map<String, dynamic>> contentControlRules(
+    FilterSettings? filter, {
+    int startOrder = 0,
+  }) {
+    if (filter == null || !filter.enabled) {
+      return const <Map<String, dynamic>>[];
+    }
+    final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[];
+    int order = startOrder;
+
+    for (final String category in filter.activeBotCategories) {
+      final ({List<String> suffixes, List<String> keywords})? spec =
+          _categoryFilterSpecs[category];
+      if (spec == null) continue;
+      rules.add(<String, dynamic>{
+        'list_order': order++,
+        'enabled': true,
+        'name': 'umbrella-filter-$category',
+        'outbound': 'block',
+        if (spec.suffixes.isNotEmpty) 'domain_suffix': spec.suffixes,
+        if (spec.keywords.isNotEmpty) 'domain_keyword': spec.keywords,
+      });
+    }
+
+    final List<String> custom = filter.normalizedCustomDomains;
+    if (custom.isNotEmpty) {
+      rules.add(<String, dynamic>{
+        'list_order': order++,
+        'enabled': true,
+        'name': 'umbrella-filter-custom',
+        'outbound': 'block',
+        'domain_suffix': custom,
+      });
+    }
+    return rules;
+  }
+
+  static const Map<String, ({List<String> suffixes, List<String> keywords})>
+      _categoryFilterSpecs =
+      <String, ({List<String> suffixes, List<String> keywords})>{
+    'adult': (
+      suffixes: <String>[
+        'xxx',
+        'porn',
+        'sex',
+        'adult',
+        'pornhub.com',
+        'xvideos.com',
+        'xnxx.com',
+        'xhamster.com',
+        'redtube.com',
+        'youporn.com',
+        'spankbang.com',
+        'onlyfans.com',
+        'chaturbate.com',
+        'stripchat.com',
+        'bongacams.com',
+        'brazzers.com',
+      ],
+      keywords: <String>[
+        'pornhub',
+        'xvideos',
+        'xnxx',
+        'xhamster',
+        'redtube',
+        'youporn',
+        'spankbang',
+      ],
+    ),
+    'gambling': (
+      suffixes: <String>[
+        'bet',
+        'casino',
+        'poker',
+        'bet365.com',
+        '1xbet.com',
+        'melbet.com',
+        'betway.com',
+        'pokerstars.com',
+        'bwin.com',
+        'stake.com',
+        'bc.game',
+        'mostbet.com',
+        'parimatch.com',
+        'williamhill.com',
+      ],
+      keywords: <String>[
+        '1xbet',
+        'melbet',
+        'bet365',
+        'mostbet',
+        'pokerstars',
+        'shartbandi',
+      ],
+    ),
+    'ads': (
+      suffixes: <String>[
+        'doubleclick.net',
+        'googlesyndication.com',
+        'googleadservices.com',
+        'adnxs.com',
+        'adsrvr.org',
+        'taboola.com',
+        'outbrain.com',
+        'criteo.com',
+        'pubmatic.com',
+        'rubiconproject.com',
+        'openx.net',
+        'popads.net',
+        'propellerads.com',
+        'adcolony.com',
+        'unityads.unity3d.com',
+        'yektanet.com',
+        'tapsell.ir',
+      ],
+      keywords: <String>[
+        'doubleclick',
+        'googlesyndication',
+        'popads',
+        'propellerads',
+      ],
+    ),
+    'dating': (
+      suffixes: <String>[
+        'dating',
+        'tinder.com',
+        'gotinder.com',
+        'bumble.com',
+        'badoo.com',
+        'okcupid.com',
+        'match.com',
+        'hinge.co',
+        'pof.com',
+        'zoosk.com',
+        'happn.com',
+        'grindr.com',
+        'meetic.com',
+        'eharmony.com',
+      ],
+      keywords: <String>[
+        'tinder',
+        'bumble',
+        'badoo',
+        'okcupid',
+      ],
+    ),
+  };
 
   /// پورت های رزروشده ای که همین حالا گرفته اند.
   static Future<List<int>> heldReservedPorts() async {
@@ -283,10 +466,31 @@ class UmbrellaCore {
     String remoteDns = defaultRemoteDns,
     String directDns = defaultDns,
     AppSettings? networkSettings,
+    FilterSettings? contentFilter,
   }) {
+    final String normalizedLog =
+        CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
+    final bool timedDiagnostic =
+        normalizedLog == 'debug' || normalizedLog == 'trace';
+    final List<Map<String, dynamic>> appRules = <Map<String, dynamic>>[
+      if (tun && networkSettings != null)
+        for (int i = 0; i < networkSettings.appRoutes.length; i++)
+          networkSettings.appRoutes[i].toCoreRule(i),
+    ];
+    final List<Map<String, dynamic>> combinedRules = <Map<String, dynamic>>[
+      ...appRules,
+      ...contentControlRules(contentFilter, startOrder: appRules.length),
+    ];
     return <String, dynamic>{
-      // ── گزارش ──────────────────────────────────────────────────────────
-      'log-level': CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel),
+      // ── گزارش (با بازگشت خودکار ۱۰ دقیقه ای در سطح عیب یابی هم راستا با 5.9.11) ──
+      'log-level': normalizedLog,
+      if (timedDiagnostic) ...<String, dynamic>{
+        'log-level-until': DateTime.now()
+            .toUtc()
+            .add(const Duration(minutes: 10))
+            .toIso8601String(),
+        'log-level-after': 'warn',
+      },
       'log-file': logFile,
       // ── ورودی ها (تونل یا پروکسی سیستمی) ───────────────────────────────
       'enable-tun': tun,
@@ -328,12 +532,9 @@ class UmbrellaCore {
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
       'region': 'other',
       ...(networkSettings?.chain ?? const ChainSettings()).toCoreOptions(),
-      if (tun && networkSettings != null && networkSettings.appRoutes.isNotEmpty)
+      if (combinedRules.isNotEmpty)
         'route-rule': <String, dynamic>{
-          'rules': <Map<String, dynamic>>[
-            for (int i = 0; i < networkSettings.appRoutes.length; i++)
-              networkSettings.appRoutes[i].toCoreRule(i),
-          ],
+          'rules': combinedRules,
         },
       // Match Hiddify's default `ipv4_only` (`verify_ipv6: false`) unless the
       // user explicitly enables IPv6 (`prefer_ipv4`).

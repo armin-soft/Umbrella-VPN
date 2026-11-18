@@ -358,6 +358,7 @@ match($Data) {
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
 'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
+'nowruz_menu_toggle' => AdminFlow::toggleNowruzMenu($Context),
 'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
 'cfg_pricing' => AdminFlow::pricingMenu($Context),
 'cfg_links' => AdminFlow::linksMenu($Context),

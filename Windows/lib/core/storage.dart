@@ -151,6 +151,7 @@ class StoreKeys {
   static const String deviceId = 'device.id';
   static const String deviceTrusted = 'device.trusted';
   static const String updateSkipped = 'update.skipped';
+  static const String updateChannel = 'update.channel';
   static const String nodesCache = 'nodes-cache.json';
 
   /// پنجره Umbrella CLI هنگام اتصال باز شود.

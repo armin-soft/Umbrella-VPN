@@ -9,8 +9,8 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.38';
-  static const int buildNumber = 39;
+  static const String version = '1.0.39';
+  static const int buildNumber = 40;
   /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.18`.
   ///
   /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
@@ -96,9 +96,13 @@ class AppConfig {
     defaultValue: '',
   );
 
-  /// آخرین انتشار ویندوز در گیت هاب (همان مخزنی که نصب کننده از آن می آید).
+  /// آخرین انتشار پایدار ویندوز در گیت هاب (کانال اصلی).
   static const String releaseApiUrl =
       'https://api.github.com/repos/armin-soft/Umbrella-VPN/releases/latest';
+
+  /// فهرست انتشارهای ویندوز در گیت هاب (برای کانال بتا، پایدار و تاریخچه تغییرات).
+  static const String releasesListApiUrl =
+      'https://api.github.com/repos/armin-soft/Umbrella-VPN/releases?per_page=20';
 
   /// صفحه انتشار، برای وقتی که خودکار نمی شود.
   static const String releasesPageUrl =
@@ -190,5 +194,7 @@ class AppConfig {
         'app/ping',
         'filter/get',
         'filter/save',
+        'subscription/offers',
+        'subscription/claim',
       ];
 }

@@ -11,7 +11,10 @@ require_once __DIR__ . '/../Telegram/Bot-Identity.php';
 require_once __DIR__ . '/../SMS/IPPanel.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once __DIR__ . '/../Storage/Repository.php';
+require_once __DIR__ . '/../Support/Bot-Config.php';
+require_once __DIR__ . '/../Support/Helper.php';
 require_once __DIR__ . '/App-Filter.php';
+require_once __DIR__ . '/System-Notifications.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 /**
@@ -81,6 +84,8 @@ if ($Route === 'auth/device') { self::heartbeat(self::body()); return; }
 if ($Route === 'account/refresh') { self::refreshAccount(); return; }
 if ($Route === 'filter/save') { self::saveFilter(self::body()); return; }
 if ($Route === 'filter/get') { self::getFilter(self::body()); return; }
+if ($Route === 'subscription/offers') { self::subscriptionOffers(); return; }
+if ($Route === 'subscription/claim') { self::claimSubscription(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
@@ -495,6 +500,7 @@ self::ok([
 'sign_in_at' => gmdate('c'),
 'account' => $Profile,
 'filter' => AppFilter::load($UUID),
+'offers' => self::offersPayload($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account),
 ]);
 }
 
@@ -708,11 +714,15 @@ $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
 self::ok([
 'account' => $Profile,
 'filter' => AppFilter::load($UUID),
+'offers' => self::offersPayload($UUID, (int)($Session['Telegram_ID'] ?? 0), $Account),
 'checked_at' => gmdate('c'),
 ]);
 }
 
-/** Keeps the device row fresh so «دستگاه‌های من» is never stale. */
+/**
+ * Keeps the device row fresh AND delivers live filter + subscription offer
+ * toggles from the Telegram bot so changes reflect automatically in the app.
+ */
 private static function heartbeat(array $Body): void {
 $Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
 
@@ -725,7 +735,13 @@ Database::getInstance()->execute(
 [time(), (string)$Session['Device_ID']]
 );
 
-self::ok(['seen_at' => gmdate('c')]);
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$Payload = ['seen_at' => gmdate('c')];
+if ($UUID !== '') {
+$Payload['filter'] = AppFilter::load($UUID);
+$Payload['offers'] = self::offersPayload($UUID, (int)($Session['Telegram_ID'] ?? 0), null);
+}
+self::ok($Payload);
 }
 
 private static function notifications(): void {
@@ -771,14 +787,27 @@ $VisibleRows[] = $Row;
 }
 
 self::ok([
-'items' => array_map(static fn(array $Row): array => [
+'items' => array_map(static function (array $Row): array {
+$Title = trim((string)$Row['Title']);
+$Body = (string)($Row['Body'] ?? '');
+$Level = (string)$Row['Level'];
+if ($Level !== 'notice' && (str_contains($Title, 'گزارش شبانه') || str_contains($Title, 'اعلان سیستمی') || mb_strlen($Body) > 220)) {
+$Body = SystemNotifications::compact($Body, 180);
+}
+if ($Title === 'گزارش شبانه مصرف') {
+$Title = 'گزارش شبانه';
+} elseif ($Title === 'اعلان سیستمی آمبرلا') {
+$Title = 'اعلان سیستم';
+}
+return [
 'id' => (int)$Row['ID'],
-'title' => (string)$Row['Title'],
-'body' => (string)($Row['Body'] ?? ''),
-'level' => (string)$Row['Level'],
+'title' => $Title,
+'body' => $Body,
+'level' => $Level,
 'sent_at' => (string)$Row['Sent_At'],
 'delivered' => (bool)$Row['_delivered'],
-], $VisibleRows),
+];
+}, $VisibleRows),
 ]);
 }
 
@@ -808,11 +837,239 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 self::ok(['settings' => AppFilter::load((string)$Session['User_UUID'])]);
 }
 
+/** Looks up the linked bot `Users` row by Telegram ID or panel UUID. */
+private static function resolveBotUser(string $UUID, int $TelegramId = 0): ?array {
+$Database = Database::getInstance();
+
+if ($TelegramId > 0) {
+$ByTg = $Database->fetch('SELECT * FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$TelegramId]);
+if ($ByTg !== null) return $ByTg;
+}
+
+if ($UUID !== '' && $UUID !== '_') {
+$ByUuid = $Database->fetch('SELECT * FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
+if ($ByUuid !== null) return $ByUuid;
+}
+
+return null;
+}
+
+/** True when the user already holds an active, non-expired subscription. */
+private static function userHasActivePlan(?array $User, ?array $PanelAccount): bool {
+if ($User !== null) {
+$Sub = trim((string)($User['Subscription'] ?? ''));
+$Exp = (int)($User['Expiration_Time_Stamp'] ?? 0);
+if ($Sub !== '' && ($Exp <= 0 || $Exp > time())) {
+return true;
+}
+}
+
+if (is_array($PanelAccount) && $PanelAccount !== []) {
+$Profile = AppFilter::accountPayload($PanelAccount);
+$Active = !empty($Profile['is_active']) && !empty($Profile['enabled']);
+$Limit = (float)($Profile['usage_limit_gb'] ?? 0);
+$Used = (float)($Profile['used_gb'] ?? 0);
+$RemainingDays = (int)($Profile['remaining_days'] ?? 0);
+if ($Active && $Limit > 0 && $Used < $Limit && $RemainingDays > 0) {
+return true;
+}
+}
+
+return false;
+}
+
+/**
+ * Computes eligibility for the welcome free trial (1 GB / 1 day, strictly once)
+ * and the seasonal Nowruz gift (5 GB / 13 days, gated by the bot's Nowruz menu).
+ */
+private static function offersPayload(string $UUID, int $TelegramId = 0, ?array $PanelAccount = null): array {
+$User = self::resolveBotUser($UUID, $TelegramId);
+$Uid = (int)($User['Telegram_ID'] ?? $TelegramId);
+$Blocked = (int)($User['Is_Blocked'] ?? 0) === 1;
+$HasActive = self::userHasActivePlan($User, $PanelAccount);
+
+$FreeKey = 'App_Free_Claimed_' . $UUID;
+$FreeClaimed = ((int)($User['Free_Plan_Claimed'] ?? 0) === 1)
+|| ($UUID !== '' && trim((string)Repository::getSetting($FreeKey, '')) === '1');
+$FreeAvailable = !$Blocked && !$HasActive && !$FreeClaimed && $UUID !== '';
+
+$NowruzEnabled = BotConfig::isNowruzMenuEnabled();
+$NowruzClaimed = BotConfig::hasClaimedNowruz($Uid, $UUID);
+$NowruzAvailable = $NowruzEnabled && !$Blocked && !$HasActive && !$NowruzClaimed && $UUID !== '';
+
+return [
+'free_available' => $FreeAvailable,
+'free_claimed' => $FreeClaimed,
+'free_gb' => 1,
+'free_days' => 1,
+'nowruz_menu_enabled' => $NowruzEnabled,
+'nowruz_available' => $NowruzAvailable,
+'nowruz_claimed' => $NowruzClaimed,
+'nowruz_gb' => 5,
+'nowruz_days' => 13,
+];
+}
+
+private static function subscriptionOffers(): void {
+$Session = self::sessionRow(self::bearer());
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+
+if ($UUID === '') {
+self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
+}
+
+$Account = PanelClient::get($UUID);
+self::ok([
+'offers' => self::offersPayload($UUID, (int)($Session['Telegram_ID'] ?? 0), $Account),
+]);
+}
+
+private static function claimSubscription(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+
+if ($UUID === '') {
+self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
+}
+
+$Type = strtolower(trim((string)($Body['type'] ?? '')));
+
+if ($Type !== 'free' && $Type !== 'nowruz') {
+self::fail(422, 'invalid_plan', 'نوع اشتراک درخواستی معتبر نیست.');
+}
+
+$LockKey = 'app_claim_' . $Type . '_' . md5($UUID);
+
+if (!Repository::tryCronLock($LockKey, 30)) {
+self::fail(409, 'busy', 'درخواست قبلی در حال پردازش است؛ چند ثانیه صبر کنید.');
+}
+
+try {
+$CurrentAccount = PanelClient::get($UUID);
+$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+$Uid = (int)($User['Telegram_ID'] ?? ($Session['Telegram_ID'] ?? 0));
+
+if ((int)($User['Is_Blocked'] ?? 0) === 1) {
+self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
+}
+
+if (self::userHasActivePlan($User, $CurrentAccount)) {
+self::fail(409, 'active_subscription', 'شما در حال حاضر اشتراک فعال دارید.');
+}
+
+if ($Type === 'free') {
+$FreeKey = 'App_Free_Claimed_' . $UUID;
+if ((int)($User['Free_Plan_Claimed'] ?? 0) === 1
+|| trim((string)Repository::getSetting($FreeKey, '')) === '1') {
+self::fail(409, 'already_claimed', 'اشتراک رایگان قبلاً برای این حساب فعال شده است.');
+}
+$Name = '۱ روزه';
+$Gb = 1;
+$Days = 1;
+} else {
+if (!BotConfig::isNowruzMenuEnabled()) {
+self::fail(403, 'nowruz_disabled', 'اشتراک نوروزی در حال حاضر فعال نیست.');
+}
+if (BotConfig::hasClaimedNowruz($Uid, $UUID)) {
+self::fail(409, 'already_claimed', 'اشتراک نوروزی قبلاً برای این حساب فعال شده است.');
+}
+$Name = 'نوروزی';
+$Gb = 5;
+$Days = 13;
+}
+
+$Tehran = new DateTimeZone('Asia/Tehran');
+$NowTehran = new DateTimeImmutable('now', $Tehran);
+$Today = $NowTehran->format('Y-m-d');
+$ExpireStamp = $NowTehran->modify('+' . $Days . ' days')->getTimestamp();
+
+$Updated = PanelClient::update($UUID, [
+'start_date' => $Today,
+'package_days' => $Days,
+'usage_limit_GB' => $Gb,
+'current_usage_GB' => 0,
+'is_active' => true,
+'enable' => true,
+'last_reset_time' => $Today,
+]);
+
+if ($Updated === null || $Updated === []) {
+self::fail(502, 'panel_unavailable', 'فعال سازی در سرور ناموفق بود؛ کمی بعد دوباره تلاش کنید.');
+}
+
+if ($Type === 'free') {
+Repository::setSetting('App_Free_Claimed_' . $UUID, '1');
+} else {
+BotConfig::markNowruzClaimed($Uid, $UUID);
+}
+
+$UsageLimit = (float)max($Gb, (float)($Updated['usage_limit_GB'] ?? $Gb));
+
+if ($Uid > 0 && $User !== null) {
+$Fields = [
+'Client_ID' => $UUID,
+'Subscription' => $Name,
+'Package_Duration' => \Helper::durationLabel($Days),
+'Package_Start_Date' => \Helper::formatPersianDate($NowTehran->getTimestamp()),
+'Expiration_Date' => \Helper::formatExpiration($ExpireStamp),
+'Expiration_Time_Stamp' => $ExpireStamp,
+'Total_Usage_GB' => $UsageLimit,
+'Used_Usage_GB' => 0.0,
+'Remaining_Usage_GB' => $UsageLimit,
+'Percent_Usage' => 0.0,
+'Client_Status' => 'فعال',
+'Channel_Client_Disabled_At' => null,
+'Deactivation_Message' => null,
+];
+if ($Type === 'free') {
+$Fields['Free_Plan_Claimed'] = 1;
+}
+Repository::updateUser($Uid, $Fields);
+Repository::addSubscriptionLog($Uid, 'activate_' . $Type, $Name, $Days, $UsageLimit, $UUID, 'app', $Uid);
+Repository::schedule('منقضی اشتراک', $Uid, $ExpireStamp);
+SystemNotifications::queue(
+$Uid,
+$Type === 'free' ? 'اشتراک رایگان فعال شد' : 'اشتراک نوروزی فعال شد',
+\Helper::toPersian((string)$Gb) . ' گیگابایت · ' . \Helper::toPersian((string)$Days) . ' روز اعتبار',
+'claim-' . $Type . ':' . $ExpireStamp,
+'success'
+);
+}
+
+$Fresh = PanelClient::get($UUID) ?? $Updated;
+$Profile = AppFilter::accountPayload($Fresh);
+$Base = PanelClient::accountBase($Fresh);
+$Profile['account_base'] = $Base;
+$Profile['subscription_url'] = self::subscriptionUrl($Fresh, $Base, $UUID);
+
+self::ok([
+'message' => $Type === 'free'
+? 'اشتراک رایگان (۱ گیگابایت، ۱ روز) فعال شد.'
+: 'اشتراک نوروزی (۵ گیگابایت، ۱۳ روز) فعال شد.',
+'account' => $Profile,
+'filter' => AppFilter::load($UUID),
+'offers' => self::offersPayload($UUID, $Uid, $Fresh),
+]);
+} finally {
+Repository::releaseCronLock($LockKey);
+}
+}
+
 private static function ping(): void {
 self::ok([
 'time' => gmdate('c'),
-'version' => '2',
-'features' => ['signin', 'device_confirm', 'notifications', 'filter'],
+'version' => '3',
+'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers'],
 ]);
 }
 

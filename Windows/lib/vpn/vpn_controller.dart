@@ -313,8 +313,47 @@ class VpnController extends ChangeNotifier {
   final Set<String> _networkSecrets = <String>{};
   ChainSettings _activeChain = const ChainSettings();
   ChainSettings get activeChain => _activeChain;
+  FilterSettings _contentFilter = FilterSettings.empty;
+  FilterSettings get contentFilter => _contentFilter;
+  Timer? _filterReloadTimer;
+  Timer? _autoConnectRetryTimer;
+  bool _shuttingDown = false;
   ProxyLink? _link;
   Timer? _liveTimer;
+
+  /// به روز رسانی قوانین کنترل محتوا (از تنظیمات برنامه یا همگام سازی زنده ربات).
+  /// اگر تونل هم اکنون متصل باشد، قوانین جدید بدون دخالت کاربر روی اتصال فعال می شوند.
+  void updateContentFilter(FilterSettings next) {
+    if (_contentFilter.sameEffectAs(next)) {
+      _contentFilter = next;
+      return;
+    }
+    _contentFilter = next;
+    if (_disposed || _shuttingDown) {
+      return;
+    }
+    _filterReloadTimer?.cancel();
+    if (_status == VpnStatus.connected && !_connectInFlight) {
+      _filterReloadTimer = Timer(const Duration(milliseconds: 600), () {
+        if (_disposed || _shuttingDown || _status != VpnStatus.connected) {
+          return;
+        }
+        _log.add(
+          next.hasActiveRules
+              ? 'اعمال قوانین جدید کنترل محتوا روی اتصال فعال...'
+              : 'غیرفعال سازی قوانین کنترل محتوا روی اتصال فعال...',
+        );
+        unawaited(() async {
+          await disconnect(silent: true);
+          if (!_disposed && !_shuttingDown) {
+            await connect();
+          }
+        }());
+      });
+    } else if (!_status.active && !_status.busy) {
+      _scheduleRuntimePrewarm();
+    }
+  }
 
   /// پینگ سرور متصل: عدد زنده تونل اگر آماده باشد، وگرنه پینگ شبکه همان
   /// سرور. این عدد هرگز صفر نمی ماند چون سرور متصل از فهرست سنجش هسته ای
@@ -391,13 +430,34 @@ class VpnController extends ChangeNotifier {
     }
     _notify();
     if (_settings.autoConnect) {
-      unawaited(connect());
+      unawaited(_runStartupAutoConnect());
     } else {
       _scheduleRuntimePrewarm();
     }
     // خواندن آی پی واقعی دستگاه کاملاً غیرمسدودکننده انجام می شود تا باز شدن
     // برنامه و دکمه اتصال حتی در شبکه محدود در کسری از ثانیه آماده باشد.
     unawaited(_discoverInitialIp());
+  }
+
+  /// اتصال خودکار شروع کار با یک تلاش مجدد زمان بندی شده (هم راستا با 5.9.11)
+  /// برای زمانی که شبکه ویندوز یا دریافت اشتراک چند ثانیه پس از بالا آمدن آماده می شود.
+  Future<void> _runStartupAutoConnect() async {
+    final bool ok = await connect();
+    if (ok || _disposed || _shuttingDown || !_settings.autoConnect) {
+      return;
+    }
+    _autoConnectRetryTimer?.cancel();
+    _autoConnectRetryTimer = Timer(const Duration(seconds: 8), () {
+      if (_disposed ||
+          _shuttingDown ||
+          !_settings.autoConnect ||
+          _status.active ||
+          _status.busy ||
+          _nodes.isEmpty) {
+        return;
+      }
+      unawaited(connect());
+    });
   }
 
   Future<void> _discoverInitialIp() async {
@@ -2046,6 +2106,7 @@ class VpnController extends ChangeNotifier {
             port: _umbrellaPort,
             logFile: logPath,
             networkSettings: _settings,
+            contentFilter: _contentFilter,
           ),
         ),
         flush: true,
@@ -2382,6 +2443,7 @@ class VpnController extends ChangeNotifier {
           port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
           logFile: coreLog,
           networkSettings: _settings,
+          contentFilter: _contentFilter,
         ),
       ),
       flush: true,
@@ -2459,13 +2521,15 @@ class VpnController extends ChangeNotifier {
         }
       }
 
-      // نبودِ پنجره: اجرای بی صدا با همان آرگومان ها.
+      // نبودِ پنجره: اجرای بی صدا با همان آرگومان ها و نگهبان عمر والد.
       final Process process = await Process.start(
         core.exe,
         args,
         workingDirectory: core.workDir,
+        environment: UmbrellaCore.ownerEnvironment(),
         runInShell: false,
       );
+      unawaited(_native.attachCoreJob(process.pid));
       if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) {
         process.kill();
         await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
@@ -2647,9 +2711,12 @@ class VpnController extends ChangeNotifier {
           // خودمان بستیم؛ هشدار «بسته شد» گمراه کننده است.
           return;
         }
+        final String crashReason = UmbrellaCore.describeWindowsExitCode(code);
         _log.add(
-          '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
-          level: 'warning',
+          crashReason.isNotEmpty
+              ? '${core.binaryName}: $crashReason'
+              : '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
+          level: crashReason.isNotEmpty ? 'error' : 'warning',
         );
       }),
     );
@@ -3167,6 +3234,19 @@ class VpnController extends ChangeNotifier {
       return 'ویندوز اجازه اجرای هسته را نداد؛ برنامه را با دسترسی مدیر اجرا '
           'کنید یا پوشه نصب را در استثناهای آنتی ویروس بگذارید.';
     }
+    final RegExpMatch? ntstatus = RegExp(
+      r'exception\s+0x([0-9a-f]{8})',
+      caseSensitive: false,
+    ).firstMatch(output);
+    if (ntstatus != null) {
+      final int? parsed = int.tryParse(ntstatus.group(1)!, radix: 16);
+      if (parsed != null) {
+        final String decoded = UmbrellaCore.describeWindowsExitCode(parsed);
+        if (decoded.isNotEmpty) {
+          return decoded;
+        }
+      }
+    }
     return '';
   }
 
@@ -3486,17 +3566,16 @@ class VpnController extends ChangeNotifier {
         return;
       }
       _healthFailures = 0;
-      if (geo.ip != previousExitIp) {
-        _log.add('مسیر امن اتصال تایید و فعال شد.');
+      if (geo.ip != previousExitIp && previousExitIp.isNotEmpty) {
+        _log.add('مسیر امن اتصال به روز شد.');
         if (_settings.notificationsEnabled) {
           final String where = countryNameFa(geo.flagCode);
-          unawaited(
-            _tray.balloon(
-              'اتصال امن برقرار است',
-              where.isEmpty ? 'ترافیک شما از مسیر امن عبور می کند' : 'موقعیت فعال: $where',
-            ),
-          );
+          if (where.isNotEmpty) {
+            unawaited(_tray.balloon('تغییر مسیر اتصال', 'موقعیت جدید: $where'));
+          }
         }
+      } else if (geo.ip != previousExitIp) {
+        _log.add('مسیر امن اتصال تایید و فعال شد.');
       }
       _notify();
     } on Exception {
@@ -3884,10 +3963,22 @@ class VpnController extends ChangeNotifier {
     return outcome;
   }
 
+  bool get _hasTrackedCoreProcesses =>
+      _runningPids.isNotEmpty ||
+      _runningBinaries.isNotEmpty ||
+      _coreProcesses.isNotEmpty ||
+      _preparingProcesses.isNotEmpty ||
+      CliSession.instance.running;
+
   Future<void> disconnect({bool silent = false}) async {
     _cancelGeneration++;
-    if (_connectInFlight) { await cancel(); return; }
-    if (_status == VpnStatus.disconnected && _runningPids.isEmpty) {
+    _filterReloadTimer?.cancel();
+    _autoConnectRetryTimer?.cancel();
+    if (_connectInFlight) {
+      await cancel();
+      return;
+    }
+    if (_status == VpnStatus.disconnected && !_hasTrackedCoreProcesses) {
       return;
     }
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
@@ -3915,6 +4006,58 @@ class VpnController extends ChangeNotifier {
       await _sound.play('disconnect');
     }
     _log.add('اتصال قطع شد و تنظیمات شبکه به حالت عادی بازگشت.');
+  }
+
+  /// بستن قطعی و کامل هسته، پنجره CLI، پروب های پینگ، پروکسی سیستمی و آیکون
+  /// سینی هنگام خروج از برنامه، خاموشی ویندوز یا نصب به روز رسانی.
+  Future<void> shutdownForExit() async {
+    if (_shuttingDown) {
+      return;
+    }
+    _shuttingDown = true;
+    _cancelRequested = true;
+    _cancelGeneration++;
+    _connectionEpoch++;
+    _prewarmCancelled = true;
+    _prewarmTimer?.cancel();
+    _filterReloadTimer?.cancel();
+    _autoConnectRetryTimer?.cancel();
+    _statsTimer?.cancel();
+    _healthTimer?.cancel();
+    _ipTimer?.cancel();
+    _pingTimer?.cancel();
+    _stopLiveMeasurement();
+    cancelSpeedTest();
+    try {
+      await _stopProbes().timeout(
+        const Duration(milliseconds: 900),
+        onTimeout: () {},
+      );
+    } catch (_) {}
+    try {
+      await _stopCores().timeout(
+        const Duration(milliseconds: 2200),
+        onTimeout: () {},
+      );
+    } catch (_) {}
+    try {
+      await _native.shutdownCores().timeout(
+            const Duration(milliseconds: 1200),
+            onTimeout: () => 0,
+          );
+    } catch (_) {}
+    try {
+      await _disableProxy().timeout(
+        const Duration(milliseconds: 800),
+        onTimeout: () {},
+      );
+    } catch (_) {}
+    try {
+      await _tray.destroy().timeout(
+            const Duration(milliseconds: 500),
+            onTimeout: () {},
+          );
+    } catch (_) {}
   }
 
   Future<void>? _stopInFlight;
@@ -4082,11 +4225,14 @@ class VpnController extends ChangeNotifier {
     _disposed = true;
     _prewarmCancelled = true;
     _prewarmTimer?.cancel();
+    _filterReloadTimer?.cancel();
+    _autoConnectRetryTimer?.cancel();
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
     _pingTimer?.cancel();
     unawaited(_stopCores());
+    unawaited(_native.shutdownCores());
     super.dispose();
   }
 }

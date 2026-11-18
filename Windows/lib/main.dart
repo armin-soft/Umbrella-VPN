@@ -123,20 +123,25 @@ Future<void> main(List<String> arguments) async {
       ..soundEnabled = settings.settings.soundEnabled
       ..notificationsEnabled = settings.settings.notificationsEnabled;
   });
+  // هر مسیر خروج برنامه (دکمه بستن، سینی سیستم، خاموشی ویندوز یا نصب آپدیت)
+  // پیش از نابود شدن پنجره، هسته و CLI را به طور کامل و قطعی می بندد.
+  window.onBeforeQuit = vpn.shutdownForExit;
+  // همگام سازی زنده کنترل محتوا از ربات تلگرام یا تنظیمات برنامه روی موتور اتصال.
+  auth.onFilterChanged = vpn.updateContentFilter;
   // اگر حساب در میانه کار منقضی یا مسدود شد، اتصال همان لحظه بسته می شود.
   auth.onAccessRevoked = (String reason) {
     if (vpn.status.active) {
       unawaited(vpn.disconnect());
     }
     auth.recordLocalNotification(
-      title: 'دسترسی اشتراک قطع شد',
+      title: 'اشتراک متوقف شد',
       body: reason,
       level: 'warning',
     );
-    toasts.error('دسترسی اشتراک قطع شد', reason);
+    toasts.error('اشتراک متوقف شد', reason);
   };
   auth.onSessionRevoked = (String reason) async {
-    toasts.error('مجوز استفاده از این دستگاه لغو شد', reason);
+    toasts.error('دسترسی دستگاه لغو شد', reason);
     if (vpn.status.active) {
       await vpn.disconnect();
     }
@@ -147,7 +152,14 @@ Future<void> main(List<String> arguments) async {
 
   final SubscriptionController subscriptions =
       SubscriptionController(vpn: vpn, auth: auth);
-  final UpdateController updates = UpdateController(native);
+  auth.onSubscriptionClaimed = () async {
+    await subscriptions.syncPersonal();
+    if (vpn.nodes.isEmpty) {
+      await subscriptions.fetchAll();
+    }
+  };
+  final UpdateController updates = UpdateController(native)
+    ..onExitForInstall = window.quit;
   await OccasionService.instance.load();
 
   runApp(
@@ -181,7 +193,7 @@ Future<void> main(List<String> arguments) async {
       await window.hide();
     }
     await subscriptions.loadCached();
-    unawaited(updates.loadSkipped());
+    await updates.loadSkipped();
     if (settings.settings.checkUpdatesOnStart) {
       unawaited(updates.check(silent: true));
     }
