@@ -367,7 +367,7 @@ class UmbrellaCore {
       return '';
     }
     final String filter =
-        ports.map((int port) => "\$_.LocalPort -eq $port").join(' -or ');
+        ports.map((int port) => '\$_.LocalPort -eq $port').join(' -or ');
     final String script =
         'Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | '
         'Where-Object { $filter } | '

@@ -69,7 +69,9 @@ class RuntimeConfig {
           (download['server'] as String).isEmpty ||
           '${download['detour'] ?? ''}'.isNotEmpty ||
           '${outbound['detour'] ?? ''}'.isNotEmpty ||
-          InternetAddress.tryParse('${outbound['server']}') == null) continue;
+          InternetAddress.tryParse('${outbound['server']}') == null) {
+        continue;
+      }
       // XHTTP reuses the upload dialer for its separate download endpoint.
       // For an IP upload that dialer has NO resolver, hence the immediate
       // "domain not resolved" (not a DNS timeout). A direct outbound always

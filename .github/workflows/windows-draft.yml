@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Release mode (draft, beta prerelease, or stable release)'
+        description: 'Release mode (draft, beta, release, or both beta+release)'
         required: false
         default: 'draft'
         type: choice
@@ -14,6 +14,7 @@ on:
           - draft
           - beta
           - release
+          - both
       beta_number:
         description: 'Beta sequence number when channel is beta (e.g. 1)'
         required: false
@@ -169,26 +170,53 @@ jobs:
             "SHA-256: $sha256"
           ) -join "`n"
 
-          if (($env:CHANNEL -eq 'beta' -or $env:CHANNEL -eq 'release') -and $env:RELEASES_TOKEN) {
+          if (($env:CHANNEL -in @('beta', 'release', 'both')) -and $env:RELEASES_TOKEN) {
             $env:GH_TOKEN = $env:RELEASES_TOKEN
+            # Ensure target release repository has an empty-tree main branch (ZERO project files/folders)
+            gh api "repos/$env:RELEASES_REPO/git/ref/heads/main" *> $null
+            if ($LASTEXITCODE -ne 0) {
+              $emptyDir = Join-Path $env:RUNNER_TEMP 'umbrella-releases-empty'
+              New-Item -ItemType Directory -Force $emptyDir | Out-Null
+              git -C $emptyDir init -b main
+              git -C $emptyDir config user.name 'Armin Soft'
+              git -C $emptyDir config user.email 'noreply@armin-soft.ir'
+              git -C $emptyDir commit --allow-empty -m 'Initialize installer-only release repository'
+              $authHeader = 'AUTHORIZATION: basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:RELEASES_TOKEN"))
+              git -C $emptyDir -c "http.https://github.com/.extraheader=$authHeader" push "https://github.com/$env:RELEASES_REPO.git" main
+              if ($LASTEXITCODE -ne 0) { throw 'Empty-tree initialization failed' }
+              Remove-Item -Recurse -Force $emptyDir
+            }
+            $treeCount = [int](gh api "repos/$env:RELEASES_REPO/git/trees/main" --jq '.tree | length')
+            if ($treeCount -ne 0) { throw "Refusing to publish: $env:RELEASES_REPO must contain zero project files (found $treeCount)" }
+
             $betaClean = ($env:BETA_NUM -replace '[^0-9]', '')
             if (!$betaClean) { $betaClean = '1' }
-            $tag = if ($env:CHANNEL -eq 'beta') { "v$version-beta.$betaClean-windows" } else { "v$version-windows" }
-            $title = if ($env:CHANNEL -eq 'beta') { "Umbrella VPN $version Beta $betaClean - Windows (x64)" } else { "Umbrella VPN $version - Windows (x64)" }
-            $exists = gh release view $tag --repo $env:RELEASES_REPO --json tagName 2>$null
-            if ($LASTEXITCODE -eq 0) {
-              gh release upload $tag $installer --clobber --repo $env:RELEASES_REPO
-              if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed' }
-              gh release edit $tag --repo $env:RELEASES_REPO --title $title --notes $notes
-            } elseif ($env:CHANNEL -eq 'beta') {
-              gh release create $tag $installer --repo $env:RELEASES_REPO --target main --prerelease --title $title --notes $notes
-            } else {
-              gh release create $tag $installer --repo $env:RELEASES_REPO --target main --latest --title $title --notes $notes
+            $modes = if ($env:CHANNEL -eq 'both') { @('beta', 'release') } else { @($env:CHANNEL) }
+            foreach ($mode in $modes) {
+              $tag = if ($mode -eq 'beta') { "v$version-beta.$betaClean-windows" } else { "v$version-windows" }
+              $title = if ($mode -eq 'beta') { "Umbrella VPN $version Beta $betaClean - Windows (x64)" } else { "Umbrella VPN $version - Windows (x64)" }
+              gh release view $tag --repo $env:RELEASES_REPO --json tagName *> $null
+              if ($LASTEXITCODE -eq 0) {
+                gh release upload $tag $installer --clobber --repo $env:RELEASES_REPO
+                if ($LASTEXITCODE -ne 0) { throw "Asset upload failed for $tag" }
+                gh release edit $tag --repo $env:RELEASES_REPO --title $title --notes $notes
+              } elseif ($mode -eq 'beta') {
+                gh release create $tag $installer --repo $env:RELEASES_REPO --target main --prerelease --title $title --notes $notes
+              } else {
+                gh release create $tag $installer --repo $env:RELEASES_REPO --target main --latest --title $title --notes $notes
+              }
+              if ($LASTEXITCODE -ne 0) { throw "Release publication failed for $tag" }
+              $rel = gh release view $tag --repo $env:RELEASES_REPO --json url,isDraft,isPrerelease,assets | ConvertFrom-Json
+              if ($rel.assets.Count -ne 1 -or !$rel.assets[0].name.EndsWith('.exe')) {
+                throw "Expected strictly 1 .exe asset on $tag"
+              }
+              Write-Output "Published installer-only release: $($rel.url) -> $($rel.assets[0].name)"
             }
-            if ($LASTEXITCODE -ne 0) { throw 'Public release publication failed' }
-            gh release view $tag --repo $env:RELEASES_REPO --json url,isDraft,isPrerelease,assets
-            if ($LASTEXITCODE -ne 0) { throw 'Public release verification failed' }
             return
+          }
+          if ($env:CHANNEL -in @('beta', 'release', 'both')) {
+            Write-Output '::error::RELEASES_TOKEN secret is not configured. Add a Fine-Grained GitHub token scoped only to armin-soft/Umbrella-VPN-Releases (Contents: Read and write) as RELEASES_TOKEN in Actions secrets.'
+            throw 'Missing RELEASES_TOKEN secret for armin-soft/Umbrella-VPN-Releases'
           }
 
           $tag = "v$version-windows"

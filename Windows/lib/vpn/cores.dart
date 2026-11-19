@@ -81,10 +81,10 @@ class CoreProvisioner {
     // لانچرها (UmbrellaCli/Admin/CoreEngine) کنار خود برنامه می آیند؛ بخش
     // کتابخانه هسته در cores\umbrella می ماند. هر دو جا بررسی می شود.
     final List<String> candidates = <String>[
-      '${appDir}${Platform.pathSeparator}$binary',
+      '$appDir${Platform.pathSeparator}$binary',
       '$bundledDir${Platform.pathSeparator}$binary',
-      '${bundledDir}${Platform.pathSeparator}umbrella${Platform.pathSeparator}$binary',
-      '${bundledDir}${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
+      '$bundledDir${Platform.pathSeparator}umbrella${Platform.pathSeparator}$binary',
+      '$bundledDir${Platform.pathSeparator}bin${Platform.pathSeparator}$binary',
       '$binDir${Platform.pathSeparator}$binary',
     ];
     for (final String candidate in candidates) {
@@ -123,7 +123,7 @@ class CoreProvisioner {
       return true;
     }
     AppLogger.instance.add(
-      'هسته ${core.binary} در پوشه نصب پیدا نشد (${bundledDir}); '
+      'هسته ${core.binary} در پوشه نصب پیدا نشد ($bundledDir); '
       'باید همراه نسخه نصب شده باشد.',
       level: 'error',
     );

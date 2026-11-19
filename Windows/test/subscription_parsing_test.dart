@@ -134,7 +134,7 @@ proxies:
   });
 
   group('فایل سینگ باکس (full-singbox.json)', () {
-    const String singbox = """
+    const String singbox = '''
     {
       "outbounds": [
         {"type": "selector", "tag": "select", "outbounds": ["proxy"]},
@@ -145,7 +145,7 @@ proxies:
         {"type": "direct", "tag": "direct"}
       ]
     }
-    """;
+    ''';
 
     test('خروجی سینگ باکس به سرور قابل اتصال تبدیل می شود', () {
       final ParseReport report =
@@ -189,7 +189,7 @@ proxies:
     });
 
     test('فایل وایرگارد مستقیم (بدون پرس وجو) خوانده می شود', () {
-      const String wg = """
+      const String wg = '''
 [Interface]
 PrivateKey = aGVsbG8=
 Address = 10.0.0.2/32
@@ -199,7 +199,7 @@ DNS = 1.1.1.1
 PublicKey = d29ybGQ=
 Endpoint = wg.example.com:51820
 AllowedIPs = 0.0.0.0/0
-""";
+''';
       final ParseReport report =
           SubscriptionParser.parseAuto(wg, 'user-wireguard');
       expect(report.nodes, isNotEmpty);

@@ -2,11 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
-import '../core/persian.dart';
 import '../core/storage.dart';
 import '../core/theme.dart';
 import '../core/utils.dart';
@@ -549,7 +547,7 @@ class VpnController extends ChangeNotifier {
   /// هر نمونه یک فرایند هسته است و دو پورت ثابت هسته را می گیرد؛ سنجیدن همه
   /// ۲۴ سرور چند دقیقه طول می کشید و در آن مدت اتصال ممکن نبود. دور اول روی
   /// ۸ سرور است، دورهای بعدی بقیه را هم می سنجند.
-  int _tunnelProbeCount = 8;
+  final int _tunnelProbeCount = 8;
 
   /// آیا خبر «نتیجه نداد» یک بار گفته شده است؟
   bool _tunnelFailureReported = false;
@@ -3796,8 +3794,11 @@ class VpnController extends ChangeNotifier {
   /// سنجش سرعت واقعی روی سرور متصل؛ از همان مسیری می رود که ترافیک کاربر
   /// می رود (تونل کامل یا پروکسی محلی).
   Future<void> measureSpeed() async {
-    if (_status != VpnStatus.connected || _speedRunner != null ||
-        (accessGuard?.call() ?? '').isNotEmpty) return;
+    if (_status != VpnStatus.connected ||
+        _speedRunner != null ||
+        (accessGuard?.call() ?? '').isNotEmpty) {
+      return;
+    }
     final SpeedTestRunner runner = SpeedTestRunner();
     _speedRunner = runner;
     _speedResult = null;

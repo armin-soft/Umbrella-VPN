@@ -67,7 +67,7 @@ void main() {
       // تنظیمات جلسه هم باید همان فایل کامل را بنویسد.
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('UmbrellaCore.settingsJson('), isTrue);
-      expect(controller.contains("settingsPath: settingsPath"), isTrue);
+      expect(controller.contains('settingsPath: settingsPath'), isTrue);
       expect(read('lib/vpn/core_runtime.dart').contains("'-d', settingsPath"), isTrue);
     });
 
@@ -76,8 +76,8 @@ void main() {
       // اشتباه /30 باعث می شد کارت شبکه هرگز پیدا نشود و اتصال سالم هم رد
       // شود («کارت شبکه تونل در ۲۵ ثانیه آماده نشد» در گزارش ۱٫۰۶).
       final String config = read('lib/core/app_config.dart');
-      expect(config.contains("172.19.0.1/28"), isTrue);
-      expect(config.contains("172.19.0.1/30"), isFalse);
+      expect(config.contains('172.19.0.1/28'), isTrue);
+      expect(config.contains('172.19.0.1/30'), isFalse);
       final String native = read('packages/umbrella_native/windows/system_ops.cpp');
       // تطبیق با بازه 172.19.0.0/28 و با نشانی آی پی وی ۶ تونل.
       expect(native.contains('0xAC130000u'), isTrue);
@@ -1269,7 +1269,7 @@ void main() {
     test('۷. زیر پیام حساب آمبرلا منوی اصلی ناخواسته قرار نمی گیرد', () {
       final String link = read('../Telegram-BOT/Bot/App-Link.php');
       expect(link.contains("Menu::section('👤', 'حساب کاربری'"), isTrue);
-      expect(link.contains("TelegramClient::inlineKeyboard(\$Rows)"), isTrue);
+      expect(link.contains('TelegramClient::inlineKeyboard(\$Rows)'), isTrue);
       expect(link.contains('main_menu'), isFalse);
       expect(link.contains("['inline_keyboard' => []]"), isTrue);
     });

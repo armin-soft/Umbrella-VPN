@@ -408,7 +408,7 @@ void main() {
             sizeBytes: payload.length,
           ),
           targetDir: tempDir,
-          onProgress: (double _, int received, int _) =>
+          onProgress: (double _, int received, int __) =>
               lastReceived = received,
         );
         expect(okFile, isNotNull);
@@ -426,7 +426,7 @@ void main() {
             sha256: validSha,
           ),
           targetDir: tempDir,
-          onProgress: (_, _, _) {},
+          onProgress: (_, __, ___) {},
         );
         expect(insecure, isNull);
 
@@ -440,7 +440,7 @@ void main() {
             sizeBytes: payload.length,
           ),
           targetDir: tempDir,
-          onProgress: (_, _, _) {},
+          onProgress: (_, __, ___) {},
         );
         expect(badFile, isNull);
 
@@ -468,7 +468,7 @@ void main() {
                 'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
           ),
           targetDir: tempDir,
-          onProgress: (_, _, _) {},
+          onProgress: (_, __, ___) {},
           isCancelled: () => cancelFlag,
         );
         expect(cancelled, isNull);
