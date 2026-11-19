@@ -653,9 +653,9 @@ void main() {
             blockIpv6: true,
             routingRegion: RoutingRegion.ir,
             resolveDestination: true,
-            independentDnsCache: true,
             enableFakeDns: true,
-            directDnsDomainStrategy: DnsDomainStrategy.ipv4Only,
+            remoteDnsStrategy: DnsDomainStrategy.preferIpv4,
+            directDnsStrategy: DnsDomainStrategy.ipv4Only,
             selectionMode: SelectionMode.stickySession,
             stickyMinutes: 25,
             appRoutes: <AppRouteRule>[
