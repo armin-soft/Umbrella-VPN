@@ -508,18 +508,18 @@ void main() {
       expect(warnSettings.containsKey('log-level-until'), isFalse);
       expect(warnSettings.containsKey('log-level-after'), isFalse);
 
-      expect(
-        UmbrellaCore.describeWindowsExitCode(-1073741819),
-        contains('0xC0000005'),
-      );
-      expect(
-        UmbrellaCore.describeWindowsExitCode(-1073741515),
-        contains('0xC0000135'),
-      );
-      expect(
-        UmbrellaCore.describeWindowsExitCode(-1073740791),
-        contains('0xC0000409'),
-      );
+      final String msg05 = UmbrellaCore.describeWindowsExitCode(-1073741819);
+      final String msg135 = UmbrellaCore.describeWindowsExitCode(-1073741515);
+      final String msg409 = UmbrellaCore.describeWindowsExitCode(-1073740791);
+      expect(msg05, contains('دسترسی حافظه'));
+      expect(msg05, contains(Fa.num(0xC0000005)));
+      expect(msg05, isNot(contains(RegExp(r'[A-Za-z0-9\u200C]'))));
+      expect(msg135, contains('کتابخانه مورد نیاز هسته'));
+      expect(msg135, contains(Fa.num(0xC0000135)));
+      expect(msg135, isNot(contains(RegExp(r'[A-Za-z0-9\u200C]'))));
+      expect(msg409, contains('سرریز بافر'));
+      expect(msg409, contains(Fa.num(0xC0000409)));
+      expect(msg409, isNot(contains(RegExp(r'[A-Za-z0-9\u200C]'))));
       expect(UmbrellaCore.describeWindowsExitCode(1), isEmpty);
 
       expect(
