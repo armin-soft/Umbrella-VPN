@@ -1339,9 +1339,9 @@ void main() {
       expect(settings.contains("'زنجیره'"), isTrue);
       expect(settings.contains("'امنیت بیشتر و رفع مسدودیت'"), isTrue);
       expect(settings.contains("'مسیریابی'"), isTrue);
-      expect(settings.contains("'DNS'"), isTrue);
+      expect(settings.contains("'دی ان اس'"), isTrue);
       expect(settings.contains("'ورودی'"), isTrue);
-      expect(settings.contains("'ترفندهای TLS'"), isTrue);
+      expect(settings.contains("'ترفندهای اتصال امن'"), isTrue);
       expect(settings.contains('GlassCard'), isTrue);
       expect(settings.contains('درباره'), isFalse);
     });

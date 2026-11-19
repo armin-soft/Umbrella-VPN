@@ -447,7 +447,7 @@ class _DetailPanel extends StatelessWidget {
               // متن خام هسته لاتین است و شماره سطر ندارد که فارسی شود؛ فقط
               // همان طور که هست، انتخاب پذیر و کامل نشان داده می شود.
               child: SelectableText(
-                detail.text.trim(),
+                Fa.num(detail.text.trim()),
                 style: TextStyle(
                   fontFamily: 'Consolas',
                   fontSize: AppMetrics.fontCaption,

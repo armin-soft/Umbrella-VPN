@@ -102,7 +102,7 @@ class _FallbackMark extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(
-        operator.latin,
+        operator.shortLabel,
         style: TextStyle(
           fontSize: AppMetrics.fontMicro,
           fontWeight: FontWeight.w900,

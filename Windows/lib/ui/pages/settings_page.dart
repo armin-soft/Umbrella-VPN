@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
@@ -35,11 +36,11 @@ extension SettingsCategoryX on SettingsCategory {
       case SettingsCategory.routing:
         return 'مسیریابی';
       case SettingsCategory.dns:
-        return 'DNS';
+        return 'دی ان اس';
       case SettingsCategory.inbound:
         return 'ورودی';
       case SettingsCategory.tlsTricks:
-        return 'ترفندهای TLS';
+        return 'ترفندهای اتصال امن';
     }
   }
 
@@ -61,15 +62,15 @@ extension SettingsCategoryX on SettingsCategory {
       case SettingsCategory.general:
         return 'پوسته برنامه، رفتار پنجره و سینی ویندوز، انتخاب خودکار سرور، اعلان ها و گزارش ها';
       case SettingsCategory.chain:
-        return 'امنیت بیشتر و رفع مسدودیت با تونل های زنجیره ای WARP و Psiphon';
+        return 'امنیت بیشتر و رفع مسدودیت با تونل های زنجیره ای وارپ و سایفون';
       case SettingsCategory.routing:
-        return 'منطقه مسیریابی، قوانین توکار، IPv6، کنترل محتوا و تفکیک برنامه ها';
+        return 'منطقه مسیریابی، قوانین توکار، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
       case SettingsCategory.dns:
-        return 'سرورهای DNS اصلی و مستقیم، استراتژی دامنه و DNS جعلی';
+        return 'سرورهای دی ان اس اصلی و مستقیم، شیوه انتخاب نشانی و دی ان اس مجازی';
       case SettingsCategory.inbound:
-        return 'حالت سرویس، پارامترهای TUN، پروکسی محلی و اشتراک اتصال در شبکه محلی';
+        return 'حالت سرویس، تنظیمات کارت شبکه تونل، پروکسی محلی و اشتراک اتصال در شبکه محلی';
       case SettingsCategory.tlsTricks:
-        return 'تکه تکه سازی (Fragment)، تغییر حروف SNI و Padding برای عبور از بازرسی بسته ها';
+        return 'تکه تکه سازی بسته ها، درهم سازی حروف نام سرور و لایه گذاری برای عبور از محدودیت ها';
     }
   }
 
@@ -225,7 +226,8 @@ class _SettingsPageState extends State<SettingsPage> {
         children: <Widget>[
           const PageHeader(
             title: 'تنظیمات',
-            subtitle: 'پیکربندی عمومی، زنجیره، مسیریابی، DNS، ورودی و ترفندهای TLS',
+            subtitle:
+                'پیکربندی عمومی، زنجیره، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن',
             icon: Icons.settings_rounded,
           ),
           const SizedBox(height: AppMetrics.space4),
@@ -275,7 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
             cfg.appRoutes.where((AppRouteRule r) => r.enabled).length;
         return activeApps > 0 ? Fa.num('$activeApps برنامه') : null;
       case SettingsCategory.dns:
-        return cfg.enableFakeDns ? 'FakeDNS' : null;
+        return cfg.enableFakeDns ? 'دی ان اس مجازی' : null;
       case SettingsCategory.inbound:
         return cfg.allowConnectionFromLan
             ? '${cfg.serviceMode.shortLabel} · اشتراک روشن'
@@ -480,17 +482,17 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   SelectOption<String>(
                     value: 'info',
-                    label: 'اطلاعات (Info)',
+                    label: 'اطلاعات',
                     subtitle: 'ثبت رویدادهای اصلی اتصال',
                   ),
                   SelectOption<String>(
                     value: 'debug',
-                    label: 'عیب یابی (Debug — ۱۰ دقیقه)',
+                    label: 'عیب یابی (۱۰ دقیقه)',
                     subtitle: 'جزئیات کامل با بازگشت خودکار به هشدار',
                   ),
                   SelectOption<String>(
                     value: 'error',
-                    label: 'فقط خطا (Error)',
+                    label: 'فقط خطا',
                     subtitle: 'ثبت خطاهای بحرانی',
                   ),
                 ],
@@ -598,7 +600,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.shield_rounded,
           title: 'امنیت بیشتر',
           subtitle:
-              'وقتی به پروکسی اعتماد نداری — پس از سرور اصلی یک لایه WARP یا Psiphon اضافه می شود و IP نهایی شما را می پوشاند',
+              'وقتی به پروکسی اعتماد نداری — پس از سرور اصلی یک لایه وارپ یا سایفون اضافه می شود و نشانی نهایی شما را می پوشاند',
           trailing: _ChainHopSelector(
             active: extraOn,
             transport: chain.transport,
@@ -617,7 +619,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 )
               : <Widget>[
                   Text(
-                    'غیرفعال — برای مخفی کردن نشانی خروجی از ارائه دهنده سرور، Psiphon یا WARP را انتخاب کنید.',
+                    'غیرفعال — برای پنهان کردن نشانی خروجی از ارائه دهنده سرور، سایفون یا وارپ را انتخاب کنید.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -636,7 +638,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.account_tree_rounded,
           title: 'رفع فیلتر پروکسی (رفع مسدودیت)',
           subtitle:
-              'عبور از فیلترینگ پروکسی — پیش از اتصال به سرور اصلی از تونل WARP یا Psiphon عبور می کند',
+              'عبور از فیلترینگ پروکسی — پیش از اتصال به سرور اصلی از تونل وارپ یا سایفون عبور می کند',
           trailing: _ChainHopSelector(
             active: unblockerOn,
             transport: chain.transport,
@@ -655,7 +657,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 )
               : <Widget>[
                   Text(
-                    'غیرفعال — اگر سرور اصلی روی اینترنت فعلی مسدود است، Psiphon یا WARP را روشن کنید.',
+                    'غیرفعال — اگر سرور اصلی روی اینترنت فعلی مسدود است، سایفون یا وارپ را روشن کنید.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -683,7 +685,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (chain.transport == ChainTransport.psiphon) {
       return <Widget>[
         AnchoredSelectField<String>(
-          label: 'منطقه سرور Psiphon',
+          label: 'منطقه سرور سایفون',
           leadingIcon: Icons.public_rounded,
           value: ChainSettings.regionLabels.containsKey(chain.psiphonRegion)
               ? chain.psiphonRegion
@@ -694,7 +696,6 @@ class _SettingsPageState extends State<SettingsPage> {
               SelectOption<String>(
                 value: entry.key,
                 label: entry.value,
-                subtitle: entry.key,
               ),
           ],
           onChanged: (String region) =>
@@ -719,7 +720,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return <Widget>[
       AnchoredSelectField<ChainTransport>(
-        label: 'تونل WARP',
+        label: 'تونل وارپ',
         leadingIcon: Icons.cloud_rounded,
         value: warpTransports.contains(chain.transport)
             ? chain.transport
@@ -763,14 +764,15 @@ class _SettingsPageState extends State<SettingsPage> {
         const Divider(height: AppMetrics.space4),
         _EditableValueRow(
           icon: Icons.dns_outlined,
-          title: 'IP تمیز',
-          value: chain.address.isEmpty ? 'تنظیم نشده' : chain.address,
-          ltrValue: true,
+          title: 'نشانی آی پی تمیز',
+          value:
+              chain.address.isEmpty ? 'تنظیم نشده' : Fa.num(chain.address),
+          ltrValue: chain.address.isNotEmpty,
           onTap: () => _editTextValue(
-            title: 'IP تمیز WARP',
-            label: 'نشانی IPv4 یا IPv6',
+            title: 'نشانی آی پی تمیز وارپ',
+            label: 'نشانی آی پی نسخه ۴ یا نسخه ۶',
             initialValue: chain.address,
-            hint: '162.159.192.1',
+            hint: '۱۶۲.۱۵۹.۱۹۲.۱',
             validator: (String v) {
               final ChainSettings probe = chain.copyWith(
                 endpoint: WarpEndpoint.custom,
@@ -786,7 +788,7 @@ class _SettingsPageState extends State<SettingsPage> {
           title: 'پورت تمیز',
           value: Fa.num('${chain.port > 0 ? chain.port : 2408}'),
           onTap: () => _editTextValue(
-            title: 'پورت تمیز WARP',
+            title: 'پورت تمیز وارپ',
             label: 'پورت (۱ تا ۶۵۵۳۵)',
             initialValue: '${chain.port > 0 ? chain.port : 2408}',
             numericOnly: true,
@@ -794,7 +796,7 @@ class _SettingsPageState extends State<SettingsPage> {
               final int? p = int.tryParse(v.trim());
               return p != null && p >= 1 && p <= 65535
                   ? null
-                  : Fa.num('عددی بین 1 تا 65535 وارد کنید');
+                  : 'عددی بین ۱ تا ۶۵۵۳۵ وارد کنید';
             },
             onSubmit: (String v) =>
                 onSave(chain.copyWith(port: int.parse(v.trim()))),
@@ -804,25 +806,25 @@ class _SettingsPageState extends State<SettingsPage> {
       const Divider(height: AppMetrics.space4),
       _EditableValueRow(
         icon: Icons.vpn_key_outlined,
-        title: 'کلید لایسنس WARP+',
+        title: 'کلید اشتراک وارپ پلاس',
         value: chain.licenseKey.isEmpty ? 'پیش فرض (رایگان)' : 'ثبت شده',
         onTap: () => _editTextValue(
-          title: 'کلید لایسنس WARP+',
-          label: 'کلید لایسنس (خالی = رایگان)',
+          title: 'کلید اشتراک وارپ پلاس',
+          label: 'کلید اشتراک (خالی برابر با رایگان)',
           initialValue: chain.licenseKey,
           validator: (String v) =>
               v.trim().length <= 128 && !v.trim().contains(RegExp(r'\s'))
                   ? null
-                  : 'فرمت کلید لایسنس معتبر نیست',
+                  : 'ساختار کلید اشتراک معتبر نیست',
           onSubmit: (String v) => onSave(chain.copyWith(licenseKey: v.trim())),
         ),
       ),
       _EditableValueRow(
         icon: Icons.straighten_rounded,
-        title: 'اندازه بسته (MTU)',
+        title: 'اندازه بسته',
         value: chain.mtu == 0 ? 'خودکار' : Fa.num('${chain.mtu}'),
         onTap: () => _editTextValue(
-          title: 'اندازه بسته WARP (MTU)',
+          title: 'اندازه بسته وارپ',
           label: '۰ (خودکار) یا ۱۲۸۰ تا ۱۵۰۰',
           initialValue: '${chain.mtu}',
           numericOnly: true,
@@ -830,7 +832,7 @@ class _SettingsPageState extends State<SettingsPage> {
             final int? n = int.tryParse(v.trim());
             return n != null && (n == 0 || (n >= 1280 && n <= 1500))
                 ? null
-                : Fa.num('صفر یا عددی بین 1280 تا 1500 وارد کنید');
+                : 'صفر یا عددی بین ۱۲۸۰ تا ۱۵۰۰ وارد کنید';
           },
           onSubmit: (String v) =>
               onSave(chain.copyWith(mtu: int.parse(v.trim()))),
@@ -841,24 +843,24 @@ class _SettingsPageState extends State<SettingsPage> {
         ToggleRow(
           icon: Icons.graphic_eq_rounded,
           title: 'یافتن خودکار نویز در اسکن',
-          subtitle: 'بررسی بسته های ضد DPI هنگام جست وجوی نقطه اتصال تمیز',
+          subtitle: 'بررسی بسته های ضد فیلتر هنگام جست وجوی نقطه اتصال تمیز',
           value: chain.searchNoise,
           onChanged: (bool v) => onSave(chain.copyWith(searchNoise: v)),
         ),
         _EditableValueRow(
           icon: Icons.timer_outlined,
           title: 'بیشینه تاخیر اسکن (میلی ثانیه)',
-          value: Fa.num('${chain.scanMaxRtt} ms'),
+          value: '${Fa.num(chain.scanMaxRtt)} میلی ثانیه',
           onTap: () => _editTextValue(
-            title: 'بیشینه تاخیر اسکن (RTT)',
+            title: 'بیشینه تاخیر اسکن',
             label: 'بین ۱۰۰ تا ۱۰٬۰۰۰ میلی ثانیه',
             initialValue: '${chain.scanMaxRtt}',
             numericOnly: true,
             validator: (String v) {
               final int? n = int.tryParse(v.trim());
-              return n != null && n >= 100 && n <= 10000
+              return n != null && n >= 100 && n <= chain.scanTimeout
                   ? null
-                  : Fa.num('عددی بین 100 تا 10000 وارد کنید');
+                  : 'عددی بین ۱۰۰ تا ${Fa.num(chain.scanTimeout)} وارد کنید';
             },
             onSubmit: (String v) =>
                 onSave(chain.copyWith(scanMaxRtt: int.parse(v.trim()))),
@@ -867,17 +869,17 @@ class _SettingsPageState extends State<SettingsPage> {
         _EditableValueRow(
           icon: Icons.hourglass_bottom_rounded,
           title: 'مهلت هر آزمایش اسکن (میلی ثانیه)',
-          value: Fa.num('${chain.scanTimeout} ms'),
+          value: '${Fa.num(chain.scanTimeout)} میلی ثانیه',
           onTap: () => _editTextValue(
             title: 'مهلت هر آزمایش اسکن',
-            label: 'بین ۲۵۰ تا ۱۵٬۰۰۰ میلی ثانیه',
+            label: 'بین ۲۵۰ تا ۱۰٬۰۰۰ میلی ثانیه',
             initialValue: '${chain.scanTimeout}',
             numericOnly: true,
             validator: (String v) {
               final int? n = int.tryParse(v.trim());
-              return n != null && n >= 250 && n <= 15000
+              return n != null && n >= 250 && n <= 10000
                   ? null
-                  : Fa.num('عددی بین 250 تا 15000 وارد کنید');
+                  : 'عددی بین ۲۵۰ تا ۱۰۰۰۰ وارد کنید';
             },
             onSubmit: (String v) =>
                 onSave(chain.copyWith(scanTimeout: int.parse(v.trim()))),
@@ -896,7 +898,7 @@ class _SettingsPageState extends State<SettingsPage> {
               final int? n = int.tryParse(v.trim());
               return n != null && n >= 1 && n <= 256
                   ? null
-                  : Fa.num('عددی بین 1 تا 256 وارد کنید');
+                  : 'عددی بین ۱ تا ۲۵۶ وارد کنید';
             },
             onSubmit: (String v) =>
                 onSave(chain.copyWith(scanCount: int.parse(v.trim()))),
@@ -922,16 +924,18 @@ class _SettingsPageState extends State<SettingsPage> {
           _EditableValueRow(
             icon: Icons.filter_9_plus_rounded,
             title: 'تعداد بسته نویز',
-            value: chain.noiseCount.isEmpty ? 'خودکار' : chain.noiseCount,
+            value:
+                chain.noiseCount.isEmpty ? 'خودکار' : Fa.num(chain.noiseCount),
             ltrValue: chain.noiseCount.isNotEmpty,
             onTap: () => _editTextValue(
               title: 'تعداد بسته نویز',
-              label: 'خالی (خودکار) یا بازه ۱ تا ۲۰۰ (مثل 5-10)',
+              label: 'خالی (خودکار) یا بازه ۱ تا ۲۰۰ (مانند ۵-۱۰)',
               initialValue: chain.noiseCount,
+              hint: '۵-۱۰',
               validator: (String v) => v.trim().isEmpty ||
                       TlsTricksSettings.isValidRange(v, min: 1, max: 200)
                   ? null
-                  : 'بازه عددی معتبر وارد کنید (مثل 5-10)',
+                  : 'بازه عددی معتبر وارد کنید (مانند ۵-۱۰)',
               onSubmit: (String v) =>
                   onSave(chain.copyWith(noiseCount: v.trim())),
             ),
@@ -939,16 +943,18 @@ class _SettingsPageState extends State<SettingsPage> {
           _EditableValueRow(
             icon: Icons.photo_size_select_small_rounded,
             title: 'اندازه نویز (بایت)',
-            value: chain.noiseSize.isEmpty ? 'خودکار' : chain.noiseSize,
+            value:
+                chain.noiseSize.isEmpty ? 'خودکار' : Fa.num(chain.noiseSize),
             ltrValue: chain.noiseSize.isNotEmpty,
             onTap: () => _editTextValue(
               title: 'اندازه نویز',
-              label: 'خالی (خودکار) یا بازه ۱ تا ۱۵۰۰ (مثل 40-100)',
+              label: 'خالی (خودکار) یا بازه ۱ تا ۱۵۰۰ (مانند ۴۰-۱۰۰)',
               initialValue: chain.noiseSize,
+              hint: '۴۰-۱۰۰',
               validator: (String v) => v.trim().isEmpty ||
                       TlsTricksSettings.isValidRange(v, min: 1, max: 1500)
                   ? null
-                  : 'بازه عددی معتبر وارد کنید (مثل 40-100)',
+                  : 'بازه عددی معتبر وارد کنید (مانند ۴۰-۱۰۰)',
               onSubmit: (String v) =>
                   onSave(chain.copyWith(noiseSize: v.trim())),
             ),
@@ -956,16 +962,19 @@ class _SettingsPageState extends State<SettingsPage> {
           _EditableValueRow(
             icon: Icons.schedule_rounded,
             title: 'تاخیر نویز (میلی ثانیه)',
-            value: chain.noiseDelay.isEmpty ? 'خودکار' : chain.noiseDelay,
+            value: chain.noiseDelay.isEmpty
+                ? 'خودکار'
+                : Fa.num(chain.noiseDelay),
             ltrValue: chain.noiseDelay.isNotEmpty,
             onTap: () => _editTextValue(
               title: 'تاخیر نویز',
-              label: 'خالی (خودکار) یا بازه ۱ تا ۱۰٬۰۰۰ (مثل 10-30)',
+              label: 'خالی (خودکار) یا بازه ۱ تا ۱۰٬۰۰۰ (مانند ۱۰-۳۰)',
               initialValue: chain.noiseDelay,
+              hint: '۱۰-۳۰',
               validator: (String v) => v.trim().isEmpty ||
                       TlsTricksSettings.isValidRange(v, min: 1, max: 10000)
                   ? null
-                  : 'بازه عددی معتبر وارد کنید (مثل 10-30)',
+                  : 'بازه عددی معتبر وارد کنید (مانند ۱۰-۳۰)',
               onSubmit: (String v) =>
                   onSave(chain.copyWith(noiseDelay: v.trim())),
             ),
@@ -976,16 +985,16 @@ class _SettingsPageState extends State<SettingsPage> {
           chain.transport == ChainTransport.automatic) ...<Widget>[
         const SizedBox(height: AppMetrics.space3),
         AnchoredSelectField<String>(
-          label: 'نسخه HTTP در MASQUE',
+          label: 'نسخه انتقال در ماسک',
           leadingIcon: Icons.http_rounded,
           value: const <String>['auto', 'h3', 'h2']
                   .contains(chain.masqueProtocol)
               ? chain.masqueProtocol
               : 'auto',
           options: const <SelectOption<String>>[
-            SelectOption<String>(value: 'auto', label: 'خودکار (Auto)'),
-            SelectOption<String>(value: 'h3', label: 'HTTP/3 (QUIC)'),
-            SelectOption<String>(value: 'h2', label: 'HTTP/2 (TCP)'),
+            SelectOption<String>(value: 'auto', label: 'خودکار'),
+            SelectOption<String>(value: 'h3', label: 'نسخه ۳ (سریع — کوئیک)'),
+            SelectOption<String>(value: 'h2', label: 'نسخه ۲ (پایدار)'),
           ],
           onChanged: (String p) =>
               onSave(chain.copyWith(masqueProtocol: p)),
@@ -1012,7 +1021,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.route_rounded,
           title: 'منطقه و قوانین مسیریابی',
           subtitle:
-              'عبور مستقیم ترافیک داخلی منطقه انتخابی، شبکه محلی، مسدودسازی تبلیغات و تنظیم IPv6',
+              'عبور مستقیم ترافیک داخلی منطقه انتخابی، شبکه محلی، مسدودسازی تبلیغات و تنظیم آی پی نسخه ۶',
           children: <Widget>[
             AnchoredSelectField<RoutingRegion>(
               label: 'منطقه',
@@ -1025,7 +1034,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     label: r.label,
                     subtitle: r == RoutingRegion.other
                         ? 'عبور تمام ترافیک از مسیر انتخابی'
-                        : 'اتصال مستقیم سایت ها و IP های داخلی ${r.label}',
+                        : 'اتصال مستقیم سایت ها و نشانی های داخلی ${r.shortLabel}',
                   ),
               ],
               onChanged: (RoutingRegion picked) =>
@@ -1033,7 +1042,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: AppMetrics.space3),
             AnchoredSelectField<Ipv6RouteMode>(
-              label: 'حالت مسیریابی IPv6',
+              label: 'حالت مسیریابی آی پی نسخه ۶',
               leadingIcon: Icons.language_rounded,
               value: cfg.ipv6RouteMode,
               options: <SelectOption<Ipv6RouteMode>>[
@@ -1046,7 +1055,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space4),
             ToggleRow(
               icon: Icons.lan_outlined,
-              title: 'دور زدن شبکه محلی (Bypass LAN)',
+              title: 'دور زدن شبکه محلی',
               subtitle: 'ارسال مستقیم ترافیک شبکه خانگی و اداری بدون عبور از تونل',
               value: cfg.bypassLan,
               onChanged: (bool v) =>
@@ -1064,8 +1073,8 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space3),
             ToggleRow(
               icon: Icons.travel_explore_rounded,
-              title: 'تحلیل آدرس مقصد (Resolve Destination)',
-              subtitle: 'تبدیل نام دامنه به IP پیش از ارسال به خروجی',
+              title: 'گشودن نشانی مقصد',
+              subtitle: 'تبدیل نام دامنه به نشانی آی پی پیش از ارسال به خروجی',
               value: cfg.resolveDestination,
               onChanged: (bool v) =>
                   _applyRuntime(vpn, () => settings.setResolveDestination(v)),
@@ -1073,8 +1082,8 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space3),
             ToggleRow(
               icon: Icons.speed_outlined,
-              title: 'مسدودسازی QUIC',
-              subtitle: 'هدایت مرورگرها به HTTP/2 روی TCP برای پایداری بیشتر',
+              title: 'مسدودسازی کوئیک',
+              subtitle: 'هدایت مرورگرها به اتصال پایدار برای جلوگیری از قطع و وصل',
               value: cfg.blockQuic,
               onChanged: (bool v) =>
                   _applyRuntime(vpn, () => settings.setBlockQuic(v)),
@@ -1086,7 +1095,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.apps_rounded,
           title: 'مسیریابی بر اساس برنامه',
           subtitle:
-              'در حالت VPN تعیین کنید هر فایل اجرایی ویندوز (`.exe`) از تونل برود، مستقیم وصل شود یا مسدود گردد',
+              'در حالت تونل کامل تعیین کنید هر فایل اجرایی ویندوز از تونل برود، مستقیم وصل شود یا مسدود گردد',
           trailing: SizedBox(
             height: AppMetrics.controlHeightSmall,
             child: OutlinedButton.icon(
@@ -1178,7 +1187,7 @@ class _SettingsPageState extends State<SettingsPage> {
         SelectOption<String>(
           value: entry.key,
           label: entry.value,
-          subtitle: entry.key,
+          subtitle: NetworkDns.subtitleFa(entry.key),
         ),
     ];
     final List<SelectOption<DnsDomainStrategy>> strategyOptions =
@@ -1192,12 +1201,12 @@ class _SettingsPageState extends State<SettingsPage> {
       children: <Widget>[
         _Section(
           icon: Icons.cloud_done_outlined,
-          title: 'DNS اصلی (ریموت — داخل تونل)',
+          title: 'دی ان اس اصلی (داخل تونل)',
           subtitle:
               'پاسخ گویی به نام دامنه سایت هایی که از سرور آمبرلا عبور می کنند',
           children: <Widget>[
             AnchoredSelectField<String>(
-              label: 'DNS اصلی (ریموت)',
+              label: 'دی ان اس اصلی',
               leadingIcon: Icons.dns_rounded,
               value: NetworkDns.normalizeRemote(cfg.remoteDns),
               options: dnsOptions,
@@ -1206,7 +1215,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: AppMetrics.space3),
             AnchoredSelectField<DnsDomainStrategy>(
-              label: 'استراتژی دامنه DNS اصلی',
+              label: 'شیوه انتخاب نشانی دی ان اس اصلی',
               leadingIcon: Icons.alt_route_rounded,
               value: cfg.remoteDnsStrategy,
               options: strategyOptions,
@@ -1216,9 +1225,9 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space4),
             ToggleRow(
               icon: Icons.flash_on_rounded,
-              title: 'فعال سازی DNS جعلی (FakeDNS)',
+              title: 'فعال سازی دی ان اس مجازی',
               subtitle:
-                  'پاسخ فوری با IP مجازی برای کاهش تاخیر باز شدن دامنه ها در حالت VPN',
+                  'پاسخ فوری با نشانی مجازی برای کاهش تاخیر باز شدن دامنه ها در حالت تونل کامل',
               value: cfg.enableFakeDns,
               onChanged: (bool v) =>
                   _applyRuntime(vpn, () => settings.setEnableFakeDns(v)),
@@ -1228,12 +1237,12 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: AppMetrics.space5),
         _Section(
           icon: Icons.router_outlined,
-          title: 'DNS پروکسی ها (مستقیم)',
+          title: 'دی ان اس پروکسی ها (مستقیم)',
           subtitle:
               'برای پیدا کردن نشانی سرورهای پروکسی و سایت های بدون فیلتر استفاده می شود',
           children: <Widget>[
             AnchoredSelectField<String>(
-              label: 'DNS مستقیم',
+              label: 'دی ان اس مستقیم',
               leadingIcon: Icons.router_rounded,
               value: NetworkDns.normalizeDirect(cfg.directDns),
               options: dnsOptions,
@@ -1242,7 +1251,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: AppMetrics.space3),
             AnchoredSelectField<DnsDomainStrategy>(
-              label: 'استراتژی دامنه DNS مستقیم',
+              label: 'شیوه انتخاب نشانی دی ان اس مستقیم',
               leadingIcon: Icons.call_split_rounded,
               value: cfg.directDnsStrategy,
               options: strategyOptions,
@@ -1272,7 +1281,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: <Widget>[
         _Section(
           icon: Icons.login_rounded,
-          title: 'حالت سرویس و کارت شبکه TUN',
+          title: 'حالت سرویس و کارت شبکه تونل',
           subtitle: 'انتخاب شیوه دریافت ترافیک سیستم و تنظیمات سطح پایین تونل',
           children: <Widget>[
             AnchoredSelectField<InboundServiceMode>(
@@ -1290,7 +1299,7 @@ class _SettingsPageState extends State<SettingsPage> {
               onChanged: (InboundServiceMode picked) async {
                 if (picked == InboundServiceMode.vpn && !settings.elevated) {
                   toasts.info(
-                    'برای حالت VPN برنامه را با دسترسی مدیر اجرا کنید',
+                    'برای حالت تونل کامل برنامه را با دسترسی مدیر اجرا کنید',
                     'حالت سرویس',
                   );
                 }
@@ -1302,7 +1311,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: AppMetrics.space3),
             AnchoredSelectField<TunStack>(
-              label: 'پیاده سازی TUN',
+              label: 'پیاده سازی کارت شبکه تونل',
               leadingIcon: Icons.layers_outlined,
               value: cfg.tunStack,
               options: <SelectOption<TunStack>>[
@@ -1315,10 +1324,10 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space4),
             _EditableValueRow(
               icon: Icons.straighten_rounded,
-              title: 'اندازه بسته تونل (MTU)',
+              title: 'اندازه بسته تونل',
               value: Fa.num('${cfg.mtu}'),
               onTap: () => _editTextValue(
-                title: 'اندازه بسته تونل (MTU)',
+                title: 'اندازه بسته تونل',
                 label: 'بین ۱۲۸۰ تا ۹۰۰۰ (پیش فرض ۹۰۰۰)',
                 initialValue: '${cfg.mtu}',
                 numericOnly: true,
@@ -1326,7 +1335,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   final int? n = int.tryParse(v.trim());
                   return n != null && n >= 1280 && n <= 9000
                       ? null
-                      : Fa.num('عددی بین 1280 تا 9000 وارد کنید');
+                      : 'عددی بین ۱۲۸۰ تا ۹۰۰۰ وارد کنید';
                 },
                 onSubmit: (String v) => _applyRuntime(
                   vpn,
@@ -1337,7 +1346,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space3),
             ToggleRow(
               icon: Icons.lock_outline_rounded,
-              title: 'مسیربندی سخت گیرانه (Strict Route)',
+              title: 'مسیربندی سخت گیرانه',
               subtitle: 'جلوگیری از نشت بسته ها خارج از کارت شبکه تونل',
               value: cfg.strictRoute,
               onChanged: (bool v) =>
@@ -1353,11 +1362,11 @@ class _SettingsPageState extends State<SettingsPage> {
           left: _Section(
             icon: Icons.computer_rounded,
             title: 'پروکسی محلی (این دستگاه)',
-            subtitle: 'پورت ترکیبی SOCKS5 / HTTP روی نشانی 127.0.0.1',
+            subtitle: 'پورت ترکیبی ساکس ۵ و وب روی نشانی ۱۲۷.۰.۰.۱',
             children: <Widget>[
               _EditableValueRow(
                 icon: Icons.settings_ethernet_rounded,
-                title: 'پورت پروکسی (SOCKS5/4، HTTP)',
+                title: 'پورت پروکسی محلی',
                 value: Fa.num('${cfg.mixedPort}'),
                 onTap: () => _editTextValue(
                   title: 'پورت پروکسی محلی',
@@ -1372,9 +1381,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               forbiddenPort: cfg.lanSharingPort,
                             )
                         ? null
-                        : Fa.num(
-                            'پورتی بین 1024 تا 65535 و متفاوت از پورت اشتراک وارد کنید',
-                          );
+                        : 'پورتی بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت اشتراک وارد کنید';
                   },
                   onSubmit: (String v) => _applyRuntime(
                     vpn,
@@ -1385,8 +1392,8 @@ class _SettingsPageState extends State<SettingsPage> {
               const Divider(height: AppMetrics.space3),
               ToggleRow(
                 icon: Icons.swap_calls_rounded,
-                title: 'باز ماندن در حالت VPN',
-                subtitle: 'نگه داشتن پورت 127.0.0.1 هنگام روشن بودن TUN',
+                title: 'باز ماندن در حالت تونل کامل',
+                subtitle: 'فعال ماندن پورت ۱۲۷.۰.۰.۱ هنگام روشن بودن تونل کامل',
                 value: cfg.localProxyInVpn,
                 onChanged: (bool v) =>
                     _applyRuntime(vpn, () => settings.setLocalProxyInVpn(v)),
@@ -1415,7 +1422,8 @@ class _SettingsPageState extends State<SettingsPage> {
           right: _Section(
             icon: Icons.wifi_tethering_rounded,
             title: 'اشتراک گذاری اتصال در شبکه محلی',
-            subtitle: 'اتصال موبایل، لپ تاپ و سایر دستگاه های هم شبکه با کد QR',
+            subtitle:
+                'اتصال گوشی، لپ تاپ و سایر دستگاه های هم شبکه با رمزینه تصویری',
             trailing: SizedBox(
               height: AppMetrics.controlHeightSmall,
               child: OutlinedButton.icon(
@@ -1423,7 +1431,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   Icons.qr_code_2_rounded,
                   size: AppMetrics.iconSm,
                 ),
-                label: const Text('کد QR'),
+                label: const Text('رمزینه تصویری'),
                 onPressed: () => LanSharingDialog.show(context),
               ),
             ),
@@ -1431,7 +1439,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ToggleRow(
                 icon: Icons.share_rounded,
                 title: 'اشتراک در شبکه محلی',
-                subtitle: 'باز کردن شنونده SOCKS5 روی شبکه Wi-Fi / LAN فعلی',
+                subtitle: 'باز کردن درگاه ساکس ۵ روی شبکه وای فای و کابلی فعلی',
                 value: cfg.allowConnectionFromLan,
                 onChanged: (bool v) => _applyRuntime(
                   vpn,
@@ -1456,9 +1464,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               forbiddenPort: cfg.mixedPort,
                             )
                         ? null
-                        : Fa.num(
-                            'پورتی بین 1024 تا 65535 و متفاوت از پورت محلی وارد کنید',
-                          );
+                        : 'پورتی بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت محلی وارد کنید';
                   },
                   onSubmit: (String v) => _applyRuntime(
                     vpn,
@@ -1485,7 +1491,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // ۶. ترفندهای TLS
+  // ۶. ترفندهای اتصال امن
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildTlsTricksSection(
     BuildContext context,
@@ -1504,31 +1510,31 @@ class _SettingsPageState extends State<SettingsPage> {
       children: <Widget>[
         _Section(
           icon: Icons.content_cut_rounded,
-          title: 'تکه تکه سازی TLS (Fragment)',
+          title: 'تکه تکه سازی بسته ها',
           subtitle:
-              'تقسیم بسته اولیه ClientHello به تکه های کوچک با مکث تصادفی برای عبور از بازرسی عمیق بسته (DPI)',
+              'تقسیم بسته اولیه اتصال امن به تکه های کوچک با مکث تصادفی برای عبور از بازرسی عمیق شبکه',
           children: <Widget>[
             ToggleRow(
               icon: Icons.call_split_rounded,
-              title: 'فعال سازی Fragment',
-              subtitle: 'اعمال خودکار روی خروجی های TLS (WS / gRPC / HTTPUpgrade / XHTTP)',
+              title: 'فعال سازی تکه تکه سازی',
+              subtitle: 'اعمال خودکار روی خروجی های رمزنگاری شده پشتیبان',
               value: tls.enableFragment,
               onChanged: (bool v) => saveTls(tls.copyWith(enableFragment: v)),
             ),
             const Divider(height: AppMetrics.space3),
             _EditableValueRow(
               icon: Icons.straighten_rounded,
-              title: 'اندازه Fragment (بایت)',
-              value: tls.fragmentSize,
+              title: 'اندازه تکه ها (بایت)',
+              value: Fa.num(tls.fragmentSize),
               ltrValue: true,
               onTap: () => _editTextValue(
-                title: 'اندازه Fragment',
-                label: 'عدد یا بازه (پیش فرض 10-100)',
+                title: 'اندازه تکه ها',
+                label: 'عدد یا بازه (پیش فرض ۱۰-۱۰۰)',
                 initialValue: tls.fragmentSize,
-                hint: '10-100',
+                hint: '۱۰-۱۰۰',
                 validator: (String v) => TlsTricksSettings.isValidRange(v)
                     ? null
-                    : 'بازه عددی معتبر وارد کنید (مثل 10-100)',
+                    : 'بازه عددی معتبر وارد کنید (مانند ۱۰-۱۰۰)',
                 onSubmit: (String v) =>
                     saveTls(tls.copyWith(fragmentSize: v.trim())),
               ),
@@ -1536,18 +1542,18 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(height: AppMetrics.space3),
             _EditableValueRow(
               icon: Icons.timer_outlined,
-              title: 'تاخیر Fragment (میلی ثانیه)',
-              value: tls.fragmentSleep,
+              title: 'تاخیر بین تکه ها (میلی ثانیه)',
+              value: Fa.num(tls.fragmentSleep),
               ltrValue: true,
               onTap: () => _editTextValue(
-                title: 'تاخیر Fragment',
-                label: 'عدد یا بازه (پیش فرض 50-200)',
+                title: 'تاخیر بین تکه ها',
+                label: 'عدد یا بازه (پیش فرض ۵۰-۲۰۰)',
                 initialValue: tls.fragmentSleep,
-                hint: '50-200',
+                hint: '۵۰-۲۰۰',
                 validator: (String v) =>
                     TlsTricksSettings.isValidRange(v, min: 0)
                         ? null
-                        : 'بازه عددی معتبر وارد کنید (مثل 50-200)',
+                        : 'بازه عددی معتبر وارد کنید (مانند ۵۰-۲۰۰)',
                 onSubmit: (String v) =>
                     saveTls(tls.copyWith(fragmentSleep: v.trim())),
               ),
@@ -1557,38 +1563,38 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: AppMetrics.space5),
         _Section(
           icon: Icons.enhanced_encryption_outlined,
-          title: 'مبهم سازی SNI و Padding',
-          subtitle: 'تغییر تصادفی حروف نام دامنه و طول بسته دست تکانی TLS',
+          title: 'مبهم سازی نام سرور و اندازه بسته',
+          subtitle: 'تغییر تصادفی حروف نام دامنه و طول بسته آغاز اتصال امن',
           children: <Widget>[
             ToggleRow(
               icon: Icons.text_fields_rounded,
-              title: 'فعال سازی Mixed SNI Case',
-              subtitle: 'ترکیب حروف بزرگ و کوچک در نام دامنه SNI',
+              title: 'درهم سازی حروف نام سرور',
+              subtitle: 'ترکیب تصادفی حروف در نام دامنه ارسالی هنگام برقراری اتصال',
               value: tls.mixedSniCase,
               onChanged: (bool v) => saveTls(tls.copyWith(mixedSniCase: v)),
             ),
             const Divider(height: AppMetrics.space3),
             ToggleRow(
               icon: Icons.unfold_more_rounded,
-              title: 'فعال سازی TLS Padding',
-              subtitle: 'تغییر اندازه بسته ClientHello به بازه دلخواه',
+              title: 'افزودن لایه پرکننده بسته',
+              subtitle: 'تغییر اندازه بسته آغاز اتصال به بازه دلخواه',
               value: tls.enablePadding,
               onChanged: (bool v) => saveTls(tls.copyWith(enablePadding: v)),
             ),
             const Divider(height: AppMetrics.space3),
             _EditableValueRow(
               icon: Icons.photo_size_select_large_rounded,
-              title: 'اندازه Padding (بایت)',
-              value: tls.paddingSize,
+              title: 'اندازه لایه پرکننده (بایت)',
+              value: Fa.num(tls.paddingSize),
               ltrValue: true,
               onTap: () => _editTextValue(
-                title: 'اندازه TLS Padding',
-                label: 'عدد یا بازه (پیش فرض 1200-1500)',
+                title: 'اندازه لایه پرکننده',
+                label: 'عدد یا بازه (پیش فرض ۱۲۰۰-۱۵۰۰)',
                 initialValue: tls.paddingSize,
-                hint: '1200-1500',
+                hint: '۱۲۰۰-۱۵۰۰',
                 validator: (String v) => TlsTricksSettings.isValidRange(v)
                     ? null
-                    : 'بازه عددی معتبر وارد کنید (مثل 1200-1500)',
+                    : 'بازه عددی معتبر وارد کنید (مانند ۱۲۰۰-۱۵۰۰)',
                 onSubmit: (String v) =>
                     saveTls(tls.copyWith(paddingSize: v.trim())),
               ),
@@ -1797,12 +1803,12 @@ class _ChainHopSelector extends StatelessWidget {
           child: Row(
             children: <Widget>[
               const Icon(
-                Icons.local_parking_rounded,
+                Icons.public_rounded,
                 size: AppMetrics.iconSm,
                 color: Color(0xFFE53935),
               ),
               const SizedBox(width: AppMetrics.space2),
-              const Expanded(child: Text('Psiphon')),
+              const Expanded(child: Text('سایفون')),
               if (active && isPsiphon)
                 Icon(
                   Icons.check_rounded,
@@ -1822,7 +1828,7 @@ class _ChainHopSelector extends StatelessWidget {
                 color: Color(0xFFF6821F),
               ),
               const SizedBox(width: AppMetrics.space2),
-              const Expanded(child: Text('WARP')),
+              const Expanded(child: Text('وارپ')),
               if (active && !isPsiphon)
                 Icon(
                   Icons.check_rounded,
@@ -1915,7 +1921,7 @@ class _EditableValueRow extends StatelessWidget {
             ),
             const SizedBox(width: AppMetrics.space2),
             Text(
-              value,
+              Fa.num(value),
               textDirection: ltrValue ? TextDirection.ltr : null,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: valueColor ?? colors.textSecondary,
@@ -1955,7 +1961,7 @@ class _AppRouteTile extends StatelessWidget {
         const SizedBox(width: AppMetrics.space2),
         Expanded(
           child: Text(
-            rule.process,
+            Fa.num(rule.process),
             textDirection: TextDirection.ltr,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textPrimary,
@@ -2001,7 +2007,7 @@ class _ValueInputDialog extends StatefulWidget {
 
 class _ValueInputDialogState extends State<_ValueInputDialog> {
   late final TextEditingController _ctrl =
-      TextEditingController(text: widget.initialValue);
+      TextEditingController(text: Fa.num(widget.initialValue));
   String? _error;
 
   @override
@@ -2011,10 +2017,10 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
   }
 
   void _submit() {
-    final String value = _ctrl.text.trim();
+    final String value = Fa.toEn(_ctrl.text.trim());
     final String? err = widget.validator?.call(value);
     if (err != null) {
-      setState(() => _error = err);
+      setState(() => _error = Fa.num(err));
       return;
     }
     Navigator.of(context).pop(value);
@@ -2029,7 +2035,7 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
         borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
         side: BorderSide(color: colors.border),
       ),
-      title: Text(widget.title),
+      title: Text(Fa.num(widget.title)),
       content: TextField(
         controller: _ctrl,
         autofocus: true,
@@ -2037,12 +2043,17 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
         keyboardType:
             widget.numericOnly ? TextInputType.number : TextInputType.text,
         inputFormatters: widget.numericOnly
-            ? <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly]
-            : null,
+            ? <TextInputFormatter>[
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹]')),
+                const PersianDigitsFormatter(),
+              ]
+            : const <TextInputFormatter>[
+                PersianDigitsFormatter(),
+              ],
         onSubmitted: (_) => _submit(),
         decoration: InputDecoration(
-          labelText: widget.label,
-          hintText: widget.hint.isEmpty ? null : widget.hint,
+          labelText: Fa.num(widget.label),
+          hintText: widget.hint.isEmpty ? null : Fa.num(widget.hint),
           errorText: _error,
         ),
       ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
@@ -37,7 +38,7 @@ class QuickConnectionPanel extends StatelessWidget {
     }
     if (mode == InboundServiceMode.vpn && !settings.elevated) {
       toasts.info(
-        'برای حالت VPN برنامه را با دسترسی مدیر اجرا کنید',
+        'برای حالت تونل کامل برنامه را با دسترسی مدیر اجرا کنید',
         'حالت سرویس',
       );
     }
@@ -145,7 +146,7 @@ class QuickConnectionPanel extends StatelessWidget {
               transport: chain.transport,
               enabled: enabled,
               tips: <String>[
-                'IP شما را ${chain.transport.quickLabel} تعیین می کند',
+                'نشانی آی پی شما را ${chain.transport.quickLabel} تعیین می کند',
                 'ارائه دهنده سرور نشانی نهایی را نمی بیند',
                 'مناسب افزایش حریم خصوصی در شبکه های عمومی',
                 'ممکن است سرعت کمی کاهش یابد',
@@ -324,7 +325,7 @@ class _LanSharingRow extends StatelessWidget {
               ),
             ),
             Tooltip(
-              message: 'کد QR',
+              message: 'رمزینه تصویری',
               child: Material(
                 color: shared
                     ? colors.primary.withValues(alpha: 0.16)
@@ -488,7 +489,7 @@ class _ChainQuickRowState extends State<_ChainQuickRow> {
                   ),
                   const SizedBox(height: AppMetrics.space1),
                   Text(
-                    activeSubtitle,
+                    Fa.num(activeSubtitle),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -536,9 +537,9 @@ class _ChainQuickRowState extends State<_ChainQuickRow> {
                 PopupMenuItem<_ChainMenuChoice>(
                   value: _ChainMenuChoice.psiphon,
                   child: _menuRow(
-                    icon: Icons.local_parking_rounded,
+                    icon: Icons.public_rounded,
                     iconColor: const Color(0xFFE53935),
-                    label: 'Psiphon',
+                    label: 'سایفون',
                     checked: widget.active && isPsiphon,
                     colors: colors,
                   ),
@@ -548,7 +549,7 @@ class _ChainQuickRowState extends State<_ChainQuickRow> {
                   child: _menuRow(
                     icon: Icons.cloud_rounded,
                     iconColor: const Color(0xFFF6821F),
-                    label: 'WARP',
+                    label: 'وارپ',
                     checked: widget.active && !isPsiphon,
                     colors: colors,
                   ),

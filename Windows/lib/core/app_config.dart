@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import 'persian.dart';
 
 /// تنظیمات ثابت برنامه: نسخه، آدرس سرویس ها و تنها منابع اشتراک مجاز.
 ///
@@ -20,7 +21,7 @@ class AppConfig {
 
   /// همان شماره با پیشوند فارسی، برای جاهایی که متن جمله است (تنظیمات،
   /// گزارش خطا): «نسخه ۱٫۰٫۱۶».
-  static String get versionPhrase => 'نسخه ${version.split('.').join('٫')}';
+  static String get versionPhrase => Fa.num('نسخه ${version.split('.').join('٫')}');
   static const String company = 'آرمین سافت';
   static const String developer = 'آرمین سافت';
   static const String developerSite = 'https://armin-soft.ir';

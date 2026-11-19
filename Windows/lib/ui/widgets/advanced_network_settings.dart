@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import 'common.dart';
@@ -21,11 +23,11 @@ class AdvancedNetworkSettings extends StatelessWidget {
     final Widget chainCard = _FeatureCard(
       icon: Icons.hub_rounded,
       accent: chainActive ? colors.success : colors.primary,
-      title: 'WARP و اتصال زنجیره‌ای',
+      title: 'وارپ و اتصال زنجیره ای',
       badge: settings.chain.position.label,
       badgeActive: chainActive,
       subtitle:
-          'عبور ترکیبی ترافیک از مسیر آمبرلا و واسط WARP یا Psiphon در اتصال بعدی',
+          'عبور ترکیبی ترافیک از مسیر آمبرلا و واسط وارپ یا سایفون در اتصال بعدی',
       actionLabel: 'تنظیم زنجیره',
       actionIcon: Icons.link_rounded,
       onAction: () async {
@@ -43,7 +45,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
     final Widget routesCard = _FeatureCard(
       icon: Icons.apps_rounded,
       accent: hasRules ? colors.info : colors.primary,
-      title: 'مسیریابی برنامه‌های ویندوز',
+      title: 'مسیریابی برنامه های ویندوز',
       badge: hasRules
           ? Fa.num('${settings.appRoutes.length} قانون')
           : 'همه از تونل',
@@ -108,7 +110,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
                           ),
                           const SizedBox(width: AppMetrics.space2),
                           Text(
-                            settings.appRoutes[i].process,
+                            Fa.num(settings.appRoutes[i].process),
                             textDirection: TextDirection.ltr,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
@@ -396,7 +398,9 @@ class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
       'license': initial.licenseKey,
     };
     for (final MapEntry<String, String> entry in values.entries) {
-      fields[entry.key] = TextEditingController(text: entry.value);
+      fields[entry.key] = TextEditingController(
+        text: entry.key == 'license' ? entry.value : Fa.num(entry.value),
+      );
     }
   }
 
@@ -450,18 +454,21 @@ class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
           obscureText: secret,
           keyboardType: number ? TextInputType.number : TextInputType.text,
           textDirection: TextDirection.ltr,
+          inputFormatters: secret
+              ? null
+              : const <TextInputFormatter>[PersianDigitsFormatter()],
           decoration: InputDecoration(labelText: label),
         ),
       );
 
-  int _int(String key) => int.tryParse(fields[key]!.text) ?? -1;
+  int _int(String key) => int.tryParse(Fa.toEn(fields[key]!.text)) ?? -1;
 
   void _save() {
     final ChainSettings next = ChainSettings(
       position: position,
       transport: transport,
       endpoint: endpoint,
-      address: fields['address']!.text.trim(),
+      address: Fa.toEn(fields['address']!.text.trim()),
       port: _int('port'),
       mtu: _int('mtu'),
       scanCount: _int('scanCount'),
@@ -483,7 +490,7 @@ class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('WARP و زنجیره اتصال'),
+        title: const Text('وارپ و زنجیره اتصال'),
         content: SizedBox(
           width: AppMetrics.dialogMaxWidth,
           child: SingleChildScrollView(
@@ -492,7 +499,7 @@ class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
-                  'تنظیمات در اتصال بعدی اعمال می‌شوند و همراه اشتراک آمبرلا کار می‌کنند.',
+                  'تنظیمات در اتصال بعدی اعمال می شوند و همراه اشتراک آمبرلا کار می کنند.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: AppMetrics.space4),
@@ -517,45 +524,42 @@ class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
                   ),
                   if (transport == ChainTransport.psiphon)
                     _choice<String>(
-                      'منطقه Psiphon',
+                      'منطقه سایفون',
                       region,
-                      <String, String>{
-                        for (final String item in ChainSettings.regions)
-                          item: item,
-                      },
+                      ChainSettings.regionLabels,
                       (String value) => region = value,
                     )
                   else ...<Widget>[
                     _choice<WarpEndpoint>(
-                      'منبع endpoint',
+                      'منبع نقطه اتصال',
                       endpoint,
                       const <WarpEndpoint, String>{
-                        WarpEndpoint.assigned: 'اختصاص‌یافته Cloudflare',
+                        WarpEndpoint.assigned: 'اختصاص یافته کلادفلر',
                         WarpEndpoint.scan: 'اسکن توسط هسته',
-                        WarpEndpoint.custom: 'IP مشخص',
+                        WarpEndpoint.custom: 'نشانی آی پی مشخص',
                       },
                       (WarpEndpoint value) => endpoint = value,
                     ),
                     if (endpoint == WarpEndpoint.custom) ...<Widget>[
-                      _field('address', 'IP endpoint'),
-                      _field('port', 'پورت endpoint', number: true),
+                      _field('address', 'نشانی آی پی نقطه اتصال'),
+                      _field('port', 'پورت نقطه اتصال', number: true),
                     ],
                     if (endpoint == WarpEndpoint.scan) ...<Widget>[
                       Padding(
                         padding:
                             const EdgeInsets.only(bottom: AppMetrics.space3),
                         child: Text(
-                          'اسکن فقط قبل از سرور آمبرلا پشتیبانی می‌شود.',
+                          'اسکن فقط قبل از سرور آمبرلا پشتیبانی می شود.',
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                       ),
-                      _field('scanCount', 'حداکثر تعداد IP (۱..۲۵۶)',
+                      _field('scanCount', 'حداکثر تعداد آی پی (۱ تا ۲۵۶)',
                           number: true),
-                      _field('scanConcurrency', 'اسکن همزمان (۱..۳۲)',
+                      _field('scanConcurrency', 'اسکن همزمان (۱ تا ۳۲)',
                           number: true),
-                      _field('scanTimeout', 'مهلت هر اسکن (میلی‌ثانیه)',
+                      _field('scanTimeout', 'مهلت هر اسکن (میلی ثانیه)',
                           number: true),
-                      _field('scanMaxRtt', 'حداکثر RTT قابل قبول (میلی‌ثانیه)',
+                      _field('scanMaxRtt', 'حداکثر تاخیر قابل قبول (میلی ثانیه)',
                           number: true),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -565,22 +569,22 @@ class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
                             setState(() => searchNoise = value),
                       ),
                     ],
-                    _field('mtu', 'MTU واسط؛ صفر برای پیش‌فرض هسته',
+                    _field('mtu', 'اندازه بسته واسط؛ صفر برای پیش فرض هسته',
                         number: true),
                     if (transport == ChainTransport.masque ||
                         transport == ChainTransport.automatic) ...<Widget>[
                       _choice<String>(
-                        'نسخه HTTP در MASQUE',
+                        'نسخه انتقال در ماسک',
                         masqueProtocol,
                         const <String, String>{
                           'auto': 'خودکار',
-                          'h2': 'HTTP/2',
-                          'h3': 'HTTP/3',
+                          'h2': 'نسخه ۲ (پایدار)',
+                          'h3': 'نسخه ۳ (سریع)',
                         },
                         (String value) => masqueProtocol = value,
                       ),
                     ],
-                    _field('license', 'کلید WARP+ (اختیاری)', secret: true),
+                    _field('license', 'کلید اشتراک وارپ پلاس (اختیاری)', secret: true),
                   ],
                 ],
                 if (error != null)
@@ -642,8 +646,8 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
                 controller: process,
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(
-                  labelText: 'نام exe یا مسیر کامل',
-                  hintText: r'C:\Apps\app.exe',
+                  labelText: 'نام برنامه یا مسیر کامل فایل اجرایی',
+                  hintText: 'نام برنامه ویندوز',
                   errorText: error,
                 ),
               ),
@@ -667,7 +671,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
               ),
               const SizedBox(height: AppMetrics.space3),
               Text(
-                'نام exe همه پردازش‌های هم‌نام را شامل می‌شود؛ برای تطبیق دقیق، مسیر کامل را وارد کنید.',
+                'نام برنامه همه پردازش های هم نام را شامل می شود؛ برای تطبیق دقیق، مسیر کامل فایل اجرایی را وارد کنید.',
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ],

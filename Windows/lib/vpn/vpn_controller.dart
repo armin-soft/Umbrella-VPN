@@ -1547,7 +1547,7 @@ class VpnController extends ChangeNotifier {
               LogDetail(
                 title: 'تنظیم پروکسی ویندوز',
                 text: <String>[
-                  'آدرس پروکسی: 127.0.0.1:${Fa.num(plan.proxyPort)}',
+                  'نشانی پروکسی: ${Fa.num('127.0.0.1')}:${Fa.num(plan.proxyPort)}',
                   'پورت محلی هسته: ${Fa.num(plan.proxyPort)}',
                   if (plan.proxyPort > 0)
                     'پورت باز است: '
@@ -1985,7 +1985,7 @@ class VpnController extends ChangeNotifier {
   /// سریع ترین را نگه دارد و هنگام افتادن یکی، به بعدی سوییچ کند — همان
   /// کاری که کاربر از یک فیلترشکن انتظار دارد.
   ///
-  /// همه لینک‌های یکتای مجاز حفظ می‌شوند؛ keep-top مصرف همزمان را محدود می‌کند.
+  /// همه لینک های یکتای مجاز حفظ می شوند؛ keep-top مصرف هم زمان را محدود می کند.
   List<String> _linkPool(VpnNode chosen) {
     final List<String> pool = <String>[];
     final Set<String> seen = <String>{};
@@ -2247,7 +2247,7 @@ class VpnController extends ChangeNotifier {
         query.add('serviceName=${Uri.encodeComponent(service)}');
       }
     }
-    // ریلیتی: بدون این پارامترها دست‌دادن TLS انجام نمی شود. `fp` پایین تر
+    // ریلیتی: بدون این پارامترها دست دادن TLS انجام نمی شود. `fp` پایین تر
     // با توضیح خودش اضافه می شود.
     for (final String key in <String>['pbk', 'sid', 'spx']) {
       final String value = JsonX.text(params[key]);
@@ -2367,7 +2367,7 @@ class VpnController extends ChangeNotifier {
     final String name = Uri.encodeComponent(node.name);
     switch (node.protocol) {
       case NodeProtocol.vless:
-        // تله‌ای که ۱٫۰٫۱۰ را شکست: در منابع کلش، `type` نام **پروتکل** است
+        // تله ای که ۱٫۰٫۱۰ را شکست: در منابع کلش، `type` نام **پروتکل** است
         // (`type: vless`)، نه نوع انتقال. خواندن `params['type']` باعث می شد
         // لینک `type=vless` بسازد و هسته با «unknown transport type: vless»
         // آن را رد کند. نوع انتقال فقط از `network` می آید.
@@ -2580,13 +2580,12 @@ class VpnController extends ChangeNotifier {
         if (!opened) {
           // پنجره باز نشد؛ همان هسته بی صدا اجرا می شود (پایین همین تابع).
           _log.add(
-            'پنجره Umbrella CLI باز نشد؛ هسته بدون پنجره اجرا می شود.',
+            'پنجره فرمان هسته باز نشد؛ هسته بدون پنجره اجرا می شود.',
             level: 'warning',
           );
         } else {
           _log.add(
-            'هسته در پنجره Umbrella CLI اجرا شد: ${core.binaryName} '
-            '(پورت ${Fa.num(plan.proxyPort)})',
+            'هسته در پنجره فرمان اجرا شد (پورت ${Fa.num(plan.proxyPort)})',
           );
           // فرایند هسته فرزند همان پنجره است؛ با نامش سنجیده و بسته می شود.
           _runningBinaries.add(core.binaryName);
@@ -2789,13 +2788,13 @@ class VpnController extends ChangeNotifier {
         _log.add(
           crashReason.isNotEmpty
               ? '${core.binaryName}: $crashReason'
-              : '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
+              : 'هسته آمبرلا بسته شد (کد خروج ${Fa.num(code)}).',
           level: crashReason.isNotEmpty ? 'error' : 'warning',
         );
       }),
     );
     if (_cancelRequested || _disposed) return false;
-    _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
+    _log.add('هسته آمبرلا اجرا شد (شناسه ${Fa.num(process.pid)}).');
     return true;
   }
 
@@ -3107,7 +3106,7 @@ class VpnController extends ChangeNotifier {
     }
     final String tail = await _readLogTail(coreLog);
     _log.add(
-      '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
+      'هسته آمبرلا بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
       '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
       level: 'error',
       details: await _coreDiagnostics(core, coreLog, code: code),
@@ -3142,7 +3141,7 @@ class VpnController extends ChangeNotifier {
       LogDetail(
         title: 'خروجی کامل هسته (${core.name})',
         text: full.isEmpty
-            ? 'هسته هیچ خروجی‌ای نداد. یعنی پیش از نوشتن هر خطی بسته شد؛ '
+            ? 'هسته هیچ خروجی ای نداد. یعنی پیش از نوشتن هر خطی بسته شد؛ '
                 'بیشتر وقت ها دلیلش نبود دسترسی، آنتی ویروس یا فایل اجرایی '
                 'ناقص است.'
             : full,

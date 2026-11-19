@@ -113,7 +113,7 @@ class GatewayClient {
       // خطای PHP داده است. نشانی و کد را در پیام می آوریم تا قابل پیگیری باشد.
       final String hint = response.statusCode == 404
           ? 'چنین مسیری روی سرور نیست'
-          : 'پاسخ سرور JSON نبود';
+          : 'ساختار پاسخ سرور معتبر نبود';
       throw ApiError(
         'bad_response',
         Fa.num(

@@ -47,13 +47,17 @@ class Fa {
     'یکشنبه',
   ];
 
-  /// تبدیل ارقام لاتین یک متن به فارسی.
+  /// تبدیل ارقام لاتین و عربی یک متن به فارسی و حذف نیم فاصله.
   static String num(Object? value) {
     final String text = (value ?? '').toString();
     final StringBuffer buffer = StringBuffer();
     for (final int rune in text.runes) {
       if (rune >= 48 && rune <= 57) {
         buffer.write(digits[rune - 48]);
+      } else if (rune >= 0x0660 && rune <= 0x0669) {
+        buffer.write(digits[rune - 0x0660]);
+      } else if (rune == 0x200C) {
+        buffer.write(' ');
       } else {
         buffer.writeCharCode(rune);
       }

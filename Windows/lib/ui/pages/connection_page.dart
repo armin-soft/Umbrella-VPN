@@ -366,7 +366,7 @@ class _ServerCard extends StatelessWidget {
             value: Fa.num(
               has
                   ? (settings.settings.tunMode
-                      ? 'تونل کامل (TUN)'
+                      ? 'تونل کامل'
                       : 'پروکسی سیستمی')
                   : '—',
             ),

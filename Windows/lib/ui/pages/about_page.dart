@@ -65,7 +65,7 @@ class AboutPage extends StatelessWidget {
                 'کلاینت رسمی ویندوز • تونل کامل، انتخاب هوشمند سریع ترین سرور و رابط راست به چپ',
             badges: <Widget>[
               Pill(
-                label: 'نسخه ${AppConfig.version}',
+                label: Fa.num('نسخه ${AppConfig.version}'),
                 icon: Icons.verified_rounded,
                 color: colors.primary,
                 dense: true,
@@ -127,9 +127,6 @@ class _DeveloperCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String siteDisplay = AppConfig.developerSite
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .replaceAll(RegExp(r'/$'), '');
     return GlassCard(
       padding: AppMetrics.cardPadding,
       radius: AppMetrics.radiusXl,
@@ -150,32 +147,28 @@ class _DeveloperCard extends StatelessWidget {
           InfoRow(
             icon: Icons.public_rounded,
             label: 'وبسایت رسمی',
-            value: siteDisplay,
-            ltr: true,
+            value: 'درگاه رسمی آرمین سافت',
             onTap: () => _open(AppConfig.developerSite),
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.headset_mic_rounded,
             label: 'پشتیبانی تلگرام',
-            value: '@UmbrellaSupport',
-            ltr: true,
+            value: 'پشتیبانی رسمی آمبرلا',
             onTap: () => _open(AppConfig.supportUrl),
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.campaign_rounded,
             label: 'کانال اطلاع رسانی',
-            value: '@UmbrellaChannel',
-            ltr: true,
+            value: 'کانال رسمی آمبرلا',
             onTap: () => _open(AppConfig.channelUrl),
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.smart_toy_rounded,
             label: 'ربات تلگرام',
-            value: '@${AppConfig.botUsername}',
-            ltr: true,
+            value: 'ربات رسمی آمبرلا',
             onTap: () => _open('https://t.me/${AppConfig.botUsername}'),
           ),
         ],

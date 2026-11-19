@@ -190,7 +190,7 @@ class SettingsController extends ChangeNotifier {
 
   /// پنجره CLI هسته هنگام اتصال باز شود یا نه.
   ///
-  /// پیش فرض خاموش است؛ فقط برای عیب‌یابی با انتخاب کاربر باز می‌شود.
+  /// پیش فرض خاموش است؛ فقط برای عیب یابی با انتخاب کاربر باز می شود.
   Future<void> setShowCli(bool value) async {
     await update(_settings.copyWith(showCli: value));
   }

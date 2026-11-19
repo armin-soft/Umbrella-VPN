@@ -85,16 +85,16 @@ extension MobileOperatorX on MobileOperator {
     }
   }
 
-  String get latin {
+  String get shortLabel {
     switch (this) {
       case MobileOperator.mci:
-        return 'MCI';
+        return 'هم';
       case MobileOperator.irancell:
-        return 'MTN';
+        return 'ای';
       case MobileOperator.rightel:
-        return 'RTL';
+        return 'را';
       case MobileOperator.unknown:
-        return 'IR';
+        return 'ای';
     }
   }
 

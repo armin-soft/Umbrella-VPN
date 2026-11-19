@@ -221,7 +221,7 @@ const Map<String, String> countryAliases = <String, String>{
   'آذربایجان': 'az',
   'قزاقستان': 'kz',
   'هند': 'in',
-  'مumbai': 'in',
+  'بمبئی': 'in',
   'سنگاپور': 'sg',
   'اندونزی': 'id',
   'مالزی': 'my',
@@ -1875,9 +1875,9 @@ extension TunStackX on TunStack {
   String get label {
     switch (this) {
       case TunStack.auto:
-        return 'پیش فرض هسته (sing-tun)';
+        return 'پیش فرض هسته';
       case TunStack.mixed:
-        return 'ترکیبی (قدیمی)';
+        return 'ترکیبی';
       case TunStack.gvisor:
         return 'کاربرفضا';
       case TunStack.system:
@@ -1907,16 +1907,41 @@ class NetworkDns {
   static const String defaultDirect = '1.1.1.1';
   static const String fallback = defaultDirect;
   static const Map<String, String> presets = <String, String>{
-    'tcp://8.8.8.8': 'Google — TCP',
-    'tcp://1.1.1.1': 'Cloudflare — TCP',
-    '1.1.1.1': 'Cloudflare — UDP',
-    '8.8.8.8': 'Google — UDP',
-    '9.9.9.9': 'Quad9 — UDP',
-    'https://1.1.1.1/dns-query': 'Cloudflare — HTTPS',
-    'https://8.8.8.8/dns-query': 'Google — HTTPS',
-    'https://9.9.9.9/dns-query': 'Quad9 — HTTPS',
-    'https://sky.rethinkdns.com/dns-query': 'RethinkDNS — HTTPS',
+    'tcp://8.8.8.8': 'گوگل — پایدار',
+    'tcp://1.1.1.1': 'کلادفلر — پایدار',
+    '1.1.1.1': 'کلادفلر — سریع',
+    '8.8.8.8': 'گوگل — سریع',
+    '9.9.9.9': 'کوآد ۹ — سریع',
+    'https://1.1.1.1/dns-query': 'کلادفلر — رمزنگاری شده',
+    'https://8.8.8.8/dns-query': 'گوگل — رمزنگاری شده',
+    'https://9.9.9.9/dns-query': 'کوآد ۹ — رمزنگاری شده',
+    'https://sky.rethinkdns.com/dns-query': 'ریتینک — رمزنگاری شده',
   };
+
+  static String subtitleFa(String key) {
+    switch (key) {
+      case 'tcp://8.8.8.8':
+        return 'نشانی ۸.۸.۸.۸ (اتصال پایدار)';
+      case 'tcp://1.1.1.1':
+        return 'نشانی ۱.۱.۱.۱ (اتصال پایدار)';
+      case '1.1.1.1':
+        return 'نشانی ۱.۱.۱.۱ (پاسخ فوری)';
+      case '8.8.8.8':
+        return 'نشانی ۸.۸.۸.۸ (پاسخ فوری)';
+      case '9.9.9.9':
+        return 'نشانی ۹.۹.۹.۹ (پاسخ فوری)';
+      case 'https://1.1.1.1/dns-query':
+        return 'نشانی ۱.۱.۱.۱ (بر بستر وب امن)';
+      case 'https://8.8.8.8/dns-query':
+        return 'نشانی ۸.۸.۸.۸ (بر بستر وب امن)';
+      case 'https://9.9.9.9/dns-query':
+        return 'نشانی ۹.۹.۹.۹ (بر بستر وب امن)';
+      case 'https://sky.rethinkdns.com/dns-query':
+        return 'سرور امن ریتینک (بر بستر وب امن)';
+      default:
+        return Fa.num(key);
+    }
+  }
   static String normalize(String value, {String defaultValue = fallback}) {
     final String clean = value.trim();
     if (clean == 'udp://1.1.1.1') return '1.1.1.1';

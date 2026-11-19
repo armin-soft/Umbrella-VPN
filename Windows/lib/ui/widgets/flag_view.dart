@@ -42,9 +42,10 @@ class FlagView extends StatelessWidget {
             filterQuality: FilterQuality.medium,
             errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
                 Center(
-              child: Text(
-                normalized.toUpperCase(),
-                style: Theme.of(context).textTheme.labelSmall,
+              child: Icon(
+                Icons.public_rounded,
+                size: width * 0.52,
+                color: colors.textSecondary,
               ),
             ),
           ),

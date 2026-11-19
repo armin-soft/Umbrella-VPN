@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:umbrella_vpn/core/app_config.dart';
+import 'package:umbrella_vpn/core/persian.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/services.dart';
@@ -712,6 +713,103 @@ void main() {
       expect(qrDialog.contains('رمز تنظیم نشده'), isTrue);
       expect(qrDialog.contains('گذاشتن رمز'), isTrue);
       expect(qrDialog.contains('کپی لینک'), isTrue);
+    });
+
+    test('تمامی متون برنامه فارسی، بدون نیم فاصله و با ارقام فارسی هستند', () {
+      // ۱. هیچ نویسه نیم فاصله (U+200C) در کل کد برنامه و پلاگین بومی وجود ندارد.
+      final List<FileSystemEntity> sourceFiles = <FileSystemEntity>[
+        ...Directory('lib').listSync(recursive: true),
+        ...Directory('packages/umbrella_native/windows')
+            .listSync(recursive: true),
+        ...Directory('windows/runner').listSync(recursive: true),
+      ];
+      for (final FileSystemEntity entity in sourceFiles) {
+        if (entity is! File) continue;
+        final String path = entity.path.replaceAll('\\', '/');
+        if (!path.endsWith('.dart') &&
+            !path.endsWith('.cpp') &&
+            !path.endsWith('.h')) {
+          continue;
+        }
+        final String text = entity.readAsStringSync();
+        expect(
+          text.contains('\u200C'),
+          isFalse,
+          reason: 'نیم فاصله در فایل $path یافت شد',
+        );
+      }
+
+      // ۲. Fa.num ارقام لاتین و عربی را به فارسی تبدیل و نیم فاصله را حذف می کند.
+      expect(Fa.num('1234567890'), '۱۲۳۴۵۶۷۸۹۰');
+      expect(Fa.num('٠١٢٣٤٥٦٧٨٩'), '۰۱۲۳۴۵۶۷۸۹');
+      expect(Fa.num('می\u200Cشود 2026'), 'می شود ۲۰۲۶');
+      expect(Fa.toEn('۱۲۳۳۸'), '12338');
+      expect(AppConfig.versionPhrase, isNot(contains(RegExp(r'[0-9]'))));
+      expect(AppConfig.versionPhrase, contains('۱٫۰٫۳۹'));
+
+      // ۳. تمام برچسب های نمایشی مدل ها فارسی خالص، بدون لاتین، بدون رقم لاتین و بدون نیم فاصله اند.
+      final RegExp forbidden = RegExp(r'[A-Za-z0-9\u200C]');
+      final List<String> allLabels = <String>[
+        for (final InboundServiceMode m in InboundServiceMode.values) ...<String>[
+          m.shortLabel,
+          m.fullLabel,
+          m.description,
+        ],
+        for (final DnsDomainStrategy s in DnsDomainStrategy.values) s.label,
+        for (final Ipv6RouteMode m in Ipv6RouteMode.values) m.label,
+        for (final RoutingRegion r in RoutingRegion.values) ...<String>[
+          r.label,
+          r.shortLabel,
+        ],
+        for (final ChainPosition p in ChainPosition.values) p.label,
+        for (final ChainTransport t in ChainTransport.values) ...<String>[
+          t.label,
+          t.tunnelLabel,
+          t.quickLabel,
+        ],
+        for (final WarpEndpoint e in WarpEndpoint.values) e.label,
+        for (final AppRouteAction a in AppRouteAction.values) a.label,
+        for (final TunStack s in TunStack.values) s.label,
+        for (final CorePreference c in CorePreference.values) ...<String>[
+          c.label,
+          c.hint,
+        ],
+        for (final SelectionMode m in SelectionMode.values) ...<String>[
+          m.label,
+          m.shortLabel,
+          m.hint,
+        ],
+        for (final ThemePreference t in ThemePreference.values) t.label,
+        ...NetworkDns.presets.values,
+        for (final String k in NetworkDns.presets.keys) NetworkDns.subtitleFa(k),
+        ...ChainSettings.regionLabels.values,
+        ...ChainSettings.noiseModes.values,
+      ];
+      for (final String label in allLabels) {
+        expect(
+          forbidden.hasMatch(label),
+          isFalse,
+          reason: 'برچسب غیرفارسی یا دارای رقم لاتین/نیم فاصله: "$label"',
+        );
+      }
+
+      // ۴. بازه های عددی با ارقام فارسی اعتبارسنجی می شوند و به هسته ASCII می دهند.
+      expect(TlsTricksSettings.isValidRange('۱۰-۱۰۰'), isTrue);
+      final Map<String, dynamic> tlsCore = const TlsTricksSettings(
+        enableFragment: true,
+        fragmentSize: '۲۰-۸۰',
+        fragmentSleep: '۳۰-۱۵۰',
+        enablePadding: true,
+        paddingSize: '۱۱۰۰-۱۴۰۰',
+      ).toCoreOptions();
+      expect(tlsCore['fragment-size'], '20-80');
+      expect(tlsCore['fragment-sleep'], '30-150');
+      expect(tlsCore['padding-size'], '1100-1400');
+
+      // ۵. رمز اشتراک LAN فقط از ارقام ساخته می شود تا نمایش فارسی و کپی ASCII داشته باشد.
+      final String generated = LanSharing.generateSecret();
+      expect(RegExp(r'^\d{4}-\d{4}$').hasMatch(generated), isTrue);
+      expect(RegExp(r'^[۰-۹]{4}-[۰-۹]{4}$').hasMatch(Fa.num(generated)), isTrue);
     });
   });
 }

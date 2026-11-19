@@ -151,7 +151,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 ),
               if (hasUpdate && available.sha256.isNotEmpty)
                 Pill(
-                  label: 'تایید SHA-256',
+                  label: 'تایید اصالت فایل',
                   color: colors.success,
                   icon: Icons.verified_user_rounded,
                   dense: true,

@@ -225,7 +225,7 @@ class AuthController extends ChangeNotifier {
     }
     final Uri? parsed = Uri.tryParse(cleaned);
     if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
-      _error = 'نشانی درگاه معتبر نیست؛ نمونه: https://example.com/index.php?AppApi=';
+      _error = 'نشانی درگاه معتبر نیست؛ نشانی کامل درگاه ربات را وارد کنید.';
       notifyListeners();
       return;
     }

@@ -153,7 +153,7 @@ void main() {
         child: Scaffold(body: ChainSettingsDialog(initial: ChainSettings(position: ChainPosition.unblocker))),
       )));
       await tester.pumpAndSettle();
-      expect(find.text('WARP و زنجیره اتصال'), findsOneWidget);
+      expect(find.text('وارپ و زنجیره اتصال'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(MaterialApp(theme: theme, home: const Directionality(
         textDirection: TextDirection.rtl, child: Scaffold(body: AppRouteDialog()),
@@ -162,7 +162,10 @@ void main() {
       await tester.enterText(find.byType(TextField), '*.exe');
       await tester.tap(find.text('ذخیره قانون'));
       await tester.pumpAndSettle();
-      expect(find.text('نام فایل exe یا مسیر کامل ویندوز را وارد کنید'), findsOneWidget);
+      expect(
+        find.text('نام فایل اجرایی برنامه یا مسیر کامل ویندوز را وارد کنید'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -576,10 +579,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('پشته کارت شبکه تونل'), findsOneWidget);
-    expect(find.text('اندازه بسته (MTU)'), findsOneWidget);
-    expect(find.text('دی‌ان‌اس ترافیک تونل'), findsOneWidget);
-    expect(find.text('WARP و اتصال زنجیره‌ای'), findsOneWidget);
-    expect(find.text('مسیریابی برنامه‌های ویندوز'), findsOneWidget);
+    expect(find.text('اندازه بسته تونل'), findsOneWidget);
+    expect(find.text('دی ان اس ترافیک تونل'), findsOneWidget);
+    expect(find.text('وارپ و اتصال زنجیره ای'), findsOneWidget);
+    expect(find.text('مسیریابی برنامه های ویندوز'), findsOneWidget);
   });
 
   test('AppLogger.redact strips server hosts, ports, protocols, IPs and subscription URLs', () {

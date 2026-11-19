@@ -1148,7 +1148,7 @@ class AppLogger extends ChangeNotifier {
     text = text.replaceAll(_webUriPattern, '[لینک محافظت شده]');
     text = text.replaceAll(_subPathPattern, '[اشتراک محافظت شده]');
     text = text.replaceAll(_uuidPattern, '[شناسه محافظت شده]');
-    text = text.replaceAll(_outboundTagPattern, 'outbound[محافظت شده]');
+    text = text.replaceAll(_outboundTagPattern, 'خروجی [محافظت شده]');
     text = text.replaceAll(_linkFilePattern, '[محافظت شده]');
     text = text.replaceAll(_hostPortPattern, '[سرور محافظت شده]');
     text = text.replaceAll(_domainPattern, '[سرور محافظت شده]');
@@ -1256,8 +1256,8 @@ class AppLogger extends ChangeNotifier {
       'سیستم: ${_systemLabel()}',
       'پیوند هسته های پردازنده: ${Fa.num(Platform.numberOfProcessors)}',
       'پوشه داده: $dataDir',
-      'پورت ثابت هسته (gRPC): ${Fa.num(AppConfig.coreGrpcPort)}',
-      'پورت ثابت هسته (Clash): ${Fa.num(AppConfig.coreClashPort)}',
+      'پورت کنترل هسته: ${Fa.num(AppConfig.coreGrpcPort)}',
+      'پورت رابط هسته: ${Fa.num(AppConfig.coreClashPort)}',
       'زمان گزارش: ${Fa.dateTime(DateTime.now())}',
     ].join('\n');
   }
@@ -1304,8 +1304,8 @@ class AppLogger extends ChangeNotifier {
         'برنامه: ${AppConfig.appName} ${Fa.num(AppConfig.version)}',
         'سیستم: ${_systemLabel()}',
         'پیوند هسته های پردازنده: ${Fa.num(Platform.numberOfProcessors)}',
-        'پورت ثابت هسته (gRPC): ${Fa.num(AppConfig.coreGrpcPort)}',
-        'پورت ثابت هسته (Clash): ${Fa.num(AppConfig.coreClashPort)}',
+        'پورت کنترل هسته: ${Fa.num(AppConfig.coreGrpcPort)}',
+        'پورت رابط هسته: ${Fa.num(AppConfig.coreClashPort)}',
         'زمان گزارش: ${Fa.dateTime(DateTime.now())}',
       ].join('\n');
 
@@ -1313,7 +1313,7 @@ class AppLogger extends ChangeNotifier {
   String exportText() {
     final StringBuffer buffer = StringBuffer();
     buffer.writeln(
-      '${AppConfig.appName} ${AppConfig.version} | ${Fa.dateTime(DateTime.now())}',
+      '${AppConfig.appName} ${Fa.num(AppConfig.version)} | ${Fa.dateTime(DateTime.now())}',
     );
     buffer.writeln(environmentTextSync());
     buffer.writeln('──────────────────────────────');

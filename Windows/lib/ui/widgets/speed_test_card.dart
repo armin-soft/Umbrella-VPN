@@ -20,35 +20,35 @@ class SpeedTestCard extends StatelessWidget {
       children: <Widget>[
         Text('سنجش مسیر اتصال', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: AppMetrics.space3),
-        const Text('آزمون سرعت به Cloudflare: حدود ۴ مگابایت دانلود و ۲ مگابایت آپلود آزمایشی، به‌علاوه سربار شبکه. حجم از اشتراک کم می‌شود؛ فایل شخصی ارسال نمی‌شود. نتیجه نمونه‌برداری مسیر فعلی است، نه تضمین ظرفیت اینترنت.'),
+        const Text('آزمون سرعت به کلادفلر: حدود ۴ مگابایت دریافت و ۲ مگابایت ارسال آزمایشی، به علاوه سربار شبکه. حجم از اشتراک کم می شود؛ فایل شخصی ارسال نمی شود. نتیجه نمونه برداری مسیر فعلی است، نه تضمین ظرفیت اینترنت.'),
         const SizedBox(height: AppMetrics.space3),
         if (vpn.speedTesting) ...<Widget>[
           const LinearProgressIndicator(),
           const SizedBox(height: AppMetrics.space2),
-          Text(vpn.speedPhase == 'upload' ? 'اندازه‌گیری آپلود…' : 'اندازه‌گیری دانلود…'),
+          Text(vpn.speedPhase == 'upload' ? 'اندازه گیری ارسال...' : 'اندازه گیری دریافت...'),
         ],
         if (result != null) ...<Widget>[
-          InfoRow(icon: Icons.download_rounded, label: 'دانلود', value: '${Fa.num(result.download.megabitsPerSecond.toStringAsFixed(2))} Mbps'),
-          InfoRow(icon: Icons.upload_rounded, label: 'آپلود', value: '${Fa.num(result.upload.megabitsPerSecond.toStringAsFixed(2))} Mbps'),
-          Text('زمان سنجش: ${Fa.num(result.measuredAt.toLocal().toString().split('.').first)}'),
+          InfoRow(icon: Icons.download_rounded, label: 'دریافت', value: '${Fa.decimal(result.download.megabitsPerSecond, fraction: 2)} مگابیت بر ثانیه'),
+          InfoRow(icon: Icons.upload_rounded, label: 'ارسال', value: '${Fa.decimal(result.upload.megabitsPerSecond, fraction: 2)} مگابیت بر ثانیه'),
+          Text('زمان سنجش: ${Fa.dateTime(result.measuredAt.toLocal())}'),
         ],
-        if (vpn.speedError.isNotEmpty) Text(vpn.speedError, style: TextStyle(color: context.colors.warning)),
+        if (vpn.speedError.isNotEmpty) Text(Fa.num(vpn.speedError), style: TextStyle(color: context.colors.warning)),
         const SizedBox(height: AppMetrics.space3),
         Wrap(spacing: AppMetrics.space3, runSpacing: AppMetrics.space2, children: <Widget>[
-          FilledButton.icon(icon: const Icon(Icons.speed_rounded), label: const Text('شروع تست با مصرف حدود ۶ MB'),
+          FilledButton.icon(icon: const Icon(Icons.speed_rounded), label: const Text('شروع آزمایش با مصرف حدود ۶ مگابایت'),
             onPressed: connected && !vpn.speedTesting ? vpn.measureSpeed : null),
-          if (vpn.speedTesting) OutlinedButton(onPressed: vpn.cancelSpeedTest, child: const Text('لغو تست')),
+          if (vpn.speedTesting) OutlinedButton(onPressed: vpn.cancelSpeedTest, child: const Text('لغو آزمایش')),
         ]),
         const Divider(height: AppMetrics.space6),
-        const Text('نشت DNS: نتیجه‌ای ثبت نشده است. تأیید HTTPS و تست سرعت، نبود نشت DNS یا پوشش همه برنامه‌ها را ثابت نمی‌کنند. آزمایش مرورگر را در حالت تونل انجام دهید؛ مرورگر نباید قانون «مستقیم» داشته باشد. حالت پروکسی سیستمی همه DNS ویندوز را پوشش نمی‌دهد.'),
+        const Text('نشت دی ان اس: نتیجه ای ثبت نشده است. تایید اتصال امن و آزمایش سرعت، نبود نشت دی ان اس یا پوشش همه برنامه ها را ثابت نمی کنند. آزمایش مرورگر را در حالت تونل انجام دهید؛ مرورگر نباید قانون «مستقیم» داشته باشد. حالت پروکسی سیستمی همه دی ان اس ویندوز را پوشش نمی دهد.'),
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton.icon(
-          icon: const Icon(Icons.open_in_new_rounded), label: const Text('آزمون مستقل DNS در مرورگر'),
+          icon: const Icon(Icons.open_in_new_rounded), label: const Text('آزمون مستقل دی ان اس در مرورگر'),
           onPressed: !connected ? null : () async {
             final bool opened = await launchUrl(Uri.parse('https://www.dnsleaktest.com/'), mode: LaunchMode.externalApplication);
-            if (!opened && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مرورگر باز نشد؛ dnsleaktest.com را دستی باز کنید.')));
+            if (!opened && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مرورگر باز نشد؛ صفحه آزمون نشت دی ان اس را دستی باز کنید.')));
           },
         )),
-        const Text('این دکمه سرویس بیرونی را باز می‌کند و IP/DNS اتصال شما در اختیار آن سرویس قرار می‌گیرد. آمبرلا نتیجه آن صفحه را خودکار تأیید نمی‌کند.'),
+        const Text('این دکمه سرویس بیرونی را باز می کند و نشانی آی پی و دی ان اس اتصال شما در اختیار آن سرویس قرار می گیرد. آمبرلا نتیجه آن صفحه را خودکار تایید نمی کند.'),
       ],
     ));
   }

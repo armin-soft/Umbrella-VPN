@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/app_config.dart';
+import 'core/persian.dart';
 import 'core/storage.dart';
 import 'models/models.dart';
 import 'platform/native.dart';
@@ -55,8 +56,7 @@ Future<void> main(List<String> arguments) async {
   // از همان ابتدا درست نمایش داده شود.
   await provisioner.init();
   AppLogger.instance.add(
-    '${AppConfig.appName} ${AppConfig.version} راه اندازی شد | '
-    'پوشه نصب: ${provisioner.appDir}',
+    '${AppConfig.appName} ${Fa.num(AppConfig.version)} راه اندازی شد',
   );
   if (!native.available) {
     AppLogger.instance.add(

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import 'advanced_network_settings.dart';
@@ -44,7 +46,7 @@ class NetworkSettings extends StatelessWidget {
         );
 
         final Widget remoteDnsField = _dnsField(
-          label: 'دی‌ان‌اس ترافیک تونل',
+          label: 'دی ان اس ترافیک تونل',
           id: 'remote',
           value: current.remoteDns,
           defaultValue: NetworkDns.defaultRemote,
@@ -53,7 +55,7 @@ class NetworkSettings extends StatelessWidget {
         );
 
         final Widget directDnsField = _dnsField(
-          label: 'دی‌ان‌اس اتصال اولیه و مستقیم',
+          label: 'دی ان اس اتصال اولیه و مستقیم',
           id: 'direct',
           value: current.directDns,
           defaultValue: NetworkDns.defaultDirect,
@@ -73,7 +75,7 @@ class NetworkSettings extends StatelessWidget {
           ),
           child: ToggleRow(
             icon: Icons.route_outlined,
-            title: 'مسیریابی سخت‌گیرانه تونل',
+            title: 'مسیریابی سخت گیرانه تونل',
             subtitle: 'جلوگیری از نشت بسته ها بیرون از مسیر امن تونل',
             value: current.strictRoute,
             onChanged: controller.setStrictRoute,
@@ -92,8 +94,8 @@ class NetworkSettings extends StatelessWidget {
           ),
           child: ToggleRow(
             icon: Icons.language_rounded,
-            title: 'حالت فقط IPv4',
-            subtitle: 'غیرفعال کردن IPv6 برای پایداری و سرعت بالاتر اتصال',
+            title: 'حالت فقط آی پی نسخه ۴',
+            subtitle: 'غیرفعال کردن آی پی نسخه ۶ برای پایداری و سرعت بالاتر اتصال',
             value: current.blockIpv6,
             onChanged: controller.setBlockIpv6,
           ),
@@ -124,7 +126,7 @@ class NetworkSettings extends StatelessWidget {
             const SizedBox(height: AppMetrics.space5),
             const _GroupCaption(
               icon: Icons.dns_rounded,
-              title: 'سرورهای دی‌ان‌اس',
+              title: 'سرورهای دی ان اس',
             ),
             const SizedBox(height: AppMetrics.space3),
             if (twoCols)
@@ -164,7 +166,7 @@ class NetworkSettings extends StatelessWidget {
             const SizedBox(height: AppMetrics.space5),
             const _GroupCaption(
               icon: Icons.hub_rounded,
-              title: 'اتصال زنجیره‌ای و تفکیک برنامه‌ها',
+              title: 'اتصال زنجیره ای و تفکیک برنامه ها',
             ),
             const SizedBox(height: AppMetrics.space3),
             const AdvancedNetworkSettings(),
@@ -189,7 +191,7 @@ class NetworkSettings extends StatelessWidget {
                   const SizedBox(width: AppMetrics.space2),
                   Expanded(
                     child: Text(
-                      'تغییرات شبکه، دی‌ان‌اس و مسیریابی در اتصال بعدی اعمال می‌شوند.',
+                      'تغییرات شبکه، دی ان اس و مسیریابی در اتصال بعدی اعمال می شوند.',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: colors.textSecondary,
                             height: 1.55,
@@ -224,6 +226,7 @@ class NetworkSettings extends StatelessWidget {
           SelectOption<String>(
             value: entry.key,
             label: entry.value,
+            subtitle: NetworkDns.subtitleFa(entry.key),
             icon: icon,
           ),
       ],
@@ -249,7 +252,7 @@ class _MtuField extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Text(
-          'اندازه بسته (MTU)',
+            'اندازه بسته تونل',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -260,12 +263,15 @@ class _MtuField extends StatelessWidget {
         const SizedBox(height: AppMetrics.space2),
         TextFormField(
           key: ValueKey<String>('mtu-$mtu'),
-          initialValue: '$mtu',
+          initialValue: Fa.num('$mtu'),
           keyboardType: TextInputType.number,
           textDirection: TextDirection.ltr,
+          inputFormatters: const <TextInputFormatter>[
+            PersianDigitsFormatter(),
+          ],
           decoration: InputDecoration(
             isDense: true,
-            helperText: Fa.num('بین ۱۲۸۰ تا ۹۰۰۰ (برای ذخیره Enter بزنید)'),
+            helperText: Fa.num('بین ۱۲۸۰ تا ۹۰۰۰'),
             helperMaxLines: 2,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: AppMetrics.space4,
@@ -279,13 +285,13 @@ class _MtuField extends StatelessWidget {
           ),
           autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: (String? value) {
-            final int? parsed = int.tryParse(value ?? '');
+            final int? parsed = int.tryParse(Fa.toEn(value ?? ''));
             return parsed == null || parsed < 1280 || parsed > 9000
                 ? 'عددی بین ۱۲۸۰ و ۹۰۰۰ وارد کنید'
                 : null;
           },
           onFieldSubmitted: (String value) {
-            final int? parsed = int.tryParse(value);
+            final int? parsed = int.tryParse(Fa.toEn(value));
             if (parsed != null && parsed >= 1280 && parsed <= 9000) {
               onSubmitted(parsed);
             }

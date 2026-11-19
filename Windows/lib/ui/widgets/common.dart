@@ -400,7 +400,7 @@ class PageBanner extends StatelessWidget {
           final bool compact =
               constraints.maxWidth < AppMetrics.breakpointCompact;
           final Widget subtitleWidget = Text(
-            subtitleLtr ? subtitle : Fa.num(subtitle),
+            Fa.num(subtitle),
             textDirection: subtitleLtr ? TextDirection.ltr : null,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -586,7 +586,7 @@ class StatTile extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
             child: Text(
-              ltr ? value : Fa.num(value),
+              Fa.num(value),
               textDirection: ltr ? TextDirection.ltr : null,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: colors.textPrimary,
@@ -668,7 +668,7 @@ class InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final String display = ltr ? value : Fa.num(value);
+    final String display = Fa.num(value);
     Widget valueText = Text(
       display,
       textDirection: ltr ? TextDirection.ltr : null,

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
+import '../core/persian.dart';
+
 /// حالت سرویس ورودی هسته؛ هم راستا با سه حالت سریع صفحه اتصال و بخش ورودی.
 enum InboundServiceMode { proxy, systemProxy, vpn }
 
@@ -8,20 +10,20 @@ extension InboundServiceModeX on InboundServiceMode {
   String get shortLabel => switch (this) {
         InboundServiceMode.proxy => 'پروکسی',
         InboundServiceMode.systemProxy => 'پروکسی سیستم',
-        InboundServiceMode.vpn => 'VPN',
+        InboundServiceMode.vpn => 'تونل کامل',
       };
 
   String get fullLabel => switch (this) {
         InboundServiceMode.proxy => 'فقط سرویس پروکسی',
         InboundServiceMode.systemProxy => 'تنظیم پروکسی سیستم',
-        InboundServiceMode.vpn => 'VPN',
+        InboundServiceMode.vpn => 'تونل کامل',
       };
 
   String get description => switch (this) {
         InboundServiceMode.proxy =>
-          'فقط پورت SOCKS5/HTTP محلی باز می شود و تنظیمات سیستم تغییر نمی کند',
+          'فقط پورت محلی ساکس ۵ و وب باز می شود و تنظیمات ویندوز تغییر نمی کند',
         InboundServiceMode.systemProxy =>
-          'پروکسی ویندوز روی پورت محلی تنظیم می شود (بدون نیاز به کارت تونل)',
+          'پروکسی ویندوز روی پورت محلی تنظیم می شود (بدون نیاز به کارت شبکه تونل)',
         InboundServiceMode.vpn =>
           'عبور تمام برنامه ها و بازی ها از کارت شبکه امن مجازی',
       };
@@ -30,7 +32,7 @@ extension InboundServiceModeX on InboundServiceMode {
   bool get enablesSystemProxy => this == InboundServiceMode.systemProxy;
 }
 
-/// استراتژی حل دامنه در DNS اصلی و مستقیم هسته.
+/// استراتژی حل دامنه در دی ان اس اصلی و مستقیم هسته.
 enum DnsDomainStrategy { asIs, preferIpv6, preferIpv4, ipv4Only, ipv6Only }
 
 extension DnsDomainStrategyX on DnsDomainStrategy {
@@ -44,14 +46,14 @@ extension DnsDomainStrategyX on DnsDomainStrategy {
 
   String get label => switch (this) {
         DnsDomainStrategy.asIs => 'خودکار',
-        DnsDomainStrategy.preferIpv6 => 'ترجیح IPv6',
-        DnsDomainStrategy.preferIpv4 => 'ترجیح IPv4',
-        DnsDomainStrategy.ipv4Only => 'فقط IPv4',
-        DnsDomainStrategy.ipv6Only => 'فقط IPv6',
+        DnsDomainStrategy.preferIpv6 => 'ترجیح آی پی نسخه ۶',
+        DnsDomainStrategy.preferIpv4 => 'ترجیح آی پی نسخه ۴',
+        DnsDomainStrategy.ipv4Only => 'فقط آی پی نسخه ۴',
+        DnsDomainStrategy.ipv6Only => 'فقط آی پی نسخه ۶',
       };
 }
 
-/// حالت مسیریابی IPv6 در هسته.
+/// حالت مسیریابی آی پی نسخه ۶ در هسته.
 enum Ipv6RouteMode { ipv4Only, preferIpv4, preferIpv6 }
 
 extension Ipv6RouteModeX on Ipv6RouteMode {
@@ -62,18 +64,18 @@ extension Ipv6RouteModeX on Ipv6RouteMode {
       };
 
   String get label => switch (this) {
-        Ipv6RouteMode.ipv4Only => 'خاموش (فقط IPv4)',
-        Ipv6RouteMode.preferIpv4 => 'روشن، اول IPv4',
-        Ipv6RouteMode.preferIpv6 => 'روشن، اول IPv6',
+        Ipv6RouteMode.ipv4Only => 'خاموش (فقط نسخه ۴)',
+        Ipv6RouteMode.preferIpv4 => 'روشن، اول نسخه ۴',
+        Ipv6RouteMode.preferIpv6 => 'روشن، اول نسخه ۶',
       };
 
   String get description => switch (this) {
         Ipv6RouteMode.ipv4Only =>
-          'برنامه ها فقط IPv4 به کار می برند و از نشت یا مکث IPv6 جلوگیری می شود',
+          'برنامه ها فقط آی پی نسخه ۴ به کار می برند و از نشت یا مکث نسخه ۶ جلوگیری می شود',
         Ipv6RouteMode.preferIpv4 =>
-          'اول IPv4 و در صورت پشتیبانی سرور فعال، IPv6 نیز عبور داده می شود',
+          'اول آی پی نسخه ۴ و در صورت پشتیبانی سرور فعال، نسخه ۶ نیز عبور داده می شود',
         Ipv6RouteMode.preferIpv6 =>
-          'اولویت با IPv6 روی سرورهایی که پشتیبانی از آن تایید شده است',
+          'اولویت با آی پی نسخه ۶ روی سرورهایی که پشتیبانی از آن تایید شده است',
       };
 }
 
@@ -86,12 +88,12 @@ extension RoutingRegionX on RoutingRegion {
   String get label => switch (this) {
         RoutingRegion.other => 'سایر (همه از تونل)',
         RoutingRegion.ir => 'ایران (سایت های داخلی مستقیم)',
-        RoutingRegion.tr => 'ترکیه (tr)',
-        RoutingRegion.ru => 'روسیه (ru)',
-        RoutingRegion.cn => 'چین (cn)',
-        RoutingRegion.af => 'افغانستان (af)',
-        RoutingRegion.id => 'اندونزی (id)',
-        RoutingRegion.br => 'برزیل (br)',
+        RoutingRegion.tr => 'ترکیه',
+        RoutingRegion.ru => 'روسیه',
+        RoutingRegion.cn => 'چین',
+        RoutingRegion.af => 'افغانستان',
+        RoutingRegion.id => 'اندونزی',
+        RoutingRegion.br => 'برزیل',
       };
 
   String get shortLabel => switch (this) {
@@ -138,23 +140,23 @@ extension ChainTransportX on ChainTransport {
       };
 
   String get label => switch (this) {
-        ChainTransport.automatic => 'WARP (خودکار)',
-        ChainTransport.wireguard => 'WARP — WireGuard',
-        ChainTransport.awg => 'WARP — AmneziaWG',
-        ChainTransport.masque => 'WARP — MASQUE',
-        ChainTransport.psiphon => 'Psiphon',
+        ChainTransport.automatic => 'وارپ (خودکار)',
+        ChainTransport.wireguard => 'وارپ — وایرگارد',
+        ChainTransport.awg => 'وارپ — آمنزیا',
+        ChainTransport.masque => 'وارپ — ماسک',
+        ChainTransport.psiphon => 'سایفون',
       };
 
   String get tunnelLabel => switch (this) {
         ChainTransport.automatic => 'خودکار',
-        ChainTransport.wireguard => 'WireGuard',
-        ChainTransport.awg => 'AmneziaWG',
-        ChainTransport.masque => 'MASQUE',
-        ChainTransport.psiphon => 'Psiphon',
+        ChainTransport.wireguard => 'وایرگارد',
+        ChainTransport.awg => 'آمنزیا',
+        ChainTransport.masque => 'ماسک',
+        ChainTransport.psiphon => 'سایفون',
       };
 
   String get quickLabel =>
-      this == ChainTransport.psiphon ? 'Psiphon' : 'WARP';
+      this == ChainTransport.psiphon ? 'سایفون' : 'وارپ';
 
   bool get isWarp => this != ChainTransport.psiphon;
 }
@@ -179,7 +181,7 @@ T _pick<T extends Enum>(List<T> values, dynamic value, T fallback) =>
 int _number(dynamic value, int fallback) => value is int ? value : fallback;
 
 bool _validOptionalRange(String raw, {int min = 0, int max = 65535}) {
-  final String text = raw.trim();
+  final String text = Fa.toEn(raw.trim());
   if (text.isEmpty) {
     return true;
   }
@@ -240,37 +242,37 @@ class ChainSettings {
 
   static const Map<String, String> regionLabels = <String, String>{
     'AUTO': 'خودکار',
-    'AT': 'اتریش (AT)',
-    'AU': 'استرالیا (AU)',
-    'BE': 'بلژیک (BE)',
-    'BG': 'بلغارستان (BG)',
-    'CA': 'کانادا (CA)',
-    'CH': 'سوئیس (CH)',
-    'CZ': 'جمهوری چک (CZ)',
-    'DE': 'آلمان (DE)',
-    'DK': 'دانمارک (DK)',
-    'EE': 'استونی (EE)',
-    'ES': 'اسپانیا (ES)',
-    'FI': 'فنلاند (FI)',
-    'FR': 'فرانسه (FR)',
-    'GB': 'بریتانیا (GB)',
-    'HR': 'کرواسی (HR)',
-    'HU': 'مجارستان (HU)',
-    'IE': 'ایرلند (IE)',
-    'IN': 'هند (IN)',
-    'IT': 'ایتالیا (IT)',
-    'JP': 'ژاپن (JP)',
-    'LV': 'لتونی (LV)',
-    'NL': 'هلند (NL)',
-    'NO': 'نروژ (NO)',
-    'PL': 'لهستان (PL)',
-    'PT': 'پرتغال (PT)',
-    'RO': 'رومانی (RO)',
-    'RS': 'صربستان (RS)',
-    'SE': 'سوئد (SE)',
-    'SG': 'سنگاپور (SG)',
-    'SK': 'اسلواکی (SK)',
-    'US': 'ایالات متحده (US)',
+    'AT': 'اتریش',
+    'AU': 'استرالیا',
+    'BE': 'بلژیک',
+    'BG': 'بلغارستان',
+    'CA': 'کانادا',
+    'CH': 'سوئیس',
+    'CZ': 'جمهوری چک',
+    'DE': 'آلمان',
+    'DK': 'دانمارک',
+    'EE': 'استونی',
+    'ES': 'اسپانیا',
+    'FI': 'فنلاند',
+    'FR': 'فرانسه',
+    'GB': 'بریتانیا',
+    'HR': 'کرواسی',
+    'HU': 'مجارستان',
+    'IE': 'ایرلند',
+    'IN': 'هند',
+    'IT': 'ایتالیا',
+    'JP': 'ژاپن',
+    'LV': 'لتونی',
+    'NL': 'هلند',
+    'NO': 'نروژ',
+    'PL': 'لهستان',
+    'PT': 'پرتغال',
+    'RO': 'رومانی',
+    'RS': 'صربستان',
+    'SE': 'سوئد',
+    'SG': 'سنگاپور',
+    'SK': 'اسلواکی',
+    'US': 'ایالات متحده',
   };
 
   static const List<String> regions = <String>[
@@ -310,12 +312,12 @@ class ChainSettings {
 
   static const Map<String, String> noiseModes = <String, String>{
     '': 'خودکار',
-    'quic': 'QUIC (HTTPS)',
-    'dns': 'DNS (google.com)',
-    'stun': 'STUN (تماس تصویری)',
-    'sip': 'SIP (تماس اینترنتی)',
-    'm4': 'استاندارد (m4)',
-    'm6': 'تصادفی (m6)',
+    'quic': 'کوئیک (وب امن)',
+    'dns': 'دی ان اس',
+    'stun': 'تماس تصویری',
+    'sip': 'تماس اینترنتی',
+    'm4': 'استاندارد چهارم',
+    'm6': 'تصادفی ششم',
   };
 
   static String regionLabel(String code) =>
@@ -427,29 +429,29 @@ class ChainSettings {
       return 'پورت باید بین ۱ و ۶۵۵۳۵ باشد';
     }
     if (mtu != 0 && (mtu < 1280 || mtu > 1500)) {
-      return 'MTU زنجیره: صفر (خودکار) یا ۱۲۸۰ تا ۱۵۰۰';
+      return 'اندازه بسته زنجیره باید صفر (خودکار) یا بین ۱۲۸۰ تا ۱۵۰۰ باشد';
     }
     if (scanCount < 1 ||
         scanCount > 256 ||
         scanConcurrency < 1 ||
         scanConcurrency > 32 ||
         scanConcurrency > scanCount) {
-      return 'تعداد اسکن ۱..۲۵۶ و همزمانی ۱..۳۲ و حداکثر برابر تعداد';
+      return 'تعداد اسکن بین ۱ تا ۲۵۶ و هم زمانی بین ۱ تا ۳۲ و حداکثر برابر تعداد است';
     }
     if (scanTimeout < 250 ||
         scanTimeout > 10000 ||
         scanMaxRtt < 100 ||
         scanMaxRtt > scanTimeout) {
-      return 'مهلت اسکن ۲۵۰..۱۰۰۰۰ و RTT بین ۱۰۰ و مهلت';
+      return 'مهلت اسکن بین ۲۵۰ تا ۱۰۰۰۰ و تاخیر مجاز بین ۱۰۰ تا مهلت است';
     }
     if (!<String>['auto', 'h2', 'h3'].contains(masqueProtocol)) {
-      return 'نسخه MASQUE نامعتبر است';
+      return 'نسخه انتقال ماسک نامعتبر است';
     }
     if (!regions.contains(psiphonRegion)) {
-      return 'منطقه Psiphon نامعتبر است';
+      return 'منطقه سایفون نامعتبر است';
     }
     if (licenseKey.length > 128 || licenseKey.contains(RegExp(r'\s'))) {
-      return 'کلید WARP نامعتبر است';
+      return 'کلید اشتراک وارپ نامعتبر است';
     }
     if (!noiseModes.containsKey(noiseMode)) {
       return 'حالت نویز نامعتبر است';
@@ -457,7 +459,7 @@ class ChainSettings {
     if (!_validOptionalRange(noiseCount, min: 1, max: 200) ||
         !_validOptionalRange(noiseSize, min: 1, max: 1500) ||
         !_validOptionalRange(noiseDelay, min: 1, max: 10000)) {
-      return 'بازه نویز نامعتبر است (مانند 5-10)';
+      return 'بازه نویز نامعتبر است (مانند ۵ تا ۱۰)';
     }
     if (transport != ChainTransport.psiphon &&
         endpoint == WarpEndpoint.custom) {
@@ -468,10 +470,10 @@ class ChainSettings {
           ip.isMulticast ||
           ip.address == '0.0.0.0' ||
           ip.address == '::') {
-        return 'آدرس IP معتبر نقطه اتصال را وارد کنید';
+        return 'نشانی آی پی معتبر نقطه اتصال را وارد کنید';
       }
       if (transport == ChainTransport.masque) {
-        return 'هسته برای MASQUE از نقطه اتصال اختصاص یافته استفاده می کند';
+        return 'در حالت ماسک فقط نقطه اتصال اختصاص یافته کلادفلر پشتیبانی می شود';
       }
     }
     if (enabled &&
@@ -579,9 +581,12 @@ class ChainSettings {
             if (mtu != 0) 'mtu': mtu,
             if (licenseKey.isNotEmpty) 'license-key': licenseKey,
             if (noiseMode.isNotEmpty) 'noise-mode': noiseMode,
-            if (noiseCount.trim().isNotEmpty) 'noise': noiseCount.trim(),
-            if (noiseSize.trim().isNotEmpty) 'noise-size': noiseSize.trim(),
-            if (noiseDelay.trim().isNotEmpty) 'noise-delay': noiseDelay.trim(),
+            if (noiseCount.trim().isNotEmpty)
+              'noise': Fa.toEn(noiseCount.trim()),
+            if (noiseSize.trim().isNotEmpty)
+              'noise-size': Fa.toEn(noiseSize.trim()),
+            if (noiseDelay.trim().isNotEmpty)
+              'noise-delay': Fa.toEn(noiseDelay.trim()),
             if (endpoint == WarpEndpoint.scan)
               'scanner': <String, dynamic>{
                 'count': scanCount,
@@ -632,7 +637,7 @@ class TlsTricksSettings {
   }
 
   static String _sanitizeRange(String raw, String fallback, {int min = 1}) {
-    final String clean = raw.trim();
+    final String clean = Fa.toEn(raw.trim());
     return isValidRange(clean, min: min) ? clean : fallback;
   }
 
@@ -728,9 +733,9 @@ class LanSharing {
   static const String lanProfileName = 'Umbrella LAN';
   static const String localProfileName = 'Umbrella Local';
 
-  // کاراکترهای خوانا بدون 0/O و 1/l/I تا تایپ دستی از روی کد هم بدون خطا باشد.
-  static const String _secretAlphabet =
-      'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  // ارقام تصادفی امن تا هم در نمایش به ارقام فارسی خوانا باشد و هم هنگام
+  // وارد کردن دستی روی گوشی یا دستگاه دیگر خطای حروف کوچک و بزرگ رخ ندهد.
+  static const String _secretAlphabet = '0123456789';
 
   // نام کاربری داخلی ثابت پورت اشتراک گذاری در موتور هسته (v2/config/inbound_ports.go).
   static final String coreAuthUser = String.fromCharCodes(
@@ -951,10 +956,10 @@ class AppRouteRule {
         value.length > 260 ||
         !value.toLowerCase().endsWith('.exe') ||
         value.contains(RegExp(r'[\r\n\x00*?"<>|]'))) {
-      return 'نام فایل exe یا مسیر کامل ویندوز را وارد کنید';
+      return 'نام فایل اجرایی برنامه یا مسیر کامل ویندوز را وارد کنید';
     }
     if (isPath && !RegExp(r'^[a-zA-Z]:\\').hasMatch(value)) {
-      return 'مسیر باید کامل باشد، مانند C:\\Apps\\app.exe';
+      return 'مسیر فایل برنامه در ویندوز باید از ریشه درایو و کامل باشد';
     }
     if (!isPath && value.contains(':')) {
       return 'نام برنامه نامعتبر است';

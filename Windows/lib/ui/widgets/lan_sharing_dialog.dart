@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
@@ -193,7 +194,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
-              Fa.num('SOCKS5 · فقط همان شبکه'),
+              Fa.num('پروکسی ساکس ۵ · فقط همان شبکه'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.textSecondary,
                     fontWeight: FontWeight.w600,
@@ -229,7 +230,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
         _buildAddressAndPortRow(
           context: context,
           colors: colors,
-          hostLabel: 'IP',
+          hostLabel: 'نشانی آی پی',
           hostValue: _loadingIp ? '...' : activeHost,
           canCopyHost: !_loadingIp && lanHost != null,
           portValue: activePort,
@@ -271,7 +272,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
             children: <Widget>[
               for (final String step in const <String>[
                 '۱. تنظیمات پروکسی برنامه مورد نظر را باز کنید',
-                '۲. نوع پروکسی را روی SOCKS5 یا HTTP بگذارید',
+                '۲. نوع پروکسی را روی ساکس ۵ یا وب بگذارید',
                 '۳. نشانی و پورت زیر را وارد کنید (با کلیک کپی می شود)',
                 '۴. اتصال آمبرلا را روشن نگه دارید',
               ])
@@ -689,14 +690,13 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     ),
                     const SizedBox(height: AppMetrics.space1),
                     Text(
-                      _showPassword ? secret : masked,
+                      _showPassword ? Fa.num(secret) : masked,
                       textDirection: TextDirection.ltr,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
-                            fontFamily: _showPassword ? 'monospace' : null,
                           ),
                     ),
                   ],
@@ -916,7 +916,7 @@ class _PortEditorDialog extends StatefulWidget {
 
 class _PortEditorDialogState extends State<_PortEditorDialog> {
   late final TextEditingController _ctrl =
-      TextEditingController(text: '${widget.initialPort}');
+      TextEditingController(text: Fa.num('${widget.initialPort}'));
   String? _error;
 
   @override
@@ -926,13 +926,13 @@ class _PortEditorDialogState extends State<_PortEditorDialog> {
   }
 
   void _submit() {
-    final int? parsed = int.tryParse(_ctrl.text.trim());
+    final int? parsed = int.tryParse(Fa.toEn(_ctrl.text.trim()));
     if (parsed == null ||
         !LanSharing.isValidPort(parsed, forbiddenPort: widget.forbiddenPort)) {
       setState(() {
         _error = parsed == widget.forbiddenPort
-            ? Fa.num('این پورت در حال استفاده است؛ عدد دیگری وارد کنید')
-            : Fa.num('پورتی بین 1024 تا 65535 وارد کنید');
+            ? 'این پورت در حال استفاده است؛ عدد دیگری وارد کنید'
+            : 'پورتی بین ۱۰۲۴ تا ۶۵۵۳۵ وارد کنید';
       });
       return;
     }
@@ -955,12 +955,14 @@ class _PortEditorDialogState extends State<_PortEditorDialog> {
         keyboardType: TextInputType.number,
         textDirection: TextDirection.ltr,
         inputFormatters: <TextInputFormatter>[
-          FilteringTextInputFormatter.digitsOnly,
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹]')),
+          const PersianDigitsFormatter(),
+          LengthLimitingTextInputFormatter(5),
         ],
         onSubmitted: (_) => _submit(),
         decoration: InputDecoration(
           labelText: 'پورت',
-          hintText: '12338',
+          hintText: '۱۲۳۳۸',
           errorText: _error,
         ),
       ),
@@ -989,7 +991,7 @@ class _PasswordEditorDialog extends StatefulWidget {
 
 class _PasswordEditorDialogState extends State<_PasswordEditorDialog> {
   late final TextEditingController _ctrl =
-      TextEditingController(text: widget.initialSecret);
+      TextEditingController(text: Fa.num(widget.initialSecret));
   String? _error;
 
   @override
@@ -999,9 +1001,9 @@ class _PasswordEditorDialogState extends State<_PasswordEditorDialog> {
   }
 
   void _submit() {
-    final String value = _ctrl.text.trim();
+    final String value = Fa.toEn(_ctrl.text.trim());
     if (!LanSharing.isValidPassword(value)) {
-      setState(() => _error = Fa.num('حداقل 4 کاراکتر وارد کنید'));
+      setState(() => _error = 'حداقل ۴ نویسه وارد کنید');
       return;
     }
     Navigator.of(context).pop(value);
@@ -1025,10 +1027,13 @@ class _PasswordEditorDialogState extends State<_PasswordEditorDialog> {
             controller: _ctrl,
             autofocus: true,
             textDirection: TextDirection.ltr,
+            inputFormatters: const <TextInputFormatter>[
+              PersianDigitsFormatter(),
+            ],
             onSubmitted: (_) => _submit(),
             decoration: InputDecoration(
               labelText: 'رمز عبور',
-              hintText: 'خالی گذاشتن = بدون رمز',
+              hintText: 'خالی گذاشتن برابر با بدون رمز',
               errorText: _error,
             ),
           ),
@@ -1039,7 +1044,7 @@ class _PasswordEditorDialogState extends State<_PasswordEditorDialog> {
               TextButton.icon(
                 onPressed: () {
                   setState(() {
-                    _ctrl.text = LanSharing.generateSecret();
+                    _ctrl.text = Fa.num(LanSharing.generateSecret());
                     _error = null;
                   });
                 },

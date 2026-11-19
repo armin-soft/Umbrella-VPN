@@ -196,7 +196,7 @@ class UpdateController extends ChangeNotifier {
             sampleMs = nowMs;
           }
           _phase = progress >= 1.0 && info.sha256.isNotEmpty
-              ? 'بررسی سلامت فایل (SHA-256)...'
+              ? 'بررسی سلامت و اصالت فایل...'
               : 'در حال دانلود بسته نصب در برنامه...';
           if (nowMs - lastNotifyMs >= 100 || progress >= 1.0) {
             lastNotifyMs = nowMs;
@@ -216,7 +216,7 @@ class UpdateController extends ChangeNotifier {
       }
       if (file == null) {
         _error = info.sha256.isNotEmpty
-            ? 'دانلود کامل نشد یا اعتبارسنجی SHA-256 فایل رد شد. دوباره تلاش کنید.'
+            ? 'دانلود کامل نشد یا اصالت فایل تایید نشد. دوباره تلاش کنید.'
             : 'دانلود بسته به روز رسانی ناموفق بود. دوباره تلاش کنید.';
         _log.add(_error, level: 'error');
         _downloading = false;
