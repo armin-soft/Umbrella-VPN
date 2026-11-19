@@ -20,7 +20,7 @@ class _Native implements NativeBridge {
   @override
   Future<bool> isElevated() async => false;
   @override
-  Future<bool> autostartEnabled() async => false;
+  Future<bool> autostartEnabled({String appName = 'UmbrellaVPN'}) async => false;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
