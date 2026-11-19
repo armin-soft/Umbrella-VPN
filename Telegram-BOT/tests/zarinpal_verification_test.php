@@ -135,7 +135,7 @@ check(HttpClient::$Calls === 2, 'business errors are not retried');
 foreach ([-30,-33,52,53,54,55,-987] as $Unknown) check(str_contains(Zarinpal::errorMessage($Unknown),'شناخته نشده'), 'unsupported codes never assigned invented explanations');
 check(str_contains(Zarinpal::errorMessage(-10),'آی پی') && str_contains(Zarinpal::errorMessage(-11),'فعال نیست'), 'correct terminal codes');
 check(str_contains(Zarinpal::errorMessage(-12),'تعداد') && str_contains(Zarinpal::errorMessage(-41),'۱۰۰ میلیون'), 'correct limit codes');
-check(str_contains(Zarinpal::errorMessage(-53),'مرچنت') && str_contains(Zarinpal::errorMessage(-54),'Authority') && str_contains(Zarinpal::errorMessage(-55),'یافت نشد'), 'negative verify codes mapped correctly');
+check(str_contains(Zarinpal::errorMessage(-53),'مرچنت') && str_contains(Zarinpal::errorMessage(-54),'شناسه مرجع پرداخت') && str_contains(Zarinpal::errorMessage(-55),'یافت نشد'), 'negative verify codes mapped correctly');
 function quoteResponse(int $Original=100000, int $Suggested=104329, string $Type='Merchant', int $Fee=4200): array {
 return ['StatusCode'=>200,'Error'=>'','Json'=>['data'=>['code'=>100,'amount'=>$Original,'suggested_amount'=>$Suggested,'fee'=>$Fee,'fee_type'=>$Type],'errors'=>[]]];
 }
