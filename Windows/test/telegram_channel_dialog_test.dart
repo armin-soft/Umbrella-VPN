@@ -41,7 +41,7 @@ class _TestWindow implements WindowService {
   @override
   void syncBrightness(Brightness brightness) {}
   @override
-  void startDragging() {}
+  Future<void> startDragging() async {}
   @override
   Future<void> minimize() async {}
   @override
