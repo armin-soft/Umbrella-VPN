@@ -28,13 +28,14 @@ class NetworkSettings extends StatelessWidget {
         final Widget stackField = AnchoredSelectField<TunStack>(
           key: ValueKey<String>('stack-${current.tunStack.name}'),
           label: 'پشته کارت شبکه تونل',
+          leadingIcon: Icons.layers_rounded,
           value: current.tunStack,
           options: <SelectOption<TunStack>>[
             for (final TunStack stack in TunStack.values)
               SelectOption<TunStack>(
                 value: stack,
                 label: stack.label,
-                icon: Icons.layers_rounded,
+                icon: stack.icon,
               ),
           ],
           onChanged: controller.setTunStack,
@@ -220,6 +221,7 @@ class NetworkSettings extends StatelessWidget {
     return AnchoredSelectField<String>(
       key: ValueKey<String>('dns-$id-$normalized'),
       label: label,
+      leadingIcon: icon,
       value: normalized,
       options: <SelectOption<String>>[
         for (final MapEntry<String, String> entry in NetworkDns.presets.entries)
@@ -227,7 +229,7 @@ class NetworkSettings extends StatelessWidget {
             value: entry.key,
             label: entry.value,
             subtitle: NetworkDns.subtitleFa(entry.key),
-            icon: icon,
+            icon: NetworkDns.iconFor(entry.key),
           ),
       ],
       onChanged: onChanged,

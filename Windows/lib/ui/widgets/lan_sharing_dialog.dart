@@ -12,6 +12,7 @@ import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
+import 'common.dart';
 
 /// پنجره اشتراک گذاری اتصال (کد QR، نشانی IP شبکه محلی، ویرایش پورت، مدیریت
 /// رمز پروکسی و کپی لینک کامل یا لینک تلگرام).
@@ -193,6 +194,12 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            Icon(
+              Icons.lan_rounded,
+              size: AppMetrics.iconXs,
+              color: colors.textSecondary,
+            ),
+            const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num('پروکسی ساکس ۵ · فقط همان شبکه'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -214,12 +221,23 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     horizontal: AppMetrics.space2,
                     vertical: AppMetrics.space1,
                   ),
-                  child: Text(
-                    Fa.num('${_selectedIpIndex + 1}/${_lanIps.length}'),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.swap_horiz_rounded,
+                        size: AppMetrics.iconXs,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(width: AppMetrics.space1),
+                      Text(
+                        Fa.num('${_selectedIpIndex + 1}/${_lanIps.length}'),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -343,6 +361,35 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              Row(
+                children: <Widget>[
+                  IconSquare(
+                    icon: Icons.wifi_tethering_rounded,
+                    color: colors.primary,
+                    size: AppMetrics.iconBoxSm,
+                    radius: AppMetrics.radiusSm,
+                  ),
+                  const SizedBox(width: AppMetrics.space3),
+                  Expanded(
+                    child: Text(
+                      Fa.num('اشتراک گذاری اتصال'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  IconAction(
+                    icon: Icons.close_rounded,
+                    tooltip: 'بستن',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppMetrics.space4),
               if (!isVpnMode) ...<Widget>[
                 _DialogModeSwitch(
                   otherDevices: _otherDevices,
@@ -392,67 +439,21 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
               Row(
                 children: <Widget>[
                   if (hasValidLink && fullLink != null && tgLink != null)
-                    PopupMenuButton<String>(
-                      tooltip: 'کپی لینک',
-                      color: colors.surfaceHigh,
-                      shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(AppMetrics.radiusMd),
-                        side: BorderSide(color: colors.border),
-                      ),
-                      onSelected: (String value) => _copyValue('link', value),
-                      itemBuilder: (BuildContext context) =>
-                          <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          value: tgLink,
-                          child: Row(
-                            children: <Widget>[
-                              Icon(
-                                Icons.send_rounded,
-                                size: AppMetrics.iconSm,
-                                color: colors.info,
-                              ),
-                              const SizedBox(width: AppMetrics.space2),
-                              const Text('لینک تلگرام'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: fullLink,
-                          child: Row(
-                            children: <Widget>[
-                              Icon(
-                                Icons.link_rounded,
-                                size: AppMetrics.iconSm,
-                                color: colors.textPrimary,
-                              ),
-                              const SizedBox(width: AppMetrics.space2),
-                              const Text('لینک کامل'),
-                            ],
-                          ),
-                        ),
-                      ],
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppMetrics.space3,
-                          vertical: AppMetrics.space2,
-                        ),
-                        child: Text(
-                          _copiedField == 'link' ? 'کپی شد' : 'کپی لینک',
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: _copiedField == 'link'
-                                        ? colors.success
-                                        : colors.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                        ),
-                      ),
+                    _CopyLinkMenuButton(
+                      copied: _copiedField == 'link',
+                      tgLink: tgLink,
+                      fullLink: fullLink,
+                      onSelect: (String value) => _copyValue('link', value),
                     ),
                   const Spacer(),
-                  TextButton(
+                  TextButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
+                    icon: Icon(
+                      Icons.check_rounded,
+                      size: AppMetrics.iconSm,
+                      color: colors.primary,
+                    ),
+                    label: Text(
                       'بستن',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                             color: colors.primary,
@@ -503,14 +504,35 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      hostCopied ? 'کپی شد' : hostLabel,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: hostCopied
-                                ? colors.success
-                                : colors.textSecondary,
-                            fontWeight: FontWeight.w600,
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          hostCopied
+                              ? Icons.check_rounded
+                              : Icons.dns_rounded,
+                          size: AppMetrics.iconXs,
+                          color: hostCopied
+                              ? colors.success
+                              : colors.textSecondary,
+                        ),
+                        const SizedBox(width: AppMetrics.space1),
+                        Expanded(
+                          child: Text(
+                            hostCopied ? 'کپی شد' : hostLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: hostCopied
+                                      ? colors.success
+                                      : colors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: AppMetrics.space1),
                     Text(
@@ -553,17 +575,35 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(
-                            portCopied ? 'کپی شد' : 'پورت',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(
-                                  color: portCopied
-                                      ? colors.success
-                                      : colors.textSecondary,
-                                  fontWeight: FontWeight.w600,
+                          Row(
+                            children: <Widget>[
+                              Icon(
+                                portCopied
+                                    ? Icons.check_rounded
+                                    : Icons.tag_rounded,
+                                size: AppMetrics.iconXs,
+                                color: portCopied
+                                    ? colors.success
+                                    : colors.textSecondary,
+                              ),
+                              const SizedBox(width: AppMetrics.space1),
+                              Expanded(
+                                child: Text(
+                                  portCopied ? 'کپی شد' : 'پورت',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: portCopied
+                                            ? colors.success
+                                            : colors.textSecondary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: AppMetrics.space1),
                           Text(
@@ -679,14 +719,35 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      secretCopied ? 'کپی شد' : 'رمز عبور',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: secretCopied
-                                ? colors.success
-                                : colors.textSecondary,
-                            fontWeight: FontWeight.w600,
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          secretCopied
+                              ? Icons.check_rounded
+                              : Icons.lock_rounded,
+                          size: AppMetrics.iconXs,
+                          color: secretCopied
+                              ? colors.success
+                              : colors.textSecondary,
+                        ),
+                        const SizedBox(width: AppMetrics.space1),
+                        Expanded(
+                          child: Text(
+                            secretCopied ? 'کپی شد' : 'رمز عبور',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: secretCopied
+                                      ? colors.success
+                                      : colors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: AppMetrics.space1),
                     Text(
@@ -859,10 +920,22 @@ class _DialogModeSwitch extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          _tab(context, colors, label: 'این دستگاه', active: !otherDevices,
-              onTap: () => onChanged(false)),
-          _tab(context, colors, label: 'دستگاه های دیگر', active: otherDevices,
-              onTap: () => onChanged(true)),
+          _tab(
+            context,
+            colors,
+            icon: Icons.computer_rounded,
+            label: 'این دستگاه',
+            active: !otherDevices,
+            onTap: () => onChanged(false),
+          ),
+          _tab(
+            context,
+            colors,
+            icon: Icons.devices_rounded,
+            label: 'دستگاه های دیگر',
+            active: otherDevices,
+            onTap: () => onChanged(true),
+          ),
         ],
       ),
     );
@@ -871,10 +944,12 @@ class _DialogModeSwitch extends StatelessWidget {
   Widget _tab(
     BuildContext context,
     UmbrellaColors colors, {
+    required IconData icon,
     required String label,
     required bool active,
     required VoidCallback onTap,
   }) {
+    final Color fg = active ? colors.primary : colors.textSecondary;
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
@@ -888,15 +963,190 @@ class _DialogModeSwitch extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
           ),
           alignment: Alignment.center,
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: active ? colors.primary : colors.textSecondary,
-                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: AppMetrics.iconXs, color: fg),
+              const SizedBox(width: AppMetrics.space1),
+              Flexible(
+                child: Text(
+                  Fa.num(label),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: fg,
+                        fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                      ),
                 ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CopyLinkMenuButton extends StatelessWidget {
+  const _CopyLinkMenuButton({
+    required this.copied,
+    required this.tgLink,
+    required this.fullLink,
+    required this.onSelect,
+  });
+
+  final bool copied;
+  final String tgLink;
+  final String fullLink;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final MenuController controller = MenuController();
+
+    Widget item({
+      required IconData icon,
+      required Color iconColor,
+      required String label,
+      required String value,
+    }) {
+      return SizedBox(
+        width: AppMetrics.buttonMaxWidth - (AppMetrics.space2 * 2),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+            onTap: () {
+              controller.close();
+              onSelect(value);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3,
+                vertical: AppMetrics.space2,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(icon, size: AppMetrics.iconSm, color: iconColor),
+                  const SizedBox(width: AppMetrics.space3),
+                  Expanded(
+                    child: Text(
+                      Fa.num(label),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.content_copy_rounded,
+                    size: AppMetrics.iconXs,
+                    color: colors.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return MenuAnchor(
+      controller: controller,
+      alignmentOffset: const Offset(0, AppMetrics.space1),
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll<Color>(colors.surface),
+        surfaceTintColor:
+            const WidgetStatePropertyAll<Color>(Colors.transparent),
+        shadowColor: WidgetStatePropertyAll<Color>(colors.shadow),
+        elevation: const WidgetStatePropertyAll<double>(14),
+        minimumSize: const WidgetStatePropertyAll<Size>(
+          Size(AppMetrics.buttonMaxWidth, 0),
+        ),
+        padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+          EdgeInsets.all(AppMetrics.space2),
+        ),
+        shape: WidgetStatePropertyAll<OutlinedBorder>(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+            side: BorderSide(color: colors.border),
+          ),
+        ),
+      ),
+      menuChildren: <Widget>[
+        item(
+          icon: Icons.send_rounded,
+          iconColor: colors.info,
+          label: 'لینک تلگرام',
+          value: tgLink,
+        ),
+        const SizedBox(height: AppMetrics.space1),
+        item(
+          icon: Icons.link_rounded,
+          iconColor: colors.primary,
+          label: 'لینک کامل',
+          value: fullLink,
+        ),
+      ],
+      builder: (
+        BuildContext context,
+        MenuController menuController,
+        Widget? child,
+      ) {
+        final bool open = menuController.isOpen;
+        final Color fg = copied ? colors.success : colors.primary;
+        return Material(
+          color: fg.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+            onTap: () {
+              if (menuController.isOpen) {
+                menuController.close();
+              } else {
+                menuController.open();
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3,
+                vertical: AppMetrics.space2,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    copied ? Icons.check_rounded : Icons.content_copy_rounded,
+                    size: AppMetrics.iconSm,
+                    color: fg,
+                  ),
+                  const SizedBox(width: AppMetrics.space1),
+                  Text(
+                    copied ? 'کپی شد' : 'کپی لینک',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: fg,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(width: AppMetrics.space1),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: AppMetrics.iconSm,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      },
     );
   }
 }

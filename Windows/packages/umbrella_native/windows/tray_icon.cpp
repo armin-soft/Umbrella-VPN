@@ -205,10 +205,12 @@ bool TrayIcon::ShowBalloon(const std::string& title, const std::string& body,
 void TrayIcon::ShowMenu() {
   HMENU menu = CreatePopupMenu();
   AppendMenuW(menu, MF_STRING, kMenuShow, L"نمایش پنجره");
-  AppendMenuW(menu, MF_STRING, kMenuServers, L"سرورها");
+  SetMenuDefaultItem(menu, kMenuShow, FALSE);
+  AppendMenuW(menu, MF_STRING, kMenuServers, L"صفحه اتصال");
   AppendMenuW(menu, MF_STRING, kMenuSettings, L"تنظیمات");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kMenuToggle,
+  AppendMenuW(menu, MF_STRING | (connected_ ? MF_CHECKED : MF_UNCHECKED),
+              kMenuToggle,
               connected_ ? disconnect_label_.c_str() : connect_label_.c_str());
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kMenuQuit, L"خروج");
@@ -217,8 +219,8 @@ void TrayIcon::ShowMenu() {
   GetCursorPos(&cursor);
   SetForegroundWindow(window_);
   int command = TrackPopupMenu(
-      menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, cursor.x, cursor.y,
-      0, window_, nullptr);
+      menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_LAYOUTRTL,
+      cursor.x, cursor.y, 0, window_, nullptr);
   DestroyMenu(menu);
 
   if (callback_ == nullptr) return;

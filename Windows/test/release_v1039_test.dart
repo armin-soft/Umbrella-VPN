@@ -810,6 +810,55 @@ void main() {
       final String generated = LanSharing.generateSecret();
       expect(RegExp(r'^\d{4}-\d{4}$').hasMatch(generated), isTrue);
       expect(RegExp(r'^[۰-۹]{4}-[۰-۹]{4}$').hasMatch(Fa.num(generated)), isTrue);
+
+      // ۶. منوی گزینه های اتصال در صفحه اصلی به صورت پیش فرض بسته است و همه منوها استانداردند.
+      final String quickPanel =
+          File('lib/ui/widgets/quick_connection_panel.dart').readAsStringSync();
+      expect(quickPanel.contains('bool _expanded = false;'), isTrue);
+      expect(quickPanel.contains('quick-panel-toggle'), isTrue);
+      expect(quickPanel.contains('MenuAnchor('), isTrue);
+      expect(quickPanel.contains('PopupMenuButton'), isFalse);
+      expect(quickPanel.contains('chevron_right_rounded'), isFalse);
+
+      final String settingsPage =
+          File('lib/ui/pages/settings_page.dart').readAsStringSync();
+      expect(settingsPage.contains('PopupMenuButton'), isFalse);
+      expect(settingsPage.contains('chevron_right_rounded'), isFalse);
+
+      final String lanDialog =
+          File('lib/ui/widgets/lan_sharing_dialog.dart').readAsStringSync();
+      expect(lanDialog.contains('PopupMenuButton'), isFalse);
+      expect(lanDialog.contains('MenuAnchor('), isTrue);
+
+      // ۷. همه حالت ها و منوهای شبکه آیکون اختصاصی دارند.
+      for (final InboundServiceMode m in InboundServiceMode.values) {
+        expect(m.icon.codePoint, greaterThan(0));
+      }
+      for (final DnsDomainStrategy s in DnsDomainStrategy.values) {
+        expect(s.icon.codePoint, greaterThan(0));
+      }
+      for (final Ipv6RouteMode m in Ipv6RouteMode.values) {
+        expect(m.icon.codePoint, greaterThan(0));
+      }
+      for (final RoutingRegion r in RoutingRegion.values) {
+        expect(r.icon.codePoint, greaterThan(0));
+      }
+      for (final ChainTransport t in ChainTransport.values) {
+        expect(t.icon.codePoint, greaterThan(0));
+        expect(t.quickIcon.codePoint, greaterThan(0));
+      }
+      for (final WarpEndpoint e in WarpEndpoint.values) {
+        expect(e.icon.codePoint, greaterThan(0));
+      }
+      for (final AppRouteAction a in AppRouteAction.values) {
+        expect(a.icon.codePoint, greaterThan(0));
+      }
+      for (final TunStack s in TunStack.values) {
+        expect(s.icon.codePoint, greaterThan(0));
+      }
+      for (final String k in NetworkDns.presets.keys) {
+        expect(NetworkDns.iconFor(k).codePoint, greaterThan(0));
+      }
     });
   });
 }

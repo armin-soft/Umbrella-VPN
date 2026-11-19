@@ -44,16 +44,20 @@ extension SettingsCategoryX on SettingsCategory {
     }
   }
 
-  String? get listSubtitle {
+  String get listSubtitle {
     switch (this) {
+      case SettingsCategory.general:
+        return 'پوسته برنامه، سینی ویندوز، اتصال خودکار و گزارش ها';
       case SettingsCategory.chain:
         return 'امنیت بیشتر و رفع مسدودیت';
-      case SettingsCategory.general:
       case SettingsCategory.routing:
+        return 'منطقه مسیریابی، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
       case SettingsCategory.dns:
+        return 'سرورهای دی ان اس اصلی و مستقیم و دی ان اس مجازی';
       case SettingsCategory.inbound:
+        return 'حالت سرویس، کارت شبکه تونل، پروکسی محلی و اشتراک گذاری';
       case SettingsCategory.tlsTricks:
-        return null;
+        return 'تکه تکه سازی بسته ها، مبهم سازی نام سرور و لایه پرکننده';
     }
   }
 
@@ -77,17 +81,34 @@ extension SettingsCategoryX on SettingsCategory {
   IconData get icon {
     switch (this) {
       case SettingsCategory.general:
-        return Icons.layers_outlined;
+        return Icons.tune_rounded;
       case SettingsCategory.chain:
-        return Icons.hub_outlined;
+        return Icons.hub_rounded;
       case SettingsCategory.routing:
-        return Icons.route_rounded;
+        return Icons.alt_route_rounded;
       case SettingsCategory.dns:
         return Icons.dns_rounded;
       case SettingsCategory.inbound:
-        return Icons.login_rounded;
+        return Icons.settings_input_component_rounded;
       case SettingsCategory.tlsTricks:
-        return Icons.build_rounded;
+        return Icons.enhanced_encryption_rounded;
+    }
+  }
+
+  Color accentColor(UmbrellaColors colors) {
+    switch (this) {
+      case SettingsCategory.general:
+        return colors.primary;
+      case SettingsCategory.chain:
+        return const Color(0xFFFF8A3D);
+      case SettingsCategory.routing:
+        return colors.info;
+      case SettingsCategory.dns:
+        return colors.success;
+      case SettingsCategory.inbound:
+        return colors.primary;
+      case SettingsCategory.tlsTricks:
+        return colors.warning;
     }
   }
 }
@@ -479,21 +500,25 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: 'warn',
                     label: 'هشدار (پیشنهادی)',
                     subtitle: 'سبک و بهینه برای استفاده روزمره',
+                    icon: Icons.warning_amber_rounded,
                   ),
                   SelectOption<String>(
                     value: 'info',
                     label: 'اطلاعات',
                     subtitle: 'ثبت رویدادهای اصلی اتصال',
+                    icon: Icons.info_outline_rounded,
                   ),
                   SelectOption<String>(
                     value: 'debug',
                     label: 'عیب یابی (۱۰ دقیقه)',
                     subtitle: 'جزئیات کامل با بازگشت خودکار به هشدار',
+                    icon: Icons.bug_report_rounded,
                   ),
                   SelectOption<String>(
                     value: 'error',
                     label: 'فقط خطا',
                     subtitle: 'ثبت خطاهای بحرانی',
+                    icon: Icons.error_outline_rounded,
                   ),
                 ],
                 onChanged: (String level) =>
@@ -696,6 +721,7 @@ class _SettingsPageState extends State<SettingsPage> {
               SelectOption<String>(
                 value: entry.key,
                 label: entry.value,
+                icon: ChainSettings.regionIcon(entry.key),
               ),
           ],
           onChanged: (String region) =>
@@ -727,7 +753,11 @@ class _SettingsPageState extends State<SettingsPage> {
             : ChainTransport.automatic,
         options: <SelectOption<ChainTransport>>[
           for (final ChainTransport t in warpTransports)
-            SelectOption<ChainTransport>(value: t, label: t.label),
+            SelectOption<ChainTransport>(
+              value: t,
+              label: t.label,
+              icon: t.icon,
+            ),
         ],
         onChanged: (ChainTransport picked) => onSave(
           chain.copyWith(
@@ -746,7 +776,11 @@ class _SettingsPageState extends State<SettingsPage> {
         value: currentEndpoint,
         options: <SelectOption<WarpEndpoint>>[
           for (final WarpEndpoint ep in endpoints)
-            SelectOption<WarpEndpoint>(value: ep, label: ep.label),
+            SelectOption<WarpEndpoint>(
+              value: ep,
+              label: ep.label,
+              icon: ep.icon,
+            ),
         ],
         onChanged: (WarpEndpoint picked) => onSave(
           chain.copyWith(
@@ -916,7 +950,11 @@ class _SettingsPageState extends State<SettingsPage> {
           options: <SelectOption<String>>[
             for (final MapEntry<String, String> entry
                 in ChainSettings.noiseModes.entries)
-              SelectOption<String>(value: entry.key, label: entry.value),
+              SelectOption<String>(
+                value: entry.key,
+                label: entry.value,
+                icon: ChainSettings.noiseIcon(entry.key),
+              ),
           ],
           onChanged: (String mode) => onSave(chain.copyWith(noiseMode: mode)),
         ),
@@ -992,9 +1030,21 @@ class _SettingsPageState extends State<SettingsPage> {
               ? chain.masqueProtocol
               : 'auto',
           options: const <SelectOption<String>>[
-            SelectOption<String>(value: 'auto', label: 'خودکار'),
-            SelectOption<String>(value: 'h3', label: 'نسخه ۳ (سریع — کوئیک)'),
-            SelectOption<String>(value: 'h2', label: 'نسخه ۲ (پایدار)'),
+            SelectOption<String>(
+              value: 'auto',
+              label: 'خودکار',
+              icon: Icons.auto_awesome_rounded,
+            ),
+            SelectOption<String>(
+              value: 'h3',
+              label: 'نسخه ۳ (سریع — کوئیک)',
+              icon: Icons.bolt_rounded,
+            ),
+            SelectOption<String>(
+              value: 'h2',
+              label: 'نسخه ۲ (پایدار)',
+              icon: Icons.verified_user_rounded,
+            ),
           ],
           onChanged: (String p) =>
               onSave(chain.copyWith(masqueProtocol: p)),
@@ -1032,6 +1082,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   SelectOption<RoutingRegion>(
                     value: r,
                     label: r.label,
+                    icon: r.icon,
                     subtitle: r == RoutingRegion.other
                         ? 'عبور تمام ترافیک از مسیر انتخابی'
                         : 'اتصال مستقیم سایت ها و نشانی های داخلی ${r.shortLabel}',
@@ -1047,7 +1098,12 @@ class _SettingsPageState extends State<SettingsPage> {
               value: cfg.ipv6RouteMode,
               options: <SelectOption<Ipv6RouteMode>>[
                 for (final Ipv6RouteMode m in Ipv6RouteMode.values)
-                  SelectOption<Ipv6RouteMode>(value: m, label: m.label),
+                  SelectOption<Ipv6RouteMode>(
+                    value: m,
+                    label: m.label,
+                    subtitle: m.description,
+                    icon: m.icon,
+                  ),
               ],
               onChanged: (Ipv6RouteMode picked) =>
                   _applyRuntime(vpn, () => settings.setIpv6RouteMode(picked)),
@@ -1188,12 +1244,17 @@ class _SettingsPageState extends State<SettingsPage> {
           value: entry.key,
           label: entry.value,
           subtitle: NetworkDns.subtitleFa(entry.key),
+          icon: NetworkDns.iconFor(entry.key),
         ),
     ];
     final List<SelectOption<DnsDomainStrategy>> strategyOptions =
         <SelectOption<DnsDomainStrategy>>[
       for (final DnsDomainStrategy s in DnsDomainStrategy.values)
-        SelectOption<DnsDomainStrategy>(value: s, label: s.label),
+        SelectOption<DnsDomainStrategy>(
+          value: s,
+          label: s.label,
+          icon: s.icon,
+        ),
     ];
 
     return Column(
@@ -1294,6 +1355,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: mode,
                     label: mode.fullLabel,
                     subtitle: mode.description,
+                    icon: mode.icon,
                   ),
               ],
               onChanged: (InboundServiceMode picked) async {
@@ -1316,7 +1378,11 @@ class _SettingsPageState extends State<SettingsPage> {
               value: cfg.tunStack,
               options: <SelectOption<TunStack>>[
                 for (final TunStack stack in TunStack.values)
-                  SelectOption<TunStack>(value: stack, label: stack.label),
+                  SelectOption<TunStack>(
+                    value: stack,
+                    label: stack.label,
+                    icon: stack.icon,
+                  ),
               ],
               onChanged: (TunStack picked) =>
                   _applyRuntime(vpn, () => settings.setTunStack(picked)),
@@ -1620,7 +1686,8 @@ class _CategoryNavTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final String? subtitle = category.listSubtitle;
+    final String subtitle = category.listSubtitle;
+    final Color accent = category.accentColor(colors);
 
     return InkWell(
       key: ValueKey<String>('settings-category-${category.name}'),
@@ -1632,10 +1699,11 @@ class _CategoryNavTile extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Icon(
-              category.icon,
-              size: AppMetrics.iconLg,
-              color: colors.textSecondary,
+            IconSquare(
+              icon: category.icon,
+              color: accent,
+              size: AppMetrics.iconBoxMd,
+              radius: AppMetrics.radiusMd,
             ),
             const SizedBox(width: AppMetrics.space4),
             Expanded(
@@ -1644,34 +1712,35 @@ class _CategoryNavTile extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   Text(
-                    category.title,
+                    Fa.num(category.title),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: colors.textPrimary,
                           fontWeight: FontWeight.w700,
                         ),
                   ),
-                  if (subtitle != null) ...<Widget>[
-                    const SizedBox(height: AppMetrics.space1),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
+                  const SizedBox(height: AppMetrics.space1),
+                  Text(
+                    Fa.num(subtitle),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
                 ],
               ),
             ),
             if (badge != null) ...<Widget>[
               Pill(
                 label: badge!,
-                color: colors.primary,
+                icon: Icons.check_circle_rounded,
+                color: accent,
                 dense: true,
               ),
               const SizedBox(width: AppMetrics.space2),
             ],
             Icon(
-              Icons.chevron_right_rounded,
+              Icons.chevron_left_rounded,
               size: AppMetrics.iconMd,
               color: colors.textSecondary,
             ),
@@ -1739,8 +1808,6 @@ class _ChainFlowBanner extends StatelessWidget {
   }
 }
 
-enum _HopChoice { off, psiphon, warp }
-
 class _ChainHopSelector extends StatelessWidget {
   const _ChainHopSelector({
     required this.active,
@@ -1761,119 +1828,181 @@ class _ChainHopSelector extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     final bool isPsiphon = transport == ChainTransport.psiphon;
     final String label = active ? transport.quickLabel : 'خاموش';
-    return PopupMenuButton<_HopChoice>(
-      color: colors.surfaceHigh,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-        side: BorderSide(color: colors.border),
+    final IconData activeIcon = active
+        ? transport.quickIcon
+        : Icons.power_settings_new_rounded;
+
+    Widget buildItem({
+      required IconData icon,
+      required Color iconColor,
+      required String title,
+      required bool selected,
+      required VoidCallback onSelect,
+      required MenuController controller,
+    }) {
+      return SizedBox(
+        width: AppMetrics.buttonMaxWidth - (AppMetrics.space2 * 2),
+        child: Material(
+          color: selected
+              ? colors.primary.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+            onTap: () {
+              controller.close();
+              onSelect();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3,
+                vertical: AppMetrics.space2,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(icon, size: AppMetrics.iconSm, color: iconColor),
+                  const SizedBox(width: AppMetrics.space3),
+                  Expanded(
+                    child: Text(
+                      Fa.num(title),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight:
+                                selected ? FontWeight.w800 : FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                  if (selected)
+                    Icon(
+                      Icons.check_rounded,
+                      size: AppMetrics.iconSm,
+                      color: colors.primary,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final MenuController controller = MenuController();
+    return MenuAnchor(
+      controller: controller,
+      alignmentOffset: const Offset(0, AppMetrics.space1),
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll<Color>(colors.surface),
+        surfaceTintColor:
+            const WidgetStatePropertyAll<Color>(Colors.transparent),
+        shadowColor: WidgetStatePropertyAll<Color>(colors.shadow),
+        elevation: const WidgetStatePropertyAll<double>(14),
+        minimumSize: const WidgetStatePropertyAll<Size>(
+          Size(AppMetrics.buttonMaxWidth, 0),
+        ),
+        padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+          EdgeInsets.all(AppMetrics.space2),
+        ),
+        shape: WidgetStatePropertyAll<OutlinedBorder>(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+            side: BorderSide(color: colors.border),
+          ),
+        ),
       ),
-      onSelected: (_HopChoice choice) {
-        switch (choice) {
-          case _HopChoice.off:
-            onOff();
-          case _HopChoice.psiphon:
-            onPick(ChainTransport.psiphon);
-          case _HopChoice.warp:
-            onPick(ChainTransport.automatic);
-        }
-      },
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<_HopChoice>>[
-        PopupMenuItem<_HopChoice>(
-          value: _HopChoice.off,
-          child: Row(
-            children: <Widget>[
-              Icon(
-                Icons.block_rounded,
-                size: AppMetrics.iconSm,
-                color: colors.textSecondary,
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              const Expanded(child: Text('غیرفعال')),
-              if (!active)
-                Icon(
-                  Icons.check_rounded,
-                  size: AppMetrics.iconSm,
-                  color: colors.primary,
-                ),
-            ],
-          ),
+      menuChildren: <Widget>[
+        buildItem(
+          icon: Icons.power_settings_new_rounded,
+          iconColor: colors.textSecondary,
+          title: 'غیرفعال',
+          selected: !active,
+          onSelect: onOff,
+          controller: controller,
         ),
-        PopupMenuItem<_HopChoice>(
-          value: _HopChoice.psiphon,
-          child: Row(
-            children: <Widget>[
-              const Icon(
-                Icons.public_rounded,
-                size: AppMetrics.iconSm,
-                color: Color(0xFFE53935),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              const Expanded(child: Text('سایفون')),
-              if (active && isPsiphon)
-                Icon(
-                  Icons.check_rounded,
-                  size: AppMetrics.iconSm,
-                  color: colors.primary,
-                ),
-            ],
-          ),
+        const SizedBox(height: AppMetrics.space1),
+        buildItem(
+          icon: Icons.cloud_done_rounded,
+          iconColor: const Color(0xFFF6821F),
+          title: 'وارپ',
+          selected: active && !isPsiphon,
+          onSelect: () => onPick(ChainTransport.automatic),
+          controller: controller,
         ),
-        PopupMenuItem<_HopChoice>(
-          value: _HopChoice.warp,
-          child: Row(
-            children: <Widget>[
-              const Icon(
-                Icons.cloud_rounded,
-                size: AppMetrics.iconSm,
-                color: Color(0xFFF6821F),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              const Expanded(child: Text('وارپ')),
-              if (active && !isPsiphon)
-                Icon(
-                  Icons.check_rounded,
-                  size: AppMetrics.iconSm,
-                  color: colors.primary,
-                ),
-            ],
-          ),
+        const SizedBox(height: AppMetrics.space1),
+        buildItem(
+          icon: Icons.language_rounded,
+          iconColor: const Color(0xFFE53935),
+          title: 'سایفون',
+          selected: active && isPsiphon,
+          onSelect: () => onPick(ChainTransport.psiphon),
+          controller: controller,
         ),
       ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppMetrics.space3,
-          vertical: AppMetrics.space2,
-        ),
-        decoration: BoxDecoration(
+      builder: (
+        BuildContext context,
+        MenuController menuController,
+        Widget? child,
+      ) {
+        final bool open = menuController.isOpen;
+        final Color fg = active
+            ? activeColor
+            : (open ? colors.primary : colors.textSecondary);
+        return Material(
           color: active
               ? activeColor.withValues(alpha: 0.14)
               : colors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-          border: Border.all(
-            color: active
-                ? activeColor.withValues(alpha: 0.45)
-                : colors.border,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: active ? activeColor : colors.textSecondary,
-                    fontWeight: FontWeight.w700,
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+            onTap: () {
+              if (menuController.isOpen) {
+                menuController.close();
+              } else {
+                menuController.open();
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3,
+                vertical: AppMetrics.space2,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                border: Border.all(
+                  color: open
+                      ? colors.primary
+                      : (active
+                          ? activeColor.withValues(alpha: 0.45)
+                          : colors.border),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(activeIcon, size: AppMetrics.iconSm, color: fg),
+                  const SizedBox(width: AppMetrics.space2),
+                  Text(
+                    Fa.num(label),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: fg,
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
+                  const SizedBox(width: AppMetrics.space1),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: AppMetrics.iconMd,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(width: AppMetrics.space1),
-            Icon(
-              Icons.arrow_drop_down_rounded,
-              size: AppMetrics.iconMd,
-              color: active ? activeColor : colors.textSecondary,
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1959,6 +2088,12 @@ class _AppRouteTile extends StatelessWidget {
       children: <Widget>[
         Switch.adaptive(value: rule.enabled, onChanged: onToggle),
         const SizedBox(width: AppMetrics.space2),
+        Icon(
+          rule.isPath ? Icons.folder_rounded : Icons.apps_rounded,
+          size: AppMetrics.iconSm,
+          color: rule.enabled ? colors.primary : colors.textSecondary,
+        ),
+        const SizedBox(width: AppMetrics.space2),
         Expanded(
           child: Text(
             Fa.num(rule.process),
@@ -1969,7 +2104,16 @@ class _AppRouteTile extends StatelessWidget {
                 ),
           ),
         ),
-        Pill(label: rule.action.label, color: colors.primary, dense: true),
+        Pill(
+          label: rule.action.label,
+          icon: rule.action.icon,
+          color: rule.action == AppRouteAction.block
+              ? colors.danger
+              : (rule.action == AppRouteAction.direct
+                  ? colors.info
+                  : colors.primary),
+          dense: true,
+        ),
         IconButton(
           tooltip: 'حذف قانون',
           onPressed: onDelete,
@@ -2035,7 +2179,26 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
         borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
         side: BorderSide(color: colors.border),
       ),
-      title: Text(Fa.num(widget.title)),
+      title: Row(
+        children: <Widget>[
+          IconSquare(
+            icon: widget.numericOnly
+                ? Icons.pin_rounded
+                : Icons.edit_note_rounded,
+            color: colors.primary,
+            size: AppMetrics.iconBoxSm,
+            radius: AppMetrics.radiusSm,
+          ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Text(
+              Fa.num(widget.title),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
       content: TextField(
         controller: _ctrl,
         autofocus: true,

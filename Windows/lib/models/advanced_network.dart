@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/material.dart' show IconData, Icons;
+
 import '../core/persian.dart';
 
 /// حالت سرویس ورودی هسته؛ هم راستا با سه حالت سریع صفحه اتصال و بخش ورودی.
@@ -28,6 +30,12 @@ extension InboundServiceModeX on InboundServiceMode {
           'عبور تمام برنامه ها و بازی ها از کارت شبکه امن مجازی',
       };
 
+  IconData get icon => switch (this) {
+        InboundServiceMode.proxy => Icons.hub_rounded,
+        InboundServiceMode.systemProxy => Icons.desktop_windows_rounded,
+        InboundServiceMode.vpn => Icons.shield_rounded,
+      };
+
   bool get enablesTun => this == InboundServiceMode.vpn;
   bool get enablesSystemProxy => this == InboundServiceMode.systemProxy;
 }
@@ -51,6 +59,14 @@ extension DnsDomainStrategyX on DnsDomainStrategy {
         DnsDomainStrategy.ipv4Only => 'فقط آی پی نسخه ۴',
         DnsDomainStrategy.ipv6Only => 'فقط آی پی نسخه ۶',
       };
+
+  IconData get icon => switch (this) {
+        DnsDomainStrategy.asIs => Icons.hdr_auto_rounded,
+        DnsDomainStrategy.preferIpv6 => Icons.filter_6_rounded,
+        DnsDomainStrategy.preferIpv4 => Icons.filter_4_rounded,
+        DnsDomainStrategy.ipv4Only => Icons.looks_4_rounded,
+        DnsDomainStrategy.ipv6Only => Icons.looks_6_rounded,
+      };
 }
 
 /// حالت مسیریابی آی پی نسخه ۶ در هسته.
@@ -67,6 +83,12 @@ extension Ipv6RouteModeX on Ipv6RouteMode {
         Ipv6RouteMode.ipv4Only => 'خاموش (فقط نسخه ۴)',
         Ipv6RouteMode.preferIpv4 => 'روشن، اول نسخه ۴',
         Ipv6RouteMode.preferIpv6 => 'روشن، اول نسخه ۶',
+      };
+
+  IconData get icon => switch (this) {
+        Ipv6RouteMode.ipv4Only => Icons.looks_4_rounded,
+        Ipv6RouteMode.preferIpv4 => Icons.filter_4_rounded,
+        Ipv6RouteMode.preferIpv6 => Icons.filter_6_rounded,
       };
 
   String get description => switch (this) {
@@ -106,6 +128,18 @@ extension RoutingRegionX on RoutingRegion {
         RoutingRegion.id => 'اندونزی',
         RoutingRegion.br => 'برزیل',
       };
+
+  IconData get icon => switch (this) {
+        RoutingRegion.other => Icons.public_rounded,
+        RoutingRegion.ir => Icons.place_rounded,
+        RoutingRegion.tr ||
+        RoutingRegion.ru ||
+        RoutingRegion.cn ||
+        RoutingRegion.af ||
+        RoutingRegion.id ||
+        RoutingRegion.br =>
+          Icons.flag_rounded,
+      };
 }
 
 /// These are auxiliary hops around an authorized Umbrella profile, never
@@ -127,6 +161,12 @@ extension ChainPositionX on ChainPosition {
         ChainPosition.off => 'خاموش',
         ChainPosition.extraSecurity => 'امنیت بیشتر',
         ChainPosition.unblocker => 'رفع فیلتر پروکسی',
+      };
+
+  IconData get icon => switch (this) {
+        ChainPosition.off => Icons.power_settings_new_rounded,
+        ChainPosition.extraSecurity => Icons.verified_user_rounded,
+        ChainPosition.unblocker => Icons.account_tree_rounded,
       };
 }
 
@@ -158,6 +198,18 @@ extension ChainTransportX on ChainTransport {
   String get quickLabel =>
       this == ChainTransport.psiphon ? 'سایفون' : 'وارپ';
 
+  IconData get icon => switch (this) {
+        ChainTransport.automatic => Icons.auto_awesome_rounded,
+        ChainTransport.wireguard => Icons.vpn_lock_rounded,
+        ChainTransport.awg => Icons.enhanced_encryption_rounded,
+        ChainTransport.masque => Icons.rocket_launch_rounded,
+        ChainTransport.psiphon => Icons.language_rounded,
+      };
+
+  IconData get quickIcon => this == ChainTransport.psiphon
+      ? Icons.language_rounded
+      : Icons.cloud_done_rounded;
+
   bool get isWarp => this != ChainTransport.psiphon;
 }
 
@@ -172,6 +224,12 @@ extension WarpEndpointX on WarpEndpoint {
         WarpEndpoint.assigned => 'تعیین شده توسط کلادفلر',
         WarpEndpoint.scan => 'جست وجو',
         WarpEndpoint.custom => 'دستی',
+      };
+
+  IconData get icon => switch (this) {
+        WarpEndpoint.assigned => Icons.cloud_done_rounded,
+        WarpEndpoint.scan => Icons.radar_rounded,
+        WarpEndpoint.custom => Icons.edit_location_alt_rounded,
       };
 }
 
@@ -274,6 +332,20 @@ class ChainSettings {
     'SK': 'اسلواکی',
     'US': 'ایالات متحده',
   };
+
+  static IconData regionIcon(String code) =>
+      code == 'AUTO' ? Icons.auto_awesome_rounded : Icons.public_rounded;
+
+  static IconData noiseIcon(String mode) => switch (mode) {
+        '' => Icons.do_not_disturb_on_outlined,
+        'none' => Icons.radio_button_unchecked_rounded,
+        'quic' => Icons.bolt_rounded,
+        'random' => Icons.shuffle_rounded,
+        'tls' => Icons.lock_rounded,
+        'dns' => Icons.dns_rounded,
+        't_mobile' => Icons.cell_tower_rounded,
+        _ => Icons.blur_on_rounded,
+      };
 
   static const List<String> regions = <String>[
     'AUTO',
@@ -931,6 +1003,12 @@ extension AppRouteActionX on AppRouteAction {
         AppRouteAction.proxy => 'از تونل',
         AppRouteAction.direct => 'مستقیم (خارج از تونل)',
         AppRouteAction.block => 'مسدود',
+      };
+
+  IconData get icon => switch (this) {
+        AppRouteAction.proxy => Icons.shield_rounded,
+        AppRouteAction.direct => Icons.call_made_rounded,
+        AppRouteAction.block => Icons.block_rounded,
       };
 }
 

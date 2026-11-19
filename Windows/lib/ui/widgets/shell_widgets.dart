@@ -534,6 +534,8 @@ class SideNav extends StatelessWidget {
                           destination: destinations[i],
                           selected: i == index,
                           compact: compact,
+                          showDot: updateAvailable &&
+                              i == destinations.length - 1,
                           onTap: () => onSelect(i),
                         ),
                     ],
@@ -687,6 +689,7 @@ class _NavItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.compact = false,
+    this.showDot = false,
   });
 
   final NavDestination destination;
@@ -695,6 +698,7 @@ class _NavItem extends StatefulWidget {
 
   /// در پنجره باریک فقط آیکون نشان داده می شود و متن در Tooltip می آید.
   final bool compact;
+  final bool showDot;
 
 
   @override
@@ -771,7 +775,7 @@ class _NavItemState extends State<_NavItem> {
               ),
               if (!widget.compact) ...<Widget>[
                 const SizedBox(width: AppMetrics.space3),
-                Flexible(
+                Expanded(
                   child: Text(
                     Fa.num(widget.destination.label),
                     maxLines: 1,
@@ -788,6 +792,17 @@ class _NavItemState extends State<_NavItem> {
                         ),
                   ),
                 ),
+                if (widget.showDot) ...<Widget>[
+                  const SizedBox(width: AppMetrics.space1),
+                  Container(
+                    width: AppMetrics.space2,
+                    height: AppMetrics.space2,
+                    decoration: BoxDecoration(
+                      color: colors.warning,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
               ],
             ],
           ),

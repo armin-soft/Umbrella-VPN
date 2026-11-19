@@ -1884,6 +1884,19 @@ extension TunStackX on TunStack {
         return 'سیستم';
     }
   }
+
+  IconData get icon {
+    switch (this) {
+      case TunStack.auto:
+        return Icons.auto_awesome_rounded;
+      case TunStack.mixed:
+        return Icons.merge_type_rounded;
+      case TunStack.gvisor:
+        return Icons.memory_rounded;
+      case TunStack.system:
+        return Icons.dns_rounded;
+    }
+  }
 }
 
 /// Values accepted by the pinned core log parser.
@@ -1941,6 +1954,18 @@ class NetworkDns {
       default:
         return Fa.num(key);
     }
+  }
+
+  /// آیکون دقیق هر سرور دی ان اس بر اساس شیوه اتصال (رمزنگاری، سریع یا پایدار).
+  static IconData iconFor(String key) {
+    final String lower = key.trim().toLowerCase();
+    if (lower.startsWith('https://')) {
+      return Icons.https_rounded;
+    }
+    if (lower.startsWith('udp://')) {
+      return Icons.bolt_rounded;
+    }
+    return Icons.verified_user_rounded;
   }
   static String normalize(String value, {String defaultValue = fallback}) {
     final String clean = value.trim();

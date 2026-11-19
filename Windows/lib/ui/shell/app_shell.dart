@@ -149,6 +149,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             _appVisible = true;
+            _pendingSettingsSection = null;
+            _settingsNavVersion++;
             _index = 3;
           });
         }
@@ -475,6 +477,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   Row(
                     children: <Widget>[
                       _FilterChip(
+                        icon: Icons.inbox_rounded,
                         label: 'همه',
                         count: all.length,
                         selected: !_unreadOnly,
@@ -482,6 +485,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                       ),
                       const SizedBox(width: AppMetrics.space2),
                       _FilterChip(
+                        icon: Icons.mark_email_unread_rounded,
                         label: 'خوانده نشده',
                         count: unread,
                         selected: _unreadOnly,
@@ -671,12 +675,14 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
 /// چیپ فیلتر اعلان ها با شمارنده.
 class _FilterChip extends StatelessWidget {
   const _FilterChip({
+    required this.icon,
     required this.label,
     required this.count,
     required this.selected,
     required this.onTap,
   });
 
+  final IconData icon;
   final String label;
   final int count;
   final bool selected;
@@ -685,6 +691,7 @@ class _FilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
+    final Color fg = selected ? colors.primary : colors.textSecondary;
     return InkWell(
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
       onTap: onTap,
@@ -707,18 +714,20 @@ class _FilterChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            Icon(icon, size: AppMetrics.iconXs, color: fg),
+            const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num(label),
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                    color: selected ? colors.primary : colors.textSecondary,
+                    color: fg,
                   ),
             ),
             const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num(count),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: selected ? colors.primary : colors.textSecondary,
+                    color: fg,
                     fontWeight: FontWeight.w800,
                   ),
             ),

@@ -33,11 +33,12 @@ class _LogsPageState extends State<LogsPage> {
   /// فقط خطاها و هشدارها؛ برای دکمه «باز کردن همه خطاها».
   static bool _hasDetail(LogLine line) => line.hasDetails;
 
-  static const List<(String, String)> _levels = <(String, String)>[
-    ('', 'همه'),
-    ('error', 'خطا'),
-    ('warning', 'هشدار'),
-    ('info', 'اطلاع'),
+  static const List<(String, String, IconData)> _levels =
+      <(String, String, IconData)>[
+    ('', 'همه', Icons.list_alt_rounded),
+    ('error', 'خطا', Icons.error_outline_rounded),
+    ('warning', 'هشدار', Icons.warning_amber_rounded),
+    ('info', 'اطلاع', Icons.info_outline_rounded),
   ];
 
   void _toggle(String key) {
@@ -146,10 +147,19 @@ class _LogsPageState extends State<LogsPage> {
             listenable: AppLogger.instance,
             builder: (BuildContext context, Widget? child) {
               return Wrap(
-                spacing: 8,
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
                 children: <Widget>[
-                  for (final (String value, String label) item in _levels)
+                  for (final (String value, String label, IconData icon) item
+                      in _levels)
                     ChoiceChip(
+                      avatar: Icon(
+                        item.$3,
+                        size: AppMetrics.iconSm,
+                        color: _level == item.$1
+                            ? colors.primary
+                            : colors.textSecondary,
+                      ),
                       label: Text(
                         Fa.num(
                           item.$1.isEmpty
