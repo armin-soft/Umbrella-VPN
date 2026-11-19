@@ -847,58 +847,139 @@ void main() {
           reason: logs.toString(),
         );
 
-        // Unauthenticated local proxy call must get 407 Proxy Auth Required.
-        final HttpClient unauth = HttpClient()
-          ..connectionTimeout = const Duration(seconds: 2)
-          ..findProxy = (_) => 'PROXY 127.0.0.1:$customMixedPort';
+        // Spin up a local loopback HTTP origin so we prove BOTH:
+        //  (a) unauthenticated proxy requests get 407,
+        //  (b) authenticated proxy requests to allowed private IP return 200 OK
+        //      (proving mixedPort + localProxyAuth + bypassLan live!), and
+        //  (c) authenticated proxy requests to all 4 Content Control categories
+        //      and custom subdomains are actively blocked by live sing-box!
+        final HttpServer origin =
+            await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        origin.listen((HttpRequest req) async {
+          req.response.statusCode = HttpStatus.ok;
+          req.response.write('UMBRELLA_LIVE_OK');
+          await req.response.close();
+        });
+        final String basic =
+            base64Encode(utf8.encode('${UmbrellaCore.id}:$proxySecret'));
         try {
-          final HttpClientRequest req = await unauth
-              .getUrl(Uri.parse('http://my-blocked-site.test/'))
-              .timeout(const Duration(seconds: 2));
-          final HttpClientResponse res =
-              await req.close().timeout(const Duration(seconds: 2));
-          await res.drain<void>();
-          expect(res.statusCode, HttpStatus.proxyAuthenticationRequired);
-        } finally {
-          unauth.close(force: true);
-        }
-
-        // Authenticated calls to blocked categories & custom subdomains must be
-        // actively rejected by sing-box within milliseconds (never 200/407).
-        for (final String blockedHost in <String>[
-          'pornhub.com',
-          'www.1xbet.com',
-          'ads.doubleclick.net',
-          'tinder.com',
-          'sub.my-blocked-site.test',
-          'second-blocked.example',
-        ]) {
-          final HttpClient authed = HttpClient()
+          // (a) Unauthenticated local proxy call must get 407 Proxy Auth Required.
+          final HttpClient unauth = HttpClient()
             ..connectionTimeout = const Duration(seconds: 2)
             ..findProxy = (_) => 'PROXY 127.0.0.1:$customMixedPort';
-          final String basic =
-              base64Encode(utf8.encode('hiddify:$proxySecret'));
-          bool blocked = false;
           try {
-            final HttpClientRequest req = await authed
-                .getUrl(Uri.parse('http://$blockedHost/'))
-                .timeout(const Duration(seconds: 2));
-            req.headers.set(HttpHeaders.proxyAuthorizationHeader, 'Basic $basic');
+            final HttpClientRequest req = await unauth
+                .getUrl(Uri.parse('http://127.0.0.1:${origin.port}/ok'))
+                .timeout(const Duration(seconds: 3));
             final HttpClientResponse res =
-                await req.close().timeout(const Duration(seconds: 2));
+                await req.close().timeout(const Duration(seconds: 3));
             await res.drain<void>();
-            // sing-box mixed inbound turns rejected HTTP proxy requests into 502/403/500, never 200 or 407.
-            blocked = res.statusCode >= 500 || res.statusCode == HttpStatus.forbidden;
-          } on IOException {
-            blocked = true;
+            expect(res.statusCode, HttpStatus.proxyAuthenticationRequired);
           } finally {
-            authed.close(force: true);
+            unauth.close(force: true);
           }
-          expect(
-            blocked,
-            isTrue,
-            reason: 'Expected $blockedHost to be blocked by live core; logs: $logs',
-          );
+
+          // (b) Authenticated call to local origin must succeed with 200 OK via direct bypass.
+          final HttpClient allowedClient = HttpClient()
+            ..connectionTimeout = const Duration(seconds: 2)
+            ..findProxy = (_) => 'PROXY 127.0.0.1:$customMixedPort';
+          try {
+            final HttpClientRequest req = await allowedClient
+                .getUrl(Uri.parse('http://127.0.0.1:${origin.port}/ok'))
+                .timeout(const Duration(seconds: 3));
+            req.headers
+                .set(HttpHeaders.proxyAuthorizationHeader, 'Basic $basic');
+            final HttpClientResponse res =
+                await req.close().timeout(const Duration(seconds: 3));
+            final String body = await res.transform(utf8.decoder).join();
+            expect(res.statusCode, HttpStatus.ok, reason: logs.toString());
+            expect(body, 'UMBRELLA_LIVE_OK');
+          } finally {
+            allowedClient.close(force: true);
+          }
+
+          // (c) Authenticated HTTPS CONNECT to every blocked category & custom
+          // subdomain must be immediately rejected/dropped by sing-box.
+          for (final String blockedHost in <String>[
+            'pornhub.com',
+            'www.1xbet.com',
+            'ads.doubleclick.net',
+            'tinder.com',
+            'sub.my-blocked-site.test',
+            'second-blocked.example',
+          ]) {
+            final Socket sock = await Socket.connect(
+              '127.0.0.1',
+              customMixedPort,
+              timeout: const Duration(seconds: 2),
+            );
+            bool rejected = false;
+            try {
+              sock.write(
+                'CONNECT $blockedHost:443 HTTP/1.1\r\n'
+                'Host: $blockedHost:443\r\n'
+                'Proxy-Authorization: Basic $basic\r\n\r\n',
+              );
+              await sock.flush();
+              final List<int> reply = await sock.first
+                  .timeout(const Duration(milliseconds: 900));
+              final String head = utf8.decode(reply, allowMalformed: true);
+              // A blocked CONNECT either closes with EOF/RST or returns non-200;
+              // if it returns 200 before sniffing/routing, reading the next byte
+              // immediately hits EOF because sing-box rejects the stream.
+              expect(
+                head,
+                isNot(contains('407')),
+                reason: 'Proxy auth must succeed before route block for $blockedHost',
+              );
+              if (!head.startsWith('HTTP/1.1 200') &&
+                  !head.startsWith('HTTP/1.0 200')) {
+                rejected = true;
+              }
+            } on StateError {
+              // Immediate EOF from sing-box reject action!
+              rejected = true;
+            } on SocketException {
+              // Immediate TCP RST from sing-box reject action!
+              rejected = true;
+            } finally {
+              sock.destroy();
+            }
+            if (!rejected) {
+              // HTTP GET form gives sing-box the full Host on byte 0 so route
+              // rejection happens before any upstream dial.
+              final HttpClient authed = HttpClient()
+                ..connectionTimeout = const Duration(seconds: 1)
+                ..findProxy = (_) => 'PROXY 127.0.0.1:$customMixedPort';
+              try {
+                final HttpClientRequest req = await authed
+                    .getUrl(Uri.parse('http://$blockedHost/'))
+                    .timeout(const Duration(milliseconds: 900));
+                req.headers
+                    .set(HttpHeaders.proxyAuthorizationHeader, 'Basic $basic');
+                final HttpClientResponse res = await req
+                    .close()
+                    .timeout(const Duration(milliseconds: 900));
+                await res.drain<void>();
+                rejected = res.statusCode >= 500 ||
+                    res.statusCode == HttpStatus.forbidden;
+              } on IOException {
+                rejected = true;
+              } on TimeoutException {
+                rejected = true;
+              } finally {
+                authed.close(force: true);
+              }
+            }
+            expect(
+              rejected,
+              isTrue,
+              reason:
+                  'Expected $blockedHost to be blocked by live core; logs: $logs',
+            );
+          }
+        } finally {
+          await origin.close(force: true);
         }
       } finally {
         running?.kill();
