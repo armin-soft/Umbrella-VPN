@@ -20,9 +20,12 @@ public static function userGreeting(Context $Context, string $Section): string {
 public static function userFooter(): string { return ''; }
 public static function toPersian(string $Value): string { return $Value; }
 public static function normalizePhone(string $Value): string { return $Value; }
+public static function noticeBlock(string $Title, array $Lines = []): string { return $Title . "\n" . implode("\n", $Lines); }
 }
 final class Repository {
-public static function getUser(int $Id): array { return []; }
+public static array $State = [];
+public static function getUser(int $Id): array { return self::$State; }
+public static function updateUserSession(int $Id, string $Step, string $Payload = ''): void { self::$State = ['Step' => $Step, 'Payload' => $Payload]; }
 }
 final class PanelClient {
 public static function findByTelegramId(int $Id): array { return ['uuid' => 'owner-' . $Id]; }
@@ -74,17 +77,18 @@ return TelegramClient::$Rows === [] ? [] : array_column(array_merge(...TelegramC
 }
 $Context = new Context();
 AppFlow::filterMenu($Context);
-check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_toggle:ads', 'app_filter_toggle:dating', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact four categories, ordered and no duplicate ads');
-check(array_map('count', TelegramClient::$Rows) === [2, 2, 1, 1, 1], 'filter categories are paired; switch and navigation remain separate');
-check(!str_contains(TelegramClient::$Text, 'دامنه') && !str_contains(TelegramClient::$Text, 'اجتماعی'), 'removed items absent from summary');
+check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_toggle:ads', 'app_filter_toggle:dating', 'app_filter_domains', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact four categories, custom domains menu, master switch and navigation');
+check(array_map('count', TelegramClient::$Rows) === [2, 2, 1, 1, 1, 1], 'filter categories are paired; custom domains, switch and navigation remain separate');
+check(str_contains(TelegramClient::$Text, 'دامنه') && !str_contains(TelegramClient::$Text, 'اجتماعی'), 'custom domain count shown and removed social absent from summary');
 $Before = Database::$Filter;
 AppFlow::filterToggle($Context, 'social');
 check(Database::$Writes === 0 && Database::$Filter === $Before, 'old removed category cannot be toggled from bot');
-AppFlow::filterDomainsStart($Context);
-AppFlow::filterDomainsInput($Context, 'new.example');
-check(UserFlow::$AccountVisits === 2 && Database::$Writes === 0, 'legacy domain entry points only redirect');
 AppFlow::filterToggle($Context, 'gambling');
 check(Database::$Filter['Gambling'] === 1 && Database::$Filter['Social'] === 1 && Database::$Filter['Custom_Domains'] === 'old.example', 'visible toggle works without deleting stored app settings');
+AppFlow::filterDomainsStart($Context);
+check((Repository::$State['Step'] ?? '') === 'app_filter_domain_add', 'domain prompt sets input step');
+AppFlow::filterDomainsInput($Context, 'https://www.New.Example/path');
+check((Repository::$State['Step'] ?? '') === 'none' && str_contains((string)Database::$Filter['Custom_Domains'], 'old.example') && str_contains((string)Database::$Filter['Custom_Domains'], 'new.example'), 'custom domain input adds normalized domain and resets session');
 AppFlow::filterToggle($Context, 'enabled');
 check(Database::$Filter['Enabled'] === 0, 'master switch works');
 check(Menu::adminHome()[0]['text'] === '🏠بازگشت به منوی مدیریت', 'admin home label');
