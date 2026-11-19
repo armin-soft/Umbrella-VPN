@@ -121,7 +121,7 @@ $Check($Step1['duplicates'] === ['alpha.com'], 'flags duplicate in same batch');
 $Check($Step1['settings']['enabled'] === true, 'auto-enables filter when custom domains are added');
 $Check($Step1['settings']['custom_domains'] === ['alpha.com', 'beta.org'], 'persists domains in DB');
 $Check($Step1['settings']['updated_by'] === 'bot', 'records bot as source');
-$Check(str_contains(AppFilter::summary($Step1['settings']), 'دامنه‌های سفارشی: 2 مورد'), 'summary shows custom domain count');
+$Check(str_contains(AppFilter::summary($Step1['settings']), 'دامنه های سفارشی: ۲ مورد'), 'summary shows custom domain count');
 
 // حذف تکی با توکن دکمه اینلاین تلگرام.
 $Alpha_Token = AppFilter::domainToken('alpha.com');

@@ -29,19 +29,60 @@ jobs:
   telegram-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.5']
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: ${{ matrix.php }}
+          extensions: pdo, pdo_mysql, pdo_sqlite, mbstring, curl, openssl
           coverage: none
-      - name: Lint and test Telegram-BOT
+      - name: Lint and test Telegram-BOT (PHP ${{ matrix.php }})
         run: |
           set -euo pipefail
-          find Telegram-BOT -name '*.php' -print0 | xargs -0 -n1 php -l
+          php -v
+          while IFS= read -r -d '' php_file; do
+            if ! lint_out=$(php -d error_reporting=E_ALL -d display_errors=1 -l "$php_file" 2>&1) || echo "$lint_out" | grep -Eq 'Deprecated:|Warning:|Notice:'; then
+              esc="${lint_out//%/%25}"
+              esc="${esc//$'\r'/}"
+              esc="${esc//$'\n'/%0A}"
+              echo "::error title=lint:$php_file::$esc"
+              exit 1
+            fi
+          done < <(find Telegram-BOT -name '*.php' -print0)
+          probe_out=$(php -d error_reporting=E_ALL -d display_errors=1 -r '
+            set_error_handler(static function (int $s, string $m, string $f, int $l): bool {
+              if ((error_reporting() & $s) === 0) return false;
+              fwrite(STDERR, "PHP-ERROR[$s]: $m in $f:$l\n");
+              exit(1);
+            });
+            require_once "Telegram-BOT/Core/Database/Database.php";
+            require_once "Telegram-BOT/Core/Database/Schema.php";
+            require_once "Telegram-BOT/Core/Database/Schema-App.php";
+            require_once "Telegram-BOT/Bot/Dispatcher.php";
+            require_once "Telegram-BOT/Bot/Scheduler.php";
+            require_once "Telegram-BOT/Core/App/App-Gateway.php";
+            $attr = Database::mysqlInitCommandAttribute();
+            if (!is_int($attr)) { fwrite(STDERR, "Expected int init-command attr\n"); exit(1); }
+            if (PHP_VERSION_ID >= 80400 && $attr !== \Pdo\Mysql::ATTR_INIT_COMMAND) {
+              fwrite(STDERR, "Mismatch with Pdo\\Mysql::ATTR_INIT_COMMAND\n"); exit(1);
+            }
+            // Attempt connection to unreachable local port so Database::connection() builds full $Options array on PHP 8.5.
+            putenv("DB_HOST=127.0.0.1"); putenv("DB_PORT=1"); putenv("DB_NAME=test"); putenv("DB_USER=test"); putenv("DB_PASS=test");
+            try { Database::getInstance()->connection(); } catch (PDOException) {}
+            echo "OK runtime load & PDO options probe on PHP " . PHP_VERSION . " (attr=" . $attr . ")\n";
+          ' 2>&1) || {
+            esc="${probe_out//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
+            echo "::error title=php-runtime-probe::$esc"
+            exit 1
+          }
+          echo "$probe_out"
           for test_file in Telegram-BOT/tests/*_test.php; do
             echo "Running $test_file"
-            if ! out=$(php "$test_file" 2>&1); then
+            if ! out=$(php -d error_reporting=E_ALL -d display_errors=1 "$test_file" 2>&1) || echo "$out" | grep -Eq '(^|[[:space:]])(PHP )?(Deprecated|Warning|Notice):'; then
               esc="${out//%/%25}"
               esc="${esc//$'\r'/}"
               esc="${esc//$'\n'/%0A}"

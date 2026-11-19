@@ -16,7 +16,12 @@ $Rows = $Db->fetchAll('SELECT `Device_ID` FROM `App_Devices` WHERE `Is_Trusted` 
 // Store full, un-shortened text so Telegram Bot views (including AppLink::notifications)
 // always show the complete message; summarization runs exclusively in formatForWindowsApp().
 $Body = html_entity_decode(strip_tags(TelegramClient::md($Body)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-$Title = mb_substr(trim(strip_tags($Title)), 0, 190);
+$RawTitle = mb_substr(trim(strip_tags($Title)), 0, 190);
+if (method_exists('Helper', 'stripZwnj')) $RawTitle = Helper::stripZwnj($RawTitle);
+if (method_exists('Helper', 'digitsToPersian')) $RawTitle = Helper::digitsToPersian($RawTitle);
+$Title = $RawTitle;
+if (method_exists('Helper', 'stripZwnj')) $Body = Helper::stripZwnj($Body);
+if (method_exists('Helper', 'digitsToPersian')) $Body = Helper::digitsToPersian($Body);
 $Body = mb_substr($Body, 0, 12000);
 if (trim($Body) === '') return 0;
 if ($Event === '') {
@@ -60,6 +65,10 @@ self::queue((int)$Rows[0]['Telegram_ID'], 'اعلان سیستمی آمبرلا'
 public static function formatForWindowsApp(string $Title, string $Body, string $Level = 'info', int $Max = 160): array {
 $CleanTitle = preg_replace('/\s+/u', ' ', str_replace("\u{200C}", ' ', trim($Title))) ?? trim($Title);
 $NormalizedBody = str_replace(["\u{200C}", "\r\n", "\r", '*', '`'], [' ', "\n", "\n", '', ''], trim($Body));
+if (method_exists('Helper', 'digitsToPersian')) {
+$CleanTitle = Helper::digitsToPersian($CleanTitle);
+$NormalizedBody = Helper::digitsToPersian($NormalizedBody);
+}
 $FinalLevel = trim($Level) !== '' ? trim($Level) : 'info';
 
 if (str_contains($CleanTitle, 'گزارش شبانه') || str_contains($NormalizedBody, 'گزارش شبانه مصرف')) {

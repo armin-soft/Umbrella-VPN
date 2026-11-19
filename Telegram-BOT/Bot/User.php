@@ -95,8 +95,8 @@ if ($Is_Member) {
 $Result = ChannelMembership::restore($Context->UserId);
 $Notice = match ($Result) {
 'restored' => '✅عضویت تأیید و کلاینت دوباره فعال شد.',
-'pending' => '⚠️عضویت تأیید شد، اما فعال‌سازی هنوز موفق نشده؛ دوباره تلاش کنید. بررسی خودکار نیز تکرار می‌شود.',
-'ineligible' => '✅عضویت تأیید شد؛ اشتراک منقضی یا محدودیت دیگری مانع فعال‌سازی خودکار است. با پشتیبانی تماس بگیرید.',
+'pending' => '⚠️عضویت تأیید شد، اما فعال سازی هنوز موفق نشده؛ دوباره تلاش کنید. بررسی خودکار نیز تکرار می شود.',
+'ineligible' => '✅عضویت تأیید شد؛ اشتراک منقضی یا محدودیت دیگری مانع فعال سازی خودکار است. با پشتیبانی تماس بگیرید.',
 default => '✅عضویت شما در کانال تأیید گردید.',
 };
 TelegramClient::sendMessage($Context->ChatId, $Greeting . $Notice . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
@@ -305,7 +305,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 }
 }
 
-/** هر دسته ورودی قبلی را لغو می‌کند، بدون دست‌زدن به اطلاعات پرداخت. */
+/** هر دسته ورودی قبلی را لغو می کند، بدون دست زدن به اطلاعات پرداخت. */
 private static function categoryMenu(Context $Context, string $Title, array $Rows): void {
 if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
@@ -373,8 +373,8 @@ if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
 [$User, $Live] = self::subscriptionMenuState($Context->UserId);
 $Subscription = trim((string)($User['Subscription'] ?? ''));
 $Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
-// توقف کلاینت، مالکیت اشتراک را از بین نمی‌برد. تاریخ نامشخص نیز
-// نباید باعث نمایش خرید مجدد برای اشتراک ثبت‌شده شود.
+// توقف کلاینت، مالکیت اشتراک را از بین نمی برد. تاریخ نامشخص نیز
+// نباید باعث نمایش خرید مجدد برای اشتراک ثبت شده شود.
 $Has_Subscription = $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
 $Rows = Menu::rows([
 [['💎اشتراک من', 'اشتراک من']],
@@ -424,7 +424,7 @@ self::categoryMenu($Context, 'حساب کاربری', $Rows);
 public static function deviceMenu(Context $Context): void {
 self::categoryMenu($Context, 'دستگاه من', Menu::rows([
 [['🛡کنترل محتوا', 'app_filter']],
-[['🔐تأیید دومرحله‌ای', 'app_2fa']],
+[['🔐تأیید دومرحله ای', 'app_2fa']],
 [['📱دستگاه های من', 'app_devices']],
 ]));
 }
@@ -443,7 +443,7 @@ $Rows = Menu::rows([
 self::categoryMenu($Context, 'سوابق و آمار', $Rows);
 }
 
-/** دسته پشتیبانی و تیکت‌ها. */
+/** دسته پشتیبانی و تیکت ها. */
 public static function supportMenu(Context $Context): void {
 $Rows = Menu::rows([
 [['🎫تیکت های من', 'لیست تیکت های من']],
@@ -571,7 +571,7 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 . "├─📤حجم باقی مانده: *" . ($Remaining_Usage !== '' ? Helper::formatGB((float)$Remaining_Usage) : 'نامشخص') . "*\n"
 . "├─📈درصد مصرف: *" . ($Percent_Usage !== '' && $Percent_Usage !== null ? Helper::formatPercent((float)$Percent_Usage) . '٪' : 'نامشخص') . "*\n"
 . "├─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*\n"
-. "└─🆔UUID: `{$Client_ID}`\n"
+. "└─🆔شناسه کلاینت: `{$Client_ID}`\n"
 . ($Has_Keys
 ? "\n🔑*کلیدهای اتصال شما:*\n\n"
 . "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private}</pre>\n"
@@ -1160,7 +1160,7 @@ TelegramClient::sendReadableMessage($Admin, null, $Admin_Text, TelegramClient::i
 [['text' => '✏️پاسخ به تیکت', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 ]));
 foreach ($Attachments as $Media) {
-if (!TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️ارسال پیوست ناموفق بود؛ از بخش پیوست‌های تیکت دوباره تلاش کنید.');
+if (!TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️ارسال پیوست ناموفق بود؛ از بخش پیوست های تیکت دوباره تلاش کنید.');
 }
 
 }
@@ -1240,7 +1240,7 @@ $Msg_Text = TicketMedia::decode($Msg) !== null ? '[📎پیوست]' : '[💬هی
 $Thread .= "{$Sender}: {$Msg_Text}\n";
 
 if (TicketMedia::decode($Msg) !== null) {
-$Thread .= "📎[پیوست؛ از دکمه پیوست‌های تیکت باز کنید]\n";
+$Thread .= "📎[پیوست؛ از دکمه پیوست های تیکت باز کنید]\n";
 }
 }
 
@@ -1253,7 +1253,7 @@ if ($Ticket['Status'] !== 'closed') {
 $Buttons[] = [['text' => '✏️پاسخ', 'callback_data' => 'ticket_user_reply:' . $Ticket_ID]];
 }
 
-$Buttons[] = [Menu::button('📎پیوست‌های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')];
+$Buttons[] = [Menu::button('📎پیوست های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')];
 $Buttons = array_merge($Buttons, Menu::userNav('لیست تیکت های من', 'لیست تیکت های من'));
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
@@ -1266,7 +1266,7 @@ $Empty = $Rows === [];
 $Rows = array_merge($Rows, Menu::pages($Page, $Count, 'ticket_attachments:' . $TicketId . ':'));
 $Rows[] = Menu::back('تیکت', ($Context->isAdmin() ? 'ticket_view:' : 'ticket_user_view:') . $TicketId);
 $Rows[] = $Context->isAdmin() ? Menu::adminHome() : Menu::userHome();
-$Text = ($Context->isAdmin() ? Helper::adminGreeting($Context, 'پیوست‌های تیکت') : Helper::userGreeting($Context, 'پیوست‌های تیکت')) . Menu::pageLabel($Page, $Count) . ($Empty ? '📭پیوستی ثبت نشده است.' : '📎پیوست مورد نظر را انتخاب کنید.');
+$Text = ($Context->isAdmin() ? Helper::adminGreeting($Context, 'پیوست های تیکت') : Helper::userGreeting($Context, 'پیوست های تیکت')) . Menu::pageLabel($Page, $Count) . ($Empty ? '📭پیوستی ثبت نشده است.' : '📎پیوست مورد نظر را انتخاب کنید.');
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
@@ -1288,7 +1288,7 @@ if ($Ticket['Status'] === 'closed') return;
 $Media = TicketMedia::extract($Context);
 if (trim($Text) === '' && $Media === null) return;
 Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Text, null, $Media !== null ? json_encode($Media, JSON_UNESCAPED_UNICODE) : null);
-// حالت پاسخ باز می‌ماند تا فایل‌های پشت‌سرهم/آلبوم گم نشوند؛ بازگشت آن را لغو می‌کند.
+// حالت پاسخ باز می ماند تا فایل های پشت سرهم/آلبوم گم نشوند؛ بازگشت آن را لغو می کند.
 
 
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
@@ -1297,10 +1297,10 @@ if ($Admin > 0) {
 TelegramClient::sendReadableMessage($Admin, null, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'مدیریت تیکت ها', $Admin) . "📨پاسخ جدید به تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
 ]));
-if ($Media !== null && !TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️پیوست دریافت نشد؛ از پیوست‌های تیکت دوباره تلاش کنید.');
+if ($Media !== null && !TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️پیوست دریافت نشد؛ از پیوست های تیکت دوباره تلاش کنید.');
 }
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پاسخ به تیکت') . "✅پاسخ در تیکت ثبت شد. می‌توانید پیام یا پیوست بعدی را بفرستید؛ برای پایان دکمه بازگشت را بزنید." . Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('لیست تیکت های من', 'لیست تیکت های من')));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پاسخ به تیکت') . "✅پاسخ در تیکت ثبت شد. می توانید پیام یا پیوست بعدی را بفرستید؛ برای پایان دکمه بازگشت را بزنید." . Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('لیست تیکت های من', 'لیست تیکت های من')));
 }
 
 public static function usageAnalytics(Context $Context): void {

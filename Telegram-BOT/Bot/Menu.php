@@ -139,7 +139,7 @@ return [self::userHome()];
 return [self::back($Back_Title, $Back_Call), self::userHome()];
 }
 
-/** ناوبری صفحه‌های صفرمبنا؛ در فهرست تک‌صفحه‌ای دکمه‌ای نمی‌سازد. */
+/** ناوبری صفحه های صفرمبنا؛ در فهرست تک صفحه ای دکمه ای نمی سازد. */
 public static function pages(int $Page, int $PageCount, string $Prefix): array {
 $Rows = [];
 if ($Page > 0) $Rows[] = [self::button('⬅️صفحه قبل', $Prefix . ($Page - 1))];
@@ -147,7 +147,7 @@ if ($Page + 1 < $PageCount) $Rows[] = [self::button('صفحه بعد➡️', $Pr
 return $Rows;
 }
 
-/** صفحه‌بندی متن خام قبل از escape؛ تگ یا entity در میانه شکسته نمی‌شود. */
+/** صفحه بندی متن خام قبل از escape؛ تگ یا entity در میانه شکسته نمی شود. */
 public static function textPage(string $Text, int $Page): array {
 $Count = max(1, (int)ceil(mb_strlen($Text) / 1800));
 $Page = max(0, min($Page, $Count - 1));
@@ -288,7 +288,7 @@ continue;
 }
 
 if (strlen($Data) > 64) {
-$Problems[] = 'callback_data دکمه «' . $Text . '» بیش از ۶۴ بایت است.';
+$Problems[] = 'شناسه فراخوان دکمه «' . $Text . '» بیش از ۶۴ بایت است.';
 }
 
 if (isset($Seen[$Data])) {

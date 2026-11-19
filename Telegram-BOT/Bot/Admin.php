@@ -24,24 +24,24 @@ final class AdminFlow {
  * where the «بازگشت» button leads, and `type` picks the validation.
  */
 private const CFG_KEYS = [
-'Plan_Price_1' => ['label' => 'قیمت پلن ۱ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 400000'],
-'Plan_Price_2' => ['label' => 'قیمت پلن ۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 700000'],
-'Plan_Price_3' => ['label' => 'قیمت پلن ۳ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 1000000'],
-'Plan_Price_6' => ['label' => 'قیمت پلن ۶ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 1800000'],
-'Plan_Price_12' => ['label' => 'قیمت پلن ۱۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلاً 3000000'],
+'Plan_Price_1' => ['label' => 'قیمت پلن ۱ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلا ۴۰۰۰۰۰'],
+'Plan_Price_2' => ['label' => 'قیمت پلن ۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلا ۷۰۰۰۰۰'],
+'Plan_Price_3' => ['label' => 'قیمت پلن ۳ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلا ۱۰۰۰۰۰۰'],
+'Plan_Price_6' => ['label' => 'قیمت پلن ۶ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلا ۱۸۰۰۰۰۰'],
+'Plan_Price_12' => ['label' => 'قیمت پلن ۱۲ ماهه', 'type' => 'price', 'screen' => 'pricing', 'hint' => 'عدد به تومان، مثلا ۳۰۰۰۰۰۰'],
 'Custom_Min_Days' => ['label' => 'حداقل روز پلن دلخواه', 'type' => 'days', 'screen' => 'pricing', 'hint' => 'عدد صحیح روز، حداقل ۱'],
-'Custom_Max_Days' => ['label' => 'حداکثر روز پلن دلخواه', 'type' => 'days', 'screen' => 'pricing', 'hint' => 'عدد صحیح روز، مثلاً 365'],
+'Custom_Max_Days' => ['label' => 'حداکثر روز پلن دلخواه', 'type' => 'days', 'screen' => 'pricing', 'hint' => 'عدد صحیح روز، مثلا ۳۶۵'],
 'Custom_Min_GB' => ['label' => 'حداقل حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، حداقل ۰.۱'],
-'Custom_Max_GB' => ['label' => 'حداکثر حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، مثلاً 1000'],
+'Custom_Max_GB' => ['label' => 'حداکثر حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، مثلا ۱۰۰۰'],
 'Support_Url' => ['label' => 'لینک پشتیبانی', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا نام کاربری با @'],
-'Channel_Url' => ['label' => 'نام کاربری کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'نام کاربری عمومی کانال، مانند @UmbrellaVPN_Channel یا https://t.me/UmbrellaVPN_Channel؛ شناسه عددی خودکار دریافت می‌شود'],
-'Telegram_Channel_ID' => ['label' => 'آی دی کانال تلگرام', 'type' => 'channel', 'screen' => 'links', 'hint' => 'آی دی عددی و معمولاً منفی، مثال: -1001833514833'],
+'Channel_Url' => ['label' => 'نام کاربری کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'نام کاربری عمومی کانال، مانند @UmbrellaVPN_Channel یا https://t.me/UmbrellaVPN_Channel؛ شناسه عددی خودکار دریافت می شود'],
+'Telegram_Channel_ID' => ['label' => 'شناسه کانال تلگرام', 'type' => 'channel', 'screen' => 'links', 'hint' => 'شناسه عددی و معمولا منفی، مثال: -۱۰۰۱۸۳۳۵۱۴۸۳۳'],
 ];
 
 private function __construct() {
 }
 
-/** منوی اصلی مدیریت تک‌ستونه؛ هر دسته یا میانبر در یک ردیف مستقل. */
+/** منوی اصلی مدیریت تک ستونه؛ هر دسته یا میانبر در یک ردیف مستقل. */
 public static function menu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
@@ -107,7 +107,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function devicesMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
-[['📲دستگاه‌های برنامه', 'admin_devices']],
+[['📲دستگاه های برنامه', 'admin_devices']],
 [['🔐سقف دستگاه حساب', 'device_limit_menu']],
 ]);
 self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
@@ -123,7 +123,7 @@ $Rows = Menu::rows([
 self::categoryMenu($Context, 'مدیریت حساب کاربری', $Rows, 'مدیریت');
 }
 
-/** سازگاری با دکمه قدیمی پشتیبانی؛ بدون صفحه واسطه به تیکت‌ها می‌رود. */
+/** سازگاری با دکمه قدیمی پشتیبانی؛ بدون صفحه واسطه به تیکت ها می رود. */
 public static function supportMenu(Context $Context): void {
 self::ticketAdminMenu($Context);
 }
@@ -151,17 +151,17 @@ public static function usersMenu(Context $Context): void {
 self::menu($Context);
 }
 
-/** مدیریت یکپارچه فهرست دستگاه‌ها و مجوز ورود برنامه. */
+/** مدیریت یکپارچه فهرست دستگاه ها و مجوز ورود برنامه. */
 public static function appDevicesMenu(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Database = Database::getInstance();
-// سه دستگاه در هر صفحه: اطلاعات کامل و نام‌های بلند در محدودیت پیام تلگرام جا می‌شوند.
+// سه دستگاه در هر صفحه: اطلاعات کامل و نام های بلند در محدودیت پیام تلگرام جا می شوند.
 $Page_Size = 3;
 $Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices`', [], 0);
 $Page_Count = max(1, (int)ceil($Total / $Page_Size));
 $Page = max(0, min($Page, $Page_Count - 1));
-// نام و منشن از یک رکورد واحد می‌آیند. شناسه تلگرام اولویت دارد؛
-// شماره فقط وقتی شناسه نداریم و دقیقاً یک کاربر منطبق است استفاده می‌شود.
+// نام و منشن از یک رکورد واحد می آیند. شناسه تلگرام اولویت دارد؛
+// شماره فقط وقتی شناسه نداریم و دقیقاً یک کاربر منطبق است استفاده می شود.
 $Rows = $Database->fetchAll(
 'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
 . '`U`.`Full_Name` AS `Owner_Name`, '
@@ -174,14 +174,14 @@ $Rows = $Database->fetchAll(
 . 'ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC LIMIT ? OFFSET ?',
 [$Page_Size, $Page * $Page_Size]
 );
-$Text = Helper::adminGreeting($Context, 'مدیریت دستگاه‌های برنامه')
-. Menu::section('📲', 'فهرست دستگاه‌های ثبت‌شده', [
+$Text = Helper::adminGreeting($Context, 'مدیریت دستگاه های برنامه')
+. Menu::section('📲', 'فهرست دستگاه های ثبت شده', [
 '📊تعداد کل: ' . Helper::toPersian((string)$Total) . ' دستگاه',
 '📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$Page_Count),
-'🔐دکمه شماره‌دار هر دستگاه، مجوز ورود همان دستگاه را تغییر می‌دهد.',
-'ℹ️مجاز بودن دستگاه به معنی آنلاین بودن آن نیست؛ زمان آخرین فعالیت، زمان ثبت‌شده سرور است.',
+'🔐دکمه شماره دار هر دستگاه، مجوز ورود همان دستگاه را تغییر می دهد.',
+'ℹ️مجاز بودن دستگاه به معنی آنلاین بودن آن نیست؛ زمان آخرین فعالیت، زمان ثبت شده سرور است.',
 ]);
-// داده‌های دریافتی از دستگاه نباید قالب پیام یا لینک‌های آن را تغییر دهند.
+// داده های دریافتی از دستگاه نباید قالب پیام یا لینک های آن را تغییر دهند.
 $Plain = static function (string $Value, int $Limit = 64): string {
 $Value = trim((string)preg_replace('/[\s\p{C}]+/u', ' ', $Value));
 $Value = mb_substr($Value, 0, $Limit);
@@ -195,24 +195,26 @@ $Text .= "\n📭هنوز دستگاهی در برنامه ثبت نشده است
 foreach ($Rows as $Index => $Row) {
 $Number = Helper::toPersian((string)($Page * $Page_Size + $Index + 1));
 $Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
-$Device_Name = trim((string)($Row['Device_Name'] ?? '')) ?: 'دستگاه بی‌نام';
+$Device_Name = trim((string)($Row['Device_Name'] ?? '')) ?: 'دستگاه بی نام';
 $Owner = trim((string)($Row['Owner_Name'] ?? '')) ?: 'نام کامل ثبت نشده';
 $Owner_Id = (int)($Row['Owner_Telegram_ID'] ?? 0);
 $Owner_Label = $Plain($Owner, 190);
 if ($Owner_Id > 0) {
 $Owner_Label = '<a href="tg://user?id=' . $Owner_Id . '">' . $Owner_Label . '</a>';
 }
-$When = trim((string)($Row['Last_Seen_At'] ?? ''));
-if ($When === '0000-00-00 00:00:00') $When = '';
+$When_Raw = trim((string)($Row['Last_Seen_At'] ?? ''));
+$When_Label = method_exists('Helper', 'formatDateTimeText') ? Helper::formatDateTimeText($When_Raw) : ($When_Raw !== '' && $When_Raw !== '0000-00-00 00:00:00' ? $When_Raw : 'ثبت نشده');
+$Platform_Raw = (string)($Row['Platform'] ?? '');
+$Platform_Label = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($Platform_Raw) : $Platform_Raw;
 $Text .= "\n📱دستگاه شماره {$Number}\n"
 . '👤نام کامل کاربر: ' . $Owner_Label . "\n"
-. '🆔شناسه تلگرام: ' . ($Owner_Id > 0 ? '<code>' . $Owner_Id . '</code>' : 'ثبت نشده؛ منشن در دسترس نیست') . "\n"
+. '🆔شناسه تلگرام: ' . ($Owner_Id > 0 ? '<code>' . Helper::toPersian((string)$Owner_Id) . '</code>' : 'ثبت نشده؛ منشن در دسترس نیست') . "\n"
 . '💻نام دستگاه: ' . $Plain($Device_Name, 64) . "\n"
-. '🖥سیستم‌عامل: ' . $Plain((string)($Row['Platform'] ?? ''), 40) . "\n"
-. '🏷نسخه برنامه: ' . $Plain((string)($Row['App_Version'] ?? ''), 40) . "\n"
-. '📞شماره ثبت‌شده دستگاه: ' . $Plain((string)($Row['Phone'] ?? ''), 20) . "\n"
-. '🌐آخرین آی‌پی: ' . $Plain((string)($Row['Last_IP'] ?? ''), 45) . "\n"
-. '🕓آخرین فعالیت: ' . $Plain($When, 25) . "\n"
+. '🖥سیستم عامل: ' . $Plain($Platform_Label, 40) . "\n"
+. '🏷نسخه برنامه: ' . $Plain(Helper::toPersian((string)($Row['App_Version'] ?? '')), 40) . "\n"
+. '📞شماره ثبت شده دستگاه: ' . $Plain(Helper::toPersian((string)($Row['Phone'] ?? '')), 20) . "\n"
+. '🌐آخرین آی پی: ' . $Plain(Helper::toPersian((string)($Row['Last_IP'] ?? '')), 45) . "\n"
+. '🕓آخرین فعالیت: ' . $Plain($When_Label, 30) . "\n"
 . '🔐مجوز ورود: ' . ($Trusted ? '✅مجاز' : '⛔️غیرمجاز') . "\n➖➖➖➖➖➖➖➖➖\n";
 $Prefix = substr((string)$Row['Device_ID'], 0, 32);
 $Buttons[] = [[
@@ -221,7 +223,7 @@ $Buttons[] = [[
 ]];
 $Buttons[] = [Menu::button('🗑حذف دستگاه ' . $Number, 'admin_device_delete:' . (int)$Row['ID'] . ':' . $Page)];
 }
-if ($Rows !== []) $Buttons[] = [Menu::button('🗑حذف گروهی دستگاه‌های این صفحه', 'admin_devices_delete_page:' . $Page)];
+if ($Rows !== []) $Buttons[] = [Menu::button('🗑حذف گروهی دستگاه های این صفحه', 'admin_devices_delete_page:' . $Page)];
 $Buttons = array_merge($Buttons, Menu::pages($Page, $Page_Count, 'admin_devices_page:'));
 $Buttons[] = Menu::back('منوی قبلی', 'admin_devices_menu');
 $Buttons[] = Menu::adminHome();
@@ -246,7 +248,7 @@ $Text = Helper::adminGreeting($Context, 'تأیید حذف دستگاه')
 foreach ($Rows as $Row) $Text .= '• ' . self::listText((string)($Row['Device_Name'] ?? 'دستگاه')) . "
 ";
 $Text .= "
-نشست‌ها و درخواست‌های ورود این دستگاه‌ها باطل می‌شوند. برای استفاده دوباره، ورود و تأیید مجدد لازم است. اشتراک کاربر حذف نمی‌شود.";
+نشست ها و درخواست های ورود این دستگاه ها باطل می شوند. برای استفاده دوباره، ورود و تأیید مجدد لازم است. اشتراک کاربر حذف نمی شود.";
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [Menu::button('🗑تأیید حذف', 'admin_devices_delete_confirm:' . $Token)],
 Menu::back('انصراف', 'admin_devices_delete_cancel:' . $Token), Menu::adminHome(),
@@ -267,7 +269,7 @@ if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context-
 return;
 }
 if (!$Cancel) Repository::logAdminAction($Context->UserId, 'app_devices_delete', null, 'count=' . (int)$Result['count']);
-if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, $Cancel ? 'حذف لغو شد.' : '✅تعداد دستگاه حذف‌شده: ' . Helper::toPersian((string)$Result['count']));
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, $Cancel ? 'حذف لغو شد.' : '✅تعداد دستگاه حذف شده: ' . Helper::toPersian((string)$Result['count']));
 self::appDevicesMenu($Context, (int)$Result['page']);
 }
 
@@ -296,7 +298,7 @@ $Text .= "
 . "
 نام کاربری: " . ($Username !== '' ? '@' . self::listText($Username) : 'ثبت نشده')
 . "
-شناسه: <code>" . $Id . '</code> | ' . ((int)($User['Is_Blocked'] ?? 0) === 1 ? '🚫مسدود' : '✅غیرمسدود') . "
+شناسه: <code>" . Helper::toPersian((string)$Id) . '</code> | ' . ((int)($User['Is_Blocked'] ?? 0) === 1 ? '🚫مسدود' : '✅غیرمسدود') . "
 ";
 $Buttons[] = [Menu::button($Number . '. ' . mb_substr((string)preg_replace('/[\s\p{C}]+/u', ' ', $Name), 0, 40), 'admin_user_view:' . $Id . ':' . $Page)];
 }
@@ -313,9 +315,9 @@ $Text = Helper::adminGreeting($Context, 'اطلاعات کاربر')
 . "
 نام کاربری: " . self::listText((string)($User['Username'] ?? ''))
 . "
-شناسه: <code>" . $Id . '</code>'
+شناسه: <code>" . Helper::toPersian((string)$Id) . '</code>'
 . "
-📞شماره: " . self::listText((string)($User['Phone'] ?? ''))
+📞شماره: " . self::listText(Helper::toPersian((string)($User['Phone'] ?? '')))
 . "
 💎اشتراک: " . self::listText((string)($User['Subscription'] ?? ''))
 . "
@@ -328,7 +330,7 @@ Menu::back('لیست کاربران', 'admin_users_page:' . max(0, $Page)), Menu
 ]));
 }
 
-/** تغییر مجوز یک دستگاه؛ شناسه کامل به کاربر نمایش داده نمی‌شود. */
+/** تغییر مجوز یک دستگاه؛ شناسه کامل به کاربر نمایش داده نمی شود. */
 public static function toggleAppDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Prefix = preg_replace('/[^A-Za-z0-9_-]/', '', $Device_Prefix) ?? '';
@@ -338,7 +340,7 @@ $Matches = $Database->fetchAll(
 [$Prefix . '%']
 );
 if ($Prefix === '' || count($Matches) !== 1) {
-if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه پیدا نشد؛ فهرست را تازه‌سازی کنید.', true);
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دستگاه پیدا نشد؛ فهرست را تازه سازی کنید.', true);
 self::appDevicesMenu($Context, $Page);
 return;
 }
@@ -440,7 +442,7 @@ $Text = Helper::adminGreeting($Context, 'آمار کلی') . "\n➖➖➖➖➖�
 . "├─✅فعال: *" . Helper::toPersian((string)$Client_Status['active']) . "* نفر\n"
 . "├─🚫غیرفعال: *" . Helper::toPersian((string)$Client_Status['inactive']) . "* نفر\n"
 . "└─⏰ منقضی: *" . Helper::toPersian((string)$Stats['expired_users']) . "* نفر\n\n"
-. "📶*توزیع اپراتور پایه (پیش‌شماره، نه استعلام ترابرد):*\n"
+. "📶*توزیع اپراتور پایه (پیش شماره، نه استعلام ترابرد):*\n"
 . $Operator_Text . "\n"
 . "💎*توزیع اشتراک:*\n"
 . $Subscription_Text . "\n"
@@ -623,7 +625,7 @@ $Value = trim($Text);
 
 if (in_array(mb_strtolower($Value), ['حذف', 'پاک', 'delete', 'clear', '-'], true)) {
 BotConfig::setEmergencyUrl('');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش‌فرض (تنظیمات سرور یا آدرس داخلی) دوباره استفاده می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات')));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش فرض (تنظیمات سرور یا آدرس داخلی) دوباره استفاده می شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات')));
 return;
 }
 
@@ -701,12 +703,13 @@ try { BotConfig::configureChannel(BotConfig::getChannelUrl(), false); }
 catch (Throwable $Error) { $ChannelNotice = '⚠️دریافت خودکار شناسه کانال انجام نشد؛ نام کاربری و دسترسی ربات را بررسی کنید.' . "\n"; }
 $Channel = BotConfig::getChannelUrl() ?: 'ثبت نشده';
 $Channel_Id = BotConfig::getTelegramChannelId() ?: 'ثبت نشده';
+$Channel_Id_Label = Helper::toPersian($Channel_Id);
 $Source_Label = static fn (string $Key): string => BotConfig::source($Key) === 'panel' ? '📝پنل' : '🌱فایل تنظیمات';
 $Text = Helper::adminGreeting($Context, 'لینک ها و کانال')
 . "📣*لینک پشتیبانی و کانال*\n➖➖➖➖➖➖➖➖➖\n"
 . "🧑‍💻لینک پشتیبانی ({$Source_Label('Support_Url')}):\n<code>{$Support}</code>\n\n"
 . "📣لینک کانال ({$Source_Label('Channel_Url')}):\n<code>{$Channel}</code>\n\n"
-. "🆔آی دی کانال ({$Source_Label('Telegram_Channel_ID')}):\n<code>{$Channel_Id}</code>\n\n"
+. "🆔شناسه کانال ({$Source_Label('Telegram_Channel_ID')}):\n<code>{$Channel_Id_Label}</code>\n\n"
 . $ChannelNotice
 . "ℹ️لینک پشتیبانی در دکمه های «ارتباط با پشتیبانی» و لینک کانال در دکمه عضویت کانال استفاده می شود.\n"
 . Helper::adminFooter();
@@ -842,7 +845,7 @@ break;
 }
 
 BotConfig::setTelegramChannelId($Value);
-$Stored = $Value;
+$Stored = Helper::toPersian($Value);
 break;
 default:
 $Error = '❓نوع مقدار ناشناخته است.';
@@ -871,7 +874,9 @@ case 'Custom_Min_GB': return Helper::formatGB(BotConfig::getCustomMinGB());
 case 'Custom_Max_GB': return Helper::formatGB(BotConfig::getCustomMaxGB());
 case 'Support_Url': return BotConfig::getSupportUrl() ?: 'ثبت نشده';
 case 'Channel_Url': return BotConfig::getChannelUrl() ?: 'ثبت نشده';
-case 'Telegram_Channel_ID': return BotConfig::getTelegramChannelId() ?: 'ثبت نشده';
+case 'Telegram_Channel_ID':
+$Current_Channel_Id = BotConfig::getTelegramChannelId();
+return $Current_Channel_Id !== '' ? Helper::toPersian($Current_Channel_Id) : 'ثبت نشده';
 default: return '—';
 }
 }
@@ -1025,13 +1030,13 @@ $Services = [
 ['snell_port', '🟡پروتکل اسنل', 'tcp', 'snell_enable'],
 ['naive_port', '🟢نایو', 'tcp', 'naive_enable'],
 ['mieru_port', '🔵میرو', 'tcp', 'mieru_enable'],
-['mieru_tcp_ports', '🔵میرو (تی‌سی‌پی)', 'tcp', 'mieru_enable'],
+['mieru_tcp_ports', '🔵میرو (تی سی پی)', 'tcp', 'mieru_enable'],
 ['wireguard_port', '🟣وایرگارد', 'udp', 'wireguard_enable'],
 ['amnezia_port', '🟠امنزیا وی جی', 'udp', 'amnezia_enable'],
 ['tuic_port', '🔴تیویک', 'udp', 'tuic_enable'],
 ['hysteria_port', '🟠هیستریا ۲', 'udp', 'hysteria_enable'],
 ['kcp_ports', '🟣کی سی پی', 'udp', 'kcp_enable'],
-['mieru_udp_ports', '🔵میرو (یو‌دی‌پی)', 'udp', 'mieru_enable'],
+['mieru_udp_ports', '🔵میرو (یو دی پی)', 'udp', 'mieru_enable'],
 ];
 
 $Groups = ['tcp' => [], 'udp' => []];
@@ -1050,7 +1055,7 @@ $Groups[$Group][] = $Label . ' — `' . Helper::toPersian($Port) . '`';
 
 $Lines = [];
 
-foreach (['tcp' => '🔌پورت‌های تی‌سی‌پی', 'udp' => '🛰پورت‌های یو‌دی‌پی'] as $Kind => $Title) {
+foreach (['tcp' => '🔌پورت های تی سی پی', 'udp' => '🛰پورت های یو دی پی'] as $Kind => $Title) {
 $Items = $Groups[$Kind];
 $Lines[] = "{$Title} (" . Helper::toPersian((string)count($Items)) . "):";
 
@@ -1158,7 +1163,7 @@ if (is_file($Filepath)) {
 @unlink($Filepath);
 }
 $Error_Msg = trim($Error_Raw);
-TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تهیه نسخه پشتیبان ناموفق بود.\n⚠️علت: ابزار پشتیبان‌گیری دیتابیس با خطا مواجه شد.\n💬جزئیات: " . mb_substr($Error_Msg, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تهیه نسخه پشتیبان ناموفق بود.\n⚠️علت: ابزار پشتیبان گیری دیتابیس با خطا مواجه شد.\n💬جزئیات: " . mb_substr($Error_Msg, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔁تلاش مجدد', 'callback_data' => 'پشتیبان گیری دیتابیس']],
 Menu::back('منوی قبلی', 'منوی سیستم'), Menu::adminHome(),
 ]));
@@ -1166,7 +1171,7 @@ return;
 }
 
 $Size = filesize($Filepath);
-$Size_Label = $Size > 1048576 ? round($Size / 1048576, 2) . ' MB' : round($Size / 1024, 2) . ' KB';
+$Size_Label = Helper::formatBytes((int)$Size);
 $Backup_Caption = Helper::adminGreeting($Context, 'مدیریت دیتابیس')
 . "✅نسخه پشتیبان با موفقیت تهیه گردید.\n📄نام فایل: `{$Filename}`\n💾حجم: {$Size_Label}"
 . Helper::adminFooter();
@@ -1848,7 +1853,7 @@ default => self::unknownAdminInput($Context),
 
 private static function unknownAdminInput(Context $Context): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ورودی شما با هیچ عملیات در انتظاری مطابقت نداشت و نادیده گرفته شد.\n👌لطفاً برای ادامه از دکمه‌های منو استفاده کنید یا دستور `/panel` را ارسال نمایید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️ورودی شما با هیچ عملیات در انتظاری مطابقت نداشت و نادیده گرفته شد.\n👌لطفا برای ادامه از دکمه های منو استفاده کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 Menu::adminHome(),
 ]));
 }
@@ -1919,10 +1924,10 @@ return null;
 }
 
 public static function versionNumber(Context $Context, string $Version): void {
-$Version = trim($Version);
+$Version = str_replace('٫', '.', trim(Helper::toEnglish($Version)));
 
 if (!preg_match('/^\d+\.\d+\.\d+$/', $Version)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فرمت نسخه نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️مثال صحیح: `1.0.0`\n🔁لطفاً شماره نسخه را با فرمت درست وارد کنید.\n👇مثلاً `1.0.1`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌فرمت نسخه نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️مثال صحیح: `۱.۰.۰`\n🔁لطفا شماره نسخه را با فرمت درست وارد کنید.\n👇مثلا `۱.۰.۱`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
 return;
 }
 
@@ -1993,7 +1998,7 @@ return "`" . Helper::toPersian($Target) . "`";
 
 public static function notifyAdminServerError(string $Operation, int $User_ID, string $Name, int $Status_Code, string $Error): void {
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
-$Status_Text = $Status_Code > 0 ? 'HTTP ' . $Status_Code : 'خطا در ارتباط';
+$Status_Text = $Status_Code > 0 ? 'کد وضعیت ' . Helper::toPersian((string)$Status_Code) : 'خطا در ارتباط';
 TelegramClient::sendSystemMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin) . "❌خطای سرور در عملیات: {$Operation}\n\n"
 . "👤کاربر: {$Name}\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"
@@ -2021,7 +2026,7 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "👌مب
 return;
 }
 
-$Amount = (float)Helper::toEnglish(preg_replace('/[^0-9.]/', '', $Text) ?? '0');
+$Amount = (float)(preg_replace('/[^0-9.]/', '', str_replace('٫', '.', Helper::toEnglish($Text))) ?? '0');
 $Target = (int)(Repository::getUserSession($Context->UserId)['Temp_UID'] ?? 0);
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => null]);
@@ -2372,7 +2377,7 @@ private static function notifyUser(Context $Context, string $Message): void {
 self::sendSingleMessage($Context, $Message, 'اطلاع رسانی اول');
 }
 
-/** چهار روش مشترک برای پیام تکی، همگانی و اطلاع‌رسانی. */
+/** چهار روش مشترک برای پیام تکی، همگانی و اطلاع رسانی. */
 private static function deliveryMenu(Context $Context, string $Scope, string $Title): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
@@ -2400,7 +2405,7 @@ private static function deliveryModeLabel(string $Mode): string {
 return match ($Mode) { 'telegram' => 'تلگرام', 'sms' => 'پیامک', 'app' => 'نرم افزار/ اپلیکیشن', 'all' => 'همه موارد', 'both' => 'تلگرام و پیامک', default => 'نامعتبر' };
 }
 
-/** شکست یک روش، ارسال روش‌های دیگر را متوقف نمی‌کند. برنامه فقط صف می‌شود. */
+/** شکست یک روش، ارسال روش های دیگر را متوقف نمی کند. برنامه فقط صف می شود. */
 private static function deliverMessage(array $User, string $Message, string $Mode, int $AdminId): array {
 $Result = [];
 $UserId = (int)($User['Telegram_ID'] ?? 0);
@@ -2462,7 +2467,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_target', 'Temp_UID' => null]);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::header($Context, 'اطلاع رسانی به برنامه')
 . "👌شناسه عددی کاربر، شماره موبایل یا کلمه «همه» را بفرستید.\n"
-. 'ℹ️ پیام در برنامه آمبرلا به دستگاه همان کاربر نمایش داده می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+. 'ℹ️ پیام در برنامه آمبرلا به دستگاه همان کاربر نمایش داده می شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome(),
 ]));
 }
@@ -2476,7 +2481,7 @@ $Input = trim($Input);
 if ($Input === 'همه' || mb_strtolower($Input) === 'all') {
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_text', 'Temp_UID' => 0]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '📝 حالا متن پیام را بفرستید؛ برای همه دستگاه‌ها ارسال می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
+. '📝 حالا متن پیام را بفرستید؛ برای همه دستگاه ها ارسال می شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 return;
 }
 
@@ -2489,7 +2494,7 @@ return;
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_text', 'Temp_UID' => (int)$User['Telegram_ID']]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '📝 حالا متن پیام را بفرستید؛ برای دستگاه‌های کاربر ' . Helper::toPersian((string)$User['Telegram_ID']) . ' ارسال می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
+. '📝 حالا متن پیام را بفرستید؛ برای دستگاه های کاربر ' . Helper::toPersian((string)$User['Telegram_ID']) . ' ارسال می شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 }
 
 /** Third step: stores (and queues) the message. */
@@ -2506,7 +2511,7 @@ $Count = self::queueAppPush($Target, $Text, (int)$Context->UserId);
 
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null]);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '✅ پیام ثبت شد و تا ' . Helper::toPersian((string)$Count) . ' دستگاه تحویل داده می‌شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
+. '✅ پیام ثبت شد و تا ' . Helper::toPersian((string)$Count) . ' دستگاه تحویل داده می شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 }
 
 /**
@@ -2564,7 +2569,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, self::h
 . "📣*پیام همزمان آماده ارسال است.*\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "👌متن دلخواه خود را در یک پیام بفرستید.\n"
-. "📤این متن برای همهٔ کاربران ربات (تلگرام) و همهٔ دستگاه‌های برنامهٔ «آمبرلا» به‌عنوان اعلان برنامه ارسال می‌شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+. "📤این متن برای همهٔ کاربران ربات (تلگرام) و همهٔ دستگاه های برنامهٔ «آمبرلا» به عنوان اعلان برنامه ارسال می شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome(),
 ]));
 }
@@ -2599,7 +2604,7 @@ if ($Name === '') $Name = 'کاربر';
 if ($User_ID <= 0) continue;
 if ($Chat_ID > 0) {
 try {
-$Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Name, 'اطلاع رسانی', $User_ID) . "📣پیام اطلاع‌رسانی سرور آمبرلا:\n\n{$Text}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
+$Result = TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Name, 'اطلاع رسانی', $User_ID) . "📣پیام اطلاع رسانی سرور آمبرلا:\n\n{$Text}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
 Menu::userHome(),
 ]));
 
@@ -2620,7 +2625,7 @@ $Failed_Tg++;
 $Devices = self::queueAppPush(0, $Text, (int)$Context->UserId);
 $Summary = "✅ارسال موفق تلگرام: " . Helper::toPersian($Sent_Tg) . " نفر\n"
 . "⛔️ارسال ناموفق تلگرام: " . Helper::toPersian($Failed_Tg) . " نفر\n"
-. "📱دستگاه‌های برنامه که این اعلان را دریافت می‌کنند: " . Helper::toPersian($Devices) . " دستگاه\n"
+. "📱دستگاه های برنامه که این اعلان را دریافت می کنند: " . Helper::toPersian($Devices) . " دستگاه\n"
 . "👥تعداد کل مخاطبین تلگرام: " . Helper::toPersian((string)count($Rows)) . " نفر";
 
 $Markup = array_merge(
@@ -2670,8 +2675,10 @@ $Index = 0;
 foreach ($Devices as $Row) {
 $Index++;
 $Name = trim((string)($Row['Device_Name'] ?? '')) ?: 'دستگاه نامشخص';
-$Seen = (int)($Row['Last_Seen_At'] ?? 0);
-$When = $Seen > 0 ? gmdate('Y-m-d H:i', $Seen) : '—';
+$When_Raw = trim((string)($Row['Last_Seen_At'] ?? ''));
+$When = $When_Raw !== '' && $When_Raw !== '0'
+? (method_exists('Helper', 'formatDateTimeText') ? Helper::formatDateTimeText($When_Raw) : Helper::toPersian($When_Raw))
+: '—';
 $Device_Lines .= "├─📱" . Helper::toPersian((string)$Index) . ". {$Name} · 🕓آخرین استفاده: {$When}\n";
 }
 
@@ -2684,7 +2691,7 @@ $Text = self::header($Context, 'مجوز دستگاه کاربران')
 . Menu::section('📱', 'کاربر انتخاب شده', [
 '👤نام: ' . $Name,
 '🆔شناسه: ' . Helper::toPersian((string)$Telegram_Id),
-'📞شماره: ' . $Phone,
+'📞شماره: ' . Helper::toPersian($Phone),
 '🔐مجوز فعلی: ' . Helper::toPersian((string)$Limit) . ' دستگاه',
 ])
 . "\n📲*دستگاه های فعال:*\n" . $Device_Lines
@@ -2694,15 +2701,15 @@ Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:device_limit_p
 
 TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [
-['text' => '1️⃣یک دستگاه', 'callback_data' => 'device_limit_set_1'],
-['text' => '2️⃣دو دستگاه', 'callback_data' => 'device_limit_set_2'],
+['text' => '🔹۱ دستگاه', 'callback_data' => 'device_limit_set_1'],
+['text' => '🔹۲ دستگاه', 'callback_data' => 'device_limit_set_2'],
 ],
 [
-['text' => '3️⃣سه دستگاه', 'callback_data' => 'device_limit_set_3'],
-['text' => '5️⃣پنج دستگاه', 'callback_data' => 'device_limit_set_5'],
+['text' => '🔹۳ دستگاه', 'callback_data' => 'device_limit_set_3'],
+['text' => '🔹۵ دستگاه', 'callback_data' => 'device_limit_set_5'],
 ],
 [
-['text' => '🔟ده دستگاه', 'callback_data' => 'device_limit_set_10'],
+['text' => '🔹۱۰ دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
 ], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
 }
@@ -2722,15 +2729,15 @@ return;
 if (!preg_match('/^\d{1,2}$/', $Number) || (int)$Number < 1) {
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⚠️فقط یک عدد بین ۱ تا ۹۹ مجاز است؛ یکی از دکمه های زیر را انتخاب کنید یا عدد را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
 [
-['text' => '1️⃣یک دستگاه', 'callback_data' => 'device_limit_set_1'],
-['text' => '2️⃣دو دستگاه', 'callback_data' => 'device_limit_set_2'],
+['text' => '🔹۱ دستگاه', 'callback_data' => 'device_limit_set_1'],
+['text' => '🔹۲ دستگاه', 'callback_data' => 'device_limit_set_2'],
 ],
 [
-['text' => '3️⃣سه دستگاه', 'callback_data' => 'device_limit_set_3'],
-['text' => '5️⃣پنج دستگاه', 'callback_data' => 'device_limit_set_5'],
+['text' => '🔹۳ دستگاه', 'callback_data' => 'device_limit_set_3'],
+['text' => '🔹۵ دستگاه', 'callback_data' => 'device_limit_set_5'],
 ],
 [
-['text' => '🔟ده دستگاه', 'callback_data' => 'device_limit_set_10'],
+['text' => '🔹۱۰ دستگاه', 'callback_data' => 'device_limit_set_10'],
 ],
 ], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
 return;
@@ -2760,8 +2767,8 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => n
 Repository::logAdminAction((int)$Context->UserId, 'device_limit_set', $Telegram_Id, 'max=' . $Max);
 
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران')
-. "✅*انجام شد.*\n📱از این به بعد کاربر " . Helper::toPersian((string)$Telegram_Id) . " می‌تواند روی *" . Helper::toPersian((string)$Max) . " دستگاه* به‌طور همزمان فعال باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
-[['text' => '📲فهرست دستگاه‌ها', 'callback_data' => 'admin_devices']],
+. "✅*انجام شد.*\n📱از این به بعد کاربر " . Helper::toPersian((string)$Telegram_Id) . " می تواند روی *" . Helper::toPersian((string)$Max) . " دستگاه* به طور همزمان فعال باشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
+[['text' => '📲فهرست دستگاه ها', 'callback_data' => 'admin_devices']],
 ], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
 }
 
@@ -2993,7 +3000,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال با�
 }
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:update_uid']);
-$Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . '👌فرمت ورودی (تک یا گروهی — بدون محدودیت):' . "\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه تک:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\nنمونه گروهی:\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n\n⚠️نکته: هر شناسه کاربر با نزدیک‌ترین شناسه کلاینت جفت می‌شود. ترتیب مهم نیست و تعداد جفت‌ها محدودیتی ندارد.\n📱به جای شناسه کاربر می‌توانید شماره موبایل کاربر را نیز وارد کنید." . Helper::adminFooter();
+$Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . '👌فرمت ورودی (تک یا گروهی — بدون محدودیت):' . "\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه تک:\n`۶۲۴۸۷۴۲۷۰۵`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\nنمونه گروهی:\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n\n⚠️نکته: هر شناسه کاربر با نزدیک ترین شناسه کلاینت جفت می شود. ترتیب مهم نیست و تعداد جفت ها محدودیتی ندارد.\n📱به جای شناسه کاربر می توانید شماره موبایل کاربر را نیز وارد کنید." . Helper::adminFooter();
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 Menu::back('منوی قبلی', 'عملیات کلاینت سرور'), Menu::adminHome(),
@@ -3035,7 +3042,7 @@ $Pending_Num = $Line;
 }
 
 if ($Pairs === []) {
-$Error_Text = self::header($Context) . " *❌خطا: فرمت وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه کاربر و شناسه کلاینت را (تک یا گروهی) وارد کنید:\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه گروهی:\n`6248742705`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n`123456789`\n`0d2585be-89a1-4a42-9d5e-2c9a4fcb51aa`" . Helper::adminFooter();
+$Error_Text = self::header($Context) . " *❌خطا: فرمت وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه کاربر و شناسه کلاینت را (تک یا گروهی) وارد کنید:\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه گروهی:\n`۶۲۴۸۷۴۲۷۰۵`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n`۱۲۳۴۵۶۷۸۹`\n`0d2585be-89a1-4a42-9d5e-2c9a4fcb51aa`" . Helper::adminFooter();
 TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard(Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')));
 return;
 }
@@ -3293,7 +3300,7 @@ $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده ه�
 . "👤*نام کامل:* " . Helper::mention((string)$Display_Name, (int)$Target_Telegram_ID) . "\n"
 . "🆔*شناسه تلگرام:* `" . Helper::toPersian((string)$Target_Telegram_ID) . "`\n"
 . "📱*شماره تماس:* {$Phone_Label}\n"
-. "📶*اپراتور پایه (پیش‌شماره):* {$Operator_Label}\n"
+. "📶*اپراتور پایه (پیش شماره):* {$Operator_Label}\n"
 . "🔑*شناسه کلاینت:* `{$Server_UUID}`\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "💎*اطلاعات اشتراک:*\n"
@@ -3332,7 +3339,7 @@ if ($Target_Telegram_ID > 0) {
 TelegramClient::sendSystemMessage($Target_Telegram_ID, Common::greet(new Context([], $Target_Telegram_ID, $Target_Telegram_ID, $Display_Name, false, null, null, null, null), 'بروز رسانی اشتراک') . "🔄لحظاتی پیش اطلاعات اشتراک شما توسط مدیریت بروزرسانی گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::backTo('💎مشاهده اشتراک', 'اشتراک من'), Menu::userHome()]));
 }
 
-return "✅{$Display_Name} — `{$Server_UUID}`" . ($Target_Telegram_ID > 0 ? ' (ID: ' . Helper::toPersian((string)$Target_Telegram_ID) . ')' : '');
+return "✅{$Display_Name} — `{$Server_UUID}`" . ($Target_Telegram_ID > 0 ? ' (شناسه: ' . Helper::toPersian((string)$Target_Telegram_ID) . ')' : '');
 }
 
 private static function packageLabel(int $Days): string {
@@ -3476,7 +3483,7 @@ $Sender = $Msg['Sender_Type'] === 'admin' ? '🛡ادمین' : '👤کاربر';
 $Thread .= "{$Sender}: " . ($Msg['Message'] ?? '[مدیا]') . "\n";
 
 if (TicketMedia::decode($Msg) !== null) {
-$Thread .= "📎[پیوست؛ از دکمه پیوست‌های تیکت باز کنید]\n";
+$Thread .= "📎[پیوست؛ از دکمه پیوست های تیکت باز کنید]\n";
 }
 }
 
@@ -3485,7 +3492,7 @@ $Text .= Menu::pageLabel($Page, $PageCount) . $ThreadPage;
 
 $Text .= Helper::adminFooter();
 $Buttons = array_merge(Menu::pages($Page, $PageCount, 'admin_ticket_messages:' . $Ticket_ID . ':'), [
-[Menu::button('📎پیوست‌های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')],
+[Menu::button('📎پیوست های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')],
 [['text' => '✏️پاسخ', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 [['text' => '✅بستن تیکت', 'callback_data' => 'ticket_close:' . $Ticket_ID]],
 ], Menu::adminNav('مدیریت تیکت ها', 'مدیریت تیکت ها'));

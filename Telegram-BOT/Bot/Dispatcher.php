@@ -21,7 +21,7 @@ private const ROUTES = [
 'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
 'user_account_menu' => [UserFlow::class, 'accountMenu'],
 'user_device_menu' => [UserFlow::class, 'deviceMenu'],
-// سازگاری با پیام‌های قدیمی؛ دسته امنیت دیگر نمایش داده نمی‌شود.
+// سازگاری با پیام های قدیمی؛ دسته امنیت دیگر نمایش داده نمی شود.
 'user_security_menu' => [UserFlow::class, 'accountMenu'],
 'user_stats_menu' => [UserFlow::class, 'statsMenu'],
 'منوی پشتیبانی' => [UserFlow::class, 'supportMenu'],
@@ -650,7 +650,7 @@ $Ok
 $Section = 'تأیید دستگاه';
 $Text = $Ok
 ? ($Approved
-? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
+? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به صورت خودکار وارد می شود." . Helper::userFooter()
 : Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
 : Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n🔁از برنامه دوباره وارد شوید." . Helper::userFooter();
 
@@ -677,7 +677,7 @@ $Has_Media = TicketMedia::extract($Context) !== null;
 
 if (!$Has_Media && $Text === '') {
 $InputFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
-if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به‌صورت عکس، فایل یا متن ارسال کنید.');
+if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به صورت عکس، فایل یا متن ارسال کنید.');
 return;
 }
 if (!$Has_Media && ($Text === '/start' || mb_strtolower($Text) === 'start')) {

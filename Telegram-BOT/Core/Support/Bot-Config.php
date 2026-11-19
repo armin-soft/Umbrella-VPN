@@ -224,7 +224,7 @@ if (preg_match('/^@?([A-Za-z][A-Za-z0-9_]{3,31})$/', $Input, $Match)) return $Ma
 throw new InvalidArgumentException('نام کاربری عمومی کانال را مانند @UmbrellaVPN_Channel یا https://t.me/UmbrellaVPN_Channel بفرستید.');
 }
 
-/** هر دو مقدار فقط پس از پاسخ معتبر getChat و در یک تراکنش ذخیره می‌شوند. */
+/** هر دو مقدار فقط پس از پاسخ معتبر getChat و در یک تراکنش ذخیره می شوند. */
 public static function configureChannel(string $Input, bool $Force = true): string {
 $Username = self::channelUsername($Input);
 if (!$Force && strtolower((string)Repository::getSetting('Resolved_Channel_Username', '')) === strtolower($Username)

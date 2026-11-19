@@ -176,7 +176,7 @@ check($P!==null && $P['Fee']==0 && $P['Amount']==10000,'legitimate free promotio
 resetCase(100); $Q=quoteResponse(); foreach (['amount','fee','suggested_amount'] as $Key) $Q['Json']['data'][$Key]=(string)$Q['Json']['data'][$Key];
 HttpClient::$Queue=[$Q,requestResponse($Authority)];
 check(Zarinpal::request(10000,'https://example.invalid/cb','test')['Amount']===10432.9,'documented string suggested_amount supported');
-$Formatter=new ReflectionMethod(SubscriptionFlow::class,'paymentAmount'); $Formatter->setAccessible(true);
+$Formatter=new ReflectionMethod(SubscriptionFlow::class,'paymentAmount');
 check(str_contains($Formatter->invoke(null,10432.9),'.9'),'payment display does not round away rial fractions');
 resetCase();
 foreach ([0.0,-1.0,NAN,INF,100000001.0] as $Amount) {

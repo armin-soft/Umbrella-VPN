@@ -85,7 +85,7 @@ SubscriptionFlow::mySubscription(new Context());
 $Rendered = implode("\n", array_map(fn($C) => $C[1]['text'] ?? '', HttpClient::$Calls));
 check(str_contains($Rendered, 'private-123+/=') && str_contains($Rendered, 'wire-456+/='), 'actual subscription preserves all keys');
 check(str_contains($Rendered, 'https://sub.test/client-123/sub/'), 'actual subscription includes usable URL');
-check(str_contains($Rendered, 'اطلاعات ذخیره‌شده'), 'server failure explicitly labelled cached, not fresh');
+check(str_contains($Rendered, 'اطلاعات ذخیره شده'), 'server failure explicitly labelled cached, not fresh');
 Repository::$User['Client_Status'] = 'غیر فعال'; HttpClient::$Calls = [];
 SubscriptionFlow::mySubscriptionActive(new Context());
 check(str_contains(end(HttpClient::$Calls)[1]['text'], 'غیرفعال'), 'inactive direct caller has a non-null renderer');

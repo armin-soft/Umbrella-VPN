@@ -146,10 +146,10 @@ self::fail(503, 'panel_unavailable', 'در حال حاضر ارتباط با س�
 }
 
 /*
- * ورود دو مرحله‌ای است: اول فقط شماره گرفته می‌شود. اگر این شماره حساب
- * نداشته باشد، بانک‌نامه بدون فرستادن پیامک پاسخ «needs_profile» می‌دهد و
- * برنامه سراغ مرحله «نام و نام خانوادگی» می‌رود؛ ثبت‌نام با همان شماره و
- * همین درخواست کامل می‌شود. شماره‌ای که حساب دارد، مستقیم کد می‌گیرد.
+ * ورود دو مرحله ای است: اول فقط شماره گرفته می شود. اگر این شماره حساب
+ * نداشته باشد، بانک نامه بدون فرستادن پیامک پاسخ «needs_profile» می دهد و
+ * برنامه سراغ مرحله «نام و نام خانوادگی» می رود؛ ثبت نام با همان شماره و
+ * همین درخواست کامل می شود. شماره ای که حساب دارد، مستقیم کد می گیرد.
  */
 if (!$Exists && ($First === '' || $Last === '')) {
 self::ok([
@@ -277,7 +277,7 @@ self::fail(409, 'wrong_stage', 'این کد قبلاً استفاده شده ا�
 
 if ((int)$Row['Otp_Attempts'] >= 5) {
 self::notifyFailedLogin((string)$Row['Phone'], 'too_many_attempts', $Row, (int)$Row['Telegram_ID']);
-self::fail(429, 'too_many_attempts', 'تعداد تلاش‌ها زیاد شد؛ کد جدید بگیرید.');
+self::fail(429, 'too_many_attempts', 'تعداد تلاش ها زیاد شد؛ کد جدید بگیرید.');
 }
 
 $Device_Limit = AppDeviceLimit::check((string)$Row['Phone'], (string)$Row['Device_ID']);
@@ -364,7 +364,7 @@ self::ok([
 'challenge' => $Challenge,
 'stage' => 'needs_telegram',
 'bot' => self::botLink(),
-'message' => 'برای تأیید دستگاه، یک‌بار ربات را باز کنید و دکمهٔ «شروع» را بزنید؛ سپس این صفحه را تازه کنید.',
+'message' => 'برای تأیید دستگاه، یک بار ربات را باز کنید و دکمهٔ «شروع» را بزنید؛ سپس این صفحه را تازه کنید.',
 ]);
 }
 
@@ -1392,9 +1392,9 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . "🔐 درخواست ورود به فیلترشکن آمبرلا\n"
 . "👤 نام: " . ($Name !== '' ? $Name : '—') . "\n"
 . "📱 دستگاه: {$Device}\n"
-. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Platform !== '' ? "🖥 سیستم عامل: " . (method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform) : $Platform) . "\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
+. ($IP !== '' ? "🌐 آی پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: {$At}\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "اگر این درخواست از طرف خودتان است «خودم بودم» را بزنید؛ در غیر این صورت «نبودم» را بزنید تا ورود مسدود شود."
@@ -1414,12 +1414,12 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . "✅ ورود به فیلترشکن آمبرلا انجام شد\n"
 . "👤 نام: " . ($Name !== '' ? $Name : '—') . "\n"
 . "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
-. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Platform !== '' ? "🖥 سیستم عامل: " . (method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform) : $Platform) . "\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
+. ($IP !== '' ? "🌐 آی پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "تأیید دومرحله‌ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در منوی خدمات ربات آن دستگاه را حذف کنید و تأیید دومرحله‌ای را روشن کنید."
+. "تأیید دومرحله ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در منوی خدمات ربات آن دستگاه را حذف کنید و تأیید دومرحله ای را روشن کنید."
 . \Helper::userFooter();
 }
 
@@ -1464,13 +1464,13 @@ $Telegram_Id,
 \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Telegram_Id)
 . "⚠️ ورود ناموفق به فیلترشکن آمبرلا\n"
 . "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
-. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Platform !== '' ? "🖥 سیستم عامل: " . (method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform) : $Platform) . "\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n"
+. "🌐 آی پی: " . \Helper::toPersian($IP) . "\n"
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "🔎 دلیل: " . ($Labels[$Reason] ?? $Reason) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه‌های ناشناس را حذف کنید.**"
+. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه های ناشناس را حذف کنید.**"
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
 ['text' => '📱 دستگاه من', 'callback_data' => 'app_devices'],
@@ -1571,6 +1571,8 @@ exit;
 private static function fail(int $Status, string $Code, string $Message, array $Extra = []): void {
 http_response_code($Status);
 $Clean_Message = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Message) : $Message;
+if (method_exists('Helper', 'stripZwnj')) $Clean_Message = Helper::stripZwnj($Clean_Message);
+if (method_exists('Helper', 'digitsToPersian')) $Clean_Message = Helper::digitsToPersian($Clean_Message);
 echo json_encode(
 array_merge(['ok' => false, 'error' => $Code, 'message' => $Clean_Message], self::sanitizePayload($Extra)),
 self::JSON_FLAGS
@@ -1588,12 +1590,20 @@ $Opaque_Keys = [
 'uuid' => true, 'sub_url' => true, 'subscription_url' => true, 'url' => true,
 'emergency_url' => true, 'channel_url' => true, 'support_url' => true,
 ];
+$Persian_Prose_Keys = [
+'message' => true, 'title' => true, 'body' => true, 'label' => true,
+];
 
 foreach ($Data as $Key => $Value) {
 if (is_string($Key) && isset($Opaque_Keys[$Key])) continue;
 
 if (is_string($Value)) {
-$Data[$Key] = Helper::repairMojibake($Value);
+$Clean = Helper::repairMojibake($Value);
+if (method_exists('Helper', 'stripZwnj')) $Clean = Helper::stripZwnj($Clean);
+if (is_string($Key) && isset($Persian_Prose_Keys[$Key]) && method_exists('Helper', 'digitsToPersian')) {
+$Clean = Helper::digitsToPersian($Clean);
+}
+$Data[$Key] = $Clean;
 }
 
 elseif (is_array($Value)) {

@@ -1159,7 +1159,7 @@ Repository::setSetting('Usage_Sync_Alert_At', $Today);
 
 TelegramClient::sendSystemMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin)
 . '❌خطای همگام سازی مصرف کاربران' . "\n\n"
-. '📡وضعیت: ' . ($Status > 0 ? 'HTTP ' . $Status : 'خطا در ارتباط') . "\n"
+. '📡وضعیت: ' . ($Status > 0 ? 'کد وضعیت ' . Helper::toPersian((string)$Status) : 'خطا در ارتباط') . "\n"
 . '⚠️پاسخ: ' . mb_substr($Detail !== '' ? $Detail : 'نامشخص', 0, 500) . "\n"
 . '➖➖➖➖➖➖➖➖➖' . "\n"
 . Helper::adminFooter());

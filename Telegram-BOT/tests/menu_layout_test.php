@@ -259,7 +259,6 @@ $this->check(substr_count($Http_Source, 'CURLOPT_SSL_VERIFYHOST => 2') === 2, 'o
 $this->check(str_contains($Http_Source, "ini_get('curl.cainfo')") && str_contains($Http_Source, "ini_get('openssl.cafile')"), 'explicit server CA configuration retained');
 require_once $Root . '/Core/Support/Http.php';
 $Method = new ReflectionMethod(HttpClient::class, 'certificateBundle');
-$Method->setAccessible(true);
 $Ini = (string)(ini_get('curl.cainfo') ?: ini_get('openssl.cafile') ?: '');
 $this->check($Method->invoke(null) === ($Ini !== '' && is_file($Ini) ? $Ini : null), 'configured CA file or system default selected');
 }

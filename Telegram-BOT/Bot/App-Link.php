@@ -32,7 +32,7 @@ $Text = \Helper::userGreeting($Context, 'فیلترشکن آمبرلا')
 . \Helper::noticeBlock(
 '📱 اتصال برنامه به تلگرام',
 'برای دیدن اطلاعات حساب و تنظیمات فیلتر، ابتدا در برنامه با همین شماره وارد شوید و ربات را باز کنید.',
-'ℹ️ بعد از ورود اول، همه‌چیز به‌صورت خودکار اینجا نمایش داده می‌شود.'
+'ℹ️ بعد از ورود اول، همه چیز به صورت خودکار اینجا نمایش داده می شود.'
 ) . \Helper::userFooter();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()]));
 return;
@@ -83,8 +83,8 @@ if ($Row !== []) $Rows[] = $Row;
 
 $Domain_Count = count($Settings['custom_domains']);
 $Domain_Button = $Domain_Count > 0
-? '🌐 دامنه‌های سفارشی (' . $Domain_Count . ')'
-: '🌐 دامنه‌های سفارشی';
+? '🌐 دامنه های سفارشی (' . $Domain_Count . ')'
+: '🌐 دامنه های سفارشی';
 $Rows[] = [['text' => $Domain_Button, 'callback_data' => 'app_filter_domains']];
 
 $Has_Rules = $Settings['categories'] !== [] || $Domain_Count > 0;
@@ -99,7 +99,7 @@ $Rows[] = Menu::userHome();
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
 . "\n➖➖➖➖➖➖➖➖➖\n"
-. "ℹ️ با زدن هر دسته یا مدیریت دامنه‌های سفارشی، قوانین بلافاصله ذخیره شده و روی اتصال برنامه اعمال می‌شوند."
+. "ℹ️ با زدن هر دسته یا مدیریت دامنه های سفارشی، قوانین بلافاصله ذخیره شده و روی اتصال برنامه اعمال می شوند."
 . \Helper::userFooter();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
@@ -152,7 +152,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'ذخیره شد ✅')
 self::filterMenu($Context);
 }
 
-/** صفحه مدیریت دامنه‌های سفارشی (نمایش صفحه‌بندی‌شده، افزودن، حذف تکی و حذف همه). */
+/** صفحه مدیریت دامنه های سفارشی (نمایش صفحه بندی شده، افزودن، حذف تکی و حذف همه). */
 public static function filterDomainsMenu(Context $Context, int $Page = 0, string $Notice = ''): void {
 $Account = self::accountOrPrompt($Context, 'app_filter');
 
@@ -168,21 +168,21 @@ $Page_Count = max(1, (int)ceil($Total / $Per_Page));
 $Page = max(0, min($Page, $Page_Count - 1));
 $Slice = array_slice($Domains, $Page * $Per_Page, $Per_Page);
 
-$Text = \Helper::userGreeting($Context, 'دامنه‌های سفارشی کنترل محتوا')
+$Text = \Helper::userGreeting($Context, 'دامنه های سفارشی کنترل محتوا')
 . Menu::pageLabel($Page, $Page_Count);
 
 if ($Notice !== '') {
 $Text .= $Notice . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
-$Status_Line = !empty($Settings['enabled']) ? '🟢فعال روی اتصال' : '⚪️ذخیره‌شده (کنترل محتوا خاموش)';
+$Status_Line = !empty($Settings['enabled']) ? '🟢فعال روی اتصال' : '⚪️ذخیره شده (کنترل محتوا خاموش)';
 $Text .= "🚦وضعیت: {$Status_Line}\n"
-. "🔢تعداد ثبت‌شده: {$Total} از " . AppFilter::MAX_CUSTOM_DOMAINS . " دامنه\n"
+. "🔢تعداد ثبت شده: {$Total} از " . AppFilter::MAX_CUSTOM_DOMAINS . " دامنه\n"
 . "➖➖➖➖➖➖➖➖➖\n";
 
 if ($Slice === []) {
 $Text .= "📭هنوز دامنه سفارشی ثبت نشده است.\n"
-. "با زدن «➕ افزودن دامنه»، هر سایت دلخواه را همراه با تمام زیردامنه‌هایش مسدود کنید.\n";
+. "با زدن «➕ افزودن دامنه»، هر سایت دلخواه را همراه با تمام زیردامنه هایش مسدود کنید.\n";
 } else {
 $Start_Index = $Page * $Per_Page;
 foreach ($Slice as $Offset => $Domain) {
@@ -211,7 +211,7 @@ $Rows = array_merge($Rows, Menu::pages($Page, $Page_Count, 'app_fdom_page:'));
 }
 
 if ($Total > 0) {
-$Rows[] = [['text' => '🧹 حذف همه دامنه‌ها', 'callback_data' => 'app_fdom_clear']];
+$Rows[] = [['text' => '🧹 حذف همه دامنه ها', 'callback_data' => 'app_fdom_clear']];
 }
 
 $Rows[] = Menu::back('منوی قبلی', 'app_filter');
@@ -231,7 +231,7 @@ if (count($Settings['custom_domains']) >= AppFilter::MAX_CUSTOM_DOMAINS) {
 if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery(
 $Context->CallbackId,
-'ظرفیت دامنه‌های سفارشی پر شده است؛ ابتدا چند مورد را حذف کنید.',
+'ظرفیت دامنه های سفارشی پر شده است؛ ابتدا چند مورد را حذف کنید.',
 true
 );
 }
@@ -246,12 +246,12 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'دامنه مورد �
 }
 
 $Text = \Helper::userGreeting($Context, 'افزودن دامنه سفارشی')
-. "🌐 دامنه یا نشانی سایتی که می‌خواهید در اتصال مسدود شود را ارسال کنید:\n"
+. "🌐 دامنه یا نشانی سایتی که می خواهید در اتصال مسدود شود را ارسال کنید:\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "• نمونه تکی: example.com\n"
 . "• نمونه چندتایی: هر دامنه در یک خط یا جداشده با ویرگول\n"
 . "• برای حذف سریع با متن، پیش از دامنه علامت - بگذارید (مانند -example.com)\n"
-. "• هر دامنه همراه با تمام زیردامنه‌های آن مسدود و با برنامه ویندوز همگام می‌شود."
+. "• هر دامنه همراه با تمام زیردامنه های آن مسدود و با برنامه ویندوز همگام می شود."
 . \Helper::userFooter();
 
 self::reply(
@@ -325,7 +325,7 @@ if ($Parsed['invalid'] !== []) {
 $Lines[] = '⚠️ ' . count($Parsed['invalid']) . ' مورد نامعتبر نادیده گرفته شد.';
 }
 if ($Lines === []) {
-$Lines[] = 'ℹ️ تغییری در فهرست دامنه‌ها ایجاد نشد (دامنه مورد نظر در فهرست نبود).';
+$Lines[] = 'ℹ️ تغییری در فهرست دامنه ها ایجاد نشد (دامنه مورد نظر در فهرست نبود).';
 }
 
 self::filterDomainsMenu($Context, 0, implode("\n", $Lines));
@@ -354,7 +354,7 @@ false
 self::filterDomainsMenu($Context, max(0, $Page));
 }
 
-/** پرسش تأیید پیش از حذف یک‌جای همه دامنه‌های سفارشی. */
+/** پرسش تأیید پیش از حذف یک جای همه دامنه های سفارشی. */
 public static function filterDomainsClearAsk(Context $Context): void {
 $Account = self::accountOrPrompt($Context, 'app_filter');
 
@@ -368,12 +368,12 @@ return;
 }
 
 if ($Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, 'تأیید حذف همه دامنه‌ها');
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'تأیید حذف همه دامنه ها');
 }
 
-$Text = \Helper::userGreeting($Context, 'تأیید حذف همه دامنه‌ها')
+$Text = \Helper::userGreeting($Context, 'تأیید حذف همه دامنه ها')
 . "⚠️ آیا مطمئن هستید تمام {$Count} دامنه سفارشی حذف شوند؟\n"
-. "این تغییر بلافاصله با برنامه ویندوز همگام می‌شود."
+. "این تغییر بلافاصله با برنامه ویندوز همگام می شود."
 . \Helper::userFooter();
 
 self::reply(
@@ -389,7 +389,7 @@ Menu::userHome(),
 );
 }
 
-/** اجرای حذف کامل همه دامنه‌های سفارشی پس از تأیید کاربر. */
+/** اجرای حذف کامل همه دامنه های سفارشی پس از تأیید کاربر. */
 public static function filterDomainsClearConfirm(Context $Context): void {
 $Account = self::accountOrPrompt($Context, 'app_filter');
 
@@ -397,9 +397,9 @@ if ($Account === null) return;
 
 AppFilter::clearDomains((string)$Account['uuid'], 'bot');
 if ($Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, 'تمام دامنه‌های سفارشی حذف شدند ✅');
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'تمام دامنه های سفارشی حذف شدند ✅');
 }
-self::filterDomainsMenu($Context, 0, '🧹 تمام دامنه‌های سفارشی حذف شدند.');
+self::filterDomainsMenu($Context, 0, '🧹 تمام دامنه های سفارشی حذف شدند.');
 }
 
 private static function clearFilterDomainFlow(Context $Context): void {
@@ -430,7 +430,7 @@ $Parameters,
 if ($Total <= 0) {
 self::reply(
 $Context,
-\Helper::userGreeting($Context, 'دستگاه‌های من')
+\Helper::userGreeting($Context, 'دستگاه های من')
 . '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()])
 );
@@ -448,7 +448,7 @@ ORDER BY `Last_Seen_At` DESC LIMIT ? OFFSET ?',
 [...$Parameters, $PageSize, $Offset]
 );
 
-$Text = \Helper::userGreeting($Context, 'دستگاه‌های من');
+$Text = \Helper::userGreeting($Context, 'دستگاه های من');
 if ($PageCount > 1) {
 $Text .= '📄صفحه ' . \Helper::toPersian((string)($Page + 1))
 . ' از ' . \Helper::toPersian((string)$PageCount) . "\n➖➖➖➖➖➖➖➖➖\n";
@@ -456,11 +456,14 @@ $Text .= '📄صفحه ' . \Helper::toPersian((string)($Page + 1))
 
 foreach ($Rows as $Index => $Row) {
 $Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
+$Platform_Raw = (string)($Row['Platform'] ?? '');
+$Platform_Label = method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform_Raw) : $Platform_Raw;
+$Ip_Label = \Helper::toPersian((string)($Row['Last_IP'] ?? ''));
 $Text .= (\Helper::toPersian((string)($Offset + $Index + 1))) . ') '
 . '📱 ' . (string)($Row['Device_Name'] ?? 'دستگاه')
-. "\n   🖥 " . (string)($Row['Platform'] ?? '')
-. "\n   🌐 " . (string)($Row['Last_IP'] ?? '')
-. "\n   " . ($Trusted ? '✅ تأییدشده' : '⚪️ تأییدنشده')
+. "\n   🖥 " . $Platform_Label
+. ($Ip_Label !== '' ? "\n   🌐 " . $Ip_Label : '')
+. "\n   " . ($Trusted ? '✅ تایید شده' : '⚪️ تایید نشده')
 . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
@@ -514,7 +517,7 @@ self::reply(
 $Context,
 \Helper::userGreeting($Context, 'تأیید لغو دستگاه')
 . "⚠️آیا مطمئن هستید دسترسی این دستگاه را لغو کنید؟\n"
-. "با تأیید، برنامه از حساب خارج می‌شود و برای استفاده دوباره باید مجدداً وارد شوید."
+. "با تأیید، برنامه از حساب خارج می شود و برای استفاده دوباره باید مجدداً وارد شوید."
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
 ['text' => '⛔️ بله، لغو دسترسی', 'callback_data' => 'app_device_revoke_confirm:' . $Prefix . ':' . $Page],
@@ -579,7 +582,7 @@ WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
 }
 });
 
-SystemNotifications::queue($Context->UserId, 'امنیت دستگاه', '⚠️مجوز یکی از دستگاه‌های حساب شما لغو شد. اگر کار شما نبود، حساب را بررسی کنید.');
+SystemNotifications::queue($Context->UserId, 'امنیت دستگاه', '⚠️مجوز یکی از دستگاه های حساب شما لغو شد. اگر کار شما نبود، حساب را بررسی کنید.');
 if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد؛ برنامه از حساب خارج خواهد شد.');
 }
@@ -587,7 +590,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد�
 self::devices($Context, $Page);
 }
 
-/** اعلان‌ها فقط برای دستگاه‌های خود کاربر، جدیدترین ابتدا. */
+/** اعلان ها فقط برای دستگاه های خود کاربر، جدیدترین ابتدا. */
 public static function notifications(Context $Context, int $Page = 0): void {
 $Database = Database::getInstance();
 $Where = 'WHERE `Device_ID` IN (SELECT `Device_ID` FROM `App_Devices` WHERE `Telegram_ID` = ?)';
@@ -595,7 +598,7 @@ $Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Notifications` ' . $W
 $PageCount = max(1, (int)ceil($Total / 3));
 $Page = max(0, min($Page, $PageCount - 1));
 $Rows = $Database->fetchAll('SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications` ' . $Where . ' ORDER BY `ID` DESC LIMIT ? OFFSET ?', [$Context->UserId, 3, $Page * 3]);
-$Text = Helper::userGreeting($Context, 'اعلان‌های برنامه') . Menu::pageLabel($Page, $PageCount);
+$Text = Helper::userGreeting($Context, 'اعلان های برنامه') . Menu::pageLabel($Page, $PageCount);
 $Buttons = [];
 if ($Rows === []) $Text .= '🔔اعلانی برای برنامه شما ثبت نشده است.';
 foreach ($Rows as $Row) {
@@ -611,7 +614,7 @@ $Buttons[] = Menu::userHome();
 self::reply($Context, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
 
-/** متن بلند اعلان بدون حذف محتوا در صفحه‌های جدا خوانده می‌شود. */
+/** متن بلند اعلان بدون حذف محتوا در صفحه های جدا خوانده می شود. */
 public static function notificationView(Context $Context, int $Id, int $ListPage = 0, int $Part = 0): void {
 $Row = Database::getInstance()->fetch('SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications` WHERE `ID` = ? AND `Device_ID` IN (SELECT `Device_ID` FROM `App_Devices` WHERE `Telegram_ID` = ?) LIMIT 1', [$Id, $Context->UserId]);
 if ($Row === null) { self::notifications($Context, $ListPage); return; }
@@ -622,7 +625,7 @@ $ListPage = max(0, $ListPage);
 $Text = Helper::userGreeting($Context, 'متن اعلان') . Menu::pageLabel($Part, $Count)
 . self::notificationText($Row, mb_substr($Body, $Part * 2200, 2200));
 $Buttons = Menu::pages($Part, $Count, 'app_notification:' . $Id . ':' . $ListPage . ':');
-$Buttons[] = Menu::back('اعلان‌ها', 'app_notifications_page:' . $ListPage);
+$Buttons[] = Menu::back('اعلان ها', 'app_notifications_page:' . $ListPage);
 $Buttons[] = Menu::userHome();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -630,8 +633,10 @@ self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
 private static function notificationText(array $Row, string $Body): string {
 $Safe = static fn(string $Value): string => htmlspecialchars(str_replace(['*', '`', '[', ']'], ['＊', '｀', '［', '］'], $Value), ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
 $Icon = match((string)($Row['Level'] ?? '')) { 'warning' => '⚠️', 'error' => '⛔️', 'success' => '✅', default => '🔔' };
+$Sent_Raw = (string)($Row['Sent_At'] ?? '');
+$Sent_Label = method_exists('Helper', 'formatDateTimeText') ? \Helper::formatDateTimeText($Sent_Raw) : \Helper::toPersian($Sent_Raw);
 return $Icon . ' ' . $Safe(mb_substr((string)($Row['Title'] ?? ''), 0, 190)) . "\n"
-. $Safe($Body) . "\n🕐 " . $Safe((string)($Row['Sent_At'] ?? '')) . "\n➖➖➖➖➖➖➖➖➖\n";
+. $Safe($Body) . "\n🕐 " . $Safe($Sent_Label) . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
 /** The switch that decides whether a sign-in also needs a tap here. */
@@ -652,7 +657,7 @@ AppTwoStep::set($Context->UserId, $Enabled);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
 $Message = $Changed
-? ($Enabled ? '✅تأیید دومرحله‌ای روشن شد.' : '⛔️تأیید دومرحله‌ای خاموش شد.')
+? ($Enabled ? '✅تأیید دومرحله ای روشن شد.' : '⛔️تأیید دومرحله ای خاموش شد.')
 : 'ℹ️وضعیت تغییری نکرد.';
 TelegramClient::answerCallbackQuery($Context->CallbackId, $Message, false);
 }
@@ -662,20 +667,20 @@ self::renderTwoStep($Context);
 
 private static function renderTwoStep(Context $Context): void {
 $On = AppTwoStep::enabled($Context->UserId);
-$Text = \Helper::userGreeting($Context, 'تأیید دومرحله‌ای ورود')
-. "🔐 *تأیید دومرحله‌ای ورود به برنامه*\n"
+$Text = \Helper::userGreeting($Context, 'تأیید دومرحله ای ورود')
+. "🔐 *تأیید دومرحله ای ورود به برنامه*\n"
 . '🚦وضعیت: ' . ($On ? '🟢فعال' : '🔴غیرفعال') . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "🟢 فعال: بعد از کد پیامکی، جزئیات دستگاه (نام، سیستم‌عامل، آی‌پی و زمان) همین‌جا به تلگرام شما می‌آید و ورود فقط با زدن «✅خودم بودم» کامل می‌شود.\n\n"
-. "🔴 غیرفعال: فقط کد پیامکی کافی است و دستگاه بلافاصله تأیید می‌شود؛ بعد از هر ورود، نتیجه به تلگرام شما اطلاع داده می‌شود.\n\n"
+. "🟢 فعال: بعد از کد پیامکی، جزئیات دستگاه (نام، سیستم عامل، آی پی و زمان) همین جا به تلگرام شما می آید و ورود فقط با زدن «✅خودم بودم» کامل می شود.\n\n"
+. "🔴 غیرفعال: فقط کد پیامکی کافی است و دستگاه بلافاصله تأیید می شود؛ بعد از هر ورود، نتیجه به تلگرام شما اطلاع داده می شود.\n\n"
 . ($On
-? 'ℹ️ پیشنهاد می‌شود این گزینه روشن بماند.'
-: '⚠️ با خاموش بودن این گزینه، هر کسی که کد پیامکی را ببیند می‌تواند وارد حساب شود.')
+? 'ℹ️ پیشنهاد می شود این گزینه روشن بماند.'
+: '⚠️ با خاموش بودن این گزینه، هر کسی که کد پیامکی را ببیند می تواند وارد حساب شود.')
 . \Helper::userFooter();
 
 $Rows = $On
-? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_off']]]
-: [[['text' => '✅فعال کردن تأیید دومرحله‌ای', 'callback_data' => 'app_2fa_on']]];
+? [[['text' => '⛔️غیرفعال کردن تأیید دومرحله ای', 'callback_data' => 'app_2fa_off']]]
+: [[['text' => '✅فعال کردن تأیید دومرحله ای', 'callback_data' => 'app_2fa_on']]];
 $Rows[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Rows[] = Menu::userHome();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));

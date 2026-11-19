@@ -671,8 +671,10 @@ catch (PDOException) {
 
 $Init_Options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
 
-if (defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
-$Init_Options[PDO::MYSQL_ATTR_INIT_COMMAND] = 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci';
+$Init_Command = Database::mysqlInitCommandAttribute();
+
+if ($Init_Command !== null) {
+$Init_Options[$Init_Command] = 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci';
 }
 
 $Server = new PDO(

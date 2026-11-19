@@ -82,6 +82,12 @@ $Signature = 'سرور آمبرلا';
 if (method_exists('Helper', 'repairMojibake')) {
 $Message = Helper::repairMojibake($Message);
 }
+if (method_exists('Helper', 'stripZwnj')) {
+$Message = Helper::stripZwnj($Message);
+}
+if (method_exists('Helper', 'digitsToPersian')) {
+$Message = Helper::digitsToPersian($Message);
+}
 $Message = rtrim($Message);
 
 if (!str_contains($Message, $Signature)) {
@@ -173,13 +179,13 @@ $Sender_Raw = trim(Environment::getSmsSender());
 
 if ($Pattern_Code === '') {
 error_log('[Umbrella-Bot][Ippanel-Pattern] کد الگو (IPPANEL_OTP_PATTERN) تنظیم نشده است.');
-\Repository::logSms(0, $Phone, 'OTP pattern missing pattern code', false);
+\Repository::logSms(0, $Phone, 'کد الگوی پیامک تایید تنظیم نشده است', false);
 return false;
 }
 
 if ($Api_Key === '' || $Sender_Raw === '') {
 error_log('[Umbrella-Bot][Ippanel-Pattern] کلید API یا شماره فرستنده تنظیم نشده است.');
-\Repository::logSms(0, $Phone, 'OTP pattern missing credentials', false);
+\Repository::logSms(0, $Phone, 'اطلاعات احراز هویت پنل پیامک تنظیم نشده است', false);
 return false;
 }
 
@@ -221,7 +227,7 @@ $Phone, $Status, $Meta_Message, mb_substr((string)($Result['Body'] ?? ''), 0, 30
 ));
 }
 
-\Repository::logSms(0, $Phone, 'OTP pattern ' . ($Ok ? 'accepted' : 'rejected'), $Ok);
+\Repository::logSms(0, $Phone, $Ok ? 'پیامک کد تایید ارسال شد' : 'ارسال پیامک کد تایید رد شد', $Ok);
 return $Ok;
 }
 

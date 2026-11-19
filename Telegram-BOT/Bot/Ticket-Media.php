@@ -26,7 +26,12 @@ $Payload = ['chat_id' => $ChatId];
 if (isset(self::METHODS[$Type]) && is_string($Media['file_id'] ?? null)) {
 $Method = self::METHODS[$Type];
 $Payload[$Type] = $Media['file_id'];
-if (!in_array($Type, ['sticker', 'video_note'], true)) $Payload['caption'] = mb_substr((string)($Media['caption'] ?? ''), 0, 1024);
+if (!in_array($Type, ['sticker', 'video_note'], true)) {
+$RawCaption = (string)($Media['caption'] ?? '');
+if (method_exists('Helper', 'stripZwnj')) $RawCaption = Helper::stripZwnj($RawCaption);
+if (method_exists('Helper', 'digitsToPersian')) $RawCaption = Helper::digitsToPersian($RawCaption);
+$Payload['caption'] = mb_substr($RawCaption, 0, 1024);
+}
 } elseif ($Type === 'venue') {
 $Method = 'sendVenue';
 $Data = $Media['data'] ?? [];
@@ -65,7 +70,10 @@ $Items = array_values(array_filter($Messages, static fn(array $M): bool => self:
 $Count = max(1, (int)ceil(count($Items) / 5));
 $Page = max(0, min($Page, $Count - 1));
 $Rows = [];
-foreach (array_slice($Items, $Page * 5, 5) as $M) $Rows[] = [Menu::button('📎نمایش پیوست #' . $M['ID'], 'ticket_attachment:' . $M['ID'])];
+foreach (array_slice($Items, $Page * 5, 5) as $M) {
+$Num = method_exists('Helper', 'toPersian') ? Helper::toPersian((string)$M['ID']) : (string)$M['ID'];
+$Rows[] = [Menu::button('📎نمایش پیوست شماره ' . $Num, 'ticket_attachment:' . $M['ID'])];
+}
 return [$Rows, $Page, $Count];
 }
 }

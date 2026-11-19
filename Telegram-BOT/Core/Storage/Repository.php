@@ -647,7 +647,7 @@ $Rows = Database::getInstance()->fetchAll(
 $Result = [];
 
 foreach ($Rows as $Row) {
-$Result[(string)($Row['Subscription'] ?? 'Unknown')] = (int)$Row['Count'];
+$Result[(string)($Row['Subscription'] ?? 'نامشخص')] = (int)$Row['Count'];
 }
 
 return $Result;

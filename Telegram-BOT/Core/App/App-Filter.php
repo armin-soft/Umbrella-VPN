@@ -11,29 +11,29 @@ require_once __DIR__ . '/../Database/Database.php';
  * The category names match `ContentCategory` in the Flutter code.
  */
 final class AppFilter {
-/** حداکثر تعداد دامنه‌های سفارشی مسدودسازی برای هر حساب کاربری. */
+/** حداکثر تعداد دامنه های سفارشی مسدودسازی برای هر حساب کاربری. */
 public const MAX_CUSTOM_DOMAINS = 200;
 
-/** تعداد دامنه‌های نمایشی در هر صفحه منوی ربات تلگرام. */
+/** تعداد دامنه های نمایشی در هر صفحه منوی ربات تلگرام. */
 public const DOMAINS_PER_PAGE = 8;
 
-/** دسته‌های قابل تنظیم در ربات؛ تنظیمات دیگر برنامه بدون حذف داده حفظ می‌شوند. */
+/** دسته های قابل تنظیم در ربات؛ تنظیمات دیگر برنامه بدون حذف داده حفظ می شوند. */
 public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
-'gambling' => 'شرط‌بندی',
+'gambling' => 'شرط بندی',
 'ads' => 'تبلیغات',
-'dating' => 'دوست‌یابی',
+'dating' => 'دوست یابی',
 ];
 
 public const CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
-'social' => 'شبکه‌های اجتماعی',
-'gambling' => 'شرط‌بندی',
+'social' => 'شبکه های اجتماعی',
+'gambling' => 'شرط بندی',
 'ads' => 'تبلیغات',
 'streaming' => 'ویدیو و پخش',
 'dating' => 'دوستیابی',
 'violence' => 'محتوای خشن',
-'messaging' => 'پیام‌رسان‌ها',
+'messaging' => 'پیام رسان ها',
 ];
 
 /** Column per category, in the order of self::CATEGORIES. */
@@ -81,14 +81,14 @@ return array_values(array_unique($Out));
 }
 
 /**
- * یک دامنه یا نشانی وب را به پسوند دامنه استاندارد تبدیل می‌کند (سازگار با کلاینت ویندوز).
- * مقادیر نامعتبر، آی‌پی خام، دامنه‌های محلی و دامنه خود درگاه ربات رد می‌شوند.
+ * یک دامنه یا نشانی وب را به پسوند دامنه استاندارد تبدیل می کند (سازگار با کلاینت ویندوز).
+ * مقادیر نامعتبر، آی پی خام، دامنه های محلی و دامنه خود درگاه ربات رد می شوند.
  */
 public static function normalizeDomain(string $Raw): ?string {
 $Value = trim($Raw);
 if ($Value === '') return null;
 
-// تبدیل ارقام فارسی و عربی به لاتین و حذف نویسه‌های نامرئی و کوتیشن‌های اطراف.
+// تبدیل ارقام فارسی و عربی به لاتین و حذف نویسه های نامرئی و کوتیشن های اطراف.
 $Value = strtr($Value, [
 '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
 '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
@@ -115,7 +115,7 @@ if ($At !== false) {
 $Value = substr($Value, $At + 1);
 }
 
-// آی‌پی نسخه ۶ داخل کروشه رد می‌شود.
+// آی پی نسخه ۶ داخل کروشه رد می شود.
 if (str_starts_with($Value, '[') || str_contains($Value, ':')) {
 if (preg_match('/^([^:]+):(\d{1,5})$/', $Value, $Port_Match) === 1) {
 $Value = $Port_Match[1];
@@ -124,7 +124,7 @@ return null;
 }
 }
 
-// حذف الگوی wildcard و نقطه‌های ابتدا/انتها.
+// حذف الگوی wildcard و نقطه های ابتدا/انتها.
 while (str_starts_with($Value, '*.') || str_starts_with($Value, '.')) {
 $Value = ltrim(substr($Value, 1), '.');
 }
@@ -133,7 +133,7 @@ if ($Value === '') return null;
 
 $Value = function_exists('mb_strtolower') ? mb_strtolower($Value, 'UTF-8') : strtolower($Value);
 
-// پشتیبانی از دامنه‌های بین‌المللی و فارسی (IDN -> Punycode).
+// پشتیبانی از دامنه های بین المللی و فارسی (IDN -> Punycode).
 if (preg_match('/[^\x20-\x7E]/', $Value) === 1) {
 if (!function_exists('idn_to_ascii')) {
 return null;
@@ -147,7 +147,7 @@ return null;
 $Value = strtolower($Ascii);
 }
 
-// حذف پیشوند www. وقتی دامنه ریشه معتبر باقی می‌ماند (تا هم ریشه و هم همه زیردامنه‌ها مسدود شوند).
+// حذف پیشوند www. وقتی دامنه ریشه معتبر باقی می ماند (تا هم ریشه و هم همه زیردامنه ها مسدود شوند).
 if (str_starts_with($Value, 'www.')) {
 $Rest = substr($Value, 4);
 if (substr_count($Rest, '.') >= 1) {
@@ -159,7 +159,7 @@ if (strlen($Value) < 4 || strlen($Value) > 253 || str_contains($Value, '..')) {
 return null;
 }
 
-// آی‌پی نسخه ۴ و میزبان‌های محلی نباید به عنوان پسوند دامنه ثبت شوند.
+// آی پی نسخه ۴ و میزبان های محلی نباید به عنوان پسوند دامنه ثبت شوند.
 if (filter_var($Value, FILTER_VALIDATE_IP) !== false) {
 return null;
 }
@@ -201,7 +201,7 @@ return null;
 return $Value;
 }
 
-/** دامنه‌های حیاتی زیرساخت برنامه که مسدودسازی آن‌ها همگام‌سازی خود فیلتر را از کار می‌اندازد. */
+/** دامنه های حیاتی زیرساخت برنامه که مسدودسازی آن ها همگام سازی خود فیلتر را از کار می اندازد. */
 private static function protectedSuffixes(): array {
 $Protected = ['umbrella-vpn.ir'];
 if (class_exists('Environment')) {
@@ -222,7 +222,7 @@ return $Protected;
 }
 
 /**
- * تجزیه متن ارسالی کاربر در ربات یا برنامه به دامنه‌های افزودنی، حذفی (با پیشوند `-`) و نامعتبر.
+ * تجزیه متن ارسالی کاربر در ربات یا برنامه به دامنه های افزودنی، حذفی (با پیشوند `-`) و نامعتبر.
  *
  * @return array{add: list<string>, remove: list<string>, invalid: list<string>}
  */
@@ -384,7 +384,7 @@ return self::save($UUID, [
 }
 
 /**
- * اعمال هم‌زمان افزودن و حذف دامنه‌های سفارشی روی یک حساب کاربری.
+ * اعمال هم زمان افزودن و حذف دامنه های سفارشی روی یک حساب کاربری.
  *
  * @param list<string> $Add_List
  * @param list<string> $Remove_List
@@ -491,7 +491,7 @@ $Saved = self::save($UUID, [
 return ['removed' => $Removed, 'settings' => $Saved];
 }
 
-/** حذف کامل همه دامنه‌های سفارشی یک حساب کاربری. */
+/** حذف کامل همه دامنه های سفارشی یک حساب کاربری. */
 public static function clearDomains(string $UUID, string $Source = 'bot'): array {
 $Current = self::load($UUID);
 if ($Current['custom_domains'] === []) {
@@ -517,26 +517,28 @@ $Domain_Count = count($Domains);
 $Has_Rules = $Labels !== [] || $Domain_Count > 0;
 
 if (empty($Settings['enabled']) || !$Has_Rules) {
+$Fa_Num = static fn(int $N): string => strtr((string)$N, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']);
 $Text = '⚪️ کنترل محتوا خاموش است.';
 if ($Labels !== [] || $Domain_Count > 0) {
 $Saved_Parts = [];
-if ($Labels !== []) $Saved_Parts[] = count($Labels) . ' دسته';
-if ($Domain_Count > 0) $Saved_Parts[] = $Domain_Count . ' دامنه سفارشی';
-$Text .= "\n💾 آماده فعال‌سازی: " . implode(' و ', $Saved_Parts);
+if ($Labels !== []) $Saved_Parts[] = $Fa_Num(count($Labels)) . ' دسته';
+if ($Domain_Count > 0) $Saved_Parts[] = $Fa_Num($Domain_Count) . ' دامنه سفارشی';
+$Text .= "\n💾 آماده فعال سازی: " . implode(' و ', $Saved_Parts);
 }
 return $Text;
 }
 
+$Fa_Num = static fn(int $N): string => strtr((string)$N, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']);
 $Text = '🟢 کنترل محتوا روشن است.';
 
 if ($Labels !== []) {
-$Text .= "\n📂 دسته‌ها: " . implode('، ', $Labels);
+$Text .= "\n📂 دسته ها: " . implode('، ', $Labels);
 }
 
 if ($Domain_Count > 0) {
 $Preview = array_slice($Domains, 0, 3);
 $Sample = implode('، ', $Preview) . ($Domain_Count > 3 ? ' و ...' : '');
-$Text .= "\n🌐 دامنه‌های سفارشی: {$Domain_Count} مورد ({$Sample})";
+$Text .= "\n🌐 دامنه های سفارشی: " . $Fa_Num($Domain_Count) . " مورد ({$Sample})";
 }
 
 return $Text;

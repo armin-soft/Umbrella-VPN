@@ -99,7 +99,7 @@ $Rows = [
 Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome(),
 ];
 
-$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\nℹ️برای تهیه اشتراک، از بخش مدیریت اشتراک یکی از گزینه‌های «💎اشتراک های آماده»، «🛠اشتراک دلخواه» یا «🎁اشتراک رایگان» را انتخاب کنید.\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter();
+$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\nℹ️برای تهیه اشتراک، از بخش مدیریت اشتراک یکی از گزینه های «💎اشتراک های آماده»، «🛠اشتراک دلخواه» یا «🎁اشتراک رایگان» را انتخاب کنید.\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter();
 
 if ($Send !== null) { $Send($Text, TelegramClient::inlineKeyboard($Rows)); return; }
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -194,7 +194,7 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . "👇مرحله ۲ از ۲ — *حجم* اشتراک را به گیگابایت وارد کنید:\n\n"
 . "📅مدت انتخاب شده: *{$Days_Label} روز*\n"
 . "📦محدوده مجاز حجم: *{$Min_GB_Label}* تا *{$Max_GB_Label}*\n\n"
-. "ℹ️فقط عدد را تایپ و ارسال کنید؛ مثال: 50\n"
+. "ℹ️فقط عدد را تایپ و ارسال کنید؛ مثال: ۵۰\n"
 . "⚠️جهت انصراف «لغو» را ارسال کنید."
 . Helper::userFooter() . "*";
 $Keyboard = TelegramClient::inlineKeyboard([
@@ -224,7 +224,7 @@ self::saveCustomPlanGB($Context, $Days, $Raw_GB);
 private static function saveCustomPlanGB(Context $Context, int $Days, string $Raw_GB): void {
 $Min_GB = BotConfig::getCustomMinGB();
 $Max_GB = BotConfig::getCustomMaxGB();
-$GB = (float)Helper::toEnglish(str_replace([' ', ','], '', trim($Raw_GB)));
+$GB = (float)Helper::toEnglish(str_replace([' ', ',', '٬', '٫'], ['', '', '', '.'], trim($Raw_GB)));
 
 if ($GB < $Min_GB || $GB > $Max_GB) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌خطا: حجم وارد شده معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفاً عددی بین *" . Helper::formatGB($Min_GB) . "* تا *" . Helper::formatGB($Max_GB) . "* وارد کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
@@ -388,9 +388,9 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . "⚠️موجود
 . "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
-. "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
-. "2️⃣ شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
-. "3️⃣ فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
+. "۱. پرداخت از طریق درگاه امن زرین پال\n"
+. "۲. شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
+. "۳. فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
 
 $Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک دلخواه'), Menu::userHome()];
 $Is_Callback = $Context->IsCallback && $Context->MessageId !== null;
@@ -522,9 +522,9 @@ $Text = $Greeting . "⚠️موجودی کیف پول برای خرید کافی
 . "└─🏦قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
-. "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
-. "2️⃣ شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
-. "3️⃣ فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
+. "۱. پرداخت از طریق درگاه امن زرین پال\n"
+. "۲. شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
+. "۳. فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
 $Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک دلخواه'), Menu::userHome()];
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -603,7 +603,7 @@ $Server_Comment = (string)($User['Server_Comment'] ?? '');
 try { $Response = ServerClient::getUser($Client_ID); }
 catch (Throwable) { $Response = ['StatusCode' => 503]; }
 $Data = $Response['Json'] ?? null;
-if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده می‌شود.\n";
+if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره شده نمایش داده می شود.\n";
 
 if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300) {
 $Usage_Limit = (float)($Data['usage_limit_GB'] ?? 0);
@@ -730,7 +730,7 @@ $Items = [
 ['🧿سینگ باکس', "{$Base}/{$Client_ID}/full-singbox.json"],
 ['⚡️کلش متا', "{$Base}/{$Client_ID}/clash/meta/all.yml"],
 ['🌐وایرگارد', "{$Base}/{$Client_ID}/wireguard/?asn=unknown"],
-['🛡️آمنزیا دبلیو‌جی', "{$Http_Base}/{$Client_ID}/amnezia/?asn=unknown"],
+['🛡️آمنزیا دبلیو جی', "{$Http_Base}/{$Client_ID}/amnezia/?asn=unknown"],
 ['🔵میرو', "{$Http_Base}/{$Client_ID}/mieru/?asn=unknown"],
 ];
 
@@ -968,9 +968,9 @@ TelegramClient::sendMessage($Context->ChatId, $Greeting . " *⚠️موجودی 
 . "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
-. "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
-. "2️⃣ شارژ خودکار کیف پول به مبلغ " . Helper::formatCurrency($Need_Gateway_Amount) . "\n"
-. "3️⃣ فعالسازی خودکار اشتراک {$Name}\n\n"
+. "۱. پرداخت از طریق درگاه امن زرین پال\n"
+. "۲. شارژ خودکار کیف پول به مبلغ " . Helper::formatCurrency($Need_Gateway_Amount) . "\n"
+. "۳. فعالسازی خودکار اشتراک {$Name}\n\n"
 . ($Direct_Url !== ''
 ? "👌برای ورود مستقیم به درگاه پرداخت، روی دکمه زیر کلیک کنید."
 : "⚠️نکته: پس از پرداخت موفق، کیف پول شما شارژ و اشتراک {$Name} به صورت خودکار فعال می گردد.") . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
@@ -1204,7 +1204,7 @@ if ($Code === Zarinpal::CODE_NOT_PAID) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت')
 . "⏳پرداخت این سفارش هنوز توسط درگاه تأیید نشده است.
 "
-. "اگر پرداخت را انجام نداده‌اید از دکمه پرداخت استفاده کنید. اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ کمی بعد بررسی مجدد را بزنید و در صورت ادامه مشکل با پشتیبانی تماس بگیرید."
+. "اگر پرداخت را انجام نداده اید از دکمه پرداخت استفاده کنید. اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ کمی بعد بررسی مجدد را بزنید و در صورت ادامه مشکل با پشتیبانی تماس بگیرید."
 . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '💳ادامه پرداخت', 'url' => Zarinpal::payLink(['BridgeUrl' => Zarinpal::bridgeUrl($Authority, $Context->UserId), 'RedirectUrl' => Zarinpal::startPayUrl($Authority)])]],
 [['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
@@ -1217,7 +1217,7 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررس�
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️علت: {$Reason}\n"
 . "⚠️اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ بررسی مجدد یا پیگیری از پشتیبانی لازم است.\n"
-. "🧾کد خطا: `{$Code}`" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+. "🧾کد خطا: `" . Helper::toPersian((string)$Code) . "`" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
 Menu::back('اشتراک من', 'اشتراک من'),
 Menu::userHome(),
@@ -1347,11 +1347,13 @@ catch (Throwable) {}
 $Payment_Type_Label = $Is_Pure_Topup
 ? '💳شارژ کیف پول'
 : '💎خرید اشتراک (درگاه زرین پال)';
+$Ref_Label = Helper::toPersian((string)$Verify['RefId']);
+$Card_Label = $Verify['CardPan'] !== '' ? Helper::toPersian((string)$Verify['CardPan']) : '';
 TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "✅پرداخت شما با موفقیت انجام شد.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🧾نوع تراکنش: {$Payment_Type_Label}\n"
-. "🧾کد رهگیری: `{$Verify['RefId']}`\n"
-. ($Verify['CardPan'] !== '' ? "💳شماره کارت: `{$Verify['CardPan']}`\n" : '')
+. "🧾کد رهگیری: `{$Ref_Label}`\n"
+. ($Card_Label !== '' ? "💳شماره کارت: `{$Card_Label}`\n" : '')
 . "💰مبلغ پرداختی: " . Helper::formatCurrency((float)$Amount) . "\n"
 . ($Topup_Amount > 0 ? "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount) . "\n" : '')
 . ($Topup_Amount > 0 ? "💵موجودی کیف پول: " . Helper::formatCurrency($Wallet_Balance) . "\n" : '')
@@ -1366,14 +1368,15 @@ Menu::userHome(),
 
 $User_For_Admin = Repository::getUser($Context->UserId);
 $Phone_Admin = (string)($User_For_Admin['Phone'] ?? '');
+$Phone_Admin_Label = $Phone_Admin !== '' ? Helper::toPersian($Phone_Admin) : '';
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId())) . "💳✅پرداخت موفق زرین پال\n\n"
 . "👤کاربر: [{$Context->profileName()}](tg://user?id={$Context->UserId})\n"
 . "🆔آیدی: `" . Helper::toPersian($Context->UserId) . "`\n"
-. ($Phone_Admin !== '' ? "📞موبایل: `{$Phone_Admin}`\n" : '')
+. ($Phone_Admin_Label !== '' ? "📞موبایل: `{$Phone_Admin_Label}`\n" : '')
 . "💎اشتراک: {$Plan_Name}\n"
 . "💰مبلغ: " . Helper::formatCurrency((float)$Amount) . "\n"
-. "🧾کد رهگیری: `{$Verify['RefId']}`\n"
-. ($Verify['CardPan'] !== '' ? "💳کارت: `{$Verify['CardPan']}`\n" : '')
+. "🧾کد رهگیری: `{$Ref_Label}`\n"
+. ($Card_Label !== '' ? "💳کارت: `{$Card_Label}`\n" : '')
 . ""
 . "➖➖➖➖➖➖➖➖➖\n"
 . "*🔄اشتراک {$Plan_Name} در حال فعال سازی...*"
@@ -1386,13 +1389,13 @@ try {
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin_ID) . "💳✅پرداخت موفق زرین پال\n\n"
 . "👤کاربر: [{$Context->profileName()}](tg://user?id={$Context->UserId})\n"
 . "🆔آیدی: `" . Helper::toPersian($Context->UserId) . "`\n"
-. ($Phone_Admin !== '' ? "📞موبایل: `{$Phone_Admin}`\n" : '')
+. ($Phone_Admin_Label !== '' ? "📞موبایل: `{$Phone_Admin_Label}`\n" : '')
 . ($Is_Pure_Topup ? "🧾نوع تراکنش:💳شارژ اعتبار کیف پول\n" : "💎اشتراک: {$Plan_Name}\n")
 . "💰مبلغ: " . Helper::formatCurrency((float)$Amount) . "\n"
 . ($Topup_Amount > 0 ? "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount) . "\n" : '')
 . ($Is_Pure_Topup ? "💵موجودی جدید کیف پول: " . Helper::formatCurrency($Wallet_Balance) . "\n" : '')
-. "🧾کد رهگیری: `{$Verify['RefId']}`\n"
-. ($Verify['CardPan'] !== '' ? "💳کارت: `{$Verify['CardPan']}`\n" : '')
+. "🧾کد رهگیری: `{$Ref_Label}`\n"
+. ($Card_Label !== '' ? "💳کارت: `{$Card_Label}`\n" : '')
 . "➖➖➖➖➖➖➖➖➖\n"
 . ($Is_Pure_Topup ? "*✅اعتبار کیف پول کاربر شارژ شد.*" : "*🔄اشتراک {$Plan_Name} در حال فعال سازی...*")
 . Helper::adminFooter();
@@ -1545,7 +1548,7 @@ $Amount = (float)preg_replace('/[^0-9]/', '', $Digits);
 $Greeting = Common::greet($Context, 'شارژ اعتبار حساب کاربری');
 
 if ($Amount <= 0) {
-TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: فقط عدد به تومان وارد کنید مانند: `100000`\n👌مجدداً مبلغ را ارسال کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: فقط عدد به تومان وارد کنید مانند: `۱۰۰۰۰۰`\n👌مجددا مبلغ را ارسال کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔙انصراف از شارژ', 'callback_data' => 'لغو شارژ اعتبار']],
 Menu::userHome(),
 ]));
@@ -1632,14 +1635,15 @@ $Full_Name = trim((string)($User['Full_Name'] ?? ''));
 $Display_Name = $Full_Name !== '' ? $Full_Name : $First_Name;
 $Phone = (string)($User['Phone'] ?? '');
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
-$User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone !== '' ? "\n📞موبایل: `{$Phone}`" : '');
+$Phone_Label = $Phone !== '' ? Helper::toPersian($Phone) : '';
+$User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone_Label !== '' ? "\n📞موبایل: `{$Phone_Label}`" : '');
 
 if (strtoupper($Status) !== 'OK') {
 TelegramClient::sendSystemMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "⚠️بازگشت از درگاه با وضعیت ناموفق یا لغوشده دریافت شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر وجه کسر شده، دوباره پرداخت نکنید؛ وضعیت را از درگاه یا پشتیبانی پیگیری کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin) . "❌پرداخت ناموفق / لغو شده توسط کاربر\n\n"
 . "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"
-. ($Phone !== '' ? "📞موبایل: `{$Phone}`\n" : '')
+. ($Phone_Label !== '' ? "📞موبایل: `{$Phone_Label}`\n" : '')
 . "🚦وضعیت: *ناموفق*\n"
 . ""
 . "➖➖➖➖➖➖➖➖➖\n"
