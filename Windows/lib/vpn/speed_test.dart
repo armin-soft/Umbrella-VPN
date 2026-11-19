@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -44,11 +45,22 @@ class SpeedTestRunner {
     Uri? downloadEndpoint, Uri? uploadEndpoint,
     int downloadLimit = downloadBytes, int uploadLimit = uploadBytes,
     Duration timeout = const Duration(seconds: 20),
+    String proxyUser = '',
+    String proxyPassword = '',
+    bool allowDirectTunnel = false,
   }) async {
     if (_running || _cancelled) throw StateError('Runner is active or cancelled');
-    if (proxyPort <= 0 || proxyPort > 65535) throw ArgumentError.value(proxyPort, 'proxyPort');
+    final bool useDirect = allowDirectTunnel && proxyPort == 0;
+    if ((!useDirect && proxyPort <= 0) || proxyPort < 0 || proxyPort > 65535) {
+      throw ArgumentError.value(proxyPort, 'proxyPort');
+    }
     if (downloadLimit <= 0 || downloadLimit > downloadBytes || uploadLimit <= 0 || uploadLimit > uploadBytes) throw ArgumentError('Invalid byte budget');
     _running = true;
+    _proxyBasic = proxyPort > 0 && proxyUser.isNotEmpty && proxyPassword.isNotEmpty
+        ? 'Basic ${base64Encode(utf8.encode('$proxyUser:$proxyPassword'))}'
+        : '';
+    _proxyUser = proxyUser;
+    _proxyPassword = proxyPassword;
     try {
       onPhase?.call('download');
       final SpeedSample down = await _download(downloadEndpoint ?? downloadUrl, proxyPort, downloadLimit, timeout);
@@ -57,15 +69,35 @@ class SpeedTestRunner {
       final SpeedSample up = await _upload(uploadEndpoint ?? uploadUrl, proxyPort, uploadLimit, timeout);
       _checkCancelled();
       return SpeedTestResult(download: down, upload: up, measuredAt: DateTime.now());
-    } finally { _running = false; }
+    } finally {
+      _running = false;
+      _proxyBasic = '';
+      _proxyUser = '';
+      _proxyPassword = '';
+    }
   }
+
+  String _proxyBasic = '';
+  String _proxyUser = '';
+  String _proxyPassword = '';
 
   HttpClient _client(int proxyPort, Duration timeout) {
     _checkCancelled();
     final HttpClient client = HttpClient()
       ..autoUncompress = false
       ..connectionTimeout = timeout
-      ..findProxy = (Uri _) => 'PROXY 127.0.0.1:$proxyPort';
+      ..findProxy = (Uri _) =>
+          proxyPort > 0 ? 'PROXY 127.0.0.1:$proxyPort' : 'DIRECT';
+    if (proxyPort > 0 && _proxyUser.isNotEmpty && _proxyPassword.isNotEmpty) {
+      final HttpClientBasicCredentials creds =
+          HttpClientBasicCredentials(_proxyUser, _proxyPassword);
+      client.addProxyCredentials('127.0.0.1', proxyPort, '', creds);
+      client.authenticateProxy =
+          (String host, int port, String scheme, String? realm) async {
+        client.addProxyCredentials(host, port, realm ?? '', creds);
+        return true;
+      };
+    }
     _clients.add(client);
     return client;
   }
@@ -74,6 +106,9 @@ class SpeedTestRunner {
     request.followRedirects = false;
     request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
     request.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+    if (_proxyBasic.isNotEmpty && request.uri.scheme == 'http') {
+      request.headers.set('Proxy-Authorization', _proxyBasic);
+    }
   }
   void _checkStatus(HttpClientResponse response) {
     if (response.statusCode < 200 || response.statusCode >= 300) throw HttpException('Speed endpoint HTTP ${response.statusCode}');

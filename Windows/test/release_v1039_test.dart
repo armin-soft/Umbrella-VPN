@@ -490,7 +490,7 @@ void main() {
   group('v1.0.39 — ارتقای هسته به 5.9.11 و قابلیت های هم راستا', () {
     test('مانیفست هسته به 5.9.11 با چک سام رسمی ارتقا یافته و نسخه برنامه 1.0.39 است', () {
       expect(AppConfig.version, '1.0.39');
-      expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v3');
+      expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v4');
       final Map<String, dynamic> manifest =
           jsonDecode(File('assets/cores/manifest.json').readAsStringSync())
               as Map<String, dynamic>;

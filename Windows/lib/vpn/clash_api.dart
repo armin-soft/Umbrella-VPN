@@ -467,6 +467,82 @@ class ClashApi {
     );
   }
 
+  /// انتخاب خروجی فعال یک گروه (`selector`) در رابط کلش هسته و بستن اتصال های
+  /// قبلی روی مسیر کهنه تا تغییر `selectionMode` در لحظه اثر کند.
+  static Future<bool> selectOutbound(
+    String groupTag,
+    String targetTag, {
+    int port = defaultPort,
+    String secret = AppConfig.coreClashSecret,
+    Duration timeout = const Duration(milliseconds: 1200),
+  }) async {
+    if (port <= 0 ||
+        port > 65535 ||
+        groupTag.trim().isEmpty ||
+        targetTag.trim().isEmpty) {
+      return false;
+    }
+    final HttpClient client = HttpClient()..connectionTimeout = timeout;
+    client.findProxy = (Uri _) => 'DIRECT';
+    try {
+      final String encoded = Uri.encodeComponent(groupTag);
+      final Uri uri = Uri.parse('http://127.0.0.1:$port/proxies/$encoded');
+      final HttpClientRequest request =
+          await client.putUrl(uri).timeout(timeout);
+      request.followRedirects = false;
+      if (secret.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $secret');
+      }
+      request.headers.contentType = ContentType.json;
+      request.add(utf8.encode(jsonEncode(<String, String>{'name': targetTag})));
+      final HttpClientResponse response =
+          await request.close().timeout(timeout);
+      await response.drain<void>().timeout(
+            const Duration(milliseconds: 300),
+            onTimeout: () {},
+          );
+      return response.statusCode == 204 || response.statusCode == 200;
+    } on Exception {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// بستن تمام اتصال های باز در هسته تا قوانین تازه کنترل محتوا یا مسیریابی روی
+  /// نشست های از قبل باز هم بی درنگ اعمال شوند.
+  static Future<bool> closeAllConnections({
+    int port = defaultPort,
+    String secret = AppConfig.coreClashSecret,
+    Duration timeout = const Duration(milliseconds: 1000),
+  }) async {
+    if (port <= 0 || port > 65535) {
+      return false;
+    }
+    final HttpClient client = HttpClient()..connectionTimeout = timeout;
+    client.findProxy = (Uri _) => 'DIRECT';
+    try {
+      final Uri uri = Uri.parse('http://127.0.0.1:$port/connections');
+      final HttpClientRequest request =
+          await client.deleteUrl(uri).timeout(timeout);
+      request.followRedirects = false;
+      if (secret.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $secret');
+      }
+      final HttpClientResponse response =
+          await request.close().timeout(timeout);
+      await response.drain<void>().timeout(
+            const Duration(milliseconds: 300),
+            onTimeout: () {},
+          );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } on Exception {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   static Future<Map<String, dynamic>?> _getJson({
     required String path,
     required int port,

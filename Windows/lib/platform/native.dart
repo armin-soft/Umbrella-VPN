@@ -511,18 +511,63 @@ class NativeBridge {
     );
   }
 
-  Future<bool> setAutostart(bool enabled, {String appName = 'UmbrellaVPN'}) async =>
-      await _invoke<bool>('autostart', <String, dynamic>{
+  static const String _runKey =
+      r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
+
+  Future<bool> setAutostart(
+    bool enabled, {
+    String appName = 'UmbrellaVPN',
+  }) async {
+    final bool? nativeResult = await _invoke<bool>(
+      'autostart',
+      <String, dynamic>{
         'enabled': enabled,
         'appName': appName,
-      }) ??
-      false;
+      },
+    );
+    if (nativeResult == true) {
+      return true;
+    }
+    if (!Platform.isWindows) {
+      return false;
+    }
+    if (!enabled) {
+      final bool existed = await autostartEnabled(appName: appName);
+      if (!existed) {
+        return true;
+      }
+      return _reg(<String>['delete', _runKey, '/v', appName, '/f']);
+    }
+    final String exe = await exePath();
+    if (exe.isEmpty) {
+      return false;
+    }
+    return _reg(<String>[
+      'add',
+      _runKey,
+      '/v',
+      appName,
+      '/t',
+      'REG_SZ',
+      '/d',
+      '"$exe" --minimized',
+      '/f',
+    ]);
+  }
 
-  Future<bool> autostartEnabled({String appName = 'UmbrellaVPN'}) async =>
-      await _invoke<bool>('autostartEnabled', <String, dynamic>{
-        'appName': appName,
-      }) ??
-      false;
+  Future<bool> autostartEnabled({String appName = 'UmbrellaVPN'}) async {
+    final bool? nativeResult = await _invoke<bool>(
+      'autostartEnabled',
+      <String, dynamic>{'appName': appName},
+    );
+    if (nativeResult != null) {
+      return nativeResult;
+    }
+    if (!Platform.isWindows) {
+      return false;
+    }
+    return _reg(<String>['query', _runKey, '/v', appName]);
+  }
 
   Future<String> exePath() async {
     final String? path = await _invoke<String>('exePath');

@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v3';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v4';
 
   static int _nonce = 0;
 
@@ -30,6 +30,7 @@ class CoreRuntime {
     void Function(Process)? onStarted,
     void Function(Process)? onFinished,
     int? clashApiPort,
+    int stickyMinutes = 15,
     bool useCache = true,
   }) async {
     // `build` enables data/clash.db, but srun does not perform hcore.Setup's
@@ -52,7 +53,7 @@ class CoreRuntime {
     ]);
     final String runtimeKey = _sha256(<List<int>>[
       utf8.encode(
-        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|',
+        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|sticky=$stickyMinutes|',
       ),
       _canonicalSettingsBytes(settingsBytes),
     ]);
@@ -142,10 +143,21 @@ class CoreRuntime {
     try {
       final Map<String, dynamic> config =
           jsonDecode(await tempBuilt.readAsString()) as Map<String, dynamic>;
+      Map<String, dynamic>? decodedSettings;
+      try {
+        final Object? parsedSettings = jsonDecode(utf8.decode(settingsBytes));
+        if (parsedSettings is Map<String, dynamic>) {
+          decodedSettings = parsedSettings;
+        }
+      } on Object {
+        decodedSettings = null;
+      }
       RuntimeConfig.finalize(
         config,
         profileTags: tags,
         clashApiPort: clashApiPort,
+        coreSettings: decodedSettings,
+        stickyMinutes: stickyMinutes,
       );
       if (cancelled()) {
         throw const FormatException('Core preparation cancelled');

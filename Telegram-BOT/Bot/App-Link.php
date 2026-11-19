@@ -57,11 +57,13 @@ $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()]));
 }
 
-/** The filter menu: one button per category, toggling on press. */
+/** The filter menu: categories, custom-domain manager, and master switch. */
 public static function filterMenu(Context $Context): void {
 $Account = self::accountOrPrompt($Context);
 
 if ($Account === null) return;
+
+self::clearFilterDomainFlow($Context);
 
 $Settings = AppFilter::load((string)$Account['uuid']);
 $Rows = [];
@@ -79,14 +81,25 @@ $Row = [];
 
 if ($Row !== []) $Rows[] = $Row;
 
-$Rows[] = [['text' => $Settings['enabled'] ? '🔴خاموش کردن کنترل محتوا' : '🟢روشن کردن کنترل محتوا', 'callback_data' => 'app_filter_toggle:enabled']];
+$Domain_Count = count($Settings['custom_domains']);
+$Domain_Button = $Domain_Count > 0
+? '🌐 دامنه‌های سفارشی (' . $Domain_Count . ')'
+: '🌐 دامنه‌های سفارشی';
+$Rows[] = [['text' => $Domain_Button, 'callback_data' => 'app_filter_domains']];
+
+$Has_Rules = $Settings['categories'] !== [] || $Domain_Count > 0;
+$Active = !empty($Settings['enabled']) && $Has_Rules;
+$Rows[] = [[
+'text' => $Active ? '🔴خاموش کردن کنترل محتوا' : '🟢روشن کردن کنترل محتوا',
+'callback_data' => 'app_filter_toggle:enabled',
+]];
 $Rows[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Rows[] = Menu::userHome();
 
 $Text = \Helper::userGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
 . "\n➖➖➖➖➖➖➖➖➖\n"
-. 'ℹ️ با زدن هر دسته، وضعیت آن تغییر می‌کند و در برنامه هم اعمال می‌شود.'
+. "ℹ️ با زدن هر دسته یا مدیریت دامنه‌های سفارشی، قوانین بلافاصله ذخیره شده و روی اتصال برنامه اعمال می‌شوند."
 . \Helper::userFooter();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
@@ -106,6 +119,21 @@ return;
 
 if ($Category === 'enabled') {
 $Current = AppFilter::load($UUID);
+$Has_Rules = $Current['categories'] !== [] || $Current['custom_domains'] !== [];
+$Want_Enable = empty($Current['enabled']) || !$Has_Rules;
+
+if ($Want_Enable && !$Has_Rules) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'ابتدا یک دسته را انتخاب کنید یا دامنه سفارشی اضافه کنید.',
+true
+);
+}
+self::filterMenu($Context);
+return;
+}
+
 AppFilter::save($UUID, [
 'enabled' => empty($Current['enabled']),
 'categories' => $Current['categories'],
@@ -124,13 +152,265 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, 'ذخیره شد ✅')
 self::filterMenu($Context);
 }
 
-/** پیام‌ها و ورودی‌های قدیمی دامنه‌ها فقط به حساب کاربری بازمی‌گردند. */
-public static function filterDomainsStart(Context $Context): void {
-UserFlow::accountMenu($Context);
+/** صفحه مدیریت دامنه‌های سفارشی (نمایش صفحه‌بندی‌شده، افزودن، حذف تکی و حذف همه). */
+public static function filterDomainsMenu(Context $Context, int $Page = 0, string $Notice = ''): void {
+$Account = self::accountOrPrompt($Context, 'app_filter');
+
+if ($Account === null) return;
+
+self::clearFilterDomainFlow($Context);
+
+$Settings = AppFilter::load((string)$Account['uuid']);
+$Domains = array_values($Settings['custom_domains']);
+$Total = count($Domains);
+$Per_Page = AppFilter::DOMAINS_PER_PAGE;
+$Page_Count = max(1, (int)ceil($Total / $Per_Page));
+$Page = max(0, min($Page, $Page_Count - 1));
+$Slice = array_slice($Domains, $Page * $Per_Page, $Per_Page);
+
+$Text = \Helper::userGreeting($Context, 'دامنه‌های سفارشی کنترل محتوا')
+. Menu::pageLabel($Page, $Page_Count);
+
+if ($Notice !== '') {
+$Text .= $Notice . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
+$Status_Line = !empty($Settings['enabled']) ? '🟢فعال روی اتصال' : '⚪️ذخیره‌شده (کنترل محتوا خاموش)';
+$Text .= "🚦وضعیت: {$Status_Line}\n"
+. "🔢تعداد ثبت‌شده: {$Total} از " . AppFilter::MAX_CUSTOM_DOMAINS . " دامنه\n"
+. "➖➖➖➖➖➖➖➖➖\n";
+
+if ($Slice === []) {
+$Text .= "📭هنوز دامنه سفارشی ثبت نشده است.\n"
+. "با زدن «➕ افزودن دامنه»، هر سایت دلخواه را همراه با تمام زیردامنه‌هایش مسدود کنید.\n";
+} else {
+$Start_Index = $Page * $Per_Page;
+foreach ($Slice as $Offset => $Domain) {
+$Safe_Domain = self::safeDomainLabel($Domain);
+$Text .= ($Start_Index + $Offset + 1) . ". {$Safe_Domain}\n";
+}
+$Text .= "\nℹ️ برای حذف هر دامنه، دکمه 🗑 همان دامنه را بزنید.\n";
+}
+
+$Text .= \Helper::userFooter();
+
+$Rows = [];
+$Rows[] = [['text' => '➕ افزودن دامنه جدید', 'callback_data' => 'app_fdom_add']];
+
+foreach ($Slice as $Domain) {
+$Token = AppFilter::domainToken($Domain);
+$Label = strlen($Domain) > 34 ? substr($Domain, 0, 31) . '...' : $Domain;
+$Rows[] = [[
+'text' => '🗑 حذف ' . $Label,
+'callback_data' => 'app_fdom_del:' . $Token . ':' . $Page,
+]];
+}
+
+if ($Page_Count > 1) {
+$Rows = array_merge($Rows, Menu::pages($Page, $Page_Count, 'app_fdom_page:'));
+}
+
+if ($Total > 0) {
+$Rows[] = [['text' => '🧹 حذف همه دامنه‌ها', 'callback_data' => 'app_fdom_clear']];
+}
+
+$Rows[] = Menu::back('منوی قبلی', 'app_filter');
+$Rows[] = Menu::userHome();
+
+self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+/** آغاز دریافت دامنه سفارشی جدید (تکی یا چندتایی) از کاربر در ربات. */
+public static function filterDomainsStart(Context $Context): void {
+$Account = self::accountOrPrompt($Context, 'app_filter');
+
+if ($Account === null) return;
+
+$Settings = AppFilter::load((string)$Account['uuid']);
+if (count($Settings['custom_domains']) >= AppFilter::MAX_CUSTOM_DOMAINS) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'ظرفیت دامنه‌های سفارشی پر شده است؛ ابتدا چند مورد را حذف کنید.',
+true
+);
+}
+self::filterDomainsMenu($Context);
+return;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => 'app:filter_domains', 'Step' => 1]);
+
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'دامنه مورد نظر را ارسال کنید');
+}
+
+$Text = \Helper::userGreeting($Context, 'افزودن دامنه سفارشی')
+. "🌐 دامنه یا نشانی سایتی که می‌خواهید در اتصال مسدود شود را ارسال کنید:\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "• نمونه تکی: example.com\n"
+. "• نمونه چندتایی: هر دامنه در یک خط یا جداشده با ویرگول\n"
+. "• برای حذف سریع با متن، پیش از دامنه علامت - بگذارید (مانند -example.com)\n"
+. "• هر دامنه همراه با تمام زیردامنه‌های آن مسدود و با برنامه ویندوز همگام می‌شود."
+. \Helper::userFooter();
+
+self::reply(
+$Context,
+$Text,
+TelegramClient::inlineKeyboard([
+Menu::back('انصراف و بازگشت', 'app_filter_domains'),
+Menu::userHome(),
+])
+);
+}
+
+/** پردازش متن ارسالی کاربر برای افزودن یا حذف دامنه سفارشی. */
 public static function filterDomainsInput(Context $Context, string $Text): void {
-UserFlow::accountMenu($Context);
+$Account = self::accountOrPrompt($Context, 'app_filter');
+
+if ($Account === null) {
+self::clearFilterDomainFlow($Context);
+return;
+}
+
+$Trimmed = trim($Text);
+if ($Trimmed === 'انصراف' || $Trimmed === 'بازگشت' || $Trimmed === '/cancel') {
+self::filterDomainsMenu($Context);
+return;
+}
+
+$Parsed = AppFilter::parseDomainsInput($Trimmed);
+if ($Parsed['add'] === [] && $Parsed['remove'] === []) {
+$Hint = \Helper::userGreeting($Context, 'دامنه نامعتبر')
+. "⚠️ هیچ دامنه معتبری در پیام شما شناسایی نشد.\n"
+. "لطفاً نام دامنه را به صورت استاندارد ارسال کنید (مانند example.com یا site.org)."
+. \Helper::userFooter();
+TelegramClient::sendMessage(
+$Context->ChatId,
+$Hint,
+TelegramClient::inlineKeyboard([
+Menu::back('انصراف و بازگشت', 'app_filter_domains'),
+Menu::userHome(),
+])
+);
+return;
+}
+
+$Result = AppFilter::applyDomainChanges(
+(string)$Account['uuid'],
+$Parsed['add'],
+$Parsed['remove'],
+'bot'
+);
+self::clearFilterDomainFlow($Context);
+
+$Lines = [];
+if ($Result['added'] !== []) {
+$Lines[] = '✅ ' . count($Result['added']) . ' دامنه اضافه شد: '
+. implode('، ', array_map([self::class, 'safeDomainLabel'], array_slice($Result['added'], 0, 5)))
+. (count($Result['added']) > 5 ? ' و ...' : '');
+}
+if ($Result['removed'] !== []) {
+$Lines[] = '🗑 ' . count($Result['removed']) . ' دامنه حذف شد: '
+. implode('، ', array_map([self::class, 'safeDomainLabel'], array_slice($Result['removed'], 0, 5)))
+. (count($Result['removed']) > 5 ? ' و ...' : '');
+}
+if ($Result['duplicates'] !== []) {
+$Lines[] = 'ℹ️ ' . count($Result['duplicates']) . ' مورد از قبل در فهرست وجود داشت.';
+}
+if ($Result['skipped_limit'] !== []) {
+$Lines[] = '⚠️ ' . count($Result['skipped_limit']) . ' مورد به دلیل پر شدن سقف ' . AppFilter::MAX_CUSTOM_DOMAINS . ' دامنه ثبت نشد.';
+}
+if ($Parsed['invalid'] !== []) {
+$Lines[] = '⚠️ ' . count($Parsed['invalid']) . ' مورد نامعتبر نادیده گرفته شد.';
+}
+if ($Lines === []) {
+$Lines[] = 'ℹ️ تغییری در فهرست دامنه‌ها ایجاد نشد (دامنه مورد نظر در فهرست نبود).';
+}
+
+self::filterDomainsMenu($Context, 0, implode("\n", $Lines));
+}
+
+/** حذف تکی یک دامنه سفارشی از روی دکمه اینلاین. */
+public static function filterDomainDelete(Context $Context, string $Token, int $Page = 0): void {
+$Account = self::accountOrPrompt($Context, 'app_filter');
+
+if ($Account === null) return;
+
+$Clean_Token = preg_replace('/[^a-f0-9]/', '', strtolower($Token)) ?? '';
+$Result = $Clean_Token !== ''
+? AppFilter::removeDomainByToken((string)$Account['uuid'], $Clean_Token, 'bot')
+: ['removed' => null, 'settings' => AppFilter::load((string)$Account['uuid'])];
+
+$Removed = $Result['removed'];
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+$Removed !== null ? "دامنه {$Removed} حذف شد ✅" : 'این دامنه قبلاً حذف شده بود.',
+false
+);
+}
+
+self::filterDomainsMenu($Context, max(0, $Page));
+}
+
+/** پرسش تأیید پیش از حذف یک‌جای همه دامنه‌های سفارشی. */
+public static function filterDomainsClearAsk(Context $Context): void {
+$Account = self::accountOrPrompt($Context, 'app_filter');
+
+if ($Account === null) return;
+
+$Settings = AppFilter::load((string)$Account['uuid']);
+$Count = count($Settings['custom_domains']);
+if ($Count === 0) {
+self::filterDomainsMenu($Context);
+return;
+}
+
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'تأیید حذف همه دامنه‌ها');
+}
+
+$Text = \Helper::userGreeting($Context, 'تأیید حذف همه دامنه‌ها')
+. "⚠️ آیا مطمئن هستید تمام {$Count} دامنه سفارشی حذف شوند؟\n"
+. "این تغییر بلافاصله با برنامه ویندوز همگام می‌شود."
+. \Helper::userFooter();
+
+self::reply(
+$Context,
+$Text,
+TelegramClient::inlineKeyboard([
+[
+['text' => '🧹 بله، همه حذف شوند', 'callback_data' => 'app_fdom_clear_ok'],
+['text' => 'انصراف', 'callback_data' => 'app_filter_domains'],
+],
+Menu::userHome(),
+])
+);
+}
+
+/** اجرای حذف کامل همه دامنه‌های سفارشی پس از تأیید کاربر. */
+public static function filterDomainsClearConfirm(Context $Context): void {
+$Account = self::accountOrPrompt($Context, 'app_filter');
+
+if ($Account === null) return;
+
+AppFilter::clearDomains((string)$Account['uuid'], 'bot');
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'تمام دامنه‌های سفارشی حذف شدند ✅');
+}
+self::filterDomainsMenu($Context, 0, '🧹 تمام دامنه‌های سفارشی حذف شدند.');
+}
+
+private static function clearFilterDomainFlow(Context $Context): void {
+$User = Repository::getUser($Context->UserId);
+if (is_array($User) && (string)($User['Flow'] ?? '') === 'app:filter_domains') {
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Step' => 0]);
+}
+}
+
+private static function safeDomainLabel(string $Domain): string {
+return str_replace(['*', '_', '`', '[', ']'], ['＊', '＿', '｀', '［', '］'], $Domain);
 }
 
 /** The devices that ever signed in, with trust state and paging. */

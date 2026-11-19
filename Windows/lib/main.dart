@@ -131,6 +131,7 @@ Future<void> main(List<String> arguments) async {
     accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
   );
   vpn.updateSettings(settings.settings);
+  settings.onDebugLogExpired = vpn.scheduleLiveReload;
   settings.addListener(() {
     vpn.updateSettings(settings.settings);
     // خاموش کردن صدا یا اعلان در تنظیمات، همان لحظه روی اعلان ها اثر می گذارد.

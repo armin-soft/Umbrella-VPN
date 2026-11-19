@@ -52,6 +52,7 @@ class WindowService with WindowListener {
 
   final NativeBridge _native;
   bool closeToTray = true;
+  bool notificationsEnabled = true;
   bool _initialized = false;
   bool _quitting = false;
 
@@ -153,10 +154,12 @@ class WindowService with WindowListener {
     }
     if (closeToTray) {
       await windowManager.hide();
-      await _native.trayBalloon(
-        title: AppConfig.appName,
-        body: 'در سینی سیستم فعال است.',
-      );
+      if (notificationsEnabled) {
+        await _native.trayBalloon(
+          title: AppConfig.appName,
+          body: 'در سینی سیستم فعال است.',
+        );
+      }
       return;
     }
     await quit();
@@ -284,7 +287,12 @@ class IpService {
 
   /// خواندن آی پی و موقعیت؛ اگر تونل فعال است، درخواست از همان پروکسی محلی
   /// می رود تا آی پی واقعی به جای آی پی خروجی گزارش نشود.
-  Future<GeoInfo> fetch({bool force = false, String proxy = ''}) async {
+  Future<GeoInfo> fetch({
+    bool force = false,
+    String proxy = '',
+    String proxyUser = '',
+    String proxyPassword = '',
+  }) async {
     if (!force && proxy.isEmpty && _cache.ip.isNotEmpty &&
         DateTime.now().difference(_cachedAt) < const Duration(minutes: 3)) {
       return _cache;
@@ -308,6 +316,23 @@ class IpService {
       final HttpClient inner = HttpClient();
       inner.findProxy = (Uri _) => 'PROXY $proxy';
       inner.connectionTimeout = const Duration(seconds: 5);
+      if (proxyUser.isNotEmpty && proxyPassword.isNotEmpty) {
+        final HttpClientBasicCredentials creds =
+            HttpClientBasicCredentials(proxyUser, proxyPassword);
+        final int sep = proxy.lastIndexOf(':');
+        if (sep > 0) {
+          final String pHost = proxy.substring(0, sep);
+          final int? pPort = int.tryParse(proxy.substring(sep + 1));
+          if (pPort != null && pPort > 0) {
+            inner.addProxyCredentials(pHost, pPort, '', creds);
+          }
+        }
+        inner.authenticateProxy =
+            (String host, int port, String scheme, String? realm) async {
+          inner.addProxyCredentials(host, port, realm ?? '', creds);
+          return true;
+        };
+      }
       temporary = IOClient(inner);
       client = temporary;
     }

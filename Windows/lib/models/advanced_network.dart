@@ -693,6 +693,8 @@ class TlsTricksSettings {
   static const String defaultFragmentSize = '10-100';
   static const String defaultFragmentSleep = '50-200';
   static const String defaultPaddingSize = '1200-1500';
+  /// سقف مجاز `padding_size` در موتور sing-box هسته (`maxTLSTricksPadding = 16000`).
+  static const int maxPaddingSize = 16000;
 
   final bool enableFragment;
   final String fragmentSize;
@@ -704,13 +706,18 @@ class TlsTricksSettings {
   bool get anyEnabled => enableFragment || mixedSniCase || enablePadding;
 
   static bool isValidRange(String value, {int min = 1, int max = 65535}) {
-    final String trimmed = value.trim();
+    final String trimmed = Fa.toEn(value.trim());
     return trimmed.isNotEmpty && _validOptionalRange(trimmed, min: min, max: max);
   }
 
-  static String _sanitizeRange(String raw, String fallback, {int min = 1}) {
+  static String _sanitizeRange(
+    String raw,
+    String fallback, {
+    int min = 1,
+    int max = 65535,
+  }) {
     final String clean = Fa.toEn(raw.trim());
-    return isValidRange(clean, min: min) ? clean : fallback;
+    return isValidRange(clean, min: min, max: max) ? clean : fallback;
   }
 
   TlsTricksSettings copyWith({
@@ -738,7 +745,11 @@ class TlsTricksSettings {
             _sanitizeRange(fragmentSleep, defaultFragmentSleep, min: 0),
         'mixedSniCase': mixedSniCase,
         'enablePadding': enablePadding,
-        'paddingSize': _sanitizeRange(paddingSize, defaultPaddingSize),
+        'paddingSize': _sanitizeRange(
+          paddingSize,
+          defaultPaddingSize,
+          max: maxPaddingSize,
+        ),
       };
 
   factory TlsTricksSettings.fromJson(Map<String, dynamic> json) {
@@ -758,6 +769,7 @@ class TlsTricksSettings {
       paddingSize: _sanitizeRange(
         json['paddingSize'] is String ? json['paddingSize'] as String : '',
         defaultPaddingSize,
+        max: maxPaddingSize,
       ),
     );
   }
@@ -769,7 +781,11 @@ class TlsTricksSettings {
             _sanitizeRange(fragmentSleep, defaultFragmentSleep, min: 0),
         'mixed-sni-case': mixedSniCase,
         'enable-padding': enablePadding,
-        'padding-size': _sanitizeRange(paddingSize, defaultPaddingSize),
+        'padding-size': _sanitizeRange(
+          paddingSize,
+          defaultPaddingSize,
+          max: maxPaddingSize,
+        ),
       };
 
   @override

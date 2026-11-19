@@ -197,10 +197,32 @@ class UmbrellaCore {
   }
 
   /// قوانین مسدودسازی آفلاین و آنی کنترل محتوا برای چهار دسته همگام با ربات تلگرام
+  /// مجموعه قوانین رسمی مسدودسازی تبلیغات، بدافزار، فیشینگ و استخراج رمز ارز در هسته.
+  static const List<String> adBlockRuleSetUrls = <String>[
+    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geoip-phishing.srs',
+    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geoip-malware.srs',
+    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-malware.srs',
+    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-phishing.srs',
+    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-cryptominers.srs',
+    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-category-ads-all.srs',
+  ];
+
+  /// الگوی نشانی قوانین منطقه ای هسته (مستقیم کردن سایت ها و آی پی های داخلی).
+  static List<String> regionalRuleSetUrls(String regionCode) => <String>[
+        'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/geoip-$regionCode.srs',
+        'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/geosite-$regionCode.srs',
+      ];
+
   /// (`adult`, `gambling`, `ads`, `dating`) و دامنه های سفارشی کاربر.
+  ///
+  /// هر دسته هم قوانین آفلاین فوری (`domain_suffix` / `domain_keyword`) دارد که از
+  /// میلی ثانیه اول بدون هیچ وابستگی به دانلود کار می کند و هم مجموعه قوانین رسمی
+  /// `.srs` دارد که از داخل تونل بارگذاری و در کش هسته ذخیره می شود تا ده ها هزار
+  /// دامنه و زیردامنه را در هر دو لایه DNS (`REFUSED`) و مسیر/SNI (`reject`) ببندد.
   static List<Map<String, dynamic>> contentControlRules(
     FilterSettings? filter, {
     int startOrder = 0,
+    bool includeRemoteRuleSets = true,
   }) {
     if (filter == null || !filter.enabled) {
       return const <Map<String, dynamic>>[];
@@ -209,8 +231,7 @@ class UmbrellaCore {
     int order = startOrder;
 
     for (final String category in filter.activeBotCategories) {
-      final ({List<String> suffixes, List<String> keywords})? spec =
-          _categoryFilterSpecs[category];
+      final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
       if (spec == null) continue;
       rules.add(<String, dynamic>{
         'list_order': order++,
@@ -219,6 +240,8 @@ class UmbrellaCore {
         'outbound': 'block',
         if (spec.suffixes.isNotEmpty) 'domain_suffix': spec.suffixes,
         if (spec.keywords.isNotEmpty) 'domain_keyword': spec.keywords,
+        if (includeRemoteRuleSets && spec.ruleSets.isNotEmpty)
+          'rule_set': spec.ruleSets,
       });
     }
 
@@ -229,33 +252,121 @@ class UmbrellaCore {
         'enabled': true,
         'name': 'umbrella-filter-custom',
         'outbound': 'block',
+        'domain': custom,
         'domain_suffix': custom,
       });
     }
     return rules;
   }
 
-  static const Map<String, ({List<String> suffixes, List<String> keywords})>
-      _categoryFilterSpecs =
-      <String, ({List<String> suffixes, List<String> keywords})>{
-    'adult': (
+  /// بررسی قطعی و آفلاین اینکه آیا یک نام میزبان توسط قوانین کنترل محتوا مسدود می شود.
+  static bool matchesContentFilter(FilterSettings? filter, String rawHost) {
+    if (filter == null || !filter.hasActiveRules) {
+      return false;
+    }
+    final String? host = FilterSettings.normalizeDomainSuffix(rawHost);
+    final String probe = (host ?? rawHost.trim().toLowerCase())
+        .replaceFirst(RegExp(r'\.+$'), '');
+    if (probe.isEmpty) {
+      return false;
+    }
+    bool matchesSuffix(String suffix) =>
+        probe == suffix || probe.endsWith('.$suffix');
+
+    for (final String custom in filter.normalizedCustomDomains) {
+      if (matchesSuffix(custom)) {
+        return true;
+      }
+    }
+    for (final String category in filter.activeBotCategories) {
+      final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
+      if (spec == null) continue;
+      if (spec.suffixes.any(matchesSuffix)) {
+        return true;
+      }
+      if (spec.keywords.any(probe.contains)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static const Map<String, _CategoryFilterSpec> _categoryFilterSpecs =
+      <String, _CategoryFilterSpec>{
+    'adult': _CategoryFilterSpec(
+      ruleSets: <String>[
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs',
+      ],
       suffixes: <String>[
         'xxx',
         'porn',
         'sex',
         'adult',
         'pornhub.com',
+        'phncdn.com',
         'xvideos.com',
+        'xv-cdn.com',
         'xnxx.com',
+        'xnxx-cdn.com',
         'xhamster.com',
+        'xhamsterlive.com',
+        'xhcdn.com',
         'redtube.com',
+        'rdtcdn.com',
         'youporn.com',
+        'ypncdn.com',
         'spankbang.com',
+        'sb-cd.com',
         'onlyfans.com',
+        'fansly.com',
         'chaturbate.com',
+        'highwebmedia.com',
+        'mmcdn.com',
         'stripchat.com',
         'bongacams.com',
+        'bngpt.com',
+        'livejasmin.com',
+        'myfreecams.com',
+        'cam4.com',
+        'camsoda.com',
+        'flirt4free.com',
+        'imlive.com',
         'brazzers.com',
+        'realitykings.com',
+        'bangbros.com',
+        'naughtyamerica.com',
+        'mofos.com',
+        'vixen.com',
+        'tushy.com',
+        'blacked.com',
+        'eporner.com',
+        'hqporner.com',
+        'beeg.com',
+        'tnaflix.com',
+        'drtuber.com',
+        'sunporno.com',
+        'txxx.com',
+        'upornia.com',
+        'fuq.com',
+        'tube8.com',
+        'xtube.com',
+        'motherless.com',
+        'redgifs.com',
+        'rule34.xxx',
+        'rule34.paheal.net',
+        'nhentai.net',
+        'hanime.tv',
+        'e-hentai.org',
+        'gelbooru.com',
+        'danbooru.donmai.us',
+        'javhd.com',
+        'missav.com',
+        'jable.tv',
+        'porn.com',
+        'sex.com',
+        'erome.com',
+        'fapello.com',
+        'literotica.com',
       ],
       keywords: <String>[
         'pornhub',
@@ -265,68 +376,189 @@ class UmbrellaCore {
         'redtube',
         'youporn',
         'spankbang',
+        'chaturbate',
+        'bongacams',
+        'brazzers',
       ],
     ),
-    'gambling': (
+    'gambling': _CategoryFilterSpec(
+      ruleSets: <String>[
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-betting-ru.srs',
+      ],
       suffixes: <String>[
         'bet',
         'casino',
         'poker',
+        'bingo',
+        'lotto',
         'bet365.com',
         '1xbet.com',
+        '1xstavka.ru',
         'melbet.com',
-        'betway.com',
-        'pokerstars.com',
-        'bwin.com',
-        'stake.com',
-        'bc.game',
         'mostbet.com',
+        'linebet.com',
+        'megapari.com',
+        '22bet.com',
+        '20bet.com',
+        'betwinner.com',
+        'betway.com',
+        'betfair.com',
+        'pokerstars.com',
+        'ggpoker.com',
+        'partypoker.com',
+        '888casino.com',
+        '888poker.com',
+        '888sport.com',
+        'bwin.com',
+        'unibet.com',
+        'stake.com',
+        'roobet.com',
+        'rollbit.com',
+        'duelbits.com',
+        'gamdom.com',
+        'bc.game',
         'parimatch.com',
         'williamhill.com',
+        'ladbrokes.com',
+        'coral.co.uk',
+        'paddypower.com',
+        'betvictor.com',
+        'betano.com',
+        'betsson.com',
+        'leovegas.com',
+        'pinnacle.com',
+        'draftkings.com',
+        'fanduel.com',
+        'betmgm.com',
+        'bovada.lv',
+        'betonline.ag',
+        'mybookie.ag',
+        'dafabet.com',
+        '188bet.com',
+        'sbobet.com',
+        'winamax.fr',
+        'polymarket.com',
+        'betforward.com',
+        'cannonbet.com',
+        'hazarat.com',
+        'takbet.com',
+        'jetbet.com',
+        'hotbet.com',
+        'abt90.com',
+        'tinobet.com',
+        'yasbet.com',
+        'pinbahis.com',
+        'shartbandi.com',
+        'persianbet.com',
       ],
       keywords: <String>[
         '1xbet',
         'melbet',
         'bet365',
         'mostbet',
+        'linebet',
+        'megapari',
         'pokerstars',
+        'betforward',
+        'cannonbet',
         'shartbandi',
       ],
     ),
-    'ads': (
+    'ads': _CategoryFilterSpec(
+      ruleSets: <String>[
+        ...adBlockRuleSetUrls,
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-ir.srs',
+      ],
       suffixes: <String>[
         'doubleclick.net',
         'googlesyndication.com',
         'googleadservices.com',
+        'google-analytics.com',
+        'googletagmanager.com',
+        'googletagservices.com',
+        'adservice.google.com',
+        '2mdn.net',
         'adnxs.com',
         'adsrvr.org',
         'taboola.com',
         'outbrain.com',
         'criteo.com',
+        'criteo.net',
         'pubmatic.com',
         'rubiconproject.com',
         'openx.net',
+        'casalemedia.com',
+        'indexww.com',
+        'smartadserver.com',
+        'advertising.com',
+        'adform.net',
+        'moatads.com',
+        'scorecardresearch.com',
+        'quantserve.com',
         'popads.net',
+        'popcash.net',
         'propellerads.com',
+        'adsterra.com',
+        'exoclick.com',
+        'exosrv.com',
+        'juicyads.com',
+        'trafficjunky.net',
+        'trafficstars.com',
+        'hilltopads.net',
+        'clickadu.com',
+        'mgid.com',
+        'revcontent.com',
+        'amazon-adsystem.com',
+        'ads-twitter.com',
+        'ads.linkedin.com',
+        'ads.tiktok.com',
+        'analytics.tiktok.com',
+        'an.facebook.com',
+        'pixel.facebook.com',
         'adcolony.com',
         'unityads.unity3d.com',
+        'applovin.com',
+        'vungle.com',
+        'ironsrc.com',
+        'chartboost.com',
+        'inmobi.com',
+        'startappservice.com',
+        'appsflyer.com',
+        'adjust.com',
+        'hotjar.com',
+        'mouseflow.com',
+        'clarity.ms',
+        'mc.yandex.ru',
+        'an.yandex.ru',
         'yektanet.com',
         'tapsell.ir',
+        'sabavision.com',
+        'mediaad.org',
+        'kaprila.com',
+        'adivery.com',
+        'najva.com',
+        'deemanetwork.com',
+        'raykaad.com',
       ],
       keywords: <String>[
         'doubleclick',
         'googlesyndication',
+        'googleadservices',
         'popads',
         'propellerads',
+        'adsterra',
+        'exoclick',
       ],
     ),
-    'dating': (
+    'dating': _CategoryFilterSpec(
       suffixes: <String>[
         'dating',
         'tinder.com',
         'gotinder.com',
+        'tindersparks.com',
         'bumble.com',
         'badoo.com',
+        'badoocdn.com',
         'okcupid.com',
         'match.com',
         'hinge.co',
@@ -336,12 +568,49 @@ class UmbrellaCore {
         'grindr.com',
         'meetic.com',
         'eharmony.com',
+        'ashleymadison.com',
+        'seeking.com',
+        'feeld.co',
+        'coffeemeetsbagel.com',
+        'cmb.io',
+        'tantanapp.com',
+        'mamba.ru',
+        'lovoo.com',
+        'tagged.com',
+        'meetme.com',
+        'skout.com',
+        'clover.co',
+        'weareher.com',
+        'scruff.com',
+        'jackd.com',
+        'hornet.com',
+        'muzz.com',
+        'muzmatch.com',
+        'salams.app',
+        'christianmingle.com',
+        'jdate.com',
+        'ourtime.com',
+        'silversingles.com',
+        'elitesingles.com',
+        'parship.de',
+        'theleague.com',
+        'hily.com',
+        'boo.world',
+        'pure.app',
+        'downapp.com',
+        'yubo.live',
+        'azarlive.com',
+        'omegle.com',
+        'ometv.tv',
+        'chatroulette.com',
       ],
       keywords: <String>[
         'tinder',
         'bumble',
         'badoo',
         'okcupid',
+        'grindr',
+        'chatroulette',
       ],
     ),
   };
@@ -472,15 +741,58 @@ class UmbrellaCore {
         CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
     final bool timedDiagnostic =
         normalizedLog == 'debug' || normalizedLog == 'trace';
-    final List<Map<String, dynamic>> appRules = <Map<String, dynamic>>[
-      if (tun && networkSettings != null)
-        for (int i = 0; i < networkSettings.appRoutes.length; i++)
-          networkSettings.appRoutes[i].toCoreRule(i),
-    ];
-    final List<Map<String, dynamic>> combinedRules = <Map<String, dynamic>>[
-      ...appRules,
-      ...contentControlRules(contentFilter, startOrder: appRules.length),
-    ];
+    // در `hiddify-core v5.9.11` به محض ارسال `route-rule`، قوانین داخلی
+    // `block-ads`، `bypass-lan` و `region` خاموش می شوند (`useAppRules`).
+    // بنابراین قوانین با ترتیب اولویت دقیق ساخته می شوند:
+    // ۱) کنترل محتوا (بالاترین اولویت — حتی دامنه داخلی هم اگر مسدود شده رد می شود)
+    // ۲) مسیریابی بر اساس برنامه (در همه حالت های سرویس روی ویندوز فعال است)
+    // ۳) مسدودسازی تبلیغات و بدافزار (در صورت روشن بودن `blockAds`)
+    // ۴) مسیریابی مستقیم منطقه انتخابی (مانند `.ir` + `geoip-ir` + `geosite-ir`)
+    // قانون `bypass-lan` (`ip_is_private`) نیز در `RuntimeConfig.finalize` حفظ می شود.
+    final List<Map<String, dynamic>> combinedRules = <Map<String, dynamic>>[];
+    if (!isolatedProbe) {
+      final List<Map<String, dynamic>> filterRules = contentControlRules(
+        contentFilter,
+        startOrder: 0,
+      );
+      combinedRules.addAll(filterRules);
+
+      if (networkSettings != null) {
+        for (final AppRouteRule route in networkSettings.appRoutes) {
+          final Map<String, dynamic> built =
+              route.toCoreRule(combinedRules.length);
+          if (route.enabled) {
+            combinedRules.add(built);
+          }
+        }
+      }
+
+      if (combinedRules.isNotEmpty && networkSettings != null) {
+        final bool adsAlreadyInFilter = (contentFilter?.enabled ?? false) &&
+            (contentFilter?.activeBotCategories.contains('ads') ?? false);
+        if (networkSettings.blockAds && !adsAlreadyInFilter) {
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length,
+            'enabled': true,
+            'name': 'umbrella-block-ads',
+            'outbound': 'block',
+            'rule_set': adBlockRuleSetUrls,
+          });
+        }
+        final RoutingRegion region = networkSettings.routingRegion;
+        if (region != RoutingRegion.other) {
+          final String code = region.coreValue;
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length,
+            'enabled': true,
+            'name': 'umbrella-region-$code',
+            'outbound': 'direct',
+            'domain_suffix': <String>['.$code'],
+            'rule_set': regionalRuleSetUrls(code),
+          });
+        }
+      }
+    }
     final int validLanPort = networkSettings != null &&
             LanSharing.isValidPort(
               networkSettings.lanSharingPort,
@@ -894,3 +1206,16 @@ class PortHolder {
     return name;
   }
 }
+
+class _CategoryFilterSpec {
+  const _CategoryFilterSpec({
+    required this.suffixes,
+    this.keywords = const <String>[],
+    this.ruleSets = const <String>[],
+  });
+
+  final List<String> suffixes;
+  final List<String> keywords;
+  final List<String> ruleSets;
+}
+

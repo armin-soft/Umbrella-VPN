@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
+import '../core/persian.dart';
 import '../core/utils.dart';
 import 'advanced_network.dart';
 export 'advanced_network.dart';
@@ -1057,6 +1060,9 @@ class FilterSettings {
   final String updatedBy;
   final String updatedAt;
 
+  /// حداکثر تعداد دامنه های سفارشی برای هر حساب (همگام با ربات تلگرام).
+  static const int maxCustomDomains = 200;
+
   /// دسته های رسمی کنترل محتوا؛ دقیقاً یکسان با ربات تلگرام (`BOT_CATEGORIES`).
   static const Map<String, String> categoryLabels = <String, String>{
     'adult': 'محتوای بزرگسال',
@@ -1072,35 +1078,56 @@ class FilterSettings {
     'dating': 'مسدودسازی شبکه ها و سایت های دوستیابی',
   };
 
+  /// دامنه های زیرساخت خود آمبرلا که مسدودسازی آن ها همگام سازی فیلتر را قفل می کند.
+  static Set<String> get _protectedSuffixes {
+    final Set<String> out = <String>{'umbrella-vpn.ir'};
+    final String? gwHost = Uri.tryParse(AppConfig.gatewayBase)?.host.toLowerCase();
+    if (gwHost != null && gwHost.isNotEmpty) {
+      out.add(gwHost.startsWith('www.') ? gwHost.substring(4) : gwHost);
+    }
+    return out;
+  }
+
   /// دسته های فعال مطابق با چهار دسته ربات تلگرام.
   List<String> get activeBotCategories =>
       categoryLabels.keys.where(categories.contains).toList(growable: false);
 
-  /// نرمال سازی دامنه یا پسوند دامنه (مانند `example.com`، `.example.com`، `.ir` یا پونی کد).
+  /// نرمال سازی دامنه یا پسوند دامنه (مانند `example.com`، `https://www.site.org/a`، `*.ads.net` یا پونی کد).
   static String? normalizeDomainSuffix(String input) {
-    String value = input.trim().toLowerCase();
+    String value = Fa.toEn(input).trim();
     if (value.isEmpty) {
       return null;
     }
-    final int scheme = value.indexOf('://');
-    if (scheme >= 0) {
-      value = value.substring(scheme + 3);
+    value = value.replaceAll(
+      RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]'),
+      '',
+    );
+    value = value.replaceAll(RegExp('^["\'`<>()\\[\\]{}+\\s]+|["\'`<>()\\[\\]{}\\s]+\$'), '');
+    if (value.isEmpty) {
+      return null;
     }
-    final int slash = value.indexOf('/');
-    if (slash >= 0) {
-      value = value.substring(0, slash);
+    value = value.toLowerCase();
+    value = value.replaceFirst(RegExp(r'^[a-z][a-z0-9+.-]*://'), '');
+    while (value.startsWith('/')) {
+      value = value.substring(1);
     }
-    final int query = value.indexOf('?');
-    if (query >= 0) {
-      value = value.substring(0, query);
+    for (final String delimiter in const <String>['/', '?', '#', '\\']) {
+      final int idx = value.indexOf(delimiter);
+      if (idx >= 0) {
+        value = value.substring(0, idx);
+      }
     }
-    final int hash = value.indexOf('#');
-    if (hash >= 0) {
-      value = value.substring(0, hash);
+    final int at = value.lastIndexOf('@');
+    if (at >= 0) {
+      value = value.substring(at + 1);
     }
-    final int colon = value.indexOf(':');
-    if (colon >= 0) {
-      value = value.substring(0, colon);
+    if (value.startsWith('[') || value.contains(':')) {
+      final RegExpMatch? portMatch =
+          RegExp(r'^([^:]+):(\d{1,5})$').firstMatch(value);
+      if (portMatch == null) {
+        return null;
+      }
+      value = portMatch.group(1)!;
     }
     while (value.startsWith('.') || value.startsWith('*')) {
       value = value.substring(1);
@@ -1111,10 +1138,22 @@ class FilterSettings {
     if (value.startsWith('www.') && value.indexOf('.', 4) > 4) {
       value = value.substring(4);
     }
-    if (value.isEmpty || value.length > 253 || value.contains(' ')) {
+    if (value.length < 4 ||
+        value.length > 253 ||
+        value.contains(' ') ||
+        value.contains('..')) {
       return null;
     }
-    if (RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(value)) {
+    if (InternetAddress.tryParse(value) != null ||
+        RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(value)) {
+      return null;
+    }
+    if (value == 'localhost' ||
+        value.endsWith('.localhost') ||
+        value.endsWith('.local') ||
+        value.endsWith('.internal') ||
+        value.endsWith('.home.arpa') ||
+        value.endsWith('.lan')) {
       return null;
     }
     final List<String> labels = value.split('.');
@@ -1132,7 +1171,37 @@ class FilterSettings {
     if (RegExp(r'^\d+$').hasMatch(tld) || tld.length < 2) {
       return null;
     }
+    for (final String protected in _protectedSuffixes) {
+      if (value == protected || value.endsWith('.$protected')) {
+        return null;
+      }
+    }
     return value;
+  }
+
+  /// تجزیه یک یا چند دامنه/لینک جداشده با فاصله، خط جدید یا ویرگول فارسی/لاتین.
+  static ({List<String> valid, List<String> invalid}) parseDomainInputs(
+    String raw,
+  ) {
+    final String cleaned =
+        raw.replaceAll('،', ',').replaceAll('؛', ';').replaceAll('\r', '\n');
+    final List<String> valid = <String>[];
+    final List<String> invalid = <String>[];
+    for (final String piece in cleaned.split(RegExp(r'[\s,;]+'))) {
+      final String token = piece.trim();
+      if (token.isEmpty) {
+        continue;
+      }
+      final String? domain = normalizeDomainSuffix(token);
+      if (domain == null) {
+        if (!invalid.contains(token)) {
+          invalid.add(token);
+        }
+      } else if (!valid.contains(domain)) {
+        valid.add(domain);
+      }
+    }
+    return (valid: valid, invalid: invalid);
   }
 
   List<String> get normalizedCustomDomains {
@@ -1141,14 +1210,89 @@ class FilterSettings {
       final String? normalized = normalizeDomainSuffix(item);
       if (normalized != null) {
         seen.add(normalized);
+        if (seen.length >= maxCustomDomains) {
+          break;
+        }
       }
     }
     return seen.toList(growable: false);
   }
 
-  bool get hasActiveRules =>
-      enabled &&
-      (activeBotCategories.isNotEmpty || normalizedCustomDomains.isNotEmpty);
+  bool get hasConfiguredRules =>
+      activeBotCategories.isNotEmpty || normalizedCustomDomains.isNotEmpty;
+
+  bool get hasActiveRules => enabled && hasConfiguredRules;
+
+  /// افزودن یک یا چند دامنه سفارشی و روشن کردن خودکار کنترل محتوا.
+  ({
+    FilterSettings settings,
+    List<String> added,
+    List<String> duplicates,
+    List<String> skippedLimit,
+  }) addCustomDomains(Iterable<String> domains) {
+    final List<String> next = normalizedCustomDomains.toList();
+    final List<String> added = <String>[];
+    final List<String> duplicates = <String>[];
+    final List<String> skippedLimit = <String>[];
+    for (final String raw in domains) {
+      final String? clean = normalizeDomainSuffix(raw);
+      if (clean == null) {
+        continue;
+      }
+      if (next.contains(clean)) {
+        if (!duplicates.contains(clean)) {
+          duplicates.add(clean);
+        }
+        continue;
+      }
+      if (next.length >= maxCustomDomains) {
+        skippedLimit.add(clean);
+        continue;
+      }
+      next.add(clean);
+      added.add(clean);
+    }
+    if (added.isEmpty) {
+      return (
+        settings: this,
+        added: added,
+        duplicates: duplicates,
+        skippedLimit: skippedLimit,
+      );
+    }
+    return (
+      settings: copyWith(enabled: true, customDomains: next),
+      added: added,
+      duplicates: duplicates,
+      skippedLimit: skippedLimit,
+    );
+  }
+
+  /// حذف یک دامنه سفارشی؛ اگر هیچ دسته و دامنه ای باقی نماند فیلتر خاموش می شود.
+  FilterSettings removeCustomDomain(String domain) {
+    final String target = normalizeDomainSuffix(domain) ?? domain.trim().toLowerCase();
+    final List<String> next = normalizedCustomDomains
+        .where((String item) => item != target)
+        .toList(growable: false);
+    if (next.length == normalizedCustomDomains.length) {
+      return this;
+    }
+    return copyWith(
+      enabled: enabled && (activeBotCategories.isNotEmpty || next.isNotEmpty),
+      customDomains: next,
+    );
+  }
+
+  /// حذف یکجای همه دامنه های سفارشی با حفظ وضعیت دسته های فعال.
+  FilterSettings clearCustomDomains() {
+    if (normalizedCustomDomains.isEmpty) {
+      return this;
+    }
+    return copyWith(
+      enabled: enabled && activeBotCategories.isNotEmpty,
+      customDomains: const <String>[],
+    );
+  }
 
   String get sourceLabel => switch (updatedBy.trim().toLowerCase()) {
         'bot' || 'telegram' => 'ربات تلگرام',

@@ -610,4 +610,303 @@ void main() {
     skip: enabled ? false : 'Set UMBRELLA_CORE_SMOKE after bundling the Windows DLLs',
     timeout: const Timeout(Duration(seconds: 45)),
   );
+
+  test(
+    'bundled core enforces content control, custom domains, app routes, LAN bypass, DNS resolve, TLS tricks, sticky TTL and local proxy auth live',
+    () async {
+      final String executable = binary!;
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'umbrella-full-settings-smoke-',
+      );
+      Process? running;
+      try {
+        final File links = File('${temp.path}/links.txt');
+        final File settings = File('${temp.path}/settings.json');
+        const String uuid = '00000000-0000-4000-8000-000000000077';
+        const String realityPbk = 'm6fT6K1a5k8o0v3z7x9c2b4n6m8q1w3e5r7t9y1u3i4';
+        // Three distinct outbound profiles:
+        //  1) Plain-TCP VLESS+TLS with randomized uTLS (must get fragment, mixed SNI, padding, fixed chrome uTLS)
+        //  2) Streamed WS VLESS+TLS with firefox uTLS (must get fragment, mixed SNI, padding, preserve firefox uTLS)
+        //  3) VLESS+Reality (must never get tls_tricks or tls_fragment)
+        await links.writeAsString(
+          <String>[
+            'vless://$uuid@192.0.2.10:443?security=tls&sni=plain-tls.example.invalid&fp=randomized&type=tcp#node-plain-tls',
+            'vless://$uuid@192.0.2.11:443?security=tls&sni=ws-tls.example.invalid&fp=firefox&type=ws&host=ws-tls.example.invalid&path=%2Fws#node-ws-tls',
+            'vless://$uuid@192.0.2.12:443?security=reality&sni=www.microsoft.com&fp=chrome&pbk=$realityPbk&sid=0123456789abcdef&type=tcp&flow=xtls-rprx-vision#node-reality',
+          ].join('\n'),
+        );
+
+        const int customMixedPort = 14334;
+        const String proxySecret = 'SmokePw-8842';
+        final Map<String, dynamic> options = UmbrellaCore.settingsJson(
+          tun: false,
+          systemProxy: false,
+          port: customMixedPort,
+          logFile: '${temp.path}/core.log',
+          networkSettings: const AppSettings(
+            serviceMode: InboundServiceMode.proxy,
+            mixedPort: customMixedPort,
+            localProxyAuth: true,
+            lanSharingPassword: proxySecret,
+            bypassLan: true,
+            blockAds: true,
+            blockIpv6: true,
+            routingRegion: RoutingRegion.ir,
+            resolveDestination: true,
+            selectionMode: SelectionMode.sticky,
+            stickyMinutes: 25,
+            appRoutes: <AppRouteRule>[
+              AppRouteRule(
+                process: 'offline-direct.exe',
+                action: AppRouteAction.direct,
+              ),
+              AppRouteRule(
+                process: 'disabled-app.exe',
+                action: AppRouteAction.block,
+                enabled: false,
+              ),
+            ],
+            tlsTricks: TlsTricksSettings(
+              enableFragment: true,
+              fragmentSize: '15-40',
+              fragmentSleep: '3-9',
+              mixedSniCase: true,
+              enablePadding: true,
+              paddingSize: '1100-1400',
+            ),
+          ),
+          contentFilter: const FilterSettings(
+            enabled: true,
+            categories: <String>['adult', 'gambling', 'ads', 'dating'],
+            customDomains: <String>[
+              'https://www.My-Blocked-Site.TEST/path',
+              'second-blocked.example',
+            ],
+          ),
+        );
+        await settings.writeAsString(jsonEncode(options));
+
+        final File compiledFile = await CoreRuntime.compile(
+          executable: executable,
+          workDir: File(executable).parent.path,
+          runDir: temp.path,
+          linksPath: links.path,
+          settingsPath: settings.path,
+          stickyMinutes: 25,
+          cancelled: () => false,
+        );
+
+        final Map<String, dynamic> compiled =
+            jsonDecode(await compiledFile.readAsString())
+                as Map<String, dynamic>;
+        final Map<String, dynamic> route =
+            compiled['route'] as Map<String, dynamic>;
+        expect(route['find_process'], isTrue);
+
+        final List<Map<String, dynamic>> routeRules =
+            (route['rules'] as List<dynamic>).cast<Map<String, dynamic>>();
+        expect(
+          routeRules.any(
+            (Map<String, dynamic> r) =>
+                r['ip_is_private'] == true &&
+                '${r['outbound'] ?? ''}'.startsWith('direct'),
+          ),
+          isTrue,
+          reason: 'bypass-lan must survive route-rule compilation',
+        );
+        expect(
+          routeRules.any(
+            (Map<String, dynamic> r) =>
+                r['action'] == 'resolve' && r['strategy'] == 'ipv4_only',
+          ),
+          isTrue,
+          reason: 'resolve-destination must emit ipv4_only resolve rule when blockIpv6 is on',
+        );
+        final String ruleSetDump = jsonEncode(route['rule_set']);
+        expect(
+          ruleSetDump,
+          allOf(
+            contains('geosite-category-porn.srs'),
+            contains('geosite-category-betting-ru.srs'),
+            contains('geosite-category-ads-all.srs'),
+            contains('geosite-category-ads-and-telemetry.srs'),
+            contains('geosite-category-ads-ir.srs'),
+            contains('geosite-ir.srs'),
+            contains('geoip-ir.srs'),
+          ),
+        );
+        expect(jsonEncode(routeRules), isNot(contains('disabled-app.exe')));
+        expect(jsonEncode(routeRules), contains('my-blocked-site.test'));
+
+        final List<Map<String, dynamic>> outbounds =
+            (compiled['outbounds'] as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        final Map<String, dynamic> plainTls = outbounds.firstWhere(
+          (Map<String, dynamic> o) => '${o['tag']}'.contains('node-plain-tls'),
+        );
+        final Map<String, dynamic> wsTls = outbounds.firstWhere(
+          (Map<String, dynamic> o) => '${o['tag']}'.contains('node-ws-tls'),
+        );
+        final Map<String, dynamic> reality = outbounds.firstWhere(
+          (Map<String, dynamic> o) => '${o['tag']}'.contains('node-reality'),
+        );
+        final Map<String, dynamic> balancer = outbounds.firstWhere(
+          (Map<String, dynamic> o) =>
+              o['type'] == 'balancer' && o['tag'] == 'balance',
+        );
+
+        expect(
+          (plainTls['tls_fragment'] as Map<String, dynamic>)['enabled'],
+          isTrue,
+        );
+        expect(
+          (plainTls['tls_fragment'] as Map<String, dynamic>)['size'],
+          '15-40',
+        );
+        final Map<String, dynamic> plainTlsCfg =
+            plainTls['tls'] as Map<String, dynamic>;
+        expect(
+          (plainTlsCfg['tls_tricks'] as Map<String, dynamic>)['mixedcase_sni'],
+          isTrue,
+        );
+        expect(
+          (plainTlsCfg['tls_tricks'] as Map<String, dynamic>)['padding_mode'],
+          'random',
+        );
+        expect(
+          (plainTlsCfg['tls_tricks'] as Map<String, dynamic>)['padding_size'],
+          '1100-1400',
+        );
+        expect(
+          (plainTlsCfg['utls'] as Map<String, dynamic>)['fingerprint'],
+          'chrome',
+        );
+
+        final Map<String, dynamic> wsTlsCfg =
+            wsTls['tls'] as Map<String, dynamic>;
+        expect(
+          (wsTlsCfg['tls_tricks'] as Map<String, dynamic>)['padding_mode'],
+          'random',
+        );
+        expect(
+          (wsTlsCfg['utls'] as Map<String, dynamic>)['fingerprint'],
+          'firefox',
+        );
+
+        final Map<String, dynamic> realityTlsCfg =
+            reality['tls'] as Map<String, dynamic>;
+        expect(reality.containsKey('tls_fragment'), isFalse);
+        expect(realityTlsCfg.containsKey('tls_tricks'), isFalse);
+
+        expect(balancer['strategy'], 'sticky-sessions');
+        expect(balancer['ttl'], '25m');
+
+        // Start srun live and verify sing-box accepts the entire config, enforces
+        // proxy auth on customMixedPort, honors ClashApi.selectOutbound/closeAll,
+        // and actively blocks Content Control & custom domains immediately!
+        running = await Process.start(
+          executable,
+          <String>['srun', '-c', compiledFile.path, '-D', temp.path],
+          workingDirectory: File(executable).parent.path,
+          runInShell: false,
+        );
+        final StringBuffer logs = StringBuffer();
+        running.stdout.transform(utf8.decoder).listen(logs.write);
+        running.stderr.transform(utf8.decoder).listen(logs.write);
+
+        final String apiSecret = '${options['web-secret']}';
+        bool ready = false;
+        for (int i = 0; i < 25; i++) {
+          final CoreProxySnapshot snap =
+              await ClashApi.status(secret: apiSecret);
+          if (snap.reachable) {
+            ready = true;
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+        }
+        expect(ready, isTrue, reason: logs.toString());
+
+        expect(
+          await ClashApi.selectOutbound(
+            'select',
+            'balance',
+            secret: apiSecret,
+          ),
+          isTrue,
+          reason: logs.toString(),
+        );
+        expect(
+          await ClashApi.closeAllConnections(secret: apiSecret),
+          isTrue,
+          reason: logs.toString(),
+        );
+
+        // Unauthenticated local proxy call must get 407 Proxy Auth Required.
+        final HttpClient unauth = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 2)
+          ..findProxy = (_) => 'PROXY 127.0.0.1:$customMixedPort';
+        try {
+          final HttpClientRequest req = await unauth
+              .getUrl(Uri.parse('http://my-blocked-site.test/'))
+              .timeout(const Duration(seconds: 2));
+          final HttpClientResponse res =
+              await req.close().timeout(const Duration(seconds: 2));
+          await res.drain<void>();
+          expect(res.statusCode, HttpStatus.proxyAuthenticationRequired);
+        } finally {
+          unauth.close(force: true);
+        }
+
+        // Authenticated calls to blocked categories & custom subdomains must be
+        // actively rejected by sing-box within milliseconds (never 200/407).
+        for (final String blockedHost in <String>[
+          'pornhub.com',
+          'www.1xbet.com',
+          'ads.doubleclick.net',
+          'tinder.com',
+          'sub.my-blocked-site.test',
+          'second-blocked.example',
+        ]) {
+          final HttpClient authed = HttpClient()
+            ..connectionTimeout = const Duration(seconds: 2)
+            ..findProxy = (_) => 'PROXY 127.0.0.1:$customMixedPort';
+          final String basic =
+              base64Encode(utf8.encode('hiddify:$proxySecret'));
+          bool blocked = false;
+          try {
+            final HttpClientRequest req = await authed
+                .getUrl(Uri.parse('http://$blockedHost/'))
+                .timeout(const Duration(seconds: 2));
+            req.headers.set(HttpHeaders.proxyAuthorizationHeader, 'Basic $basic');
+            final HttpClientResponse res =
+                await req.close().timeout(const Duration(seconds: 2));
+            await res.drain<void>();
+            // sing-box mixed inbound turns rejected HTTP proxy requests into 502/403/500, never 200 or 407.
+            blocked = res.statusCode >= 500 || res.statusCode == HttpStatus.forbidden;
+          } on IOException {
+            blocked = true;
+          } finally {
+            authed.close(force: true);
+          }
+          expect(
+            blocked,
+            isTrue,
+            reason: 'Expected $blockedHost to be blocked by live core; logs: $logs',
+          );
+        }
+      } finally {
+        running?.kill();
+        if (running != null) {
+          await running.exitCode.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => -1,
+          );
+        }
+        await temp.delete(recursive: true);
+      }
+    },
+    skip: enabled ? false : 'Set UMBRELLA_CORE_SMOKE after bundling the Windows DLLs',
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
 }

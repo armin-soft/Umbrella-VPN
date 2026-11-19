@@ -21,10 +21,16 @@ class VerifiedProbe {
     int minimumSuccesses = 1,
     Duration timeout = const Duration(seconds: 8),
     Map<String, String> targets = endpoints,
+    String proxyUser = '',
+    String proxyPassword = '',
   }) async {
     if (minimumSuccesses < 1 || targets.length < minimumSuccesses || proxyPort < 0 || proxyPort > 65535) return false;
     final List<HttpClient> clients = <HttpClient>[];
     final Completer<bool> done = Completer<bool>();
+    final bool useProxyAuth = proxyPort > 0 && proxyUser.isNotEmpty && proxyPassword.isNotEmpty;
+    final String proxyBasic = useProxyAuth
+        ? 'Basic ${base64Encode(utf8.encode('$proxyUser:$proxyPassword'))}'
+        : '';
     int pending = targets.length;
     int successes = 0;
     Future<void> probe(String url, String expected) async {
@@ -38,10 +44,31 @@ class VerifiedProbe {
       final HttpClient client = HttpClient()..connectionTimeout = timeout;
       clients.add(client);
       client.findProxy = (Uri _) => proxyPort > 0 ? 'PROXY 127.0.0.1:$proxyPort' : 'DIRECT';
+      if (useProxyAuth) {
+        client.addProxyCredentials(
+          '127.0.0.1',
+          proxyPort,
+          '',
+          HttpClientBasicCredentials(proxyUser, proxyPassword),
+        );
+        client.authenticateProxy =
+            (String host, int port, String scheme, String? realm) async {
+          client.addProxyCredentials(
+            host,
+            port,
+            realm ?? '',
+            HttpClientBasicCredentials(proxyUser, proxyPassword),
+          );
+          return true;
+        };
+      }
       try {
         final HttpClientRequest request = await client.getUrl(uri);
         request.followRedirects = false;
         request.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+        if (proxyBasic.isNotEmpty && uri.scheme == 'http') {
+          request.headers.set('Proxy-Authorization', proxyBasic);
+        }
         final HttpClientResponse response = await request.close();
         final List<int> body = <int>[];
         await for (final List<int> chunk in response) {

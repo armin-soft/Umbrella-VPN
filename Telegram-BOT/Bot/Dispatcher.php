@@ -355,7 +355,10 @@ match($Data) {
 'app_notifications' => UserFlow::accountMenu($Context),
 'nightly_report_on' => UserFlow::setNightlyReport($Context, true),
 'nightly_report_off' => UserFlow::setNightlyReport($Context, false),
-'app_filter_domains' => AppFlow::filterDomainsStart($Context),
+'app_filter_domains' => AppFlow::filterDomainsMenu($Context),
+'app_fdom_add' => AppFlow::filterDomainsStart($Context),
+'app_fdom_clear' => AppFlow::filterDomainsClearAsk($Context),
+'app_fdom_clear_ok' => AppFlow::filterDomainsClearConfirm($Context),
 'app_push_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
@@ -474,6 +477,22 @@ return;
 
 if (str_starts_with($Data, 'app_filter_toggle:')) {
 AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
+return;
+}
+
+if (str_starts_with($Data, 'app_fdom_page:')) {
+$Rest = substr($Data, strlen('app_fdom_page:'));
+if (preg_match('/^[0-9]+$/D', $Rest) === 1) {
+AppFlow::filterDomainsMenu($Context, (int)$Rest);
+}
+return;
+}
+
+if (str_starts_with($Data, 'app_fdom_del:')) {
+$Rest = substr($Data, strlen('app_fdom_del:'));
+if (preg_match('/^([a-f0-9]{12}):([0-9]+)$/D', $Rest, $Match) === 1) {
+AppFlow::filterDomainDelete($Context, $Match[1], (int)$Match[2]);
+}
 return;
 }
 

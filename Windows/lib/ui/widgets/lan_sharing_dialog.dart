@@ -150,8 +150,10 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
     final String activeHost = showLan ? (lanHost ?? '127.0.0.1') : '127.0.0.1';
     final int activePort = showLan ? cfg.lanSharingPort : cfg.mixedPort;
     final String secret = cfg.lanSharingPassword.trim();
+    final bool localAuthActive = cfg.localProxyAuth &&
+        cfg.serviceMode != InboundServiceMode.systemProxy;
     final String effectiveSecret =
-        showLan ? secret : (cfg.localProxyAuth ? secret : '');
+        showLan ? secret : (localAuthActive ? secret : '');
     final bool shared = cfg.allowConnectionFromLan;
 
     final bool hasValidLink = showLan ? (shared && lanHost != null) : true;

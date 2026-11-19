@@ -8,6 +8,7 @@ import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
+import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
@@ -268,7 +269,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   _CategoryNavTile(
                     category: SettingsCategory.values[i],
-                    badge: _categoryBadge(SettingsCategory.values[i], cfg),
+                    badge: _categoryBadge(
+                      context,
+                      SettingsCategory.values[i],
+                      cfg,
+                    ),
                     onTap: () =>
                         setState(() => _section = SettingsCategory.values[i]),
                   ),
@@ -281,7 +286,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  String? _categoryBadge(SettingsCategory category, AppSettings cfg) {
+  String? _categoryBadge(
+    BuildContext context,
+    SettingsCategory category,
+    AppSettings cfg,
+  ) {
     switch (category) {
       case SettingsCategory.general:
         return null;
@@ -291,12 +300,20 @@ class _SettingsPageState extends State<SettingsPage> {
         }
         return '${cfg.chain.position.label} · ${cfg.chain.transport.quickLabel}';
       case SettingsCategory.routing:
+        final FilterSettings? filter =
+            Provider.of<AuthController?>(context)?.filter;
+        if (filter != null && filter.hasActiveRules) {
+          return 'کنترل محتوا';
+        }
         if (cfg.routingRegion != RoutingRegion.other) {
           return cfg.routingRegion.label;
         }
         final int activeApps =
             cfg.appRoutes.where((AppRouteRule r) => r.enabled).length;
-        return activeApps > 0 ? Fa.num('$activeApps برنامه') : null;
+        if (activeApps > 0) {
+          return Fa.num('$activeApps برنامه');
+        }
+        return cfg.blockAds ? 'ضد تبلیغات' : null;
       case SettingsCategory.dns:
         return cfg.enableFakeDns ? 'دی ان اس مجازی' : null;
       case SettingsCategory.inbound:
@@ -1151,7 +1168,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.apps_rounded,
           title: 'مسیریابی بر اساس برنامه',
           subtitle:
-              'در حالت تونل کامل تعیین کنید هر فایل اجرایی ویندوز از تونل برود، مستقیم وصل شود یا مسدود گردد',
+              'تعیین کنید هر فایل اجرایی ویندوز از تونل عبور کند، مستقیم وصل شود یا مسدود گردد',
           trailing: SizedBox(
             height: AppMetrics.controlHeightSmall,
             child: OutlinedButton.icon(
@@ -1469,19 +1486,26 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: Icons.password_rounded,
                 title: 'درخواست رمز در پروکسی محلی',
                 subtitle: cfg.serviceMode == InboundServiceMode.systemProxy
-                    ? 'در حالت پروکسی سیستم غیرفعال است'
+                    ? 'در حالت پروکسی سیستم غیرفعال است (ویندوز رمز پروکسی ارسال نمی کند)'
                     : 'الزام به وارد کردن رمز پروکسی برای برنامه های محلی',
-                value: cfg.localProxyAuth,
-                onChanged: (bool v) async {
-                  if (v && secret.isEmpty) {
-                    await settings
-                        .setLanSharingPassword(LanSharing.generateSecret());
-                  }
-                  await _applyRuntime(
-                    vpn,
-                    () => settings.setLocalProxyAuth(v),
-                  );
-                },
+                value: cfg.serviceMode != InboundServiceMode.systemProxy &&
+                    cfg.localProxyAuth,
+                onChanged: cfg.serviceMode == InboundServiceMode.systemProxy
+                    ? (bool _) => toasts.info(
+                          'برای رمزگذاری پروکسی محلی، حالت سرویس را روی پروکسی یا تونل کامل بگذارید',
+                          'پروکسی محلی',
+                        )
+                    : (bool v) async {
+                        if (v && secret.isEmpty) {
+                          await settings.setLanSharingPassword(
+                            LanSharing.generateSecret(),
+                          );
+                        }
+                        await _applyRuntime(
+                          vpn,
+                          () => settings.setLocalProxyAuth(v),
+                        );
+                      },
               ),
             ],
           ),
@@ -1655,12 +1679,16 @@ class _SettingsPageState extends State<SettingsPage> {
               ltrValue: true,
               onTap: () => _editTextValue(
                 title: 'اندازه لایه پرکننده',
-                label: 'عدد یا بازه (پیش فرض ۱۲۰۰-۱۵۰۰)',
+                label: 'عدد یا بازه بین ۱ تا ۱۶٬۰۰۰ (پیش فرض ۱۲۰۰-۱۵۰۰)',
                 initialValue: tls.paddingSize,
                 hint: '۱۲۰۰-۱۵۰۰',
-                validator: (String v) => TlsTricksSettings.isValidRange(v)
+                validator: (String v) => TlsTricksSettings.isValidRange(
+                  v,
+                  min: 1,
+                  max: TlsTricksSettings.maxPaddingSize,
+                )
                     ? null
-                    : 'بازه عددی معتبر وارد کنید (مانند ۱۲۰۰-۱۵۰۰)',
+                    : 'بازه عددی بین ۱ تا ۱۶٬۰۰۰ وارد کنید (مانند ۱۲۰۰-۱۵۰۰)',
                 onSubmit: (String v) =>
                     saveTls(tls.copyWith(paddingSize: v.trim())),
               ),

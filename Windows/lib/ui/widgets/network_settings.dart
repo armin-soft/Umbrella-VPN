@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
+import '../../vpn/vpn_controller.dart';
 import 'advanced_network_settings.dart';
 import 'common.dart';
 
@@ -17,8 +18,15 @@ class NetworkSettings extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final SettingsController controller = context.watch<SettingsController>();
+    final VpnController? vpn =
+        Provider.of<VpnController?>(context, listen: false);
     final AppSettings current = controller.settings;
     final UmbrellaColors colors = context.colors;
+
+    Future<void> applyRuntime(Future<void> Function() mutate) async {
+      await mutate();
+      vpn?.scheduleLiveReload();
+    }
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -38,12 +46,13 @@ class NetworkSettings extends StatelessWidget {
                 icon: stack.icon,
               ),
           ],
-          onChanged: controller.setTunStack,
+          onChanged: (TunStack v) =>
+              applyRuntime(() => controller.setTunStack(v)),
         );
 
         final Widget mtuField = _MtuField(
           mtu: current.mtu,
-          onSubmitted: controller.setMtu,
+          onSubmitted: (int v) => applyRuntime(() => controller.setMtu(v)),
         );
 
         final Widget remoteDnsField = _dnsField(
@@ -52,7 +61,8 @@ class NetworkSettings extends StatelessWidget {
           value: current.remoteDns,
           defaultValue: NetworkDns.defaultRemote,
           icon: Icons.public_rounded,
-          onChanged: controller.setRemoteDns,
+          onChanged: (String v) =>
+              applyRuntime(() => controller.setRemoteDns(v)),
         );
 
         final Widget directDnsField = _dnsField(
@@ -61,7 +71,8 @@ class NetworkSettings extends StatelessWidget {
           value: current.directDns,
           defaultValue: NetworkDns.defaultDirect,
           icon: Icons.dns_rounded,
-          onChanged: controller.setDirectDns,
+          onChanged: (String v) =>
+              applyRuntime(() => controller.setDirectDns(v)),
         );
 
         final Widget strictToggle = Container(
@@ -79,7 +90,8 @@ class NetworkSettings extends StatelessWidget {
             title: 'مسیریابی سخت گیرانه تونل',
             subtitle: 'جلوگیری از نشت بسته ها بیرون از مسیر امن تونل',
             value: current.strictRoute,
-            onChanged: controller.setStrictRoute,
+            onChanged: (bool v) =>
+                applyRuntime(() => controller.setStrictRoute(v)),
           ),
         );
 
@@ -98,7 +110,8 @@ class NetworkSettings extends StatelessWidget {
             title: 'حالت فقط آی پی نسخه ۴',
             subtitle: 'غیرفعال کردن آی پی نسخه ۶ برای پایداری و سرعت بالاتر اتصال',
             value: current.blockIpv6,
-            onChanged: controller.setBlockIpv6,
+            onChanged: (bool v) =>
+                applyRuntime(() => controller.setBlockIpv6(v)),
           ),
         );
 

@@ -71,15 +71,26 @@ class TunnelProbe {
     );
   }
 
-  /// اندازه گیری تاخیر واقعی از طریق پروکسی محلی؛ میلی ثانیه یا -۱.
+  /// اندازه گیری تاخیر واقعی از طریق پروکسی محلی (یا مستقیم از تونل وقتی
+  /// `proxyPort == 0`)؛ میلی ثانیه یا -۱.
   static Future<int> latency({
     required int proxyPort,
     Duration timeout = const Duration(seconds: 6),
+    String proxyUser = '',
+    String proxyPassword = '',
   }) async {
     final Completer<int> done = Completer<int>();
     int pending = _endpoints.length;
     for (final String url in _endpoints) {
-      final Future<int> probe = _timedViaProxy(proxyPort, url, timeout);
+      final Future<int> probe = proxyPort > 0
+          ? _timedViaProxy(
+              proxyPort,
+              url,
+              timeout,
+              proxyUser: proxyUser,
+              proxyPassword: proxyPassword,
+            )
+          : _timedDirect(url, timeout);
       unawaited(
         probe.then<void>(
           (int ms) {
@@ -102,12 +113,46 @@ class TunnelProbe {
     );
   }
 
+  static Future<int> _timedDirect(String url, Duration timeout) async {
+    final Uri uri = Uri.parse(url);
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = timeout
+      ..findProxy = (Uri _) => 'DIRECT';
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      final HttpClientRequest request =
+          await client.getUrl(uri).timeout(timeout);
+      request.followRedirects = false;
+      final HttpClientResponse response =
+          await request.close().timeout(timeout);
+      watch.stop();
+      await response.drain<void>().timeout(
+            const Duration(milliseconds: 300),
+            onTimeout: () {},
+          );
+      return response.statusCode >= 200 && response.statusCode < 400
+          ? watch.elapsedMilliseconds
+          : -1;
+    } catch (_) {
+      return -1;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   static Future<int> _timedViaProxy(
     int port,
     String url,
-    Duration timeout,
-  ) async {
+    Duration timeout, {
+    String proxyUser = '',
+    String proxyPassword = '',
+  }) async {
     final Uri uri = Uri.parse(url);
+    final String authHeader =
+        proxyUser.isNotEmpty && proxyPassword.isNotEmpty
+            ? 'Proxy-Authorization: Basic '
+                '${base64Encode(utf8.encode('$proxyUser:$proxyPassword'))}\r\n'
+            : '';
     Socket? socket;
     final Stopwatch watch = Stopwatch()..start();
     try {
@@ -116,6 +161,7 @@ class TunnelProbe {
         utf8.encode(
           'GET $url HTTP/1.1\r\n'
           'Host: ${uri.host}\r\n'
+          '$authHeader'
           'User-Agent: UmbrellaVPN/1.0\r\n'
           'Accept: */*\r\n'
           'Connection: close\r\n\r\n',

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
@@ -22,6 +25,13 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> _pendingSave = Future<void>.value();
   int _saveSeq = 0;
+  Timer? _debugRevertTimer;
+  DateTime? _debugLogExpiresAt;
+
+  /// فراخوانی خودکار هنگام پایان مهلت ۱۰ دقیقه ای سطح گزارش `debug` تا اتصال
+  /// فعال بدون دخالت کاربر به سطح سبک `warn` بازگردد.
+  VoidCallback? onDebugLogExpired;
+
   AppSettings _settings = const AppSettings();
   AppSettings get settings => _settings;
 
@@ -51,7 +61,17 @@ class SettingsController extends ChangeNotifier {
     _landingSeen = LocalStore.instance.readBool(StoreKeys.landingSeen);
     _elevated = await _native.isElevated();
     _sound.enabled = _settings.soundEnabled;
-    _window.closeToTray = _settings.closeToTray;
+    _window
+      ..closeToTray = _settings.closeToTray
+      ..notificationsEnabled = _settings.notificationsEnabled;
+    // اگر اجرای خودکار با ویندوز روشن است، مسیر فایل اجرایی فعلی در رجیستری
+    // تازه سازی می شود تا پس از به روز رسانی یا جابه جایی پوشه نصب از کار نیفتد.
+    if (Platform.isWindows && _settings.startWithWindows) {
+      unawaited(
+        _native.setAutostart(true, appName: AppConfig.autostartName),
+      );
+    }
+    _syncDebugRevertTimer(_settings.logLevel);
     notifyListeners();
   }
 
@@ -65,7 +85,12 @@ class SettingsController extends ChangeNotifier {
     final AppSettings previous = _settings;
     _settings = next;
     _sound.enabled = next.soundEnabled;
-    _window.closeToTray = next.closeToTray;
+    _window
+      ..closeToTray = next.closeToTray
+      ..notificationsEnabled = next.notificationsEnabled;
+    if (previous.logLevel != next.logLevel) {
+      _syncDebugRevertTimer(next.logLevel);
+    }
     // Apply appearance immediately; serialize and coalesce disk writes so rapid
     // back-to-back theme clicks neither block rendering nor persist stale state.
     notifyListeners();
@@ -403,8 +428,41 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(lastNodeId: nodeId), applyNative: false);
   }
 
+  void _syncDebugRevertTimer(String rawLevel) {
+    _debugRevertTimer?.cancel();
+    _debugRevertTimer = null;
+    final String normalized = CoreLogLevel.normalize(rawLevel);
+    if (normalized != 'debug' && normalized != 'trace') {
+      _debugLogExpiresAt = null;
+      return;
+    }
+    final DateTime expires =
+        DateTime.now().add(const Duration(minutes: 10));
+    _debugLogExpiresAt = expires;
+    _debugRevertTimer = Timer(const Duration(minutes: 10), () {
+      if (_debugLogExpiresAt != expires) return;
+      _debugLogExpiresAt = null;
+      final String current = CoreLogLevel.normalize(_settings.logLevel);
+      if (current == 'debug' || current == 'trace') {
+        unawaited(() async {
+          await update(
+            _settings.copyWith(logLevel: CoreLogLevel.defaultLevel),
+            applyNative: false,
+          );
+          onDebugLogExpired?.call();
+        }());
+      }
+    });
+  }
+
   Future<bool> requestElevation() async {
     final bool ok = await _native.relaunchElevated();
     return ok;
+  }
+
+  @override
+  void dispose() {
+    _debugRevertTimer?.cancel();
+    super.dispose();
   }
 }

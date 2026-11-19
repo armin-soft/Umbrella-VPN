@@ -71,22 +71,25 @@ void main() {
     expect(invalid.toCoreOptions, throwsFormatException);
     expect(ChainSettings.fromJson(invalid.toJson()).toCoreOptions, throwsFormatException);
   });
-  test('ordered process rules use protobuf JSON names; proxy mode omits them', () {
+  test('ordered process rules use protobuf JSON names in both TUN and proxy modes and omit disabled entries', () {
     const AppSettings settings = AppSettings(appRoutes: <AppRouteRule>[
       AppRouteRule(process: 'browser.exe', action: AppRouteAction.direct),
       AppRouteRule(process: r'C:\Apps\blocked.exe', action: AppRouteAction.block),
       AppRouteRule(process: 'other.exe', enabled: false),
     ]);
     final AppSettings reloaded = AppSettings.fromJson(jsonDecode(jsonEncode(settings.toJson())) as Map<String, dynamic>);
+    expect(reloaded.appRoutes, hasLength(3));
+    expect(reloaded.appRoutes[2].enabled, false);
     final List<dynamic> rules = (core(reloaded)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    expect(rules, hasLength(2));
     expect(rules[0]['process_name'], <String>['browser.exe']);
     expect(rules[1]['process_path'], <String>[r'C:\Apps\blocked.exe']);
     expect(rules[0]['outbound'], 'direct');
     expect(rules[1]['outbound'], 'block');
-    expect(rules[2]['enabled'], false);
     expect(rules[0]['list_order'], 0);
     expect(rules[1]['list_order'], 1);
-    expect(core(reloaded, tun: false).containsKey('route-rule'), false);
+    final List<dynamic> proxyRules = (core(reloaded, tun: false)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    expect(proxyRules, hasLength(2));
   });
   test('rules never become unconditional and diagnostic processes cannot bypass', () {
     for (final String process in <String>['', '*', 'x', 'app.exe\n', r'..\app.exe', r'\\server\app.exe', 'UmbrellaVPN.exe', 'UmbrellaCli.exe', 'app?.exe']) {
@@ -116,7 +119,7 @@ void main() {
     expect(controller, contains('if (_healthInFlight || _status != VpnStatus.connected) return;'));
     expect(controller, contains('epoch != _connectionEpoch'));
     expect(controller, contains('cancelSpeedTest();'));
-    expect(controller, contains('VerifiedProbe.check(proxyPort: _umbrellaPort'));
+    expect(controller, contains('proxyPort: _probeProxyPort'));
     expect(controller, isNot(contains('return _coreReportsWorkingTunnel')));
     final String source = File('lib/state/subscription_controller.dart').readAsStringSync();
     expect(source, contains('AppConfig.allowedSubscriptionHosts.contains(host)'));

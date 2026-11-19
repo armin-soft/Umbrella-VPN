@@ -319,8 +319,48 @@ class VpnController extends ChangeNotifier {
   Timer? _filterReloadTimer;
   Timer? _autoConnectRetryTimer;
   bool _shuttingDown = false;
+  bool _pendingLiveReload = false;
+  String _launchedFilterSignature = FilterSettings.empty.effectSignature;
+  bool _activePlanTun = false;
+  int _activeMixedPort = AppConfig.httpPortUmbrella;
+  bool _activeLocalProxyOpen = true;
+  String _activeLocalProxySecret = '';
   ProxyLink? _link;
   Timer? _liveTimer;
+
+  /// پورت ترکیبی محلی تنظیم شده توسط کاربر (با بازگشت امن به پیش فرض).
+  int get _configuredMixedPort =>
+      LanSharing.isValidPort(_settings.mixedPort)
+          ? _settings.mixedPort
+          : _umbrellaPort;
+
+  /// پورت مناسب برای سنجش سلامت، پینگ، آی پی و تست سرعت روی اتصال فعلی
+  /// (۰ یعنی مسیر مستقیم کارت شبکه تونل وقتی پورت محلی در حالت VPN بسته است).
+  int get _probeProxyPort {
+    if (_activePlanTun && !_activeLocalProxyOpen) {
+      return 0;
+    }
+    if (_proxyPort > 0) {
+      return _proxyPort;
+    }
+    return _activeMixedPort > 0 ? _activeMixedPort : _configuredMixedPort;
+  }
+
+  String get _probeProxyUser =>
+      _probeProxyPort > 0 && _activeLocalProxySecret.isNotEmpty
+          ? LanSharing.coreAuthUser
+          : '';
+
+  String get _probeProxyPassword =>
+      _probeProxyPort > 0 ? _activeLocalProxySecret : '';
+
+  String get _desiredSelectGroup => switch (_settings.selectionMode) {
+        SelectionMode.roundRobin ||
+        SelectionMode.consistentHash ||
+        SelectionMode.stickySession =>
+          'balance',
+        SelectionMode.auto || SelectionMode.manual => 'lowest',
+      };
 
   /// به روز رسانی قوانین کنترل محتوا (از تنظیمات برنامه یا همگام سازی زنده ربات).
   /// اگر تونل هم اکنون متصل باشد، قوانین جدید بدون دخالت کاربر روی اتصال فعال می شوند.
@@ -334,26 +374,43 @@ class VpnController extends ChangeNotifier {
       return;
     }
     _filterReloadTimer?.cancel();
-    if (_status == VpnStatus.connected && !_connectInFlight) {
-      _filterReloadTimer = Timer(const Duration(milliseconds: 600), () {
-        if (_disposed || _shuttingDown || _status != VpnStatus.connected) {
-          return;
-        }
-        _log.add(
-          next.hasActiveRules
-              ? 'اعمال قوانین جدید کنترل محتوا روی اتصال فعال...'
-              : 'غیرفعال سازی قوانین کنترل محتوا روی اتصال فعال...',
-        );
-        unawaited(() async {
-          await disconnect(silent: true);
-          if (!_disposed && !_shuttingDown) {
-            await connect();
-          }
-        }());
-      });
+    if (_connectInFlight) {
+      // به محض کامل شدن اتصال در حال انجام، تفاوت `_launchedFilterSignature`
+      // بررسی و قوانین تازه بلافاصله اعمال می شوند.
+      return;
+    }
+    if (_status == VpnStatus.connected) {
+      _scheduleFilterHotReload(next);
     } else if (!_status.active && !_status.busy) {
       _scheduleRuntimePrewarm();
     }
+  }
+
+  void _scheduleFilterHotReload(FilterSettings targetFilter) {
+    _filterReloadTimer?.cancel();
+    _filterReloadTimer = Timer(const Duration(milliseconds: 500), () {
+      if (_disposed ||
+          _shuttingDown ||
+          _connectInFlight ||
+          _status != VpnStatus.connected) {
+        return;
+      }
+      _log.add(
+        targetFilter.hasActiveRules
+            ? 'اعمال قوانین جدید کنترل محتوا روی اتصال فعال...'
+            : 'غیرفعال سازی قوانین کنترل محتوا روی اتصال فعال...',
+      );
+      unawaited(() async {
+        final VpnNode? requested = _singleNodeSession ? _activeNode : null;
+        unawaited(ClashApi.closeAllConnections());
+        await disconnect(silent: true);
+        unawaited(_native.flushDns());
+        if (!_disposed && !_shuttingDown) {
+          await connect(requested: requested);
+          unawaited(_native.flushDns());
+        }
+      }());
+    });
   }
 
   /// پینگ سرور متصل: عدد زنده تونل اگر آماده باشد، وگرنه پینگ شبکه همان
@@ -832,11 +889,23 @@ class VpnController extends ChangeNotifier {
     if (runtimeChanged) {
       _scheduleRuntimePrewarm();
     }
+    final bool traySpeedChanged =
+        previous.showSpeedInTray != settings.showSpeedInTray;
+    if (traySpeedChanged && _status == VpnStatus.connected) {
+      final String tooltip = settings.showSpeedInTray && _stats.available
+          ? '${AppConfig.appName} - ${Fa.speed(_stats.downSpeed)} / ${Fa.speed(_stats.upSpeed)}'
+          : '${AppConfig.appName} - متصل';
+      unawaited(
+        _tray.update(
+          state: 'connected',
+          tooltip: tooltip,
+          connected: true,
+        ),
+      );
+    }
     // تغییر صرفاً ظاهری (مثل جابه جایی تم روشن/تاریک) نباید همه مصرف کنندگان
     // `VpnController` را دوباره بسازد یا پیش گرم سازی هسته را راه بیندازد.
-    if (runtimeChanged ||
-        pingChanged ||
-        previous.showSpeedInTray != settings.showSpeedInTray) {
+    if (runtimeChanged || pingChanged || traySpeedChanged) {
       _notify();
     }
   }
@@ -926,17 +995,30 @@ class VpnController extends ChangeNotifier {
   /// امنیت بیشتر، رفع فیلتر پروکسی، مسیریابی، DNS، ورودی و ترفندهای TLS).
   void scheduleLiveReload() {
     _liveReloadTimer?.cancel();
+    if (_connectInFlight) {
+      _pendingLiveReload = true;
+      return;
+    }
     if (!_status.active) {
       return;
     }
     _liveReloadTimer = Timer(const Duration(milliseconds: 350), () {
-      if (!_status.active || _connectInFlight) {
+      if (_disposed || _shuttingDown) {
+        return;
+      }
+      if (_connectInFlight) {
+        _pendingLiveReload = true;
+        return;
+      }
+      if (!_status.active) {
         return;
       }
       unawaited(() async {
         final VpnNode? target = _singleNodeSession ? _activeNode : null;
-        await disconnect();
-        await connect(requested: target);
+        await disconnect(silent: true);
+        if (!_disposed && !_shuttingDown) {
+          await connect(requested: target);
+        }
       }());
     });
   }
@@ -1017,13 +1099,23 @@ class VpnController extends ChangeNotifier {
       final ConnectOutcome outcome = await _connectInner(requested: requested);
       return _cancelRequested ? const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.') : outcome;
     } finally {
-      if (_cancelRequested) {
+      final bool wasCancelled = _cancelRequested;
+      if (wasCancelled) {
         await _stopCores();
         await _disableProxy();
         _finishCancel();
       }
       _connectInFlight = false;
       _cancelRequested = false;
+      final bool reloadQueued = _pendingLiveReload;
+      _pendingLiveReload = false;
+      if (!wasCancelled && !_disposed && !_shuttingDown && _status == VpnStatus.connected) {
+        if (reloadQueued) {
+          scheduleLiveReload();
+        } else if (_launchedFilterSignature != _contentFilter.effectSignature) {
+          _scheduleFilterHotReload(_contentFilter);
+        }
+      }
     }
   }
 
@@ -1468,7 +1560,9 @@ class VpnController extends ChangeNotifier {
                   ? timeout
                   : const Duration(seconds: 6);
               final bool chainOk = await VerifiedProbe.check(
-                proxyPort: _umbrellaPort,
+                proxyPort: _probeProxyPort,
+                proxyUser: _probeProxyUser,
+                proxyPassword: _probeProxyPassword,
                 timeout: cap,
               );
               if (chainOk) {
@@ -1487,7 +1581,9 @@ class VpnController extends ChangeNotifier {
               ? timeout
               : const Duration(seconds: 5);
           final bool proxy = await VerifiedProbe.check(
-            proxyPort: _umbrellaPort,
+            proxyPort: _probeProxyPort,
+            proxyUser: _probeProxyUser,
+            proxyPassword: _probeProxyPassword,
             timeout: proxyCap,
           );
           if (proxy) {
@@ -1624,11 +1720,19 @@ class VpnController extends ChangeNotifier {
           }
         }),
       );
+      // در حالت چندسروره، گروه انتخابی کاربر (`lowest` یا `balance`) صریحاً روی
+      // `select` ست می شود تا مقدار کش شده قدیمی در `data/clash.db` آن را خنثی نکند.
+      if (!_singleNodeSession) {
+        unawaited(ClashApi.selectOutbound('select', _desiredSelectGroup));
+      }
+      if (_contentFilter.hasActiveRules) {
+        unawaited(_native.flushDns());
+      }
       _preferredCore[node.id] = plan.cores.first.name;
-      _log.add(
-        'اتصال امن آمبرلا با موفقیت برقرار شد '
-        '(${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}).',
-      );
+      final String modeLabel = plan.tun
+          ? 'تونل کامل'
+          : (plan.usesSystemProxy ? 'پروکسی سیستمی' : 'فقط سرویس پروکسی');
+      _log.add('اتصال امن آمبرلا با موفقیت برقرار شد ($modeLabel).');
       _settings = _settings.copyWith(lastNodeId: node.id);
       onSettingsChanged?.call(_settings);
       return const _AttemptResult(message: 'اتصال برقرار شد.', ok: true);
@@ -1935,7 +2039,7 @@ class VpnController extends ChangeNotifier {
     return UmbrellaCore.args(
       links: links,
       runDir: runDir,
-      port: _umbrellaPort,
+      port: _configuredMixedPort,
       tun: tun,
       systemProxy: !tun,
       logLevel: CoreLogLevel.normalize(_settings.logLevel),
@@ -2182,6 +2286,7 @@ class VpnController extends ChangeNotifier {
         runDir: runDir.path,
         linksPath: prewarmLinks.path,
         settingsPath: prewarmSettings.path,
+        stickyMinutes: _settings.stickyMinutes,
         cancelled: shouldAbort,
       );
     } catch (_) {
@@ -2504,15 +2609,24 @@ class VpnController extends ChangeNotifier {
     if (_settings.lanSharingPassword.trim().isNotEmpty) {
       _networkSecrets.add(_settings.lanSharingPassword.trim());
     }
-    final int configuredMixedPort = LanSharing.isValidPort(_settings.mixedPort)
-        ? _settings.mixedPort
-        : _umbrellaPort;
+    final int configuredMixedPort = _configuredMixedPort;
+    final int effectivePort =
+        plan.proxyPort > 0 ? plan.proxyPort : configuredMixedPort;
+    final String proxySecret = _settings.lanSharingPassword.trim();
+    final bool localAuthEnabled = !(plan.usesSystemProxy && !plan.tun) &&
+        _settings.localProxyAuth &&
+        proxySecret.isNotEmpty;
+    _activePlanTun = plan.tun;
+    _activeMixedPort = effectivePort;
+    _activeLocalProxyOpen = !plan.tun || _settings.localProxyInVpn;
+    _activeLocalProxySecret = localAuthEnabled ? proxySecret : '';
+    _launchedFilterSignature = _contentFilter.effectSignature;
     await File(settingsPath).writeAsString(
       jsonEncode(
         UmbrellaCore.settingsJson(
           tun: plan.tun,
           systemProxy: plan.usesSystemProxy,
-          port: plan.proxyPort > 0 ? plan.proxyPort : configuredMixedPort,
+          port: effectivePort,
           logFile: coreLog,
           networkSettings: _settings,
           contentFilter: _contentFilter,
@@ -2542,6 +2656,7 @@ class VpnController extends ChangeNotifier {
       runtime = await CoreRuntime.compile(
         executable: core.exe, workDir: core.workDir, runDir: plan.runDir,
         linksPath: sessionLinks.path, settingsPath: settingsPath,
+        stickyMinutes: _settings.stickyMinutes,
         cancelled: () => _cancelRequested || _disposed || preparationEpoch != _connectionEpoch,
         onStarted: _preparingProcesses.add,
         onFinished: _preparingProcesses.remove,
@@ -2848,7 +2963,14 @@ class VpnController extends ChangeNotifier {
     List<int> held = await UmbrellaCore.heldReservedPorts();
     // پورت های خود برنامه هم بررسی می شوند: نمونه بازمانده آمبرلا که پورت
     // پروکسی را گرفته باشد، همان قدر اتصال را می کشد.
-    final List<int> appHeld = await _heldPorts(UmbrellaCore.appPorts);
+    final Set<int> configuredAppPorts = <int>{
+      ...UmbrellaCore.appPorts,
+      _configuredMixedPort,
+      if (_settings.allowConnectionFromLan &&
+          LanSharing.isValidPort(_settings.lanSharingPort))
+        _settings.lanSharingPort,
+    };
+    final List<int> appHeld = await _heldPorts(configuredAppPorts.toList());
     if (held.isEmpty && appHeld.isEmpty) {
       return true;
     }
@@ -3222,8 +3344,12 @@ class VpnController extends ChangeNotifier {
         }
       }
     }
-    return VerifiedProbe.check(proxyPort: _umbrellaPort,
-        timeout: const Duration(seconds: 5));
+    return VerifiedProbe.check(
+      proxyPort: _probeProxyPort,
+      proxyUser: _probeProxyUser,
+      proxyPassword: _probeProxyPassword,
+      timeout: const Duration(seconds: 5),
+    );
   }
 
   /// آی پی و کشور خروجی از سطر `MONITORING result` خود هسته.
@@ -3492,8 +3618,18 @@ class VpnController extends ChangeNotifier {
   /// فقط پاسخ HTTPS معتبر با گواهی درست و بدنه مورد انتظار از دست کم دو نشانی
   /// مستقل پذیرفته می شود.
   Future<bool> _trafficReturns({Duration timeout = const Duration(seconds: 8)}) async {
+    final int port = _probeProxyPort;
+    if (port == 0) {
+      return VerifiedProbe.check(
+        proxyPort: 0,
+        minimumSuccesses: 2,
+        timeout: timeout,
+      );
+    }
     final bool proxy = await VerifiedProbe.check(
-      proxyPort: _umbrellaPort,
+      proxyPort: port,
+      proxyUser: _probeProxyUser,
+      proxyPassword: _probeProxyPassword,
       minimumSuccesses: 2,
       timeout: timeout,
     );
@@ -3546,10 +3682,12 @@ class VpnController extends ChangeNotifier {
         return;
       }
       if (geo.ip.isEmpty) {
-        final int localProxy = _proxyPort > 0 ? _proxyPort : _umbrellaPort;
+        final int localProxy = _probeProxyPort;
         geo = await _ip.fetch(
           force: true,
-          proxy: '127.0.0.1:$localProxy',
+          proxy: localProxy > 0 ? '127.0.0.1:$localProxy' : '',
+          proxyUser: _probeProxyUser,
+          proxyPassword: _probeProxyPassword,
         );
         if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       }
@@ -3782,7 +3920,9 @@ class VpnController extends ChangeNotifier {
       return;
     }
     final int ms = await TunnelProbe.latency(
-      proxyPort: _umbrellaPort,
+      proxyPort: _probeProxyPort,
+      proxyUser: _probeProxyUser,
+      proxyPassword: _probeProxyPassword,
       timeout: const Duration(seconds: 4),
     );
     if (ms > 0) {
@@ -3807,10 +3947,12 @@ class VpnController extends ChangeNotifier {
     _speedMeasuredAt = null;
     _notify();
     try {
+      final int speedPort = _probeProxyPort;
       final SpeedTestResult result = await runner.run(
-        // The loopback mixed listener stays enabled in TUN mode too. Never
-        // measure through a system route which could escape during disconnect.
-        proxyPort: _umbrellaPort,
+        proxyPort: speedPort,
+        proxyUser: _probeProxyUser,
+        proxyPassword: _probeProxyPassword,
+        allowDirectTunnel: speedPort == 0 && _activePlanTun,
         onPhase: (String phase) { _speedPhase = phase; _notify(); },
       );
       if (identical(_speedRunner, runner) && _status == VpnStatus.connected &&
@@ -3949,7 +4091,7 @@ class VpnController extends ChangeNotifier {
     // انجام می شود.
     bool flows = await _tunnelFlowsNow();
     if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
-    if (!flows && !_singleNodeSession) {
+    if (!flows && !_singleNodeSession && _settings.autoFailover) {
       await _nudgeCoreFailover();
       if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       flows = await _tunnelFlowsNow();
@@ -4144,6 +4286,10 @@ class VpnController extends ChangeNotifier {
   Future<void> _stopCoresOwned() async {
     cancelSpeedTest();
     _activeChain = const ChainSettings();
+    _activePlanTun = false;
+    _activeMixedPort = _configuredMixedPort;
+    _activeLocalProxyOpen = true;
+    _activeLocalProxySecret = '';
     _stoppingOwnCore = true;
     try {
       await _stopCoresInner();
