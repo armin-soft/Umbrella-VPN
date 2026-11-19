@@ -653,7 +653,7 @@ void main() {
             blockIpv6: true,
             routingRegion: RoutingRegion.ir,
             resolveDestination: true,
-            selectionMode: SelectionMode.sticky,
+            selectionMode: SelectionMode.stickySession,
             stickyMinutes: 25,
             appRoutes: <AppRouteRule>[
               AppRouteRule(

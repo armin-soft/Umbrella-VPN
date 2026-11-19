@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
-import '../core/persian.dart';
 import '../core/utils.dart';
 import 'advanced_network.dart';
 export 'advanced_network.dart';

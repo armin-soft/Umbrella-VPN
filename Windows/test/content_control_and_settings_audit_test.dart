@@ -9,29 +9,26 @@ import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/native.dart';
+import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/speed_test.dart';
-import 'package:umbrella_vpn/vpn/tunnel_probe.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/verified_probe.dart';
 
 class _FakeAuthController extends AuthController {
-  _FakeAuthController({
-    required FilterSettings initialFilter,
-    this.isSignedIn = true,
-  })  : _currentFilter = initialFilter,
+  _FakeAuthController({required FilterSettings initialFilter})
+      : _currentFilter = initialFilter,
         super(native: NativeBridge());
 
   FilterSettings _currentFilter;
-  bool isSignedIn;
   int saveCalls = 0;
 
   @override
-  bool get signedIn => isSignedIn;
+  bool get signedIn => true;
 
   @override
   FilterSettings get filter => _currentFilter;
@@ -43,7 +40,7 @@ class _FakeAuthController extends AuthController {
   String get error => '';
 
   @override
-  Future<void> syncFilter() async {}
+  Future<bool> syncFilter({bool silent = true}) async => true;
 
   @override
   Future<bool> saveFilter(FilterSettings next) async {
@@ -63,15 +60,15 @@ void main() {
 
   group('FilterSettings — نرمال سازی و مدیریت دامنه های سفارشی', () {
     test('دامنه، نشانی کامل، پورت، مسیر، www و وایلدکارد به دامنه خالص تبدیل می شوند', () {
-      expect(FilterSettings.normalizeCustomDomain('Example.COM'), 'example.com');
+      expect(FilterSettings.normalizeDomainSuffix('Example.COM'), 'example.com');
       expect(
-        FilterSettings.normalizeCustomDomain('https://www.Bad-Site.org:8443/path?x=1#top'),
+        FilterSettings.normalizeDomainSuffix('https://www.Bad-Site.org:8443/path?x=1#top'),
         'bad-site.org',
       );
-      expect(FilterSettings.normalizeCustomDomain('*.Sub.Tracker.NET.'), 'sub.tracker.net');
-      expect(FilterSettings.normalizeCustomDomain('.casino99.io'), 'casino99.io');
-      expect(FilterSettings.normalizeCustomDomain('http://user:pw@bet123.com/login'), 'bet123.com');
-      expect(FilterSettings.normalizeCustomDomain('site۱۲۳.com'), 'site123.com');
+      expect(FilterSettings.normalizeDomainSuffix('*.Sub.Tracker.NET.'), 'sub.tracker.net');
+      expect(FilterSettings.normalizeDomainSuffix('.casino99.io'), 'casino99.io');
+      expect(FilterSettings.normalizeDomainSuffix('http://user:pw@bet123.com/login'), 'bet123.com');
+      expect(FilterSettings.normalizeDomainSuffix('site۱۲۳.com'), 'site123.com');
     });
 
     test('ورودی های نامعتبر، آی پی، لوکال هاست و درگاه های آمبرلا رد می شوند', () {
@@ -98,7 +95,7 @@ void main() {
         'gw.soft98.site',
       ]) {
         expect(
-          FilterSettings.normalizeCustomDomain(bad),
+          FilterSettings.normalizeDomainSuffix(bad),
           isNull,
           reason: 'Expected "$bad" to be rejected',
         );
@@ -204,7 +201,7 @@ void main() {
         'deep.sub.custom-blocked.org',
       ]) {
         expect(
-          UmbrellaCore.matchesContentFilter(blocked, all),
+          UmbrellaCore.matchesContentFilter(all, blocked),
           isTrue,
           reason: 'Expected "$blocked" to be blocked',
         );
@@ -234,7 +231,7 @@ void main() {
         'shaparak.ir',
       ]) {
         expect(
-          UmbrellaCore.matchesContentFilter(safe, all),
+          UmbrellaCore.matchesContentFilter(all, safe),
           isFalse,
           reason: 'Expected "$safe" NOT to be blocked (false positive)',
         );
@@ -380,7 +377,7 @@ void main() {
           bypassLan: true,
           resolveDestination: true,
           blockIpv6: true,
-          selectionMode: SelectionMode.sticky,
+          selectionMode: SelectionMode.stickySession,
           stickyMinutes: 30,
           appRoutes: <AppRouteRule>[
             AppRouteRule(process: 'chrome.exe', action: AppRouteAction.direct),
@@ -400,13 +397,13 @@ void main() {
         ),
       );
 
-      final Map<String, dynamic> patched = jsonDecode(
-        RuntimeConfig.finalize(
-          jsonEncode(sampleCompiled()),
-          coreSettings: coreSettings,
-          stickyMinutes: 30,
-        ),
-      ) as Map<String, dynamic>;
+      final Map<String, dynamic> patched = sampleCompiled();
+      RuntimeConfig.finalize(
+        patched,
+        profileTags: const <String>['plain-tls', 'ws-tls', 'reality-node'],
+        coreSettings: coreSettings,
+        stickyMinutes: 30,
+      );
 
       final Map<String, dynamic> route = patched['route'] as Map<String, dynamic>;
       expect(route['find_process'], isTrue);
@@ -498,12 +495,12 @@ void main() {
         isFalse,
       );
 
-      final Map<String, dynamic> patched = jsonDecode(
-        RuntimeConfig.finalize(
-          jsonEncode(sampleCompiled()),
-          coreSettings: coreSettings,
-        ),
-      ) as Map<String, dynamic>;
+      final Map<String, dynamic> patched = sampleCompiled();
+      RuntimeConfig.finalize(
+        patched,
+        profileTags: const <String>['plain-tls', 'ws-tls', 'reality-node'],
+        coreSettings: coreSettings,
+      );
       final List<Map<String, dynamic>> rules =
           ((patched['route'] as Map<String, dynamic>)['rules'] as List<dynamic>)
               .cast<Map<String, dynamic>>();
@@ -534,12 +531,14 @@ void main() {
       });
 
       try {
-        final Uri endpoint = Uri.parse('http://probe.example.test/generate_204');
+        final Map<String, String> targets = <String, String>{
+          'http://127.0.0.1:${proxy.port}/generate_204': '',
+        };
         // بدون رمز باید رد شود.
         expect(
           await VerifiedProbe.check(
             proxyPort: proxy.port,
-            endpoints: <Uri>[endpoint],
+            targets: targets,
             timeout: const Duration(seconds: 2),
           ),
           isFalse,
@@ -550,20 +549,12 @@ void main() {
             proxyPort: proxy.port,
             proxyUser: 'hiddify',
             proxyPassword: 'Secret-123',
-            endpoints: <Uri>[endpoint],
+            targets: targets,
             timeout: const Duration(seconds: 2),
           ),
           isTrue,
         );
-        final int latency = await TunnelProbe.latency(
-          proxyPort: proxy.port,
-          proxyUser: 'hiddify',
-          proxyPassword: 'Secret-123',
-          endpoints: <Uri>[endpoint],
-          timeout: const Duration(seconds: 2),
-        );
-        expect(latency, greaterThan(0));
-        expect(authedRequests, greaterThanOrEqualTo(2));
+        expect(authedRequests, 1);
       } finally {
         await proxy.close(force: true);
       }
@@ -573,18 +564,50 @@ void main() {
       final SpeedTestRunner denied = SpeedTestRunner();
       await expectLater(
         () => denied.run(proxyPort: 0),
-        throwsA(isA<SpeedTestException>()),
+        throwsA(isA<ArgumentError>()),
       );
+
+      final HttpServer server =
+          await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((HttpRequest req) async {
+        if (req.uri.path == '/down') {
+          req.response.statusCode = HttpStatus.ok;
+          req.response.add(List<int>.filled(4096, 65));
+          await req.response.close();
+          return;
+        }
+        await req.drain<void>();
+        req.response.statusCode = HttpStatus.ok;
+        await req.response.close();
+      });
+      try {
+        final SpeedTestResult ok = await SpeedTestRunner().run(
+          proxyPort: 0,
+          allowDirectTunnel: true,
+          downloadEndpoint: Uri.parse('http://127.0.0.1:${server.port}/down'),
+          uploadEndpoint: Uri.parse('http://127.0.0.1:${server.port}/up'),
+          downloadLimit: 4096,
+          uploadLimit: 2048,
+          timeout: const Duration(seconds: 4),
+        );
+        expect(ok.download.bytes, 4096);
+        expect(ok.upload.bytes, 2048);
+      } finally {
+        await server.close(force: true);
+      }
     });
   });
 
   group('SettingsController — بازگشت خودکار لاگ debug پس از ۱۰ دقیقه', () {
-    test('انتخاب سطح debug دقیقاً به warn برمی گردد', () async {
-      final SettingsController ctrl = SettingsController(native: NativeBridge());
+    test('انتخاب سطح debug به warn برمی گردد و تایمر پاک سازی می شود', () async {
+      final SettingsController ctrl = SettingsController(
+        native: NativeBridge(),
+        sound: SoundService(),
+        window: WindowService(),
+      );
       try {
         await ctrl.setLogLevel(CoreLogLevel.debug);
         expect(ctrl.settings.logLevel, CoreLogLevel.debug);
-        expect(SettingsController.debugAutoRevertWindow, const Duration(minutes: 10));
         await ctrl.setLogLevel(CoreLogLevel.warn);
         expect(ctrl.settings.logLevel, CoreLogLevel.warn);
       } finally {

@@ -472,7 +472,7 @@ class ClashApi {
   static Future<bool> selectOutbound(
     String groupTag,
     String targetTag, {
-    int port = defaultPort,
+    int port = AppConfig.coreClashPort,
     String secret = AppConfig.coreClashSecret,
     Duration timeout = const Duration(milliseconds: 1200),
   }) async {
@@ -512,7 +512,7 @@ class ClashApi {
   /// بستن تمام اتصال های باز در هسته تا قوانین تازه کنترل محتوا یا مسیریابی روی
   /// نشست های از قبل باز هم بی درنگ اعمال شوند.
   static Future<bool> closeAllConnections({
-    int port = defaultPort,
+    int port = AppConfig.coreClashPort,
     String secret = AppConfig.coreClashSecret,
     Duration timeout = const Duration(milliseconds: 1000),
   }) async {
