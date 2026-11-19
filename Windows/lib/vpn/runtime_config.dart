@@ -97,6 +97,12 @@ class RuntimeConfig {
     // The controller captures stdout; do not let two writers truncate one log.
     (config['log'] as Map<String, dynamic>?)?.remove('output');
 
+    // ارتقای خودکار فیلدهای منسوخ شده `sing-box 1.14+` که هسته `v5.9.11` هنوز
+    // به شکل قدیمی تولید می کند (`download_detour` روی `rule_set`، `store_rdrc`،
+    // `independent_cache`، `rule_set_ip_cidr_accept_empty` و `strategy` روی
+    // قوانین DNS) تا اجرای `srun` روی هیچ تنظیمی با خطای `FATAL` متوقف نشود.
+    _migrateSingBox114Deprecations(config, experimental);
+
     final _ResolvedTlsPadding? tlsPadding = _extractTlsPadding(coreSettings);
     final _ResolvedTlsFragment? tlsFragment = _extractTlsFragment(coreSettings);
     final bool mixedSniWanted = _extractMixedSniCase(coreSettings);
@@ -450,6 +456,112 @@ class RuntimeConfig {
     if (tricks.isNotEmpty) {
       rawTls['tls_tricks'] = tricks;
     }
+  }
+
+  /// مهاجرت فیلدهای منسوخ در `sing-box 1.14/1.15` به معادل استاندارد جدید:
+  /// - `route.rule_set[*].download_detour` -> `http_client: { detour: <tag> }`
+  /// - `experimental.cache_file.store_rdrc` -> حذف (در 1.14+ خودکار است)
+  /// - `dns.independent_cache` -> حذف (در 1.14+ کش هر سرور DNS ذاتاً مستقل است)
+  /// - `dns.rules[*].strategy` -> تبدیل `ipv4_only`/`ipv6_only` به قانون پیش از آن
+  ///   با `query_type: [AAAA|A]` و `action: predefined, rcode: NOERROR` و حذف فیلد
+  /// - `dns.rules[*].rule_set_ip_cidr_accept_empty` و `geoip-*` در DNS -> پاک سازی
+  static void _migrateSingBox114Deprecations(
+    Map<String, dynamic> config,
+    Map<String, dynamic> experimental,
+  ) {
+    final Object? cacheFile = experimental['cache_file'];
+    if (cacheFile is Map<String, dynamic>) {
+      cacheFile.remove('store_rdrc');
+    }
+
+    final Object? rawRoute = config['route'];
+    if (rawRoute is Map<String, dynamic>) {
+      final Object? rawRuleSets = rawRoute['rule_set'];
+      if (rawRuleSets is List) {
+        for (final dynamic item in rawRuleSets) {
+          if (item is! Map<String, dynamic>) continue;
+          final Object? legacyDetour = item.remove('download_detour');
+          final String detour = '${legacyDetour ?? ''}'.trim();
+          if (item['type'] == 'remote' && item['http_client'] == null) {
+            item['http_client'] = <String, dynamic>{
+              'detour': detour.isNotEmpty ? detour : 'select',
+            };
+          }
+        }
+      }
+    }
+
+    final Object? rawDns = config['dns'];
+    if (rawDns is! Map<String, dynamic>) {
+      return;
+    }
+    rawDns.remove('independent_cache');
+
+    final Object? rawDnsRules = rawDns['rules'];
+    if (rawDnsRules is! List) {
+      return;
+    }
+    const Set<String> dnsActionKeys = <String>{
+      'action',
+      'server',
+      'strategy',
+      'disable_cache',
+      'disable_optimistic_cache',
+      'rewrite_ttl',
+      'client_subnet',
+      'rcode',
+      'answer',
+      'ns',
+      'extra',
+      'method',
+      'no_drop',
+    };
+    final List<Map<String, dynamic>> migrated = <Map<String, dynamic>>[];
+    for (final dynamic rawRule in rawDnsRules) {
+      if (rawRule is! Map<String, dynamic>) continue;
+      rawRule.remove('rule_set_ip_cidr_accept_empty');
+      rawRule.remove('rule_set_ip_cidr_match_source');
+
+      final Object? rs = rawRule['rule_set'];
+      if (rs is List) {
+        final List<String> kept = rs
+            .map((Object? e) => '$e')
+            .where((String tag) => !tag.toLowerCase().startsWith('geoip-'))
+            .toList(growable: false);
+        if (kept.isEmpty && rs.isNotEmpty) {
+          rawRule.remove('rule_set');
+          final bool hasOtherMatch = rawRule.keys
+              .any((String k) => !dnsActionKeys.contains(k));
+          if (!hasOtherMatch) {
+            continue;
+          }
+        } else if (kept.length != rs.length) {
+          rawRule['rule_set'] = kept;
+        }
+      }
+
+      final String strategy = '${rawRule.remove('strategy') ?? ''}'.trim();
+      final bool isRouteAction =
+          rawRule['action'] == null || rawRule['action'] == 'route';
+      if (isRouteAction &&
+          rawRule['query_type'] == null &&
+          (strategy == 'ipv4_only' || strategy == 'ipv6_only')) {
+        final Map<String, dynamic> suppressRule = <String, dynamic>{};
+        for (final MapEntry<String, dynamic> entry in rawRule.entries) {
+          if (!dnsActionKeys.contains(entry.key)) {
+            suppressRule[entry.key] = entry.value;
+          }
+        }
+        suppressRule['query_type'] = <String>[
+          strategy == 'ipv4_only' ? 'AAAA' : 'A',
+        ];
+        suppressRule['action'] = 'predefined';
+        suppressRule['rcode'] = 'NOERROR';
+        migrated.add(suppressRule);
+      }
+      migrated.add(rawRule);
+    }
+    rawDns['rules'] = migrated;
   }
 
   static bool _nonEmptyRuleField(Object? value) {

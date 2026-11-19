@@ -653,6 +653,9 @@ void main() {
             blockIpv6: true,
             routingRegion: RoutingRegion.ir,
             resolveDestination: true,
+            independentDnsCache: true,
+            enableFakeDns: true,
+            directDnsDomainStrategy: DnsDomainStrategy.ipv4Only,
             selectionMode: SelectionMode.stickySession,
             stickyMinutes: 25,
             appRoutes: <AppRouteRule>[
@@ -723,6 +726,8 @@ void main() {
           reason: 'resolve-destination must emit ipv4_only resolve rule when blockIpv6 is on',
         );
         final String ruleSetDump = jsonEncode(route['rule_set']);
+        expect(ruleSetDump, isNot(contains('download_detour')));
+        expect(ruleSetDump, contains('"http_client"'));
         expect(
           ruleSetDump,
           allOf(
