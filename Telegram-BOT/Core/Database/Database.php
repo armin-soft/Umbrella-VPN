@@ -20,8 +20,8 @@ return self::$Instance ??= new Database();
 
 /**
  * شناسه گزینه دستور آغازین اتصال سازگار با نسخه ۸.۲ تا ۸.۵ و جدیدتر.
- * در نسخه ۸.۴ و ۸.۵ از Pdo\Mysql::ATTR_INIT_COMMAND استفاده می شود تا
- * هشدار منسوخ شدن PDO::MYSQL_ATTR_INIT_COMMAND در نسخه ۸.۵ هرگز ثبت نشود.
+ * در نسخه ۸.۴ و ۸.۵ از ثابت جدید کلاس اختصاصی مای اس کیو ال استفاده می شود تا
+ * هشدار منسوخ شدن ثابت قدیمی در نسخه ۸.۵ هرگز ثبت نشود.
  */
 public static function mysqlInitCommandAttribute(): ?int {
 if (PHP_VERSION_ID >= 80400 && class_exists(\Pdo\Mysql::class, false)) {

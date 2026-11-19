@@ -65,12 +65,17 @@ $Content = (string)file_get_contents($Path);
 $IsTest = str_starts_with($Rel, 'tests/');
 
 if ($Ext === 'php' && $Rel !== 'tests/persian_and_php85_test.php') {
+$CodeOnly = '';
+foreach (token_get_all($Content) as $Tok) {
+if (is_array($Tok) && in_array($Tok[0], [T_COMMENT, T_DOC_COMMENT, T_CONSTANT_ENCAPSED_STRING], true)) continue;
+$CodeOnly .= is_array($Tok) ? $Tok[1] : $Tok;
+}
 assertOk(
-preg_match('/(?<![\'"])\bPDO::(?:MYSQL|PGSQL|SQLITE|ODBC|FB)_ATTR_[A-Z0-9_]+/', $Content) !== 1,
+preg_match('/\bPDO\s*::\s*(?:MYSQL|PGSQL|SQLITE|ODBC|FB)_ATTR_[A-Z0-9_]+/', $CodeOnly) !== 1,
 'No direct deprecated PDO driver constant in ' . $Rel
 );
-assertOk(!str_contains($Content, '->setAccessible('), 'No deprecated Reflection::setAccessible in ' . $Rel);
-assertOk(preg_match('/\b(?:curl_close|curl_share_close|imagedestroy|xml_parser_free|finfo_close)\s*\(/', $Content) !== 1, 'No PHP 8.5 deprecated close() in ' . $Rel);
+assertOk(!str_contains($CodeOnly, '->setAccessible('), 'No deprecated Reflection::setAccessible in ' . $Rel);
+assertOk(preg_match('/\b(?:curl_close|curl_share_close|imagedestroy|xml_parser_free|finfo_close)\s*\(/', $CodeOnly) !== 1, 'No PHP 8.5 deprecated close() in ' . $Rel);
 }
 
 if (!$IsTest) {
