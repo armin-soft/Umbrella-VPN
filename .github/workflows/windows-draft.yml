@@ -40,7 +40,14 @@ jobs:
           find Telegram-BOT -name '*.php' -print0 | xargs -0 -n1 php -l
           for test_file in Telegram-BOT/tests/*_test.php; do
             echo "Running $test_file"
-            php "$test_file"
+            if ! out=$(php "$test_file" 2>&1); then
+              esc="${out//%/%25}"
+              esc="${esc//$'\r'/}"
+              esc="${esc//$'\n'/%0A}"
+              echo "::error title=$test_file::$esc"
+              exit 1
+            fi
+            echo "$out"
           done
   installer:
     needs: telegram-bot
