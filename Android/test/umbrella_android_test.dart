@@ -179,9 +179,11 @@ Future<_HarnessBundle> _buildTestHarness({
           'https://user.umbrella-server.ir/D6qnVQXRwa/9f7b5c1a-2233-4455-8899-aabbccddeeff/sub/',
     );
 
+    final String nowEpoch =
+        DateTime.now().toUtc().millisecondsSinceEpoch.toString();
     final Map<String, Object> initialPrefs = <String, Object>{
       StoreKeys.landingSeen: landingSeen,
-      StoreKeys.telegramChannelPromptAt: DateTime.now().toIso8601String(),
+      StoreKeys.telegramChannelPromptAt: nowEpoch,
       if (signedIn) ...<String, Object>{
         StoreKeys.deviceId: 'android-test-device',
         StoreKeys.session: jsonEncode(
@@ -199,10 +201,7 @@ Future<_HarnessBundle> _buildTestHarness({
     final LocalStore store = LocalStore.instance;
     await store.init();
     await store.writeBool(StoreKeys.landingSeen, landingSeen);
-    await store.write(
-      StoreKeys.telegramChannelPromptAt,
-      DateTime.now().toIso8601String(),
-    );
+    await store.write(StoreKeys.telegramChannelPromptAt, nowEpoch);
     if (signedIn) {
       await store.write(StoreKeys.deviceId, 'android-test-device');
       await store.writeJson(
@@ -672,7 +671,7 @@ void main() {
       expect(vpn.nodes.length, 1);
       expect(vpn.nodes.single.host, 'de1.umbrella-server.ir');
       expect(subs.sources.length, 1);
-      expect(subs.sources.single.source.id, AppConfig.personalSourceId);
+      expect(subs.sources.single.source.id, 'user-sub');
     });
   });
 
