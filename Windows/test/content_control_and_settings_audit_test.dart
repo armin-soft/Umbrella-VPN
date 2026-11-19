@@ -400,7 +400,7 @@ void main() {
       final Map<String, dynamic> patched = sampleCompiled();
       RuntimeConfig.finalize(
         patched,
-        profileTags: const <String>['plain-tls', 'ws-tls', 'reality-node'],
+        profileTags: const <String>{'plain-tls', 'ws-tls', 'reality-node'},
         coreSettings: coreSettings,
         stickyMinutes: 30,
       );
@@ -498,7 +498,7 @@ void main() {
       final Map<String, dynamic> patched = sampleCompiled();
       RuntimeConfig.finalize(
         patched,
-        profileTags: const <String>['plain-tls', 'ws-tls', 'reality-node'],
+        profileTags: const <String>{'plain-tls', 'ws-tls', 'reality-node'},
         coreSettings: coreSettings,
       );
       final List<Map<String, dynamic>> rules =
@@ -600,16 +600,17 @@ void main() {
 
   group('SettingsController — بازگشت خودکار لاگ debug پس از ۱۰ دقیقه', () {
     test('انتخاب سطح debug به warn برمی گردد و تایمر پاک سازی می شود', () async {
+      final NativeBridge native = NativeBridge();
       final SettingsController ctrl = SettingsController(
-        native: NativeBridge(),
+        native: native,
         sound: SoundService(),
-        window: WindowService(),
+        window: WindowService(native),
       );
       try {
-        await ctrl.setLogLevel(CoreLogLevel.debug);
-        expect(ctrl.settings.logLevel, CoreLogLevel.debug);
-        await ctrl.setLogLevel(CoreLogLevel.warn);
-        expect(ctrl.settings.logLevel, CoreLogLevel.warn);
+        await ctrl.setLogLevel('debug');
+        expect(ctrl.settings.logLevel, 'debug');
+        await ctrl.setLogLevel('warn');
+        expect(ctrl.settings.logLevel, 'warn');
       } finally {
         ctrl.dispose();
       }
@@ -636,7 +637,7 @@ void main() {
             ChangeNotifierProvider<ToastController>.value(value: toasts),
           ],
           child: MaterialApp(
-            theme: UmbrellaTheme.dark(),
+            theme: AppTheme.dark(),
             home: const Directionality(
               textDirection: TextDirection.rtl,
               child: Scaffold(
