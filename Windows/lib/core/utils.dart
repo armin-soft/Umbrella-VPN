@@ -164,6 +164,7 @@ class IranPhone {
     '0992': MobileOperator.mci,
     '0993': MobileOperator.mci,
     '0994': MobileOperator.mci,
+    '0996': MobileOperator.mci,
     '0900': MobileOperator.irancell,
     '0901': MobileOperator.irancell,
     '0902': MobileOperator.irancell,
@@ -230,12 +231,32 @@ class IranPhone {
     );
   }
 
+  /// یکدست سازی نام فارسی (تبدیل حروف عربی به فارسی و حذف نیم فاصله اضافه).
+  static String normalizeName(String value) {
+    return value
+        .replaceAll('\u200c', ' ')
+        .replaceAll('\u200f', '')
+        .replaceAll('\u200e', '')
+        .replaceAll('ي', 'ی')
+        .replaceAll('ى', 'ی')
+        .replaceAll('ك', 'ک')
+        .replaceAll('ة', 'ه')
+        .replaceAll('ۀ', 'ه')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
   static bool validName(String value) {
-    final String trimmed = value.trim();
-    if (trimmed.length < 2) {
+    final String trimmed = normalizeName(value);
+    if (trimmed.length < 2 || trimmed.length > 60) {
       return false;
     }
-    return RegExp(r'^[\u0600-\u06FF\s]{2,60}$').hasMatch(trimmed);
+    if (RegExp(r'[\d\u06F0-\u06F9\u0660-\u0669]').hasMatch(trimmed)) {
+      return false;
+    }
+    return RegExp(
+      r'^[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF\s]{2,60}$',
+    ).hasMatch(trimmed);
   }
 }
 

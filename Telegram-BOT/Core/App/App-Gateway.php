@@ -104,8 +104,8 @@ self::fail(500, 'gateway_error', 'internal error');
 
 private static function start(array $Body): void {
 $Phone = \Helper::normalizePhone((string)($Body['phone'] ?? ''));
-$First = trim((string)($Body['first_name'] ?? ''));
-$Last = trim((string)($Body['last_name'] ?? ''));
+$First = trim((string)(preg_replace('/\s+/u', ' ', \Helper::stripZwnj((string)($Body['first_name'] ?? ''))) ?? ''));
+$Last = trim((string)(preg_replace('/\s+/u', ' ', \Helper::stripZwnj((string)($Body['last_name'] ?? ''))) ?? ''));
 $Device_Id = self::safeDeviceId((string)($Body['device_id'] ?? ''));
 
 if (!\Helper::validatePhone($Phone)) {
@@ -136,13 +136,13 @@ self::fail(403, 'device_limit', 'این حساب قبلاً روی دستگاه 
 $Exists = $Known !== null;
 $List_Error = $Exists ? null : PanelClient::lastListError();
 
-
-// When the panel cannot even be listed we must not conclude «account does
-// not exist» — that would mint duplicate accounts and lock existing ones
-// out of the app. Say the server is down instead.
+// If all local tables (Users, App_Devices, App_SignIn_Requests) have no UUID
+// for this phone and the remote panel list endpoint had a temporary hiccup, do
+// not lock brand-new users out at the phone screen: let them continue through
+// name + SMS verification, and resolveAccount() will re-check the panel with
+// retries before creating an account.
 if (!$Exists && $List_Error !== null) {
-error_log('[Umbrella-Bot][App-Auth] refusing needs-profile while panel list is failing: ' . $List_Error);
-self::fail(503, 'panel_unavailable', 'در حال حاضر ارتباط با سرور برقرار نیست؛ کمی بعد دوباره تلاش کنید.');
+error_log('[Umbrella-Bot][App-Auth] panel list unavailable during start (' . $Lookup_Source . '), proceeding with new-user flow: ' . $List_Error);
 }
 
 /*
@@ -435,6 +435,7 @@ $Linked_UUID = trim((string)($Row['User_UUID'] ?? ''));
 
 if ($Linked_UUID !== '') {
 try { PanelClient::update($Linked_UUID, ['telegram_id' => $Linked]); } catch (Throwable) {}
+self::syncBotUserClientId($Linked, $Linked_UUID);
 }
 
 if (self::sendConfirmation($Row, $Linked, 'needs_telegram')) {
@@ -474,7 +475,14 @@ self::fail(409, 'no_account', 'حسابی به این شماره وصل نیست
 $Account = PanelClient::get($UUID) ?? [];
 
 if ($Account === []) {
-self::fail(502, 'panel_unavailable', 'دریافت پروفایل از پنل ناموفق بود.');
+error_log('[Umbrella-Bot][Gateway] session profile fallback for uuid=' . $UUID . ' status=' . PanelClient::lastGetStatus());
+$Account = [
+'uuid' => $UUID,
+'name' => trim((string)($Row['Full_Name'] ?? '')),
+'telegram_id' => (int)($Row['Telegram_ID'] ?? 0),
+'is_active' => true,
+'enable' => true,
+];
 }
 
 $Token = (string)($Row['Token'] ?? '');
@@ -1257,22 +1265,20 @@ return true;
 private static function resolveAccount(string $Phone, string $Full_Name, int $Telegram_Id = 0): array {
 [$Account] = self::findCustomerAccount($Phone);
 
-if ($Account === null && PanelClient::lastListError() !== null) {
-// The list read failed — we cannot tell «new customer» from «panel is
-// down», so refuse to create a duplicate account.
-error_log('[Umbrella-Bot][Gateway] refusing account creation while panel list is failing: ' . PanelClient::lastListError());
-return [];
-}
-
 if (is_array($Account) && $Account !== []) {
 return $Account;
 }
 
+if (PanelClient::lastListError() !== null) {
+error_log('[Umbrella-Bot][Gateway] panel list degraded during resolveAccount; no local UUID found for masked-' . substr(md5($Phone), 0, 8) . ', attempting create: ' . PanelClient::lastListError());
+}
+
 // This panel has no `phone` field — it stores the mobile in `comment` and the
-// numeric Telegram id in `telegram_id` (linked right after creation).
+// numeric Telegram id in `telegram_id`.
 $Created = PanelClient::create([
-'name' => $Full_Name,
+'name' => $Full_Name !== '' ? $Full_Name : 'کاربر آمبرلا',
 'comment' => $Phone,
+'telegram_id' => max(0, $Telegram_Id),
 ]);
 
 if ($Created === null) {
@@ -1280,10 +1286,11 @@ error_log('[Umbrella-Bot][Gateway] account creation failed for ' . $Phone);
 return [];
 }
 
-if ($Telegram_Id > 0) {
 $New_UUID = trim((string)($Created['uuid'] ?? ''));
 
-if ($New_UUID !== '') {
+if ($Telegram_Id > 0 && $New_UUID !== '') {
+self::syncBotUserClientId($Telegram_Id, $New_UUID);
+if ((int)($Created['telegram_id'] ?? 0) !== $Telegram_Id) {
 try { PanelClient::update($New_UUID, ['telegram_id' => $Telegram_Id]); }
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] telegram_id link after create failed for ' . $Phone . ': ' . $Error->getMessage()); }
 }
@@ -1293,17 +1300,33 @@ Repository::addNotification(null, 'app_signup', 'حساب جدید ساخته ش
 return $Created;
 }
 
+/** Keeps Users.Client_ID linked when an app-created account joins the bot. */
+private static function syncBotUserClientId(int $Telegram_Id, string $UUID): void {
+if ($Telegram_Id <= 0 || $UUID === '') return;
+
+try {
+Database::getInstance()->execute(
+"UPDATE `Users` SET `Client_ID` = ? WHERE `Telegram_ID` = ? AND (`Client_ID` IS NULL OR `Client_ID` = '' OR `Client_ID` = '_')",
+[$UUID, $Telegram_Id]
+);
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Gateway] Users.Client_ID sync failed: ' . $Error->getMessage());
+}
+}
+
 /**
- * Finds the customer for a phone: the bot's Users row first (it remembers the
- * panel uuid the bot issued, so this works even when the panel list is slow),
- * then the panel itself (matching `comment` or `phone`). Returns the account
- * and where it was found ('bot_db' | 'panel' | 'none').
+ * Finds the customer for a phone: checks local DB tables first (`Users`,
+ * `App_Devices`, `App_SignIn_Requests` — fast and independent of panel list
+ * availability), then scans the panel itself (`comment` / `phone`).
  *
  * @return array{0: ?array, 1: string}
  */
 private static function findCustomerAccount(string $Phone): array {
 $Linked = Repository::findUserByPhone($Phone);
 $Client_Id = trim((string)($Linked['Client_ID'] ?? ''));
+$Linked_Telegram = (int)($Linked['Telegram_ID'] ?? 0);
+$Linked_Name = trim((string)($Linked['Full_Name'] ?? ($Linked['First_Name'] ?? '')));
 
 if ($Client_Id !== '' && $Client_Id !== '_') {
 $Account = PanelClient::get($Client_Id);
@@ -1312,7 +1335,52 @@ if (is_array($Account) && $Account !== []) {
 return [$Account, 'bot_db'];
 }
 
-error_log('[Umbrella-Bot][App-Auth] Client_ID stored in the bot DB no longer resolves in the panel; falling back to the phone scan');
+// If the panel returned anything other than 404 (e.g. transient timeout/5xx),
+// keep the known UUID so we never treat an existing customer as brand-new.
+if (PanelClient::lastGetStatus() !== 404) {
+error_log('[Umbrella-Bot][App-Auth] panel get transient failure for known bot Client_ID; preserving local UUID');
+return [[
+'uuid' => $Client_Id,
+'name' => $Linked_Name,
+'telegram_id' => $Linked_Telegram,
+], 'bot_db_cached'];
+}
+
+error_log('[Umbrella-Bot][App-Auth] Client_ID stored in the bot DB no longer exists (404); falling back to phone scan');
+}
+
+// Check previously linked app devices and verified sign-in requests as well,
+// covering app-registered users who have not yet opened the Telegram bot.
+$Prior_Device = Database::getInstance()->fetch(
+"SELECT `User_UUID`, `Telegram_ID` FROM `App_Devices`
+WHERE `Phone` = ? AND `User_UUID` IS NOT NULL AND `User_UUID` != ''
+ORDER BY `ID` DESC LIMIT 1",
+[$Phone]
+);
+$Prior_Request = $Prior_Device === null ? Database::getInstance()->fetch(
+"SELECT `User_UUID`, `Telegram_ID`, `Full_Name` FROM `App_SignIn_Requests`
+WHERE `Phone` = ? AND `User_UUID` IS NOT NULL AND `User_UUID` != ''
+ORDER BY `ID` DESC LIMIT 1",
+[$Phone]
+) : null;
+
+$Cached_Row = $Prior_Device ?? $Prior_Request;
+$Cached_UUID = trim((string)($Cached_Row['User_UUID'] ?? ''));
+
+if ($Cached_UUID !== '') {
+$Account = PanelClient::get($Cached_UUID);
+
+if (is_array($Account) && $Account !== []) {
+return [$Account, 'app_db'];
+}
+
+if (PanelClient::lastGetStatus() !== 404) {
+return [[
+'uuid' => $Cached_UUID,
+'name' => trim((string)($Cached_Row['Full_Name'] ?? $Linked_Name)),
+'telegram_id' => (int)($Cached_Row['Telegram_ID'] ?? $Linked_Telegram),
+], 'app_db_cached'];
+}
 }
 
 $Account = PanelClient::findByPhone($Phone);
@@ -1555,9 +1623,20 @@ return rtrim($Base, '/') . '/' . $UUID . '/sub/';
 
 private static function body(): array {
 $Raw = file_get_contents('php://input') ?: '';
+if (str_starts_with($Raw, "\xEF\xBB\xBF")) {
+$Raw = substr($Raw, 3);
+}
 $Json = json_decode($Raw, true);
 
 if (is_array($Json)) return $Json;
+
+// Fallback for client networks / WAF rules that block application/json POSTs
+// and re-send the JSON envelope inside a standard form-encoded `_json` field.
+$Wrapped = $_POST['_json'] ?? ($_GET['_json'] ?? null);
+if (is_string($Wrapped) && $Wrapped !== '') {
+$Decoded = json_decode($Wrapped, true);
+if (is_array($Decoded)) return $Decoded;
+}
 
 return array_merge($_GET, $_POST);
 }

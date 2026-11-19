@@ -80,8 +80,29 @@ usleep(400000);
 return $Response;
 }
 
-public static function listUsers(): array {
-return HttpClient::get(rtrim(Environment::getUmbrellaBaseUrl(), '/') . '/', self::headers());
+public static function listUsers(int $Attempts = 2, int $Time_Out = 15): array {
+$Url = rtrim(Environment::getUmbrellaBaseUrl(), '/') . '/';
+$Response = ['StatusCode' => 0, 'Body' => '', 'Json' => null, 'Error' => 'no attempt'];
+
+for ($Try = 1; $Try <= max(1, $Attempts); $Try++) {
+$Response = HttpClient::get($Url, self::headers(), $Time_Out);
+$Status = (int)($Response['StatusCode'] ?? 0);
+
+if ($Status >= 200 && $Status < 300 && is_array($Response['Json'] ?? null)) {
+return $Response;
+}
+
+// خطای کلاینت (۴xx به جز ۴۰۸/۴۲۹) با تلاش مجدد برطرف نمی شود.
+if ($Status >= 400 && $Status < 500 && $Status !== 408 && $Status !== 429) {
+return $Response;
+}
+
+if ($Try < $Attempts) {
+usleep(300000);
+}
+}
+
+return $Response;
 }
 
 public static function updateUserUsage(): array {

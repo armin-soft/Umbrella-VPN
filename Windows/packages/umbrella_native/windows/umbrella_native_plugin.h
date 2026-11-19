@@ -20,9 +20,15 @@
 #endif
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace umbrella {
+
+struct PluginReplyGuard {
+  std::mutex mutex;
+  bool alive = true;
+};
 
 class UMBRELLA_PLUGIN_EXPORT UmbrellaNativePlugin : public flutter::Plugin {
  public:
@@ -50,6 +56,8 @@ class UMBRELLA_PLUGIN_EXPORT UmbrellaNativePlugin : public flutter::Plugin {
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> tray_sink_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> tray_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
+  std::shared_ptr<PluginReplyGuard> reply_guard_ =
+      std::make_shared<PluginReplyGuard>();
   std::string data_dir_;
 };
 

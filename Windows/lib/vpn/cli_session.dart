@@ -49,6 +49,22 @@ class CliSession {
     });
   }
 
+  /// رهاسازی فوری دستگیره ها هنگام خروج برنامه؛ کشتن درخت پردازش در یک گذر
+  /// واحد توسط `ShutdownOwnedCores` بومی ویندوز انجام می شود تا اجرای اضافی
+  /// `taskkill.exe` بسته شدن برنامه را کند نکند.
+  void dropForShutdown() {
+    final Process? process = _process;
+    _process = null;
+    _windowOpened = false;
+    if (process != null) {
+      try {
+        process.kill();
+      } on Object {
+        // فرایند از قبل بسته شده است.
+      }
+    }
+  }
+
   Future<void> close() async {
     final Process? process = _process;
     final bool hadWindow = _windowOpened;

@@ -43,9 +43,9 @@ CloseApplications=yes
 RestartApplications=no
 ; Windows 10 (build 10240) is the oldest supported release, 11 is included.
 MinVersion=10.0
-; 64 bit only. The client refuses to start on 32 bit Windows.
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; All 64-bit Windows 10 and Windows 11 editions (x64 and x64-capable 64-bit).
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 ; Installing a VPN tunnel adapter and a firewall kill switch needs admin.
 PrivilegesRequired=admin
 VersionInfoVersion={#AppVersion}.0

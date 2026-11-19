@@ -1,4 +1,5 @@
 #include "system_ops.h"
+#include "winhttp_client.h"
 
 #include <iphlpapi.h>
 #include <ipifcons.h>
@@ -16,6 +17,8 @@
 #include <cstring>
 #include <cwctype>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
@@ -157,10 +160,22 @@ bool IsOwnedCoreExe(const std::string& exe) {
 
 BOOL CALLBACK CloseUmbrellaCliWindowsProc(HWND hwnd, LPARAM /*param*/) {
   if (!IsWindow(hwnd)) return TRUE;
-  wchar_t title[256] = {0};
-  const int length = GetWindowTextW(hwnd, title, 255);
-  if (length <= 0) return TRUE;
-  if (wcsncmp(title, L"Umbrella CLI", 12) == 0) {
+  wchar_t cls[64] = {0};
+  const int cls_len = GetClassNameW(hwnd, cls, 63);
+  if (cls_len <= 0) return TRUE;
+  // Filter to console hosts first (kernel-local check) so we never touch
+  // hundreds of unrelated or unresponsive desktop windows during exit.
+  if (wcscmp(cls, L"ConsoleWindowClass") != 0 &&
+      wcscmp(cls, L"CASCADIA_HOSTING_WINDOW_CLASS") != 0 &&
+      wcscmp(cls, L"PseudoConsoleWindow") != 0) {
+    return TRUE;
+  }
+  wchar_t title[128] = {0};
+  DWORD_PTR copied = 0;
+  if (SendMessageTimeoutW(hwnd, WM_GETTEXT, 127,
+                          reinterpret_cast<LPARAM>(title),
+                          SMTO_ABORTIFHUNG | SMTO_BLOCK, 15, &copied) != 0 &&
+      copied > 0 && wcsncmp(title, L"Umbrella CLI", 12) == 0) {
     PostMessageW(hwnd, WM_CLOSE, 0, 0);
   }
   return TRUE;
@@ -206,6 +221,9 @@ bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
   const BOOL ok = ShellExecuteExW(&info);
   SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
   if (!ok) return false;
+  if (is_core) {
+    shutdown_clean_.store(false, std::memory_order_release);
+  }
   if (info.hProcess) CloseHandle(info.hProcess);
   return true;
 }
@@ -631,6 +649,7 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
   }
   int pid = static_cast<int>(process.dwProcessId);
   if (is_core) {
+    shutdown_clean_.store(false, std::memory_order_release);
     std::lock_guard<std::mutex> lock(mutex_);
     HANDLE job = EnsureCoreJobLocked();
     if (job != nullptr) {
@@ -673,8 +692,84 @@ bool SystemOps::AttachCoreJob(int pid) {
       attached = AssignProcessToJobObject(job, process) != 0;
     }
   }
+  if (attached) {
+    shutdown_clean_.store(false, std::memory_order_release);
+  }
   CloseHandle(process);
   return attached;
+}
+
+int SystemOps::KillOwnedCoreTreeSinglePass() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return 0;
+
+  const DWORD self_pid = GetCurrentProcessId();
+  std::unordered_map<DWORD, std::vector<DWORD>> children;
+  std::vector<DWORD> queue;
+  std::unordered_set<DWORD> targets;
+
+  PROCESSENTRY32W entry = {};
+  entry.dwSize = sizeof(entry);
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      const DWORD pid = entry.th32ProcessID;
+      if (pid == 0) continue;
+      children[entry.th32ParentProcessID].push_back(pid);
+      if (pid == self_pid) continue;
+      const std::string name = ToLowerAscii(ToUtf8(entry.szExeFile));
+      for (const char* owned : kOwnedCores) {
+        if (name == owned) {
+          if (targets.insert(pid).second) {
+            queue.push_back(pid);
+          }
+          break;
+        }
+      }
+    } while (Process32NextW(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
+
+  // Expand all descendant processes from the same snapshot in O(N).
+  for (size_t i = 0; i < queue.size(); ++i) {
+    auto it = children.find(queue[i]);
+    if (it == children.end()) continue;
+    for (DWORD child : it->second) {
+      if (child != 0 && child != self_pid && targets.insert(child).second) {
+        queue.push_back(child);
+      }
+    }
+  }
+
+  int killed = 0;
+  for (DWORD pid : queue) {
+    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (proc == nullptr) continue;
+    if (TerminateProcess(proc, 0) != FALSE) {
+      ++killed;
+    }
+    CloseHandle(proc);
+  }
+  return killed;
+}
+
+void SystemOps::NotifyProxySettingsChangedFast() {
+  INTERNET_PER_CONN_OPTION_LISTW list = {};
+  INTERNET_PER_CONN_OPTIONW option = {};
+  option.dwOption = INTERNET_PER_CONN_FLAGS;
+  option.Value.dwValue = PROXY_TYPE_DIRECT;
+  list.dwSize = sizeof(list);
+  list.pszConnection = nullptr;
+  list.dwOptionCount = 1;
+  list.pOptions = &option;
+  InternetSetOptionW(nullptr, INTERNET_OPTION_PER_CONNECTION_OPTION, &list,
+                     sizeof(list));
+  // Non-blocking broadcast notifies browsers and WinINet listeners immediately
+  // without stalling for seconds when any third-party window is hung.
+  SendNotifyMessageW(
+      HWND_BROADCAST, WM_SETTINGCHANGE, 0,
+      reinterpret_cast<LPARAM>(
+          L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"));
+  ResetWinHttpProxyFast();
 }
 
 void SystemOps::ClearLoopbackProxyFast() {
@@ -711,13 +806,15 @@ void SystemOps::ClearLoopbackProxyFast() {
   }
   RegCloseKey(key);
   if (cleared) {
-    InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
-    InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
+    NotifyProxySettingsChangedFast();
   }
 }
 
-int SystemOps::ShutdownOwnedCores() {
-  EnumWindows(CloseUmbrellaCliWindowsProc, 0);
+int SystemOps::ShutdownOwnedCores(bool skip_if_clean) {
+  if (skip_if_clean && shutdown_clean_.load(std::memory_order_acquire)) {
+    ClearLoopbackProxyFast();
+    return 0;
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (core_job_ != nullptr) {
@@ -725,12 +822,10 @@ int SystemOps::ShutdownOwnedCores() {
       core_job_ = nullptr;
     }
   }
-  int killed = 0;
-  for (const char* name : kOwnedCores) {
-    killed += KillByName(name);
-  }
+  const int killed = KillOwnedCoreTreeSinglePass();
   EnumWindows(CloseUmbrellaCliWindowsProc, 0);
   ClearLoopbackProxyFast();
+  shutdown_clean_.store(true, std::memory_order_release);
   return killed;
 }
 
@@ -918,31 +1013,30 @@ bool SystemOps::DisableSystemProxy() {
                     0, KEY_READ | KEY_WRITE, &key) != ERROR_SUCCESS) {
     return false;
   }
+  DWORD enabled = 0;
+  DWORD enabled_size = sizeof(enabled);
+  DWORD enabled_type = 0;
+  const bool was_enabled =
+      RegQueryValueExW(key, L"ProxyEnable", nullptr, &enabled_type,
+                       reinterpret_cast<LPBYTE>(&enabled),
+                       &enabled_size) == ERROR_SUCCESS &&
+      enabled_type == REG_DWORD && enabled != 0;
   DWORD zero = 0;
   RegSetValueExW(key, L"ProxyEnable", 0, REG_DWORD,
                  reinterpret_cast<const BYTE*>(&zero), sizeof(zero));
   // The bypass list was written by us when the tunnel came up.
-  RegDeleteValueW(key, L"ProxyOverride");
+  const bool had_override =
+      RegDeleteValueW(key, L"ProxyOverride") == ERROR_SUCCESS;
   RegCloseKey(key);
 
-  INTERNET_PER_CONN_OPTION_LIST list = {0};
-  INTERNET_PER_CONN_OPTION option = {0};
-  option.dwOption = INTERNET_PER_CONN_FLAGS;
-  option.Value.dwValue = PROXY_TYPE_DIRECT;
-  list.dwSize = sizeof(list);
-  list.pszConnection = nullptr;
-  list.dwOptionCount = 1;
-  list.pOptions = &option;
-  DWORD list_size = sizeof(list);
-  InternetSetOptionW(nullptr, INTERNET_OPTION_PER_CONNECTION_OPTION, &list,
-                     list_size);
-  InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
-  InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
-  RunAndWait(L"netsh winhttp reset proxy");
+  if (was_enabled || had_override) {
+    NotifyProxySettingsChangedFast();
+  }
   return true;
 }
 
 bool SystemOps::SetSystemProxy(const std::string& host, int port) {
+  shutdown_clean_.store(false, std::memory_order_release);
   std::wstring entry = ToWide(host + ":" + std::to_string(port));
   HKEY key = nullptr;
   if (RegOpenKeyExW(HKEY_CURRENT_USER,

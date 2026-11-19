@@ -142,8 +142,40 @@ jobs:
             throw 'Windows build failed'
           }
           $bundle = 'build/windows/x64/runner/Release'
-          foreach ($exe in @('UmbrellaVPN.exe','UmbrellaCli.exe','UmbrellaAdmin.exe','UmbrellaCoreEngine.exe')) {
-            if (!(Test-Path "$bundle/$exe")) { throw "Missing launcher: $exe" }
+          foreach ($exe in @('UmbrellaVPN.exe','UmbrellaCli.exe','UmbrellaAdmin.exe','UmbrellaCoreEngine.exe','umbrella_native_plugin.dll','flutter_windows.dll')) {
+            if (!(Test-Path "$bundle/$exe")) { throw "Missing binary: $exe" }
+          }
+          # Bundle official Microsoft Visual C++ x64 runtime DLLs so fresh 64-bit
+          # Windows 10 and Windows 11 installations run without pre-installed VC++ redist.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = if (Test-Path $vswhere) { & $vswhere -latest -products * -property installationPath } else { '' }
+          $crtDirs = @()
+          if ($vsRoot) {
+            $crtDirs += Get-ChildItem -Path "$vsRoot\VC\Redist\MSVC" -Recurse -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|spectre' } |
+              Sort-Object FullName -Descending
+          }
+          $crtDlls = @('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','concrt140.dll')
+          foreach ($dll in $crtDlls) {
+            $copied = $false
+            foreach ($dir in $crtDirs) {
+              $candidate = Join-Path $dir.FullName $dll
+              if (Test-Path $candidate) {
+                Copy-Item $candidate "$bundle/$dll" -Force
+                $copied = $true
+                break
+              }
+            }
+            if (!$copied) {
+              $sysCandidate = Join-Path $env:SystemRoot "System32\$dll"
+              if (Test-Path $sysCandidate) {
+                Copy-Item $sysCandidate "$bundle/$dll" -Force
+                $copied = $true
+              }
+            }
+            if (!$copied -and $dll -in @('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll')) {
+              throw "Missing required x64 MSVC runtime DLL: $dll"
+            }
           }
           $manifest = Get-Content assets/cores/manifest.json -Raw | ConvertFrom-Json
           $core = $manifest.cores | Where-Object id -eq 'hiddify'
@@ -203,11 +235,11 @@ jobs:
           $installer = (Get-ChildItem installer/output -Filter '*.exe').FullName
           $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           $notes = @(
+            "- رفع کامل مشکل «ارتباط برقرار نشد» هنگام ورود و ثبت نام کاربران جدید روی تمام نسخه های ویندوز ۱۰ و ۱۱ شصت و چهار بیتی (مسیر بومی WinHTTP و Schannel همراه با پشتیبان خودکار)",
+            "- بسته شدن آنی و بدون مکث برنامه همراه با توقف کامل هسته، بازگردانی پروکسی سیستمی و حذف فوری آیکون سینی",
+            "- همراه سازی کتابخانه های رسمی اجرایی ۶۴ بیتی مایکروسافت برای اجرا روی ویندوزهای تازه نصب شده",
             "- رابط کاملا فارسی با اعداد فارسی و بدون نیم فاصله در سراسر برنامه",
-            "- آیکون گرد و کاملا شفاف در نصب کننده، میانبرها، سینی سیستم و تمام صفحات",
-            "- منوی بازشوی استاندارد تنظیمات سریع اتصال و آیکون دقیق برای همه بخش ها",
-            "- هسته آمبرلا نسخه ۵.۹.۱۱ با پایداری تونل و بستن کامل پردازش ها هنگام خروج",
-            "- به روز رسانی درون برنامه ای در دو کانال پایدار و بتا با تایید اصالت فایل",
+            "- هسته آمبرلا نسخه ۵.۹.۱۱ با پایداری تونل و به روز رسانی درون برنامه ای با تایید اصالت فایل",
             "SHA-256: $sha256"
           ) -join "`n"
 

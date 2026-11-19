@@ -4257,12 +4257,15 @@ class VpnController extends ChangeNotifier {
     _log.add('اتصال قطع شد و تنظیمات شبکه به حالت عادی بازگشت.');
   }
 
-  /// بستن قطعی و کامل هسته، پنجره CLI، پروب های پینگ، پروکسی سیستمی و آیکون
-  /// سینی هنگام خروج از برنامه، خاموشی ویندوز یا نصب به روز رسانی.
-  Future<void> shutdownForExit() async {
-    if (_shuttingDown) {
-      return;
-    }
+  Future<void>? _shutdownInFlight;
+
+  /// بستن قطعی، سریع و بدون تکرار هسته، پنجره CLI، پروب های پینگ، پروکسی
+  /// سیستمی و آیکون سینی هنگام خروج از برنامه، خاموشی ویندوز یا نصب به روز رسانی.
+  Future<void> shutdownForExit() {
+    return _shutdownInFlight ??= _performShutdownForExit();
+  }
+
+  Future<void> _performShutdownForExit() async {
     _shuttingDown = true;
     _cancelRequested = true;
     _cancelGeneration++;
@@ -4277,36 +4280,83 @@ class VpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     _stopLiveMeasurement();
     cancelSpeedTest();
-    try {
-      await _stopProbes().timeout(
-        const Duration(milliseconds: 900),
-        onTimeout: () {},
-      );
-    } catch (_) {}
-    try {
-      await _stopCores().timeout(
-        const Duration(milliseconds: 2200),
-        onTimeout: () {},
-      );
-    } catch (_) {}
-    try {
-      await _native.shutdownCores().timeout(
-            const Duration(milliseconds: 1200),
-            onTimeout: () => 0,
-          );
-    } catch (_) {}
-    try {
-      await _disableProxy().timeout(
-        const Duration(milliseconds: 800),
-        onTimeout: () {},
-      );
-    } catch (_) {}
+
+    // آیکون سینی در همان ابتدا برداشته می شود تا روی نوار وظیفه باقی نماند.
     try {
       await _tray.destroy().timeout(
-            const Duration(milliseconds: 500),
+            const Duration(milliseconds: 250),
             onTimeout: () {},
           );
     } catch (_) {}
+
+    // بستن فوری پروب ها و دستگیره های دارت بدون صبر چندثانیه ای روی exitCode
+    // یا اجرای تکراری taskkill/ServerSocket.
+    if (_measuring || _corePing.busy) {
+      _measuring = false;
+      try {
+        await _corePing.stopAll().timeout(
+              const Duration(milliseconds: 300),
+              onTimeout: () {},
+            );
+      } catch (_) {}
+    }
+    for (final Process process in List<Process>.of(_preparingProcesses)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _preparingProcesses.clear();
+    for (final Process process in List<Process>.of(_coreProcesses.values)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _coreProcesses.clear();
+    CliSession.instance.dropForShutdown();
+
+    final List<int> extraPids = List<int>.of(_runningPids);
+    _runningPids.clear();
+    _runningBinaries.clear();
+    _activeChain = const ChainSettings();
+    _activePlanTun = false;
+
+    for (final int pid in extraPids) {
+      try {
+        await _native.killPid(pid).timeout(
+              const Duration(milliseconds: 150),
+              onTimeout: () => false,
+            );
+      } catch (_) {}
+    }
+
+    try {
+      final File pidFile = File(
+        '${_provisioner.dataDir}${Platform.pathSeparator}run'
+        '${Platform.pathSeparator}umbrella-core.pid',
+      );
+      if (pidFile.existsSync()) {
+        pidFile.deleteSync();
+      }
+    } catch (_) {}
+
+    // یک گذر بومی واحد روی رشته پس زمینه: بستن Job Object، تمام پردازش های
+    // هسته و فرزندانشان، پنجره های CLI، و پاک سازی فوری پروکسی لوکال هاست.
+    final bool hadProxy = _proxyPort != 0;
+    _proxyPort = 0;
+    try {
+      await _native.shutdownCores().timeout(
+            const Duration(milliseconds: 900),
+            onTimeout: () => 0,
+          );
+    } catch (_) {}
+    if (hadProxy) {
+      try {
+        await _native.disableSystemProxy().timeout(
+              const Duration(milliseconds: 500),
+              onTimeout: () => false,
+            );
+      } catch (_) {}
+    }
   }
 
   Future<void>? _stopInFlight;
@@ -4337,7 +4387,10 @@ class VpnController extends ChangeNotifier {
   Future<void> _stopCoresInner() async {
     for (final Process process in List<Process>.of(_preparingProcesses)) {
       process.kill();
-      await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
+      await process.exitCode.timeout(
+        const Duration(milliseconds: 400),
+        onTimeout: () => -1,
+      );
     }
     await _sweepOrphanChildren();
     // اگر هسته در پنجره CLI اجرا شده باشد، اول همان بسته می شود تا هیچ هسته
@@ -4347,7 +4400,10 @@ class VpnController extends ChangeNotifier {
     for (final Process process in List<Process>.of(_coreProcesses.values)) {
       try {
         process.kill();
-        await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
+        await process.exitCode.timeout(
+          const Duration(milliseconds: 400),
+          onTimeout: () => -1,
+        );
       } on Exception {
         // فرایند از قبل بسته شده است.
       }

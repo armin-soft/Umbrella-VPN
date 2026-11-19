@@ -1249,13 +1249,13 @@ void main() {
 
     test('۴. ورود ناموفق پیام امنیتی دقیق و دکمه دستگاه من دارد', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
-      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه‌های ناشناس را حذف کنید.'), isTrue);
+      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه های ناشناس را حذف کنید.'), isTrue);
       expect(gateway.contains("'text' => '📱 دستگاه من'"), isTrue);
     });
 
     test('۵. IP در پیام های ورود تلگرام فارسی سازی می شود', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
-      expect(gateway.contains('آی‌پی:'), isTrue);
+      expect(gateway.contains('آی پی:'), isTrue);
       expect(gateway.contains('Helper::toPersian(\$IP)'), isTrue);
     });
 

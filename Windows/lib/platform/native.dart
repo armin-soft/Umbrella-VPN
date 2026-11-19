@@ -6,6 +6,25 @@ import 'package:flutter/services.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
 
+/// پاسخ درخواست HTTP بومی ویندوز (WinHTTP + Schannel).
+class NativeHttpResponse {
+  const NativeHttpResponse({
+    required this.ok,
+    required this.statusCode,
+    required this.bodyBytes,
+    this.contentType = '',
+    this.winError = 0,
+    this.error = '',
+  });
+
+  final bool ok;
+  final int statusCode;
+  final Uint8List bodyBytes;
+  final String contentType;
+  final int winError;
+  final String error;
+}
+
 /// پل ارتباط با لایه بومی ویندوز (پلاگین umbrella_native).
 ///
 /// هر متد در صورت نبود پلاگین مقدار امن برمی گرداند تا رابط کاربری هرگز
@@ -274,9 +293,87 @@ class NativeBridge {
         false;
   }
 
+  static bool _winHttpAvailable = true;
+
+  /// فعال سازی مجدد مسیر HTTP بومی برای آزمون واحد.
+  static void resetHttpAvailabilityForTest() {
+    _winHttpAvailable = true;
+  }
+
+  /// ارسال درخواست HTTPS/HTTP از مسیر بومی ویندوز (WinHTTP + Schannel).
+  ///
+  /// روی تمام نسخه های ۶۴ بیتی ویندوز ۱۰ و ۱۱ از مخزن گواهی خود ویندوز
+  /// (همراه با دریافت خودکار گواهی ریشه و میانی)، TLS 1.2/1.3 بومی و گذار
+  /// سریع از IPv6 معیوب به IPv4 استفاده می کند و روی رشته پس زمینه اجرا
+  /// می شود تا رابط کاربری هرگز قفل نشود.
+  static Future<NativeHttpResponse?> performHttpRequest({
+    required String method,
+    required String url,
+    Map<String, String> headers = const <String, String>{},
+    String body = '',
+    int timeoutMs = 15000,
+    bool useProxy = false,
+  }) async {
+    if (!Platform.isWindows || !_winHttpAvailable) {
+      return null;
+    }
+    try {
+      final Map<Object?, Object?>? raw =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'httpRequest',
+        <String, dynamic>{
+          'method': method,
+          'url': url,
+          'headers': headers,
+          'body': body,
+          'timeoutMs': timeoutMs,
+          'useProxy': useProxy,
+        },
+      ).timeout(Duration(milliseconds: timeoutMs + 3000));
+      if (raw == null) {
+        return null;
+      }
+      final Object? rawBytes = raw['bodyBytes'];
+      final Uint8List bytes;
+      if (rawBytes is Uint8List) {
+        bytes = rawBytes;
+      } else if (rawBytes is List<int>) {
+        bytes = Uint8List.fromList(rawBytes);
+      } else {
+        bytes = Uint8List(0);
+      }
+      return NativeHttpResponse(
+        ok: raw['ok'] == true,
+        statusCode: JsonX.integer(raw['statusCode']),
+        bodyBytes: bytes,
+        contentType: raw['contentType']?.toString() ?? '',
+        winError: JsonX.integer(raw['winError']),
+        error: raw['error']?.toString() ?? '',
+      );
+    } on MissingPluginException {
+      _winHttpAvailable = false;
+      return null;
+    } on PlatformException {
+      return null;
+    } on TimeoutException {
+      return NativeHttpResponse(
+        ok: false,
+        statusCode: 0,
+        bodyBytes: Uint8List(0),
+        winError: 12002,
+        error: 'channel_timeout',
+      );
+    } on Object {
+      return null;
+    }
+  }
+
   /// بستن قطعی همه پردازش های هسته و پنجره های CLI آمبرلا و پاک سازی پروکسی محلی.
-  Future<int> shutdownCores() async {
-    final int? count = await _invoke<int>('shutdownCores');
+  Future<int> shutdownCores({bool skipIfClean = false}) async {
+    final int? count = await _invoke<int>(
+      'shutdownCores',
+      <String, dynamic>{'skipIfClean': skipIfClean},
+    );
     if (count != null) {
       return count;
     }
@@ -293,10 +390,13 @@ class NativeBridge {
   }
 
   Future<bool> killPid(int pid) async {
+    if (pid <= 0) {
+      return false;
+    }
     final bool? ok =
         await _invoke<bool>('killPid', <String, dynamic>{'pid': pid});
-    if (ok == true) {
-      return true;
+    if (ok != null) {
+      return ok;
     }
     try {
       final ProcessResult result = await Process.run(
@@ -313,7 +413,7 @@ class NativeBridge {
   Future<int> killByName(String name) async {
     final int? count =
         await _invoke<int>('killByName', <String, dynamic>{'name': name});
-    if (count != null && count > 0) {
+    if (count != null) {
       return count;
     }
     return _dartKillByName(name);

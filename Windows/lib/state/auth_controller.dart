@@ -28,6 +28,7 @@ class AuthController extends ChangeNotifier {
     SoundService? sound,
     TrayService? tray,
   })  : _native = native,
+        _injectedGateway = gateway != null,
         _sound = sound,
         _tray = tray,
         _store = store ?? LocalStore.instance {
@@ -40,6 +41,7 @@ class AuthController extends ChangeNotifier {
   }
 
   final NativeBridge _native;
+  final bool _injectedGateway;
   late GatewayClient _gateway;
   final LocalStore _store;
   final AppLogger _log = AppLogger.instance;
@@ -198,11 +200,46 @@ class AuthController extends ChangeNotifier {
   String _lastServiceError = '';
 
   void _logError(String message) {
-    if (message == _lastServiceError) {
+    final String detail = _gateway.lastDiagnostic;
+    final String full = detail.isEmpty ? message : '$message [$detail]';
+    if (full == _lastServiceError) {
       return;
     }
-    _lastServiceError = message;
-    _log.add('خطای سرویس: $message', level: 'error');
+    _lastServiceError = full;
+    _log.add('خطای سرویس: $full', level: 'error');
+  }
+
+  /// اگر نشانی سفارشی کهنه در تنظیمات ذخیره شده باشد و خطای شبکه یا ۴۰۴ بدهد،
+  /// به صورت خودکار نشانی پیش فرض رسمی آمبرلا آزموده و جایگزین می شود.
+  Future<T> _callGatewayWithDefaultFallback<T>(
+    Future<T> Function(GatewayClient client) call,
+  ) async {
+    try {
+      return await call(_gateway);
+    } on ApiError catch (error) {
+      final bool retriable = error.code == 'network' ||
+          error.code == 'timeout' ||
+          error.code == 'bad_response';
+      final bool usingCustom = !_injectedGateway &&
+          _gateway.baseUrl.trim() != AppConfig.gatewayBase.trim();
+      if (!retriable || !usingCustom) {
+        rethrow;
+      }
+      final GatewayClient fallback =
+          GatewayClient(baseUrl: AppConfig.gatewayBase);
+      try {
+        final T result = await call(fallback);
+        final GatewayClient previous = _gateway;
+        _gateway = fallback;
+        previous.close();
+        await _store.remove(AppConfig.gatewayStoreKey);
+        _log.add('نشانی درگاه به نشانی رسمی پیش فرض بازگردانی شد.');
+        return result;
+      } on Object {
+        fallback.close();
+        rethrow;
+      }
+    }
   }
 
   String get baseUrl => _gateway.baseUrl;
@@ -266,11 +303,13 @@ class AuthController extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     try {
-      final SignInStart start = await _gateway.start(
-        phone: phone,
-        deviceId: _deviceId,
-        deviceName: _device.deviceName,
-        platform: _device.platformLabel,
+      final SignInStart start = await _callGatewayWithDefaultFallback(
+        (GatewayClient client) => client.start(
+          phone: phone,
+          deviceId: _deviceId,
+          deviceName: _device.deviceName,
+          platform: _device.platformLabel,
+        ),
       );
       _challenge = start.challenge;
       _stage = start.stage;
@@ -309,18 +348,20 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    _firstName = first.trim();
-    _lastName = last.trim();
+    _firstName = IranPhone.normalizeName(first);
+    _lastName = IranPhone.normalizeName(last);
     _busy = true;
     notifyListeners();
     try {
-      final SignInStart start = await _gateway.start(
-        phone: _phone,
-        deviceId: _deviceId,
-        deviceName: _device.deviceName,
-        platform: _device.platformLabel,
-        firstName: _firstName,
-        lastName: _lastName,
+      final SignInStart start = await _callGatewayWithDefaultFallback(
+        (GatewayClient client) => client.start(
+          phone: _phone,
+          deviceId: _deviceId,
+          deviceName: _device.deviceName,
+          platform: _device.platformLabel,
+          firstName: _firstName,
+          lastName: _lastName,
+        ),
       );
       _challenge = start.challenge;
       _stage = start.stage;

@@ -22,6 +22,7 @@
 #include <winsock2.h>
 #include <windows.h>
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -89,7 +90,7 @@ class SystemOps {
   /// متن آخرین خطای CreateProcess برای گزارش دقیق؛ خالی یعنی خطایی نبوده.
   std::string LastSpawnError() const;
   bool AttachCoreJob(int pid);
-  int ShutdownOwnedCores();
+  int ShutdownOwnedCores(bool skip_if_clean = false);
   bool KillPid(int pid);
   int KillByName(const std::string& exe_name);
 
@@ -124,11 +125,14 @@ class SystemOps {
   bool RunAndWait(const std::wstring& command_line);
   std::vector<DWORD> FindProcessIds(const std::string& exe_name);
   HANDLE EnsureCoreJobLocked();
+  int KillOwnedCoreTreeSinglePass();
+  void NotifyProxySettingsChangedFast();
   void ClearLoopbackProxyFast();
 
   std::mutex mutex_;
   std::map<int, HANDLE> processes_;
   HANDLE core_job_ = nullptr;
+  std::atomic<bool> shutdown_clean_{false};
   mutable DWORD last_spawn_error_ = 0;
 };
 

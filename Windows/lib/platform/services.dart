@@ -151,29 +151,43 @@ class WindowService with WindowListener {
       return;
     }
     _quitting = true;
+    // اول پنجره و آیکون سینی بی درنگ پنهان و حذف می شوند تا خروج برای کاربر
+    // آنی باشد و هیچ پنجره قفل شده ای روی صفحه نماند.
+    try {
+      _hiddenToTray = true;
+      await windowManager.hide();
+    } catch (_) {}
+    try {
+      await _native.trayDestroy().timeout(
+            const Duration(milliseconds: 250),
+            onTimeout: () => false,
+          );
+    } catch (_) {}
+    bool ranCleanup = false;
     try {
       final Future<void> Function()? cleanup = onBeforeQuit;
       if (cleanup != null) {
         await cleanup().timeout(
-          const Duration(milliseconds: 3800),
+          const Duration(milliseconds: 1800),
           onTimeout: () {},
         );
+        ranCleanup = true;
       }
     } catch (_) {
       // خطای پاک سازی نباید مانع بسته شدن برنامه و هسته شود.
     }
     try {
-      await _native.shutdownCores().timeout(
-            const Duration(milliseconds: 1200),
+      await _native.shutdownCores(skipIfClean: ranCleanup).timeout(
+            const Duration(milliseconds: 600),
             onTimeout: () => 0,
           );
-      await _native.trayDestroy().timeout(
-            const Duration(milliseconds: 600),
-            onTimeout: () => false,
-          );
     } catch (_) {}
-    await windowManager.setPreventClose(false);
-    await windowManager.destroy();
+    try {
+      await windowManager.setPreventClose(false);
+      await windowManager.destroy();
+    } catch (_) {
+      exit(0);
+    }
   }
 
   Future<void> startDragging() async {
@@ -189,9 +203,11 @@ class WindowService with WindowListener {
       _hiddenToTray = true;
       await windowManager.hide();
       if (notificationsEnabled) {
-        await _native.trayBalloon(
-          title: AppConfig.appName,
-          body: 'در سینی سیستم فعال است.',
+        unawaited(
+          _native.trayBalloon(
+            title: AppConfig.appName,
+            body: 'در سینی سیستم فعال است.',
+          ),
         );
       }
       return;

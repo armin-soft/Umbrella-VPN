@@ -200,6 +200,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         }
         break;
       case 'quit':
+        try {
+          await widget.windowService.hide();
+        } catch (_) {}
         await vpn.shutdownForExit();
         await widget.windowService.quit();
         break;
