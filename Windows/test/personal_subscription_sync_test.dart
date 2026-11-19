@@ -17,6 +17,14 @@ import 'package:umbrella_vpn/state/subscription_controller.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
+class _SilentSound implements SoundService {
+  @override
+  bool enabled = false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
 class _TestHarness {
   _TestHarness._({
     required this.auth,
@@ -72,7 +80,7 @@ class _TestHarness {
     }
 
     final NativeBridge native = NativeBridge();
-    final SoundService sound = SoundService();
+    final SoundService sound = _SilentSound();
     final TrayService tray = TrayService(native);
     final VpnController vpn = VpnController(
       native: native,
