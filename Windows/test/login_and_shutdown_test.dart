@@ -162,6 +162,16 @@ void main() {
       );
       expect(start.stage, SignInStage.needsProfile);
       expect(proxyAttempts, <bool>[false, true]);
+
+      // درخواست بعدی مستقیم از مسیر سالم ذخیره شده استفاده می کند.
+      final SignInStart second = await client.start(
+        phone: '09121112233',
+        deviceId: 'win64-fallback',
+        deviceName: 'WIN11-USER',
+        platform: 'Windows 11 x64',
+      );
+      expect(second.stage, SignInStage.needsProfile);
+      expect(proxyAttempts, <bool>[false, true, true]);
     });
 
     test('پذیرش نام های فارسی کاربر جدید با حروف عربی یا نیم فاصله صفحه کلید', () {

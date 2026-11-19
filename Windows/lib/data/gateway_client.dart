@@ -269,9 +269,10 @@ class GatewayClient {
           response = retried;
         }
       }
-      // اگر مسیر فعلی صفحه مسدودسازی پروکسی یا خطای ۵۰۲/۵۰۴ بدون JSON داد،
-      // مسیر بعدی (مثلا بدون پروکسی یا با پروکسی) هم آزموده می شود.
-      if (response.statusCode >= 502 &&
+      // اگر مسیر فعلی پاسخ خطای غیر JSON برگرداند (مثلا صفحه مسدودسازی
+      // فایروال یا خطای ۵۰۲/۴۰۳/۴۰۰ میزبان میانی)، مسیر بعدی (بدون پروکسی یا
+      // با پروکسی) هم آزموده می شود؛ پاسخ JSON واقعی سرور بلافاصله برمی گردد.
+      if (response.statusCode >= 400 &&
           _tryDecodeJsonMap(
             utf8.decode(response.bodyBytes, allowMalformed: true),
           ).isEmpty) {
