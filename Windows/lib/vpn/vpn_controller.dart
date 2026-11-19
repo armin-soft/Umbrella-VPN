@@ -2963,14 +2963,19 @@ class VpnController extends ChangeNotifier {
     List<int> held = await UmbrellaCore.heldReservedPorts();
     // پورت های خود برنامه هم بررسی می شوند: نمونه بازمانده آمبرلا که پورت
     // پروکسی را گرفته باشد، همان قدر اتصال را می کشد.
-    final Set<int> configuredAppPorts = <int>{
-      ...UmbrellaCore.appPorts,
-      _configuredMixedPort,
+    final List<int> defaultAppHeld = await _heldPorts(UmbrellaCore.appPorts);
+    final List<int> extraAppPorts = <int>[
+      if (!UmbrellaCore.appPorts.contains(_configuredMixedPort))
+        _configuredMixedPort,
       if (_settings.allowConnectionFromLan &&
-          LanSharing.isValidPort(_settings.lanSharingPort))
+          LanSharing.isValidPort(_settings.lanSharingPort) &&
+          !UmbrellaCore.appPorts.contains(_settings.lanSharingPort) &&
+          _settings.lanSharingPort != _configuredMixedPort)
         _settings.lanSharingPort,
-    };
-    final List<int> appHeld = await _heldPorts(configuredAppPorts.toList());
+    ];
+    final List<int> appHeld = extraAppPorts.isEmpty
+        ? defaultAppHeld
+        : <int>[...defaultAppHeld, ...await _heldPorts(extraAppPorts)];
     if (held.isEmpty && appHeld.isEmpty) {
       return true;
     }

@@ -197,20 +197,23 @@ class UmbrellaCore {
   }
 
   /// قوانین مسدودسازی آفلاین و آنی کنترل محتوا برای چهار دسته همگام با ربات تلگرام
+  static const String _geoRuleSetBase =
+      'https://raw.githubusercontent.com/$id/$id-geo/rule-set';
+
   /// مجموعه قوانین رسمی مسدودسازی تبلیغات، بدافزار، فیشینگ و استخراج رمز ارز در هسته.
   static const List<String> adBlockRuleSetUrls = <String>[
-    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geoip-phishing.srs',
-    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geoip-malware.srs',
-    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-malware.srs',
-    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-phishing.srs',
-    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-cryptominers.srs',
-    'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block/geosite-category-ads-all.srs',
+    '$_geoRuleSetBase/block/geoip-phishing.srs',
+    '$_geoRuleSetBase/block/geoip-malware.srs',
+    '$_geoRuleSetBase/block/geosite-malware.srs',
+    '$_geoRuleSetBase/block/geosite-phishing.srs',
+    '$_geoRuleSetBase/block/geosite-cryptominers.srs',
+    '$_geoRuleSetBase/block/geosite-category-ads-all.srs',
   ];
 
   /// الگوی نشانی قوانین منطقه ای هسته (مستقیم کردن سایت ها و آی پی های داخلی).
   static List<String> regionalRuleSetUrls(String regionCode) => <String>[
-        'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/geoip-$regionCode.srs',
-        'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/geosite-$regionCode.srs',
+        '$_geoRuleSetBase/country/geoip-$regionCode.srs',
+        '$_geoRuleSetBase/country/geosite-$regionCode.srs',
       ];
 
   /// (`adult`, `gambling`, `ads`, `dating`) و دامنه های سفارشی کاربر.

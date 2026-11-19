@@ -436,11 +436,12 @@ void main() {
       final int lanIdx = rules.indexWhere((Map<String, dynamic> r) => r['ip_is_private'] == true);
       final int resolveIdx = rules.indexWhere((Map<String, dynamic> r) => r['action'] == 'resolve');
       final int blockIdx = rules.indexWhere((Map<String, dynamic> r) => r['action'] == 'reject');
-      expect(lanIdx, greaterThan(hijackIdx));
-      expect(blockIdx, greaterThan(lanIdx));
-      // قانون resolve عمداً پس از قوانین مسدودسازی دامنه قرار می گیرد تا دامنه های
-      // مسدودشده بدون هدررفت درخواست DNS درجا رد شوند و پیش از مسیریابی نهایی حل شوند.
-      expect(resolveIdx, greaterThan(blockIdx));
+      // ترتیب دقیق در مسیر route:
+      // sniff -> hijack-dns -> resolve (برای فعال شدن قوانین IP و شبکه محلی)
+      // -> قوانین مسدودسازی و برنامه ها -> bypass-lan (ip_is_private -> direct)
+      expect(resolveIdx, greaterThan(hijackIdx));
+      expect(blockIdx, greaterThan(resolveIdx));
+      expect(lanIdx, greaterThan(resolveIdx));
       expect(rules[lanIdx]['outbound'], 'direct §hide§');
       expect(rules[resolveIdx]['strategy'], 'ipv4_only');
 
