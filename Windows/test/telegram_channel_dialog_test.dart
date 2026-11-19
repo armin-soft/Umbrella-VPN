@@ -16,6 +16,48 @@ import 'package:umbrella_vpn/ui/pages/landing_page.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+class _TestNative implements NativeBridge {
+  @override
+  Future<bool> isElevated() async => false;
+  @override
+  Future<bool> autostartEnabled({String appName = 'UmbrellaVPN'}) async =>
+      false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestSound implements SoundService {
+  @override
+  bool enabled = true;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestWindow implements WindowService {
+  @override
+  bool closeToTray = true;
+  @override
+  bool notificationsEnabled = true;
+  @override
+  void syncBrightness(Brightness brightness) {}
+  @override
+  void startDragging() {}
+  @override
+  Future<void> minimize() async {}
+  @override
+  Future<void> toggleMaximize() async {}
+  @override
+  Future<void> quit() async {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+SettingsController _makeSettings() => SettingsController(
+      native: _TestNative(),
+      sound: _TestSound(),
+      window: _TestWindow(),
+    );
+
 Widget _hostApp({
   required Widget child,
   ThemeMode themeMode = ThemeMode.light,
@@ -471,12 +513,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1280, 820));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final NativeBridge native = NativeBridge();
-      final SettingsController settings = SettingsController(
-        native: native,
-        sound: SoundService(),
-        window: WindowService(native),
-      );
+      final SettingsController settings = _makeSettings();
       addTearDown(settings.dispose);
       await settings.load();
       expect(settings.resolveBrightness(Brightness.light), Brightness.dark);
@@ -484,7 +521,7 @@ void main() {
       await tester.pumpWidget(
         MultiProvider(
           providers: [
-            Provider<WindowService>.value(value: WindowService(native)),
+            Provider<WindowService>.value(value: _TestWindow()),
             ChangeNotifierProvider<SettingsController>.value(value: settings),
           ],
           child: Consumer<SettingsController>(
@@ -504,7 +541,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1500));
 
       // شروع در حالت تاریک و تغییر فوری به حالت روشن با دکمه نوار بالا.
       expect(
@@ -512,7 +550,7 @@ void main() {
         UmbrellaColors.dark.background,
       );
       await tester.tap(find.byIcon(Icons.light_mode_rounded));
-      await tester.pumpAndSettle();
+      await tester.pump();
       expect(settings.settings.theme, ThemePreference.light);
       expect(settings.resolveBrightness(Brightness.dark), Brightness.light);
       expect(
@@ -522,9 +560,10 @@ void main() {
 
       // بازگشت فوری به حالت تاریک و بررسی حالت هماهنگ با ویندوز.
       await tester.tap(find.byIcon(Icons.dark_mode_rounded));
-      await tester.pumpAndSettle();
+      await tester.pump();
       expect(settings.settings.theme, ThemePreference.dark);
       await settings.setTheme(ThemePreference.system);
+      await tester.pump();
       expect(settings.resolveBrightness(Brightness.light), Brightness.light);
       expect(settings.resolveBrightness(Brightness.dark), Brightness.dark);
       expect(tester.takeException(), isNull);
@@ -543,32 +582,19 @@ void main() {
       expect(migratedLegacy.autoConnect, isFalse);
 
       // ۳. انتخاب صریح کاربر در نسخه ۱.۰.۰ به درستی ذخیره و بازیابی می شود.
-      final NativeBridge native = NativeBridge();
-      final SettingsController controller = SettingsController(
-        native: native,
-        sound: SoundService(),
-        window: WindowService(native),
-      );
+      final SettingsController controller = _makeSettings();
       addTearDown(controller.dispose);
       await controller.load();
       expect(controller.settings.autoConnect, isFalse);
 
       await controller.setAutoConnect(true);
-      final SettingsController reloadedOn = SettingsController(
-        native: native,
-        sound: SoundService(),
-        window: WindowService(native),
-      );
+      final SettingsController reloadedOn = _makeSettings();
       addTearDown(reloadedOn.dispose);
       await reloadedOn.load();
       expect(reloadedOn.settings.autoConnect, isTrue);
 
       await reloadedOn.setAutoConnect(false);
-      final SettingsController reloadedOff = SettingsController(
-        native: native,
-        sound: SoundService(),
-        window: WindowService(native),
-      );
+      final SettingsController reloadedOff = _makeSettings();
       addTearDown(reloadedOff.dispose);
       await reloadedOff.load();
       expect(reloadedOff.settings.autoConnect, isFalse);
