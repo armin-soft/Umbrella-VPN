@@ -1,0 +1,294 @@
+name: Android APK draft
+on:
+  push:
+    branches: ['arena/**', Default]
+    paths: ['Android/**', '.github/workflows/android-draft.yml']
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release mode (draft, beta, release, or both beta+release)'
+        required: false
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - beta
+          - release
+          - both
+      beta_number:
+        description: 'Beta sequence number when channel is beta (e.g. 1)'
+        required: false
+        default: '1'
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: Android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.5'
+          channel: stable
+          cache: true
+
+      - name: Prepare Flutter Gradle wrapper and dependencies
+        run: |
+          set -euo pipefail
+          scaffold="${RUNNER_TEMP}/umbrella_android_scaffold"
+          flutter create --platforms=android --org ir.umbrella --project-name umbrella_vpn "$scaffold"
+          mkdir -p android/gradle/wrapper
+          cp "$scaffold/android/gradlew" android/gradlew
+          chmod +x android/gradlew
+          cp "$scaffold/android/gradle/wrapper/gradle-wrapper.jar" android/gradle/wrapper/gradle-wrapper.jar
+          flutter pub get
+
+      - name: Audit Unicode cleanliness, analyze, and test Flutter Android app
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re, sys
+          invis = re.compile(r'[\u200b\u200c\u200d\u200e\u200f\ufeff\u202a-\u202e\u2066-\u2069]')
+          bad = []
+          for p in sorted(pathlib.Path('.').rglob('*')):
+              if not p.is_file():
+                  continue
+              if any(part in {'.dart_tool', 'build', 'licenses', 'gradle'} for part in p.parts):
+                  continue
+              if p.name == 'THIRD-PARTY-NOTICES.txt':
+                  continue
+              if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.ico', '.ttf', '.otf', '.wav', '.mp3', '.aar', '.jar', '.so'}:
+                  continue
+              if invis.search(p.read_text(encoding='utf-8')):
+                  bad.append(str(p))
+          if bad:
+              print('Forbidden invisible characters found in:', bad, file=sys.stderr)
+              sys.exit(1)
+          print('Unicode cleanliness audit OK.')
+          PY
+
+          if ! analysis=$(flutter analyze --no-fatal-infos 2>&1); then
+            echo "$analysis"
+            esc="${analysis//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
+            echo "::error title=flutter-analyze::$esc"
+            exit 1
+          fi
+          echo "$analysis"
+
+          if ! tests=$(flutter test --reporter expanded 2>&1); then
+            echo "$tests"
+            esc="${tests//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
+            echo "::error title=flutter-test::$esc"
+            exit 1
+          fi
+          echo "$tests"
+
+      - name: Download and SHA-256 verify Android core engine
+        run: |
+          set -euo pipefail
+          read -r core_url core_sha < <(python3 - <<'PY'
+          import json
+          data = json.load(open('assets/cores/manifest.json', encoding='utf-8'))
+          c = next(x for x in data['cores'] if x['id'] == 'hiddify')
+          print(c['url'], c['sha256'])
+          PY
+          )
+          archive="${RUNNER_TEMP}/umbrella-core-android.tar.gz"
+          extract="${RUNNER_TEMP}/umbrella-core-android"
+          curl -fsSL --retry 4 --retry-delay 3 -o "$archive" "$core_url"
+          actual_sha=$(sha256sum "$archive" | awk '{print tolower($1)}')
+          if [[ "$actual_sha" != "$core_sha" ]]; then
+            echo "::error title=core-sha256::Expected $core_sha but got $actual_sha"
+            exit 1
+          fi
+          mkdir -p "$extract" android/app/libs
+          tar -xzf "$archive" -C "$extract"
+          aar_path=$(find "$extract" -type f -name '*.aar' | head -n 1)
+          if [[ -z "$aar_path" ]]; then
+            echo "::error title=core-aar::No .aar found in verified archive"
+            exit 1
+          fi
+          cp "$aar_path" android/app/libs/umbrella-core.aar
+          aar_entries=$(unzip -Z1 android/app/libs/umbrella-core.aar)
+          for required in \
+            'classes.jar' \
+            'jni/arm64-v8a/' \
+            'jni/armeabi-v7a/' \
+            'jni/x86_64/'; do
+            if ! grep -q "$required" <<<"$aar_entries"; then
+              echo "::error title=core-aar-contents::Missing $required inside umbrella-core.aar"
+              exit 1
+            fi
+          done
+          echo "Verified umbrella-core.aar (SHA-256: $actual_sha)"
+
+      - name: Configure release keystore if provided
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEYSTORE_B64" && -n "$STORE_PASS" && -n "$KEY_ALIAS" && -n "$KEY_PASS" ]]; then
+            keystore_path="${RUNNER_TEMP}/umbrella-release.jks"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$keystore_path"
+            printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
+              "$STORE_PASS" "$KEY_PASS" "$KEY_ALIAS" "$keystore_path" > android/key.properties
+            echo "Configured production release keystore."
+          else
+            echo "Using standard debug-signed release fallback (set ANDROID_KEYSTORE_* secrets for custom key)."
+          fi
+
+      - name: Build and verify Flutter Android release APKs (per-ABI + universal)
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import re; print(re.search(r\"static const String version = '([^']+)'\", open('lib/core/app_config.dart').read()).group(1))")
+          out_dir="build/release-apks"
+          rm -rf "$out_dir"
+          mkdir -p "$out_dir"
+
+          if ! split_log=$(flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64 2>&1); then
+            echo "$split_log"
+            tail_log=$(tail -n 120 <<<"$split_log")
+            esc="${tail_log//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
+            echo "::error title=build-split-apk::$esc"
+            exit 1
+          fi
+          echo "$split_log"
+
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            src="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            dst="${out_dir}/UmbrellaVPN-${version}-${abi}.apk"
+            if [[ ! -f "$src" ]]; then
+              echo "::error title=missing-apk::Missing $src"
+              exit 1
+            fi
+            cp "$src" "$dst"
+          done
+
+          if ! uni_log=$(flutter build apk --release --target-platform android-arm,android-arm64,android-x64 2>&1); then
+            echo "$uni_log"
+            tail_log=$(tail -n 120 <<<"$uni_log")
+            esc="${tail_log//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
+            echo "::error title=build-universal-apk::$esc"
+            exit 1
+          fi
+          echo "$uni_log"
+          cp "build/app/outputs/flutter-apk/app-release.apk" "${out_dir}/UmbrellaVPN-${version}-universal.apk"
+
+          apksigner_bin=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -name apksigner | sort -V | tail -n 1)
+          for apk in "$out_dir"/*.apk; do
+            entries=$(unzip -Z1 "$apk")
+            grep -q 'lib/.*/libflutter\.so' <<<"$entries" || { echo "::error::Missing libflutter.so in $apk"; exit 1; }
+            grep -q 'lib/.*/libapp\.so' <<<"$entries" || { echo "::error::Missing libapp.so in $apk"; exit 1; }
+            grep -q 'lib/.*/libgojni\.so' <<<"$entries" || grep -q 'lib/.*/libhiddify.*\.so' <<<"$entries" || {
+              echo "::error::Missing core engine .so in $apk (found: $(grep '^lib/' <<<"$entries" | tr '\n' ' '))"
+              exit 1
+            }
+            if [[ -n "$apksigner_bin" ]]; then
+              "$apksigner_bin" verify --verbose "$apk" | head -n 5
+            fi
+          done
+
+          (cd "$out_dir" && sha256sum UmbrellaVPN-*.apk > SHA256SUMS.txt)
+          ls -lh "$out_dir"
+          cat "$out_dir/SHA256SUMS.txt"
+
+      - name: Upload APK build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Android-APKs
+          path: |
+            Android/build/release-apks/*.apk
+            Android/build/release-apks/SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Publish Android APK release or draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          RELEASES_REPO: 'armin-soft/Umbrella-VPN-Releases'
+          CHANNEL: ${{ inputs.channel || 'draft' }}
+          BETA_NUM: ${{ inputs.beta_number || '1' }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import re; print(re.search(r\"static const String version = '([^']+)'\", open('lib/core/app_config.dart').read()).group(1))")
+          out_dir="build/release-apks"
+          sums=$(cat "$out_dir/SHA256SUMS.txt")
+          notes=$(printf '%s\n' \
+            "- نسخه رسمی فلاتر اندروید فیلترشکن آمبرلا (سازگار با اندروید ۷ تا ۱۶ روی گوشی و تبلت)" \
+            "- رابط کاملا فارسی، راست چین، با ارقام فارسی و بدون نیم فاصله هماهنگ با نسخه ویندوز" \
+            "- موتور اتصال نسخه ۵.۹.۱۱ با تونل کامل اندروید، پروکسی سیستم، پروکسی محلی، اشتراک گذاری شبکه محلی با کد QR و زنجیره وارپ و سایفون" \
+            "- جداسازی برنامه های اندروید (عبور مستقیم همراه بانک ها و برنامه های داخلی بدون قطع فیلترشکن)" \
+            "- کاشی تنظیمات سریع اندروید، اعلان زنده سرعت، اجرای خودکار هنگام روشن شدن گوشی و پشتیبانی از VPN همیشگی" \
+            "- استفاده انحصاری از اشتراک اختصاصی حساب کاربری (همراه با دریافت امن از درگاه حساب در صورت محدودیت شبکه)" \
+            "- به روز رسانی درون برنامه ای با تشخیص خودکار معماری پردازنده و بررسی اصالت SHA-256" \
+            "" \
+            "SHA-256:" \
+            "$sums")
+          assets=("$out_dir"/UmbrellaVPN-*.apk "$out_dir/SHA256SUMS.txt")
+
+          if [[ ("$CHANNEL" == "beta" || "$CHANNEL" == "release" || "$CHANNEL" == "both") && -n "$RELEASES_TOKEN" ]]; then
+            export GH_TOKEN="$RELEASES_TOKEN"
+            beta_clean="${BETA_NUM//[^0-9]/}"
+            [[ -z "$beta_clean" ]] && beta_clean="1"
+            modes=("$CHANNEL")
+            [[ "$CHANNEL" == "both" ]] && modes=("beta" "release")
+            for mode in "${modes[@]}"; do
+              if [[ "$mode" == "beta" ]]; then
+                tag="v${version}-beta.${beta_clean}-android"
+                title="Umbrella VPN ${version} Beta ${beta_clean} - Android"
+              else
+                tag="v${version}-android"
+                title="Umbrella VPN ${version} - Android"
+              fi
+              if gh release view "$tag" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+                gh release upload "$tag" "${assets[@]}" --clobber --repo "$RELEASES_REPO"
+                gh release edit "$tag" --repo "$RELEASES_REPO" --title "$title" --notes "$notes"
+              elif [[ "$mode" == "beta" ]]; then
+                gh release create "$tag" "${assets[@]}" --repo "$RELEASES_REPO" --target main --prerelease --title "$title" --notes "$notes"
+              else
+                gh release create "$tag" "${assets[@]}" --repo "$RELEASES_REPO" --target main --title "$title" --notes "$notes"
+              fi
+              gh release view "$tag" --repo "$RELEASES_REPO" --json url,isDraft,isPrerelease,assets
+            done
+            exit 0
+          fi
+
+          if [[ "$CHANNEL" == "beta" || "$CHANNEL" == "release" || "$CHANNEL" == "both" ]]; then
+            echo "::error::RELEASES_TOKEN secret is not configured."
+            exit 1
+          fi
+
+          tag="v${version}-android"
+          if existing=$(gh release view "$tag" --repo "$SOURCE_REPO" --json isDraft 2>/dev/null); then
+            is_draft=$(python3 -c "import json,sys; print(str(json.load(sys.stdin)['isDraft']).lower())" <<<"$existing")
+            if [[ "$is_draft" != "true" ]]; then
+              tag="v${version}-draft-android"
+            fi
+          fi
+          if gh release view "$tag" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$SOURCE_REPO" --target "$COMMIT" --draft --notes "$notes"
+            gh release upload "$tag" "${assets[@]}" --clobber --repo "$SOURCE_REPO"
+          else
+            gh release create "$tag" "${assets[@]}" --repo "$SOURCE_REPO" --target "$COMMIT" --draft --title "Umbrella VPN ${version} - Android" --notes "$notes"
+          fi
+          gh release view "$tag" --repo "$SOURCE_REPO" --json url,isDraft,assets
