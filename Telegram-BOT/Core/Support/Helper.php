@@ -1079,5 +1079,109 @@ if ($Minutes > 0 && $Years === 0 && $Months === 0 && $Days === 0) $Parts[] = sel
 if ($Parts === []) return 'کمتر از یک دقیقه';
 return implode(' و ', array_slice($Parts, 0, 3));
 }
+
+/**
+ * بازگردانی بدون افت متن های UTF-8 که به اشتباه با کدگذاری Windows-1252 یا
+ * ISO-8859-1 خوانده یا ذخیره شده اند (مانند تبدیل به «🟢روشن» و «ناموفق»).
+ * متن های فارسی، انگلیسی، ایموجی و نشانه های سالم دست نخورده برمی گردند.
+ */
+public static function repairMojibake(string $Text): string {
+if ($Text === '') return '';
+
+if (str_starts_with($Text, "\xEF\xBB\xBF")) {
+$Text = substr($Text, 3);
+}
+
+if ($Text === '' || !str_contains($Text, "\xC3") || preg_match('//u', $Text) !== 1) {
+return $Text;
+}
+
+if (preg_match('/\xC3[\x82-\xB4]/', $Text) !== 1) {
+return $Text;
+}
+
+$Pattern = '/[\x{0080}-\x{00FF}\x{20AC}\x{201A}\x{0192}\x{201E}\x{2026}\x{2020}\x{2021}'
+. '\x{02C6}\x{2030}\x{0160}\x{2039}\x{0152}\x{017D}\x{2018}\x{2019}\x{201C}\x{201D}'
+. '\x{2022}\x{2013}\x{2014}\x{02DC}\x{2122}\x{0161}\x{203A}\x{0153}\x{017E}\x{0178}]+/u';
+
+return preg_replace_callback(
+$Pattern,
+static fn (array $Match): string => self::decodeMojibakeRun($Match[0]),
+$Text
+) ?? $Text;
+}
+
+private static function decodeMojibakeRun(string $Segment): string {
+$Current = $Segment;
+
+for ($Pass = 0; $Pass < 3; $Pass++) {
+if (!str_contains($Current, "\xC3") || preg_match('/\xC3[\x82-\xB4]/', $Current) !== 1) {
+break;
+}
+
+$Decoded = self::decodeMojibakeOnce($Current);
+
+if ($Decoded === null) {
+break;
+}
+
+$Current = $Decoded;
+}
+
+if (str_starts_with($Current, "\xEF\xBB\xBF")) {
+$Current = substr($Current, 3);
+}
+
+if ($Current === $Segment) {
+return $Segment;
+}
+
+if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|\xC2[\x80-\x9F]|\xEF\xBF\xBD/', $Current) === 1) {
+return $Segment;
+}
+
+return $Current;
+}
+
+private static function decodeMojibakeOnce(string $Segment): ?string {
+if (preg_match('/^[\x00-\x7F\x{0080}-\x{00FF}\x{20AC}\x{201A}\x{0192}\x{201E}\x{2026}\x{2020}\x{2021}'
+. '\x{02C6}\x{2030}\x{0160}\x{2039}\x{0152}\x{017D}\x{2018}\x{2019}\x{201C}\x{201D}'
+. '\x{2022}\x{2013}\x{2014}\x{02DC}\x{2122}\x{0161}\x{203A}\x{0153}\x{017E}\x{0178}]+$/u', $Segment) !== 1) {
+return null;
+}
+
+$Raw = strtr($Segment, self::cp1252ToByteMap());
+
+if (preg_match('/[\xC2-\xF4]/', $Raw) !== 1 || preg_match('//u', $Raw) !== 1) {
+return null;
+}
+
+return $Raw === $Segment ? null : $Raw;
+}
+
+private static function cp1252ToByteMap(): array {
+static $Map = null;
+
+if ($Map !== null) {
+return $Map;
+}
+
+$Map = [
+"\u{20AC}" => "\x80", "\u{201A}" => "\x82", "\u{0192}" => "\x83", "\u{201E}" => "\x84",
+"\u{2026}" => "\x85", "\u{2020}" => "\x86", "\u{2021}" => "\x87", "\u{02C6}" => "\x88",
+"\u{2030}" => "\x89", "\u{0160}" => "\x8A", "\u{2039}" => "\x8B", "\u{0152}" => "\x8C",
+"\u{017D}" => "\x8E", "\u{2018}" => "\x91", "\u{2019}" => "\x92", "\u{201C}" => "\x93",
+"\u{201D}" => "\x94", "\u{2022}" => "\x95", "\u{2013}" => "\x96", "\u{2014}" => "\x97",
+"\u{02DC}" => "\x98", "\u{2122}" => "\x99", "\u{0161}" => "\x9A", "\u{203A}" => "\x9B",
+"\u{0153}" => "\x9C", "\u{017E}" => "\x9E", "\u{0178}" => "\x9F",
+];
+
+for ($Byte = 0x80; $Byte <= 0xFF; $Byte++) {
+$Utf8_Char = chr(0xC0 | ($Byte >> 6)) . chr(0x80 | ($Byte & 0x3F));
+$Map[$Utf8_Char] = chr($Byte);
+}
+
+return $Map;
+}
 }
 ?>

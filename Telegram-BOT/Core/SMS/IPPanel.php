@@ -79,6 +79,9 @@ $Message = "{$Name}\n" . ltrim($Message);
 }
 
 $Signature = 'سرور آمبرلا';
+if (method_exists('Helper', 'repairMojibake')) {
+$Message = Helper::repairMojibake($Message);
+}
 $Message = rtrim($Message);
 
 if (!str_contains($Message, $Signature)) {
@@ -120,7 +123,7 @@ $Url = self::SEND_URL;
 self::throttle();
 
 $Result = HttpClient::post($Url, $Payload, [
-'Content-Type' => 'application/json',
+'Content-Type' => 'application/json; charset=utf-8',
 'Accept' => 'application/json',
 'Authorization' => $Api_Key,
 ]);
@@ -200,7 +203,7 @@ $Url = self::SEND_URL;
 self::throttle();
 
 $Result = HttpClient::post($Url, $Payload, [
-'Content-Type' => 'application/json',
+'Content-Type' => 'application/json; charset=utf-8',
 'Accept' => 'application/json',
 'Authorization' => $Api_Key,
 ]);

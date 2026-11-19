@@ -83,7 +83,19 @@ TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, $Se
 
 public static function isRobotOn(): bool {
 $Status = Repository::getSetting('Robot_Status', '🟢روشن');
-return is_string($Status) && !str_contains($Status, 'خاموش');
+
+if (!is_string($Status)) {
+return false;
+}
+
+if (method_exists('Helper', 'repairMojibake')) {
+$Status = Helper::repairMojibake($Status);
+}
+
+$Trimmed = trim($Status);
+$Lower = strtolower($Trimmed);
+
+return !str_contains($Trimmed, 'خاموش') && $Lower !== 'off' && $Lower !== '0' && $Lower !== 'false';
 }
 
 public static function offlineText(Context $Context, string $Section = 'منوی خدمات ربات'): string {

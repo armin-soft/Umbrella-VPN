@@ -41,7 +41,7 @@ require_once dirname(__DIR__, 2) . '/Config/Environment.php';
  *   GET  app/ping
  */
 final class AppGateway {
-private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
 private function __construct() {
 }
 
@@ -1560,17 +1560,44 @@ return array_merge($_GET, $_POST);
 
 private static function ok(array $Payload): void {
 http_response_code(200);
-echo json_encode($Payload + ['ok' => true], self::JSON_FLAGS);
+echo json_encode(self::sanitizePayload($Payload) + ['ok' => true], self::JSON_FLAGS);
 exit;
 }
 
 private static function fail(int $Status, string $Code, string $Message, array $Extra = []): void {
 http_response_code($Status);
+$Clean_Message = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Message) : $Message;
 echo json_encode(
-array_merge(['ok' => false, 'error' => $Code, 'message' => $Message], $Extra),
+array_merge(['ok' => false, 'error' => $Code, 'message' => $Clean_Message], self::sanitizePayload($Extra)),
 self::JSON_FLAGS
 );
 exit;
+}
+
+private static function sanitizePayload(array $Data): array {
+if (!method_exists('Helper', 'repairMojibake')) {
+return $Data;
+}
+
+$Opaque_Keys = [
+'token' => true, 'secret' => true, 'challenge' => true, 'device_id' => true,
+'uuid' => true, 'sub_url' => true, 'subscription_url' => true, 'url' => true,
+'emergency_url' => true, 'channel_url' => true, 'support_url' => true,
+];
+
+foreach ($Data as $Key => $Value) {
+if (is_string($Key) && isset($Opaque_Keys[$Key])) continue;
+
+if (is_string($Value)) {
+$Data[$Key] = Helper::repairMojibake($Value);
+}
+
+elseif (is_array($Value)) {
+$Data[$Key] = self::sanitizePayload($Value);
+}
+}
+
+return $Data;
 }
 }
 ?>

@@ -19,12 +19,20 @@ $File = dirname(__DIR__, 1) . '/.env';
 
 if (!is_file($File)) return;
 foreach (file($File, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $Line) {
+if (str_starts_with($Line, "\xEF\xBB\xBF")) {
+$Line = substr($Line, 3);
+}
+
 $Line = trim($Line);
 
 if ($Line === '' || str_starts_with($Line, '#') || !str_contains($Line, '=')) continue;
 [$Name, $Value] = explode('=', $Line, 2);
 $Name = trim($Name);
 $Value = trim($Value);
+
+if ($Value !== '' && str_starts_with($Value, "\xEF\xBB\xBF")) {
+$Value = trim(substr($Value, 3));
+}
 
 if ($Name !== '' && !array_key_exists($Name, $_SERVER)) {
 $_SERVER[$Name] = $Value;

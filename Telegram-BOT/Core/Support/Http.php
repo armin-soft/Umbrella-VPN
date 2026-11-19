@@ -93,10 +93,10 @@ if ($Method === 'POST') {
 curl_setopt($Ch, CURLOPT_POST, true);
 
 if (is_array($Body) && !array_is_list($Body)) {
-curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE));
+curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
 
 if (!self::hasHeader($Header_List, 'Content-Type')) {
-$Header_List[] = 'Content-Type: application/json';
+$Header_List[] = 'Content-Type: application/json; charset=utf-8';
 curl_setopt($Ch, CURLOPT_HTTPHEADER, $Header_List);
 }
 }
@@ -110,10 +110,10 @@ elseif ($Method === 'PATCH' || $Method === 'DELETE') {
 curl_setopt($Ch, CURLOPT_CUSTOMREQUEST, $Method);
 
 if ($Method === 'PATCH' && is_array($Body) && !array_is_list($Body)) {
-curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE));
+curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
 
 if (!self::hasHeader($Header_List, 'Content-Type')) {
-$Header_List[] = 'Content-Type: application/json';
+$Header_List[] = 'Content-Type: application/json; charset=utf-8';
 curl_setopt($Ch, CURLOPT_HTTPHEADER, $Header_List);
 }
 }

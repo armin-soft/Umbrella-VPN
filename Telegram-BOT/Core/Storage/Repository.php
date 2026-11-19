@@ -480,15 +480,36 @@ $Value = Database::getInstance()->scalar(
 [$Key]
 );
 
-return $Value === null ? $Default : $Value;
+if ($Value === null) {
+return $Default;
+}
+
+if (is_string($Value) && !self::isOpaqueSettingKey($Key) && method_exists('Helper', 'repairMojibake')) {
+return Helper::repairMojibake($Value);
+}
+
+return $Value;
 }
 
 public static function setSetting(string $Key, mixed $Value): void {
+$Text = (string)$Value;
+
+if (!self::isOpaqueSettingKey($Key) && method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+
 Database::getInstance()->execute(
 'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?)
 ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
-[$Key, (string)$Value]
+[$Key, $Text]
 );
+}
+
+private static function isOpaqueSettingKey(string $Key): bool {
+return $Key === 'App_Gateway_Secret'
+|| str_ends_with($Key, '_Secret')
+|| str_ends_with($Key, '_Token')
+|| str_starts_with($Key, 'DailyNotice_');
 }
 
 
@@ -977,7 +998,12 @@ $Row = Database::getInstance()->fetch(
 [$Code]
 );
 
-return $Row === null ? null : (string)($Row['Template'] ?? null);
+if ($Row === null || !isset($Row['Template'])) {
+return null;
+}
+
+$Template = (string)$Row['Template'];
+return method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Template) : $Template;
 }
 
 

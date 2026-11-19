@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/Database/Database.php';
+require_once dirname(__DIR__) . '/Support/Helper.php';
 require_once __DIR__ . '/Schema-App.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
@@ -125,6 +126,7 @@ self::migrateSessionTicketColumns();
 self::migrateLegacyRevenue();
 self::migrateHistorySources();
 self::ensureTables();
+self::migrateUtf8AndMojibake();
 }
 
 private static function migrateSessionTicketColumns(): void {
@@ -453,6 +455,7 @@ error_log("[Umbrella-Bot][Schema-Seed] SMS template failed: " . $Error->getMessa
 private static function seedSettings(): void {
 $Database = Database::getInstance();
 $Settings = [
+['Robot_Status', '🟢روشن'],
 ['Daily_Report_Enabled', '1'],
 ['Daily_Report_Time', '00:00'],
 ['Expiry_Warning_3Days', '1'],
@@ -474,6 +477,186 @@ error_log("[Umbrella-Bot][Schema-Seed] Setting failed: " . $Error->getMessage())
 }
 }
 
+public static function normalizeRobotStatus(string $Value): string {
+$Clean = trim(method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Value) : $Value);
+$Lower = strtolower($Clean);
+
+if ($Clean !== '' && (str_contains($Clean, 'خاموش') || $Lower === 'off' || $Lower === '0' || $Lower === 'false')) {
+return '🔴خاموش';
+}
+
+return '🟢روشن';
+}
+
+/**
+ * تعمیر یک باره کدگذاری utf8mb4 و پاکسازی تمام رشته های به هم ریخته قدیمی
+ * (از جمله مقدار پیش فرض ستون SMS_Logs.Status و کلید Robot_Status در Settings).
+ */
+private static function migrateUtf8AndMojibake(): void {
+if ((string)self::safeSetting('Utf8_Mojibake_Migration_v1') === '1') return;
+
+try {
+$Database = Database::getInstance();
+$Db_Name = Environment::getDatabaseName();
+
+if ($Db_Name !== '') {
+$Safe_Db = str_replace('`', '', $Db_Name);
+try {
+$Database->connection()->exec("ALTER DATABASE `{$Safe_Db}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+catch (Throwable) {}
+}
+
+$Non_Utf8_Tables = $Database->fetchAll(
+"SELECT TABLE_NAME AS t FROM information_schema.tables
+WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+AND (TABLE_COLLATION IS NULL OR TABLE_COLLATION NOT LIKE 'utf8mb4\\_%')"
+);
+
+foreach ($Non_Utf8_Tables as $Row) {
+$Table = (string)($Row['t'] ?? '');
+if ($Table === '' || preg_match('/^[A-Za-z0-9_]+$/', $Table) !== 1) continue;
+try {
+$Database->connection()->exec("ALTER TABLE `{$Table}` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+catch (Throwable $Convert_Error) {
+error_log("[Umbrella-Bot][UTF8-Migration] Failed to convert table {$Table}: " . $Convert_Error->getMessage());
+}
+}
+
+$Sms_Default = $Database->scalar(
+"SELECT COLUMN_DEFAULT FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name = 'SMS_Logs' AND column_name = 'Status'"
+);
+
+if ($Sms_Default !== null && (string)$Sms_Default !== 'ناموفق') {
+try {
+$Database->connection()->exec(
+"ALTER TABLE `SMS_Logs` MODIFY COLUMN `Status` VARCHAR(20) NOT NULL DEFAULT 'ناموفق'"
+);
+}
+catch (Throwable $Default_Error) {
+error_log('[Umbrella-Bot][UTF8-Migration] Failed to update SMS_Logs.Status default: ' . $Default_Error->getMessage());
+}
+}
+
+$Targets = [
+'Settings' => ['pk' => 'Key', 'columns' => ['Value']],
+'SMS_Logs' => ['pk' => 'ID', 'columns' => ['Status', 'Message']],
+'SMS_Templates' => ['pk' => 'ID', 'columns' => ['Name', 'Template']],
+'Users' => ['pk' => 'ID', 'columns' => [
+'First_Name', 'Full_Name', 'Gender', 'Operator', 'Rank_Title',
+'Client_Status', 'Subscription', 'Package_Duration',
+'Package_Start_Date', 'Expiration_Date', 'Deactivation_Message',
+'Server_Comment', 'Tags',
+]],
+'User_Sessions' => ['pk' => 'Telegram_ID', 'columns' => ['Flow', 'Ticket_Subject', 'Ticket_Description']],
+'Transactions' => ['pk' => 'ID', 'columns' => ['Description']],
+'Subscription_Logs' => ['pk' => 'ID', 'columns' => ['Plan_Name', 'Server_Response']],
+'Tickets' => ['pk' => 'ID', 'columns' => ['Subject']],
+'Ticket_Messages' => ['pk' => 'ID', 'columns' => ['Message']],
+'Notifications' => ['pk' => 'ID', 'columns' => ['Title', 'Message']],
+'Admin_Logs' => ['pk' => 'ID', 'columns' => ['Details']],
+'Ratings' => ['pk' => 'ID', 'columns' => ['Comment']],
+'Versions' => ['pk' => 'ID', 'columns' => ['Changes']],
+'App_Devices' => ['pk' => 'ID', 'columns' => ['Device_Name', 'Platform']],
+'App_SignIn_Requests' => ['pk' => 'ID', 'columns' => ['Device_Name', 'Platform']],
+'App_Notifications' => ['pk' => 'ID', 'columns' => ['Title', 'Body']],
+];
+
+foreach ($Targets as $Table => $Spec) {
+self::repairTableMojibake($Database, $Table, $Spec['pk'], $Spec['columns']);
+}
+
+$Robot_Status = self::safeSetting('Robot_Status');
+
+if ($Robot_Status !== null) {
+$Normalized_Status = self::normalizeRobotStatus($Robot_Status);
+
+if ($Robot_Status !== $Normalized_Status) {
+$Database->execute('UPDATE `Settings` SET `Value` = ? WHERE `Key` = ?', [$Normalized_Status, 'Robot_Status']);
+}
+}
+
+else {
+$Database->execute('INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)', ['Robot_Status', '🟢روشن']);
+}
+
+$Database->execute(
+'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
+['Utf8_Mojibake_Migration_v1', '1']
+);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][UTF8-Migration] Migration failed: ' . $Error->getMessage());
+}
+}
+
+private static function repairTableMojibake(Database $Database, string $Table, string $Primary_Key, array $Columns): void {
+try {
+$Existing_Rows = $Database->fetchAll(
+'SELECT COLUMN_NAME AS c FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?',
+[$Table]
+);
+
+if ($Existing_Rows === []) return;
+$Available = [];
+
+foreach ($Existing_Rows as $Row) {
+$Available[strtolower((string)($Row['c'] ?? ''))] = true;
+}
+
+if (!isset($Available[strtolower($Primary_Key)])) return;
+$Active_Cols = array_values(array_filter(
+$Columns,
+static fn (string $Col): bool => isset($Available[strtolower($Col)])
+));
+
+if ($Active_Cols === []) return;
+$Select_Cols = array_merge(["`{$Primary_Key}`"], array_map(static fn (string $Col): string => "`{$Col}`", $Active_Cols));
+$Non_Ascii_Where = implode(' OR ', array_map(
+static fn (string $Col): string => "(`{$Col}` IS NOT NULL AND CHAR_LENGTH(`{$Col}`) < OCTET_LENGTH(`{$Col}`))",
+$Active_Cols
+));
+$Sql = 'SELECT ' . implode(', ', $Select_Cols) . " FROM `{$Table}` WHERE {$Non_Ascii_Where}";
+
+if ($Table === 'Settings') {
+$Sql .= " AND `Key` NOT IN ('App_Gateway_Secret', 'Webhook_State') AND `Key` NOT LIKE 'DailyNotice\\_%'";
+}
+
+$Rows = $Database->fetchAll($Sql);
+
+foreach ($Rows as $Row) {
+$Set_Parts = [];
+$Params = [];
+
+foreach ($Active_Cols as $Col) {
+$Original = $Row[$Col] ?? null;
+
+if (!is_string($Original) || $Original === '') continue;
+$Repaired = Helper::repairMojibake($Original);
+
+if ($Repaired !== $Original) {
+$Set_Parts[] = "`{$Col}` = ?";
+$Params[] = $Repaired;
+}
+}
+
+if ($Set_Parts === []) continue;
+$Params[] = $Row[$Primary_Key];
+$Database->execute(
+"UPDATE `{$Table}` SET " . implode(', ', $Set_Parts) . " WHERE `{$Primary_Key}` = ?",
+$Params
+);
+}
+}
+
+catch (Throwable $Error) {
+error_log("[Umbrella-Bot][UTF8-Migration] Table {$Table} scan skipped: " . $Error->getMessage());
+}
+}
+
 private static function ensureDatabase(): void {
 $Name = Environment::getDatabaseName();
 
@@ -486,11 +669,17 @@ return;
 catch (PDOException) {
 }
 
+$Init_Options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+
+if (defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
+$Init_Options[PDO::MYSQL_ATTR_INIT_COMMAND] = 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci';
+}
+
 $Server = new PDO(
 sprintf('mysql:host=%s;port=%d;charset=utf8mb4', Environment::getDatabaseHost(), Environment::getDatabasePort()),
 Environment::getDatabaseUser(),
 Environment::getDatabasePassword(),
-[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+$Init_Options
 );
 
 $Safe = str_replace('`', '', $Name);

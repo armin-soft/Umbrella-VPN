@@ -1125,6 +1125,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '💾در حال ته�
 
 $Config = Database::getConfig();
 $Host = (string)($Config['host'] ?? 'localhost');
+$Port = (int)($Config['port'] ?? 3306);
 $Dbname = (string)($Config['database'] ?? '');
 $User = (string)($Config['user'] ?? '');
 $Pass = (string)($Config['password'] ?? '');
@@ -1138,8 +1139,9 @@ if (!is_dir($Backup_Dir)) {
 $Filename = 'backup_' . $Dbname . '_' . date('Y-m-d_H-i-s') . '.sql';
 $Filepath = $Backup_Dir . '/' . $Filename;
 $Command = sprintf(
-"mysqldump --host=%s --user=%s --password=%s --single-transaction --routines --triggers %s > %s 2>&1",
+"mysqldump --default-character-set=utf8mb4 --host=%s --port=%d --user=%s --password=%s --single-transaction --routines --triggers %s > %s 2>&1",
 escapeshellarg($Host),
+$Port > 0 ? $Port : 3306,
 escapeshellarg($User),
 escapeshellarg($Pass),
 escapeshellarg($Dbname),
@@ -1151,7 +1153,11 @@ $Return_Var = 0;
 exec($Command, $Output, $Return_Var);
 
 if ($Return_Var !== 0 || !file_exists($Filepath) || filesize($Filepath) === 0) {
-$Error_Msg = implode("\n", array_slice($Output, 0, 5));
+$Error_Raw = $Output !== [] ? implode("\n", array_slice($Output, 0, 5)) : (is_file($Filepath) ? (string)file_get_contents($Filepath, false, null, 0, 500) : '');
+if (is_file($Filepath)) {
+@unlink($Filepath);
+}
+$Error_Msg = trim($Error_Raw);
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'مدیریت دیتابیس') . "❌خطا: تهیه نسخه پشتیبان ناموفق بود.\n⚠️علت: ابزار پشتیبان‌گیری دیتابیس با خطا مواجه شد.\n💬جزئیات: " . mb_substr($Error_Msg, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🔁تلاش مجدد', 'callback_data' => 'پشتیبان گیری دیتابیس']],
 Menu::back('منوی قبلی', 'منوی سیستم'), Menu::adminHome(),

@@ -185,7 +185,7 @@ if ($Rial === null || $Rial < 1000 || !self::isConfigured()) return self::failur
 try {
 $Response = HttpClient::post(self::base() . 'v4/payment/feeCalculation.json', [
 'merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'currency' => 'IRR',
-], ['Content-Type' => 'application/json', 'Accept' => 'application/json']);
+], ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json']);
 } catch (Throwable) { return self::failure(-1000, 'transport', 'feeCalculation'); }
 $Result = self::parse($Response, 'feeCalculation');
 if (!$Result['Ok']) return $Result;
@@ -219,7 +219,7 @@ $Rial = $Quote['Final_Rial'];
 $Payload = ['merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'currency' => 'IRR', 'callback_url' => $Call_Back_Url, 'description' => $Description];
 if ($Phone_Number !== '') $Payload['metadata'] = ['mobile' => $Phone_Number];
 // Never retry request automatically: a lost response may already have created an order.
-try { $Response = HttpClient::post(self::requestUrl(), $Payload, ['Content-Type' => 'application/json', 'Accept' => 'application/json']); }
+try { $Response = HttpClient::post(self::requestUrl(), $Payload, ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json']); }
 catch (Throwable) { self::$RequestError = self::failure(-1000, 'transport', 'request'); return null; }
 $Result = self::parse($Response, 'request');
 if (!$Result['Ok']) { self::$RequestError = $Result; return null; }
@@ -242,7 +242,7 @@ public static function verify(float $Amount_Toman, string $Authority): array {
 $Rial = self::rial($Amount_Toman);
 if ($Rial === null || !self::isConfigured() || !self::validAuthority($Authority)) return self::failure(-1002, 'validation', 'verify');
 for ($Attempt = 1; $Attempt <= 2; $Attempt++) {
-try { $Response = HttpClient::post(self::verifyUrl(), ['merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'authority' => $Authority], ['Content-Type' => 'application/json', 'Accept' => 'application/json']); }
+try { $Response = HttpClient::post(self::verifyUrl(), ['merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'authority' => $Authority], ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json']); }
 catch (Throwable) { $Response = ['StatusCode' => 0, 'Error' => 'transport']; }
 $Result = self::parse($Response, 'verify');
 if ($Result['Ok'] || ($Result['Kind'] ?? '') === 'api' || $Attempt === 2) return $Result;

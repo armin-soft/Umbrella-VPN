@@ -45,6 +45,9 @@ return trim($Text);
 
 public static function md(string $Text): string {
 if ($Text === '') return $Text;
+if (method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
 $Text = str_replace(["\r\n", "\r"], "\n", $Text);
 // Every message goes through here, so this is the one place that guarantees
 // Persian digits — code spans, links and @usernames keep their Latin ones.
@@ -345,7 +348,12 @@ return $Clean === [] ? [] : ['inline_keyboard' => $Clean];
 public static function answerCallbackQuery(string $Callback_Query_ID, string $Text = '', bool $Show_Alert = false): array {
 $Payload = ['callback_query_id' => $Callback_Query_ID, 'show_alert' => $Show_Alert];
 
-if ($Text !== '') $Payload['text'] = Helper::digitsToPersian($Text);
+if ($Text !== '') {
+if (method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+$Payload['text'] = Helper::digitsToPersian($Text);
+}
 return self::call('answerCallbackQuery', $Payload);
 }
 
@@ -365,7 +373,7 @@ $Fields = [
 'disable_web_page_preview' => true,
 ];
 
-if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup);
+if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 $Response = HttpClient::postMultipart(self::url('sendPhoto'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
@@ -392,7 +400,7 @@ $Fields = [
 'disable_web_page_preview' => true,
 ];
 
-if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup);
+if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 $Response = HttpClient::postMultipart(self::url('sendDocument'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
@@ -469,7 +477,8 @@ continue;
 }
 }
 
-$Text = Helper::digitsToPersian($Button['text']);
+$Raw_Button_Text = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Button['text']) : $Button['text'];
+$Text = Helper::digitsToPersian($Raw_Button_Text);
 
 // متن دکمه حداکثر ۶۴ کاراکتر است.
 if (mb_strlen($Text) > 64) $Text = mb_substr($Text, 0, 61) . '…';

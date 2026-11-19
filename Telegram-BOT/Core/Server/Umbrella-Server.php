@@ -14,7 +14,7 @@ return self::JSON_HEADERS + ['Hiddify-API-Key' => Environment::getUmbrellaApiKey
 }
 
 public static function postHeaders(): array {
-return self::JSON_HEADERS + ['Content-Type' => 'application/json', 'Hiddify-API-Key' => Environment::getUmbrellaApiKey()];
+return self::JSON_HEADERS + ['Content-Type' => 'application/json; charset=utf-8', 'Hiddify-API-Key' => Environment::getUmbrellaApiKey()];
 }
 
 public static function createUser(string $Name, int|string $Usage_Limit_GB, int $Package_Days, string $Comment, int $Telegram_ID): array {

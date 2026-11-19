@@ -40,6 +40,10 @@ PDO::ATTR_PERSISTENT => false,
 PDO::ATTR_STRINGIFY_FETCHES => false,
 ];
 
+if (defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
+$Options[PDO::MYSQL_ATTR_INIT_COMMAND] = 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci';
+}
+
 self::$Connection = new PDO($DSN, Environment::getDatabaseUser(), Environment::getDatabasePassword(), $Options);
 return self::$Connection;
 }

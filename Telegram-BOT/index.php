@@ -9,6 +9,11 @@ echo 'PHP 8.2+ is required.';
 exit;
 }
 
+@ini_set('default_charset', 'UTF-8');
+if (function_exists('mb_internal_encoding')) {
+mb_internal_encoding('UTF-8');
+}
+
 require_once __DIR__ . '/Bot/Dispatcher.php';
 require_once __DIR__ . '/Core/Database/Schema.php';
 require_once __DIR__ . '/Config/Environment.php';
