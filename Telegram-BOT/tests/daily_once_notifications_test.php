@@ -47,7 +47,7 @@ $Out[] = $U;
 }
 return $Out;
 }
-if (str_contains($Sql, 'Expiration_Time_Stamp` > ?')) {
+if (str_contains($Sql, 'Expiration_Time_Stamp` <= ?')) {
 $Lo = (int)$Args[0];
 $Hi = (int)$Args[1];
 $Out = [];
