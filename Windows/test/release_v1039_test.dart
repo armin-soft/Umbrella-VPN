@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -289,9 +290,9 @@ void main() {
         'body': '- ارتقای هسته به 5.9.11\n- رفع کامل ماندن CLI پس از خروج',
         'assets': <Map<String, dynamic>>[
           <String, dynamic>{
-            'name': 'UmbrellaVPN-Setup-1.0.40.exe',
+            'name': 'UmbrellaVPN-Setup-1.0.40-x64.exe',
             'browser_download_url':
-                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40.exe',
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
             'size': 25165824,
             'digest': 'sha256:$sampleDigest',
           },
@@ -311,12 +312,12 @@ void main() {
         'tag_name': 'v1.0.41-beta.1-windows',
         'draft': false,
         'prerelease': true,
-        'body': '* کانال بتا آزمایشی',
+        'body': '* کانال بتا آزمایشی\nSHA-256: `$sampleDigest`',
         'assets': <Map<String, dynamic>>[
           <String, dynamic>{
-            'name': 'UmbrellaVPN-Setup-1.0.41-beta.1.exe',
+            'name': 'UmbrellaVPN-Setup-1.0.41-beta.1-x64.exe',
             'browser_download_url':
-                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.41-beta.1/UmbrellaVPN-Setup-1.0.41-beta.1.exe',
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.41-beta.1-windows/UmbrellaVPN-Setup-1.0.41-beta.1-x64.exe',
             'size': 26000000,
           },
         ],
@@ -336,6 +337,9 @@ void main() {
       expect(beta, isNotNull);
       expect(beta!.version, '1.0.41-beta.1');
       expect(beta.preRelease, isTrue);
+      expect(beta.sha256, sampleDigest);
+      expect(beta.changelogItems, <String>['کانال بتا آزمایشی']);
+      expect(UpdateInfo.normalizeVersion('v1.0.41-nightly.2-windows'), '1.0.41-nightly.2');
 
       final UpdateInfo? draft = UpdateService.parseGithubRelease(
         <String, dynamic>{
@@ -391,35 +395,52 @@ void main() {
             );
           }),
         );
+        final File staleExe = File(
+          '${tempDir.path}${Platform.pathSeparator}UmbrellaVPN-Setup-1.0.38-x64.exe',
+        )..writeAsBytesSync(<int>[1, 2, 3]);
         int lastReceived = 0;
         final File? okFile = await okService.download(
           UpdateInfo(
             version: '1.0.40',
             url:
-                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
             sha256: validSha,
             sizeBytes: payload.length,
           ),
           targetDir: tempDir,
-          onProgress: (double _, int received, int __) =>
+          onProgress: (double _, int received, int _) =>
               lastReceived = received,
         );
         expect(okFile, isNotNull);
         expect(await okFile!.length(), payload.length);
         expect(lastReceived, payload.length);
+        expect(await staleExe.exists(), isFalse);
         await okFile.delete();
+
+        // نشانی غیرامن http باید پیش از شبکه رد شود.
+        final File? insecure = await okService.download(
+          UpdateInfo(
+            version: '1.0.40',
+            url:
+                'http://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
+            sha256: validSha,
+          ),
+          targetDir: tempDir,
+          onProgress: (_, _, _) {},
+        );
+        expect(insecure, isNull);
 
         // چک سام نامعتبر باید رد و فایل پاک شود.
         final File? badFile = await okService.download(
           UpdateInfo(
             version: '1.0.40',
             url:
-                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
             sha256: '0' * 64,
             sizeBytes: payload.length,
           ),
           targetDir: tempDir,
-          onProgress: (_, __, ___) {},
+          onProgress: (_, _, _) {},
         );
         expect(badFile, isNull);
 
@@ -444,10 +465,10 @@ void main() {
           const UpdateInfo(
             version: '1.0.40',
             url:
-                'https://github.com/armin-soft/Umbrella-VPN/releases/download/v1.0.40/UmbrellaVPN-Setup-1.0.40.exe',
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
           ),
           targetDir: tempDir,
-          onProgress: (_, __, ___) {},
+          onProgress: (_, _, _) {},
           isCancelled: () => cancelFlag,
         );
         expect(cancelled, isNull);
@@ -859,6 +880,85 @@ void main() {
       for (final String k in NetworkDns.presets.keys) {
         expect(NetworkDns.iconFor(k).codePoint, greaterThan(0));
       }
+    });
+
+    test('مخزن رسمی Umbrella-VPN-Releases، آیکون گرد شفاف نصب کننده و هماهنگی نسخه نهایی برقرار است', () {
+      expect(
+        AppConfig.releaseApiUrl,
+        'https://api.github.com/repos/armin-soft/Umbrella-VPN-Releases/releases/latest',
+      );
+      expect(
+        AppConfig.releasesListApiUrl,
+        'https://api.github.com/repos/armin-soft/Umbrella-VPN-Releases/releases?per_page=20',
+      );
+      expect(
+        AppConfig.releasesPageUrl,
+        'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/latest',
+      );
+      expect(
+        AppConfig.allReleasesPageUrl,
+        'https://github.com/armin-soft/Umbrella-VPN-Releases/releases',
+      );
+
+      final String iss = File('installer/umbrella.iss').readAsStringSync();
+      expect(iss, contains('WizardImageAlphaFormat=defined'));
+      expect(
+        iss,
+        contains(
+          'WizardSmallImageFile=wizard-small.bmp,wizard-small-150.bmp,wizard-small-200.bmp,wizard-small-250.bmp',
+        ),
+      );
+      expect(
+        iss,
+        contains('https://github.com/armin-soft/Umbrella-VPN-Releases/releases'),
+      );
+      expect(iss, contains('ClearLoopbackProxy'));
+
+      // تمام آیکون های کوچک ویزارد نصب باید ۳۲ بیتی BGRA با گوشه های کاملا شفاف باشند.
+      for (final (String file, int expectedSize) in <(String, int)>[
+        ('installer/wizard-small.bmp', 55),
+        ('installer/wizard-small-150.bmp', 83),
+        ('installer/wizard-small-200.bmp', 110),
+        ('installer/wizard-small-250.bmp', 138),
+      ]) {
+        final Uint8List bytes = File(file).readAsBytesSync();
+        final ByteData bd = ByteData.sublistView(bytes);
+        expect(bytes[0], 0x42); // 'B'
+        expect(bytes[1], 0x4D); // 'M'
+        final int offset = bd.getUint32(10, Endian.little);
+        final int w = bd.getInt32(18, Endian.little);
+        final int h = bd.getInt32(22, Endian.little);
+        final int bpp = bd.getUint16(28, Endian.little);
+        final int comp = bd.getUint32(30, Endian.little);
+        expect(w, expectedSize, reason: file);
+        expect(h, expectedSize, reason: file);
+        expect(bpp, 32, reason: file);
+        expect(comp, 0, reason: file);
+        int alphaAt(int x, int y) {
+          final int row = h - 1 - y;
+          return bytes[offset + (row * w + x) * 4 + 3];
+        }
+        expect(alphaAt(0, 0), 0, reason: '$file top-left corner');
+        expect(alphaAt(w - 1, 0), 0, reason: '$file top-right corner');
+        expect(alphaAt(0, h - 1), 0, reason: '$file bottom-left corner');
+        expect(alphaAt(w - 1, h - 1), 0, reason: '$file bottom-right corner');
+        expect(alphaAt(w ~/ 2, h ~/ 2), 255, reason: '$file center');
+      }
+
+      // نسخه Runner.rc و THIRD-PARTY-NOTICES و آیکون دایره ای صفحه درباره.
+      final String runnerRc =
+          File('windows/runner/Runner.rc').readAsStringSync();
+      expect(runnerRc, contains('FILEVERSION 1,0,39,0'));
+      expect(runnerRc, contains('VALUE "FileVersion", "1.0.39.0"'));
+      expect(runnerRc, contains('VALUE "CompanyName", "Umbrella"'));
+
+      final String notices = File('THIRD-PARTY-NOTICES.txt').readAsStringSync();
+      expect(notices, contains('5.9.11'));
+
+      final String aboutPage =
+          File('lib/ui/pages/about_page.dart').readAsStringSync();
+      expect(aboutPage, contains('BoxShape.circle'));
+      expect(aboutPage, contains('ClipOval'));
     });
   });
 }

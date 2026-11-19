@@ -54,8 +54,11 @@ if ($Final_Price <= 0) {
 error_log('[Umbrella-Bot][AutoRenew] Plan price is not configured for key ' . $Plan);
 
 try {
+$Admin_Id = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
+
+if ($Admin_Id > 0 && Repository::claimDailyNotice('autorenew_price_missing', $Plan)) {
 TelegramClient::sendSystemMessage(
-Environment::getAdminUserId(),
+$Admin_Id,
 Helper::adminGreetingNamed('', 'تمدید خودکار')
 . "⚠️*تمدید خودکار انجام نشد.*\n"
 . "├─📦پلن: {$Plan_Name}\n"
@@ -64,6 +67,7 @@ Helper::adminGreetingNamed('', 'تمدید خودکار')
 . Helper::adminFooter()
 );
 }
+}
 
 catch (Throwable) {}
 continue;
@@ -71,19 +75,25 @@ continue;
 
 if ($Balance < $Final_Price) {
 $User_Now = Repository::getUser($User_ID);
+$User_Chat_ID = (int)($User_Now['Chat_ID'] ?? 0);
+
+// حداکثر یک اعلان تمدید در شبانه روز برای هر کاربر (مشترک با یادآور انقضا).
+if ($User_Chat_ID > 0 && Repository::claimDailyNotice('renewal_tg', $User_ID)) {
 TelegramClient::sendSystemMessage(
-(int)($User_Now['Chat_ID'] ?? 0),
+$User_Chat_ID,
 Helper::frame('کاربر', (string)($User_Now['Full_Name'] ?? ''), 'تمدید خودکار', $User_ID)
 . "⚠️*تمدید خودکار ناموفق بود.*\n"
 . "├─📦پلن: {$Plan_Name}\n"
 . "├─💰مبلغ لازم: " . Helper::formatCurrency($Final_Price) . "\n"
 . "└─💵موجودی کیف پول: " . Helper::formatCurrency($Balance) . "\n"
-. "⚠️لطفاً کیف پول خود را شارژ کنید تا تمدید خودکار انجام شود."
+. "⚠️لطفا کیف پول خود را شارژ کنید تا تمدید خودکار انجام شود."
 . Helper::userFooter()
 );
+}
 continue;
 }
 
+if (!Repository::claimDailyNotice('autorenew_execute', $User_ID)) continue;
 if (!Repository::removeMoney($User_ID, $Final_Price, 'تمدید خودکار اشتراک', 'bot')) continue;
 
 if ($Days <= 0) { Repository::addMoney($User_ID, $Final_Price, 'بازگشت وجه تمدید خودکار', 'bot'); continue; }

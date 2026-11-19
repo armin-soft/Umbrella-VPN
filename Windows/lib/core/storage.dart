@@ -115,11 +115,28 @@ class LocalStore {
   }
 
   Future<void> writeFile(String name, String content) async {
+    File? tmp;
     try {
       final File target = await file(name);
-      await target.writeAsString(content, flush: true);
+      tmp = File('${target.path}.tmp');
+      await tmp.writeAsString(content, flush: true);
+      try {
+        await tmp.rename(target.path);
+      } on FileSystemException {
+        await target.writeAsString(content, flush: true);
+        if (await tmp.exists()) {
+          await tmp.delete();
+        }
+      }
     } on FileSystemException {
       // نوشتن فایل اختیاری است؛ نبود آن نباید برنامه را متوقف کند.
+      try {
+        if (tmp != null && await tmp.exists()) {
+          await tmp.delete();
+        }
+      } on FileSystemException {
+        // نادیده گرفته می شود.
+      }
     }
   }
 

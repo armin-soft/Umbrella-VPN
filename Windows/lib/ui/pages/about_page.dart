@@ -33,29 +33,31 @@ class AboutPage extends StatelessWidget {
               width: AppMetrics.iconBoxHero,
               height: AppMetrics.iconBoxHero,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+                shape: BoxShape.circle,
                 color: colors.primary.withValues(alpha: 0.14),
                 border: Border.all(
                   color: colors.primary.withValues(alpha: 0.32),
                 ),
               ),
               clipBehavior: Clip.antiAlias,
-              child: TickerMode(
-                enabled: true,
-                child: Image.asset(
-                  BrandAssets.logo,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  filterQuality: FilterQuality.medium,
-                  errorBuilder: (
-                    BuildContext context,
-                    Object error,
-                    StackTrace? stack,
-                  ) =>
-                      Icon(
-                    Icons.shield_rounded,
-                    size: AppMetrics.iconXl,
-                    color: colors.primary,
+              child: ClipOval(
+                child: TickerMode(
+                  enabled: true,
+                  child: Image.asset(
+                    BrandAssets.logo,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                    errorBuilder: (
+                      BuildContext context,
+                      Object error,
+                      StackTrace? stack,
+                    ) =>
+                        Icon(
+                      Icons.shield_rounded,
+                      size: AppMetrics.iconXl,
+                      color: colors.primary,
+                    ),
                   ),
                 ),
               ),

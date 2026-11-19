@@ -1,5 +1,5 @@
 ; ---------------------------------------------------------------------------
-; Umbrella VPN 1.0.8
+; Umbrella VPN 1.0.39
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
@@ -23,7 +23,7 @@ AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL=https://user.umbrella-server.ir/
 AppSupportURL=https://t.me/umbrella_support
-AppUpdatesURL=https://user.umbrella-server.ir/
+AppUpdatesURL=https://github.com/armin-soft/Umbrella-VPN-Releases/releases
 DefaultDirName={autopf}\Umbrella VPN
 DefaultGroupName={#AppName}
 UninstallDisplayName={#AppName}
@@ -31,8 +31,9 @@ UninstallDisplayIcon={app}\{#AppExe}
 OutputDir=output
 OutputBaseFilename=UmbrellaVPN-Setup-{#AppVersion}-x64
 SetupIconFile=..\windows\runner\resources\app_icon.ico
-WizardImageFile=wizard-image.bmp
-WizardSmallImageFile=wizard-small.bmp
+WizardImageAlphaFormat=defined
+WizardImageFile=wizard-image.bmp,wizard-image-200.bmp
+WizardSmallImageFile=wizard-small.bmp,wizard-small-150.bmp,wizard-small-200.bmp,wizard-small-250.bmp
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -89,9 +90,9 @@ Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall 
 ; own icon in the taskbar, the Alt-Tab list and notification balloons. It must
 ; stay identical to the value in windows/runner/main.cpp; without it the shell
 ; groups the app under a generic host and draws an iconless notification.
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"
-Name: "{group}\Uninstall {#AppNameEn}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"
+Name: "{group}\Uninstall {#AppNameEn}"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#AppExe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "UmbrellaVPN"; ValueData: """{app}\{#AppExe}"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
@@ -197,11 +198,36 @@ begin
        '', SW_HIDE, ewNoWait, ResultCode);
 end;
 
+// اگر برنامه هنگام اتصال پراکسی سیستمی لوکال ثبت کرده بود، در زمان حذف
+// آن را خاموش می کنیم تا مرورگر کاربر بدون اینترنت نماند.
+procedure ClearLoopbackProxy();
+var
+  ProxyServer: String;
+begin
+  if RegQueryStringValue(
+       HKCU,
+       'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+       'ProxyServer',
+       ProxyServer) then
+  begin
+    if (Pos('127.0.0.1:', ProxyServer) > 0) or
+       (Pos('localhost:', Lowercase(ProxyServer)) > 0) then
+    begin
+      RegWriteDWordValue(
+        HKCU,
+        'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        'ProxyEnable',
+        0);
+    end;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
     KillRunning();
+    ClearLoopbackProxy();
     RemoveInstallFolder();
   end;
 end;

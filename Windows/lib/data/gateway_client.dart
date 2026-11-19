@@ -125,9 +125,12 @@ class GatewayClient {
     }
     final bool ok = JsonX.boolean(json['ok'], fallback: response.statusCode < 400);
     if (!ok) {
+      final String serverMsg =
+          JsonX.text(json['message'], 'خطای نامشخص از سرور')
+              .replaceAll('\u200c', ' ');
       throw ApiError(
         JsonX.text(json['error'], 'unknown'),
-        JsonX.text(json['message'], 'خطای نامشخص از سرور'),
+        Fa.num(serverMsg),
         retryAfter: json['retry_after'] == null ? null : JsonX.integer(json['retry_after']),
         status: response.statusCode,
       );

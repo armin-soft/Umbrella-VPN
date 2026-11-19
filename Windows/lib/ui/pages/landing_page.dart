@@ -122,7 +122,7 @@ class _LandingPageState extends State<LandingPage>
                               ),
                               const SizedBox(width: AppMetrics.space4),
                               Pill(
-                                label: 'نسخه ${AppConfig.versionLabel}',
+                                label: Fa.num('نسخه ${AppConfig.versionLabel}'),
                                 icon: Icons.verified_rounded,
                                 color: colors.success,
                               ),

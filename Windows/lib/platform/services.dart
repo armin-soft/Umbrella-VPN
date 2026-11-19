@@ -615,6 +615,7 @@ class UpdateService {
       return null;
     }
 
+    final String releaseBody = JsonX.text(json['body']);
     String url = '';
     String assetName = '';
     int size = 0;
@@ -624,6 +625,9 @@ class UpdateService {
       assetName = JsonX.text(installerAsset['name']);
       size = JsonX.integer(installerAsset['size']);
       sha = _extractDigestSha256(JsonX.text(installerAsset['digest']));
+    }
+    if (sha.isEmpty && releaseBody.isNotEmpty) {
+      sha = _extractBodySha256(releaseBody, assetName: assetName);
     }
     if (url.isEmpty) {
       final String coreVersion = _versionOf(tag);
@@ -637,7 +641,7 @@ class UpdateService {
       version: version,
       url: url,
       sha256: sha,
-      notes: JsonX.text(json['body']),
+      notes: releaseBody,
       mandatory: false,
       sizeBytes: size,
       publishedAt: JsonX.dateTime(json['published_at']),
@@ -674,6 +678,18 @@ class UpdateService {
     return match?.group(1)?.toLowerCase() ?? '';
   }
 
+  static String _extractBodySha256(String body, {String assetName = ''}) {
+    final String fromSums = parseSha256Sums(body, assetName: assetName);
+    if (fromSums.isNotEmpty) {
+      return fromSums;
+    }
+    final RegExpMatch? labeled = RegExp(
+      r'sha[-_ ]?256\s*[:=]\s*`?([0-9a-fA-F]{64})`?',
+      caseSensitive: false,
+    ).firstMatch(body);
+    return labeled?.group(1)?.toLowerCase() ?? '';
+  }
+
   Map<String, String> get _headers => <String, String>{
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
@@ -689,23 +705,20 @@ class UpdateService {
     return match?.group(1) ?? '';
   }
 
-  /// مسیر پشتیبان فایل نصب در مخزن.
+  /// مسیر مستقیم فایل نصب در مخزن رسمی انتشار (فقط فایل نصبی).
   static String _installerUrl(String tag, String version) =>
-      'https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
-      'setup/$version/UmbrellaVPN-Setup-$version-x64.exe';
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/'
+      '$tag/UmbrellaVPN-Setup-$version-x64.exe';
 
-  /// اثر انگشت SHA-256 فایل نصب از `SHA256SUMS.txt` انتشار یا مخزن.
+  /// اثر انگشت SHA-256 فایل نصب در صورتی که در گیت هاب یا متن انتشار نیامده باشد.
   Future<String> _shaForRelease({
     required String tag,
     required String version,
     String assetName = '',
   }) async {
-    final String coreVersion = _versionOf(version);
     final List<String> candidates = <String>[
-      'https://github.com/armin-soft/Umbrella-VPN/releases/download/$tag/SHA256SUMS.txt',
-      if (coreVersion.isNotEmpty)
-        'https://github.com/armin-soft/Umbrella-VPN/raw/$tag/'
-            'setup/$coreVersion/SHA256SUMS.txt',
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/'
+          '$tag/SHA256SUMS.txt',
     ];
     for (final String url in candidates) {
       try {
@@ -820,12 +833,19 @@ class UpdateService {
         await target.delete();
       }
 
+      final Uri? downloadUri = Uri.tryParse(info.url.trim());
+      if (downloadUri == null ||
+          downloadUri.scheme.toLowerCase() != 'https' ||
+          downloadUri.host.isEmpty) {
+        return null;
+      }
+
       partFile = File('${target.path}.part');
       if (await partFile.exists()) {
         await partFile.delete();
       }
 
-      final http.Request request = http.Request('GET', Uri.parse(info.url));
+      final http.Request request = http.Request('GET', downloadUri);
       request.headers['User-Agent'] = 'Umbrella-Windows/${AppConfig.version}';
       final http.StreamedResponse response =
           await _client.send(request).timeout(const Duration(seconds: 30));
@@ -887,7 +907,9 @@ class UpdateService {
       if (await target.exists()) {
         await target.delete();
       }
-      return await partFile.rename(target.path);
+      final File ready = await partFile.rename(target.path);
+      await _pruneOldInstallers(dir, keepName: name);
+      return ready;
     } on Exception {
       try {
         await sink?.close();
@@ -922,6 +944,31 @@ class UpdateService {
       return native.runElevated(file.path, args: args);
     }
     return native.openPath(file.path);
+  }
+
+  static Future<void> _pruneOldInstallers(
+    Directory dir, {
+    required String keepName,
+  }) async {
+    try {
+      await for (final FileSystemEntity entity in dir.list()) {
+        if (entity is! File) continue;
+        final String base =
+            entity.path.split(Platform.pathSeparator).last.toLowerCase();
+        if (base == keepName.toLowerCase()) continue;
+        if (base.endsWith('.exe') ||
+            base.endsWith('.msi') ||
+            base.endsWith('.part')) {
+          try {
+            await entity.delete();
+          } on FileSystemException {
+            // فایل قدیمی قفل شده نادیده گرفته می شود.
+          }
+        }
+      }
+    } on FileSystemException {
+      // پاک سازی کش موقت اختیاری است.
+    }
   }
 }
 
@@ -1272,7 +1319,8 @@ class AppLogger extends ChangeNotifier {
     // نسخه ویندوز از همان رشته خوانده می شود؛ اگر نبود، نام ساده می آید.
     final RegExpMatch? build = RegExp(r'\(Build (\d+)\)').firstMatch(raw);
     final String edition = _windowsEdition(raw);
-    final String arch = Platform.version.contains('arm64') ? 'ARM' : '۶۴ بیت';
+    final String arch =
+        Platform.version.contains('arm64') ? 'آرم ۶۴ بیت' : '۶۴ بیت';
     if (!Platform.isWindows) {
       return Fa.num('${Platform.operatingSystem} $raw');
     }

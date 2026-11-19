@@ -97,17 +97,21 @@ class AppConfig {
     defaultValue: '',
   );
 
-  /// آخرین انتشار پایدار ویندوز در گیت هاب (کانال اصلی).
+  /// آخرین انتشار پایدار ویندوز در مخزن رسمی انتشار (کانال اصلی).
   static const String releaseApiUrl =
-      'https://api.github.com/repos/armin-soft/Umbrella-VPN/releases/latest';
+      'https://api.github.com/repos/armin-soft/Umbrella-VPN-Releases/releases/latest';
 
-  /// فهرست انتشارهای ویندوز در گیت هاب (برای کانال بتا، پایدار و تاریخچه تغییرات).
+  /// فهرست انتشارهای ویندوز در مخزن رسمی انتشار (برای کانال بتا، پایدار و تاریخچه تغییرات).
   static const String releasesListApiUrl =
-      'https://api.github.com/repos/armin-soft/Umbrella-VPN/releases?per_page=20';
+      'https://api.github.com/repos/armin-soft/Umbrella-VPN-Releases/releases?per_page=20';
 
-  /// صفحه انتشار، برای وقتی که خودکار نمی شود.
+  /// صفحه آخرین انتشار پایدار، برای وقتی که خودکار نمی شود.
   static const String releasesPageUrl =
-      'https://github.com/armin-soft/Umbrella-VPN/releases/latest';
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/latest';
+
+  /// صفحه همه انتشارها (شامل نسخه های بتا و پایدار).
+  static const String allReleasesPageUrl =
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases';
 
   /// پیشوند نام آداپتور تونل که برای خواندن آمار مصرف استفاده می شود.
   ///

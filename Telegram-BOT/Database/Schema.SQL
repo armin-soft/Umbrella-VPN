@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS `SMS_Logs` (
 `User_ID` BIGINT NOT NULL,
 `Phone_Number` VARCHAR(20) NULL,
 `Message` TEXT NULL,
-`Status` VARCHAR(20) NOT NULL DEFAULT 'Ù†Ø§Ù…ÙˆÙÙ‚',
+`Status` VARCHAR(20) NOT NULL DEFAULT 'ناموفق',
 `Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -136,7 +136,7 @@ KEY `IDX_Subscription_Logs_Created_At` (`Created_At`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES
-('Robot_Status', 'ðŸŸ¢Ø±ÙˆØ´Ù†'),
+('Robot_Status', '🟢روشن'),
 ('Daily_Report_Enabled', '1'),
 ('Daily_Report_Time', '00:00'),
 ('Expiry_Warning_3Days', '1'),

@@ -1434,15 +1434,10 @@ if ($Telegram_Id <= 0) {
 return;
 }
 
-// Three wrong codes in a row are one event, not three; without this the person
-// fumbling their own code would fill their chat with alerts.
-$Throttle_Key = 'AppFailNotify_' . $Telegram_Id;
-
-if (time() - (int)Repository::getSetting($Throttle_Key, 0) < 60) {
+// حداکثر یک اعلان خودکار ورود ناموفق در شبانه روز برای هر کاربر.
+if (!Repository::claimDailyNotice('app_failed_login', $Telegram_Id)) {
 return;
 }
-
-Repository::setSetting($Throttle_Key, time());
 
 $Labels = [
 'code_invalid' => 'کد تأیید اشتباه',

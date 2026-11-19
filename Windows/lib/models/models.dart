@@ -3067,7 +3067,7 @@ class UpdateInfo {
         .replaceFirst(RegExp(r'^[vV]'), '')
         .replaceFirst(RegExp(r'-windows$', caseSensitive: false), '');
     final RegExpMatch? match = RegExp(
-      r'^(\d+\.\d+\.\d+(?:[-.](?:alpha|beta|rc|pre|preview|dev)(?:[.-]?\d+)?)?)',
+      r'^(\d+\.\d+\.\d+(?:[-.](?:alpha|beta|rc|pre|preview|dev|nightly|canary)(?:[.-]?\d+)?)?)',
       caseSensitive: false,
     ).firstMatch(stripped);
     return match?.group(1) ?? stripped;
@@ -3144,6 +3144,12 @@ class UpdateInfo {
         continue;
       }
       if (line.toLowerCase().startsWith('full changelog')) {
+        continue;
+      }
+      if (RegExp(
+        r'^(?:sha[-_ ]?256\s*[:=]\s*)?[0-9a-fA-F]{64}(?:\s+\S+)?$',
+        caseSensitive: false,
+      ).hasMatch(line)) {
         continue;
       }
       out.add(line);

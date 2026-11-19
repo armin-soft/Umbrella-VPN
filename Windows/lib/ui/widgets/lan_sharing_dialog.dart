@@ -878,17 +878,16 @@ class _ShareQrBox extends StatelessWidget {
             Container(
               width: AppMetrics.controlHeightSmall,
               height: AppMetrics.controlHeightSmall,
-              padding: const EdgeInsets.all(AppMetrics.space1),
+              padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 2),
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
+              child: ClipOval(
                 child: Image.asset(
                   BrandAssets.logo,
-                  fit: BoxFit.contain,
+                  fit: BoxFit.cover,
                   filterQuality: FilterQuality.high,
                 ),
               ),

@@ -19,7 +19,10 @@ $Body = html_entity_decode(strip_tags(TelegramClient::md($Body)), ENT_QUOTES | E
 $Title = mb_substr(trim(strip_tags($Title)), 0, 190);
 $Body = mb_substr($Body, 0, 12000);
 if (trim($Body) === '') return 0;
-if ($Event === '') $Event = hash('sha256', $Body) . ':' . intdiv(time(), 300);
+if ($Event === '') {
+$Day = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
+$Event = hash('sha256', $Body) . ':' . $Day;
+}
 $Targets = [];
 foreach ($Rows as $Row) {
 $Device = trim((string)($Row['Device_ID'] ?? ''));

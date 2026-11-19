@@ -4,6 +4,21 @@ on:
     branches: ['arena/**', Default]
     paths: ['Windows/**', 'Telegram-BOT/**', '.github/workflows/windows-draft.yml']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release mode (draft, beta prerelease, or stable release)'
+        required: false
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - beta
+          - release
+      beta_number:
+        description: 'Beta sequence number when channel is beta (e.g. 1)'
+        required: false
+        default: '1'
+        type: string
 permissions:
   contents: write
 concurrency:
@@ -124,26 +139,62 @@ jobs:
           $files = @(Get-ChildItem installer/output -Filter '*.exe')
           if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
           Get-FileHash $files[0].FullName -Algorithm SHA256
-      - name: Create or update draft with only the installer
+      - name: Publish installer-only release or draft
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          RELEASES_REPO: 'armin-soft/Umbrella-VPN-Releases'
+          CHANNEL: ${{ inputs.channel || 'draft' }}
+          BETA_NUM: ${{ inputs.beta_number || '1' }}
           COMMIT: ${{ github.sha }}
         run: |
           $version = [regex]::Match((Get-Content lib/core/app_config.dart -Raw), "static const String version = '([^']+)'").Groups[1].Value
           if (!$version) { throw 'Missing version' }
-          $tag = "v$version-windows"
           $installer = (Get-ChildItem installer/output -Filter '*.exe').FullName
-          $existing = gh release view $tag --repo $env:REPO --json isDraft,assets 2>$null
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          $notes = @(
+            "- رابط کاملا فارسی با اعداد فارسی و بدون نیم فاصله در سراسر برنامه",
+            "- آیکون گرد و کاملا شفاف در نصب کننده، میانبرها، سینی سیستم و تمام صفحات",
+            "- منوی بازشوی استاندارد تنظیمات سریع اتصال و آیکون دقیق برای همه بخش ها",
+            "- هسته آمبرلا نسخه ۵.۹.۱۱ با پایداری تونل و بستن کامل پردازش ها هنگام خروج",
+            "- به روز رسانی درون برنامه ای در دو کانال پایدار و بتا با تایید اصالت فایل",
+            "SHA-256: $sha256"
+          ) -join "`n"
+
+          if (($env:CHANNEL -eq 'beta' -or $env:CHANNEL -eq 'release') -and $env:RELEASES_TOKEN) {
+            $env:GH_TOKEN = $env:RELEASES_TOKEN
+            $betaClean = ($env:BETA_NUM -replace '[^0-9]', '')
+            if (!$betaClean) { $betaClean = '1' }
+            $tag = if ($env:CHANNEL -eq 'beta') { "v$version-beta.$betaClean-windows" } else { "v$version-windows" }
+            $title = if ($env:CHANNEL -eq 'beta') { "Umbrella VPN $version Beta $betaClean - Windows (x64)" } else { "Umbrella VPN $version - Windows (x64)" }
+            $exists = gh release view $tag --repo $env:RELEASES_REPO --json tagName 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              gh release upload $tag $installer --clobber --repo $env:RELEASES_REPO
+              if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed' }
+              gh release edit $tag --repo $env:RELEASES_REPO --title $title --notes $notes
+            } elseif ($env:CHANNEL -eq 'beta') {
+              gh release create $tag $installer --repo $env:RELEASES_REPO --target main --prerelease --title $title --notes $notes
+            } else {
+              gh release create $tag $installer --repo $env:RELEASES_REPO --target main --latest --title $title --notes $notes
+            }
+            if ($LASTEXITCODE -ne 0) { throw 'Public release publication failed' }
+            gh release view $tag --repo $env:RELEASES_REPO --json url,isDraft,isPrerelease,assets
+            if ($LASTEXITCODE -ne 0) { throw 'Public release verification failed' }
+            return
+          }
+
+          $tag = "v$version-windows"
+          $existing = gh release view $tag --repo $env:SOURCE_REPO --json isDraft,assets 2>$null
           if ($LASTEXITCODE -eq 0) {
             $release = $existing | ConvertFrom-Json
             if (!$release.isDraft) { throw 'Refusing to replace a published release' }
-            gh release edit $tag --repo $env:REPO --target $env:COMMIT --draft
+            gh release edit $tag --repo $env:SOURCE_REPO --target $env:COMMIT --draft --notes $notes
             if ($LASTEXITCODE -ne 0) { throw 'Draft update failed' }
-            gh release upload $tag $installer --clobber --repo $env:REPO
+            gh release upload $tag $installer --clobber --repo $env:SOURCE_REPO
           } else {
-            gh release create $tag $installer --repo $env:REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows" --notes "- ارتقای هسته آمبرلا به نسخه 5.9.11 با بهینه سازی مصرف پردازنده و پایداری TUN`n- بستن کامل و قطعی CLI و پردازش های هسته هنگام خروج، آپدیت و خاموشی ویندوز`n- همگام سازی کامل و آنی کنترل محتوا با ربات تلگرام`n- فشرده سازی و بازطراحی گزارش شبانه و تمام اعلان ها`n- افزودن اشتراک رایگان یک بار مصرف و اشتراک نوروزی همگام با ربات در حساب کاربری`n- کانال به روز رسانی اصلی (پایدار) و بتا با دانلود و نصب خودکار کاملاً درون برنامه ای"
+            gh release create $tag $installer --repo $env:SOURCE_REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows (x64)" --notes $notes
           }
           if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
-          gh release view $tag --repo $env:REPO --json url,isDraft,assets
+          gh release view $tag --repo $env:SOURCE_REPO --json url,isDraft,assets
           if ($LASTEXITCODE -ne 0) { throw 'Draft verification failed' }

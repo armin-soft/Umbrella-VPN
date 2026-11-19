@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +23,20 @@ import 'vpn/vpn_controller.dart';
 /// نقطه شروع برنامه: آماده سازی انبار داده، پنجره، سرویس ها و کنترلرها.
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    AppLogger.instance.add(
+      'خطای رابط کاربری: ${details.exceptionAsString()}',
+      level: 'error',
+    );
+  };
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    AppLogger.instance.add(
+      'خطای پیش بینی نشده: $error',
+      level: 'error',
+    );
+    return true;
+  };
   await LocalStore.instance.init();
 
   final NativeBridge native = NativeBridge();
@@ -203,15 +218,21 @@ Future<void> main(List<String> arguments) async {
         unawaited(updates.check(silent: true));
       }
     });
-    // همگام سازی کاملاً خودکار حساب، پنل، کنترل محتوا، طرح های هدیه و سرورها.
+    // همگام سازی کاملا خودکار حساب، پنل، کنترل محتوا، طرح های هدیه و سرورها.
+    bool syncing = false;
     Timer.periodic(const Duration(minutes: 5), (_) {
-      if (!auth.signedIn) {
+      if (!auth.signedIn || syncing) {
         return;
       }
+      syncing = true;
       unawaited(() async {
-        await auth.refreshAccount(silent: true);
-        await auth.refreshFromPanel();
-        await subscriptions.syncPersonal();
+        try {
+          await auth.refreshAccount(silent: true);
+          await auth.refreshFromPanel();
+          await subscriptions.syncPersonal();
+        } finally {
+          syncing = false;
+        }
       }());
     });
     if (auth.signedIn) {

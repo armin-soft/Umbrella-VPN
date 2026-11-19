@@ -14,14 +14,20 @@ namespace {
 
 constexpr wchar_t kMutexName[] = L"Global\\UmbrellaVPN.Desktop.SingleInstance";
 constexpr wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
+constexpr wchar_t kWindowTitle[] =
+    L"\u0641\u06cc\u0644\u062a\u0631\u0634\u06a9\u0646 "
+    L"\u0622\u0645\u0628\u0631\u0644\u0627";
 
 // A second launch must bring the running copy forward instead of starting a
 // second tunnel: two cores racing for the same TUN adapter is the fastest way
 // to break a user's network.
 void FocusExistingWindow() {
-  HWND existing = FindWindowW(kWindowClassName, nullptr);
+  HWND existing = FindWindowW(kWindowClassName, kWindowTitle);
   if (existing == nullptr) {
     return;
+  }
+  if (!IsWindowVisible(existing)) {
+    ShowWindow(existing, SW_SHOW);
   }
   if (IsIconic(existing)) {
     ShowWindow(existing, SW_RESTORE);
@@ -68,9 +74,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Point origin(0, 0);
   Win32Window::Size size(1280, 820);
   // Persian title, same as the window title the app sets after start-up.
-  if (!window.Create(L"\u0641\u06cc\u0644\u062a\u0631\u0634\u06a9\u0646 "
-                    L"\u0622\u0645\u0628\u0631\u0644\u0627",
-                    origin, size)) {
+  if (!window.Create(kWindowTitle, origin, size)) {
+    ::CoUninitialize();
+    if (mutex != nullptr) {
+      ReleaseMutex(mutex);
+      CloseHandle(mutex);
+    }
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

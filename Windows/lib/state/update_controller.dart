@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
+import '../core/persian.dart';
 import '../core/storage.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
@@ -169,7 +170,7 @@ class UpdateController extends ChangeNotifier {
     _total = info.sizeBytes;
     _speedBytesPerSec = 0;
     _error = '';
-    _phase = 'آماده سازی دانلود نسخه ${info.version}...';
+    _phase = Fa.num('آماده سازی دانلود نسخه ${info.version}...');
     notifyListeners();
 
     final Stopwatch clock = Stopwatch()..start();
@@ -228,7 +229,7 @@ class UpdateController extends ChangeNotifier {
 
       _installing = true;
       _speedBytesPerSec = 0;
-      _phase = 'در حال نصب خودکار نسخه ${info.version}...';
+      _phase = Fa.num('در حال نصب خودکار نسخه ${info.version}...');
       notifyListeners();
 
       final bool ok = await _service.install(
@@ -247,7 +248,7 @@ class UpdateController extends ChangeNotifier {
       }
 
       _phase = 'بسته نصب اجرا شد؛ برنامه به روز و دوباره باز می شود...';
-      _log.add('نصب درون برنامه ای نسخه ${info.version} آغاز شد.');
+      _log.add(Fa.num('نصب درون برنامه ای نسخه ${info.version} آغاز شد.'));
       notifyListeners();
 
       final Future<void> Function()? exitHook = onExitForInstall;
@@ -272,9 +273,12 @@ class UpdateController extends ChangeNotifier {
     }
   }
 
-  /// پشتیبان باز کردن صفحه انتشار.
+  /// پشتیبان باز کردن صفحه انتشار رسمی (کانال پایدار یا بتا).
   Future<bool> openDownloadPage() async {
-    final Uri? uri = Uri.tryParse(AppConfig.releasesPageUrl);
+    final String target = _channel == UpdateChannel.beta
+        ? AppConfig.allReleasesPageUrl
+        : AppConfig.releasesPageUrl;
+    final Uri? uri = Uri.tryParse(target);
     if (uri == null) {
       return false;
     }
