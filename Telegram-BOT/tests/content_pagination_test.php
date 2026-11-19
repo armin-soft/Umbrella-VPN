@@ -86,9 +86,11 @@ check(Database::$Writes === 0 && Database::$Filter === $Before, 'old removed cat
 AppFlow::filterToggle($Context, 'gambling');
 check(Database::$Filter['Gambling'] === 1 && Database::$Filter['Social'] === 1 && Database::$Filter['Custom_Domains'] === 'old.example', 'visible toggle works without deleting stored app settings');
 AppFlow::filterDomainsStart($Context);
-check((Repository::$State['Step'] ?? '') === 'app_filter_domain_add', 'domain prompt sets input step');
+check((Repository::$State['Flow'] ?? '') === 'app:filter_domains', 'domain prompt sets flow');
 AppFlow::filterDomainsInput($Context, 'https://www.New.Example/path');
-check((Repository::$State['Step'] ?? '') === 'none' && str_contains((string)Database::$Filter['Custom_Domains'], 'old.example') && str_contains((string)Database::$Filter['Custom_Domains'], 'new.example'), 'custom domain input adds normalized domain and resets session');
+check((Repository::$State['Flow'] ?? '') === '' && str_contains((string)Database::$Filter['Custom_Domains'], 'old.example') && str_contains((string)Database::$Filter['Custom_Domains'], 'new.example'), 'custom domain input adds normalized domain and clears flow');
+AppFlow::filterDomainsRemoveByIndex($Context, 1, 0);
+check((string)Database::$Filter['Custom_Domains'] === 'old.example', 'remove by index deletes selected custom domain');
 AppFlow::filterToggle($Context, 'enabled');
 check(Database::$Filter['Enabled'] === 0, 'master switch works');
 check(Menu::adminHome()[0]['text'] === '🏠بازگشت به منوی مدیریت', 'admin home label');
