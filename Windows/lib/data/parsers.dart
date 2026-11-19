@@ -109,13 +109,41 @@ class SubscriptionParser {
 
   // ── ایکس ری / وی۲ری ─────────────────────────────────────────────────
 
+  static bool looksLikeHtml(String raw) {
+    final String head = raw.trimLeft().toLowerCase();
+    return head.startsWith('<!doctype html') || head.startsWith('<html');
+  }
+
   static ParseReport _parseXray(String body, String sourceId) {
     final ParseReport report = ParseReport(sourceId: sourceId);
-    String text = body;
+    if (looksLikeHtml(body)) {
+      report.problems.add('پاسخ اشتراک صفحه وب بود، نه فهرست سرور.');
+      return report;
+    }
+    String text = body.startsWith('\uFEFF') ? body.substring(1) : body;
     if (!text.contains('://')) {
       final String? decoded = B64.tryDecode(text);
       if (decoded != null && decoded.contains('://')) {
         text = decoded;
+      }
+    } else {
+      // در برخی پاسخ های `/sub/` خطوط توضیحات ابتدایی (مثل `#profile-web-page-url: https://...`)
+      // دارای `://` هستند ولی خود لینک های سرور در خط های بعدی به صورت Base64
+      // کدگذاری شده اند؛ خطوط غیرتوضیحی را هم بررسی و رمزگشایی می کنیم.
+      final List<String> activeLines = const LineSplitter()
+          .convert(text)
+          .map((String line) => line.trim())
+          .where((String line) =>
+              line.isNotEmpty &&
+              !line.startsWith('#') &&
+              !line.startsWith('//'))
+          .toList();
+      if (activeLines.isNotEmpty &&
+          activeLines.every((String line) => !line.contains('://'))) {
+        final String? decoded = B64.tryDecode(activeLines.join());
+        if (decoded != null && decoded.contains('://')) {
+          text = decoded;
+        }
       }
     }
 

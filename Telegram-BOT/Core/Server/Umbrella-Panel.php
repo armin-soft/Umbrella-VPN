@@ -256,26 +256,64 @@ self::$Last_List_Count = count($Rows);
 return $Rows;
 }
 
-/** The share-link base for an account, when the panel reports it. */
+/** Configured subscription base URL including the panel's secret path slug. */
+public static function subscriptionLinkBase(): string {
+$Configured = '';
+
+if (class_exists('Repository', false) && method_exists('Repository', 'getSetting')) {
+try {
+$Configured = trim((string)(Repository::getSetting('Subscription_Link_Base') ?? ''));
+} catch (Throwable) {
+$Configured = '';
+}
+}
+
+if ($Configured === '' && method_exists('Environment', 'getSubscriptionLinkBase')) {
+$Configured = trim(Environment::getSubscriptionLinkBase());
+}
+
+if ($Configured !== '' && str_starts_with($Configured, 'http')) {
+$Clean = (string)preg_replace(
+'#/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/.*)?$#',
+'',
+rtrim($Configured, '/')
+);
+return rtrim($Clean, '/') . '/';
+}
+
+return '';
+}
+
+/** The share-link base (before `<uuid>/sub/`) for a personal account. */
 public static function accountBase(array $Row): string {
+$Configured = self::subscriptionLinkBase();
+
+if ($Configured !== '') {
+return $Configured;
+}
+
 $Candidates = ['account_base', 'sub_base', 'subscription_base', 'sub_domain'];
 
 foreach ($Candidates as $Key) {
 $Value = trim((string)($Row[$Key] ?? ''));
 
 if ($Value !== '' && str_starts_with($Value, 'http')) {
-return rtrim($Value, '/') . '/';
+$Clean = (string)preg_replace(
+'#/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/.*)?$#',
+'',
+rtrim($Value, '/')
+);
+return rtrim($Clean, '/') . '/';
 }
 }
 
-// The panel's own account page is derived from the configured base: the
-// per-account slug sits in front of the uuid.
 $Base = rtrim(Environment::getUmbrellaBaseUrl(), '/');
 $Parts = parse_url($Base);
-$Host = ($Parts['scheme'] ?? 'https') . '://' . ($Parts['host'] ?? '');
-$UUID = trim((string)($Row['uuid'] ?? ''));
+$Host = is_array($Parts) && !empty($Parts['host'])
+? (($Parts['scheme'] ?? 'https') . '://' . $Parts['host'])
+: '';
 
-return $UUID === '' ? '' : $Host . '/' . $UUID . '/';
+return $Host === '' ? '' : $Host . '/';
 }
 }
 ?>

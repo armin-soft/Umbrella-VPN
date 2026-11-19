@@ -117,12 +117,11 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
       setState(() {});
-      if (subs.totalNodes == 0 && !subs.loadingAll && !subs.personalLoading) {
-        if (auth.signedIn) {
-          await subs.syncPersonal();
-        } else {
-          await subs.fetchAll();
-        }
+      if (auth.signedIn &&
+          subs.totalNodes == 0 &&
+          !subs.loadingAll &&
+          !subs.personalLoading) {
+        await subs.syncPersonal();
       }
       if (mounted &&
           !vpn.measuring &&
@@ -184,21 +183,24 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     final AuthController auth = context.read<AuthController>();
+    if (!auth.signedIn) {
+      toasts.error('ورود لازم است', 'ابتدا وارد حساب کاربری خود شوید.');
+      return;
+    }
     if (!auth.account.canConnect) {
       toasts.error('اجازه اتصال نیست', auth.account.accessReason);
       return;
     }
     if (vpn.nodes.isEmpty) {
-      if (auth.signedIn) {
-        await subs.syncPersonal();
-      } else {
-        await subs.fetchAll();
-      }
+      await subs.syncPersonal();
       if (!mounted) {
         return;
       }
       if (vpn.nodes.isEmpty) {
-        toasts.error('سروری موجود نیست', 'ابتدا دریافت اشتراک را بررسی کنید.');
+        toasts.error(
+          'اشتراک دریافت نشد',
+          'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
+        );
         return;
       }
     }

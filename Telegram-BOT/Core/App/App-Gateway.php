@@ -86,6 +86,7 @@ if ($Route === 'filter/save') { self::saveFilter(self::body()); return; }
 if ($Route === 'filter/get') { self::getFilter(self::body()); return; }
 if ($Route === 'subscription/offers') { self::subscriptionOffers(); return; }
 if ($Route === 'subscription/claim') { self::claimSubscription(self::body()); return; }
+if ($Route === 'subscription/fetch') { self::fetchSubscription(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
@@ -1107,11 +1108,81 @@ Repository::releaseCronLock($LockKey);
 }
 }
 
+private static function fetchSubscription(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+
+if ($UUID === '') {
+self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
+}
+
+$Account = PanelClient::get($UUID) ?? [];
+$Base = PanelClient::accountBase($Account);
+$Sub_Url = self::subscriptionUrl($Account, $Base, $UUID);
+
+// Only allow fetching the user's own `/sub/` link when the full secret prefix
+// is present; prevent calling a bare `https://host/<uuid>/sub/` that 404s.
+$Parsed = $Sub_Url !== '' ? parse_url($Sub_Url) : false;
+$Segments = is_array($Parsed) && isset($Parsed['path'])
+? array_values(array_filter(explode('/', (string)$Parsed['path']), static fn(string $S): bool => $S !== ''))
+: [];
+
+if ($Sub_Url === '' || count($Segments) < 3) {
+self::fail(409, 'no_subscription_url', 'نشانی اشتراک اختصاصی در سرور تنظیم نشده است.');
+}
+
+$User_Agents = ['Umbrella-Windows/1.0.0', 'SingBox/1.10.0'];
+$Last_Status = 0;
+$Last_Error = '';
+
+foreach ($User_Agents as $Agent) {
+$Response = HttpClient::get($Sub_Url, [
+'Accept' => 'text/plain, application/json, */*',
+'User-Agent' => $Agent,
+], 18);
+$Last_Status = (int)($Response['StatusCode'] ?? 0);
+$Last_Error = trim((string)($Response['Error'] ?? ''));
+$Content = trim((string)($Response['Body'] ?? ''));
+
+if ($Last_Status >= 200 && $Last_Status < 300 && $Content !== '') {
+$Lower_Head = strtolower(substr(ltrim($Content), 0, 64));
+
+if (str_starts_with($Lower_Head, '<!doctype html') || str_starts_with($Lower_Head, '<html')) {
+continue;
+}
+
+self::ok([
+'uuid' => $UUID,
+'account_base' => $Base,
+'subscription_url' => $Sub_Url,
+'content' => $Content,
+'checked_at' => gmdate('c'),
+]);
+}
+
+if ($Last_Status === 401 || $Last_Status === 403 || $Last_Status === 404) {
+break;
+}
+}
+
+error_log('[Umbrella-Bot][Gateway] subscription/fetch failed | uuid=' . substr($UUID, 0, 8) . ' | HTTP=' . $Last_Status . ($Last_Error !== '' ? ' | curl=' . $Last_Error : ''));
+self::fail(
+$Last_Status >= 400 && $Last_Status < 500 ? $Last_Status : 502,
+'subscription_unavailable',
+'دریافت اشتراک اختصاصی از سرور ناموفق بود.'
+);
+}
+
 private static function ping(): void {
 self::ok([
 'time' => gmdate('c'),
-'version' => '3',
-'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers'],
+'version' => '4',
+'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch'],
 ]);
 }
 
@@ -1607,18 +1678,38 @@ return BotIdentity::link();
 }
 
 /**
- * The customer share link. The panel reports it for most deployments; when it
- * does not, it is built from the account base and the uuid the same way the
- * bot's own subscription menu builds it.
+ * Personal customer `/sub/` share link — built from the same configured
+ * `Subscription_Link_Base` + `<uuid>/sub/` formula as the bot's own subscription
+ * menu, never duplicating the UUID and never falling back to public sources.
  */
 private static function subscriptionUrl(array $Account, string $Base, string $UUID): string {
+$UUID = trim($UUID);
 $Direct = trim((string)($Account['subscription_url'] ?? ($Account['sub_link'] ?? '')));
 
-if ($Direct !== '') return $Direct;
+if ($Direct !== '' && str_starts_with($Direct, 'http')) {
+if (preg_match('#^(https?://[^/]+)(/.*?)?/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:/.*)?$#', $Direct, $Match) === 1) {
+$Prefix = trim((string)($Match[2] ?? ''), '/');
+$Target_Uuid = $UUID !== '' ? $UUID : $Match[3];
+if ($Prefix !== '' && strtolower($Prefix) !== strtolower($Target_Uuid)) {
+return $Match[1] . '/' . $Prefix . '/' . $Target_Uuid . '/sub/';
+}
+$Base_Path = $Base !== '' ? trim((string)(parse_url($Base, PHP_URL_PATH) ?? ''), '/') : '';
+if ($Base_Path !== '' && strtolower($Base_Path) !== strtolower($Target_Uuid)) {
+return rtrim($Base, '/') . '/' . $Target_Uuid . '/sub/';
+}
+return $Match[1] . '/' . $Target_Uuid . '/sub/';
+}
+return $Direct;
+}
 
 if ($Base === '' || $UUID === '') return '';
 
-return rtrim($Base, '/') . '/' . $UUID . '/sub/';
+$Clean_Base = rtrim($Base, '/');
+if (str_ends_with(strtolower($Clean_Base), '/' . strtolower($UUID))) {
+return $Clean_Base . '/sub/';
+}
+
+return $Clean_Base . '/' . $UUID . '/sub/';
 }
 
 private static function body(): array {
@@ -1666,7 +1757,8 @@ return $Data;
 
 $Opaque_Keys = [
 'token' => true, 'secret' => true, 'challenge' => true, 'device_id' => true,
-'uuid' => true, 'sub_url' => true, 'subscription_url' => true, 'url' => true,
+'uuid' => true, 'sub_url' => true, 'subscription_url' => true, 'account_base' => true,
+'content' => true, 'url' => true,
 'emergency_url' => true, 'channel_url' => true, 'support_url' => true,
 ];
 $Persian_Prose_Keys = [

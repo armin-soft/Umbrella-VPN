@@ -7,6 +7,7 @@ import 'package:http/io_client.dart';
 import '../core/app_config.dart';
 import '../core/persian.dart';
 import '../models/models.dart';
+import '../platform/native.dart';
 import 'parsers.dart';
 import 'subscription_endpoints.dart';
 
@@ -43,8 +44,10 @@ class EndpointCheck {
 /// بررسی زنده نشانی اشتراک `/sub/` یک حساب.
 class SubscriptionDiagnostics {
   SubscriptionDiagnostics({http.Client? client})
-      : _client = client ?? _directClient();
+      : _injectedClient = client != null,
+        _client = client ?? _directClient();
 
+  final bool _injectedClient;
   final http.Client _client;
 
   /// کلاینت بدون پروکسی.
@@ -78,16 +81,36 @@ class SubscriptionDiagnostics {
   }
 
   Future<EndpointCheck> _check(SubscriptionSource source) async {
+    final Map<String, String> headers = <String, String>{
+      'Accept': 'text/plain, application/json, */*',
+      'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
+    };
     try {
-      final http.Response response = await _client
-          .get(
-            Uri.parse(source.url),
-            headers: <String, String>{
-              'Accept': 'text/plain, */*',
-              'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
-            },
-          )
-          .timeout(const Duration(seconds: 20));
+      http.Response? response;
+      if (!_injectedClient && Platform.isWindows) {
+        for (final bool useProxy in const <bool>[false, true]) {
+          final NativeHttpResponse? native =
+              await NativeBridge.performHttpRequest(
+            method: 'GET',
+            url: source.url,
+            headers: headers,
+            timeoutMs: 18000,
+            useProxy: useProxy,
+          );
+          if (native != null && native.ok && native.statusCode > 0) {
+            response = http.Response.bytes(
+              native.bodyBytes,
+              native.statusCode,
+            );
+            if (native.statusCode < 500) {
+              break;
+            }
+          }
+        }
+      }
+      response ??= await _client
+          .get(Uri.parse(source.url), headers: headers)
+          .timeout(const Duration(seconds: 18));
       final String body =
           utf8.decode(response.bodyBytes, allowMalformed: true);
       final int status = response.statusCode;

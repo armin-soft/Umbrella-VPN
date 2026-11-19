@@ -177,9 +177,6 @@ Future<void> main(List<String> arguments) async {
       SubscriptionController(vpn: vpn, auth: auth);
   auth.onSubscriptionClaimed = () async {
     await subscriptions.syncPersonal();
-    if (vpn.nodes.isEmpty) {
-      await subscriptions.fetchAll();
-    }
   };
   final UpdateController updates = UpdateController(native)
     ..onExitForInstall = window.quit;
@@ -246,14 +243,9 @@ Future<void> main(List<String> arguments) async {
     if (auth.signedIn) {
       unawaited(auth.fetchNotifications(includeHistory: true));
       unawaited(auth.refreshFromPanel());
-      // اشتراک شخصی از سرور خوانده می شود؛ فقط اگر سرور چیزی نداد منابع عمومی
-      // به عنوان پشتیبان بارگذاری می شوند.
-      unawaited(() async {
-        await subscriptions.syncPersonal();
-        if (vpn.nodes.isEmpty) {
-          await subscriptions.fetchAll();
-        }
-      }());
+      // فقط اشتراک اختصاصی حساب کاربر واردشده دریافت می شود؛ هیچ منبع عمومی
+      // یا رایگان وجود ندارد.
+      unawaited(subscriptions.syncPersonal());
     }
   });
 }

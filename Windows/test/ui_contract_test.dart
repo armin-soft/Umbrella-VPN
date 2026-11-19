@@ -833,12 +833,28 @@ void main() {
       expect(endpoints.contains("'sub/'"), isTrue);
       final String config = read('lib/core/app_config.dart');
       expect(
-        config.contains(
-          'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11',
-        ),
+        config.contains("'https://user.umbrella-server.ir/D6qnVQXRwa/'"),
         isTrue,
       );
-      expect(config.contains(r"'$subscriptionRoot/sub/'"), isTrue);
+      expect(
+        config.contains('9b9d9f5d-9841-45bf-a6b9-0479de273c11'),
+        isFalse,
+        reason: 'هیچ شناسه اشتراک اشتراکی یا عمومی نباید در تنظیمات برنامه باشد',
+      );
+      expect(config.contains('defaultSubscriptionUrl'), isFalse);
+      final String subCtrl = read('lib/state/subscription_controller.dart');
+      for (final String forbidden in <String>[
+        '_activateFallbackSources',
+        '_fallbackActive',
+        'منابع عمومی استفاده می شود',
+        'پیکربندی پشتیبان برنامه',
+      ]) {
+        expect(
+          subCtrl.contains(forbidden),
+          isFalse,
+          reason: '$forbidden نباید در کنترلر اشتراک وجود داشته باشد',
+        );
+      }
     });
 
     test('منوی منطقه و سرورها از صفحه اتصال کامل حذف شده و دو گزینه اتصال مرتب اند', () {

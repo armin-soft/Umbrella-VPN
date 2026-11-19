@@ -663,6 +663,51 @@ class AuthController extends ChangeNotifier {
   /// می شود تا اتصال فعال قطع شود. در main به VpnController وصل می شود.
   void Function(String reason)? onAccessRevoked;
 
+  /// دریافت اشتراک اختصاصی کاربر از طریق درگاه ربات (مسیر کمکی بدون هیچ منبع
+  /// عمومی، فقط برای خود حساب واردشده).
+  Future<String?> fetchSubscriptionViaGateway() async {
+    final SessionData? session = _session;
+    if (session == null || session.token.isEmpty) {
+      return null;
+    }
+    try {
+      final ({String content, String subscriptionUrl, String accountBase})?
+          fetched = await _gateway.fetchSubscription(session.token);
+      if (fetched == null) {
+        return null;
+      }
+      final SessionData? current = _session;
+      if (current != null) {
+        final String nextSub = fetched.subscriptionUrl.isNotEmpty
+            ? fetched.subscriptionUrl
+            : current.account.subscriptionUrl;
+        final String nextBase = fetched.accountBase.isNotEmpty
+            ? fetched.accountBase
+            : current.account.accountBase;
+        if (nextSub != current.account.subscriptionUrl ||
+            nextBase != current.account.accountBase) {
+          _session = current.copyWith(
+            account: current.account.copyWith(
+              subscriptionUrl: nextSub,
+              accountBase: nextBase,
+            ),
+          );
+          await _store.writeJson(StoreKeys.session, _session!.toJson());
+        }
+      }
+      return fetched.content;
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+        notifyListeners();
+      }
+      return null;
+    }
+  }
+
   Future<void> refreshAccount({bool silent = false}) async {
     final SessionData? session = _session;
     if (session == null) {

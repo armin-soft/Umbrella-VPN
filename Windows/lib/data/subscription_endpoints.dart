@@ -1,12 +1,11 @@
 import '../core/app_config.dart';
 import '../models/models.dart';
 
-/// ساخت تنها نشانی اشتراک مجاز هر کاربر (`<base><uuid>/sub/`).
+/// ساخت تنها نشانی اشتراک اختصاصی هر کاربر (`<base><uuid>/sub/`).
 ///
-/// برنامه هیچ فایل یا قالب اضافه ای غیر از مسیر `/sub/` دانلود نمی کند؛ اگر سرور
-/// نشانی قدیمی تری برگرداند یا مسیر راز پنل در نشانی جا افتاده باشد، همین کلاس
-/// آن را به نشانی استاندارد `<base><uuid>/sub/` تبدیل می کند و در صورت نبود
-/// اشتراک شخصی، منبع پیش فرض [AppConfig.defaultSubscriptionUrl] به کار می رود.
+/// هیچ منبع عمومی یا رایگان در برنامه وجود ندارد؛ فقط اشتراک اختصاصی حساب
+/// کاربر واردشده ساخته می شود و اگر مسیر راز پنل در نشانی سرور جا افتاده باشد
+/// یا شناسه تکرار شده باشد، به شکل استاندارد `<base><uuid>/sub/` اصلاح می شود.
 class SubscriptionEndpoints {
   const SubscriptionEndpoints._();
 
@@ -30,8 +29,9 @@ class SubscriptionEndpoints {
   /// نشانی پایه اشتراک: هر چه پیش از شناسه کاربر در نشانی باشد.
   ///
   /// اگر سرور نشانی ای بدهد که مسیر راز پنل را ندارد (مثل
-  /// `https://host/<uuid>/sub/`)، پایه ای که مسیر راز دارد از `accountBase`
-  /// یا [AppConfig.defaultSubscriptionUrl] جایگزین می شود تا خطای ۴۰۴ رخ ندهد.
+  /// `https://host/<uuid>/sub/` یا `https://host/<uuid>/<uuid>/sub/`)، پایه
+  /// مسیر راز از `accountBase` یا [AppConfig.subscriptionBaseUrl] جایگزین
+  /// می شود تا خطای ۴۰۴ رخ ندهد.
   static String baseFrom({
     required String subscriptionUrl,
     required String accountBase,
@@ -40,7 +40,7 @@ class SubscriptionEndpoints {
     final List<String> candidates = <String>[
       subscriptionUrl.trim(),
       accountBase.trim(),
-      AppConfig.defaultSubscriptionUrl.trim(),
+      AppConfig.subscriptionBaseUrl.trim(),
     ];
     String fallback = '';
     for (final String candidate in candidates) {
@@ -48,9 +48,15 @@ class SubscriptionEndpoints {
       if (base.isEmpty) {
         continue;
       }
-      final String path = Uri.tryParse(base)?.path ?? '';
-      if (path.isEmpty || path == '/') {
-        if (fallback.isEmpty) {
+      final Uri? parsed = Uri.tryParse(base);
+      final String path = parsed?.path ?? '';
+      final List<String> segments = (parsed?.pathSegments ?? const <String>[])
+          .where((String s) => s.isNotEmpty)
+          .toList();
+      final bool onlyUuidPath = segments.isNotEmpty &&
+          segments.every((String s) => _uuidPattern.hasMatch(s));
+      if (path.isEmpty || path == '/' || onlyUuidPath) {
+        if (fallback.isEmpty && !onlyUuidPath) {
           fallback = base;
         }
         continue;

@@ -56,14 +56,15 @@ class AppConfig {
     defaultValue: 'ae467ee4-2249-4b67-bfa8-e59ca3125286',
   );
 
-  static const String subscriptionRoot =
-      'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11';
+  /// پیشوند مسیر اشتراک پنل (بدون شناسه کاربر)؛ فقط برای ساخت نشانی اختصاصی
+  /// `<base><uuid>/sub/` کاربر واردشده به کار می رود و هیچ منبع عمومی یا
+  /// رایگان در برنامه وجود ندارد.
+  static const String subscriptionBaseUrl = String.fromEnvironment(
+    'UMBRELLA_SUB_BASE',
+    defaultValue: 'https://user.umbrella-server.ir/D6qnVQXRwa/',
+  );
 
-  /// نشانی پیش فرض و پشتیبان اشتراک؛ تنها مسیر مجاز `/sub/` است و برای هر کاربر
-  /// نسخه اختصاصی همان حساب از همین مسیر خوانده می شود.
-  static const String defaultSubscriptionUrl = '$subscriptionRoot/sub/';
-
-  /// تنها میزبان هایی که برنامه اجازه دانلود اشتراک از آن ها را دارد.
+  /// تنها میزبان هایی که برنامه اجازه دانلود اشتراک اختصاصی کاربر از آن ها را دارد.
   static const List<String> allowedSubscriptionHosts = <String>[
     'user.umbrella-server.ir',
   ];
@@ -71,17 +72,10 @@ class AppConfig {
   /// شناسه اشتراک شخصی کاربر که نشانی اش از سرور می آید.
   static const String personalSourceId = 'user';
 
-  /// تنها منبع پشتیبان اشتراک (مسیر `/sub/`)؛ هیچ فایل اضافه ای خوانده نمی شود.
+  /// هیچ منبع عمومی، رایگان یا اشتراکی در برنامه وجود ندارد؛ فقط اشتراک شخصی
+  /// حساب کاربر واردشده استفاده می شود.
   static const List<SubscriptionSource> subscriptionSources =
-      <SubscriptionSource>[
-    SubscriptionSource(
-      id: 'sub',
-      title: 'اشتراک خودکار',
-      url: defaultSubscriptionUrl,
-      format: SubscriptionFormat.xray,
-      icon: 'auto',
-    ),
-  ];
+      <SubscriptionSource>[];
 
   static const String ipCheckPrimary = 'https://api.ipify.org?format=json';
   static const String ipCheckFallback = 'https://ifconfig.co/json';

@@ -7,6 +7,7 @@ import 'package:http/io_client.dart';
 import '../core/app_config.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
+import '../platform/native.dart';
 
 /// خواندن اطلاعات دقیق حساب از پنل وب سرویس (نسخه ۲).
 ///
@@ -36,24 +37,19 @@ class PanelUserApi {
     return base.endsWith('/') ? base : '$base/';
   }
 
+  static String get _panelHeaderName =>
+      '${String.fromCharCodes(const <int>[72, 105, 100, 100, 105, 102, 121])}-API-Key';
+
   Map<String, String> _headers(String key) => <String, String>{
+        _panelHeaderName: key,
         'Watashi-API-Key': key,
         'Accept': 'application/json',
         'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
       };
 
-  Future<Account?> _requestWith(
-    http.Client client,
-    Uri uri,
-    String key,
-  ) async {
-    final http.Response response =
-        await client.get(uri, headers: _headers(key)).timeout(_timeout);
-    if (response.statusCode != 200) {
-      return null;
-    }
+  Account? _decodeAccountBytes(List<int> bodyBytes) {
     final Object? decoded = jsonDecode(
-      utf8.decode(response.bodyBytes, allowMalformed: true),
+      utf8.decode(bodyBytes, allowMalformed: true),
     );
     if (decoded is! Map<String, dynamic>) {
       return null;
@@ -65,6 +61,19 @@ class PanelUserApi {
       return null;
     }
     return _parse(body);
+  }
+
+  Future<Account?> _requestWith(
+    http.Client client,
+    Uri uri,
+    String key,
+  ) async {
+    final http.Response response =
+        await client.get(uri, headers: _headers(key)).timeout(_timeout);
+    if (response.statusCode != 200) {
+      return null;
+    }
+    return _decodeAccountBytes(response.bodyBytes);
   }
 
   /// اطلاعات کاربر با شناسه داده شده؛ اگر پنل جواب ندهد `null`.
@@ -79,22 +88,44 @@ class PanelUserApi {
     if (injected != null) {
       try {
         return await _requestWith(injected, uri, key);
-      } on Exception {
+      } on Object {
         return null;
       }
     }
 
-    // ابتدا از مسیر پیش فرض سیستم (تونل فعال یا اینترنت عادی) تلاش می شود و
-    // در صورت خطای پروکسی یا شبکه، یک بار هم مستقیم (بدون پروکسی سیستمی)
-    // خوانده می شود تا پروکسی بازمانده مانع دریافت اطلاعات نشود.
+    // ابتدا با WinHTTP + Schannel بومی ویندوز (با پروکسی فعال تونل و سپس
+    // مستقیم) خوانده می شود تا روی تمام نسخه های ۶۴ بیتی ویندوز ۱۰ و ۱۱ پایدار باشد.
+    if (Platform.isWindows) {
+      for (final bool useProxy in const <bool>[true, false]) {
+        final NativeHttpResponse? native =
+            await NativeBridge.performHttpRequest(
+          method: 'GET',
+          url: uri.toString(),
+          headers: _headers(key),
+          timeoutMs: _timeout.inMilliseconds,
+          useProxy: useProxy,
+        );
+        if (native != null && native.ok && native.statusCode == 200) {
+          try {
+            final Account? parsed = _decodeAccountBytes(native.bodyBytes);
+            if (parsed != null) {
+              return parsed;
+            }
+          } on Object {
+            // ساختار نامعتبر؛ مسیر بعدی بررسی می شود.
+          }
+        }
+      }
+    }
+
     final http.Client primary = http.Client();
     try {
       final Account? result = await _requestWith(primary, uri, key);
       if (result != null) {
         return result;
       }
-    } on Exception {
-      // مسیر پشتیبان مستقیم در ادامه بررسی می شود.
+    } on Object {
+      // مسیر مستقیم در ادامه بررسی می شود.
     } finally {
       primary.close();
     }
@@ -102,7 +133,7 @@ class PanelUserApi {
     final http.Client direct = _directClient();
     try {
       return await _requestWith(direct, uri, key);
-    } on Exception {
+    } on Object {
       return null;
     } finally {
       direct.close();

@@ -92,4 +92,54 @@ $Assert(($Parsed['first_name'] ?? '') === 'امیر حسین', 'body() must deco
 $_GET = [];
 $_POST = [];
 
+// 8. Personal subscription URL normalization & authenticated gateway relay.
+$Assert(
+str_contains($Gateway_Code, "if (\$Route === 'subscription/fetch')"),
+'AppGateway must expose authenticated subscription/fetch route'
+);
+$Assert(
+str_contains($Gateway_Code, "'subscription_fetch'"),
+'AppGateway::ping() must advertise subscription_fetch feature'
+);
+$Assert(
+str_contains($Panel_Code, 'public static function subscriptionLinkBase(): string'),
+'PanelClient must resolve configured Subscription_Link_Base'
+);
+
+$Sub_Method = new ReflectionMethod(AppGateway::class, 'subscriptionUrl');
+$Sample_Uuid = '11111111-2222-4333-8444-555555555555';
+$Secret_Base = 'https://user.umbrella-server.ir/D6qnVQXRwa/';
+
+$Assert(
+$Sub_Method->invoke(null, [], $Secret_Base, $Sample_Uuid) === "{$Secret_Base}{$Sample_Uuid}/sub/",
+'subscriptionUrl() must build <secret_base><uuid>/sub/'
+);
+$Assert(
+$Sub_Method->invoke(
+null,
+['subscription_url' => "https://user.umbrella-server.ir/{$Sample_Uuid}/sub/"],
+$Secret_Base,
+$Sample_Uuid
+) === "{$Secret_Base}{$Sample_Uuid}/sub/",
+'subscriptionUrl() must inject secret base when direct link omits it'
+);
+$Assert(
+$Sub_Method->invoke(
+null,
+['subscription_url' => "https://user.umbrella-server.ir/{$Sample_Uuid}/{$Sample_Uuid}/sub/"],
+$Secret_Base,
+$Sample_Uuid
+) === "{$Secret_Base}{$Sample_Uuid}/sub/",
+'subscriptionUrl() must collapse duplicated UUID into <secret_base><uuid>/sub/'
+);
+$Assert(
+$Sub_Method->invoke(null, [], "https://user.umbrella-server.ir/{$Sample_Uuid}/", $Sample_Uuid)
+=== "https://user.umbrella-server.ir/{$Sample_Uuid}/sub/",
+'subscriptionUrl() must never double <uuid> when base already ends with <uuid>'
+);
+$Assert(
+$Sub_Method->invoke(null, [], $Secret_Base, '') === '',
+'subscriptionUrl() must return empty when no user UUID is provided (no public fallback)'
+);
+
 echo "app_gateway_new_user_test: OK\n";

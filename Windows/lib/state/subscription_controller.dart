@@ -11,6 +11,7 @@ import '../core/utils.dart';
 import '../data/parsers.dart';
 import '../data/subscription_endpoints.dart';
 import '../models/models.dart';
+import '../platform/native.dart';
 import '../platform/services.dart';
 import 'auth_controller.dart';
 import '../vpn/vpn_controller.dart';
@@ -38,47 +39,51 @@ class SourceState {
   bool get personal => source.personal;
 }
 
-/// دانلود و خواندن اشتراک ها.
+/// دانلود و به روز رسانی اشتراک اختصاصی کاربر.
 ///
-/// همه چیز خودکار است: سرور پایه اشتراک هر کاربر را می دهد، برنامه همان پایه
-/// را به پنج نشانی استاندارد پنل (ایکس ری، کلش متا، وایرگارد، آمنزیا، میرو)
-/// تبدیل می کند و خودش می خواند. هیچ نشانی دستی وارد نمی شود.
+/// هیچ منبع عمومی، رایگان یا اشتراکی در برنامه استفاده نمی شود: فقط نشانی
+/// اختصاصی `/sub/` حساب کاربر واردشده از مسیر بومی ویندوز (WinHTTP + Schannel)،
+/// مسیر پشتیبان کلاینت و در صورت محدودیت شبکه از درگاه امن حساب دریافت می شود.
 class SubscriptionController extends ChangeNotifier {
   SubscriptionController({
     required VpnController vpn,
     required AuthController auth,
     http.Client? client,
+    bool? enableNativeTransport,
   })  : _vpn = vpn,
         _auth = auth,
-        _client = client ?? _directClient() {
-    _sources = AppConfig.subscriptionSources
-        .map((SubscriptionSource source) => SourceState(source: source))
-        .toList();
+        _injectedClient = client != null,
+        _enableNativeTransport =
+            enableNativeTransport ?? (client == null && Platform.isWindows),
+        _client = client ?? _createClient(direct: true),
+        _proxyClient = client == null ? _createClient(direct: false) : null {
+    _sources = <SourceState>[];
     _rebuildSources();
     _auth.addListener(_onAccountChanged);
   }
 
-  /// کلاینت بدون پروکسی: نشانی ها ایرانی هستند و پروکسی بازمانده یک برنامه
-  /// دیگر نباید دریافت اشتراک را بشکند.
-  static http.Client _directClient() {
+  static http.Client _createClient({required bool direct}) {
     final HttpClient inner = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 20);
-    inner.findProxy = (Uri _) => 'DIRECT';
+      ..connectionTimeout = const Duration(seconds: 12)
+      ..idleTimeout = const Duration(seconds: 15);
+    inner.findProxy =
+        direct ? (Uri _) => 'DIRECT' : HttpClient.findProxyFromEnvironment;
     return IOClient(inner);
   }
 
   final VpnController _vpn;
   final AuthController _auth;
+  final bool _injectedClient;
+  final bool _enableNativeTransport;
   final http.Client _client;
+  final http.Client? _proxyClient;
   final AppLogger _log = AppLogger.instance;
 
   late List<SourceState> _sources;
   String _signature = '';
   String _personalFetchedFor = '';
+  Future<void>? _syncInFlight;
   bool _disposed = false;
-
-  /// وقتی نشانی های سرور پاسخ نمی دهند، منابع عمومی جای آن ها را می گیرند.
-  bool _fallbackActive = false;
 
   /// نشانی های اشتراک بدون ورود به حساب در دسترس نیستند (کد ۴۰۱/۴۰۳/۴۰۴).
   bool _needsLogin = false;
@@ -143,24 +148,23 @@ class SubscriptionController extends ChangeNotifier {
 
   int get okSources => _sources.where((SourceState item) => item.loaded).length;
 
-  /// منابع اشتراک را از داده حساب بازسازی می کند و می گوید فهرست عوض شد یا نه.
+  /// فقط منبع اشتراک اختصاصی حساب واردشده را می سازد؛ هیچ منبع عمومی یا رایگان
+  /// هرگز اضافه نمی شود.
   bool _rebuildSources() {
-    final List<SubscriptionSource> personal = SubscriptionEndpoints.build(
-      subscriptionUrl: _auth.account.subscriptionUrl,
-      accountBase: _auth.account.accountBase,
-      uuid: _auth.account.uuid,
-    );
-    final List<SubscriptionSource> next = personal.isNotEmpty
-        ? personal
-        : AppConfig.subscriptionSources;
+    final List<SubscriptionSource> next = _auth.signedIn
+        ? SubscriptionEndpoints.build(
+            subscriptionUrl: _auth.account.subscriptionUrl,
+            accountBase: _auth.account.accountBase,
+            uuid: _auth.account.uuid,
+          )
+        : const <SubscriptionSource>[];
     final String signature = next
         .map((SubscriptionSource item) => '${item.id}|${item.url}')
         .join('\n');
-    if (signature == _signature && _sources.isNotEmpty) {
+    if (signature == _signature && _sources.length == next.length) {
       return false;
     }
     _signature = signature;
-    _fallbackActive = false;
     _needsLogin = false;
     _personalFetchedFor = '';
     final Map<String, SourceState> previous = <String, SourceState>{
@@ -181,13 +185,22 @@ class SubscriptionController extends ChangeNotifier {
       return;
     }
     final bool changed = _rebuildSources();
+    if (!_auth.signedIn) {
+      if (_vpn.nodes.isNotEmpty) {
+        unawaited(_vpn.applyNodes(<VpnNode>[], measure: false));
+      }
+      if (changed) {
+        notifyListeners();
+      }
+      return;
+    }
     if (changed) {
       notifyListeners();
     }
     if (!hasPersonal || personalLoading) {
       return;
     }
-    // هر مجموعه نشانی تازه یک بار به صورت خودکار خوانده می شود.
+    // هر نشانی تازه اشتراک شخصی یک بار به صورت خودکار خوانده می شود.
     final String signature = personalSources
         .map((SourceState item) => item.source.url)
         .join('|');
@@ -200,11 +213,18 @@ class SubscriptionController extends ChangeNotifier {
 
   Future<void> loadCached() async {
     await _vpn.bootstrap();
+    if (!_auth.signedIn) {
+      // بدون ورود به حساب هیچ سرور ذخیره شده یا عمومی نگه داشته نمی شود.
+      if (_vpn.nodes.isNotEmpty) {
+        await _vpn.applyNodes(<VpnNode>[], measure: false);
+      }
+      return;
+    }
     if (_vpn.nodes.isNotEmpty) {
-      // فقط گره های متعلق به تنها مسیر مجاز `/sub/` نگه داشته می شوند؛ هر کش
-      // بازمانده از مسیرهای حذف شده نسخه های پیشین بی درنگ پاک می شود.
+      // فقط گره های اشتراک اختصاصی کاربر (`user-sub`) نگه داشته می شوند؛ هر
+      // گره بازمانده از منابع عمومی یا پیش فرض نسخه های قبلی بی درنگ حذف می شود.
       final Set<String> allowedIds =
-          _sources.map((SourceState item) => item.source.id).toSet();
+          personalSources.map((SourceState item) => item.source.id).toSet();
       final List<VpnNode> cleaned = _vpn.nodes
           .where((VpnNode node) => allowedIds.contains(node.sourceId))
           .map((VpnNode node) =>
@@ -214,7 +234,7 @@ class SubscriptionController extends ChangeNotifier {
           _vpn.nodes.any((VpnNode node) => node.disabled)) {
         await _vpn.applyNodes(cleaned, measure: false);
       }
-      for (final SourceState state in _sources) {
+      for (final SourceState state in personalSources) {
         final int count = _vpn.nodes
             .where((VpnNode node) => node.sourceId == state.source.id)
             .length;
@@ -225,132 +245,176 @@ class SubscriptionController extends ChangeNotifier {
     }
   }
 
-  /// اشتراک شخصی را از سرور می گیرد. اگر سرور هنوز داده کافی نداده باشد، یک بار
-  /// حساب به روز می شود و دوباره تلاش می کند. هیچ ورودی دستی وجود ندارد.
-  Future<void> syncPersonal() async {
-    if (!_auth.signedIn) {
+  /// اشتراک اختصاصی کاربر را از سرور دریافت و به روز می کند (تک پروازی تا چند
+  /// فراخوانی هم زمان با هم تداخل نکنند و گزارش خطای تکراری ثبت نشود).
+  Future<void> syncPersonal() {
+    final Future<void>? active = _syncInFlight;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> run = _performSyncPersonal();
+    _syncInFlight = run;
+    return run.whenComplete(() {
+      if (identical(_syncInFlight, run)) {
+        _syncInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _performSyncPersonal() async {
+    if (!_auth.signedIn || _disposed) {
       return;
     }
+    bool refreshedAccount = false;
     if (!hasPersonal) {
       await _auth.refreshAccount(silent: true);
-      final bool changed = _rebuildSources();
-      if (changed) {
+      refreshedAccount = true;
+      if (_rebuildSources() && !_disposed) {
         notifyListeners();
       }
     }
-    final List<SourceState> personal = personalSources;
+    List<SourceState> personal = personalSources;
     if (personal.isEmpty) {
       _log.add(
-        'سرور برای این حساب نشانی اشتراک نداد؛ منابع عمومی استفاده می شود.',
+        'برای این حساب هنوز نشانی اشتراک اختصاصی ثبت نشده است.',
         level: 'warning',
       );
       return;
     }
-    final _BatchFetch batch = await _fetchMany(personal);
-    final List<VpnNode> fetched = batch.nodes;
+
+    _personalFetchedFor =
+        personal.map((SourceState item) => item.source.url).join('|');
+    _BatchFetch batch = await _fetchMany(personal, logErrors: false);
+    List<VpnNode> fetched = batch.nodes;
+
+    // اگر دسترسی مستقیم به دامنه پنل اشتراک محدود بود یا پاسخی نرسید، اشتراک
+    // اختصاصی همین کاربر از درگاه امن حساب (armin-soft.ir) خوانده می شود.
+    if (fetched.isEmpty && _auth.signedIn && !_disposed) {
+      final SourceState primary = personal.first;
+      final List<VpnNode> viaGateway = await _tryFetchViaGateway(primary);
+      if (viaGateway.isNotEmpty) {
+        fetched = viaGateway;
+      }
+    }
+
+    // اگر هنوز دریافت نشد و پروفایل حساب تازه نشده بود، یک بار نشانی اشتراک را
+    // از درگاه به روز کن و در صورت تغییر نشانی دوباره امتحان کن.
+    if (fetched.isEmpty && !refreshedAccount && _auth.signedIn && !_disposed) {
+      final String previousUrl = personal.first.source.url;
+      await _auth.refreshAccount(silent: true);
+      _rebuildSources();
+      personal = personalSources;
+      if (personal.isNotEmpty && personal.first.source.url != previousUrl) {
+        _personalFetchedFor =
+            personal.map((SourceState item) => item.source.url).join('|');
+        batch = await _fetchMany(personal, logErrors: false);
+        fetched = batch.nodes;
+        if (fetched.isEmpty && _auth.signedIn && !_disposed) {
+          fetched = await _tryFetchViaGateway(personal.first);
+        }
+      }
+    }
+
     if (fetched.isEmpty) {
       _needsLogin = personal.every((SourceState item) => item.unauthorized);
-      if (_needsLogin) {
+      final SourceState state = personal.first;
+      if (!_auth.account.canConnect) {
         _log.add(
-          'نشانی های اشتراک بدون ورود به حساب پاسخ نمی دهند (کد '
-          '${Fa.num(personal.isEmpty ? 0 : personal.first.lastStatus)})؛ '
-          'ابتدا وارد حساب شوید.',
+          'اشتراک به روز نشد: ${_auth.account.accessReason}',
           level: 'warning',
         );
+      } else if (state.lastStatus == 404) {
+        _log.add(
+          'نشانی اشتراک این حساب در سرور پیدا نشد (کد ۴۰۴)؛ وضعیت بسته اشتراک را در حساب من بررسی کنید.',
+          level: 'error',
+        );
+      } else if (state.lastStatus == 401 || state.lastStatus == 403) {
+        _log.add(
+          'دسترسی به نشانی اشتراک رد شد (کد ${Fa.num(state.lastStatus)}).',
+          level: 'error',
+        );
+      } else if (state.lastStatus >= 200 && state.lastStatus < 300) {
+        _log.add(
+          'اشتراک شما هنوز سرور فعالی ندارد؛ در صورت نداشتن بسته فعال از بخش حساب من اشتراک تهیه کنید.',
+          level: 'warning',
+        );
+      } else {
+        final String detail =
+            state.error.isNotEmpty ? state.error : 'سرور اشتراک پاسخ نداد.';
+        _log.add(detail, level: 'error');
       }
-      await _activateFallbackSources();
+      if (!_disposed) {
+        notifyListeners();
+      }
       return;
     }
-    _fallbackActive = false;
+
     _needsLogin = false;
-    // همه منبع های شخصی بازخوانی شدند؛ سرورهای حذف شده قدیمی از کش پاک می شوند
-    // تا فهرست اتصال با سرورهای ازکارافتاده انباشته نشود.
     final int uniqueCount = await _applyNodes(
       fetched,
-      refreshedSourceIds: personal
-          .map((SourceState item) => item.source.id)
-          .toSet(),
+      refreshedSourceIds:
+          personal.map((SourceState item) => item.source.id).toSet(),
     );
     if (!_disposed) {
       notifyListeners();
     }
-    _log.add(
-      'اشتراک کاربر به روز شد: ${Fa.num(uniqueCount)} مسیر آماده اتصال.',
-    );
+    if (uniqueCount > 0) {
+      _log.add(
+        'اشتراک کاربر به روز شد: ${Fa.num(uniqueCount)} مسیر آماده اتصال.',
+      );
+    }
   }
 
-  /// اگر نشانی اختصاصی کاربر پاسخ نداد، منبع پشتیبان پیش فرض امتحان می شود
-  /// تا کاربر بدون مسیر اتصال نماند.
-  Future<void> _activateFallbackSources() async {
-    if (_fallbackActive) {
-      return;
+  Future<List<VpnNode>> _tryFetchViaGateway(SourceState state) async {
+    state.loading = true;
+    if (!_disposed) {
+      notifyListeners();
     }
-    _fallbackActive = true;
-    _sources = AppConfig.subscriptionSources
-        .map((SubscriptionSource source) => SourceState(source: source))
-        .toList();
-    notifyListeners();
-    _log.add(
-      'اشتراک حساب پاسخ نداد؛ در حال بارگذاری پیکربندی پشتیبان برنامه.',
-      level: 'warning',
-    );
-    final _BatchFetch batch = await _fetchMany(_sources);
-    final List<VpnNode> nodes = batch.nodes;
-    if (nodes.isEmpty) {
-      _log.add('دریافت پیکربندی اشتراک ناموفق بود.', level: 'error');
-      if (_needsLogin) {
-        _log.add(
-          'فهرست سرورهای قبلی پاک شد؛ پس از ورود به حساب، اشتراک دوباره '
-          'خوانده می شود.',
-          level: 'warning',
-        );
-        await _vpn.applyNodes(<VpnNode>[], measure: false);
+    try {
+      final String? content = await _auth.fetchSubscriptionViaGateway();
+      if (content == null || content.trim().isEmpty) {
+        state.loading = false;
+        return const <VpnNode>[];
       }
-      notifyListeners();
-      return;
-    }
-    await _applyNodes(
-      nodes,
-      refreshedSourceIds: _sources
-          .map((SourceState item) => item.source.id)
-          .toSet(),
-    );
-    if (!_disposed) {
-      notifyListeners();
+      final ParseReport report =
+          SubscriptionParser.parseAuto(content, state.source.id);
+      if (report.nodes.isEmpty) {
+        state.loading = false;
+        return const <VpnNode>[];
+      }
+      state
+        ..loading = false
+        ..loaded = true
+        ..lastStatus = 200
+        ..body = content
+        ..count = report.count
+        ..checkedAt = DateTime.now()
+        ..error = '';
+      return report.nodes;
+    } on Object {
+      state.loading = false;
+      return const <VpnNode>[];
     }
   }
 
+  /// فقط اشتراک شخصی کاربر واردشده را بازخوانی می کند؛ منبع عمومی وجود ندارد.
   Future<void> fetchAll() async {
-    if (_loadingAll) {
+    if (!_auth.signedIn || _loadingAll) {
       return;
     }
     _loadingAll = true;
     _progress = 0;
-    notifyListeners();
-    final List<SourceState> order = <SourceState>[
-      ...personalSources,
-      ..._sources.where((SourceState item) => !item.personal),
-    ];
-    final _BatchFetch batch = await _fetchMany(
-      order,
-      onProgress: (int done, int total) {
-        _progress = total == 0 ? 1 : done / total;
-        if (!_disposed) {
-          notifyListeners();
-        }
-      },
-    );
-
-    await _applyNodes(
-      batch.nodes,
-      refreshedSourceIds: batch.nodes.isNotEmpty
-          ? batch.settledSourceIds
-          : const <String>{},
-    );
-    _loadingAll = false;
-    _progress = 1;
     if (!_disposed) {
       notifyListeners();
+    }
+    try {
+      await syncPersonal();
+    } finally {
+      _loadingAll = false;
+      _progress = 1;
+      if (!_disposed) {
+        notifyListeners();
+      }
     }
   }
 
@@ -372,6 +436,7 @@ class SubscriptionController extends ChangeNotifier {
   Future<_BatchFetch> _fetchMany(
     List<SourceState> items, {
     int concurrency = 3,
+    bool logErrors = true,
     void Function(int done, int total)? onProgress,
   }) async {
     if (items.isEmpty) {
@@ -391,7 +456,7 @@ class SubscriptionController extends ChangeNotifier {
           return;
         }
         final SourceState state = items[index];
-        final ParseReport? report = await _fetch(state);
+        final ParseReport? report = await _fetch(state, logErrors: logErrors);
         reports[index] = report;
         if (report != null ||
             (state.lastStatus >= 200 && state.lastStatus < 500)) {
@@ -544,18 +609,18 @@ class SubscriptionController extends ChangeNotifier {
     ].join('\x1f');
   }
 
-  /// آیا میزبان این نشانی قابل اعتماد است؟ نشانی اشتراک از خود سرور می آید،
-  /// بنابراین میزبان درگاه یا میزبان پایه حساب هم پذیرفته می شود.
+  /// آیا میزبان این نشانی قابل اعتماد است؟ فقط اشتراک شخصی کاربر از میزبان
+  /// رسمی پنل، میزبان درگاه یا پایه حساب تاییدشده مجاز است.
   bool _hostAllowed(Uri uri, {required bool personal}) {
+    if (!personal) {
+      return false;
+    }
     final String host = uri.host.toLowerCase();
     if (host.isEmpty) {
       return false;
     }
     if (AppConfig.allowedSubscriptionHosts.contains(host)) {
       return true;
-    }
-    if (!personal) {
-      return false;
     }
     final String gateway =
         Uri.tryParse(_auth.gatewayBase)?.host.toLowerCase() ?? '';
@@ -564,63 +629,190 @@ class SubscriptionController extends ChangeNotifier {
     return host == gateway || (base.isNotEmpty && host == base);
   }
 
-  /// یک درخواست با یک تلاش دوباره؛ اگر شبکه هنگام اتصال لحظه ای قطع شود،
-  /// دریافت اشتراک بدون دخالت کاربر تکرار می شود.
-  Future<http.Response> _getWithRetry(Uri uri) async {
-    final Map<String, String> headers = <String, String>{
-      'Accept': 'text/plain, */*',
-      'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
-    };
-    try {
-      final http.Response first = await _client
-          .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 12));
-      // خطای دائمی کلاینت (۴۰۱/۴۰۳/۴۰۴/۴۱۰) با تلاش دوباره درست نمی شود؛
-      // خطای موقت سرور (۵xx یا ۴۲۹) یک بار دوباره امتحان می شود.
-      if (first.statusCode == 429 || first.statusCode >= 500) {
-        await Future<void>.delayed(const Duration(milliseconds: 600));
-        return await _client
+  Map<String, String> _subHeaders({String? userAgent}) => <String, String>{
+        'Accept': 'text/plain, application/json, */*',
+        'Cache-Control': 'no-cache',
+        'User-Agent': userAgent ?? 'Umbrella-Windows/${AppConfig.version}',
+      };
+
+  Future<({http.Response? response, bool tlsFailed, bool timedOut})>
+      _downloadWithTransports(Uri uri, {String? userAgent}) async {
+    final Map<String, String> headers = _subHeaders(userAgent: userAgent);
+    if (_injectedClient) {
+      try {
+        final http.Response r = await _client
             .get(uri, headers: headers)
-            .timeout(const Duration(seconds: 12));
+            .timeout(const Duration(seconds: 15));
+        return (response: r, tlsFailed: false, timedOut: false);
+      } on TimeoutException {
+        return (response: null, tlsFailed: false, timedOut: true);
+      } on TlsException {
+        return (response: null, tlsFailed: true, timedOut: false);
+      } on Object {
+        return (response: null, tlsFailed: false, timedOut: false);
       }
-      return first;
-    } on Exception {
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      return await _client
-          .get(uri, headers: headers)
-          .timeout(const Duration(seconds: 12));
     }
+
+    bool sawTls = false;
+    bool sawTimeout = false;
+    int attempts = 0;
+    http.Response? fallbackError;
+
+    // ۱. مسیر بومی WinHTTP + Schannel ویندوز (در حالت وصل ابتدا از تونل فعال و
+    // در حالت قطع ابتدا مستقیم و سپس با پروکسی سیستم) برای سازگاری ۱۰۰ درصد با
+    // تمامی نسخه های ۶۴ بیتی ویندوز ۱۰ و ۱۱.
+    final bool preferProxy = _vpn.status.active;
+    if (_enableNativeTransport) {
+      final List<bool> proxyOrder = preferProxy
+          ? const <bool>[true, false]
+          : const <bool>[false, true];
+      for (final bool useProxy in proxyOrder) {
+        attempts++;
+        final NativeHttpResponse? native =
+            await NativeBridge.performHttpRequest(
+          method: 'GET',
+          url: uri.toString(),
+          headers: headers,
+          timeoutMs: 15000,
+          useProxy: useProxy,
+        );
+        if (native == null) {
+          break;
+        }
+        if (!native.ok || native.statusCode <= 0) {
+          if (native.winError == 12175) {
+            sawTls = true;
+          } else if (native.winError == 12002) {
+            sawTimeout = true;
+          }
+          continue;
+        }
+        final http.Response resp =
+            http.Response.bytes(native.bodyBytes, native.statusCode);
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          return (response: resp, tlsFailed: false, timedOut: false);
+        }
+        fallbackError ??= resp;
+        if (resp.statusCode == 401 || resp.statusCode == 404) {
+          return (response: resp, tlsFailed: false, timedOut: false);
+        }
+      }
+    }
+
+    // ۲. مسیر پشتیبان کلاینت دارت (مستقیم و با پروکسی سیستمی).
+    final http.Client? proxyClient = _proxyClient;
+    final List<http.Client> dartClients = preferProxy && proxyClient != null
+        ? <http.Client>[proxyClient, _client]
+        : <http.Client>[
+            _client,
+            if (proxyClient != null) proxyClient,
+          ];
+    for (final http.Client client in dartClients) {
+      attempts++;
+      try {
+        final http.Response resp = await client
+            .get(uri, headers: headers)
+            .timeout(const Duration(seconds: 14));
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          return (response: resp, tlsFailed: false, timedOut: false);
+        }
+        fallbackError ??= resp;
+        if (resp.statusCode == 401 || resp.statusCode == 404) {
+          return (response: resp, tlsFailed: false, timedOut: false);
+        }
+      } on TimeoutException {
+        sawTimeout = true;
+      } on TlsException {
+        sawTls = true;
+      } on Object {
+        // مسیر بعدی بررسی می شود.
+      }
+    }
+
+    return (
+      response: fallbackError,
+      tlsFailed: sawTls && attempts > 0 && !sawTimeout,
+      timedOut: sawTimeout,
+    );
   }
 
-  Future<ParseReport?> _fetch(SourceState state) async {
+  Future<ParseReport?> _fetch(
+    SourceState state, {
+    bool logErrors = true,
+  }) async {
     state.loading = true;
     state.error = '';
-    notifyListeners();
+    if (!_disposed) {
+      notifyListeners();
+    }
     try {
       final Uri uri = Uri.parse(state.source.url);
       if (!_hostAllowed(uri, personal: state.source.personal)) {
-        state.error = 'منبع اشتراک مجاز نیست.';
-        _log.add(
-          'منبع اشتراک در فهرست مجاز نیست و خوانده نشد.',
-          level: 'error',
-        );
-        state.loading = false;
-        notifyListeners();
+        state
+          ..error = 'منبع اشتراک مجاز نیست.'
+          ..loading = false;
+        if (logErrors) {
+          _log.add(
+            'منبع اشتراک در فهرست مجاز نیست و خوانده نشد.',
+            level: 'error',
+          );
+        }
+        if (!_disposed) {
+          notifyListeners();
+        }
         return null;
       }
-      final http.Response response = await _getWithRetry(uri);
+
+      final ({http.Response? response, bool tlsFailed, bool timedOut}) result =
+          await _downloadWithTransports(uri);
+      final http.Response? response = result.response;
+
+      if (response == null) {
+        final String message = result.tlsFailed
+            ? 'خطای گواهی امنیتی در دریافت اشتراک؛ ساعت و تاریخ ویندوز را بررسی کنید.'
+            : result.timedOut
+                ? 'پاسخ سرور اشتراک دیر رسید؛ اتصال اینترنت یا محدودیت شبکه را بررسی کنید.'
+                : 'دسترسی به سرور اشتراک برقرار نشد؛ اتصال اینترنت یا محدودیت شبکه را بررسی کنید.';
+        state
+          ..lastStatus = 0
+          ..loading = false
+          ..error = message;
+        if (logErrors) {
+          _log.add(message, level: 'error');
+        }
+        if (!_disposed) {
+          notifyListeners();
+        }
+        return null;
+      }
+
       state.lastStatus = response.statusCode;
       if (response.statusCode >= 300) {
-        state.error = 'پاسخ ناموفق اشتراک (کد ${Fa.num(response.statusCode)})';
-        _log.add(
-          'دریافت اشتراک ناموفق بود (کد ${Fa.num(response.statusCode)}).',
-          level: 'error',
-        );
-        state.loading = false;
-        notifyListeners();
+        final String message =
+            'دریافت اشتراک ناموفق بود (کد ${Fa.num(response.statusCode)}).';
+        state
+          ..error = message
+          ..loading = false;
+        if (logErrors) {
+          _log.add(message, level: 'error');
+        }
+        if (!_disposed) {
+          notifyListeners();
+        }
         return null;
       }
-      final String body = utf8.decode(response.bodyBytes, allowMalformed: true);
+
+      String body = utf8.decode(response.bodyBytes, allowMalformed: true);
+      if (SubscriptionParser.looksLikeHtml(body)) {
+        final ({http.Response? response, bool tlsFailed, bool timedOut}) alt =
+            await _downloadWithTransports(uri, userAgent: 'SingBox/1.10.0');
+        if (alt.response != null &&
+            alt.response!.statusCode >= 200 &&
+            alt.response!.statusCode < 300) {
+          body = utf8.decode(alt.response!.bodyBytes, allowMalformed: true);
+        }
+      }
+
       state.body = body;
       final ParseReport report =
           SubscriptionParser.parseAuto(body, state.source.id);
@@ -632,23 +824,29 @@ class SubscriptionController extends ChangeNotifier {
         ..error = report.nodes.isEmpty
             ? report.problems.take(2).join(' | ')
             : '';
-      notifyListeners();
+      if (!_disposed) {
+        notifyListeners();
+      }
       return report;
-    } on Exception {
+    } on Object {
+      const String message =
+          'دریافت اشتراک اختصاصی ناموفق بود؛ اتصال اینترنت را بررسی کنید.';
       state
         ..loading = false
-        ..error = 'دریافت اشتراک ناموفق بود.';
-      _log.add(
-        'دریافت اشتراک ناموفق بود؛ اتصال اینترنت را بررسی کنید.',
-        level: 'error',
-      );
-      notifyListeners();
+        ..error = message;
+      if (logErrors) {
+        _log.add(message, level: 'error');
+      }
+      if (!_disposed) {
+        notifyListeners();
+      }
       return null;
     }
   }
 
   Future<void> close() async {
     _client.close();
+    _proxyClient?.close();
   }
 
   @override

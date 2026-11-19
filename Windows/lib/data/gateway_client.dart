@@ -599,6 +599,35 @@ class GatewayClient {
     );
   }
 
+  /// دریافت محتوای اشتراک اختصاصی `/sub/` کاربر از طریق درگاه امن ربات؛ برای
+  /// شبکه هایی که دسترسی مستقیم به دامنه پنل اشتراک پیش از اتصال محدود است.
+  Future<({String content, String subscriptionUrl, String accountBase})?>
+      fetchSubscription(String token) async {
+    if (token.trim().isEmpty) {
+      return null;
+    }
+    try {
+      final Map<String, dynamic> json = await _post(
+        'subscription/fetch',
+        <String, dynamic>{'token': token},
+      );
+      final String content = JsonX.text(json['content']).trim();
+      if (content.isEmpty) {
+        return null;
+      }
+      return (
+        content: content,
+        subscriptionUrl: JsonX.text(json['subscription_url']).trim(),
+        accountBase: JsonX.text(json['account_base']).trim(),
+      );
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked' || error.needsLogin) {
+        rethrow;
+      }
+      return null;
+    }
+  }
+
   Future<bool> ping() async {
     try {
       final Map<String, dynamic> json = await _get('app/ping');
