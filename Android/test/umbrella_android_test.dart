@@ -52,6 +52,12 @@ class _OfflineIpService extends IpService {
 }
 
 void _installMockNativeChannel(WidgetTester tester) {
+  const MethodChannel pathChannel =
+      MethodChannel('plugins.flutter.io/path_provider');
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    pathChannel,
+    (MethodCall call) async => Directory.systemTemp.path,
+  );
   const MethodChannel channel = MethodChannel('ir.umbrella.app/native');
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
     channel,
@@ -118,29 +124,63 @@ void _installMockNativeChannel(WidgetTester tester) {
   );
 }
 
-Future<Widget> _buildTestHarness({
+class _HarnessBundle {
+  const _HarnessBundle({
+    required this.widget,
+    required this.disposeAsync,
+  });
+
+  final Widget widget;
+  final Future<void> Function() disposeAsync;
+}
+
+Future<_HarnessBundle> _buildTestHarness({
+  required WidgetTester tester,
   required bool landingSeen,
   required bool signedIn,
 }) async {
-  const Account sampleAccount = Account(
-    uuid: '9f7b5c1a-2233-4455-8899-aabbccddeeff',
-    name: 'آرمین',
-    phone: '09123456789',
-    enable: true,
-    isActive: true,
-    usageLimitGb: 100,
-    currentUsageGb: 18.5,
-    packageDays: 30,
-    subscriptionUrl:
-        'https://user.umbrella-server.ir/D6qnVQXRwa/9f7b5c1a-2233-4455-8899-aabbccddeeff/sub/',
-  );
+  return (await tester.runAsync<_HarnessBundle>(() async {
+    const Account sampleAccount = Account(
+      uuid: '9f7b5c1a-2233-4455-8899-aabbccddeeff',
+      name: 'آرمین',
+      phone: '09123456789',
+      enable: true,
+      isActive: true,
+      usageLimitGb: 100,
+      currentUsageGb: 18.5,
+      packageDays: 30,
+      subscriptionUrl:
+          'https://user.umbrella-server.ir/D6qnVQXRwa/9f7b5c1a-2233-4455-8899-aabbccddeeff/sub/',
+    );
 
-  final Map<String, Object> initialPrefs = <String, Object>{
-    StoreKeys.landingSeen: landingSeen,
-    StoreKeys.telegramChannelPromptAt: DateTime.now().millisecondsSinceEpoch,
-    if (signedIn) ...<String, Object>{
-      StoreKeys.deviceId: 'android-test-device',
-      StoreKeys.session: jsonEncode(
+    final Map<String, Object> initialPrefs = <String, Object>{
+      StoreKeys.landingSeen: landingSeen,
+      StoreKeys.telegramChannelPromptAt: DateTime.now().toIso8601String(),
+      if (signedIn) ...<String, Object>{
+        StoreKeys.deviceId: 'android-test-device',
+        StoreKeys.session: jsonEncode(
+          SessionData(
+            token: 'tok-android-test-123',
+            uuid: sampleAccount.uuid,
+            deviceId: 'android-test-device',
+            account: sampleAccount,
+            filter: FilterSettings.empty,
+          ).toJson(),
+        ),
+      },
+    };
+    SharedPreferences.setMockInitialValues(initialPrefs);
+    final LocalStore store = LocalStore.instance;
+    await store.init();
+    await store.writeBool(StoreKeys.landingSeen, landingSeen);
+    await store.write(
+      StoreKeys.telegramChannelPromptAt,
+      DateTime.now().toIso8601String(),
+    );
+    if (signedIn) {
+      await store.write(StoreKeys.deviceId, 'android-test-device');
+      await store.writeJson(
+        StoreKeys.session,
         SessionData(
           token: 'tok-android-test-123',
           uuid: sampleAccount.uuid,
@@ -148,119 +188,101 @@ Future<Widget> _buildTestHarness({
           account: sampleAccount,
           filter: FilterSettings.empty,
         ).toJson(),
-      ),
-    },
-  };
-  SharedPreferences.setMockInitialValues(initialPrefs);
-  final LocalStore store = LocalStore.instance;
-  await store.init();
-  await store.writeBool(StoreKeys.landingSeen, landingSeen);
-  await store.write(
-    StoreKeys.telegramChannelPromptAt,
-    DateTime.now().toIso8601String(),
-  );
-  if (signedIn) {
-    await store.write(StoreKeys.deviceId, 'android-test-device');
-    await store.writeJson(
-      StoreKeys.session,
-      SessionData(
-        token: 'tok-android-test-123',
-        uuid: sampleAccount.uuid,
-        deviceId: 'android-test-device',
-        account: sampleAccount,
-        filter: FilterSettings.empty,
-      ).toJson(),
+      );
+    } else {
+      await store.remove(StoreKeys.session);
+    }
+
+    final MockClient mockHttp = MockClient((http.Request request) async {
+      return http.Response(
+        jsonEncode(<String, Object>{'ok': false, 'items': <Object>[]}),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+    });
+
+    final NativeBridge native = NativeBridge();
+    final SoundService sound = _SilentSound();
+    final WindowService window = WindowService(native);
+    final IpService ipService = _OfflineIpService();
+    final SettingsController settings = SettingsController(
+      native: native,
+      sound: sound,
+      window: window,
     );
-  } else {
-    await store.remove(StoreKeys.session);
-  }
+    await settings.load();
 
-  final MockClient mockHttp = MockClient((http.Request request) async {
-    return http.Response(
-      jsonEncode(<String, Object>{'ok': false, 'items': <Object>[]}),
-      200,
-      headers: <String, String>{'content-type': 'application/json'},
+    final TrayService tray = TrayService(native);
+    final GatewayClient gateway = GatewayClient(
+      client: mockHttp,
+      enableNativeTransport: false,
     );
-  });
+    final AuthController auth = AuthController(
+      gateway: gateway,
+      native: native,
+      store: store,
+      sound: sound,
+      tray: tray,
+    );
+    await auth.restore();
 
-  final NativeBridge native = NativeBridge();
-  final SoundService sound = _SilentSound();
-  final WindowService window = WindowService(native);
-  final IpService ipService = _OfflineIpService();
-  final SettingsController settings = SettingsController(
-    native: native,
-    sound: sound,
-    window: window,
-  );
-  await settings.load();
+    final CoreProvisioner provisioner = CoreProvisioner();
+    await provisioner.init();
+    final ToastController toasts = ToastController();
+    final VpnController vpn = VpnController(
+      native: native,
+      ipService: ipService,
+      sound: sound,
+      tray: tray,
+      provisioner: provisioner,
+      settings: settings.settings,
+      onSettingsChanged: (AppSettings _) {},
+      onRequireElevation: () {},
+      onRequireCores: () {},
+      canAutoConnect: () => false,
+    );
+    final SubscriptionController subs = SubscriptionController(
+      vpn: vpn,
+      auth: auth,
+      client: mockHttp,
+      enableNativeTransport: false,
+    );
+    final UpdateController updates = UpdateController(
+      native,
+      service: UpdateService(client: mockHttp),
+    );
 
-  final TrayService tray = TrayService(native);
-  final GatewayClient gateway = GatewayClient(
-    client: mockHttp,
-    enableNativeTransport: false,
-  );
-  final AuthController auth = AuthController(
-    gateway: gateway,
-    native: native,
-    store: store,
-    sound: sound,
-    tray: tray,
-  );
-  await auth.restore();
+    final Widget widget = MultiProvider(
+      providers: [
+        Provider<NativeBridge>.value(value: native),
+        Provider<WindowService>.value(value: window),
+        Provider<SoundService>.value(value: sound),
+        Provider<IpService>.value(value: ipService),
+        Provider<TrayService>.value(value: tray),
+        Provider<CoreProvisioner>.value(value: provisioner),
+        ChangeNotifierProvider<ToastController>.value(value: toasts),
+        ChangeNotifierProvider<SettingsController>.value(value: settings),
+        ChangeNotifierProvider<AuthController>.value(value: auth),
+        ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+        ChangeNotifierProvider<VpnController>.value(value: vpn),
+        ChangeNotifierProvider<UpdateController>.value(value: updates),
+      ],
+      child: UmbrellaApp(windowService: window),
+    );
 
-  final CoreProvisioner provisioner = CoreProvisioner();
-  await provisioner.init();
-  final ToastController toasts = ToastController();
-  final VpnController vpn = VpnController(
-    native: native,
-    ipService: ipService,
-    sound: sound,
-    tray: tray,
-    provisioner: provisioner,
-    settings: settings.settings,
-    onSettingsChanged: (AppSettings _) {},
-    onRequireElevation: () {},
-    onRequireCores: () {},
-    canAutoConnect: () => false,
-  );
-  final SubscriptionController subs = SubscriptionController(
-    vpn: vpn,
-    auth: auth,
-    client: mockHttp,
-    enableNativeTransport: false,
-  );
-  final UpdateController updates = UpdateController(
-    native,
-    service: UpdateService(client: mockHttp),
-  );
-
-  addTearDown(() async {
-    updates.dispose();
-    subs.dispose();
-    await subs.close();
-    vpn.dispose();
-    auth.dispose();
-    settings.dispose();
-    toasts.dispose();
-  });
-
-  return MultiProvider(
-    providers: [
-      Provider<NativeBridge>.value(value: native),
-      Provider<WindowService>.value(value: window),
-      Provider<SoundService>.value(value: sound),
-      Provider<IpService>.value(value: ipService),
-      Provider<TrayService>.value(value: tray),
-      Provider<CoreProvisioner>.value(value: provisioner),
-      ChangeNotifierProvider<ToastController>.value(value: toasts),
-      ChangeNotifierProvider<SettingsController>.value(value: settings),
-      ChangeNotifierProvider<AuthController>.value(value: auth),
-      ChangeNotifierProvider<SubscriptionController>.value(value: subs),
-      ChangeNotifierProvider<VpnController>.value(value: vpn),
-      ChangeNotifierProvider<UpdateController>.value(value: updates),
-    ],
-    child: UmbrellaApp(windowService: window),
-  );
+    return _HarnessBundle(
+      widget: widget,
+      disposeAsync: () async {
+        updates.dispose();
+        subs.dispose();
+        await subs.close();
+        vpn.dispose();
+        auth.dispose();
+        settings.dispose();
+        toasts.dispose();
+      },
+    );
+  }))!;
 }
 
 void main() {
@@ -636,11 +658,12 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      final Widget app = await _buildTestHarness(
+      final _HarnessBundle bundle = await _buildTestHarness(
+        tester: tester,
         landingSeen: false,
         signedIn: false,
       );
-      await tester.pumpWidget(app);
+      await tester.pumpWidget(bundle.widget);
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.textContaining('آمبرلا'), findsWidgets);
@@ -652,6 +675,9 @@ void main() {
 
       expect(find.textContaining('شماره موبایل'), findsWidgets);
       expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(bundle.disposeAsync);
     });
 
     testWidgets('AppShell renders MobileBottomNav + Drawer + pages on 390x844 phone',
@@ -664,11 +690,12 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      final Widget app = await _buildTestHarness(
+      final _HarnessBundle bundle = await _buildTestHarness(
+        tester: tester,
         landingSeen: true,
         signedIn: true,
       );
-      await tester.pumpWidget(app);
+      await tester.pumpWidget(bundle.widget);
       await tester.pump(const Duration(milliseconds: 700));
 
       expect(find.byType(MobileBottomNav), findsOneWidget);
@@ -691,6 +718,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.textContaining('اندروید'), findsWidgets);
       expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(bundle.disposeAsync);
     });
 
     testWidgets('AppShell renders SideNav layout on 1280x800 Android tablet',
@@ -703,16 +733,20 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      final Widget app = await _buildTestHarness(
+      final _HarnessBundle bundle = await _buildTestHarness(
+        tester: tester,
         landingSeen: true,
         signedIn: true,
       );
-      await tester.pumpWidget(app);
+      await tester.pumpWidget(bundle.widget);
       await tester.pump(const Duration(milliseconds: 700));
 
       expect(find.byType(SideNav), findsOneWidget);
       expect(find.byType(MobileBottomNav), findsNothing);
       expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(bundle.disposeAsync);
     });
   });
 }

@@ -90,7 +90,7 @@ jobs:
           fi
           echo "$analysis"
 
-          if ! tests=$(flutter test --reporter expanded 2>&1); then
+          if ! tests=$(flutter test --timeout 45s --reporter expanded 2>&1); then
             echo "$tests"
             esc="${tests//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
             echo "::error title=flutter-test::$esc"
