@@ -878,7 +878,7 @@ class _ShareQrBox extends StatelessWidget {
             Container(
               width: AppMetrics.controlHeightSmall,
               height: AppMetrics.controlHeightSmall,
-              padding: const EdgeInsets.all(2),
+              padding: const EdgeInsets.all(AppMetrics.space1),
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
