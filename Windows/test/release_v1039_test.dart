@@ -771,13 +771,13 @@ void main() {
         for (final AppRouteAction a in AppRouteAction.values) a.label,
         for (final TunStack s in TunStack.values) s.label,
         for (final CorePreference c in CorePreference.values) ...<String>[
-          c.label,
-          c.hint,
+          c.faName,
+          c.description,
         ],
         for (final SelectionMode m in SelectionMode.values) ...<String>[
           m.label,
-          m.shortLabel,
-          m.hint,
+          m.faName,
+          m.description,
         ],
         for (final ThemePreference t in ThemePreference.values) t.label,
         ...NetworkDns.presets.values,
