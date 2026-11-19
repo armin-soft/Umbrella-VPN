@@ -11,7 +11,6 @@ import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
-import 'brand_widgets.dart';
 
 /// پنجره اشتراک گذاری اتصال (کد QR، نشانی IP شبکه محلی، ویرایش پورت، مدیریت
 /// رمز پروکسی و کپی لینک کامل یا لینک تلگرام).

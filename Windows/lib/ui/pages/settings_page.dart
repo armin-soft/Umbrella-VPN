@@ -1129,7 +1129,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       onToggle: (bool enabled) async {
                         final List<AppRouteRule> next =
                             List<AppRouteRule>.of(cfg.appRoutes);
-                        next[i] = next[i].copyWith(enabled: enabled);
+                        next[i] = AppRouteRule(
+                          process: next[i].process,
+                          action: next[i].action,
+                          enabled: enabled,
+                        );
                         await _applyRuntime(
                           vpn,
                           () => settings.setAppRoutes(next),

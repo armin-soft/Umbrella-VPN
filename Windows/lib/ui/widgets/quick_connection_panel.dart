@@ -235,7 +235,7 @@ class _ServiceModeSegmentedBar extends StatelessWidget {
       height: AppMetrics.controlHeightSmall,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-        border: Border.all(color: colors.borderStrong),
+        border: Border.all(color: colors.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Row(
@@ -246,7 +246,7 @@ class _ServiceModeSegmentedBar extends StatelessWidget {
               VerticalDivider(
                 width: 1,
                 thickness: 1,
-                color: colors.borderStrong,
+                color: colors.border,
               ),
             Expanded(
               child: _segment(context, colors, _modes[i]),
@@ -350,7 +350,7 @@ class _LanSharingRow extends StatelessWidget {
               height: AppMetrics.space7,
               child: VerticalDivider(
                 width: AppMetrics.space4,
-                color: colors.borderStrong,
+                color: colors.border,
               ),
             ),
             Switch.adaptive(

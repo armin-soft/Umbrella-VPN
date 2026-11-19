@@ -938,7 +938,7 @@ class VpnController extends ChangeNotifier {
       unawaited(() async {
         final VpnNode? target = _singleNodeSession ? _activeNode : null;
         await disconnect();
-        await connect(target: target);
+        await connect(requested: target);
       }());
     });
   }
