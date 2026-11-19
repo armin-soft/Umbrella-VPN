@@ -14,7 +14,7 @@ import 'package:umbrella_vpn/platform/native.dart';
 import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/subscription_controller.dart';
-import 'package:umbrella_vpn/vpn/core_runtime.dart';
+import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _TestHarness {
