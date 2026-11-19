@@ -1145,7 +1145,7 @@ class _CopyLinkMenuButton extends StatelessWidget {
               ),
             ),
           ),
-        ),
+        );
       },
     );
   }
