@@ -25,7 +25,7 @@ public static function noticeBlock(string $Title, array $Lines = []): string { r
 final class Repository {
 public static array $State = [];
 public static function getUser(int $Id): array { return self::$State; }
-public static function updateUserSession(int $Id, string $Step, string $Payload = ''): void { self::$State = ['Step' => $Step, 'Payload' => $Payload]; }
+public static function updateUserSession(int $Id, array $Fields): void { self::$State = array_merge(self::$State, $Fields); }
 }
 final class PanelClient {
 public static function findByTelegramId(int $Id): array { return ['uuid' => 'owner-' . $Id]; }
