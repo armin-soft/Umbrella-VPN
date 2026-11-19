@@ -235,9 +235,10 @@ jobs:
           $installer = (Get-ChildItem installer/output -Filter '*.exe').FullName
           $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           $notes = @(
-            "- رفع کامل مشکل «ارتباط برقرار نشد» هنگام ورود و ثبت نام کاربران جدید روی تمام نسخه های ویندوز ۱۰ و ۱۱ شصت و چهار بیتی (مسیر بومی WinHTTP و Schannel همراه با پشتیبان خودکار)",
+            "- حذف کامل تمام منابع عمومی، رایگان و پشتیبان؛ استفاده انحصاری از اشتراک اختصاصی حساب هر کاربر",
+            "- رفع کامل مشکل دریافت و به روز رسانی اشتراک روی تمامی سیستم های ۶۴ بیتی ویندوز ۱۰ و ۱۱ (WinHTTP و Schannel بومی همراه با دریافت امن از درگاه حساب در صورت محدودیت شبکه)",
+            "- رفع مشکل ورود و ثبت نام کاربران جدید روی ویندوز ۱۰ و ۱۱ شصت و چهار بیتی و همراه سازی کتابخانه های رسمی ۶۴ بیتی مایکروسافت",
             "- بسته شدن آنی و بدون مکث برنامه همراه با توقف کامل هسته، بازگردانی پروکسی سیستمی و حذف فوری آیکون سینی",
-            "- همراه سازی کتابخانه های رسمی اجرایی ۶۴ بیتی مایکروسافت برای اجرا روی ویندوزهای تازه نصب شده",
             "- رابط کاملا فارسی با اعداد فارسی و بدون نیم فاصله در سراسر برنامه",
             "- هسته آمبرلا نسخه ۵.۹.۱۱ با پایداری تونل و به روز رسانی درون برنامه ای با تایید اصالت فایل",
             "SHA-256: $sha256"
@@ -294,6 +295,13 @@ jobs:
 
           $tag = "v$version-windows"
           $existing = gh release view $tag --repo $env:SOURCE_REPO --json isDraft,assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (!$release.isDraft) {
+              $tag = "v$version-draft-windows"
+              $existing = gh release view $tag --repo $env:SOURCE_REPO --json isDraft,assets 2>$null
+            }
+          }
           if ($LASTEXITCODE -eq 0) {
             $release = $existing | ConvertFrom-Json
             if (!$release.isDraft) { throw 'Refusing to replace a published release' }
