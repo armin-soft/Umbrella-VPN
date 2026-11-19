@@ -200,9 +200,6 @@ class TrayService {
 
   Future<void> destroy() async {
     _initialized = false;
-    _lastState = null;
-    _lastTooltip = null;
-    _lastConnected = null;
   }
 }
 
