@@ -300,7 +300,7 @@ object VpnBridge {
         val options = SetupOptions().apply {
             basePath = baseDir.absolutePath
             workingDir = workDir.absolutePath
-            tempDir = tempDir.absolutePath
+            this.tempDir = tempDir.absolutePath
             listen = "127.0.0.1:$grpcPort"
             secret = ""
             this.debug = debug
