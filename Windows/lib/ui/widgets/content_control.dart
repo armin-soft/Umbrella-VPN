@@ -244,7 +244,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: colors.danger,
-                foregroundColor: Colors.white,
+                foregroundColor: colors.onPrimary,
               ),
               onPressed: () => Navigator.of(dialogContext).pop(true),
               child: const Text('حذف همه'),

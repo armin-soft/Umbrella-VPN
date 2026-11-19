@@ -46,6 +46,7 @@ class UmbrellaApp extends StatelessWidget {
       ],
       scrollBehavior: const _UmbrellaScrollBehavior(),
       builder: (BuildContext context, Widget? child) {
+        windowService.syncBrightness(Theme.of(context).brightness);
         return Directionality(
           textDirection: TextDirection.rtl,
           child: child ?? const SizedBox.shrink(),

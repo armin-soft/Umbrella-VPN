@@ -415,7 +415,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: colors.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: colors.onPrimary,
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppMetrics.space5,
                           vertical: AppMetrics.space3,
@@ -860,6 +860,7 @@ class _ShareQrBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+          border: Border.all(color: colors.border),
         ),
         child: Stack(
           alignment: Alignment.center,

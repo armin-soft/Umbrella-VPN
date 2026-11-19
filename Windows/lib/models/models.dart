@@ -2444,6 +2444,7 @@ class AppSettings {
         'modeChoiceExplicit': modeChoiceExplicit,
         'showCli': showCli,
         'cliPreferenceVersion': 1,
+        'autoConnectPreferenceVersion': currentAutoConnectPreferenceVersion,
         'coreDefaultsVersion': currentCoreDefaultsVersion,
       };
 
@@ -2501,7 +2502,11 @@ class AppSettings {
 
     return AppSettings(
       theme: pick(ThemePreference.values, json['theme'], ThemePreference.dark),
-      autoConnect: JsonX.boolean(json['autoConnect']),
+      // بازنشانی یک باره اتصال خودکار ذخیره شده از نسخه های پیشین به حالت خاموش؛
+      // اگر کاربر در تنظیمات به صورت دستی روشنش کند، انتخابش ذخیره می ماند.
+      autoConnect: json['autoConnectPreferenceVersion'] ==
+              currentAutoConnectPreferenceVersion &&
+          JsonX.boolean(json['autoConnect']),
       killSwitch: JsonX.boolean(json['killSwitch'], fallback: false),
       freeCorePorts: JsonX.boolean(json['freeCorePorts'], fallback: true),
       tunMode: parsedTunMode,
@@ -2590,6 +2595,10 @@ class AppSettings {
       showCli: json['cliPreferenceVersion'] == 1 && JsonX.boolean(json['showCli']),
     );
   }
+
+  /// نسخه تنظیم اتصال خودکار؛ مقدار قدیمی پیش از ۱٫۰٫۰ یک بار به حالت خاموش
+  /// بازمی گردد تا برنامه هنگام باز شدن بدون خواست صریح کاربر وصل نشود.
+  static const int currentAutoConnectPreferenceVersion = 1;
 
   String get fullName => '$firstName $lastName'.trim();
 }

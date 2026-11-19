@@ -117,11 +117,14 @@ class TelegramChannelPrompt {
     if (!context.mounted) {
       return false;
     }
+    final Color barrier = Theme.of(context).brightness == Brightness.dark
+        ? context.colors.shadow
+        : context.colors.textPrimary.withValues(alpha: 0.44);
     final bool? joined = await showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'بستن',
-      barrierColor: Colors.black.withValues(alpha: 0.52),
+      barrierColor: barrier,
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (
         BuildContext dialogContext,
@@ -189,8 +192,9 @@ class TelegramChannelPrompt {
   }
 }
 
-/// گفت و گوی دعوت به کانال رسمی تلگرام آمبرلا با سربرگ آبی تلگرام، حلقه های
-/// تنفسی نرم، ستاره های درخشان، نشان شناور موشک کاغذی و آیدی کانال.
+/// گفت و گوی دعوت به کانال رسمی تلگرام آمبرلا با پالت رنگی اختصاصی آمبرلا
+/// (سازگار با هر دو حالت روشن و تاریک)، حلقه های تنفسی نرم، ستاره های درخشان،
+/// نشان شناور تلگرام و آیدی رسمی کانال.
 class TelegramChannelDialog extends StatefulWidget {
   const TelegramChannelDialog({
     super.key,
@@ -199,12 +203,18 @@ class TelegramChannelDialog extends StatefulWidget {
     this.animate = true,
   });
 
-  static const Color telegramLight = Color(0xFF37BBFE);
-  static const Color telegramBlue = Color(0xFF229ED9);
-  static const Color telegramDeep = Color(0xFF1A7FC1);
-  static const Color _lightCardSurface = Color(0xFFFCFBF7);
-  static const Color _lightTitleColor = Color(0xFF1C1E24);
-  static const Color _lightSubtitleColor = Color(0xFF5A5D66);
+  /// گرادیان سربرگ کارت بر پایه پالت فعال آمبرلا (روشن یا تاریک).
+  static List<Color> headerGradientFor(
+    UmbrellaColors colors,
+    Brightness brightness,
+  ) {
+    final double highlight = brightness == Brightness.dark ? 0.14 : 0.16;
+    return <Color>[
+      Color.lerp(colors.primary, colors.onPrimary, highlight)!,
+      colors.primary,
+      colors.primaryDeep,
+    ];
+  }
 
   final String channelHandle;
   final Future<bool> Function()? onJoinLaunch;
@@ -276,20 +286,12 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final UmbrellaColors colors = context.colors;
-    final bool isDark = theme.brightness == Brightness.dark;
-    final Color cardColor =
-        isDark ? colors.surfaceHigh : TelegramChannelDialog._lightCardSurface;
-    final Color titleColor =
-        isDark ? colors.textPrimary : TelegramChannelDialog._lightTitleColor;
-    final Color subtitleColor = isDark
-        ? colors.textSecondary
-        : TelegramChannelDialog._lightSubtitleColor;
 
     return Dialog(
-      backgroundColor: cardColor,
+      backgroundColor: colors.surface,
       surfaceTintColor: Colors.transparent,
       elevation: 12,
-      shadowColor: Colors.black.withValues(alpha: isDark ? 0.55 : 0.24),
+      shadowColor: colors.shadow,
       clipBehavior: Clip.antiAlias,
       insetPadding: const EdgeInsets.symmetric(
         horizontal: AppMetrics.space6,
@@ -297,7 +299,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppMetrics.space7),
-        side: isDark ? BorderSide(color: colors.border) : BorderSide.none,
+        side: BorderSide(color: colors.border),
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(
@@ -325,8 +327,8 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                     'به تلگرام آمبرلا بپیوندید',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.titleLarge?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w800,
                       height: 1.4,
                     ),
                   ),
@@ -335,7 +337,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                     'کانال رسمی آمبرلا را برای اخبار، نسخه های جدید و ترفندهای متصل ماندن دنبال کنید.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: subtitleColor,
+                      color: colors.textSecondary,
                       height: 1.6,
                     ),
                   ),
@@ -352,8 +354,8 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
               child: FilledButton.icon(
                 key: const Key('telegram_channel_join_button'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: TelegramChannelDialog.telegramBlue,
-                  foregroundColor: Colors.white,
+                  backgroundColor: colors.primary,
+                  foregroundColor: colors.onPrimary,
                   elevation: 0,
                   minimumSize: const Size.fromHeight(AppMetrics.space10),
                   shape: RoundedRectangleBorder(
@@ -365,10 +367,10 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                icon: const Icon(
+                icon: Icon(
                   Icons.telegram,
-                  size: 22,
-                  color: Colors.white,
+                  size: AppMetrics.iconLg,
+                  color: colors.onPrimary,
                 ),
                 label: const Text('عضویت در کانال'),
                 onPressed: _handleJoin,
@@ -380,7 +382,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                 child: TextButton(
                   key: const Key('telegram_channel_later_button'),
                   style: TextButton.styleFrom(
-                    foregroundColor: subtitleColor,
+                    foregroundColor: colors.textSecondary,
                     textStyle: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
@@ -420,19 +422,24 @@ class _TelegramHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final UmbrellaColors colors = context.colors;
+    final List<Color> gradientColors = TelegramChannelDialog.headerGradientFor(
+      colors,
+      theme.brightness,
+    );
     return RepaintBoundary(
       child: SizedBox(
         height: AppMetrics.telegramHeaderHeight,
         child: DecoratedBox(
-          decoration: const BoxDecoration(
+          key: const Key('telegram_channel_header'),
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: <Color>[
-                TelegramChannelDialog.telegramLight,
-                TelegramChannelDialog.telegramBlue,
-                TelegramChannelDialog.telegramDeep,
-              ],
+              colors: gradientColors,
+            ),
+            border: Border(
+              bottom: BorderSide(color: colors.border.withValues(alpha: 0.45)),
             ),
           ),
           child: AnimatedBuilder(
@@ -444,7 +451,10 @@ class _TelegramHeader extends StatelessWidget {
                 children: <Widget>[
                   Positioned.fill(
                     child: CustomPaint(
-                      painter: _TelegramRingsPainter(phase),
+                      painter: _TelegramRingsPainter(
+                        phase: phase,
+                        ringColor: colors.onPrimary,
+                      ),
                     ),
                   ),
                   for (final (double x, double y, double offset, double size)
@@ -457,7 +467,7 @@ class _TelegramHeader extends StatelessWidget {
                       child: Icon(
                         Icons.auto_awesome,
                         size: size,
-                        color: Colors.white.withValues(alpha: 0.55),
+                        color: colors.onPrimary.withValues(alpha: 0.55),
                       ),
                     ),
                   Column(
@@ -468,25 +478,26 @@ class _TelegramHeader extends StatelessWidget {
                         child: Transform.rotate(
                           angle: math.sin(phase) * 0.05,
                           child: Container(
+                            key: const Key('telegram_channel_avatar'),
                             width: AppMetrics.telegramAvatarSize,
                             height: AppMetrics.telegramAvatarSize,
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: colors.onPrimary,
                               shape: BoxShape.circle,
                               boxShadow: <BoxShadow>[
                                 BoxShadow(
-                                  color: TelegramChannelDialog.telegramDeep
-                                      .withValues(alpha: 0.45),
+                                  color:
+                                      colors.primaryDeep.withValues(alpha: 0.5),
                                   blurRadius: 24,
                                   offset: const Offset(0, 10),
                                 ),
                               ],
                             ),
                             alignment: Alignment.center,
-                            child: const Icon(
+                            child: Icon(
                               Icons.telegram,
                               size: AppMetrics.telegramAvatarSize,
-                              color: TelegramChannelDialog.telegramBlue,
+                              color: colors.primary,
                             ),
                           ),
                         ),
@@ -503,12 +514,12 @@ class _TelegramHeader extends StatelessWidget {
                               vertical: AppMetrics.space1,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.20),
+                              color: colors.onPrimary.withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(
                                 AppMetrics.radiusXl,
                               ),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.35),
+                                color: colors.onPrimary.withValues(alpha: 0.36),
                               ),
                             ),
                             child: Text(
@@ -518,7 +529,7 @@ class _TelegramHeader extends StatelessWidget {
                               softWrap: false,
                               overflow: TextOverflow.fade,
                               style: theme.textTheme.labelLarge?.copyWith(
-                                color: Colors.white,
+                                color: colors.onPrimary,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 0.3,
                               ),
@@ -538,11 +549,15 @@ class _TelegramHeader extends StatelessWidget {
   }
 }
 
-/// حلقه های هم مرکز نرم پشت آیکون تلگرام با حرکت تنفسی ملایم.
+/// حلقه های هم مرکز نرم پشت آیکون کانال با حرکت تنفسی ملایم.
 class _TelegramRingsPainter extends CustomPainter {
-  const _TelegramRingsPainter(this.phase);
+  const _TelegramRingsPainter({
+    required this.phase,
+    required this.ringColor,
+  });
 
   final double phase;
+  final Color ringColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -552,13 +567,13 @@ class _TelegramRingsPainter extends CustomPainter {
       final Paint paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2
-        ..color = Colors.white.withValues(alpha: 0.22 - i * 0.04);
+        ..color = ringColor.withValues(alpha: 0.22 - i * 0.04);
       canvas.drawCircle(center, (42 + i * 26) * breath, paint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _TelegramRingsPainter oldDelegate) {
-    return oldDelegate.phase != phase;
+    return oldDelegate.phase != phase || oldDelegate.ringColor != ringColor;
   }
 }

@@ -221,6 +221,7 @@ class VpnController extends ChangeNotifier {
     this.onRequireElevation,
     this.onRequireCores,
     this.accessGuard,
+    this.canAutoConnect,
   })  : _native = native,
         _ip = ipService,
         _sound = sound,
@@ -247,6 +248,13 @@ class VpnController extends ChangeNotifier {
   /// انجام نمی شود و همان پیام به کاربر نشان داده می شود (اشتراک منقضی،
   /// مسدود یا تمام شده).
   final String Function()? accessGuard;
+
+  /// شرط مجاز بودن اتصال خودکار در شروع برنامه (عبور از معرفی، ورود به حساب و
+  /// داشتن اشتراک سالم) تا برنامه در صفحه معرفی یا ورود هرگز خودکار وصل نشود.
+  final bool Function()? canAutoConnect;
+
+  bool get _mayAutoConnectNow =>
+      _settings.autoConnect && (canAutoConnect?.call() ?? true);
 
   final VoidCallback? onRequireCores;
 
@@ -487,9 +495,11 @@ class VpnController extends ChangeNotifier {
       }
     }
     _notify();
-    if (_settings.autoConnect) {
+    if (_mayAutoConnectNow && _nodes.isNotEmpty) {
       unawaited(_runStartupAutoConnect());
     } else {
+      _autoConnectRetryTimer?.cancel();
+      _autoConnectRetryTimer = null;
       _scheduleRuntimePrewarm();
     }
     // خواندن آی پی واقعی دستگاه کاملاً غیرمسدودکننده انجام می شود تا باز شدن
@@ -497,18 +507,33 @@ class VpnController extends ChangeNotifier {
     unawaited(_discoverInitialIp());
   }
 
-  /// اتصال خودکار شروع کار با یک تلاش مجدد زمان بندی شده (هم راستا با 5.9.11)
-  /// برای زمانی که شبکه ویندوز یا دریافت اشتراک چند ثانیه پس از بالا آمدن آماده می شود.
+  /// اتصال خودکار شروع برنامه؛ فقط وقتی اجرا می شود که کاربر گزینه «اتصال
+  /// خودکار در شروع برنامه» را در تنظیمات عمومی به صورت صریح روشن کرده باشد.
   Future<void> _runStartupAutoConnect() async {
+    if (!_mayAutoConnectNow || _status.active || _status.busy) {
+      return;
+    }
+    final int startedCancelGeneration = _cancelGeneration;
+    _log.add(
+      'اتصال خودکار در شروع برنامه فعال است؛ در حال برقراری اتصال '
+      '(برای غیرفعال سازی به تنظیمات > عمومی بروید).',
+    );
     final ConnectOutcome outcome = await connect();
-    if (outcome.ok || _disposed || _shuttingDown || !_settings.autoConnect) {
+    if (outcome.ok ||
+        outcome.cancelled ||
+        _cancelGeneration != startedCancelGeneration ||
+        _disposed ||
+        _shuttingDown ||
+        !_mayAutoConnectNow) {
       return;
     }
     _autoConnectRetryTimer?.cancel();
     _autoConnectRetryTimer = Timer(const Duration(seconds: 8), () {
+      _autoConnectRetryTimer = null;
       if (_disposed ||
           _shuttingDown ||
-          !_settings.autoConnect ||
+          _cancelGeneration != startedCancelGeneration ||
+          !_mayAutoConnectNow ||
           _status.active ||
           _status.busy ||
           _nodes.isEmpty) {
@@ -868,6 +893,10 @@ class VpnController extends ChangeNotifier {
   void updateSettings(AppSettings settings) {
     final AppSettings previous = _settings;
     _settings = settings;
+    if (!settings.autoConnect) {
+      _autoConnectRetryTimer?.cancel();
+      _autoConnectRetryTimer = null;
+    }
     _sound.enabled = settings.soundEnabled;
     final bool pingChanged = _pingTimer == null ||
         previous.pingIntervalSeconds != settings.pingIntervalSeconds;
@@ -1037,6 +1066,8 @@ class VpnController extends ChangeNotifier {
 
   /// لغو فوری اتصال در حال انجام (دکمه «لغو اتصال»).
   Future<void> cancel() async {
+    _autoConnectRetryTimer?.cancel();
+    _autoConnectRetryTimer = null;
     if (!_connectInFlight && !_status.busy && _status != VpnStatus.connected) {
       return;
     }

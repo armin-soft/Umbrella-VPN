@@ -44,7 +44,6 @@ Future<void> main(List<String> arguments) async {
   final bool elevatedNow = await native.isElevated();
   final SoundService sound = SoundService();
   final WindowService window = WindowService(native);
-  await window.init();
 
   final SettingsController settings = SettingsController(
     native: native,
@@ -53,6 +52,11 @@ Future<void> main(List<String> arguments) async {
   );
   await settings.load();
   await settings.migrateConnectionMode();
+  await window.init(
+    initialBrightness: settings.resolveBrightness(
+      PlatformDispatcher.instance.platformBrightness,
+    ),
+  );
 
   final IpService ipService = IpService();
   final TrayService tray = TrayService(native);
@@ -129,6 +133,9 @@ Future<void> main(List<String> arguments) async {
     },
     // بدون اشتراک سالم، هیچ اتصالی برقرار نمی شود.
     accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
+    // اتصال خودکار فقط پس از معرفی، ورود به حساب و سالم بودن اشتراک مجاز است.
+    canAutoConnect: () =>
+        settings.landingSeen && auth.signedIn && auth.account.canConnect,
   );
   vpn.updateSettings(settings.settings);
   settings.onDebugLogExpired = vpn.scheduleLiveReload;

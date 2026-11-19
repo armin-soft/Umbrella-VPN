@@ -52,6 +52,18 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
+  /// روشنایی نهایی برنامه با توجه به حالت انتخابی کاربر و تم فعلی ویندوز.
+  Brightness resolveBrightness(Brightness platformBrightness) {
+    switch (_settings.theme) {
+      case ThemePreference.dark:
+        return Brightness.dark;
+      case ThemePreference.light:
+        return Brightness.light;
+      case ThemePreference.system:
+        return platformBrightness;
+    }
+  }
+
   Future<void> load() async {
     final Map<String, dynamic> json =
         LocalStore.instance.readJson(StoreKeys.settings);

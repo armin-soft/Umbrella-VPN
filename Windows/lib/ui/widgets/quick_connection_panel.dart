@@ -97,8 +97,7 @@ class _QuickConnectionPanelState extends State<QuickConnectionPanel> {
     final bool extraOn = chain.position == ChainPosition.extraSecurity;
     final bool unblockerOn = chain.position == ChainPosition.unblocker;
     final bool chainActive = extraOn || unblockerOn;
-    final Color chainColor =
-        extraOn ? const Color(0xFF34C759) : const Color(0xFFFF8A3D);
+    final Color chainColor = extraOn ? colors.success : colors.warning;
 
     final Color borderColor = _expanded
         ? colors.primary.withValues(alpha: 0.45)
@@ -307,7 +306,7 @@ class _QuickConnectionPanelState extends State<QuickConnectionPanel> {
                         title: 'امنیت بیشتر',
                         subtitle: 'وقتی به پروکسی اعتماد نداری',
                         icon: Icons.verified_user_rounded,
-                        activeColor: const Color(0xFF34C759),
+                        activeColor: colors.success,
                         active: extraOn,
                         transport: chain.transport,
                         enabled: widget.enabled,
@@ -344,7 +343,7 @@ class _QuickConnectionPanelState extends State<QuickConnectionPanel> {
                         title: 'رفع فیلتر پروکسی',
                         subtitle: 'عبور از فیلترینگ پروکسی',
                         icon: Icons.account_tree_rounded,
-                        activeColor: const Color(0xFFFF8A3D),
+                        activeColor: colors.warning,
                         active: unblockerOn,
                         transport: chain.transport,
                         enabled: widget.enabled,
@@ -851,7 +850,7 @@ class _ChainQuickRowState extends State<_ChainQuickRow> {
                 const SizedBox(height: AppMetrics.space1),
                 _AnchoredChainOption(
                   icon: Icons.cloud_done_rounded,
-                  iconColor: const Color(0xFFF6821F),
+                  iconColor: colors.warning,
                   label: 'وارپ',
                   subtitle: 'تونل امن کلادفلر',
                   selected: widget.active && !isPsiphon,
@@ -863,7 +862,7 @@ class _ChainQuickRowState extends State<_ChainQuickRow> {
                 const SizedBox(height: AppMetrics.space1),
                 _AnchoredChainOption(
                   icon: Icons.language_rounded,
-                  iconColor: const Color(0xFFE53935),
+                  iconColor: colors.primary,
                   label: 'سایفون',
                   subtitle: 'شبکه ضد فیلتر سایفون',
                   selected: widget.active && isPsiphon,

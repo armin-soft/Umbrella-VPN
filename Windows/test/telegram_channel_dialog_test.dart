@@ -3,10 +3,16 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
+import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/platform/native.dart';
+import 'package:umbrella_vpn/platform/services.dart';
+import 'package:umbrella_vpn/state/settings_controller.dart';
+import 'package:umbrella_vpn/ui/pages/landing_page.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -208,8 +214,19 @@ void main() {
   });
 
   group('رابط کاربری و تجربه کاربری گفت و گوی عضویت در کانال تلگرام', () {
-    testWidgets('در هر دو تم روشن و تاریک با چیدمان راست به چپ، آیدی چپ به راست و انیمیشن نرم رندر می شود', (WidgetTester tester) async {
+    testWidgets('در هر دو تم روشن و تاریک با رنگ اختصاصی آمبرلا (نه آبی تلگرام)، چیدمان راست به چپ و انیمیشن نرم رندر می شود', (WidgetTester tester) async {
+      final String dialogSrc =
+          File('lib/ui/widgets/telegram_channel_dialog.dart').readAsStringSync();
+      expect(dialogSrc, isNot(contains('0xFF229ED9')));
+      expect(dialogSrc, isNot(contains('0xFF37BBFE')));
+      expect(dialogSrc, isNot(contains('0xFF1A7FC1')));
+
       for (final ThemeMode mode in <ThemeMode>[ThemeMode.light, ThemeMode.dark]) {
+        final UmbrellaColors expectedColors =
+            mode == ThemeMode.dark ? UmbrellaColors.dark : UmbrellaColors.light;
+        final Brightness expectedBrightness =
+            mode == ThemeMode.dark ? Brightness.dark : Brightness.light;
+
         await tester.pumpWidget(
           _hostApp(
             themeMode: mode,
@@ -232,15 +249,71 @@ void main() {
         expect(find.byIcon(Icons.telegram), findsNWidgets(2));
         expect(find.byIcon(Icons.auto_awesome), findsNWidgets(4));
 
+        // بررسی تطابق کامل رنگ کارت، کادر، سربرگ، نشان و دکمه با پالت آمبرلا.
+        final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+        expect(dialog.backgroundColor, expectedColors.surface);
+        expect(dialog.shadowColor, expectedColors.shadow);
+        final RoundedRectangleBorder border =
+            dialog.shape! as RoundedRectangleBorder;
+        expect(border.side.color, expectedColors.border);
+
+        final DecoratedBox header = tester.widget<DecoratedBox>(
+          find.byKey(const Key('telegram_channel_header')),
+        );
+        final BoxDecoration headerDecoration =
+            header.decoration as BoxDecoration;
+        final LinearGradient headerGradient =
+            headerDecoration.gradient! as LinearGradient;
+        expect(
+          headerGradient.colors,
+          TelegramChannelDialog.headerGradientFor(
+            expectedColors,
+            expectedBrightness,
+          ),
+        );
+        expect(headerGradient.colors[1], expectedColors.primary);
+        expect(headerGradient.colors[2], expectedColors.primaryDeep);
+
+        final Container avatar = tester.widget<Container>(
+          find.byKey(const Key('telegram_channel_avatar')),
+        );
+        final BoxDecoration avatarDecoration =
+            avatar.decoration! as BoxDecoration;
+        expect(avatarDecoration.color, expectedColors.onPrimary);
+        final Icon avatarIcon = tester.widget<Icon>(
+          find.descendant(
+            of: find.byKey(const Key('telegram_channel_avatar')),
+            matching: find.byIcon(Icons.telegram),
+          ),
+        );
+        expect(avatarIcon.color, expectedColors.primary);
+
+        final Text titleText = tester.widget<Text>(
+          find.text('به تلگرام آمبرلا بپیوندید'),
+        );
+        expect(titleText.style?.color, expectedColors.textPrimary);
+
         // بررسی جهت چپ به راست نشان آیدی کانال.
         final Text handleText = tester.widget<Text>(
           find.text('@UmbrellaVPN_Channel'),
         );
         expect(handleText.textDirection, TextDirection.ltr);
+        expect(handleText.style?.color, expectedColors.onPrimary);
 
-        // در چیدمان راست به چپ، آیکون تلگرام داخل دکمه در سمت راست متن قرار دارد.
+        // دکمه اصلی از رنگ برند آمبرلا استفاده می کند و در چیدمان راست به چپ
+        // آیکون تلگرام در سمت راست متن قرار دارد.
         final Finder joinBtn = find.byKey(
           const Key('telegram_channel_join_button'),
+        );
+        final ButtonStyle joinStyle =
+            tester.widget<ButtonStyleButton>(joinBtn).style!;
+        expect(
+          joinStyle.backgroundColor?.resolve(<WidgetState>{}),
+          expectedColors.primary,
+        );
+        expect(
+          joinStyle.foregroundColor?.resolve(<WidgetState>{}),
+          expectedColors.onPrimary,
         );
         final Finder btnIcon = find.descendant(
           of: joinBtn,
@@ -350,6 +423,165 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(TelegramChannelDialog), findsNothing);
       expect(joinCalls, 2);
+    });
+  });
+
+  group('پشتیبانی کامل تم روشن و تاریک در سراسر برنامه', () {
+    test('تمام صفحات اصلی و صفحه معرفی کلید تغییر تم دارند و رنگ ثابت غیرتمی ندارند', () {
+      for (final String path in <String>[
+        'lib/ui/pages/landing_page.dart',
+        'lib/ui/pages/login_page.dart',
+        'lib/ui/shell/app_shell.dart',
+      ]) {
+        final String content = File(path).readAsStringSync();
+        expect(content, contains('onToggleTheme:'), reason: path);
+        expect(content, contains('darkTheme:'), reason: path);
+      }
+
+      // هیچ فایل صفحه ای در lib/ui/pages نباید Color(0x...) ثابت داشته باشد.
+      final Directory pagesDir = Directory('lib/ui/pages');
+      for (final FileSystemEntity entity in pagesDir.listSync()) {
+        if (entity is! File || !entity.path.endsWith('.dart')) {
+          continue;
+        }
+        final String src = entity.readAsStringSync();
+        expect(
+          src.contains('Color(0x'),
+          isFalse,
+          reason: '${entity.path} must use UmbrellaColors for light/dark parity',
+        );
+      }
+
+      // همگام سازی قاب بومی ویندوز با تم روشن، تاریک و هماهنگ با سیستم.
+      expect(
+        File('lib/app.dart').readAsStringSync(),
+        contains('windowService.syncBrightness'),
+      );
+      expect(
+        File('lib/platform/services.dart').readAsStringSync(),
+        contains('setBrightness'),
+      );
+      expect(
+        File('windows/runner/win32_window.cpp').readAsStringSync(),
+        contains('AppsUseLightTheme'),
+      );
+    });
+
+    testWidgets('صفحه معرفی در هر دو تم روشن و تاریک بدون خطا رندر می شود و کلید تم کار می کند', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 820));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final NativeBridge native = NativeBridge();
+      final SettingsController settings = SettingsController(
+        native: native,
+        sound: SoundService(),
+        window: WindowService(native),
+      );
+      addTearDown(settings.dispose);
+      await settings.load();
+      expect(settings.resolveBrightness(Brightness.light), Brightness.dark);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<WindowService>.value(value: WindowService(native)),
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ],
+          child: Consumer<SettingsController>(
+            builder: (BuildContext context, SettingsController s, _) {
+              return MaterialApp(
+                theme: AppTheme.light(),
+                darkTheme: AppTheme.dark(),
+                themeMode: s.themeMode,
+                themeAnimationDuration: Duration.zero,
+                builder: (BuildContext context, Widget? inner) => Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: inner ?? const SizedBox.shrink(),
+                ),
+                home: LandingPage(onStart: () {}),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // شروع در حالت تاریک و تغییر فوری به حالت روشن با دکمه نوار بالا.
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        UmbrellaColors.dark.background,
+      );
+      await tester.tap(find.byIcon(Icons.light_mode_rounded));
+      await tester.pumpAndSettle();
+      expect(settings.settings.theme, ThemePreference.light);
+      expect(settings.resolveBrightness(Brightness.dark), Brightness.light);
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        UmbrellaColors.light.background,
+      );
+
+      // بازگشت فوری به حالت تاریک و بررسی حالت هماهنگ با ویندوز.
+      await tester.tap(find.byIcon(Icons.dark_mode_rounded));
+      await tester.pumpAndSettle();
+      expect(settings.settings.theme, ThemePreference.dark);
+      await settings.setTheme(ThemePreference.system);
+      expect(settings.resolveBrightness(Brightness.light), Brightness.light);
+      expect(settings.resolveBrightness(Brightness.dark), Brightness.dark);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('اتصال خودکار در شروع برنامه (پیش فرض خاموش و بازنشانی امن)', () {
+    test('پیش فرض خاموش است، مقدار قدیمی ذخیره شده را یک بار خاموش می کند و انتخاب تازه کاربر را نگه می دارد', () async {
+      // ۱. پیش فرض نصب تازه: خاموش.
+      expect(const AppSettings().autoConnect, isFalse);
+
+      // ۲. تنظیمات قدیمی ذخیره شده در ویندوز بدون نسخه ترجیح: به خاموش بازمی گردد.
+      final AppSettings migratedLegacy = AppSettings.fromJson(<String, dynamic>{
+        'autoConnect': true,
+      });
+      expect(migratedLegacy.autoConnect, isFalse);
+
+      // ۳. انتخاب صریح کاربر در نسخه ۱.۰.۰ به درستی ذخیره و بازیابی می شود.
+      final NativeBridge native = NativeBridge();
+      final SettingsController controller = SettingsController(
+        native: native,
+        sound: SoundService(),
+        window: WindowService(native),
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+      expect(controller.settings.autoConnect, isFalse);
+
+      await controller.setAutoConnect(true);
+      final SettingsController reloadedOn = SettingsController(
+        native: native,
+        sound: SoundService(),
+        window: WindowService(native),
+      );
+      addTearDown(reloadedOn.dispose);
+      await reloadedOn.load();
+      expect(reloadedOn.settings.autoConnect, isTrue);
+
+      await reloadedOn.setAutoConnect(false);
+      final SettingsController reloadedOff = SettingsController(
+        native: native,
+        sound: SoundService(),
+        window: WindowService(native),
+      );
+      addTearDown(reloadedOff.dispose);
+      await reloadedOff.load();
+      expect(reloadedOff.settings.autoConnect, isFalse);
+
+      // ۴. نگهبان canAutoConnect و لغو تایمر تلاش مجدد در کنترلر اتصال وجود دارد.
+      final String vpnSrc =
+          File('lib/vpn/vpn_controller.dart').readAsStringSync();
+      expect(vpnSrc, contains('canAutoConnect'));
+      expect(vpnSrc, contains('_mayAutoConnectNow'));
+      expect(
+        File('lib/main.dart').readAsStringSync(),
+        contains('canAutoConnect:'),
+      );
     });
   });
 }

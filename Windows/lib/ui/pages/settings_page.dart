@@ -101,7 +101,7 @@ extension SettingsCategoryX on SettingsCategory {
       case SettingsCategory.general:
         return colors.primary;
       case SettingsCategory.chain:
-        return const Color(0xFFFF8A3D);
+        return colors.warning;
       case SettingsCategory.routing:
         return colors.info;
       case SettingsCategory.dns:
@@ -646,7 +646,7 @@ class _SettingsPageState extends State<SettingsPage> {
           trailing: _ChainHopSelector(
             active: extraOn,
             transport: chain.transport,
-            activeColor: const Color(0xFF34C759),
+            activeColor: colors.success,
             onOff: () => saveChain(chain.deactivate()),
             onPick: (ChainTransport picked) =>
                 saveChain(chain.activateExtraSecurity(picked)),
@@ -684,7 +684,7 @@ class _SettingsPageState extends State<SettingsPage> {
           trailing: _ChainHopSelector(
             active: unblockerOn,
             transport: chain.transport,
-            activeColor: const Color(0xFFFF8A3D),
+            activeColor: colors.warning,
             onOff: () => saveChain(chain.deactivate()),
             onPick: (ChainTransport picked) =>
                 saveChain(chain.activateUnblocker(picked)),
@@ -1949,7 +1949,7 @@ class _ChainHopSelector extends StatelessWidget {
         const SizedBox(height: AppMetrics.space1),
         buildItem(
           icon: Icons.cloud_done_rounded,
-          iconColor: const Color(0xFFF6821F),
+          iconColor: colors.warning,
           title: 'وارپ',
           selected: active && !isPsiphon,
           onSelect: () => onPick(ChainTransport.automatic),
@@ -1958,7 +1958,7 @@ class _ChainHopSelector extends StatelessWidget {
         const SizedBox(height: AppMetrics.space1),
         buildItem(
           icon: Icons.language_rounded,
-          iconColor: const Color(0xFFE53935),
+          iconColor: colors.primary,
           title: 'سایفون',
           selected: active && isPsiphon,
           onSelect: () => onPick(ChainTransport.psiphon),
@@ -2350,6 +2350,17 @@ class _ThemeOptionCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  IconData get _icon {
+    switch (preference) {
+      case ThemePreference.dark:
+        return Icons.dark_mode_rounded;
+      case ThemePreference.light:
+        return Icons.light_mode_rounded;
+      case ThemePreference.system:
+        return Icons.brightness_auto_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
@@ -2375,6 +2386,12 @@ class _ThemeOptionCard extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
+                  Icon(
+                    _icon,
+                    size: AppMetrics.iconMd,
+                    color: selected ? colors.primary : colors.textSecondary,
+                  ),
+                  const SizedBox(width: AppMetrics.space2),
                   Expanded(
                     child: Text(
                       title,

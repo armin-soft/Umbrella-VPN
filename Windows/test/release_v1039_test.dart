@@ -487,9 +487,20 @@ void main() {
     });
   });
 
-  group('v1.0.39 — ارتقای هسته به 5.9.11 و قابلیت های هم راستا', () {
-    test('مانیفست هسته به 5.9.11 با چک سام رسمی ارتقا یافته و نسخه برنامه 1.0.39 است', () {
-      expect(AppConfig.version, '1.0.39');
+  group('نسخه ۱.۰.۰ — هسته ۵.۹.۱۱ و یکپارچگی نسخه در همه فایل ها', () {
+    test('مانیفست هسته به 5.9.11 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 1.0.0 است', () {
+      expect(AppConfig.version, '1.0.0');
+      expect(AppConfig.versionLabel, '1.0.0');
+      expect(AppConfig.buildNumber, 1);
+      expect(File('pubspec.yaml').readAsStringSync(), contains('version: 1.0.0+1'));
+      expect(
+        File('installer/umbrella.iss').readAsStringSync(),
+        contains('#define AppVersion "1.0.0"'),
+      );
+      expect(
+        File('windows/CMakeLists.txt').readAsStringSync(),
+        contains('project(UmbrellaVPN VERSION "1.0.0" LANGUAGES C CXX)'),
+      );
       expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v4');
       final Map<String, dynamic> manifest =
           jsonDecode(File('assets/cores/manifest.json').readAsStringSync())
@@ -766,7 +777,7 @@ void main() {
       expect(Fa.num('می\u200Cشود 2026'), 'می شود ۲۰۲۶');
       expect(Fa.toEn('۱۲۳۳۸'), '12338');
       expect(AppConfig.versionPhrase, isNot(contains(RegExp(r'[0-9]'))));
-      expect(AppConfig.versionPhrase, contains('۱٫۰٫۳۹'));
+      expect(AppConfig.versionPhrase, contains('۱٫۰٫۰'));
 
       // ۳. تمام برچسب های نمایشی مدل ها فارسی خالص، بدون لاتین، بدون رقم لاتین و بدون نیم فاصله اند.
       final RegExp forbidden = RegExp(r'[A-Za-z0-9\u200C]');
@@ -948,8 +959,10 @@ void main() {
       // نسخه Runner.rc و THIRD-PARTY-NOTICES و آیکون دایره ای صفحه درباره.
       final String runnerRc =
           File('windows/runner/Runner.rc').readAsStringSync();
-      expect(runnerRc, contains('FILEVERSION 1,0,39,0'));
-      expect(runnerRc, contains('VALUE "FileVersion", "1.0.39.0"'));
+      expect(runnerRc, contains('FILEVERSION 1,0,0,0'));
+      expect(runnerRc, contains('PRODUCTVERSION 1,0,0,0'));
+      expect(runnerRc, contains('VALUE "FileVersion", "1.0.0.0"'));
+      expect(runnerRc, contains('VALUE "ProductVersion", "1.0.0.0"'));
       expect(runnerRc, contains('VALUE "CompanyName", "Umbrella"'));
 
       final String notices = File('THIRD-PARTY-NOTICES.txt').readAsStringSync();

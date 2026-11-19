@@ -427,6 +427,12 @@ class AppTheme {
         backgroundColor: palette.surface,
         modalBackgroundColor: palette.surface,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppMetrics.radiusXxl),
+          ),
+          side: BorderSide(color: palette.border),
+        ),
       ),
       popupMenuTheme: PopupMenuThemeData(
         color: palette.surface,
@@ -584,12 +590,107 @@ class AppTheme {
         ),
         behavior: SnackBarBehavior.floating,
       ),
+      cardTheme: CardThemeData(
+        color: palette.surface,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: palette.shadow,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
+          side: BorderSide(color: palette.border),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: palette.textSecondary,
+        textColor: palette.textPrimary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith<Color>(
+          (Set<WidgetState> states) => states.contains(WidgetState.selected)
+              ? palette.primary
+              : Colors.transparent,
+        ),
+        checkColor: WidgetStatePropertyAll<Color>(palette.onPrimary),
+        side: BorderSide(color: palette.border, width: 1.5),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.space1),
+        ),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith<Color>(
+          (Set<WidgetState> states) => states.contains(WidgetState.selected)
+              ? palette.primary
+              : palette.textSecondary,
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: palette.surfaceHigh,
+        selectedColor: palette.primarySoft,
+        disabledColor: palette.surfaceHigh.withValues(alpha: 0.5),
+        side: BorderSide(color: palette.border),
+        labelStyle: TextStyle(
+          fontFamily: fontFamily,
+          color: palette.textPrimary,
+          fontSize: AppMetrics.fontSmall,
+          fontWeight: FontWeight.w600,
+        ),
+        secondaryLabelStyle: TextStyle(
+          fontFamily: fontFamily,
+          color: palette.primary,
+          fontSize: AppMetrics.fontSmall,
+          fontWeight: FontWeight.w700,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        ),
+      ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: TextStyle(
+          fontFamily: fontFamily,
+          color: palette.textPrimary,
+          fontSize: AppMetrics.fontBody,
+        ),
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll<Color>(palette.surface),
+          surfaceTintColor:
+              const WidgetStatePropertyAll<Color>(Colors.transparent),
+          shadowColor: WidgetStatePropertyAll<Color>(palette.shadow),
+          side: WidgetStatePropertyAll<BorderSide>(
+            BorderSide(color: palette.border),
+          ),
+          shape: WidgetStatePropertyAll<OutlinedBorder>(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+            ),
+          ),
+        ),
+      ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: palette.primary,
           textStyle: TextStyle(
             fontFamily: fontFamily,
             fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: palette.primary,
+          foregroundColor: palette.onPrimary,
+          elevation: 0,
+          minimumSize: const Size(0, AppMetrics.controlHeightSmall),
+          textStyle: TextStyle(
+            fontFamily: fontFamily,
+            fontWeight: FontWeight.w700,
+            fontSize: AppMetrics.fontBody,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           ),
         ),
       ),

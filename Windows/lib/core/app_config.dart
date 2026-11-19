@@ -10,17 +10,12 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.39';
-  static const int buildNumber = 40;
-  /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.18`.
-  ///
-  /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
-  /// هنوز «۱٫۰٫۰» نوشته بود). بدون کلمه «نسخه» و با رقم لاتین، چون کاربر
-  /// دقیقا همین را زیر منوی کناری خواست.
+  static const String version = '1.0.0';
+  static const int buildNumber = 1;
+  /// شماره نسخه برای نمایش، از همان `version` ساخته می شود تا هیچ وقت عقب نماند.
   static String get versionLabel => version;
 
-  /// همان شماره با پیشوند فارسی، برای جاهایی که متن جمله است (تنظیمات،
-  /// گزارش خطا): «نسخه ۱٫۰٫۱۶».
+  /// همان شماره با پیشوند فارسی، برای جاهایی که متن جمله است (تنظیمات، گزارش خطا).
   static String get versionPhrase => Fa.num('نسخه ${version.split('.').join('٫')}');
   static const String company = 'آرمین سافت';
   static const String developer = 'آرمین سافت';

@@ -94,7 +94,12 @@ class _LoginPageState extends State<LoginPage> {
                         center: const Alignment(-0.8, -0.9),
                         radius: 1.5,
                         colors: <Color>[
-                          colors.primary.withValues(alpha: 0.20),
+                          colors.primary.withValues(
+                            alpha: Theme.of(context).brightness ==
+                                    Brightness.dark
+                                ? 0.20
+                                : 0.10,
+                          ),
                           colors.background,
                         ],
                       ),

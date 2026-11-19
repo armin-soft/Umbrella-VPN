@@ -63,8 +63,17 @@ class WindowService with WindowListener {
   /// پیش از بستن کامل برنامه (دکمه بستن، خروج از سینی، نصب به روز رسانی یا
   /// خاموشی ویندوز) صدا زده می شود تا هسته و CLI کامل و بی درنگ متوقف شوند.
   Future<void> Function()? onBeforeQuit;
+  Brightness? _appliedBrightness;
 
-  Future<void> init({Size? size}) async {
+  static Color _backgroundFor(Brightness brightness) =>
+      brightness == Brightness.dark
+          ? const Color(0xFF07080B)
+          : const Color(0xFFF5F6FA);
+
+  Future<void> init({
+    Size? size,
+    Brightness initialBrightness = Brightness.dark,
+  }) async {
     if (_initialized) {
       return;
     }
@@ -75,11 +84,12 @@ class WindowService with WindowListener {
       return null;
     });
     await windowManager.ensureInitialized();
+    _appliedBrightness = initialBrightness;
     final WindowOptions options = WindowOptions(
       size: size ?? const Size(1280, 820),
       minimumSize: const Size(1120, 720),
       center: true,
-      backgroundColor: const Color(0xFF07080B),
+      backgroundColor: _backgroundFor(initialBrightness),
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,
     );
@@ -88,12 +98,29 @@ class WindowService with WindowListener {
     await windowManager.setPreventClose(true);
     await windowManager.waitUntilReadyToShow(options, () async {
       await windowManager.setMinimumSize(const Size(1120, 720));
+      try {
+        await windowManager.setBrightness(initialBrightness);
+      } catch (_) {}
       await windowManager.center();
       await windowManager.show();
       await windowManager.focus();
     });
     windowManager.addListener(this);
     _initialized = true;
+  }
+
+  /// همگام سازی رنگ پس زمینه و قاب بومی پنجره ویندوز (DWM) با تم روشن و تاریک.
+  void syncBrightness(Brightness brightness) {
+    if (!_initialized || _appliedBrightness == brightness) {
+      return;
+    }
+    _appliedBrightness = brightness;
+    unawaited(() async {
+      try {
+        await windowManager.setBrightness(brightness);
+        await windowManager.setBackgroundColor(_backgroundFor(brightness));
+      } catch (_) {}
+    }());
   }
 
   Future<void> minimize() async {

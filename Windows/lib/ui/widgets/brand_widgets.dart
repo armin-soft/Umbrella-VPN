@@ -35,11 +35,13 @@ class OperatorBadge extends StatelessWidget {
               vertical: AppMetrics.space1,
             ),
             decoration: BoxDecoration(
-              color: operator.chipColor,
+              color: operator == MobileOperator.unknown
+                  ? colors.surfaceHigh
+                  : operator.chipColor,
               borderRadius: BorderRadius.circular(
                 compact ? AppMetrics.radiusSm : AppMetrics.radiusMd,
               ),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              border: Border.all(color: colors.border),
             ),
             child: Image.asset(
               operator.logoAsset,
@@ -98,7 +100,7 @@ class _FallbackMark extends StatelessWidget {
             Color.lerp(operator.color, Colors.black, 0.35)!,
           ],
         ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        border: Border.all(color: context.colors.border),
       ),
       alignment: Alignment.center,
       child: Text(

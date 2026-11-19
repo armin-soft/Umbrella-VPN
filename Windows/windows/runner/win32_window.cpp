@@ -8,6 +8,7 @@
 #include "resource.h"
 
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "advapi32.lib")
 
 namespace {
 
@@ -26,10 +27,17 @@ UINT GetDpiForWindowSafe(HWND hwnd) {
   return 96;
 }
 
-void EnableDarkTitleBar(HWND hwnd) {
-  // The client area paints its own title bar; this keeps the frame dark while
-  // the window is being created.
-  BOOL dark = TRUE;
+void ApplySystemTitleBarTheme(HWND hwnd) {
+  // Match Windows AppsUseLightTheme on initial HWND creation; WindowService
+  // then keeps DWMWA_USE_IMMERSIVE_DARK_MODE synced to Dark, Light, or System.
+  DWORD light_mode = 0;
+  DWORD data_size = sizeof(light_mode);
+  const LSTATUS status = RegGetValueW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light_mode,
+      &data_size);
+  BOOL dark = (status == ERROR_SUCCESS && light_mode != 0) ? FALSE : TRUE;
   const DWORD kAttribute = 20;  // DWMWA_USE_IMMERSIVE_DARK_MODE
   DwmSetWindowAttribute(hwnd, kAttribute, &dark, sizeof(dark));
 }
@@ -80,7 +88,7 @@ bool Win32Window::Create(const std::wstring& title, const Point& origin,
     return false;
   }
   window_handle_ = handle;
-  EnableDarkTitleBar(window_handle_);
+  ApplySystemTitleBarTheme(window_handle_);
 
   // The Flutter view is created once the HWND exists, so the client area is
   // already valid when the controller measures it.
