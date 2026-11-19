@@ -34,7 +34,7 @@ private const CFG_KEYS = [
 'Custom_Min_GB' => ['label' => 'حداقل حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، حداقل ۰.۱'],
 'Custom_Max_GB' => ['label' => 'حداکثر حجم پلن دلخواه', 'type' => 'gb', 'screen' => 'pricing', 'hint' => 'عدد به گیگابایت، مثلاً 1000'],
 'Support_Url' => ['label' => 'لینک پشتیبانی', 'type' => 'link', 'screen' => 'links', 'hint' => 'آدرس کامل https://t.me/... یا نام کاربری با @'],
-'Channel_Url' => ['label' => 'نام کاربری کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'نام کاربری عمومی کانال، مانند @channel_name یا https://t.me/channel_name؛ شناسه عددی خودکار دریافت می‌شود'],
+'Channel_Url' => ['label' => 'نام کاربری کانال تلگرام', 'type' => 'link', 'screen' => 'links', 'hint' => 'نام کاربری عمومی کانال، مانند @UmbrellaVPN_Channel یا https://t.me/UmbrellaVPN_Channel؛ شناسه عددی خودکار دریافت می‌شود'],
 'Telegram_Channel_ID' => ['label' => 'آی دی کانال تلگرام', 'type' => 'channel', 'screen' => 'links', 'hint' => 'آی دی عددی و معمولاً منفی، مثال: -1001833514833'],
 ];
 

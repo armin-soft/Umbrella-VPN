@@ -723,6 +723,7 @@ self::ok([
 'account' => $Profile,
 'filter' => AppFilter::load($UUID),
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
+'channel_url' => BotConfig::getChannelUrl(),
 'checked_at' => gmdate('c'),
 ]);
 }
@@ -746,7 +747,10 @@ Database::getInstance()->execute(
 [time(), $DeviceId]
 );
 
-$Payload = ['seen_at' => gmdate('c')];
+$Payload = [
+'seen_at' => gmdate('c'),
+'channel_url' => BotConfig::getChannelUrl(),
+];
 if ($UUID !== '') {
 $LinkedTg = self::autoLinkTelegramOwner(
 $DeviceId,

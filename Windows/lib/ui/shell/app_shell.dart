@@ -22,6 +22,7 @@ import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
 import '../widgets/common.dart';
 import '../widgets/shell_widgets.dart';
+import '../widgets/telegram_channel_dialog.dart';
 
 /// پوسته برنامه: نوار عنوان، نوار کنار و بخش ها.
 class AppShell extends StatefulWidget {
@@ -48,7 +49,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _index = 0;
   bool _appVisible = true;
   bool _assetsPrecached = false;
+  bool _telegramPromptOpen = false;
   StreamSubscription<String>? _traySub;
+  Timer? _telegramInitTimer;
+  Timer? _telegramPeriodicTimer;
 
   static const List<NavDestination> _destinations = <NavDestination>[
     NavDestination(label: 'اتصال', icon: Icons.shield_outlined, activeIcon: Icons.shield_rounded),
@@ -70,6 +74,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
+    _telegramInitTimer = Timer(const Duration(milliseconds: 550), () {
+      unawaited(_maybeShowTelegramChannelPrompt());
+    });
+    _telegramPeriodicTimer = Timer.periodic(const Duration(hours: 6), (_) {
+      unawaited(_maybeShowTelegramChannelPrompt());
+    });
   }
 
   @override
@@ -95,7 +105,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _traySub?.cancel();
+    _telegramInitTimer?.cancel();
+    _telegramPeriodicTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _maybeShowTelegramChannelPrompt() async {
+    if (!mounted ||
+        !_appVisible ||
+        widget.windowService.isHiddenToTray ||
+        _telegramPromptOpen) {
+      return;
+    }
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      return;
+    }
+    _telegramPromptOpen = true;
+    try {
+      await TelegramChannelPrompt.showIfDue(context);
+    } catch (_) {
+      // خطای احتمالی انبار محلی هرگز نباید کار پوسته اصلی را متوقف کند.
+    } finally {
+      _telegramPromptOpen = false;
+    }
   }
 
   void _triggerAutoSync() {
@@ -122,6 +155,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       _triggerAutoSync();
+      unawaited(_maybeShowTelegramChannelPrompt());
     }
   }
 
@@ -134,6 +168,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           setState(() => _appVisible = true);
         }
         _triggerAutoSync();
+        unawaited(_maybeShowTelegramChannelPrompt());
         break;
       case 'servers':
         await widget.windowService.show();
@@ -143,6 +178,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             _index = 0;
           });
         }
+        unawaited(_maybeShowTelegramChannelPrompt());
         break;
       case 'settings':
         await widget.windowService.show();
@@ -154,6 +190,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             _index = 3;
           });
         }
+        unawaited(_maybeShowTelegramChannelPrompt());
         break;
       case 'toggle':
         if (vpn.status.active) {

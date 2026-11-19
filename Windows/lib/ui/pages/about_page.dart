@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -6,6 +8,7 @@ import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../data/gateway_client.dart';
 import '../widgets/common.dart';
+import '../widgets/telegram_channel_dialog.dart';
 
 /// صفحه «درباره»: معرفی برنامه، راه های ارتباطی و بررسی درگاه سرویس با ساختار
 /// کاملاً یکدست با منوهای دستگاه من، حساب من و تنظیمات.
@@ -161,10 +164,11 @@ class _DeveloperCard extends StatelessWidget {
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
-            icon: Icons.campaign_rounded,
+            icon: Icons.telegram,
             label: 'کانال اطلاع رسانی',
-            value: 'کانال رسمی آمبرلا',
-            onTap: () => _open(AppConfig.channelUrl),
+            value: AppConfig.channelHandle,
+            ltr: true,
+            onTap: () => unawaited(TelegramChannelPrompt.openChannel()),
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(

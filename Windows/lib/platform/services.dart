@@ -55,6 +55,10 @@ class WindowService with WindowListener {
   bool notificationsEnabled = true;
   bool _initialized = false;
   bool _quitting = false;
+  bool _hiddenToTray = false;
+
+  /// آیا پنجره هم اکنون در سینی سیستم پنهان است (مثلا با اجرای خودکار خاموش).
+  bool get isHiddenToTray => _hiddenToTray;
 
   /// پیش از بستن کامل برنامه (دکمه بستن، خروج از سینی، نصب به روز رسانی یا
   /// خاموشی ویندوز) صدا زده می شود تا هسته و CLI کامل و بی درنگ متوقف شوند.
@@ -105,10 +109,12 @@ class WindowService with WindowListener {
   }
 
   Future<void> hide() async {
+    _hiddenToTray = true;
     await windowManager.hide();
   }
 
   Future<void> show() async {
+    _hiddenToTray = false;
     await windowManager.show();
     await windowManager.focus();
   }
@@ -153,6 +159,7 @@ class WindowService with WindowListener {
       return;
     }
     if (closeToTray) {
+      _hiddenToTray = true;
       await windowManager.hide();
       if (notificationsEnabled) {
         await _native.trayBalloon(

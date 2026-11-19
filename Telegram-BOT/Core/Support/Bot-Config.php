@@ -194,11 +194,22 @@ public static function setSupportUrl(string $Url): void {
 Repository::setSetting('Support_Url', trim($Url));
 }
 
+public const DEFAULT_CHANNEL_USERNAME = 'UmbrellaVPN_Channel';
+public const DEFAULT_CHANNEL_URL = 'https://t.me/UmbrellaVPN_Channel';
+
 /** Public channel link; the panel's `Channel_Url` wins over `CHANNEL_URL`. */
 public static function getChannelUrl(): string {
 $Stored = trim((string)Repository::getSetting('Channel_Url', ''));
-
-return $Stored !== '' ? $Stored : Environment::getChannelUrl();
+if ($Stored !== '') {
+return $Stored;
+}
+if (class_exists('Environment') && method_exists('Environment', 'getChannelUrl')) {
+$Env = trim(Environment::getChannelUrl());
+if ($Env !== '') {
+return $Env;
+}
+}
+return self::DEFAULT_CHANNEL_URL;
 }
 
 public static function setChannelUrl(string $Url): void {
@@ -210,7 +221,7 @@ public static function channelUsername(string $Input): string {
 $Input = trim($Input);
 if (preg_match('~^(?:https?://)?(?:www\.)?t\.me/([A-Za-z][A-Za-z0-9_]{3,31})/?$~i', $Input, $Match)) return $Match[1];
 if (preg_match('/^@?([A-Za-z][A-Za-z0-9_]{3,31})$/', $Input, $Match)) return $Match[1];
-throw new InvalidArgumentException('نام کاربری عمومی کانال را مانند @channel_name یا https://t.me/channel_name بفرستید.');
+throw new InvalidArgumentException('نام کاربری عمومی کانال را مانند @UmbrellaVPN_Channel یا https://t.me/UmbrellaVPN_Channel بفرستید.');
 }
 
 /** هر دو مقدار فقط پس از پاسخ معتبر getChat و در یک تراکنش ذخیره می‌شوند. */

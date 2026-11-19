@@ -116,7 +116,8 @@ return (int)self::get('ADMIN_USER_ID');
 }
 
 public static function getChannelUrl(): string {
-return self::get('CHANNEL_URL');
+$Url = trim(self::get('CHANNEL_URL'));
+return $Url !== '' ? $Url : 'https://t.me/UmbrellaVPN_Channel';
 }
 
 

@@ -26,7 +26,13 @@ class AppConfig {
   static const String developer = 'آرمین سافت';
   static const String developerSite = 'https://armin-soft.ir';
   static const String supportUrl = 'https://t.me/UmbrellaSupport';
-  static const String channelUrl = 'https://t.me/UmbrellaChannel';
+  static const String channelUsername = String.fromEnvironment(
+    'UMBRELLA_CHANNEL',
+    defaultValue: 'UmbrellaVPN_Channel',
+  );
+  static const String channelHandle = '@$channelUsername';
+  static const String channelUrl = 'https://t.me/$channelUsername';
+  static const String channelAppUrl = 'tg://resolve?domain=$channelUsername';
   static const String botUsername = String.fromEnvironment(
     'UMBRELLA_BOT',
     defaultValue: 'UmbrellaVPN_BOT',

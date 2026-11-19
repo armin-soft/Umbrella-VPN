@@ -205,6 +205,7 @@ class AppMetrics {
   static const double radiusXs = 6;
   static const double radiusSm = 8;
   static const double radiusMd = 12;
+  static const double radiusButton = 14;
   static const double radiusLg = 16;
   static const double radiusXl = 20;
   static const double radiusXxl = 24;
@@ -291,6 +292,11 @@ class AppMetrics {
   static const double dialogMaxHeight = 620;
   static const double qrDialogWidth = 372;
   static const double qrCodeSize = 200;
+
+  /// ابعاد گفت و گوی عضویت در کانال تلگرام.
+  static const double telegramDialogWidth = 360;
+  static const double telegramHeaderHeight = 188;
+  static const double telegramAvatarSize = 84;
 
   /// کمینه پهنای نشان عددی (شمارنده اعلان ها).
   static const double badgeMinWidth = 14;
