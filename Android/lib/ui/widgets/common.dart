@@ -511,13 +511,17 @@ class Pill extends StatelessWidget {
             ),
             const SizedBox(width: AppMetrics.space1),
           ],
-          Text(
-            Fa.num(label),
-            style: TextStyle(
-              fontSize: dense ? AppMetrics.fontCaption : AppMetrics.fontSmall,
-              fontWeight: FontWeight.w700,
-              color: tone,
-              fontFamily: AppTheme.fontFamily,
+          Flexible(
+            child: Text(
+              Fa.num(label),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: dense ? AppMetrics.fontCaption : AppMetrics.fontSmall,
+                fontWeight: FontWeight.w700,
+                color: tone,
+                fontFamily: AppTheme.fontFamily,
+              ),
             ),
           ),
         ],
@@ -692,14 +696,16 @@ class InfoRow extends StatelessWidget {
         children: <Widget>[
           Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
           const SizedBox(width: AppMetrics.space3),
-          Text(
-            Fa.num(label),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
+          Flexible(
+            child: Text(
+              Fa.num(label),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
           ),
           const SizedBox(width: AppMetrics.space3),
           Expanded(

@@ -205,6 +205,7 @@ class TitleBar extends StatelessWidget {
     final VpnStatus? current = status;
     final Color tone =
         current == null ? colors.primary : VpnVisuals.color(context, current);
+    final bool compactBar = MediaQuery.sizeOf(context).width < 480;
 
     return Container(
       decoration: BoxDecoration(
@@ -265,7 +266,9 @@ class TitleBar extends StatelessWidget {
                     ),
                     const SizedBox(width: AppMetrics.space2),
                     Text(
-                      Fa.num(AppConfig.appName),
+                      Fa.num(
+                        compactBar ? AppConfig.shortName : AppConfig.appName,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(

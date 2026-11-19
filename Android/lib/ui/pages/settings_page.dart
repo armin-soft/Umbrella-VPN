@@ -2359,21 +2359,42 @@ class _ThemeCardSelector extends StatelessWidget {
       (ThemePreference.light, 'روشن', 'خوانا در محیط های پرنور'),
       (ThemePreference.system, 'هماهنگ با سیستم', 'تغییر خودکار با اندروید'),
     ];
-    return Row(
-      children: <Widget>[
-        for (int i = 0; i < items.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: AppMetrics.space3),
-          Expanded(
-            child: _ThemeOptionCard(
-              preference: items[i].$1,
-              title: items[i].$2,
-              subtitle: items[i].$3,
-              selected: selected == items[i].$1,
-              onTap: () => onChanged(items[i].$1),
-            ),
-          ),
-        ],
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < AppMetrics.breakpointCompact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(height: AppMetrics.space2),
+                _ThemeOptionCard(
+                  preference: items[i].$1,
+                  title: items[i].$2,
+                  subtitle: items[i].$3,
+                  selected: selected == items[i].$1,
+                  onTap: () => onChanged(items[i].$1),
+                ),
+              ],
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            for (int i = 0; i < items.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: AppMetrics.space3),
+              Expanded(
+                child: _ThemeOptionCard(
+                  preference: items[i].$1,
+                  title: items[i].$2,
+                  subtitle: items[i].$3,
+                  selected: selected == items[i].$1,
+                  onTap: () => onChanged(items[i].$1),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

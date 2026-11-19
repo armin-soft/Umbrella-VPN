@@ -593,38 +593,42 @@ void main() {
         subscriptionUrl:
             'https://user.umbrella-server.ir/D6qnVQXRwa/9f7b5c1a-2233-4455-8899-aabbccddeeff/sub/',
       );
+      final SessionData relaySession = SessionData(
+        token: 'tok-relay-test',
+        uuid: account.uuid,
+        deviceId: 'android-relay-test',
+        account: account,
+        filter: FilterSettings.empty,
+      );
       SharedPreferences.setMockInitialValues(<String, Object>{
         StoreKeys.deviceId: 'android-relay-test',
-        StoreKeys.session: jsonEncode(
-          SessionData(
-            token: 'tok-relay-test',
-            uuid: account.uuid,
-            deviceId: 'android-relay-test',
-            account: account,
-            filter: FilterSettings.empty,
-          ).toJson(),
-        ),
+        StoreKeys.session: jsonEncode(relaySession.toJson()),
       });
       final LocalStore store = LocalStore.instance;
       await store.init();
+      await store.write(StoreKeys.deviceId, 'android-relay-test');
+      await store.writeJson(StoreKeys.session, relaySession.toJson());
       await store.deleteFile(StoreKeys.nodesCache);
 
       final MockClient relayClient = MockClient((http.Request req) async {
         if (req.url.host == 'user.umbrella-server.ir') {
           throw const SocketException('direct host blocked');
         }
-        if (req.url.toString().contains('subscription/fetch')) {
+        final String query = req.url.toString();
+        if (query.contains('subscription/fetch') ||
+            query.contains('subscription%2Ffetch')) {
           return http.Response(
             jsonEncode(<String, Object>{
               'ok': true,
               'content': base64Encode(utf8.encode('$vlessSample\n')),
               'subscription_url': account.subscriptionUrl,
+              'account_base': AppConfig.subscriptionBaseUrl,
             }),
             200,
             headers: <String, String>{'content-type': 'application/json'},
           );
         }
-        return http.Response('{}', 404);
+        return http.Response(jsonEncode(<String, Object>{'ok': true}), 200);
       });
 
       final NativeBridge native = NativeBridge();
