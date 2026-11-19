@@ -360,6 +360,9 @@ void main() {
             <String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'},
           ],
           'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{
+              'workers': 4,
+            },
             'clash_api': <String, dynamic>{
               'external_controller': '127.0.0.1:16756',
               'secret': 'abc',
@@ -510,7 +513,9 @@ void main() {
   });
 
   group('پروب ها و تست سرعت — احراز هویت پروکسی محلی و حالت تونل بدون پروکسی', () {
-    test('VerifiedProbe و TunnelProbe هدر احراز هویت پروکسی محلی را ارسال می کنند', () async {
+    test('VerifiedProbe هدر احراز هویت پروکسی محلی را ارسال می کند', () async {
+      final HttpOverrides? previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
       final HttpServer proxy = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final String expectedAuth =
           'Basic ${base64Encode(utf8.encode('hiddify:Secret-123'))}';
@@ -557,10 +562,13 @@ void main() {
         expect(authedRequests, 1);
       } finally {
         await proxy.close(force: true);
+        HttpOverrides.global = previousOverrides;
       }
     });
 
     test('SpeedTestRunner بدون پروکسی محلی فقط با allowDirectTunnel صریح اجرا می شود', () async {
+      final HttpOverrides? previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
       final SpeedTestRunner denied = SpeedTestRunner();
       await expectLater(
         () => denied.run(proxyPort: 0),
@@ -594,6 +602,7 @@ void main() {
         expect(ok.upload.bytes, 2048);
       } finally {
         await server.close(force: true);
+        HttpOverrides.global = previousOverrides;
       }
     });
   });
@@ -700,6 +709,9 @@ void main() {
       expect(auth.filter.activeBotCategories, <String>['adult']);
       expect(auth.filter.enabled, isTrue);
 
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
       toasts.dispose();
     });
   });

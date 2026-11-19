@@ -379,6 +379,10 @@ class UmbrellaCore {
         'chaturbate',
         'bongacams',
         'brazzers',
+        'sexvid',
+        'sexcam',
+        'sextube',
+        'hentai',
       ],
     ),
     'gambling': _CategoryFilterSpec(
@@ -462,11 +466,15 @@ class UmbrellaCore {
         'betforward',
         'cannonbet',
         'shartbandi',
+        'enfejar',
+        'casino',
+        'betting',
       ],
     ),
     'ads': _CategoryFilterSpec(
       ruleSets: <String>[
         ...adBlockRuleSetUrls,
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-and-telemetry.srs',
         'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-ir.srs',
       ],
       suffixes: <String>[
@@ -510,6 +518,7 @@ class UmbrellaCore {
         'revcontent.com',
         'amazon-adsystem.com',
         'ads-twitter.com',
+        'ads.yahoo.com',
         'ads.linkedin.com',
         'ads.tiktok.com',
         'analytics.tiktok.com',
@@ -544,6 +553,7 @@ class UmbrellaCore {
         'doubleclick',
         'googlesyndication',
         'googleadservices',
+        'adserver',
         'popads',
         'propellerads',
         'adsterra',

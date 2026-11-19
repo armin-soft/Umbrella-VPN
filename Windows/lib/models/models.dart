@@ -1079,7 +1079,12 @@ class FilterSettings {
 
   /// دامنه های زیرساخت خود آمبرلا که مسدودسازی آن ها همگام سازی فیلتر را قفل می کند.
   static Set<String> get _protectedSuffixes {
-    final Set<String> out = <String>{'umbrella-vpn.ir'};
+    final Set<String> out = <String>{
+      'umbrella-vpn.ir',
+      'armin-soft.ir',
+      'arminsoft.ir',
+      'soft98.site',
+    };
     final String? gwHost = Uri.tryParse(AppConfig.gatewayBase)?.host.toLowerCase();
     if (gwHost != null && gwHost.isNotEmpty) {
       out.add(gwHost.startsWith('www.') ? gwHost.substring(4) : gwHost);
