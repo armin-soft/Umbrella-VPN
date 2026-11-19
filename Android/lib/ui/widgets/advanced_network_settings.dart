@@ -753,9 +753,7 @@ class _InstalledAppPickerDialogState extends State<_InstalledAppPickerDialog> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final List<InstalledAndroidApp> items = await widget.native.installedApps(
-      includeSystem: _includeSystem,
-    );
+    final List<InstalledAndroidApp> items = await widget.native.installedApps();
     if (!mounted) {
       return;
     }
@@ -769,15 +767,18 @@ class _InstalledAppPickerDialogState extends State<_InstalledAppPickerDialog> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final String query = _search.text.trim().toLowerCase();
-    final List<InstalledAndroidApp> filtered = query.isEmpty
-        ? _apps
-        : _apps
-            .where(
-              (InstalledAndroidApp app) =>
-                  app.label.toLowerCase().contains(query) ||
-                  app.packageName.toLowerCase().contains(query),
-            )
-            .toList(growable: false);
+    final List<InstalledAndroidApp> filtered = _apps.where(
+      (InstalledAndroidApp app) {
+        if (!_includeSystem && app.isSystem) {
+          return false;
+        }
+        if (query.isEmpty) {
+          return true;
+        }
+        return app.appName.toLowerCase().contains(query) ||
+            app.packageName.toLowerCase().contains(query);
+      },
+    ).toList(growable: false);
     return AlertDialog(
       title: const Text('برنامه های نصب شده'),
       content: SizedBox(
@@ -806,8 +807,7 @@ class _InstalledAppPickerDialogState extends State<_InstalledAppPickerDialog> {
                 Switch(
                   value: _includeSystem,
                   onChanged: (bool value) {
-                    _includeSystem = value;
-                    _load();
+                    setState(() => _includeSystem = value);
                   },
                 ),
               ],
@@ -828,23 +828,23 @@ class _InstalledAppPickerDialogState extends State<_InstalledAppPickerDialog> {
                         )
                       : ListView.separated(
                           itemCount: filtered.length,
-                          separatorBuilder: (_, _) =>
+                          separatorBuilder: (BuildContext context, int index) =>
                               const Divider(height: 1),
                           itemBuilder: (BuildContext context, int index) {
                             final InstalledAndroidApp app = filtered[index];
                             return ListTile(
                               dense: true,
                               leading: IconSquare(
-                                icon: app.systemApp
+                                icon: app.isSystem
                                     ? Icons.android_rounded
                                     : Icons.apps_rounded,
-                                color: app.systemApp
+                                color: app.isSystem
                                     ? colors.textSecondary
                                     : colors.primary,
                                 size: AppMetrics.iconBoxSm,
                               ),
                               title: Text(
-                                Fa.num(app.label),
+                                Fa.num(app.appName),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),

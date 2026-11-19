@@ -165,9 +165,6 @@ class TrayService {
 
   final NativeBridge _native;
   bool _initialized = false;
-  String? _lastState;
-  String? _lastTooltip;
-  bool? _lastConnected;
 
   Future<bool> init() async {
     if (_initialized) {
@@ -185,9 +182,6 @@ class TrayService {
     if (!_initialized) {
       return;
     }
-    _lastState = state;
-    _lastTooltip = tooltip;
-    _lastConnected = connected;
   }
 
   Future<void> balloon(String title, String body, {bool warning = false}) async {

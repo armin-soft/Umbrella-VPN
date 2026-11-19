@@ -93,13 +93,13 @@ void _installMockNativeChannel(WidgetTester tester) {
           return <Map<String, Object>>[
             <String, Object>{
               'packageName': 'org.telegram.messenger',
-              'label': 'تلگرام',
-              'systemApp': false,
+              'appName': 'تلگرام',
+              'isSystem': false,
             },
             <String, Object>{
               'packageName': 'ir.divar',
-              'label': 'دیوار',
-              'systemApp': false,
+              'appName': 'دیوار',
+              'isSystem': false,
             },
           ];
         case 'tunnelStats':
@@ -617,11 +617,11 @@ void main() {
         await store.deleteFile(StoreKeys.nodesCache);
       });
 
-      final int count = await subs.syncPersonal();
-      expect(count, 1);
+      await subs.syncPersonal();
+      expect(vpn.nodes.length, 1);
       expect(vpn.nodes.single.host, 'de1.umbrella-server.ir');
       expect(subs.sources.length, 1);
-      expect(subs.sources.single.id, AppConfig.personalSourceId);
+      expect(subs.sources.single.source.id, AppConfig.personalSourceId);
     });
   });
 
