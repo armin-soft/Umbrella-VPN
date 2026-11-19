@@ -185,7 +185,7 @@ class _GatewayRelayClient extends http.BaseClient {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const MethodChannel nativeChannel = MethodChannel('umbrella/native');
+  const MethodChannel nativeChannel = MethodChannel('ir.umbrella.app/native');
   const String userUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
   const String sampleSub =
       'vless://aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee@nl1.example.com:443?encryption=none&security=tls&sni=nl1.example.com#NL-01\n'
