@@ -337,11 +337,14 @@ class RuntimeConfig {
 
   static String? _effectiveResolveStrategy(Map<String, dynamic>? settings) {
     if (settings == null) return null;
+    final String ipv6 = '${settings['ipv6-mode'] ?? ''}'.trim();
     final String remote = '${settings['remote-dns-domain-strategy'] ?? ''}'.trim();
+    if (ipv6 == 'ipv4_only' && remote != 'ipv6_only') {
+      return 'ipv4_only';
+    }
     if (_validDomainStrategies.contains(remote)) {
       return remote;
     }
-    final String ipv6 = '${settings['ipv6-mode'] ?? ''}'.trim();
     if (_validDomainStrategies.contains(ipv6)) {
       return ipv6;
     }
