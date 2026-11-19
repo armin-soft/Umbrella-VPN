@@ -116,11 +116,37 @@ void _installMockNativeChannel(WidgetTester tester) {
             'adapter': '',
           };
         case 'autostartEnabled':
+        case 'isRunning':
+        case 'systemProxyEnabled':
           return false;
+        case 'stopCore':
+        case 'shutdownCores':
+          return 0;
+        case 'runningCores':
+          return <String>[];
+        case 'localIp':
+        case 'adapterName':
+        case 'exePath':
+        case 'dataDir':
+          return '';
+        case 'coreStatus':
+          return <String, Object>{
+            'state': 'stopped',
+            'error': '',
+            'startedAtMs': 0,
+            'rx': 0,
+            'tx': 0,
+          };
         default:
           return true;
       }
     },
+  );
+  tester.binding.defaultBinaryMessenger.setMockStreamHandler(
+    const EventChannel('ir.umbrella.app/tray'),
+    MockStreamHandler.inline(
+      onListen: (Object? args, MockStreamHandlerEventSink events) {},
+    ),
   );
 }
 
@@ -591,9 +617,8 @@ void main() {
           return http.Response(
             jsonEncode(<String, Object>{
               'ok': true,
-              'status_code': 200,
-              'body_base64': base64Encode(utf8.encode('$vlessSample\n')),
-              'content_type': 'text/plain; charset=utf-8',
+              'content': base64Encode(utf8.encode('$vlessSample\n')),
+              'subscription_url': account.subscriptionUrl,
             }),
             200,
             headers: <String, String>{'content-type': 'application/json'},

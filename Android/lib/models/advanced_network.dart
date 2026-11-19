@@ -1058,6 +1058,13 @@ class AppRouteRule {
       return 'شناسه بسته برنامه اندروید را وارد یا از فهرست انتخاب کنید (مانند org.telegram.messenger)';
     }
     final String lower = value.toLowerCase();
+    if (lower.endsWith('.exe') ||
+        lower.endsWith('.msi') ||
+        lower.endsWith('.dll') ||
+        lower.endsWith('.bat') ||
+        lower.endsWith('.cmd')) {
+      return 'در نسخه اندروید شناسه بسته برنامه را وارد کنید، نه فایل اجرایی دسکتاپ';
+    }
     if (lower == 'ir.umbrella.vpn' ||
         lower.startsWith('ir.umbrella.') ||
         lower.contains(LanSharing.coreAuthUser)) {
