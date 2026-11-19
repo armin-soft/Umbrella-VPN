@@ -131,10 +131,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  DateTime? _lastAutoSyncAt;
+
   void _triggerAutoSync() {
     if (!mounted) {
       return;
     }
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastAutoSyncAt;
+    if (last != null &&
+        now.difference(last) < const Duration(seconds: 45)) {
+      return;
+    }
+    _lastAutoSyncAt = now;
     final AuthController auth = context.read<AuthController>();
     final SubscriptionController subs = context.read<SubscriptionController>();
     final VpnController vpn = context.read<VpnController>();
@@ -144,7 +153,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         unawaited(subs.syncPersonal());
       }
     }
-    unawaited(vpn.refreshIp());
+    // فقط زمانی که تونل فعال نیست آی پی واقعی سیستم را بازخوانی کن تا آی پی
+    // خروجی سرور VPN جایگزین آی پی واقعی پیش از اتصال نشود.
+    if (!vpn.status.active && !vpn.status.busy) {
+      unawaited(vpn.refreshIp());
+    }
   }
 
   @override

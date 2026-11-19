@@ -407,4 +407,97 @@ void main() {
       await h.dispose(subs);
     }
   });
+
+  group('جلوگیری از حلقه قطع و وصل خودکار هنگام فعال بودن تونل', () {
+    test('isUntunneledExitIp آی پی خارجی تاییدشده هسته را هرگز نشت تلقی نمی کند', () {
+      // وقتی `_realIp` به دلیل فیلترشکن قبلی با آی پی سرور خارجی برابر باشد،
+      // پایش داخلی هسته یا کد کشور خارجی نباید باعث قطع و وصل تونل شود.
+      expect(
+        VpnController.isUntunneledExitIp(
+          exitIp: '91.107.12.34',
+          exitCountryCode: 'DE',
+          realIp: '91.107.12.34',
+          realCountryCode: 'DE',
+          fromCoreMonitor: true,
+        ),
+        isFalse,
+      );
+      expect(
+        VpnController.isUntunneledExitIp(
+          exitIp: '91.107.12.34',
+          exitCountryCode: 'DE',
+          realIp: '91.107.12.34',
+          realCountryCode: 'IR',
+          fromCoreMonitor: true,
+        ),
+        isFalse,
+      );
+      expect(
+        VpnController.isUntunneledExitIp(
+          exitIp: '91.107.12.34',
+          exitCountryCode: 'DE',
+          realIp: '91.107.12.34',
+          realCountryCode: 'DE',
+          fromCoreMonitor: false,
+        ),
+        isFalse,
+      );
+      expect(
+        VpnController.isUntunneledExitIp(
+          exitIp: '91.107.12.34',
+          exitCountryCode: 'NL',
+          realIp: '5.120.10.20',
+          realCountryCode: 'IR',
+          fromCoreMonitor: false,
+        ),
+        isFalse,
+      );
+
+      // نشت واقعی آی پی ایران همچنان به درستی شناسایی می شود.
+      expect(
+        VpnController.isUntunneledExitIp(
+          exitIp: '5.120.10.20',
+          exitCountryCode: 'IR',
+          realIp: '5.120.10.20',
+          realCountryCode: 'IR',
+          fromCoreMonitor: false,
+        ),
+        isTrue,
+      );
+      expect(
+        VpnController.isUntunneledExitIp(
+          exitIp: '5.120.10.20',
+          exitCountryCode: '',
+          realIp: '5.120.10.20',
+          realCountryCode: 'IR',
+          fromCoreMonitor: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('refreshIp و بازاتصال خودکار در برابر بازنویسی _realIp و حلقه بی پایان محافظت شده اند',
+        () {
+      final String vpn =
+          File('lib/vpn/vpn_controller.dart').readAsStringSync();
+      final String shell =
+          File('lib/ui/shell/app_shell.dart').readAsStringSync();
+      final String device =
+          File('lib/ui/pages/device_page.dart').readAsStringSync();
+
+      expect(vpn.contains('bool get _canCaptureBaselineIp'), isTrue);
+      expect(vpn.contains('bool isAutoReconnect = false'), isTrue);
+      expect(vpn.contains('connect(isAutoReconnect: true)'), isTrue);
+      expect(
+        shell.contains('if (!vpn.status.active && !vpn.status.busy)'),
+        isTrue,
+      );
+      expect(
+        device.contains(
+          'if (includePublicIp && !vpn.status.active && !vpn.status.busy)',
+        ),
+        isTrue,
+      );
+    });
+  });
 }

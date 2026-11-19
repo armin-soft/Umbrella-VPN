@@ -82,6 +82,7 @@ class SubscriptionController extends ChangeNotifier {
   late List<SourceState> _sources;
   String _signature = '';
   String _personalFetchedFor = '';
+  String _lastLoggedNodesSignature = '';
   Future<void>? _syncInFlight;
   bool _disposed = false;
 
@@ -167,6 +168,7 @@ class SubscriptionController extends ChangeNotifier {
     _signature = signature;
     _needsLogin = false;
     _personalFetchedFor = '';
+    _lastLoggedNodesSignature = '';
     final Map<String, SourceState> previous = <String, SourceState>{
       for (final SourceState item in _sources) item.source.id: item,
     };
@@ -359,9 +361,15 @@ class SubscriptionController extends ChangeNotifier {
       notifyListeners();
     }
     if (uniqueCount > 0) {
-      _log.add(
-        'اشتراک کاربر به روز شد: ${Fa.num(uniqueCount)} مسیر آماده اتصال.',
-      );
+      final List<String> ids =
+          _vpn.nodes.map((VpnNode item) => item.id).toList()..sort();
+      final String nodesSignature = '$uniqueCount:${ids.join(',')}';
+      if (nodesSignature != _lastLoggedNodesSignature) {
+        _lastLoggedNodesSignature = nodesSignature;
+        _log.add(
+          'اشتراک کاربر به روز شد: ${Fa.num(uniqueCount)} مسیر آماده اتصال.',
+        );
+      }
     }
   }
 

@@ -100,7 +100,7 @@ class _DevicePageState extends State<DevicePage> {
 
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
       native.deviceInfo().catchError((_) => DeviceProfile.empty),
-      if (includePublicIp)
+      if (includePublicIp && !vpn.status.active && !vpn.status.busy)
         vpn.refreshIp().then<Object?>((_) => true).catchError((_) => false),
     ]);
 

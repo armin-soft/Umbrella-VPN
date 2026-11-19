@@ -280,7 +280,55 @@ class VpnController extends ChangeNotifier {
   GeoInfo get geo => _geo;
 
   String _realIp = '';
+  String _realCountryCode = '';
+  int _sameIpWarnedEpoch = -1;
   String get realIp => _realIp;
+
+  /// آیا در همین لحظه مجاز به ثبت آی پی واقعی (پیش از اتصال) هستیم؟
+  /// فقط زمانی که هیچ تونل، اتصال در حال انجام یا فرایند هسته ای فعال نیست.
+  bool get _canCaptureBaselineIp =>
+      !_disposed &&
+      !_shuttingDown &&
+      !_connectInFlight &&
+      _status == VpnStatus.disconnected &&
+      _exitIp.isEmpty &&
+      !_hasTrackedCoreProcesses;
+
+  /// تشخیص دقیق اینکه آیا آی پی خروجی خوانده شده واقعاً نشت بدون تونل است یا
+  /// آی پی سالم سرور خارجی است (مثلاً وقتی پیش از اتصال یک فیلترشکن دیگر باز
+  /// بوده یا `_realIp` قبلاً از سرور خارجی ثبت شده است).
+  static bool isUntunneledExitIp({
+    required String exitIp,
+    required String exitCountryCode,
+    required String realIp,
+    required String realCountryCode,
+    required bool fromCoreMonitor,
+  }) {
+    final String cleanExit = exitIp.trim();
+    if (cleanExit.isEmpty) {
+      return false;
+    }
+    final String exitCc = exitCountryCode.trim().toLowerCase();
+    if (exitCc == 'ir') {
+      return true;
+    }
+    // پایش داخلی خود هسته (ipinfo) مستقیماً از دل خروجی پروکسی اجرا می شود؛
+    // وقتی کشور غیر ایران گزارش کرده، ترافیک قطعاً از سرور خارجی خارج شده است.
+    if (fromCoreMonitor && exitCc.isNotEmpty) {
+      return false;
+    }
+    final String cleanReal = realIp.trim();
+    if (cleanReal.isEmpty || cleanExit != cleanReal) {
+      return false;
+    }
+    final String realCc = realCountryCode.trim().toLowerCase();
+    // اگر آی پی خروجی صراحتاً متعلق به کشور خارجی است و آی پی پایه هم از همان
+    // کشور خارجی بوده (اجرای قبلی فیلترشکن)، این نشت بدون تونل نیست.
+    if (exitCc.isNotEmpty && realCc.isNotEmpty && realCc != 'ir') {
+      return false;
+    }
+    return true;
+  }
 
   String _exitIp = '';
   String get exitIp => _exitIp;
@@ -544,23 +592,22 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _discoverInitialIp() async {
-    final String ip = await _ip.fetchIp(force: true);
-    if (_disposed) return;
-    if (ip.isNotEmpty) {
-      _realIp = ip;
-      if (!_status.active && !_status.busy) {
-        _geo = _ip.last;
-        _notify();
-      }
+    if (!_canCaptureBaselineIp) return;
+    final GeoInfo fetched = await _ip.fetch(force: true);
+    if (!_canCaptureBaselineIp) return;
+    if (fetched.ip.isNotEmpty) {
+      _realIp = fetched.ip;
+      _realCountryCode = fetched.flagCode.toLowerCase();
+      _geo = fetched;
+      _notify();
       return;
     }
     final String local = await _native.localIp();
-    if (_disposed) return;
+    if (!_canCaptureBaselineIp) return;
     if (local.isNotEmpty && _realIp.isEmpty) {
       _realIp = local;
-      if (!_status.active && !_status.busy) {
-        _notify();
-      }
+      _realCountryCode = '';
+      _notify();
     }
   }
 
@@ -1108,7 +1155,10 @@ class VpnController extends ChangeNotifier {
 
   /// اتصال با تلاش روی چند سرور: اگر یک سرور بالا نیامد، سرور بعدی امتحان
   /// می شود تا کاربر مجبور نشود دستی سرور عوض کند.
-  Future<ConnectOutcome> connect({VpnNode? requested}) async {
+  Future<ConnectOutcome> connect({
+    VpnNode? requested,
+    bool isAutoReconnect = false,
+  }) async {
     // فقط یک اتصال همزمان.
     //
     // در گزارش ۱٫۰۱۲ دو «درخواست اتصال» با سه ثانیه فاصله آمد و هر دو
@@ -1124,6 +1174,9 @@ class VpnController extends ChangeNotifier {
     }
     if (_status.active) {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
+    }
+    if (!isAutoReconnect) {
+      _reconnectAttempts = 0;
     }
     _connectInFlight = true;
     try {
@@ -1703,7 +1756,9 @@ class VpnController extends ChangeNotifier {
       _activeCoreLogPath = _coreLogPath(plan);
       _tunnelVerified = true;
       _healthFailures = 0;
-      _reconnectAttempts = 0;
+      // شمارنده `_reconnectAttempts` اینجا صفر نمی شود؛ فقط در اتصال دستی یا پس
+      // از تایید کامل سلامت مسیر صفر می شود تا بازاتصال خودکار هرگز به حلقه
+      // بی پایان قطع و وصل تبدیل نشود.
       if (initialDelayMs > 0) {
         _livePing = initialDelayMs;
       }
@@ -3773,9 +3828,26 @@ class VpnController extends ChangeNotifier {
         _notify();
         return;
       }
-      final bool ipKnown = _realIp.isNotEmpty;
-      final bool ipChanged =
-          !ipKnown || (geo.ip != _realIp && geo.flagCode.toLowerCase() != 'ir');
+      final bool fromCoreMonitor =
+          coreIpInfo != null && coreIpInfo.ip.isNotEmpty && geo.ip == coreIpInfo.ip;
+      // اگر پایش خود هسته کشور خارجی را تایید کرده ولی `_realIp` با آن برابر
+      // است، یعنی `_realIp` قبلاً هنگام فعال بودن فیلترشکن دیگری ثبت شده بوده؛
+      // آن را پاک می کنیم تا معیار اشتباه باقی نماند.
+      if (fromCoreMonitor &&
+          geo.flagCode.isNotEmpty &&
+          geo.flagCode.toLowerCase() != 'ir' &&
+          _realIp == geo.ip) {
+        _realIp = '';
+        _realCountryCode = '';
+      }
+      final bool untunneled = isUntunneledExitIp(
+        exitIp: geo.ip,
+        exitCountryCode: geo.flagCode,
+        realIp: _realIp,
+        realCountryCode: _realCountryCode,
+        fromCoreMonitor: fromCoreMonitor,
+      );
+      final bool ipChanged = !untunneled;
       bool passes = coreHealthy;
       if (!passes && ipChanged) {
         passes = await _trafficReturns();
@@ -3789,10 +3861,35 @@ class VpnController extends ChangeNotifier {
       }
       _tunnelVerified = ipChanged && passes;
       if (!ipChanged) {
-        _log.add(
-          'آی پی خروجی با آی پی قبلی یکسان است؛ ممکن است تونل کامل برقرار نشده باشد.',
-          level: 'warning',
-        );
+        // هرگز تونل سالم را صرفاً به خاطر یک پاسخ آی پی قطع و راه اندازی مجدد
+        // نکن: ابتدا از بالانسر داخلی هسته بخواه بدون قطع تونل گره را بازسنجی
+        // کند، و اگر هسته یا ترافیک واقعی سالم است اتصال را برقرار نگه دار.
+        if (!_singleNodeSession && _settings.autoFailover) {
+          await _nudgeCoreFailover();
+          if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        }
+        final bool flows = coreHealthy || await _trafficReturns();
+        if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        if (flows) {
+          _tunnelVerified = true;
+          _healthFailures = 0;
+          if (_sameIpWarnedEpoch != epoch) {
+            _sameIpWarnedEpoch = epoch;
+            _log.add(
+              'سرویس تشخیص آی پی نشانی قبلی را برگرداند اما مسیر امن هسته فعال و برقرار است.',
+              level: 'info',
+            );
+          }
+          _notify();
+          return;
+        }
+        if (_sameIpWarnedEpoch != epoch) {
+          _sameIpWarnedEpoch = epoch;
+          _log.add(
+            'آی پی خروجی با آی پی قبلی یکسان است و ترافیک از تونل عبور نکرد.',
+            level: 'warning',
+          );
+        }
         _notify();
         if (_settings.autoFailover && _reconnectAttempts < 3) {
           _reconnectAttempts++;
@@ -3811,6 +3908,7 @@ class VpnController extends ChangeNotifier {
         return;
       }
       _healthFailures = 0;
+      _reconnectAttempts = 0;
       if (geo.ip != previousExitIp && previousExitIp.isNotEmpty) {
         _log.add('مسیر امن اتصال به روز شد.');
         if (_settings.notificationsEnabled) {
@@ -3913,8 +4011,12 @@ class VpnController extends ChangeNotifier {
     if (!_activeChain.enabled &&
         coreIp != null &&
         coreIp.ip.isNotEmpty &&
-        coreIp.ip != _realIp &&
+        coreIp.countryCode.toLowerCase() != 'ir' &&
         coreIp.ip != _exitIp) {
+      if (_realIp == coreIp.ip && coreIp.countryCode.isNotEmpty) {
+        _realIp = '';
+        _realCountryCode = '';
+      }
       _geo = GeoInfo.fromJson(coreIp.toGeoJson());
       _exitIp = coreIp.ip;
       changed = true;
@@ -4142,6 +4244,12 @@ class VpnController extends ChangeNotifier {
         _log.add('تونل دوباره سالم شد.');
       }
       _healthFailures = 0;
+      if (_reconnectAttempts > 0 &&
+          _connectedAt != null &&
+          DateTime.now().difference(_connectedAt!) >=
+              const Duration(seconds: 30)) {
+        _reconnectAttempts = 0;
+      }
       if (!_tunnelVerified) {
         _tunnelVerified = true;
         _notify();
@@ -4179,10 +4287,11 @@ class VpnController extends ChangeNotifier {
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
     await _disableProxy();
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+    final int backoffMs = 800 * _reconnectAttempts.clamp(1, 4);
+    await Future<void>.delayed(Duration(milliseconds: backoffMs));
     if (_disposed || generation != _cancelGeneration) return;
     _status = VpnStatus.disconnected;
-    final ConnectOutcome outcome = await connect();
+    final ConnectOutcome outcome = await connect(isAutoReconnect: true);
     if (!outcome.ok && !outcome.cancelled) {
       await _failAndCleanup(outcome.message);
     }
@@ -4245,7 +4354,11 @@ class VpnController extends ChangeNotifier {
     _stats = TunnelStats.empty;
     _tunnelVerified = false;
     _exitIp = '';
+    _sameIpWarnedEpoch = -1;
     _setStatus(VpnStatus.disconnected, 'اتصال قطع شد.');
+    if (!silent) {
+      unawaited(refreshIp());
+    }
     await _tray.update(
       state: 'disconnected',
       tooltip: '${AppConfig.appName} - قطع',
@@ -4509,8 +4622,25 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> refreshIp() async {
-    _geo = await _ip.fetch(force: true);
-    _realIp = _geo.ip;
+    if (_disposed || _shuttingDown || _connectInFlight || _status.busy) {
+      return;
+    }
+    // هنگام اتصال فعال هرگز `_realIp` (آی پی واقعی پیش از تونل) را با آی پی
+    // خروجی تونل بازنویسی نکن؛ فقط اطلاعات آی پی خروجی تونل را به روز کن.
+    if (_status == VpnStatus.connected) {
+      await _verifyTunnel(allowRetry: false);
+      return;
+    }
+    if (!_canCaptureBaselineIp) {
+      return;
+    }
+    final GeoInfo fetched = await _ip.fetch(force: true);
+    if (!_canCaptureBaselineIp || fetched.ip.isEmpty) {
+      return;
+    }
+    _geo = fetched;
+    _realIp = fetched.ip;
+    _realCountryCode = fetched.flagCode.toLowerCase();
     _notify();
   }
 
