@@ -19,6 +19,25 @@ import 'package:umbrella_vpn/vpn/speed_test.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/verified_probe.dart';
 
+class _SilentSound implements SoundService {
+  @override
+  bool enabled = true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeWindow implements WindowService {
+  @override
+  bool closeToTray = true;
+
+  @override
+  bool notificationsEnabled = true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
 class _FakeAuthController extends AuthController {
   _FakeAuthController({required FilterSettings initialFilter})
       : _currentFilter = initialFilter,
@@ -418,8 +437,10 @@ void main() {
       final int resolveIdx = rules.indexWhere((Map<String, dynamic> r) => r['action'] == 'resolve');
       final int blockIdx = rules.indexWhere((Map<String, dynamic> r) => r['action'] == 'reject');
       expect(lanIdx, greaterThan(hijackIdx));
-      expect(resolveIdx, greaterThan(lanIdx));
-      expect(blockIdx, greaterThan(resolveIdx));
+      expect(blockIdx, greaterThan(lanIdx));
+      // قانون resolve عمداً پس از قوانین مسدودسازی دامنه قرار می گیرد تا دامنه های
+      // مسدودشده بدون هدررفت درخواست DNS درجا رد شوند و پیش از مسیریابی نهایی حل شوند.
+      expect(resolveIdx, greaterThan(blockIdx));
       expect(rules[lanIdx]['outbound'], 'direct §hide§');
       expect(rules[resolveIdx]['strategy'], 'ipv4_only');
 
@@ -608,18 +629,22 @@ void main() {
   });
 
   group('SettingsController — بازگشت خودکار لاگ debug پس از ۱۰ دقیقه', () {
-    test('انتخاب سطح debug به warn برمی گردد و تایمر پاک سازی می شود', () async {
-      final NativeBridge native = NativeBridge();
+    test('انتخاب سطح debug به warn برمی گردد و اعلان ها روی پنجره همگام می شود', () async {
+      final _FakeWindow window = _FakeWindow();
       final SettingsController ctrl = SettingsController(
-        native: native,
-        sound: SoundService(),
-        window: WindowService(native),
+        native: NativeBridge(),
+        sound: _SilentSound(),
+        window: window,
       );
       try {
         await ctrl.setLogLevel('debug');
         expect(ctrl.settings.logLevel, 'debug');
         await ctrl.setLogLevel('warn');
         expect(ctrl.settings.logLevel, 'warn');
+        await ctrl.setNotifications(false);
+        expect(window.notificationsEnabled, isFalse);
+        await ctrl.setNotifications(true);
+        expect(window.notificationsEnabled, isTrue);
       } finally {
         ctrl.dispose();
       }

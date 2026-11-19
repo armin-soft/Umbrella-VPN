@@ -20,6 +20,8 @@ class _Native implements NativeBridge {
   @override
   Future<bool> isElevated() async => false;
   @override
+  Future<bool> autostartEnabled() async => false;
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 class _Sound implements SoundService {
@@ -31,6 +33,8 @@ class _Sound implements SoundService {
 class _Window implements WindowService {
   @override
   bool closeToTray = true;
+  @override
+  bool notificationsEnabled = true;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
