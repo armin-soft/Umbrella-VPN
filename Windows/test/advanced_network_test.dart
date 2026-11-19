@@ -96,10 +96,11 @@ void main() {
     expect(const AppRouteRule(process: r'C:\Program Files\App\app.exe').validationError, isNull);
     expect(() => core(const AppSettings(appRoutes: <AppRouteRule>[AppRouteRule(process: '')])), throwsFormatException);
   });
-  test('diagnostic redaction hides WARP license and local API secret', () {
-    final String text = jsonEncode(<String, dynamic>{'warp': <String, dynamic>{'license-key': 'abc-123'}, 'web-secret': 'secret', 'mtu': 1400});
+  test('diagnostic redaction hides WARP license, LAN password and local API secret', () {
+    final String text = jsonEncode(<String, dynamic>{'warp': <String, dynamic>{'license-key': 'abc-123'}, 'lan-sharing-password': 'LanPw-7742', 'web-secret': 'secret', 'mtu': 1400});
     final String clean = redactNetworkSecrets(text);
     expect(clean, isNot(contains('abc-123')));
+    expect(clean, isNot(contains('LanPw-7742')));
     expect(clean, isNot(contains(':"secret"')));
     expect(clean, contains('1400'));
     expect(redactNetworkSecrets('core used abc-123', knownSecrets: <String>['abc-123']), 'core used [redacted]');

@@ -195,6 +195,7 @@ class CorePinger {
             systemProxy: false,
             port: port,
             networkSettings: settings,
+            isolatedProbe: true,
           ),
         ),
         flush: true,

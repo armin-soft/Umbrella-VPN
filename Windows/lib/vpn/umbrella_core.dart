@@ -467,6 +467,7 @@ class UmbrellaCore {
     String directDns = defaultDns,
     AppSettings? networkSettings,
     FilterSettings? contentFilter,
+    bool isolatedProbe = false,
   }) {
     final String normalizedLog =
         CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
@@ -481,6 +482,25 @@ class UmbrellaCore {
       ...appRules,
       ...contentControlRules(contentFilter, startOrder: appRules.length),
     ];
+    final int validLanPort = networkSettings != null &&
+            LanSharing.isValidPort(
+              networkSettings.lanSharingPort,
+              forbiddenPort: port,
+            )
+        ? networkSettings.lanSharingPort
+        : (port == LanSharing.defaultLanPort
+            ? LanSharing.defaultLanPort + 1
+            : LanSharing.defaultLanPort);
+    final bool lanShared =
+        !isolatedProbe && (networkSettings?.allowConnectionFromLan ?? false);
+    final String proxySecret =
+        isolatedProbe ? '' : (networkSettings?.lanSharingPassword.trim() ?? '');
+    final bool localAuth = !isolatedProbe &&
+        !(systemProxy && !tun) &&
+        (networkSettings?.localProxyAuth ?? false) &&
+        proxySecret.isNotEmpty;
+    final TlsTricksSettings tlsTricks =
+        networkSettings?.tlsTricks ?? const TlsTricksSettings();
     return <String, dynamic>{
       // ── گزارش (با بازگشت خودکار ۱۰ دقیقه ای در سطح عیب یابی هم راستا با 5.9.11) ──
       'log-level': normalizedLog,
@@ -492,7 +512,7 @@ class UmbrellaCore {
         'log-level-after': 'warn',
       },
       'log-file': logFile,
-      // ── ورودی ها (تونل یا پروکسی سیستمی) ───────────────────────────────
+      // ── ورودی ها (VPN، پروکسی سیستمی یا پروکسی محلی + اشتراک LAN) ───────
       'enable-tun': tun,
       'enable-tun-service': false,
       'set-system-proxy': systemProxy && !tun,
@@ -505,13 +525,16 @@ class UmbrellaCore {
       'tproxy-port': 12335,
       'redirect-port': 12336,
       'direct-port': 12337,
-      'lan-sharing-port': 12338,
-      'local-proxy-auth': false,
-      'local-proxy-in-vpn': true, // Loopback-only diagnostic path, also in TUN mode.
+      'lan-sharing-port': validLanPort,
+      if (proxySecret.isNotEmpty) 'lan-sharing-password': proxySecret,
+      'local-proxy-auth': localAuth,
+      'local-proxy-in-vpn': networkSettings?.localProxyInVpn ?? true,
       // پیش فرض خود هسته: `sing15` یعنی پشته پیش فرض sing-tun و `9000` همان
       // ام تی یو خودش. صفر گذاشتن این دو، تونل را بی بسته می کند.
-      'tun-implementation': networkSettings == null || networkSettings.tunStack == TunStack.auto
-          ? 'sing15' : networkSettings.tunStack.name,
+      'tun-implementation': networkSettings == null ||
+              networkSettings.tunStack == TunStack.auto
+          ? 'sing15'
+          : networkSettings.tunStack.name,
       'mtu': (networkSettings?.mtu ?? 9000).clamp(1280, 9000),
       'strict-route': networkSettings?.strictRoute ?? true,
       'auto-redirect': true,
@@ -523,28 +546,34 @@ class UmbrellaCore {
       'direct-dns-address': networkSettings == null
           ? directDns
           : NetworkDns.normalizeDirect(networkSettings.directDns),
-      'remote-dns-domain-strategy': 'as_is',
-      'direct-dns-domain-strategy': 'as_is',
+      'remote-dns-domain-strategy':
+          (networkSettings?.remoteDnsStrategy ?? DnsDomainStrategy.asIs)
+              .coreValue,
+      'direct-dns-domain-strategy':
+          (networkSettings?.directDnsStrategy ?? DnsDomainStrategy.asIs)
+              .coreValue,
       // در sing-box 1.14+ کش هر سرور DNS به صورت پیش فرض مستقل است و کلید
       // قدیمی `independent_cache: true` منسوخ شده و در `srun` خطای FATAL می دهد.
       'independent-dns-cache': false,
-      'enable-fake-dns': false,
+      'enable-fake-dns':
+          !isolatedProbe && (networkSettings?.enableFakeDns ?? false),
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
-      'region': 'other',
+      'region': (networkSettings?.routingRegion ?? RoutingRegion.other).coreValue,
       ...(networkSettings?.chain ?? const ChainSettings()).toCoreOptions(),
       if (combinedRules.isNotEmpty)
         'route-rule': <String, dynamic>{
           'rules': combinedRules,
         },
       // Match Hiddify's default `ipv4_only` (`verify_ipv6: false`) unless the
-      // user explicitly enables IPv6 (`prefer_ipv4`).
-      'ipv6-mode': networkSettings == null ? 'ipv4_only'
-          : networkSettings.blockIpv6 ? 'ipv4_only' : 'prefer_ipv4',
-      'resolve-destination': false,
-      'bypass-lan': false,
-      'allow-connection-from-lan': false,
-      'block-quic': false,
-      'block-ads': false,
+      // user explicitly enables IPv6 (`prefer_ipv4` / `prefer_ipv6`).
+      'ipv6-mode': networkSettings == null
+          ? 'ipv4_only'
+          : networkSettings.ipv6RouteMode.coreValue,
+      'resolve-destination': networkSettings?.resolveDestination ?? false,
+      'bypass-lan': networkSettings?.bypassLan ?? false,
+      'allow-connection-from-lan': lanShared,
+      'block-quic': networkSettings?.blockQuic ?? false,
+      'block-ads': networkSettings?.blockAds ?? false,
       'enable-full-config': false,
       'use-xray-core-when-possible': false,
       // رابط کلش روشن است؛ خود هسته در حالت `run` آن را روی ۱۶۷۵۶ باز می
@@ -613,14 +642,7 @@ class UmbrellaCore {
         'max-streams': 8,
         'protocol': 'h2mux',
       },
-      'tls-tricks': <String, dynamic>{
-        'enable-fragment': false,
-        'fragment-size': '10-100',
-        'fragment-sleep': '50-200',
-        'mixed-sni-case': false,
-        'enable-padding': false,
-        'padding-size': '1200-1500',
-      },
+      'tls-tricks': tlsTricks.toCoreOptions(),
       'rules': <dynamic>[],
     };
   }

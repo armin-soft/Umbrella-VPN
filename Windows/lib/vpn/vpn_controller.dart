@@ -180,6 +180,7 @@ class LaunchPlan {
     this.warning = '',
     this.proxyPort = 0,
     this.tun = false,
+    this.systemProxy = true,
   });
 
   final List<CoreLaunch> cores;
@@ -196,14 +197,16 @@ class LaunchPlan {
   final bool chained;
   final String warning;
 
-  /// اگر بزرگ تر از صفر باشد، هسته یک سرور پروکسی محلی روی این پورت می سازد و
-  /// برنامه پروکسی سیستمی ویندوز را به آن وصل می کند.
+  /// اگر بزرگ تر از صفر باشد، هسته یک سرور پروکسی محلی روی این پورت می سازد.
   final int proxyPort;
 
   /// آیا این نقشه تونل کامل است (`--tun`)؟
   final bool tun;
 
-  bool get usesSystemProxy => proxyPort > 0 && !tun;
+  /// آیا پروکسی سیستم عامل روی [proxyPort] تنظیم شود؟ در حالت «فقط پروکسی» خاموش است.
+  final bool systemProxy;
+
+  bool get usesSystemProxy => proxyPort > 0 && !tun && systemProxy;
 }
 
 /// مغز اتصال: انتخاب سرور، ساخت پیکربندی، اجرای هسته، کیل سوییچ، پایش و
@@ -843,6 +846,7 @@ class VpnController extends ChangeNotifier {
   static bool _runtimeSettingsChanged(AppSettings a, AppSettings b) {
     if (a.tunMode != b.tunMode ||
         a.corePreference != b.corePreference ||
+        a.serviceMode != b.serviceMode ||
         a.selectionMode != b.selectionMode ||
         a.autoFailover != b.autoFailover ||
         a.stickyMinutes != b.stickyMinutes ||
@@ -852,9 +856,25 @@ class VpnController extends ChangeNotifier {
         a.tunStack != b.tunStack ||
         a.mtu != b.mtu ||
         a.blockIpv6 != b.blockIpv6 ||
+        a.ipv6RouteMode != b.ipv6RouteMode ||
         a.strictRoute != b.strictRoute ||
+        a.mixedPort != b.mixedPort ||
+        a.localProxyInVpn != b.localProxyInVpn ||
+        a.localProxyAuth != b.localProxyAuth ||
+        a.allowConnectionFromLan != b.allowConnectionFromLan ||
+        a.lanSharingPort != b.lanSharingPort ||
+        a.lanSharingPassword != b.lanSharingPassword ||
         a.remoteDns != b.remoteDns ||
         a.directDns != b.directDns ||
+        a.remoteDnsStrategy != b.remoteDnsStrategy ||
+        a.directDnsStrategy != b.directDnsStrategy ||
+        a.enableFakeDns != b.enableFakeDns ||
+        a.routingRegion != b.routingRegion ||
+        a.bypassLan != b.bypassLan ||
+        a.blockAds != b.blockAds ||
+        a.resolveDestination != b.resolveDestination ||
+        a.blockQuic != b.blockQuic ||
+        a.tlsTricks != b.tlsTricks ||
         a.logLevel != b.logLevel ||
         a.serverRegionCode != b.serverRegionCode ||
         a.lastNodeId != b.lastNodeId ||
@@ -895,7 +915,32 @@ class VpnController extends ChangeNotifier {
         a.configurationInvalid != b.configurationInvalid ||
         a.masqueProtocol != b.masqueProtocol ||
         a.licenseKey != b.licenseKey ||
-        a.psiphonRegion != b.psiphonRegion;
+        a.psiphonRegion != b.psiphonRegion ||
+        a.noiseMode != b.noiseMode ||
+        a.noiseCount != b.noiseCount ||
+        a.noiseSize != b.noiseSize ||
+        a.noiseDelay != b.noiseDelay;
+  }
+
+  Timer? _liveReloadTimer;
+
+  /// بازاعمال خودکار تنظیمات هسته روی اتصال فعال (حالت سرویس، اشتراک LAN،
+  /// امنیت بیشتر، رفع فیلتر پروکسی، مسیریابی، DNS، ورودی و ترفندهای TLS).
+  void scheduleLiveReload() {
+    _liveReloadTimer?.cancel();
+    if (!_status.active) {
+      return;
+    }
+    _liveReloadTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!_status.active || _connectInFlight) {
+        return;
+      }
+      unawaited(() async {
+        final VpnNode? target = _singleNodeSession ? _activeNode : null;
+        await disconnect();
+        await connect(target: target);
+      }());
+    });
   }
 
   /// درخواست لغو اتصال در حال انجام.
@@ -1519,6 +1564,9 @@ class VpnController extends ChangeNotifier {
           await _disableProxy();
           continue;
         }
+      } else if (!plan.tun) {
+        // حالت «فقط سرویس پروکسی»: پورت محلی باز است و پروکسی ویندوز دست نخورده می ماند.
+        await _disableProxy();
       }
       if (_cancelRequested || _disposed) {
         await _stopCores();
@@ -1792,8 +1840,14 @@ class VpnController extends ChangeNotifier {
     // داشته باشیم، وگرنه پروکسی سیستمی. در حالت «خودکار» اگر آداپتور یا مسیر
     // تونل توسط ویندوز/فایروال بسته شود ولی خود پروکسی هسته کار کند، پروکسی
     // سیستمی به عنوان پشتیبان آماده است.
-    bool tun = _settings.corePreference != CorePreference.systemProxy &&
+    final InboundServiceMode requestedMode = _settings.serviceMode;
+    final int activeMixedPort = LanSharing.isValidPort(_settings.mixedPort)
+        ? _settings.mixedPort
+        : _umbrellaPort;
+    bool tun = requestedMode == InboundServiceMode.vpn &&
+        _settings.corePreference != CorePreference.systemProxy &&
         _settings.tunMode;
+    bool sysProxy = requestedMode == InboundServiceMode.systemProxy;
     if (tun && !_device.elevated) {
       _log.add(
         'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
@@ -1801,6 +1855,7 @@ class VpnController extends ChangeNotifier {
         level: 'warning',
       );
       tun = false;
+      sysProxy = true;
     }
     final bool hasActiveAppRoutes =
         _settings.appRoutes.any((AppRouteRule rule) => rule.enabled);
@@ -1808,7 +1863,11 @@ class VpnController extends ChangeNotifier {
         _settings.corePreference == CorePreference.auto &&
         !hasActiveAppRoutes &&
         !_settings.killSwitch;
-    LaunchPlan makePlan({required bool useTun, String warning = ''}) {
+    LaunchPlan makePlan({
+      required bool useTun,
+      required bool useSystemProxy,
+      String warning = '',
+    }) {
       return LaunchPlan(
         cores: <CoreLaunch>[
           CoreLaunch(
@@ -1824,22 +1883,24 @@ class VpnController extends ChangeNotifier {
           ),
         ],
         linksPath: links.path,
-        readinessPort: useTun ? 0 : _umbrellaPort,
+        readinessPort: useTun ? 0 : activeMixedPort,
         primaryBinary: binary,
         tunnelHint: useTun ? AppConfig.tunAdapterHint : '',
         chained: false,
-        proxyPort: useTun ? 0 : _umbrellaPort,
+        proxyPort: useTun ? 0 : activeMixedPort,
         runDir: runDir.path,
         tun: useTun,
+        systemProxy: useSystemProxy,
         warning: warning,
       );
     }
 
     return <LaunchPlan>[
-      makePlan(useTun: tun),
+      makePlan(useTun: tun, useSystemProxy: sysProxy),
       if (allowProxyFallback)
         makePlan(
           useTun: false,
+          useSystemProxy: true,
           warning:
               'مسیر کارت شبکه تونل روی این سیستم پاسخ نداد؛ اتصال با پروکسی '
               'سیستمی برقرار می شود.',
@@ -2082,10 +2143,15 @@ class VpnController extends ChangeNotifier {
       );
       if (prepared.links.isEmpty || shouldAbort()) return;
 
-      final bool tun =
+      final bool tun = _settings.serviceMode == InboundServiceMode.vpn &&
           _settings.corePreference != CorePreference.systemProxy &&
-              _settings.tunMode &&
-              _device.elevated;
+          _settings.tunMode &&
+          _device.elevated;
+      final bool sysProxy = !tun &&
+          _settings.serviceMode != InboundServiceMode.proxy;
+      final int activeMixedPort = LanSharing.isValidPort(_settings.mixedPort)
+          ? _settings.mixedPort
+          : _umbrellaPort;
       final String logPath =
           '${runDir.path}${Platform.pathSeparator}umbrella-core.log';
       final File prewarmLinks = File(
@@ -2102,8 +2168,8 @@ class VpnController extends ChangeNotifier {
         jsonEncode(
           UmbrellaCore.settingsJson(
             tun: tun,
-            systemProxy: !tun,
-            port: _umbrellaPort,
+            systemProxy: sysProxy,
+            port: activeMixedPort,
             logFile: logPath,
             networkSettings: _settings,
             contentFilter: _contentFilter,
@@ -2434,13 +2500,21 @@ class VpnController extends ChangeNotifier {
     final String settingsPath =
         '${plan.runDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
     _activeChain = _settings.chain;
-    if (_activeChain.licenseKey.isNotEmpty) _networkSecrets.add(_activeChain.licenseKey);
+    if (_activeChain.licenseKey.isNotEmpty) {
+      _networkSecrets.add(_activeChain.licenseKey);
+    }
+    if (_settings.lanSharingPassword.trim().isNotEmpty) {
+      _networkSecrets.add(_settings.lanSharingPassword.trim());
+    }
+    final int configuredMixedPort = LanSharing.isValidPort(_settings.mixedPort)
+        ? _settings.mixedPort
+        : _umbrellaPort;
     await File(settingsPath).writeAsString(
       jsonEncode(
         UmbrellaCore.settingsJson(
           tun: plan.tun,
           systemProxy: plan.usesSystemProxy,
-          port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
+          port: plan.proxyPort > 0 ? plan.proxyPort : configuredMixedPort,
           logFile: coreLog,
           networkSettings: _settings,
           contentFilter: _contentFilter,
@@ -4223,6 +4297,7 @@ class VpnController extends ChangeNotifier {
     _prewarmCancelled = true;
     _prewarmTimer?.cancel();
     _filterReloadTimer?.cancel();
+    _liveReloadTimer?.cancel();
     _autoConnectRetryTimer?.cancel();
     _statsTimer?.cancel();
     _healthTimer?.cancel();

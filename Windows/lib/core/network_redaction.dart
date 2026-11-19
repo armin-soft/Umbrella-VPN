@@ -2,7 +2,10 @@
 /// still sensitive and should never be shared without review.
 String redactNetworkSecrets(String input, {Iterable<String> knownSecrets = const <String>[]}) {
   String result = input.replaceAllMapped(
-    RegExp(r'("(?:license-key|web-secret|private_key|private-key|password)"\s*:\s*)"(?:\\.|[^"\\])*"', caseSensitive: false),
+    RegExp(
+      r'("(?:license-key|web-secret|private_key|private-key|lan-sharing-password|password)"\s*:\s*)"(?:\\.|[^"\\])*"',
+      caseSensitive: false,
+    ),
     (Match match) => '${match.group(1)}"[redacted]"',
   );
   for (final String secret in knownSecrets) {

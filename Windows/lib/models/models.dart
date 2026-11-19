@@ -1946,15 +1946,32 @@ class AppSettings {
     this.notificationsEnabled = true,
     this.selectionMode = SelectionMode.auto,
     this.corePreference = CorePreference.auto,
+    this.serviceMode = InboundServiceMode.vpn,
     this.autoFailover = true,
     this.stickyMinutes = 30,
     this.tunStack = TunStack.auto,
     this.mtu = 9000,
     this.blockIpv6 = true,
+    this.ipv6RouteMode = Ipv6RouteMode.ipv4Only,
     this.strictRoute = true,
+    this.mixedPort = AppConfig.httpPortUmbrella,
+    this.localProxyInVpn = true,
+    this.localProxyAuth = false,
+    this.allowConnectionFromLan = false,
+    this.lanSharingPort = LanSharing.defaultLanPort,
+    this.lanSharingPassword = '',
     this.dnsOverTunnel = true,
     this.remoteDns = NetworkDns.defaultRemote,
     this.directDns = NetworkDns.defaultDirect,
+    this.remoteDnsStrategy = DnsDomainStrategy.asIs,
+    this.directDnsStrategy = DnsDomainStrategy.asIs,
+    this.enableFakeDns = false,
+    this.routingRegion = RoutingRegion.other,
+    this.bypassLan = false,
+    this.blockAds = false,
+    this.resolveDestination = false,
+    this.blockQuic = false,
+    this.tlsTricks = const TlsTricksSettings(),
     this.chain = const ChainSettings(),
     this.appRoutes = const <AppRouteRule>[],
     this.showSpeedInTray = true,
@@ -1996,17 +2013,36 @@ class AppSettings {
 
   /// هسته انتخابی کاربر؛ خودکار یعنی زنجیره پیش فرض.
   final CorePreference corePreference;
+
+  /// حالت سرویس ورودی هسته (`پروکسی` / `پروکسی سیستم` / `VPN`).
+  final InboundServiceMode serviceMode;
   final bool autoFailover;
   final int stickyMinutes;
   final TunStack tunStack;
   final int mtu;
   final bool blockIpv6;
+  final Ipv6RouteMode ipv6RouteMode;
   final bool strictRoute;
+  final int mixedPort;
+  final bool localProxyInVpn;
+  final bool localProxyAuth;
+  final bool allowConnectionFromLan;
+  final int lanSharingPort;
+  final String lanSharingPassword;
   // Legacy persisted value. The pinned core always routes remote DNS through
   // the selected proxy; it exposes no boolean for changing that behavior.
   final bool dnsOverTunnel;
   final String remoteDns;
   final String directDns;
+  final DnsDomainStrategy remoteDnsStrategy;
+  final DnsDomainStrategy directDnsStrategy;
+  final bool enableFakeDns;
+  final RoutingRegion routingRegion;
+  final bool bypassLan;
+  final bool blockAds;
+  final bool resolveDestination;
+  final bool blockQuic;
+  final TlsTricksSettings tlsTricks;
   final ChainSettings chain;
   final List<AppRouteRule> appRoutes;
   final bool showSpeedInTray;
@@ -2043,15 +2079,32 @@ class AppSettings {
     bool? notificationsEnabled,
     SelectionMode? selectionMode,
     CorePreference? corePreference,
+    InboundServiceMode? serviceMode,
     bool? autoFailover,
     int? stickyMinutes,
     TunStack? tunStack,
     int? mtu,
     bool? blockIpv6,
+    Ipv6RouteMode? ipv6RouteMode,
     bool? strictRoute,
+    int? mixedPort,
+    bool? localProxyInVpn,
+    bool? localProxyAuth,
+    bool? allowConnectionFromLan,
+    int? lanSharingPort,
+    String? lanSharingPassword,
     bool? dnsOverTunnel,
     String? remoteDns,
     String? directDns,
+    DnsDomainStrategy? remoteDnsStrategy,
+    DnsDomainStrategy? directDnsStrategy,
+    bool? enableFakeDns,
+    RoutingRegion? routingRegion,
+    bool? bypassLan,
+    bool? blockAds,
+    bool? resolveDestination,
+    bool? blockQuic,
+    TlsTricksSettings? tlsTricks,
     ChainSettings? chain,
     List<AppRouteRule>? appRoutes,
     bool? showSpeedInTray,
@@ -2069,6 +2122,13 @@ class AppSettings {
     bool? modeChoiceExplicit,
     bool? showCli,
   }) {
+    final Ipv6RouteMode nextIpv6Mode = ipv6RouteMode ??
+        (blockIpv6 != null
+            ? (blockIpv6 ? Ipv6RouteMode.ipv4Only : Ipv6RouteMode.preferIpv4)
+            : this.ipv6RouteMode);
+    final bool nextBlockIpv6 = ipv6RouteMode != null
+        ? ipv6RouteMode == Ipv6RouteMode.ipv4Only
+        : (blockIpv6 ?? this.blockIpv6);
     return AppSettings(
       theme: theme ?? this.theme,
       autoConnect: autoConnect ?? this.autoConnect,
@@ -2082,15 +2142,33 @@ class AppSettings {
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       selectionMode: selectionMode ?? this.selectionMode,
       corePreference: corePreference ?? this.corePreference,
+      serviceMode: serviceMode ?? this.serviceMode,
       autoFailover: autoFailover ?? this.autoFailover,
       stickyMinutes: stickyMinutes ?? this.stickyMinutes,
       tunStack: tunStack ?? this.tunStack,
       mtu: mtu ?? this.mtu,
-      blockIpv6: blockIpv6 ?? this.blockIpv6,
+      blockIpv6: nextBlockIpv6,
+      ipv6RouteMode: nextIpv6Mode,
       strictRoute: strictRoute ?? this.strictRoute,
+      mixedPort: mixedPort ?? this.mixedPort,
+      localProxyInVpn: localProxyInVpn ?? this.localProxyInVpn,
+      localProxyAuth: localProxyAuth ?? this.localProxyAuth,
+      allowConnectionFromLan:
+          allowConnectionFromLan ?? this.allowConnectionFromLan,
+      lanSharingPort: lanSharingPort ?? this.lanSharingPort,
+      lanSharingPassword: lanSharingPassword ?? this.lanSharingPassword,
       dnsOverTunnel: dnsOverTunnel ?? this.dnsOverTunnel,
       remoteDns: remoteDns ?? this.remoteDns,
       directDns: directDns ?? this.directDns,
+      remoteDnsStrategy: remoteDnsStrategy ?? this.remoteDnsStrategy,
+      directDnsStrategy: directDnsStrategy ?? this.directDnsStrategy,
+      enableFakeDns: enableFakeDns ?? this.enableFakeDns,
+      routingRegion: routingRegion ?? this.routingRegion,
+      bypassLan: bypassLan ?? this.bypassLan,
+      blockAds: blockAds ?? this.blockAds,
+      resolveDestination: resolveDestination ?? this.resolveDestination,
+      blockQuic: blockQuic ?? this.blockQuic,
+      tlsTricks: tlsTricks ?? this.tlsTricks,
       chain: chain ?? this.chain,
       appRoutes: appRoutes == null ? this.appRoutes : List<AppRouteRule>.unmodifiable(appRoutes),
       showSpeedInTray: showSpeedInTray ?? this.showSpeedInTray,
@@ -2125,15 +2203,32 @@ class AppSettings {
         'notificationsEnabled': notificationsEnabled,
         'selectionMode': selectionMode.name,
         'corePreference': corePreference.name,
+        'serviceMode': serviceMode.name,
         'autoFailover': autoFailover,
         'stickyMinutes': stickyMinutes,
         'tunStack': tunStack.name,
         'mtu': mtu,
         'blockIpv6': blockIpv6,
+        'ipv6RouteMode': ipv6RouteMode.name,
         'strictRoute': strictRoute,
+        'mixedPort': mixedPort,
+        'localProxyInVpn': localProxyInVpn,
+        'localProxyAuth': localProxyAuth,
+        'allowConnectionFromLan': allowConnectionFromLan,
+        'lanSharingPort': lanSharingPort,
+        'lanSharingPassword': lanSharingPassword,
         'dnsOverTunnel': dnsOverTunnel,
         'remoteDns': remoteDns,
         'directDns': directDns,
+        'remoteDnsStrategy': remoteDnsStrategy.name,
+        'directDnsStrategy': directDnsStrategy.name,
+        'enableFakeDns': enableFakeDns,
+        'routingRegion': routingRegion.name,
+        'bypassLan': bypassLan,
+        'blockAds': blockAds,
+        'resolveDestination': resolveDestination,
+        'blockQuic': blockQuic,
+        'tlsTricks': tlsTricks.toJson(),
         'chain': chain.toJson(),
         'appRoutes': appRoutes.map((AppRouteRule rule) => rule.toJson()).toList(),
         'showSpeedInTray': showSpeedInTray,
@@ -2172,12 +2267,46 @@ class AppSettings {
       return fallback;
     }
 
+    final CorePreference parsedCorePref =
+        pick(CorePreference.values, json['corePreference'], CorePreference.auto);
+    final bool parsedTunMode = JsonX.boolean(json['tunMode'], fallback: true);
+    final InboundServiceMode fallbackServiceMode =
+        parsedCorePref == CorePreference.systemProxy || !parsedTunMode
+            ? InboundServiceMode.systemProxy
+            : InboundServiceMode.vpn;
+    final InboundServiceMode parsedServiceMode = pick(
+      InboundServiceMode.values,
+      json['serviceMode'],
+      fallbackServiceMode,
+    );
+    final bool parsedBlockIpv6 =
+        JsonX.boolean(json['blockIpv6'], fallback: true);
+    final Ipv6RouteMode parsedIpv6Mode = json['ipv6RouteMode'] != null
+        ? pick(Ipv6RouteMode.values, json['ipv6RouteMode'], Ipv6RouteMode.ipv4Only)
+        : (parsedBlockIpv6 ? Ipv6RouteMode.ipv4Only : Ipv6RouteMode.preferIpv4);
+    final int rawMixedPort =
+        JsonX.integer(json['mixedPort'], AppConfig.httpPortUmbrella);
+    final int validMixedPort = LanSharing.isValidPort(rawMixedPort)
+        ? rawMixedPort
+        : AppConfig.httpPortUmbrella;
+    final int rawLanPort =
+        JsonX.integer(json['lanSharingPort'], LanSharing.defaultLanPort);
+    final int validLanPort =
+        LanSharing.isValidPort(rawLanPort, forbiddenPort: validMixedPort)
+            ? rawLanPort
+            : (validMixedPort == LanSharing.defaultLanPort
+                ? LanSharing.defaultLanPort + 1
+                : LanSharing.defaultLanPort);
+    final String rawSecret = JsonX.text(json['lanSharingPassword']).trim();
+    final String validSecret =
+        LanSharing.isValidPassword(rawSecret) ? rawSecret : '';
+
     return AppSettings(
       theme: pick(ThemePreference.values, json['theme'], ThemePreference.dark),
       autoConnect: JsonX.boolean(json['autoConnect']),
       killSwitch: JsonX.boolean(json['killSwitch'], fallback: false),
       freeCorePorts: JsonX.boolean(json['freeCorePorts'], fallback: true),
-      tunMode: JsonX.boolean(json['tunMode'], fallback: true),
+      tunMode: parsedTunMode,
       startWithWindows: JsonX.boolean(json['startWithWindows']),
       minimizeToTray: JsonX.boolean(json['minimizeToTray'], fallback: true),
       closeToTray: JsonX.boolean(json['closeToTray'], fallback: true),
@@ -2191,14 +2320,21 @@ class AppSettings {
           _withoutManual(
             pick(SelectionMode.values, json['selectionMode'], SelectionMode.auto),
           ),
-      corePreference:
-          pick(CorePreference.values, json['corePreference'], CorePreference.auto),
+      corePreference: parsedCorePref,
+      serviceMode: parsedServiceMode,
       autoFailover: JsonX.boolean(json['autoFailover'], fallback: true),
       stickyMinutes: JsonX.integer(json['stickyMinutes'], 30),
       tunStack: pick(TunStack.values, json['tunStack'], TunStack.auto),
       mtu: JsonX.integer(json['mtu'], 9000).clamp(1280, 9000),
-      blockIpv6: JsonX.boolean(json['blockIpv6'], fallback: true),
+      blockIpv6: parsedIpv6Mode == Ipv6RouteMode.ipv4Only,
+      ipv6RouteMode: parsedIpv6Mode,
       strictRoute: JsonX.boolean(json['strictRoute'], fallback: true),
+      mixedPort: validMixedPort,
+      localProxyInVpn: JsonX.boolean(json['localProxyInVpn'], fallback: true),
+      localProxyAuth: JsonX.boolean(json['localProxyAuth']),
+      allowConnectionFromLan: JsonX.boolean(json['allowConnectionFromLan']),
+      lanSharingPort: validLanPort,
+      lanSharingPassword: validSecret,
       dnsOverTunnel: JsonX.boolean(json['dnsOverTunnel'], fallback: true),
       remoteDns: json['coreDefaultsVersion'] != currentCoreDefaultsVersion &&
               const <String>{
@@ -2208,6 +2344,27 @@ class AppSettings {
           ? NetworkDns.defaultRemote
           : NetworkDns.normalizeRemote(JsonX.text(json['remoteDns'])),
       directDns: NetworkDns.normalizeDirect(JsonX.text(json['directDns'])),
+      remoteDnsStrategy: pick(
+        DnsDomainStrategy.values,
+        json['remoteDnsStrategy'],
+        DnsDomainStrategy.asIs,
+      ),
+      directDnsStrategy: pick(
+        DnsDomainStrategy.values,
+        json['directDnsStrategy'],
+        DnsDomainStrategy.asIs,
+      ),
+      enableFakeDns: JsonX.boolean(json['enableFakeDns']),
+      routingRegion: pick(
+        RoutingRegion.values,
+        json['routingRegion'],
+        RoutingRegion.other,
+      ),
+      bypassLan: JsonX.boolean(json['bypassLan']),
+      blockAds: JsonX.boolean(json['blockAds']),
+      resolveDestination: JsonX.boolean(json['resolveDestination']),
+      blockQuic: JsonX.boolean(json['blockQuic']),
+      tlsTricks: TlsTricksSettings.fromJson(JsonX.asMap(json['tlsTricks'])),
       chain: ChainSettings.fromJson(JsonX.asMap(json['chain'])),
       appRoutes: List<AppRouteRule>.unmodifiable(json['appRoutes'] is List
           ? (json['appRoutes'] as List).map((dynamic value) => AppRouteRule.fromJson(JsonX.asMap(value)))

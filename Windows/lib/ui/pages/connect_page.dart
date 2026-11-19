@@ -16,14 +16,18 @@ import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
+import '../widgets/quick_connection_panel.dart';
 
-/// صفحه اتصال: یک نگاه، یک دکمه، منوی اتصال مرتب و خوانا.
+/// صفحه اتصال: یک نگاه، یک دکمه و پنل تنظیمات سریع در همان صفحه.
 ///
-/// کارت اتصال تمام ارتفاع صفحه را می گیرد و دکمه بزرگ در مرکز آن قرار دارد.
-/// تنظیمات «حالت اتصال» و «حالت انتخاب سرور» در دو کارت هم اندازه و خوانا زیر
-/// دکمه چیده شده اند و آمار زنده اتصال در نوار پایینی نمایش داده می شود.
+/// کارت اتصال تمام ارتفاع صفحه را می گیرد، دکمه بزرگ اتصال در مرکز آن قرار دارد،
+/// در زیر دکمه پنل کنترل سریع (`پروکسی` / `پروکسی سیستم` / `VPN`، اشتراک گذاری
+/// اتصال با کد QR، امنیت بیشتر و رفع فیلتر پروکسی) چیده شده و آمار زنده اتصال
+/// در نوار پایینی نمایش داده می شود.
 class ConnectPage extends StatefulWidget {
-  const ConnectPage({super.key});
+  const ConnectPage({super.key, this.onOpenChainSettings});
+
+  final VoidCallback? onOpenChainSettings;
 
   @override
   State<ConnectPage> createState() => _ConnectPageState();
@@ -204,69 +208,6 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     if (outcome.ok) {
       toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
-    } else if (!outcome.cancelled) {
-      toasts.error('اتصال برقرار نشد', outcome.message);
-    }
-  }
-
-  /// تغییر مستقیم حالت اتصال از فهرست بازشوی استاندارد (خودکار / تونل کامل / پروکسی سیستمی).
-  Future<void> _changeConnectionMode(
-    CorePreference picked,
-    VpnController vpn,
-    SettingsController settings,
-    ToastController toasts,
-  ) async {
-    if (!mounted || picked == settings.settings.corePreference) {
-      return;
-    }
-    await settings.setCorePreference(picked);
-    if (!mounted) {
-      return;
-    }
-    toasts.info('حالت اتصال: ${picked.faName}');
-    if (vpn.status.busy || !vpn.status.active) {
-      return;
-    }
-    await vpn.disconnect();
-    final ConnectOutcome outcome = await vpn.connect();
-    if (!mounted) {
-      return;
-    }
-    if (outcome.ok) {
-      toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
-    } else if (!outcome.cancelled) {
-      toasts.error('اتصال برقرار نشد', outcome.message);
-    }
-  }
-
-  /// تغییر مستقیم حالت انتخاب سرور از فهرست بازشوی استاندارد.
-  Future<void> _changeSelectionMode(
-    SelectionMode picked,
-    VpnController vpn,
-    SettingsController settings,
-    ToastController toasts,
-  ) async {
-    if (!mounted || picked == settings.settings.selectionMode) {
-      return;
-    }
-    await settings.setSelectionMode(picked);
-    if (!mounted) {
-      return;
-    }
-    toasts.info('حالت انتخاب سرور: ${picked.faName}');
-    if (vpn.status.busy || !vpn.status.active) {
-      return;
-    }
-    await vpn.disconnect();
-    final ConnectOutcome outcome = await vpn.connect();
-    if (!mounted) {
-      return;
-    }
-    if (outcome.ok) {
-      toasts.success(
-        'با حالت ${picked.faName} دوباره وصل شد',
-        _connectedNote(vpn),
-      );
     } else if (!outcome.cancelled) {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
@@ -568,27 +509,12 @@ class _ConnectPageState extends State<ConnectPage> {
                                   ?.copyWith(color: colors.danger),
                             ),
                           ),
-                        const SizedBox(height: AppMetrics.space5),
+                        const SizedBox(height: AppMetrics.space4),
 
-                        // ── کنترل های استاندارد حالت اتصال و حالت انتخاب سرور ──
-                        _ConnectionOptionsBar(
-                          connectionMode: settings.settings.corePreference,
-                          selectionMode: settings.settings.selectionMode,
+                        // ── پنل تنظیمات سریع (VPN / پروکسی، اشتراک QR، زنجیره) ──
+                        QuickConnectionPanel(
                           enabled: !status.busy,
-                          onConnectionModeChanged: (CorePreference picked) =>
-                              _changeConnectionMode(
-                            picked,
-                            vpn,
-                            settings,
-                            toasts,
-                          ),
-                          onSelectionModeChanged: (SelectionMode picked) =>
-                              _changeSelectionMode(
-                            picked,
-                            vpn,
-                            settings,
-                            toasts,
-                          ),
+                          onOpenChainSettings: widget.onOpenChainSettings,
                         ),
                       ],
                     ),
@@ -602,93 +528,6 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
         );
       },
-    );
-  }
-}
-
-/// دو فهرست بازشوی استاندارد، هم تراز و خوانا برای «حالت اتصال» و «حالت انتخاب سرور»
-/// که مستقیماً زیر خود فیلد باز می شوند (بدون پنجره پاپ آپ وسط صفحه).
-class _ConnectionOptionsBar extends StatelessWidget {
-  const _ConnectionOptionsBar({
-    required this.connectionMode,
-    required this.selectionMode,
-    required this.enabled,
-    required this.onConnectionModeChanged,
-    required this.onSelectionModeChanged,
-  });
-
-  final CorePreference connectionMode;
-  final SelectionMode selectionMode;
-  final bool enabled;
-  final ValueChanged<CorePreference> onConnectionModeChanged;
-  final ValueChanged<SelectionMode> onSelectionModeChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget connectionSelect = AnchoredSelectField<CorePreference>(
-      key: const ValueKey<String>('connect-mode-select'),
-      label: 'حالت اتصال',
-      value: connectionMode,
-      enabled: enabled,
-      options: <SelectOption<CorePreference>>[
-        for (final CorePreference pref in CorePreference.values)
-          SelectOption<CorePreference>(
-            value: pref,
-            label: pref.faName,
-            subtitle: pref.description,
-            icon: pref.icon,
-            enabled: pref.available,
-          ),
-      ],
-      onChanged: onConnectionModeChanged,
-    );
-
-    final Widget serverModeSelect = AnchoredSelectField<SelectionMode>(
-      key: const ValueKey<String>('selection-mode-select'),
-      label: 'حالت انتخاب سرور',
-      value: SelectionModeList.visible.contains(selectionMode)
-          ? selectionMode
-          : SelectionMode.auto,
-      enabled: enabled,
-      options: <SelectOption<SelectionMode>>[
-        for (final SelectionMode mode in SelectionModeList.visible)
-          SelectOption<SelectionMode>(
-            value: mode,
-            label: mode.label,
-            subtitle: mode.description,
-            icon: mode.icon,
-          ),
-      ],
-      onChanged: onSelectionModeChanged,
-    );
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(
-        maxWidth: AppMetrics.breakpointCompact,
-      ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          if (constraints.maxWidth < AppMetrics.controlMaxWidth) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                connectionSelect,
-                const SizedBox(height: AppMetrics.space3),
-                serverModeSelect,
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(child: connectionSelect),
-              const SizedBox(width: AppMetrics.space3),
-              Expanded(child: serverModeSelect),
-            ],
-          );
-        },
-      ),
     );
   }
 }

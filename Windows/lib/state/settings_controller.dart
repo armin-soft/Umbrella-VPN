@@ -131,9 +131,25 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setTunMode(bool value) async {
-    // انتخاب کاربر ثبت می شود تا مایگریشن پیش فرض دیگر رویش ننویسد.
+    await setServiceMode(
+      value ? InboundServiceMode.vpn : InboundServiceMode.systemProxy,
+    );
+  }
+
+  /// تغییر حالت سرویس ورودی (`پروکسی` / `پروکسی سیستم` / `VPN`).
+  Future<void> setServiceMode(InboundServiceMode mode) async {
+    final CorePreference pref = switch (mode) {
+      InboundServiceMode.vpn => CorePreference.tun,
+      InboundServiceMode.systemProxy => CorePreference.systemProxy,
+      InboundServiceMode.proxy => CorePreference.systemProxy,
+    };
     await update(
-      _settings.copyWith(tunMode: value, modeChoiceExplicit: true),
+      _settings.copyWith(
+        serviceMode: mode,
+        corePreference: pref,
+        tunMode: mode.enablesTun,
+        modeChoiceExplicit: true,
+      ),
     );
   }
 
@@ -149,6 +165,8 @@ class SettingsController extends ChangeNotifier {
     await update(
       _settings.copyWith(
         tunMode: needsTun ? true : _settings.tunMode,
+        serviceMode:
+            needsTun ? InboundServiceMode.vpn : _settings.serviceMode,
         serverRegionCode: 'all',
       ),
     );
@@ -161,6 +179,9 @@ class SettingsController extends ChangeNotifier {
     await update(
       _settings.copyWith(
         corePreference: value,
+        serviceMode: value.prefersTun
+            ? InboundServiceMode.vpn
+            : InboundServiceMode.systemProxy,
         tunMode: value.prefersTun,
         modeChoiceExplicit: true,
       ),
@@ -219,21 +240,109 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setBlockIpv6(bool value) async {
-    await update(_settings.copyWith(blockIpv6: value));
+    await setIpv6RouteMode(
+      value ? Ipv6RouteMode.ipv4Only : Ipv6RouteMode.preferIpv4,
+    );
+  }
+
+  Future<void> setIpv6RouteMode(Ipv6RouteMode mode) async {
+    await update(_settings.copyWith(ipv6RouteMode: mode));
   }
 
   Future<void> setStrictRoute(bool value) async {
     await update(_settings.copyWith(strictRoute: value));
   }
 
+  Future<void> setMixedPort(int port) async {
+    if (!LanSharing.isValidPort(port, forbiddenPort: _settings.lanSharingPort)) {
+      throw const FormatException(
+        'پورت باید بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت اشتراک باشد',
+      );
+    }
+    await update(_settings.copyWith(mixedPort: port));
+  }
+
+  Future<void> setLocalProxyInVpn(bool value) async {
+    await update(_settings.copyWith(localProxyInVpn: value));
+  }
+
+  Future<void> setLocalProxyAuth(bool value) async {
+    await update(_settings.copyWith(localProxyAuth: value));
+  }
+
+  Future<void> setAllowConnectionFromLan(bool value) async {
+    await update(_settings.copyWith(allowConnectionFromLan: value));
+  }
+
+  Future<void> setLanSharingPort(int port) async {
+    if (!LanSharing.isValidPort(port, forbiddenPort: _settings.mixedPort)) {
+      throw const FormatException(
+        'پورت باید بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت پروکسی محلی باشد',
+      );
+    }
+    await update(_settings.copyWith(lanSharingPort: port));
+  }
+
+  Future<void> setLanSharingPassword(String raw) async {
+    final String clean = raw.trim();
+    if (!LanSharing.isValidPassword(clean)) {
+      throw const FormatException('رمز باید حداقل ۴ کاراکتر باشد');
+    }
+    await update(_settings.copyWith(lanSharingPassword: clean));
+  }
+
   Future<void> setRemoteDns(String value) async {
-    if (!NetworkDns.presets.containsKey(value)) throw ArgumentError.value(value, 'remoteDns');
+    if (!NetworkDns.presets.containsKey(value)) {
+      throw ArgumentError.value(value, 'remoteDns');
+    }
     await update(_settings.copyWith(remoteDns: value));
   }
 
   Future<void> setDirectDns(String value) async {
-    if (!NetworkDns.presets.containsKey(value)) throw ArgumentError.value(value, 'directDns');
+    if (!NetworkDns.presets.containsKey(value)) {
+      throw ArgumentError.value(value, 'directDns');
+    }
     await update(_settings.copyWith(directDns: value));
+  }
+
+  Future<void> setRemoteDnsStrategy(DnsDomainStrategy strategy) async {
+    await update(_settings.copyWith(remoteDnsStrategy: strategy));
+  }
+
+  Future<void> setDirectDnsStrategy(DnsDomainStrategy strategy) async {
+    await update(_settings.copyWith(directDnsStrategy: strategy));
+  }
+
+  Future<void> setEnableFakeDns(bool value) async {
+    await update(_settings.copyWith(enableFakeDns: value));
+  }
+
+  Future<void> setRoutingRegion(RoutingRegion region) async {
+    await update(_settings.copyWith(routingRegion: region));
+  }
+
+  Future<void> setBypassLan(bool value) async {
+    await update(_settings.copyWith(bypassLan: value));
+  }
+
+  Future<void> setBlockAds(bool value) async {
+    await update(_settings.copyWith(blockAds: value));
+  }
+
+  Future<void> setResolveDestination(bool value) async {
+    await update(_settings.copyWith(resolveDestination: value));
+  }
+
+  Future<void> setBlockQuic(bool value) async {
+    await update(_settings.copyWith(blockQuic: value));
+  }
+
+  Future<void> setLogLevel(String level) async {
+    await update(_settings.copyWith(logLevel: CoreLogLevel.normalize(level)));
+  }
+
+  Future<void> setTlsTricks(TlsTricksSettings tricks) async {
+    await update(_settings.copyWith(tlsTricks: tricks));
   }
 
   Future<void> setChain(ChainSettings chain) async {

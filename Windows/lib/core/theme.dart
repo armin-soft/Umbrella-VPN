@@ -289,6 +289,8 @@ class AppMetrics {
   /// حداکثر پهنای گفت و گو ها.
   static const double dialogMaxWidth = 560;
   static const double dialogMaxHeight = 620;
+  static const double qrDialogWidth = 372;
+  static const double qrCodeSize = 200;
 
   /// کمینه پهنای نشان عددی (شمارنده اعلان ها).
   static const double badgeMinWidth = 14;

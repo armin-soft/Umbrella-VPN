@@ -849,11 +849,12 @@ void main() {
       expect(connect.contains('showDialog'), isFalse);
       expect(connect.contains('_ConnectionModeDialog'), isFalse);
       expect(connect.contains('_ModeDialog'), isFalse);
-      expect(connect.contains("'حالت اتصال'"), isTrue);
-      expect(connect.contains("'حالت انتخاب سرور'"), isTrue);
-      expect(connect.contains('_ConnectionOptionsBar'), isTrue);
-      expect(connect.contains('AnchoredSelectField<CorePreference>'), isTrue);
-      expect(connect.contains('AnchoredSelectField<SelectionMode>'), isTrue);
+      expect(connect.contains('QuickConnectionPanel('), isTrue);
+      final String quick = read('lib/ui/widgets/quick_connection_panel.dart');
+      expect(quick.contains("'اشتراک گذاری اتصال'"), isTrue);
+      expect(quick.contains("'امنیت بیشتر'"), isTrue);
+      expect(quick.contains("'رفع فیلتر پروکسی'"), isTrue);
+      expect(quick.contains('LanSharingDialog.show'), isTrue);
     });
 
     test('چهار منوی دستگاه من، حساب من، تنظیمات و درباره ساختار یکدست دارند', () {
@@ -1328,11 +1329,19 @@ void main() {
       expect(account.contains('signOut('), isFalse);
     });
 
-    test('۱۵. تنظیمات مدرن و دسته بندی شده است و ارجاع درباره در آن نیست', () {
+    test('۱۵. تنظیمات مدرن و شش بخشی است و ارجاع درباره در آن نیست', () {
       final String settings = read('lib/ui/pages/settings_page.dart');
       expect(settings.contains('class _Section'), isTrue);
-      expect(settings.contains('class _SettingsTabBar'), isTrue);
+      expect(settings.contains('enum SettingsCategory'), isTrue);
+      expect(settings.contains('class _CategoryNavTile'), isTrue);
       expect(settings.contains('class _ThemeCardSelector'), isTrue);
+      expect(settings.contains("'عمومی'"), isTrue);
+      expect(settings.contains("'زنجیره'"), isTrue);
+      expect(settings.contains("'امنیت بیشتر و رفع مسدودیت'"), isTrue);
+      expect(settings.contains("'مسیریابی'"), isTrue);
+      expect(settings.contains("'DNS'"), isTrue);
+      expect(settings.contains("'ورودی'"), isTrue);
+      expect(settings.contains("'ترفندهای TLS'"), isTrue);
       expect(settings.contains('GlassCard'), isTrue);
       expect(settings.contains('درباره'), isFalse);
     });

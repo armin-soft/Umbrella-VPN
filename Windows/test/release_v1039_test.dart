@@ -569,5 +569,149 @@ void main() {
       expect(device.contains('_autoRefreshTimer'), isTrue);
       expect(updates.contains('_autoCheckTimer'), isTrue);
     });
+
+    test('QuickConnectionPanel، اشتراک گذاری LAN با QR و تنظیمات شش بخشی کامل کار می کنند', () {
+      // ۱. ساخت رمز، لینک SOCKS5، لینک تلگرام و داده QR اشتراک گذاری LAN
+      final String generated = LanSharing.generateSecret();
+      expect(RegExp(r'^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$').hasMatch(generated), isTrue);
+      expect(LanSharing.isValidPassword(''), isTrue);
+      expect(LanSharing.isValidPassword('abc'), isFalse);
+      expect(LanSharing.isValidPassword(generated), isTrue);
+      expect(LanSharing.isValidPort(12338, forbiddenPort: 12334), isTrue);
+      expect(LanSharing.isValidPort(12334, forbiddenPort: 12334), isFalse);
+      expect(LanSharing.isValidPort(80), isFalse);
+
+      final String openLink = LanSharing.socksLink(host: '192.168.1.42', port: 12338);
+      expect(openLink, 'socks://192.168.1.42:12338#Umbrella%20LAN');
+      final String qr = LanSharing.qrPayload(
+        host: '192.168.1.42',
+        port: 12338,
+        password: 'MySecret-99',
+      );
+      expect(qr.startsWith('#profile-title: Umbrella LAN\nsocks://'), isTrue);
+      expect(qr.contains(':MySecret-99@192.168.1.42:12338#Umbrella%20LAN'), isTrue);
+      final String tg = LanSharing.telegramLink(
+        host: '192.168.1.42',
+        port: 12338,
+        password: 'MySecret-99',
+      );
+      expect(tg.startsWith('tg://socks?'), isTrue);
+      expect(tg.contains('server=192.168.1.42'), isTrue);
+      expect(tg.contains('port=12338'), isTrue);
+      expect(tg.contains('pass=MySecret-99'), isTrue);
+
+      // ۲. ذخیره، بازیابی و خروجی JSON تمام گزینه های ۶ بخش به موتور 5.9.11
+      final AppSettings configured = const AppSettings().copyWith(
+        serviceMode: InboundServiceMode.proxy,
+        mixedPort: 14080,
+        localProxyInVpn: false,
+        localProxyAuth: true,
+        allowConnectionFromLan: true,
+        lanSharingPort: 14088,
+        lanSharingPassword: 'SafePass-42',
+        remoteDns: 'https://1.1.1.1/dns-query',
+        directDns: '8.8.8.8',
+        remoteDnsStrategy: DnsDomainStrategy.ipv4Only,
+        directDnsStrategy: DnsDomainStrategy.preferIpv4,
+        enableFakeDns: true,
+        routingRegion: RoutingRegion.ir,
+        bypassLan: true,
+        blockAds: true,
+        resolveDestination: true,
+        blockQuic: true,
+        ipv6RouteMode: Ipv6RouteMode.preferIpv6,
+        tlsTricks: const TlsTricksSettings(
+          enableFragment: true,
+          fragmentSize: '20-80',
+          fragmentSleep: '40-120',
+          mixedSniCase: true,
+          enablePadding: true,
+          paddingSize: '1100-1400',
+        ),
+        chain: const ChainSettings().activateUnblocker(ChainTransport.automatic).copyWith(
+              noiseMode: 'quic',
+              noiseCount: '5-10',
+              noiseSize: '40-90',
+              noiseDelay: '10-25',
+            ),
+      );
+      final AppSettings restored = AppSettings.fromJson(
+        jsonDecode(jsonEncode(configured.toJson())) as Map<String, dynamic>,
+      );
+      expect(restored.serviceMode, InboundServiceMode.proxy);
+      expect(restored.mixedPort, 14080);
+      expect(restored.allowConnectionFromLan, isTrue);
+      expect(restored.lanSharingPort, 14088);
+      expect(restored.lanSharingPassword, 'SafePass-42');
+      expect(restored.routingRegion, RoutingRegion.ir);
+      expect(restored.ipv6RouteMode, Ipv6RouteMode.preferIpv6);
+      expect(restored.tlsTricks, configured.tlsTricks);
+      expect(restored.chain.position, ChainPosition.unblocker);
+      expect(restored.chain.endpoint, WarpEndpoint.scan);
+      expect(restored.chain.noiseMode, 'quic');
+
+      final Map<String, dynamic> coreJson = UmbrellaCore.settingsJson(
+        tun: false,
+        systemProxy: false,
+        port: restored.mixedPort,
+        networkSettings: restored,
+      );
+      expect(coreJson['enable-tun'], isFalse);
+      expect(coreJson['set-system-proxy'], isFalse);
+      expect(coreJson['mixed-port'], 14080);
+      expect(coreJson['allow-connection-from-lan'], isTrue);
+      expect(coreJson['lan-sharing-port'], 14088);
+      expect(coreJson['lan-sharing-password'], 'SafePass-42');
+      expect(coreJson['local-proxy-auth'], isTrue);
+      expect(coreJson['local-proxy-in-vpn'], isFalse);
+      expect(coreJson['remote-dns-domain-strategy'], 'ipv4_only');
+      expect(coreJson['direct-dns-domain-strategy'], 'prefer_ipv4');
+      expect(coreJson['enable-fake-dns'], isTrue);
+      expect(coreJson['region'], 'ir');
+      expect(coreJson['bypass-lan'], isTrue);
+      expect(coreJson['block-ads'], isTrue);
+      expect(coreJson['resolve-destination'], isTrue);
+      expect(coreJson['block-quic'], isTrue);
+      expect(coreJson['ipv6-mode'], 'prefer_ipv6');
+      expect(coreJson['chain-status'], 'unblocker');
+      final Map<String, dynamic> tls =
+          coreJson['tls-tricks'] as Map<String, dynamic>;
+      expect(tls['enable-fragment'], isTrue);
+      expect(tls['fragment-size'], '20-80');
+      expect(tls['fragment-sleep'], '40-120');
+      expect(tls['mixed-sni-case'], isTrue);
+      expect(tls['enable-padding'], isTrue);
+      expect(tls['padding-size'], '1100-1400');
+
+      // سنجش پینگ ایزوله هرگز پورت اشتراک LAN یا رمز یا FakeDNS را باز نمی کند.
+      final Map<String, dynamic> probeJson = UmbrellaCore.settingsJson(
+        tun: false,
+        systemProxy: false,
+        port: 19999,
+        networkSettings: restored,
+        isolatedProbe: true,
+      );
+      expect(probeJson['allow-connection-from-lan'], isFalse);
+      expect(probeJson.containsKey('lan-sharing-password'), isFalse);
+      expect(probeJson['local-proxy-auth'], isFalse);
+      expect(probeJson['enable-fake-dns'], isFalse);
+
+      // ۳. امنیت بیشتر و رفع فیلتر پروکسی دوحالته (mutually exclusive) هستند.
+      final ChainSettings extra =
+          restored.chain.activateExtraSecurity(ChainTransport.psiphon);
+      expect(extra.position, ChainPosition.extraSecurity);
+      expect(extra.transport, ChainTransport.psiphon);
+      expect(extra.validationError, isNull);
+      expect(extra.deactivate().position, ChainPosition.off);
+
+      // ۴. بررسی وجود دیالوگ QR و شش دسته صفحه تنظیمات
+      final String qrDialog =
+          File('lib/ui/widgets/lan_sharing_dialog.dart').readAsStringSync();
+      expect(qrDialog.contains('QrImageView('), isTrue);
+      expect(qrDialog.contains('BrandAssets.logo'), isTrue);
+      expect(qrDialog.contains('رمز تنظیم نشده'), isTrue);
+      expect(qrDialog.contains('گذاشتن رمز'), isTrue);
+      expect(qrDialog.contains('کپی لینک'), isTrue);
+    });
   });
 }
