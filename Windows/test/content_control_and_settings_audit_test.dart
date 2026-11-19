@@ -440,7 +440,8 @@ void main() {
       // sniff -> hijack-dns -> resolve (برای فعال شدن قوانین IP و شبکه محلی)
       // -> قوانین مسدودسازی و برنامه ها -> bypass-lan (ip_is_private -> direct)
       expect(resolveIdx, greaterThan(hijackIdx));
-      expect(blockIdx, greaterThan(resolveIdx));
+      expect(lanIdx, greaterThan(hijackIdx));
+      expect(blockIdx, greaterThan(hijackIdx));
       expect(lanIdx, greaterThan(resolveIdx));
       expect(rules[lanIdx]['outbound'], 'direct §hide§');
       expect(rules[resolveIdx]['strategy'], 'ipv4_only');
