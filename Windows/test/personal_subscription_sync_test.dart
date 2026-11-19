@@ -273,15 +273,15 @@ void main() {
       if (!useProxy) {
         return <String, Object?>{
           'ok': false,
-          'status': 0,
+          'statusCode': 0,
           'winError': 12029,
           'error': 'cannot_connect',
         };
       }
       return <String, Object?>{
         'ok': true,
-        'status': 200,
-        'body': Uint8List.fromList(
+        'statusCode': 200,
+        'bodyBytes': Uint8List.fromList(
           utf8.encode(base64Encode(utf8.encode(sampleSub))),
         ),
       };
