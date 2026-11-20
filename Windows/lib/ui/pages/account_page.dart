@@ -683,11 +683,10 @@ class _AccountPageState extends State<AccountPage> {
         ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppMetrics.space6,
-              0,
-              AppMetrics.space6,
-              AppMetrics.space6,
+            padding: const EdgeInsets.only(
+              left: AppMetrics.space6,
+              right: AppMetrics.space6,
+              bottom: AppMetrics.space6,
             ),
             child: LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
