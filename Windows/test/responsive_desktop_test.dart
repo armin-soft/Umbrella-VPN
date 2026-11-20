@@ -119,7 +119,11 @@ void main() {
             )),
           ));
           await tester.pump();
-          expect(tester.takeException(), isNull, reason: '${page.runtimeType} at $size / $textScale');
+          final problem = tester.takeException();
+          if (problem != null) {
+            final stack = problem is Error ? problem.stackTrace : null;
+            fail('${page.runtimeType} at $size / $textScale: $problem\n$stack');
+          }
         }
         await tester.pumpWidget(const SizedBox());
         subs.dispose();
