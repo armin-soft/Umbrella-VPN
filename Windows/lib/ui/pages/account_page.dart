@@ -198,7 +198,7 @@ class _AccountPageState extends State<AccountPage> {
                   decoration: const InputDecoration(labelText: 'حجم (گیگابایت)'),
                   onChanged: (_) => update(() {})),
                 const SizedBox(height: 16),
-                Text(valid ? 'قیمت تقریبی: ${Fa.num(terms.priceForDays(dayValue!))} تومان'
+                Text(valid ? 'قیمت تقریبی: ${Fa.num(terms.priceForDays(dayValue))} تومان'
                     : 'مدت و حجم را در محدوده مجاز وارد کنید.'),
                 const Text('حجم هزینه جداگانه ندارد و مانند ربات به نزدیک ترین گیگابایت گرد می شود؛ قیمت نهایی توسط سرور محاسبه می شود.'),
               ],
@@ -206,7 +206,7 @@ class _AccountPageState extends State<AccountPage> {
             actions: <Widget>[
               TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')),
               FilledButton(onPressed: valid ? () => Navigator.pop(dialogContext,
-                  <num>[dayValue!, gbValue!]) : null, child: const Text('ادامه')),
+                  <num>[dayValue, gbValue]) : null, child: const Text('ادامه')),
             ],
           );
         },
@@ -346,8 +346,10 @@ class _AccountPageState extends State<AccountPage> {
       if (mounted) toasts.error('باز کردن تلگرام ناموفق بود', 'لینک جدید بگیرید و دوباره تلاش کنید.');
       return;
     }
-    if (mounted) toasts.info('ربات باز شد',
-        'در تلگرام شروع و سپس اتصال حساب را تایید کنید. در صورت نیاز ابتدا عضو کانال شوید و همین لینک را دوباره باز کنید.');
+    if (mounted) {
+      toasts.info('ربات باز شد',
+          'در تلگرام شروع و سپس اتصال حساب را تایید کنید. در صورت نیاز ابتدا عضو کانال شوید و همین لینک را دوباره باز کنید.');
+    }
   }
 
   /// باز کردن ربات رسمی حساب آمبرلا.
