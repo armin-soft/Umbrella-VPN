@@ -10,18 +10,15 @@ import '../../vpn/vpn_controller.dart';
 import 'common.dart';
 import 'lan_sharing_dialog.dart';
 
-/// پیکربندی اتصال در پنجره جداگانه؛ گزینه ها و مسیرهای موجود را یک جا نگه می دارد:
-/// حالت سرویس، اشتراک گذاری شبکه محلی، امنیت بیشتر و رفع فیلتر پروکسی.
+/// پنل یکپارچه برای تنظیم حالت اتصال و اشتراک گذاری شبکه محلی.
 class QuickConnectionPanel extends StatelessWidget {
   const QuickConnectionPanel({
     super.key,
     required this.enabled,
-    this.onOpenChainSettings,
     this.onClose,
   });
 
   final bool enabled;
-  final VoidCallback? onOpenChainSettings;
   final VoidCallback? onClose;
 
   Future<void> _selectServiceMode(
@@ -50,20 +47,6 @@ class QuickConnectionPanel extends StatelessWidget {
     if (vpn.status.active) vpn.scheduleLiveReload();
   }
 
-  Future<void> _applyChain(
-    SettingsController settings,
-    VpnController vpn,
-    ToastController toasts,
-    ChainSettings next,
-  ) async {
-    try {
-      await settings.setChain(next);
-      if (vpn.status.active) vpn.scheduleLiveReload();
-    } on FormatException catch (error) {
-      toasts.error(error.message, 'زنجیره اتصال');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
@@ -71,15 +54,13 @@ class QuickConnectionPanel extends StatelessWidget {
     final VpnController vpn = context.read<VpnController>();
     final ToastController toasts = context.read<ToastController>();
     final AppSettings cfg = settings.settings;
-    final ChainSettings chain = cfg.chain;
-    final bool extraOn = chain.position == ChainPosition.extraSecurity;
-    final bool unblockerOn = chain.position == ChainPosition.unblocker;
-
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: AppMetrics.controlMaxWidth),
       child: GlassCard(
         padding: EdgeInsets.zero,
         radius: AppMetrics.radiusXl,
+        elevated: true,
+        borderColor: colors.primary.withValues(alpha: 0.24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -97,16 +78,15 @@ class QuickConnectionPanel extends StatelessWidget {
                     child: SectionHeader(
                       icon: Icons.tune_rounded,
                       title: 'تنظیمات اتصال',
-                      subtitle: 'حالت سرویس، شبکه محلی و مسیر زنجیره اتصال',
+                      subtitle: 'مدیریت حالت سرویس و اشتراک گذاری شبکه محلی',
+                      trailing: Pill(
+                        label: cfg.serviceMode.shortLabel,
+                        icon: cfg.serviceMode.icon,
+                        color: colors.primary,
+                        dense: true,
+                      ),
                     ),
                   ),
-                  if (onOpenChainSettings != null)
-                    IconButton(
-                      key: const ValueKey<String>('quick-chain-settings'),
-                      tooltip: Fa.num('تنظیمات پیشرفته زنجیره'),
-                      onPressed: enabled ? onOpenChainSettings : null,
-                      icon: const Icon(Icons.settings_suggest_rounded),
-                    ),
                   if (onClose != null)
                     IconButton(
                       key: const ValueKey<String>('quick-settings-close'),
@@ -163,52 +143,6 @@ class QuickConnectionPanel extends StatelessWidget {
               onOpenQr: () => LanSharingDialog.show(context),
               onToggle: (bool value) =>
                   _toggleLanSharing(settings, vpn, value),
-            ),
-            Divider(height: 1, color: colors.border),
-            _ChainQuickRow(
-              rowKey: const ValueKey<String>('quick-extra-security'),
-              title: 'امنیت بیشتر',
-              subtitle: 'پس از سرور اصلی از وارپ یا سایفون عبور کنید',
-              icon: Icons.verified_user_rounded,
-              activeColor: colors.success,
-              active: extraOn,
-              transport: chain.transport,
-              enabled: enabled,
-              onTurnOff: () => _applyChain(
-                settings,
-                vpn,
-                toasts,
-                chain.deactivate(),
-              ),
-              onPickTransport: (ChainTransport picked) => _applyChain(
-                settings,
-                vpn,
-                toasts,
-                chain.activateExtraSecurity(picked),
-              ),
-            ),
-            Divider(height: 1, color: colors.border),
-            _ChainQuickRow(
-              rowKey: const ValueKey<String>('quick-proxy-unblocker'),
-              title: 'رفع فیلتر پروکسی',
-              subtitle: 'پیش از سرور اصلی از وارپ یا سایفون عبور کنید',
-              icon: Icons.account_tree_rounded,
-              activeColor: colors.warning,
-              active: unblockerOn,
-              transport: chain.transport,
-              enabled: enabled,
-              onTurnOff: () => _applyChain(
-                settings,
-                vpn,
-                toasts,
-                chain.deactivate(),
-              ),
-              onPickTransport: (ChainTransport picked) => _applyChain(
-                settings,
-                vpn,
-                toasts,
-                chain.activateUnblocker(picked),
-              ),
             ),
           ],
         ),
@@ -427,155 +361,6 @@ class _LanSharingRow extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ChainQuickRow extends StatelessWidget {
-  const _ChainQuickRow({
-    required this.rowKey,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.activeColor,
-    required this.active,
-    required this.transport,
-    required this.enabled,
-    required this.onTurnOff,
-    required this.onPickTransport,
-  });
-
-  final Key rowKey;
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color activeColor;
-  final bool active;
-  final ChainTransport transport;
-  final bool enabled;
-  final VoidCallback onTurnOff;
-  final ValueChanged<ChainTransport> onPickTransport;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final bool isPsiphon = transport == ChainTransport.psiphon;
-    final Color tone = active ? activeColor : colors.textSecondary;
-    return Container(
-      key: rowKey,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppMetrics.space4,
-        vertical: AppMetrics.space3,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              IconSquare(
-                icon: icon,
-                color: tone,
-                size: AppMetrics.iconBoxSm,
-                radius: AppMetrics.radiusSm,
-              ),
-              const SizedBox(width: AppMetrics.space3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      Fa.num(title),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                    const SizedBox(height: AppMetrics.space1),
-                    Text(
-                      Fa.num(subtitle),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Pill(
-                label: active ? transport.quickLabel : 'خاموش',
-                icon: active
-                    ? transport.quickIcon
-                    : Icons.power_settings_new_rounded,
-                color: tone,
-                dense: true,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppMetrics.space2),
-          Wrap(
-            spacing: AppMetrics.space2,
-            runSpacing: AppMetrics.space1,
-            children: <Widget>[
-              _chainChoice(
-                context,
-                label: 'خاموش',
-                icon: Icons.power_settings_new_rounded,
-                selected: !active,
-                enabled: enabled && active,
-                onPressed: onTurnOff,
-              ),
-              _chainChoice(
-                context,
-                label: 'وارپ',
-                icon: Icons.cloud_done_rounded,
-                selected: active && !isPsiphon,
-                enabled: enabled,
-                onPressed: () => onPickTransport(ChainTransport.automatic),
-              ),
-              _chainChoice(
-                context,
-                label: 'سایفون',
-                icon: Icons.language_rounded,
-                selected: active && isPsiphon,
-                enabled: enabled,
-                onPressed: () => onPickTransport(ChainTransport.psiphon),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _chainChoice(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required bool enabled,
-    required VoidCallback onPressed,
-  }) {
-    final UmbrellaColors colors = context.colors;
-    return ChoiceChip(
-      label: Text(Fa.num(label)),
-      avatar: Icon(icon, size: AppMetrics.iconXs),
-      selected: selected,
-      showCheckmark: false,
-      visualDensity: VisualDensity.compact,
-      labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: selected ? colors.primary : colors.textSecondary,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-          ),
-      selectedColor: colors.primary.withValues(alpha: 0.13),
-      side: BorderSide(
-        color: selected ? colors.primary.withValues(alpha: 0.4) : colors.border,
-      ),
-      onSelected: enabled ? (_) => onPressed() : null,
     );
   }
 }

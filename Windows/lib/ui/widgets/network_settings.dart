@@ -180,7 +180,7 @@ class NetworkSettings extends StatelessWidget {
             const SizedBox(height: AppMetrics.space5),
             const _GroupCaption(
               icon: Icons.hub_rounded,
-              title: 'اتصال زنجیره ای و تفکیک برنامه ها',
+              title: 'قوانین مسیریابی برنامه ها',
             ),
             const SizedBox(height: AppMetrics.space3),
             const AdvancedNetworkSettings(),

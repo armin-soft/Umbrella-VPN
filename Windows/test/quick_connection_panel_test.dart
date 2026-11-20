@@ -55,7 +55,7 @@ void main() {
     await LocalStore.instance.init();
   });
 
-  testWidgets('connection options are visible and chain choices work directly',
+  testWidgets('connection settings stay focused and hide chain controls',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(900, 760));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -67,7 +67,6 @@ void main() {
     );
     final _Vpn vpn = _Vpn();
     final ToastController toasts = ToastController();
-    bool openedAdvancedSettings = false;
 
     await tester.pumpWidget(
       MultiProvider(
@@ -84,7 +83,6 @@ void main() {
               body: SingleChildScrollView(
                 child: QuickConnectionPanel(
                   enabled: true,
-                  onOpenChainSettings: () => openedAdvancedSettings = true,
                 ),
               ),
             ),
@@ -96,26 +94,25 @@ void main() {
 
     expect(find.text('تنظیمات اتصال'), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('quick-panel-toggle')), findsNothing);
-    expect(find.byKey(const ValueKey<String>('quick-extra-security')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('quick-proxy-unblocker')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('quick-extra-security')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('quick-proxy-unblocker')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('quick-chain-settings')), findsNothing);
+    expect(find.text('امنیت بیشتر'), findsNothing);
+    expect(find.text('رفع فیلتر پروکسی'), findsNothing);
     expect(find.byKey(const ValueKey<String>('quick-lan-switch')), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNWidgets(6));
+    expect(find.byType(ChoiceChip), findsNothing);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byKey(const ValueKey<String>('quick-chain-settings')));
-    expect(openedAdvancedSettings, isTrue);
-
-    await tester.tap(find.text('سایفون').first);
-    await tester.pumpAndSettle();
-    expect(settings.settings.chain.position, ChainPosition.extraSecurity);
-    expect(settings.settings.chain.transport, ChainTransport.psiphon);
-
-    final Finder inactiveUnblockerOffChoice = find.descendant(
-      of: find.byKey(const ValueKey<String>('quick-proxy-unblocker')),
-      matching: find.widgetWithText(ChoiceChip, 'خاموش'),
+    await settings.setChain(
+      const ChainSettings(position: ChainPosition.extraSecurity),
     );
-    await tester.tap(inactiveUnblockerOffChoice);
+    await tester.pump();
+    expect(settings.settings.chain.position, ChainPosition.extraSecurity);
+    expect(find.text('امنیت بیشتر'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey<String>('quick-lan-switch')));
     await tester.pumpAndSettle();
+    expect(settings.settings.allowConnectionFromLan, isTrue);
     expect(settings.settings.chain.position, ChainPosition.extraSecurity);
     expect(tester.takeException(), isNull);
 

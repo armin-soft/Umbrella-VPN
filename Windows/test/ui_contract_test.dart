@@ -1376,6 +1376,9 @@ void main() {
       expect(account.contains('signOut('), isFalse);
       expect(account.contains('renewalDueAt(_now)'), isTrue);
       expect(account.contains('account-renewal-notice'), isTrue);
+      expect(account.contains('account-active-subscription'), isTrue);
+      expect(account.contains('TabBarView('), isTrue);
+      expect(account.contains('account.panelId'), isFalse);
     });
 
     test('۱۵. تنظیمات مدرن و شش بخشی است و ارجاع درباره در آن نیست', () {
@@ -1385,13 +1388,15 @@ void main() {
       expect(settings.contains('class _CategoryNavTile'), isTrue);
       expect(settings.contains('class _ThemeCardSelector'), isTrue);
       expect(settings.contains("'عمومی'"), isTrue);
-      expect(settings.contains("'زنجیره'"), isTrue);
+      expect(settings.contains("'زنجیره'"), isFalse);
       expect(settings.contains('SettingsCategory.navigationItems'), isTrue);
-      expect(settings.contains("'امنیت بیشتر و رفع مسدودیت'"), isTrue);
+      expect(settings.contains("'امنیت بیشتر و رفع مسدودیت'"), isFalse);
       final String shell = read('lib/ui/shell/app_shell.dart');
       final String quick = read('lib/ui/widgets/quick_connection_panel.dart');
-      expect(shell.contains('_openSettingsSection(SettingsCategory.chain)'), isTrue);
-      expect(quick.contains('quick-chain-settings'), isTrue);
+      expect(shell.contains('SettingsCategory.chain'), isFalse);
+      expect(quick.contains('quick-chain-settings'), isFalse);
+      expect(quick.contains('quick-extra-security'), isFalse);
+      expect(quick.contains('quick-proxy-unblocker'), isFalse);
       expect(settings.contains("'مسیریابی'"), isTrue);
       expect(settings.contains("'دی ان اس'"), isTrue);
       expect(settings.contains("'ورودی'"), isTrue);

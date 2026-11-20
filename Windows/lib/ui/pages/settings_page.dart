@@ -18,17 +18,15 @@ import '../widgets/common.dart';
 import '../widgets/content_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
 
-/// دسته های تنظیمات؛ زنجیره از صفحه اتصال و باتری فقط روی لپ تاپ در دسترس است.
+/// دسته های تنظیمات برنامه؛ بهینه سازی باتری فقط روی لپ تاپ در دسترس است.
 enum SettingsCategory {
   general,
-  chain,
   routing,
   dns,
   inbound,
   tlsTricks,
   battery;
 
-  /// زنجیره از پنل تنظیمات اتصال پیکربندی می شود، نه فهرست اصلی تنظیمات.
   static const List<SettingsCategory> navigationItems = <SettingsCategory>[
     SettingsCategory.general,
     SettingsCategory.routing,
@@ -46,8 +44,6 @@ extension SettingsCategoryX on SettingsCategory {
         return 'عمومی';
       case SettingsCategory.battery:
         return 'باتری لپ تاپ';
-      case SettingsCategory.chain:
-        return 'زنجیره';
       case SettingsCategory.routing:
         return 'مسیریابی';
       case SettingsCategory.dns:
@@ -65,8 +61,6 @@ extension SettingsCategoryX on SettingsCategory {
         return 'پوسته برنامه، سینی ویندوز، اتصال خودکار و گزارش ها';
       case SettingsCategory.battery:
         return 'کاهش مصرف پس زمینه هنگام استفاده از باتری';
-      case SettingsCategory.chain:
-        return 'امنیت بیشتر و رفع مسدودیت';
       case SettingsCategory.routing:
         return 'منطقه مسیریابی، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
       case SettingsCategory.dns:
@@ -84,8 +78,6 @@ extension SettingsCategoryX on SettingsCategory {
         return 'پوسته برنامه، رفتار پنجره و سینی ویندوز، انتخاب خودکار سرور، اعلان ها و گزارش ها';
       case SettingsCategory.battery:
         return 'مدیریت مصرف برنامه هنگام کار با باتری لپ تاپ';
-      case SettingsCategory.chain:
-        return 'امنیت بیشتر و رفع مسدودیت با تونل های زنجیره ای وارپ و سایفون';
       case SettingsCategory.routing:
         return 'منطقه مسیریابی، قوانین توکار، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
       case SettingsCategory.dns:
@@ -103,8 +95,6 @@ extension SettingsCategoryX on SettingsCategory {
         return Icons.tune_rounded;
       case SettingsCategory.battery:
         return Icons.battery_saver_rounded;
-      case SettingsCategory.chain:
-        return Icons.hub_rounded;
       case SettingsCategory.routing:
         return Icons.alt_route_rounded;
       case SettingsCategory.dns:
@@ -122,8 +112,6 @@ extension SettingsCategoryX on SettingsCategory {
         return colors.primary;
       case SettingsCategory.battery:
         return colors.success;
-      case SettingsCategory.chain:
-        return colors.warning;
       case SettingsCategory.routing:
         return colors.info;
       case SettingsCategory.dns:
@@ -136,7 +124,7 @@ extension SettingsCategoryX on SettingsCategory {
   }
 }
 
-/// صفحه تنظیمات آمبرلا؛ پیکربندی زنجیره از بخش اتصال در دسترس است.
+/// صفحه تنظیمات آمبرلا برای پیکربندی اتصال و تجربه کاربری.
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, this.initialSection});
 
@@ -306,7 +294,7 @@ class _SettingsPageState extends State<SettingsPage> {
             eyebrow: 'مرکز تنظیمات',
             premium: true,
             subtitle:
-                'پیکربندی عمومی، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن؛ گزینه های زنجیره در صفحه اتصال هستند',
+                'پیکربندی عمومی، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن',
             icon: Icons.settings_rounded,
           ),
           const SizedBox(height: AppMetrics.space4),
@@ -353,11 +341,6 @@ class _SettingsPageState extends State<SettingsPage> {
         return null;
       case SettingsCategory.battery:
         return cfg.batteryOptimization ? 'روشن' : 'خاموش';
-      case SettingsCategory.chain:
-        if (!cfg.chain.enabled) {
-          return null;
-        }
-        return '${cfg.chain.position.label} · ${cfg.chain.transport.quickLabel}';
       case SettingsCategory.routing:
         final bool hasActiveRules = context.select<AuthController?, bool>(
           (auth) => auth?.filter.hasActiveRules ?? false,
@@ -407,8 +390,6 @@ class _SettingsPageState extends State<SettingsPage> {
           toasts,
           cfg,
         );
-      case SettingsCategory.chain:
-        return _buildChainSection(context, colors, settings, vpn, toasts, cfg);
       case SettingsCategory.routing:
         return _buildRoutingSection(
           context,
@@ -666,473 +647,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ۲. زنجیره (امنیت بیشتر و رفع مسدودیت)
-  // ═══════════════════════════════════════════════════════════════════════════
-  Widget _buildChainSection(
-    BuildContext context,
-    UmbrellaColors colors,
-    SettingsController settings,
-    VpnController vpn,
-    ToastController toasts,
-    AppSettings cfg,
-  ) {
-    final ChainSettings chain = cfg.chain;
-    final bool extraOn = chain.position == ChainPosition.extraSecurity;
-    final bool unblockerOn = chain.position == ChainPosition.unblocker;
-
-    Future<void> saveChain(ChainSettings next) async {
-      try {
-        await _applyRuntime(vpn, () => settings.setChain(next));
-      } on FormatException catch (error) {
-        toasts.error(error.message, 'زنجیره');
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _ChainFlowBanner(
-          icon: Icons.apps_rounded,
-          title: 'برنامه های دستگاه',
-          subtitle: 'شروع مسیر ترافیک از ویندوز به هسته آمبرلا',
-          accent: colors.textSecondary,
-        ),
-        const SizedBox(height: AppMetrics.space3),
-        _Section(
-          icon: Icons.shield_rounded,
-          title: 'امنیت بیشتر',
-          subtitle:
-              'وقتی به پروکسی اعتماد نداری — پس از سرور اصلی یک لایه وارپ یا سایفون اضافه می شود و نشانی نهایی شما را می پوشاند',
-          trailing: _ChainHopSelector(
-            active: extraOn,
-            transport: chain.transport,
-            activeColor: colors.success,
-            onOff: () => saveChain(chain.deactivate()),
-            onPick: (ChainTransport picked) =>
-                saveChain(chain.activateExtraSecurity(picked)),
-          ),
-          children: extraOn
-              ? _buildChainHopFields(
-                  context: context,
-                  colors: colors,
-                  chain: chain,
-                  isUnblocker: false,
-                  onSave: saveChain,
-                )
-              : <Widget>[
-                  Text(
-                    'غیرفعال — برای پنهان کردن نشانی خروجی از ارائه دهنده سرور، سایفون یا وارپ را انتخاب کنید.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                  ),
-                ],
-        ),
-        const SizedBox(height: AppMetrics.space3),
-        _ChainFlowBanner(
-          icon: Icons.verified_user_rounded,
-          title: 'پروفایل اصلی آمبرلا',
-          subtitle: 'سرور فعال اشتراک شما (انتخاب خودکار بهترین سرور)',
-          accent: colors.primary,
-        ),
-        const SizedBox(height: AppMetrics.space3),
-        _Section(
-          icon: Icons.account_tree_rounded,
-          title: 'رفع فیلتر پروکسی (رفع مسدودیت)',
-          subtitle:
-              'عبور از فیلترینگ پروکسی — پیش از اتصال به سرور اصلی از تونل وارپ یا سایفون عبور می کند',
-          trailing: _ChainHopSelector(
-            active: unblockerOn,
-            transport: chain.transport,
-            activeColor: colors.warning,
-            onOff: () => saveChain(chain.deactivate()),
-            onPick: (ChainTransport picked) =>
-                saveChain(chain.activateUnblocker(picked)),
-          ),
-          children: unblockerOn
-              ? _buildChainHopFields(
-                  context: context,
-                  colors: colors,
-                  chain: chain,
-                  isUnblocker: true,
-                  onSave: saveChain,
-                )
-              : <Widget>[
-                  Text(
-                    'غیرفعال — اگر سرور اصلی روی اینترنت فعلی مسدود است، سایفون یا وارپ را روشن کنید.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                  ),
-                ],
-        ),
-        const SizedBox(height: AppMetrics.space3),
-        _ChainFlowBanner(
-          icon: Icons.public_rounded,
-          title: 'اینترنت آزاد',
-          subtitle: 'مقصد نهایی ترافیک پس از عبور از زنجیره',
-          accent: colors.success,
-        ),
-      ],
-    );
-  }
-
-  List<Widget> _buildChainHopFields({
-    required BuildContext context,
-    required UmbrellaColors colors,
-    required ChainSettings chain,
-    required bool isUnblocker,
-    required Future<void> Function(ChainSettings next) onSave,
-  }) {
-    if (chain.transport == ChainTransport.psiphon) {
-      return <Widget>[
-        AnchoredSelectField<String>(
-          label: 'منطقه سرور سایفون',
-          leadingIcon: Icons.public_rounded,
-          value: ChainSettings.regionLabels.containsKey(chain.psiphonRegion)
-              ? chain.psiphonRegion
-              : 'AUTO',
-          options: <SelectOption<String>>[
-            for (final MapEntry<String, String> entry
-                in ChainSettings.regionLabels.entries)
-              SelectOption<String>(
-                value: entry.key,
-                label: entry.value,
-                icon: ChainSettings.regionIcon(entry.key),
-              ),
-          ],
-          onChanged: (String region) =>
-              onSave(chain.copyWith(psiphonRegion: region)),
-        ),
-      ];
-    }
-
-    final List<ChainTransport> warpTransports = <ChainTransport>[
-      ChainTransport.automatic,
-      ChainTransport.wireguard,
-      ChainTransport.awg,
-      ChainTransport.masque,
-    ];
-    final List<WarpEndpoint> endpoints = <WarpEndpoint>[
-      if (isUnblocker) WarpEndpoint.scan,
-      WarpEndpoint.assigned,
-      if (chain.transport != ChainTransport.masque) WarpEndpoint.custom,
-    ];
-    final WarpEndpoint currentEndpoint =
-        endpoints.contains(chain.endpoint) ? chain.endpoint : endpoints.first;
-
-    return <Widget>[
-      AnchoredSelectField<ChainTransport>(
-        label: 'تونل وارپ',
-        leadingIcon: Icons.cloud_rounded,
-        value: warpTransports.contains(chain.transport)
-            ? chain.transport
-            : ChainTransport.automatic,
-        options: <SelectOption<ChainTransport>>[
-          for (final ChainTransport t in warpTransports)
-            SelectOption<ChainTransport>(
-              value: t,
-              label: t.label,
-              icon: t.icon,
-            ),
-        ],
-        onChanged: (ChainTransport picked) => onSave(
-          chain.copyWith(
-            transport: picked,
-            endpoint: picked == ChainTransport.masque &&
-                    chain.endpoint == WarpEndpoint.custom
-                ? (isUnblocker ? WarpEndpoint.scan : WarpEndpoint.assigned)
-                : chain.endpoint,
-          ),
-        ),
-      ),
-      const SizedBox(height: AppMetrics.space3),
-      AnchoredSelectField<WarpEndpoint>(
-        label: 'نقطه اتصال',
-        leadingIcon: Icons.hub_rounded,
-        value: currentEndpoint,
-        options: <SelectOption<WarpEndpoint>>[
-          for (final WarpEndpoint ep in endpoints)
-            SelectOption<WarpEndpoint>(
-              value: ep,
-              label: ep.label,
-              icon: ep.icon,
-            ),
-        ],
-        onChanged: (WarpEndpoint picked) => onSave(
-          chain.copyWith(
-            endpoint: picked,
-            address: picked == WarpEndpoint.custom && chain.address.isEmpty
-                ? '162.159.192.1'
-                : chain.address,
-            port: picked == WarpEndpoint.custom && chain.port <= 0
-                ? 2408
-                : chain.port,
-          ),
-        ),
-      ),
-      if (currentEndpoint == WarpEndpoint.custom) ...<Widget>[
-        const Divider(height: AppMetrics.space4),
-        _EditableValueRow(
-          icon: Icons.dns_outlined,
-          title: 'نشانی آی پی تمیز',
-          value:
-              chain.address.isEmpty ? 'تنظیم نشده' : Fa.num(chain.address),
-          ltrValue: chain.address.isNotEmpty,
-          onTap: () => _editTextValue(
-            title: 'نشانی آی پی تمیز وارپ',
-            label: 'نشانی آی پی نسخه ۴ یا نسخه ۶',
-            initialValue: chain.address,
-            hint: '۱۶۲.۱۵۹.۱۹۲.۱',
-            validator: (String v) {
-              final ChainSettings probe = chain.copyWith(
-                endpoint: WarpEndpoint.custom,
-                address: v.trim(),
-              );
-              return probe.validationError;
-            },
-            onSubmit: (String v) => onSave(chain.copyWith(address: v.trim())),
-          ),
-        ),
-        _EditableValueRow(
-          icon: Icons.numbers_rounded,
-          title: 'پورت تمیز',
-          value: Fa.num('${chain.port > 0 ? chain.port : 2408}'),
-          onTap: () => _editTextValue(
-            title: 'پورت تمیز وارپ',
-            label: 'پورت (۱ تا ۶۵۵۳۵)',
-            initialValue: '${chain.port > 0 ? chain.port : 2408}',
-            numericOnly: true,
-            validator: (String v) {
-              final int? p = int.tryParse(v.trim());
-              return p != null && p >= 1 && p <= 65535
-                  ? null
-                  : 'عددی بین ۱ تا ۶۵۵۳۵ وارد کنید';
-            },
-            onSubmit: (String v) =>
-                onSave(chain.copyWith(port: int.parse(v.trim()))),
-          ),
-        ),
-      ],
-      const Divider(height: AppMetrics.space4),
-      _EditableValueRow(
-        icon: Icons.vpn_key_outlined,
-        title: 'کلید اشتراک وارپ پلاس',
-        value: chain.licenseKey.isEmpty ? 'پیش فرض (رایگان)' : 'ثبت شده',
-        onTap: () => _editTextValue(
-          title: 'کلید اشتراک وارپ پلاس',
-          label: 'کلید اشتراک (خالی برابر با رایگان)',
-          initialValue: chain.licenseKey,
-          validator: (String v) =>
-              v.trim().length <= 128 && !v.trim().contains(RegExp(r'\s'))
-                  ? null
-                  : 'ساختار کلید اشتراک معتبر نیست',
-          onSubmit: (String v) => onSave(chain.copyWith(licenseKey: v.trim())),
-        ),
-      ),
-      _EditableValueRow(
-        icon: Icons.straighten_rounded,
-        title: 'اندازه بسته',
-        value: chain.mtu == 0 ? 'خودکار' : Fa.num('${chain.mtu}'),
-        onTap: () => _editTextValue(
-          title: 'اندازه بسته وارپ',
-          label: '۰ (خودکار) یا ۱۲۸۰ تا ۱۵۰۰',
-          initialValue: '${chain.mtu}',
-          numericOnly: true,
-          validator: (String v) {
-            final int? n = int.tryParse(v.trim());
-            return n != null && (n == 0 || (n >= 1280 && n <= 1500))
-                ? null
-                : 'صفر یا عددی بین ۱۲۸۰ تا ۱۵۰۰ وارد کنید';
-          },
-          onSubmit: (String v) =>
-              onSave(chain.copyWith(mtu: int.parse(v.trim()))),
-        ),
-      ),
-      if (isUnblocker && currentEndpoint == WarpEndpoint.scan) ...<Widget>[
-        const Divider(height: AppMetrics.space4),
-        ToggleRow(
-          icon: Icons.graphic_eq_rounded,
-          title: 'یافتن خودکار نویز در اسکن',
-          subtitle: 'بررسی بسته های ضد فیلتر هنگام جست وجوی نقطه اتصال تمیز',
-          value: chain.searchNoise,
-          onChanged: (bool v) => onSave(chain.copyWith(searchNoise: v)),
-        ),
-        _EditableValueRow(
-          icon: Icons.timer_outlined,
-          title: 'بیشینه تاخیر اسکن (میلی ثانیه)',
-          value: '${Fa.num(chain.scanMaxRtt)} میلی ثانیه',
-          onTap: () => _editTextValue(
-            title: 'بیشینه تاخیر اسکن',
-            label: 'بین ۱۰۰ تا ۱۰٬۰۰۰ میلی ثانیه',
-            initialValue: '${chain.scanMaxRtt}',
-            numericOnly: true,
-            validator: (String v) {
-              final int? n = int.tryParse(v.trim());
-              return n != null && n >= 100 && n <= chain.scanTimeout
-                  ? null
-                  : 'عددی بین ۱۰۰ تا ${Fa.num(chain.scanTimeout)} وارد کنید';
-            },
-            onSubmit: (String v) =>
-                onSave(chain.copyWith(scanMaxRtt: int.parse(v.trim()))),
-          ),
-        ),
-        _EditableValueRow(
-          icon: Icons.hourglass_bottom_rounded,
-          title: 'مهلت هر آزمایش اسکن (میلی ثانیه)',
-          value: '${Fa.num(chain.scanTimeout)} میلی ثانیه',
-          onTap: () => _editTextValue(
-            title: 'مهلت هر آزمایش اسکن',
-            label: 'بین ۲۵۰ تا ۱۰٬۰۰۰ میلی ثانیه',
-            initialValue: '${chain.scanTimeout}',
-            numericOnly: true,
-            validator: (String v) {
-              final int? n = int.tryParse(v.trim());
-              return n != null && n >= 250 && n <= 10000
-                  ? null
-                  : 'عددی بین ۲۵۰ تا ۱۰۰۰۰ وارد کنید';
-            },
-            onSubmit: (String v) =>
-                onSave(chain.copyWith(scanTimeout: int.parse(v.trim()))),
-          ),
-        ),
-        _EditableValueRow(
-          icon: Icons.format_list_numbered_rounded,
-          title: 'تعداد نشانی های اسکن',
-          value: Fa.num('${chain.scanCount}'),
-          onTap: () => _editTextValue(
-            title: 'تعداد نشانی های اسکن',
-            label: 'بین ۱ تا ۲۵۶',
-            initialValue: '${chain.scanCount}',
-            numericOnly: true,
-            validator: (String v) {
-              final int? n = int.tryParse(v.trim());
-              return n != null && n >= 1 && n <= 256
-                  ? null
-                  : 'عددی بین ۱ تا ۲۵۶ وارد کنید';
-            },
-            onSubmit: (String v) =>
-                onSave(chain.copyWith(scanCount: int.parse(v.trim()))),
-          ),
-        ),
-      ],
-      if (isUnblocker && chain.transport != ChainTransport.masque) ...<Widget>[
-        const Divider(height: AppMetrics.space4),
-        AnchoredSelectField<String>(
-          label: 'حالت نویز وایرگارد',
-          leadingIcon: Icons.blur_on_rounded,
-          value: ChainSettings.noiseModes.containsKey(chain.noiseMode)
-              ? chain.noiseMode
-              : '',
-          options: <SelectOption<String>>[
-            for (final MapEntry<String, String> entry
-                in ChainSettings.noiseModes.entries)
-              SelectOption<String>(
-                value: entry.key,
-                label: entry.value,
-                icon: ChainSettings.noiseIcon(entry.key),
-              ),
-          ],
-          onChanged: (String mode) => onSave(chain.copyWith(noiseMode: mode)),
-        ),
-        if (chain.noiseMode.isNotEmpty) ...<Widget>[
-          _EditableValueRow(
-            icon: Icons.filter_9_plus_rounded,
-            title: 'تعداد بسته نویز',
-            value:
-                chain.noiseCount.isEmpty ? 'خودکار' : Fa.num(chain.noiseCount),
-            ltrValue: chain.noiseCount.isNotEmpty,
-            onTap: () => _editTextValue(
-              title: 'تعداد بسته نویز',
-              label: 'خالی (خودکار) یا بازه ۱ تا ۲۰۰ (مانند ۵-۱۰)',
-              initialValue: chain.noiseCount,
-              hint: '۵-۱۰',
-              validator: (String v) => v.trim().isEmpty ||
-                      TlsTricksSettings.isValidRange(v, min: 1, max: 200)
-                  ? null
-                  : 'بازه عددی معتبر وارد کنید (مانند ۵-۱۰)',
-              onSubmit: (String v) =>
-                  onSave(chain.copyWith(noiseCount: v.trim())),
-            ),
-          ),
-          _EditableValueRow(
-            icon: Icons.photo_size_select_small_rounded,
-            title: 'اندازه نویز (بایت)',
-            value:
-                chain.noiseSize.isEmpty ? 'خودکار' : Fa.num(chain.noiseSize),
-            ltrValue: chain.noiseSize.isNotEmpty,
-            onTap: () => _editTextValue(
-              title: 'اندازه نویز',
-              label: 'خالی (خودکار) یا بازه ۱ تا ۱۵۰۰ (مانند ۴۰-۱۰۰)',
-              initialValue: chain.noiseSize,
-              hint: '۴۰-۱۰۰',
-              validator: (String v) => v.trim().isEmpty ||
-                      TlsTricksSettings.isValidRange(v, min: 1, max: 1500)
-                  ? null
-                  : 'بازه عددی معتبر وارد کنید (مانند ۴۰-۱۰۰)',
-              onSubmit: (String v) =>
-                  onSave(chain.copyWith(noiseSize: v.trim())),
-            ),
-          ),
-          _EditableValueRow(
-            icon: Icons.schedule_rounded,
-            title: 'تاخیر نویز (میلی ثانیه)',
-            value: chain.noiseDelay.isEmpty
-                ? 'خودکار'
-                : Fa.num(chain.noiseDelay),
-            ltrValue: chain.noiseDelay.isNotEmpty,
-            onTap: () => _editTextValue(
-              title: 'تاخیر نویز',
-              label: 'خالی (خودکار) یا بازه ۱ تا ۱۰٬۰۰۰ (مانند ۱۰-۳۰)',
-              initialValue: chain.noiseDelay,
-              hint: '۱۰-۳۰',
-              validator: (String v) => v.trim().isEmpty ||
-                      TlsTricksSettings.isValidRange(v, min: 1, max: 10000)
-                  ? null
-                  : 'بازه عددی معتبر وارد کنید (مانند ۱۰-۳۰)',
-              onSubmit: (String v) =>
-                  onSave(chain.copyWith(noiseDelay: v.trim())),
-            ),
-          ),
-        ],
-      ],
-      if (chain.transport == ChainTransport.masque ||
-          chain.transport == ChainTransport.automatic) ...<Widget>[
-        const SizedBox(height: AppMetrics.space3),
-        AnchoredSelectField<String>(
-          label: 'نسخه انتقال در ماسک',
-          leadingIcon: Icons.http_rounded,
-          value: const <String>['auto', 'h3', 'h2']
-                  .contains(chain.masqueProtocol)
-              ? chain.masqueProtocol
-              : 'auto',
-          options: const <SelectOption<String>>[
-            SelectOption<String>(
-              value: 'auto',
-              label: 'خودکار',
-              icon: Icons.auto_awesome_rounded,
-            ),
-            SelectOption<String>(
-              value: 'h3',
-              label: 'نسخه ۳ (سریع — کوئیک)',
-              icon: Icons.bolt_rounded,
-            ),
-            SelectOption<String>(
-              value: 'h2',
-              label: 'نسخه ۲ (پایدار)',
-              icon: Icons.verified_user_rounded,
-            ),
-          ],
-          onChanged: (String p) =>
-              onSave(chain.copyWith(masqueProtocol: p)),
-        ),
-      ],
-    ];
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ۳. مسیریابی
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildRoutingSection(
     BuildContext context,
@@ -1836,262 +1350,6 @@ class _CategoryNavTile extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ChainFlowBanner extends StatelessWidget {
-  const _ChainFlowBanner({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    return GlassCard(
-      radius: AppMetrics.radiusLg,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppMetrics.space4,
-        vertical: AppMetrics.space3,
-      ),
-      child: Row(
-        children: <Widget>[
-          IconSquare(
-            icon: icon,
-            color: accent,
-            size: AppMetrics.iconBoxMd,
-            radius: AppMetrics.radiusMd,
-          ),
-          const SizedBox(width: AppMetrics.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: colors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChainHopSelector extends StatelessWidget {
-  const _ChainHopSelector({
-    required this.active,
-    required this.transport,
-    required this.activeColor,
-    required this.onOff,
-    required this.onPick,
-  });
-
-  final bool active;
-  final ChainTransport transport;
-  final Color activeColor;
-  final VoidCallback onOff;
-  final ValueChanged<ChainTransport> onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final bool isPsiphon = transport == ChainTransport.psiphon;
-    final String label = active ? transport.quickLabel : 'خاموش';
-    final IconData activeIcon = active
-        ? transport.quickIcon
-        : Icons.power_settings_new_rounded;
-
-    Widget buildItem({
-      required IconData icon,
-      required Color iconColor,
-      required String title,
-      required bool selected,
-      required VoidCallback onSelect,
-      required MenuController controller,
-    }) {
-      return SizedBox(
-        width: AppMetrics.buttonMaxWidth - (AppMetrics.space2 * 2),
-        child: Material(
-          color: selected
-              ? colors.primary.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-            onTap: () {
-              controller.close();
-              onSelect();
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppMetrics.space3,
-                vertical: AppMetrics.space2,
-              ),
-              child: Row(
-                children: <Widget>[
-                  Icon(icon, size: AppMetrics.iconSm, color: iconColor),
-                  const SizedBox(width: AppMetrics.space3),
-                  Expanded(
-                    child: Text(
-                      Fa.num(title),
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight:
-                                selected ? FontWeight.w800 : FontWeight.w600,
-                          ),
-                    ),
-                  ),
-                  if (selected)
-                    Icon(
-                      Icons.check_rounded,
-                      size: AppMetrics.iconSm,
-                      color: colors.primary,
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final MenuController controller = MenuController();
-    return MenuAnchor(
-      controller: controller,
-      alignmentOffset: const Offset(0, AppMetrics.space1),
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll<Color>(colors.surface),
-        surfaceTintColor:
-            const WidgetStatePropertyAll<Color>(Colors.transparent),
-        shadowColor: WidgetStatePropertyAll<Color>(colors.shadow),
-        elevation: const WidgetStatePropertyAll<double>(14),
-        minimumSize: const WidgetStatePropertyAll<Size>(
-          Size(AppMetrics.buttonMaxWidth, 0),
-        ),
-        padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-          EdgeInsets.all(AppMetrics.space2),
-        ),
-        shape: WidgetStatePropertyAll<OutlinedBorder>(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-            side: BorderSide(color: colors.border),
-          ),
-        ),
-      ),
-      menuChildren: <Widget>[
-        buildItem(
-          icon: Icons.power_settings_new_rounded,
-          iconColor: colors.textSecondary,
-          title: 'غیرفعال',
-          selected: !active,
-          onSelect: onOff,
-          controller: controller,
-        ),
-        const SizedBox(height: AppMetrics.space1),
-        buildItem(
-          icon: Icons.cloud_done_rounded,
-          iconColor: colors.warning,
-          title: 'وارپ',
-          selected: active && !isPsiphon,
-          onSelect: () => onPick(ChainTransport.automatic),
-          controller: controller,
-        ),
-        const SizedBox(height: AppMetrics.space1),
-        buildItem(
-          icon: Icons.language_rounded,
-          iconColor: colors.primary,
-          title: 'سایفون',
-          selected: active && isPsiphon,
-          onSelect: () => onPick(ChainTransport.psiphon),
-          controller: controller,
-        ),
-      ],
-      builder: (
-        BuildContext context,
-        MenuController menuController,
-        Widget? child,
-      ) {
-        final bool open = menuController.isOpen;
-        final Color fg = active
-            ? activeColor
-            : (open ? colors.primary : colors.textSecondary);
-        return Material(
-          color: active
-              ? activeColor.withValues(alpha: 0.14)
-              : colors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-            onTap: () {
-              if (menuController.isOpen) {
-                menuController.close();
-              } else {
-                menuController.open();
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppMetrics.space3,
-                vertical: AppMetrics.space2,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                border: Border.all(
-                  color: open
-                      ? colors.primary
-                      : (active
-                          ? activeColor.withValues(alpha: 0.45)
-                          : colors.border),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(activeIcon, size: AppMetrics.iconSm, color: fg),
-                  const SizedBox(width: AppMetrics.space2),
-                  Text(
-                    Fa.num(label),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: fg,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(width: AppMetrics.space1),
-                  AnimatedRotation(
-                    turns: open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 160),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: AppMetrics.iconMd,
-                      color: fg,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

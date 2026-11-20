@@ -198,7 +198,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             _appVisible = true;
-            _pendingSettingsSection = null;
             _settingsNavVersion++;
             _index = 3;
           });
@@ -234,16 +233,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
   }
 
-  SettingsCategory? _pendingSettingsSection;
   int _settingsNavVersion = 0;
-
-  void _openSettingsSection(SettingsCategory section) {
-    setState(() {
-      _pendingSettingsSection = section;
-      _settingsNavVersion++;
-      _index = 3;
-    });
-  }
 
   Widget _buildActivePage(int index) {
     switch (index) {
@@ -252,10 +242,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       case 2:
         return const AccountPage();
       case 3:
-        return SettingsPage(
-          key: ValueKey<int>(_settingsNavVersion),
-          initialSection: _pendingSettingsSection,
-        );
+        return SettingsPage(key: ValueKey<int>(_settingsNavVersion));
       case 4:
         return const LogsPage();
       case 5:
@@ -264,10 +251,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return const UpdatesPage();
       case 0:
       default:
-        return ConnectPage(
-          onOpenChainSettings: () =>
-              _openSettingsSection(SettingsCategory.chain),
-        );
+        return const ConnectPage();
     }
   }
 
@@ -313,7 +297,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   onSelect: (int value) {
                     setState(() {
                       if (value == 3) {
-                        _pendingSettingsSection = null;
                         _settingsNavVersion++;
                       }
                       _index = value;

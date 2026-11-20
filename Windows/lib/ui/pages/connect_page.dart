@@ -21,12 +21,9 @@ import '../widgets/quick_connection_panel.dart';
 /// صفحه اصلی اتصال؛ وضعیت و کنترل اتصال را در اولویت نگه می دارد.
 ///
 /// گزینه های جانبی اتصال از دکمه اختصاصی باز می شوند تا صفحه اصلی خلوت بماند؛
-/// تمام حالت های سرویس، اشتراک گذاری شبکه، زنجیره و مسیرهای اتصال در همان
-/// پنجره تنظیمات در دسترس هستند.
+/// حالت سرویس و اشتراک گذاری شبکه از پنجره تنظیمات اتصال در دسترس هستند.
 class ConnectPage extends StatefulWidget {
-  const ConnectPage({super.key, this.onOpenChainSettings});
-
-  final VoidCallback? onOpenChainSettings;
+  const ConnectPage({super.key});
 
   @override
   State<ConnectPage> createState() => _ConnectPageState();
@@ -218,9 +215,7 @@ class _ConnectPageState extends State<ConnectPage> {
     showDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (BuildContext context) => _ConnectionSettingsDialog(
-        onOpenChainSettings: widget.onOpenChainSettings,
-      ),
+      builder: (BuildContext context) => const _ConnectionSettingsDialog(),
     );
   }
 
@@ -548,9 +543,7 @@ class _ConnectPageState extends State<ConnectPage> {
 
 /// پنل پیکربندی روی صفحه اصلی؛ تمام کنترل ها همان ویجت مشترک را به کار می برند.
 class _ConnectionSettingsDialog extends StatelessWidget {
-  const _ConnectionSettingsDialog({this.onOpenChainSettings});
-
-  final VoidCallback? onOpenChainSettings;
+  const _ConnectionSettingsDialog();
 
   @override
   Widget build(BuildContext context) {
@@ -574,12 +567,6 @@ class _ConnectionSettingsDialog extends StatelessWidget {
           child: QuickConnectionPanel(
             enabled: enabled,
             onClose: () => Navigator.of(context).pop(),
-            onOpenChainSettings: onOpenChainSettings == null
-                ? null
-                : () {
-                    Navigator.of(context).pop();
-                    onOpenChainSettings!.call();
-                  },
           ),
         ),
       ),

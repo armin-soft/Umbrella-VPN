@@ -251,28 +251,122 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> _topupWallet(AuthController auth, ToastController toasts) async {
     if (!auth.walletLoaded || auth.walletPaymentPending) return;
-    final controller = TextEditingController();
+    final TextEditingController controller = TextEditingController();
     final int? amount = await showDialog<int>(
       context: context,
       builder: (BuildContext dialogContext) => StatefulBuilder(
         builder: (BuildContext context, StateSetter update) {
-          final text = Fa.toEn(controller.text).trim();
-          final value = RegExp(r'^[0-9]+$').hasMatch(text) ? int.tryParse(text) : null;
-          final valid = value != null && value >= auth.walletMinTopup && value <= auth.walletMaxTopup;
+          final String text = Fa.toEn(controller.text).trim();
+          final int? value = RegExp(r'^[0-9]+$').hasMatch(text)
+              ? int.tryParse(text)
+              : null;
+          final bool valid = value != null &&
+              value >= auth.walletMinTopup &&
+              value <= auth.walletMaxTopup;
+          final List<int> presets = <int>[
+            auth.walletMinTopup,
+            auth.walletMinTopup * 2,
+            auth.walletMinTopup * 5,
+          ].where((int preset) =>
+              preset >= auth.walletMinTopup &&
+              preset <= auth.walletMaxTopup).toSet().toList();
+          final UmbrellaColors colors = context.colors;
+
           return AlertDialog(
+            backgroundColor: colors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
+              side: BorderSide(color: colors.border),
+            ),
             title: const Text('افزایش اعتبار کیف پول'),
-            content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              Text('مبلغ شارژ به تومان؛ حداقل ${Fa.grouped(auth.walletMinTopup)} و حداکثر ${Fa.grouped(auth.walletMaxTopup)} تومان.'),
-              TextField(controller: controller, autofocus: true, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'مبلغ شارژ (تومان)'),
-                onChanged: (_) => update(() {})),
-              const SizedBox(height: AppMetrics.space3),
-              const Text('کارمزد درگاه پس از استعلام جداگانه نمایش داده می شود و به موجودی اضافه نمی شود.'),
-            ])),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    'مبلغ شارژ به تومان؛ حداقل ${Fa.grouped(auth.walletMinTopup)} و حداکثر ${Fa.grouped(auth.walletMaxTopup)} تومان.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                          height: 1.5,
+                        ),
+                  ),
+                  if (presets.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: AppMetrics.space3),
+                    Text(
+                      'مبلغ پیشنهادی',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: AppMetrics.space2),
+                    Wrap(
+                      spacing: AppMetrics.space2,
+                      runSpacing: AppMetrics.space1,
+                      children: <Widget>[
+                        for (final int preset in presets)
+                          ChoiceChip(
+                            label: Text('${Fa.grouped(preset)} تومان'),
+                            selected: value == preset,
+                            showCheckmark: false,
+                            onSelected: (_) {
+                              final String next = '$preset';
+                              controller.value = TextEditingValue(
+                                text: next,
+                                selection: TextSelection.collapsed(
+                                  offset: next.length,
+                                ),
+                              );
+                              update(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: AppMetrics.space3),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'مبلغ شارژ (تومان)',
+                      prefixIcon: Icon(Icons.payments_outlined),
+                    ),
+                    onChanged: (_) => update(() {}),
+                  ),
+                  const SizedBox(height: AppMetrics.space3),
+                  Container(
+                    padding: const EdgeInsets.all(AppMetrics.space3),
+                    decoration: BoxDecoration(
+                      color: colors.info.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                      border: Border.all(
+                        color: colors.info.withValues(alpha: 0.24),
+                      ),
+                    ),
+                    child: Text(
+                      'کارمزد درگاه پس از استعلام جداگانه نمایش داده می شود و به موجودی اضافه نمی شود.',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.5,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             actions: <Widget>[
-              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')),
-              FilledButton(onPressed: valid ? () => Navigator.pop(dialogContext, value) : null,
-                child: const Text('ثبت درخواست پرداخت')),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('انصراف'),
+              ),
+              FilledButton.icon(
+                onPressed: valid
+                    ? () => Navigator.pop(dialogContext, value)
+                    : null,
+                icon: const Icon(Icons.lock_outline_rounded),
+                label: const Text('ثبت درخواست امن'),
+              ),
             ],
           );
         },
@@ -291,17 +385,54 @@ class _AccountPageState extends State<AccountPage> {
     final total = JsonX.number(result['gateway_amount']);
     final fee = JsonX.number(result['fee']);
     final String link = JsonX.text(result['checkout_url']);
-    final bool open = await showDialog<bool>(context: context, builder: (BuildContext dialogContext) => AlertDialog(
-      title: const Text('جزئیات پرداخت'),
-      content: Text('اعتبار کیف پول: ${_walletMoney(credit)} تومان\n'
-        'کارمزد درگاه: ${_walletMoney(fee)} تومان\n'
-        'جمع قابل پرداخت: ${_walletMoney(total)} تومان\n\n'
-        'تنها پس از تایید سرور درگاه، اعتبار اضافه می شود. در صورت انصراف، سفارش در کیف پول برای پیگیری باقی می ماند.'),
-      actions: <Widget>[
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('بعداً')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('رفتن به درگاه')),
-      ],
-    )) ?? false;
+    final bool open = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            final UmbrellaColors colors = dialogContext.colors;
+            return AlertDialog(
+              backgroundColor: colors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
+                side: BorderSide(color: colors.border),
+              ),
+              title: const Text('جزئیات پرداخت'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _PaymentAmountRow(label: 'اعتبار کیف پول', amount: credit),
+                  _PaymentAmountRow(label: 'کارمزد درگاه', amount: fee),
+                  const Divider(height: AppMetrics.space4),
+                  _PaymentAmountRow(
+                    label: 'جمع قابل پرداخت',
+                    amount: total,
+                    emphasize: true,
+                  ),
+                  const SizedBox(height: AppMetrics.space3),
+                  Text(
+                    'اعتبار فقط پس از تایید سرور درگاه اضافه می شود. اگر پرداخت را فعلاً ادامه ندهید، سفارش برای پیگیری در کیف پول باقی می ماند.',
+                    style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                          height: 1.55,
+                        ),
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('بعداً'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  icon: const Icon(Icons.lock_outline_rounded),
+                  label: const Text('رفتن به درگاه امن'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
     if (open && mounted) await _openWalletCheckout(link, toasts);
   }
 
@@ -444,7 +575,6 @@ class _AccountPageState extends State<AccountPage> {
     final double percent = account.usagePercent;
     final double daily = account.dailyAverageGb(_now);
     final bool onlineNow = account.isOnlineRecently(_now);
-
     final String name = _ownerNameFa(account);
 
     final Color statusTone = !account.enable || expired || account.quotaFinished
@@ -511,106 +641,139 @@ class _AccountPageState extends State<AccountPage> {
       ),
     ];
 
+    return DefaultTabController(
+      length: 4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: AppMetrics.pagePadding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const PageHeader(
+                  title: 'حساب من',
+                  eyebrow: 'حساب و سرویس',
+                  premium: true,
+                  subtitle:
+                      'وضعیت اشتراک، کیف پول و مشخصات در بخش های جداگانه',
+                  icon: Icons.person_rounded,
+                ),
+                const SizedBox(height: AppMetrics.space4),
+                GlassCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppMetrics.space2,
+                    vertical: AppMetrics.space1,
+                  ),
+                  radius: AppMetrics.radiusLg,
+                  child: TabBar(
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    dividerColor: Colors.transparent,
+                    indicatorColor: colors.primary,
+                    indicatorWeight: AppMetrics.space1,
+                    labelColor: colors.primary,
+                    unselectedLabelColor: colors.textSecondary,
+                    tabs: const <Widget>[
+                      Tab(
+                        key: ValueKey<String>('account-tab-summary'),
+                        icon: Icon(Icons.dashboard_rounded),
+                        text: 'خلاصه',
+                      ),
+                      Tab(
+                        key: ValueKey<String>('account-tab-wallet'),
+                        icon: Icon(Icons.account_balance_wallet_rounded),
+                        text: 'کیف پول',
+                      ),
+                      Tab(
+                        key: ValueKey<String>('account-tab-subscription'),
+                        icon: Icon(Icons.workspace_premium_rounded),
+                        text: 'اشتراک',
+                      ),
+                      Tab(
+                        key: ValueKey<String>('account-tab-profile'),
+                        icon: Icon(Icons.badge_rounded),
+                        text: 'مشخصات',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: <Widget>[
+                _buildSummaryTab(
+                  account: account,
+                  kpiCards: kpiCards,
+                  used: used,
+                  limit: limit,
+                  unlimited: unlimited,
+                  remaining: remaining,
+                  percent: percent,
+                  quotaTone: quotaTone,
+                  statusTone: statusTone,
+                  timeTone: timeTone,
+                ),
+                _buildWalletTab(auth, toasts),
+                _buildSubscriptionTab(
+                  auth: auth,
+                  toasts: toasts,
+                  account: account,
+                  expiry: expiry,
+                  daysLeft: daysLeft,
+                  renewalNotice: renewalNotice,
+                  renewalTone: renewalTone,
+                ),
+                _buildProfileTab(account: account, name: name, toasts: toasts),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryTab({
+    required Account account,
+    required List<Widget> kpiCards,
+    required double used,
+    required double limit,
+    required bool unlimited,
+    required double remaining,
+    required double percent,
+    required Color quotaTone,
+    required Color statusTone,
+    required Color timeTone,
+  }) {
+    final UmbrellaColors colors = context.colors;
     return SingleChildScrollView(
+      key: const PageStorageKey<String>('account-tab-content-summary'),
       padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          PageHeader(
-            title: 'حساب من',
-            eyebrow: 'حساب و سرویس',
-            premium: true,
-            subtitle:
-                'پایش زنده حجم مصرفی، تقویم دقیق شمسی سرویس و مشخصات حساب کاربری',
-            icon: Icons.person_rounded,
-          ),
-          const SizedBox(height: AppMetrics.space4),
-
-          if (auth.botLinked != true) ...<Widget>[
-            GlassCard(
-              padding: AppMetrics.cardPadding,
-              radius: AppMetrics.radiusXl,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-                const SectionHeader(icon: Icons.send_rounded, title: 'عضویت و اتصال ربات تلگرام',
-                  subtitle: 'اتصال امن حساب فعلی برنامه به ربات و پنل'),
-                const SizedBox(height: AppMetrics.space2),
-                const Text('لینک اختصاصی را باز کنید، در ربات شروع و اتصال را تایید کنید. لینک فقط ۱۰ دقیقه معتبر و یک بار مصرف است؛ آن را برای دیگران نفرستید.'),
-                const SizedBox(height: AppMetrics.space2),
-                FilledButton.icon(onPressed: auth.linkingBot ? null : () => _joinBot(auth, toasts),
-                  icon: const Icon(Icons.link_rounded), label: Text(auth.linkingBot ? 'در حال ساخت لینک...' : 'عضویت و اتصال ربات')),
-                TextButton(onPressed: () => _autoSync(), child: const Text('بررسی وضعیت اتصال')),
-              ]),
-            ),
-            const SizedBox(height: AppMetrics.space4),
-          ],
-
-          _WalletCard(
-            auth: auth,
-            onTopup: () => _topupWallet(auth, toasts),
-            onRefresh: () => _refreshWallet(auth, toasts),
-            onVerify: () => _refreshWallet(auth, toasts, verify: true),
-            onContinue: () => _openWalletCheckout(auth.walletCheckoutUrl, toasts),
-          ),
-          const SizedBox(height: AppMetrics.space4),
-
-          // ── طرح های هدیه همگام با ربات (اشتراک رایگان و نوروزی) ─────────
-          if (auth.offers.hasVisibleOffer) ...<Widget>[
-            _GiftPlansCard(
-              offers: auth.offers,
-              busy: auth.claimingOffer,
-              activePlanType: auth.claimingPlanType,
-              onClaim: (String planType) async {
-                final String? message =
-                    await auth.claimSubscriptionOffer(planType);
-                if (!context.mounted) {
-                  return;
-                }
-                if (message != null) {
-                  toasts.success(message);
-                } else if (auth.error.isNotEmpty) {
-                  toasts.error('فعال سازی انجام نشد', auth.error);
-                }
-              },
-            ),
-            const SizedBox(height: AppMetrics.space4),
-          ],
-
-          // ── خرید/تمدید پولی از تعرفه و کیف پول مشترک ربات ──────────────
-          _PaidPlansCard(
-            plans: auth.subscriptionPlans,
-            balance: auth.walletBalance,
-            custom: auth.customSubscriptionTerms,
-            renewalNotice: renewalNotice,
-            renewalTone: renewalTone,
-            onCustom: () => _purchaseCustomPlan(auth, toasts),
-            loading: auth.loadingSubscriptionPlans,
-            busy: auth.purchasingSubscription,
-            onRefresh: () => _refreshPaidPlans(auth, toasts),
-            onPurchase: (SubscriptionPlan plan) =>
-                _purchasePlan(auth, toasts, plan),
-          ),
-          const SizedBox(height: AppMetrics.space4),
-
-          // ── چهار کارت شاخص کلیدی حساب کاربری ──────────────────────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointColumns) {
+              final double scale = MediaQuery.textScalerOf(context)
+                  .scale(1)
+                  .clamp(1.0, 2.0).toDouble();
+              final double width = constraints.maxWidth / scale;
+              if (width >= AppMetrics.breakpointColumns) {
                 return IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      Expanded(child: kpiCards[0]),
-                      const SizedBox(width: AppMetrics.space3),
-                      Expanded(child: kpiCards[1]),
-                      const SizedBox(width: AppMetrics.space3),
-                      Expanded(child: kpiCards[2]),
-                      const SizedBox(width: AppMetrics.space3),
-                      Expanded(child: kpiCards[3]),
+                      for (int i = 0; i < kpiCards.length; i++) ...<Widget>[
+                        if (i > 0) const SizedBox(width: AppMetrics.space3),
+                        Expanded(child: kpiCards[i]),
+                      ],
                     ],
                   ),
                 );
               }
-              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointCompact) {
+              if (width >= AppMetrics.breakpointCompact) {
                 return Column(
                   children: <Widget>[
                     IntrinsicHeight(
@@ -640,20 +803,15 @@ class _AccountPageState extends State<AccountPage> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  kpiCards[0],
-                  const SizedBox(height: AppMetrics.space3),
-                  kpiCards[1],
-                  const SizedBox(height: AppMetrics.space3),
-                  kpiCards[2],
-                  const SizedBox(height: AppMetrics.space3),
-                  kpiCards[3],
+                  for (int i = 0; i < kpiCards.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(height: AppMetrics.space3),
+                    kpiCards[i],
+                  ],
                 ],
               );
             },
           ),
           const SizedBox(height: AppMetrics.space5),
-
-          // ── ردیف اول: تحلیل مصرف ترافیک + تقویم دقیق شمسی سرویس ────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget usage = _UsageCard(
@@ -674,7 +832,10 @@ class _AccountPageState extends State<AccountPage> {
                 tone: timeTone,
                 colors: colors,
               );
-              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) < AppMetrics.breakpointColumns) {
+              final double scale = MediaQuery.textScalerOf(context)
+                  .scale(1)
+                  .clamp(1.0, 2.0).toDouble();
+              if (constraints.maxWidth / scale < AppMetrics.breakpointColumns) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -696,9 +857,139 @@ class _AccountPageState extends State<AccountPage> {
               );
             },
           ),
-          const SizedBox(height: AppMetrics.space5),
+          const SizedBox(height: AppMetrics.space4),
+        ],
+      ),
+    );
+  }
 
-          // ── ردیف دوم: مشخصات کامل حساب کاربری و سرویس ───────────────────
+  Widget _buildWalletTab(AuthController auth, ToastController toasts) {
+    return SingleChildScrollView(
+      key: const PageStorageKey<String>('account-tab-content-wallet'),
+      padding: AppMetrics.pagePadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (auth.botLinked != true) ...<Widget>[
+            GlassCard(
+              padding: AppMetrics.cardPadding,
+              radius: AppMetrics.radiusXl,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const SectionHeader(
+                    icon: Icons.send_rounded,
+                    title: 'اتصال امن به ربات تلگرام',
+                    subtitle: 'برای استفاده از کیف پول مشترک، حساب را پیوند دهید',
+                  ),
+                  const SizedBox(height: AppMetrics.space3),
+                  const Text(
+                    'لینک اختصاصی را باز کنید و در ربات شروع و اتصال را تایید کنید. لینک فقط ۱۰ دقیقه معتبر و یک بار مصرف است؛ آن را برای دیگران نفرستید.',
+                  ),
+                  const SizedBox(height: AppMetrics.space3),
+                  GradientButton(
+                    onPressed: auth.linkingBot ? null : () => _joinBot(auth, toasts),
+                    loading: auth.linkingBot,
+                    icon: Icons.link_rounded,
+                    label: auth.linkingBot
+                        ? 'در حال ساخت لینک...'
+                        : 'عضویت و اتصال ربات',
+                  ),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () => _autoSync(),
+                      icon: const Icon(Icons.sync_rounded),
+                      label: const Text('بررسی وضعیت اتصال'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppMetrics.space4),
+          ],
+          _WalletCard(
+            auth: auth,
+            onTopup: () => _topupWallet(auth, toasts),
+            onRefresh: () => _refreshWallet(auth, toasts),
+            onVerify: () => _refreshWallet(auth, toasts, verify: true),
+            onContinue: () => _openWalletCheckout(auth.walletCheckoutUrl, toasts),
+          ),
+          const SizedBox(height: AppMetrics.space4),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionTab({
+    required AuthController auth,
+    required ToastController toasts,
+    required Account account,
+    required DateTime? expiry,
+    required int daysLeft,
+    required String? renewalNotice,
+    required Color? renewalTone,
+  }) {
+    return SingleChildScrollView(
+      key: const PageStorageKey<String>('account-tab-content-subscription'),
+      padding: AppMetrics.pagePadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (auth.offers.hasVisibleOffer) ...<Widget>[
+            _GiftPlansCard(
+              offers: auth.offers,
+              busy: auth.claimingOffer,
+              activePlanType: auth.claimingPlanType,
+              onClaim: (String planType) async {
+                final String? message =
+                    await auth.claimSubscriptionOffer(planType);
+                if (!mounted) return;
+                if (message != null) {
+                  toasts.success(message);
+                } else if (auth.error.isNotEmpty) {
+                  toasts.error('فعال سازی انجام نشد', auth.error);
+                }
+              },
+            ),
+            const SizedBox(height: AppMetrics.space4),
+          ],
+          if (account.canConnect)
+            _ActiveSubscriptionCard(
+              account: account,
+              expiry: expiry,
+              daysLeft: daysLeft,
+            )
+          else
+            _PaidPlansCard(
+              plans: auth.subscriptionPlans,
+              balance: auth.walletBalance,
+              custom: auth.customSubscriptionTerms,
+              renewalNotice: renewalNotice,
+              renewalTone: renewalTone,
+              onCustom: () => _purchaseCustomPlan(auth, toasts),
+              loading: auth.loadingSubscriptionPlans,
+              busy: auth.purchasingSubscription,
+              onRefresh: () => _refreshPaidPlans(auth, toasts),
+              onPurchase: (SubscriptionPlan plan) =>
+                  _purchasePlan(auth, toasts, plan),
+            ),
+          const SizedBox(height: AppMetrics.space4),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileTab({
+    required Account account,
+    required String name,
+    required ToastController toasts,
+  }) {
+    return SingleChildScrollView(
+      key: const PageStorageKey<String>('account-tab-content-profile'),
+      padding: AppMetrics.pagePadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
           GlassCard(
             padding: AppMetrics.cardPadding,
             radius: AppMetrics.radiusXl,
@@ -709,7 +1000,7 @@ class _AccountPageState extends State<AccountPage> {
                   icon: Icons.badge_rounded,
                   title: 'مشخصات حساب و سرویس',
                   subtitle:
-                      'اطلاعات حساب کاربری به صورت کاملاً خودکار در پس زمینه به روز می شود',
+                      'اطلاعات حساب کاربری به صورت خودکار در پس زمینه به روز می شود',
                   trailing: IconAction(
                     icon: Icons.send_rounded,
                     tooltip: 'باز کردن ربات رسمی آمبرلا',
@@ -780,14 +1071,6 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                   ),
                 ],
-                if (account.panelId > 0) ...<Widget>[
-                  const Divider(height: AppMetrics.space2),
-                  InfoRow(
-                    icon: Icons.tag_rounded,
-                    label: 'شماره کاربری در پنل',
-                    value: 'کاربر شماره ${Fa.grouped(account.panelId)}',
-                  ),
-                ],
                 if (account.wgIpv4.isNotEmpty) ...<Widget>[
                   const Divider(height: AppMetrics.space2),
                   InfoRow(
@@ -827,10 +1110,12 @@ class _AccountPageState extends State<AccountPage> {
               ],
             ),
           ),
+          const SizedBox(height: AppMetrics.space4),
         ],
       ),
     );
   }
+
 }
 
 /// کارت شاخص کلیدی ویژه حساب کاربری.
@@ -1236,15 +1521,56 @@ class _PercentRing extends StatelessWidget {
   }
 }
 
+class _PaymentAmountRow extends StatelessWidget {
+  const _PaymentAmountRow({
+    required this.label,
+    required this.amount,
+    this.emphasize = false,
+  });
+
+  final String label;
+  final double amount;
+  final bool emphasize;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final TextStyle? style = emphasize
+        ? Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colors.primary,
+              fontWeight: FontWeight.w900,
+            )
+        : Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.textSecondary,
+              fontWeight: FontWeight.w600,
+            );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppMetrics.space1),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: Text(label, style: style)),
+          Text('${_walletMoney(amount)} تومان', style: style),
+        ],
+      ),
+    );
+  }
+}
+
 String _walletMoney(double value) {
   if ((value - value.round()).abs() < 0.000001) return Fa.grouped(value);
   return Fa.decimal(value, fraction: 1);
 }
 
-/// منوی مستقل کیف پول مشترک برنامه و ربات.
+/// کارت کیف پول با نمایش موجودی، پرداخت های معلق و اقدام های امن.
 class _WalletCard extends StatelessWidget {
-  const _WalletCard({required this.auth, required this.onTopup,
-    required this.onRefresh, required this.onVerify, required this.onContinue});
+  const _WalletCard({
+    required this.auth,
+    required this.onTopup,
+    required this.onRefresh,
+    required this.onVerify,
+    required this.onContinue,
+  });
+
   final AuthController auth;
   final VoidCallback onTopup;
   final VoidCallback onRefresh;
@@ -1253,35 +1579,281 @@ class _WalletCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
+    final UmbrellaColors colors = context.colors;
+    final Color stateColor = !auth.walletLoaded
+        ? colors.textSecondary
+        : (auth.walletPaymentPending ? colors.warning : colors.success);
+    final String stateLabel = !auth.walletLoaded
+        ? 'همگام نشده'
+        : (auth.walletPaymentPending ? 'در انتظار پرداخت' : 'آماده');
+
     return GlassCard(
-      padding: AppMetrics.cardPadding, radius: AppMetrics.radiusXl,
-      child: ExpansionTile(
-        leading: Icon(Icons.account_balance_wallet_rounded, color: colors.primary),
-        title: const Text('کیف پول'),
-        subtitle: Text(auth.walletLoaded
-            ? 'موجودی مشترک: ${_walletMoney(auth.walletExactBalance)} تومان'
-            : 'مشاهده موجودی و افزایش اعتبار حساب مشترک ربات'),
+      key: const ValueKey<String>('account-wallet-card'),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
+      borderColor: colors.primary.withValues(alpha: 0.28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (!auth.walletLoaded)
-            const Padding(padding: EdgeInsets.all(AppMetrics.space3), child: Text(
-              'برای مشاهده کیف پول، حساب را به ربات متصل و وضعیت را تازه سازی کنید.'))
-          else ...<Widget>[
-            if (auth.walletPaymentPending)
-              Padding(padding: const EdgeInsets.all(AppMetrics.space3), child: Text(auth.walletTopupPending
-                ? 'درخواست شارژ ${_walletMoney(auth.walletPendingCredit)} تومان در انتظار تأیید است؛ مبلغ درگاه ${_walletMoney(auth.walletPendingAmount)} تومان. اگر مبلغ کسر شده، دوباره پرداخت نکنید.'
-                : 'یک پرداخت اشتراک در حال بررسی است؛ ابتدا آن را تکمیل یا از ربات پیگیری کنید.')),
-            Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
-              FilledButton.icon(onPressed: auth.walletBusy || auth.walletPaymentPending ? null : onTopup,
-                icon: const Icon(Icons.add_card_rounded), label: const Text('افزایش اعتبار')),
-              if (auth.walletTopupPending && auth.walletCheckoutUrl.isNotEmpty)
-                OutlinedButton(onPressed: auth.walletBusy ? null : onContinue, child: const Text('ادامه پرداخت')),
-              if (auth.walletTopupPending)
-                OutlinedButton(onPressed: auth.walletBusy ? null : onVerify, child: const Text('بررسی پرداخت')),
-            ]),
+          SectionHeader(
+            icon: Icons.account_balance_wallet_rounded,
+            title: 'کیف پول مشترک',
+            subtitle: 'موجودی قابل استفاده برای خرید اشتراک',
+            trailing: Pill(
+              label: stateLabel,
+              icon: auth.walletLoaded
+                  ? (auth.walletPaymentPending
+                      ? Icons.hourglass_top_rounded
+                      : Icons.check_circle_rounded)
+                  : Icons.sync_rounded,
+              color: stateColor,
+              dense: true,
+            ),
+          ),
+          const SizedBox(height: AppMetrics.space4),
+          Container(
+            padding: const EdgeInsets.all(AppMetrics.space4),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: <Color>[colors.primary, colors.primaryDeep],
+              ),
+              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: colors.primary.withValues(alpha: 0.2),
+                  blurRadius: AppMetrics.space5,
+                  offset: const Offset(0, AppMetrics.space2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'موجودی فعلی',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: AppMetrics.space1),
+                      Text(
+                        auth.walletLoaded
+                            ? _walletMoney(auth.walletExactBalance)
+                            : '— — —',
+                        key: const ValueKey<String>('account-wallet-balance'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
+                      const SizedBox(height: AppMetrics.space1),
+                      Text(
+                        auth.walletLoaded
+                            ? 'تومان • همگام با کیف پول ربات'
+                            : 'برای مشاهده موجودی، کیف پول را تازه سازی کنید',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppMetrics.space3),
+                Container(
+                  width: AppMetrics.iconBoxXl,
+                  height: AppMetrics.iconBoxXl,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance_wallet_rounded,
+                    color: Colors.white,
+                    size: AppMetrics.iconXl,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!auth.walletLoaded) ...<Widget>[
+            const SizedBox(height: AppMetrics.space3),
+            _WalletNotice(
+              color: colors.info,
+              icon: Icons.info_outline_rounded,
+              message:
+                  'برای استفاده از موجودی مشترک، حساب را به ربات متصل کنید و وضعیت کیف پول را تازه سازی کنید.',
+            ),
           ],
-          TextButton.icon(onPressed: auth.walletBusy ? null : onRefresh,
-            icon: const Icon(Icons.refresh_rounded), label: Text(auth.walletBusy ? 'در حال بررسی...' : 'تازه سازی موجودی')),
+          if (auth.walletPaymentPending) ...<Widget>[
+            const SizedBox(height: AppMetrics.space3),
+            _WalletNotice(
+              color: colors.warning,
+              icon: Icons.hourglass_top_rounded,
+              message: auth.walletTopupPending
+                  ? 'درخواست شارژ ${_walletMoney(auth.walletPendingCredit)} تومان در انتظار تایید است؛ مبلغ درگاه ${_walletMoney(auth.walletPendingAmount)} تومان. اگر مبلغ کسر شده، دوباره پرداخت نکنید.'
+                  : 'یک پرداخت اشتراک در حال بررسی است؛ ابتدا آن را تکمیل یا از ربات پیگیری کنید.',
+            ),
+          ],
+          const SizedBox(height: AppMetrics.space4),
+          Wrap(
+            spacing: AppMetrics.space2,
+            runSpacing: AppMetrics.space2,
+            children: <Widget>[
+              if (auth.walletLoaded)
+                GradientButton(
+                  expand: false,
+                  height: AppMetrics.controlHeightSmall,
+                  onPressed: auth.walletBusy || auth.walletPaymentPending
+                      ? null
+                      : onTopup,
+                  loading: auth.walletBusy,
+                  icon: Icons.add_card_rounded,
+                  label: 'افزایش اعتبار',
+                ),
+              if (auth.walletTopupPending &&
+                  auth.walletCheckoutUrl.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: auth.walletBusy ? null : onContinue,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('ادامه پرداخت'),
+                ),
+              if (auth.walletTopupPending)
+                OutlinedButton.icon(
+                  onPressed: auth.walletBusy ? null : onVerify,
+                  icon: const Icon(Icons.verified_rounded),
+                  label: const Text('بررسی پرداخت'),
+                ),
+              OutlinedButton.icon(
+                onPressed: auth.walletBusy ? null : onRefresh,
+                icon: auth.walletBusy
+                    ? const SizedBox.square(
+                        dimension: AppMetrics.iconSm,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(
+                  auth.walletBusy ? 'در حال بررسی...' : 'تازه سازی موجودی',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WalletNotice extends StatelessWidget {
+  const _WalletNotice({
+    required this.color,
+    required this.icon,
+    required this.message,
+  });
+
+  final Color color;
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppMetrics.space3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(icon, size: AppMetrics.iconSm, color: color),
+          const SizedBox(width: AppMetrics.space2),
+          Expanded(
+            child: Text(
+              Fa.num(message),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textPrimary,
+                    height: 1.55,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveSubscriptionCard extends StatelessWidget {
+  const _ActiveSubscriptionCard({
+    required this.account,
+    required this.expiry,
+    required this.daysLeft,
+  });
+
+  final Account account;
+  final DateTime? expiry;
+  final int daysLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String expiryLabel = expiry == null
+        ? 'بدون محدودیت زمانی'
+        : (daysLeft > 0
+            ? '${Fa.grouped(daysLeft)} روز باقی مانده'
+            : Fa.spanFa(account.remainingDuration()));
+
+    return GlassCard(
+      key: const ValueKey<String>('account-active-subscription'),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
+      borderColor: colors.success.withValues(alpha: 0.36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SectionHeader(
+            icon: Icons.verified_user_rounded,
+            accent: colors.success,
+            title: 'اشتراک شما فعال است',
+            subtitle: 'پلن فعلی آماده استفاده است',
+            trailing: Pill(
+              label: 'فعال',
+              icon: Icons.check_circle_rounded,
+              color: colors.success,
+              dense: true,
+            ),
+          ),
+          const Divider(height: AppMetrics.space5),
+          InfoRow(
+            icon: Icons.category_rounded,
+            label: 'نوع بسته',
+            value: account.packageDurationLabel,
+          ),
+          const Divider(height: AppMetrics.space2),
+          InfoRow(
+            icon: Icons.event_available_rounded,
+            label: 'اعتبار باقی مانده',
+            value: expiryLabel,
+            valueColor: colors.success,
+          ),
+          const Divider(height: AppMetrics.space2),
+          InfoRow(
+            icon: Icons.data_usage_rounded,
+            label: 'حجم قابل استفاده',
+            value: account.unlimited ? 'نامحدود' : Fa.gb(account.remainingGb),
+          ),
         ],
       ),
     );

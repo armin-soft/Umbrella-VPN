@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
-import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/settings_controller.dart';
 import 'common.dart';
@@ -17,30 +15,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
     final SettingsController controller = context.watch<SettingsController>();
     final AppSettings settings = controller.settings;
     final UmbrellaColors colors = context.colors;
-    final bool chainActive = settings.chain.enabled;
     final bool hasRules = settings.appRoutes.isNotEmpty;
-
-    final Widget chainCard = _FeatureCard(
-      icon: Icons.hub_rounded,
-      accent: chainActive ? colors.success : colors.primary,
-      title: 'وارپ و اتصال زنجیره ای',
-      badge: settings.chain.position.label,
-      badgeActive: chainActive,
-      subtitle:
-          'عبور ترکیبی ترافیک از مسیر آمبرلا و واسط وارپ یا سایفون در اتصال بعدی',
-      actionLabel: 'تنظیم زنجیره',
-      actionIcon: Icons.link_rounded,
-      onAction: () async {
-        final ChainSettings? next = await showDialog<ChainSettings>(
-          context: context,
-          builder: (BuildContext context) =>
-              ChainSettingsDialog(initial: settings.chain),
-        );
-        if (next != null) {
-          await controller.setChain(next);
-        }
-      },
-    );
 
     final Widget routesCard = _FeatureCard(
       icon: Icons.apps_rounded,
@@ -59,165 +34,134 @@ class AdvancedNetworkSettings extends StatelessWidget {
           : () => _editRule(context, controller),
     );
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool twoCols =
-            constraints.maxWidth >= AppMetrics.breakpointCompact;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (twoCols)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        routesCard,
+        if (hasRules) ...<Widget>[
+          const SizedBox(height: AppMetrics.space3),
+          for (int i = 0; i < settings.appRoutes.length; i++)
+            Container(
+              margin: const EdgeInsets.only(bottom: AppMetrics.space2),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space4,
+                vertical: AppMetrics.space2,
+              ),
+              decoration: BoxDecoration(
+                color: colors.surfaceHigh.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                border: Border.all(color: colors.border),
+              ),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space1,
                 children: <Widget>[
-                  Expanded(child: chainCard),
-                  const SizedBox(width: AppMetrics.space4),
-                  Expanded(child: routesCard),
-                ],
-              )
-            else ...<Widget>[
-              chainCard,
-              const SizedBox(height: AppMetrics.space3),
-              routesCard,
-            ],
-            if (hasRules) ...<Widget>[
-              const SizedBox(height: AppMetrics.space3),
-              for (int i = 0; i < settings.appRoutes.length; i++)
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppMetrics.space2),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppMetrics.space4,
-                    vertical: AppMetrics.space2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceHigh.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                    border: Border.all(color: colors.border),
-                  ),
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: AppMetrics.space2,
-                    runSpacing: AppMetrics.space1,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(
-                            Icons.terminal_rounded,
-                            size: AppMetrics.iconSm,
-                            color: colors.textSecondary,
-                          ),
-                          const SizedBox(width: AppMetrics.space2),
-                          Text(
-                            Fa.num(settings.appRoutes[i].process),
-                            textDirection: TextDirection.ltr,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelLarge
-                                ?.copyWith(
-                                  color: colors.textPrimary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          const SizedBox(width: AppMetrics.space2),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppMetrics.space2,
-                              vertical: AppMetrics.space1,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.primary.withValues(alpha: 0.1),
-                              borderRadius:
-                                  BorderRadius.circular(AppMetrics.radiusPill),
-                            ),
-                            child: Text(
-                              settings.appRoutes[i].action.label,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                          ),
-                        ],
+                      Icon(
+                        Icons.terminal_rounded,
+                        size: AppMetrics.iconSm,
+                        color: colors.textSecondary,
                       ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Switch.adaptive(
-                            value: settings.appRoutes[i].enabled,
-                            onChanged: (bool enabled) => _saveRules(
-                              context,
-                              controller,
-                              <AppRouteRule>[
-                                for (int j = 0;
-                                    j < settings.appRoutes.length;
-                                    j++)
-                                  j == i
-                                      ? AppRouteRule(
-                                          process:
-                                              settings.appRoutes[j].process,
-                                          action: settings.appRoutes[j].action,
-                                          enabled: enabled,
-                                        )
-                                      : settings.appRoutes[j],
-                              ],
+                      const SizedBox(width: AppMetrics.space2),
+                      Text(
+                        Fa.num(settings.appRoutes[i].process),
+                        textDirection: TextDirection.ltr,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w700,
                             ),
-                          ),
-                          IconButton(
-                            tooltip: 'ویرایش قانون',
-                            icon: const Icon(
-                              Icons.edit_outlined,
-                              size: AppMetrics.iconSm,
-                            ),
-                            onPressed: () =>
-                                _editRule(context, controller, index: i),
-                          ),
-                          IconButton(
-                            tooltip: 'اولویت بالاتر',
-                            icon: const Icon(
-                              Icons.arrow_upward_rounded,
-                              size: AppMetrics.iconSm,
-                            ),
-                            onPressed: i == 0
-                                ? null
-                                : () {
-                                    final List<AppRouteRule> rules =
-                                        List<AppRouteRule>.of(
-                                      settings.appRoutes,
-                                    );
-                                    final AppRouteRule rule =
-                                        rules.removeAt(i);
-                                    rules.insert(i - 1, rule);
-                                    _saveRules(context, controller, rules);
-                                  },
-                          ),
-                          IconButton(
-                            tooltip: 'حذف قانون',
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: AppMetrics.iconSm,
-                            ),
-                            onPressed: () => _saveRules(
-                              context,
-                              controller,
-                              List<AppRouteRule>.of(settings.appRoutes)
-                                ..removeAt(i),
-                            ),
-                          ),
-                        ],
+                      ),
+                      const SizedBox(width: AppMetrics.space2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppMetrics.space2,
+                          vertical: AppMetrics.space1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.1),
+                          borderRadius:
+                              BorderRadius.circular(AppMetrics.radiusPill),
+                        ),
+                        child: Text(
+                          settings.appRoutes[i].action.label,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-            ],
-          ],
-        );
-      },
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Switch.adaptive(
+                        value: settings.appRoutes[i].enabled,
+                        onChanged: (bool enabled) => _saveRules(
+                          context,
+                          controller,
+                          <AppRouteRule>[
+                            for (int j = 0; j < settings.appRoutes.length; j++)
+                              j == i
+                                  ? AppRouteRule(
+                                      process: settings.appRoutes[j].process,
+                                      action: settings.appRoutes[j].action,
+                                      enabled: enabled,
+                                    )
+                                  : settings.appRoutes[j],
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'ویرایش قانون',
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          size: AppMetrics.iconSm,
+                        ),
+                        onPressed: () =>
+                            _editRule(context, controller, index: i),
+                      ),
+                      IconButton(
+                        tooltip: 'اولویت بالاتر',
+                        icon: const Icon(
+                          Icons.arrow_upward_rounded,
+                          size: AppMetrics.iconSm,
+                        ),
+                        onPressed: i == 0
+                            ? null
+                            : () {
+                                final List<AppRouteRule> rules =
+                                    List<AppRouteRule>.of(settings.appRoutes);
+                                final AppRouteRule rule = rules.removeAt(i);
+                                rules.insert(i - 1, rule);
+                                _saveRules(context, controller, rules);
+                              },
+                      ),
+                      IconButton(
+                        tooltip: 'حذف قانون',
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: AppMetrics.iconSm,
+                        ),
+                        onPressed: () => _saveRules(
+                          context,
+                          controller,
+                          List<AppRouteRule>.of(settings.appRoutes)
+                            ..removeAt(i),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ],
     );
   }
 
@@ -358,254 +302,6 @@ class _FeatureCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class ChainSettingsDialog extends StatefulWidget {
-  const ChainSettingsDialog({super.key, required this.initial});
-  final ChainSettings initial;
-  @override
-  State<ChainSettingsDialog> createState() => _ChainSettingsDialogState();
-}
-
-class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
-  late ChainPosition position;
-  late ChainTransport transport;
-  late WarpEndpoint endpoint;
-  late String masqueProtocol, region;
-  late bool searchNoise;
-  final Map<String, TextEditingController> fields =
-      <String, TextEditingController>{};
-  String? error;
-
-  @override
-  void initState() {
-    super.initState();
-    final ChainSettings initial = widget.initial;
-    position = initial.position;
-    transport = initial.transport;
-    endpoint = initial.endpoint;
-    masqueProtocol = initial.masqueProtocol;
-    region = initial.psiphonRegion;
-    searchNoise = initial.searchNoise;
-    final Map<String, String> values = <String, String>{
-      'address': initial.address,
-      'port': '${initial.port}',
-      'mtu': '${initial.mtu}',
-      'scanCount': '${initial.scanCount}',
-      'scanConcurrency': '${initial.scanConcurrency}',
-      'scanTimeout': '${initial.scanTimeout}',
-      'scanMaxRtt': '${initial.scanMaxRtt}',
-      'license': initial.licenseKey,
-    };
-    for (final MapEntry<String, String> entry in values.entries) {
-      fields[entry.key] = TextEditingController(
-        text: entry.key == 'license' ? entry.value : Fa.num(entry.value),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final TextEditingController controller in fields.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  Widget _choice<T>(
-    String label,
-    T value,
-    Map<T, String> items,
-    ValueChanged<T> changed,
-  ) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: AppMetrics.space3),
-        child: DropdownButtonFormField<T>(
-          initialValue: value,
-          isExpanded: true,
-          dropdownColor: context.colors.surface,
-          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-          decoration: InputDecoration(labelText: label),
-          items: items.entries
-              .map(
-                (MapEntry<T, String> entry) => DropdownMenuItem<T>(
-                  value: entry.key,
-                  child: Text(entry.value, overflow: TextOverflow.ellipsis),
-                ),
-              )
-              .toList(),
-          onChanged: (T? value) {
-            if (value != null) setState(() => changed(value));
-          },
-        ),
-      );
-
-  Widget _field(
-    String id,
-    String label, {
-    bool number = false,
-    bool secret = false,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: AppMetrics.space3),
-        child: TextField(
-          key: ValueKey<String>('chain-$id'),
-          controller: fields[id],
-          obscureText: secret,
-          keyboardType: number ? TextInputType.number : TextInputType.text,
-          textDirection: TextDirection.ltr,
-          inputFormatters: secret
-              ? null
-              : const <TextInputFormatter>[PersianDigitsFormatter()],
-          decoration: InputDecoration(labelText: label),
-        ),
-      );
-
-  int _int(String key) => int.tryParse(Fa.toEn(fields[key]!.text)) ?? -1;
-
-  void _save() {
-    final ChainSettings next = ChainSettings(
-      position: position,
-      transport: transport,
-      endpoint: endpoint,
-      address: Fa.toEn(fields['address']!.text.trim()),
-      port: _int('port'),
-      mtu: _int('mtu'),
-      scanCount: _int('scanCount'),
-      scanConcurrency: _int('scanConcurrency'),
-      scanTimeout: _int('scanTimeout'),
-      scanMaxRtt: _int('scanMaxRtt'),
-      searchNoise: searchNoise,
-      masqueProtocol: masqueProtocol,
-      licenseKey: fields['license']!.text.trim(),
-      psiphonRegion: region,
-    );
-    final String? validation = next.enabled ? next.validationError : null;
-    if (validation != null) {
-      setState(() => error = validation);
-      return;
-    }
-    Navigator.of(context).pop(next);
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('وارپ و زنجیره اتصال'),
-        content: SizedBox(
-          width: AppMetrics.dialogMaxWidth,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  'تنظیمات در اتصال بعدی اعمال می شوند و همراه اشتراک آمبرلا کار می کنند.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: AppMetrics.space4),
-                _choice<ChainPosition>(
-                  'ترتیب عبور ترافیک',
-                  position,
-                  <ChainPosition, String>{
-                    for (final ChainPosition item in ChainPosition.values)
-                      item: item.label,
-                  },
-                  (ChainPosition value) => position = value,
-                ),
-                if (position != ChainPosition.off) ...<Widget>[
-                  _choice<ChainTransport>(
-                    'نوع واسط',
-                    transport,
-                    <ChainTransport, String>{
-                      for (final ChainTransport item in ChainTransport.values)
-                        item: item.label,
-                    },
-                    (ChainTransport value) => transport = value,
-                  ),
-                  if (transport == ChainTransport.psiphon)
-                    _choice<String>(
-                      'منطقه سایفون',
-                      region,
-                      ChainSettings.regionLabels,
-                      (String value) => region = value,
-                    )
-                  else ...<Widget>[
-                    _choice<WarpEndpoint>(
-                      'منبع نقطه اتصال',
-                      endpoint,
-                      const <WarpEndpoint, String>{
-                        WarpEndpoint.assigned: 'اختصاص یافته کلادفلر',
-                        WarpEndpoint.scan: 'اسکن توسط هسته',
-                        WarpEndpoint.custom: 'نشانی آی پی مشخص',
-                      },
-                      (WarpEndpoint value) => endpoint = value,
-                    ),
-                    if (endpoint == WarpEndpoint.custom) ...<Widget>[
-                      _field('address', 'نشانی آی پی نقطه اتصال'),
-                      _field('port', 'پورت نقطه اتصال', number: true),
-                    ],
-                    if (endpoint == WarpEndpoint.scan) ...<Widget>[
-                      Padding(
-                        padding:
-                            const EdgeInsets.only(bottom: AppMetrics.space3),
-                        child: Text(
-                          'اسکن فقط قبل از سرور آمبرلا پشتیبانی می شود.',
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                      ),
-                      _field('scanCount', 'حداکثر تعداد آی پی (۱ تا ۲۵۶)',
-                          number: true),
-                      _field('scanConcurrency', 'اسکن همزمان (۱ تا ۳۲)',
-                          number: true),
-                      _field('scanTimeout', 'مهلت هر اسکن (میلی ثانیه)',
-                          number: true),
-                      _field('scanMaxRtt', 'حداکثر تاخیر قابل قبول (میلی ثانیه)',
-                          number: true),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('آزمایش الگوهای نویز'),
-                        value: searchNoise,
-                        onChanged: (bool value) =>
-                            setState(() => searchNoise = value),
-                      ),
-                    ],
-                    _field('mtu', 'اندازه بسته واسط؛ صفر برای پیش فرض هسته',
-                        number: true),
-                    if (transport == ChainTransport.masque ||
-                        transport == ChainTransport.automatic) ...<Widget>[
-                      _choice<String>(
-                        'نسخه انتقال در ماسک',
-                        masqueProtocol,
-                        const <String, String>{
-                          'auto': 'خودکار',
-                          'h2': 'نسخه ۲ (پایدار)',
-                          'h3': 'نسخه ۳ (سریع)',
-                        },
-                        (String value) => masqueProtocol = value,
-                      ),
-                    ],
-                    _field('license', 'کلید اشتراک وارپ پلاس (اختیاری)', secret: true),
-                  ],
-                ],
-                if (error != null)
-                  Text(
-                    error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('انصراف'),
-          ),
-          FilledButton(onPressed: _save, child: const Text('ذخیره زنجیره')),
-        ],
-      );
 }
 
 class AppRouteDialog extends StatefulWidget {

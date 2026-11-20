@@ -149,15 +149,8 @@ void main() {
     expect(reloaded.settings.gatewayBase, 'https://account.example');
   });
   for (final Brightness brightness in Brightness.values) {
-    testWidgets('chain and route dialogs validate in RTL $brightness', (WidgetTester tester) async {
+    testWidgets('route dialog validates in RTL $brightness', (WidgetTester tester) async {
       final ThemeData theme = brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light();
-      await tester.pumpWidget(MaterialApp(theme: theme, home: const Directionality(
-        textDirection: TextDirection.rtl,
-        child: Scaffold(body: ChainSettingsDialog(initial: ChainSettings(position: ChainPosition.unblocker))),
-      )));
-      await tester.pumpAndSettle();
-      expect(find.text('وارپ و زنجیره اتصال'), findsOneWidget);
-      expect(tester.takeException(), isNull);
       await tester.pumpWidget(MaterialApp(theme: theme, home: const Directionality(
         textDirection: TextDirection.rtl, child: Scaffold(body: AppRouteDialog()),
       )));
@@ -582,8 +575,9 @@ void main() {
     expect(find.text('پشته کارت شبکه تونل'), findsOneWidget);
     expect(find.text('اندازه بسته تونل'), findsOneWidget);
     expect(find.text('دی ان اس ترافیک تونل'), findsOneWidget);
-    expect(find.text('وارپ و اتصال زنجیره ای'), findsOneWidget);
+    expect(find.text('قوانین مسیریابی برنامه ها'), findsOneWidget);
     expect(find.text('مسیریابی برنامه های ویندوز'), findsOneWidget);
+    expect(find.text('وارپ و اتصال زنجیره ای'), findsNothing);
   });
 
   test('AppLogger.redact strips server hosts, ports, protocols, IPs and subscription URLs', () {

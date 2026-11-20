@@ -98,10 +98,6 @@ class ConnectionPage extends StatelessWidget {
           ),
           const SizedBox(height: AppMetrics.space4),
 
-          if (connected && vpn.activeChain.enabled) Padding(
-            padding: const EdgeInsets.only(bottom: AppMetrics.space4),
-            child: Text('زنجیره فعال: ${vpn.activeChain.position.label} — ${vpn.activeChain.transport.label}'),
-          ),
           const SpeedTestCard(),
           const SizedBox(height: AppMetrics.space4),
 

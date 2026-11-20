@@ -843,16 +843,16 @@ void main() {
       expect(RegExp(r'^\d{4}-\d{4}$').hasMatch(generated), isTrue);
       expect(RegExp(r'^[۰-۹]{4}-[۰-۹]{4}$').hasMatch(Fa.num(generated)), isTrue);
 
-      // ۶. در پنجره تنظیمات، گزینه ها مستقیم دیده می شوند و مسیرهای زنجیره منوی بازشو ندارند.
+      // ۶. پنجره تنظیمات اتصال فقط حالت سرویس و اشتراک شبکه محلی را نشان می دهد.
       final String quickPanel =
           File('lib/ui/widgets/quick_connection_panel.dart').readAsStringSync();
       expect(quickPanel.contains('_expanded'), isFalse);
       expect(quickPanel.contains('quick-panel-toggle'), isFalse);
       expect(quickPanel.contains('MenuAnchor('), isFalse);
-      expect(quickPanel.contains('ChoiceChip('), isTrue);
-      expect(quickPanel.contains('quick-extra-security'), isTrue);
-      expect(quickPanel.contains('quick-proxy-unblocker'), isTrue);
-      expect(quickPanel.contains('quick-chain-settings'), isTrue);
+      expect(quickPanel.contains('ChoiceChip('), isFalse);
+      expect(quickPanel.contains('quick-extra-security'), isFalse);
+      expect(quickPanel.contains('quick-proxy-unblocker'), isFalse);
+      expect(quickPanel.contains('quick-chain-settings'), isFalse);
       expect(quickPanel.contains('PopupMenuButton'), isFalse);
       expect(quickPanel.contains('chevron_right_rounded'), isFalse);
 
