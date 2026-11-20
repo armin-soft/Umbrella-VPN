@@ -18,12 +18,11 @@ import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 import '../widgets/quick_connection_panel.dart';
 
-/// صفحه اتصال: یک نگاه، یک دکمه و پنل تنظیمات سریع در همان صفحه.
+/// صفحه اصلی اتصال؛ وضعیت و کنترل اتصال را در اولویت نگه می دارد.
 ///
-/// کارت اتصال تمام ارتفاع صفحه را می گیرد، دکمه بزرگ اتصال در مرکز آن قرار دارد،
-/// در زیر دکمه پنل کنترل سریع (`پروکسی` / `پروکسی سیستم` / `VPN`، اشتراک گذاری
-/// اتصال با کد QR، امنیت بیشتر و رفع فیلتر پروکسی) چیده شده و آمار زنده اتصال
-/// در نوار پایینی نمایش داده می شود.
+/// گزینه های جانبی اتصال از دکمه اختصاصی باز می شوند تا صفحه اصلی خلوت بماند؛
+/// تمام حالت های سرویس، اشتراک گذاری شبکه، زنجیره و مسیرهای اتصال در همان
+/// پنجره تنظیمات در دسترس هستند.
 class ConnectPage extends StatefulWidget {
   const ConnectPage({super.key, this.onOpenChainSettings});
 
@@ -213,6 +212,16 @@ class _ConnectPageState extends State<ConnectPage> {
     } else if (!outcome.cancelled) {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
+  }
+
+  void _openConnectionSettings() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) => _ConnectionSettingsDialog(
+        onOpenChainSettings: widget.onOpenChainSettings,
+      ),
+    );
   }
 
   @override
@@ -508,10 +517,18 @@ class _ConnectPageState extends State<ConnectPage> {
                           ),
                         const SizedBox(height: AppMetrics.space4),
 
-                        // ── پنل تنظیمات سریع (VPN / پروکسی، اشتراک QR، زنجیره) ──
-                        QuickConnectionPanel(
-                          enabled: !status.busy,
-                          onOpenChainSettings: widget.onOpenChainSettings,
+                        // تنظیمات جانبی فقط با درخواست کاربر باز می شوند؛
+                        // کنترل اصلی اتصال در همین صفحه بدون تغییر می ماند.
+                        SizedBox(
+                          width: AppMetrics.controlMaxWidth,
+                          child: OutlinedButton.icon(
+                            key: const ValueKey<String>(
+                              'connection-settings-button',
+                            ),
+                            onPressed: _openConnectionSettings,
+                            icon: const Icon(Icons.tune_rounded),
+                            label: const Text('تنظیمات اتصال'),
+                          ),
                         ),
                       ],
                     ),
@@ -525,6 +542,47 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
         );
       },
+    );
+  }
+}
+
+/// پنل پیکربندی روی صفحه اصلی؛ تمام کنترل ها همان ویجت مشترک را به کار می برند.
+class _ConnectionSettingsDialog extends StatelessWidget {
+  const _ConnectionSettingsDialog({this.onOpenChainSettings});
+
+  final VoidCallback? onOpenChainSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = !context.watch<VpnController>().status.busy;
+    return Dialog(
+      key: const ValueKey<String>('connection-settings-dialog'),
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space4,
+        vertical: AppMetrics.space4,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: AppMetrics.dialogMaxWidth,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppMetrics.space1),
+          child: QuickConnectionPanel(
+            enabled: enabled,
+            onClose: () => Navigator.of(context).pop(),
+            onOpenChainSettings: onOpenChainSettings == null
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    onOpenChainSettings!.call();
+                  },
+          ),
+        ),
+      ),
     );
   }
 }

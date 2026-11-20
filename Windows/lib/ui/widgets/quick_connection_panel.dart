@@ -10,17 +10,19 @@ import '../../vpn/vpn_controller.dart';
 import 'common.dart';
 import 'lan_sharing_dialog.dart';
 
-/// تنظیمات سریع اتصال، به صورت مستقیم و بدون باز کردن زیرمنو نمایش داده می شوند:
-/// حالت سرویس، اشتراک گذاری شبکه محلی، و انتخاب وارپ یا سایفون.
+/// پیکربندی اتصال در پنجره جداگانه؛ گزینه ها و مسیرهای موجود را یک جا نگه می دارد:
+/// حالت سرویس، اشتراک گذاری شبکه محلی، امنیت بیشتر و رفع فیلتر پروکسی.
 class QuickConnectionPanel extends StatelessWidget {
   const QuickConnectionPanel({
     super.key,
     required this.enabled,
     this.onOpenChainSettings,
+    this.onClose,
   });
 
   final bool enabled;
   final VoidCallback? onOpenChainSettings;
+  final VoidCallback? onClose;
 
   Future<void> _selectServiceMode(
     SettingsController settings,
@@ -95,16 +97,22 @@ class QuickConnectionPanel extends StatelessWidget {
                     child: SectionHeader(
                       icon: Icons.tune_rounded,
                       title: 'تنظیمات اتصال',
-                      subtitle: 'گزینه ها مستقیم و یک جا در همین صفحه هستند',
+                      subtitle: 'حالت سرویس، شبکه محلی و مسیر زنجیره اتصال',
                     ),
                   ),
                   if (onOpenChainSettings != null)
                     IconButton(
                       key: const ValueKey<String>('quick-chain-settings'),
                       tooltip: Fa.num('تنظیمات پیشرفته زنجیره'),
-                      onPressed:
-                          enabled ? onOpenChainSettings : null,
+                      onPressed: enabled ? onOpenChainSettings : null,
                       icon: const Icon(Icons.settings_suggest_rounded),
+                    ),
+                  if (onClose != null)
+                    IconButton(
+                      key: const ValueKey<String>('quick-settings-close'),
+                      tooltip: Fa.num('بستن تنظیمات اتصال'),
+                      onPressed: onClose,
+                      icon: const Icon(Icons.close_rounded),
                     ),
                 ],
               ),

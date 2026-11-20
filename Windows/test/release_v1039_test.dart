@@ -843,7 +843,7 @@ void main() {
       expect(RegExp(r'^\d{4}-\d{4}$').hasMatch(generated), isTrue);
       expect(RegExp(r'^[۰-۹]{4}-[۰-۹]{4}$').hasMatch(Fa.num(generated)), isTrue);
 
-      // ۶. گزینه های اتصال همیشه مستقیم دیده می شوند و انتخاب های زنجیره منوی بازشو ندارند.
+      // ۶. در پنجره تنظیمات، گزینه ها مستقیم دیده می شوند و مسیرهای زنجیره منوی بازشو ندارند.
       final String quickPanel =
           File('lib/ui/widgets/quick_connection_panel.dart').readAsStringSync();
       expect(quickPanel.contains('_expanded'), isFalse);

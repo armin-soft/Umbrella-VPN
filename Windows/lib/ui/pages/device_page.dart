@@ -311,6 +311,8 @@ class _DevicePageState extends State<DevicePage> {
         children: <Widget>[
           PageHeader(
             title: 'دستگاه من',
+            eyebrow: 'وضعیت و مشخصات دستگاه',
+            premium: true,
             subtitle:
                 'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه محلی و شناسه این رایانه',
             icon: Icons.devices_rounded,

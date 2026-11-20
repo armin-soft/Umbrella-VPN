@@ -341,7 +341,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                         child: RepaintBoundary(
                           child: TickerMode(
                             enabled: _appVisible,
-                            child: _buildActivePage(_index),
+                            child: _index == 0
+                                ? _buildActivePage(_index)
+                                : MenuPageBackdrop(
+                                    child: _buildActivePage(_index),
+                                  ),
                           ),
                         ),
                       ),

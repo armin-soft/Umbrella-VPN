@@ -249,6 +249,8 @@ class _SettingsPageState extends State<SettingsPage> {
               children: <Widget>[
                 PageHeader(
                   title: active.title,
+                  eyebrow: 'بخش تنظیمات',
+                  premium: true,
                   subtitle: active.detailSubtitle,
                   icon: active.icon,
                   actions: <Widget>[
@@ -301,6 +303,8 @@ class _SettingsPageState extends State<SettingsPage> {
         children: <Widget>[
           const PageHeader(
             title: 'تنظیمات',
+            eyebrow: 'مرکز تنظیمات',
+            premium: true,
             subtitle:
                 'پیکربندی عمومی، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن؛ گزینه های زنجیره در صفحه اتصال هستند',
             icon: Icons.settings_rounded,

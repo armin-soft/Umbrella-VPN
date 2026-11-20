@@ -22,6 +22,7 @@ import 'package:umbrella_vpn/ui/pages/login_page.dart';
 import 'package:umbrella_vpn/ui/pages/logs_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
+import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
@@ -115,15 +116,58 @@ void main() {
                   ? page
                   : Scaffold(body: Row(children: <Widget>[
                       const SizedBox(width: AppMetrics.navWidthCompact),
-                      Expanded(child: TickerMode(enabled: false, child: page)),
+                      Expanded(
+                        child: TickerMode(
+                          enabled: false,
+                          child: page is ConnectPage
+                              ? page
+                              : MenuPageBackdrop(child: page),
+                        ),
+                      ),
                     ]))),
             )),
           ));
           await tester.pump();
+          if (page is ConnectPage) {
+            expect(find.byType(MenuPageBackdrop), findsNothing);
+          } else if (!fullWindow) {
+            expect(find.byType(MenuPageBackdrop), findsOneWidget);
+          }
           final problem = tester.takeException();
           if (problem != null) {
             final stack = problem is Error ? problem.stackTrace : null;
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
+          }
+          if (page is ConnectPage && problem == null) {
+            final Finder settingsButton = find.byKey(
+              const ValueKey<String>('connection-settings-button'),
+            );
+            expect(settingsButton, findsOneWidget);
+            expect(
+              find.byKey(const ValueKey<String>('connection-settings-dialog')),
+              findsNothing,
+            );
+            await tester.ensureVisible(settingsButton);
+            await tester.tap(settingsButton);
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(const ValueKey<String>('connection-settings-dialog')),
+              findsOneWidget,
+            );
+            expect(
+              find.byKey(const ValueKey<String>('quick-settings-close')),
+              findsOneWidget,
+            );
+            final dialogProblem = tester.takeException();
+            if (dialogProblem != null) {
+              problems.add(
+                'Connection settings dialog at $size / $textScale: $dialogProblem',
+              );
+            }
+            await tester.tap(
+              find.byKey(const ValueKey<String>('quick-settings-close')),
+            );
+            await tester.pumpAndSettle();
           }
         }
         await tester.pumpWidget(const SizedBox());

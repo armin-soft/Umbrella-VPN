@@ -93,6 +93,8 @@ class _UpdatesPageState extends State<UpdatesPage> {
         children: <Widget>[
           PageHeader(
             title: 'به روز رسانی',
+            eyebrow: 'به روز رسانی برنامه',
+            premium: true,
             subtitle: Fa.num(
               'نسخه نصب شده ${AppConfig.version}  •  کانال ${updates.channel.label}'
               '${updates.lastCheckedAt != null ? '  •  آخرین بررسی ${Fa.relative(updates.lastCheckedAt)}' : ''}',

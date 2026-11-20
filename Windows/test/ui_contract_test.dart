@@ -857,12 +857,13 @@ void main() {
       }
     });
 
-    test('منوی منطقه و سرورها از صفحه اتصال کامل حذف شده و دو گزینه اتصال مرتب اند', () {
+    test('تنظیمات اتصال در دیالوگ جدا باز می شود و منوی منطقه از اتصال حذف است', () {
       final String connect = read('lib/ui/pages/connect_page.dart');
       expect(connect.contains('منطقه و سرورها'), isFalse);
       expect(connect.contains('_RegionProxyDialog'), isFalse);
       expect(connect.contains('_pickServerRegion'), isFalse);
-      expect(connect.contains('showDialog'), isFalse);
+      expect(connect.contains('_ConnectionSettingsDialog'), isTrue);
+      expect(connect.contains('connection-settings-dialog'), isTrue);
       expect(connect.contains('_ConnectionModeDialog'), isFalse);
       expect(connect.contains('_ModeDialog'), isFalse);
       expect(connect.contains('QuickConnectionPanel('), isTrue);

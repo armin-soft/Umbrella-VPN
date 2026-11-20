@@ -167,6 +167,7 @@ void main() {
             child: Scaffold(body: Padding(
               padding: AppMetrics.pagePadding,
               child: PageHeader(title: 'تنظیمات شبکه',
+                eyebrow: 'مرکز تنظیمات', premium: true,
                 subtitle: 'تنظیمات شبکه و ورودی برای دستگاه',
                 icon: Icons.settings_rounded,
                 actions: [OutlinedButton.icon(onPressed: () {},

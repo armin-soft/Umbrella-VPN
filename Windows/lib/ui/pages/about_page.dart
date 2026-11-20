@@ -25,6 +25,8 @@ class AboutPage extends StatelessWidget {
         children: <Widget>[
           const PageHeader(
             title: 'درباره',
+            eyebrow: 'درباره آمبرلا',
+            premium: true,
             subtitle: 'مشخصات نسخه، راه های ارتباط با پشتیبانی و بررسی دسترسی',
             icon: Icons.info_rounded,
           ),

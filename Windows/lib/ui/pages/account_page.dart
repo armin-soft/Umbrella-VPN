@@ -520,6 +520,8 @@ class _AccountPageState extends State<AccountPage> {
         children: <Widget>[
           const PageHeader(
             title: 'حساب من',
+            eyebrow: 'حساب و سرویس',
+            premium: true,
             subtitle:
                 'پایش زنده حجم مصرفی، تقویم دقیق شمسی سرویس و مشخصات حساب کاربری',
             icon: Icons.person_rounded,

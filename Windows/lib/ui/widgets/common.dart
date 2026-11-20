@@ -179,11 +179,71 @@ class GradientButton extends StatelessWidget {
   }
 }
 
-/// سرصفحه یکدست همه صفحه ها: نشان، عنوان، زیرعنوان و دکمه های سمت چپ.
+/// پس زمینه مشترک صفحه های مدیریتی؛ اتصال عمداً ظاهر مستقل خود را دارد.
+class MenuPageBackdrop extends StatelessWidget {
+  const MenuPageBackdrop({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        Positioned(
+          top: -AppMetrics.space10 * 3,
+          right: -AppMetrics.space10 * 2,
+          width: 540,
+          height: 540,
+          child: IgnorePointer(
+            child: ExcludeSemantics(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: <Color>[
+                      colors.primary.withValues(alpha: 0.11),
+                      colors.primary.withValues(alpha: 0),
+                    ],
+                    stops: const <double>[0, 1],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: -AppMetrics.space10 * 4,
+          left: -AppMetrics.space10 * 3,
+          width: 620,
+          height: 620,
+          child: IgnorePointer(
+            child: ExcludeSemantics(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: <Color>[
+                      colors.info.withValues(alpha: 0.055),
+                      colors.info.withValues(alpha: 0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(child: child),
+      ],
+    );
+  }
+}
+
+/// سربرگ یکدست و حرفه ای منوها: نشان صفحه، مسیر، عنوان، توضیح و عملیات.
 ///
-/// پیش از این هر صفحه سرصفحه خودش را با فاصله ها و اندازه های کمی متفاوت
-/// می ساخت؛ نتیجه اش این بود که منوها «یکسان» به نظر نمی رسیدند. همه صفحه ها
-/// حالا از همین یک ویجت استفاده می کنند.
+/// اتصال از قاب هویتی خودش استفاده می کند؛ این قطعه فقط برای منوهای مدیریتی
+/// به کار می رود تا همه آن ها وزن بصری، فاصله و سلسله مراتب یکسان داشته باشند.
 class PageHeader extends StatelessWidget {
   const PageHeader({
     super.key,
@@ -191,19 +251,113 @@ class PageHeader extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.actions = const <Widget>[],
+    this.eyebrow = 'مرکز مدیریت آمبرلا',
+    this.premium = false,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
   final List<Widget> actions;
+  final String eyebrow;
+  final bool premium;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    return LayoutBuilder(
+    if (!premium) {
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool narrow = constraints.maxWidth <
+              math.max(AppMetrics.breakpointCompact, 620 * textScale);
+          final Widget text = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                Fa.num(title),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              if (subtitle != null) ...<Widget>[
+                const SizedBox(height: AppMetrics.space1),
+                Text(
+                  Fa.num(subtitle!),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.7,
+                      ),
+                ),
+              ],
+            ],
+          );
+          final Widget mark = icon == null
+              ? const SizedBox.shrink()
+              : Container(
+                  width: AppMetrics.iconBoxXl,
+                  height: AppMetrics.iconBoxXl,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+                    color: colors.primary.withValues(alpha: 0.14),
+                    border: Border.all(
+                      color: colors.primary.withValues(alpha: 0.32),
+                    ),
+                  ),
+                  child: Icon(icon, size: AppMetrics.iconLg, color: colors.primary),
+                );
+          final Widget heading = Row(
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                mark,
+                const SizedBox(width: AppMetrics.space4),
+              ],
+              Expanded(child: text),
+            ],
+          );
+          if (actions.isEmpty) {
+            return ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: AppMetrics.controlHeight,
+              ),
+              child: heading,
+            );
+          }
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                heading,
+                const SizedBox(height: AppMetrics.space3),
+                Wrap(
+                  spacing: AppMetrics.space3,
+                  runSpacing: AppMetrics.space3,
+                  children: actions,
+                ),
+              ],
+            );
+          }
+          return ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: AppMetrics.controlHeight,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Expanded(child: heading),
+                const SizedBox(width: AppMetrics.space3),
+                ...actions,
+              ],
+            ),
+          );
+        },
+      );
+    }
+    final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // Actions must not squeeze or overflow the heading at large text scales.
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool narrow = constraints.maxWidth <
             math.max(AppMetrics.breakpointCompact, 620 * textScale);
@@ -211,21 +365,53 @@ class PageHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: AppMetrics.space2,
+                  height: AppMetrics.space2,
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: colors.primary.withValues(alpha: 0.38),
+                        blurRadius: AppMetrics.space3,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppMetrics.space2),
+                Text(
+                  Fa.num(eyebrow),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.35,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppMetrics.space1),
             Text(
               Fa.num(title),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: colors.textPrimary,
                     fontWeight: FontWeight.w900,
+                    height: 1.15,
                   ),
             ),
-            if (subtitle != null) ...<Widget>[
+            if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
               const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num(subtitle!),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textSecondary,
-                      height: 1.7,
+                      height: 1.65,
                     ),
               ),
             ],
@@ -234,16 +420,27 @@ class PageHeader extends StatelessWidget {
         final Widget mark = icon == null
             ? const SizedBox.shrink()
             : Container(
-                width: AppMetrics.iconBoxXl,
-                height: AppMetrics.iconBoxXl,
+                width: AppMetrics.iconBoxHero,
+                height: AppMetrics.iconBoxHero,
                 decoration: BoxDecoration(
+                  gradient: context.brandGradient,
                   borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-                  color: colors.primary.withValues(alpha: 0.14),
                   border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.32),
+                    color: Colors.white.withValues(alpha: 0.22),
                   ),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: colors.primary.withValues(alpha: 0.2),
+                      blurRadius: AppMetrics.space5,
+                      offset: const Offset(0, AppMetrics.space2),
+                    ),
+                  ],
                 ),
-                child: Icon(icon, size: AppMetrics.iconLg, color: colors.primary),
+                child: Icon(
+                  icon,
+                  size: AppMetrics.iconXl,
+                  color: colors.onPrimary,
+                ),
               );
         final Widget heading = Row(
           children: <Widget>[
@@ -257,7 +454,7 @@ class PageHeader extends StatelessWidget {
         if (actions.isEmpty) {
           return ConstrainedBox(
             constraints: const BoxConstraints(
-              minHeight: AppMetrics.controlHeight,
+              minHeight: AppMetrics.iconBoxHero,
             ),
             child: heading,
           );
@@ -269,8 +466,8 @@ class PageHeader extends StatelessWidget {
               heading,
               const SizedBox(height: AppMetrics.space3),
               Wrap(
-                spacing: AppMetrics.space3,
-                runSpacing: AppMetrics.space3,
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
                 children: actions,
               ),
             ],
@@ -278,7 +475,7 @@ class PageHeader extends StatelessWidget {
         }
         return ConstrainedBox(
           constraints: const BoxConstraints(
-            minHeight: AppMetrics.controlHeight,
+            minHeight: AppMetrics.iconBoxHero,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -290,6 +487,43 @@ class PageHeader extends StatelessWidget {
           ),
         );
       },
+    );
+
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      radius: AppMetrics.radiusXl,
+      borderColor: colors.primary.withValues(alpha: 0.24),
+      gradient: LinearGradient(
+        begin: AlignmentDirectional.centerStart,
+        end: AlignmentDirectional.centerEnd,
+        colors: <Color>[
+          Color.alphaBlend(
+            colors.primary.withValues(alpha: 0.085),
+            colors.surface,
+          ),
+          colors.surface,
+        ],
+      ),
+      child: Stack(
+        children: <Widget>[
+          PositionedDirectional(
+            start: 0,
+            top: AppMetrics.space4,
+            bottom: AppMetrics.space4,
+            child: Container(
+              width: AppMetrics.space1,
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppMetrics.space4),
+            child: content,
+          ),
+        ],
+      ),
     );
   }
 }

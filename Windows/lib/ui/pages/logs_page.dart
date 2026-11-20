@@ -62,6 +62,8 @@ class _LogsPageState extends State<LogsPage> {
       children: <Widget>[
           PageHeader(
             title: 'گزارش ها',
+            eyebrow: 'گزارش و عیب یابی',
+            premium: true,
             subtitle: 'همه رویدادها، خطاها و هشدارها با تاریخ و ساعت؛ برای پیگیری مشکل اتصال.',
             icon: Icons.receipt_long_rounded,
             actions: <Widget>[
