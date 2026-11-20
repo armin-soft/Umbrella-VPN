@@ -138,7 +138,7 @@ void main() {
                 subtitle: 'تنظیمات شبکه و ورودی برای دستگاه',
                 icon: Icons.settings_rounded,
                 actions: [OutlinedButton.icon(onPressed: () {},
-                  icon: const Icon(Icons.arrow_back_rounded), child: const Text('بازگشت به تنظیمات'))]),
+                  icon: const Icon(Icons.arrow_back_rounded), label: const Text('بازگشت به تنظیمات'))]),
             )),
           ),
         ),
