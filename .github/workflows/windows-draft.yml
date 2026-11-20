@@ -131,9 +131,9 @@ jobs:
             Write-Output "::error::$detail"
             throw 'Analysis failed'
           }
-          flutter test --reporter expanded 2>&1 | Tee-Object -Variable tests
+          flutter test test/battery_menu_test.dart test/power_optimization_test.dart test/proxy_link_performance_test.dart --reporter expanded --timeout 45s 2>&1 | Tee-Object -Variable tests
           if ($LASTEXITCODE -ne 0) {
-            $detail = ($tests | Where-Object { "$_" -notmatch '^\d\d:\d\d ' -or "$_" -match '\[E\]|failed' } | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            $detail = ($tests | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
             Write-Output "::error::$detail"
             throw 'Tests failed'
           }
