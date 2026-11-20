@@ -13,9 +13,15 @@ on:
         options:
           - draft
           - artifact
+          - artifact_transfer
           - beta
           - release
           - both
+      artifact_run:
+        description: 'Run ID for an existing installer artifact (transfer only)'
+        required: false
+        default: ''
+        type: string
       beta_number:
         description: 'Beta sequence number when channel is beta (e.g. 1)'
         required: false
@@ -23,11 +29,13 @@ on:
         type: string
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: windows-installer-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   telegram-bot:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact_transfer') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -92,6 +100,33 @@ jobs:
             fi
             echo "$out"
           done
+  transfer-artifact:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact_transfer' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Retrieve existing installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: UmbrellaVPN-Setup-0.0.1-x64
+          run-id: ${{ inputs.artifact_run }}
+          github-token: ${{ github.token }}
+          path: installer-transfer
+      - name: Transfer installer to GitHub API as an unreferenced temporary blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find installer-transfer -maxdepth 1 -name '*.exe' -type f)
+          [ "${#files[@]}" -eq 1 ] || { echo 'Expected one installer'; exit 1; }
+          sha256=$(sha256sum "${files[0]}" | cut -d' ' -f1)
+          node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[2], JSON.stringify({content:fs.readFileSync(process.argv[1]).toString("base64"),encoding:"base64"}));' "${files[0]}" "$RUNNER_TEMP/blob.json"
+          blob=$(gh api --method POST "repos/$REPO/git/blobs" --input "$RUNNER_TEMP/blob.json" --jq .sha)
+          [[ "$blob" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          echo "::notice title=InstallerBlob::$blob"
+          echo "::notice title=InstallerSHA256::$sha256"
+          rm -f "$RUNNER_TEMP/blob.json"
   installer:
     needs: telegram-bot
     # A manually requested installer artifact can be built even when the
