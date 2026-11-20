@@ -213,8 +213,12 @@ class _ConnectPageState extends State<ConnectPage> {
 
   void _openConnectionSettings() {
     final UmbrellaColors colors = context.colors;
+    final Size viewport = MediaQuery.sizeOf(context);
+    // When a display feature splits the viewport, Flutter's RTL fallback picks
+    // the right pane; anchoring at the center avoids that directional bias.
     showModalBottomSheet<void>(
       context: context,
+      anchorPoint: Offset(viewport.width / 2, viewport.height / 2),
       useRootNavigator: true,
       useSafeArea: true,
       isScrollControlled: true,

@@ -15,6 +15,31 @@ import '../../vpn/vpn_controller.dart';
 import '../shell/app_shell.dart';
 import '../widgets/common.dart';
 
+enum _DeviceSection { overview, hardware, network, identity }
+
+extension _DeviceSectionX on _DeviceSection {
+  String get title => switch (this) {
+        _DeviceSection.overview => 'نمای کلی',
+        _DeviceSection.hardware => 'سخت افزار',
+        _DeviceSection.network => 'شبکه',
+        _DeviceSection.identity => 'هویت و امنیت',
+      };
+
+  String get detail => switch (this) {
+        _DeviceSection.overview => 'شاخص های وضعیت رایانه',
+        _DeviceSection.hardware => 'پردازنده، حافظه و سیستم عامل',
+        _DeviceSection.network => 'کارت شبکه و نشانی های فعال',
+        _DeviceSection.identity => 'شناسه دستگاه و مجوز اجرایی',
+      };
+
+  IconData get icon => switch (this) {
+        _DeviceSection.overview => Icons.dashboard_rounded,
+        _DeviceSection.hardware => Icons.memory_rounded,
+        _DeviceSection.network => Icons.lan_rounded,
+        _DeviceSection.identity => Icons.phonelink_lock_rounded,
+      };
+}
+
 /// صفحه اختصاصی «دستگاه من»: فقط اطلاعات سخت افزار، حافظه، سیستم عامل، شبکه محلی
 /// و شناسه یکتای همین رایانه (کاملاً مجزا از اطلاعات حساب کاربری و اشتراک).
 class DevicePage extends StatefulWidget {
@@ -304,307 +329,426 @@ class _DevicePageState extends State<DevicePage> {
       ),
     ];
 
-    return SingleChildScrollView(
-      padding: AppMetrics.pagePadding,
+    final Widget memoryCard = _MemoryAndStorageCard(
+      device: device,
+      hasRam: hasRam,
+      hasDisk: hasDisk,
+      ramTone: ramTone,
+      colors: colors,
+    );
+    final Widget hardwareCard = _ProcessorAndSystemCard(
+      device: device,
+      cores: cores,
+      liveUptime: liveUptime,
+      bootAt: bootAt,
+      colors: colors,
+    );
+    final Widget hardwareContent = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double scale = MediaQuery.textScalerOf(context)
+            .scale(1)
+            .clamp(1.0, 2.0)
+            .toDouble();
+        if (constraints.maxWidth / scale >= AppMetrics.breakpointColumns) {
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: memoryCard),
+                const SizedBox(width: AppMetrics.space5),
+                Expanded(child: hardwareCard),
+              ],
+            ),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            memoryCard,
+            const SizedBox(height: AppMetrics.space4),
+            hardwareCard,
+          ],
+        );
+      },
+    );
+    final Widget networkCard = GlassCard(
+      key: const ValueKey<String>('device-network-card'),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          PageHeader(
-            title: 'دستگاه من',
-            eyebrow: 'وضعیت و مشخصات دستگاه',
-            premium: true,
-            subtitle:
-                'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه محلی و شناسه این رایانه',
-            icon: Icons.devices_rounded,
-            actions: _loading
-                ? const <Widget>[
-                    SizedBox(
-                      width: AppMetrics.iconSm,
-                      height: AppMetrics.iconSm,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ]
-                : const <Widget>[],
+          SectionHeader(
+            icon: Icons.lan_rounded,
+            title: 'شبکه و رابط ارتباطی رایانه',
+            subtitle: 'وضعیت کارت شبکه فیزیکی و نشانی های فعال سیستم',
+            trailing: Pill(
+              label: hasLocalIp ? 'متصل' : 'نامشخص',
+              color: hasLocalIp ? colors.success : colors.warning,
+              dense: true,
+            ),
+          ),
+          const Divider(height: AppMetrics.space5),
+          InfoRow(
+            icon: Icons.settings_ethernet_rounded,
+            label: 'نوع کارت شبکه فعال',
+            value: device.adapterLabelFa,
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.router_rounded,
+            label: 'نشانی شبکه داخلی',
+            value: _ipLabelFa(device.localIp),
+            trailing: hasLocalIp
+                ? IconAction(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'کپی نشانی شبکه داخلی',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _copy('نشانی شبکه داخلی', device.localIp),
+                  )
+                : null,
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.travel_explore_rounded,
+            label: 'وضعیت نشانی اینترنت',
+            value: internetAddressStatus,
+            valueColor: tunnelProtected ? colors.success : colors.textPrimary,
+            trailing: (!tunnelProtected && vpn.realIp.isNotEmpty)
+                ? IconAction(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'کپی نشانی اینترنت',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _copy('نشانی اینترنت دستگاه', vpn.realIp),
+                  )
+                : null,
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.perm_device_information_rounded,
+            label: 'شناسه فیزیکی کارت شبکه',
+            value: hasMac ? 'ثبت شده و آماده کپی' : 'شناسایی نشده',
+            trailing: hasMac
+                ? IconAction(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'کپی شناسه فیزیکی کارت شبکه',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _copy('شناسه فیزیکی کارت شبکه', device.mac),
+                  )
+                : null,
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.update_rounded,
+            label: 'آخرین بررسی شبکه و سیستم',
+            value: _lastCheckedAt == null
+                ? 'در حال بررسی'
+                : Fa.tehranFullDateTime(_lastCheckedAt),
+            tooltip: true,
+          ),
+        ],
+      ),
+    );
+    final Widget identityCard = GlassCard(
+      key: const ValueKey<String>('device-identity-card'),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SectionHeader(
+            icon: Icons.phonelink_lock_rounded,
+            title: 'هویت و امنیت این دستگاه',
+            subtitle: 'شناسه سخت افزاری ویندوز و سطح مجوز اجرایی برنامه',
+            trailing: Pill(
+              label: device.machineId.isNotEmpty
+                  ? 'شناسایی شده'
+                  : 'در حال بررسی',
+              color: device.machineId.isNotEmpty
+                  ? colors.success
+                  : colors.textSecondary,
+              dense: true,
+            ),
+          ),
+          const Divider(height: AppMetrics.space5),
+          InfoRow(
+            icon: Icons.desktop_windows_rounded,
+            label: 'نام رایانه در ویندوز',
+            value: _systemNameFa(device.hostname, 'ثبت شده در ویندوز'),
+            trailing: device.hostname.isEmpty
+                ? null
+                : IconAction(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'کپی نام رایانه',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _copy('نام رایانه', device.hostname),
+                  ),
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.account_box_rounded,
+            label: 'حساب کاربری ویندوز',
+            value: _systemNameFa(device.username, 'کاربر محلی ویندوز'),
+            trailing: device.username.isEmpty
+                ? null
+                : IconAction(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'کپی نام کاربری ویندوز',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _copy('نام کاربری ویندوز', device.username),
+                  ),
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.fingerprint_rounded,
+            label: 'شناسه یکتای سخت افزاری',
+            value: _hardwareCodeFa(device.machineId),
+            trailing: device.machineId.isEmpty
+                ? null
+                : IconAction(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'کپی شناسه یکتای دستگاه',
+                    size: AppMetrics.iconBoxSm,
+                    onTap: () => _copy('شناسه یکتای دستگاه', device.machineId),
+                  ),
+          ),
+          const Divider(height: AppMetrics.space3),
+          InfoRow(
+            icon: Icons.admin_panel_settings_rounded,
+            label: 'سطح دسترسی اجرایی',
+            value: device.elevated
+                ? 'مدیر سیستم (دسترسی کامل)'
+                : 'کاربر استاندارد',
+            valueColor: device.elevated ? colors.success : colors.warning,
           ),
           const SizedBox(height: AppMetrics.space4),
-
-          // ── چهار کارت شاخص کلیدی هم اندازه سخت افزار و سیستم ──────────
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointColumns) {
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Expanded(child: summaryTiles[0]),
-                      const SizedBox(width: AppMetrics.space3),
-                      Expanded(child: summaryTiles[1]),
-                      const SizedBox(width: AppMetrics.space3),
-                      Expanded(child: summaryTiles[2]),
-                      const SizedBox(width: AppMetrics.space3),
-                      Expanded(child: summaryTiles[3]),
-                    ],
-                  ),
-                );
-              }
-              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointCompact) {
-                return Column(
-                  children: <Widget>[
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          Expanded(child: summaryTiles[0]),
-                          const SizedBox(width: AppMetrics.space3),
-                          Expanded(child: summaryTiles[1]),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppMetrics.space3),
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          Expanded(child: summaryTiles[2]),
-                          const SizedBox(width: AppMetrics.space3),
-                          Expanded(child: summaryTiles[3]),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  summaryTiles[0],
-                  const SizedBox(height: AppMetrics.space3),
-                  summaryTiles[1],
-                  const SizedBox(height: AppMetrics.space3),
-                  summaryTiles[2],
-                  const SizedBox(height: AppMetrics.space3),
-                  summaryTiles[3],
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppMetrics.space5),
-
-          // ── ردیف اول: منابع حافظه و ذخیره سازی + سخت افزار و نمایشگر ───
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final Widget memoryCard = _MemoryAndStorageCard(
-                device: device,
-                hasRam: hasRam,
-                hasDisk: hasDisk,
-                ramTone: ramTone,
-                colors: colors,
-              );
-              final Widget hardwareCard = _ProcessorAndSystemCard(
-                device: device,
-                cores: cores,
-                liveUptime: liveUptime,
-                bootAt: bootAt,
-                colors: colors,
-              );
-              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointColumns) {
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Expanded(child: memoryCard),
-                      const SizedBox(width: AppMetrics.space5),
-                      Expanded(child: hardwareCard),
-                    ],
-                  ),
-                );
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  memoryCard,
-                  const SizedBox(height: AppMetrics.space4),
-                  hardwareCard,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppMetrics.space5),
-
-          // ── ردیف دوم: رابط شبکه رایانه + شناسه و امنیت دستگاه ──────────
-          ResponsiveColumns(
-            leftFlex: 1,
-            rightFlex: 1,
-            spacing: AppMetrics.space5,
-            left: GlassCard(
-              padding: AppMetrics.cardPadding,
-              radius: AppMetrics.radiusXl,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  SectionHeader(
-                    icon: Icons.lan_rounded,
-                    title: 'شبکه و رابط ارتباطی رایانه',
-                    subtitle: 'وضعیت کارت شبکه فیزیکی و نشانی های فعال سیستم',
-                    trailing: Pill(
-                      label: hasLocalIp ? 'متصل' : 'نامشخص',
-                      color: hasLocalIp ? colors.success : colors.warning,
-                      dense: true,
-                    ),
-                  ),
-                  const Divider(height: AppMetrics.space5),
-                  InfoRow(
-                    icon: Icons.settings_ethernet_rounded,
-                    label: 'نوع کارت شبکه فعال',
-                    value: device.adapterLabelFa,
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.router_rounded,
-                    label: 'نشانی شبکه داخلی',
-                    value: _ipLabelFa(device.localIp),
-                    trailing: hasLocalIp
-                        ? IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی نشانی شبکه داخلی',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () =>
-                                _copy('نشانی شبکه داخلی', device.localIp),
-                          )
-                        : null,
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.travel_explore_rounded,
-                    label: 'وضعیت نشانی اینترنت',
-                    value: internetAddressStatus,
-                    valueColor:
-                        tunnelProtected ? colors.success : colors.textPrimary,
-                    trailing: (!tunnelProtected && vpn.realIp.isNotEmpty)
-                        ? IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی نشانی اینترنت',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () =>
-                                _copy('نشانی اینترنت دستگاه', vpn.realIp),
-                          )
-                        : null,
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.perm_device_information_rounded,
-                    label: 'شناسه فیزیکی کارت شبکه',
-                    value: hasMac ? 'ثبت شده و آماده کپی' : 'شناسایی نشده',
-                    trailing: hasMac
-                        ? IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی شناسه فیزیکی کارت شبکه',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () =>
-                                _copy('شناسه فیزیکی کارت شبکه', device.mac),
-                          )
-                        : null,
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.update_rounded,
-                    label: 'آخرین بررسی شبکه و سیستم',
-                    value: _lastCheckedAt == null
-                        ? 'در حال بررسی'
-                        : Fa.tehranFullDateTime(_lastCheckedAt),
-                    tooltip: true,
-                  ),
-                ],
+          SizedBox(
+            height: AppMetrics.controlHeightSmall,
+            child: OutlinedButton.icon(
+              icon: const Icon(
+                Icons.copy_all_rounded,
+                size: AppMetrics.iconSm,
+              ),
+              label: const Text('کپی مشخصات فنی این دستگاه'),
+              onPressed: () => _copy(
+                'مشخصات فنی دستگاه',
+                _buildDeviceReport(device, cores, liveUptime, bootAt),
               ),
             ),
-            right: GlassCard(
-              padding: AppMetrics.cardPadding,
-              radius: AppMetrics.radiusXl,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          ),
+        ],
+      ),
+    );
+
+    return DefaultTabController(
+      length: _DeviceSection.values.length,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: AppMetrics.pagePadding,
+            child: PageHeader(
+              title: 'دستگاه من',
+              eyebrow: 'وضعیت و مشخصات دستگاه',
+              premium: true,
+              subtitle:
+                  'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه محلی و شناسه این رایانه',
+              icon: Icons.devices_rounded,
+              actions: _loading
+                  ? const <Widget>[
+                      SizedBox(
+                        width: AppMetrics.iconSm,
+                        height: AppMetrics.iconSm,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ]
+                  : const <Widget>[],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppMetrics.space6,
+              right: AppMetrics.space6,
+              bottom: AppMetrics.space3,
+            ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double scale = MediaQuery.textScalerOf(context)
+                    .scale(1)
+                    .clamp(1.0, 2.0)
+                    .toDouble();
+                final bool scrollable = constraints.maxWidth / scale <
+                    AppMetrics.breakpointCompact;
+                return GlassCard(
+                  key: const ValueKey<String>('device-section-tab-card'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppMetrics.space2,
+                    vertical: AppMetrics.space1,
+                  ),
+                  radius: AppMetrics.radiusXl,
+                  child: TabBar(
+                    key: const ValueKey<String>('device-section-tabs'),
+                    isScrollable: scrollable,
+                    tabAlignment: scrollable ? TabAlignment.start : null,
+                    dividerColor: Colors.transparent,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicatorPadding: const EdgeInsets.all(AppMetrics.space1),
+                    indicator: BoxDecoration(
+                      color: colors.primary.withValues(alpha: 0.13),
+                      borderRadius:
+                          BorderRadius.circular(AppMetrics.radiusMd),
+                      border: Border.all(
+                        color: colors.primary.withValues(alpha: 0.28),
+                      ),
+                    ),
+                    labelColor: colors.primary,
+                    unselectedLabelColor: colors.textSecondary,
+                    labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                    unselectedLabelStyle:
+                        Theme.of(context).textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                    tabs: <Widget>[
+                      for (final _DeviceSection section
+                          in _DeviceSection.values)
+                        Tab(
+                          key: ValueKey<String>(
+                            'device-tab-${section.name}',
+                          ),
+                          icon: Tooltip(
+                            message: Fa.num(section.detail),
+                            child: Icon(
+                              section.icon,
+                              size: AppMetrics.iconMd,
+                            ),
+                          ),
+                          iconMargin: const EdgeInsets.only(
+                            bottom: AppMetrics.space1,
+                          ),
+                          text: Fa.num(section.title),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(
+                left: AppMetrics.space6,
+                right: AppMetrics.space6,
+                bottom: AppMetrics.space6,
+              ),
+              child: TabBarView(
                 children: <Widget>[
-                  SectionHeader(
-                    icon: Icons.phonelink_lock_rounded,
-                    title: 'هویت و امنیت این دستگاه',
-                    subtitle: 'شناسه سخت افزاری ویندوز و سطح مجوز اجرایی برنامه',
-                    trailing: Pill(
-                      label: device.machineId.isNotEmpty
-                          ? 'شناسایی شده'
-                          : 'در حال بررسی',
-                      color: device.machineId.isNotEmpty
-                          ? colors.success
-                          : colors.textSecondary,
-                      dense: true,
+                  SingleChildScrollView(
+                    key: const PageStorageKey<String>(
+                      'device-section-content-overview',
+                    ),
+                    padding: const EdgeInsets.only(
+                      bottom: AppMetrics.space4,
+                    ),
+                    child: LayoutBuilder(
+                      builder: (BuildContext context,
+                          BoxConstraints constraints) {
+                        final double scale = MediaQuery.textScalerOf(context)
+                            .scale(1)
+                            .clamp(1.0, 2.0)
+                            .toDouble();
+                        final double width = constraints.maxWidth / scale;
+                        if (width >= AppMetrics.breakpointColumns) {
+                          return IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                for (int i = 0; i < summaryTiles.length; i++)
+                                  ...<Widget>[
+                                    if (i > 0)
+                                      const SizedBox(
+                                        width: AppMetrics.space3,
+                                      ),
+                                    Expanded(child: summaryTiles[i]),
+                                  ],
+                              ],
+                            ),
+                          );
+                        }
+                        if (width >= AppMetrics.breakpointCompact) {
+                          return Column(
+                            children: <Widget>[
+                              IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: <Widget>[
+                                    Expanded(child: summaryTiles[0]),
+                                    const SizedBox(
+                                      width: AppMetrics.space3,
+                                    ),
+                                    Expanded(child: summaryTiles[1]),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: AppMetrics.space3),
+                              IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: <Widget>[
+                                    Expanded(child: summaryTiles[2]),
+                                    const SizedBox(
+                                      width: AppMetrics.space3,
+                                    ),
+                                    Expanded(child: summaryTiles[3]),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            for (int i = 0; i < summaryTiles.length; i++)
+                              ...<Widget>[
+                                if (i > 0)
+                                  const SizedBox(height: AppMetrics.space3),
+                                summaryTiles[i],
+                              ],
+                          ],
+                        );
+                      },
                     ),
                   ),
-                  const Divider(height: AppMetrics.space5),
-                  InfoRow(
-                    icon: Icons.desktop_windows_rounded,
-                    label: 'نام رایانه در ویندوز',
-                    value: _systemNameFa(device.hostname, 'ثبت شده در ویندوز'),
-                    trailing: device.hostname.isEmpty
-                        ? null
-                        : IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی نام رایانه',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () => _copy('نام رایانه', device.hostname),
-                          ),
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.account_box_rounded,
-                    label: 'حساب کاربری ویندوز',
-                    value: _systemNameFa(device.username, 'کاربر محلی ویندوز'),
-                    trailing: device.username.isEmpty
-                        ? null
-                        : IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی نام کاربری ویندوز',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () =>
-                                _copy('نام کاربری ویندوز', device.username),
-                          ),
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.fingerprint_rounded,
-                    label: 'شناسه یکتای سخت افزاری',
-                    value: _hardwareCodeFa(device.machineId),
-                    trailing: device.machineId.isEmpty
-                        ? null
-                        : IconAction(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'کپی شناسه یکتای دستگاه',
-                            size: AppMetrics.iconBoxSm,
-                            onTap: () =>
-                                _copy('شناسه یکتای دستگاه', device.machineId),
-                          ),
-                  ),
-                  const Divider(height: AppMetrics.space3),
-                  InfoRow(
-                    icon: Icons.admin_panel_settings_rounded,
-                    label: 'سطح دسترسی اجرایی',
-                    value: device.elevated
-                        ? 'مدیر سیستم (دسترسی کامل)'
-                        : 'کاربر استاندارد',
-                    valueColor:
-                        device.elevated ? colors.success : colors.warning,
-                  ),
-                  const SizedBox(height: AppMetrics.space4),
-                  SizedBox(
-                    height: AppMetrics.controlHeightSmall,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(
-                        Icons.copy_all_rounded,
-                        size: AppMetrics.iconSm,
-                      ),
-                      label: const Text('کپی مشخصات فنی این دستگاه'),
-                      onPressed: () => _copy(
-                        'مشخصات فنی دستگاه',
-                        _buildDeviceReport(device, cores, liveUptime, bootAt),
-                      ),
+                  SingleChildScrollView(
+                    key: const PageStorageKey<String>(
+                      'device-section-content-hardware',
                     ),
+                    padding: const EdgeInsets.only(
+                      bottom: AppMetrics.space4,
+                    ),
+                    child: hardwareContent,
+                  ),
+                  SingleChildScrollView(
+                    key: const PageStorageKey<String>(
+                      'device-section-content-network',
+                    ),
+                    padding: const EdgeInsets.only(
+                      bottom: AppMetrics.space4,
+                    ),
+                    child: networkCard,
+                  ),
+                  SingleChildScrollView(
+                    key: const PageStorageKey<String>(
+                      'device-section-content-identity',
+                    ),
+                    padding: const EdgeInsets.only(
+                      bottom: AppMetrics.space4,
+                    ),
+                    child: identityCard,
                   ),
                 ],
               ),

@@ -1,3 +1,5 @@
+import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -78,6 +80,9 @@ void main() {
       testWidgets('desktop screens at $size, text $textScale', (tester) async {
         await tester.binding.setSurfaceSize(size);
         addTearDown(() => tester.binding.setSurfaceSize(null));
+        final bool splitDisplay =
+            size == const Size(800, 480) && textScale == 1.0;
+        addTearDown(() => tester.view.resetDisplayFeatures());
         final native = _Native();
         final sound = _Sound();
         final window = WindowService(native);
@@ -110,22 +115,41 @@ void main() {
               ChangeNotifierProvider<PowerController>.value(value: power),
               ChangeNotifierProvider<ToastController>.value(value: toasts),
             ],
-            child: MaterialApp(theme: AppTheme.dark(), home: MediaQuery(
-              data: MediaQueryData(size: size, textScaler: TextScaler.linear(textScale)),
-              child: Directionality(textDirection: TextDirection.rtl, child: fullWindow
-                  ? page
-                  : Scaffold(body: Row(children: <Widget>[
-                      const SizedBox(width: AppMetrics.navWidthCompact),
-                      Expanded(
-                        child: TickerMode(
-                          enabled: false,
-                          child: page is ConnectPage
-                              ? page
-                              : MenuPageBackdrop(child: page),
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              builder: (BuildContext context, Widget? child) => Directionality(
+                textDirection: TextDirection.rtl,
+                child: child!,
+              ),
+              home: MediaQuery(
+                data: MediaQueryData(
+                  size: size,
+                  textScaler: TextScaler.linear(textScale),
+                ),
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: fullWindow
+                      ? page
+                      : Scaffold(
+                          body: Row(
+                            children: <Widget>[
+                              const SizedBox(
+                                width: AppMetrics.navWidthCompact,
+                              ),
+                              Expanded(
+                                child: TickerMode(
+                                  enabled: false,
+                                  child: page is ConnectPage
+                                      ? page
+                                      : MenuPageBackdrop(child: page),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ]))),
-            )),
+                ),
+              ),
+            ),
           ));
           await tester.pump();
           if (page is ConnectPage) {
@@ -139,6 +163,22 @@ void main() {
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
           if (page is ConnectPage && problem == null) {
+            if (splitDisplay) {
+              // An RTL fallback would select the right pane of this hinge.
+              tester.view.displayFeatures = <DisplayFeature>[
+                DisplayFeature(
+                  bounds: Rect.fromLTRB(
+                    size.width / 2 - 10,
+                    0,
+                    size.width / 2 + 10,
+                    size.height,
+                  ),
+                  type: DisplayFeatureType.hinge,
+                  state: DisplayFeatureState.unknown,
+                ),
+              ];
+              await tester.pump();
+            }
             final Finder settingsButton = find.byKey(
               const ValueKey<String>('connection-settings-button'),
             );
@@ -158,6 +198,15 @@ void main() {
               find.byKey(const ValueKey<String>('quick-settings-close')),
               findsOneWidget,
             );
+            final Rect sheetRect = tester.getRect(
+              find.byKey(
+                const ValueKey<String>('connection-settings-sheet'),
+              ),
+            );
+            final double expectedCenter = splitDisplay
+                ? (size.width / 2 - 10) / 2
+                : size.width / 2;
+            expect(sheetRect.center.dx, closeTo(expectedCenter, 1));
             final sheetProblem = tester.takeException();
             if (sheetProblem != null) {
               problems.add(
@@ -168,6 +217,10 @@ void main() {
               find.byKey(const ValueKey<String>('quick-settings-close')),
             );
             await tester.pumpAndSettle();
+            if (splitDisplay) {
+              tester.view.resetDisplayFeatures();
+              await tester.pump();
+            }
           }
         }
         await tester.pumpWidget(const SizedBox());
