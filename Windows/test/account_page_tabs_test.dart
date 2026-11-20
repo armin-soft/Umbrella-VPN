@@ -76,6 +76,9 @@ class _TestAuth extends ChangeNotifier implements AuthController {
 
 class _TestVpn extends ChangeNotifier implements VpnController {
   @override
+  List<VpnNode> get nodes => const <VpnNode>[];
+
+  @override
   VpnStatus get status => VpnStatus.disconnected;
 
   @override
