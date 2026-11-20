@@ -212,10 +212,26 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 
   void _openConnectionSettings() {
-    showDialog<void>(
+    final UmbrellaColors colors = context.colors;
+    showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: true,
-      builder: (BuildContext context) => const _ConnectionSettingsDialog(),
+      useRootNavigator: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      enableDrag: true,
+      constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+      backgroundColor: colors.surface,
+      barrierColor: colors.background.withValues(alpha: 0.68),
+      elevation: AppMetrics.space6,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppMetrics.radiusXxl),
+        ),
+        side: BorderSide(color: colors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      builder: (BuildContext context) => const _ConnectionSettingsSheet(),
     );
   }
 
@@ -541,29 +557,23 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 }
 
-/// پنل پیکربندی روی صفحه اصلی؛ تمام کنترل ها همان ویجت مشترک را به کار می برند.
-class _ConnectionSettingsDialog extends StatelessWidget {
-  const _ConnectionSettingsDialog();
+/// برگه تنظیمات اتصال: ورود از پایین، گوشه های نرم و کنترل های لمسی استاندارد.
+class _ConnectionSettingsSheet extends StatelessWidget {
+  const _ConnectionSettingsSheet();
 
   @override
   Widget build(BuildContext context) {
     final bool enabled = !context.watch<VpnController>().status.busy;
-    return Dialog(
-      key: const ValueKey<String>('connection-settings-dialog'),
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: AppMetrics.space4,
-        vertical: AppMetrics.space4,
+    return ConstrainedBox(
+      key: const ValueKey<String>('connection-settings-sheet'),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.86,
       ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: AppMetrics.dialogMaxWidth,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom + AppMetrics.space3,
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppMetrics.space1),
+        child: Center(
           child: QuickConnectionPanel(
             enabled: enabled,
             onClose: () => Navigator.of(context).pop(),

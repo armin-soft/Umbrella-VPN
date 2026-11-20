@@ -857,13 +857,15 @@ void main() {
       }
     });
 
-    test('تنظیمات اتصال در دیالوگ جدا باز می شود و منوی منطقه از اتصال حذف است', () {
+    test('تنظیمات اتصال به شکل برگه متحرک باز می شود و منوی منطقه حذف است', () {
       final String connect = read('lib/ui/pages/connect_page.dart');
       expect(connect.contains('منطقه و سرورها'), isFalse);
       expect(connect.contains('_RegionProxyDialog'), isFalse);
       expect(connect.contains('_pickServerRegion'), isFalse);
-      expect(connect.contains('_ConnectionSettingsDialog'), isTrue);
-      expect(connect.contains('connection-settings-dialog'), isTrue);
+      expect(connect.contains('_ConnectionSettingsSheet'), isTrue);
+      expect(connect.contains('connection-settings-sheet'), isTrue);
+      expect(connect.contains('showModalBottomSheet<void>'), isTrue);
+      expect(connect.contains('showDragHandle: true'), isTrue);
       expect(connect.contains('_ConnectionModeDialog'), isFalse);
       expect(connect.contains('_ModeDialog'), isFalse);
       expect(connect.contains('QuickConnectionPanel('), isTrue);
@@ -1377,7 +1379,9 @@ void main() {
       expect(account.contains('renewalDueAt(_now)'), isTrue);
       expect(account.contains('account-renewal-notice'), isTrue);
       expect(account.contains('account-active-subscription'), isTrue);
-      expect(account.contains('TabBarView('), isTrue);
+      expect(account.contains('_buildAccountRail()'), isTrue);
+      expect(account.contains('_buildCompactSectionPicker()'), isTrue);
+      expect(account.contains('AnimatedSwitcher('), isTrue);
       expect(account.contains('account.panelId'), isFalse);
     });
 

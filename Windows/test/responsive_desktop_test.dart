@@ -144,24 +144,24 @@ void main() {
             );
             expect(settingsButton, findsOneWidget);
             expect(
-              find.byKey(const ValueKey<String>('connection-settings-dialog')),
+              find.byKey(const ValueKey<String>('connection-settings-sheet')),
               findsNothing,
             );
             await tester.ensureVisible(settingsButton);
             await tester.tap(settingsButton);
             await tester.pumpAndSettle();
             expect(
-              find.byKey(const ValueKey<String>('connection-settings-dialog')),
+              find.byKey(const ValueKey<String>('connection-settings-sheet')),
               findsOneWidget,
             );
             expect(
               find.byKey(const ValueKey<String>('quick-settings-close')),
               findsOneWidget,
             );
-            final dialogProblem = tester.takeException();
-            if (dialogProblem != null) {
+            final sheetProblem = tester.takeException();
+            if (sheetProblem != null) {
               problems.add(
-                'Connection settings dialog at $size / $textScale: $dialogProblem',
+                'Connection settings sheet at $size / $textScale: $sheetProblem',
               );
             }
             await tester.tap(

@@ -99,7 +99,10 @@ void main() {
     expect(find.byKey(const ValueKey<String>('quick-chain-settings')), findsNothing);
     expect(find.text('امنیت بیشتر'), findsNothing);
     expect(find.text('رفع فیلتر پروکسی'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('quick-lan-row')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('quick-lan-qr-button')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('quick-lan-switch')), findsOneWidget);
+    expect(find.byType(SegmentedButton<InboundServiceMode>), findsOneWidget);
     expect(find.byType(ChoiceChip), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -110,10 +113,17 @@ void main() {
     expect(settings.settings.chain.position, ChainPosition.extraSecurity);
     expect(find.text('امنیت بیشتر'), findsNothing);
 
+    await tester.tap(find.text('پروکسی سیستم'));
+    await tester.pumpAndSettle();
+    expect(settings.settings.serviceMode, InboundServiceMode.systemProxy);
+    expect(settings.settings.chain.position, ChainPosition.extraSecurity);
+
     await tester.tap(find.byKey(const ValueKey<String>('quick-lan-switch')));
     await tester.pumpAndSettle();
     expect(settings.settings.allowConnectionFromLan, isTrue);
     expect(settings.settings.chain.position, ChainPosition.extraSecurity);
+    expect(find.byKey(const ValueKey<String>('quick-lan-qr-button')),
+        findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox());

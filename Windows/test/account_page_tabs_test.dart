@@ -88,8 +88,9 @@ class _TestVpn extends ChangeNotifier implements VpnController {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('account tabs separate content, hide active renewal, and omit panel ID',
-      (WidgetTester tester) async {
+  testWidgets(
+    'account sections separate content, hide active renewal, and omit panel ID',
+    (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(980, 820));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -144,28 +145,42 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const PageStorageKey<String>('account-tab-content-summary')),
-        findsOneWidget);
+    expect(
+      find.byKey(const PageStorageKey<String>('account-section-content-summary')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('account-section-navigation')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey<String>('account-section-picker')),
+        findsNothing);
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsNothing);
     expect(find.byKey(const ValueKey<String>('account-active-subscription')),
         findsNothing);
 
-    Future<void> selectTab(int index) async {
-      final BuildContext tabContext = tester.element(find.byType(TabBar));
-      DefaultTabController.of(tabContext).animateTo(index);
+    Future<void> selectSection(String section) async {
+      final Finder item =
+          find.byKey(ValueKey<String>('account-section-$section'));
+      await tester.ensureVisible(item);
+      await tester.tap(item);
       await tester.pumpAndSettle();
     }
 
-    await selectTab(1);
+    await selectSection('wallet');
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('account-wallet-balance')),
         findsOneWidget);
-    expect(find.byKey(const PageStorageKey<String>('account-tab-content-wallet')),
-        findsOneWidget);
+    expect(
+      find.byKey(
+        const PageStorageKey<String>('account-section-content-wallet'),
+      ),
+      findsOneWidget,
+    );
 
-    await selectTab(2);
+    await selectSection('subscription');
     expect(find.byKey(const ValueKey<String>('account-active-subscription')),
         findsOneWidget);
     expect(find.text('خرید و تمدید اشتراک'), findsNothing);
@@ -183,13 +198,36 @@ void main() {
     expect(find.text('تمدید اشتراک'), findsOneWidget);
     expect(find.text('پلن آزمایشی'), findsOneWidget);
 
-    await selectTab(3);
+    await selectSection('profile');
     expect(find.text('شناسه یکتای حساب'), findsOneWidget);
     expect(find.text('شناسه عددی تلگرام'), findsOneWidget);
     expect(find.text('شماره کاربری در پنل'), findsNothing);
     expect(find.textContaining('کاربر شماره'), findsNothing);
     expect(
-      find.byKey(const PageStorageKey<String>('account-tab-content-profile')),
+      find.byKey(const PageStorageKey<String>('account-section-content-profile')),
+      findsOneWidget,
+    );
+
+    await tester.binding.setSurfaceSize(const Size(700, 820));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('account-section-navigation')),
+        findsNothing);
+    expect(find.byKey(const ValueKey<String>('account-section-picker')),
+        findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('account-section-picker')),
+    );
+    await tester.pumpAndSettle();
+    final Finder walletOption = find.byKey(
+      const ValueKey<String>('account-section-option-wallet'),
+    );
+    expect(walletOption, findsOneWidget);
+    await tester.tap(walletOption);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('account-wallet-card')),
+        findsOneWidget);
+    expect(
+      find.byKey(const PageStorageKey<String>('account-section-content-wallet')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

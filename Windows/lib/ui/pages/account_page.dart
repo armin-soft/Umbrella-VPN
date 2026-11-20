@@ -14,6 +14,31 @@ import '../../state/toast_controller.dart';
 import '../shell/app_shell.dart';
 import '../widgets/common.dart';
 
+enum _AccountSection { summary, wallet, subscription, profile }
+
+extension _AccountSectionX on _AccountSection {
+  String get title => switch (this) {
+        _AccountSection.summary => 'نمای کلی',
+        _AccountSection.wallet => 'کیف پول',
+        _AccountSection.subscription => 'اشتراک',
+        _AccountSection.profile => 'مشخصات',
+      };
+
+  String get detail => switch (this) {
+        _AccountSection.summary => 'حجم، اعتبار و وضعیت اتصال',
+        _AccountSection.wallet => 'موجودی و پرداخت های امن',
+        _AccountSection.subscription => 'وضعیت و تمدید سرویس',
+        _AccountSection.profile => 'اطلاعات حساب کاربری',
+      };
+
+  IconData get icon => switch (this) {
+        _AccountSection.summary => Icons.dashboard_rounded,
+        _AccountSection.wallet => Icons.account_balance_wallet_rounded,
+        _AccountSection.subscription => Icons.workspace_premium_rounded,
+        _AccountSection.profile => Icons.badge_rounded,
+      };
+}
+
 /// صفحه اختصاصی «حساب من»: پایش زنده حجم مصرفی، تقویم دقیق شمسی اشتراک،
 /// مشخصات مالک حساب از وب سرویس نسخه ۲ پنل و همگام سازی تلگرام (کاملاً مجزا
 /// از مشخصات سخت افزاری رایانه).
@@ -28,6 +53,7 @@ class _AccountPageState extends State<AccountPage> {
   bool _syncInFlight = false;
   bool _panelFresh = false;
   bool _wasTabActive = false;
+  _AccountSection _selectedSection = _AccountSection.summary;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
   Timer? _autoSyncTimer;
@@ -641,97 +667,245 @@ class _AccountPageState extends State<AccountPage> {
       ),
     ];
 
-    return DefaultTabController(
-      length: 4,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: AppMetrics.pagePadding,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const PageHeader(
-                  title: 'حساب من',
-                  eyebrow: 'حساب و سرویس',
-                  premium: true,
-                  subtitle:
-                      'وضعیت اشتراک، کیف پول و مشخصات در بخش های جداگانه',
-                  icon: Icons.person_rounded,
-                ),
-                const SizedBox(height: AppMetrics.space4),
-                GlassCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppMetrics.space2,
-                    vertical: AppMetrics.space1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: AppMetrics.pagePadding,
+          child: const PageHeader(
+            title: 'حساب من',
+            eyebrow: 'حساب و سرویس',
+            premium: true,
+            subtitle:
+                'مدیریت موجودی، اشتراک و مشخصات حساب از یک نمای منظم',
+            icon: Icons.person_rounded,
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppMetrics.space6,
+              0,
+              AppMetrics.space6,
+              AppMetrics.space6,
+            ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final Widget selectedContent = switch (_selectedSection) {
+                  _AccountSection.summary => _buildSummaryTab(
+                      account: account,
+                      kpiCards: kpiCards,
+                      used: used,
+                      limit: limit,
+                      unlimited: unlimited,
+                      remaining: remaining,
+                      percent: percent,
+                      quotaTone: quotaTone,
+                      statusTone: statusTone,
+                      timeTone: timeTone,
+                    ),
+                  _AccountSection.wallet => _buildWalletTab(auth, toasts),
+                  _AccountSection.subscription => _buildSubscriptionTab(
+                      auth: auth,
+                      toasts: toasts,
+                      account: account,
+                      expiry: expiry,
+                      daysLeft: daysLeft,
+                      renewalNotice: renewalNotice,
+                      renewalTone: renewalTone,
+                    ),
+                  _AccountSection.profile =>
+                    _buildProfileTab(account: account, name: name, toasts: toasts),
+                };
+                final Widget sectionContent = AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) {
+                    final Animation<Offset> slide = Tween<Offset>(
+                      begin: const Offset(0.025, 0),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    );
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: slide, child: child),
+                    );
+                  },
+                  child: KeyedSubtree(
+                    key: ValueKey<_AccountSection>(_selectedSection),
+                    child: selectedContent,
                   ),
-                  radius: AppMetrics.radiusLg,
-                  child: TabBar(
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    dividerColor: Colors.transparent,
-                    indicatorColor: colors.primary,
-                    indicatorWeight: AppMetrics.space1,
-                    labelColor: colors.primary,
-                    unselectedLabelColor: colors.textSecondary,
-                    tabs: const <Widget>[
-                      Tab(
-                        key: ValueKey<String>('account-tab-summary'),
-                        icon: Icon(Icons.dashboard_rounded),
-                        text: 'خلاصه',
+                );
+
+                final double scale = MediaQuery.textScalerOf(context)
+                    .scale(1)
+                    .clamp(1.0, 2.0)
+                    .toDouble();
+                if (constraints.maxWidth / scale >=
+                    AppMetrics.breakpointColumns) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      SizedBox(
+                        width: AppMetrics.navWidthMedium,
+                        child: _buildAccountRail(),
                       ),
-                      Tab(
-                        key: ValueKey<String>('account-tab-wallet'),
-                        icon: Icon(Icons.account_balance_wallet_rounded),
-                        text: 'کیف پول',
-                      ),
-                      Tab(
-                        key: ValueKey<String>('account-tab-subscription'),
-                        icon: Icon(Icons.workspace_premium_rounded),
-                        text: 'اشتراک',
-                      ),
-                      Tab(
-                        key: ValueKey<String>('account-tab-profile'),
-                        icon: Icon(Icons.badge_rounded),
-                        text: 'مشخصات',
-                      ),
+                      const SizedBox(width: AppMetrics.space4),
+                      Expanded(child: sectionContent),
                     ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _buildCompactSectionPicker(),
+                    const SizedBox(height: AppMetrics.space3),
+                    Expanded(child: sectionContent),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountRail() {
+    final UmbrellaColors colors = context.colors;
+    return GlassCard(
+      key: const ValueKey<String>('account-section-navigation'),
+      padding: const EdgeInsets.all(AppMetrics.space2),
+      radius: AppMetrics.radiusXl,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppMetrics.space3,
+                AppMetrics.space2,
+                AppMetrics.space3,
+                AppMetrics.space3,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'بخش های حساب',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.w800,
+                        ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: AppMetrics.space1),
+                  Text(
+                    'برای مشاهده جزئیات انتخاب کنید',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: TabBarView(
-              children: <Widget>[
-                _buildSummaryTab(
-                  account: account,
-                  kpiCards: kpiCards,
-                  used: used,
-                  limit: limit,
-                  unlimited: unlimited,
-                  remaining: remaining,
-                  percent: percent,
-                  quotaTone: quotaTone,
-                  statusTone: statusTone,
-                  timeTone: timeTone,
+            for (final _AccountSection section in _AccountSection.values)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppMetrics.space1),
+                child: _AccountSectionTile(
+                  section: section,
+                  selected: _selectedSection == section,
+                  onTap: () => setState(() => _selectedSection = section),
                 ),
-                _buildWalletTab(auth, toasts),
-                _buildSubscriptionTab(
-                  auth: auth,
-                  toasts: toasts,
-                  account: account,
-                  expiry: expiry,
-                  daysLeft: daysLeft,
-                  renewalNotice: renewalNotice,
-                  renewalTone: renewalTone,
-                ),
-                _buildProfileTab(account: account, name: name, toasts: toasts),
-              ],
-            ),
-          ),
-        ],
+              ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildCompactSectionPicker() {
+    final UmbrellaColors colors = context.colors;
+    return MenuAnchor(
+      menuChildren: <Widget>[
+        for (final _AccountSection section in _AccountSection.values)
+          MenuItemButton(
+            key: ValueKey<String>('account-section-option-${section.name}'),
+            leadingIcon: Icon(section.icon),
+            trailingIcon: _selectedSection == section
+                ? Icon(Icons.check_rounded, color: colors.primary)
+                : null,
+            onPressed: () => setState(() => _selectedSection = section),
+            child: Text(Fa.num(section.title)),
+          ),
+      ],
+      builder: (
+        BuildContext context,
+        MenuController controller,
+        Widget? child,
+      ) {
+        return OutlinedButton(
+          key: const ValueKey<String>('account-section-picker'),
+          onPressed: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, AppMetrics.controlHeightLarge),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppMetrics.space4,
+              vertical: AppMetrics.space2,
+            ),
+            alignment: AlignmentDirectional.centerStart,
+            foregroundColor: colors.textPrimary,
+            backgroundColor: colors.surfaceHigh.withValues(alpha: 0.38),
+            side: BorderSide(color: colors.border),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(_selectedSection.icon, color: colors.primary),
+              const SizedBox(width: AppMetrics.space3),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'بخش فعال',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                    Text(
+                      Fa.num(_selectedSection.title),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppMetrics.space2),
+              Icon(
+                controller.isOpen
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                color: colors.textSecondary,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -749,8 +923,8 @@ class _AccountPageState extends State<AccountPage> {
   }) {
     final UmbrellaColors colors = context.colors;
     return SingleChildScrollView(
-      key: const PageStorageKey<String>('account-tab-content-summary'),
-      padding: AppMetrics.pagePadding,
+      key: const PageStorageKey<String>('account-section-content-summary'),
+      padding: const EdgeInsets.only(bottom: AppMetrics.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -865,8 +1039,8 @@ class _AccountPageState extends State<AccountPage> {
 
   Widget _buildWalletTab(AuthController auth, ToastController toasts) {
     return SingleChildScrollView(
-      key: const PageStorageKey<String>('account-tab-content-wallet'),
-      padding: AppMetrics.pagePadding,
+      key: const PageStorageKey<String>('account-section-content-wallet'),
+      padding: const EdgeInsets.only(bottom: AppMetrics.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -923,8 +1097,8 @@ class _AccountPageState extends State<AccountPage> {
     required Color? renewalTone,
   }) {
     return SingleChildScrollView(
-      key: const PageStorageKey<String>('account-tab-content-subscription'),
-      padding: AppMetrics.pagePadding,
+      key: const PageStorageKey<String>('account-section-content-subscription'),
+      padding: const EdgeInsets.only(bottom: AppMetrics.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -978,8 +1152,8 @@ class _AccountPageState extends State<AccountPage> {
     required ToastController toasts,
   }) {
     return SingleChildScrollView(
-      key: const PageStorageKey<String>('account-tab-content-profile'),
-      padding: AppMetrics.pagePadding,
+      key: const PageStorageKey<String>('account-section-content-profile'),
+      padding: const EdgeInsets.only(bottom: AppMetrics.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1109,6 +1283,100 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
+}
+
+class _AccountSectionTile extends StatelessWidget {
+  const _AccountSectionTile({
+    required this.section,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _AccountSection section;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final Color accent = selected ? colors.primary : colors.textSecondary;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${section.title}. ${section.detail}',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey<String>('account-section-${section.name}'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(AppMetrics.space3),
+            decoration: BoxDecoration(
+              color: selected
+                  ? colors.primary.withValues(alpha: 0.11)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+              border: Border.all(
+                color: selected
+                    ? colors.primary.withValues(alpha: 0.32)
+                    : colors.border.withValues(alpha: 0.55),
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                IconSquare(
+                  icon: section.icon,
+                  color: accent,
+                  size: AppMetrics.iconBoxMd,
+                  radius: AppMetrics.radiusMd,
+                ),
+                const SizedBox(width: AppMetrics.space2),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        Fa.num(section.title),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: selected
+                                  ? colors.primary
+                                  : colors.textPrimary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: AppMetrics.space1),
+                      Text(
+                        Fa.num(section.detail),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (selected) ...<Widget>[
+                  const SizedBox(width: AppMetrics.space1),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    size: AppMetrics.iconSm,
+                    color: colors.primary,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// کارت شاخص کلیدی ویژه حساب کاربری.
