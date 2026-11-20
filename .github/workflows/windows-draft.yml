@@ -13,6 +13,7 @@ on:
         options:
           - draft
           - artifact
+          - artifact_to_draft
           - beta
           - release
           - both
@@ -23,11 +24,13 @@ on:
         type: string
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: windows-installer-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   telegram-bot:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact_to_draft') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -92,6 +95,30 @@ jobs:
             fi
             echo "$out"
           done
+  installer-to-draft:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact_to_draft' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download previously built installer
+        uses: actions/download-artifact@v4
+        with:
+          name: UmbrellaVPN-Setup-0.0.1-x64
+          run-id: 44699828841
+          github-token: ${{ github.token }}
+          path: installer-transfer
+      - name: Upload verified installer to existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find installer-transfer -type f -name 'UmbrellaVPN-Setup-0.0.1-x64.exe')
+          [ "${#files[@]}" -eq 1 ] || { echo '::error::Installer missing or ambiguous'; exit 1; }
+          echo "fae5fe65b91948b8c44dc73b7fff8e4b36807c577d22a61ac4d3048ffdc0437a  ${files[0]}" | sha256sum --check
+          [ "$(gh release view v0.0.1-windows --repo "$REPO" --json isDraft --jq .isDraft)" = true ] || { echo '::error::Refusing to modify a non-draft release'; exit 1; }
+          gh release upload v0.0.1-windows "${files[0]}" --repo "$REPO" --clobber
+          gh release view v0.0.1-windows --repo "$REPO" --json isDraft,assets --jq 'select(.isDraft and (.assets|length)==1 and .assets[0].name == "UmbrellaVPN-Setup-0.0.1-x64.exe") | .assets[0].name' | grep -Fx 'UmbrellaVPN-Setup-0.0.1-x64.exe'
   installer:
     needs: telegram-bot
     # A manually requested installer artifact can be built even when the
