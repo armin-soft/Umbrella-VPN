@@ -71,6 +71,30 @@ void main() {
     expect(expired.daysLeft, 0);
   });
 
+  test('یادآوری تمدید با مرز دقیق ۷۲ ساعت و اتمام حجم هماهنگ است', () {
+    final DateTime now = DateTime.utc(2026, 11, 17, 12);
+    final Account withinThreeDays = Account(
+      expiryDate: now.add(const Duration(days: 3)),
+    );
+    final Account justOutsideWindow = Account(
+      expiryDate: now.add(const Duration(days: 3, seconds: 1)),
+    );
+    final Account expired = Account(
+      expiryDate: now.subtract(const Duration(seconds: 1)),
+    );
+    final Account exhausted = Account(
+      usageLimitGb: 10,
+      currentUsageGb: 10,
+      expiryDate: now.add(const Duration(days: 30)),
+    );
+
+    expect(withinThreeDays.renewalDueAt(now), isTrue);
+    expect(justOutsideWindow.renewalDueAt(now), isFalse);
+    expect(expired.renewalDueAt(now), isTrue);
+    expect(exhausted.renewalDueAt(now), isTrue);
+    expect(Account().renewalDueAt(now), isFalse);
+  });
+
   test('اگر سرور نشانی اشتراک ندهد مقدار خالی می ماند', () {
     final Account account = Account.fromJson(<String, dynamic>{
       'uuid': uuid,

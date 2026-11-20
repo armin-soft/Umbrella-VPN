@@ -1344,6 +1344,8 @@ void main() {
       final String account = read('lib/ui/pages/account_page.dart');
       expect(account.contains('https://t.me/UmbrellaVPN_BOT'), isTrue);
       expect(account.contains('signOut('), isFalse);
+      expect(account.contains('renewalDueAt(_now)'), isTrue);
+      expect(account.contains('account-renewal-notice'), isTrue);
     });
 
     test('۱۵. تنظیمات مدرن و شش بخشی است و ارجاع درباره در آن نیست', () {
@@ -1354,7 +1356,12 @@ void main() {
       expect(settings.contains('class _ThemeCardSelector'), isTrue);
       expect(settings.contains("'عمومی'"), isTrue);
       expect(settings.contains("'زنجیره'"), isTrue);
+      expect(settings.contains('SettingsCategory.navigationItems'), isTrue);
       expect(settings.contains("'امنیت بیشتر و رفع مسدودیت'"), isTrue);
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      final String quick = read('lib/ui/widgets/quick_connection_panel.dart');
+      expect(shell.contains('_openSettingsSection(SettingsCategory.chain)'), isTrue);
+      expect(quick.contains('quick-chain-settings'), isTrue);
       expect(settings.contains("'مسیریابی'"), isTrue);
       expect(settings.contains("'دی ان اس'"), isTrue);
       expect(settings.contains("'ورودی'"), isTrue);

@@ -422,6 +422,20 @@ class _AccountPageState extends State<AccountPage> {
     final int daysLeft = account.daysLeftAt(_now);
     final int daysElapsed = account.daysElapsedAt(_now);
     final bool soon = expiry != null && !expired && daysLeft <= 7;
+    final bool renewalDue = account.renewalDueAt(_now);
+    final String renewalRemaining = remDuration.inSeconds <= 0
+        ? 'کمتر از یک دقیقه'
+        : Fa.spanFa(remDuration);
+    final String? renewalNotice = expired
+        ? 'اشتراک شما منقضی شده است؛ پلن مناسب را برای تمدید انتخاب کنید.'
+        : (account.quotaFinished
+            ? 'حجم اشتراک تمام شده است؛ برای ادامه پلن تازه انتخاب کنید.'
+            : (renewalDue
+                ? 'تنها $renewalRemaining تا پایان اعتبار باقی مانده است؛ پلن تمدید را انتخاب کنید.'
+                : null));
+    final Color? renewalTone = renewalDue
+        ? (expired ? colors.danger : colors.warning)
+        : null;
 
     final double used = account.currentUsageGb;
     final double limit = account.usageLimitGb;
@@ -625,6 +639,8 @@ class _AccountPageState extends State<AccountPage> {
             plans: auth.subscriptionPlans,
             balance: auth.walletBalance,
             custom: auth.customSubscriptionTerms,
+            renewalNotice: renewalNotice,
+            renewalTone: renewalTone,
             onCustom: () => _purchaseCustomPlan(auth, toasts),
             loading: auth.loadingSubscriptionPlans,
             busy: auth.purchasingSubscription,
@@ -1337,6 +1353,8 @@ class _PaidPlansCard extends StatelessWidget {
     required this.plans,
     required this.balance,
     required this.custom,
+    required this.renewalNotice,
+    required this.renewalTone,
     required this.onCustom,
     required this.loading,
     required this.busy,
@@ -1347,6 +1365,8 @@ class _PaidPlansCard extends StatelessWidget {
   final List<SubscriptionPlan> plans;
   final int balance;
   final CustomSubscriptionTerms? custom;
+  final String? renewalNotice;
+  final Color? renewalTone;
   final VoidCallback onCustom;
   final bool loading;
   final bool busy;
@@ -1356,10 +1376,11 @@ class _PaidPlansCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
+    final Color noticeColor = renewalTone ?? colors.warning;
     return GlassCard(
       padding: AppMetrics.cardPadding,
       radius: AppMetrics.radiusXl,
-      borderColor: colors.primary.withValues(alpha: 0.34),
+      borderColor: (renewalTone ?? colors.primary).withValues(alpha: 0.34),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1367,9 +1388,15 @@ class _PaidPlansCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: SectionHeader(
-                  icon: Icons.payments_rounded,
-                  title: 'خرید و تمدید اشتراک',
-                  subtitle: 'پلن ها و موجودی از حساب مشترک ربات تلگرام',
+                  icon: renewalNotice == null
+                      ? Icons.payments_rounded
+                      : Icons.autorenew_rounded,
+                  title: renewalNotice == null
+                      ? 'خرید و تمدید اشتراک'
+                      : 'تمدید اشتراک',
+                  subtitle: renewalNotice == null
+                      ? 'پلن ها و موجودی از حساب مشترک ربات تلگرام'
+                      : 'یادآوری تمدید اشتراک',
                 ),
               ),
               IconButton(
@@ -1384,7 +1411,42 @@ class _PaidPlansCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppMetrics.space2),
+          if (renewalNotice != null) ...<Widget>[
+            const SizedBox(height: AppMetrics.space2),
+            Container(
+              key: const ValueKey<String>('account-renewal-notice'),
+              padding: const EdgeInsets.all(AppMetrics.space3),
+              decoration: BoxDecoration(
+                color: noticeColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                border: Border.all(
+                  color: noticeColor.withValues(alpha: 0.32),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    Icons.notifications_active_rounded,
+                    size: AppMetrics.iconSm,
+                    color: noticeColor,
+                  ),
+                  const SizedBox(width: AppMetrics.space2),
+                  Expanded(
+                    child: Text(
+                      Fa.num(renewalNotice!),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textPrimary,
+                            height: 1.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppMetrics.space3),
+          ],
           Text(
             'موجودی کیف پول: ${Fa.num(balance)} تومان',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(

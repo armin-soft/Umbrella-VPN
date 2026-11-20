@@ -88,7 +88,11 @@ void main() {
         ),
       ));
       await tester.pump();
-      for (final category in SettingsCategory.values) {
+      expect(
+        find.byKey(const ValueKey<String>('settings-category-chain')),
+        findsNothing,
+      );
+      for (final category in SettingsCategory.navigationItems) {
         final menu = find.byKey(ValueKey<String>('settings-category-${category.name}'));
         await tester.ensureVisible(menu);
         await tester.pump();
@@ -114,6 +118,34 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
       expect(find.byKey(const PageStorageKey<String>('settings-root-scroll')), findsOneWidget);
+
+      // زنجیره از فهرست اصلی پنهان است، اما پیوند صفحه اتصال باید همچنان کار کند.
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<PowerController>.value(value: power),
+          ChangeNotifierProvider<VpnController>.value(value: vpn),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<ToastController>.value(value: toasts),
+        ],
+        child: MaterialApp(
+          theme: brightness == Brightness.dark ? AppTheme.dark() : AppTheme.light(),
+          home: const Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: SettingsPage(initialSection: SettingsCategory.chain),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('settings-detail-chain')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey<String>('settings-back-button')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
       await tester.pumpWidget(const SizedBox());
       settings.dispose();
       power.dispose();

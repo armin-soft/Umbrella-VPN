@@ -18,7 +18,7 @@ import '../widgets/common.dart';
 import '../widgets/content_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
 
-/// بخش های صفحه تنظیمات؛ باتری فقط برای لپ تاپ شناسایی شده نمایان است.
+/// دسته های تنظیمات؛ زنجیره از صفحه اتصال و باتری فقط روی لپ تاپ در دسترس است.
 enum SettingsCategory {
   general,
   chain,
@@ -26,7 +26,17 @@ enum SettingsCategory {
   dns,
   inbound,
   tlsTricks,
-  battery,
+  battery;
+
+  /// زنجیره از پنل تنظیمات اتصال پیکربندی می شود، نه فهرست اصلی تنظیمات.
+  static const List<SettingsCategory> navigationItems = <SettingsCategory>[
+    SettingsCategory.general,
+    SettingsCategory.routing,
+    SettingsCategory.dns,
+    SettingsCategory.inbound,
+    SettingsCategory.tlsTricks,
+    SettingsCategory.battery,
+  ];
 }
 
 extension SettingsCategoryX on SettingsCategory {
@@ -126,8 +136,7 @@ extension SettingsCategoryX on SettingsCategory {
   }
 }
 
-/// صفحه تنظیمات آمبرلا:
-/// `عمومی` | `زنجیره` | `مسیریابی` | `DNS` | `ورودی` | `ترفندهای TLS`
+/// صفحه تنظیمات آمبرلا؛ پیکربندی زنجیره از بخش اتصال در دسترس است.
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, this.initialSection});
 
@@ -281,9 +290,9 @@ class _SettingsPageState extends State<SettingsPage> {
     AppSettings cfg,
     bool isLaptop,
   ) {
-    final categories = SettingsCategory.values
+    final List<SettingsCategory> categories = SettingsCategory.navigationItems
         .where((category) => category != SettingsCategory.battery || isLaptop)
-        .toList();
+        .toList(growable: false);
     return SingleChildScrollView(
       key: const PageStorageKey<String>('settings-root-scroll'),
       padding: AppMetrics.pagePadding,
@@ -293,7 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const PageHeader(
             title: 'تنظیمات',
             subtitle:
-                'پیکربندی عمومی، زنجیره، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن',
+                'پیکربندی عمومی، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن؛ گزینه های زنجیره در صفحه اتصال هستند',
             icon: Icons.settings_rounded,
           ),
           const SizedBox(height: AppMetrics.space4),

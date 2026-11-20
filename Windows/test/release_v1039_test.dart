@@ -843,12 +843,16 @@ void main() {
       expect(RegExp(r'^\d{4}-\d{4}$').hasMatch(generated), isTrue);
       expect(RegExp(r'^[۰-۹]{4}-[۰-۹]{4}$').hasMatch(Fa.num(generated)), isTrue);
 
-      // ۶. منوی گزینه های اتصال در صفحه اصلی به صورت پیش فرض بسته است و همه منوها استانداردند.
+      // ۶. گزینه های اتصال همیشه مستقیم دیده می شوند و انتخاب های زنجیره منوی بازشو ندارند.
       final String quickPanel =
           File('lib/ui/widgets/quick_connection_panel.dart').readAsStringSync();
-      expect(quickPanel.contains('bool _expanded = false;'), isTrue);
-      expect(quickPanel.contains('quick-panel-toggle'), isTrue);
-      expect(quickPanel.contains('MenuAnchor('), isTrue);
+      expect(quickPanel.contains('_expanded'), isFalse);
+      expect(quickPanel.contains('quick-panel-toggle'), isFalse);
+      expect(quickPanel.contains('MenuAnchor('), isFalse);
+      expect(quickPanel.contains('ChoiceChip('), isTrue);
+      expect(quickPanel.contains('quick-extra-security'), isTrue);
+      expect(quickPanel.contains('quick-proxy-unblocker'), isTrue);
+      expect(quickPanel.contains('quick-chain-settings'), isTrue);
       expect(quickPanel.contains('PopupMenuButton'), isFalse);
       expect(quickPanel.contains('chevron_right_rounded'), isFalse);
 

@@ -788,6 +788,21 @@ class Account {
     return rem.inHours ~/ 24;
   }
 
+  /// مانند ربات، تمدید را سه روز مانده به پایان، پس از انقضا یا با اتمام حجم
+  /// برجسته می کند. مرز ۷۲ ساعت دقیق و شامل لحظهٔ برابری با زمان فعلی است.
+  bool renewalDueAt([DateTime? now]) {
+    if (quotaFinished) {
+      return true;
+    }
+    final DateTime? end = effectiveExpiryDate;
+    if (end == null) {
+      return false;
+    }
+    final DateTime limit =
+        (now ?? DateTime.now()).toUtc().add(const Duration(days: 3));
+    return !end.toUtc().isAfter(limit);
+  }
+
   int get daysLeft => daysLeftAt();
 
   int daysElapsedAt([DateTime? now]) => elapsedDuration(now).inDays;
