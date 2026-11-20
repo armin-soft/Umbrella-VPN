@@ -28,6 +28,7 @@ class AuthController extends ChangeNotifier {
     SoundService? sound,
     TrayService? tray,
   })  : _native = native,
+        _injectedGateway = gateway != null,
         _sound = sound,
         _tray = tray,
         _store = store ?? LocalStore.instance {
@@ -40,6 +41,7 @@ class AuthController extends ChangeNotifier {
   }
 
   final NativeBridge _native;
+  final bool _injectedGateway;
   late GatewayClient _gateway;
   final LocalStore _store;
   final AppLogger _log = AppLogger.instance;
@@ -103,10 +105,96 @@ class AuthController extends ChangeNotifier {
   DeviceProfile _device = DeviceProfile.empty;
   DeviceProfile get device => _device;
 
+  static const int maxStoredNotifications = 100;
+
   List<AppNotification> _notifications = <AppNotification>[];
   List<AppNotification> get notifications => List<AppNotification>.unmodifiable(_notifications);
   int get unreadCount =>
       _notifications.where((AppNotification item) => !item.read).length;
+
+  bool _loadingNotifications = false;
+  bool get loadingNotifications => _loadingNotifications;
+  Future<void>? _notificationsFetch;
+  bool _historySynced = false;
+
+  bool _syncingFilter = false;
+  bool get syncingFilter => _syncingFilter;
+  bool _savingFilter = false;
+  bool get savingFilter => _savingFilter;
+
+  bool _claimingOffer = false;
+  bool get claimingOffer => _claimingOffer;
+  String _claimingPlanType = '';
+  String get claimingPlanType => _claimingPlanType;
+
+  SubscriptionOffers get offers => _session?.offers ?? SubscriptionOffers.empty;
+
+  List<SubscriptionPlan> _subscriptionPlans = <SubscriptionPlan>[];
+  List<SubscriptionPlan> get subscriptionPlans =>
+      List<SubscriptionPlan>.unmodifiable(_subscriptionPlans);
+  int _walletBalance = 0;
+  int get walletBalance => _walletBalance;
+  CustomSubscriptionTerms? _customSubscriptionTerms;
+  CustomSubscriptionTerms? get customSubscriptionTerms => _customSubscriptionTerms;
+  bool? _botLinked;
+  bool? get botLinked => _botLinked;
+  bool _linkingBot = false;
+  bool get linkingBot => _linkingBot;
+
+  Future<void> refreshBotLinkStatus() async {
+    final session = _session;
+    if (session == null) return;
+    try {
+      final linked = await _gateway.botMembershipStatus(session.token);
+      if (_session?.token != session.token) return;
+      _botLinked = linked;
+      notifyListeners();
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') await _handleDeviceRevoked(error.message);
+    }
+  }
+
+  Future<String?> createBotMembershipLink() async {
+    final session = _session;
+    if (session == null || _linkingBot) return null;
+    _linkingBot = true;
+    _error = '';
+    notifyListeners();
+    try {
+      final result = await _gateway.createBotMembershipLink(session.token);
+      if (_session?.token != session.token) return null;
+      if (JsonX.boolean(result['linked'])) {
+        _botLinked = true;
+        await refreshAccount(silent: true);
+        return '';
+      }
+      return JsonX.text(result['url']);
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else {
+        _error = error.message;
+      }
+      return null;
+    } finally {
+      _linkingBot = false;
+      notifyListeners();
+    }
+  }
+
+  bool _loadingSubscriptionPlans = false;
+  bool get loadingSubscriptionPlans => _loadingSubscriptionPlans;
+  bool _purchasingSubscription = false;
+  bool get purchasingSubscription => _purchasingSubscription;
+
+
+  /// وقتی کنترل محتوا تغییر کند (از برنامه یا مستقیم از ربات تلگرام) صدا زده
+  /// می شود تا هسته اتصال قوانین جدید را بلافاصله اعمال کند.
+  void Function(FilterSettings filter)? onFilterChanged;
+
+  /// پس از فعال سازی موفق اشتراک رایگان یا نوروزی صدا زده می شود تا سرورهای
+  /// شخصی کاربر بی درنگ دریافت شوند.
+  Future<void> Function()? onSubscriptionClaimed;
 
   Timer? _pollTimer;
   Timer? _clockTimer;
@@ -129,6 +217,18 @@ class AuthController extends ChangeNotifier {
       _deviceId = _generateDeviceId();
       await _store.write(StoreKeys.deviceId, _deviceId);
     }
+    // اعلان های ذخیره شده پیش از شروع پایش دوره ای بارگذاری می شوند تا هیچ
+    // درخواست همزمانی تاریخچه قبلی را جا نیندازد یا دوباره صدا ندهد.
+    final List<dynamic> cached = _store.readJsonList(StoreKeys.notifications);
+    _notifications = _sortAndTrim(
+      cached
+          .map((Object? item) => AppNotification.fromJson(JsonX.asMap(item)))
+          .where((AppNotification item) => !_isStaleDeviceRevocation(item))
+          .toList(),
+    );
+    for (final AppNotification item in _notifications) {
+      _announced.add(_keyOf(item));
+    }
     final Map<String, dynamic> json = _store.readJson(StoreKeys.session);
     if (json.isNotEmpty) {
       _session = SessionData.fromJson(json);
@@ -137,16 +237,11 @@ class AuthController extends ChangeNotifier {
       } else {
         _phase = AuthPhase.done;
         _phone = _session!.account.phone;
+        await _syncNotificationOwner(_session!.ownerKey);
+        onFilterChanged?.call(filter);
         _startHeartbeat();
         unawaited(refreshAccount(silent: true));
       }
-    }
-    final List<dynamic> cached = _store.readJsonList(StoreKeys.notifications);
-    _notifications =
-        cached.map((Object? item) => AppNotification.fromJson(JsonX.asMap(item))).toList();
-    // اعلان های ذخیره شده قبلی دیگر «تازه» نیستند و با شروع برنامه صدا نمی دهند.
-    for (final AppNotification item in _notifications) {
-      _announced.add(_keyOf(item));
     }
     notifyListeners();
   }
@@ -164,11 +259,46 @@ class AuthController extends ChangeNotifier {
   String _lastServiceError = '';
 
   void _logError(String message) {
-    if (message == _lastServiceError) {
+    final String detail = _gateway.lastDiagnostic;
+    final String full = detail.isEmpty ? message : '$message [$detail]';
+    if (full == _lastServiceError) {
       return;
     }
-    _lastServiceError = message;
-    _log.add('خطای سرویس: $message', level: 'error');
+    _lastServiceError = full;
+    _log.add('خطای سرویس: $full', level: 'error');
+  }
+
+  /// اگر نشانی سفارشی کهنه در تنظیمات ذخیره شده باشد و خطای شبکه یا ۴۰۴ بدهد،
+  /// به صورت خودکار نشانی پیش فرض رسمی آمبرلا آزموده و جایگزین می شود.
+  Future<T> _callGatewayWithDefaultFallback<T>(
+    Future<T> Function(GatewayClient client) call,
+  ) async {
+    try {
+      return await call(_gateway);
+    } on ApiError catch (error) {
+      final bool retriable = error.code == 'network' ||
+          error.code == 'timeout' ||
+          error.code == 'bad_response';
+      final bool usingCustom = !_injectedGateway &&
+          _gateway.baseUrl.trim() != AppConfig.gatewayBase.trim();
+      if (!retriable || !usingCustom) {
+        rethrow;
+      }
+      final GatewayClient fallback =
+          GatewayClient(baseUrl: AppConfig.gatewayBase);
+      try {
+        final T result = await call(fallback);
+        final GatewayClient previous = _gateway;
+        _gateway = fallback;
+        previous.close();
+        await _store.remove(AppConfig.gatewayStoreKey);
+        _log.add('نشانی درگاه به نشانی رسمی پیش فرض بازگردانی شد.');
+        return result;
+      } on Object {
+        fallback.close();
+        rethrow;
+      }
+    }
   }
 
   String get baseUrl => _gateway.baseUrl;
@@ -191,7 +321,7 @@ class AuthController extends ChangeNotifier {
     }
     final Uri? parsed = Uri.tryParse(cleaned);
     if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
-      _error = 'نشانی درگاه معتبر نیست؛ نمونه: https://example.com/index.php?AppApi=';
+      _error = 'نشانی درگاه معتبر نیست؛ نشانی کامل درگاه ربات را وارد کنید.';
       notifyListeners();
       return;
     }
@@ -232,11 +362,13 @@ class AuthController extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     try {
-      final SignInStart start = await _gateway.start(
-        phone: phone,
-        deviceId: _deviceId,
-        deviceName: _device.deviceName,
-        platform: _device.platformLabel,
+      final SignInStart start = await _callGatewayWithDefaultFallback(
+        (GatewayClient client) => client.start(
+          phone: phone,
+          deviceId: _deviceId,
+          deviceName: _device.deviceName,
+          platform: _device.platformLabel,
+        ),
       );
       _challenge = start.challenge;
       _stage = start.stage;
@@ -275,18 +407,20 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    _firstName = first.trim();
-    _lastName = last.trim();
+    _firstName = IranPhone.normalizeName(first);
+    _lastName = IranPhone.normalizeName(last);
     _busy = true;
     notifyListeners();
     try {
-      final SignInStart start = await _gateway.start(
-        phone: _phone,
-        deviceId: _deviceId,
-        deviceName: _device.deviceName,
-        platform: _device.platformLabel,
-        firstName: _firstName,
-        lastName: _lastName,
+      final SignInStart start = await _callGatewayWithDefaultFallback(
+        (GatewayClient client) => client.start(
+          phone: _phone,
+          deviceId: _deviceId,
+          deviceName: _device.deviceName,
+          platform: _device.platformLabel,
+          firstName: _firstName,
+          lastName: _lastName,
+        ),
       );
       _challenge = start.challenge;
       _stage = start.stage;
@@ -388,11 +522,13 @@ class AuthController extends ChangeNotifier {
       _session = session;
       _phase = AuthPhase.done;
       _phone = session.account.phone.isNotEmpty ? session.account.phone : _phone;
+      _historySynced = false;
+      await _syncNotificationOwner(session.ownerKey);
       await _store.writeJson(StoreKeys.session, session.toJson());
       await _store.writeJson(StoreKeys.filter, session.filter.toJson());
+      onFilterChanged?.call(session.filter);
       _startHeartbeat();
       _log.add('ورود موفق؛ خوش آمدید ${session.account.displayName}.');
-      unawaited(fetchNotifications());
       notifyListeners();
       // نشست فقط خلاصه حساب را دارد؛ پروفایل کامل و نشانی اشتراک از همین
       // مسیر از سرور گرفته می شود.
@@ -477,8 +613,11 @@ class AuthController extends ChangeNotifier {
 
     _checkingDeviceAccess = true;
     try {
-      await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
-      await fetchNotifications();
+      final ({FilterSettings? filter, SubscriptionOffers? offers}) beat =
+          await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
+      await _applyLiveServerState(filter: beat.filter, offers: beat.offers);
+      final bool wantHistory = !_historySynced;
+      await fetchNotifications(includeHistory: wantHistory);
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
         await _handleDeviceRevoked(error.message);
@@ -545,17 +684,29 @@ class AuthController extends ChangeNotifier {
       return false;
     }
     final Account merged = session.account.copyWith(
+      panelId: panel.panelId > 0 ? panel.panelId : null,
       name: panel.name.isNotEmpty ? panel.name : null,
-      phone: panel.phone.isNotEmpty ? panel.phone : null,
+      phone: panel.effectivePhone.isNotEmpty ? panel.effectivePhone : null,
+      telegramId: panel.telegramId.isNotEmpty ? panel.telegramId : null,
+      comment: panel.comment.isNotEmpty ? panel.comment : null,
       enable: panel.enable,
       isActive: panel.isActive,
-      usageLimitGb: panel.usageLimitGb > 0 ? panel.usageLimitGb : null,
+      usageLimitGb: panel.usageLimitGb >= 0 ? panel.usageLimitGb : null,
       currentUsageGb: panel.currentUsageGb,
       packageDays: panel.packageDays > 0 ? panel.packageDays : null,
       startDate: panel.startDate,
       expiryDate: panel.expiryDate,
+      clearExpiryDate: panel.expiryDate == null &&
+          panel.startDate != null &&
+          panel.packageDays > 0,
+      lastResetTime: panel.lastResetTime,
       lastOnline: panel.lastOnline,
       mode: panel.mode.isNotEmpty ? panel.mode : null,
+      lang: panel.lang.isNotEmpty ? panel.lang : null,
+      wgIpv4: panel.wgIpv4.isNotEmpty ? panel.wgIpv4 : null,
+      wgIpv6: panel.wgIpv6.isNotEmpty ? panel.wgIpv6 : null,
+      awgIpv4: panel.awgIpv4.isNotEmpty ? panel.awgIpv4 : null,
+      awgIpv6: panel.awgIpv6.isNotEmpty ? panel.awgIpv6 : null,
     );
     _session = session.copyWith(account: merged, filter: session.filter);
     await _store.writeJson(StoreKeys.session, _session!.toJson());
@@ -571,6 +722,51 @@ class AuthController extends ChangeNotifier {
   /// می شود تا اتصال فعال قطع شود. در main به VpnController وصل می شود.
   void Function(String reason)? onAccessRevoked;
 
+  /// دریافت اشتراک اختصاصی کاربر از طریق درگاه ربات (مسیر کمکی بدون هیچ منبع
+  /// عمومی، فقط برای خود حساب واردشده).
+  Future<String?> fetchSubscriptionViaGateway() async {
+    final SessionData? session = _session;
+    if (session == null || session.token.isEmpty) {
+      return null;
+    }
+    try {
+      final ({String content, String subscriptionUrl, String accountBase})?
+          fetched = await _gateway.fetchSubscription(session.token);
+      if (fetched == null) {
+        return null;
+      }
+      final SessionData? current = _session;
+      if (current != null) {
+        final String nextSub = fetched.subscriptionUrl.isNotEmpty
+            ? fetched.subscriptionUrl
+            : current.account.subscriptionUrl;
+        final String nextBase = fetched.accountBase.isNotEmpty
+            ? fetched.accountBase
+            : current.account.accountBase;
+        if (nextSub != current.account.subscriptionUrl ||
+            nextBase != current.account.accountBase) {
+          _session = current.copyWith(
+            account: current.account.copyWith(
+              subscriptionUrl: nextSub,
+              accountBase: nextBase,
+            ),
+          );
+          await _store.writeJson(StoreKeys.session, _session!.toJson());
+        }
+      }
+      return fetched.content;
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+        notifyListeners();
+      }
+      return null;
+    }
+  }
+
   Future<void> refreshAccount({bool silent = false}) async {
     final SessionData? session = _session;
     if (session == null) {
@@ -578,9 +774,28 @@ class AuthController extends ChangeNotifier {
     }
     try {
       final SessionData fresh = await _gateway.refresh(session.token);
-      _session = session.copyWith(account: fresh.account, filter: fresh.filter);
+      final Account prev = session.account;
+      final Account next = fresh.account;
+      final Account preserved = next.copyWith(
+        panelId: next.panelId > 0 ? next.panelId : prev.panelId,
+        lastResetTime: next.lastResetTime ?? prev.lastResetTime,
+        wgIpv4: next.wgIpv4.isNotEmpty ? next.wgIpv4 : prev.wgIpv4,
+        wgIpv6: next.wgIpv6.isNotEmpty ? next.wgIpv6 : prev.wgIpv6,
+        awgIpv4: next.awgIpv4.isNotEmpty ? next.awgIpv4 : prev.awgIpv4,
+        awgIpv6: next.awgIpv6.isNotEmpty ? next.awgIpv6 : prev.awgIpv6,
+      );
+      final FilterSettings previousFilter = session.filter;
+      _session = session.copyWith(
+        account: preserved,
+        filter: fresh.filter,
+        offers: fresh.offers,
+      );
+      await _syncNotificationOwner(_session!.ownerKey);
       await _store.writeJson(StoreKeys.session, _session!.toJson());
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());
+      if (!previousFilter.sameEffectAs(fresh.filter)) {
+        onFilterChanged?.call(fresh.filter);
+      }
       notifyListeners();
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
@@ -588,6 +803,116 @@ class AuthController extends ChangeNotifier {
       } else if (error.needsLogin) {
         await signOut(callServer: false);
         _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+        notifyListeners();
+      }
+    }
+  }
+
+  /// اعمال خودکار تغییرات دریافتی از ربات تلگرام (کنترل محتوا و وضعیت منوی
+  /// اشتراک رایگان / نوروزی) بدون نیاز به بستن یا ورود مجدد.
+  Future<void> _applyLiveServerState({
+    FilterSettings? filter,
+    SubscriptionOffers? offers,
+  }) async {
+    final SessionData? current = _session;
+    if (current == null) {
+      return;
+    }
+    FilterSettings nextFilter = current.filter;
+    bool filterChanged = false;
+    bool filterEffectChanged = false;
+    if (filter != null && !_savingFilter && !current.filter.sameAs(filter)) {
+      filterEffectChanged = !current.filter.sameEffectAs(filter);
+      nextFilter = filter;
+      filterChanged = true;
+    }
+
+    SubscriptionOffers nextOffers = current.offers;
+    bool offersChanged = false;
+    if (offers != null && !_claimingOffer && !current.offers.sameAs(offers)) {
+      nextOffers = offers;
+      offersChanged = true;
+    }
+
+    if (!filterChanged && !offersChanged) {
+      return;
+    }
+    _session = current.copyWith(filter: nextFilter, offers: nextOffers);
+    await _store.writeJson(StoreKeys.session, _session!.toJson());
+    if (filterChanged) {
+      await _store.writeJson(StoreKeys.filter, nextFilter.toJson());
+    }
+    if (filterEffectChanged) {
+      onFilterChanged?.call(nextFilter);
+    }
+    notifyListeners();
+  }
+
+  /// همگام سازی کاملاً خودکار پس زمینه (کنترل محتوا، هدیه ها، حساب، پنل و اعلان ها).
+  DateTime? _lastAutoSyncAt;
+  bool _autoSyncInFlight = false;
+
+  Future<void> autoSync({bool includeAccount = true}) async {
+    if (!signedIn || _autoSyncInFlight || _revokingSession) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    if (_lastAutoSyncAt != null &&
+        now.difference(_lastAutoSyncAt!) < const Duration(seconds: 12)) {
+      return;
+    }
+    _autoSyncInFlight = true;
+    _lastAutoSyncAt = now;
+    try {
+      await _checkDeviceAccess();
+      if (includeAccount && signedIn && !_revokingSession) {
+        await refreshAccount(silent: true);
+        await refreshFromPanel();
+      }
+    } catch (_) {
+      // همگام سازی پس زمینه کاملاً بی صداست و خطای موقت شبکه کاربر را آزار نمی دهد.
+    } finally {
+      _autoSyncInFlight = false;
+    }
+  }
+
+  /// همگام سازی خودکار و بی صدای کنترل محتوا با ربات تلگرام.
+  Future<bool> syncFilter({bool silent = true}) async {
+    final SessionData? session = _session;
+    if (session == null || _syncingFilter || _savingFilter) {
+      return false;
+    }
+    _syncingFilter = true;
+    if (!silent) {
+      notifyListeners();
+    }
+    try {
+      final FilterSettings latest = await _gateway.getFilter(session.token);
+      final SessionData? current = _session;
+      if (current != null && !_savingFilter && !current.filter.sameAs(latest)) {
+        final bool effectChanged = !current.filter.sameEffectAs(latest);
+        _session = current.copyWith(filter: latest);
+        await _store.writeJson(StoreKeys.session, _session!.toJson());
+        await _store.writeJson(StoreKeys.filter, latest.toJson());
+        if (effectChanged) {
+          onFilterChanged?.call(latest);
+        }
+        notifyListeners();
+      }
+      return true;
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+      } else if (!silent) {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return false;
+    } finally {
+      _syncingFilter = false;
+      if (!silent) {
         notifyListeners();
       }
     }
@@ -595,14 +920,25 @@ class AuthController extends ChangeNotifier {
 
   Future<bool> saveFilter(FilterSettings settings) async {
     final SessionData? session = _session;
-    if (session == null) {
+    if (session == null || _savingFilter) {
       return false;
     }
+    _savingFilter = true;
+    _error = '';
+    notifyListeners();
     try {
-      final FilterSettings saved = await _gateway.saveFilter(session.token, settings);
-      _session = session.copyWith(filter: saved);
+      final FilterSettings previous = session.filter;
+      final FilterSettings saved =
+          await _gateway.saveFilter(session.token, settings);
+      final SessionData nextSession = (_session ?? session).copyWith(
+        filter: saved,
+      );
+      _session = nextSession;
+      await _store.writeJson(StoreKeys.session, nextSession.toJson());
       await _store.writeJson(StoreKeys.filter, saved.toJson());
-      notifyListeners();
+      if (!previous.sameEffectAs(saved)) {
+        onFilterChanged?.call(saved);
+      }
       return true;
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
@@ -610,38 +946,353 @@ class AuthController extends ChangeNotifier {
       } else {
         _error = error.message;
         _logError(error.message);
-        notifyListeners();
       }
       return false;
+    } finally {
+      _savingFilter = false;
+      notifyListeners();
     }
   }
 
-  Future<void> fetchNotifications() async {
+  Future<bool> loadSubscriptionPlans({bool silent = true}) async {
+    final SessionData? session = _session;
+    if (session == null || _loadingSubscriptionPlans) return false;
+    _loadingSubscriptionPlans = true;
+    try {
+      final ({List<SubscriptionPlan> plans, int balance, CustomSubscriptionTerms? custom}) result =
+          await _gateway.subscriptionPlans(session.token);
+      if (_session?.token != session.token) return false;
+      _subscriptionPlans = result.plans;
+      _customSubscriptionTerms = result.custom;
+      _walletBalance = result.balance;
+      return true;
+    } on ApiError catch (error) {
+      if (!silent) {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return false;
+    } finally {
+      _loadingSubscriptionPlans = false;
+      notifyListeners();
+    }
+  }
+
+  /// خرید یا تمدید از همان تعرفه/کیف پول ربات؛ checkout URL فقط پس از ساخت
+  /// سفارش سرورمحور برمی‌گردد و نتیجه پرداخت در callback زرین‌پال تایید می‌شود.
+  Future<({String status, String checkoutUrl, String message})?>
+      purchaseSubscriptionPlan(String month, {int? days, double? gb, int? quotedPrice}) async {
+    final SessionData? session = _session;
+    if (session == null || _purchasingSubscription) return null;
+    _purchasingSubscription = true;
+    _error = '';
+    notifyListeners();
+    try {
+      final Map<String, dynamic> result = days != null && gb != null
+          ? await _gateway.purchaseCustomSubscription(token: session.token, days: days, gb: gb, quotedPrice: quotedPrice)
+          : await _gateway.purchaseSubscription(token: session.token, month: month, quotedPrice: quotedPrice);
+      final String status = JsonX.text(result['status']);
+      String message = JsonX.text(result['message']);
+      final String checkoutUrl = JsonX.text(result['checkout_url']);
+      if (status == 'payment_required') {
+        final int gatewayAmount = JsonX.integer(result['gateway_amount']);
+        final int fee = JsonX.integer(result['fee']);
+        message = 'قابل پرداخت از درگاه ${Fa.num(gatewayAmount)} تومان'
+            '${fee > 0 ? '، شامل ${Fa.num(fee)} تومان کارمزد' : ''} است.';
+      }
+      if (status == 'activated') {
+        await refreshAccount(silent: true);
+        await refreshFromPanel();
+        await loadSubscriptionPlans();
+        if (onSubscriptionClaimed != null) {
+          unawaited(onSubscriptionClaimed!());
+        }
+      }
+      return (status: status, checkoutUrl: checkoutUrl, message: message);
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return null;
+    } finally {
+      _purchasingSubscription = false;
+      notifyListeners();
+    }
+  }
+
+  /// فعال سازی اشتراک رایگان (۱ گیگ / ۱ روز) یا نوروزی (۵ گیگ / ۱۳ روز) همگام با ربات.
+  Future<String?> claimSubscriptionOffer(String type) async {
+    final SessionData? session = _session;
+    if (session == null || _claimingOffer) {
+      return null;
+    }
+    _claimingOffer = true;
+    _claimingPlanType = type;
+    _error = '';
+    notifyListeners();
+    try {
+      final ({
+        String message,
+        Account account,
+        FilterSettings filter,
+        SubscriptionOffers offers,
+      }) res = await _gateway.claimSubscription(
+        token: session.token,
+        type: type,
+      );
+      final SessionData base = _session ?? session;
+      final Account prev = base.account;
+      final Account merged = res.account.copyWith(
+        panelId: res.account.panelId > 0 ? res.account.panelId : prev.panelId,
+        wgIpv4: res.account.wgIpv4.isNotEmpty ? res.account.wgIpv4 : prev.wgIpv4,
+        wgIpv6: res.account.wgIpv6.isNotEmpty ? res.account.wgIpv6 : prev.wgIpv6,
+        awgIpv4:
+            res.account.awgIpv4.isNotEmpty ? res.account.awgIpv4 : prev.awgIpv4,
+        awgIpv6:
+            res.account.awgIpv6.isNotEmpty ? res.account.awgIpv6 : prev.awgIpv6,
+      );
+      _session = base.copyWith(
+        account: merged,
+        filter: res.filter,
+        offers: res.offers,
+      );
+      await _store.writeJson(StoreKeys.session, _session!.toJson());
+      await _store.writeJson(StoreKeys.filter, res.filter.toJson());
+      notifyListeners();
+      if (onSubscriptionClaimed != null) {
+        unawaited(onSubscriptionClaimed!());
+      }
+      return res.message.isNotEmpty
+          ? res.message
+          : (type == 'nowruz'
+              ? 'اشتراک نوروزی با موفقیت فعال شد.'
+              : 'اشتراک رایگان با موفقیت فعال شد.');
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.code == 'already_claimed' ||
+          error.code == 'nowruz_disabled' ||
+          error.code == 'active_subscription') {
+        _error = error.message;
+        unawaited(refreshAccount(silent: true));
+      } else {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return null;
+    } finally {
+      _claimingOffer = false;
+      _claimingPlanType = '';
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncNotificationOwner(String ownerKey) async {
+    if (ownerKey.isEmpty) {
+      return;
+    }
+    final String previousOwner =
+        (_store.read(StoreKeys.notificationsOwner) ?? '').trim();
+    if (previousOwner.isNotEmpty && previousOwner != ownerKey) {
+      _notifications = <AppNotification>[];
+      _announced.clear();
+      _historySynced = false;
+      await _store.writeJsonList(StoreKeys.notifications, const <dynamic>[]);
+    }
+    if (previousOwner != ownerKey) {
+      await _store.write(StoreKeys.notificationsOwner, ownerKey);
+    }
+  }
+
+  /// ادغام اعلان های دریافتی از درگاه با تاریخچه ذخیره شده محلی.
+  ///
+  /// درگاه در حالت عادی فقط اعلان های تحویل نشده را برمی گرداند و بلافاصله
+  /// `Delivered_At` را پر می کند؛ بنابراین جایگزینی مستقیم لیست باعث پاک شدن
+  /// تمام اعلان های قبلی در درخواست بعدی می شد. این متد اعلان های قبلی را حفظ
+  /// می کند، وضعیت خوانده شدن هر اعلان را نگه می دارد، و اعلان های تاریخی
+  /// بازیابی شده (`delivered == true`) را بدون پخش مجدد صدا در فهرست قرار می دهد.
+  static ({List<AppNotification> merged, List<AppNotification> fresh})
+      mergeNotificationHistory({
+    required List<AppNotification> existing,
+    required List<AppNotification> incoming,
+    required Set<String> announced,
+    int maxItems = maxStoredNotifications,
+  }) {
+    final Map<String, AppNotification> byKey = <String, AppNotification>{};
+    for (final AppNotification item in existing) {
+      if (_isStaleDeviceRevocation(item)) {
+        continue;
+      }
+      byKey[_keyOf(item)] = item.copyWith(clearDelivered: true);
+    }
+
+    final List<AppNotification> fresh = <AppNotification>[];
+    final Set<String> freshKeys = <String>{};
+
+    for (final AppNotification item in incoming) {
+      if (_isStaleDeviceRevocation(item)) {
+        continue;
+      }
+      final String key = _keyOf(item);
+      final AppNotification? previous = byKey[key];
+      if (previous != null) {
+        byKey[key] = previous.copyWith(
+          title: item.title.isNotEmpty ? item.title : previous.title,
+          body: item.body.isNotEmpty ? item.body : previous.body,
+          level: item.level.isNotEmpty ? item.level : previous.level,
+          sentAt: item.sentAt ?? previous.sentAt,
+          read: previous.read,
+          clearDelivered: true,
+        );
+        announced.add(key);
+        continue;
+      }
+
+      if (item.delivered == true) {
+        // اعلان قدیمی بازیابی شده از تاریخچه سرور: نمایش در فهرست بدون هشدار مجدد.
+        byKey[key] = item.copyWith(read: true, clearDelivered: true);
+        announced.add(key);
+      } else {
+        final AppNotification normalized = item.copyWith(clearDelivered: true);
+        byKey[key] = normalized;
+        if (!normalized.read &&
+            !announced.contains(key) &&
+            freshKeys.add(key)) {
+          fresh.add(normalized);
+        }
+      }
+    }
+
+    final List<AppNotification> merged = _sortAndTrim(
+      byKey.values.toList(),
+      maxItems: maxItems,
+    );
+    return (merged: merged, fresh: fresh);
+  }
+
+  static List<AppNotification> _sortAndTrim(
+    List<AppNotification> items, {
+    int maxItems = maxStoredNotifications,
+  }) {
+    items.sort((AppNotification a, AppNotification b) {
+      final DateTime? ta = a.sentAt;
+      final DateTime? tb = b.sentAt;
+      if (ta != null && tb != null) {
+        final int byTime = tb.compareTo(ta);
+        if (byTime != 0) {
+          return byTime;
+        }
+      } else if (tb != null) {
+        return 1;
+      } else if (ta != null) {
+        return -1;
+      }
+      return b.id.abs().compareTo(a.id.abs());
+    });
+    if (items.length > maxItems) {
+      return items.sublist(0, maxItems);
+    }
+    return items;
+  }
+
+  static bool _sameNotificationList(
+    List<AppNotification> a,
+    List<AppNotification> b,
+  ) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (int i = 0; i < a.length; i++) {
+      final AppNotification x = a[i];
+      final AppNotification y = b[i];
+      if (x.id != y.id ||
+          x.read != y.read ||
+          x.title != y.title ||
+          x.body != y.body ||
+          x.level != y.level ||
+          x.sentAt != y.sentAt) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> fetchNotifications({bool includeHistory = false}) async {
+    if (_session == null) {
+      return;
+    }
+    final Future<void>? inFlight = _notificationsFetch;
+    if (inFlight != null) {
+      await inFlight;
+      if (!includeHistory || _session == null) {
+        return;
+      }
+    }
+    final Future<void> run =
+        _performFetchNotifications(includeHistory: includeHistory);
+    _notificationsFetch = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_notificationsFetch, run)) {
+        _notificationsFetch = null;
+      }
+    }
+  }
+
+  Future<void> _performFetchNotifications({
+    required bool includeHistory,
+  }) async {
     final SessionData? session = _session;
     if (session == null) {
       return;
     }
+    if (includeHistory && !_loadingNotifications) {
+      _loadingNotifications = true;
+      notifyListeners();
+    }
     try {
-      final List<AppNotification> items = (await _gateway.notifications(session.token))
+      final List<AppNotification> items = (await _gateway.notifications(
+        session.token,
+        includeHistory: includeHistory,
+      ))
           // A revoke warning can be queued immediately before this same device
           // is re-approved. The gateway filters it too; keep older deployments
           // and delayed responses from showing that stale warning after approval.
           .where((AppNotification item) => !_isStaleDeviceRevocation(item))
           .toList();
-      final List<AppNotification> fresh = items
-          .where((AppNotification item) => !_announced.contains(_keyOf(item)))
-          .toList();
-      _notifications = items;
-      await _store.writeJsonList(
-        StoreKeys.notifications,
-        items.map((AppNotification item) => item.toJson()).toList(),
+      if (includeHistory) {
+        _historySynced = true;
+      }
+      final ({List<AppNotification> merged, List<AppNotification> fresh})
+          result = mergeNotificationHistory(
+        existing: _notifications,
+        incoming: items,
+        announced: _announced,
       );
-      notifyListeners();
+      final bool changed = !_sameNotificationList(_notifications, result.merged);
+      if (changed) {
+        _notifications = result.merged;
+        await _persistNotifications();
+      }
+      if (_loadingNotifications) {
+        _loadingNotifications = false;
+      }
+      if (changed || includeHistory) {
+        notifyListeners();
+      }
       // اعلان تازه باید هم صدا داشته باشد و هم در گوشه ویندوز دیده شود.
-      if (fresh.isNotEmpty) {
-        await _announce(fresh);
+      if (result.fresh.isNotEmpty) {
+        await _announce(result.fresh);
       }
     } on ApiError catch (error) {
+      if (_loadingNotifications) {
+        _loadingNotifications = false;
+        notifyListeners();
+      }
       if (error.code == 'device_revoked') {
         await _handleDeviceRevoked(error.message);
       } else if (error.needsLogin) {
@@ -649,7 +1300,19 @@ class AuthController extends ChangeNotifier {
         _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
         notifyListeners();
       }
+    } catch (_) {
+      if (_loadingNotifications) {
+        _loadingNotifications = false;
+        notifyListeners();
+      }
     }
+  }
+
+  Future<void> _persistNotifications() {
+    return _store.writeJsonList(
+      StoreKeys.notifications,
+      _notifications.map((AppNotification item) => item.toJson()).toList(),
+    );
   }
 
   static bool _isStaleDeviceRevocation(AppNotification item) {
@@ -658,7 +1321,45 @@ class AuthController extends ChangeNotifier {
         notice.contains('دسترسی این دستگاه به نرم افزار آمبرلا لغو شد');
   }
 
-  static String _keyOf(AppNotification item) => '${item.id}|${item.sentAt?.toIso8601String() ?? ''}';
+  static String _keyOf(AppNotification item) => item.identityKey;
+
+  /// ثبت اعلان مهم محلی (مثل اتمام اشتراک) در مرکز اعلان ها تا بعداً هم قابل
+  /// مشاهده باشد.
+  void recordLocalNotification({
+    required String title,
+    String body = '',
+    String level = 'info',
+  }) {
+    final String cleanTitle = title.trim();
+    final String cleanBody = body.trim();
+    if (cleanTitle.isEmpty) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    // جلوگیری از ثبت تکراری یک اعلان محلی یکسان در بازه کوتاه.
+    final bool duplicate = _notifications.any(
+      (AppNotification item) =>
+          item.id < 0 &&
+          item.title == cleanTitle &&
+          item.body == cleanBody &&
+          item.sentAt != null &&
+          now.difference(item.sentAt!).inMinutes.abs() < 10,
+    );
+    if (duplicate) {
+      return;
+    }
+    final AppNotification entry = AppNotification(
+      id: -now.microsecondsSinceEpoch,
+      title: cleanTitle,
+      body: cleanBody,
+      level: level,
+      sentAt: now,
+    );
+    _announced.add(_keyOf(entry));
+    _notifications = _sortAndTrim(<AppNotification>[entry, ..._notifications]);
+    unawaited(_persistNotifications());
+    notifyListeners();
+  }
 
   /// اعلام اعلان تازه: صدا و بالون سینی سیستم.
   ///
@@ -667,7 +1368,9 @@ class AuthController extends ChangeNotifier {
   Future<void> _announce(List<AppNotification> fresh) async {
     for (final AppNotification item in fresh) {
       _announced.add(_keyOf(item));
-      _log.add('اعلان تازه: ${item.title}${item.body.isEmpty ? '' : ' | ${item.body}'}');
+      final String shortTitle = item.compactTitle;
+      final String shortBody = item.balloonBody;
+      _log.add('اعلان: $shortTitle${shortBody.isEmpty ? '' : ' | $shortBody'}');
     }
     final AppNotification last = fresh.last;
     if (soundEnabled) {
@@ -675,23 +1378,38 @@ class AuthController extends ChangeNotifier {
     }
     if (notificationsEnabled) {
       await _tray?.balloon(
-        last.title.isEmpty ? 'اعلان تازه' : last.title,
-        last.body,
+        last.compactTitle,
+        last.balloonBody,
         warning: fresh.any((AppNotification item) => item.level == 'warning'),
       );
     }
   }
 
+  void markNotificationRead(AppNotification target) {
+    final String key = _keyOf(target);
+    bool changed = false;
+    _notifications = _notifications.map((AppNotification item) {
+      if (!item.read && _keyOf(item) == key) {
+        changed = true;
+        return item.copyWith(read: true);
+      }
+      return item;
+    }).toList();
+    if (!changed) {
+      return;
+    }
+    unawaited(_persistNotifications());
+    notifyListeners();
+  }
+
   void markNotificationsRead() {
+    if (_notifications.every((AppNotification item) => item.read)) {
+      return;
+    }
     _notifications = _notifications
         .map((AppNotification item) => item.copyWith(read: true))
         .toList();
-    unawaited(
-      _store.writeJsonList(
-        StoreKeys.notifications,
-        _notifications.map((AppNotification item) => item.toJson()).toList(),
-      ),
-    );
+    unawaited(_persistNotifications());
     notifyListeners();
   }
 
@@ -701,6 +1419,11 @@ class AuthController extends ChangeNotifier {
     _heartbeatTimer?.cancel();
     final SessionData? session = _session;
     _session = null;
+    _subscriptionPlans = <SubscriptionPlan>[];
+    _customSubscriptionTerms = null;
+    _botLinked = null;
+    _walletBalance = 0;
+    onFilterChanged?.call(FilterSettings.empty);
     _phase = AuthPhase.phone;
     _stage = SignInStage.unknown;
     _challenge = '';

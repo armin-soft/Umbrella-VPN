@@ -47,6 +47,8 @@ eval(preg_replace('/\?>\s*$/', '', substr($S, strpos($S, 'final class ' . $Class
 }
 $N = 0;
 function check(bool $Ok, string $Message): void { global $N; if (!$Ok) throw new RuntimeException($Message); $N++; }
+check(BotConfig::getChannelUrl() === 'https://t.me/UmbrellaVPN_Channel', 'default channel url is UmbrellaVPN_Channel');
+foreach (['@UmbrellaVPN_Channel', 'UmbrellaVPN_Channel', 'https://t.me/UmbrellaVPN_Channel', 't.me/UmbrellaVPN_Channel/'] as $Input) check(BotConfig::channelUsername($Input) === 'UmbrellaVPN_Channel', 'UmbrellaVPN_Channel normalization');
 foreach (['@sample_channel', 'sample_channel', 'https://t.me/sample_channel', 't.me/sample_channel/'] as $Input) check(BotConfig::channelUsername($Input) === 'sample_channel', 'username normalization');
 foreach (['https://evil.test/sample_channel', 'https://t.me/+private', 'https://t.me/channel/12', '-1001234'] as $Input) { try { BotConfig::channelUsername($Input); check(false, 'invalid channel accepted'); } catch (InvalidArgumentException) { check(true, 'invalid channel refused'); } }
 TelegramClient::$Response = ['ok' => true, 'result' => ['id' => -1001234567890, 'type' => 'channel', 'username' => 'sample_channel']];

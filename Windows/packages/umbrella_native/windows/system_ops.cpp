@@ -1,4 +1,5 @@
 #include "system_ops.h"
+#include "winhttp_client.h"
 
 #include <iphlpapi.h>
 #include <ipifcons.h>
@@ -16,6 +17,8 @@
 #include <cstring>
 #include <cwctype>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
@@ -136,7 +139,47 @@ const char* kForeignCores[] = {
     "shadowsocks.exe", "ss-local.exe", "trojan.exe",   "hysteria.exe",
     "naive.exe",     "tun2socks.exe", "warp-svc.exe",  "nekoray.exe",
     "v2rayn.exe",    "shadowrocket.exe", "outline.exe", "psiphon.exe",
+    "hiddifycli.exe", "hiddifycore.exe",
 };
+
+const char* kOwnedCores[] = {
+    "umbrellacli.exe",
+    "umbrellacoreengine.exe",
+    "umbrellaadmin.exe",
+    "hiddifycli.exe",
+    "hiddifycore.exe",
+};
+
+bool IsOwnedCoreExe(const std::string& exe) {
+  const std::string base = ToLowerAscii(ExtractFileName(exe));
+  for (const char* name : kOwnedCores) {
+    if (base == name) return true;
+  }
+  return false;
+}
+
+BOOL CALLBACK CloseUmbrellaCliWindowsProc(HWND hwnd, LPARAM /*param*/) {
+  if (!IsWindow(hwnd)) return TRUE;
+  wchar_t cls[64] = {0};
+  const int cls_len = GetClassNameW(hwnd, cls, 63);
+  if (cls_len <= 0) return TRUE;
+  // Filter to console hosts first (kernel-local check) so we never touch
+  // hundreds of unrelated or unresponsive desktop windows during exit.
+  if (wcscmp(cls, L"ConsoleWindowClass") != 0 &&
+      wcscmp(cls, L"CASCADIA_HOSTING_WINDOW_CLASS") != 0 &&
+      wcscmp(cls, L"PseudoConsoleWindow") != 0) {
+    return TRUE;
+  }
+  wchar_t title[128] = {0};
+  DWORD_PTR copied = 0;
+  if (SendMessageTimeoutW(hwnd, WM_GETTEXT, 127,
+                          reinterpret_cast<LPARAM>(title),
+                          SMTO_ABORTIFHUNG | SMTO_BLOCK, 15, &copied) != 0 &&
+      copied > 0 && wcsncmp(title, L"Umbrella CLI", 12) == 0) {
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+  }
+  return TRUE;
+}
 
 }  // namespace
 
@@ -159,6 +202,13 @@ bool SystemOps::IsElevated() {
 }
 
 bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
+  const bool is_core = IsOwnedCoreExe(exe);
+  if (is_core) {
+    const std::wstring self_pid = std::to_wstring(GetCurrentProcessId());
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", self_pid.c_str());
+  } else {
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+  }
   std::wstring file = ToWide(exe);
   std::wstring parameters = ToWide(args);
   SHELLEXECUTEINFOW info = {0};
@@ -168,7 +218,12 @@ bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
   info.lpFile = file.c_str();
   info.lpParameters = parameters.empty() ? nullptr : parameters.c_str();
   info.nShow = SW_SHOWNORMAL;
-  if (!ShellExecuteExW(&info)) return false;
+  const BOOL ok = ShellExecuteExW(&info);
+  SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+  if (!ok) return false;
+  if (is_core) {
+    shutdown_clean_.store(false, std::memory_order_release);
+  }
   if (info.hProcess) CloseHandle(info.hProcess);
   return true;
 }
@@ -187,23 +242,34 @@ bool SystemOps::RelaunchElevated(const std::string& extra_args) {
 std::string SystemOps::ExecutablePath() { return ToUtf8(ExePathW()); }
 
 std::string SystemOps::LocalIpv4() {
-  ULONG size = 16384;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return std::string();
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  IP_ADAPTER_ADDRESSES* addresses = nullptr;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG res = GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size);
+    if (res == NO_ERROR) break;
+    addresses = nullptr;
+    if (res != ERROR_BUFFER_OVERFLOW) return std::string();
   }
+  if (addresses == nullptr) return std::string();
+
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp) continue;
     if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
     for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr;
          unicast = unicast->Next) {
+      if (unicast->Address.lpSockaddr == nullptr) continue;
       if (unicast->Address.lpSockaddr->sa_family != AF_INET) continue;
       auto* ipv4 =
           reinterpret_cast<sockaddr_in*>(unicast->Address.lpSockaddr);
+      // Skip the local TUN subnet (172.19.0.0/28) so physical LAN IP wins.
+      if ((ntohl(ipv4->sin_addr.s_addr) & 0xFFFFFFF0u) == 0xAC130000u) {
+        continue;
+      }
       char text[INET_ADDRSTRLEN] = {0};
       if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text)) == nullptr) {
         continue;
@@ -216,40 +282,70 @@ std::string SystemOps::LocalIpv4() {
 }
 
 std::string SystemOps::DefaultAdapterName() {
-  ULONG size = 16384;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return std::string();
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  IP_ADAPTER_ADDRESSES* addresses = nullptr;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG res = GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size);
+    if (res == NO_ERROR) break;
+    addresses = nullptr;
+    if (res != ERROR_BUFFER_OVERFLOW) return std::string();
   }
+  if (addresses == nullptr) return std::string();
+
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp) continue;
     if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
-    if (adapter->FirstUnicastAddress == nullptr) continue;
+    bool has_physical_ipv4 = false;
+    for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr;
+         unicast = unicast->Next) {
+      if (unicast->Address.lpSockaddr == nullptr) continue;
+      if (unicast->Address.lpSockaddr->sa_family != AF_INET) continue;
+      auto* ipv4 =
+          reinterpret_cast<sockaddr_in*>(unicast->Address.lpSockaddr);
+      if ((ntohl(ipv4->sin_addr.s_addr) & 0xFFFFFFF0u) == 0xAC130000u) {
+        continue;
+      }
+      char text[INET_ADDRSTRLEN] = {0};
+      if (inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text)) == nullptr) {
+        continue;
+      }
+      if (strncmp(text, "169.254.", 8) == 0) continue;
+      has_physical_ipv4 = true;
+      break;
+    }
+    if (!has_physical_ipv4) continue;
     return ToUtf8(adapter->FriendlyName);
   }
   return std::string();
 }
 
 std::string SystemOps::DefaultAdapterMac() {
-  ULONG size = 16384;
-  std::vector<BYTE> buffer(size);
-  auto* addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
                 GAA_FLAG_SKIP_DNS_SERVER;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size) !=
-      NO_ERROR) {
-    return std::string();
+  ULONG size = 16384;
+  std::vector<BYTE> buffer;
+  IP_ADAPTER_ADDRESSES* addresses = nullptr;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    buffer.assign(size, 0);
+    addresses = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG res = GetAdaptersAddresses(AF_INET, flags, nullptr, addresses, &size);
+    if (res == NO_ERROR) break;
+    addresses = nullptr;
+    if (res != ERROR_BUFFER_OVERFLOW) return std::string();
   }
+  if (addresses == nullptr) return std::string();
+
   for (auto* adapter = addresses; adapter != nullptr; adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp) continue;
     if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
     if (adapter->PhysicalAddressLength < 6) continue;
     char text[32] = {0};
-    snprintf(text, sizeof(text), "%02X%02X%02X%02X%02X%02X",
+    snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X",
              adapter->PhysicalAddress[0], adapter->PhysicalAddress[1],
              adapter->PhysicalAddress[2], adapter->PhysicalAddress[3],
              adapter->PhysicalAddress[4], adapter->PhysicalAddress[5]);
@@ -277,15 +373,34 @@ DeviceInfo SystemOps::CollectDeviceInfo() {
         reinterpret_cast<RtlGetVersionPtr>(GetProcAddress(ntdll, "RtlGetVersion"));
     if (rtl_get_version != nullptr &&
         rtl_get_version(reinterpret_cast<PRTL_OSVERSIONINFOW>(&version)) == 0) {
+      info.os_build = static_cast<int>(version.dwBuildNumber);
+      const int display_major =
+          (version.dwMajorVersion == 10 && version.dwBuildNumber >= 22000)
+              ? 11
+              : static_cast<int>(version.dwMajorVersion);
       std::ostringstream os;
-      os << "Windows " << version.dwMajorVersion << "." << version.dwMinorVersion
+      os << "Windows " << display_major
          << " (build " << version.dwBuildNumber << ")";
       info.os = os.str();
     }
   }
 
+  std::wstring edition_id;
+  if (ReadRegistryString(HKEY_LOCAL_MACHINE,
+                         L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                         L"EditionID", &edition_id)) {
+    info.os_edition = ToUtf8(edition_id);
+  }
+  std::wstring display_ver;
+  if (ReadRegistryString(HKEY_LOCAL_MACHINE,
+                         L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                         L"DisplayVersion", &display_ver)) {
+    info.os_display_version = ToUtf8(display_ver);
+  }
+
   SYSTEM_INFO system_info;
   GetNativeSystemInfo(&system_info);
+  info.cpu_cores = static_cast<int>(system_info.dwNumberOfProcessors);
   switch (system_info.wProcessorArchitecture) {
     case PROCESSOR_ARCHITECTURE_AMD64:
       info.arch = "x64";
@@ -313,6 +428,50 @@ DeviceInfo SystemOps::CollectDeviceInfo() {
                          L"ProcessorNameString", &cpu)) {
     info.cpu = ToUtf8(cpu);
   }
+  MEMORYSTATUSEX mem_status = {0};
+  mem_status.dwLength = sizeof(mem_status);
+  if (GlobalMemoryStatusEx(&mem_status)) {
+    const uint64_t total_mb = mem_status.ullTotalPhys / (1024ULL * 1024ULL);
+    const uint64_t avail_mb = mem_status.ullAvailPhys / (1024ULL * 1024ULL);
+    info.ram_total_mb = static_cast<int64_t>(total_mb);
+    info.ram_used_mb = static_cast<int64_t>(
+        total_mb > avail_mb ? (total_mb - avail_mb) : 0ULL);
+    info.ram_load_percent = static_cast<int>(mem_status.dwMemoryLoad);
+  }
+
+  wchar_t sys_dir[MAX_PATH] = {0};
+  UINT sys_len = GetSystemDirectoryW(sys_dir, MAX_PATH);
+  std::wstring root_drive = L"C:\\";
+  if (sys_len >= 3 && sys_dir[1] == L':') {
+    root_drive.assign(sys_dir, 3);
+  }
+  ULARGE_INTEGER free_avail = {0};
+  ULARGE_INTEGER total_bytes = {0};
+  ULARGE_INTEGER total_free = {0};
+  if (GetDiskFreeSpaceExW(root_drive.c_str(), &free_avail, &total_bytes,
+                          &total_free)) {
+    info.disk_total_mb =
+        static_cast<int64_t>(total_bytes.QuadPart / (1024ULL * 1024ULL));
+    info.disk_free_mb =
+        static_cast<int64_t>(total_free.QuadPart / (1024ULL * 1024ULL));
+  }
+
+  info.screen_width = GetSystemMetrics(SM_CXSCREEN);
+  info.screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+  SYSTEM_POWER_STATUS power = {0};
+  if (GetSystemPowerStatus(&power)) {
+    const bool no_system_battery = (power.BatteryFlag & 128) != 0 ||
+                                   power.BatteryFlag == 255;
+    info.has_battery = !no_system_battery;
+    if (power.BatteryLifePercent <= 100) {
+      info.battery_percent = static_cast<int>(power.BatteryLifePercent);
+    }
+    info.power_plugged = (power.ACLineStatus == 1) || !info.has_battery;
+  }
+
+  info.uptime_seconds = static_cast<int64_t>(GetTickCount64() / 1000ULL);
+  info.adapter_name = DefaultAdapterName();
   info.local_ip = LocalIpv4();
   info.adapter_mac = DefaultAdapterMac();
   info.elevated = IsElevated();
@@ -466,6 +625,14 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
     }
   }
 
+  const bool is_core = IsOwnedCoreExe(exe);
+  if (is_core) {
+    const std::wstring self_pid = std::to_wstring(GetCurrentProcessId());
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", self_pid.c_str());
+  } else {
+    SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+  }
+
   PROCESS_INFORMATION process = {0};
   std::wstring wdir = ToWide(work_dir);
   std::wstring buffer = command_line;
@@ -474,15 +641,192 @@ int SystemOps::Spawn(const std::string& exe, const std::string& args,
       wexe.empty() ? nullptr : wexe.c_str(), buffer.data(), nullptr, nullptr,
       log != INVALID_HANDLE_VALUE ? TRUE : FALSE, flags, nullptr,
       work_dir.empty() ? nullptr : wdir.c_str(), &startup, &process);
+  SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
   if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
   if (!started) {
     last_spawn_error_ = GetLastError();
     return -1;
   }
   int pid = static_cast<int>(process.dwProcessId);
+  if (is_core) {
+    shutdown_clean_.store(false, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(mutex_);
+    HANDLE job = EnsureCoreJobLocked();
+    if (job != nullptr) {
+      AssignProcessToJobObject(job, process.hProcess);
+    }
+  }
   CloseHandle(process.hThread);
   CloseHandle(process.hProcess);
   return pid;
+}
+
+HANDLE SystemOps::EnsureCoreJobLocked() {
+  if (core_job_ != nullptr) return core_job_;
+  HANDLE job = CreateJobObjectW(nullptr, nullptr);
+  if (job == nullptr) return nullptr;
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
+  info.BasicLimitInformation.LimitFlags =
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+  if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info,
+                               sizeof(info))) {
+    CloseHandle(job);
+    return nullptr;
+  }
+  core_job_ = job;
+  return core_job_;
+}
+
+bool SystemOps::AttachCoreJob(int pid) {
+  if (pid <= 0 || static_cast<DWORD>(pid) == GetCurrentProcessId()) {
+    return false;
+  }
+  HANDLE process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return false;
+  bool attached = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    HANDLE job = EnsureCoreJobLocked();
+    if (job != nullptr) {
+      attached = AssignProcessToJobObject(job, process) != 0;
+    }
+  }
+  if (attached) {
+    shutdown_clean_.store(false, std::memory_order_release);
+  }
+  CloseHandle(process);
+  return attached;
+}
+
+int SystemOps::KillOwnedCoreTreeSinglePass() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return 0;
+
+  const DWORD self_pid = GetCurrentProcessId();
+  std::unordered_map<DWORD, std::vector<DWORD>> children;
+  std::vector<DWORD> queue;
+  std::unordered_set<DWORD> targets;
+
+  PROCESSENTRY32W entry = {};
+  entry.dwSize = sizeof(entry);
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      const DWORD pid = entry.th32ProcessID;
+      if (pid == 0) continue;
+      children[entry.th32ParentProcessID].push_back(pid);
+      if (pid == self_pid) continue;
+      const std::string name = ToLowerAscii(ToUtf8(entry.szExeFile));
+      for (const char* owned : kOwnedCores) {
+        if (name == owned) {
+          if (targets.insert(pid).second) {
+            queue.push_back(pid);
+          }
+          break;
+        }
+      }
+    } while (Process32NextW(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
+
+  // Expand all descendant processes from the same snapshot in O(N).
+  for (size_t i = 0; i < queue.size(); ++i) {
+    auto it = children.find(queue[i]);
+    if (it == children.end()) continue;
+    for (DWORD child : it->second) {
+      if (child != 0 && child != self_pid && targets.insert(child).second) {
+        queue.push_back(child);
+      }
+    }
+  }
+
+  int killed = 0;
+  for (DWORD pid : queue) {
+    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (proc == nullptr) continue;
+    if (TerminateProcess(proc, 0) != FALSE) {
+      ++killed;
+    }
+    CloseHandle(proc);
+  }
+  return killed;
+}
+
+void SystemOps::NotifyProxySettingsChangedFast() {
+  INTERNET_PER_CONN_OPTION_LISTW list = {};
+  INTERNET_PER_CONN_OPTIONW option = {};
+  option.dwOption = INTERNET_PER_CONN_FLAGS;
+  option.Value.dwValue = PROXY_TYPE_DIRECT;
+  list.dwSize = sizeof(list);
+  list.pszConnection = nullptr;
+  list.dwOptionCount = 1;
+  list.pOptions = &option;
+  InternetSetOptionW(nullptr, INTERNET_OPTION_PER_CONNECTION_OPTION, &list,
+                     sizeof(list));
+  // Non-blocking broadcast notifies browsers and WinINet listeners immediately
+  // without stalling for seconds when any third-party window is hung.
+  SendNotifyMessageW(
+      HWND_BROADCAST, WM_SETTINGCHANGE, 0,
+      reinterpret_cast<LPARAM>(
+          L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"));
+  ResetWinHttpProxyFast();
+}
+
+void SystemOps::ClearLoopbackProxyFast() {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet "
+                    L"Settings",
+                    0, KEY_READ | KEY_WRITE, &key) != ERROR_SUCCESS) {
+    return;
+  }
+  DWORD enabled = 0;
+  DWORD size = sizeof(enabled);
+  DWORD type = 0;
+  bool cleared = false;
+  if (RegQueryValueExW(key, L"ProxyEnable", nullptr, &type,
+                       reinterpret_cast<LPBYTE>(&enabled),
+                       &size) == ERROR_SUCCESS &&
+      type == REG_DWORD && enabled != 0) {
+    wchar_t server[256] = {0};
+    DWORD server_size = sizeof(server) - sizeof(wchar_t);
+    DWORD server_type = 0;
+    if (RegQueryValueExW(key, L"ProxyServer", nullptr, &server_type,
+                         reinterpret_cast<LPBYTE>(server),
+                         &server_size) == ERROR_SUCCESS &&
+        server_type == REG_SZ &&
+        (wcsstr(server, L"127.0.0.1:") != nullptr ||
+         wcsstr(server, L"localhost:") != nullptr)) {
+      DWORD zero = 0;
+      RegSetValueExW(key, L"ProxyEnable", 0, REG_DWORD,
+                     reinterpret_cast<const BYTE*>(&zero), sizeof(zero));
+      RegDeleteValueW(key, L"ProxyOverride");
+      cleared = true;
+    }
+  }
+  RegCloseKey(key);
+  if (cleared) {
+    NotifyProxySettingsChangedFast();
+  }
+}
+
+int SystemOps::ShutdownOwnedCores(bool skip_if_clean) {
+  if (skip_if_clean && shutdown_clean_.load(std::memory_order_acquire)) {
+    ClearLoopbackProxyFast();
+    return 0;
+  }
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (core_job_ != nullptr) {
+      CloseHandle(core_job_);
+      core_job_ = nullptr;
+    }
+  }
+  const int killed = KillOwnedCoreTreeSinglePass();
+  EnumWindows(CloseUmbrellaCliWindowsProc, 0);
+  ClearLoopbackProxyFast();
+  shutdown_clean_.store(true, std::memory_order_release);
+  return killed;
 }
 
 std::string SystemOps::LastSpawnError() const {
@@ -530,9 +874,33 @@ std::vector<DWORD> SystemOps::FindProcessIds(const std::string& exe_name) {
 }
 
 bool SystemOps::KillPid(int pid) {
-  if (pid <= 0) return false;
-  HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE,
-                               static_cast<DWORD>(pid));
+  if (pid <= 0 || static_cast<DWORD>(pid) == GetCurrentProcessId()) {
+    return false;
+  }
+  const DWORD target = static_cast<DWORD>(pid);
+  // Also terminate any direct child processes (e.g. CLI host -> UmbrellaCli.exe)
+  // so detached console sessions never outlive the parent request.
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot != INVALID_HANDLE_VALUE) {
+    PROCESSENTRY32W entry = {0};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+      do {
+        if (entry.th32ParentProcessID == target &&
+            entry.th32ProcessID != target &&
+            entry.th32ProcessID != GetCurrentProcessId()) {
+          HANDLE child =
+              OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
+          if (child != nullptr) {
+            TerminateProcess(child, 0);
+            CloseHandle(child);
+          }
+        }
+      } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+  }
+  HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, target);
   if (process == nullptr) return false;
   bool ok = TerminateProcess(process, 0) != 0;
   CloseHandle(process);
@@ -645,31 +1013,30 @@ bool SystemOps::DisableSystemProxy() {
                     0, KEY_READ | KEY_WRITE, &key) != ERROR_SUCCESS) {
     return false;
   }
+  DWORD enabled = 0;
+  DWORD enabled_size = sizeof(enabled);
+  DWORD enabled_type = 0;
+  const bool was_enabled =
+      RegQueryValueExW(key, L"ProxyEnable", nullptr, &enabled_type,
+                       reinterpret_cast<LPBYTE>(&enabled),
+                       &enabled_size) == ERROR_SUCCESS &&
+      enabled_type == REG_DWORD && enabled != 0;
   DWORD zero = 0;
   RegSetValueExW(key, L"ProxyEnable", 0, REG_DWORD,
                  reinterpret_cast<const BYTE*>(&zero), sizeof(zero));
   // The bypass list was written by us when the tunnel came up.
-  RegDeleteValueW(key, L"ProxyOverride");
+  const bool had_override =
+      RegDeleteValueW(key, L"ProxyOverride") == ERROR_SUCCESS;
   RegCloseKey(key);
 
-  INTERNET_PER_CONN_OPTION_LIST list = {0};
-  INTERNET_PER_CONN_OPTION option = {0};
-  option.dwOption = INTERNET_PER_CONN_FLAGS;
-  option.Value.dwValue = PROXY_TYPE_DIRECT;
-  list.dwSize = sizeof(list);
-  list.pszConnection = nullptr;
-  list.dwOptionCount = 1;
-  list.pOptions = &option;
-  DWORD list_size = sizeof(list);
-  InternetSetOptionW(nullptr, INTERNET_OPTION_PER_CONNECTION_OPTION, &list,
-                     list_size);
-  InternetSetOptionW(nullptr, INTERNET_OPTION_SETTINGS_CHANGED, nullptr, 0);
-  InternetSetOptionW(nullptr, INTERNET_OPTION_REFRESH, nullptr, 0);
-  RunAndWait(L"netsh winhttp reset proxy");
+  if (was_enabled || had_override) {
+    NotifyProxySettingsChangedFast();
+  }
   return true;
 }
 
 bool SystemOps::SetSystemProxy(const std::string& host, int port) {
+  shutdown_clean_.store(false, std::memory_order_release);
   std::wstring entry = ToWide(host + ":" + std::to_string(port));
   HKEY key = nullptr;
   if (RegOpenKeyExW(HKEY_CURRENT_USER,

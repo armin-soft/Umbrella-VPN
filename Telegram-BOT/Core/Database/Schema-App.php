@@ -38,6 +38,19 @@ if (!(int)$Exists) $Database->connection()->exec('ALTER TABLE `App_Notifications
 
 private static function statements(): array {
 return [
+ 'App_Bot_Link_Requests' => "CREATE TABLE IF NOT EXISTS `App_Bot_Link_Requests` (
+`Token_Hash` CHAR(64) NOT NULL,
+`Session_Hash` CHAR(64) NOT NULL,
+`User_UUID` VARCHAR(64) NOT NULL,
+`Device_ID` VARCHAR(64) NOT NULL,
+`Phone` VARCHAR(20) NOT NULL,
+`Telegram_ID` BIGINT NULL,
+`Expires_At` INT UNSIGNED NOT NULL,
+`Used_At` INT UNSIGNED NULL,
+PRIMARY KEY (`Token_Hash`),
+KEY `IDX_App_Bot_Link_Expiry` (`Expires_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
 'App_Devices' => "CREATE TABLE IF NOT EXISTS `App_Devices` (
 `ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 `Device_ID` VARCHAR(64) NOT NULL,

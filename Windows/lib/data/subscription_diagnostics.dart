@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
+import '../core/app_config.dart';
 import '../core/persian.dart';
 import '../models/models.dart';
+import '../platform/native.dart';
 import 'parsers.dart';
 import 'subscription_endpoints.dart';
 
@@ -39,15 +41,13 @@ class EndpointCheck {
   }
 }
 
-/// بررسی زنده همه نشانی های اشتراک یک حساب.
-///
-/// این کار برای عیب یابی است: هر هشت نشانی پنل (خودکار، فهرست ساده،
-/// Base64، کلش متا، سینگ باکس، وایرگارد، آمنزیا، میرو) دانلود و خوانده
-/// می شوند و تعداد سرورهای هر کدام در گزارش ها نوشته می شود.
+/// بررسی زنده نشانی اشتراک `/sub/` یک حساب.
 class SubscriptionDiagnostics {
   SubscriptionDiagnostics({http.Client? client})
-      : _client = client ?? _directClient();
+      : _injectedClient = client != null,
+        _client = client ?? _directClient();
 
+  final bool _injectedClient;
   final http.Client _client;
 
   /// کلاینت بدون پروکسی.
@@ -81,16 +81,36 @@ class SubscriptionDiagnostics {
   }
 
   Future<EndpointCheck> _check(SubscriptionSource source) async {
+    final Map<String, String> headers = <String, String>{
+      'Accept': 'text/plain, application/json, */*',
+      'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
+    };
     try {
-      final http.Response response = await _client
-          .get(
-            Uri.parse(source.url),
-            headers: <String, String>{
-              'Accept': '*/*',
-              'User-Agent': 'Umbrella-Windows/1.0',
-            },
-          )
-          .timeout(const Duration(seconds: 20));
+      http.Response? response;
+      if (!_injectedClient && Platform.isWindows) {
+        for (final bool useProxy in const <bool>[false, true]) {
+          final NativeHttpResponse? native =
+              await NativeBridge.performHttpRequest(
+            method: 'GET',
+            url: source.url,
+            headers: headers,
+            timeoutMs: 18000,
+            useProxy: useProxy,
+          );
+          if (native != null && native.ok && native.statusCode > 0) {
+            response = http.Response.bytes(
+              native.bodyBytes,
+              native.statusCode,
+            );
+            if (native.statusCode < 500) {
+              break;
+            }
+          }
+        }
+      }
+      response ??= await _client
+          .get(Uri.parse(source.url), headers: headers)
+          .timeout(const Duration(seconds: 18));
       final String body =
           utf8.decode(response.bodyBytes, allowMalformed: true);
       final int status = response.statusCode;
@@ -113,15 +133,13 @@ class SubscriptionDiagnostics {
         bytes: body.length,
         problem: report.problems.take(1).join(' '),
       );
-    } on Exception catch (error) {
-      // متن واقعی خطا در گزارش می آید تا معلوم شود مشکل شبکه دستگاه است یا
-      // خود نشانی؛ پیش از این همه چیز «خطای شبکه» بود.
+    } on Exception {
       return EndpointCheck(
         title: source.title,
         url: source.url,
         status: 0,
         nodes: 0,
-        problem: 'خطای شبکه: $error',
+        problem: 'خطای ارتباط با شبکه',
       );
     }
   }

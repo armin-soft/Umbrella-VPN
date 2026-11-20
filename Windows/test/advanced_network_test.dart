@@ -71,22 +71,25 @@ void main() {
     expect(invalid.toCoreOptions, throwsFormatException);
     expect(ChainSettings.fromJson(invalid.toJson()).toCoreOptions, throwsFormatException);
   });
-  test('ordered process rules use protobuf JSON names; proxy mode omits them', () {
+  test('ordered process rules use protobuf JSON names in both TUN and proxy modes and omit disabled entries', () {
     const AppSettings settings = AppSettings(appRoutes: <AppRouteRule>[
       AppRouteRule(process: 'browser.exe', action: AppRouteAction.direct),
       AppRouteRule(process: r'C:\Apps\blocked.exe', action: AppRouteAction.block),
       AppRouteRule(process: 'other.exe', enabled: false),
     ]);
     final AppSettings reloaded = AppSettings.fromJson(jsonDecode(jsonEncode(settings.toJson())) as Map<String, dynamic>);
+    expect(reloaded.appRoutes, hasLength(3));
+    expect(reloaded.appRoutes[2].enabled, false);
     final List<dynamic> rules = (core(reloaded)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    expect(rules, hasLength(2));
     expect(rules[0]['process_name'], <String>['browser.exe']);
     expect(rules[1]['process_path'], <String>[r'C:\Apps\blocked.exe']);
     expect(rules[0]['outbound'], 'direct');
     expect(rules[1]['outbound'], 'block');
-    expect(rules[2]['enabled'], false);
     expect(rules[0]['list_order'], 0);
     expect(rules[1]['list_order'], 1);
-    expect(core(reloaded, tun: false).containsKey('route-rule'), false);
+    final List<dynamic> proxyRules = (core(reloaded, tun: false)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    expect(proxyRules, hasLength(2));
   });
   test('rules never become unconditional and diagnostic processes cannot bypass', () {
     for (final String process in <String>['', '*', 'x', 'app.exe\n', r'..\app.exe', r'\\server\app.exe', 'UmbrellaVPN.exe', 'UmbrellaCli.exe', 'app?.exe']) {
@@ -96,18 +99,48 @@ void main() {
     expect(const AppRouteRule(process: r'C:\Program Files\App\app.exe').validationError, isNull);
     expect(() => core(const AppSettings(appRoutes: <AppRouteRule>[AppRouteRule(process: '')])), throwsFormatException);
   });
-  test('diagnostic redaction hides WARP license and local API secret', () {
-    final String text = jsonEncode(<String, dynamic>{'warp': <String, dynamic>{'license-key': 'abc-123'}, 'web-secret': 'secret', 'mtu': 1400});
+  test('diagnostics redact account and WireGuard keys in JSON, config lines, and PEM blocks', () {
+    final String text = jsonEncode(<String, dynamic>{
+      'warp': <String, dynamic>{'license-key': 'abc-123'},
+      'lan-sharing-password': 'LanPw-7742',
+      'web-secret': 'secret',
+      'ED_25519_Private_Key': 'ed-private-secret',
+      'ed25519_public_key': 'ed-public-secret',
+      'wireguard_private_key': 'wg-private-secret',
+      'wg_pub': 'wg-public-secret',
+      'wg_psk': 'wg-psk-secret',
+      'privateKey': 'camel-private-secret',
+      'mtu': 1400,
+    });
     final String clean = redactNetworkSecrets(text);
-    expect(clean, isNot(contains('abc-123')));
-    expect(clean, isNot(contains(':"secret"')));
+    for (final String secret in <String>[
+      'abc-123',
+      'LanPw-7742',
+      'secret',
+      'ed-private-secret',
+      'ed-public-secret',
+      'wg-private-secret',
+      'wg-public-secret',
+      'wg-psk-secret',
+      'camel-private-secret',
+    ]) {
+      expect(clean, isNot(contains(secret)), reason: secret);
+    }
     expect(clean, contains('1400'));
+    expect(
+      redactNetworkSecrets('PrivateKey = wg-line-secret\\nPresharedKey = wg-line-psk'),
+      isNot(contains('wg-line-secret')),
+    );
+    expect(
+      redactNetworkSecrets('-----BEGIN OPENSSH PRIVATE KEY-----\\nssh-private-secret\\n-----END OPENSSH PRIVATE KEY-----'),
+      isNot(contains('ssh-private-secret')),
+    );
     expect(redactNetworkSecrets('core used abc-123', knownSecrets: <String>['abc-123']), 'core used [redacted]');
   });
   test('auxiliary hop cannot replace account gating or authorized input', () {
     final String controller = File('lib/vpn/vpn_controller.dart').readAsStringSync();
     final int start = controller.indexOf('Future<ConnectOutcome> _connectInner');
-    final String connect = controller.substring(start, controller.indexOf('final List<VpnNode> regionalNodes', start));
+    final String connect = controller.substring(start, controller.indexOf('final List<VpnNode> fitting', start));
     expect(connect.indexOf('accessGuard?.call()'), lessThan(connect.indexOf('_settings.chain')));
     expect(connect, contains('if (_nodes.isEmpty)'));
     expect(controller, contains('networkSettings: _settings'));
@@ -115,7 +148,7 @@ void main() {
     expect(controller, contains('if (_healthInFlight || _status != VpnStatus.connected) return;'));
     expect(controller, contains('epoch != _connectionEpoch'));
     expect(controller, contains('cancelSpeedTest();'));
-    expect(controller, contains('VerifiedProbe.check(proxyPort: _umbrellaPort'));
+    expect(controller, contains('proxyPort: _probeProxyPort'));
     expect(controller, isNot(contains('return _coreReportsWorkingTunnel')));
     final String source = File('lib/state/subscription_controller.dart').readAsStringSync();
     expect(source, contains('AppConfig.allowedSubscriptionHosts.contains(host)'));

@@ -19,12 +19,20 @@ $File = dirname(__DIR__, 1) . '/.env';
 
 if (!is_file($File)) return;
 foreach (file($File, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $Line) {
+if (str_starts_with($Line, "\xEF\xBB\xBF")) {
+$Line = substr($Line, 3);
+}
+
 $Line = trim($Line);
 
 if ($Line === '' || str_starts_with($Line, '#') || !str_contains($Line, '=')) continue;
 [$Name, $Value] = explode('=', $Line, 2);
 $Name = trim($Name);
 $Value = trim($Value);
+
+if ($Value !== '' && str_starts_with($Value, "\xEF\xBB\xBF")) {
+$Value = trim(substr($Value, 3));
+}
 
 if ($Name !== '' && !array_key_exists($Name, $_SERVER)) {
 $_SERVER[$Name] = $Value;
@@ -108,7 +116,8 @@ return (int)self::get('ADMIN_USER_ID');
 }
 
 public static function getChannelUrl(): string {
-return self::get('CHANNEL_URL');
+$Url = trim(self::get('CHANNEL_URL'));
+return $Url !== '' ? $Url : 'https://t.me/UmbrellaVPN_Channel';
 }
 
 
@@ -222,6 +231,12 @@ return $Val === 'true' || $Val === '1';
 public static function getEmergencyConfigUrl(): string {
 $Url = self::get('EMERGENCY_CONFIG_URL');
 return $Url !== '' ? $Url : 'https://raw.githubusercontent.com/armin-soft/Umbrella-VPN-Config/refs/heads/main/Emergency-Configuration.txt';
+}
+
+/** Fallback for the Nowruz gift menu toggle controlled in «⚙️ تنظیمات ربات». */
+public static function showNowruzMenu(): bool {
+$Val = strtolower(self::get('SHOW_NOWRUZ_MENU', 'false'));
+return $Val === 'true' || $Val === '1';
 }
 }
 ?>

@@ -2,11 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
-import '../core/persian.dart';
 import '../core/storage.dart';
 import '../core/theme.dart';
 import '../core/utils.dart';
@@ -15,9 +13,9 @@ import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
 import 'balancer.dart';
+import 'clash_api.dart';
 import 'core_runtime.dart';
 import 'startup_verification.dart';
-import 'clash_config.dart';
 import 'cli_session.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
@@ -180,6 +178,7 @@ class LaunchPlan {
     this.warning = '',
     this.proxyPort = 0,
     this.tun = false,
+    this.systemProxy = true,
   });
 
   final List<CoreLaunch> cores;
@@ -196,14 +195,16 @@ class LaunchPlan {
   final bool chained;
   final String warning;
 
-  /// اگر بزرگ تر از صفر باشد، هسته یک سرور پروکسی محلی روی این پورت می سازد و
-  /// برنامه پروکسی سیستمی ویندوز را به آن وصل می کند.
+  /// اگر بزرگ تر از صفر باشد، هسته یک سرور پروکسی محلی روی این پورت می سازد.
   final int proxyPort;
 
   /// آیا این نقشه تونل کامل است (`--tun`)؟
   final bool tun;
 
-  bool get usesSystemProxy => proxyPort > 0 && !tun;
+  /// آیا پروکسی سیستم عامل روی [proxyPort] تنظیم شود؟ در حالت «فقط پروکسی» خاموش است.
+  final bool systemProxy;
+
+  bool get usesSystemProxy => proxyPort > 0 && !tun && systemProxy;
 }
 
 /// مغز اتصال: انتخاب سرور، ساخت پیکربندی، اجرای هسته، کیل سوییچ، پایش و
@@ -220,6 +221,7 @@ class VpnController extends ChangeNotifier {
     this.onRequireElevation,
     this.onRequireCores,
     this.accessGuard,
+    this.canAutoConnect,
   })  : _native = native,
         _ip = ipService,
         _sound = sound,
@@ -247,6 +249,13 @@ class VpnController extends ChangeNotifier {
   /// مسدود یا تمام شده).
   final String Function()? accessGuard;
 
+  /// شرط مجاز بودن اتصال خودکار در شروع برنامه (عبور از معرفی، ورود به حساب و
+  /// داشتن اشتراک سالم) تا برنامه در صفحه معرفی یا ورود هرگز خودکار وصل نشود.
+  final bool Function()? canAutoConnect;
+
+  bool get _mayAutoConnectNow =>
+      _settings.autoConnect && (canAutoConnect?.call() ?? true);
+
   final VoidCallback? onRequireCores;
 
   AppSettings _settings;
@@ -271,7 +280,55 @@ class VpnController extends ChangeNotifier {
   GeoInfo get geo => _geo;
 
   String _realIp = '';
+  String _realCountryCode = '';
+  int _sameIpWarnedEpoch = -1;
   String get realIp => _realIp;
+
+  /// آیا در همین لحظه مجاز به ثبت آی پی واقعی (پیش از اتصال) هستیم؟
+  /// فقط زمانی که هیچ تونل، اتصال در حال انجام یا فرایند هسته ای فعال نیست.
+  bool get _canCaptureBaselineIp =>
+      !_disposed &&
+      !_shuttingDown &&
+      !_connectInFlight &&
+      _status == VpnStatus.disconnected &&
+      _exitIp.isEmpty &&
+      !_hasTrackedCoreProcesses;
+
+  /// تشخیص دقیق اینکه آیا آی پی خروجی خوانده شده واقعاً نشت بدون تونل است یا
+  /// آی پی سالم سرور خارجی است (مثلاً وقتی پیش از اتصال یک فیلترشکن دیگر باز
+  /// بوده یا `_realIp` قبلاً از سرور خارجی ثبت شده است).
+  static bool isUntunneledExitIp({
+    required String exitIp,
+    required String exitCountryCode,
+    required String realIp,
+    required String realCountryCode,
+    required bool fromCoreMonitor,
+  }) {
+    final String cleanExit = exitIp.trim();
+    if (cleanExit.isEmpty) {
+      return false;
+    }
+    final String exitCc = exitCountryCode.trim().toLowerCase();
+    if (exitCc == 'ir') {
+      return true;
+    }
+    // پایش داخلی خود هسته (ipinfo) مستقیماً از دل خروجی پروکسی اجرا می شود؛
+    // وقتی کشور غیر ایران گزارش کرده، ترافیک قطعاً از سرور خارجی خارج شده است.
+    if (fromCoreMonitor && exitCc.isNotEmpty) {
+      return false;
+    }
+    final String cleanReal = realIp.trim();
+    if (cleanReal.isEmpty || cleanExit != cleanReal) {
+      return false;
+    }
+    final String realCc = realCountryCode.trim().toLowerCase();
+    // اگر آی پی خروجی صراحتاً متعلق به کشور خارجی است و آی پی پایه هم از همان
+    // کشور خارجی بوده (اجرای قبلی فیلترشکن)، این نشت بدون تونل نیست.
+    if (exitCc.isNotEmpty && realCc.isNotEmpty && realCc != 'ir') {
+      return false;
+    }
+    return true;
+  }
 
   String _exitIp = '';
   String get exitIp => _exitIp;
@@ -313,8 +370,104 @@ class VpnController extends ChangeNotifier {
   final Set<String> _networkSecrets = <String>{};
   ChainSettings _activeChain = const ChainSettings();
   ChainSettings get activeChain => _activeChain;
+  FilterSettings _contentFilter = FilterSettings.empty;
+  FilterSettings get contentFilter => _contentFilter;
+  Timer? _filterReloadTimer;
+  Timer? _autoConnectRetryTimer;
+  bool _shuttingDown = false;
+  bool _pendingLiveReload = false;
+  String _launchedFilterSignature = FilterSettings.empty.effectSignature;
+  bool _activePlanTun = false;
+  int _activeMixedPort = AppConfig.httpPortUmbrella;
+  bool _activeLocalProxyOpen = true;
+  String _activeLocalProxySecret = '';
   ProxyLink? _link;
   Timer? _liveTimer;
+
+  /// پورت ترکیبی محلی تنظیم شده توسط کاربر (با بازگشت امن به پیش فرض).
+  int get _configuredMixedPort =>
+      LanSharing.isValidPort(_settings.mixedPort)
+          ? _settings.mixedPort
+          : _umbrellaPort;
+
+  /// پورت مناسب برای سنجش سلامت، پینگ، آی پی و تست سرعت روی اتصال فعلی
+  /// (۰ یعنی مسیر مستقیم کارت شبکه تونل وقتی پورت محلی در حالت VPN بسته است).
+  int get _probeProxyPort {
+    if (_activePlanTun && !_activeLocalProxyOpen) {
+      return 0;
+    }
+    if (_proxyPort > 0) {
+      return _proxyPort;
+    }
+    return _activeMixedPort > 0 ? _activeMixedPort : _configuredMixedPort;
+  }
+
+  String get _probeProxyUser =>
+      _probeProxyPort > 0 && _activeLocalProxySecret.isNotEmpty
+          ? LanSharing.coreAuthUser
+          : '';
+
+  String get _probeProxyPassword =>
+      _probeProxyPort > 0 ? _activeLocalProxySecret : '';
+
+  String get _desiredSelectGroup => switch (_settings.selectionMode) {
+        SelectionMode.roundRobin ||
+        SelectionMode.consistentHash ||
+        SelectionMode.stickySession =>
+          'balance',
+        SelectionMode.auto || SelectionMode.manual => 'lowest',
+      };
+
+  /// به روز رسانی قوانین کنترل محتوا (از تنظیمات برنامه یا همگام سازی زنده ربات).
+  /// اگر تونل هم اکنون متصل باشد، قوانین جدید بدون دخالت کاربر روی اتصال فعال می شوند.
+  void updateContentFilter(FilterSettings next) {
+    if (_contentFilter.sameEffectAs(next)) {
+      _contentFilter = next;
+      return;
+    }
+    _contentFilter = next;
+    if (_disposed || _shuttingDown) {
+      return;
+    }
+    _filterReloadTimer?.cancel();
+    if (_connectInFlight) {
+      // به محض کامل شدن اتصال در حال انجام، تفاوت `_launchedFilterSignature`
+      // بررسی و قوانین تازه بلافاصله اعمال می شوند.
+      return;
+    }
+    if (_status == VpnStatus.connected) {
+      _scheduleFilterHotReload(next);
+    } else if (!_status.active && !_status.busy) {
+      _scheduleRuntimePrewarm();
+    }
+  }
+
+  void _scheduleFilterHotReload(FilterSettings targetFilter) {
+    _filterReloadTimer?.cancel();
+    _filterReloadTimer = Timer(const Duration(milliseconds: 500), () {
+      if (_disposed ||
+          _shuttingDown ||
+          _connectInFlight ||
+          _status != VpnStatus.connected) {
+        return;
+      }
+      _log.add(
+        targetFilter.hasActiveRules
+            ? 'اعمال قوانین جدید کنترل محتوا روی اتصال فعال...'
+            : 'غیرفعال سازی قوانین کنترل محتوا روی اتصال فعال...',
+      );
+      unawaited(() async {
+        final VpnNode? requested = _singleNodeSession ? _activeNode : null;
+        unawaited(ClashApi.closeAllConnections());
+        await disconnect(silent: true);
+        unawaited(_native.flushDns());
+        if (!_disposed && !_shuttingDown) {
+          await connect(requested: requested);
+          unawaited(_native.flushDns());
+        }
+      }());
+    });
+  }
 
   /// پینگ سرور متصل: عدد زنده تونل اگر آماده باشد، وگرنه پینگ شبکه همان
   /// سرور. این عدد هرگز صفر نمی ماند چون سرور متصل از فهرست سنجش هسته ای
@@ -323,11 +476,14 @@ class VpnController extends ChangeNotifier {
     if (_livePing > 0) {
       return _livePing;
     }
+    if (_status.busy || _status == VpnStatus.failed) {
+      return 0;
+    }
     final VpnNode? node = _activeNode;
     if (node == null) {
       return 0;
     }
-    if (node.pingMs > 0) {
+    if (PingService.plausible(node.pingMs)) {
       return node.pingMs;
     }
     return 0;
@@ -346,6 +502,10 @@ class VpnController extends ChangeNotifier {
   Timer? _healthTimer;
   Timer? _ipTimer;
   Timer? _pingTimer;
+  Timer? _prewarmTimer;
+  Future<void>? _prewarmInFlight;
+  bool _prewarmCancelled = false;
+  DateTime? _sessionStartUtc;
   int _healthFailures = 0;
 
   /// هسته ای که برای هر سرور جواب داده است (شناسه سرور → نام هسته).
@@ -368,21 +528,6 @@ class VpnController extends ChangeNotifier {
   Future<void> bootstrap() async {
     await _provisioner.init();
     _device = await _native.deviceInfo();
-    // آی پی واقعی دستگاه پیش از هر اتصالی خوانده می شود تا صفحه اتصال هرگز
-    // «نامشخص» نشان ندهد. اگر یک سرویس جواب نداد، سرویس بعدی امتحان می شود و
-    // در آخر آی پی داخلی کارت شبکه می ماند.
-    _realIp = await _ip.fetchIp(force: true);
-    if (_realIp.isEmpty) {
-      final String local = await _native.localIp();
-      if (local.isNotEmpty) {
-        _realIp = local;
-      }
-      _log.add(
-        'آی پی بیرونی خوانده نشد؛ آی پی داخلی دستگاه نمایش داده می شود.',
-        level: 'warning',
-      );
-    }
-    _geo = _ip.last;
     if (_device.elevated && _native.available) {
       // پروکسی سیستم از اجرای قبلی پاک می شود.
       await _native.restoreNetworkDefaults();
@@ -398,24 +543,78 @@ class VpnController extends ChangeNotifier {
       }
     }
     _notify();
-    if (_settings.autoConnect) {
+    if (_mayAutoConnectNow && _nodes.isNotEmpty) {
+      unawaited(_runStartupAutoConnect());
+    } else {
+      _autoConnectRetryTimer?.cancel();
+      _autoConnectRetryTimer = null;
+      _scheduleRuntimePrewarm();
+    }
+    // خواندن آی پی واقعی دستگاه کاملاً غیرمسدودکننده انجام می شود تا باز شدن
+    // برنامه و دکمه اتصال حتی در شبکه محدود در کسری از ثانیه آماده باشد.
+    unawaited(_discoverInitialIp());
+  }
+
+  /// اتصال خودکار شروع برنامه؛ فقط وقتی اجرا می شود که کاربر گزینه «اتصال
+  /// خودکار در شروع برنامه» را در تنظیمات عمومی به صورت صریح روشن کرده باشد.
+  Future<void> _runStartupAutoConnect() async {
+    if (!_mayAutoConnectNow || _status.active || _status.busy) {
+      return;
+    }
+    final int startedCancelGeneration = _cancelGeneration;
+    _log.add(
+      'اتصال خودکار در شروع برنامه فعال است؛ در حال برقراری اتصال '
+      '(برای غیرفعال سازی به تنظیمات > عمومی بروید).',
+    );
+    final ConnectOutcome outcome = await connect();
+    if (outcome.ok ||
+        outcome.cancelled ||
+        _cancelGeneration != startedCancelGeneration ||
+        _disposed ||
+        _shuttingDown ||
+        !_mayAutoConnectNow) {
+      return;
+    }
+    _autoConnectRetryTimer?.cancel();
+    _autoConnectRetryTimer = Timer(const Duration(seconds: 8), () {
+      _autoConnectRetryTimer = null;
+      if (_disposed ||
+          _shuttingDown ||
+          _cancelGeneration != startedCancelGeneration ||
+          !_mayAutoConnectNow ||
+          _status.active ||
+          _status.busy ||
+          _nodes.isEmpty) {
+        return;
+      }
       unawaited(connect());
+    });
+  }
+
+  Future<void> _discoverInitialIp() async {
+    if (!_canCaptureBaselineIp) return;
+    final GeoInfo fetched = await _ip.fetch(force: true);
+    if (!_canCaptureBaselineIp) return;
+    if (fetched.ip.isNotEmpty) {
+      _realIp = fetched.ip;
+      _realCountryCode = fetched.flagCode.toLowerCase();
+      _geo = fetched;
+      _notify();
+      return;
+    }
+    final String local = await _native.localIp();
+    if (!_canCaptureBaselineIp) return;
+    if (local.isNotEmpty && _realIp.isEmpty) {
+      _realIp = local;
+      _realCountryCode = '';
+      _notify();
     }
   }
 
   Future<void> _loadCachedNodes() async {
-    // پیکربندی کلش پنل هم مثل فهرست سرورها نگه داشته می شود تا پس از اجرای
-    // دوباره برنامه، بدون اینترنت دوباره در دسترس باشد.
-    try {
-      final String? yaml =
-          await LocalStore.instance.readFile(StoreKeys.panelProfile);
-      if (yaml != null && yaml.trim().isNotEmpty) {
-        _panelProfile = yaml;
-        _clashNames = ClashConfig.nodeNames(yaml).toSet();
-      }
-    } on Exception {
-      // پیکربندی ذخیره نشده است؛ هسته از لینک ها استفاده می کند.
-    }
+    // هر فایل پروفایل کلش بازمانده از نسخه های پیشین پاک می شود تا فقط
+    // سرورهای مسیر `/sub/` در برنامه بمانند.
+    await LocalStore.instance.deleteFile(StoreKeys.legacyPanelProfile);
     try {
       final String? raw = await LocalStore.instance.readFile(StoreKeys.nodesCache);
       if (raw == null || raw.isEmpty) {
@@ -464,8 +663,11 @@ class VpnController extends ChangeNotifier {
     }).toList();
     await _cacheNodes();
     _notify();
-    if (measure && _nodes.isNotEmpty) {
-      unawaited(refreshPings());
+    if (_nodes.isNotEmpty && !_status.active && !_status.busy) {
+      _scheduleRuntimePrewarm();
+      if (measure) {
+        unawaited(refreshPings(all: false, tunnelProbe: false));
+      }
     }
   }
 
@@ -474,12 +676,12 @@ class VpnController extends ChangeNotifier {
   /// هر نمونه یک فرایند هسته است و دو پورت ثابت هسته را می گیرد؛ سنجیدن همه
   /// ۲۴ سرور چند دقیقه طول می کشید و در آن مدت اتصال ممکن نبود. دور اول روی
   /// ۸ سرور است، دورهای بعدی بقیه را هم می سنجند.
-  int _tunnelProbeCount = 8;
+  final int _tunnelProbeCount = 8;
 
   /// آیا خبر «نتیجه نداد» یک بار گفته شده است؟
   bool _tunnelFailureReported = false;
 
-  Future<void> refreshPings({bool all = true}) async {
+  Future<void> refreshPings({bool all = true, bool tunnelProbe = true}) async {
     if (_measuring || _nodes.isEmpty) {
       return;
     }
@@ -511,9 +713,9 @@ class VpnController extends ChangeNotifier {
       _notify();
       return;
     }
-    _pingProgressTotal = all ? pool.length : pool.take(12).length;
+    _pingProgressTotal = all ? pool.length : pool.take(24).length;
     _notify();
-    final List<VpnNode> target = all ? pool : pool.take(12).toList();
+    final List<VpnNode> target = all ? pool : pool.take(24).toList();
     List<VpnNode> measured = target;
     try {
       measured = await _ping.measureAll(
@@ -532,21 +734,17 @@ class VpnController extends ChangeNotifier {
     // می دهد؛ اگر هسته در دسترس نباشد، نتیجه تی سی پی و آی سی ام پی همان
     // طور می ماند.
     Map<String, int> tunnelDelays = <String, int>{};
-    try {
-      if (liveTunnel) {
-        throw StateError('اتصال فعال است');
+    if (tunnelProbe && !liveTunnel && !_status.busy && !_cancelRequested) {
+      try {
+        tunnelDelays = await _corePing.measure(
+          target,
+          settings: _settings,
+          maxNodes: _tunnelProbeCount,
+          budget: const Duration(seconds: 45),
+        );
+      } catch (_) {
+        tunnelDelays = <String, int>{};
       }
-      // سنجش خودش مهلت دارد و نمونه هایش را می بندد؛ `Future.timeout` این
-      // کار را نمی کرد و هسته های یتیم، پورت ۱۷۰۷۸ را تا اتصال بعدی گرفته
-      // نگه می داشتند.
-      tunnelDelays = await _corePing.measure(
-        target,
-        settings: _settings,
-        maxNodes: _tunnelProbeCount,
-        budget: const Duration(seconds: 60),
-      );
-    } catch (_) {
-      tunnelDelays = <String, int>{};
     }
     // اگر اتصال در این میان شروع شده باشد، سنجش را خودمان بستیم؛ گزارش
     // «تاخیر تونل برای ۰ سرور» آن وقت فقط گیج کننده است.
@@ -581,6 +779,10 @@ class VpnController extends ChangeNotifier {
       // سنجش دوباره کار می کند؛ اگر بعداً یک بار دیگر نتیجه نداد، همان یک بار
       // گزارش می شود.
       _tunnelFailureReported = false;
+    }
+    if (!tunnelProbe) {
+      _notify();
+      return;
     }
     final bool nothing = tunnelDelays.isEmpty &&
         !liveTunnel &&
@@ -731,25 +933,169 @@ class VpnController extends ChangeNotifier {
         )
         .toList();
     await _cacheNodes();
+    _scheduleRuntimePrewarm();
     _notify();
   }
 
   void updateSettings(AppSettings settings) {
+    final AppSettings previous = _settings;
     _settings = settings;
+    if (!settings.autoConnect) {
+      _autoConnectRetryTimer?.cancel();
+      _autoConnectRetryTimer = null;
+    }
     _sound.enabled = settings.soundEnabled;
-    _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(
-      Duration(seconds: settings.pingIntervalSeconds.clamp(120, 3600)),
-      (_) {
-        // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
-        // بالا آوردن هسته سنجش، خود اتصال را می کشت.
-        if (_status.active) {
-          return;
+    final bool pingChanged = _pingTimer == null ||
+        previous.pingIntervalSeconds != settings.pingIntervalSeconds;
+    if (pingChanged) {
+      _pingTimer?.cancel();
+      _pingTimer = Timer.periodic(
+        Duration(seconds: settings.pingIntervalSeconds.clamp(120, 3600)),
+        (_) {
+          // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
+          // بالا آوردن هسته سنجش، خود اتصال را می کشت.
+          if (_status.active) {
+            return;
+          }
+          unawaited(refreshPings(all: false));
+        },
+      );
+    }
+    final bool runtimeChanged = _runtimeSettingsChanged(previous, settings);
+    if (runtimeChanged) {
+      _scheduleRuntimePrewarm();
+    }
+    final bool traySpeedChanged =
+        previous.showSpeedInTray != settings.showSpeedInTray;
+    if (traySpeedChanged && _status == VpnStatus.connected) {
+      final String tooltip = settings.showSpeedInTray && _stats.available
+          ? '${AppConfig.appName} - ${Fa.speed(_stats.downSpeed)} / ${Fa.speed(_stats.upSpeed)}'
+          : '${AppConfig.appName} - متصل';
+      unawaited(
+        _tray.update(
+          state: 'connected',
+          tooltip: tooltip,
+          connected: true,
+        ),
+      );
+    }
+    // تغییر صرفاً ظاهری (مثل جابه جایی تم روشن/تاریک) نباید همه مصرف کنندگان
+    // `VpnController` را دوباره بسازد یا پیش گرم سازی هسته را راه بیندازد.
+    if (runtimeChanged || pingChanged || traySpeedChanged) {
+      _notify();
+    }
+  }
+
+  static bool _runtimeSettingsChanged(AppSettings a, AppSettings b) {
+    if (a.tunMode != b.tunMode ||
+        a.corePreference != b.corePreference ||
+        a.serviceMode != b.serviceMode ||
+        a.selectionMode != b.selectionMode ||
+        a.autoFailover != b.autoFailover ||
+        a.stickyMinutes != b.stickyMinutes ||
+        a.freeCorePorts != b.freeCorePorts ||
+        a.killSwitch != b.killSwitch ||
+        a.showCli != b.showCli ||
+        a.tunStack != b.tunStack ||
+        a.mtu != b.mtu ||
+        a.blockIpv6 != b.blockIpv6 ||
+        a.ipv6RouteMode != b.ipv6RouteMode ||
+        a.strictRoute != b.strictRoute ||
+        a.mixedPort != b.mixedPort ||
+        a.localProxyInVpn != b.localProxyInVpn ||
+        a.localProxyAuth != b.localProxyAuth ||
+        a.allowConnectionFromLan != b.allowConnectionFromLan ||
+        a.lanSharingPort != b.lanSharingPort ||
+        a.lanSharingPassword != b.lanSharingPassword ||
+        a.remoteDns != b.remoteDns ||
+        a.directDns != b.directDns ||
+        a.remoteDnsStrategy != b.remoteDnsStrategy ||
+        a.directDnsStrategy != b.directDnsStrategy ||
+        a.enableFakeDns != b.enableFakeDns ||
+        a.routingRegion != b.routingRegion ||
+        a.bypassLan != b.bypassLan ||
+        a.resolveDestination != b.resolveDestination ||
+        a.blockQuic != b.blockQuic ||
+        a.tlsTricks != b.tlsTricks ||
+        a.logLevel != b.logLevel ||
+        a.serverRegionCode != b.serverRegionCode ||
+        a.lastNodeId != b.lastNodeId ||
+        _chainChanged(a.chain, b.chain) ||
+        a.appRoutes.length != b.appRoutes.length) {
+      return true;
+    }
+    if (identical(a.appRoutes, b.appRoutes)) {
+      return false;
+    }
+    for (int i = 0; i < a.appRoutes.length; i++) {
+      final AppRouteRule x = a.appRoutes[i];
+      final AppRouteRule y = b.appRoutes[i];
+      if (x.process != y.process ||
+          x.action != y.action ||
+          x.enabled != y.enabled) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _chainChanged(ChainSettings a, ChainSettings b) {
+    if (identical(a, b)) {
+      return false;
+    }
+    return a.position != b.position ||
+        a.transport != b.transport ||
+        a.endpoint != b.endpoint ||
+        a.address != b.address ||
+        a.port != b.port ||
+        a.mtu != b.mtu ||
+        a.scanCount != b.scanCount ||
+        a.scanConcurrency != b.scanConcurrency ||
+        a.scanTimeout != b.scanTimeout ||
+        a.scanMaxRtt != b.scanMaxRtt ||
+        a.searchNoise != b.searchNoise ||
+        a.configurationInvalid != b.configurationInvalid ||
+        a.masqueProtocol != b.masqueProtocol ||
+        a.licenseKey != b.licenseKey ||
+        a.psiphonRegion != b.psiphonRegion ||
+        a.noiseMode != b.noiseMode ||
+        a.noiseCount != b.noiseCount ||
+        a.noiseSize != b.noiseSize ||
+        a.noiseDelay != b.noiseDelay;
+  }
+
+  Timer? _liveReloadTimer;
+
+  /// بازاعمال خودکار تنظیمات هسته روی اتصال فعال (حالت سرویس، اشتراک LAN،
+  /// امنیت بیشتر، رفع فیلتر پروکسی، مسیریابی، DNS، ورودی و ترفندهای TLS).
+  void scheduleLiveReload() {
+    _liveReloadTimer?.cancel();
+    if (_connectInFlight) {
+      _pendingLiveReload = true;
+      return;
+    }
+    if (!_status.active) {
+      return;
+    }
+    _liveReloadTimer = Timer(const Duration(milliseconds: 350), () {
+      if (_disposed || _shuttingDown) {
+        return;
+      }
+      if (_connectInFlight) {
+        _pendingLiveReload = true;
+        return;
+      }
+      if (!_status.active) {
+        return;
+      }
+      unawaited(() async {
+        final VpnNode? target = _singleNodeSession ? _activeNode : null;
+        await disconnect(silent: true);
+        if (!_disposed && !_shuttingDown) {
+          await connect(requested: target);
         }
-        unawaited(refreshPings(all: false));
-      },
-    );
-    _notify();
+      }());
+    });
   }
 
   /// درخواست لغو اتصال در حال انجام.
@@ -758,12 +1104,16 @@ class VpnController extends ChangeNotifier {
   /// با زدن دکمه قطع، این پرچم بالا می رود، حلقه تلاش هسته ها می شکند و همه
   /// چیز تمیز بسته می شود.
   int _cancelGeneration = 0;
+  int _lastLoggedCancelGeneration = -1;
   bool _cancelRequested = false;
   bool _singleNodeSession = false;
+  String _activeCoreLogPath = '';
   bool get cancelling => _cancelRequested;
 
   /// لغو فوری اتصال در حال انجام (دکمه «لغو اتصال»).
   Future<void> cancel() async {
+    _autoConnectRetryTimer?.cancel();
+    _autoConnectRetryTimer = null;
     if (!_connectInFlight && !_status.busy && _status != VpnStatus.connected) {
       return;
     }
@@ -796,12 +1146,18 @@ class VpnController extends ChangeNotifier {
         connected: false,
       ),
     );
-    _log.add('اتصال لغو شد و تنظیمات شبکه به حالت عادی بازگشت.');
+    if (_lastLoggedCancelGeneration != _cancelGeneration) {
+      _lastLoggedCancelGeneration = _cancelGeneration;
+      _log.add('اتصال لغو شد و تنظیمات شبکه به حالت عادی بازگشت.');
+    }
   }
 
   /// اتصال با تلاش روی چند سرور: اگر یک سرور بالا نیامد، سرور بعدی امتحان
   /// می شود تا کاربر مجبور نشود دستی سرور عوض کند.
-  Future<ConnectOutcome> connect({VpnNode? requested}) async {
+  Future<ConnectOutcome> connect({
+    VpnNode? requested,
+    bool isAutoReconnect = false,
+  }) async {
     // فقط یک اتصال همزمان.
     //
     // در گزارش ۱٫۰۱۲ دو «درخواست اتصال» با سه ثانیه فاصله آمد و هر دو
@@ -818,18 +1174,31 @@ class VpnController extends ChangeNotifier {
     if (_status.active) {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
     }
+    if (!isAutoReconnect) {
+      _reconnectAttempts = 0;
+    }
     _connectInFlight = true;
     try {
       final ConnectOutcome outcome = await _connectInner(requested: requested);
       return _cancelRequested ? const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.') : outcome;
     } finally {
-      if (_cancelRequested) {
+      final bool wasCancelled = _cancelRequested;
+      if (wasCancelled) {
         await _stopCores();
         await _disableProxy();
         _finishCancel();
       }
       _connectInFlight = false;
       _cancelRequested = false;
+      final bool reloadQueued = _pendingLiveReload;
+      _pendingLiveReload = false;
+      if (!wasCancelled && !_disposed && !_shuttingDown && _status == VpnStatus.connected) {
+        if (reloadQueued) {
+          scheduleLiveReload();
+        } else if (_launchedFilterSignature != _contentFilter.effectSignature) {
+          _scheduleFilterHotReload(_contentFilter);
+        }
+      }
     }
   }
 
@@ -837,6 +1206,7 @@ class VpnController extends ChangeNotifier {
     _cancelRequested = false;
     _singleNodeSession = requested != null ||
         _settings.selectionMode == SelectionMode.manual || !_settings.autoFailover;
+    await _cancelRuntimePrewarm();
     // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
     // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
     await _stopProbes();
@@ -889,33 +1259,16 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    final List<VpnNode> regionalNodes =
-        usableNodes.where(_matchesServerRegion).toList();
-    if (regionalNodes.isEmpty) {
-      final String region = _serverRegionLabel(_settings.serverRegionCode);
-      final String message = 'در منطقه $region سرور سازگار و فعالی پیدا نشد.';
-      _setStatus(VpnStatus.failed, message);
-      return ConnectOutcome(ok: false, message: message);
-    }
-    final List<VpnNode> fitting = regionalNodes
-        .where(_fitsPreference)
-        .toList();
+    final List<VpnNode> fitting = usableNodes.where(_fitsPreference).toList();
     if (fitting.isEmpty) {
       const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
     }
     _log.add(
-      'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در فهرست، '
+      'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در اشتراک، '
       'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',
     );
-    if (_clashNames.isNotEmpty) {
-      _log.add(
-        'پیکربندی پنل ${Fa.num(_clashNames.length)} گره دارد و نگه داشته '
-        'شده است؛ اگر سرورها با این پروفایل جواب ندهند، همان ها با لینک '
-        'اجرا می شوند.',
-      );
-    }
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
     try {
       if (_native.available && !_device.elevated) {
@@ -1025,21 +1378,6 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// آیا کشور این سرور با فیلتر منطقه انتخاب شده هماهنگ است؟
-  bool _matchesServerRegion(VpnNode node) {
-    final String selected = _settings.serverRegionCode;
-    if (selected == 'all' || selected.isEmpty) return true;
-    final String code = node.flagCode.toLowerCase();
-    if (selected == 'unknown') return code.isEmpty;
-    return code == selected.toLowerCase();
-  }
-
-  static String _serverRegionLabel(String code) {
-    if (code == 'unknown') return 'نامشخص';
-    if (code == 'all' || code.isEmpty) return 'همه کشورها';
-    return countryNameFa(code).isEmpty ? code.toUpperCase() : countryNameFa(code);
-  }
-
   /// آیا این سرور با هسته انتخابی کاربر اجرا می شود؟
   bool _fitsPreference(VpnNode node) =>
       fitsPreference(_settings.corePreference, node);
@@ -1075,7 +1413,6 @@ class VpnController extends ChangeNotifier {
             !node.disabled &&
             usable(node) &&
             !_unusableInThisRun.contains(node.id) &&
-            _matchesServerRegion(node) &&
             _fitsPreference(node))
         .toList();
     switch (_settings.selectionMode) {
@@ -1091,7 +1428,6 @@ class VpnController extends ChangeNotifier {
                 !candidate.disabled &&
                 usable(candidate) &&
                 !_unusableInThisRun.contains(candidate.id) &&
-                _matchesServerRegion(candidate) &&
                 _fitsPreference(candidate)) {
               rotation.add(candidate);
             }
@@ -1129,11 +1465,13 @@ class VpnController extends ChangeNotifier {
   /// یک تلاش اتصال به یک سرور مشخص.
   Future<_AttemptResult> _attempt(VpnNode node) async {
     _activeNode = node;
+    _livePing = 0;
+    _stats = TunnelStats.empty;
     _notify();
 
-    // ۱. بستن هر فیلترشکن و پروکسی فعال دیگر
+    // ۱. بستن هر فیلترشکن فعال دیگر و پروکسی بازمانده پیش از اجرا.
     await _terminateForeignCores();
-    await _native.disableSystemProxy();
+    _proxyPort = 0;
 
     // ۲. آماده سازی هسته ها از نسخه نصب (بدون هیچ دانلودی)
     for (final CoreInfo core in _provisioner.catalog) {
@@ -1157,10 +1495,16 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    // یک هسته است، دو حالت: اگر راه اول (تونل کامل یا پروکسی سیستمی) بالا
-    // نیامد، همان هسته با حالت دیگر امتحان می شود. این همان کاری است که
-    // همان کاری که کلاینت رسمی هسته می کند، با عوض کردن حالت به جای هسته.
-    for (final LaunchPlan plan in plans) {
+    // یک هسته است، دو حالت: اگر راه اول (تونل کامل) به دلیل کارت شبکه یا
+    // مسیر ویندوز بالا نیامد ولی خود پروکسی هسته سالم بود، همان هسته با
+    // پروکسی سیستمی وصل می شود؛ اما اگر هیچ سروری پاسخ نداد، وقت کاربر با
+    // تکرار بی فایده همان فهرست گرفته نمی شود.
+    bool allowProxyFallbackNow = false;
+    for (int planIndex = 0; planIndex < plans.length; planIndex++) {
+      final LaunchPlan plan = plans[planIndex];
+      if (planIndex > 0 && plan.usesSystemProxy && !allowProxyFallbackNow) {
+        break;
+      }
       if (_cancelRequested) {
         await _stopCores();
         await _disableProxy();
@@ -1170,11 +1514,6 @@ class VpnController extends ChangeNotifier {
         _log.add(plan.warning, level: 'warning');
       }
       // پیش از هر تلاش، پورت های هسته آزاد می شوند.
-      //
-      // تا ۱٫۰٫۱۰ این کار فقط یک بار در ابتدای اتصال انجام می شد. وقتی تلاش
-      // اول شکست می خورد و هسته قبلی هنوز در حال خاموش شدن بود، تلاش دوم و
-      // سوم و چهارم همگی با «port 17078 is already in use» برمی گشتند؛ یعنی
-      // هر بار همان پورت خودمان جلوی خودمان را می گرفت.
       await _stopCores();
       if (_cancelRequested) return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       final bool portFree = await _freeCorePortsWithRetry();
@@ -1187,6 +1526,7 @@ class VpnController extends ChangeNotifier {
       }
       if (_cancelRequested) return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       _setStatus(VpnStatus.connecting, 'اجرای هسته و ساخت تونل...');
+      final DateTime sessionStart = DateTime.now().toUtc();
       final bool started = await _launch(plan);
       if (!started) {
         final bool unusable = _lastLaunchUnusable;
@@ -1198,6 +1538,9 @@ class VpnController extends ChangeNotifier {
                 'امتحان می شود.',
             unusable: true,
           );
+        }
+        if (plan.tun) {
+          allowProxyFallbackNow = true;
         }
         continue;
       }
@@ -1224,7 +1567,6 @@ class VpnController extends ChangeNotifier {
             plan.cores.first,
             coreLog,
             plan: plan,
-            node: node,
           ),
         );
         final String full = await _readLogFull(coreLog);
@@ -1242,25 +1584,95 @@ class VpnController extends ChangeNotifier {
             unusable: true,
           );
         }
+        if (plan.tun) {
+          allowProxyFallbackNow = true;
+        }
         continue;
       }
 
-      // Open sockets, byte counters and dial log entries are not evidence of
-      // successful traffic. Require authenticated HTTPS with an expected body.
-      _setStatus(VpnStatus.connecting, 'انتخاب مسیر سالم و تأیید عبور HTTPS...');
+      // Match `hiddify-app` + `hiddify-core v5.9.1/v2/hcore/connectivity.go`:
+      // once the box and inbound (TUN / mixed port) are running, enter Waiting
+      // and transition to Connected the instant the core's outbound monitor
+      // records a fresh non-cached URL-test reply (`0 < delay < 65000`), or stop
+      // immediately on `NO_AVAILABLE_PROXIES` when every outbound timed out.
+      // When an auxiliary chain hop (WARP / Psiphon / profile) is enabled, also
+      // verify end-to-end HTTPS through the loopback mixed port because the hop
+      // sits outside the `lowest` group.
+      _setStatus(VpnStatus.connecting, 'در انتظار پاسخ سرور...');
+      bool proxyEverVerified = false;
+      bool poolExhausted = false;
+      int initialDelayMs = 0;
+      CoreExitIpInfo? initialIpInfo;
+      final Stopwatch waitClock = Stopwatch()..start();
       final bool flows = await StartupVerification.wait(
-        cancelled: () => _cancelRequested || _disposed,
+        cancelled: () => _cancelRequested || _disposed || poolExhausted,
         alive: () async => _coreProcesses.isNotEmpty ||
             await _native.isRunning(plan.primaryBinary),
         budget: _singleNodeSession && !_activeChain.enabled
-            ? const Duration(seconds: 30) : const Duration(minutes: 2),
+            ? const Duration(seconds: 20)
+            : const Duration(seconds: 60),
+        interval: const Duration(milliseconds: 120),
+        attemptTimeout: const Duration(seconds: 8),
         probe: (Duration timeout) async {
-          final Stopwatch clock = Stopwatch()..start();
-          final bool proxy = await VerifiedProbe.check(proxyPort: _umbrellaPort, timeout: timeout);
-          if (!proxy || _cancelRequested || _disposed) return false;
-          final Duration remaining = timeout - clock.elapsed;
-          return !plan.tun || (remaining > Duration.zero &&
-              await VerifiedProbe.check(proxyPort: 0, timeout: remaining));
+          final CoreProxySnapshot snapshot = await ClashApi.status(
+            since: sessionStart,
+            timeout: const Duration(milliseconds: 800),
+          );
+          if (_cancelRequested || _disposed) {
+            return false;
+          }
+          if (snapshot.reachable) {
+            if (snapshot.connectivity ==
+                CoreConnectivityState.noAvailableProxies) {
+              poolExhausted = true;
+              return false;
+            }
+            if (snapshot.connectivity == CoreConnectivityState.started) {
+              if (PingService.plausible(snapshot.activeDelayMs)) {
+                initialDelayMs = snapshot.activeDelayMs;
+              } else if (PingService.plausible(snapshot.bestDelayMs)) {
+                initialDelayMs = snapshot.bestDelayMs;
+              }
+              initialIpInfo = snapshot.exitIpInfo;
+              if (!_activeChain.enabled) {
+                proxyEverVerified = true;
+                return true;
+              }
+              // Chain hop enabled: ensure the hop finished handshaking too.
+              final Duration cap = timeout < const Duration(seconds: 6)
+                  ? timeout
+                  : const Duration(seconds: 6);
+              final bool chainOk = await VerifiedProbe.check(
+                proxyPort: _probeProxyPort,
+                proxyUser: _probeProxyUser,
+                proxyPassword: _probeProxyPassword,
+                timeout: cap,
+              );
+              if (chainOk) {
+                proxyEverVerified = true;
+              }
+              return chainOk;
+            }
+            return false;
+          }
+          // Fallback only if the loopback Clash controller fails to respond
+          // after initial startup while the engine process is still alive.
+          if (waitClock.elapsed < const Duration(milliseconds: 2500)) {
+            return false;
+          }
+          final Duration proxyCap = timeout < const Duration(seconds: 5)
+              ? timeout
+              : const Duration(seconds: 5);
+          final bool proxy = await VerifiedProbe.check(
+            proxyPort: _probeProxyPort,
+            proxyUser: _probeProxyUser,
+            proxyPassword: _probeProxyPassword,
+            timeout: proxyCap,
+          );
+          if (proxy) {
+            proxyEverVerified = true;
+          }
+          return proxy;
         },
       );
       if (_cancelRequested) {
@@ -1269,23 +1681,33 @@ class VpnController extends ChangeNotifier {
         return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       }
       if (!flows) {
-        final String coreLog = '${_provisioner.dataDir}'
-            '${Platform.pathSeparator}run${Platform.pathSeparator}'
-            '${plan.cores.first.name}-core.log';
+        if (plan.tun && proxyEverVerified) {
+          allowProxyFallbackNow = true;
+        }
+        final String coreLog = _coreLogPath(plan);
         final String tail = await _readLogTail(coreLog);
         _log.add(
-          'هسته بالا آمد ولی سنجش HTTPS پاسخ معتبر نگرفت؛ اتصال تأیید نشد.'
-          '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+          poolExhausted
+              ? 'همه سرورهای اشتراک بررسی شدند و در شبکه فعلی هیچ سرور '
+                  'در دسترسی پاسخ نداد.'
+                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}'
+              : 'هسته بالا آمد ولی در مهلت تعیین شده هیچ سروری پاسخ نداد.'
+                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
           details: await _coreDiagnostics(
             plan.cores.first,
             coreLog,
             plan: plan,
-            node: node,
           ),
         );
         await _stopCores();
         await _disableProxy();
+        if (poolExhausted && !_singleNodeSession) {
+          _setStatus(VpnStatus.failed, 'هیچ سرور در دسترسی پاسخ نداد.');
+          return const _AttemptResult(
+            message: 'هیچ سرور در دسترسی پاسخ نداد.',
+          );
+        }
         continue;
       }
 
@@ -1302,7 +1724,7 @@ class VpnController extends ChangeNotifier {
               LogDetail(
                 title: 'تنظیم پروکسی ویندوز',
                 text: <String>[
-                  'آدرس پروکسی: 127.0.0.1:${Fa.num(plan.proxyPort)}',
+                  'نشانی پروکسی: ${Fa.num('127.0.0.1')}:${Fa.num(plan.proxyPort)}',
                   'پورت محلی هسته: ${Fa.num(plan.proxyPort)}',
                   if (plan.proxyPort > 0)
                     'پورت باز است: '
@@ -1319,6 +1741,9 @@ class VpnController extends ChangeNotifier {
           await _disableProxy();
           continue;
         }
+      } else if (!plan.tun) {
+        // حالت «فقط سرویس پروکسی»: پورت محلی باز است و پروکسی ویندوز دست نخورده می ماند.
+        await _disableProxy();
       }
       if (_cancelRequested || _disposed) {
         await _stopCores();
@@ -1326,43 +1751,73 @@ class VpnController extends ChangeNotifier {
         return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       }
       _connectedAt = DateTime.now();
+      _sessionStartUtc = sessionStart;
+      _activeCoreLogPath = _coreLogPath(plan);
+      _tunnelVerified = true;
       _healthFailures = 0;
-      _reconnectAttempts = 0;
+      // شمارنده `_reconnectAttempts` اینجا صفر نمی شود؛ فقط در اتصال دستی یا پس
+      // از تایید کامل سلامت مسیر صفر می شود تا بازاتصال خودکار هرگز به حلقه
+      // بی پایان قطع و وصل تبدیل نشود.
+      if (initialDelayMs > 0) {
+        _livePing = initialDelayMs;
+      }
+      if (initialIpInfo != null && initialIpInfo!.ip.isNotEmpty) {
+        _geo = GeoInfo.fromJson(initialIpInfo!.toGeoJson());
+        _exitIp = initialIpInfo!.ip;
+      }
       _setStatus(VpnStatus.connected, 'اتصال برقرار شد.');
       _balancer.markConnected(node.id);
-      _startTimers();
-      await _sound.play('connect');
+      _startTimers(initialPingMs: initialDelayMs);
+      unawaited(_sound.play('connect'));
       // نام سرور در سینی ویندوز و اعلان نمی آید.
-      //
-      // کاربر خواست پس از اتصال هیچ جا نام سرور دیده نشود، فقط «به آمبرلا
-      // متصل شد»؛ جزئیات سرور فقط در گزارش ها می ماند. اعلان هم پینگ واقعی
-      // را می گوید، نه پینگ لحظه انتخاب.
-      await _tray.update(
-        state: 'connected',
-        tooltip: '${AppConfig.appName} - متصل شد',
-        connected: true,
+      unawaited(
+        _tray.update(
+          state: 'connected',
+          tooltip: '${AppConfig.appName} - متصل شد',
+          connected: true,
+        ),
       );
-      // آی پی خروجی از سطر MONITORING خود هسته؛ اگر خوانده نشود، سنجش وب
-      // جای آن را می گیرد.
-      final String coreIp = await _coreExitIp(_coreLogPath(plan));
-      if (coreIp.isNotEmpty) {
-        _log.add('آی پی خروجی از گزارش هسته: $coreIp');
-        _notify();
+      if (initialIpInfo != null && initialIpInfo!.ip.isNotEmpty) {
+        _log.add(
+          'آی پی خروجی: ${Fa.num(_geo.ip)}'
+          '${_geo.flagEmojiFreeLabel.isEmpty ? '' : ' | ${_geo.flagEmojiFreeLabel}'}',
+        );
       }
       if (_settings.notificationsEnabled) {
-        final int shownPing = activePingMs > 0 ? activePingMs : node.pingMs;
-        await _tray.balloon(
-          'به آمبرلا متصل شد',
-          shownPing > 0 ? 'پینگ ${Fa.ms(shownPing)}' : 'اتصال امن برقرار است',
+        final int shownPing = activePingMs;
+        unawaited(
+          _tray.balloon(
+            'به آمبرلا متصل شد',
+            shownPing > 0 ? 'پینگ ${Fa.ms(shownPing)}' : 'اتصال امن برقرار است',
+          ),
         );
       }
 
-      unawaited(_verifyTunnel());
-      _preferredCore[node.id] = plan.cores.first.name;
-      _log.add(
-        'اتصال به ${node.name} (${node.host}:${node.port}) با هسته '
-        '${plan.primaryBinary} برقرار شد.',
+      // خواندن غیرمسدودکننده آی پی و موقعیت خروجی در پس زمینه (ابتدا از ipinfo
+      // داخلی خود هسته و در صورت نیاز از وب) بدون یک میلی ثانیه تاخیر در اتصال.
+      final int connectedEpoch = _connectionEpoch;
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 900), () async {
+          if (!_disposed &&
+              connectedEpoch == _connectionEpoch &&
+              _status == VpnStatus.connected) {
+            await _verifyTunnel();
+          }
+        }),
       );
+      // در حالت چندسروره، گروه انتخابی کاربر (`lowest` یا `balance`) صریحاً روی
+      // `select` ست می شود تا مقدار کش شده قدیمی در `data/clash.db` آن را خنثی نکند.
+      if (!_singleNodeSession) {
+        unawaited(ClashApi.selectOutbound('select', _desiredSelectGroup));
+      }
+      if (_contentFilter.hasActiveRules) {
+        unawaited(_native.flushDns());
+      }
+      _preferredCore[node.id] = plan.cores.first.name;
+      final String modeLabel = plan.tun
+          ? 'تونل کامل'
+          : (plan.usesSystemProxy ? 'پروکسی سیستمی' : 'فقط سرویس پروکسی');
+      _log.add('اتصال امن آمبرلا با موفقیت برقرار شد ($modeLabel).');
       _settings = _settings.copyWith(lastNodeId: node.id);
       onSettingsChanged?.call(_settings);
       return const _AttemptResult(message: 'اتصال برقرار شد.', ok: true);
@@ -1404,6 +1859,9 @@ class VpnController extends ChangeNotifier {
       case NodeProtocol.vmess:
       case NodeProtocol.trojan:
       case NodeProtocol.shadowsocks:
+      case NodeProtocol.ssh:
+      case NodeProtocol.naive:
+      case NodeProtocol.anytls:
       case NodeProtocol.socks:
       case NodeProtocol.mieru:
       case NodeProtocol.hysteria2:
@@ -1447,10 +1905,20 @@ class VpnController extends ChangeNotifier {
             JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.trojan:
       case NodeProtocol.hysteria2:
+      case NodeProtocol.anytls:
         return JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.shadowsocks:
         return JsonX.text(params['password']).isNotEmpty &&
             JsonX.text(params['method'] ?? params['cipher']).isNotEmpty;
+      case NodeProtocol.ssh:
+        return JsonX.text(params['username']).isNotEmpty &&
+            (JsonX.text(params['password']).isNotEmpty ||
+                JsonX.text(
+                  params['privateKey'] ?? params['pk'] ?? params['private_key'],
+                ).isNotEmpty);
+      case NodeProtocol.naive:
+        return JsonX.text(params['username']).isNotEmpty ||
+            JsonX.text(params['password']).isNotEmpty;
       case NodeProtocol.mieru:
         return JsonX.text(params['username']).isNotEmpty &&
             JsonX.text(params['password']).isNotEmpty;
@@ -1467,40 +1935,6 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// نام گره هایی که در پیکربندی خود پنل هستند.
-  ///
-  /// فقط برای همین گره ها نام پنل با نام سرور یکی است، پس در گزارش ها می شود
-  /// هر دو را به هم نسبت داد.
-  Set<String> _clashNames = <String>{};
-
-  /// نام گره های پنل (برای گزارش ها: کاربر می بیند کدام سرور همان گره پنل
-  /// است). وقتی پنل پروفایل کاملی داده باشد پر می شود.
-  Set<String> get panelNodeNames => Set<String>.unmodifiable(_clashNames);
-
-  /// آخرین پیکربندی کاملی که خود پنل داد (کلش یا قالب کامل موتور).
-  ///
-  /// این فایل تنها جایی است که پدینگ، هدرهای مرورگر، ALPN و finger-print گره
-  /// ها با هم هست؛ همان چیزی که سرور انتظار دارد. خود هسته این فایل
-  /// را درست می شناسد، پس نگه داشته می شود تا اگر کاربر خواست همان پروفایل
-  /// اجرا شود، آماده باشد.
-  String _panelProfile = '';
-
-  String get panelProfile => _panelProfile;
-
-  /// ذخیره پیکربندی خود پنل (متن YAML یا JSON).
-  Future<void> applyClashProfile(String yaml) async {
-    if (yaml.trim().isEmpty || yaml.trim() == _panelProfile.trim()) {
-      return;
-    }
-    _panelProfile = yaml;
-    try {
-      _clashNames = ClashConfig.nodeNames(yaml).toSet();
-    } on Exception {
-      _clashNames = <String>{};
-    }
-    await LocalStore.instance.writeFile(StoreKeys.panelProfile, yaml);
-  }
-
   /// پوشه هسته: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
   /// همان پوشه خود فایل اجرایی است.
   String _umbrellaDir(String exe) => _dirOf(exe);
@@ -1511,7 +1945,7 @@ class VpnController extends ChangeNotifier {
   /// اگر دی ان اس داخل تونل، سرور را از طریق خودش ترجمه کند، آماده شدن پورت
   /// طول می کشد و سنجش (که فقط چند ثانیه صبر می کند) بی نتیجه می ماند —
   /// همان «تاخیر تونل برای ۰ سرور» در گزارش کاربر.
-  static const String pingDns = 'https://1.1.1.1/dns-query';
+  static const String pingDns = UmbrellaCore.defaultRemoteDns;
 
   /// نقشه اجرا برای یک سرور.
   ///
@@ -1590,8 +2024,17 @@ class VpnController extends ChangeNotifier {
     }
 
     // همان حالتی که کاربر خواسته: تونل کامل اگر روشن باشد و دسترسی مدیر هم
-    // داشته باشیم، وگرنه پروکسی سیستمی.
-    bool tun = _settings.tunMode;
+    // داشته باشیم، وگرنه پروکسی سیستمی. در حالت «خودکار» اگر آداپتور یا مسیر
+    // تونل توسط ویندوز/فایروال بسته شود ولی خود پروکسی هسته کار کند، پروکسی
+    // سیستمی به عنوان پشتیبان آماده است.
+    final InboundServiceMode requestedMode = _settings.serviceMode;
+    final int activeMixedPort = LanSharing.isValidPort(_settings.mixedPort)
+        ? _settings.mixedPort
+        : _umbrellaPort;
+    bool tun = requestedMode == InboundServiceMode.vpn &&
+        _settings.corePreference != CorePreference.systemProxy &&
+        _settings.tunMode;
+    bool sysProxy = requestedMode == InboundServiceMode.systemProxy;
     if (tun && !_device.elevated) {
       _log.add(
         'حالت تونل به دسترسی مدیر نیاز دارد؛ این بار با پروکسی سیستمی وصل '
@@ -1599,9 +2042,20 @@ class VpnController extends ChangeNotifier {
         level: 'warning',
       );
       tun = false;
+      sysProxy = true;
     }
-    return <LaunchPlan>[
-      LaunchPlan(
+    final bool hasActiveAppRoutes =
+        _settings.appRoutes.any((AppRouteRule rule) => rule.enabled);
+    final bool allowProxyFallback = tun &&
+        _settings.corePreference == CorePreference.auto &&
+        !hasActiveAppRoutes &&
+        !_settings.killSwitch;
+    LaunchPlan makePlan({
+      required bool useTun,
+      required bool useSystemProxy,
+      String warning = '',
+    }) {
+      return LaunchPlan(
         cores: <CoreLaunch>[
           CoreLaunch(
             exe: exe,
@@ -1609,23 +2063,35 @@ class VpnController extends ChangeNotifier {
               exe: exe,
               links: links.path,
               runDir: runDir.path,
-              tun: tun,
+              tun: useTun,
             ),
             workDir: _umbrellaDir(exe),
-            name: tun ? 'umbrella-tun' : 'umbrella',
+            name: useTun ? 'umbrella-tun' : 'umbrella',
           ),
         ],
         linksPath: links.path,
-        // در حالت پروکسی سیستمی، باز شدن پورت محلی نشانه آمادگی است؛ در
-        // حالت تونل، کارت شبکه مجازی نشانه آن است.
-        readinessPort: tun ? 0 : _umbrellaPort,
+        readinessPort: useTun ? 0 : activeMixedPort,
         primaryBinary: binary,
-        tunnelHint: tun ? AppConfig.tunAdapterHint : '',
+        tunnelHint: useTun ? AppConfig.tunAdapterHint : '',
         chained: false,
-        proxyPort: tun ? 0 : _umbrellaPort,
+        proxyPort: useTun ? 0 : activeMixedPort,
         runDir: runDir.path,
-        tun: tun,
-      ),
+        tun: useTun,
+        systemProxy: useSystemProxy,
+        warning: warning,
+      );
+    }
+
+    return <LaunchPlan>[
+      makePlan(useTun: tun, useSystemProxy: sysProxy),
+      if (allowProxyFallback)
+        makePlan(
+          useTun: false,
+          useSystemProxy: true,
+          warning:
+              'مسیر کارت شبکه تونل روی این سیستم پاسخ نداد؛ اتصال با پروکسی '
+              'سیستمی برقرار می شود.',
+        ),
     ];
   }
 
@@ -1658,7 +2124,7 @@ class VpnController extends ChangeNotifier {
     return UmbrellaCore.args(
       links: links,
       runDir: runDir,
-      port: _umbrellaPort,
+      port: _configuredMixedPort,
       tun: tun,
       systemProxy: !tun,
       logLevel: CoreLogLevel.normalize(_settings.logLevel),
@@ -1670,7 +2136,12 @@ class VpnController extends ChangeNotifier {
   static String linkFor(VpnNode node) {
     final String raw = node.raw.trim();
     if (raw.contains('://')) {
-      return _normalizeLegacyTransportLink(raw);
+      final String normalized =
+          node.protocol == NodeProtocol.vless ||
+                  node.protocol == NodeProtocol.trojan
+              ? _normalizeLegacyTransportLink(raw)
+              : raw;
+      return LinkPreparation.normalizeLink(normalized);
     }
     return _linkFromNode(node);
   }
@@ -1701,7 +2172,7 @@ class VpnController extends ChangeNotifier {
   /// سریع ترین را نگه دارد و هنگام افتادن یکی، به بعدی سوییچ کند — همان
   /// کاری که کاربر از یک فیلترشکن انتظار دارد.
   ///
-  /// همه لینک‌های یکتای مجاز حفظ می‌شوند؛ keep-top مصرف همزمان را محدود می‌کند.
+  /// همه لینک های یکتای مجاز حفظ می شوند؛ keep-top مصرف هم زمان را محدود می کند.
   List<String> _linkPool(VpnNode chosen) {
     final List<String> pool = <String>[];
     final Set<String> seen = <String>{};
@@ -1721,37 +2192,191 @@ class VpnController extends ChangeNotifier {
       // یک سرور (رایج ترین حالت: یک سرور با چند شناسه کاربر) به یکی
       // کاهش می یافتند و فقط یکی از آن ها به هسته می رسید. حالا هر لینک
       // یکتا یک کلاینت است و همه شان امتحان می شوند.
-      final String key = link.split('#').first;
+      final String key = LinkPreparation.canonicalTarget(link);
       if (!seen.add(key)) {
         return;
       }
       pool.add(link);
     }
 
-    add(chosen);
     // An explicit selection (or disabled failover) must not launch a monitor
     // over the entire subscription or silently select a different server.
-    if (_singleNodeSession) return pool;
-    // بعد از انتخاب فعلی، پین ها اول به هسته داده می شوند تا در مجموعه
-    // keep-top شانس ماندن داشته باشند؛ سپس بقیه سرورها به ترتیب پینگ می آیند.
-    final List<VpnNode> rest = _nodes
-        .where((VpnNode n) =>
-            n.id != chosen.id &&
-            !n.disabled &&
-            n != chosen &&
-            _matchesServerRegion(n))
-        .toList()
-      ..sort((VpnNode a, VpnNode b) {
-        final int pa = a.pingMs <= 0 ? 1 << 30 : a.pingMs;
-        final int pb = b.pingMs <= 0 ? 1 << 30 : b.pingMs;
-        if (a.favorite != b.favorite) return a.favorite ? -1 : 1;
-        return pa.compareTo(pb);
-      });
-    for (final VpnNode n in rest) {
-      add(n);
+    if (_singleNodeSession) {
+      add(chosen);
+      return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
     }
+    // در حالت خودکار چندسروره، ترتیب فهرست باید کاملاً یکتا و پایدار بماند
+    // (مستقل از تغییر پینگ یا چرخش انتخاب گر) تا هم تگ های ترتیبی هسته در
+    // `data/clash.db` همیشه به همان سرور اشاره کنند و هم کش `runtime.json`
+    // پیش آماده شده در لحظه زدن دکمه اتصال بی درنگ و بدون کامپایل دوباره اجرا
+    // شود. پین شده ها اول قرار می گیرند و بقیه به ترتیب پایدار فهرست می آیند.
+    final List<VpnNode> candidates =
+        _nodes.where((VpnNode n) => !n.disabled).toList();
+    for (final VpnNode n in candidates) {
+      if (n.favorite) {
+        add(n);
+      }
+    }
+    for (final VpnNode n in candidates) {
+      if (!n.favorite) {
+        add(n);
+      }
+    }
+    add(chosen);
     // اگر هیچ کدام سازگار نبود، لااقل همان یکی.
     return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
+  }
+
+  /// پیش آماده سازی بی صدا و پس زمینه `parsed.json` و `runtime.json` پس از
+  /// دریافت اشتراک یا تغییر تنظیمات تا کلیک روی «اتصال» در کسری از ثانیه مستقیم
+  /// وارد `srun` شود (دقیقاً مشابه پروفایل از پیش پارس شده Hiddify).
+  void _scheduleRuntimePrewarm() {
+    if (!Platform.isWindows || _disposed) {
+      return;
+    }
+    _prewarmTimer?.cancel();
+    if (_status.active ||
+        _status.busy ||
+        _connectInFlight ||
+        _nodes.isEmpty ||
+        _settings.selectionMode == SelectionMode.manual ||
+        !_settings.autoFailover) {
+      return;
+    }
+    _prewarmTimer = Timer(const Duration(milliseconds: 350), () {
+      _prewarmTimer = null;
+      if (_disposed ||
+          _status.active ||
+          _status.busy ||
+          _connectInFlight ||
+          _measuring ||
+          _corePing.busy) {
+        return;
+      }
+      final Future<void> job = _runRuntimePrewarm();
+      _prewarmInFlight = job;
+      unawaited(
+        job.whenComplete(() {
+          if (identical(_prewarmInFlight, job)) {
+            _prewarmInFlight = null;
+          }
+        }),
+      );
+    });
+  }
+
+  Future<void> _cancelRuntimePrewarm() async {
+    _prewarmTimer?.cancel();
+    _prewarmTimer = null;
+    final Future<void>? running = _prewarmInFlight;
+    if (running == null) {
+      return;
+    }
+    _prewarmCancelled = true;
+    try {
+      await running.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
+    } catch (_) {
+      // Prewarm is strictly best-effort; connect always validates/builds.
+    } finally {
+      _prewarmCancelled = false;
+      if (identical(_prewarmInFlight, running)) {
+        _prewarmInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _runRuntimePrewarm() async {
+    _prewarmCancelled = false;
+    bool shouldAbort() =>
+        _prewarmCancelled ||
+        _disposed ||
+        _cancelRequested ||
+        _status.active ||
+        _status.busy ||
+        _connectInFlight;
+    try {
+      if (shouldAbort()) return;
+      final List<VpnNode> usableNodes = _nodes
+          .where((VpnNode node) => usable(node) && !node.disabled)
+          .toList();
+      if (usableNodes.isEmpty) return;
+      final String binary = CliSession.wanted(_settings)
+          ? umbrellaCliBinary
+          : UmbrellaCore.engineBinary;
+      final String? exe = await _provisioner.locateBinary(binary);
+      if (exe == null || exe.isEmpty || shouldAbort()) return;
+      final String workDir = _umbrellaDir(exe);
+      final Directory runDir = Directory(
+        '${_provisioner.dataDir}${Platform.pathSeparator}run',
+      );
+      await runDir.create(recursive: true);
+
+      final bool savedSingle = _singleNodeSession;
+      _singleNodeSession = false;
+      final List<String> pool;
+      try {
+        pool = _linkPool(usableNodes.first);
+      } finally {
+        _singleNodeSession = savedSingle;
+      }
+      if (pool.isEmpty || shouldAbort()) return;
+
+      final PreparedLinks prepared = await LinkPreparation.prepare(
+        pool,
+        resolveEndpoints: false,
+      );
+      if (prepared.links.isEmpty || shouldAbort()) return;
+
+      final bool tun = _settings.serviceMode == InboundServiceMode.vpn &&
+          _settings.corePreference != CorePreference.systemProxy &&
+          _settings.tunMode &&
+          _device.elevated;
+      final bool sysProxy = !tun &&
+          _settings.serviceMode != InboundServiceMode.proxy;
+      final int activeMixedPort = LanSharing.isValidPort(_settings.mixedPort)
+          ? _settings.mixedPort
+          : _umbrellaPort;
+      final String logPath =
+          '${runDir.path}${Platform.pathSeparator}umbrella-core.log';
+      final File prewarmLinks = File(
+        '${runDir.path}${Platform.pathSeparator}prewarm-links.txt',
+      );
+      final File prewarmSettings = File(
+        '${runDir.path}${Platform.pathSeparator}prewarm-settings.json',
+      );
+      await prewarmLinks.writeAsString(
+        '${prepared.links.join('\n')}\n',
+        flush: true,
+      );
+      await prewarmSettings.writeAsString(
+        jsonEncode(
+          UmbrellaCore.settingsJson(
+            tun: tun,
+            systemProxy: sysProxy,
+            port: activeMixedPort,
+            logFile: logPath,
+            networkSettings: _settings,
+            contentFilter: _contentFilter,
+          ),
+        ),
+        flush: true,
+      );
+      if (shouldAbort()) return;
+      await CoreRuntime.compile(
+        executable: exe,
+        workDir: workDir,
+        runDir: runDir.path,
+        linksPath: prewarmLinks.path,
+        settingsPath: prewarmSettings.path,
+        stickyMinutes: _settings.stickyMinutes,
+        cancelled: shouldAbort,
+      );
+    } catch (_) {
+      // Silent best-effort prewarm; foreground connect logs any real error.
+    }
   }
 
   /// آیا نوع انتقال این گره برای هسته شناخته شده است؟
@@ -1810,7 +2435,7 @@ class VpnController extends ChangeNotifier {
         query.add('serviceName=${Uri.encodeComponent(service)}');
       }
     }
-    // ریلیتی: بدون این پارامترها دست‌دادن TLS انجام نمی شود. `fp` پایین تر
+    // ریلیتی: بدون این پارامترها دست دادن TLS انجام نمی شود. `fp` پایین تر
     // با توضیح خودش اضافه می شود.
     for (final String key in <String>['pbk', 'sid', 'spx']) {
       final String value = JsonX.text(params[key]);
@@ -1860,6 +2485,14 @@ class VpnController extends ChangeNotifier {
 
   /// آیا این گره با نوع انتقالش برای هسته آمبرلا قابل اجراست؟
   static bool transportSupported(VpnNode node) {
+    // فقط پروتکل های خانواده V2Ray از پارامتر انتقال (`tcp`/`ws`/`grpc`/`xhttp`)
+    // استفاده می کنند؛ پروتکل های مستقل مثل `naive` (با `type=custom`)، `ssh`،
+    // `anytls`، `ss`، `tuic` و `hysteria2` انتقال داخلی خودشان را دارند.
+    if (node.protocol != NodeProtocol.vless &&
+        node.protocol != NodeProtocol.vmess &&
+        node.protocol != NodeProtocol.trojan) {
+      return true;
+    }
     final String network = _networkOf(node);
     if (network.isEmpty) {
       return true;
@@ -1922,7 +2555,7 @@ class VpnController extends ChangeNotifier {
     final String name = Uri.encodeComponent(node.name);
     switch (node.protocol) {
       case NodeProtocol.vless:
-        // تله‌ای که ۱٫۰٫۱۰ را شکست: در منابع کلش، `type` نام **پروتکل** است
+        // تله ای که ۱٫۰٫۱۰ را شکست: در منابع کلش، `type` نام **پروتکل** است
         // (`type: vless`)، نه نوع انتقال. خواندن `params['type']` باعث می شد
         // لینک `type=vless` بسازد و هسته با «unknown transport type: vless»
         // آن را رد کند. نوع انتقال فقط از `network` می آید.
@@ -1965,9 +2598,41 @@ class VpnController extends ChangeNotifier {
         return 'hysteria2://${Uri.encodeComponent(JsonX.text(params['password']))}'
             '@$host:$port?sni=${JsonX.text(params['sni'], host)}#$name';
       case NodeProtocol.tuic:
-        return 'tuic://${JsonX.text(params['id'])}:'
+        return 'tuic://${JsonX.text(params['id'] ?? params['uuid'])}:'
             '${Uri.encodeComponent(JsonX.text(params['password']))}'
             '@$host:$port?sni=${JsonX.text(params['sni'], host)}#$name';
+      case NodeProtocol.ssh:
+        final String user = Uri.encodeComponent(JsonX.text(params['username']));
+        final String pass = JsonX.text(params['password']);
+        final String auth =
+            pass.isEmpty ? user : '$user:${Uri.encodeComponent(pass)}';
+        final List<String> sshQuery = <String>[];
+        final String pk = JsonX.text(
+          params['privateKey'] ?? params['pk'] ?? params['private_key'],
+        );
+        final String hk = JsonX.text(params['hostKey'] ?? params['hk']);
+        if (pk.isNotEmpty) {
+          sshQuery.add('pk=${Uri.encodeQueryComponent(pk)}');
+        }
+        if (hk.isNotEmpty) {
+          sshQuery.add('hk=${Uri.encodeQueryComponent(hk)}');
+        }
+        final String sshSuffix =
+            sshQuery.isEmpty ? '' : '?${sshQuery.join('&')}';
+        return 'ssh://$auth@$host:$port$sshSuffix#$name';
+      case NodeProtocol.naive:
+        final String user = Uri.encodeComponent(JsonX.text(params['username']));
+        final String pass = JsonX.text(params['password']);
+        final String auth =
+            pass.isEmpty ? user : '$user:${Uri.encodeComponent(pass)}';
+        final String sni = JsonX.text(params['sni'], host);
+        final String scheme =
+            JsonX.boolean(params['quic']) ? 'naive+quic' : 'naive+https';
+        return '$scheme://$auth@$host:$port?sni=${Uri.encodeQueryComponent(sni)}#$name';
+      case NodeProtocol.anytls:
+        final String sni = JsonX.text(params['sni'], host);
+        return 'anytls://${Uri.encodeComponent(JsonX.text(params['password']))}'
+            '@$host:$port?sni=${Uri.encodeQueryComponent(sni)}#$name';
       case NodeProtocol.mieru:
         return 'mieru://${JsonX.text(params['username'])}:'
             '${Uri.encodeComponent(JsonX.text(params['password']))}'
@@ -1983,15 +2648,8 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// نام سرور برای گزارش ها. بعضی نام ها خودشان با واژه سرور شروع می شوند و
-  /// تکرار آن واژه در گزارش ها زشت و گمراه کننده بود.
-  static String _nodeLabel(VpnNode node) {
-    final String name = node.name.trim();
-    if (name.startsWith('سرور')) {
-      return name;
-    }
-    return 'سرور $name';
-  }
+  /// برچسب عمومی سرور برای گزارش ها بدون افشای نام، پروتکل یا نشانی سرور.
+  static String _nodeLabel(VpnNode node) => 'مسیر انتخابی آمبرلا';
 
   String _dirOf(String path) {
     final int index = path.lastIndexOf(Platform.pathSeparator);
@@ -2014,13 +2672,10 @@ class VpnController extends ChangeNotifier {
   Future<bool> _launch(LaunchPlan plan) async {
     if (_cancelRequested || _disposed) return false;
     _lastLaunchUnusable = false;
-    await _stopCores();
-    final int preparationEpoch = _connectionEpoch;
-    // _freeCorePorts خودش دلیل و نتیجه را گزارش می کند، پس اینجا تکرار
-    // نمی شود.
-    if (!await _freeCorePorts()) {
-      return false;
+    if (_coreProcesses.isNotEmpty || _runningPids.isNotEmpty) {
+      await _stopCores();
     }
+    final int preparationEpoch = _connectionEpoch;
     final Directory runDir = Directory(plan.runDir);
     await runDir.create(recursive: true);
     final CoreLaunch core = plan.cores.first;
@@ -2033,37 +2688,50 @@ class VpnController extends ChangeNotifier {
     final String settingsPath =
         '${plan.runDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
     _activeChain = _settings.chain;
-    if (_activeChain.licenseKey.isNotEmpty) _networkSecrets.add(_activeChain.licenseKey);
+    if (_activeChain.licenseKey.isNotEmpty) {
+      _networkSecrets.add(_activeChain.licenseKey);
+    }
+    if (_settings.lanSharingPassword.trim().isNotEmpty) {
+      _networkSecrets.add(_settings.lanSharingPassword.trim());
+    }
+    final int configuredMixedPort = _configuredMixedPort;
+    final int effectivePort =
+        plan.proxyPort > 0 ? plan.proxyPort : configuredMixedPort;
+    final String proxySecret = _settings.lanSharingPassword.trim();
+    final bool localAuthEnabled = !(plan.usesSystemProxy && !plan.tun) &&
+        _settings.localProxyAuth &&
+        proxySecret.isNotEmpty;
+    _activePlanTun = plan.tun;
+    _activeMixedPort = effectivePort;
+    _activeLocalProxyOpen = !plan.tun || _settings.localProxyInVpn;
+    _activeLocalProxySecret = localAuthEnabled ? proxySecret : '';
+    _launchedFilterSignature = _contentFilter.effectSignature;
     await File(settingsPath).writeAsString(
       jsonEncode(
         UmbrellaCore.settingsJson(
           tun: plan.tun,
           systemProxy: plan.usesSystemProxy,
-          port: plan.proxyPort > 0 ? plan.proxyPort : _umbrellaPort,
+          port: effectivePort,
           logFile: coreLog,
           networkSettings: _settings,
+          contentFilter: _contentFilter,
         ),
       ),
       flush: true,
     );
 
     final List<String> originalLinks = await File(plan.linksPath).readAsLines();
+    // هم راستا با Hiddify: هیچ درخواست DNS مسدودکننده ای پیش از اجرای هسته زده
+    // نمی شود؛ خود موتور sing-box با `dns-direct-group` و فیلتر ضد جعل در لحظه
+    // اتصال موازی نشانی میزبان ها را حل می کند و فقط نرمال سازی لینک ها در چند
+    // میلی ثانیه انجام می شود.
     final PreparedLinks prepared = await LinkPreparation.prepare(
       originalLinks.where((String line) => line.trim().isNotEmpty).toList(),
-      // With an unblocker chain the endpoint may intentionally be resolved by
-      // the hop. Do not replace that name using the local network's answer.
-      resolveEndpoints: _settings.chain.position != ChainPosition.unblocker,
+      resolveEndpoints: false,
     );
     if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) return false;
     final File sessionLinks = File('${plan.runDir}${Platform.pathSeparator}prepared-links.txt');
     await sessionLinks.writeAsString('${prepared.links.join('\n')}\n', flush: true);
-    if (prepared.resolvedHosts > 0) {
-      _log.add('نشانی ${Fa.num(prepared.resolvedHosts)} میزبان سرور پیش از فعال شدن تونل آماده شد.');
-    }
-    if (prepared.unresolvedHosts > 0) {
-      _log.add('نشانی ${Fa.num(prepared.unresolvedHosts)} میزبان پیش از اتصال پیدا نشد؛ '
-          'هسته با DNS مستقیم تنظیم‌شده دوباره تلاش می‌کند.', level: 'warning');
-    }
 
     // با `-d` هسته همه تنظیمات را از فایل می خواند و پرچم های تونل و پورت را
     // نادیده می گیرد؛ پس فایل کامل نوشته می شود (UmbrellaCore.settingsJson) و
@@ -2073,6 +2741,7 @@ class VpnController extends ChangeNotifier {
       runtime = await CoreRuntime.compile(
         executable: core.exe, workDir: core.workDir, runDir: plan.runDir,
         linksPath: sessionLinks.path, settingsPath: settingsPath,
+        stickyMinutes: _settings.stickyMinutes,
         cancelled: () => _cancelRequested || _disposed || preparationEpoch != _connectionEpoch,
         onStarted: _preparingProcesses.add,
         onFinished: _preparingProcesses.remove,
@@ -2109,13 +2778,12 @@ class VpnController extends ChangeNotifier {
         if (!opened) {
           // پنجره باز نشد؛ همان هسته بی صدا اجرا می شود (پایین همین تابع).
           _log.add(
-            'پنجره Umbrella CLI باز نشد؛ هسته بدون پنجره اجرا می شود.',
+            'پنجره فرمان هسته باز نشد؛ هسته بدون پنجره اجرا می شود.',
             level: 'warning',
           );
         } else {
           _log.add(
-            'هسته در پنجره Umbrella CLI اجرا شد: ${core.binaryName} '
-            '(پورت ${Fa.num(plan.proxyPort)})',
+            'هسته در پنجره فرمان اجرا شد (پورت ${Fa.num(plan.proxyPort)})',
           );
           // فرایند هسته فرزند همان پنجره است؛ با نامش سنجیده و بسته می شود.
           _runningBinaries.add(core.binaryName);
@@ -2124,13 +2792,15 @@ class VpnController extends ChangeNotifier {
         }
       }
 
-      // نبودِ پنجره: اجرای بی صدا با همان آرگومان ها.
+      // نبودِ پنجره: اجرای بی صدا با همان آرگومان ها و نگهبان عمر والد.
       final Process process = await Process.start(
         core.exe,
         args,
         workingDirectory: core.workDir,
+        environment: UmbrellaCore.ownerEnvironment(),
         runInShell: false,
       );
+      unawaited(_native.attachCoreJob(process.pid));
       if (_cancelRequested || _disposed || preparationEpoch != _connectionEpoch) {
         process.kill();
         await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
@@ -2198,7 +2868,7 @@ class VpnController extends ChangeNotifier {
         '${_provisioner.binDir}${Platform.pathSeparator}$binary',
       ];
 
-  /// توضیح اینکه چرا هیچ سروری برای اجرا قبول نشد.
+  /// توضیح اینکه چرا هیچ سروری برای اجرا قبول نشد (بدون افشای نام یا پروتکل سرور).
   String _whyNoUsableServer() {
     final List<VpnNode> disabled =
         _nodes.where((VpnNode node) => node.disabled).toList();
@@ -2207,30 +2877,24 @@ class VpnController extends ChangeNotifier {
     final List<VpnNode> notUsable =
         _nodes.where((VpnNode node) => !usable(node)).toList();
     return <String>[
-      'کل سرورها: ${Fa.num(_nodes.length)}',
+      'کل مسیرها: ${Fa.num(_nodes.length)}',
       'غیرفعال شده: ${Fa.num(disabled.length)}',
-      'بدون میزبان: ${Fa.num(noHost.length)}',
-      'پروتکل پشتیبانی نشده: ${Fa.num(notUsable.length)}',
-      if (notUsable.isNotEmpty)
-        'اولین سرور پشتیبانی نشده: ${notUsable.first.name} '
-            '(${notUsable.first.protocol.name})',
+      'ناقص: ${Fa.num(noHost.length)}',
+      'ناسازگار با این نسخه: ${Fa.num(notUsable.length)}',
     ].join('\n');
   }
 
-  /// چند سرور از هر پروتکل در اشتراک هست.
+  /// خلاصه وضعیت مسیرهای اشتراک بدون افشای نوع پروتکل یا مشخصات سرور.
   String _protocolBreakdown() {
-    final Map<String, int> counts = <String, int>{};
-    for (final VpnNode node in _nodes) {
-      counts[node.protocol.name] = (counts[node.protocol.name] ?? 0) + 1;
+    if (_nodes.isEmpty) {
+      return 'هیچ مسیری خوانده نشده است.';
     }
-    if (counts.isEmpty) {
-      return 'هیچ سروری خوانده نشده است.';
-    }
-    final List<String> rows = counts.entries
-        .map((MapEntry<String, int> e) => '${e.key}: ${Fa.num(e.value)}')
-        .toList()
-      ..sort();
-    return rows.join('\n');
+    final int ready =
+        _nodes.where((VpnNode node) => usable(node) && !node.disabled).length;
+    return <String>[
+      'مسیرهای دریافت شده: ${Fa.num(_nodes.length)}',
+      'مسیرهای قابل استفاده: ${Fa.num(ready)}',
+    ].join('\n');
   }
 
   /// وضعیت فایل اجرایی هسته: هست یا نه، چه اندازه ای دارد، آخرین تغییرش کِی
@@ -2281,10 +2945,11 @@ class VpnController extends ChangeNotifier {
     process.stdout.listen(sink.add);
     process.stderr.listen(sink.add);
 
-    // اگر هسته بلافاصله بسته شود، خروجی خودش دلیل را می گوید.
+    // اگر هسته بلافاصله بسته شود (پورت یا پیکربندی نامعتبر)، در همان چند صد
+    // میلی ثانیه اول خارج می شود؛ بقیه آمادگی در `_waitForTunnel` سنجیده می شود.
     final int? exited = await Future.any<int?>(<Future<int?>>[
       process.exitCode,
-      Future<int?>.delayed(const Duration(milliseconds: 1500), () => null),
+      Future<int?>.delayed(const Duration(milliseconds: 60), () => null),
     ]);
     if (exited != null) {
       if (identical(_coreProcesses[core.name], process)) _coreProcesses.remove(core.name);
@@ -2317,14 +2982,17 @@ class VpnController extends ChangeNotifier {
           // خودمان بستیم؛ هشدار «بسته شد» گمراه کننده است.
           return;
         }
+        final String crashReason = UmbrellaCore.describeWindowsExitCode(code);
         _log.add(
-          '${core.binaryName} بسته شد (کد خروج ${Fa.num(code)}).',
-          level: 'warning',
+          crashReason.isNotEmpty
+              ? '${core.binaryName}: $crashReason'
+              : 'هسته آمبرلا بسته شد (کد خروج ${Fa.num(code)}).',
+          level: crashReason.isNotEmpty ? 'error' : 'warning',
         );
       }),
     );
     if (_cancelRequested || _disposed) return false;
-    _log.add('${core.binaryName} اجرا شد (شناسه ${Fa.num(process.pid)}).');
+    _log.add('هسته آمبرلا اجرا شد (شناسه ${Fa.num(process.pid)}).');
     return true;
   }
 
@@ -2337,20 +3005,21 @@ class VpnController extends ChangeNotifier {
   /// بلافاصله بعد از kill، تضمین آزاد بودن هنگام اجرا نیست. پس: چند تلاش،
   /// با فاصله فزاینده، و در هر تلاش فهرست واقعی دوباره خوانده می شود.
   Future<bool> _freeCorePortsWithRetry() async {
+    // حالت عادی: پورت ها از همان اول آزادند؛ بدون هیچ مکث اضافی ادامه بده.
+    if ((await _heldPorts(UmbrellaCore.allPorts)).isEmpty) {
+      return true;
+    }
     const List<Duration> gaps = <Duration>[
-      Duration(milliseconds: 250),
-      Duration(milliseconds: 500),
-      Duration(milliseconds: 900),
-      Duration(seconds: 2),
+      Duration(milliseconds: 200),
+      Duration(milliseconds: 400),
+      Duration(milliseconds: 800),
+      Duration(milliseconds: 1500),
     ];
     for (int attempt = 0; attempt < gaps.length; attempt++) {
       if (await _freeCorePorts()) {
-        // یک بار دیگر بعد از مکث کوتاه تایید می شود؛ اگر همان لحظه کسی
-        // پورت را گرفت، دور بعدی.
-        await Future<void>.delayed(const Duration(milliseconds: 120));
-        if (await UmbrellaCore.heldReservedPorts().then(
-              (List<int> held) => held.isEmpty,
-            )) {
+        // پس از بستن فرایند مزاحم، یک مکث کوتاه برای آزاد شدن TIME_WAIT.
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if ((await UmbrellaCore.heldReservedPorts()).isEmpty) {
           return true;
         }
       }
@@ -2379,7 +3048,19 @@ class VpnController extends ChangeNotifier {
     List<int> held = await UmbrellaCore.heldReservedPorts();
     // پورت های خود برنامه هم بررسی می شوند: نمونه بازمانده آمبرلا که پورت
     // پروکسی را گرفته باشد، همان قدر اتصال را می کشد.
-    final List<int> appHeld = await _heldPorts(UmbrellaCore.appPorts);
+    final List<int> defaultAppHeld = await _heldPorts(UmbrellaCore.appPorts);
+    final List<int> extraAppPorts = <int>[
+      if (!UmbrellaCore.appPorts.contains(_configuredMixedPort))
+        _configuredMixedPort,
+      if (_settings.allowConnectionFromLan &&
+          LanSharing.isValidPort(_settings.lanSharingPort) &&
+          !UmbrellaCore.appPorts.contains(_settings.lanSharingPort) &&
+          _settings.lanSharingPort != _configuredMixedPort)
+        _settings.lanSharingPort,
+    ];
+    final List<int> appHeld = extraAppPorts.isEmpty
+        ? defaultAppHeld
+        : <int>[...defaultAppHeld, ...await _heldPorts(extraAppPorts)];
     if (held.isEmpty && appHeld.isEmpty) {
       return true;
     }
@@ -2543,15 +3224,15 @@ class VpnController extends ChangeNotifier {
     return killed;
   }
 
-  /// کدام یک از این پورت ها همین حالا گرفته اند.
+  /// کدام یک از این پورت ها همین حالا گرفته اند (بررسی موازی و سریع).
   Future<List<int>> _heldPorts(List<int> ports) async {
-    final List<int> held = <int>[];
-    for (final int port in ports) {
-      if (await UmbrellaCore.inUse(port)) {
-        held.add(port);
-      }
-    }
-    return held;
+    final List<bool> states = await Future.wait<bool>(
+      ports.map(UmbrellaCore.inUse),
+    );
+    return <int>[
+      for (int i = 0; i < ports.length; i++)
+        if (states[i]) ports[i],
+    ];
   }
 
   /// انتظار کوتاه تا آزاد شدن پورت ها (یا پایان مهلت).
@@ -2635,7 +3316,7 @@ class VpnController extends ChangeNotifier {
     }
     final String tail = await _readLogTail(coreLog);
     _log.add(
-      '${core.binaryName} بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
+      'هسته آمبرلا بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
       '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
       level: 'error',
       details: await _coreDiagnostics(core, coreLog, code: code),
@@ -2661,7 +3342,6 @@ class VpnController extends ChangeNotifier {
     String coreLog, {
     int? code,
     LaunchPlan? plan,
-    VpnNode? node,
   }) async {
     final List<LogDetail> details = <LogDetail>[];
 
@@ -2671,14 +3351,14 @@ class VpnController extends ChangeNotifier {
       LogDetail(
         title: 'خروجی کامل هسته (${core.name})',
         text: full.isEmpty
-            ? 'هسته هیچ خروجی‌ای نداد. یعنی پیش از نوشتن هر خطی بسته شد؛ '
+            ? 'هسته هیچ خروجی ای نداد. یعنی پیش از نوشتن هر خطی بسته شد؛ '
                 'بیشتر وقت ها دلیلش نبود دسترسی، آنتی ویروس یا فایل اجرایی '
                 'ناقص است.'
             : full,
       ),
     );
 
-    // ۲. فرمان اجرا و مسیرها؛ برای بازتولید همان اجرا بیرون از برنامه.
+    // ۲. فرمان اجرا و مسیرهای محلی (بدون مسیر فایل لینک یا مشخصات سرور).
     details.add(
       LogDetail(
         title: 'فرمان اجرا و مسیرها',
@@ -2687,8 +3367,8 @@ class VpnController extends ChangeNotifier {
           'مسیر: ${core.exe}',
           'پوشه اجرا: ${core.workDir}',
           'فایل گزارش هسته: $coreLog',
-          if (plan != null) 'فایل لینک سرور: ${plan.linksPath}',
-          if (plan != null) 'حالت اتصال: ${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}',
+          if (plan != null)
+            'حالت اتصال: ${plan.tun ? 'تونل کامل' : 'پروکسی سیستمی'}',
           if (plan != null && plan.proxyPort > 0)
             'پورت محلی: ${Fa.num(plan.proxyPort)}',
           if (code != null) 'کد خروج: ${Fa.num(code)}',
@@ -2696,21 +3376,7 @@ class VpnController extends ChangeNotifier {
       ),
     );
 
-    // ۳. سروری که با آن تلاش شد؛ بدون رمز و شناسه، فقط آنچه برای تشخیص لازم
-    // است. نام و میزبان برای پیدا کردن سرور مشکل دار کافی است.
-    if (node != null) {
-      details.add(
-        LogDetail(
-          title: 'سروری که با آن تلاش شد',
-          text: <String>[
-            'نام: ${node.name}',
-            'پروتکل: ${node.protocol.name}',
-            'میزبان: ${node.host}',
-            'پورت: ${Fa.num(node.port)}',
-          ].join('\n'),
-        ),
-      );
-    }
+    // ۳. مشخصات سرور، دامنه، آی پی، پورت و پروتکل هرگز در گزارش ثبت نمی شود.
 
     // ۴. وضعیت پورت های ثابت هسته؛ اگر گرفته باشند، صاحبش.
     //
@@ -2750,13 +3416,30 @@ class VpnController extends ChangeNotifier {
     return details;
   }
 
-  /// A failed endpoint race is retried by the existing health-failure counter;
-  /// neither transmitted bytes nor a stale core log can override it.
+  /// بررسی سلامت سبک هم راستا با Hiddify: تا وقتی پایش داخلی هسته روی خروجی
+  /// فعال سالم است (`STARTED`) بدون هیچ سربار HTTPS اضافه اتصال تایید می شود؛
+  /// فقط در حالت زنجیره یا هنگام گزارش افت در پایش هسته سنجش HTTPS اجرا می شود.
   Future<bool> _tunnelFlowsNow() async {
-    final bool proxy = await VerifiedProbe.check(proxyPort: _umbrellaPort,
-        timeout: const Duration(seconds: 6));
-    return proxy && (_proxyPort > 0 || await VerifiedProbe.check(proxyPort: 0,
-        timeout: const Duration(seconds: 6)));
+    if (!_activeChain.enabled) {
+      final CoreProxySnapshot snapshot = await ClashApi.status(
+        since: _sessionStartUtc,
+        timeout: const Duration(milliseconds: 900),
+      );
+      if (snapshot.reachable) {
+        if (snapshot.connectivity == CoreConnectivityState.started) {
+          return true;
+        }
+        if (snapshot.connectivity == CoreConnectivityState.noAvailableProxies) {
+          return false;
+        }
+      }
+    }
+    return VerifiedProbe.check(
+      proxyPort: _probeProxyPort,
+      proxyUser: _probeProxyUser,
+      proxyPassword: _probeProxyPassword,
+      timeout: const Duration(seconds: 5),
+    );
   }
 
   /// آی پی و کشور خروجی از سطر `MONITORING result` خود هسته.
@@ -2837,6 +3520,19 @@ class VpnController extends ChangeNotifier {
     if (text.contains('permission') || text.contains('access is denied')) {
       return 'ویندوز اجازه اجرای هسته را نداد؛ برنامه را با دسترسی مدیر اجرا '
           'کنید یا پوشه نصب را در استثناهای آنتی ویروس بگذارید.';
+    }
+    final RegExpMatch? ntstatus = RegExp(
+      r'exception\s+0x([0-9a-f]{8})',
+      caseSensitive: false,
+    ).firstMatch(output);
+    if (ntstatus != null) {
+      final int? parsed = int.tryParse(ntstatus.group(1)!, radix: 16);
+      if (parsed != null) {
+        final String decoded = UmbrellaCore.describeWindowsExitCode(parsed);
+        if (decoded.isNotEmpty) {
+          return decoded;
+        }
+      }
     }
     return '';
   }
@@ -2963,91 +3659,236 @@ class VpnController extends ChangeNotifier {
       if (plan.readinessPort > 0) {
         final int probe = await _native.tcpPing('127.0.0.1', plan.readinessPort);
         if (probe >= 0) {
-          await Future<void>.delayed(const Duration(milliseconds: 500));
           return true;
         }
       } else {
         // کارت شبکه تونل، همان چیزی که هسته در اولین ثانیه می سازد
         // (`inbound/tun[tun-in]: started at tun0`). اینجا فقط «ساخته شد یا
-        // نه» سنجیده می شود؛ عبور ترافیک کار سنجش بعدی است. پیش از این،
-        // انتظار ۲۵ ثانیه ای برای کارت، اتصال سالم را هم رد می کرد.
-        final TunnelStats stats = await _native.tunnelStats(hint: plan.tunnelHint);
+        // نه» سنجیده می شود؛ عبور ترافیک کار سنجش بعدی است.
+        final TunnelStats stats =
+            await _native.tunnelStats(hint: plan.tunnelHint);
         if (stats.available) {
-          await Future<void>.delayed(const Duration(milliseconds: 500));
           return true;
         }
       }
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     return false;
+  }
+
+  /// جابه جایی بدون قطع اتصال داخل خود هسته در حال اجرا.
+  ///
+  /// وقتی سرور فعلی در میانه کار کند یا مسدود شود، به جای بستن کل هسته و قطع
+  /// کارت شبکه تونل، از رابط محلی هسته می خواهیم تاخیر خروجی فعال و گروه
+  /// انتخاب را بازسنجی کند تا بالانسر در کسری از ثانیه به گره سالم بعدی برود.
+  Future<void> _nudgeCoreFailover() async {
+    final CoreProxySnapshot snapshot = await ClashApi.status(
+      timeout: const Duration(milliseconds: 1200),
+    );
+    if (!snapshot.reachable) {
+      return;
+    }
+    if (snapshot.activeTag.isNotEmpty) {
+      await ClashApi.testDelay(
+        snapshot.activeTag,
+        timeout: const Duration(milliseconds: 3000),
+      );
+    }
+    await ClashApi.testDelay(
+      'select',
+      timeout: const Duration(milliseconds: 3500),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 400));
   }
 
   bool _verifyInFlight = false;
 
   /// آیا ترافیک واقعاً از تونل **برگشت**؟
   ///
-  /// این سنجش با خواندن شمارنده کارت شبکه فرق دارد: یک درخواست HTTP کامل
-  /// (درخواست + پاسخ) می فرستد و منتظر **بدنه پاسخ** می ماند. اگر پاسخ
-  /// برگشت، تونل واقعاً کار می کند؛ اگر فقط ارسال زیاد شد و پاسخی نیامد،
-  /// تونل مرده است — همان چیزی که در گزارش ۱٫۰۱۷ «متصل ولی هیچی باز نمی
-  /// کند» را ساخت.
-  ///
-  /// نشانی ها همان `generate_204` هستند: سبک، بدون بدنه بزرگ و در بیشتر
-  /// شبکه ها باز. فقط پاسخ HTTPS معتبر با محتوای مورد انتظار پذیرفته است.
+  /// فقط پاسخ HTTPS معتبر با گواهی درست و بدنه مورد انتظار از دست کم دو نشانی
+  /// مستقل پذیرفته می شود.
   Future<bool> _trafficReturns({Duration timeout = const Duration(seconds: 8)}) async {
-    final bool proxy = await VerifiedProbe.check(proxyPort: _umbrellaPort,
-        minimumSuccesses: 2, timeout: timeout);
-    return proxy && (_proxyPort > 0 || await VerifiedProbe.check(proxyPort: 0, timeout: timeout));
+    final int port = _probeProxyPort;
+    if (port == 0) {
+      return VerifiedProbe.check(
+        proxyPort: 0,
+        minimumSuccesses: 2,
+        timeout: timeout,
+      );
+    }
+    final bool proxy = await VerifiedProbe.check(
+      proxyPort: port,
+      proxyUser: _probeProxyUser,
+      proxyPassword: _probeProxyPassword,
+      minimumSuccesses: 2,
+      timeout: timeout,
+    );
+    return proxy &&
+        (_proxyPort > 0 ||
+            await VerifiedProbe.check(proxyPort: 0, timeout: timeout));
   }
 
-  Future<void> _verifyTunnel() async {
-    if (_verifyInFlight) {
+  Future<void> _verifyTunnel({bool allowRetry = true}) async {
+    if (_verifyInFlight || _status != VpnStatus.connected) {
       return;
     }
     _verifyInFlight = true;
     final int epoch = _connectionEpoch;
     try {
-      final GeoInfo geo = await _ip.fetch(
-        force: true,
-        proxy: _proxyPort > 0 ? '127.0.0.1:$_proxyPort' : '',
+      final String previousExitIp = _exitIp;
+      // ۱. اول بدون هیچ درخواست خارجی اضافه، آی پی و کشور خروجی را از پایش
+      // داخلی خود هسته (Hiddify ipinfo) می خوانیم که با چرخش چند سرویس از دل
+      // همان پروکسی فعال پر می شود.
+      final CoreProxySnapshot snapshot = await ClashApi.status(
+        since: _sessionStartUtc,
+        timeout: const Duration(milliseconds: 900),
       );
       if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
-      _geo = geo;
-      _exitIp = geo.ip;
-      // اگر آی پی خوانده نشد، این هیچ چیزی را درباره تونل ثابت نمی کند.
-      //
-      // در گزارش ۱٫۰۱۲ همین حالت تونل سالم را کشت: اتصال برقرار شد، ولی
-      // سرویس های خواندن آی پی (ipinfo/ip-api/…) از مسیر تونل جواب ندادند،
-      // `geo.ip` خالی ماند و کد آن را «آی پی خروجی با آی پی قبلی یکسان است»
-      // خواند و `_reconnect()` را صدا زد. یعنی خودمان تونل درست را کشتیم.
-      // خوانده نشدن آی پی یک ناشناخته است، نه یک شکست.
+      GeoInfo geo = GeoInfo.empty;
+      final CoreExitIpInfo? coreIpInfo = snapshot.exitIpInfo;
+      if (coreIpInfo != null && coreIpInfo.ip.isNotEmpty) {
+        geo = GeoInfo.fromJson(coreIpInfo.toGeoJson());
+      }
+      if (PingService.plausible(snapshot.activeDelayMs) &&
+          _livePing != snapshot.activeDelayMs) {
+        _livePing = snapshot.activeDelayMs;
+      }
+
+      // ۲. اگر هسته هنوز جست وجوی ipinfo را تمام نکرده (در حالت زنجیره یا
+      // ثانیه اول اتصال)، یک بار بعد از ۲ ثانیه دوباره از هسته می خوانیم و در
+      // نوبت دوم در صورت خالی ماندن از سرویس وب پشتیبان از دل پروکسی محلی
+      // می خوانیم.
+      if (geo.ip.isEmpty && allowRetry && !_activeChain.enabled) {
+        unawaited(
+          Future<void>.delayed(const Duration(milliseconds: 1800), () async {
+            if (!_disposed &&
+                epoch == _connectionEpoch &&
+                _status == VpnStatus.connected) {
+              await _verifyTunnel(allowRetry: false);
+            }
+          }),
+        );
+        _notify();
+        return;
+      }
       if (geo.ip.isEmpty) {
-        // آی پی خوانده نشد. این به خودی خود شکست نیست، ولی **نشانه** است:
-        // اگر تونل کار کند، درخواست ما از مسیرش بیرون می رود و پاسخ می آید.
-        // پس یک سنجش عبور ترافیک می کنیم تا معلوم شود تونل زنده است یا نه.
-        //
-        // در گزارش ۱٫۰۱۷ سه بار همین پیام آمد و کاربر گفت «متصل هست ولی
-        // هیچی باز نمی کند»: تونل مرده بود، ولی ما فقط هشدار می دادیم و
-        // همان گره مرده را نگه می داشتیم.
-        final bool alive = await _trafficReturns();
+        final int localProxy = _probeProxyPort;
+        geo = await _ip.fetch(
+          force: true,
+          proxy: localProxy > 0 ? '127.0.0.1:$localProxy' : '',
+          proxyUser: _probeProxyUser,
+          proxyPassword: _probeProxyPassword,
+        );
         if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
-        if (alive) {
-          _log.add(
-            'آی پی خروجی خوانده نشد، ولی ترافیک واقعی از تونل برگشت؛ '
-            'اتصال معتبر است.',
-            level: 'warning',
-          );
+      }
+      if (geo.ip.isEmpty && _activeCoreLogPath.isNotEmpty) {
+        final String loggedIp = await _coreExitIp(_activeCoreLogPath);
+        if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        if (loggedIp.isNotEmpty) {
+          geo = GeoInfo.fromJson(<String, dynamic>{'ip': loggedIp});
+        }
+      }
+      if (geo.ip.isNotEmpty) {
+        _geo = geo;
+        _exitIp = geo.ip;
+      }
+      final bool coreHealthy = !_activeChain.enabled &&
+          snapshot.connectivity == CoreConnectivityState.started;
+      // اگر آی پی خوانده نشد، این هیچ چیزی را درباره تونل ثابت نمی کند؛ سلامت
+      // مسیر از خود هسته یا بازگشت واقعی ترافیک سنجیده می شود.
+      if (geo.ip.isEmpty) {
+        if (coreHealthy) {
           _tunnelVerified = true;
+          _healthFailures = 0;
           _notify();
           return;
         }
-        // ترافیکی برنگشت: این گره واقعاً کار نمی کند.
+        bool alive = await _trafficReturns();
+        if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        if (!alive && !_singleNodeSession) {
+          await _nudgeCoreFailover();
+          if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+          alive = await _trafficReturns();
+          if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        }
+        if (alive) {
+          _tunnelVerified = true;
+          _healthFailures = 0;
+          _notify();
+          return;
+        }
         _tunnelVerified = false;
+        _healthFailures++;
         _log.add(
-          'آی پی خروجی خوانده نشد و ترافیکی هم از تونل برنگشت؛ '
-          'این سرور کار نمی کند و سرور بعدی امتحان می شود.',
-          level: 'error',
+          'سنجش دوره ای آی پی و ترافیک پاسخ نگرفت؛ پایش سلامت در حال جابه جایی '
+          'خودکار مسیر است.',
+          level: 'warning',
         );
+        _notify();
+        return;
+      }
+      final bool fromCoreMonitor =
+          coreIpInfo != null && coreIpInfo.ip.isNotEmpty && geo.ip == coreIpInfo.ip;
+      // اگر پایش خود هسته کشور خارجی را تایید کرده ولی `_realIp` با آن برابر
+      // است، یعنی `_realIp` قبلاً هنگام فعال بودن فیلترشکن دیگری ثبت شده بوده؛
+      // آن را پاک می کنیم تا معیار اشتباه باقی نماند.
+      if (fromCoreMonitor &&
+          geo.flagCode.isNotEmpty &&
+          geo.flagCode.toLowerCase() != 'ir' &&
+          _realIp == geo.ip) {
+        _realIp = '';
+        _realCountryCode = '';
+      }
+      final bool untunneled = isUntunneledExitIp(
+        exitIp: geo.ip,
+        exitCountryCode: geo.flagCode,
+        realIp: _realIp,
+        realCountryCode: _realCountryCode,
+        fromCoreMonitor: fromCoreMonitor,
+      );
+      final bool ipChanged = !untunneled;
+      bool passes = coreHealthy;
+      if (!passes && ipChanged) {
+        passes = await _trafficReturns();
+        if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        if (!passes && !_singleNodeSession) {
+          await _nudgeCoreFailover();
+          if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+          passes = await _trafficReturns();
+          if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        }
+      }
+      _tunnelVerified = ipChanged && passes;
+      if (!ipChanged) {
+        // هرگز تونل سالم را صرفاً به خاطر یک پاسخ آی پی قطع و راه اندازی مجدد
+        // نکن: ابتدا از بالانسر داخلی هسته بخواه بدون قطع تونل گره را بازسنجی
+        // کند، و اگر هسته یا ترافیک واقعی سالم است اتصال را برقرار نگه دار.
+        if (!_singleNodeSession && _settings.autoFailover) {
+          await _nudgeCoreFailover();
+          if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        }
+        final bool flows = coreHealthy || await _trafficReturns();
+        if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+        if (flows) {
+          _tunnelVerified = true;
+          _healthFailures = 0;
+          if (_sameIpWarnedEpoch != epoch) {
+            _sameIpWarnedEpoch = epoch;
+            _log.add(
+              'سرویس تشخیص آی پی نشانی قبلی را برگرداند اما مسیر امن هسته فعال و برقرار است.',
+              level: 'info',
+            );
+          }
+          _notify();
+          return;
+        }
+        if (_sameIpWarnedEpoch != epoch) {
+          _sameIpWarnedEpoch = epoch;
+          _log.add(
+            'آی پی خروجی با آی پی قبلی یکسان است و ترافیک از تونل عبور نکرد.',
+            level: 'warning',
+          );
+        }
         _notify();
         if (_settings.autoFailover && _reconnectAttempts < 3) {
           _reconnectAttempts++;
@@ -3056,113 +3897,140 @@ class VpnController extends ChangeNotifier {
         }
         return;
       }
-      // اگر آی پی بدون تونل خوانده نشده باشد، مقایسه بی معنی است و نباید
-      // اتصال سالم را «ناموفق» اعلام کند (خطای ۰ سرور در شمارش پینگ).
-      final bool ipKnown = _realIp.isNotEmpty;
-      final bool ipChanged = !ipKnown || geo.ip != _realIp;
-      // **گزارش «وصل میشه الکی»:** تا ۱٫۰۱۸ فقط تغییر نکردن آی پی بررسی می
-      // شد. یعنی اگر آی پی عوض می شد، اتصال «تایید شده» اعلام می شد حتی اگر
-      // هیچ درخواستی از تونل رد نمی شد. حالا عبور واقعی ترافیک هم شرط است:
-      // دو پاسخ ۲xx مستقل. اگر تونل جواب ندهد، پرچم تایید برداشته می شود و
-      // در صورت فعال بودن جابه جایی خودکار، گره بعدی امتحان می شود.
-      final bool passes = await _trafficReturns();
-      if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
-      _tunnelVerified = ipChanged && passes;
-      if (!ipChanged) {
+      if (!passes) {
+        _healthFailures++;
         _log.add(
-          'آی پی خروجی با آی پی قبلی یکسان است؛ ممکن است تونل کامل برقرار نشده باشد.',
+          'سنجش کمکی مسیر موقتاً کند بود؛ پایش سلامت ادامه دارد.',
           level: 'warning',
         );
-      } else if (!passes) {
-        _log.add(
-          'آی پی خروجی عوض شد (${Fa.num(geo.ip)}) ولی هیچ درخواستی از تونل '
-          'برنگشت؛ این اتصال معتبر نیست و سرور بعدی امتحان می شود.',
-          level: 'error',
-        );
-      }
-      if (!_tunnelVerified) {
         _notify();
-        // اتصالی که ترافیک از آن رد نمی شود نباید «وصل» بماند.
-        if (_settings.autoFailover && _reconnectAttempts < 3) {
-          _reconnectAttempts++;
-          _verifyInFlight = false;
-          await _reconnect();
-          return;
+        return;
+      }
+      _healthFailures = 0;
+      _reconnectAttempts = 0;
+      if (geo.ip != previousExitIp && previousExitIp.isNotEmpty) {
+        _log.add('مسیر امن اتصال به روز شد.');
+        if (_settings.notificationsEnabled) {
+          final String where = countryNameFa(geo.flagCode);
+          if (where.isNotEmpty) {
+            unawaited(_tray.balloon('تغییر مسیر اتصال', 'موقعیت جدید: $where'));
+          }
         }
-      } else {
-        _log.add('آی پی خروجی: ${Fa.num(geo.ip)} | ${geo.flagEmojiFreeLabel}');
+      } else if (geo.ip != previousExitIp) {
+        _log.add('مسیر امن اتصال تایید و فعال شد.');
       }
       _notify();
-      if (_settings.notificationsEnabled && _tunnelVerified) {
-        // نام کشور از کد دوحرفی و به فارسی؛ `countryLabel` ممکن است نام
-        // انگلیسی سرویس (مثل `Iran`) باشد و کاربر فارسی خواسته است.
-        final String where = countryNameFa(geo.flagCode);
-        await _tray.balloon(
-          'آی پی جدید شما',
-          where.isEmpty
-              ? Fa.num(geo.ip)
-              : '${Fa.num(geo.ip)} | $where',
-        );
-      }
-    } on Exception catch (error) {
-      _log.add('بررسی آی پی ناموفق: $error', level: 'warning');
+    } on Exception {
+      _log.add('بررسی دوره ای سلامت مسیر موقتاً پاسخ نداد.', level: 'warning');
     } finally {
       _verifyInFlight = false;
     }
   }
 
-  void _startTimers() {
-    _startLiveMeasurement();
+  void _startTimers({int initialPingMs = 0}) {
+    _startLiveMeasurement(initialPingMs: initialPingMs);
     _statsTimer?.cancel();
     _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickStats());
     _healthTimer?.cancel();
     _healthTimer =
-        Timer.periodic(const Duration(seconds: 10), (_) => _tickHealth());
+        Timer.periodic(const Duration(seconds: 15), (_) => _tickHealth());
     _ipTimer?.cancel();
-    _ipTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+    _ipTimer = Timer.periodic(const Duration(seconds: 120), (_) {
       unawaited(_verifyTunnel());
     });
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(
       Duration(seconds: _settings.pingIntervalSeconds.clamp(120, 3600)),
       (_) {
-        // در حین اتصال یا پس از آن، عدد زنده همان اتصال خوانده می شود؛
-        // بالا آوردن هسته سنجش، خود اتصال را می کشت.
-        if (_status.active) {
+        // در حین اتصال عدد زنده از خود هسته خوانده می شود و نیازی به سنجش
+        // جداگانه فهرست نیست.
+        if (_status.active || _status.busy) {
           return;
         }
-        unawaited(refreshPings(all: false));
+        unawaited(refreshPings(all: false, tunnelProbe: false));
       },
     );
   }
 
-  /// سنجش زنده سرور متصل. روی یک اتصال باز انجام می شود تا عدد، پینگ واقعی
-  /// تونل باشد نه زمان دست دادن دوباره TCP.
-  void _startLiveMeasurement() {
+  /// خواندن پینگ واقعی خروجی فعال: ابتدا بدون سربار شبکه از پایش داخلی خود
+  /// هسته، و فقط در صورت نبود عدد، با یک درخواست سبک از پروکسی محلی.
+  void _startLiveMeasurement({int initialPingMs = 0}) {
     _liveTimer?.cancel();
-    _livePing = 0;
+    _livePing = PingService.plausible(initialPingMs) ? initialPingMs : 0;
     _link?.close();
-    // عدد اولیه پینگ سرور متصل همان لحظه خوانده می شود تا کاربر به جای
-    // «در حال سنجش» یک عدد واقعی ببیند.
-    final VpnNode? node = _activeNode;
-    if (node != null) {
-      unawaited(_measureActiveNetworkPing(node));
-    }
-    if (_proxyPort <= 0) {
-      // در حالت تونل کامل، عدد پینگ از همان مسیر سیستم خوانده می شود.
-      _liveTimer = Timer.periodic(const Duration(seconds: 5), (Timer _) {
-        unawaited(_measureLiveTunnel());
-      });
-      unawaited(_measureLiveTunnel());
+    _link = null;
+    final int epoch = _connectionEpoch;
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 1500), () {
+        if (!_disposed &&
+            epoch == _connectionEpoch &&
+            _status == VpnStatus.connected) {
+          unawaited(_refreshLivePing());
+        }
+      }),
+    );
+    unawaited(
+      Future<void>.delayed(const Duration(seconds: 4), () {
+        if (!_disposed &&
+            epoch == _connectionEpoch &&
+            _status == VpnStatus.connected) {
+          unawaited(_refreshLivePing());
+        }
+      }),
+    );
+    _liveTimer = Timer.periodic(const Duration(seconds: 10), (Timer _) {
+      unawaited(_refreshLivePing());
+    });
+  }
+
+  Future<void> _refreshLivePing() async {
+    if (_status != VpnStatus.connected || _disposed) {
       return;
     }
-    unawaited(() async {
-      _link = await TunnelProbe.openLink(_proxyPort);
+    final CoreProxySnapshot snapshot = await ClashApi.status(
+      since: _sessionStartUtc,
+      timeout: const Duration(milliseconds: 900),
+    );
+    if (_status != VpnStatus.connected || _disposed) {
+      return;
+    }
+    bool changed = false;
+    final int delay = PingService.plausible(snapshot.activeDelayMs)
+        ? snapshot.activeDelayMs
+        : (PingService.plausible(snapshot.bestDelayMs)
+            ? snapshot.bestDelayMs
+            : 0);
+    if (delay > 0 && _livePing != delay) {
+      _livePing = delay;
+      changed = true;
+    }
+    // وقتی خود هسته روی گره سریع تر سوییچ کرد، آی پی خروجی جدیدش بدون درخواست
+    // اضافه در رابط کاربری هم به روز می شود.
+    final CoreExitIpInfo? coreIp = snapshot.exitIpInfo;
+    if (!_activeChain.enabled &&
+        coreIp != null &&
+        coreIp.ip.isNotEmpty &&
+        coreIp.countryCode.toLowerCase() != 'ir' &&
+        coreIp.ip != _exitIp) {
+      if (_realIp == coreIp.ip && coreIp.countryCode.isNotEmpty) {
+        _realIp = '';
+        _realCountryCode = '';
+      }
+      _geo = GeoInfo.fromJson(coreIp.toGeoJson());
+      _exitIp = coreIp.ip;
+      changed = true;
+    }
+    if (changed) {
+      _notify();
+    }
+    if (delay > 0) {
+      return;
+    }
+    if (_proxyPort > 0) {
       await _measureLiveLink();
-    }());
-    _liveTimer = Timer.periodic(const Duration(seconds: 5), (Timer _) {
-      unawaited(_measureLiveLink());
-    });
+    } else {
+      await _measureLiveTunnel();
+    }
   }
 
   Future<void> _measureLiveLink() async {
@@ -3189,7 +4057,9 @@ class VpnController extends ChangeNotifier {
       return;
     }
     final int ms = await TunnelProbe.latency(
-      proxyPort: _umbrellaPort,
+      proxyPort: _probeProxyPort,
+      proxyUser: _probeProxyUser,
+      proxyPassword: _probeProxyPassword,
       timeout: const Duration(seconds: 4),
     );
     if (ms > 0) {
@@ -3201,8 +4071,11 @@ class VpnController extends ChangeNotifier {
   /// سنجش سرعت واقعی روی سرور متصل؛ از همان مسیری می رود که ترافیک کاربر
   /// می رود (تونل کامل یا پروکسی محلی).
   Future<void> measureSpeed() async {
-    if (_status != VpnStatus.connected || _speedRunner != null ||
-        (accessGuard?.call() ?? '').isNotEmpty) return;
+    if (_status != VpnStatus.connected ||
+        _speedRunner != null ||
+        (accessGuard?.call() ?? '').isNotEmpty) {
+      return;
+    }
     final SpeedTestRunner runner = SpeedTestRunner();
     _speedRunner = runner;
     _speedResult = null;
@@ -3211,10 +4084,12 @@ class VpnController extends ChangeNotifier {
     _speedMeasuredAt = null;
     _notify();
     try {
+      final int speedPort = _probeProxyPort;
       final SpeedTestResult result = await runner.run(
-        // The loopback mixed listener stays enabled in TUN mode too. Never
-        // measure through a system route which could escape during disconnect.
-        proxyPort: _umbrellaPort,
+        proxyPort: speedPort,
+        proxyUser: _probeProxyUser,
+        proxyPassword: _probeProxyPassword,
+        allowDirectTunnel: speedPort == 0 && _activePlanTun,
         onPhase: (String phase) { _speedPhase = phase; _notify(); },
       );
       if (identical(_speedRunner, runner) && _status == VpnStatus.connected &&
@@ -3252,42 +4127,68 @@ class VpnController extends ChangeNotifier {
     _link?.close();
     _link = null;
     _livePing = 0;
+    _sessionStartUtc = null;
     _liveSpeed = 0;
     _speedMeasuredAt = null;
   }
 
+  bool _statsInFlight = false;
+
   Future<void> _tickStats() async {
-    if (!_status.active) {
+    if (!_status.active || _statsInFlight) {
       return;
     }
-    final TunnelStats raw = _proxyPort > 0
-        ? TunnelStats.empty
-        : await _native.tunnelStats(hint: AppConfig.tunAdapterHint);
-    final int downDelta = raw.rx - _stats.rx;
-    final int upDelta = raw.tx - _stats.tx;
-    _stats = _stats.copyWith(
-      rx: raw.rx,
-      tx: raw.tx,
-      available: raw.available,
-      adapter: raw.adapter,
-      downSpeed: downDelta > 0 ? downDelta.toDouble() : 0,
-      upSpeed: upDelta > 0 ? upDelta.toDouble() : 0,
-      connectedFor: _connectedAt == null
-          ? Duration.zero
-          : DateTime.now().difference(_connectedAt!),
-    );
-    if (_settings.showSpeedInTray && _connectedAt != null) {
-      final int seconds = DateTime.now().difference(_connectedAt!).inSeconds;
-      if (seconds % 5 == 0) {
-        await _tray.update(
-          state: 'connected',
-          tooltip:
-              '${AppConfig.appName} - ${Fa.speed(_stats.downSpeed)} / ${Fa.speed(_stats.upSpeed)}',
-          connected: true,
+    _statsInFlight = true;
+    try {
+      TunnelStats raw = _proxyPort > 0
+          ? TunnelStats.empty
+          : await _native.tunnelStats(hint: AppConfig.tunAdapterHint);
+      if (!raw.available) {
+        final CoreTrafficTotals? clash = await ClashApi.trafficTotals(
+          timeout: const Duration(milliseconds: 700),
         );
+        if (clash != null) {
+          raw = TunnelStats(
+            rx: clash.rxBytes,
+            tx: clash.txBytes,
+            available: true,
+            adapter: _proxyPort > 0 ? 'SystemProxy' : 'Core',
+          );
+        }
       }
+      if (!_status.active) {
+        return;
+      }
+      final bool hadPrevious =
+          _stats.available && _stats.adapter == raw.adapter;
+      final int downDelta = hadPrevious ? raw.rx - _stats.rx : 0;
+      final int upDelta = hadPrevious ? raw.tx - _stats.tx : 0;
+      _stats = _stats.copyWith(
+        rx: raw.rx,
+        tx: raw.tx,
+        available: raw.available,
+        adapter: raw.adapter,
+        downSpeed: downDelta > 0 ? downDelta.toDouble() : 0,
+        upSpeed: upDelta > 0 ? upDelta.toDouble() : 0,
+        connectedFor: _connectedAt == null
+            ? Duration.zero
+            : DateTime.now().difference(_connectedAt!),
+      );
+      if (_settings.showSpeedInTray && _connectedAt != null) {
+        final int seconds = DateTime.now().difference(_connectedAt!).inSeconds;
+        if (seconds % 5 == 0) {
+          await _tray.update(
+            state: 'connected',
+            tooltip:
+                '${AppConfig.appName} - ${Fa.speed(_stats.downSpeed)} / ${Fa.speed(_stats.upSpeed)}',
+            connected: true,
+          );
+        }
+      }
+      _notify();
+    } finally {
+      _statsInFlight = false;
     }
-    _notify();
   }
 
   Future<void> _tickHealth() async {
@@ -3305,36 +4206,65 @@ class VpnController extends ChangeNotifier {
     if (node == null) {
       return;
     }
-    final bool alive = _runningBinaries.isEmpty
-        ? true
-        : await _native.isRunning(_runningBinaries.first);
+    final bool alive = _coreProcesses.isNotEmpty ||
+        (_runningBinaries.isEmpty
+            ? true
+            : await _native.isRunning(_runningBinaries.first));
     if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
     if (!alive) {
-      _healthFailures++;
-      _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی...', level: 'warning');
-    } else {
-      // زنده بودن فرایند کافی نیست؛ خود تونل هم باید جواب بدهد.
-      //
-      // Three consecutive failed races are required before failover. A raw
-      // byte counter or dial log cannot override failed HTTPS validation.
-      final bool flows = await _tunnelFlowsNow();
+      _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی فوری...', level: 'warning');
+      if (_settings.autoFailover && _reconnectAttempts < 3) {
+        _reconnectAttempts++;
+        await _reconnect();
+      } else {
+        await _failAndCleanup('هسته اتصال به صورت غیرمنتظره متوقف شد.');
+      }
+      return;
+    }
+
+    // زنده بودن فرایند کافی نیست؛ خود تونل هم باید پاسخ HTTPS معتبر بدهد.
+    // اگر سرور فعال افت کرده باشد، ابتدا از خود هسته خواسته می شود بدون قطع
+    // تونل روی گره سالم بعدی سوییچ کند، و فقط در صورت شکست پیاپی بازاتصال کامل
+    // انجام می شود.
+    bool flows = await _tunnelFlowsNow();
+    if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+    if (!flows && !_singleNodeSession && _settings.autoFailover) {
+      await _nudgeCoreFailover();
+      if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+      flows = await _tunnelFlowsNow();
       if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       if (flows) {
-        if (_healthFailures > 0) {
-          _log.add('تونل دوباره سالم شد.');
-        }
-        _healthFailures = 0;
-        return;
+        _log.add('سرور فعال کند شد؛ هسته بدون قطع اتصال به مسیر سالم بعدی جابه جا شد.');
+        unawaited(_refreshLivePing());
       }
-      _healthFailures++;
-      _tunnelVerified = false;
-      _log.add(
-        'ترافیک از تونل رد نمی شود؛ بررسی سلامت ناموفق بود.',
-        level: 'warning',
-      );
-      _notify();
     }
-    if (_healthFailures >= 3) {
+    if (flows) {
+      if (_healthFailures > 0) {
+        _log.add('تونل دوباره سالم شد.');
+      }
+      _healthFailures = 0;
+      if (_reconnectAttempts > 0 &&
+          _connectedAt != null &&
+          DateTime.now().difference(_connectedAt!) >=
+              const Duration(seconds: 30)) {
+        _reconnectAttempts = 0;
+      }
+      if (!_tunnelVerified) {
+        _tunnelVerified = true;
+        _notify();
+      }
+      return;
+    }
+
+    _healthFailures++;
+    _tunnelVerified = false;
+    _log.add(
+      'ترافیک از تونل رد نمی شود؛ بررسی سلامت ناموفق بود '
+      '(${Fa.num(_healthFailures)} از ۴).',
+      level: 'warning',
+    );
+    _notify();
+    if (_healthFailures >= 4) {
       if (_settings.autoFailover && _reconnectAttempts < 3) {
         _reconnectAttempts++;
         await _reconnect();
@@ -3346,13 +4276,21 @@ class VpnController extends ChangeNotifier {
 
   Future<void> _reconnect() async {
     final int generation = _cancelGeneration;
+    _statsTimer?.cancel();
+    _healthTimer?.cancel();
+    _ipTimer?.cancel();
+    _stopLiveMeasurement();
+    _connectedAt = null;
+    _activeCoreLogPath = '';
+    _stats = TunnelStats.empty;
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
     await _disableProxy();
-    await Future<void>.delayed(const Duration(seconds: 2));
+    final int backoffMs = 800 * _reconnectAttempts.clamp(1, 4);
+    await Future<void>.delayed(Duration(milliseconds: backoffMs));
     if (_disposed || generation != _cancelGeneration) return;
     _status = VpnStatus.disconnected;
-    final ConnectOutcome outcome = await connect();
+    final ConnectOutcome outcome = await connect(isAutoReconnect: true);
     if (!outcome.ok && !outcome.cancelled) {
       await _failAndCleanup(outcome.message);
     }
@@ -3370,7 +4308,7 @@ class VpnController extends ChangeNotifier {
       return connect(requested: node);
     }
     final int generation = _cancelGeneration;
-    _setStatus(VpnStatus.switching, 'تغییر سرور به ${node.name}...');
+    _setStatus(VpnStatus.switching, 'در حال جابه جایی مسیر اتصال...');
     await _stopCores();
     await _disableProxy();
     await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -3385,10 +4323,19 @@ class VpnController extends ChangeNotifier {
     return outcome;
   }
 
+  bool get _hasTrackedCoreProcesses =>
+      _runningPids.isNotEmpty ||
+      _runningBinaries.isNotEmpty ||
+      _coreProcesses.isNotEmpty ||
+      _preparingProcesses.isNotEmpty ||
+      CliSession.instance.running;
+
   Future<void> disconnect({bool silent = false}) async {
     _cancelGeneration++;
+    _filterReloadTimer?.cancel();
+    _autoConnectRetryTimer?.cancel();
     if (_connectInFlight) { await cancel(); return; }
-    if (_status == VpnStatus.disconnected && _runningPids.isEmpty) {
+    if (_status == VpnStatus.disconnected && !_hasTrackedCoreProcesses) {
       return;
     }
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
@@ -3402,10 +4349,15 @@ class VpnController extends ChangeNotifier {
     _ipTimer?.cancel();
     _stopLiveMeasurement();
     _connectedAt = null;
+    _activeCoreLogPath = '';
     _stats = TunnelStats.empty;
     _tunnelVerified = false;
     _exitIp = '';
+    _sameIpWarnedEpoch = -1;
     _setStatus(VpnStatus.disconnected, 'اتصال قطع شد.');
+    if (!silent) {
+      unawaited(refreshIp());
+    }
     await _tray.update(
       state: 'disconnected',
       tooltip: '${AppConfig.appName} - قطع',
@@ -3415,6 +4367,108 @@ class VpnController extends ChangeNotifier {
       await _sound.play('disconnect');
     }
     _log.add('اتصال قطع شد و تنظیمات شبکه به حالت عادی بازگشت.');
+  }
+
+  Future<void>? _shutdownInFlight;
+
+  /// بستن قطعی، سریع و بدون تکرار هسته، پنجره CLI، پروب های پینگ، پروکسی
+  /// سیستمی و آیکون سینی هنگام خروج از برنامه، خاموشی ویندوز یا نصب به روز رسانی.
+  Future<void> shutdownForExit() {
+    return _shutdownInFlight ??= _performShutdownForExit();
+  }
+
+  Future<void> _performShutdownForExit() async {
+    _shuttingDown = true;
+    _cancelRequested = true;
+    _cancelGeneration++;
+    _connectionEpoch++;
+    _prewarmCancelled = true;
+    _prewarmTimer?.cancel();
+    _filterReloadTimer?.cancel();
+    _autoConnectRetryTimer?.cancel();
+    _statsTimer?.cancel();
+    _healthTimer?.cancel();
+    _ipTimer?.cancel();
+    _pingTimer?.cancel();
+    _stopLiveMeasurement();
+    cancelSpeedTest();
+
+    // آیکون سینی در همان ابتدا برداشته می شود تا روی نوار وظیفه باقی نماند.
+    try {
+      await _tray.destroy().timeout(
+            const Duration(milliseconds: 250),
+            onTimeout: () {},
+          );
+    } catch (_) {}
+
+    // بستن فوری پروب ها و دستگیره های دارت بدون صبر چندثانیه ای روی exitCode
+    // یا اجرای تکراری taskkill/ServerSocket.
+    if (_measuring || _corePing.busy) {
+      _measuring = false;
+      try {
+        await _corePing.stopAll().timeout(
+              const Duration(milliseconds: 300),
+              onTimeout: () {},
+            );
+      } catch (_) {}
+    }
+    for (final Process process in List<Process>.of(_preparingProcesses)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _preparingProcesses.clear();
+    for (final Process process in List<Process>.of(_coreProcesses.values)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _coreProcesses.clear();
+    CliSession.instance.dropForShutdown();
+
+    final List<int> extraPids = List<int>.of(_runningPids);
+    _runningPids.clear();
+    _runningBinaries.clear();
+    _activeChain = const ChainSettings();
+    _activePlanTun = false;
+
+    for (final int pid in extraPids) {
+      try {
+        await _native.killPid(pid).timeout(
+              const Duration(milliseconds: 150),
+              onTimeout: () => false,
+            );
+      } catch (_) {}
+    }
+
+    try {
+      final File pidFile = File(
+        '${_provisioner.dataDir}${Platform.pathSeparator}run'
+        '${Platform.pathSeparator}umbrella-core.pid',
+      );
+      if (pidFile.existsSync()) {
+        pidFile.deleteSync();
+      }
+    } catch (_) {}
+
+    // یک گذر بومی واحد روی رشته پس زمینه: بستن Job Object، تمام پردازش های
+    // هسته و فرزندانشان، پنجره های CLI، و پاک سازی فوری پروکسی لوکال هاست.
+    final bool hadProxy = _proxyPort != 0;
+    _proxyPort = 0;
+    try {
+      await _native.shutdownCores().timeout(
+            const Duration(milliseconds: 900),
+            onTimeout: () => 0,
+          );
+    } catch (_) {}
+    if (hadProxy) {
+      try {
+        await _native.disableSystemProxy().timeout(
+              const Duration(milliseconds: 500),
+              onTimeout: () => false,
+            );
+      } catch (_) {}
+    }
   }
 
   Future<void>? _stopInFlight;
@@ -3430,6 +4484,10 @@ class VpnController extends ChangeNotifier {
   Future<void> _stopCoresOwned() async {
     cancelSpeedTest();
     _activeChain = const ChainSettings();
+    _activePlanTun = false;
+    _activeMixedPort = _configuredMixedPort;
+    _activeLocalProxyOpen = true;
+    _activeLocalProxySecret = '';
     _stoppingOwnCore = true;
     try {
       await _stopCoresInner();
@@ -3441,7 +4499,10 @@ class VpnController extends ChangeNotifier {
   Future<void> _stopCoresInner() async {
     for (final Process process in List<Process>.of(_preparingProcesses)) {
       process.kill();
-      await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
+      await process.exitCode.timeout(
+        const Duration(milliseconds: 400),
+        onTimeout: () => -1,
+      );
     }
     await _sweepOrphanChildren();
     // اگر هسته در پنجره CLI اجرا شده باشد، اول همان بسته می شود تا هیچ هسته
@@ -3451,7 +4512,10 @@ class VpnController extends ChangeNotifier {
     for (final Process process in List<Process>.of(_coreProcesses.values)) {
       try {
         process.kill();
-        await process.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -1);
+        await process.exitCode.timeout(
+          const Duration(milliseconds: 400),
+          onTimeout: () => -1,
+        );
       } on Exception {
         // فرایند از قبل بسته شده است.
       }
@@ -3531,6 +4595,10 @@ class VpnController extends ChangeNotifier {
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
+    _stopLiveMeasurement();
+    _connectedAt = null;
+    _activeCoreLogPath = '';
+    _tunnelVerified = false;
     _stats = TunnelStats.empty;
     _setStatus(VpnStatus.failed, reason);
     await _sound.play('error');
@@ -3553,8 +4621,25 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> refreshIp() async {
-    _geo = await _ip.fetch(force: true);
-    _realIp = _geo.ip;
+    if (_disposed || _shuttingDown || _connectInFlight || _status.busy) {
+      return;
+    }
+    // هنگام اتصال فعال هرگز `_realIp` (آی پی واقعی پیش از تونل) را با آی پی
+    // خروجی تونل بازنویسی نکن؛ فقط اطلاعات آی پی خروجی تونل را به روز کن.
+    if (_status == VpnStatus.connected) {
+      await _verifyTunnel(allowRetry: false);
+      return;
+    }
+    if (!_canCaptureBaselineIp) {
+      return;
+    }
+    final GeoInfo fetched = await _ip.fetch(force: true);
+    if (!_canCaptureBaselineIp || fetched.ip.isEmpty) {
+      return;
+    }
+    _geo = fetched;
+    _realIp = fetched.ip;
+    _realCountryCode = fetched.flagCode.toLowerCase();
     _notify();
   }
 
@@ -3576,11 +4661,17 @@ class VpnController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _prewarmCancelled = true;
+    _prewarmTimer?.cancel();
+    _filterReloadTimer?.cancel();
+    _liveReloadTimer?.cancel();
+    _autoConnectRetryTimer?.cancel();
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
     _pingTimer?.cancel();
     unawaited(_stopCores());
+    unawaited(_native.shutdownCores());
     super.dispose();
   }
 }

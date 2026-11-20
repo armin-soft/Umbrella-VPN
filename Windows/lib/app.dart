@@ -22,15 +22,21 @@ class UmbrellaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final SettingsController settings = context.watch<SettingsController>();
-    final ToastController toasts = context.watch<ToastController>();
+    final ThemeMode themeMode = context.select<SettingsController, ThemeMode>(
+      (SettingsController s) => s.themeMode,
+    );
+    final ToastController toasts = context.read<ToastController>();
 
     return MaterialApp(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      themeMode: settings.themeMode,
+      themeMode: themeMode,
+      // تغییر تم باید در همان فریم و بدون وقفه انجام شود؛ انیمیشن میانی
+      // `ThemeData.lerp` در دسکتاپ باعث بازسازی مکرر کل درخت ویجت و گیر کردن
+      // لحظه ای هنگام جابه جایی بین تم روشن و تاریک می شد.
+      themeAnimationDuration: Duration.zero,
       locale: const Locale('fa'),
       supportedLocales: const <Locale>[Locale('fa'), Locale('en')],
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
@@ -40,6 +46,7 @@ class UmbrellaApp extends StatelessWidget {
       ],
       scrollBehavior: const _UmbrellaScrollBehavior(),
       builder: (BuildContext context, Widget? child) {
+        windowService.syncBrightness(Theme.of(context).brightness);
         return Directionality(
           textDirection: TextDirection.rtl,
           child: child ?? const SizedBox.shrink(),
@@ -63,13 +70,19 @@ class RootGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final SettingsController settings = context.watch<SettingsController>();
-    final AuthController auth = context.watch<AuthController>();
+    final bool landingSeen = context.select<SettingsController, bool>(
+      (SettingsController s) => s.landingSeen,
+    );
+    final bool signedIn = context.select<AuthController, bool>(
+      (AuthController a) => a.signedIn,
+    );
 
-    if (!settings.landingSeen) {
-      return LandingPage(onStart: settings.markLandingSeen);
+    if (!landingSeen) {
+      return LandingPage(
+        onStart: context.read<SettingsController>().markLandingSeen,
+      );
     }
-    if (!auth.signedIn) {
+    if (!signedIn) {
       return const LoginPage();
     }
     return AppShell(windowService: windowService);

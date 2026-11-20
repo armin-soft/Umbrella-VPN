@@ -86,17 +86,17 @@ CURLOPT_HTTPHEADER => $Header_List,
 CURLOPT_SSL_VERIFYPEER => true,
 CURLOPT_SSL_VERIFYHOST => 2,
 ...(self::certificateBundle() !== null ? [CURLOPT_CAINFO => self::certificateBundle()] : []),
-CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+...(!self::hasHeader($Header_List, 'User-Agent') ? [CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'] : []),
 ]);
 
 if ($Method === 'POST') {
 curl_setopt($Ch, CURLOPT_POST, true);
 
 if (is_array($Body) && !array_is_list($Body)) {
-curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE));
+curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
 
 if (!self::hasHeader($Header_List, 'Content-Type')) {
-$Header_List[] = 'Content-Type: application/json';
+$Header_List[] = 'Content-Type: application/json; charset=utf-8';
 curl_setopt($Ch, CURLOPT_HTTPHEADER, $Header_List);
 }
 }
@@ -110,10 +110,10 @@ elseif ($Method === 'PATCH' || $Method === 'DELETE') {
 curl_setopt($Ch, CURLOPT_CUSTOMREQUEST, $Method);
 
 if ($Method === 'PATCH' && is_array($Body) && !array_is_list($Body)) {
-curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE));
+curl_setopt($Ch, CURLOPT_POSTFIELDS, json_encode($Body, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
 
 if (!self::hasHeader($Header_List, 'Content-Type')) {
-$Header_List[] = 'Content-Type: application/json';
+$Header_List[] = 'Content-Type: application/json; charset=utf-8';
 curl_setopt($Ch, CURLOPT_HTTPHEADER, $Header_List);
 }
 }

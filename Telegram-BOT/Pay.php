@@ -5,8 +5,13 @@ if (PHP_VERSION_ID < 80200) {
 error_log('[Umbrella-Bot][PHP-Version] PHP >= 8.2 is required but the server runs PHP ' . PHP_VERSION . ' in ' . basename(__FILE__) . '. Set the domain PHP version to 8.2 or newer (cPanel MultiPHP Manager).');
 http_response_code(503);
 header('Content-Type: text/plain; charset=UTF-8');
-echo 'PHP 8.2+ is required.';
+echo 'برای اجرای این بخش نسخه ۸.۲ یا جدیدتر پی اچ پی لازم است.';
 exit;
+}
+
+@ini_set('default_charset', 'UTF-8');
+if (function_exists('mb_internal_encoding')) {
+mb_internal_encoding('UTF-8');
 }
 
 require_once __DIR__ . '/Core/Payment/ZarinPal.php';
@@ -128,8 +133,8 @@ echo '<!DOCTYPE html>'
 . '<p>در حال اتصال به درگاه امن زرین پال…</p>'
 . '<ul class="steps"><li>بررسی اطلاعات تراکنش</li><li>اتصال به درگاه پرداخت</li><li>ثبت پرداخت و بازگشت</li></ul>'
 . '<a class="cta" id="go" href="' . $Safe_Target . '">ادامه پرداخت</a>'
-. '<div class="count" id="countdown" data-sec="5"></div>'
-. '<p class="note">اگر به صورت خودکار منتقل نشدید، روی دکمهٔ بالا کلیک کنید.</p>'
+. '<div class="count" id="countdown" data-sec="5">انتقال خودکار تا ۵ ثانیه دیگر…</div>'
+. '<p class="note">اگر به صورت خودکار منتقل نشدید، روی دکمه بالا کلیک کنید.</p>'
 . '<a class="back" href="' . $Safe_Target . '">انتقال فوری به درگاه</a>'
 . '<div class="foot"><span class="dot"></span><span>پرداخت امن از طریق زرین پال</span></div>'
 . '</main>'

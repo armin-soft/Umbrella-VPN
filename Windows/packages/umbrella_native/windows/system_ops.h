@@ -22,6 +22,7 @@
 #include <winsock2.h>
 #include <windows.h>
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -34,9 +35,25 @@ struct DeviceInfo {
   std::string hostname;
   std::string username;
   std::string os;
+  std::string os_edition;
+  std::string os_display_version;
+  int os_build = 0;
   std::string arch;
   std::string machine_id;
   std::string cpu;
+  int cpu_cores = 0;
+  int64_t ram_total_mb = 0;
+  int64_t ram_used_mb = 0;
+  int ram_load_percent = 0;
+  int64_t disk_total_mb = 0;
+  int64_t disk_free_mb = 0;
+  int screen_width = 0;
+  int screen_height = 0;
+  bool has_battery = false;
+  int battery_percent = -1;
+  bool power_plugged = true;
+  int64_t uptime_seconds = 0;
+  std::string adapter_name;
   std::string local_ip;
   std::string adapter_mac;
   bool elevated = false;
@@ -72,6 +89,8 @@ class SystemOps {
 
   /// متن آخرین خطای CreateProcess برای گزارش دقیق؛ خالی یعنی خطایی نبوده.
   std::string LastSpawnError() const;
+  bool AttachCoreJob(int pid);
+  int ShutdownOwnedCores(bool skip_if_clean = false);
   bool KillPid(int pid);
   int KillByName(const std::string& exe_name);
 
@@ -105,9 +124,15 @@ class SystemOps {
   SystemOps() = default;
   bool RunAndWait(const std::wstring& command_line);
   std::vector<DWORD> FindProcessIds(const std::string& exe_name);
+  HANDLE EnsureCoreJobLocked();
+  int KillOwnedCoreTreeSinglePass();
+  void NotifyProxySettingsChangedFast();
+  void ClearLoopbackProxyFast();
 
   std::mutex mutex_;
   std::map<int, HANDLE> processes_;
+  HANDLE core_job_ = nullptr;
+  std::atomic<bool> shutdown_clean_{false};
   mutable DWORD last_spawn_error_ = 0;
 };
 

@@ -6,6 +6,25 @@ import 'package:flutter/services.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
 
+/// پاسخ درخواست HTTP بومی ویندوز (WinHTTP + Schannel).
+class NativeHttpResponse {
+  const NativeHttpResponse({
+    required this.ok,
+    required this.statusCode,
+    required this.bodyBytes,
+    this.contentType = '',
+    this.winError = 0,
+    this.error = '',
+  });
+
+  final bool ok;
+  final int statusCode;
+  final Uint8List bodyBytes;
+  final String contentType;
+  final int winError;
+  final String error;
+}
+
 /// پل ارتباط با لایه بومی ویندوز (پلاگین umbrella_native).
 ///
 /// هر متد در صورت نبود پلاگین مقدار امن برمی گرداند تا رابط کاربری هرگز
@@ -266,11 +285,118 @@ class NativeBridge {
   Future<String> lastSpawnError() async =>
       await _invoke<String>('lastSpawnError') ?? '';
 
+  /// الصاق پردازش هسته به Job Object بومی ویندوز تا با بسته شدن برنامه (حتی از
+  /// Task Manager) هسته و CLI بلافاصله بسته شوند.
+  Future<bool> attachCoreJob(int pid) async {
+    if (pid <= 0) return false;
+    return await _invoke<bool>('attachCoreJob', <String, dynamic>{'pid': pid}) ??
+        false;
+  }
+
+  static bool _winHttpAvailable = true;
+
+  /// فعال سازی مجدد مسیر HTTP بومی برای آزمون واحد.
+  static void resetHttpAvailabilityForTest() {
+    _winHttpAvailable = true;
+  }
+
+  /// ارسال درخواست HTTPS/HTTP از مسیر بومی ویندوز (WinHTTP + Schannel).
+  ///
+  /// روی تمام نسخه های ۶۴ بیتی ویندوز ۱۰ و ۱۱ از مخزن گواهی خود ویندوز
+  /// (همراه با دریافت خودکار گواهی ریشه و میانی)، TLS 1.2/1.3 بومی و گذار
+  /// سریع از IPv6 معیوب به IPv4 استفاده می کند و روی رشته پس زمینه اجرا
+  /// می شود تا رابط کاربری هرگز قفل نشود.
+  static Future<NativeHttpResponse?> performHttpRequest({
+    required String method,
+    required String url,
+    Map<String, String> headers = const <String, String>{},
+    String body = '',
+    int timeoutMs = 15000,
+    bool useProxy = false,
+  }) async {
+    if (!Platform.isWindows || !_winHttpAvailable) {
+      return null;
+    }
+    try {
+      final Map<Object?, Object?>? raw =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'httpRequest',
+        <String, dynamic>{
+          'method': method,
+          'url': url,
+          'headers': headers,
+          'body': body,
+          'timeoutMs': timeoutMs,
+          'useProxy': useProxy,
+        },
+      ).timeout(Duration(milliseconds: timeoutMs + 3000));
+      if (raw == null) {
+        return null;
+      }
+      final Object? rawBytes = raw['bodyBytes'];
+      final Uint8List bytes;
+      if (rawBytes is Uint8List) {
+        bytes = rawBytes;
+      } else if (rawBytes is List<int>) {
+        bytes = Uint8List.fromList(rawBytes);
+      } else {
+        bytes = Uint8List(0);
+      }
+      return NativeHttpResponse(
+        ok: raw['ok'] == true,
+        statusCode: JsonX.integer(raw['statusCode']),
+        bodyBytes: bytes,
+        contentType: raw['contentType']?.toString() ?? '',
+        winError: JsonX.integer(raw['winError']),
+        error: raw['error']?.toString() ?? '',
+      );
+    } on MissingPluginException {
+      _winHttpAvailable = false;
+      return null;
+    } on PlatformException {
+      return null;
+    } on TimeoutException {
+      return NativeHttpResponse(
+        ok: false,
+        statusCode: 0,
+        bodyBytes: Uint8List(0),
+        winError: 12002,
+        error: 'channel_timeout',
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  /// بستن قطعی همه پردازش های هسته و پنجره های CLI آمبرلا و پاک سازی پروکسی محلی.
+  Future<int> shutdownCores({bool skipIfClean = false}) async {
+    final int? count = await _invoke<int>(
+      'shutdownCores',
+      <String, dynamic>{'skipIfClean': skipIfClean},
+    );
+    if (count != null) {
+      return count;
+    }
+    int killed = 0;
+    for (final String name in const <String>[
+      'UmbrellaCli.exe',
+      'UmbrellaCoreEngine.exe',
+      'UmbrellaAdmin.exe',
+    ]) {
+      killed += await _dartKillByName(name);
+    }
+    await _dartDisableSystemProxy();
+    return killed;
+  }
+
   Future<bool> killPid(int pid) async {
+    if (pid <= 0) {
+      return false;
+    }
     final bool? ok =
         await _invoke<bool>('killPid', <String, dynamic>{'pid': pid});
-    if (ok == true) {
-      return true;
+    if (ok != null) {
+      return ok;
     }
     try {
       final ProcessResult result = await Process.run(
@@ -287,7 +413,7 @@ class NativeBridge {
   Future<int> killByName(String name) async {
     final int? count =
         await _invoke<int>('killByName', <String, dynamic>{'name': name});
-    if (count != null && count > 0) {
+    if (count != null) {
       return count;
     }
     return _dartKillByName(name);
@@ -485,18 +611,63 @@ class NativeBridge {
     );
   }
 
-  Future<bool> setAutostart(bool enabled, {String appName = 'UmbrellaVPN'}) async =>
-      await _invoke<bool>('autostart', <String, dynamic>{
+  static const String _runKey =
+      r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
+
+  Future<bool> setAutostart(
+    bool enabled, {
+    String appName = 'UmbrellaVPN',
+  }) async {
+    final bool? nativeResult = await _invoke<bool>(
+      'autostart',
+      <String, dynamic>{
         'enabled': enabled,
         'appName': appName,
-      }) ??
-      false;
+      },
+    );
+    if (nativeResult == true) {
+      return true;
+    }
+    if (!Platform.isWindows) {
+      return false;
+    }
+    if (!enabled) {
+      final bool existed = await autostartEnabled(appName: appName);
+      if (!existed) {
+        return true;
+      }
+      return _reg(<String>['delete', _runKey, '/v', appName, '/f']);
+    }
+    final String exe = await exePath();
+    if (exe.isEmpty) {
+      return false;
+    }
+    return _reg(<String>[
+      'add',
+      _runKey,
+      '/v',
+      appName,
+      '/t',
+      'REG_SZ',
+      '/d',
+      '"$exe" --minimized',
+      '/f',
+    ]);
+  }
 
-  Future<bool> autostartEnabled({String appName = 'UmbrellaVPN'}) async =>
-      await _invoke<bool>('autostartEnabled', <String, dynamic>{
-        'appName': appName,
-      }) ??
-      false;
+  Future<bool> autostartEnabled({String appName = 'UmbrellaVPN'}) async {
+    final bool? nativeResult = await _invoke<bool>(
+      'autostartEnabled',
+      <String, dynamic>{'appName': appName},
+    );
+    if (nativeResult != null) {
+      return nativeResult;
+    }
+    if (!Platform.isWindows) {
+      return false;
+    }
+    return _reg(<String>['query', _runKey, '/v', appName]);
+  }
 
   Future<String> exePath() async {
     final String? path = await _invoke<String>('exePath');

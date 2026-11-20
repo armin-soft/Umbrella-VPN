@@ -34,72 +34,14 @@ private const MIN_TOPUP = 80000;
 private function __construct() {
 }
 
-public static function mySubscription(Context $Context): void {
-try {
-TelegramClient::sendChatAction($Context->ChatId);
-
-if ($Context->IsCallback && $Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄اشتراک من در حال بارگذاری...', false);
-}
-
-if (!Common::isRobotOn()) {
-Common::robotOff($Context, 'اشتراک من');
-return;
-}
-
-$User = Repository::getUser($Context->UserId);
-$Phone = (string)($User['Phone'] ?? '');
-$Subscription = $User['Subscription'] ?? null;
-$Client_ID = $User['Client_ID'] ?? null;
-$Is_Callback = $Context->IsCallback && $Context->MessageId !== null;
-$Send = static function (string $Text, array $Keyboard) use ($Context, $Is_Callback): void {
-$Ok = TelegramClient::sendReadableMessage($Context->ChatId, $Is_Callback ? $Context->MessageId : null, $Text, $Keyboard);
-if (!$Ok && $Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'نمایش اشتراک ناموفق بود؛ دوباره تلاش کنید.', true);
-};
-
-if ($Phone === '') {
-$Send(Common::greet($Context, 'اشتراک من') . "⚠️برای دریافت اشتراک، ابتدا اطلاعات پروفایل کاربری خود را کامل کنید؛ بدون شماره موبایل امکان صدور اشتراک نیست." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📝👤ثبت اطلاعات پروفایل کاربری', 'callback_data' => 'ویرایش و ثبت پروفایل']],
-Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
-]));
-return;
-}
-
-if (!is_string($Subscription) || $Subscription === '') {
-self::buyMenu($Context, $Send);
-return;
-}
-
-if (!is_string($Client_ID) || $Client_ID === '' || $Client_ID === '_') {
-$Send(Common::greet($Context, 'اشتراک من') . "⚠️داده های سرور با ربات هماهنگ نیست.\n🔁لطفاً چند لحظه بعد دوباره تلاش کنید یا به پشتیبانی اطلاع دهید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome(),
-]));
-return;
-}
-
-self::mySubscriptionActive($Context, $Send);
-}
-
-catch (Throwable $e) {
-error_log('[Umbrella-Subscription] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
-try {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "❌خطای داخلی رخ داد. لطفاً مجدد تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()]));
-}
-
-catch (Throwable $e2) {
-error_log('[Umbrella-Subscription-2] ' . $e2->getMessage());
-}
-}
-}
-
 private static function buyMenu(Context $Context, ?\Closure $Send = null): void {
 $Money = Helper::formatCurrency(Repository::getBalance($Context->UserId));
 $Rows = [
-[['text' => "🔄💳به روزرسانی اعتبار حساب", 'callback_data' => "اشتراک من"]],
+[['text' => "🔄💳به روزرسانی اعتبار حساب", 'callback_data' => "user_wallet_menu"]],
 Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome(),
 ];
 
-$Text = Common::greet($Context, 'اشتراک من') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\nℹ️برای تهیه اشتراک، از بخش مدیریت اشتراک یکی از گزینه‌های «💎اشتراک های آماده»، «🛠اشتراک دلخواه» یا «🎁اشتراک رایگان» را انتخاب کنید.\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter();
+$Text = Common::greet($Context, 'مدیریت اشتراک') . "➖➖➖➖➖➖➖➖➖\n🌏ارز کنونی:🇮🇷ایران - تومان\n💳اعتبار کنونی: *{$Money}*\n\n💎وضعیت اشتراک:*❌ندارید*\n\nℹ️برای تهیه اشتراک، از بخش مدیریت اشتراک یکی از گزینه های «💎اشتراک های آماده»، «🛠اشتراک دلخواه» یا «🎁اشتراک رایگان» را انتخاب کنید.\n\n⚠️نکته:همه اشتراک ها ۱ کاربره و با حجم نامحدود می باشد." . Helper::userFooter();
 
 if ($Send !== null) { $Send($Text, TelegramClient::inlineKeyboard($Rows)); return; }
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -194,7 +136,7 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . ""
 . "👇مرحله ۲ از ۲ — *حجم* اشتراک را به گیگابایت وارد کنید:\n\n"
 . "📅مدت انتخاب شده: *{$Days_Label} روز*\n"
 . "📦محدوده مجاز حجم: *{$Min_GB_Label}* تا *{$Max_GB_Label}*\n\n"
-. "ℹ️فقط عدد را تایپ و ارسال کنید؛ مثال: 50\n"
+. "ℹ️فقط عدد را تایپ و ارسال کنید؛ مثال: ۵۰\n"
 . "⚠️جهت انصراف «لغو» را ارسال کنید."
 . Helper::userFooter() . "*";
 $Keyboard = TelegramClient::inlineKeyboard([
@@ -224,7 +166,7 @@ self::saveCustomPlanGB($Context, $Days, $Raw_GB);
 private static function saveCustomPlanGB(Context $Context, int $Days, string $Raw_GB): void {
 $Min_GB = BotConfig::getCustomMinGB();
 $Max_GB = BotConfig::getCustomMaxGB();
-$GB = (float)Helper::toEnglish(str_replace([' ', ','], '', trim($Raw_GB)));
+$GB = (float)Helper::toEnglish(str_replace([' ', ',', '٬', '٫'], ['', '', '', '.'], trim($Raw_GB)));
 
 if ($GB < $Min_GB || $GB > $Max_GB) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک دلخواه') . "❌خطا: حجم وارد شده معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفاً عددی بین *" . Helper::formatGB($Min_GB) . "* تا *" . Helper::formatGB($Max_GB) . "* وارد کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
@@ -274,7 +216,30 @@ Repository::updateUserSession($Context->UserId, ['Custom_Days' => $Days, 'Custom
 self::startCustomPlanGB($Context);
 }
 
+private static function withPurchaseLock(Context $Context, callable $Operation): void {
+$Lock = 'subscription_purchase_' . $Context->UserId;
+if (!Repository::tryCronLock($Lock, 180)) {
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت') . 'درخواست خرید دیگری در حال پردازش است؛ کمی بعد دوباره تلاش کنید.' . Helper::userFooter());
+return;
+}
+try {
+if (trim((string)(Repository::getUserSession($Context->UserId)['Pending_Payment'] ?? '')) !== '') {
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پرداخت') . 'یک پرداخت قبلی در حال بررسی است؛ ابتدا همان سفارش را تکمیل یا پیگیری کنید.' . Helper::userFooter());
+return;
+}
+$Operation();
+} finally {
+Repository::releaseCronLock($Lock);
+}
+}
+
 private static function confirmCustomPlan(Context $Context, int $Days, float $GB = 0.0): void {
+self::withPurchaseLock($Context, static function () use ($Context, $Days, $GB): void {
+self::confirmCustomPlanUnlocked($Context, $Days, $GB);
+});
+}
+
+private static function confirmCustomPlanUnlocked(Context $Context, int $Days, float $GB = 0.0): void {
 $Day_Rate = BotConfig::getCustomDayRate();
 $Total = (int)round($Days * $Day_Rate);
 $Days_Label = Helper::toPersian((string)$Days);
@@ -388,9 +353,9 @@ $Text = Common::greet($Context, 'اشتراک دلخواه') . "⚠️موجود
 . "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
-. "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
-. "2️⃣ شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
-. "3️⃣ فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
+. "۱. پرداخت از طریق درگاه امن زرین پال\n"
+. "۲. شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
+. "۳. فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
 
 $Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک دلخواه'), Menu::userHome()];
 $Is_Callback = $Context->IsCallback && $Context->MessageId !== null;
@@ -409,6 +374,12 @@ TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeybo
 }
 
 public static function confirmCustomPlanCallback(Context $Context): void {
+self::withPurchaseLock($Context, static function () use ($Context): void {
+self::confirmCustomPlanCallbackUnlocked($Context);
+});
+}
+
+private static function confirmCustomPlanCallbackUnlocked(Context $Context): void {
 $Session = Repository::getUserSession($Context->UserId);
 $Days = (int)($Session['Custom_Days'] ?? 0);
 
@@ -449,7 +420,7 @@ $Total_Label = Helper::formatCurrency($Amount);
 if ($Balance >= $Amount) {
 if (!Repository::removeMoney($Context->UserId, $Amount, 'خرید اشتراک - پرداخت از کیف پول', 'bot')) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . " *❌خطا: کسر اعتبار ناموفق بود." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-Menu::back('اشتراک من', 'اشتراک من'),
+Menu::back('مدیریت اشتراک', 'user_subscriptions_menu'),
 Menu::userHome(),
 ]));
 return;
@@ -522,9 +493,9 @@ $Text = $Greeting . "⚠️موجودی کیف پول برای خرید کافی
 . "└─🏦قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
-. "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
-. "2️⃣ شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
-. "3️⃣ فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
+. "۱. پرداخت از طریق درگاه امن زرین پال\n"
+. "۲. شارژ خودکار کیف پول به مبلغ {$Need_Label}\n"
+. "۳. فعالسازی خودکار اشتراک {$Name}" . Helper::userFooter() . "*";
 $Rows = [$Pay_Button, Common::backTo('🔙انصراف', 'اشتراک دلخواه'), Menu::userHome()];
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -541,7 +512,7 @@ $Client_ID = (string)($User['Client_ID'] ?? '');
 $Phone_For_Comment = (string)($User['Phone'] ?? '');
 $Full_Name_User = trim((string)($User['Full_Name'] ?? ''));
 $Server_Name = $Full_Name_User !== '' ? $Full_Name_User : ('user-' . $User_ID);
-$Usage_Limit = $GB > 0 ? (int)round($GB) : self::UNLIMITED_GB;
+$Usage_Limit = $GB > 0 ? max(1, (int)round($GB)) : self::UNLIMITED_GB;
 
 if ($Client_ID !== '' && $Client_ID !== '_') {
 self::renewSubscription($Context, $Name, $Usage_Limit, $Days, $Client_ID);
@@ -574,188 +545,230 @@ Menu::userHome(),
 ]));
 }
 
-public static function mySubscriptionActive(Context $Context, ?\Closure $Send = null): void {
-$Send ??= static function (string $Text, array $Markup) use ($Context): void {
-TelegramClient::sendReadableMessage($Context->ChatId, $Context->IsCallback ? $Context->MessageId : null, $Text, $Markup);
-};
-$Greeting = Common::greet($Context, 'اشتراک من');
-$User = Repository::getUser($Context->UserId);
-$Client_ID = (string)($User['Client_ID'] ?? '');
-$Full_Name = $Context->profileName();
-$Subscription = (string)($User['Subscription'] ?? '');
-$Client_Status = (string)($User['Client_Status'] ?? 'فعال');
-$Total_Usage_GB = (float)($User['Total_Usage_GB'] ?? 0);
-$Used_Usage_GB = (float)($User['Used_Usage_GB'] ?? 0);
-$Remaining_GB = (float)($User['Remaining_Usage_GB'] ?? 0);
-$Percent_Val = (float)($User['Percent_Usage'] ?? 0);
-$Package_Start = (string)($User['Package_Start_Date'] ?? '');
-$Package_Duration = (string)($User['Package_Duration'] ?? '');
-$Package_Days = (int)Helper::toEnglish(preg_replace('/[^0-9۰-۹]/u', '', $Package_Duration));
-$Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
-$Expiration = $Expiration_Time_Stamp > 0 ? Helper::formatExpirationShort($Expiration_Time_Stamp) : (string)($User['Expiration_Date'] ?? '');
-$Last_Online = (string)($User['Last_Online'] ?? '');
-$ED_Private = (string)($User['ED_25519_Private_Key'] ?? '');
-$ED_Public = (string)($User['ED_25519_Public_Key'] ?? '');
-$WG_Private = (string)($User['WireGuard_Private_Key'] ?? '');
-$WG_Public = (string)($User['WireGuard_Public_Key'] ?? '');
-$WG_PSK = (string)($User['WireGuard_PSK'] ?? '');
-$Server_Comment = (string)($User['Server_Comment'] ?? '');
-try { $Response = ServerClient::getUser($Client_ID); }
-catch (Throwable) { $Response = ['StatusCode' => 503]; }
-$Data = $Response['Json'] ?? null;
-if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره‌شده نمایش داده می‌شود.\n";
-
-if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300) {
-$Usage_Limit = (float)($Data['usage_limit_GB'] ?? 0);
-$Used_GB = (float)($Data['current_usage_GB'] ?? 0);
-$Remaining_GB = max(0, $Usage_Limit - $Used_GB);
-$Percent_Val = $Usage_Limit > 0 ? round(($Used_GB / $Usage_Limit) * 100, 1) : 0;
-$Total_Usage_GB = $Usage_Limit;
-$Used_Usage_GB = $Used_GB;
-$Remaining_GB = $Remaining_GB;
-$Last_Online = (string)($Data['last_online'] ?? $Last_Online);
-$ED_Private = (string)($Data['ed25519_private_key'] ?? $ED_Private);
-$ED_Public = (string)($Data['ed25519_public_key'] ?? $ED_Public);
-$WG_Private = (string)($Data['wg_pk'] ?? $WG_Private);
-$WG_Public = (string)($Data['wg_pub'] ?? $WG_Public);
-$WG_PSK = (string)($Data['wg_psk'] ?? $WG_PSK);
-$Server_Comment = (string)($Data['comment'] ?? $Server_Comment);
-$Updates = [
-'Total_Usage_GB' => $Total_Usage_GB,
-'Used_Usage_GB' => $Used_Usage_GB,
-'Remaining_Usage_GB' => $Remaining_GB,
-'Percent_Usage' => $Percent_Val,
-'Last_Online' => $Last_Online,
-'ED_25519_Private_Key' => $ED_Private,
-'ED_25519_Public_Key' => $ED_Public,
-'WireGuard_Private_Key' => $WG_Private,
-'WireGuard_Public_Key' => $WG_Public,
-'WireGuard_PSK' => $WG_PSK,
-'Server_Comment' => $Server_Comment,
-];
-
-$Server_Active = (bool)($Data['is_active'] ?? true);
-$Server_Enabled = (bool)($Data['enable'] ?? true);
-
-if (!$Server_Active || !$Server_Enabled) {
-$Client_Status = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0 ? '🚫قطع به دلیل عدم عضویت' : '🚫غیر فعال';
-$Updates['Client_Status'] = $Client_Status;
-}
-
-Repository::updateUser($Context->UserId, $Updates);
-}
-
-if (str_contains($Client_Status, 'غیر') || (int)($User['Server_Is_Active'] ?? 1) === 0 || (int)($User['Server_Enable'] ?? 1) === 0) {
-$Reason = (string)($User['Deactivation_Message'] ?? 'از سرور');
-
-if (trim($Reason) === '') $Reason = 'کلاینت شما در سرور غیرفعال است';
-$Text = $Greeting . Helper::noticeBlock(
-'⛔️کلاینت شما در سرور غیرفعال است.',
-'⚠️علت:🔌غیرفعال سازی کلاینت در سرور — ' . $Reason,
-'ℹ️تا زمانی که کلاینت شما فعال نشود، امکان استفاده از سرویس وجود ندارد.'
-) . Helper::userFooter();
-$Send($Text, TelegramClient::inlineKeyboard([
-[['text' => '🔄بررسی مجدد', 'callback_data' => 'اشتراک من']],
-[['text' => '🎫تیکت ها و پشتیبانی', 'callback_data' => 'تیکت های من']],
-[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
-Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
-]));
-return;
-}
-
-$Last_Online_Label = 'نامشخص';
-
-if ($Last_Online !== '' && $Last_Online !== '0001-01-01 00:00:00') {
-try {
-$Lo_Date = substr($Last_Online, 0, 10);
-$Lo_Time = substr($Last_Online, 11, 8);
-$Last_Online_Label = Helper::gregorianToJalali($Lo_Date) . ' - ' . Helper::formatTime($Lo_Time);
-$Lo_Stamp = \Helper::parseServerTimeSafe($Last_Online);
-if ($Lo_Stamp !== false && (time() - $Lo_Stamp) <= 300) { $Last_Online_Label = '🟢آنلاین'; }
-}
-
-catch (Throwable) { $Last_Online_Label = $Last_Online; }
-}
-
-$Client_Status_Label = Helper::translateStatus($Client_Status);
-$Base_Link = (string)(Repository::getSetting('Subscription_Link_Base') ?: Environment::getSubscriptionLinkBase());
-$Text = $Greeting . "➖➖➖➖➖➖➖➖➖\n";
-$Text .= "💎<b>اطلاعات اشتراک:</b>\n";
-$Text .= "├─🪪<b>نوع اشتراک:</b> <b>{$Subscription}</b>\n";
-$Duration_Days = $Package_Days > 0 ? Helper::toPersian((string)$Package_Days) : Helper::durationLabelFromLabel($Package_Duration);
-$Duration_Label = $Package_Days > 0 ? Helper::humanDuration($Package_Days * 86400) : Helper::durationLabelFromLabel($Package_Duration);
-$Text .= "├─📆<b>مدت دقیق اشتراک:</b> <b>{$Duration_Days}</b> <b>({$Duration_Label})</b>\n";
-$Text .= "├─⏱️<b>تاریخ شروع:</b> <b>{$Package_Start}</b>\n";
-$Text .= "├─⏳<b>تاریخ انقضا:</b> <b>{$Expiration}</b>\n";
-$Text .= "├─🕒<b>زمان باقیمانده:</b> <b>" . Helper::remainingDuration($Expiration_Time_Stamp) . "</b>\n";
-$Text .= "├─🚦<b>وضعیت کلاینت:</b> <b>{$Client_Status_Label}</b>\n";
-$Text .= "└─📡<b>آخرین اتصال:</b> <b>{$Last_Online_Label}</b>\n\n";
-$Text .= "📊<b>مصرف:</b>\n";
-$Text .= "├─📊<b>حجم کل:</b> <b>" . Helper::formatGB($Total_Usage_GB) . "</b>\n";
-$Text .= "├─📥<b>مصرف شده:</b> <b>" . Helper::formatGB($Used_Usage_GB) . "</b>\n";
-$Text .= "├─📤<b>باقیمانده:</b> <b>" . Helper::formatGB($Remaining_GB) . "</b>\n";
-$Text .= "└─📈<b>درصد مصرف:</b> <b>" . Helper::formatPercent($Percent_Val) . "٪</b>\n\n";
-$Key_Esc = static fn(string $Value): string => htmlspecialchars(trim($Value), ENT_QUOTES, 'UTF-8');
-$Client_ID_Label = $Key_Esc($Client_ID);
-$ED_Private_Label = $Key_Esc($ED_Private);
-$ED_Public_Label = $Key_Esc($ED_Public);
-$WG_Private_Label = $Key_Esc($WG_Private);
-$WG_Public_Label = $Key_Esc($WG_Public);
-$WG_PSK_Label = $Key_Esc($WG_PSK);
-$Text .= "🔑<b>کلیدهای اتصال</b>\n\n";
-$Text .= "🆔<b>شناسه کلاینت</b>\n<pre>{$Client_ID_Label}</pre>\n";
-$Text .= "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private_Label}</pre>\n";
-$Text .= "🔹<b>کلید عمومی ادی۲۵۵۱۹</b>\n<pre>{$ED_Public_Label}</pre>\n";
-$Text .= "🔸<b>کلید خصوصی وایرگارد</b>\n<pre>{$WG_Private_Label}</pre>\n";
-$Text .= "🔹<b>کلید عمومی وایرگارد</b>\n<pre>{$WG_Public_Label}</pre>\n";
-$Text .= "🔸<b>کلید پیش اشتراکی وایرگارد</b>\n<pre>{$WG_PSK_Label}</pre>\n";
-$Text .= self::configLinks($Base_Link, $Client_ID) . "\n\n";
-$Text .= Helper::userFooter();
-
-$Markup = TelegramClient::inlineKeyboard([
-Common::backTo('🔄💎بروزرسانی اشتراک من', 'اشتراک من'),
-[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
-Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
-]);
-
-if ($Send !== null) { $Send($Text, $Markup); return; }
-TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
-}
-
-private static function configLinks(string $Base, string $Client_ID): string {
-$Http_Base = preg_replace('#^https:#', 'http:', $Base);
-$Items = [
-['🚀خودکار', "{$Base}/{$Client_ID}/sub/"],
-['☄️ایکس ری', "{$Base}/{$Client_ID}/all.txt"],
-['🧿سینگ باکس', "{$Base}/{$Client_ID}/full-singbox.json"],
-['⚡️کلش متا', "{$Base}/{$Client_ID}/clash/meta/all.yml"],
-['🌐وایرگارد', "{$Base}/{$Client_ID}/wireguard/?asn=unknown"],
-['🛡️آمنزیا دبلیو‌جی', "{$Http_Base}/{$Client_ID}/amnezia/?asn=unknown"],
-['🔵میرو', "{$Http_Base}/{$Client_ID}/mieru/?asn=unknown"],
-];
-
-$Text = "⚡️<b>مشخصات اتصال شما به شرح زیر است</b>\n";
-
-if (BotConfig::showEmergency()) {
-$Emergency = BotConfig::emergencyUrl();
-$Text .= "<blockquote>🚱<b>اضطراری موقت:</b>\n<code>{$Emergency}</code></blockquote>\n";
-}
-
-foreach ($Items as [$Label, $Url]) {
-$Text .= "\n{$Label}\n<code>{$Url}</code>\n";
-}
-
-return rtrim($Text);
-}
-
 public static function freePlan(Context $Context): void {
-if (self::hasAlreadyFree($Context)) return;
+if (self::hasAlreadyFree($Context) || self::hasActiveSubscriptionNow($Context)) return;
 self::purchase($Context, 'free');
 }
 
 public static function nowruzPlan(Context $Context): void {
-if (self::hasAlreadyFree($Context)) return;
+if (!BotConfig::isNowruzMenuEnabled()) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️اشتراک نوروزی در حال حاضر فعال نیست.', true);
+}
+return;
+}
+
+$User = Repository::getUser($Context->UserId);
+$Uuid = (string)($User['Client_ID'] ?? '');
+
+if (BotConfig::hasClaimedNowruz($Context->UserId, $Uuid)) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '❌اشتراک نوروزی را قبلاً دریافت کرده اید.', true);
+}
+return;
+}
+
+if (self::hasActiveSubscriptionNow($Context)) return;
 self::purchase($Context, 'nowruz');
+}
+
+private static function hasActiveSubscriptionNow(Context $Context): bool {
+$User = Repository::getUser($Context->UserId);
+$Subscription = trim((string)($User['Subscription'] ?? ''));
+$Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
+
+if ($Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time())) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '⚠️شما در حال حاضر اشتراک فعال دارید.', true);
+}
+return true;
+}
+
+return false;
+}
+
+/** Paid plans exposed to the authenticated Windows app; prices are the bot's live tariff. */
+public static function appPlanCatalog(): array {
+$Plans = [];
+foreach (self::PLANS as $Month => [$Name, $Days, $Gb]) {
+$Price = BotConfig::getPlanPrice($Month);
+if ($Price <= 0) continue;
+$Plans[] = ['month' => (string)$Month, 'name' => $Name, 'days' => $Days, 'gb' => $Gb, 'price' => (int)round($Price)];
+}
+return $Plans;
+}
+
+/** Custom-plan constraints/rates are sourced from the same live bot settings. */
+public static function appCustomPlanTerms(): array {
+return [
+'day_rate' => BotConfig::getCustomDayRate(),
+'min_days' => BotConfig::getCustomMinDays(),
+'max_days' => BotConfig::getCustomMaxDays(),
+'min_gb' => BotConfig::getCustomMinGB(),
+'max_gb' => BotConfig::getCustomMaxGB(),
+];
+}
+
+/** Validate custom days and volume against the exact live bot constraints. */
+private static function validateAppCustomPlan(int $Days, float $GB): array {
+$Terms = self::appCustomPlanTerms();
+if ($Days < $Terms['min_days'] || $Days > $Terms['max_days'] || !is_finite($GB)
+|| $GB < $Terms['min_gb'] || $GB > $Terms['max_gb']) {
+throw new InvalidArgumentException('invalid_custom_plan');
+}
+$Price = (int)round($Days * (float)$Terms['day_rate']);
+if ($Price <= 0) throw new RuntimeException('custom_plan_unavailable');
+return [$Price, $Terms];
+}
+
+/** Apply wallet-funded custom plan with the same ledger and activation pipeline as Telegram. */
+public static function purchaseCustomFromAppWallet(int $User_ID, int $Days, float $GB, ?int $Quoted_Price = null): array {
+$Lock = 'subscription_purchase_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 180)) throw new RuntimeException('purchase_busy');
+try {
+[$Price] = self::validateAppCustomPlan($Days, $GB);
+if ($Quoted_Price !== null && $Quoted_Price !== $Price) throw new RuntimeException('price_changed');
+if (trim((string)(Repository::getUserSession($User_ID)['Pending_Payment'] ?? '')) !== '') throw new RuntimeException('payment_pending');
+$Balance = Repository::getBalance($User_ID);
+if ($Balance < $Price) throw new RuntimeException('wallet_changed');
+$User = Repository::getUser($User_ID);
+if ($User === []) throw new RuntimeException('Linked bot account not found');
+$Before_Expiry = (int)($User['Expiration_Time_Stamp'] ?? 0);
+$Chat_ID = (int)(($User['Chat_ID'] ?? 0) ?: $User_ID);
+$Context = new Context([], $User_ID, $Chat_ID, (string)(($User['First_Name'] ?? '') ?: 'کاربر'), false, null, null, null, null);
+if (!Repository::removeMoney($User_ID, $Price, 'خرید اشتراک دلخواه - پرداخت از کیف پول', 'app')) throw new RuntimeException('wallet_changed');
+try {
+$Name = 'اشتراک ' . Helper::toPersian((string)$Days) . ' روزه - ' . Helper::formatGB($GB);
+self::activateCustom($Context, $Name, $Days, $GB);
+} catch (Throwable $Error) {
+if (Repository::getBalance($User_ID) <= $Balance - $Price) Repository::addMoney($User_ID, $Price, 'بازگشت وجه اشتراک دلخواه (خطا در فعالسازی)', 'app');
+throw $Error;
+}
+$After = Repository::getUser($User_ID);
+$After_Expiry = (int)($After['Expiration_Time_Stamp'] ?? 0);
+$After_Balance = Repository::getBalance($User_ID);
+if ($After_Expiry <= $Before_Expiry) {
+if ($After_Balance <= $Balance - $Price) Repository::addMoney($User_ID, $Price, 'بازگشت وجه اشتراک دلخواه (فعال سازی تأیید نشد)', 'app');
+throw new RuntimeException('activation_failed');
+}
+if ($After_Balance > $Balance - $Price) throw new RuntimeException('wallet_debit_not_confirmed');
+return ['expires_at' => $After_Expiry, 'balance' => $After_Balance, 'price' => $Price];
+} finally {
+Repository::releaseCronLock($Lock);
+}
+}
+
+/** Create a custom-plan ZarinPal order in the same pending-payment ledger used by Telegram. */
+public static function startAppCustomCheckout(int $User_ID, int $Days, float $GB, ?int $Quoted_Price = null): array {
+$Lock = 'subscription_purchase_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 180)) throw new RuntimeException('purchase_busy');
+try {
+[$Price] = self::validateAppCustomPlan($Days, $GB);
+if ($Quoted_Price !== null && $Quoted_Price !== $Price) throw new RuntimeException('price_changed');
+$Current = Repository::getUserSession($User_ID);
+if (trim((string)($Current['Pending_Payment'] ?? '')) !== '') throw new RuntimeException('payment_pending');
+$Balance = Repository::getBalance($User_ID);
+if ($Balance >= $Price) throw new RuntimeException('wallet_changed');
+$Shortage = $Price - $Balance;
+if ($Shortage < Environment::getMinimumPaymentAmount()) throw new RuntimeException('below_gateway_minimum');
+if (!Zarinpal::isConfigured()) throw new RuntimeException('gateway_unavailable');
+$Base = Environment::getPaymentCallbackUrl();
+if ($Base === '') throw new RuntimeException('gateway_unavailable');
+$User = Repository::getUser($User_ID);
+$Callback = $Base . (str_contains($Base, '?') ? '&' : '?') . 'Uid=' . $User_ID;
+$Name = 'اشتراک ' . Helper::toPersian((string)$Days) . ' روزه - ' . Helper::formatGB($GB);
+$Payment = Zarinpal::request($Shortage, $Callback, 'خرید ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone((string)($User['Phone'] ?? '')));
+if (!is_array($Payment) || !isset($Payment['Authority'], $Payment['RedirectUrl'])) throw new RuntimeException('gateway_request_failed');
+$Final = (float)($Payment['Amount'] ?? $Shortage);
+Repository::updateUserSession($User_ID, [
+'Pending_Plan' => null,
+'Pending_Custom_Plan' => $Days . '|' . $Price . '|' . $GB,
+'Pending_Topup' => (string)$Shortage,
+'Pending_Payment' => 'topup|' . $Final . '|' . (string)$Payment['Authority'],
+]);
+$Payment['Plan_Price'] = $Price;
+$Payment['Wallet_Balance'] = (int)round($Balance);
+$Payment['Custom_Days'] = $Days;
+$Payment['Custom_GB'] = $GB;
+return $Payment;
+} finally {
+Repository::releaseCronLock($Lock);
+}
+}
+
+/** Create an app checkout under the same per-user purchase lock used by bot purchases. */
+public static function startAppCheckout(int $User_ID, string $Month_Key, ?int $Quoted_Price = null): array {
+if (!isset(self::PLANS[$Month_Key])) throw new InvalidArgumentException('Invalid checkout');
+$Lock = 'subscription_purchase_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 180)) throw new RuntimeException('purchase_busy');
+try {
+$Current = Repository::getUserSession($User_ID);
+if (trim((string)($Current['Pending_Payment'] ?? '')) !== '') throw new RuntimeException('payment_pending');
+$Price = BotConfig::getPlanPrice($Month_Key);
+if ($Quoted_Price !== null && $Quoted_Price !== (int)round($Price)) throw new RuntimeException('price_changed');
+$Balance = Repository::getBalance($User_ID);
+if ($Price <= 0 || $Balance >= $Price) throw new RuntimeException('wallet_changed');
+$Shortage = $Price - $Balance;
+if ($Shortage < Environment::getMinimumPaymentAmount()) throw new RuntimeException('below_gateway_minimum');
+if (!Zarinpal::isConfigured()) throw new RuntimeException('gateway_unavailable');
+$Base = Environment::getPaymentCallbackUrl();
+if ($Base === '') throw new RuntimeException('gateway_unavailable');
+$User = Repository::getUser($User_ID);
+$Callback = $Base . (str_contains($Base, '?') ? '&' : '?') . 'Uid=' . $User_ID;
+[$Name] = self::PLANS[$Month_Key];
+$Payment = Zarinpal::request($Shortage, $Callback, 'خرید اشتراک ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone((string)($User['Phone'] ?? '')));
+if (!is_array($Payment) || !isset($Payment['Authority'], $Payment['RedirectUrl'])) throw new RuntimeException('gateway_request_failed');
+$Final = (float)($Payment['Amount'] ?? $Shortage);
+Repository::updateUserSession($User_ID, [
+'Pending_Plan' => 'paid|' . $Month_Key . '|' . (int)round($Price),
+'Pending_Topup' => (string)$Shortage,
+'Pending_Custom_Plan' => null,
+'Pending_Payment' => $Month_Key . '|' . $Final . '|' . (string)$Payment['Authority'],
+]);
+$Payment['Plan_Price'] = (int)round($Price);
+$Payment['Wallet_Balance'] = (int)round($Balance);
+return $Payment;
+} finally {
+Repository::releaseCronLock($Lock);
+}
+}
+
+/** Apply a wallet-funded app purchase through the same activation path used by the bot. */
+public static function purchaseFromAppWallet(int $User_ID, string $Month_Key, ?int $Quoted_Price = null): array {
+if (!isset(self::PLANS[$Month_Key])) throw new InvalidArgumentException('Invalid subscription plan');
+$Lock = 'subscription_purchase_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 180)) throw new RuntimeException('purchase_busy');
+try {
+$Price = BotConfig::getPlanPrice($Month_Key);
+if ($Quoted_Price !== null && $Quoted_Price !== (int)round($Price)) throw new RuntimeException('price_changed');
+$Balance = Repository::getBalance($User_ID);
+if ($Price <= 0 || $Balance < $Price) throw new RuntimeException('wallet_changed');
+$Pending = trim((string)(Repository::getUserSession($User_ID)['Pending_Payment'] ?? ''));
+if ($Pending !== '') throw new RuntimeException('payment_pending');
+$User = Repository::getUser($User_ID);
+if ($User === []) throw new RuntimeException('Linked bot account not found');
+$Before_Expiry = (int)($User['Expiration_Time_Stamp'] ?? 0);
+$Chat_ID = (int)(($User['Chat_ID'] ?? 0) ?: $User_ID);
+$Context = new Context([], $User_ID, $Chat_ID, (string)(($User['First_Name'] ?? '') ?: 'کاربر'), false, null, null, null, null);
+if (!Repository::removeMoney($User_ID, $Price, 'خرید اشتراک - پرداخت از کیف پول', 'app')) throw new RuntimeException('wallet_changed');
+try {
+self::purchaseUnlocked($Context, 'paid', $Month_Key, true);
+} catch (Throwable $Error) {
+if (Repository::getBalance($User_ID) <= $Balance - $Price) Repository::addMoney($User_ID, $Price, 'بازگشت وجه اشتراک (خطا در فعالسازی)', 'app');
+throw $Error;
+}
+$After = Repository::getUser($User_ID);
+$After_Expiry = (int)($After['Expiration_Time_Stamp'] ?? 0);
+$After_Balance = Repository::getBalance($User_ID);
+if ($After_Expiry <= $Before_Expiry) {
+if ($After_Balance <= $Balance - $Price) Repository::addMoney($User_ID, $Price, 'بازگشت وجه اشتراک (فعال سازی تأیید نشد)', 'app');
+throw new RuntimeException('Subscription activation was not confirmed');
+}
+if ($After_Balance > $Balance - $Price) throw new RuntimeException('Wallet debit was not confirmed');
+return ['expires_at' => $After_Expiry, 'balance' => $After_Balance];
+} finally {
+Repository::releaseCronLock($Lock);
+}
 }
 
 public static function payPlan(Context $Context): void {
@@ -792,6 +805,24 @@ return false;
 }
 
 private static function purchase(Context $Context, string $Type, string $Month_Key = '', bool $Direct_Charge = false): void {
+$Lock = 'subscription_purchase_' . $Context->UserId;
+if (!Repository::tryCronLock($Lock, 180)) {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'درخواست خرید دیگری در حال پردازش است؛ کمی بعد دوباره تلاش کنید.', true);
+return;
+}
+try {
+if ($Type === 'paid' && !$Direct_Charge
+&& trim((string)(Repository::getUserSession($Context->UserId)['Pending_Payment'] ?? '')) !== '') {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'یک پرداخت قبلی در حال بررسی است؛ ابتدا همان سفارش را تکمیل کنید.', true);
+return;
+}
+self::purchaseUnlocked($Context, $Type, $Month_Key, $Direct_Charge);
+} finally {
+Repository::releaseCronLock($Lock);
+}
+}
+
+private static function purchaseUnlocked(Context $Context, string $Type, string $Month_Key = '', bool $Direct_Charge = false): void {
 $Greeting = Common::greet($Context, 'خرید اشتراک');
 $Full_Name = $Context->profileName();
 $User = Repository::getUser($Context->UserId);
@@ -827,8 +858,9 @@ else {
 [$Name, $Days, $Gb] = self::PLANS[$Month_Key];
 $Amount = BotConfig::getPlanPrice($Month_Key);
 
-// پلن بدون قیمت هرگز نباید اشتراک رایگان بسازد.
-if ($Amount <= 0) {
+// A verified/directly charged order must still activate if the tariff was later disabled.
+// Unpaid orders must never create a free subscription.
+if ($Amount <= 0 && !$Direct_Charge) {
 TelegramClient::sendMessage($Context->ChatId, $Greeting . "⚠️این اشتراک هنوز قیمت گذاری نشده است و قابل خرید نیست.\n➖➖➖➖➖➖➖➖➖\n👌لطفاً یکی از اشتراک های دیگر را انتخاب کنید یا با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک آماده']],
 Menu::userHome(),
@@ -936,9 +968,9 @@ TelegramClient::sendMessage($Context->ChatId, $Greeting . " *⚠️موجودی 
 . "└─🏦مبلغ قابل پرداخت از درگاه: *{$Final_Amount_Label}* (شامل کارمزد خریدار)\n\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🔄*مراحل تکمیل خرید:*\n"
-. "1️⃣ پرداخت از طریق درگاه امن زرین پال\n"
-. "2️⃣ شارژ خودکار کیف پول به مبلغ " . Helper::formatCurrency($Need_Gateway_Amount) . "\n"
-. "3️⃣ فعالسازی خودکار اشتراک {$Name}\n\n"
+. "۱. پرداخت از طریق درگاه امن زرین پال\n"
+. "۲. شارژ خودکار کیف پول به مبلغ " . Helper::formatCurrency($Need_Gateway_Amount) . "\n"
+. "۳. فعالسازی خودکار اشتراک {$Name}\n\n"
 . ($Direct_Url !== ''
 ? "👌برای ورود مستقیم به درگاه پرداخت، روی دکمه زیر کلیک کنید."
 : "⚠️نکته: پس از پرداخت موفق، کیف پول شما شارژ و اشتراک {$Name} به صورت خودکار فعال می گردد.") . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
@@ -959,7 +991,7 @@ $Full_Name_User = trim((string)($User['Full_Name'] ?? ''));
 $Server_Name = $Full_Name_User !== '' ? $Full_Name_User : ('user-' . $Context->UserId);
 
 if ($Client_ID !== '' && $Client_ID !== '_') {
-self::renewSubscription($Context, $Name, $Gb, $Days, $Client_ID);
+self::renewSubscription($Context, $Name, $Gb, $Days, $Client_ID, $Type);
 return;
 }
 
@@ -968,11 +1000,18 @@ $Data = $Response['Json'] ?? null;
 
 if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300 && isset($Data['uuid'])) {
 $Gb = max($Gb, (int)round((float)($Data['usage_limit_GB'] ?? 0)));
+if ($Type === 'free') {
+Repository::updateUser($Context->UserId, ['Free_Plan_Claimed' => 1]);
+} elseif ($Type === 'nowruz') {
+BotConfig::markNowruzClaimed($Context->UserId, (string)$Data['uuid']);
+}
 self::activateSubscription($Context, $Data, $Name, $Gb, $Days);
 return;
 }
 
+if ($Type === 'free') {
 Repository::updateUser($Context->UserId, ['Free_Plan_Claimed' => 0]);
+}
 
 if ($Type === 'paid') Repository::addMoney($Context->UserId, $Amount, 'بازگشت وجه اشتراک (خطا در فعالسازی)', 'bot');
 $Api_Error = '';
@@ -999,7 +1038,7 @@ public static function retryCreation(Context $Context): void {
 $Pending = (string)(Repository::getUserSession($Context->UserId)['Pending_Plan'] ?? '');
 
 if ($Pending === '') {
-self::mySubscription($Context);
+UserFlow::subscriptionsMenu($Context);
 return;
 }
 
@@ -1045,7 +1084,7 @@ private static function startGatewayPayment(Context $Context, string $Month_Key,
 $Call_Back_Base = Environment::getPaymentCallbackUrl();
 
 if ($Call_Back_Base === '') {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "⚠️درگاه پرداخت هنوز پیکربندی نشده است. لطفا بعدا تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'مدیریت اشتراک') . "⚠️درگاه پرداخت هنوز پیکربندی نشده است. لطفا بعدا تلاش کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
@@ -1059,13 +1098,13 @@ $Call_Back_Url = $Call_Back_Base . (str_contains($Call_Back_Base, '?') ? '&' : '
 $Payment = Zarinpal::request($Amount, $Call_Back_Url, 'خرید اشتراک ' . $Name . ' - سرور آمبرلا', Helper::normalizePhone($Phone));
 
 if ($Payment === null) {
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'اشتراک من') . "❌خطا: اتصال به درگاه پرداخت ناموفق بود.\n"
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'مدیریت اشتراک') . "❌خطا: اتصال به درگاه پرداخت ناموفق بود.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️علت: " . Zarinpal::requestErrorMessage() . "\n"
 . "🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n"
 . "📞در صورت ادامه مشکل با پشتیبانی تماس بگیرید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔄تلاش مجدد', 'callback_data' => 'پرداخت کسری کیف پول']],
-Menu::back('اشتراک من', 'اشتراک من'),
+Menu::back('مدیریت اشتراک', 'user_subscriptions_menu'),
 Menu::userHome(),
 ]));
 return;
@@ -1141,7 +1180,7 @@ $Pending_Topup = (string)($Session['Pending_Topup'] ?? '');
 
 if ($Pending_Payment === '') {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت') . "❌خطا: سفارش پرداخت فعالی یافت نشد.\n➖➖➖➖➖➖➖➖➖\nℹ️ممکن است سفارش قبلاً پردازش شده باشد؛ موجودی و اشتراک خود را بررسی کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
+[['text' => '💳خرید و تمدید اشتراک', 'callback_data' => 'user_subscriptions_menu']],
 Menu::userHome(),
 ]));
 return false;
@@ -1165,7 +1204,7 @@ if ($Code === Zarinpal::CODE_NOT_PAID) {
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررسی پرداخت')
 . "⏳پرداخت این سفارش هنوز توسط درگاه تأیید نشده است.
 "
-. "اگر پرداخت را انجام نداده‌اید از دکمه پرداخت استفاده کنید. اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ کمی بعد بررسی مجدد را بزنید و در صورت ادامه مشکل با پشتیبانی تماس بگیرید."
+. "اگر پرداخت را انجام نداده اید از دکمه پرداخت استفاده کنید. اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ کمی بعد بررسی مجدد را بزنید و در صورت ادامه مشکل با پشتیبانی تماس بگیرید."
 . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '💳ادامه پرداخت', 'url' => Zarinpal::payLink(['BridgeUrl' => Zarinpal::bridgeUrl($Authority, $Context->UserId), 'RedirectUrl' => Zarinpal::startPayUrl($Authority)])]],
 [['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
@@ -1178,9 +1217,9 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'بررس�
 . "➖➖➖➖➖➖➖➖➖\n"
 . "⚠️علت: {$Reason}\n"
 . "⚠️اگر مبلغ کسر شده، دوباره پرداخت نکنید؛ بررسی مجدد یا پیگیری از پشتیبانی لازم است.\n"
-. "🧾کد خطا: `{$Code}`" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+. "🧾کد خطا: `" . Helper::toPersian((string)$Code) . "`" . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '✅بررسی مجدد پرداخت', 'callback_data' => 'بررسی پرداخت']],
-Menu::back('اشتراک من', 'اشتراک من'),
+Menu::back('مدیریت اشتراک', 'user_subscriptions_menu'),
 Menu::userHome(),
 ]));
 return false;
@@ -1242,7 +1281,7 @@ $Is_Custom = true;
 }
 
 elseif ($Pending_Plan !== '' && str_starts_with($Pending_Plan, 'paid|')) {
-[, $Plan_Month] = explode('|', $Pending_Plan, 2);
+[, $Plan_Month] = explode('|', $Pending_Plan, 3);
 
 if (isset(self::PLANS[$Plan_Month])) {
 $Plan_Name = self::PLANS[$Plan_Month][0];
@@ -1262,8 +1301,9 @@ $Wallet_Share = max(0.0, (float)$Wallet_Parts[1]);
 }
 
 elseif ($Pending_Plan !== '' && str_starts_with($Pending_Plan, 'paid|')) {
-[, $Wallet_Month] = explode('|', $Pending_Plan, 2);
-$Wallet_Share = max(0.0, (float)BotConfig::getPlanPrice($Wallet_Month));
+[, $Wallet_Month, $Order_Price] = array_pad(explode('|', $Pending_Plan, 3), 3, '');
+// New app orders retain their original server tariff; legacy bot orders fall back to the current tariff.
+$Wallet_Share = $Order_Price !== '' ? max(0.0, (float)$Order_Price) : max(0.0, (float)BotConfig::getPlanPrice($Wallet_Month));
 }
 
 $Wallet_Charged = 0.0;
@@ -1308,11 +1348,13 @@ catch (Throwable) {}
 $Payment_Type_Label = $Is_Pure_Topup
 ? '💳شارژ کیف پول'
 : '💎خرید اشتراک (درگاه زرین پال)';
+$Ref_Label = Helper::toPersian((string)$Verify['RefId']);
+$Card_Label = $Verify['CardPan'] !== '' ? Helper::toPersian((string)$Verify['CardPan']) : '';
 TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'پرداخت زرین پال') . "✅پرداخت شما با موفقیت انجام شد.\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "🧾نوع تراکنش: {$Payment_Type_Label}\n"
-. "🧾کد رهگیری: `{$Verify['RefId']}`\n"
-. ($Verify['CardPan'] !== '' ? "💳شماره کارت: `{$Verify['CardPan']}`\n" : '')
+. "🧾کد رهگیری: `{$Ref_Label}`\n"
+. ($Card_Label !== '' ? "💳شماره کارت: `{$Card_Label}`\n" : '')
 . "💰مبلغ پرداختی: " . Helper::formatCurrency((float)$Amount) . "\n"
 . ($Topup_Amount > 0 ? "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount) . "\n" : '')
 . ($Topup_Amount > 0 ? "💵موجودی کیف پول: " . Helper::formatCurrency($Wallet_Balance) . "\n" : '')
@@ -1321,20 +1363,21 @@ TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'پ�
 . ($Is_Custom ? "📅مدت اشتراک: " . Helper::toPersian((string)$Custom_Days) . " روز\n" : '')
 . ($Is_Pure_Topup ? "✅اعتبار کیف پول شما با موفقیت شارژ شد." : "🔄در حال فعالسازی {$Plan_Name}...") . Helper::userFooter() . "*",
 TelegramClient::inlineKeyboard([
-Common::backTo('💎اشتراک من', 'اشتراک من'),
+Common::backTo('👤پروفایل کاربری', 'پروفایل کاربری'),
 Menu::userHome(),
 ]));
 
 $User_For_Admin = Repository::getUser($Context->UserId);
 $Phone_Admin = (string)($User_For_Admin['Phone'] ?? '');
+$Phone_Admin_Label = $Phone_Admin !== '' ? Helper::toPersian($Phone_Admin) : '';
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId())) . "💳✅پرداخت موفق زرین پال\n\n"
 . "👤کاربر: [{$Context->profileName()}](tg://user?id={$Context->UserId})\n"
 . "🆔آیدی: `" . Helper::toPersian($Context->UserId) . "`\n"
-. ($Phone_Admin !== '' ? "📞موبایل: `{$Phone_Admin}`\n" : '')
+. ($Phone_Admin_Label !== '' ? "📞موبایل: `{$Phone_Admin_Label}`\n" : '')
 . "💎اشتراک: {$Plan_Name}\n"
 . "💰مبلغ: " . Helper::formatCurrency((float)$Amount) . "\n"
-. "🧾کد رهگیری: `{$Verify['RefId']}`\n"
-. ($Verify['CardPan'] !== '' ? "💳کارت: `{$Verify['CardPan']}`\n" : '')
+. "🧾کد رهگیری: `{$Ref_Label}`\n"
+. ($Card_Label !== '' ? "💳کارت: `{$Card_Label}`\n" : '')
 . ""
 . "➖➖➖➖➖➖➖➖➖\n"
 . "*🔄اشتراک {$Plan_Name} در حال فعال سازی...*"
@@ -1347,13 +1390,13 @@ try {
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin_ID) . "💳✅پرداخت موفق زرین پال\n\n"
 . "👤کاربر: [{$Context->profileName()}](tg://user?id={$Context->UserId})\n"
 . "🆔آیدی: `" . Helper::toPersian($Context->UserId) . "`\n"
-. ($Phone_Admin !== '' ? "📞موبایل: `{$Phone_Admin}`\n" : '')
+. ($Phone_Admin_Label !== '' ? "📞موبایل: `{$Phone_Admin_Label}`\n" : '')
 . ($Is_Pure_Topup ? "🧾نوع تراکنش:💳شارژ اعتبار کیف پول\n" : "💎اشتراک: {$Plan_Name}\n")
 . "💰مبلغ: " . Helper::formatCurrency((float)$Amount) . "\n"
 . ($Topup_Amount > 0 ? "💳شارژ کیف پول: " . Helper::formatCurrency($Topup_Amount) . "\n" : '')
 . ($Is_Pure_Topup ? "💵موجودی جدید کیف پول: " . Helper::formatCurrency($Wallet_Balance) . "\n" : '')
-. "🧾کد رهگیری: `{$Verify['RefId']}`\n"
-. ($Verify['CardPan'] !== '' ? "💳کارت: `{$Verify['CardPan']}`\n" : '')
+. "🧾کد رهگیری: `{$Ref_Label}`\n"
+. ($Card_Label !== '' ? "💳کارت: `{$Card_Label}`\n" : '')
 . "➖➖➖➖➖➖➖➖➖\n"
 . ($Is_Pure_Topup ? "*✅اعتبار کیف پول کاربر شارژ شد.*" : "*🔄اشتراک {$Plan_Name} در حال فعال سازی...*")
 . Helper::adminFooter();
@@ -1376,7 +1419,7 @@ return true;
 }
 
 if ($Pending_Plan !== '' && str_starts_with($Pending_Plan, 'paid|')) {
-[, $Plan_Month] = explode('|', $Pending_Plan, 2);
+[, $Plan_Month] = explode('|', $Pending_Plan, 3);
 self::purchase($Context, 'paid', $Plan_Month, true);
 return true;
 }
@@ -1406,6 +1449,12 @@ return Zarinpal::errorMessage($Code);
 }
 
 public static function payTopup(Context $Context): void {
+self::withPurchaseLock($Context, static function () use ($Context): void {
+self::payTopupUnlocked($Context);
+});
+}
+
+private static function payTopupUnlocked(Context $Context): void {
 $Greeting = Common::greet($Context, 'شارژ کیف پول');
 $Session = Repository::getUserSession($Context->UserId);
 $Pending_Topup = (string)($Session['Pending_Topup'] ?? '');
@@ -1421,8 +1470,8 @@ if ($Context->IsCallback && $Context->MessageId !== null) {
 try { TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId); } catch (Throwable) {}
 }
 
-TelegramClient::sendMessage($Context->ChatId, $Greeting . "⛔️جلسه پرداخت منقضی شده است یا نامعتبر است.\n⚠️لطفا دوباره از بخش اشتراک من پلن خود را انتخاب کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '💎انتخاب اشتراک', 'callback_data' => 'اشتراک من']],
+TelegramClient::sendMessage($Context->ChatId, $Greeting . "⛔️جلسه پرداخت منقضی شده است یا نامعتبر است.\n⚠️لطفا دوباره از بخش مدیریت اشتراک پلن خود را انتخاب کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+[['text' => '💎انتخاب اشتراک', 'callback_data' => 'user_subscriptions_menu']],
 Menu::userHome()
 ]));
 
@@ -1446,7 +1495,7 @@ TelegramClient::sendMessage($Context->ChatId, $Greeting . " *برای پرداخ
 return;
 }
 
-[, $Month_Key] = explode('|', $Pending_Plan, 2);
+[, $Month_Key] = explode('|', $Pending_Plan, 3);
 self::startGatewayPayment($Context, $Month_Key, self::PLANS[$Month_Key][0] ?? 'اشتراک', (float)$Pending_Topup);
 }
 
@@ -1501,12 +1550,18 @@ Menu::back('منوی قبلی', 'user_wallet_menu'), Menu::userHome(),
 }
 
 public static function handleWalletTopupInput(Context $Context, string $Text): void {
+self::withPurchaseLock($Context, static function () use ($Context, $Text): void {
+self::handleWalletTopupInputUnlocked($Context, $Text);
+});
+}
+
+private static function handleWalletTopupInputUnlocked(Context $Context, string $Text): void {
 $Digits = Helper::toEnglish($Text);
 $Amount = (float)preg_replace('/[^0-9]/', '', $Digits);
 $Greeting = Common::greet($Context, 'شارژ اعتبار حساب کاربری');
 
 if ($Amount <= 0) {
-TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: فقط عدد به تومان وارد کنید مانند: `100000`\n👌مجدداً مبلغ را ارسال کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, $Greeting . "❌خطا: مبلغ وارد شده نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n⚠️علت: فقط عدد به تومان وارد کنید مانند: `۱۰۰۰۰۰`\n👌مجددا مبلغ را ارسال کنید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '🔙انصراف از شارژ', 'callback_data' => 'لغو شارژ اعتبار']],
 Menu::userHome(),
 ]));
@@ -1593,14 +1648,15 @@ $Full_Name = trim((string)($User['Full_Name'] ?? ''));
 $Display_Name = $Full_Name !== '' ? $Full_Name : $First_Name;
 $Phone = (string)($User['Phone'] ?? '');
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
-$User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone !== '' ? "\n📞موبایل: `{$Phone}`" : '');
+$Phone_Label = $Phone !== '' ? Helper::toPersian($Phone) : '';
+$User_Label = "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n🆔آیدی: `" . Helper::toPersian($User_ID) . "`" . ($Phone_Label !== '' ? "\n📞موبایل: `{$Phone_Label}`" : '');
 
 if (strtoupper($Status) !== 'OK') {
 TelegramClient::sendSystemMessage($Chat_ID, Helper::frame('کاربر', $Display_Name, 'پرداخت زرین پال', $User_ID) . "⚠️بازگشت از درگاه با وضعیت ناموفق یا لغوشده دریافت شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر وجه کسر شده، دوباره پرداخت نکنید؛ وضعیت را از درگاه یا پشتیبانی پیگیری کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 $Admin_Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'گزارش پرداخت', $Admin) . "❌پرداخت ناموفق / لغو شده توسط کاربر\n\n"
 . "👤کاربر: [{$Display_Name}](tg://user?id={$User_ID})\n"
 . "🆔آیدی: `" . Helper::toPersian($User_ID) . "`\n"
-. ($Phone !== '' ? "📞موبایل: `{$Phone}`\n" : '')
+. ($Phone_Label !== '' ? "📞موبایل: `{$Phone_Label}`\n" : '')
 . "🚦وضعیت: *ناموفق*\n"
 . ""
 . "➖➖➖➖➖➖➖➖➖\n"
@@ -1658,7 +1714,7 @@ ServerClient::updateUser((string)($Data['uuid'] ?? ''), [
 $Greeting = Common::greet($Context, 'فعالسازی اشتراک');
 
 TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت فعال گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '👁نمایش اشتراک', 'callback_data' => 'اشتراک من']],
+[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
 Menu::userHome()
 ]));
 
@@ -1681,7 +1737,7 @@ $Sms_Text = $Template !== null
 Repository::schedule('منقضی اشتراک', $User_ID, $Expire_Time_Stamp);
 }
 
-private static function renewSubscription(Context $Context, string $Name, int $Gb, int $Days, string $Client_ID): void {
+private static function renewSubscription(Context $Context, string $Name, int $Gb, int $Days, string $Client_ID, string $Type = 'paid'): void {
 $Greeting = Common::greet($Context, 'تمدید اشتراک');
 $User_ID = $Context->UserId;
 $Full_Name = $Context->profileName();
@@ -1721,16 +1777,16 @@ $Api_Error = mb_substr((string)$Response['Body'], 0, 300);
 AdminFlow::notifyAdminServerError('تمدید اشتراک', $User_ID, $Full_Name, $Response['StatusCode'] ?? 0, $Api_Error);
 TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *❌اشتراک {$Name} شما با موفقیت تمدید نشد.\n\n🔄لطفا چند لحظه دیگر با دکمه «تلاش مجدد» اقدام فرمایید.\n⚠️در صورت ادامه مشکل با پشتیبانی در تماس باشید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
 [['text' => '📞🧑‍💻ارتباط با پشتیبانی', 'url' => BotConfig::getSupportUrl()]],
-[['text' => '🔄تلاش مجدد', 'callback_data' => 'اشتراک من']],
+[['text' => '🔄تلاش مجدد', 'callback_data' => 'user_subscriptions_menu']],
 Menu::userHome()
 ]));
 return;
 }
 
 $Usage_Limit = (float)max($Gb, (float)($Data['usage_limit_GB'] ?? $Gb));
-
-Repository::updateUser($User_ID, [
-'Client_ID'  => (string)($Data['uuid'] ?? $Client_ID),
+$Resolved_Uuid = (string)($Data['uuid'] ?? $Client_ID);
+$User_Fields = [
+'Client_ID'  => $Resolved_Uuid,
 'Subscription'  => $Name,
 'Package_Duration'   => self::durationLabel($Days),
 'Package_Start_Date'  => $Package_Start,
@@ -1743,11 +1799,18 @@ Repository::updateUser($User_ID, [
 'Client_Status'  => 'فعال',
 'Channel_Client_Disabled_At' => null,
 'Deactivation_Message'   => null,
-]);
+];
+if ($Type === 'free') {
+$User_Fields['Free_Plan_Claimed'] = 1;
+}
+Repository::updateUser($User_ID, $User_Fields);
+if ($Type === 'nowruz') {
+BotConfig::markNowruzClaimed($User_ID, $Resolved_Uuid);
+}
 Repository::updateUserSession($User_ID, ['Pending_Plan' => null]);
 
 TelegramClient::sendSystemMessage($Context->ChatId, "🎁{$Greeting} *اشتراک {$Name} شما با موفقیت تمدید گردید." . Helper::userFooter() . "*", TelegramClient::inlineKeyboard([
-[['text' => '👁نمایش اشتراک', 'callback_data' => 'اشتراک من']],
+[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
 Menu::userHome()
 ]));
 

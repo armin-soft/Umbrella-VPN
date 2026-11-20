@@ -81,34 +81,34 @@ return match ($Code) {
 -9 => 'خطای اعتبارسنجی پارامترها: مرچنت، آدرس بازگشت، توضیحات، مبلغ یا کد معرف را بررسی کنید.',
 -10 => 'آی پی یا مرچنت کد پذیرنده صحیح نیست.',
 -11 => 'درگاه پذیرنده فعال نیست؛ با پشتیبانی زرین پال تماس بگیرید.',
--12 => 'تعداد تلاش‌ها از حد مجاز بیشتر شده است؛ کمی بعد دوباره تلاش کنید.',
+-12 => 'تعداد تلاش ها از حد مجاز بیشتر شده است؛ کمی بعد دوباره تلاش کنید.',
 -13 => 'محدودیت تراکنش پذیرنده؛ تکمیل مدارک و پیگیری از پشتیبانی لازم است.',
 -14 => 'دامنه آدرس بازگشت با دامنه ثبت شده درگاه مطابقت ندارد.',
 -15 => 'درگاه پذیرنده به حالت تعلیق درآمده است.',
--16 => 'سطح تأیید پذیرنده پایین‌تر از سطح نقره‌ای است.',
+-16 => 'سطح تایید پذیرنده پایین تر از سطح نقره ای است.',
 -17 => 'محدودیت پذیرنده در سطح آبی.',
 -18 => 'نشانی ارجاع با دامنه ثبت شده درگاه مطابقت ندارد.',
 -19 => 'ایجاد تراکنش برای این درگاه ممنوع شده است.',
--40 => 'پارامتر اضافی expire_in نامعتبر است.',
+-40 => 'پارامتر اضافی زمان انقضا نامعتبر است.',
 -41 => 'حداکثر مبلغ پرداختی طبق مستندات درگاه ۱۰۰ میلیون تومان است.',
--50 => 'مبلغ تأیید با مبلغ سفارش درگاه مطابقت ندارد؛ با پشتیبانی تماس بگیرید.',
+-50 => 'مبلغ تایید با مبلغ سفارش درگاه مطابقت ندارد؛ با پشتیبانی تماس بگیرید.',
 -51 => 'پرداخت ناموفق است؛ تلاش پرداخت موفقی برای این سفارش ثبت نشده است.',
 -52 => 'خطای غیرمنتظره درگاه؛ با پشتیبانی زرین پال تماس بگیرید.',
 -53 => 'پرداخت متعلق به این مرچنت کد نیست.',
--54 => 'شناسه مرجع پرداخت (Authority) نامعتبر است.',
+-54 => 'شناسه مرجع پرداخت نامعتبر است.',
 -55 => 'تراکنش مورد نظر یافت نشد.',
 -60 => 'امکان برگشت تراکنش از طریق بانک وجود ندارد.',
--61 => 'تراکنش موفق نیست یا قبلاً برگشت داده شده است.',
+-61 => 'تراکنش موفق نیست یا قبلا برگشت داده شده است.',
 -62 => 'محدودیت آی پی درگاه برای برگشت تراکنش باید فعال باشد.',
--63 => 'مهلت ۳۰ دقیقه‌ای برگشت تراکنش پایان یافته است.',
+-63 => 'مهلت ۳۰ دقیقه ای برگشت تراکنش پایان یافته است.',
 100 => 'عملیات موفق بود.',
-101 => 'تراکنش قبلاً تأیید شده است؛ ثبت محلی آن باید بررسی شود.',
--1000 => 'ارتباط با درگاه برقرار نشد یا پاسخ HTTP ناموفق بود؛ نتیجه پرداخت هنوز مشخص نیست.',
+101 => 'تراکنش قبلا تایید شده است؛ ثبت محلی آن باید بررسی شود.',
+-1000 => 'ارتباط با درگاه برقرار نشد یا پاسخ سرور درگاه ناموفق بود؛ نتیجه پرداخت هنوز مشخص نیست.',
 -1001 => 'پاسخ درگاه ناقص یا نامعتبر است؛ نتیجه پرداخت هنوز مشخص نیست.',
--1003 => 'برای دریافت کارمزد فقط در ربات، پرداخت کننده کارمزد در پنل زرین پال باید پذیرنده (Merchant) باشد؛ لینک پرداخت ساخته یا ارائه نشد.',
+-1003 => 'برای دریافت کارمزد فقط در ربات، پرداخت کننده کارمزد در پنل زرین پال باید پذیرنده باشد؛ لینک پرداخت ساخته یا ارائه نشد.',
 -1004 => 'مبلغ یا کارمزد پاسخ درگاه با محاسبه سفارش مطابقت ندارد؛ برای جلوگیری از دریافت مبلغ اشتباه، لینک پرداخت ارائه نشد.',
 -1002 => 'پارامترهای محلی پرداخت نامعتبر است؛ تنظیمات و مبلغ را بررسی کنید.',
-default => 'کد اعلام شده درگاه در فهرست مستندات شناخته نشده است (کد ' . $Code . ')؛ با پشتیبانی پیگیری کنید.',
+default => 'کد اعلام شده درگاه در فهرست مستندات شناخته نشده است (کد ' . (method_exists('Helper', 'toPersian') ? Helper::toPersian((string)$Code) : (string)$Code) . ')؛ با پشتیبانی پیگیری کنید.',
 };
 }
 
@@ -116,8 +116,9 @@ private static ?array $RequestError = null;
 public static function lastRequestError(): ?array { return self::$RequestError; }
 public static function requestErrorMessage(): string {
 $Error = self::$RequestError;
-return $Error === null ? 'ساخت درخواست پرداخت انجام نشد؛ با پشتیبانی پیگیری کنید.'
-: $Error['Message'] . ' (کد ' . $Error['Code'] . ')';
+if ($Error === null) return 'ساخت درخواست پرداخت انجام نشد؛ با پشتیبانی پیگیری کنید.';
+$CodeLabel = method_exists('Helper', 'toPersian') ? Helper::toPersian((string)$Error['Code']) : (string)$Error['Code'];
+return $Error['Message'] . ' (کد ' . $CodeLabel . ')';
 }
 
 private static function rial(float $Toman): ?int {
@@ -185,7 +186,7 @@ if ($Rial === null || $Rial < 1000 || !self::isConfigured()) return self::failur
 try {
 $Response = HttpClient::post(self::base() . 'v4/payment/feeCalculation.json', [
 'merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'currency' => 'IRR',
-], ['Content-Type' => 'application/json', 'Accept' => 'application/json']);
+], ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json']);
 } catch (Throwable) { return self::failure(-1000, 'transport', 'feeCalculation'); }
 $Result = self::parse($Response, 'feeCalculation');
 if (!$Result['Ok']) return $Result;
@@ -219,7 +220,7 @@ $Rial = $Quote['Final_Rial'];
 $Payload = ['merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'currency' => 'IRR', 'callback_url' => $Call_Back_Url, 'description' => $Description];
 if ($Phone_Number !== '') $Payload['metadata'] = ['mobile' => $Phone_Number];
 // Never retry request automatically: a lost response may already have created an order.
-try { $Response = HttpClient::post(self::requestUrl(), $Payload, ['Content-Type' => 'application/json', 'Accept' => 'application/json']); }
+try { $Response = HttpClient::post(self::requestUrl(), $Payload, ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json']); }
 catch (Throwable) { self::$RequestError = self::failure(-1000, 'transport', 'request'); return null; }
 $Result = self::parse($Response, 'request');
 if (!$Result['Ok']) { self::$RequestError = $Result; return null; }
@@ -242,7 +243,7 @@ public static function verify(float $Amount_Toman, string $Authority): array {
 $Rial = self::rial($Amount_Toman);
 if ($Rial === null || !self::isConfigured() || !self::validAuthority($Authority)) return self::failure(-1002, 'validation', 'verify');
 for ($Attempt = 1; $Attempt <= 2; $Attempt++) {
-try { $Response = HttpClient::post(self::verifyUrl(), ['merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'authority' => $Authority], ['Content-Type' => 'application/json', 'Accept' => 'application/json']); }
+try { $Response = HttpClient::post(self::verifyUrl(), ['merchant_id' => Environment::getZarinpalMerchantId(), 'amount' => $Rial, 'authority' => $Authority], ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json']); }
 catch (Throwable) { $Response = ['StatusCode' => 0, 'Error' => 'transport']; }
 $Result = self::parse($Response, 'verify');
 if ($Result['Ok'] || ($Result['Kind'] ?? '') === 'api' || $Attempt === 2) return $Result;

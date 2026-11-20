@@ -35,6 +35,10 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "user32.lib")
+
 /// نام فایل کتابخانه هسته در پوشه این فایل اجرایی.
 ///
 /// نام عوض شده و فایل با نام آمبرلا نصب می شود، چون نام فایل در Explorer دیده
@@ -183,15 +187,116 @@ static char **utf8_arguments(int *argc) {
   return argv;
 }
 
+/// اگر پروکسی ویندوز روی لوکال هاست مانده باشد (وقتی برنامه اصلی ناگهان بسته
+/// شود)، خاموشش می کند تا مرورگر کاربر بدون اینترنت نماند.
+static void clear_loopback_proxy(void) {
+  HKEY key = NULL;
+  if (RegOpenKeyExW(
+          HKEY_CURRENT_USER,
+          L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", 0,
+          KEY_QUERY_VALUE | KEY_SET_VALUE, &key) != ERROR_SUCCESS) {
+    return;
+  }
+  DWORD enabled = 0;
+  DWORD size = sizeof(enabled);
+  DWORD type = 0;
+  if (RegQueryValueExW(key, L"ProxyEnable", NULL, &type, (LPBYTE)&enabled,
+                       &size) == ERROR_SUCCESS &&
+      type == REG_DWORD && enabled != 0) {
+    wchar_t server[256] = {0};
+    DWORD server_size = sizeof(server) - sizeof(wchar_t);
+    DWORD server_type = 0;
+    if (RegQueryValueExW(key, L"ProxyServer", NULL, &server_type,
+                         (LPBYTE)server, &server_size) == ERROR_SUCCESS &&
+        server_type == REG_SZ &&
+        (wcsstr(server, L"127.0.0.1:") != NULL ||
+         wcsstr(server, L"localhost:") != NULL)) {
+      DWORD zero = 0;
+      RegSetValueExW(key, L"ProxyEnable", 0, REG_DWORD, (const BYTE *)&zero,
+                     sizeof(zero));
+      RegDeleteValueW(key, L"ProxyOverride");
+    }
+  }
+  RegCloseKey(key);
+}
+
+static BOOL WINAPI on_console_ctrl(DWORD ctrl_type) {
+  if (ctrl_type == CTRL_CLOSE_EVENT || ctrl_type == CTRL_LOGOFF_EVENT ||
+      ctrl_type == CTRL_SHUTDOWN_EVENT) {
+    clear_loopback_proxy();
+  }
+  return FALSE;
+}
+
+/// نگهبان عمر برنامه اصلی: به محض بسته شدن UmbrellaVPN.exe (به هر دلیل: دکمه
+/// خروج، سینی سیستم، نصب به روز رسانی، خاموشی ویندوز یا Task Manager)، پروکسی
+/// محلی را پاک می کند و هسته و پنجره CLI را کامل می بندد تا هرگز در پس زمینه
+/// زنده نماند.
+static DWORD WINAPI owner_watchdog_thread(LPVOID parameter) {
+  HANDLE owner = (HANDLE)parameter;
+  WaitForSingleObject(owner, INFINITE);
+  CloseHandle(owner);
+  clear_loopback_proxy();
+#if !defined(UMBRELLA_LAUNCHER_GUI)
+  GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+  Sleep(650);
+#endif
+  TerminateProcess(GetCurrentProcess(), 0);
+  return 0;
+}
+
+static void start_owner_watchdog(void) {
+  wchar_t buffer[32] = {0};
+  const DWORD length =
+      GetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", buffer, 32);
+  if (length == 0 || length >= 32) {
+    return;
+  }
+  wchar_t *end = NULL;
+  const unsigned long parsed = wcstoul(buffer, &end, 10);
+  if (end == buffer || parsed == 0) {
+    return;
+  }
+  const DWORD owner_pid = (DWORD)parsed;
+  if (owner_pid == GetCurrentProcessId()) {
+    return;
+  }
+  HANDLE owner = OpenProcess(SYNCHRONIZE, FALSE, owner_pid);
+  if (!owner) {
+    if (GetLastError() == ERROR_INVALID_PARAMETER) {
+      clear_loopback_proxy();
+      TerminateProcess(GetCurrentProcess(), 0);
+    }
+    return;
+  }
+  if (WaitForSingleObject(owner, 0) == WAIT_OBJECT_0) {
+    CloseHandle(owner);
+    clear_loopback_proxy();
+    TerminateProcess(GetCurrentProcess(), 0);
+    return;
+  }
+  HANDLE thread =
+      CreateThread(NULL, 0, owner_watchdog_thread, owner, 0, NULL);
+  if (thread) {
+    CloseHandle(thread);
+  } else {
+    CloseHandle(owner);
+  }
+}
+
 static int run(int argc, char **argv) {
   if (!argv) {
     report(L"Umbrella: the command line could not be read.");
     return 1;
   }
-  // The pinned 5.9.1 builder still emits DNS rule `strategy`. libbox's
-  // application context accepts it, whereas srun's stderr deprecation manager
-  // exits unless this specific compatibility flag is set. Keep the builder's
-  // DNS semantics (do not remove IPv4 policy or disable validation wholesale).
+#if !defined(UMBRELLA_LAUNCHER_GUI)
+  SetConsoleCtrlHandler(on_console_ctrl, TRUE);
+#endif
+  start_owner_watchdog();
+  // The pinned 5.9.11 builder emits DNS rule `strategy`. libbox's application
+  // context accepts it, whereas srun's stderr deprecation manager exits unless
+  // this specific compatibility flag is set. Keep the builder's DNS semantics
+  // (do not remove IPv4 policy or disable validation wholesale).
   // Set before loading Go's DLL: Go snapshots the process environment at init.
   if (argc > 1 && strcmp(argv[1], "srun") == 0) {
     if (!SetEnvironmentVariableW(

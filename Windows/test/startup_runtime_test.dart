@@ -65,10 +65,40 @@ void main() {
     expect(outbounds.length, 1103); // all nodes + hop + resolving download dialer
     expect(outbounds.where((dynamic out) => out['lazy'] == true).length, 1101);
     expect(outbounds.firstWhere((dynamic out) => out['tag'] == 'chain-hop')['lazy'], isNull);
-    expect(config['experimental']['monitoring']['keep_top'], <String, dynamic>{'count': 8, 'batch': 4, 'quick': true});
+    expect(
+      config['experimental']['monitoring']['keep_top'],
+      <String, dynamic>{
+        'count': RuntimeConfig.keepTopCount,
+        'batch': RuntimeConfig.keepTopBatch,
+        'quick': true,
+      },
+    );
+    expect(config['experimental']['monitoring']['workers'], 16);
+    expect(config['experimental']['monitoring']['debounce_window'], '200ms');
+    expect(config['experimental']['monitoring']['url_test_timeout'], '4s');
     expect(config['experimental']['cache_file']['enabled'], true);
     expect(config['experimental']['clash_api']['external_ui'], isNull);
     expect(config['log']['output'], isNull);
+
+    // Normal subscriptions (<= 128 nodes, e.g. 85 `/sub/` servers) match
+    // Hiddify default `keep-top: -1`: lazy outbounds stay active without any
+    // sequential batch barrier delaying the first live server.
+    final Map<String, dynamic> regular = fixture();
+    for (int i = 0; i < 84; i++) {
+      (regular['outbounds'] as List<dynamic>)
+          .add(<String, dynamic>{'type': 'vless', 'tag': 'sub-$i'});
+    }
+    RuntimeConfig.finalize(
+      regular,
+      profileTags: <String>{'profile', for (int i = 0; i < 84; i++) 'sub-$i'},
+    );
+    expect(
+      (regular['outbounds'] as List<dynamic>)
+          .where((dynamic out) => out['lazy'] == true)
+          .length,
+      85,
+    );
+    expect(regular['experimental']['monitoring']['keep_top'], isNull);
   });
   test('IP upload plus domain download gets a resolving dialer, preserving wire identities', () {
     final Map<String, dynamic> config = fixture();

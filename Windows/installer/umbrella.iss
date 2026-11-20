@@ -1,5 +1,5 @@
 ; ---------------------------------------------------------------------------
-; Umbrella VPN 1.0.8
+; Umbrella VPN 1.0.0
 ; Windows 10 / 11 x64 only. Everything the operating system shows (setup text,
 ; app name, shortcuts, folder and exe name) is English; the application itself
 ; speaks Persian once it starts.
@@ -9,7 +9,7 @@
 
 #define AppName "Umbrella VPN"
 #define AppNameEn "Umbrella VPN"
-#define AppVersion "1.0.29"
+#define AppVersion "1.0.0"
 #define AppPublisher "Armin Soft"
 #define AppExe "UmbrellaVPN.exe"
 #define AppId "{{8F3D2C41-7B5E-4A19-9C6D-2E4F1A7B8C90}"
@@ -23,7 +23,7 @@ AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL=https://user.umbrella-server.ir/
 AppSupportURL=https://t.me/umbrella_support
-AppUpdatesURL=https://user.umbrella-server.ir/
+AppUpdatesURL=https://github.com/armin-soft/Umbrella-VPN-Releases/releases
 DefaultDirName={autopf}\Umbrella VPN
 DefaultGroupName={#AppName}
 UninstallDisplayName={#AppName}
@@ -31,8 +31,9 @@ UninstallDisplayIcon={app}\{#AppExe}
 OutputDir=output
 OutputBaseFilename=UmbrellaVPN-Setup-{#AppVersion}-x64
 SetupIconFile=..\windows\runner\resources\app_icon.ico
-WizardImageFile=wizard-image.bmp
-WizardSmallImageFile=wizard-small.bmp
+WizardImageAlphaFormat=defined
+WizardImageFile=wizard-image.bmp,wizard-image-200.bmp
+WizardSmallImageFile=wizard-small.bmp,wizard-small-150.bmp,wizard-small-200.bmp,wizard-small-250.bmp
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -42,9 +43,9 @@ CloseApplications=yes
 RestartApplications=no
 ; Windows 10 (build 10240) is the oldest supported release, 11 is included.
 MinVersion=10.0
-; 64 bit only. The client refuses to start on 32 bit Windows.
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; All 64-bit Windows 10 and Windows 11 editions (x64 and x64-capable 64-bit).
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 ; Installing a VPN tunnel adapter and a firewall kill switch needs admin.
 PrivilegesRequired=admin
 VersionInfoVersion={#AppVersion}.0
@@ -89,9 +90,9 @@ Source: "redist\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall 
 ; own icon in the taskbar, the Alt-Tab list and notification balloons. It must
 ; stay identical to the value in windows/runner/main.cpp; without it the shell
 ; groups the app under a generic host and draws an iconless notification.
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"
-Name: "{group}\Uninstall {#AppNameEn}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"
+Name: "{group}\Uninstall {#AppNameEn}"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#AppExe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "Umbrella.VPN.Desktop"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "UmbrellaVPN"; ValueData: """{app}\{#AppExe}"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
@@ -102,12 +103,20 @@ Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; S
 ; with the elevated token Setup already holds. Inno's postinstall entries run as
 ; the original, unelevated user by default, which fails with CreateProcess 740.
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
+; When launched from the in-app updater (/VERYSILENT /RelaunchAfterUpdate=1),
+; automatically reopen the freshly upgraded application once copying finishes.
+Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent runascurrentuser; Check: ShouldRelaunchAfterUpdate
 
 [UninstallRun]
 ; Only the rules this client created are removed, the rest of the firewall stays untouched.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ""Get-NetFirewallRule -DisplayName 'Umbrella-*' | Remove-NetFirewallRule -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveUmbrellaFirewallRules"
 
 [Code]
+function ShouldRelaunchAfterUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:RelaunchAfterUpdate|0}') = '1';
+end;
+
 // برنامه در حال اجرا با فایل های نصب قفل می کند؛ قبل از کپی، هر نسخه در حال
 // اجرا و هسته های بازمانده بسته می شوند تا کاربر مجبور به تسک منیجر نشود.
 procedure KillRunning();
@@ -124,7 +133,11 @@ begin
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaCoreEngine.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaAdmin.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCli.exe /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCore.exe /T',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(600);
 end;
@@ -185,11 +198,36 @@ begin
        '', SW_HIDE, ewNoWait, ResultCode);
 end;
 
+// اگر برنامه هنگام اتصال پراکسی سیستمی لوکال ثبت کرده بود، در زمان حذف
+// آن را خاموش می کنیم تا مرورگر کاربر بدون اینترنت نماند.
+procedure ClearLoopbackProxy();
+var
+  ProxyServer: String;
+begin
+  if RegQueryStringValue(
+       HKCU,
+       'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+       'ProxyServer',
+       ProxyServer) then
+  begin
+    if (Pos('127.0.0.1:', ProxyServer) > 0) or
+       (Pos('localhost:', Lowercase(ProxyServer)) > 0) then
+    begin
+      RegWriteDWordValue(
+        HKCU,
+        'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        'ProxyEnable',
+        0);
+    end;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
     KillRunning();
+    ClearLoopbackProxy();
     RemoveInstallFolder();
   end;
 end;

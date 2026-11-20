@@ -7,6 +7,7 @@ import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../platform/services.dart';
+import '../../state/settings_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 import '../widgets/shell_widgets.dart';
@@ -46,15 +47,23 @@ class _LandingPageState extends State<LandingPage>
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
+    final SettingsController settings = context.watch<SettingsController>();
+    final WindowService window = context.read<WindowService>();
+    final Brightness brightness = Theme.of(context).brightness;
+    final bool isDark = brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: colors.background,
       body: Column(
         children: <Widget>[
           TitleBar(
-            onDragStart: context.read<WindowService>().startDragging,
-            onMinimize: context.read<WindowService>().minimize,
-            onMaximize: context.read<WindowService>().toggleMaximize,
-            onClose: context.read<WindowService>().quit,
+            onDragStart: window.startDragging,
+            onMinimize: window.minimize,
+            onMaximize: window.toggleMaximize,
+            onClose: window.quit,
+            onToggleTheme: () => settings.toggleTheme(
+              effectiveBrightness: brightness,
+            ),
+            darkTheme: isDark,
           ),
           Expanded(
             child: Stack(
@@ -66,7 +75,7 @@ class _LandingPageState extends State<LandingPage>
                   center: const Alignment(0.75, -0.85),
                   radius: 1.4,
                   colors: <Color>[
-                    colors.primary.withValues(alpha: 0.22),
+                    colors.primary.withValues(alpha: isDark ? 0.22 : 0.11),
                     colors.background,
                   ],
                 ),
@@ -74,7 +83,12 @@ class _LandingPageState extends State<LandingPage>
             ),
           ),
           Positioned.fill(
-            child: CustomPaint(painter: _CircuitPainter(color: colors.primary)),
+            child: CustomPaint(
+              painter: _CircuitPainter(
+                color: colors.primary,
+                opacity: isDark ? 0.10 : 0.08,
+              ),
+            ),
           ),
           SafeArea(
             child: Padding(
@@ -122,7 +136,7 @@ class _LandingPageState extends State<LandingPage>
                               ),
                               const SizedBox(width: AppMetrics.space4),
                               Pill(
-                                label: 'نسخه ${AppConfig.versionLabel}',
+                                label: Fa.num('نسخه ${AppConfig.versionLabel}'),
                                 icon: Icons.verified_rounded,
                                 color: colors.success,
                               ),
@@ -200,9 +214,10 @@ class _LandingPageState extends State<LandingPage>
 }
 
 class _CircuitPainter extends CustomPainter {
-  _CircuitPainter({required this.color});
+  _CircuitPainter({required this.color, this.opacity = 0.10});
 
   final Color color;
+  final double opacity;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -210,7 +225,7 @@ class _CircuitPainter extends CustomPainter {
     final Paint paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8
-      ..color = color.withValues(alpha: 0.10);
+      ..color = color.withValues(alpha: opacity);
     for (int i = 0; i < 18; i++) {
       final Offset start = Offset(
         random.nextDouble() * size.width,
@@ -234,5 +249,6 @@ class _CircuitPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CircuitPainter old) => old.color != color;
+  bool shouldRepaint(covariant _CircuitPainter old) =>
+      old.color != color || old.opacity != opacity;
 }

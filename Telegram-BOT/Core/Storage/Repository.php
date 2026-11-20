@@ -480,20 +480,121 @@ $Value = Database::getInstance()->scalar(
 [$Key]
 );
 
-return $Value === null ? $Default : $Value;
+if ($Value === null) {
+return $Default;
+}
+
+if (is_string($Value) && !self::isOpaqueSettingKey($Key) && method_exists('Helper', 'repairMojibake')) {
+return Helper::repairMojibake($Value);
+}
+
+return $Value;
 }
 
 public static function setSetting(string $Key, mixed $Value): void {
+$Text = (string)$Value;
+
+if (!self::isOpaqueSettingKey($Key) && method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+
 Database::getInstance()->execute(
 'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?)
 ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
-[$Key, (string)$Value]
+[$Key, $Text]
 );
 }
 
+private static function isOpaqueSettingKey(string $Key): bool {
+return $Key === 'App_Gateway_Secret'
+|| str_ends_with($Key, '_Secret')
+|| str_ends_with($Key, '_Token')
+|| str_starts_with($Key, 'DailyNotice_');
+}
+
+
+public static function tehranToday(): string {
+return (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
+}
+
+/**
+ * قفل اتمی حداکثر یک بار در روز (بر اساس تاریخ تهران) برای هر اعلان خودکار.
+ * با INSERT IGNORE روی کلید اصلی Settings ثبت می شود تا حتی در اجرای هم زمان
+ * چند وبهوک یا خطای تایم اوت شبکه، هیچ اعلان خودکاری در یک روز تکرار نشود.
+ */
+public static function claimDailyNotice(string $Category, int|string $Target, ?string $Day = null): bool {
+$Category = trim($Category);
+$Target_Key = trim((string)$Target);
+
+if ($Category === '' || $Target_Key === '') {
+return false;
+}
+
+$Day_Key = ($Day !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($Day)) === 1)
+? trim($Day)
+: self::tehranToday();
+$Key = 'DailyNotice_' . $Day_Key . '_' . hash('sha256', $Category . ':' . $Target_Key);
+
+try {
+return Database::getInstance()->execute(
+'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',
+[$Key, (string)time()]
+)->rowCount() === 1;
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Daily-Once] claim failed for ' . $Category . ':' . $Target_Key . ' | ' . $Error->getMessage());
+return false;
+}
+}
+
+/**
+ * قفل اتمی یک بار برای هر رویداد یکتا (مانند هشدار یک مرز انقضای مشخص).
+ */
+public static function claimOnceNotice(string $Key, string $Value = '1'): bool {
+$Key = trim($Key);
+
+if ($Key === '') {
+return false;
+}
+
+try {
+return Database::getInstance()->execute(
+'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',
+[$Key, $Value]
+)->rowCount() === 1;
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Once-Notice] claim failed for ' . $Key . ' | ' . $Error->getMessage());
+return false;
+}
+}
+
+public static function purgeOldDailyNotices(int $Keep_Days = 14): void {
+$Cutoff = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))
+->modify('-' . max(2, $Keep_Days) . ' days')
+->format('Y-m-d');
+
+try {
+Database::getInstance()->execute(
+"DELETE FROM `Settings` WHERE `Key` LIKE 'DailyNotice\\_%' AND SUBSTRING(`Key`, 13, 10) < ?",
+[$Cutoff]
+);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Daily-Once] purge failed: ' . $Error->getMessage());
+}
+}
 
 public static function schedule(string $Command, int $User_ID, int $Run_After_Time_Stamp): void {
-Database::getInstance()->execute(
+$Db = Database::getInstance();
+$Db->execute(
+'DELETE FROM `Scheduled_Jobs` WHERE `Command` = ? AND `User_ID` = ?',
+[$Command, $User_ID]
+);
+$Db->execute(
 'INSERT INTO `Scheduled_Jobs` (`Command`, `User_ID`, `Run_At`, `Created_At`)
 VALUES (?, ?, FROM_UNIXTIME(?), NOW())',
 [$Command, $User_ID, $Run_After_Time_Stamp]
@@ -546,7 +647,7 @@ $Rows = Database::getInstance()->fetchAll(
 $Result = [];
 
 foreach ($Rows as $Row) {
-$Result[(string)($Row['Subscription'] ?? 'Unknown')] = (int)$Row['Count'];
+$Result[(string)($Row['Subscription'] ?? 'نامشخص')] = (int)$Row['Count'];
 }
 
 return $Result;
@@ -897,7 +998,12 @@ $Row = Database::getInstance()->fetch(
 [$Code]
 );
 
-return $Row === null ? null : (string)($Row['Template'] ?? null);
+if ($Row === null || !isset($Row['Template'])) {
+return null;
+}
+
+$Template = (string)$Row['Template'];
+return method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Template) : $Template;
 }
 
 
@@ -916,7 +1022,8 @@ public static function tryCronLock(string $Job_Name, int $Ttl_Seconds = 3600): b
 try {
 $Database = Database::getInstance();
 $Database->execute(
-'DELETE FROM `Cron_Lock` WHERE `Locked_At` < DATE_SUB(NOW(), INTERVAL ' . max(60, $Ttl_Seconds) . ' SECOND)'
+'DELETE FROM `Cron_Lock` WHERE `Job_Name` = ? AND `Locked_At` < DATE_SUB(NOW(), INTERVAL ' . max(60, $Ttl_Seconds) . ' SECOND)',
+[$Job_Name]
 );
 $Affected = $Database->execute('INSERT IGNORE INTO `Cron_Lock` (`Job_Name`) VALUES (?)', [$Job_Name])->rowCount();
 return $Affected > 0;

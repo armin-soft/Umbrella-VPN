@@ -67,7 +67,7 @@ void main() {
       // تنظیمات جلسه هم باید همان فایل کامل را بنویسد.
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('UmbrellaCore.settingsJson('), isTrue);
-      expect(controller.contains("settingsPath: settingsPath"), isTrue);
+      expect(controller.contains('settingsPath: settingsPath'), isTrue);
       expect(read('lib/vpn/core_runtime.dart').contains("'-d', settingsPath"), isTrue);
     });
 
@@ -76,8 +76,8 @@ void main() {
       // اشتباه /30 باعث می شد کارت شبکه هرگز پیدا نشود و اتصال سالم هم رد
       // شود («کارت شبکه تونل در ۲۵ ثانیه آماده نشد» در گزارش ۱٫۰۶).
       final String config = read('lib/core/app_config.dart');
-      expect(config.contains("172.19.0.1/28"), isTrue);
-      expect(config.contains("172.19.0.1/30"), isFalse);
+      expect(config.contains('172.19.0.1/28'), isTrue);
+      expect(config.contains('172.19.0.1/30'), isFalse);
       final String native = read('packages/umbrella_native/windows/system_ops.cpp');
       // تطبیق با بازه 172.19.0.0/28 و با نشانی آی پی وی ۶ تونل.
       expect(native.contains('0xAC130000u'), isTrue);
@@ -180,9 +180,10 @@ void main() {
     test('HTTP verification cannot be bypassed by stale core statistics', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('final bool flows = await StartupVerification.wait'), isTrue);
+      expect(controller.contains('CoreConnectivityState.started'), isTrue);
+      expect(controller.contains('CoreConnectivityState.noAvailableProxies'), isTrue);
+      expect(controller.contains('since: sessionStart'), isTrue);
       expect(controller.contains('final bool proxy = await VerifiedProbe.check'), isTrue);
-      expect(controller.contains('return !plan.tun || (remaining > Duration.zero &&'), isTrue);
-      expect(controller.contains('await VerifiedProbe.check(proxyPort: 0, timeout: remaining)'), isTrue);
       expect(controller.contains('_coreReportsWorkingTunnel'), isFalse);
       expect(controller.contains('_clashTunnelVerdict'), isFalse);
     });
@@ -220,10 +221,11 @@ void main() {
     test('explicit server selection and disabled failover isolate the runtime pool', () {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('_singleNodeSession = requested != null ||'), isTrue);
-      expect(controller.contains('if (_singleNodeSession) return pool;'), isTrue);
+      expect(controller.contains('if (_singleNodeSession) {'), isTrue);
       expect(controller.contains('? umbrellaCliBinary : UmbrellaCore.engineBinary'), isTrue);
       expect(controller.contains('preparationEpoch != _connectionEpoch'), isTrue);
-      expect(read('lib/vpn/umbrella_core.dart').contains("'keep-top-batch': 4"), isTrue);
+      expect(controller.contains('resolveEndpoints: false'), isTrue);
+      expect(read('lib/vpn/runtime_config.dart').contains('autoKeepTopThreshold'), isTrue);
     });
 
     test('کل اشتراک امتحان می شود، نه چهار سرور اول', () {
@@ -241,11 +243,11 @@ void main() {
       expect(controller.contains('_connectBudget'), isTrue);
     });
 
-    test('هسته چند گره زنده نگه می دارد تا بتواند سوییچ کند', () {
-      // با `keep-top: 3` اگر دو گره اول کند بودند جایگزینی نمی ماند. ۸
-      // گره یعنی همیشه جای سوییچ هست.
+    test('هسته مانند Hiddify بدون صف مرحله ای سریع ترین گره را برمی گزیند و سوییچ می کند', () {
       final String core = read('lib/vpn/umbrella_core.dart');
-      expect(core.contains("'keep-top': 8"), isTrue);
+      expect(core.contains("'keep-top': -1"), isTrue);
+      expect(core.contains("'ipinfo-url': ''"), isTrue);
+      expect(core.contains("'url-test-interval': 600"), isTrue);
       // `lowest` یعنی گروه انتخاب روی بالانسر کم ترین تاخیر می رود، پس
       // خود هسته سریع ترین را برمی دارد و هنگام افتادن سوییچ می کند.
       expect(core.contains("'default-proxy': 'lowest'"), isTrue);
@@ -292,8 +294,9 @@ void main() {
       final String controller = read('lib/vpn/vpn_controller.dart');
       expect(controller.contains('متصل به \${node.name}'), isFalse);
       expect(controller.contains('\${node.name} | \${Fa.ms(node.pingMs)}'), isFalse);
-      // ولی در گزارش، سرور و مشخصاتش هست.
-      expect(controller.contains('اتصال به \${node.name}'), isTrue);
+      // در گزارش ها هم نام، میزبان، پورت و پروتکل سرور فاش نمی شود.
+      expect(controller.contains('اتصال به \${node.name}'), isFalse);
+      expect(controller.contains('\${node.host}:\${node.port}'), isFalse);
     });
 
     test('پینگ سرور متصل زیر وضعیت اتصال نشان داده می شود', () {
@@ -369,13 +372,15 @@ void main() {
       expect(nav.contains('Tooltip'), isTrue);
     });
 
-    test('حساب من: اشتراک من و بررسی نشانی حذف شده، سینک تلگرام اضافه شده', () {
+    test('حساب من: منو و دکمه های همگام سازی دستی حذف شده و کاملاً خودکار است', () {
       final String account = read('lib/ui/pages/account_page.dart');
       expect(account.contains('اشتراک من'), isFalse);
       expect(account.contains('بررسی نشانی های اشتراک'), isFalse);
       expect(account.contains('خواندن دوباره از پنل'), isFalse);
-      expect(account.contains('_TelegramSyncButton'), isTrue);
-      // سینک با شناسه حساب به ربات می رود، نه فقط صفحه ربات.
+      expect(account.contains('همگام سازی با تلگرام'), isFalse);
+      expect(account.contains('_TelegramSyncButton'), isFalse);
+      expect(account.contains('اتصال و سینک حساب'), isFalse);
+      expect(account.contains('_autoSync'), isTrue);
       expect(account.contains('https://t.me/UmbrellaVPN_BOT'), isTrue);
       expect(account.contains('_openTelegramBot'), isTrue);
     });
@@ -500,13 +505,26 @@ void main() {
       // جزئیات باید خروجی کامل هسته را بیاورد.
       expect(controller.contains('_coreDiagnostics'), isTrue);
       expect(controller.contains('خروجی کامل هسته'), isTrue);
-      // فرمان، مسیرها، سرور و وضعیت پورت ها هم بخشی از جزئیات اند.
+      // فرمان، مسیرهای محلی و وضعیت پورت ها بخشی از جزئیات اند؛ اما مشخصات
+      // سرور و لینک اشتراک هرگز در گزارش ثبت نمی شود.
       expect(controller.contains('فرمان اجرا و مسیرها'), isTrue);
-      expect(controller.contains('سروری که با آن تلاش شد'), isTrue);
+      expect(controller.contains('سروری که با آن تلاش شد'), isFalse);
+      expect(controller.contains(r'اتصال به ${node.name}'), isFalse);
+      expect(controller.contains(r'میزبان: ${node.host}'), isFalse);
+      expect(controller.contains(r'تغییر سرور به ${node.name}'), isFalse);
+      expect(controller.contains('فایل لینک سرور:'), isFalse);
       expect(controller.contains('پورت های هسته در همین لحظه'), isTrue);
       // خلاصه دیگر نباید متن چسبیده ۶۰۰ نویسه ای باشد.
       expect(controller.contains('maxChars = 300'), isTrue);
       expect(controller.contains('maxChars = 600'), isFalse);
+      // اشتراک، بالانسر و پنجره خط فرمان هم لینک ساب یا نام سرور را لو نمی دهند.
+      final String subs = read('lib/state/subscription_controller.dart');
+      expect(subs.contains(r'): $uri'), isFalse);
+      expect(subs.contains(r'| ${state.source.url}'), isFalse);
+      expect(subs.contains(r'منبع ${uri.host}'), isFalse);
+      expect(read('lib/vpn/balancer.dart').contains(r'${node.name}'), isFalse);
+      expect(read('lib/vpn/cli_session.dart').contains(r'${node.name}'), isFalse);
+      expect(read('lib/platform/services.dart').contains('static String redact('), isTrue);
     });
 
     test('خطاهای مهم جزئیات دارند', () {
@@ -635,6 +653,16 @@ void main() {
       final String auth = read('lib/state/auth_controller.dart');
       expect(auth.contains("_sound?.play('notify')"), isTrue);
       expect(auth.contains('_announce('), isTrue);
+    });
+
+    test('اعلان های قبلی هنگام به روز رسانی پاک نمی شوند و تغییر تم بی وقفه است', () {
+      final String auth = read('lib/state/auth_controller.dart');
+      expect(auth.contains('mergeNotificationHistory('), isTrue);
+      expect(auth.contains('_notifications = items;'), isFalse);
+      final String app = read('lib/app.dart');
+      expect(app.contains('themeAnimationDuration: Duration.zero'), isTrue);
+      final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
+      expect(gateway.contains("\$_GET['history']"), isTrue);
     });
 
     test('صدای اعلان در دارایی های برنامه هست', () {
@@ -781,20 +809,106 @@ void main() {
     });
   });
 
-  group('اشتراک', () {
-    test('مسیر مرده mihomo جایی ساخته نمی شود', () {
+  group('اشتراک و منوی اتصال', () {
+    test('فقط مسیر `/sub/` در تنظیمات و سازنده اشتراک وجود دارد و هیچ منبع اضافه ای نیست', () {
       for (final String path in <String>[
         'lib/core/app_config.dart',
         'lib/data/subscription_endpoints.dart',
       ]) {
         final String text = read(path);
-        expect(text.contains("'mihomo/all.yml'"), isFalse, reason: path);
+        for (final String forbidden in <String>[
+          'mihomo/all.yml',
+          'clash/meta/all.yml',
+          'full-singbox.json',
+          'sub64/',
+          'all.txt',
+          'wireguard/?asn=',
+          'amnezia/?asn=',
+          'mieru/?asn=',
+        ]) {
+          expect(text.contains(forbidden), isFalse, reason: '$path → $forbidden');
+        }
+      }
+      final String endpoints = read('lib/data/subscription_endpoints.dart');
+      expect(endpoints.contains("'sub/'"), isTrue);
+      final String config = read('lib/core/app_config.dart');
+      expect(
+        config.contains("'https://user.umbrella-server.ir/D6qnVQXRwa/'"),
+        isTrue,
+      );
+      expect(
+        config.contains('9b9d9f5d-9841-45bf-a6b9-0479de273c11'),
+        isFalse,
+        reason: 'هیچ شناسه اشتراک اشتراکی یا عمومی نباید در تنظیمات برنامه باشد',
+      );
+      expect(config.contains('defaultSubscriptionUrl'), isFalse);
+      final String subCtrl = read('lib/state/subscription_controller.dart');
+      for (final String forbidden in <String>[
+        '_activateFallbackSources',
+        '_fallbackActive',
+        'منابع عمومی استفاده می شود',
+        'پیکربندی پشتیبان برنامه',
+      ]) {
+        expect(
+          subCtrl.contains(forbidden),
+          isFalse,
+          reason: '$forbidden نباید در کنترلر اشتراک وجود داشته باشد',
+        );
       }
     });
 
-    test('مسیر درست کلش متا در فهرست است', () {
-      final String endpoints = read('lib/data/subscription_endpoints.dart');
-      expect(endpoints.contains("'clash/meta/all.yml'"), isTrue);
+    test('منوی منطقه و سرورها از صفحه اتصال کامل حذف شده و دو گزینه اتصال مرتب اند', () {
+      final String connect = read('lib/ui/pages/connect_page.dart');
+      expect(connect.contains('منطقه و سرورها'), isFalse);
+      expect(connect.contains('_RegionProxyDialog'), isFalse);
+      expect(connect.contains('_pickServerRegion'), isFalse);
+      expect(connect.contains('showDialog'), isFalse);
+      expect(connect.contains('_ConnectionModeDialog'), isFalse);
+      expect(connect.contains('_ModeDialog'), isFalse);
+      expect(connect.contains('QuickConnectionPanel('), isTrue);
+      final String quick = read('lib/ui/widgets/quick_connection_panel.dart');
+      expect(quick.contains("'اشتراک گذاری اتصال'"), isTrue);
+      expect(quick.contains("'امنیت بیشتر'"), isTrue);
+      expect(quick.contains("'رفع فیلتر پروکسی'"), isTrue);
+      expect(quick.contains('LanSharingDialog.show'), isTrue);
+    });
+
+    test('چهار منوی دستگاه من، حساب من، تنظیمات و درباره ساختار یکدست دارند', () {
+      for (final String page in <String>[
+        'device_page',
+        'account_page',
+        'settings_page',
+        'about_page',
+      ]) {
+        final String text = read('lib/ui/pages/$page.dart');
+        expect(text.contains('PageHeader('), isTrue, reason: page);
+        expect(text.contains('PageBanner('), isTrue, reason: page);
+        expect(text.contains('SectionHeader('), isTrue, reason: page);
+        expect(text.contains('AppMetrics.radiusXl'), isTrue, reason: page);
+      }
+      expect(
+        read('lib/ui/pages/settings_page.dart').contains('ResponsiveColumns('),
+        isTrue,
+      );
+      // پوسته اصلی باید صفحه فعال را به کل ارتفاع گسترش دهد تا صفحات کوتاه تر
+      // مثل «دستگاه من» و «درباره» بالایشان فضای خالی نیفتد.
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      expect(shell.contains('SizedBox.expand('), isTrue);
+      for (final String page in <String>[
+        'device_page',
+        'account_page',
+        'settings_page',
+        'logs_page',
+        'about_page',
+        'updates_page',
+      ]) {
+        expect(
+          read('lib/ui/pages/$page.dart')
+              .contains('padding: AppMetrics.pagePadding'),
+          isTrue,
+          reason: page,
+        );
+      }
     });
   });
 
@@ -1151,13 +1265,13 @@ void main() {
 
     test('۴. ورود ناموفق پیام امنیتی دقیق و دکمه دستگاه من دارد', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
-      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه‌های ناشناس را حذف کنید.'), isTrue);
+      expect(gateway.contains('اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه های ناشناس را حذف کنید.'), isTrue);
       expect(gateway.contains("'text' => '📱 دستگاه من'"), isTrue);
     });
 
     test('۵. IP در پیام های ورود تلگرام فارسی سازی می شود', () {
       final String gateway = read('../Telegram-BOT/Core/App/App-Gateway.php');
-      expect(gateway.contains('آی‌پی:'), isTrue);
+      expect(gateway.contains('آی پی:'), isTrue);
       expect(gateway.contains('Helper::toPersian(\$IP)'), isTrue);
     });
 
@@ -1171,7 +1285,7 @@ void main() {
     test('۷. زیر پیام حساب آمبرلا منوی اصلی ناخواسته قرار نمی گیرد', () {
       final String link = read('../Telegram-BOT/Bot/App-Link.php');
       expect(link.contains("Menu::section('👤', 'حساب کاربری'"), isTrue);
-      expect(link.contains("TelegramClient::inlineKeyboard(\$Rows)"), isTrue);
+      expect(link.contains('TelegramClient::inlineKeyboard(\$Rows)'), isTrue);
       expect(link.contains('main_menu'), isFalse);
       expect(link.contains("['inline_keyboard' => []]"), isTrue);
     });
@@ -1231,9 +1345,19 @@ void main() {
       expect(account.contains('signOut('), isFalse);
     });
 
-    test('۱۵. تنظیمات مدرن است و ارجاع درباره در آن نیست', () {
+    test('۱۵. تنظیمات مدرن و شش بخشی است و ارجاع درباره در آن نیست', () {
       final String settings = read('lib/ui/pages/settings_page.dart');
       expect(settings.contains('class _Section'), isTrue);
+      expect(settings.contains('enum SettingsCategory'), isTrue);
+      expect(settings.contains('class _CategoryNavTile'), isTrue);
+      expect(settings.contains('class _ThemeCardSelector'), isTrue);
+      expect(settings.contains("'عمومی'"), isTrue);
+      expect(settings.contains("'زنجیره'"), isTrue);
+      expect(settings.contains("'امنیت بیشتر و رفع مسدودیت'"), isTrue);
+      expect(settings.contains("'مسیریابی'"), isTrue);
+      expect(settings.contains("'دی ان اس'"), isTrue);
+      expect(settings.contains("'ورودی'"), isTrue);
+      expect(settings.contains("'ترفندهای اتصال امن'"), isTrue);
       expect(settings.contains('GlassCard'), isTrue);
       expect(settings.contains('درباره'), isFalse);
     });

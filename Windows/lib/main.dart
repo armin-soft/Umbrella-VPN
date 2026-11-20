@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/app_config.dart';
+import 'core/persian.dart';
 import 'core/storage.dart';
 import 'models/models.dart';
 import 'platform/native.dart';
@@ -21,6 +23,20 @@ import 'vpn/vpn_controller.dart';
 /// نقطه شروع برنامه: آماده سازی انبار داده، پنجره، سرویس ها و کنترلرها.
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    AppLogger.instance.add(
+      'خطای رابط کاربری: ${details.exceptionAsString()}',
+      level: 'error',
+    );
+  };
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    AppLogger.instance.add(
+      'خطای پیش بینی نشده: $error',
+      level: 'error',
+    );
+    return true;
+  };
   await LocalStore.instance.init();
 
   final NativeBridge native = NativeBridge();
@@ -28,7 +44,6 @@ Future<void> main(List<String> arguments) async {
   final bool elevatedNow = await native.isElevated();
   final SoundService sound = SoundService();
   final WindowService window = WindowService(native);
-  await window.init();
 
   final SettingsController settings = SettingsController(
     native: native,
@@ -37,6 +52,11 @@ Future<void> main(List<String> arguments) async {
   );
   await settings.load();
   await settings.migrateConnectionMode();
+  await window.init(
+    initialBrightness: settings.resolveBrightness(
+      PlatformDispatcher.instance.platformBrightness,
+    ),
+  );
 
   final IpService ipService = IpService();
   final TrayService tray = TrayService(native);
@@ -55,8 +75,7 @@ Future<void> main(List<String> arguments) async {
   // از همان ابتدا درست نمایش داده شود.
   await provisioner.init();
   AppLogger.instance.add(
-    '${AppConfig.appName} ${AppConfig.version} راه اندازی شد | '
-    'پوشه نصب: ${provisioner.appDir}',
+    '${AppConfig.appName} ${Fa.num(AppConfig.version)} راه اندازی شد',
   );
   if (!native.available) {
     AppLogger.instance.add(
@@ -114,8 +133,12 @@ Future<void> main(List<String> arguments) async {
     },
     // بدون اشتراک سالم، هیچ اتصالی برقرار نمی شود.
     accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
+    // اتصال خودکار فقط پس از معرفی، ورود به حساب و سالم بودن اشتراک مجاز است.
+    canAutoConnect: () =>
+        settings.landingSeen && auth.signedIn && auth.account.canConnect,
   );
   vpn.updateSettings(settings.settings);
+  settings.onDebugLogExpired = vpn.scheduleLiveReload;
   settings.addListener(() {
     vpn.updateSettings(settings.settings);
     // خاموش کردن صدا یا اعلان در تنظیمات، همان لحظه روی اعلان ها اثر می گذارد.
@@ -123,12 +146,22 @@ Future<void> main(List<String> arguments) async {
       ..soundEnabled = settings.settings.soundEnabled
       ..notificationsEnabled = settings.settings.notificationsEnabled;
   });
+  // هر مسیر خروج برنامه (دکمه بستن، سینی سیستم، خاموشی ویندوز یا نصب آپدیت)
+  // پیش از نابود شدن پنجره، هسته و CLI را به طور کامل و قطعی می بندد.
+  window.onBeforeQuit = vpn.shutdownForExit;
+  // همگام سازی زنده کنترل محتوا از ربات تلگرام یا تنظیمات برنامه روی موتور اتصال.
+  auth.onFilterChanged = vpn.updateContentFilter;
   // اگر حساب در میانه کار منقضی یا مسدود شد، اتصال همان لحظه بسته می شود.
   auth.onAccessRevoked = (String reason) {
     if (vpn.status.active) {
       unawaited(vpn.disconnect());
     }
-    toasts.error('دسترسی اشتراک قطع شد', reason);
+    auth.recordLocalNotification(
+      title: 'اشتراک متوقف شد',
+      body: reason,
+      level: 'warning',
+    );
+    toasts.error('اشتراک متوقف شد', reason);
   };
   auth.onSessionRevoked = (String reason) async {
     toasts.error('مجوز استفاده از این دستگاه لغو شد', reason);
@@ -142,7 +175,11 @@ Future<void> main(List<String> arguments) async {
 
   final SubscriptionController subscriptions =
       SubscriptionController(vpn: vpn, auth: auth);
-  final UpdateController updates = UpdateController(native);
+  auth.onSubscriptionClaimed = () async {
+    await subscriptions.syncPersonal();
+  };
+  final UpdateController updates = UpdateController(native)
+    ..onExitForInstall = window.quit;
   await OccasionService.instance.load();
 
   runApp(
@@ -176,30 +213,39 @@ Future<void> main(List<String> arguments) async {
       await window.hide();
     }
     await subscriptions.loadCached();
-    unawaited(updates.loadSkipped());
+    await updates.loadSkipped();
     if (settings.settings.checkUpdatesOnStart) {
       unawaited(updates.check(silent: true));
     }
-    // به روز رسانی خودکار پروفایل و اشتراک هر نیم ساعت؛ کاربر کاری نمی کند.
-    Timer.periodic(const Duration(minutes: 30), (_) {
-      if (!auth.signedIn) {
+    // بررسی خودکار دوره ای نسخه جدید در پس زمینه (کانال فعال کاربر).
+    Timer.periodic(const Duration(minutes: 60), (_) {
+      if (settings.settings.checkUpdatesOnStart) {
+        unawaited(updates.check(silent: true));
+      }
+    });
+    // همگام سازی کاملا خودکار حساب، پنل، کنترل محتوا، طرح های هدیه و سرورها.
+    bool syncing = false;
+    Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!auth.signedIn || syncing) {
         return;
       }
+      syncing = true;
       unawaited(() async {
-        await auth.refreshAccount(silent: true);
-        await subscriptions.syncPersonal();
+        try {
+          await auth.refreshAccount(silent: true);
+          await auth.refreshFromPanel();
+          await subscriptions.syncPersonal();
+        } finally {
+          syncing = false;
+        }
       }());
     });
     if (auth.signedIn) {
-      unawaited(auth.fetchNotifications());
-      // اشتراک شخصی از سرور خوانده می شود؛ فقط اگر سرور چیزی نداد منابع عمومی
-      // به عنوان پشتیبان بارگذاری می شوند.
-      unawaited(() async {
-        await subscriptions.syncPersonal();
-        if (vpn.nodes.isEmpty) {
-          await subscriptions.fetchAll();
-        }
-      }());
+      unawaited(auth.fetchNotifications(includeHistory: true));
+      unawaited(auth.refreshFromPanel());
+      // فقط اشتراک اختصاصی حساب کاربر واردشده دریافت می شود؛ هیچ منبع عمومی
+      // یا رایگان وجود ندارد.
+      unawaited(subscriptions.syncPersonal());
     }
   });
 }

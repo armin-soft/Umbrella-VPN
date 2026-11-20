@@ -186,7 +186,7 @@ $this->check(str_contains($Text, '└─آمار کلی'), 'section(): bullets f
 
 private function test_problems_accepts_clean_keyboard(): void {
 $Rows = array_merge(
-Menu::rows([['پروفایل', 'پروفایل کاربری'], ['اشتراک', 'اشتراک من']]),
+Menu::rows([['پروفایل', 'پروفایل کاربری'], ['مدیریت اشتراک', 'user_subscriptions_menu']]),
 [Menu::userHome()]
 );
 
@@ -220,7 +220,7 @@ $Body = substr($Source, $Start, $End - $Start);
 $this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
 $this->check_main_rows($Body, 'Menu_Rows', [
 'user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu',
-'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
+'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
 ]);
 }
 
@@ -259,7 +259,6 @@ $this->check(substr_count($Http_Source, 'CURLOPT_SSL_VERIFYHOST => 2') === 2, 'o
 $this->check(str_contains($Http_Source, "ini_get('curl.cainfo')") && str_contains($Http_Source, "ini_get('openssl.cafile')"), 'explicit server CA configuration retained');
 require_once $Root . '/Core/Support/Http.php';
 $Method = new ReflectionMethod(HttpClient::class, 'certificateBundle');
-$Method->setAccessible(true);
 $Ini = (string)(ini_get('curl.cainfo') ?: ini_get('openssl.cafile') ?: '');
 $this->check($Method->invoke(null) === ($Ini !== '' && is_file($Ini) ? $Ini : null), 'configured CA file or system default selected');
 }

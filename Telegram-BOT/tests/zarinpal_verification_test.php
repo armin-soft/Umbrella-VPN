@@ -33,7 +33,7 @@ public function profileName(): string { return 'test user'; }
 }
 final class Repository {
 public static array $Session = []; public static int $Claims = 0; public static int $Records = 0; public static float $Balance = 0;
-public static bool $FailSettlement = false;
+public static bool $FailSettlement = false; public static float $LastDebit = 0;
 public static function settleGatewayFunds(int $Id, array $Snapshot, float $Amount, string $Ref, float $Credit): bool {
 if (self::$FailSettlement) throw new RuntimeException('simulated database failure');
 if (self::$Session !== $Snapshot || !self::claimPendingPayment($Id, $Snapshot['Pending_Payment'])) return false;
@@ -49,7 +49,7 @@ foreach (['Pending_Payment','Pending_Topup','Pending_Plan','Pending_Custom_Plan'
 return true;
 }
 public static function updateUserSession(int $Id, array $Fields): void { throw new RuntimeException('Unexpected unconditional order mutation'); }
-public static function removeMoney(...$Args): bool { return false; }
+public static function removeMoney(...$Args): bool { self::$LastDebit = (float)$Args[1]; return false; }
 public static function recordGatewayPayment(...$Args): void { self::$Records++; }
 public static function addMoney(int $Id, float $Amount, ...$Args): void { self::$Balance += $Amount; }
 }
@@ -135,7 +135,7 @@ check(HttpClient::$Calls === 2, 'business errors are not retried');
 foreach ([-30,-33,52,53,54,55,-987] as $Unknown) check(str_contains(Zarinpal::errorMessage($Unknown),'شناخته نشده'), 'unsupported codes never assigned invented explanations');
 check(str_contains(Zarinpal::errorMessage(-10),'آی پی') && str_contains(Zarinpal::errorMessage(-11),'فعال نیست'), 'correct terminal codes');
 check(str_contains(Zarinpal::errorMessage(-12),'تعداد') && str_contains(Zarinpal::errorMessage(-41),'۱۰۰ میلیون'), 'correct limit codes');
-check(str_contains(Zarinpal::errorMessage(-53),'مرچنت') && str_contains(Zarinpal::errorMessage(-54),'Authority') && str_contains(Zarinpal::errorMessage(-55),'یافت نشد'), 'negative verify codes mapped correctly');
+check(str_contains(Zarinpal::errorMessage(-53),'مرچنت') && str_contains(Zarinpal::errorMessage(-54),'شناسه مرجع پرداخت') && str_contains(Zarinpal::errorMessage(-55),'یافت نشد'), 'negative verify codes mapped correctly');
 function quoteResponse(int $Original=100000, int $Suggested=104329, string $Type='Merchant', int $Fee=4200): array {
 return ['StatusCode'=>200,'Error'=>'','Json'=>['data'=>['code'=>100,'amount'=>$Original,'suggested_amount'=>$Suggested,'fee'=>$Fee,'fee_type'=>$Type],'errors'=>[]]];
 }
@@ -176,7 +176,7 @@ check($P!==null && $P['Fee']==0 && $P['Amount']==10000,'legitimate free promotio
 resetCase(100); $Q=quoteResponse(); foreach (['amount','fee','suggested_amount'] as $Key) $Q['Json']['data'][$Key]=(string)$Q['Json']['data'][$Key];
 HttpClient::$Queue=[$Q,requestResponse($Authority)];
 check(Zarinpal::request(10000,'https://example.invalid/cb','test')['Amount']===10432.9,'documented string suggested_amount supported');
-$Formatter=new ReflectionMethod(SubscriptionFlow::class,'paymentAmount'); $Formatter->setAccessible(true);
+$Formatter=new ReflectionMethod(SubscriptionFlow::class,'paymentAmount');
 check(str_contains($Formatter->invoke(null,10432.9),'.9'),'payment display does not round away rial fractions');
 resetCase();
 foreach ([0.0,-1.0,NAN,INF,100000001.0] as $Amount) {
@@ -233,5 +233,7 @@ resetCase(100); Repository::$Session['Pending_Plan']='paid|1';
 check(!SubscriptionFlow::recoverPendingPayment(1), 'failed wallet debit stops purchase');
 check(Repository::$Balance===90.0 && Repository::$Records===1,'gateway credit retained when wallet cannot cover plan');
 check(str_contains(end(TelegramClient::$Messages),'اشتراک فعال نشد'), 'failed wallet debit clearly reported without activating subscription');
+resetCase(100); Repository::$Session['Pending_Plan']='paid|1|125';
+check(!SubscriptionFlow::recoverPendingPayment(1) && Repository::$LastDebit===125.0, 'app order uses stored original tariff instead of changed live tariff');
 @unlink($Log);
 echo "OK Zarinpal protocol/fees/error codes/recovery/callback safety ($N assertions)\n";

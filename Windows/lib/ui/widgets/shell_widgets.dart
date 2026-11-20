@@ -294,11 +294,17 @@ class TitleBar extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   ClipOval(
-                    child: Image.asset(
-                      BrandAssets.logo,
-                      width: AppMetrics.iconLg,
-                      height: AppMetrics.iconLg,
-                      errorBuilder: (BuildContext context, Object error, StackTrace? stack) => Icon(Icons.shield_rounded, size: AppMetrics.iconMd, color: colors.primary),
+                    child: TickerMode(
+                      enabled: true,
+                      child: Image.asset(
+                        BrandAssets.logo,
+                        width: AppMetrics.iconLg,
+                        height: AppMetrics.iconLg,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (BuildContext context, Object error, StackTrace? stack) => Icon(Icons.shield_rounded, size: AppMetrics.iconMd, color: colors.primary),
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppMetrics.space2),
@@ -342,18 +348,22 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
     final bool hasBadge = widget.badge > 0;
     return Tooltip(
       message: Fa.num(widget.tooltip),
-      waitDuration: const Duration(milliseconds: 350),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
+      waitDuration: const Duration(milliseconds: 500),
+      triggerMode: TooltipTriggerMode.manual,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           onTap: widget.onTap,
+          onHover: (bool value) {
+            if (_hover != value) {
+              setState(() => _hover = value);
+            }
+          },
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           child: Stack(
             clipBehavior: Clip.none,
             children: <Widget>[
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+              Container(
                 width: AppMetrics.iconButton,
                 height: AppMetrics.iconButton,
                 decoration: BoxDecoration(
@@ -489,20 +499,24 @@ class SideNav extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // ریسپانسیو: در پنجره باریک نوار کناری باریک می شود و متن منوها
-        // کوتاه می شود تا محتوا جا شود؛ هیچ گزینه ای حذف نمی شود.
-        final double width = constraints.maxWidth < AppMetrics.breakpointNav
+        // ریسپانسیو: در پنجره باریک نوار کناری جمع و جور می شود و متن منوها در
+        // Tooltip می آید؛ در پنجره متوسط و پهن نام هر منو خوانا و مرتب می نشیند.
+        final double windowWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final double width = windowWidth < AppMetrics.breakpointNav
             ? AppMetrics.navWidthCompact
-            : (constraints.maxWidth < AppMetrics.breakpointNavWide
+            : (windowWidth < AppMetrics.breakpointNavWide
                 ? AppMetrics.navWidthMedium
                 : AppMetrics.navWidthWide);
         final bool compact = width < AppMetrics.navWidthMedium;
+        final Color statusTone = VpnVisuals.color(context, status);
         return Container(
           width: width,
           decoration: BoxDecoration(
             color: colors.backgroundAlt,
             border: BorderDirectional(
-              start: BorderSide(color: colors.border),
+              end: BorderSide(color: colors.border),
             ),
           ),
           child: Column(
@@ -520,6 +534,8 @@ class SideNav extends StatelessWidget {
                           destination: destinations[i],
                           selected: i == index,
                           compact: compact,
+                          showDot: updateAvailable &&
+                              i == destinations.length - 1,
                           onTap: () => onSelect(i),
                         ),
                     ],
@@ -536,8 +552,11 @@ class SideNav extends StatelessWidget {
                     if (!compact)
                       GlassCard(
                         onTap: onStatusTap,
-                        padding: const EdgeInsets.all(AppMetrics.space3),
-                        radius: AppMetrics.radiusMd,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppMetrics.space3,
+                          vertical: AppMetrics.space3,
+                        ),
+                        radius: AppMetrics.radiusLg,
                         child: Row(
                           children: <Widget>[
                             Container(
@@ -545,11 +564,10 @@ class SideNav extends StatelessWidget {
                               height: AppMetrics.space2,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: VpnVisuals.color(context, status),
+                                color: statusTone,
                                 boxShadow: <BoxShadow>[
                                   BoxShadow(
-                                    color: VpnVisuals.color(context, status)
-                                        .withValues(alpha: 0.6),
+                                    color: statusTone.withValues(alpha: 0.55),
                                     blurRadius: 8,
                                   ),
                                 ],
@@ -557,16 +575,40 @@ class SideNav extends StatelessWidget {
                             ),
                             const SizedBox(width: AppMetrics.space2),
                             Expanded(
-                              child: Text(
-                                Fa.num(status.label),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    Fa.num('اتصال'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(color: colors.textSecondary),
+                                  ),
+                                  Text(
+                                    Fa.num(status.label),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          color: statusTone,
+                                        ),
+                                  ),
+                                ],
                               ),
                             ),
+                            if (index != 0)
+                              Icon(
+                                Icons.chevron_left_rounded,
+                                size: AppMetrics.iconSm,
+                                color: colors.textSecondary,
+                              ),
                           ],
                         ),
                       )
@@ -574,12 +616,19 @@ class SideNav extends StatelessWidget {
                       Center(
                         child: Tooltip(
                           message: Fa.num(status.label),
-                          child: Container(
-                            width: AppMetrics.space3,
-                            height: AppMetrics.space3,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: VpnVisuals.color(context, status),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: onStatusTap,
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppMetrics.space2),
+                              child: Container(
+                                width: AppMetrics.space3,
+                                height: AppMetrics.space3,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: statusTone,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -640,6 +689,7 @@ class _NavItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.compact = false,
+    this.showDot = false,
   });
 
   final NavDestination destination;
@@ -648,6 +698,7 @@ class _NavItem extends StatefulWidget {
 
   /// در پنجره باریک فقط آیکون نشان داده می شود و متن در Tooltip می آید.
   final bool compact;
+  final bool showDot;
 
 
   @override
@@ -666,9 +717,9 @@ class _NavItemState extends State<_NavItem> {
       onExit: (_) => setState(() => _hover = false),
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+        child: Container(
           constraints: const BoxConstraints(
             minHeight: AppMetrics.navItemHeight,
           ),
@@ -697,21 +748,22 @@ class _NavItemState extends State<_NavItem> {
             ),
           ),
           child: Row(
+            mainAxisAlignment: widget.compact
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: <Widget>[
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: AppMetrics.space1,
-                height: AppMetrics.iconSm,
-                decoration: BoxDecoration(
-                  color: widget.selected
-                      ? colors.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
+              if (!widget.compact) ...<Widget>[
+                Container(
+                  width: AppMetrics.space1,
+                  height: AppMetrics.iconSm,
+                  decoration: BoxDecoration(
+                    color:
+                        widget.selected ? colors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusXs),
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: widget.compact ? AppMetrics.space2 : AppMetrics.space3,
-              ),
+                const SizedBox(width: AppMetrics.space3),
+              ],
               Icon(
                 widget.selected
                     ? widget.destination.activeIcon
@@ -723,7 +775,7 @@ class _NavItemState extends State<_NavItem> {
               ),
               if (!widget.compact) ...<Widget>[
                 const SizedBox(width: AppMetrics.space3),
-                Flexible(
+                Expanded(
                   child: Text(
                     Fa.num(widget.destination.label),
                     maxLines: 1,
@@ -740,6 +792,17 @@ class _NavItemState extends State<_NavItem> {
                         ),
                   ),
                 ),
+                if (widget.showDot) ...<Widget>[
+                  const SizedBox(width: AppMetrics.space1),
+                  Container(
+                    width: AppMetrics.space2,
+                    height: AppMetrics.space2,
+                    decoration: BoxDecoration(
+                      color: colors.warning,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
               ],
             ],
           ),

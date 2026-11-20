@@ -1,3 +1,5 @@
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `Settings` (
 `Key` VARCHAR(190) NOT NULL,
 `Value` TEXT NULL,
@@ -86,7 +88,7 @@ CREATE TABLE IF NOT EXISTS `SMS_Logs` (
 `User_ID` BIGINT NOT NULL,
 `Phone_Number` VARCHAR(20) NULL,
 `Message` TEXT NULL,
-`Status` VARCHAR(20) NOT NULL DEFAULT 'Ù†Ø§Ù…ÙˆÙÙ‚',
+`Status` VARCHAR(20) NOT NULL DEFAULT 'ناموفق',
 `Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -136,7 +138,7 @@ KEY `IDX_Subscription_Logs_Created_At` (`Created_At`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES
-('Robot_Status', 'ðŸŸ¢Ø±ÙˆØ´Ù†'),
+('Robot_Status', '🟢روشن'),
 ('Daily_Report_Enabled', '1'),
 ('Daily_Report_Time', '00:00'),
 ('Expiry_Warning_3Days', '1'),
@@ -361,4 +363,12 @@ CREATE TABLE IF NOT EXISTS `App_Filter_Settings` (
 `Updated_By` VARCHAR(20) NOT NULL DEFAULT 'app',
 `Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 PRIMARY KEY (`User_UUID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_Bot_Link_Requests` (
+`Token_Hash` CHAR(64) NOT NULL, `Session_Hash` CHAR(64) NOT NULL,
+`User_UUID` VARCHAR(64) NOT NULL, `Device_ID` VARCHAR(64) NOT NULL,
+`Phone` VARCHAR(20) NOT NULL, `Telegram_ID` BIGINT NULL,
+`Expires_At` INT UNSIGNED NOT NULL, `Used_At` INT UNSIGNED NULL,
+PRIMARY KEY (`Token_Hash`), KEY `IDX_App_Bot_Link_Expiry` (`Expires_At`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

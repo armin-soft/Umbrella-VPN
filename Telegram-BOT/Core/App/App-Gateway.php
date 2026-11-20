@@ -7,11 +7,18 @@ require_once __DIR__ . '/../Server/Umbrella-Panel.php';
 require_once __DIR__ . '/App-Device-Limit.php';
 require_once __DIR__ . '/App-Two-Step.php';
 require_once __DIR__ . '/App-Secret.php';
+require_once __DIR__ . '/App-Bot-Link.php';
 require_once __DIR__ . '/../Telegram/Bot-Identity.php';
 require_once __DIR__ . '/../SMS/IPPanel.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once __DIR__ . '/../Storage/Repository.php';
+require_once __DIR__ . '/../Support/Bot-Config.php';
+require_once __DIR__ . '/../Support/Helper.php';
+require_once __DIR__ . '/../../Bot/Context.php';
+require_once __DIR__ . '/../../Bot/Subscription.php';
+require_once __DIR__ . '/../Payment/ZarinPal.php';
 require_once __DIR__ . '/App-Filter.php';
+require_once __DIR__ . '/System-Notifications.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 /**
@@ -38,7 +45,7 @@ require_once dirname(__DIR__, 2) . '/Config/Environment.php';
  *   GET  app/ping
  */
 final class AppGateway {
-private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
 private function __construct() {
 }
 
@@ -79,8 +86,15 @@ if ($Route === 'auth/resend') { self::resend(self::body()); return; }
 if ($Route === 'auth/signout') { self::signOut(self::body()); return; }
 if ($Route === 'auth/device') { self::heartbeat(self::body()); return; }
 if ($Route === 'account/refresh') { self::refreshAccount(); return; }
+if ($Route === 'account/bot-link') { self::botMembershipLink(self::body()); return; }
+if ($Route === 'account/bot-link-status') { self::botMembershipStatus(); return; }
 if ($Route === 'filter/save') { self::saveFilter(self::body()); return; }
 if ($Route === 'filter/get') { self::getFilter(self::body()); return; }
+if ($Route === 'subscription/offers') { self::subscriptionOffers(); return; }
+if ($Route === 'subscription/claim') { self::claimSubscription(self::body()); return; }
+if ($Route === 'subscription/fetch') { self::fetchSubscription(self::body()); return; }
+if ($Route === 'subscription/plans') { self::subscriptionPlans(); return; }
+if ($Route === 'subscription/purchase') { self::purchaseSubscription(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
@@ -99,8 +113,8 @@ self::fail(500, 'gateway_error', 'internal error');
 
 private static function start(array $Body): void {
 $Phone = \Helper::normalizePhone((string)($Body['phone'] ?? ''));
-$First = trim((string)($Body['first_name'] ?? ''));
-$Last = trim((string)($Body['last_name'] ?? ''));
+$First = trim((string)(preg_replace('/\s+/u', ' ', \Helper::stripZwnj((string)($Body['first_name'] ?? ''))) ?? ''));
+$Last = trim((string)(preg_replace('/\s+/u', ' ', \Helper::stripZwnj((string)($Body['last_name'] ?? ''))) ?? ''));
 $Device_Id = self::safeDeviceId((string)($Body['device_id'] ?? ''));
 
 if (!\Helper::validatePhone($Phone)) {
@@ -131,20 +145,20 @@ self::fail(403, 'device_limit', 'این حساب قبلاً روی دستگاه 
 $Exists = $Known !== null;
 $List_Error = $Exists ? null : PanelClient::lastListError();
 
-
-// When the panel cannot even be listed we must not conclude «account does
-// not exist» — that would mint duplicate accounts and lock existing ones
-// out of the app. Say the server is down instead.
+// If all local tables (Users, App_Devices, App_SignIn_Requests) have no UUID
+// for this phone and the remote panel list endpoint had a temporary hiccup, do
+// not lock brand-new users out at the phone screen: let them continue through
+// name + SMS verification, and resolveAccount() will re-check the panel with
+// retries before creating an account.
 if (!$Exists && $List_Error !== null) {
-error_log('[Umbrella-Bot][App-Auth] refusing needs-profile while panel list is failing: ' . $List_Error);
-self::fail(503, 'panel_unavailable', 'در حال حاضر ارتباط با سرور برقرار نیست؛ کمی بعد دوباره تلاش کنید.');
+error_log('[Umbrella-Bot][App-Auth] panel list unavailable during start (' . $Lookup_Source . '), proceeding with new-user flow: ' . $List_Error);
 }
 
 /*
- * ورود دو مرحله‌ای است: اول فقط شماره گرفته می‌شود. اگر این شماره حساب
- * نداشته باشد، بانک‌نامه بدون فرستادن پیامک پاسخ «needs_profile» می‌دهد و
- * برنامه سراغ مرحله «نام و نام خانوادگی» می‌رود؛ ثبت‌نام با همان شماره و
- * همین درخواست کامل می‌شود. شماره‌ای که حساب دارد، مستقیم کد می‌گیرد.
+ * ورود دو مرحله ای است: اول فقط شماره گرفته می شود. اگر این شماره حساب
+ * نداشته باشد، بانک نامه بدون فرستادن پیامک پاسخ «needs_profile» می دهد و
+ * برنامه سراغ مرحله «نام و نام خانوادگی» می رود؛ ثبت نام با همان شماره و
+ * همین درخواست کامل می شود. شماره ای که حساب دارد، مستقیم کد می گیرد.
  */
 if (!$Exists && ($First === '' || $Last === '')) {
 self::ok([
@@ -272,7 +286,7 @@ self::fail(409, 'wrong_stage', 'این کد قبلاً استفاده شده ا�
 
 if ((int)$Row['Otp_Attempts'] >= 5) {
 self::notifyFailedLogin((string)$Row['Phone'], 'too_many_attempts', $Row, (int)$Row['Telegram_ID']);
-self::fail(429, 'too_many_attempts', 'تعداد تلاش‌ها زیاد شد؛ کد جدید بگیرید.');
+self::fail(429, 'too_many_attempts', 'تعداد تلاش ها زیاد شد؛ کد جدید بگیرید.');
 }
 
 $Device_Limit = AppDeviceLimit::check((string)$Row['Phone'], (string)$Row['Device_ID']);
@@ -336,31 +350,27 @@ $Row['User_UUID'] = $UUID;
 $Row['Telegram_ID'] = $Telegram_Id;
 }
 
-// Without a Telegram link there is nobody to confirm the device, so the bot
-// asks the person to open it once. The app shows that instruction; once the
-// number is linked — on any later app poll of auth/status — the request is
-// promoted to awaiting_telegram and the confirmation is sent then.
+// If no Telegram account exists, phone ownership has already been verified by
+// SMS. Confirm against the live panel and bot DB before allowing SMS-only
+// sign-in; linked accounts still use their existing Telegram two-step policy.
 if ($Telegram_Id <= 0) {
-Database::getInstance()->execute(
-'UPDATE `App_SignIn_Requests` SET `Stage` = ?, `Confirmed_At` = ? WHERE `Challenge` = ?',
-['needs_telegram', time(), $Challenge]
-);
-
-Repository::logAdminAction(
-0,
-'app_signin_needs_telegram',
-null,
-'phone=' . $Phone . ' device=' . (string)$Row['Device_ID'],
-self::clientIp()
-);
-
+$LiveAccount = PanelClient::get($UUID);
+if (!$LiveAccount) self::fail(502, 'panel_unavailable', 'برای بررسی اتصال تلگرام، پنل در دسترس نیست؛ دوباره تلاش کنید.');
+$BotUser = self::resolveBotUser($UUID, 0);
+$Telegram_Id = (int)($LiveAccount['telegram_id'] ?? 0);
+if ($Telegram_Id <= 0) $Telegram_Id = (int)($BotUser['Telegram_ID'] ?? 0);
+if ($Telegram_Id <= 0) $Telegram_Id = (int)(Repository::findUserByPhone($Phone)['Telegram_ID'] ?? 0);
+if ($Telegram_Id > 0) {
+Database::getInstance()->execute('UPDATE `App_SignIn_Requests` SET `Telegram_ID` = ? WHERE `Challenge` = ? AND `Stage` = ?', [$Telegram_Id, $Challenge, 'code_sent']);
+$Row['Telegram_ID'] = $Telegram_Id;
+} else {
+if (!self::decide($Challenge, true, 0)) self::fail(503, 'sign_in_failed', 'تأیید دستگاه انجام نشد؛ دوباره تلاش کنید.');
 self::ok([
-'verified' => true,
-'challenge' => $Challenge,
-'stage' => 'needs_telegram',
-'bot' => self::botLink(),
-'message' => 'برای تأیید دستگاه، یک‌بار ربات را باز کنید و دکمهٔ «شروع» را بزنید؛ سپس این صفحه را تازه کنید.',
+'verified' => true, 'challenge' => $Challenge, 'stage' => 'approved',
+'expires_at' => gmdate('c', (int)$Row['Expires_At']),
+'message' => 'ورود با تأیید پیامک انجام شد؛ اتصال ربات را از حساب من تکمیل کنید.',
 ]);
+}
 }
 
 // With two-step switched off in the bot the SMS code is the only factor: the
@@ -430,6 +440,7 @@ $Linked_UUID = trim((string)($Row['User_UUID'] ?? ''));
 
 if ($Linked_UUID !== '') {
 try { PanelClient::update($Linked_UUID, ['telegram_id' => $Linked]); } catch (Throwable) {}
+self::syncBotUserClientId($Linked, $Linked_UUID);
 }
 
 if (self::sendConfirmation($Row, $Linked, 'needs_telegram')) {
@@ -469,7 +480,14 @@ self::fail(409, 'no_account', 'حسابی به این شماره وصل نیست
 $Account = PanelClient::get($UUID) ?? [];
 
 if ($Account === []) {
-self::fail(502, 'panel_unavailable', 'دریافت پروفایل از پنل ناموفق بود.');
+error_log('[Umbrella-Bot][Gateway] session profile fallback for uuid=' . $UUID . ' status=' . PanelClient::lastGetStatus());
+$Account = [
+'uuid' => $UUID,
+'name' => trim((string)($Row['Full_Name'] ?? '')),
+'telegram_id' => (int)($Row['Telegram_ID'] ?? 0),
+'is_active' => true,
+'enable' => true,
+];
 }
 
 $Token = (string)($Row['Token'] ?? '');
@@ -495,6 +513,7 @@ self::ok([
 'sign_in_at' => gmdate('c'),
 'account' => $Profile,
 'filter' => AppFilter::load($UUID),
+'offers' => self::offersPayload($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account),
 ]);
 }
 
@@ -676,6 +695,31 @@ return true;
 
 // ── device side ────────────────────────────────────────────────────────────
 
+private static function botMembershipStatus(): void {
+$Session = self::sessionRow(self::bearer());
+if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$User = $UUID === '' ? null : Database::getInstance()->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
+$Linked = (int)($User['Telegram_ID'] ?? 0);
+if ($Linked <= 0) self::ok(['linked' => false]);
+$Panel = PanelClient::get($UUID);
+if (!$Panel) self::fail(502, 'panel_unavailable', 'بررسی اتصال در پنل انجام نشد؛ دوباره تلاش کنید.');
+self::ok(['linked' => (int)($Panel['telegram_id'] ?? 0) === $Linked]);
+}
+
+/** Issue a one-use join link only to an authenticated, trusted device. */
+private static function botMembershipLink(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+try { self::ok(AppBotLink::issue($Session)); }
+catch (Throwable $Error) {
+if ($Error->getMessage() === 'panel_unavailable') self::fail(502, 'panel_unavailable', 'بررسی اتصال در پنل انجام نشد؛ دوباره تلاش کنید.');
+if ($Error->getMessage() === 'bot_unavailable') self::fail(503, 'bot_unavailable', 'نشانی ربات در حال حاضر در دسترس نیست.');
+if ($Error->getMessage() === 'invalid_account') self::fail(409, 'invalid_account', 'حساب یا شماره تاییدشده دستگاه برای اتصال در دسترس نیست.');
+throw $Error;
+}
+}
+
 /**
  * The account as the panel reports it right now: expiry, usage and the share
  * link. The app asks here rather than calling the panel itself, so the
@@ -700,7 +744,15 @@ if ($Account === null || $Account === []) {
 self::fail(502, 'panel_unavailable', 'دریافت اطلاعات حساب ناموفق بود.');
 }
 
+$LinkedTg = self::autoLinkTelegramOwner(
+(string)$Session['Device_ID'],
+$UUID,
+(int)($Session['Telegram_ID'] ?? 0)
+);
 $Profile = AppFilter::accountPayload($Account);
+if (trim((string)($Profile['telegram_id'] ?? '')) === '' && $LinkedTg > 0) {
+$Profile['telegram_id'] = (string)$LinkedTg;
+}
 $Base = PanelClient::accountBase($Account);
 $Profile['account_base'] = $Base;
 $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
@@ -708,11 +760,17 @@ $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
 self::ok([
 'account' => $Profile,
 'filter' => AppFilter::load($UUID),
+'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
+'channel_url' => BotConfig::getChannelUrl(),
 'checked_at' => gmdate('c'),
 ]);
 }
 
-/** Keeps the device row fresh so «دستگاه‌های من» is never stale. */
+/**
+ * Keeps the device row fresh, automatically links Telegram ownership when the
+ * same UUID exists in `Users`, and delivers live filter + subscription offer
+ * toggles so everything stays synchronized with zero manual sync controls.
+ */
 private static function heartbeat(array $Body): void {
 $Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
 
@@ -720,12 +778,48 @@ if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
 
+$DeviceId = (string)$Session['Device_ID'];
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
 Database::getInstance()->execute(
 'UPDATE `App_Devices` SET `Last_Seen_At` = ? WHERE `Device_ID` = ?',
-[time(), (string)$Session['Device_ID']]
+[time(), $DeviceId]
 );
 
-self::ok(['seen_at' => gmdate('c')]);
+$Payload = [
+'seen_at' => gmdate('c'),
+'channel_url' => BotConfig::getChannelUrl(),
+];
+if ($UUID !== '') {
+$LinkedTg = self::autoLinkTelegramOwner(
+$DeviceId,
+$UUID,
+(int)($Session['Telegram_ID'] ?? 0)
+);
+$Payload['filter'] = AppFilter::load($UUID);
+$Payload['offers'] = self::offersPayload($UUID, $LinkedTg, null);
+}
+self::ok($Payload);
+}
+
+/** Automatically links a device row to its Telegram owner when unlinked. */
+private static function autoLinkTelegramOwner(string $DeviceId, string $UUID, int $TelegramId): int {
+if ($TelegramId > 0) {
+return $TelegramId;
+}
+if ($UUID === '' || $UUID === '_') {
+return 0;
+}
+$User = self::resolveBotUser($UUID, 0);
+$Found = (int)($User['Telegram_ID'] ?? 0);
+if ($Found > 0 && $DeviceId !== '') {
+try {
+Database::getInstance()->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `Device_ID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Found, $DeviceId]
+);
+} catch (Throwable) {}
+}
+return $Found;
 }
 
 private static function notifications(): void {
@@ -735,37 +829,57 @@ if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
 
-$Rows = Database::getInstance()->fetchAll(
-'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At` FROM `App_Notifications`
+$IncludeHistory = ((string)($_GET['history'] ?? '')) === '1';
+$Scope = '((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))';
+$Sql = $IncludeHistory
+? 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At`, `Delivered_At` FROM `App_Notifications`
+WHERE ' . $Scope . '
+ORDER BY (`Delivered_At` IS NULL) DESC, `ID` DESC LIMIT 50'
+: 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At`, `Delivered_At` FROM `App_Notifications`
 WHERE `Delivered_At` IS NULL
-AND ((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))
-ORDER BY `ID` ASC LIMIT 20',
+AND ' . $Scope . '
+ORDER BY `ID` ASC LIMIT 20';
+
+$Rows = Database::getInstance()->fetchAll(
+$Sql,
 [(string)$Session['Device_ID'], (string)$Session['User_UUID'], (string)$Session['User_UUID']]
 );
 
 $VisibleRows = [];
 foreach ($Rows as $Row) {
+$WasDelivered = ($Row['Delivered_At'] ?? null) !== null;
+if (!$WasDelivered) {
 Database::getInstance()->execute(
 'UPDATE `App_Notifications` SET `Delivered_At` = ? WHERE `ID` = ?',
 [time(), (int)$Row['ID']]
 );
+}
 $Notice = (string)$Row['Title'] . "\n" . (string)($Row['Body'] ?? '');
 // The current session is trusted; a queued revoke warning is stale after re-approval.
 if (str_contains($Notice, 'مجوز این دستگاه لغو شد') ||
     str_contains($Notice, 'دسترسی این دستگاه به نرم افزار آمبرلا لغو شد')) {
 continue;
 }
+$Row['_delivered'] = $WasDelivered;
 $VisibleRows[] = $Row;
 }
 
 self::ok([
-'items' => array_map(static fn(array $Row): array => [
+'items' => array_map(static function (array $Row): array {
+$Formatted = SystemNotifications::formatForWindowsApp(
+(string)$Row['Title'],
+(string)($Row['Body'] ?? ''),
+(string)$Row['Level']
+);
+return [
 'id' => (int)$Row['ID'],
-'title' => (string)$Row['Title'],
-'body' => (string)($Row['Body'] ?? ''),
-'level' => (string)$Row['Level'],
+'title' => $Formatted['title'],
+'body' => $Formatted['body'],
+'level' => $Formatted['level'],
 'sent_at' => (string)$Row['Sent_At'],
-], $VisibleRows),
+'delivered' => (bool)$Row['_delivered'],
+];
+}, $VisibleRows),
 ]);
 }
 
@@ -795,11 +909,432 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 self::ok(['settings' => AppFilter::load((string)$Session['User_UUID'])]);
 }
 
+/** Looks up the linked bot `Users` row by Telegram ID or panel UUID. */
+private static function resolveBotUser(string $UUID, int $TelegramId = 0): ?array {
+$Database = Database::getInstance();
+
+if ($TelegramId > 0) {
+$ByTg = $Database->fetch('SELECT * FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$TelegramId]);
+if ($ByTg !== null) return $ByTg;
+}
+
+if ($UUID !== '' && $UUID !== '_') {
+$ByUuid = $Database->fetch('SELECT * FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
+if ($ByUuid !== null) return $ByUuid;
+}
+
+return null;
+}
+
+/** True when the user already holds an active, non-expired subscription. */
+private static function userHasActivePlan(?array $User, ?array $PanelAccount): bool {
+if ($User !== null) {
+$Sub = trim((string)($User['Subscription'] ?? ''));
+$Exp = (int)($User['Expiration_Time_Stamp'] ?? 0);
+if ($Sub !== '' && ($Exp <= 0 || $Exp > time())) {
+return true;
+}
+}
+
+if (is_array($PanelAccount) && $PanelAccount !== []) {
+$Profile = AppFilter::accountPayload($PanelAccount);
+$Active = !empty($Profile['is_active']) && !empty($Profile['enabled']);
+$Limit = (float)($Profile['usage_limit_gb'] ?? 0);
+$Used = (float)($Profile['used_gb'] ?? 0);
+$RemainingDays = (int)($Profile['remaining_days'] ?? 0);
+if ($Active && $Limit > 0 && $Used < $Limit && $RemainingDays > 0) {
+return true;
+}
+}
+
+return false;
+}
+
+/**
+ * Computes eligibility for the welcome free trial (1 GB / 1 day, strictly once)
+ * and the seasonal Nowruz gift (5 GB / 13 days, gated by the bot's Nowruz menu).
+ */
+private static function offersPayload(string $UUID, int $TelegramId = 0, ?array $PanelAccount = null): array {
+$User = self::resolveBotUser($UUID, $TelegramId);
+$Uid = (int)($User['Telegram_ID'] ?? $TelegramId);
+$Blocked = (int)($User['Is_Blocked'] ?? 0) === 1;
+$HasActive = self::userHasActivePlan($User, $PanelAccount);
+
+$FreeKey = 'App_Free_Claimed_' . $UUID;
+$FreeClaimed = ((int)($User['Free_Plan_Claimed'] ?? 0) === 1)
+|| ($UUID !== '' && trim((string)Repository::getSetting($FreeKey, '')) === '1');
+$FreeAvailable = !$Blocked && !$HasActive && !$FreeClaimed && $UUID !== '';
+
+$NowruzEnabled = BotConfig::isNowruzMenuEnabled();
+$NowruzClaimed = BotConfig::hasClaimedNowruz($Uid, $UUID);
+$NowruzAvailable = $NowruzEnabled && !$Blocked && !$HasActive && !$NowruzClaimed && $UUID !== '';
+
+return [
+'free_available' => $FreeAvailable,
+'free_claimed' => $FreeClaimed,
+'free_gb' => 1,
+'free_days' => 1,
+'nowruz_menu_enabled' => $NowruzEnabled,
+'nowruz_available' => $NowruzAvailable,
+'nowruz_claimed' => $NowruzClaimed,
+'nowruz_gb' => 5,
+'nowruz_days' => 13,
+];
+}
+
+/** Return the bot's currently priced plans and the linked wallet balance. */
+private static function subscriptionPlans(): void {
+$Session = self::sessionRow(self::bearer());
+if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+if ($UUID === '' || $User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
+}
+if ((int)($User['Is_Blocked'] ?? 0) === 1) self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
+self::ok([
+'plans' => \SubscriptionFlow::appPlanCatalog(),
+'custom' => \SubscriptionFlow::appCustomPlanTerms(),
+'balance' => (int)round(\Repository::getBalance((int)$User['Telegram_ID'])),
+]);
+}
+
+/**
+ * Creates a checkout using the bot's own tariff, wallet and pending-order fields.
+ * ZarinPal callbacks are still verified and settled only by SubscriptionFlow's
+ * existing callback/settlement path; the app never submits a paid status.
+ */
+private static function purchaseSubscription(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+if ($UUID === '' || $User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
+}
+$UserId = (int)($User['Telegram_ID'] ?? 0);
+if ($UserId <= 0 || (int)($User['Is_Blocked'] ?? 0) === 1) self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
+$Type = strtolower(trim((string)($Body['type'] ?? 'ready')));
+if (!in_array($Type, ['ready', 'custom'], true)) self::fail(422, 'invalid_plan', 'نوع پلن انتخابی معتبر نیست.');
+if (trim((string)(Repository::getUserSession($UserId)['Pending_Payment'] ?? '')) !== '') self::fail(409, 'payment_pending', 'یک پرداخت دیگر در حال بررسی است؛ ابتدا همان پرداخت را تکمیل یا از ربات پیگیری کنید.');
+$Phone = trim((string)($User['Phone'] ?? ''));
+$FullName = trim((string)($User['Full_Name'] ?? ''));
+if ($Phone === '' || $FullName === '') self::fail(409, 'profile_required', 'برای خرید، نام و شماره همراه را در پروفایل ربات ثبت کنید.');
+
+$Month = '';
+$Days = 0;
+$GB = 0.0;
+if ($Type === 'custom') {
+$DaysRaw = $Body['days'] ?? null;
+$GbRaw = $Body['gb'] ?? null;
+if (!(is_int($DaysRaw) || (is_string($DaysRaw) && preg_match('/^[0-9]+$/D', trim($DaysRaw)) === 1))
+|| !(is_int($GbRaw) || is_float($GbRaw) || (is_string($GbRaw) && is_numeric(trim($GbRaw))))) {
+self::fail(422, 'invalid_custom_plan', 'مدت یا حجم پلن دلخواه معتبر نیست.');
+}
+$Days = (int)$DaysRaw;
+$GB = (float)$GbRaw;
+$Terms = \SubscriptionFlow::appCustomPlanTerms();
+if (!is_finite($GB) || $Days < (int)$Terms['min_days'] || $Days > (int)$Terms['max_days']
+|| $GB < (float)$Terms['min_gb'] || $GB > (float)$Terms['max_gb']) {
+self::fail(422, 'invalid_custom_plan', 'مدت یا حجم پلن دلخواه خارج از محدوده مجاز است.');
+}
+$Price = (int)round($Days * (float)$Terms['day_rate']);
+if ($Price <= 0) self::fail(422, 'custom_plan_unavailable', 'تعرفه پلن دلخواه در حال حاضر قابل محاسبه نیست.');
+$Plan = [
+'type' => 'custom',
+'name' => 'اشتراک ' . \Helper::toPersian((string)$Days) . ' روزه - ' . \Helper::formatGB($GB),
+'days' => $Days, 'gb' => $GB, 'price' => $Price];
+} else {
+$Month = trim((string)($Body['month'] ?? ''));
+$Plans = array_column(\SubscriptionFlow::appPlanCatalog(), null, 'month');
+if (!isset($Plans[$Month])) self::fail(422, 'invalid_plan', 'پلن انتخابی معتبر یا قابل فروش نیست.');
+$Plan = $Plans[$Month];
+$Price = (int)$Plan['price'];
+}
+
+// The client quote is only compared, never used to set the amount charged.
+$Quote = $Body['quoted_price'] ?? null;
+if ($Quote !== null && !(is_int($Quote) && $Quote > 0)) self::fail(422, 'invalid_quote', 'قیمت انتخابی معتبر نیست؛ تعرفه را تازه سازی کنید.');
+if ($Quote !== null && $Quote !== $Price) self::fail(409, 'price_changed', 'تعرفه تغییر کرده است؛ پلن ها را تازه سازی و دوباره تأیید کنید.');
+
+$Balance = \Repository::getBalance($UserId);
+if ($Balance >= $Price) {
+try {
+$Result = $Type === 'custom'
+? \SubscriptionFlow::purchaseCustomFromAppWallet($UserId, $Days, $GB, $Quote)
+: \SubscriptionFlow::purchaseFromAppWallet($UserId, $Month, $Quote);
+self::ok(['status' => 'activated', 'balance' => (int)round($Result['balance']), 'expires_at' => $Result['expires_at'], 'message' => 'اشتراک با موجودی کیف پول مشترک فعال شد.']);
+} catch (Throwable $Error) {
+$Code = $Error->getMessage();
+if ($Code === 'price_changed') self::fail(409, 'price_changed', 'تعرفه تغییر کرده است؛ پلن ها را تازه سازی و دوباره تأیید کنید.');
+if ($Code === 'invalid_custom_plan' || $Code === 'custom_plan_unavailable') self::fail(422, $Code, 'تعرفه یا محدوده پلن دلخواه تغییر کرده است؛ پلن ها را تازه سازی کنید.');
+if ($Code === 'payment_pending') self::fail(409, 'payment_pending', 'یک پرداخت دیگر در حال بررسی است؛ ابتدا همان پرداخت را تکمیل یا از ربات پیگیری کنید.');
+if ($Code === 'wallet_changed') self::fail(409, 'wallet_changed', 'موجودی کیف پول هم زمان تغییر کرده است؛ کیف پول را تازه سازی کنید.');
+if ($Code === 'purchase_busy') self::fail(409, 'busy', 'درخواست خرید دیگری در حال پردازش است؛ چند ثانیه صبر کنید.');
+error_log('[Umbrella-Bot][App-Purchase] wallet activation failed for user ' . $UserId . ': ' . $Code);
+self::fail(502, 'activation_failed', 'فعال سازی از کیف پول تأیید نشد؛ موجودی و اشتراک را تازه سازی کنید.');
+}
+}
+
+try {
+$Payment = $Type === 'custom'
+? \SubscriptionFlow::startAppCustomCheckout($UserId, $Days, $GB, $Quote)
+: \SubscriptionFlow::startAppCheckout($UserId, $Month, $Quote);
+} catch (Throwable $Error) {
+$Code = $Error->getMessage();
+if ($Code === 'price_changed') self::fail(409, 'price_changed', 'تعرفه تغییر کرده است؛ پلن ها را تازه سازی و دوباره تأیید کنید.');
+if ($Code === 'invalid_custom_plan' || $Code === 'custom_plan_unavailable') self::fail(422, $Code, 'تعرفه یا محدوده پلن دلخواه تغییر کرده است؛ پلن ها را تازه سازی کنید.');
+if ($Code === 'payment_pending') self::fail(409, 'payment_pending', 'یک پرداخت دیگر در حال بررسی است؛ ابتدا همان پرداخت را تکمیل یا از ربات پیگیری کنید.');
+if ($Code === 'purchase_busy') self::fail(409, 'busy', 'درخواست خرید دیگری در حال پردازش است؛ چند ثانیه صبر کنید.');
+if ($Code === 'wallet_changed') self::fail(409, 'wallet_changed', 'موجودی یا قیمت پلن هم زمان تغییر کرده است؛ تعرفه و کیف پول را تازه سازی کنید.');
+if ($Code === 'below_gateway_minimum') self::fail(422, 'below_gateway_minimum', 'مبلغ کسری از حداقل پرداخت درگاه کمتر است؛ کیف پول را از ربات شارژ کنید یا پلن دیگری برگزینید.');
+if ($Code === 'gateway_unavailable') self::fail(503, 'gateway_unavailable', 'درگاه پرداخت یا نشانی بازگشت تنظیم نشده است.');
+if ($Code === 'invalid_custom_plan') self::fail(422, 'invalid_custom_plan', 'مدت یا حجم پلن دلخواه خارج از محدوده مجاز است.');
+error_log('[Umbrella-Bot][App-Purchase] gateway order creation failed for user ' . $UserId . ': ' . $Code);
+self::fail(502, 'gateway_request_failed', 'ساخت درخواست پرداخت انجام نشد؛ دوباره تلاش کنید.');
+}
+$FinalAmount = (float)($Payment['Amount'] ?? ($Price - $Balance));
+self::ok([
+'status' => 'payment_required',
+'checkout_url' => \Zarinpal::payLink($Payment),
+'price' => (int)($Payment['Plan_Price'] ?? $Price),
+'balance' => (int)($Payment['Wallet_Balance'] ?? $Balance),
+'gateway_amount' => (int)round($FinalAmount),
+'fee' => (int)round((float)($Payment['Fee'] ?? 0)),
+'plan' => $Plan,
+]);
+}
+
+private static function subscriptionOffers(): void {
+$Session = self::sessionRow(self::bearer());
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+
+if ($UUID === '') {
+self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
+}
+
+$Account = PanelClient::get($UUID);
+self::ok([
+'offers' => self::offersPayload($UUID, (int)($Session['Telegram_ID'] ?? 0), $Account),
+]);
+}
+
+private static function claimSubscription(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+
+if ($UUID === '') {
+self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
+}
+
+$Type = strtolower(trim((string)($Body['type'] ?? '')));
+
+if ($Type !== 'free' && $Type !== 'nowruz') {
+self::fail(422, 'invalid_plan', 'نوع اشتراک درخواستی معتبر نیست.');
+}
+
+$LockKey = 'app_claim_' . $Type . '_' . md5($UUID);
+
+if (!Repository::tryCronLock($LockKey, 30)) {
+self::fail(409, 'busy', 'درخواست قبلی در حال پردازش است؛ چند ثانیه صبر کنید.');
+}
+
+try {
+$CurrentAccount = PanelClient::get($UUID);
+$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+$Uid = (int)($User['Telegram_ID'] ?? ($Session['Telegram_ID'] ?? 0));
+
+if ((int)($User['Is_Blocked'] ?? 0) === 1) {
+self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
+}
+
+if (self::userHasActivePlan($User, $CurrentAccount)) {
+self::fail(409, 'active_subscription', 'شما در حال حاضر اشتراک فعال دارید.');
+}
+
+if ($Type === 'free') {
+$FreeKey = 'App_Free_Claimed_' . $UUID;
+if ((int)($User['Free_Plan_Claimed'] ?? 0) === 1
+|| trim((string)Repository::getSetting($FreeKey, '')) === '1') {
+self::fail(409, 'already_claimed', 'اشتراک رایگان قبلاً برای این حساب فعال شده است.');
+}
+$Name = '۱ روزه';
+$Gb = 1;
+$Days = 1;
+} else {
+if (!BotConfig::isNowruzMenuEnabled()) {
+self::fail(403, 'nowruz_disabled', 'اشتراک نوروزی در حال حاضر فعال نیست.');
+}
+if (BotConfig::hasClaimedNowruz($Uid, $UUID)) {
+self::fail(409, 'already_claimed', 'اشتراک نوروزی قبلاً برای این حساب فعال شده است.');
+}
+$Name = 'نوروزی';
+$Gb = 5;
+$Days = 13;
+}
+
+$Tehran = new DateTimeZone('Asia/Tehran');
+$NowTehran = new DateTimeImmutable('now', $Tehran);
+$Today = $NowTehran->format('Y-m-d');
+$ExpireStamp = $NowTehran->modify('+' . $Days . ' days')->getTimestamp();
+
+$Updated = PanelClient::update($UUID, [
+'start_date' => $Today,
+'package_days' => $Days,
+'usage_limit_GB' => $Gb,
+'current_usage_GB' => 0,
+'is_active' => true,
+'enable' => true,
+'last_reset_time' => $Today,
+]);
+
+if ($Updated === null || $Updated === []) {
+self::fail(502, 'panel_unavailable', 'فعال سازی در سرور ناموفق بود؛ کمی بعد دوباره تلاش کنید.');
+}
+
+if ($Type === 'free') {
+Repository::setSetting('App_Free_Claimed_' . $UUID, '1');
+} else {
+BotConfig::markNowruzClaimed($Uid, $UUID);
+}
+
+$UsageLimit = (float)max($Gb, (float)($Updated['usage_limit_GB'] ?? $Gb));
+
+if ($Uid > 0 && $User !== null) {
+$Fields = [
+'Client_ID' => $UUID,
+'Subscription' => $Name,
+'Package_Duration' => \Helper::durationLabel($Days),
+'Package_Start_Date' => \Helper::formatPersianDate($NowTehran->getTimestamp()),
+'Expiration_Date' => \Helper::formatExpiration($ExpireStamp),
+'Expiration_Time_Stamp' => $ExpireStamp,
+'Total_Usage_GB' => $UsageLimit,
+'Used_Usage_GB' => 0.0,
+'Remaining_Usage_GB' => $UsageLimit,
+'Percent_Usage' => 0.0,
+'Client_Status' => 'فعال',
+'Channel_Client_Disabled_At' => null,
+'Deactivation_Message' => null,
+];
+if ($Type === 'free') {
+$Fields['Free_Plan_Claimed'] = 1;
+}
+Repository::updateUser($Uid, $Fields);
+Repository::addSubscriptionLog($Uid, 'activate_' . $Type, $Name, $Days, $UsageLimit, $UUID, 'app', $Uid);
+Repository::schedule('منقضی اشتراک', $Uid, $ExpireStamp);
+SystemNotifications::queue(
+$Uid,
+$Type === 'free' ? 'اشتراک رایگان فعال شد' : 'اشتراک نوروزی فعال شد',
+\Helper::toPersian((string)$Gb) . ' گیگابایت · ' . \Helper::toPersian((string)$Days) . ' روز اعتبار',
+'claim-' . $Type . ':' . $ExpireStamp,
+'success'
+);
+}
+
+$Fresh = PanelClient::get($UUID) ?? $Updated;
+$Profile = AppFilter::accountPayload($Fresh);
+$Base = PanelClient::accountBase($Fresh);
+$Profile['account_base'] = $Base;
+$Profile['subscription_url'] = self::subscriptionUrl($Fresh, $Base, $UUID);
+
+self::ok([
+'message' => $Type === 'free'
+? 'اشتراک رایگان (۱ گیگابایت، ۱ روز) فعال شد.'
+: 'اشتراک نوروزی (۵ گیگابایت، ۱۳ روز) فعال شد.',
+'account' => $Profile,
+'filter' => AppFilter::load($UUID),
+'offers' => self::offersPayload($UUID, $Uid, $Fresh),
+]);
+} finally {
+Repository::releaseCronLock($LockKey);
+}
+}
+
+private static function fetchSubscription(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+
+if ($UUID === '') {
+self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
+}
+
+$Account = PanelClient::get($UUID) ?? [];
+$Base = PanelClient::accountBase($Account);
+$Sub_Url = self::subscriptionUrl($Account, $Base, $UUID);
+
+// Only allow fetching the user's own `/sub/` link when the full secret prefix
+// is present; prevent calling a bare `https://host/<uuid>/sub/` that 404s.
+$Parsed = $Sub_Url !== '' ? parse_url($Sub_Url) : false;
+$Segments = is_array($Parsed) && isset($Parsed['path'])
+? array_values(array_filter(explode('/', (string)$Parsed['path']), static fn(string $S): bool => $S !== ''))
+: [];
+
+if ($Sub_Url === '' || count($Segments) < 3) {
+self::fail(409, 'no_subscription_url', 'نشانی اشتراک اختصاصی در سرور تنظیم نشده است.');
+}
+
+$User_Agents = ['Umbrella-Windows/1.0.0', 'SingBox/1.10.0'];
+$Last_Status = 0;
+$Last_Error = '';
+
+foreach ($User_Agents as $Agent) {
+$Response = HttpClient::get($Sub_Url, [
+'Accept' => 'text/plain, application/json, */*',
+'User-Agent' => $Agent,
+], 18);
+$Last_Status = (int)($Response['StatusCode'] ?? 0);
+$Last_Error = trim((string)($Response['Error'] ?? ''));
+$Content = trim((string)($Response['Body'] ?? ''));
+
+if ($Last_Status >= 200 && $Last_Status < 300 && $Content !== '') {
+$Lower_Head = strtolower(substr(ltrim($Content), 0, 64));
+
+if (str_starts_with($Lower_Head, '<!doctype html') || str_starts_with($Lower_Head, '<html')) {
+continue;
+}
+
+self::ok([
+'uuid' => $UUID,
+'account_base' => $Base,
+'subscription_url' => $Sub_Url,
+'content' => $Content,
+'checked_at' => gmdate('c'),
+]);
+}
+
+if ($Last_Status === 401 || $Last_Status === 403 || $Last_Status === 404) {
+break;
+}
+}
+
+error_log('[Umbrella-Bot][Gateway] subscription/fetch failed | uuid=' . substr($UUID, 0, 8) . ' | HTTP=' . $Last_Status . ($Last_Error !== '' ? ' | curl=' . $Last_Error : ''));
+self::fail(
+$Last_Status >= 400 && $Last_Status < 500 ? $Last_Status : 502,
+'subscription_unavailable',
+'دریافت اشتراک اختصاصی از سرور ناموفق بود.'
+);
+}
+
 private static function ping(): void {
 self::ok([
 'time' => gmdate('c'),
-'version' => '2',
-'features' => ['signin', 'device_confirm', 'notifications', 'filter'],
+'version' => '4',
+'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase'],
 ]);
 }
 
@@ -953,22 +1488,20 @@ return true;
 private static function resolveAccount(string $Phone, string $Full_Name, int $Telegram_Id = 0): array {
 [$Account] = self::findCustomerAccount($Phone);
 
-if ($Account === null && PanelClient::lastListError() !== null) {
-// The list read failed — we cannot tell «new customer» from «panel is
-// down», so refuse to create a duplicate account.
-error_log('[Umbrella-Bot][Gateway] refusing account creation while panel list is failing: ' . PanelClient::lastListError());
-return [];
-}
-
 if (is_array($Account) && $Account !== []) {
 return $Account;
 }
 
+if (PanelClient::lastListError() !== null) {
+error_log('[Umbrella-Bot][Gateway] panel list degraded during resolveAccount; no local UUID found for masked-' . substr(md5($Phone), 0, 8) . ', attempting create: ' . PanelClient::lastListError());
+}
+
 // This panel has no `phone` field — it stores the mobile in `comment` and the
-// numeric Telegram id in `telegram_id` (linked right after creation).
+// numeric Telegram id in `telegram_id`.
 $Created = PanelClient::create([
-'name' => $Full_Name,
+'name' => $Full_Name !== '' ? $Full_Name : 'کاربر آمبرلا',
 'comment' => $Phone,
+'telegram_id' => max(0, $Telegram_Id),
 ]);
 
 if ($Created === null) {
@@ -976,10 +1509,11 @@ error_log('[Umbrella-Bot][Gateway] account creation failed for ' . $Phone);
 return [];
 }
 
-if ($Telegram_Id > 0) {
 $New_UUID = trim((string)($Created['uuid'] ?? ''));
 
-if ($New_UUID !== '') {
+if ($Telegram_Id > 0 && $New_UUID !== '') {
+self::syncBotUserClientId($Telegram_Id, $New_UUID);
+if ((int)($Created['telegram_id'] ?? 0) !== $Telegram_Id) {
 try { PanelClient::update($New_UUID, ['telegram_id' => $Telegram_Id]); }
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] telegram_id link after create failed for ' . $Phone . ': ' . $Error->getMessage()); }
 }
@@ -989,17 +1523,33 @@ Repository::addNotification(null, 'app_signup', 'حساب جدید ساخته ش
 return $Created;
 }
 
+/** Keeps Users.Client_ID linked when an app-created account joins the bot. */
+private static function syncBotUserClientId(int $Telegram_Id, string $UUID): void {
+if ($Telegram_Id <= 0 || $UUID === '') return;
+
+try {
+Database::getInstance()->execute(
+"UPDATE `Users` SET `Client_ID` = ? WHERE `Telegram_ID` = ? AND (`Client_ID` IS NULL OR `Client_ID` = '' OR `Client_ID` = '_')",
+[$UUID, $Telegram_Id]
+);
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Gateway] Users.Client_ID sync failed: ' . $Error->getMessage());
+}
+}
+
 /**
- * Finds the customer for a phone: the bot's Users row first (it remembers the
- * panel uuid the bot issued, so this works even when the panel list is slow),
- * then the panel itself (matching `comment` or `phone`). Returns the account
- * and where it was found ('bot_db' | 'panel' | 'none').
+ * Finds the customer for a phone: checks local DB tables first (`Users`,
+ * `App_Devices`, `App_SignIn_Requests` — fast and independent of panel list
+ * availability), then scans the panel itself (`comment` / `phone`).
  *
  * @return array{0: ?array, 1: string}
  */
 private static function findCustomerAccount(string $Phone): array {
 $Linked = Repository::findUserByPhone($Phone);
 $Client_Id = trim((string)($Linked['Client_ID'] ?? ''));
+$Linked_Telegram = (int)($Linked['Telegram_ID'] ?? 0);
+$Linked_Name = trim((string)($Linked['Full_Name'] ?? ($Linked['First_Name'] ?? '')));
 
 if ($Client_Id !== '' && $Client_Id !== '_') {
 $Account = PanelClient::get($Client_Id);
@@ -1008,7 +1558,52 @@ if (is_array($Account) && $Account !== []) {
 return [$Account, 'bot_db'];
 }
 
-error_log('[Umbrella-Bot][App-Auth] Client_ID stored in the bot DB no longer resolves in the panel; falling back to the phone scan');
+// If the panel returned anything other than 404 (e.g. transient timeout/5xx),
+// keep the known UUID so we never treat an existing customer as brand-new.
+if (PanelClient::lastGetStatus() !== 404) {
+error_log('[Umbrella-Bot][App-Auth] panel get transient failure for known bot Client_ID; preserving local UUID');
+return [[
+'uuid' => $Client_Id,
+'name' => $Linked_Name,
+'telegram_id' => $Linked_Telegram,
+], 'bot_db_cached'];
+}
+
+error_log('[Umbrella-Bot][App-Auth] Client_ID stored in the bot DB no longer exists (404); falling back to phone scan');
+}
+
+// Check previously linked app devices and verified sign-in requests as well,
+// covering app-registered users who have not yet opened the Telegram bot.
+$Prior_Device = Database::getInstance()->fetch(
+"SELECT `User_UUID`, `Telegram_ID` FROM `App_Devices`
+WHERE `Phone` = ? AND `User_UUID` IS NOT NULL AND `User_UUID` != ''
+ORDER BY `ID` DESC LIMIT 1",
+[$Phone]
+);
+$Prior_Request = $Prior_Device === null ? Database::getInstance()->fetch(
+"SELECT `User_UUID`, `Telegram_ID`, `Full_Name` FROM `App_SignIn_Requests`
+WHERE `Phone` = ? AND `User_UUID` IS NOT NULL AND `User_UUID` != ''
+ORDER BY `ID` DESC LIMIT 1",
+[$Phone]
+) : null;
+
+$Cached_Row = $Prior_Device ?? $Prior_Request;
+$Cached_UUID = trim((string)($Cached_Row['User_UUID'] ?? ''));
+
+if ($Cached_UUID !== '') {
+$Account = PanelClient::get($Cached_UUID);
+
+if (is_array($Account) && $Account !== []) {
+return [$Account, 'app_db'];
+}
+
+if (PanelClient::lastGetStatus() !== 404) {
+return [[
+'uuid' => $Cached_UUID,
+'name' => trim((string)($Cached_Row['Full_Name'] ?? $Linked_Name)),
+'telegram_id' => (int)($Cached_Row['Telegram_ID'] ?? $Linked_Telegram),
+], 'app_db_cached'];
+}
 }
 
 $Account = PanelClient::findByPhone($Phone);
@@ -1088,9 +1683,9 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . "🔐 درخواست ورود به فیلترشکن آمبرلا\n"
 . "👤 نام: " . ($Name !== '' ? $Name : '—') . "\n"
 . "📱 دستگاه: {$Device}\n"
-. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Platform !== '' ? "🖥 سیستم عامل: " . (method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform) : $Platform) . "\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
+. ($IP !== '' ? "🌐 آی پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: {$At}\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "اگر این درخواست از طرف خودتان است «خودم بودم» را بزنید؛ در غیر این صورت «نبودم» را بزنید تا ورود مسدود شود."
@@ -1110,12 +1705,12 @@ return \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Tel
 . "✅ ورود به فیلترشکن آمبرلا انجام شد\n"
 . "👤 نام: " . ($Name !== '' ? $Name : '—') . "\n"
 . "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
-. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Platform !== '' ? "🖥 سیستم عامل: " . (method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform) : $Platform) . "\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. ($IP !== '' ? "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n" : '')
+. ($IP !== '' ? "🌐 آی پی: " . \Helper::toPersian($IP) . "\n" : '')
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "تأیید دومرحله‌ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در منوی خدمات ربات آن دستگاه را حذف کنید و تأیید دومرحله‌ای را روشن کنید."
+. "تأیید دومرحله ای خاموش است، بنابراین دستگاه بدون پرسش تأیید شد. اگر این ورود از طرف شما نبود، همین حالا از «📱دستگاه من» در منوی خدمات ربات آن دستگاه را حذف کنید و تأیید دومرحله ای را روشن کنید."
 . \Helper::userFooter();
 }
 
@@ -1134,15 +1729,10 @@ if ($Telegram_Id <= 0) {
 return;
 }
 
-// Three wrong codes in a row are one event, not three; without this the person
-// fumbling their own code would fill their chat with alerts.
-$Throttle_Key = 'AppFailNotify_' . $Telegram_Id;
-
-if (time() - (int)Repository::getSetting($Throttle_Key, 0) < 60) {
+// حداکثر یک اعلان خودکار ورود ناموفق در شبانه روز برای هر کاربر.
+if (!Repository::claimDailyNotice('app_failed_login', $Telegram_Id)) {
 return;
 }
-
-Repository::setSetting($Throttle_Key, time());
 
 $Labels = [
 'code_invalid' => 'کد تأیید اشتباه',
@@ -1165,13 +1755,13 @@ $Telegram_Id,
 \Helper::frame('کاربر', $Name, 'فیلترشکن آمبرلا', $Telegram_Id)
 . "⚠️ ورود ناموفق به فیلترشکن آمبرلا\n"
 . "📱 دستگاه: " . ($Device !== '' ? $Device : 'دستگاه ناشناس') . "\n"
-. ($Platform !== '' ? "🖥 سیستم‌عامل: {$Platform}\n" : '')
+. ($Platform !== '' ? "🖥 سیستم عامل: " . (method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform) : $Platform) . "\n" : '')
 . ($Version !== '' ? "🏷 نسخه برنامه: " . \Helper::toPersian($Version) . "\n" : '')
-. "🌐 آی‌پی: " . \Helper::toPersian($IP) . "\n"
+. "🌐 آی پی: " . \Helper::toPersian($IP) . "\n"
 . "🕐 زمان: " . \Helper::formatPersianDate(time(), true) . "\n"
 . "🔎 دلیل: " . ($Labels[$Reason] ?? $Reason) . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه‌های ناشناس را حذف کنید.**"
+. "**اگر این تلاش از طرف شما نبود، کد تأیید را برای کسی نفرستید و از «📱دستگاه من» در منوی خدمات ربات، دستگاه های ناشناس را حذف کنید.**"
 . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([[
 ['text' => '📱 دستگاه من', 'callback_data' => 'app_devices'],
@@ -1240,42 +1830,111 @@ return BotIdentity::link();
 }
 
 /**
- * The customer share link. The panel reports it for most deployments; when it
- * does not, it is built from the account base and the uuid the same way the
- * bot's own subscription menu builds it.
+ * Personal customer `/sub/` share link — built from the same configured
+ * `Subscription_Link_Base` + `<uuid>/sub/` formula as the bot's own subscription
+ * menu, never duplicating the UUID and never falling back to public sources.
  */
 private static function subscriptionUrl(array $Account, string $Base, string $UUID): string {
+$UUID = trim($UUID);
 $Direct = trim((string)($Account['subscription_url'] ?? ($Account['sub_link'] ?? '')));
 
-if ($Direct !== '') return $Direct;
+if ($Direct !== '' && str_starts_with($Direct, 'http')) {
+if (preg_match('#^(https?://[^/]+)(/.*?)?/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:/.*)?$#', $Direct, $Match) === 1) {
+$Prefix = trim((string)($Match[2] ?? ''), '/');
+$Target_Uuid = $UUID !== '' ? $UUID : $Match[3];
+if ($Prefix !== '' && strtolower($Prefix) !== strtolower($Target_Uuid)) {
+return $Match[1] . '/' . $Prefix . '/' . $Target_Uuid . '/sub/';
+}
+$Base_Path = $Base !== '' ? trim((string)(parse_url($Base, PHP_URL_PATH) ?? ''), '/') : '';
+if ($Base_Path !== '' && strtolower($Base_Path) !== strtolower($Target_Uuid)) {
+return rtrim($Base, '/') . '/' . $Target_Uuid . '/sub/';
+}
+return $Match[1] . '/' . $Target_Uuid . '/sub/';
+}
+return $Direct;
+}
 
 if ($Base === '' || $UUID === '') return '';
 
-return rtrim($Base, '/') . '/' . $UUID . '/sub/';
+$Clean_Base = rtrim($Base, '/');
+if (str_ends_with(strtolower($Clean_Base), '/' . strtolower($UUID))) {
+return $Clean_Base . '/sub/';
+}
+
+return $Clean_Base . '/' . $UUID . '/sub/';
 }
 
 private static function body(): array {
 $Raw = file_get_contents('php://input') ?: '';
+if (str_starts_with($Raw, "\xEF\xBB\xBF")) {
+$Raw = substr($Raw, 3);
+}
 $Json = json_decode($Raw, true);
 
 if (is_array($Json)) return $Json;
+
+// Fallback for client networks / WAF rules that block application/json POSTs
+// and re-send the JSON envelope inside a standard form-encoded `_json` field.
+$Wrapped = $_POST['_json'] ?? ($_GET['_json'] ?? null);
+if (is_string($Wrapped) && $Wrapped !== '') {
+$Decoded = json_decode($Wrapped, true);
+if (is_array($Decoded)) return $Decoded;
+}
 
 return array_merge($_GET, $_POST);
 }
 
 private static function ok(array $Payload): void {
 http_response_code(200);
-echo json_encode($Payload + ['ok' => true], self::JSON_FLAGS);
+echo json_encode(self::sanitizePayload($Payload) + ['ok' => true], self::JSON_FLAGS);
 exit;
 }
 
 private static function fail(int $Status, string $Code, string $Message, array $Extra = []): void {
 http_response_code($Status);
+$Clean_Message = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Message) : $Message;
+if (method_exists('Helper', 'stripZwnj')) $Clean_Message = Helper::stripZwnj($Clean_Message);
+if (method_exists('Helper', 'digitsToPersian')) $Clean_Message = Helper::digitsToPersian($Clean_Message);
 echo json_encode(
-array_merge(['ok' => false, 'error' => $Code, 'message' => $Message], $Extra),
+array_merge(['ok' => false, 'error' => $Code, 'message' => $Clean_Message], self::sanitizePayload($Extra)),
 self::JSON_FLAGS
 );
 exit;
+}
+
+private static function sanitizePayload(array $Data): array {
+if (!method_exists('Helper', 'repairMojibake')) {
+return $Data;
+}
+
+$Opaque_Keys = [
+'token' => true, 'secret' => true, 'challenge' => true, 'device_id' => true,
+'uuid' => true, 'sub_url' => true, 'subscription_url' => true, 'account_base' => true,
+'content' => true, 'url' => true,
+'emergency_url' => true, 'channel_url' => true, 'support_url' => true,
+];
+$Persian_Prose_Keys = [
+'message' => true, 'title' => true, 'body' => true, 'label' => true,
+];
+
+foreach ($Data as $Key => $Value) {
+if (is_string($Key) && isset($Opaque_Keys[$Key])) continue;
+
+if (is_string($Value)) {
+$Clean = Helper::repairMojibake($Value);
+if (method_exists('Helper', 'stripZwnj')) $Clean = Helper::stripZwnj($Clean);
+if (is_string($Key) && isset($Persian_Prose_Keys[$Key]) && method_exists('Helper', 'digitsToPersian')) {
+$Clean = Helper::digitsToPersian($Clean);
+}
+$Data[$Key] = $Clean;
+}
+
+elseif (is_array($Value)) {
+$Data[$Key] = self::sanitizePayload($Value);
+}
+}
+
+return $Data;
 }
 }
 ?>

@@ -45,9 +45,15 @@ return trim($Text);
 
 public static function md(string $Text): string {
 if ($Text === '') return $Text;
+if (method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+if (method_exists('Helper', 'stripZwnj')) {
+$Text = Helper::stripZwnj($Text);
+}
 $Text = str_replace(["\r\n", "\r"], "\n", $Text);
-// Every message goes through here, so this is the one place that guarantees
-// Persian digits — code spans, links and @usernames keep their Latin ones.
+// همه پیام ها از این نقطه عبور می کنند: حذف نیم فاصله و تبدیل ارقام به فارسی
+// در حالی که کلیدها، لینک ها و نام های کاربری دست نخورده باقی می مانند.
 $Text = Helper::digitsToPersian($Text);
 $Text = static::normalizeStars($Text);
 $Text = static::normalizeLayout($Text);
@@ -241,7 +247,7 @@ if ($Reply_To !== null) $Payload['reply_to_message_id'] = $Reply_To;
 return self::call('sendMessage', $Payload);
 }
 
-/** تحویل متن بلند با عقب‌گرد به متن ساده؛ خطای قالب نباید صفحه را بی‌پاسخ بگذارد. */
+/** تحویل متن بلند با عقب گرد به متن ساده؛ خطای قالب نباید صفحه را بی پاسخ بگذارد. */
 public static function sendReadableMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): bool {
 $Html = self::md(self::trimFooterWithoutKeyboard($Text, $Markup));
 // Keep hyperlink destinations in the plain-text fallback too.
@@ -253,7 +259,7 @@ $Result = $MessageId !== null ? self::editMessageText($ChatId, $MessageId, $Text
 if (($Result['ok'] ?? false) === true || str_contains((string)($Result['description'] ?? ''), 'message is not modified')) return true;
 } catch (Throwable) {}
 }
-// قطعه‌بندی متن ساده، ترجیحاً در پایان خط، بدون حذف هیچ بخشی از متن.
+// قطعه بندی متن ساده، ترجیحاً در پایان خط، بدون حذف هیچ بخشی از متن.
 $Parts = [];
 while (mb_strlen($Plain) > 1800) {
 $Head = mb_substr($Plain, 0, 1800);
@@ -345,7 +351,15 @@ return $Clean === [] ? [] : ['inline_keyboard' => $Clean];
 public static function answerCallbackQuery(string $Callback_Query_ID, string $Text = '', bool $Show_Alert = false): array {
 $Payload = ['callback_query_id' => $Callback_Query_ID, 'show_alert' => $Show_Alert];
 
-if ($Text !== '') $Payload['text'] = Helper::digitsToPersian($Text);
+if ($Text !== '') {
+if (method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+if (method_exists('Helper', 'stripZwnj')) {
+$Text = Helper::stripZwnj($Text);
+}
+$Payload['text'] = Helper::digitsToPersian($Text);
+}
 return self::call('answerCallbackQuery', $Payload);
 }
 
@@ -365,7 +379,7 @@ $Fields = [
 'disable_web_page_preview' => true,
 ];
 
-if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup);
+if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 $Response = HttpClient::postMultipart(self::url('sendPhoto'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
@@ -377,6 +391,16 @@ return self::call('sendPhoto', $Payload);
 }
 
 public static function sendMediaGroup(int $Chat_ID, array $Media, array $Markup = []): array {
+foreach ($Media as $Index => $Item) {
+if (is_array($Item) && isset($Item['caption']) && is_string($Item['caption']) && $Item['caption'] !== '') {
+$Caption = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Item['caption']) : $Item['caption'];
+if (method_exists('Helper', 'stripZwnj')) {
+$Caption = Helper::stripZwnj($Caption);
+}
+$Item['caption'] = Helper::digitsToPersian($Caption);
+$Media[$Index] = $Item;
+}
+}
 $Payload = ['chat_id' => $Chat_ID, 'media' => $Media];
 
 if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
@@ -392,7 +416,7 @@ $Fields = [
 'disable_web_page_preview' => true,
 ];
 
-if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup);
+if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 $Response = HttpClient::postMultipart(self::url('sendDocument'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
@@ -469,7 +493,11 @@ continue;
 }
 }
 
-$Text = Helper::digitsToPersian($Button['text']);
+$Raw_Button_Text = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Button['text']) : $Button['text'];
+if (method_exists('Helper', 'stripZwnj')) {
+$Raw_Button_Text = Helper::stripZwnj($Raw_Button_Text);
+}
+$Text = Helper::digitsToPersian($Raw_Button_Text);
 
 // متن دکمه حداکثر ۶۴ کاراکتر است.
 if (mb_strlen($Text) > 64) $Text = mb_substr($Text, 0, 61) . '…';

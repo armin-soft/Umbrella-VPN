@@ -21,14 +21,16 @@ private const ROUTES = [
 'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
 'user_account_menu' => [UserFlow::class, 'accountMenu'],
 'user_device_menu' => [UserFlow::class, 'deviceMenu'],
-// سازگاری با پیام‌های قدیمی؛ دسته امنیت دیگر نمایش داده نمی‌شود.
+// سازگاری با پیام های قدیمی؛ دسته امنیت دیگر نمایش داده نمی شود.
 'user_security_menu' => [UserFlow::class, 'accountMenu'],
 'user_stats_menu' => [UserFlow::class, 'statsMenu'],
+'app_download_menu' => [UserFlow::class, 'appDownloadMenu'],
+'app_download_windows' => [UserFlow::class, 'appDownloadWindows'],
 'منوی پشتیبانی' => [UserFlow::class, 'supportMenu'],
 'گزارش مصرف' => [UserFlow::class, 'usageAnalytics'],
 'ویرایش و ثبت پروفایل' => [ProfileFlow::class, 'begin'],
 'ویرایش پروفایل' => [ProfileFlow::class, 'begin'],
-'اشتراک من' => [SubscriptionFlow::class, 'mySubscription'],
+'اشتراک من' => [UserFlow::class, 'profile'],
 'اشتراک رایگان اول' => [SubscriptionFlow::class, 'freePlan'],
 'اشتراک نوروزی اول' => [SubscriptionFlow::class, 'nowruzPlan'],
 'اشتراک آماده' => [SubscriptionFlow::class, 'readyPlansMenu'],
@@ -77,6 +79,7 @@ $Text = trim((string)$Context->Text);
 $Is_Start = $Callback === 'start' || $Callback === '/start'
 || mb_strtolower($Callback) === 'start'
 || $Text === '/start' || mb_strtolower($Text) === 'start'
+|| preg_match('/^\/start(?:@\w+)? app_[a-f0-9]{32}$/D', $Text) === 1
 || $Callback === 'بررسی عضویت کانال';
 
 if (!$Is_Start && !UserFlow::checkChannelMembershipCached($Context->UserId)) {
@@ -168,7 +171,9 @@ $Text = $Greeting . Helper::noticeBlock(
 ) . Helper::userFooter();
 }
 
-SystemNotifications::queue($Context->UserId, 'عضویت کانال', '⚠️شما عضو کانال اطلاع‌رسانی نیستید؛ برای ادامه سرویس عضو شوید: ' . $Channel_Url, 'channel-warning:' . (int)($Grace_Started_At ?? 0) . ':first', 'warning');
+if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_warn_app', $Context->UserId)) {
+SystemNotifications::queue($Context->UserId, 'عضویت کانال', '⚠️شما عضو کانال اطلاع رسانی نیستید؛ برای ادامه سرویس عضو شوید: ' . $Channel_Url, 'channel-warning:' . (int)($Grace_Started_At ?? 0) . ':first', 'warning');
+}
 if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️ابتدا عضو کانال شوید.', true);
 }
@@ -263,6 +268,11 @@ UserFlow::start($Context);
 return;
 }
 
+if (preg_match('/^app_link:([a-f0-9]{32})$/D', $Data, $Match) === 1) {
+AppBotLink::confirm($Context, $Match[1]);
+return;
+}
+
 // ── device confirmation from the app ─────────────────────────────────────
 // Handled before the channel guard and the menus: a sign-in waiting for an
 // answer must always be answerable, whatever state the bot is in.
@@ -353,11 +363,15 @@ match($Data) {
 'app_notifications' => UserFlow::accountMenu($Context),
 'nightly_report_on' => UserFlow::setNightlyReport($Context, true),
 'nightly_report_off' => UserFlow::setNightlyReport($Context, false),
-'app_filter_domains' => AppFlow::filterDomainsStart($Context),
+'app_filter_domains' => AppFlow::filterDomainsMenu($Context),
+'app_fdom_add' => AppFlow::filterDomainsStart($Context),
+'app_fdom_clear' => AppFlow::filterDomainsClearAsk($Context),
+'app_fdom_clear_ok' => AppFlow::filterDomainsClearConfirm($Context),
 'app_push_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
 'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
+'nowruz_menu_toggle' => AdminFlow::toggleNowruzMenu($Context),
 'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
 'cfg_pricing' => AdminFlow::pricingMenu($Context),
 'cfg_links' => AdminFlow::linksMenu($Context),
@@ -471,6 +485,22 @@ return;
 
 if (str_starts_with($Data, 'app_filter_toggle:')) {
 AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
+return;
+}
+
+if (str_starts_with($Data, 'app_fdom_page:')) {
+$Rest = substr($Data, strlen('app_fdom_page:'));
+if (preg_match('/^[0-9]+$/D', $Rest) === 1) {
+AppFlow::filterDomainsMenu($Context, (int)$Rest);
+}
+return;
+}
+
+if (str_starts_with($Data, 'app_fdom_del:')) {
+$Rest = substr($Data, strlen('app_fdom_del:'));
+if (preg_match('/^([a-f0-9]{12}):([0-9]+)$/D', $Rest, $Match) === 1) {
+AppFlow::filterDomainDelete($Context, $Match[1], (int)$Match[2]);
+}
 return;
 }
 
@@ -628,7 +658,7 @@ $Ok
 $Section = 'تأیید دستگاه';
 $Text = $Ok
 ? ($Approved
-? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
+? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به صورت خودکار وارد می شود." . Helper::userFooter()
 : Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
 : Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n🔁از برنامه دوباره وارد شوید." . Helper::userFooter();
 
@@ -655,7 +685,11 @@ $Has_Media = TicketMedia::extract($Context) !== null;
 
 if (!$Has_Media && $Text === '') {
 $InputFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
-if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به‌صورت عکس، فایل یا متن ارسال کنید.');
+if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به صورت عکس، فایل یا متن ارسال کنید.');
+return;
+}
+if (!$Has_Media && preg_match('/^\/start(?:@\w+)? app_([a-f0-9]{32})$/D', $Text, $Match) === 1) {
+AppBotLink::begin($Context, $Match[1]);
 return;
 }
 if (!$Has_Media && ($Text === '/start' || mb_strtolower($Text) === 'start')) {
@@ -778,7 +812,8 @@ $Typed_Routes = [
 'دستگاه من' => fn() => UserFlow::deviceMenu($Context),
 'امنیت' => fn() => UserFlow::accountMenu($Context),
 'سوابق و آمار' => fn() => UserFlow::statsMenu($Context),
-'اشتراک من' => fn() => SubscriptionFlow::mySubscription($Context),
+'نرم افزار/اپلیکیشن' => fn() => UserFlow::appDownloadMenu($Context),
+'اشتراک من' => fn() => UserFlow::profile($Context),
 'منوی خدمات کاربری' => fn() => UserFlow::serviceMenu($Context),
 'منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
 'بازگشت به منوی اصلی' => fn() => UserFlow::serviceMenu($Context),

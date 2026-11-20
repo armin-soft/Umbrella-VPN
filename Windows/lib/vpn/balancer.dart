@@ -68,7 +68,7 @@ class NodeBalancer {
         final VpnNode node = usable[index];
         return SelectionResult(
           node: node,
-          reason: 'انتخاب گردشی برای پخش بار (نوبت ${node.name}).',
+          reason: 'انتخاب گردشی برای پخش بار.',
         );
       case SelectionMode.consistentHash:
         final VpnNode node = _consistentHash(usable, deviceSeed);

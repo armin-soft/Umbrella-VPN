@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import 'persian.dart';
 
 /// تنظیمات ثابت برنامه: نسخه، آدرس سرویس ها و تنها منابع اشتراک مجاز.
 ///
@@ -9,23 +10,24 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.29';
-  static const int buildNumber = 28;
-  /// شماره نسخه برای نمایش، همان طور که در نوار کناری خواسته شد: `1.0.18`.
-  ///
-  /// از همان `version` ساخته می شود تا هیچ وقت عقب نماند (در ۱٫۰٫۸ اینجا
-  /// هنوز «۱٫۰٫۰» نوشته بود). بدون کلمه «نسخه» و با رقم لاتین، چون کاربر
-  /// دقیقا همین را زیر منوی کناری خواست.
+  static const String version = '1.0.0';
+  static const int buildNumber = 1;
+  /// شماره نسخه برای نمایش، از همان `version` ساخته می شود تا هیچ وقت عقب نماند.
   static String get versionLabel => version;
 
-  /// همان شماره با پیشوند فارسی، برای جاهایی که متن جمله است (تنظیمات،
-  /// گزارش خطا): «نسخه ۱٫۰٫۱۶».
-  static String get versionPhrase => 'نسخه ${version.split('.').join('٫')}';
+  /// همان شماره با پیشوند فارسی، برای جاهایی که متن جمله است (تنظیمات، گزارش خطا).
+  static String get versionPhrase => Fa.num('نسخه ${version.split('.').join('٫')}');
   static const String company = 'آرمین سافت';
   static const String developer = 'آرمین سافت';
   static const String developerSite = 'https://armin-soft.ir';
   static const String supportUrl = 'https://t.me/UmbrellaSupport';
-  static const String channelUrl = 'https://t.me/UmbrellaChannel';
+  static const String channelUsername = String.fromEnvironment(
+    'UMBRELLA_CHANNEL',
+    defaultValue: 'UmbrellaVPN_Channel',
+  );
+  static const String channelHandle = '@$channelUsername';
+  static const String channelUrl = 'https://t.me/$channelUsername';
+  static const String channelAppUrl = 'tg://resolve?domain=$channelUsername';
   static const String botUsername = String.fromEnvironment(
     'UMBRELLA_BOT',
     defaultValue: 'UmbrellaVPN_BOT',
@@ -54,10 +56,15 @@ class AppConfig {
     defaultValue: 'ae467ee4-2249-4b67-bfa8-e59ca3125286',
   );
 
-  static const String subscriptionRoot =
-      'https://user.umbrella-server.ir/D6qnVQXRwa/9b9d9f5d-9841-45bf-a6b9-0479de273c11';
+  /// پیشوند مسیر اشتراک پنل (بدون شناسه کاربر)؛ فقط برای ساخت نشانی اختصاصی
+  /// `<base><uuid>/sub/` کاربر واردشده به کار می رود و هیچ منبع عمومی یا
+  /// رایگان در برنامه وجود ندارد.
+  static const String subscriptionBaseUrl = String.fromEnvironment(
+    'UMBRELLA_SUB_BASE',
+    defaultValue: 'https://user.umbrella-server.ir/D6qnVQXRwa/',
+  );
 
-  /// تنها میزبان هایی که برنامه اجازه دانلود اشتراک از آن ها را دارد.
+  /// تنها میزبان هایی که برنامه اجازه دانلود اشتراک اختصاصی کاربر از آن ها را دارد.
   static const List<String> allowedSubscriptionHosts = <String>[
     'user.umbrella-server.ir',
   ];
@@ -65,56 +72,10 @@ class AppConfig {
   /// شناسه اشتراک شخصی کاربر که نشانی اش از سرور می آید.
   static const String personalSourceId = 'user';
 
-  /// منابع عمومی برنامه؛ فقط پشتیبان هستند تا پیش از ورود هم سروری نمایش داده
-  /// شود. اشتراک اصلی هر کاربر همان است که سرور می دهد.
+  /// هیچ منبع عمومی، رایگان یا اشتراکی در برنامه وجود ندارد؛ فقط اشتراک شخصی
+  /// حساب کاربر واردشده استفاده می شود.
   static const List<SubscriptionSource> subscriptionSources =
-      <SubscriptionSource>[
-    SubscriptionSource(
-      id: 'xray',
-      title: 'ایکس ری',
-      url: '$subscriptionRoot/all.txt',
-      format: SubscriptionFormat.xray,
-      icon: 'bolt',
-    ),
-    SubscriptionSource(
-      id: 'clash',
-      title: 'کلش متا',
-      url: '$subscriptionRoot/clash/meta/all.yml',
-      format: SubscriptionFormat.clash,
-      icon: 'grid',
-    ),
-    SubscriptionSource(
-      id: 'wireguard',
-      title: 'وایرگارد',
-      url: '$subscriptionRoot/wireguard/?asn=unknown',
-      format: SubscriptionFormat.wireguard,
-      icon: 'shield',
-    ),
-    SubscriptionSource(
-      id: 'amnezia',
-      title: 'آمنزیا',
-      url: '$subscriptionRoot/amnezia/?asn=unknown',
-      format: SubscriptionFormat.amnezia,
-      icon: 'lock',
-    ),
-    SubscriptionSource(
-      id: 'mieru',
-      title: 'میرو',
-      url: '$subscriptionRoot/mieru/?asn=unknown',
-      format: SubscriptionFormat.mieru,
-      icon: 'route',
-    ),
-  ];
-
-  /// فایل های استاندارد حساب کاربر روی پنل (نتایج واقعی آزمایش، ۹ آبان):
-  /// sub/ خودکار، all.txt فهرست ساده، sub64/ فهرست base64،
-  /// clash/meta/all.yml کلش متا، full-singbox.json سینگ باکس،
-  /// wireguard، amnezia و mieru فایل های مستقیم.
-  /// تنها مسیر درست کلش متا در این پنل `clash/meta/all.yml` است؛ مسیر قدیمی
-  /// `mihomo/all.yml` با کد ۴۰۴ پاسخ می دهد و دیگر امتحان نمی شود.
-  static const List<String> mihomoPaths = <String>[
-    'clash/meta/all.yml',
-  ];
+      <SubscriptionSource>[];
 
   static const String ipCheckPrimary = 'https://api.ipify.org?format=json';
   static const String ipCheckFallback = 'https://ifconfig.co/json';
@@ -131,13 +92,21 @@ class AppConfig {
     defaultValue: '',
   );
 
-  /// آخرین انتشار ویندوز در گیت هاب (همان مخزنی که نصب کننده از آن می آید).
+  /// آخرین انتشار پایدار ویندوز در مخزن رسمی انتشار (کانال اصلی).
   static const String releaseApiUrl =
-      'https://api.github.com/repos/armin-soft/Umbrella-VPN/releases/latest';
+      'https://api.github.com/repos/armin-soft/Umbrella-VPN-Releases/releases/latest';
 
-  /// صفحه انتشار، برای وقتی که خودکار نمی شود.
+  /// فهرست انتشارهای ویندوز در مخزن رسمی انتشار (برای کانال بتا، پایدار و تاریخچه تغییرات).
+  static const String releasesListApiUrl =
+      'https://api.github.com/repos/armin-soft/Umbrella-VPN-Releases/releases?per_page=20';
+
+  /// صفحه آخرین انتشار پایدار، برای وقتی که خودکار نمی شود.
   static const String releasesPageUrl =
-      'https://github.com/armin-soft/Umbrella-VPN/releases/latest';
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/latest';
+
+  /// صفحه همه انتشارها (شامل نسخه های بتا و پایدار).
+  static const String allReleasesPageUrl =
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases';
 
   /// پیشوند نام آداپتور تونل که برای خواندن آمار مصرف استفاده می شود.
   ///
@@ -171,10 +140,10 @@ class AppConfig {
   /// «اینترنت وصل است؟» استفاده می کنند؛ سبک اند (۲۰۴ بدون بدنه) و در
   /// بیشتر شبکه ها باز.
   static const List<String> connectionTestUrls = <String>[
-    'https://www.gstatic.com/generate_204',
     'http://connectivitycheck.gstatic.com/generate_204',
-    'http://cp.cloudflare.com/generate_204',
-    'https://www.google.com/generate_204',
+    'http://captive.apple.com/hotspot-detect.html',
+    'http://captive.apple.com/generate_204',
+    'http://cp.cloudflare.com/',
   ];
   /// پورت محلی هسته (پروکسی مختلط HTTP/SOCKS). همان پورتی که
   /// مستندات هسته پیش فرض می دهد.
@@ -225,5 +194,7 @@ class AppConfig {
         'app/ping',
         'filter/get',
         'filter/save',
+        'subscription/offers',
+        'subscription/claim',
       ];
 }

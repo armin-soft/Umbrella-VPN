@@ -19,6 +19,7 @@ final class BotConfig {
 public const KEY_VERSION = 'Robot_Version';
 public const KEY_EMERGENCY_SHOW = 'Emergency_Show';
 public const KEY_EMERGENCY_URL = 'Emergency_URL';
+public const KEY_NOWRUZ_MENU = 'Nowruz_Menu_Enabled';
 
 /** The plans the bot sells, keyed by months, exactly as in `PLAN_PRICE_<M>`. */
 public const PLAN_MONTHS = [1 => '۱ ماهه', 2 => '۲ ماهه', 3 => '۳ ماهه', 6 => '۶ ماهه', 12 => '۱۲ ماهه'];
@@ -59,6 +60,55 @@ Repository::setSetting(self::KEY_EMERGENCY_SHOW, $Show ? '1' : '0');
 
 public static function setEmergencyUrl(string $Url): void {
 Repository::setSetting(self::KEY_EMERGENCY_URL, trim($Url));
+}
+
+public static function isNowruzMenuEnabled(): bool {
+$Stored = Repository::getSetting(self::KEY_NOWRUZ_MENU, null);
+
+if ($Stored !== null && trim((string)$Stored) !== '') {
+$Normalized = strtolower(trim((string)$Stored));
+return $Normalized === '1' || $Normalized === 'true' || $Normalized === 'on';
+}
+
+return method_exists(Environment::class, 'showNowruzMenu') && Environment::showNowruzMenu();
+}
+
+public static function setNowruzMenuEnabled(bool $Show): void {
+Repository::setSetting(self::KEY_NOWRUZ_MENU, $Show ? '1' : '0');
+}
+
+public static function nowruzSeasonKey(): string {
+return (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y');
+}
+
+public static function hasClaimedNowruz(int $UserId = 0, string $Uuid = '', ?string $Season = null): bool {
+$Year = $Season ?? self::nowruzSeasonKey();
+
+if ($UserId > 0 && trim((string)Repository::getSetting('Nowruz_Claimed_' . $Year . '_u_' . $UserId, '')) === '1') {
+return true;
+}
+
+$CleanUuid = trim($Uuid);
+
+if ($CleanUuid !== '' && $CleanUuid !== '_' && trim((string)Repository::getSetting('Nowruz_Claimed_' . $Year . '_c_' . $CleanUuid, '')) === '1') {
+return true;
+}
+
+return false;
+}
+
+public static function markNowruzClaimed(int $UserId = 0, string $Uuid = '', ?string $Season = null): void {
+$Year = $Season ?? self::nowruzSeasonKey();
+
+if ($UserId > 0) {
+Repository::setSetting('Nowruz_Claimed_' . $Year . '_u_' . $UserId, '1');
+}
+
+$CleanUuid = trim($Uuid);
+
+if ($CleanUuid !== '' && $CleanUuid !== '_') {
+Repository::setSetting('Nowruz_Claimed_' . $Year . '_c_' . $CleanUuid, '1');
+}
 }
 
 /** Where the value in use came from, for the admin screen. */
@@ -144,11 +194,22 @@ public static function setSupportUrl(string $Url): void {
 Repository::setSetting('Support_Url', trim($Url));
 }
 
+public const DEFAULT_CHANNEL_USERNAME = 'UmbrellaVPN_Channel';
+public const DEFAULT_CHANNEL_URL = 'https://t.me/UmbrellaVPN_Channel';
+
 /** Public channel link; the panel's `Channel_Url` wins over `CHANNEL_URL`. */
 public static function getChannelUrl(): string {
 $Stored = trim((string)Repository::getSetting('Channel_Url', ''));
-
-return $Stored !== '' ? $Stored : Environment::getChannelUrl();
+if ($Stored !== '') {
+return $Stored;
+}
+if (class_exists('Environment') && method_exists('Environment', 'getChannelUrl')) {
+$Env = trim(Environment::getChannelUrl());
+if ($Env !== '') {
+return $Env;
+}
+}
+return self::DEFAULT_CHANNEL_URL;
 }
 
 public static function setChannelUrl(string $Url): void {
@@ -160,10 +221,10 @@ public static function channelUsername(string $Input): string {
 $Input = trim($Input);
 if (preg_match('~^(?:https?://)?(?:www\.)?t\.me/([A-Za-z][A-Za-z0-9_]{3,31})/?$~i', $Input, $Match)) return $Match[1];
 if (preg_match('/^@?([A-Za-z][A-Za-z0-9_]{3,31})$/', $Input, $Match)) return $Match[1];
-throw new InvalidArgumentException('نام کاربری عمومی کانال را مانند @channel_name یا https://t.me/channel_name بفرستید.');
+throw new InvalidArgumentException('نام کاربری عمومی کانال را مانند @UmbrellaVPN_Channel یا https://t.me/UmbrellaVPN_Channel بفرستید.');
 }
 
-/** هر دو مقدار فقط پس از پاسخ معتبر getChat و در یک تراکنش ذخیره می‌شوند. */
+/** هر دو مقدار فقط پس از پاسخ معتبر getChat و در یک تراکنش ذخیره می شوند. */
 public static function configureChannel(string $Input, bool $Force = true): string {
 $Username = self::channelUsername($Input);
 if (!$Force && strtolower((string)Repository::getSetting('Resolved_Channel_Username', '')) === strtolower($Username)

@@ -18,6 +18,24 @@ public static function getInstance(): Database {
 return self::$Instance ??= new Database();
 }
 
+/**
+ * شناسه گزینه دستور آغازین اتصال سازگار با نسخه ۸.۲ تا ۸.۵ و جدیدتر.
+ * در نسخه ۸.۴ و ۸.۵ از ثابت جدید کلاس اختصاصی مای اس کیو ال استفاده می شود تا
+ * هشدار منسوخ شدن ثابت قدیمی در نسخه ۸.۵ هرگز ثبت نشود.
+ */
+public static function mysqlInitCommandAttribute(): ?int {
+if (PHP_VERSION_ID >= 80400 && class_exists(\Pdo\Mysql::class, false)) {
+return \Pdo\Mysql::ATTR_INIT_COMMAND;
+}
+
+if (PHP_VERSION_ID < 80500 && defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
+$Attribute = constant('PDO::MYSQL_ATTR_INIT_COMMAND');
+return is_int($Attribute) ? $Attribute : null;
+}
+
+return null;
+}
+
 public function connection(): PDO {
 if (self::$Connection instanceof PDO) {
 return self::$Connection;
@@ -39,6 +57,12 @@ PDO::ATTR_TIMEOUT => self::CONNECTION_TIMEOUT,
 PDO::ATTR_PERSISTENT => false,
 PDO::ATTR_STRINGIFY_FETCHES => false,
 ];
+
+$Init_Command = self::mysqlInitCommandAttribute();
+
+if ($Init_Command !== null) {
+$Options[$Init_Command] = 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci';
+}
 
 self::$Connection = new PDO($DSN, Environment::getDatabaseUser(), Environment::getDatabasePassword(), $Options);
 return self::$Connection;

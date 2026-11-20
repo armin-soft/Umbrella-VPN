@@ -24,20 +24,15 @@ Future<void> showGatewayDialog(BuildContext context) async {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              Fa.num('نشانی کامل فایل index.php ربات را وارد کنید. نمونه:'),
+              Fa.num('نشانی کامل درگاه ربات را وارد کنید:'),
               style: Theme.of(dialogContext).textTheme.labelSmall,
             ),
             const SizedBox(height: AppMetrics.space2),
-            const SelectableText(
-              'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php?AppApi=',
-              textDirection: TextDirection.ltr,
-            ),
-            const SizedBox(height: AppMetrics.space3),
             TextField(
               controller: controller,
               autofocus: true,
               textDirection: TextDirection.ltr,
-              decoration: const InputDecoration(hintText: 'https://...'),
+              decoration: const InputDecoration(hintText: 'نشانی درگاه ربات'),
             ),
           ],
         ),

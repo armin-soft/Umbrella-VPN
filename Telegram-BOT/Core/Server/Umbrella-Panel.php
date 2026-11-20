@@ -16,6 +16,7 @@ require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 final class PanelClient {
 private static ?string $Last_List_Error = null;
 private static int $Last_List_Count = 0;
+private static int $Last_Get_Status = 0;
 private function __construct() {
 }
 
@@ -76,53 +77,121 @@ return $Row;
 return null;
 }
 
-/** One customer record by uuid. */
+/** One customer record by uuid, with automatic retry on transient errors. */
 public static function get(string $UUID): ?array {
+self::$Last_Get_Status = 0;
 $UUID = trim($UUID);
 
 if ($UUID === '') return null;
 
-$Response = HttpClient::get(self::usersUrl() . rawurlencode($UUID) . '/', ServerClient::headers());
+$Url = self::usersUrl() . rawurlencode($UUID) . '/';
+
+for ($Try = 1; $Try <= 2; $Try++) {
+$Response = HttpClient::get($Url, ServerClient::headers(), 15);
+$Status = (int)($Response['StatusCode'] ?? 0);
+self::$Last_Get_Status = $Status;
 $Json = $Response['Json'] ?? null;
 
-if (!is_array($Json)) return null;
-if (isset($Json['uuid'])) return $Json;
-if (isset($Json['data']) && is_array($Json['data'])) return $Json['data'];
+if ($Status >= 200 && $Status < 300 && is_array($Json)) {
+$Record = self::extractRecord($Json);
+
+if ($Record !== null) return $Record;
+}
+
+if ($Status === 404 || ($Status >= 400 && $Status < 500 && $Status !== 408 && $Status !== 429)) {
+return null;
+}
+
+if ($Try < 2) {
+usleep(250000);
+}
+}
 
 return null;
+}
+
+/** HTTP status of the most recent get() call (0 on transport error). */
+public static function lastGetStatus(): int {
+return self::$Last_Get_Status;
 }
 
 /**
- * Creates a customer for an app sign-up.
- *
- * `phone` is what the panel matches on and what the bot uses to tie the new
- * account to a Telegram user, so it is always sent normalised.
+ * Creates a customer for an app sign-up using the exact Hiddify v2 admin user
+ * schema proven in ServerClient::createUser(), with transient error retries.
  */
 public static function create(array $Payload): ?array {
+$Today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
+$Phone = trim((string)($Payload['phone'] ?? ''));
+unset($Payload['phone']);
+
+$Comment = trim((string)($Payload['comment'] ?? ''));
+if ($Comment === '') {
+$Comment = $Phone !== '' ? $Phone : 'Umbrella VPN';
+}
+
 $Body = array_merge([
 'name' => '',
-'phone' => '',
-'comment' => 'Umbrella VPN',
-'package_days' => 30,
 'usage_limit_GB' => 100,
+'package_days' => 30,
+'comment' => $Comment,
+'telegram_id' => 0,
+'start_date' => $Today,
 'mode' => 'no_reset',
 'lang' => 'fa',
-'enable' => true,
+'current_usage_GB' => 0,
 'is_active' => true,
+'enable' => true,
+'added_by_uuid' => Environment::getUmbrellaApiKey(),
+'uuid' => null,
+'last_online' => null,
+'last_reset_time' => null,
 ], $Payload);
+$Body['comment'] = $Comment;
+$Body['usage_limit_GB'] = (int)$Body['usage_limit_GB'];
+$Body['package_days'] = (int)$Body['package_days'];
+$Body['telegram_id'] = (int)$Body['telegram_id'];
 
-$Response = HttpClient::post(self::usersUrl(), $Body, ServerClient::postHeaders());
+$Response = ['StatusCode' => 0, 'Body' => '', 'Json' => null, 'Error' => ''];
+
+for ($Try = 1; $Try <= 3; $Try++) {
+$Response = HttpClient::post(self::usersUrl(), $Body, ServerClient::postHeaders(), 20);
+$Status = (int)($Response['StatusCode'] ?? 0);
 $Json = $Response['Json'] ?? null;
 
-if (!is_array($Json)) {
-error_log('[Umbrella-Bot][Panel-API] create failed: ' . mb_substr((string)($Response['Body'] ?? ''), 0, 300));
+if ($Status >= 200 && $Status < 300 && is_array($Json)) {
+$Record = self::extractRecord($Json);
+
+if ($Record !== null) return $Record;
+}
+
+if ($Status >= 400 && $Status < 500 && $Status !== 408 && $Status !== 429) {
+break;
+}
+
+if ($Try < 3) {
+usleep(350000);
+}
+}
+
+error_log(
+'[Umbrella-Bot][Panel-API] create failed | HTTP=' . (int)($Response['StatusCode'] ?? 0)
+. ' | curl=' . (string)($Response['Error'] ?? '')
+. ' | body=' . mb_substr((string)($Response['Body'] ?? ''), 0, 300)
+);
 return null;
 }
 
-if (isset($Json['uuid'])) return $Json;
-if (isset($Json['data']) && is_array($Json['data'])) return $Json['data'];
+private static function extractRecord(array $Json): ?array {
+if (isset($Json['uuid']) && trim((string)$Json['uuid']) !== '') {
+return $Json;
+}
 
-error_log('[Umbrella-Bot][Panel-API] create returned no uuid: ' . mb_substr((string)($Response['Body'] ?? ''), 0, 300));
+foreach (['data', 'user', 'item', 'result'] as $Key) {
+if (isset($Json[$Key]) && is_array($Json[$Key]) && trim((string)($Json[$Key]['uuid'] ?? '')) !== '') {
+return $Json[$Key];
+}
+}
+
 return null;
 }
 
@@ -173,6 +242,8 @@ $Rows = null;
 if (isset($Json['items']) && is_array($Json['items'])) $Rows = $Json['items'];
 elseif (isset($Json['users']) && is_array($Json['users'])) $Rows = $Json['users'];
 elseif (isset($Json['data']) && is_array($Json['data'])) $Rows = $Json['data'];
+elseif (isset($Json['results']) && is_array($Json['results'])) $Rows = $Json['results'];
+elseif (isset($Json['records']) && is_array($Json['records'])) $Rows = $Json['records'];
 
 // A bare list is also valid.
 if ($Rows === null && array_is_list($Json)) $Rows = $Json;
@@ -185,26 +256,64 @@ self::$Last_List_Count = count($Rows);
 return $Rows;
 }
 
-/** The share-link base for an account, when the panel reports it. */
+/** Configured subscription base URL including the panel's secret path slug. */
+public static function subscriptionLinkBase(): string {
+$Configured = '';
+
+if (class_exists('Repository', false) && method_exists('Repository', 'getSetting')) {
+try {
+$Configured = trim((string)(Repository::getSetting('Subscription_Link_Base') ?? ''));
+} catch (Throwable) {
+$Configured = '';
+}
+}
+
+if ($Configured === '' && method_exists('Environment', 'getSubscriptionLinkBase')) {
+$Configured = trim(Environment::getSubscriptionLinkBase());
+}
+
+if ($Configured !== '' && str_starts_with($Configured, 'http')) {
+$Clean = (string)preg_replace(
+'#/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/.*)?$#',
+'',
+rtrim($Configured, '/')
+);
+return rtrim($Clean, '/') . '/';
+}
+
+return '';
+}
+
+/** The share-link base (before `<uuid>/sub/`) for a personal account. */
 public static function accountBase(array $Row): string {
+$Configured = self::subscriptionLinkBase();
+
+if ($Configured !== '') {
+return $Configured;
+}
+
 $Candidates = ['account_base', 'sub_base', 'subscription_base', 'sub_domain'];
 
 foreach ($Candidates as $Key) {
 $Value = trim((string)($Row[$Key] ?? ''));
 
 if ($Value !== '' && str_starts_with($Value, 'http')) {
-return rtrim($Value, '/') . '/';
+$Clean = (string)preg_replace(
+'#/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/.*)?$#',
+'',
+rtrim($Value, '/')
+);
+return rtrim($Clean, '/') . '/';
 }
 }
 
-// The panel's own account page is derived from the configured base: the
-// per-account slug sits in front of the uuid.
 $Base = rtrim(Environment::getUmbrellaBaseUrl(), '/');
 $Parts = parse_url($Base);
-$Host = ($Parts['scheme'] ?? 'https') . '://' . ($Parts['host'] ?? '');
-$UUID = trim((string)($Row['uuid'] ?? ''));
+$Host = is_array($Parts) && !empty($Parts['host'])
+? (($Parts['scheme'] ?? 'https') . '://' . $Parts['host'])
+: '';
 
-return $UUID === '' ? '' : $Host . '/' . $UUID . '/';
+return $Host === '' ? '' : $Host . '/';
 }
 }
 ?>

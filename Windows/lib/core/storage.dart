@@ -115,11 +115,39 @@ class LocalStore {
   }
 
   Future<void> writeFile(String name, String content) async {
+    File? tmp;
     try {
       final File target = await file(name);
-      await target.writeAsString(content, flush: true);
+      tmp = File('${target.path}.tmp');
+      await tmp.writeAsString(content, flush: true);
+      try {
+        await tmp.rename(target.path);
+      } on FileSystemException {
+        await target.writeAsString(content, flush: true);
+        if (await tmp.exists()) {
+          await tmp.delete();
+        }
+      }
     } on FileSystemException {
       // نوشتن فایل اختیاری است؛ نبود آن نباید برنامه را متوقف کند.
+      try {
+        if (tmp != null && await tmp.exists()) {
+          await tmp.delete();
+        }
+      } on FileSystemException {
+        // نادیده گرفته می شود.
+      }
+    }
+  }
+
+  Future<void> deleteFile(String name) async {
+    try {
+      final File target = await file(name);
+      if (await target.exists()) {
+        await target.delete();
+      }
+    } on FileSystemException {
+      // پاک کردن فایل اختیاری است؛ نبود یا قفل بودن آن برنامه را متوقف نمی کند.
     }
   }
 }
@@ -132,6 +160,7 @@ class StoreKeys {
   static const String settings = 'settings.v1';
   static const String nodes = 'nodes.v1';
   static const String notifications = 'notifications.v1';
+  static const String notificationsOwner = 'notifications.owner.v1';
   static const String landingSeen = 'landing.seen';
   static const String lastPhone = 'auth.lastPhone';
   static const String lastNode = 'vpn.lastNode';
@@ -139,12 +168,14 @@ class StoreKeys {
   static const String deviceId = 'device.id';
   static const String deviceTrusted = 'device.trusted';
   static const String updateSkipped = 'update.skipped';
+  static const String updateChannel = 'update.channel';
+  static const String telegramChannelPromptAt = 'telegram.channel.prompt.at';
   static const String nodesCache = 'nodes-cache.json';
 
   /// پنجره Umbrella CLI هنگام اتصال باز شود.
   static const String showCli = 'cli.show';
 
-  /// پیکربندی کاملی که خود پنل می دهد (کلش، ایکس ری یا سینگ باکس)؛ نگه
-  /// داشته می شود تا هر بار از نو گرفته نشود.
-  static const String panelProfile = 'panel-profile.yml';
+  /// فایل قدیمی پروفایل کلش که در نسخه های پیشین ذخیره می شد و هنگام راه اندازی
+  /// پاک سازی می شود تا هیچ اثری از منابع اضافه باقی نماند.
+  static const String legacyPanelProfile = 'panel-profile.yml';
 }

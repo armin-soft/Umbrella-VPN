@@ -65,9 +65,9 @@ class UmbrellaCore {
     int? port,
     bool tun = false,
     bool systemProxy = false,
-    String logLevel = 'info',
+    String logLevel = CoreLogLevel.defaultLevel,
     String settingsPath = '',
-    String remoteDns = defaultDns,
+    String remoteDns = defaultRemoteDns,
     String directDns = defaultDns,
     bool disableColor = true,
   }) {
@@ -139,10 +139,17 @@ class UmbrellaCore {
     }
   }
 
-  /// بستن نمونه های بازمانده با نام، پیش از اجرای یک نمونه تازه.
-  ///
-  /// سنجش پینگ و اجرای اصلی هر دو پورت های ثابت هسته را می خواهند؛ یک نمونه
-  /// که از دور قبل زنده مانده، پورت را گرفته و نمونه بعدی را می کشد.
+  /// متغیر محیطی مالک پردازش؛ لانچر بومی (`umbrella_launcher.c`) به محض بسته
+  /// شدن این PID همه پردازش های هسته و پنجره CLI را کامل می بندد.
+  static Map<String, String> ownerEnvironment([
+    Map<String, String> extra = const <String, String>{},
+  ]) =>
+      <String, String>{
+        ...extra,
+        'UMBRELLA_OWNER_PID': '$pid',
+      };
+
+  /// بستن نمونه های بازمانده و زیرشاخه هایشان پیش از اجرا یا هنگام خروج.
   static Future<void> releasePorts() async {
     if (!Platform.isWindows) {
       return;
@@ -155,7 +162,7 @@ class UmbrellaCore {
       try {
         await Process.run(
           'taskkill',
-          <String>['/F', '/IM', name],
+          <String>['/F', '/T', '/IM', name],
           runInShell: false,
         );
       } on Exception {
@@ -164,15 +171,322 @@ class UmbrellaCore {
     }
   }
 
-  /// پورت های رزروشده ای که همین حالا گرفته اند.
-  static Future<List<int>> heldReservedPorts() async {
-    final List<int> held = <int>[];
-    for (final int port in reservedPorts) {
-      if (await inUse(port)) {
-        held.add(port);
+  /// ترجمه کدهای خروج و استثناهای سطح پایین ویندوز (NTSTATUS) هسته به فارسی روشن.
+  static String describeWindowsExitCode(int code) {
+    final int unsigned = code & 0xFFFFFFFF;
+    if (unsigned < 0x80000000) {
+      return '';
+    }
+    final String codeFa = Fa.num(unsigned);
+    return switch (unsigned) {
+      0xC000013A => 'هسته با سیگنال توقف بسته شد (کد $codeFa).',
+      0xC0000135 =>
+        'کتابخانه مورد نیاز هسته پیدا نشد (کد $codeFa)؛ برنامه را با فایل نصب رسمی دوباره نصب کنید.',
+      0xC0000142 =>
+        'راه اندازی کتابخانه هسته ناموفق بود (کد $codeFa)؛ پوشه نصب را در استثنای آنتی ویروس بگذارید.',
+      0xC0000005 =>
+        'خطای غیرمنتظره دسترسی حافظه در هسته (کد $codeFa)؛ جزئیات در بخش رویدادهای ویندوز ثبت شده است.',
+      0xC0000409 =>
+        'سرریز بافر محافظت شده در هسته (کد $codeFa)؛ دوباره متصل شوید.',
+      0xC00000FD => 'سرریز پشته در هسته (کد $codeFa)؛ دوباره متصل شوید.',
+      0xC0000374 => 'آسیب حافظه داخلی در هسته (کد $codeFa)؛ دوباره متصل شوید.',
+      0xC0000017 => 'حافظه آزاد سیستم برای اجرای هسته کافی نبود (کد $codeFa).',
+      0xC000001D => 'دستورالعمل پردازنده ناسازگار در هسته (کد $codeFa).',
+      _ => 'هسته به صورت غیرمنتظره متوقف شد (کد ویندوز $codeFa).',
+    };
+  }
+
+  /// قوانین کنترل محتوا برای دو دسته همگام با ربات تلگرام
+  static const String _geoRuleSetBase =
+      'https://raw.githubusercontent.com/$id/$id-geo/rule-set';
+
+  /// الگوی نشانی قوانین منطقه ای هسته (مستقیم کردن سایت ها و آی پی های داخلی).
+  static List<String> regionalRuleSetUrls(String regionCode) => <String>[
+        '$_geoRuleSetBase/country/geoip-$regionCode.srs',
+        '$_geoRuleSetBase/country/geosite-$regionCode.srs',
+      ];
+
+  /// (`adult`, `gambling`) و دامنه های سفارشی کاربر.
+  ///
+  /// هر دسته هم قوانین آفلاین فوری (`domain_suffix` / `domain_keyword`) دارد که از
+  /// میلی ثانیه اول بدون هیچ وابستگی به دانلود کار می کند و هم مجموعه قوانین رسمی
+  /// `.srs` دارد که از داخل تونل بارگذاری و در کش هسته ذخیره می شود تا ده ها هزار
+  /// دامنه و زیردامنه را در لایه DNS و مسیر دامنه مسدود کند.
+  static List<Map<String, dynamic>> contentControlRules(
+    FilterSettings? filter, {
+    int startOrder = 0,
+    bool includeRemoteRuleSets = true,
+  }) {
+    if (filter == null || !filter.enabled) {
+      return const <Map<String, dynamic>>[];
+    }
+    final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[];
+    int order = startOrder;
+
+    for (final String category in filter.activeBotCategories) {
+      final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
+      if (spec == null) continue;
+      rules.add(<String, dynamic>{
+        'list_order': order++,
+        'enabled': true,
+        'name': 'umbrella-filter-$category',
+        'outbound': 'block',
+        if (spec.suffixes.isNotEmpty) 'domain_suffix': spec.suffixes,
+        if (spec.keywords.isNotEmpty) 'domain_keyword': spec.keywords,
+        if (includeRemoteRuleSets && spec.ruleSets.isNotEmpty)
+          'rule_set': spec.ruleSets,
+      });
+    }
+
+    final List<String> custom = filter.normalizedCustomDomains;
+    if (custom.isNotEmpty) {
+      rules.add(<String, dynamic>{
+        'list_order': order++,
+        'enabled': true,
+        'name': 'umbrella-filter-custom',
+        'outbound': 'block',
+        'domain': custom,
+        'domain_suffix': custom,
+      });
+    }
+    return rules;
+  }
+
+  /// بررسی قطعی و آفلاین اینکه آیا یک نام میزبان توسط قوانین کنترل محتوا مسدود می شود.
+  static bool matchesContentFilter(FilterSettings? filter, String rawHost) {
+    if (filter == null || !filter.hasActiveRules) {
+      return false;
+    }
+    final String? host = FilterSettings.normalizeDomainSuffix(rawHost);
+    final String probe = (host ?? rawHost.trim().toLowerCase())
+        .replaceFirst(RegExp(r'\.+$'), '');
+    if (probe.isEmpty) {
+      return false;
+    }
+    bool matchesSuffix(String suffix) =>
+        probe == suffix || probe.endsWith('.$suffix');
+
+    for (final String custom in filter.normalizedCustomDomains) {
+      if (matchesSuffix(custom)) {
+        return true;
       }
     }
-    return held;
+    for (final String category in filter.activeBotCategories) {
+      final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
+      if (spec == null) continue;
+      if (spec.suffixes.any(matchesSuffix)) {
+        return true;
+      }
+      if (spec.keywords.any(probe.contains)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static const Map<String, _CategoryFilterSpec> _categoryFilterSpecs =
+      <String, _CategoryFilterSpec>{
+    'adult': _CategoryFilterSpec(
+      ruleSets: <String>[
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs',
+        // فهرست اختصاصی Pornhub از قوانین Iran-sing-box.
+        'https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-pornhub.srs',
+        // دسته پورن مستقل از قواعد شرط بندی، از فهرست ایران.
+        'https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-category-porn.srs',
+        // فهرست های مستقل و روزآمد HaGeZi و OISD برای پوشش دامنه های جاافتاده.
+        'https://raw.githubusercontent.com/razaxq/dns-blocklists-sing-box/rule-set/hagezi-nsfw.srs',
+        'https://raw.githubusercontent.com/razaxq/dns-blocklists-sing-box/rule-set/oisd-nsfw.srs',
+      ],
+      suffixes: <String>[
+        'xxx',
+        'porn',
+        'sex',
+        'adult',
+        'pornhub.com',
+        'phncdn.com',
+        'xvideos.com',
+        'xv-cdn.com',
+        'xnxx.com',
+        'xnxx-cdn.com',
+        'xhamster.com',
+        'xhamsterlive.com',
+        'xhcdn.com',
+        'redtube.com',
+        'rdtcdn.com',
+        'youporn.com',
+        'ypncdn.com',
+        'spankbang.com',
+        'sb-cd.com',
+        'onlyfans.com',
+        'fansly.com',
+        'chaturbate.com',
+        'highwebmedia.com',
+        'mmcdn.com',
+        'stripchat.com',
+        'bongacams.com',
+        'bngpt.com',
+        'livejasmin.com',
+        'myfreecams.com',
+        'cam4.com',
+        'camsoda.com',
+        'flirt4free.com',
+        'imlive.com',
+        'brazzers.com',
+        'realitykings.com',
+        'bangbros.com',
+        'naughtyamerica.com',
+        'mofos.com',
+        'vixen.com',
+        'tushy.com',
+        'blacked.com',
+        'eporner.com',
+        'hqporner.com',
+        'beeg.com',
+        'tnaflix.com',
+        'drtuber.com',
+        'sunporno.com',
+        'txxx.com',
+        'upornia.com',
+        'fuq.com',
+        'tube8.com',
+        'xtube.com',
+        'motherless.com',
+        'redgifs.com',
+        'rule34.xxx',
+        'rule34.paheal.net',
+        'nhentai.net',
+        'hanime.tv',
+        'e-hentai.org',
+        'gelbooru.com',
+        'danbooru.donmai.us',
+        'javhd.com',
+        'missav.com',
+        'jable.tv',
+        'porn.com',
+        'sex.com',
+        'erome.com',
+        'fapello.com',
+        'literotica.com',
+      ],
+      keywords: <String>[
+        'pornhub',
+        'xvideos',
+        'xnxx',
+        'xhamster',
+        'redtube',
+        'youporn',
+        'spankbang',
+        'chaturbate',
+        'bongacams',
+        'brazzers',
+        'sexvid',
+        'sexcam',
+        'sextube',
+        'hentai',
+      ],
+    ),
+    'gambling': _CategoryFilterSpec(
+      ruleSets: <String>[
+        // این فهرست رسمی فقط شرط بندی روسی را پوشش می دهد؛ آن را با دامنه های
+        // قمار جهانی/ایرانی تکمیل می کنیم، نه اینکه آن را پوشش جامع فرض کنیم.
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-betting-ru.srs',
+        // فهرست اختصاصی شرط بندی HaGeZi (به روزرسانی روزانه، صدها هزار دامنه).
+        'https://raw.githubusercontent.com/razaxq/dns-blocklists-sing-box/rule-set/hagezi-gambling.srs',
+      ],
+      suffixes: <String>[
+        'bet',
+        'casino',
+        'poker',
+        'bingo',
+        'lotto',
+        'bet365.com',
+        '1xbet.com',
+        '1xstavka.ru',
+        'melbet.com',
+        'mostbet.com',
+        'linebet.com',
+        'megapari.com',
+        '22bet.com',
+        '20bet.com',
+        'betwinner.com',
+        'betway.com',
+        'betfair.com',
+        'pokerstars.com',
+        'ggpoker.com',
+        'partypoker.com',
+        '888casino.com',
+        '888poker.com',
+        '888sport.com',
+        'bwin.com',
+        'unibet.com',
+        'stake.com',
+        'roobet.com',
+        'rollbit.com',
+        'duelbits.com',
+        'gamdom.com',
+        'bc.game',
+        'parimatch.com',
+        'williamhill.com',
+        'ladbrokes.com',
+        'coral.co.uk',
+        'paddypower.com',
+        'betvictor.com',
+        'betano.com',
+        'betsson.com',
+        'leovegas.com',
+        'pinnacle.com',
+        'draftkings.com',
+        'fanduel.com',
+        'betmgm.com',
+        'bovada.lv',
+        'betonline.ag',
+        'mybookie.ag',
+        'dafabet.com',
+        '188bet.com',
+        'sbobet.com',
+        'winamax.fr',
+        'polymarket.com',
+        'betforward.com',
+        'cannonbet.com',
+        'hazarat.com',
+        'takbet.com',
+        'jetbet.com',
+        'hotbet.com',
+        'abt90.com',
+        'tinobet.com',
+        'yasbet.com',
+        'pinbahis.com',
+        'shartbandi.com',
+        'persianbet.com',
+      ],
+      keywords: <String>[
+        '1xbet',
+        'melbet',
+        'bet365',
+        'mostbet',
+        'linebet',
+        'megapari',
+        'pokerstars',
+        'betforward',
+        'cannonbet',
+        'shartbandi',
+        'enfejar',
+        'casino',
+        'betting',
+      ],
+    ),
+
+  };
+
+  /// پورت های رزروشده ای که همین حالا گرفته اند.
+  static Future<List<int>> heldReservedPorts() async {
+    final List<bool> states = await Future.wait<bool>(
+      reservedPorts.map(inUse),
+    );
+    return <int>[
+      for (int i = 0; i < reservedPorts.length; i++)
+        if (states[i]) reservedPorts[i],
+    ];
   }
 
   /// نام برنامه ای که این پورت ها را گرفته است.
@@ -185,7 +499,7 @@ class UmbrellaCore {
       return '';
     }
     final String filter =
-        ports.map((int port) => "\$_.LocalPort -eq $port").join(' -or ');
+        ports.map((int port) => '\$_.LocalPort -eq $port').join(' -or ');
     final String script =
         'Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | '
         'Where-Object { $filter } | '
@@ -254,12 +568,14 @@ class UmbrellaCore {
     return native.killPid(pid);
   }
 
-  /// دی ان اس پیش فرض هسته (همان پیش فرض خودش در `DefaultHiddifyOptions`).
-  static const String defaultDns = '1.1.1.1';
+  /// دی ان اس پیش فرض هسته (هم راستا با Hiddify: راه دور `tcp://8.8.8.8` و
+  /// مستقیم `1.1.1.1` / `udp://1.1.1.1`).
+  static const String defaultRemoteDns = NetworkDns.defaultRemote;
+  static const String defaultDns = NetworkDns.defaultDirect;
 
   /// فایل تنظیمات کامل هسته (`-d`).
   ///
-  /// **تله‌ای که ۱٫۰٫۳ را شکست:** اگر `-d` داده شود، هسته فایل را با
+  /// **تله ای که ۱٫۰٫۳ را شکست:** اگر `-d` داده شود، هسته فایل را با
   /// `json.Unmarshal` روی یک ساختار **خالی** می خواند و همه پیش فرض های خودش را
   /// کنار می گذارد (`readHiddifyOptionsAt` در `v2/hcore/standalone.go`). یعنی
   /// هر کلیدی که در فایل نباشد خالی و صفر می شود — و پرچم های خط فرمان هم دیگر
@@ -276,62 +592,149 @@ class UmbrellaCore {
     required bool tun,
     required bool systemProxy,
     required int port,
-    String logLevel = 'info',
+    String logLevel = CoreLogLevel.defaultLevel,
     String logFile = '',
-    String remoteDns = defaultDns,
+    String remoteDns = defaultRemoteDns,
     String directDns = defaultDns,
     AppSettings? networkSettings,
+    FilterSettings? contentFilter,
+    bool isolatedProbe = false,
   }) {
+    final String normalizedLog =
+        CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
+    final bool timedDiagnostic =
+        normalizedLog == 'debug' || normalizedLog == 'trace';
+    // در `hiddify-core v5.9.11` با ارسال `route-rule`، مسیرهای داخلی منطقه و LAN
+    // غیرفعال می شوند (`useAppRules`)؛ گزینه legacy ضدتبلیغات همیشه خاموش است.
+    // بنابراین قوانین با ترتیب اولویت دقیق ساخته می شوند:
+    // ۱) کنترل محتوا (بالاترین اولویت — حتی دامنه داخلی هم اگر مسدود شده رد می شود)
+    // ۲) مسیریابی بر اساس برنامه (در همه حالت های سرویس روی ویندوز فعال است)
+    // ۳) مسیریابی مستقیم منطقه انتخابی (مانند `.ir` + `geoip-ir` + `geosite-ir`)
+    // قانون `bypass-lan` (`ip_is_private`) نیز در `RuntimeConfig.finalize` حفظ می شود.
+    final List<Map<String, dynamic>> combinedRules = <Map<String, dynamic>>[];
+    if (!isolatedProbe) {
+      final List<Map<String, dynamic>> filterRules = contentControlRules(
+        contentFilter,
+        startOrder: 0,
+      );
+      combinedRules.addAll(filterRules);
+
+      if (networkSettings != null) {
+        for (final AppRouteRule route in networkSettings.appRoutes) {
+          final Map<String, dynamic> built =
+              route.toCoreRule(combinedRules.length);
+          if (route.enabled) {
+            combinedRules.add(built);
+          }
+        }
+      }
+
+      if (combinedRules.isNotEmpty && networkSettings != null) {
+        final RoutingRegion region = networkSettings.routingRegion;
+        if (region != RoutingRegion.other) {
+          final String code = region.coreValue;
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length,
+            'enabled': true,
+            'name': 'umbrella-region-$code',
+            'outbound': 'direct',
+            'domain_suffix': <String>['.$code'],
+            'rule_set': regionalRuleSetUrls(code),
+          });
+        }
+      }
+    }
+    final int validLanPort = networkSettings != null &&
+            LanSharing.isValidPort(
+              networkSettings.lanSharingPort,
+              forbiddenPort: port,
+            )
+        ? networkSettings.lanSharingPort
+        : (port == LanSharing.defaultLanPort
+            ? LanSharing.defaultLanPort + 1
+            : LanSharing.defaultLanPort);
+    final bool lanShared =
+        !isolatedProbe && (networkSettings?.allowConnectionFromLan ?? false);
+    final String proxySecret =
+        isolatedProbe ? '' : (networkSettings?.lanSharingPassword.trim() ?? '');
+    final bool localAuth = !isolatedProbe &&
+        !(systemProxy && !tun) &&
+        (networkSettings?.localProxyAuth ?? false) &&
+        proxySecret.isNotEmpty;
+    final TlsTricksSettings tlsTricks =
+        networkSettings?.tlsTricks ?? const TlsTricksSettings();
     return <String, dynamic>{
-      // ── گزارش ──────────────────────────────────────────────────────────
-      'log-level': CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel),
+      // ── گزارش (با بازگشت خودکار ۱۰ دقیقه ای در سطح عیب یابی هم راستا با 5.9.11) ──
+      'log-level': normalizedLog,
+      if (timedDiagnostic) ...<String, dynamic>{
+        'log-level-until': DateTime.now()
+            .toUtc()
+            .add(const Duration(minutes: 10))
+            .toIso8601String(),
+        'log-level-after': 'warn',
+      },
       'log-file': logFile,
-      // ── ورودی ها (تونل یا پروکسی سیستمی) ───────────────────────────────
+      // ── ورودی ها (VPN، پروکسی سیستمی یا پروکسی محلی + اشتراک LAN) ───────
       'enable-tun': tun,
       'enable-tun-service': false,
       'set-system-proxy': systemProxy && !tun,
       'delegate-system-proxy': false,
       'mixed-port': port,
       'enable-mixed-port': true,
+      'enable-tproxy-port': false,
+      'enable-redirect-port': false,
+      'enable-direct-port': false,
       'tproxy-port': 12335,
       'redirect-port': 12336,
       'direct-port': 12337,
-      'lan-sharing-port': 12338,
-      'local-proxy-auth': false,
-      'local-proxy-in-vpn': true, // Loopback-only diagnostic path, also in TUN mode.
+      'lan-sharing-port': validLanPort,
+      if (proxySecret.isNotEmpty) 'lan-sharing-password': proxySecret,
+      'local-proxy-auth': localAuth,
+      'local-proxy-in-vpn': networkSettings?.localProxyInVpn ?? true,
       // پیش فرض خود هسته: `sing15` یعنی پشته پیش فرض sing-tun و `9000` همان
       // ام تی یو خودش. صفر گذاشتن این دو، تونل را بی بسته می کند.
-      'tun-implementation': networkSettings == null || networkSettings.tunStack == TunStack.auto
-          ? 'sing15' : networkSettings.tunStack.name,
+      'tun-implementation': networkSettings == null ||
+              networkSettings.tunStack == TunStack.auto
+          ? 'sing15'
+          : networkSettings.tunStack.name,
       'mtu': (networkSettings?.mtu ?? 9000).clamp(1280, 9000),
       'strict-route': networkSettings?.strictRoute ?? true,
       'auto-redirect': true,
       'router-mode': false,
-      // ── دی ان اس: خالی گذاشتن این دو، هسته را با «نشانی نامعتبر» می بندد ──
-      'remote-dns-address': networkSettings == null ? remoteDns : NetworkDns.normalize(networkSettings.remoteDns),
-      'direct-dns-address': networkSettings == null ? directDns : NetworkDns.normalize(networkSettings.directDns),
-      'remote-dns-domain-strategy': 'as_is',
-      'direct-dns-domain-strategy': 'as_is',
+      // ── دی ان اس: هم راستا با Hiddify (`tcp://8.8.8.8` تونل + `1.1.1.1` مستقیم) ──
+      'remote-dns-address': networkSettings == null
+          ? remoteDns
+          : NetworkDns.normalizeRemote(networkSettings.remoteDns),
+      'direct-dns-address': networkSettings == null
+          ? directDns
+          : NetworkDns.normalizeDirect(networkSettings.directDns),
+      'remote-dns-domain-strategy':
+          (networkSettings?.remoteDnsStrategy ?? DnsDomainStrategy.asIs)
+              .coreValue,
+      'direct-dns-domain-strategy':
+          (networkSettings?.directDnsStrategy ?? DnsDomainStrategy.asIs)
+              .coreValue,
+      // در sing-box 1.14+ کش هر سرور DNS به صورت پیش فرض مستقل است و کلید
+      // قدیمی `independent_cache: true` منسوخ شده و در `srun` خطای FATAL می دهد.
       'independent-dns-cache': false,
-      'enable-fake-dns': false,
+      'enable-fake-dns':
+          !isolatedProbe && (networkSettings?.enableFakeDns ?? false),
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
-      'region': 'other',
+      'region': (networkSettings?.routingRegion ?? RoutingRegion.other).coreValue,
       ...(networkSettings?.chain ?? const ChainSettings()).toCoreOptions(),
-      if (tun && networkSettings != null && networkSettings.appRoutes.isNotEmpty)
+      if (combinedRules.isNotEmpty)
         'route-rule': <String, dynamic>{
-          'rules': <Map<String, dynamic>>[
-            for (int i = 0; i < networkSettings.appRoutes.length; i++)
-              networkSettings.appRoutes[i].toCoreRule(i),
-          ],
+          'rules': combinedRules,
         },
-      // In this core as_is still disables IPv6 for clients. PreferIPv4 allows
-      // both families, while ipv4_only requests IPv4 client destinations.
-      'ipv6-mode': networkSettings == null ? 'as_is'
-          : networkSettings.blockIpv6 ? 'ipv4_only' : 'prefer_ipv4',
-      'resolve-destination': false,
-      'bypass-lan': false,
-      'allow-connection-from-lan': false,
-      'block-quic': false,
+      // Match Hiddify's default `ipv4_only` (`verify_ipv6: false`) unless the
+      // user explicitly enables IPv6 (`prefer_ipv4` / `prefer_ipv6`).
+      'ipv6-mode': networkSettings == null
+          ? 'ipv4_only'
+          : networkSettings.ipv6RouteMode.coreValue,
+      'resolve-destination': networkSettings?.resolveDestination ?? false,
+      'bypass-lan': networkSettings?.bypassLan ?? false,
+      'allow-connection-from-lan': lanShared,
+      'block-quic': networkSettings?.blockQuic ?? false,
       'block-ads': false,
       'enable-full-config': false,
       'use-xray-core-when-possible': false,
@@ -347,8 +750,12 @@ class UmbrellaCore {
       // ایران ۳۰۱/۴۰۳ می دهد، پس هسته گره سالم را «no answer» می خواند.
       'connection-test-url': AppConfig.connectionTestUrls.first,
       'connection-test-urls': AppConfig.connectionTestUrls,
-      // هر ۳۰ ثانیه به جای ۶۰۰ تا گره تازه وصل‌شده سریع دیده شود.
-      'url-test-interval': 30,
+      // پایش اولیه در لحظه شروع اجرا بی درنگ انجام می شود؛ دوره بازسنجی
+      // ۱۸۰ ثانیه است تا اتصال های باز کاربر هر ۳۰ ثانیه با سوییچ بی مورد قطع
+      // نشوند ولی اگر گرهی افت کرد به موقع جایگزین شود.
+      // هم راستا با Hiddify (۱۰ دقیقه = ۶۰۰ ثانیه): پایش اولیه در لحظه شروع بی درنگ
+      // اجرا می شود و از بازسنجی های پرفشار میان اتصال جلوگیری می شود.
+      'url-test-interval': 600,
       // نشانی خواندن آی پی و موقعیت خروجی.
       //
       // این کلید در گزارش های پیشین تنظیم نشده بود، پس هسته خط
@@ -360,28 +767,23 @@ class UmbrellaCore {
       // نتیجه همان «آی پی خروجی خوانده نشد» بود که به کلادفلر و گره ربطی
       // نداشت. `ipwho.is` همان قالب را می دهد، کلید می خواهد نه توکن، و
       // از داخل ایران هم باز است.
-      'ipinfo-url': 'https://ipwho.is/',
+      // هم راستا با Hiddify: چرخش خودکار بین همه سرویس های ipinfo + پشتیبان Cloudflare trace.
+      'ipinfo-url': '',
       // چند گره زنده بمانند تا خود هسته بتواند سوییچ کند.
       //
       // ۳ خیلی کم بود: با ۳ گره، اگر دو تای اول کند یا افتاده باشند کار
       // تمام است و کاربر فقط «سرور عوض کن» می بیند. ۸ تعادل است بین
       // سرعت اجرا و داشتن جایگزین.
-      'keep-top': 8,
-      // Bound discovery pressure; retain all authorized candidates for later batches.
-      'keep-top-batch': 4,
-      // مانند Hiddify، انتخاب سریع فعال است: هسته می تواند با تکیه بر سنجش های
-      // تازه، زودتر مجموعه گزینه های سریع را برگزیند و پایش گره های اشتراک را
-      // ادامه دهد. این گزینه لینک های جدید را از سنجش حذف نمی کند.
+      // هم راستا با پیش فرض Hiddify (`keep-top: -1`): بدون صف بندی مرحله ای روی
+      // اشتراک های متعارف تا سریع ترین گره در زیر یک ثانیه پاسخ دهد؛ روی اشتراک های
+      // بسیار بزرگ، `RuntimeConfig.finalize` خودکار `keep_top` مرحله ای می سازد.
+      'keep-top': -1,
       'keep-top-quick': true,
-      // انتخاب پیش فرض روی گروه «کم ترین تاخیر» باشد، نه گره اول.
-      //
-      // در `setOutbounds` خود هسته (`v2/config/builder.go`) مقدار `lowest`
-      // یعنی `DefaultProxyLowest` و گروه انتخاب را روی بالانسر
-      // `lowest-delay` می گذارد. یعنی سریع ترین گره برمی دارد و تا وقتی
-      // یکی افت نکرده، همان می ماند؛ هنگام افتادن هم خودش به بعدی می رود.
-      // `balancer-strategy` را عمداً نمی گذاریم: مقدارش در این نسخه هسته
-      // با `lowest-delay` یکی نیست و پیکربندی را رد می کند.
-      'default-proxy': 'lowest',
+      // انتخاب پیش فرض روی گروه «کم ترین تاخیر» (`lowest`) است تا سریع ترین
+      // گره سالم برداشته شود و هنگام افتادن بی درنگ به بعدی برود؛ اگر کاربر
+      // یکی از حالت های توزیع بار را برگزیده باشد روی گروه `balance` با همان
+      // راهبرد می رود.
+      ..._selectionOptions(networkSettings?.selectionMode),
       // ── بقیه پیش فرض های هسته، تا صفر نشوند ───────────────────────────
       'enable-ntp': true,
       // موتور TLS ویندوز باید خاموش بماند.
@@ -393,7 +795,7 @@ class UmbrellaCore {
       // را رد می کند و هیچ اتصالی برقرار نمی شود.
       //
       // خاموش گذاشتنش یعنی هسته uTLS با اثر انگشت کروم را برمی دارد؛ همان
-      // چیزی که زیکس‌ری هم به طور پیش فرض انجام می دهد و ریلیتی با آن کار
+        // چیزی که زیکس ری هم به طور پیش فرض انجام می دهد و ریلیتی با آن کار
       // می کند. هزینه اش فقط این است که گره های TLS معمولی هم از uTLS می روند.
       'use-system-tls-engine': false,
       'mux': <String, dynamic>{
@@ -402,16 +804,36 @@ class UmbrellaCore {
         'max-streams': 8,
         'protocol': 'h2mux',
       },
-      'tls-tricks': <String, dynamic>{
-        'enable-fragment': false,
-        'fragment-size': '10-100',
-        'fragment-sleep': '50-200',
-        'mixed-sni-case': false,
-        'enable-padding': false,
-        'padding-size': '1200-1500',
-      },
+      'tls-tricks': tlsTricks.toCoreOptions(),
       'rules': <dynamic>[],
     };
+  }
+
+  /// نگاشت حالت انتخاب کاربر به کلیدهای واقعی گروه خروجی هسته.
+  static Map<String, dynamic> _selectionOptions(SelectionMode? mode) {
+    switch (mode) {
+      case SelectionMode.roundRobin:
+        return const <String, dynamic>{
+          'default-proxy': 'balance',
+          'balancer-strategy': 'round-robin',
+        };
+      case SelectionMode.consistentHash:
+        return const <String, dynamic>{
+          'default-proxy': 'balance',
+          'balancer-strategy': 'consistent-hashing',
+        };
+      case SelectionMode.stickySession:
+        return const <String, dynamic>{
+          'default-proxy': 'balance',
+          'balancer-strategy': 'sticky-sessions',
+        };
+      case SelectionMode.auto:
+      case SelectionMode.manual:
+      case null:
+        return const <String, dynamic>{
+          'default-proxy': 'lowest',
+        };
+    }
   }
 
   /// پوشه هسته در نسخه نصب: همه فایل های هسته باید کنار هم بمانند.
@@ -545,8 +967,7 @@ class PortHolder {
     // پردازش مال ماست، پورت مال ماست.
     final String lowerPath = path.toLowerCase();
     final String lowerName = name.toLowerCase();
-    if (lowerPath.isNotEmpty &&
-        (lowerPath.contains('umbrella') || lowerPath.contains('umb\u200c'))) {
+    if (lowerPath.isNotEmpty && lowerPath.contains('umbrella')) {
       return false;
     }
     if (lowerName.isNotEmpty &&
@@ -635,4 +1056,16 @@ class PortHolder {
     }
     return name;
   }
+}
+
+class _CategoryFilterSpec {
+  const _CategoryFilterSpec({
+    required this.suffixes,
+    this.keywords = const <String>[],
+    this.ruleSets = const <String>[],
+  });
+
+  final List<String> suffixes;
+  final List<String> keywords;
+  final List<String> ruleSets;
 }

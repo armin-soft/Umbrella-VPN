@@ -30,16 +30,84 @@ private function __construct() {
 }
 
 /**
- * Turns every Latin digit in a message into a Persian one, except inside the
- * parts that are meant to be copied: code spans, code/pre blocks, links,
- * e-mail addresses, @usernames and bare URLs. Those keep Latin digits or the
- * copied value would be wrong (a UUID, a subscription link, a payment ref).
- *
- * Message texts pass through this once in TelegramClient, so a screen that
- * forgets Helper::toPersian() still renders Persian numbers.
+ * حذف کامل نیم فاصله (U+200C) و تبدیل آن به فاصله معمولی استاندارد.
+ */
+public static function stripZwnj(string $Text): string {
+if ($Text === '' || !str_contains($Text, "\u{200C}")) {
+return $Text;
+}
+
+return preg_replace('/ {2,}/u', ' ', str_replace("\u{200C}", ' ', $Text)) ?? str_replace("\u{200C}", ' ', $Text);
+}
+
+/**
+ * تبدیل همه ارقام لاتین و عربی به فارسی و حذف کامل نیم فاصله در متن نمایشی.
+ */
+public static function cleanPersian(string $Text): string {
+return static::digitsToPersian(static::stripZwnj($Text));
+}
+
+/**
+ * نمایش نام سیستم عامل دستگاه به فارسی روان و بدون نیم فاصله.
+ */
+public static function formatPlatform(string $Platform): string {
+$Raw = trim(static::stripZwnj($Platform));
+
+if ($Raw === '') {
+return 'ثبت نشده';
+}
+
+$Map = [
+'/\bwindows\b/iu' => 'ویندوز',
+'/\bwin(?:32|64)\b/iu' => 'ویندوز',
+'/\bandroid\b/iu' => 'اندروید',
+'/\b(?:ios|iphone|ipad|ipados)\b/iu' => 'آی او اس',
+'/\b(?:macos|mac\s*os\s*x?|darwin)\b/iu' => 'مک',
+'/\blinux\b/iu' => 'لینوکس',
+'/\bubuntu\b/iu' => 'اوبونتو',
+'/\bdebian\b/iu' => 'دبیان',
+'/\bweb\b/iu' => 'وب',
+'/\bunknown\b/iu' => 'نامشخص',
+];
+
+$Formatted = preg_replace(array_keys($Map), array_values($Map), $Raw) ?? $Raw;
+$Formatted = trim(preg_replace('/ {2,}/u', ' ', $Formatted) ?? $Formatted);
+
+return $Formatted !== '' ? static::toPersian($Formatted) : 'ثبت نشده';
+}
+
+/**
+ * تبدیل رشته تاریخ و زمان پایگاه داده یا عدد زمان به تاریخ شمسی با ارقام فارسی.
+ */
+public static function formatDateTimeText(string $Value): string {
+$Raw = trim($Value);
+
+if ($Raw === '' || $Raw === '0' || $Raw === '0000-00-00 00:00:00' || $Raw === '0000-00-00') {
+return 'ثبت نشده';
+}
+
+if (ctype_digit($Raw)) {
+$Stamp = (int)$Raw;
+return $Stamp > 0 ? static::jalaliFromTimestamp($Stamp, true) : 'ثبت نشده';
+}
+
+if (preg_match('/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2})(?::\d{2})?)?$/', $Raw, $Match) === 1) {
+$Label = static::gregorianToJalali($Match[1]);
+if (isset($Match[2]) && $Match[2] !== '') {
+$Label .= ' ' . static::toPersian($Match[2]);
+}
+return $Label;
+}
+
+return static::cleanPersian($Raw);
+}
+
+/**
+ * تبدیل تمام ارقام لاتین و عربی پیام به ارقام فارسی به جز مقادیر فنی قابل کپی
+ * (کلیدها، شناسه های یکتا، نشانی های اینترنتی، رایانامه و نام های کاربری تلگرام).
  */
 public static function digitsToPersian(string $Text): string {
-if ($Text === '' || preg_match('/[0-9]/', $Text) !== 1) {
+if ($Text === '' || preg_match('/[0-9\x{0660}-\x{0669}]/u', $Text) !== 1) {
 return $Text;
 }
 
@@ -50,25 +118,34 @@ $Hold[$Key] = $Value;
 
 return $Key;
 };
-// Inline code first (`...`), then <code>/<pre> blocks: whatever is inside is
-// literal data, not prose.
-$Text = (string)preg_replace_callback('/`[^`\n]*`/u', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('#<(code|pre)(?:\s[^>]*)?>.*?</\1>#isu', static fn (array $M): string => $Keep($M[0]), $Text);
-// Link targets: markdown ](...), HTML href="..." and any bare URL.
+// بلوک های کد حاوی حروف لاتین (کلید، لینک، شناسه کلاینت، دامنه) دست نخورده می مانند؛
+// بلوک های صرفا عددی (شناسه تلگرام، شماره موبایل، کد رهگیری، مبلغ، نسخه) فارسی می شوند.
+$Text = (string)preg_replace_callback('/`([^`\n]*)`/u', static fn (array $M): string => preg_match('/[A-Za-z]/', $M[1]) === 1 ? $Keep($M[0]) : $M[0], $Text);
+$Text = (string)preg_replace_callback('#<(code|pre)((?:\s[^>]*)?)>(.*?)</\1>#isu', static function (array $M) use ($Keep): string {
+$Inner = preg_replace('/&(?:amp|lt|gt|quot|apos);/i', '', $M[3]) ?? $M[3];
+return preg_match('/[A-Za-z]/', $Inner) === 1 ? $Keep($M[0]) : $M[0];
+}, $Text);
+// حفظ برچسب های قالب بندی و موجودیت های عددی، نشانی های اینترنتی، رایانامه و نام کاربری.
+$Text = (string)preg_replace_callback('/&#[0-9]+;/u', static fn (array $M): string => $Keep($M[0]), $Text);
 $Text = (string)preg_replace_callback('/\]\([^)\n]*\)/u', static fn (array $M): string => $Keep($M[0]), $Text);
 $Text = (string)preg_replace_callback('/href="[^"]*"/iu', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('#(?:https?|tg)://[^\s<>"`]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#(?:https?|tg|vless|vmess|trojan|ss|ssr|hysteria2?|tuic|wg|wireguard)://[^\s<>"`]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
 $Text = (string)preg_replace_callback('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
 $Text = (string)preg_replace_callback('/(?<![\w\x01])@[A-Za-z][A-Za-z0-9_]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = strtr($Text, array_combine(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS));
+// محافظت از نام دامنه های فنی که شامل عدد هستند (مانند sub1.example.com).
+$Text = (string)preg_replace_callback('/\b(?=[A-Za-z0-9.\-]*[A-Za-z])(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = strtr($Text, array_merge(
+array_combine(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS),
+array_combine(self::ARABIC_DIGITS, self::PERSIAN_DIGITS)
+));
 
 return $Hold === [] ? $Text : strtr($Text, $Hold);
 }
 
 public static function toPersian(int|float|string $Number): string {
-return strtr((string)$Number, array_combine(
-['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
-self::PERSIAN_DIGITS
+return strtr((string)$Number, array_merge(
+array_combine(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS),
+array_combine(self::ARABIC_DIGITS, self::PERSIAN_DIGITS)
 ));
 }
 
@@ -94,9 +171,9 @@ return $Plan !== '' ? $Plan : 'فعال';
 public static function normalizeText(string $Text): string {
 $Text = trim($Text);
 $Text = preg_replace('/\s+/u', ' ', $Text) ?? $Text;
-$Text = str_replace(['‍', ' ', 'ـ', '‬', '‎'], '', $Text);
+$Text = str_replace(["\u{200D}", "\u{200C}", 'ـ', "\u{202C}", "\u{200E}"], '', $Text);
 $Text = str_replace(['ي', 'ك', 'ة', 'أ', 'إ', 'آ', 'ؤ', 'ئ'], ['ی', 'ک', 'ه', 'ا', 'ا', 'ا', 'و', 'ی'], $Text);
-$Text = preg_replace('/[۰-۹0-9]/u', '', $Text);
+$Text = preg_replace('/[۰-۹\x{0660}-\x{0669}0-9]/u', '', $Text);
 return mb_strtolower($Text, 'UTF-8');
 }
 
@@ -146,7 +223,7 @@ continue;
 $Body = trim((string)($Response['Body'] ?? ''));
 
 if ($Body === '') {
-$Last_Error = 'پاسخ وب سرویس تاریخ و زمان خالی بود (HTTP ' . (int)($Response['StatusCode'] ?? 0) . ')';
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان خالی بود (کد وضعیت ' . static::toPersian((string)(int)($Response['StatusCode'] ?? 0)) . ')';
 continue;
 }
 
@@ -155,14 +232,14 @@ $Json = $Response['Json'] ?? null;
 if (!is_array($Json)) $Json = json_decode($Body, true);
 
 if (!is_array($Json)) {
-$Last_Error = 'پاسخ وب سرویس تاریخ و زمان JSON معتبر نبود (HTTP ' . (int)($Response['StatusCode'] ?? 0) . ')';
+$Last_Error = 'پاسخ وب سرویس تاریخ و زمان معتبر نبود (کد وضعیت ' . static::toPersian((string)(int)($Response['StatusCode'] ?? 0)) . ')';
 continue;
 }
 
 $Data = $Json['Data'] ?? null;
 
 if (!is_array($Data) || $Data === []) {
-$Last_Error = 'وب سرویس تاریخ و زمان داده ای برنگرداند (کد ' . (int)($Json['Status']['Code'] ?? ($Response['StatusCode'] ?? 0)) . ')';
+$Last_Error = 'وب سرویس تاریخ و زمان داده ای برنگرداند (کد ' . static::toPersian((string)(int)($Json['Status']['Code'] ?? ($Response['StatusCode'] ?? 0))) . ')';
 continue;
 }
 
@@ -246,10 +323,10 @@ $Service_Data = static::dateTimeSnapshot();
 }
 
 if (is_array($Service_Data)) {
-$Hijri = trim((string)($Service_Data['Hijri_Date'] ?? ''));
-$Season = trim((string)($Service_Data['Season'] ?? ''));
+$Hijri = static::cleanPersian(trim((string)($Service_Data['Hijri_Date'] ?? '')));
+$Season = static::cleanPersian(trim((string)($Service_Data['Season'] ?? '')));
 $Season_Emoji = trim((string)($Service_Data['Season_Emoji'] ?? ''));
-$Part = trim((string)($Service_Data['Time_Based'] ?? ''));
+$Part = static::cleanPersian(trim((string)($Service_Data['Time_Based'] ?? '')));
 $Part_Emoji = trim((string)($Service_Data['Time_Based_Emoji'] ?? ''));
 }
 
@@ -355,10 +432,10 @@ catch (Throwable) {
 return $Include_Time ? 'نامعلوم --:--' : 'نامعلوم';
 }
 
-$Result = (string)($Data['Shamsi_Date'] ?? '');
+$Result = static::cleanPersian((string)($Data['Shamsi_Date'] ?? ''));
 
 if ($Include_Time) {
-$Result .= ' ' . (string)($Data['Time'] ?? '');
+$Result .= ' ' . static::cleanPersian((string)($Data['Time'] ?? ''));
 }
 
 return $Result;
@@ -385,10 +462,10 @@ $Hijri = '';
 try {
 $Data = static::getDateTimeData(static::daysFromToday($Time_Stamp));
 
-if (($Data['Hijri_Date'] ?? '') !== '') $Hijri = (string)$Data['Hijri_Date'];
-if (($Data['Season'] ?? '') !== '') $Season = (string)$Data['Season'];
+if (($Data['Hijri_Date'] ?? '') !== '') $Hijri = static::cleanPersian((string)$Data['Hijri_Date']);
+if (($Data['Season'] ?? '') !== '') $Season = static::cleanPersian((string)$Data['Season']);
 if (($Data['Season_Emoji'] ?? '') !== '') $Season_Emoji = (string)$Data['Season_Emoji'];
-if (($Data['Time_Based'] ?? '') !== '') $Part = (string)$Data['Time_Based'];
+if (($Data['Time_Based'] ?? '') !== '') $Part = static::cleanPersian((string)$Data['Time_Based']);
 if (($Data['Time_Based_Emoji'] ?? '') !== '') $Part_Emoji = (string)$Data['Time_Based_Emoji'];
 }
 
@@ -796,13 +873,16 @@ return true;
 
 
 public static function greetingFrame(string $Type, string $Name, string $Section, ?int $User_ID = null): string {
+$Name = static::stripZwnj($Name);
 $Name = trim($Name) !== '' ? trim($Name) : $Type;
 $Name = self::mention($Name, $User_ID);
-// عنوان دکمه ممکن است ایموجی داشته باشد، اما داخل جمله خوشامد فقط نام بخش می‌آید.
-// این قاعده مشترک برای عنوان‌های ثابت و پویا و هر دو بخش کاربر/مدیر است.
+// عنوان دکمه ممکن است ایموجی داشته باشد، اما داخل جمله خوشامد فقط نام بخش می آید.
+// این قاعده مشترک برای عنوان های ثابت و پویا و هر دو بخش کاربر/مدیر است.
+$Section = static::stripZwnj($Section);
 $Section = preg_replace('/^[\s\p{So}\p{Sk}\x{FE0F}\x{200D}]+/u', '', $Section) ?? $Section;
 $Section = trim(preg_replace('/\s+/u', ' ', $Section) ?? $Section);
 if ($Section === '') $Section = 'منوی اصلی';
+$Section = static::digitsToPersian($Section);
 
 // حتی اگر سرویس تاریخ و زمان و حافظه پنهان هر دو در دسترس نباشند، هدر با
 // تاریخ محلی پر می شود؛ متن خطای تاریخ و زمان دیگر در هیچ پیامی نمی آید.
@@ -1078,6 +1158,110 @@ if ($Hours > 0 && $Years === 0 && $Months === 0) $Parts[] = self::toPersian((str
 if ($Minutes > 0 && $Years === 0 && $Months === 0 && $Days === 0) $Parts[] = self::toPersian((string)$Minutes) . ' دقیقه';
 if ($Parts === []) return 'کمتر از یک دقیقه';
 return implode(' و ', array_slice($Parts, 0, 3));
+}
+
+/**
+ * بازگردانی بدون افت متن های UTF-8 که به اشتباه با کدگذاری Windows-1252 یا
+ * ISO-8859-1 خوانده یا ذخیره شده اند (مانند تبدیل به «🟢روشن» و «ناموفق»).
+ * متن های فارسی، انگلیسی، ایموجی و نشانه های سالم دست نخورده برمی گردند.
+ */
+public static function repairMojibake(string $Text): string {
+if ($Text === '') return '';
+
+if (str_starts_with($Text, "\xEF\xBB\xBF")) {
+$Text = substr($Text, 3);
+}
+
+if ($Text === '' || !str_contains($Text, "\xC3") || preg_match('//u', $Text) !== 1) {
+return $Text;
+}
+
+if (preg_match('/\xC3[\x82-\xB4]/', $Text) !== 1) {
+return $Text;
+}
+
+$Pattern = '/[\x{0080}-\x{00FF}\x{20AC}\x{201A}\x{0192}\x{201E}\x{2026}\x{2020}\x{2021}'
+. '\x{02C6}\x{2030}\x{0160}\x{2039}\x{0152}\x{017D}\x{2018}\x{2019}\x{201C}\x{201D}'
+. '\x{2022}\x{2013}\x{2014}\x{02DC}\x{2122}\x{0161}\x{203A}\x{0153}\x{017E}\x{0178}]+/u';
+
+return preg_replace_callback(
+$Pattern,
+static fn (array $Match): string => self::decodeMojibakeRun($Match[0]),
+$Text
+) ?? $Text;
+}
+
+private static function decodeMojibakeRun(string $Segment): string {
+$Current = $Segment;
+
+for ($Pass = 0; $Pass < 3; $Pass++) {
+if (!str_contains($Current, "\xC3") || preg_match('/\xC3[\x82-\xB4]/', $Current) !== 1) {
+break;
+}
+
+$Decoded = self::decodeMojibakeOnce($Current);
+
+if ($Decoded === null) {
+break;
+}
+
+$Current = $Decoded;
+}
+
+if (str_starts_with($Current, "\xEF\xBB\xBF")) {
+$Current = substr($Current, 3);
+}
+
+if ($Current === $Segment) {
+return $Segment;
+}
+
+if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|\xC2[\x80-\x9F]|\xEF\xBF\xBD/', $Current) === 1) {
+return $Segment;
+}
+
+return $Current;
+}
+
+private static function decodeMojibakeOnce(string $Segment): ?string {
+if (preg_match('/^[\x00-\x7F\x{0080}-\x{00FF}\x{20AC}\x{201A}\x{0192}\x{201E}\x{2026}\x{2020}\x{2021}'
+. '\x{02C6}\x{2030}\x{0160}\x{2039}\x{0152}\x{017D}\x{2018}\x{2019}\x{201C}\x{201D}'
+. '\x{2022}\x{2013}\x{2014}\x{02DC}\x{2122}\x{0161}\x{203A}\x{0153}\x{017E}\x{0178}]+$/u', $Segment) !== 1) {
+return null;
+}
+
+$Raw = strtr($Segment, self::cp1252ToByteMap());
+
+if (preg_match('/[\xC2-\xF4]/', $Raw) !== 1 || preg_match('//u', $Raw) !== 1) {
+return null;
+}
+
+return $Raw === $Segment ? null : $Raw;
+}
+
+private static function cp1252ToByteMap(): array {
+static $Map = null;
+
+if ($Map !== null) {
+return $Map;
+}
+
+$Map = [
+"\u{20AC}" => "\x80", "\u{201A}" => "\x82", "\u{0192}" => "\x83", "\u{201E}" => "\x84",
+"\u{2026}" => "\x85", "\u{2020}" => "\x86", "\u{2021}" => "\x87", "\u{02C6}" => "\x88",
+"\u{2030}" => "\x89", "\u{0160}" => "\x8A", "\u{2039}" => "\x8B", "\u{0152}" => "\x8C",
+"\u{017D}" => "\x8E", "\u{2018}" => "\x91", "\u{2019}" => "\x92", "\u{201C}" => "\x93",
+"\u{201D}" => "\x94", "\u{2022}" => "\x95", "\u{2013}" => "\x96", "\u{2014}" => "\x97",
+"\u{02DC}" => "\x98", "\u{2122}" => "\x99", "\u{0161}" => "\x9A", "\u{203A}" => "\x9B",
+"\u{0153}" => "\x9C", "\u{017E}" => "\x9E", "\u{0178}" => "\x9F",
+];
+
+for ($Byte = 0x80; $Byte <= 0xFF; $Byte++) {
+$Utf8_Char = chr(0xC0 | ($Byte >> 6)) . chr(0x80 | ($Byte & 0x3F));
+$Map[$Utf8_Char] = chr($Byte);
+}
+
+return $Map;
 }
 }
 ?>

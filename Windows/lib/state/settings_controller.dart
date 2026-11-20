@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
@@ -21,6 +24,14 @@ class SettingsController extends ChangeNotifier {
   final WindowService _window;
 
   Future<void> _pendingSave = Future<void>.value();
+  int _saveSeq = 0;
+  Timer? _debugRevertTimer;
+  DateTime? _debugLogExpiresAt;
+
+  /// فراخوانی خودکار هنگام پایان مهلت ۱۰ دقیقه ای سطح گزارش `debug` تا اتصال
+  /// فعال بدون دخالت کاربر به سطح سبک `warn` بازگردد.
+  VoidCallback? onDebugLogExpired;
+
   AppSettings _settings = const AppSettings();
   AppSettings get settings => _settings;
 
@@ -41,6 +52,18 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
+  /// روشنایی نهایی برنامه با توجه به حالت انتخابی کاربر و تم فعلی ویندوز.
+  Brightness resolveBrightness(Brightness platformBrightness) {
+    switch (_settings.theme) {
+      case ThemePreference.dark:
+        return Brightness.dark;
+      case ThemePreference.light:
+        return Brightness.light;
+      case ThemePreference.system:
+        return platformBrightness;
+    }
+  }
+
   Future<void> load() async {
     final Map<String, dynamic> json =
         LocalStore.instance.readJson(StoreKeys.settings);
@@ -50,7 +73,17 @@ class SettingsController extends ChangeNotifier {
     _landingSeen = LocalStore.instance.readBool(StoreKeys.landingSeen);
     _elevated = await _native.isElevated();
     _sound.enabled = _settings.soundEnabled;
-    _window.closeToTray = _settings.closeToTray;
+    _window
+      ..closeToTray = _settings.closeToTray
+      ..notificationsEnabled = _settings.notificationsEnabled;
+    // اگر اجرای خودکار با ویندوز روشن است، مسیر فایل اجرایی فعلی در رجیستری
+    // تازه سازی می شود تا پس از به روز رسانی یا جابه جایی پوشه نصب از کار نیفتد.
+    if (Platform.isWindows && _settings.startWithWindows) {
+      unawaited(
+        _native.setAutostart(true, appName: AppConfig.autostartName),
+      );
+    }
+    _syncDebugRevertTimer(_settings.logLevel);
     notifyListeners();
   }
 
@@ -64,13 +97,25 @@ class SettingsController extends ChangeNotifier {
     final AppSettings previous = _settings;
     _settings = next;
     _sound.enabled = next.soundEnabled;
-    _window.closeToTray = next.closeToTray;
-    // Apply appearance immediately; serialize disk writes so fast toggles cannot
-    // persist an older theme after a newer one.
+    _window
+      ..closeToTray = next.closeToTray
+      ..notificationsEnabled = next.notificationsEnabled;
+    if (previous.logLevel != next.logLevel) {
+      _syncDebugRevertTimer(next.logLevel);
+    }
+    // Apply appearance immediately; serialize and coalesce disk writes so rapid
+    // back-to-back theme clicks neither block rendering nor persist stale state.
     notifyListeners();
-    final Future<void> save = _pendingSave.then(
-      (_) => LocalStore.instance.writeJson(StoreKeys.settings, next.toJson()),
-    );
+    final int seq = ++_saveSeq;
+    final Future<void> save = _pendingSave.then((_) async {
+      if (seq != _saveSeq) {
+        return;
+      }
+      await LocalStore.instance.writeJson(
+        StoreKeys.settings,
+        _settings.toJson(),
+      );
+    });
     _pendingSave = save.catchError((Object error) {
       AppLogger.instance.add('ذخیره تنظیمات ناموفق بود: $error', level: 'error');
     });
@@ -87,16 +132,25 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setTheme(ThemePreference theme) async {
-    await update(_settings.copyWith(theme: theme));
+    if (_settings.theme == theme) {
+      return;
+    }
+    await update(_settings.copyWith(theme: theme), applyNative: false);
   }
 
-  Future<void> toggleTheme() async {
-    final bool isDark = _settings.theme == ThemePreference.dark ||
-        (_settings.theme == ThemePreference.system &&
-            WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
-    final ThemePreference next = isDark
-        ? ThemePreference.light
-        : ThemePreference.dark;
+  Future<void> toggleTheme({Brightness? effectiveBrightness}) async {
+    final bool isDark;
+    if (_settings.theme == ThemePreference.dark) {
+      isDark = true;
+    } else if (_settings.theme == ThemePreference.light) {
+      isDark = false;
+    } else {
+      final Brightness current = effectiveBrightness ??
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      isDark = current == Brightness.dark;
+    }
+    final ThemePreference next =
+        isDark ? ThemePreference.light : ThemePreference.dark;
     await setTheme(next);
   }
 
@@ -114,20 +168,45 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setTunMode(bool value) async {
-    // انتخاب کاربر ثبت می شود تا مایگریشن پیش فرض دیگر رویش ننویسد.
-    await update(
-      _settings.copyWith(tunMode: value, modeChoiceExplicit: true),
+    await setServiceMode(
+      value ? InboundServiceMode.vpn : InboundServiceMode.systemProxy,
     );
   }
 
-  /// مایگریشن یک باره: نسخه قبلی به طور پیش فرض پروکسی سیستمی بود و کاربر
-  /// گزینه ای انتخاب نکرده بود. حالا تونل کامل پیش فرض است تا
-  /// سرعت و پایداری بیشتر شود؛ اگر کاربر خودش انتخابی کرده باشد دست نمی زنیم.
+  /// تغییر حالت سرویس ورودی (`پروکسی` / `پروکسی سیستم` / `VPN`).
+  Future<void> setServiceMode(InboundServiceMode mode) async {
+    final CorePreference pref = switch (mode) {
+      InboundServiceMode.vpn => CorePreference.tun,
+      InboundServiceMode.systemProxy => CorePreference.systemProxy,
+      InboundServiceMode.proxy => CorePreference.systemProxy,
+    };
+    await update(
+      _settings.copyWith(
+        serviceMode: mode,
+        corePreference: pref,
+        tunMode: mode.enablesTun,
+        modeChoiceExplicit: true,
+      ),
+    );
+  }
+
+  /// مایگریشن تنظیمات نسخه های پیشین: پیش فرض اتصال روی تونل کامل است و هر
+  /// فیلتر منطقه قدیمی (از منوی حذف شده «منطقه و سرورها») به «همه» برمی گردد
+  /// تا تمام سرورهای اشتراک `/sub/` کاربر فعال باشند.
   Future<void> migrateConnectionMode() async {
-    if (_settings.modeChoiceExplicit || _settings.tunMode) {
+    final bool needsTun = !_settings.modeChoiceExplicit && !_settings.tunMode;
+    final bool needsRegionReset = _settings.serverRegionCode != 'all';
+    if (!needsTun && !needsRegionReset) {
       return;
     }
-    await update(_settings.copyWith(tunMode: true));
+    await update(
+      _settings.copyWith(
+        tunMode: needsTun ? true : _settings.tunMode,
+        serviceMode:
+            needsTun ? InboundServiceMode.vpn : _settings.serviceMode,
+        serverRegionCode: 'all',
+      ),
+    );
   }
 
   /// ثبت حالت اتصال. `tunMode` هم به روز می شود تا این دو هیچ وقت ناهماهنگ
@@ -137,6 +216,9 @@ class SettingsController extends ChangeNotifier {
     await update(
       _settings.copyWith(
         corePreference: value,
+        serviceMode: value.prefersTun
+            ? InboundServiceMode.vpn
+            : InboundServiceMode.systemProxy,
         tunMode: value.prefersTun,
         modeChoiceExplicit: true,
       ),
@@ -145,7 +227,7 @@ class SettingsController extends ChangeNotifier {
 
   /// پنجره CLI هسته هنگام اتصال باز شود یا نه.
   ///
-  /// پیش فرض خاموش است؛ فقط برای عیب‌یابی با انتخاب کاربر باز می‌شود.
+  /// پیش فرض خاموش است؛ فقط برای عیب یابی با انتخاب کاربر باز می شود.
   Future<void> setShowCli(bool value) async {
     await update(_settings.copyWith(showCli: value));
   }
@@ -195,21 +277,105 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> setBlockIpv6(bool value) async {
-    await update(_settings.copyWith(blockIpv6: value));
+    await setIpv6RouteMode(
+      value ? Ipv6RouteMode.ipv4Only : Ipv6RouteMode.preferIpv4,
+    );
+  }
+
+  Future<void> setIpv6RouteMode(Ipv6RouteMode mode) async {
+    await update(_settings.copyWith(ipv6RouteMode: mode));
   }
 
   Future<void> setStrictRoute(bool value) async {
     await update(_settings.copyWith(strictRoute: value));
   }
 
+  Future<void> setMixedPort(int port) async {
+    if (!LanSharing.isValidPort(port, forbiddenPort: _settings.lanSharingPort)) {
+      throw const FormatException(
+        'پورت باید بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت اشتراک باشد',
+      );
+    }
+    await update(_settings.copyWith(mixedPort: port));
+  }
+
+  Future<void> setLocalProxyInVpn(bool value) async {
+    await update(_settings.copyWith(localProxyInVpn: value));
+  }
+
+  Future<void> setLocalProxyAuth(bool value) async {
+    await update(_settings.copyWith(localProxyAuth: value));
+  }
+
+  Future<void> setAllowConnectionFromLan(bool value) async {
+    await update(_settings.copyWith(allowConnectionFromLan: value));
+  }
+
+  Future<void> setLanSharingPort(int port) async {
+    if (!LanSharing.isValidPort(port, forbiddenPort: _settings.mixedPort)) {
+      throw const FormatException(
+        'پورت باید بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت پروکسی محلی باشد',
+      );
+    }
+    await update(_settings.copyWith(lanSharingPort: port));
+  }
+
+  Future<void> setLanSharingPassword(String raw) async {
+    final String clean = raw.trim();
+    if (!LanSharing.isValidPassword(clean)) {
+      throw const FormatException('رمز باید حداقل ۴ کاراکتر باشد');
+    }
+    await update(_settings.copyWith(lanSharingPassword: clean));
+  }
+
   Future<void> setRemoteDns(String value) async {
-    if (!NetworkDns.presets.containsKey(value)) throw ArgumentError.value(value, 'remoteDns');
+    if (!NetworkDns.presets.containsKey(value)) {
+      throw ArgumentError.value(value, 'remoteDns');
+    }
     await update(_settings.copyWith(remoteDns: value));
   }
 
   Future<void> setDirectDns(String value) async {
-    if (!NetworkDns.presets.containsKey(value)) throw ArgumentError.value(value, 'directDns');
+    if (!NetworkDns.presets.containsKey(value)) {
+      throw ArgumentError.value(value, 'directDns');
+    }
     await update(_settings.copyWith(directDns: value));
+  }
+
+  Future<void> setRemoteDnsStrategy(DnsDomainStrategy strategy) async {
+    await update(_settings.copyWith(remoteDnsStrategy: strategy));
+  }
+
+  Future<void> setDirectDnsStrategy(DnsDomainStrategy strategy) async {
+    await update(_settings.copyWith(directDnsStrategy: strategy));
+  }
+
+  Future<void> setEnableFakeDns(bool value) async {
+    await update(_settings.copyWith(enableFakeDns: value));
+  }
+
+  Future<void> setRoutingRegion(RoutingRegion region) async {
+    await update(_settings.copyWith(routingRegion: region));
+  }
+
+  Future<void> setBypassLan(bool value) async {
+    await update(_settings.copyWith(bypassLan: value));
+  }
+
+  Future<void> setResolveDestination(bool value) async {
+    await update(_settings.copyWith(resolveDestination: value));
+  }
+
+  Future<void> setBlockQuic(bool value) async {
+    await update(_settings.copyWith(blockQuic: value));
+  }
+
+  Future<void> setLogLevel(String level) async {
+    await update(_settings.copyWith(logLevel: CoreLogLevel.normalize(level)));
+  }
+
+  Future<void> setTlsTricks(TlsTricksSettings tricks) async {
+    await update(_settings.copyWith(tlsTricks: tricks));
   }
 
   Future<void> setChain(ChainSettings chain) async {
@@ -270,8 +436,41 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(lastNodeId: nodeId), applyNative: false);
   }
 
+  void _syncDebugRevertTimer(String rawLevel) {
+    _debugRevertTimer?.cancel();
+    _debugRevertTimer = null;
+    final String normalized = CoreLogLevel.normalize(rawLevel);
+    if (normalized != 'debug' && normalized != 'trace') {
+      _debugLogExpiresAt = null;
+      return;
+    }
+    final DateTime expires =
+        DateTime.now().add(const Duration(minutes: 10));
+    _debugLogExpiresAt = expires;
+    _debugRevertTimer = Timer(const Duration(minutes: 10), () {
+      if (_debugLogExpiresAt != expires) return;
+      _debugLogExpiresAt = null;
+      final String current = CoreLogLevel.normalize(_settings.logLevel);
+      if (current == 'debug' || current == 'trace') {
+        unawaited(() async {
+          await update(
+            _settings.copyWith(logLevel: CoreLogLevel.defaultLevel),
+            applyNative: false,
+          );
+          onDebugLogExpired?.call();
+        }());
+      }
+    });
+  }
+
   Future<bool> requestElevation() async {
     final bool ok = await _native.relaunchElevated();
     return ok;
+  }
+
+  @override
+  void dispose() {
+    _debugRevertTimer?.cancel();
+    super.dispose();
   }
 }

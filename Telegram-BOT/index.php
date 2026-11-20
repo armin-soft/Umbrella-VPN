@@ -5,8 +5,13 @@ if (PHP_VERSION_ID < 80200) {
 error_log('[Umbrella-Bot][PHP-Version] PHP >= 8.2 is required but the server runs PHP ' . PHP_VERSION . ' in ' . basename(__FILE__) . '. Set the domain PHP version to 8.2 or newer (cPanel MultiPHP Manager).');
 http_response_code(503);
 header('Content-Type: text/plain; charset=UTF-8');
-echo 'PHP 8.2+ is required.';
+echo 'برای اجرای این بخش نسخه ۸.۲ یا جدیدتر پی اچ پی لازم است.';
 exit;
+}
+
+@ini_set('default_charset', 'UTF-8');
+if (function_exists('mb_internal_encoding')) {
+mb_internal_encoding('UTF-8');
 }
 
 require_once __DIR__ . '/Bot/Dispatcher.php';

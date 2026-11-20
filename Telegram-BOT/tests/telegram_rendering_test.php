@@ -55,43 +55,33 @@ TelegramClient::sendReadableMessage(1, null, '<a href="https://example.test/123"
 check(str_contains(end(HttpClient::$Calls)[1]['text'], 'https://example.test/123'), 'fallback preserves hyperlink URL');
 HttpClient::$Replies = ['throw', ['ok' => false]];
 check(!TelegramClient::sendReadableMessage(1, null, 'fail', $Markup), 'network/Telegram failure reported to caller');
-// Render the actual subscription flow, including the formerly nullable Send path.
-final class Context {
-public int $UserId = 1, $ChatId = 1; public ?int $MessageId = 10;
-public bool $IsCallback = true; public ?string $CallbackId = 'callback';
-public function profileName(): string { return 'offline user'; }
-}
-final class Common {
-public static function greet(Context $C, string $Title): string { return $Title . "\n"; }
-public static function isRobotOn(): bool { return true; }
-public static function backTo(string $Title, string $Data): array { return [Menu::button($Title, $Data)]; }
-}
-final class Repository {
-public static array $User = ['Phone' => '09123456789', 'Subscription' => 'standard', 'Client_ID' => 'client-123', 'Package_Duration' => '30', 'ED_25519_Private_Key' => 'private-123+/=', 'WireGuard_Private_Key' => 'wire-456+/='];
-public static function getUser(int $Id): array { return self::$User; }
-public static function updateUser(int $Id, array $Data): void { self::$User = array_merge(self::$User, $Data); }
-public static function getSetting(string $K, mixed $Default = null): mixed { return $Default; }
-public static function getBalance(int $Id): float { return 0; }
-}
-final class ServerClient { public static function getUser(string $Id): array { throw new RuntimeException('server offline'); } }
-final class BotConfig {
-public static function getSupportUrl(): string { return 'https://t.me/support'; }
-public static function showEmergency(): bool { return false; }
-}
-$Source = file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
-eval(preg_replace('/\?>\s*$/', '', substr($Source, strpos($Source, 'final class SubscriptionFlow {'))));
-HttpClient::$Calls = []; HttpClient::$Replies = [];
-SubscriptionFlow::mySubscription(new Context());
-$Rendered = implode("\n", array_map(fn($C) => $C[1]['text'] ?? '', HttpClient::$Calls));
-check(str_contains($Rendered, 'private-123+/=') && str_contains($Rendered, 'wire-456+/='), 'actual subscription preserves all keys');
-check(str_contains($Rendered, 'https://sub.test/client-123/sub/'), 'actual subscription includes usable URL');
-check(str_contains($Rendered, 'اطلاعات ذخیره‌شده'), 'server failure explicitly labelled cached, not fresh');
-Repository::$User['Client_Status'] = 'غیر فعال'; HttpClient::$Calls = [];
-SubscriptionFlow::mySubscriptionActive(new Context());
-check(str_contains(end(HttpClient::$Calls)[1]['text'], 'غیرفعال'), 'inactive direct caller has a non-null renderer');
-foreach ([['Phone' => ''], ['Subscription' => null], ['Client_ID' => '_']] as $Change) {
-Repository::$User = array_merge(['Phone' => '09123456789', 'Subscription' => 'standard', 'Client_ID' => 'client-123'], $Change);
-HttpClient::$Calls = []; SubscriptionFlow::mySubscription(new Context());
-check(count(array_filter(HttpClient::$Calls, fn($C) => isset($C[1]['text']) && $C[1]['text'] !== '')) > 0, 'missing profile, no plan and inconsistent client all render');
-}
+// Verify that the removed subscription-details flow has no remaining render path.
+$SubscriptionSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
+$UserSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/User.php');
+$AdminSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
+$DispatcherSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Dispatcher.php');
+$CommonSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Common.php');
+$SchedulerSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');
+$ReleaseCatalogSource = (string)file_get_contents(dirname(__DIR__) . '/Core/App/Release-Catalog.php');
+check(str_contains($ReleaseCatalogSource, 'https://api.github.com/repos/') && str_contains($ReleaseCatalogSource, 'App_Release_Catalog_Token'), 'app download details come from a cached public release catalog');
+check(str_contains($UserSource, 'appDownloadPlatform') && str_contains($DispatcherSource, "'app_download_windows' => [UserFlow::class, 'appDownloadWindows']") && !str_contains($DispatcherSource, 'app_download_android'), 'Windows download page is wired without Android releases');
+check(str_contains($ReleaseCatalogSource, "private const PLATFORMS = ['windows'];"), 'release catalog currently exposes Windows only');
+check(!str_contains($SubscriptionSource, 'mySubscriptionActive') && !str_contains($SubscriptionSource, 'configLinks('), 'subscription-details renderer and connection links are removed');
+check(!str_contains($SubscriptionSource, 'کلیدهای اتصال') && !str_contains($SubscriptionSource, 'شناسه کلاینت</b>'), 'subscription screen has no client id or keys');
+check(!str_contains($SubscriptionSource, 'مشخصات اتصال شما') && !str_contains($SubscriptionSource, 'full-singbox.json'), 'subscription screen has no connection links');
+check(str_contains($DispatcherSource, "'اشتراک من' => [UserFlow::class, 'profile']"), 'old subscription callback safely redirects to profile');
+check(!str_contains($UserSource, "['💎اشتراک من', 'اشتراک من']"), 'subscription details item is absent from management menu');
+check(!str_contains($UserSource, 'شناسه کلاینت'), 'user profile omits the client identifier');
+check(str_contains($UserSource, "'اشتراک آماده'") && str_contains($UserSource, "'اشتراک دلخواه'"), 'subscription purchase menu remains available');
+check(str_contains($CommonSource, "'package_days'") && str_contains($CommonSource, "'start_date'") && str_contains($CommonSource, "'Expiration_Time_Stamp'"), 'panel start date and package length determine expiry');
+check(str_contains($UserSource, 'Common::syncSubscriptionFromServer($User)') && str_contains($UserSource, 'Common::syncSubscriptionFromServer($User, $Live)'), 'profile and subscription menu fetch authoritative panel expiry');
+check(str_contains($SchedulerSource, 'Common::subscriptionFieldsFromServer($Row)') && str_contains($SchedulerSource, 'ServerClient::getUser($Client_ID)'), 'scheduler syncs panel expiry before periodic updates and expiry actions');
+$Activate_Start = strpos($SubscriptionSource, 'private static function activateSubscription(');
+$Renew_Start = strpos($SubscriptionSource, 'private static function renewSubscription(');
+$Duration_Start = strpos($SubscriptionSource, 'private static function durationLabel(');
+$Activation = substr($SubscriptionSource, $Activate_Start, $Renew_Start - $Activate_Start);
+$Renewal = substr($SubscriptionSource, $Renew_Start, $Duration_Start - $Renew_Start);
+check(str_contains($Activation, "'👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری'"), 'activation success leads to profile');
+check(str_contains($Renewal, "'👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری'"), 'renewal success leads to profile');
+check(!str_contains($AdminSource, 'کلیدهای کلاینت') && !str_contains($AdminSource, 'کلید خصوصی ادی۲۵۵۱۹'), 'admin account details source has no key display');
 echo "OK Telegram rendering ({$N} assertions)\n";

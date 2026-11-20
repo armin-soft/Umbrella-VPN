@@ -1,11 +1,14 @@
 #include "umbrella_native_plugin.h"
+#include "winhttp_client.h"
 
 #include <flutter/standard_method_codec.h>
 #include <knownfolders.h>
 #include <shlobj.h>
 
+#include <map>
 #include <string>
-
+#include <thread>
+#include <utility>
 #include <vector>
 
 namespace umbrella {
@@ -45,6 +48,42 @@ bool BoolOf(const flutter::EncodableMap& args, const char* key, bool fallback) {
   if (iterator == args.end()) return fallback;
   const auto* value = std::get_if<bool>(&iterator->second);
   return value == nullptr ? fallback : *value;
+}
+
+std::map<std::string, std::string> StringMapOf(const flutter::EncodableMap& args,
+                                               const char* key) {
+  std::map<std::string, std::string> out;
+  auto iterator = args.find(flutter::EncodableValue(std::string(key)));
+  if (iterator == args.end()) return out;
+  const auto* map = std::get_if<flutter::EncodableMap>(&iterator->second);
+  if (map == nullptr) return out;
+  for (const auto& entry : *map) {
+    const auto* k = std::get_if<std::string>(&entry.first);
+    const auto* v = std::get_if<std::string>(&entry.second);
+    if (k != nullptr && v != nullptr && !k->empty()) {
+      out[*k] = *v;
+    }
+  }
+  return out;
+}
+
+template <typename WorkFn>
+void RunOffUiThread(
+    const std::shared_ptr<PluginReplyGuard>& guard,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
+    WorkFn&& work) {
+  auto shared_result =
+      std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(
+          result.release());
+  std::thread([guard, shared_result, fn = std::forward<WorkFn>(work)]() mutable {
+    flutter::EncodableValue payload = fn();
+    std::lock_guard<std::mutex> lock(guard->mutex);
+    if (guard->alive && shared_result != nullptr) {
+      shared_result->Success(payload);
+    } else {
+      shared_result.reset();
+    }
+  }).detach();
 }
 
 /// جریان رویدادهای سینی سیستم؛ بدون وابستگی به کلاس های کمکی نسخه های
@@ -107,7 +146,21 @@ UmbrellaNativePlugin::UmbrellaNativePlugin() {
   CreateDirectoryW((wide + L"\\cores").c_str(), nullptr);
 }
 
-UmbrellaNativePlugin::~UmbrellaNativePlugin() { tray_.Destroy(); }
+UmbrellaNativePlugin::~UmbrellaNativePlugin() {
+  {
+    std::lock_guard<std::mutex> lock(reply_guard_->mutex);
+    reply_guard_->alive = false;
+  }
+  if (method_channel_ != nullptr) {
+    method_channel_->SetMethodCallHandler(nullptr);
+  }
+  if (tray_channel_ != nullptr) {
+    tray_channel_->SetStreamHandler(nullptr);
+  }
+  tray_sink_.reset();
+  tray_.Destroy();
+  ops_.ShutdownOwnedCores(/*skip_if_clean=*/true);
+}
 
 void UmbrellaNativePlugin::AttachTraySink(
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
@@ -166,9 +219,25 @@ void UmbrellaNativePlugin::HandleMethodCall(
     map[flutter::EncodableValue("hostname")] = flutter::EncodableValue(info.hostname);
     map[flutter::EncodableValue("username")] = flutter::EncodableValue(info.username);
     map[flutter::EncodableValue("os")] = flutter::EncodableValue(info.os);
+    map[flutter::EncodableValue("osEdition")] = flutter::EncodableValue(info.os_edition);
+    map[flutter::EncodableValue("osDisplayVersion")] = flutter::EncodableValue(info.os_display_version);
+    map[flutter::EncodableValue("osBuild")] = flutter::EncodableValue(info.os_build);
     map[flutter::EncodableValue("arch")] = flutter::EncodableValue(info.arch);
     map[flutter::EncodableValue("machineId")] = flutter::EncodableValue(info.machine_id);
     map[flutter::EncodableValue("cpu")] = flutter::EncodableValue(info.cpu);
+    map[flutter::EncodableValue("cpuCores")] = flutter::EncodableValue(info.cpu_cores);
+    map[flutter::EncodableValue("ramTotalMb")] = flutter::EncodableValue(info.ram_total_mb);
+    map[flutter::EncodableValue("ramUsedMb")] = flutter::EncodableValue(info.ram_used_mb);
+    map[flutter::EncodableValue("ramLoadPercent")] = flutter::EncodableValue(info.ram_load_percent);
+    map[flutter::EncodableValue("diskTotalMb")] = flutter::EncodableValue(info.disk_total_mb);
+    map[flutter::EncodableValue("diskFreeMb")] = flutter::EncodableValue(info.disk_free_mb);
+    map[flutter::EncodableValue("screenWidth")] = flutter::EncodableValue(info.screen_width);
+    map[flutter::EncodableValue("screenHeight")] = flutter::EncodableValue(info.screen_height);
+    map[flutter::EncodableValue("hasBattery")] = flutter::EncodableValue(info.has_battery);
+    map[flutter::EncodableValue("batteryPercent")] = flutter::EncodableValue(info.battery_percent);
+    map[flutter::EncodableValue("powerPlugged")] = flutter::EncodableValue(info.power_plugged);
+    map[flutter::EncodableValue("uptimeSeconds")] = flutter::EncodableValue(info.uptime_seconds);
+    map[flutter::EncodableValue("adapterName")] = flutter::EncodableValue(info.adapter_name);
     map[flutter::EncodableValue("localIp")] = flutter::EncodableValue(info.local_ip);
     map[flutter::EncodableValue("mac")] = flutter::EncodableValue(info.adapter_mac);
     map[flutter::EncodableValue("elevated")] = flutter::EncodableValue(info.elevated);
@@ -183,15 +252,55 @@ void UmbrellaNativePlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(ops_.DefaultAdapterName()));
     return;
   }
+  if (method == "httpRequest") {
+    WinHttpRequestSpec spec;
+    spec.method = StringOf(args, "method", "GET");
+    spec.url = StringOf(args, "url");
+    spec.headers = StringMapOf(args, "headers");
+    spec.body = StringOf(args, "body");
+    spec.timeout_ms = IntOf(args, "timeoutMs", 15000);
+    spec.use_system_proxy = BoolOf(args, "useProxy", false);
+    RunOffUiThread(reply_guard_, std::move(result),
+                   [spec = std::move(spec)]() {
+                     WinHttpResponseData resp = PerformWinHttpRequest(spec);
+                     flutter::EncodableMap map;
+                     map[flutter::EncodableValue("ok")] =
+                         flutter::EncodableValue(resp.ok);
+                     map[flutter::EncodableValue("statusCode")] =
+                         flutter::EncodableValue(resp.status_code);
+                     map[flutter::EncodableValue("winError")] =
+                         flutter::EncodableValue(
+                             static_cast<int64_t>(resp.win_error));
+                     map[flutter::EncodableValue("contentType")] =
+                         flutter::EncodableValue(resp.content_type);
+                     std::vector<uint8_t> body_bytes(resp.body.begin(),
+                                                     resp.body.end());
+                     map[flutter::EncodableValue("bodyBytes")] =
+                         flutter::EncodableValue(std::move(body_bytes));
+                     map[flutter::EncodableValue("error")] =
+                         flutter::EncodableValue(resp.error);
+                     return flutter::EncodableValue(map);
+                   });
+    return;
+  }
   if (method == "ping") {
-    result->Success(flutter::EncodableValue(ops_.PingHost(
-        StringOf(args, "host"), IntOf(args, "timeoutMs", 1500))));
+    const std::string host = StringOf(args, "host");
+    const int timeout_ms = IntOf(args, "timeoutMs", 1500);
+    RunOffUiThread(reply_guard_, std::move(result), [host, timeout_ms]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().PingHost(host, timeout_ms));
+    });
     return;
   }
   if (method == "tcpPing") {
-    result->Success(flutter::EncodableValue(ops_.TcpPing(
-        StringOf(args, "host"), IntOf(args, "port", 443),
-        IntOf(args, "timeoutMs", 1500))));
+    const std::string host = StringOf(args, "host");
+    const int port = IntOf(args, "port", 443);
+    const int timeout_ms = IntOf(args, "timeoutMs", 1500);
+    RunOffUiThread(
+        reply_guard_, std::move(result), [host, port, timeout_ms]() {
+          return flutter::EncodableValue(
+              SystemOps::Instance().TcpPing(host, port, timeout_ms));
+        });
     return;
   }
   if (method == "spawn") {
@@ -203,6 +312,19 @@ void UmbrellaNativePlugin::HandleMethodCall(
   }
   if (method == "lastSpawnError") {
     result->Success(flutter::EncodableValue(ops_.LastSpawnError()));
+    return;
+  }
+  if (method == "attachCoreJob") {
+    result->Success(
+        flutter::EncodableValue(ops_.AttachCoreJob(IntOf(args, "pid", 0))));
+    return;
+  }
+  if (method == "shutdownCores") {
+    const bool skip_if_clean = BoolOf(args, "skipIfClean", false);
+    RunOffUiThread(reply_guard_, std::move(result), [skip_if_clean]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().ShutdownOwnedCores(skip_if_clean));
+    });
     return;
   }
   if (method == "killPid") {
@@ -251,7 +373,10 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "disableSystemProxy") {
-    result->Success(flutter::EncodableValue(ops_.DisableSystemProxy()));
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().DisableSystemProxy());
+    });
     return;
   }
   if (method == "systemProxyEnabled") {
@@ -259,7 +384,9 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "flushDns") {
-    result->Success(flutter::EncodableValue(ops_.FlushDns()));
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      return flutter::EncodableValue(SystemOps::Instance().FlushDns());
+    });
     return;
   }
   if (method == "tunnelStats") {

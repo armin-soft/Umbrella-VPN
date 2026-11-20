@@ -41,11 +41,15 @@ class _ExitPageState extends State<ExitPage> {
     }
     setState(() => _busy = true);
     final VpnController vpn = context.read<VpnController>();
+    final WindowService? window = context.read<WindowService?>();
     try {
-      // اتصال اول قطع می شود تا تنظیمات شبکه به حالت عادی برگردد و
-      // کارت شبکه مجازی پاک شود؛ وگرنه بعد از خروج اینترنت کاربر خراب
-      // می ماند.
-      await vpn.disconnect(silent: true);
+      // ابتدا پنجره بی درنگ پنهان می شود تا کاربر هیچ تاخیری حس نکند؛ سپس
+      // هسته و پروکسی سیستمی در یک گذر سریع پاک سازی می شوند و فرایند پایان
+      // می یابد.
+      try {
+        await window?.hide();
+      } catch (_) {}
+      await vpn.shutdownForExit();
       await widget.onExit();
     } finally {
       if (mounted) {

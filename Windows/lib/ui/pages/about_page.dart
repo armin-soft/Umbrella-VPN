@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -5,15 +7,11 @@ import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../data/gateway_client.dart';
-import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
+import '../widgets/telegram_channel_dialog.dart';
 
-/// درباره برنامه و توسعه دهنده.
-///
-/// چیدمان پیشین چند کارت جزئیات فنی داشت که به کاربر عادی چیزی نمی گفت و
-/// صفحه را شلوغ می کرد. حالا سه بخش روشن است: معرفی برنامه، توسعه دهنده با
-/// لوگو، و بررسی دسترسی. بررسی اتصال هم که ته صفحه گم شده بود، جای مشخص
-/// خودش را در کارت بررسی دارد.
+/// صفحه «درباره»: معرفی برنامه، راه های ارتباطی و بررسی درگاه سرویس با ساختار
+/// کاملاً یکدست با منوهای دستگاه من، حساب من و تنظیمات.
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
@@ -22,141 +20,104 @@ class AboutPage extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return SingleChildScrollView(
       padding: AppMetrics.pagePadding,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppMetrics.maxContentWidth),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const PageHeader(
-                title: 'درباره',
-                subtitle: 'درباره برنامه، سازنده و بررسی دسترسی.',
-                icon: Icons.info_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const PageHeader(
+            title: 'درباره',
+            subtitle: 'مشخصات نسخه، راه های ارتباط با پشتیبانی و بررسی دسترسی',
+            icon: Icons.info_rounded,
+          ),
+          const SizedBox(height: AppMetrics.space4),
+
+          // ── نوار هویتی یکدست برنامه ───────────────────────────────────
+          PageBanner(
+            leading: Container(
+              width: AppMetrics.iconBoxHero,
+              height: AppMetrics.iconBoxHero,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.primary.withValues(alpha: 0.14),
+                border: Border.all(
+                  color: colors.primary.withValues(alpha: 0.32),
+                ),
               ),
-              const SizedBox(height: AppMetrics.space4),
-              _Hero(colors: colors),
-              const SizedBox(height: AppMetrics.space4),
-              // در پنجره باریک کارت ها زیر هم می روند، نه کنار هم.
-              LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final bool narrow = constraints.maxWidth < 640;
-                  final Widget developer = _DeveloperCard(colors: colors);
-                  final Widget check = _AccessCheckCard(colors: colors);
-                  if (narrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        developer,
-                        const SizedBox(height: AppMetrics.space4),
-                        check,
-                      ],
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(child: developer),
-                      const SizedBox(width: AppMetrics.space4),
-                      Expanded(child: check),
-                    ],
-                  );
-                },
+              clipBehavior: Clip.antiAlias,
+              child: ClipOval(
+                child: TickerMode(
+                  enabled: true,
+                  child: Image.asset(
+                    BrandAssets.logo,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                    errorBuilder: (
+                      BuildContext context,
+                      Object error,
+                      StackTrace? stack,
+                    ) =>
+                        Icon(
+                      Icons.shield_rounded,
+                      size: AppMetrics.iconXl,
+                      color: colors.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            title: AppConfig.appName,
+            subtitle:
+                'کلاینت رسمی ویندوز • تونل کامل، انتخاب هوشمند سریع ترین سرور و رابط راست به چپ',
+            badges: <Widget>[
+              Pill(
+                label: Fa.num('نسخه ${AppConfig.version}'),
+                icon: Icons.verified_rounded,
+                color: colors.primary,
+                dense: true,
+              ),
+              const Pill(
+                label: 'ویندوز ۱۰ و ۱۱ (۶۴ بیت)',
+                icon: Icons.window_rounded,
+                dense: true,
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
+          const SizedBox(height: AppMetrics.space4),
 
-class _Hero extends StatelessWidget {
-  const _Hero({required this.colors});
-
-  final UmbrellaColors colors;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: AppMetrics.pagePadding,
-      radius: AppMetrics.radiusXxl,
-      gradient: LinearGradient(
-        begin: Alignment.topRight,
-        end: Alignment.bottomLeft,
-        colors: <Color>[
-          colors.primary.withValues(alpha: 0.18),
-          colors.surface,
+          // ── دو کارت هم اندازه و هم تراز: ارتباط و پشتیبانی | نسخه و بررسی ──
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final Widget developer = _DeveloperCard(colors: colors);
+              final Widget check = _AccessCheckCard(colors: colors);
+              if (constraints.maxWidth < AppMetrics.breakpointColumns) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    developer,
+                    const SizedBox(height: AppMetrics.space4),
+                    check,
+                  ],
+                );
+              }
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: developer),
+                    const SizedBox(width: AppMetrics.space4),
+                    Expanded(child: check),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool narrow = constraints.maxWidth < 480;
-          final Widget mark = const BrandMark(size: AppMetrics.logoLg, showTitle: false);
-          final Widget text = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                Fa.num(AppConfig.appName),
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-              ),
-              const SizedBox(height: AppMetrics.space2),
-              Text(
-                Fa.num('نسخه ${AppConfig.version}'),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-              ),
-              const SizedBox(height: AppMetrics.space2),
-              Text(
-                Fa.num(
-                  'فیلترشکن آمبرلا یک کلاینت ویندوزی کامل است: تونل کامل دستگاه، '
-                  'انتخاب خودکار پایدارترین سرور، کیل سوییچ، و رابط فارسی '
-                  'راست چین.',
-                ),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.textSecondary,
-                      height: 1.9,
-                    ),
-              ),
-              const SizedBox(height: AppMetrics.space3),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: const <Widget>[
-                  Pill(label: 'ویندوز ۱۰ و ۱۱', icon: Icons.window_rounded),
-                  Pill(label: 'نسخه ۶۴ بیت', icon: Icons.memory_rounded),
-                  Pill(label: 'تونل کامل', icon: Icons.lock_rounded),
-                ],
-              ),
-            ],
-          );
-          if (narrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                mark,
-                const SizedBox(height: AppMetrics.space4),
-                text,
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              mark,
-              const SizedBox(width: AppMetrics.space6),
-              Expanded(child: text),
-            ],
-          );
-        },
-      ),
     );
   }
 }
 
-/// کارت توسعه دهنده: لوگوی سازنده، راه های ارتباط و بررسی اتصال.
+/// کارت توسعه دهنده و راه های رسمی ارتباط و پشتیبانی.
 class _DeveloperCard extends StatelessWidget {
   const _DeveloperCard({required this.colors});
 
@@ -172,98 +133,48 @@ class _DeveloperCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(AppMetrics.space5),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // ── لوگوی توسعه دهنده ────────────────────────────────────────
-          Row(
-            children: <Widget>[
-              Container(
-                width: AppMetrics.iconBoxHero,
-                height: AppMetrics.iconBoxHero,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-                  gradient: LinearGradient(
-                    colors: <Color>[
-                      colors.primary.withValues(alpha: 0.28),
-                      colors.primary.withValues(alpha: 0.06),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.35),
-                  ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  BrandAssets.logo,
-                  fit: BoxFit.cover,
-                  errorBuilder: (BuildContext context, Object error,
-                          StackTrace? stack) =>
-                      Icon(
-                    Icons.verified_rounded,
-                    size: AppMetrics.iconXl,
-                    color: colors.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      Fa.num(AppConfig.developer),
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: AppMetrics.space1),
-                    Text(
-                      Fa.num('پشتیبانی، پیشنهاد و گزارش خطا'),
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.verified_rounded,
-                size: AppMetrics.iconMd,
-                color: colors.primary.withValues(alpha: 0.8),
-              ),
-            ],
+          SectionHeader(
+            icon: Icons.support_agent_rounded,
+            title: AppConfig.developer,
+            subtitle: 'پشتیبانی، اطلاع رسانی و ارتباط رسمی',
+            trailing: Icon(
+              Icons.verified_rounded,
+              size: AppMetrics.iconMd,
+              color: colors.primary,
+            ),
           ),
-          const SizedBox(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space5),
           InfoRow(
             icon: Icons.public_rounded,
-            label: 'وبسایت',
-            value: AppConfig.developerSite,
+            label: 'وبسایت رسمی',
+            value: 'درگاه رسمی آرمین سافت',
             onTap: () => _open(AppConfig.developerSite),
           ),
-          const Divider(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space2),
           InfoRow(
-            icon: Icons.support_agent_rounded,
-            label: 'پشتیبانی',
-            value: '@UmbrellaSupport',
+            icon: Icons.headset_mic_rounded,
+            label: 'پشتیبانی تلگرام',
+            value: 'پشتیبانی رسمی آمبرلا',
             onTap: () => _open(AppConfig.supportUrl),
           ),
-          const Divider(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space2),
           InfoRow(
-            icon: Icons.campaign_rounded,
-            label: 'کانال',
-            value: '@UmbrellaChannel',
-            onTap: () => _open(AppConfig.channelUrl),
+            icon: Icons.telegram,
+            label: 'کانال اطلاع رسانی',
+            value: AppConfig.channelHandle,
+            ltr: true,
+            onTap: () => unawaited(TelegramChannelPrompt.openChannel()),
           ),
-          const Divider(height: AppMetrics.space4),
+          const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.smart_toy_rounded,
             label: 'ربات تلگرام',
-            value: '@${AppConfig.botUsername}',
+            value: 'ربات رسمی آمبرلا',
             onTap: () => _open('https://t.me/${AppConfig.botUsername}'),
           ),
         ],
@@ -272,10 +183,7 @@ class _DeveloperCard extends StatelessWidget {
   }
 }
 
-/// بررسی دسترسی به سرور سرویس.
-///
-/// پیش از این دکمه «بررسی اتصال به سرور» ته صفحه و جدا از هر چیزی بود؛ حالا
-/// کارت مستقل خودش را دارد با توضیح روشن که چه چیزی سنجیده می شود.
+/// کارت مشخصات انتشار و بررسی دسترسی به درگاه سرویس.
 class _AccessCheckCard extends StatelessWidget {
   const _AccessCheckCard({required this.colors});
 
@@ -284,70 +192,43 @@ class _AccessCheckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(AppMetrics.space5),
+      padding: AppMetrics.cardPadding,
+      radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              IconSquare(
+              const SectionHeader(
                 icon: Icons.network_check_rounded,
-                color: colors.info,
-                size: AppMetrics.iconBoxLg,
+                title: 'نسخه و بررسی دسترسی',
+                subtitle: 'مشخصات انتشار و سنجش ارتباط مستقیم با درگاه سرویس',
               ),
-              const SizedBox(width: AppMetrics.space3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      Fa.num('بررسی دسترسی'),
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    Text(
-                      Fa.num('آیا سرور سرویس از این شبکه در دسترس است؟'),
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                  ],
-                ),
+              const Divider(height: AppMetrics.space5),
+              InfoRow(
+                icon: Icons.tag_rounded,
+                label: 'نسخه نصب شده',
+                value: Fa.num(AppConfig.version),
+              ),
+              const Divider(height: AppMetrics.space2),
+              const InfoRow(
+                icon: Icons.desktop_windows_rounded,
+                label: 'سیستم عامل هدف',
+                value: 'ویندوز ۱۰ و ۱۱ (۶۴ بیت)',
+              ),
+              const Divider(height: AppMetrics.space2),
+              const InfoRow(
+                icon: Icons.cloud_done_rounded,
+                label: 'محدوده بررسی',
+                value: 'پاسخگویی درگاه حساب و اشتراک',
               ),
             ],
           ),
-          const SizedBox(height: AppMetrics.space4),
-          const _PingTestButton(),
-          const SizedBox(height: AppMetrics.space3),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space3, vertical: AppMetrics.space3),
-            decoration: BoxDecoration(
-              color: colors.surfaceHigh,
-              borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-              border: Border.all(color: colors.border),
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(Icons.info_outline_rounded,
-                    size: AppMetrics.iconSm, color: colors.textSecondary),
-                const SizedBox(width: AppMetrics.space2),
-                Expanded(
-                  child: Text(
-                    Fa.num(
-                      'این بررسی فقط دسترسی به درگاه را می سنجد، نه اتصال VPN را.',
-                    ),
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: colors.textSecondary, height: 1.6),
-                  ),
-                ),
-              ],
-            ),
+          const Padding(
+            padding: EdgeInsets.only(top: AppMetrics.space4),
+            child: _PingTestButton(),
           ),
         ],
       ),
@@ -390,47 +271,59 @@ class _PingTestButtonState extends State<_PingTestButton> {
       _running = false;
       _ok = ok;
       _result = ok
-          ? 'درگاه در دسترس است (${Fa.ms(watch.elapsedMilliseconds)})'
-          : 'درگاه پاسخ نداد؛ شبکه یا فیلتر را بررسی کنید.';
+          ? 'درگاه سرویس در دسترس است (${Fa.ms(watch.elapsedMilliseconds)})'
+          : 'درگاه پاسخ نداد؛ اتصال اینترنت خود را بررسی کنید.';
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
+    final Color statusColor = _ok ? colors.success : colors.danger;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (_result.isNotEmpty) ...<Widget>[
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppMetrics.space3,
+              vertical: AppMetrics.space2,
+            ),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+              border: Border.all(color: statusColor.withValues(alpha: 0.32)),
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  _ok ? Icons.check_circle_rounded : Icons.error_rounded,
+                  size: AppMetrics.iconSm,
+                  color: statusColor,
+                ),
+                const SizedBox(width: AppMetrics.space2),
+                Expanded(
+                  child: Text(
+                    Fa.num(_result),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w700,
+                          height: 1.5,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppMetrics.space3),
+        ],
         GradientButton(
           label: 'بررسی اتصال به سرور',
           icon: Icons.wifi_tethering_rounded,
           height: AppMetrics.controlHeightSmall,
-          tone: colors.info,
           loading: _running,
           onPressed: _running ? null : _run,
         ),
-        if (_result.isNotEmpty) ...<Widget>[
-          const SizedBox(height: AppMetrics.space3),
-          Row(
-            children: <Widget>[
-              Icon(
-                _ok ? Icons.check_circle_rounded : Icons.error_rounded,
-                size: AppMetrics.iconSm,
-                color: _ok ? colors.success : colors.danger,
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Expanded(
-                child: Text(
-                  Fa.num(_result),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: _ok ? colors.success : colors.danger,
-                        height: 1.6,
-                      ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ],
     );
   }

@@ -1,8 +1,15 @@
 #include "flutter_window.h"
 
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+constexpr UINT_PTR kEndSessionTimerId = 0x554D4252;
+constexpr UINT kEndSessionTimeoutMs = 4500;
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -24,6 +31,11 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  session_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "ir.umbrella.app/session",
+          &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   // Let the engine show the window once the first frame is ready, so the app
@@ -41,6 +53,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  session_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -48,9 +61,39 @@ void FlutterWindow::OnDestroy() {
   Win32Window::OnDestroy();
 }
 
+void FlutterWindow::EndSession(HWND window) noexcept {
+  if (ending_session_) {
+    return;
+  }
+  ending_session_ = true;
+  SetTimer(window, kEndSessionTimerId, kEndSessionTimeoutMs, nullptr);
+  if (session_channel_) {
+    session_channel_->InvokeMethod("endSession", nullptr);
+  } else {
+    PostQuitMessage(0);
+  }
+}
+
 LRESULT FlutterWindow::MessageHandler(HWND window, UINT const message,
                                       WPARAM const wparam,
                                       LPARAM const lparam) noexcept {
+  // Handle Windows logoff/shutdown and installer Restart Manager promptly even
+  // when hidden to the system tray (preventClose intercepting WM_CLOSE).
+  if (message == WM_QUERYENDSESSION) {
+    return TRUE;
+  }
+  if (message == WM_ENDSESSION) {
+    if (wparam != 0) {
+      EndSession(window);
+    }
+    return 0;
+  }
+  if (message == WM_TIMER && wparam == kEndSessionTimerId) {
+    KillTimer(window, kEndSessionTimerId);
+    PostQuitMessage(0);
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

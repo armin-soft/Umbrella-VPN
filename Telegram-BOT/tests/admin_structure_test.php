@@ -41,6 +41,7 @@ public static function getUser(int $Id): array { return self::$User; }
 public static function updateUserSession(int $Id, array $Values): void { self::$Session = array_replace(self::$Session, $Values); }
 public static function getUserSession(int $Id): array { return self::$Session; }
 public static function setSetting(string $Key, string $Value): void { self::$Settings[$Key] = $Value; }
+public static function getSetting(string $Key, string $Default = ''): string { return (string)(self::$Settings[$Key] ?? $Default); }
 }
 final class ServerClient {
 public static ?array $Response = null;
@@ -65,7 +66,18 @@ self::$LastParams = $Params;
 return array_slice(self::$Devices, $Params[1], $Params[0]);
 }
 }
-final class BotConfig { public static function getPlanPrice(int|string $Key): float { return 1000; } }
+final class BotConfig {
+public const KEY_EMERGENCY_URL = 'Emergency_Url';
+public static function getPlanPrice(int|string $Key): float { return 1000; }
+public static function showEmergency(): bool { return false; }
+public static function emergencyUrl(): string { return 'https://example.invalid/emg'; }
+public static function source(string $Key): string { return 'env'; }
+public static function isNowruzMenuEnabled(): bool { return (Repository::$Settings['Nowruz_Menu_Enabled'] ?? '0') === '1'; }
+public static function setNowruzMenuEnabled(bool $Show): void { Repository::$Settings['Nowruz_Menu_Enabled'] = $Show ? '1' : '0'; }
+public static function hasClaimedNowruz(int $UserId = 0, string $Uuid = '', ?string $Season = null): bool {
+return (Repository::$Settings['Nowruz_Claimed_' . $UserId] ?? '0') === '1';
+}
+}
 final class Helper {
 public static function formatCurrency(float $Value): string { return (string)$Value; }
 public static function remainingDuration(int $Stamp): string { return (string)$Stamp; }
@@ -83,6 +95,7 @@ public static string $Text = "";
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function sendMessage(int $ChatId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
 public static function editOrSendMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
+public static function editMessageText(int $ChatId, int $MessageId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
 public static function sendChatAction(int $ChatId): void {}
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
 }
@@ -216,8 +229,8 @@ check(str_contains($Body, "Menu::back('منوی قبلی', '{$Parent}')"), $Meth
 check(str_contains($Body, 'Menu::adminHome()'), $Method . ': leaf keeps main menu');
 }
 $UserMenus = [
-'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
-'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک من', 'اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
+'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
+'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
 'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل']],
 'deviceMenu' => ['user_device_menu', ['app_filter', 'app_2fa', 'app_devices']],
@@ -225,8 +238,8 @@ $UserMenus = [
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
 $UserWidths = [
-'serviceMenu' => [1, 1, 1, 1, 1, 1, 1],
-'subscriptionsMenu' => [1, 2, 1, 1], 'walletMenu' => [1, 1, 1],
+'serviceMenu' => [1, 1, 1, 1, 1, 1, 1, 1],
+'subscriptionsMenu' => [2, 1, 1], 'walletMenu' => [1, 1, 1],
 'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
@@ -290,25 +303,23 @@ foreach ([true, false] as $Callback) {
 $UserContext->IsCallback = $Callback;
 Repository::$Session = ['Flow' => 'custom_plan_days', 'Pending_Payment' => 'preserved'];
 UserFlow::subscriptionsMenu($UserContext);
-$Expected = $HasSubscription ? ['اشتراک من'] : $UserMenus['subscriptionsMenu'][1];
+$Expected = $HasSubscription ? ['اشتراک آماده', 'اشتراک دلخواه'] : $UserMenus['subscriptionsMenu'][1];
 if ($RenewVisible) $Expected[] = 'منوی تمدید خودکار';
 $Expected[] = 'منوی خدمات ربات';
 check(calls() === $Expected, $Label . ': correct subscription actions');
-check(array_map('count', TelegramClient::$Last['inline_keyboard']) === array_merge($HasSubscription ? [1] : [1, 2, 1], $RenewVisible ? [1, 1] : [1]), $Label . ': subscription row grouping');
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === array_merge($HasSubscription ? [2] : [2, 1, 1], $RenewVisible ? [1, 1] : [1]), $Label . ': subscription row grouping');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], $Label . ': navigation preserves payment');
 }
 }
 Repository::$User = [];
 $UserContext->IsCallback = true;
 $SubscriptionSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
-preg_match('/public static function mySubscriptionActive\b.*?(?=(?:public|private) static function |\z)/s', $SubscriptionSource, $Match);
-foreach (['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول'] as $PurchaseAction) {
-check(!str_contains($Match[0], "'callback_data' => '" . $PurchaseAction . "'"), 'active subscription details have no purchase action: ' . $PurchaseAction);
-}
+check(!str_contains($SubscriptionSource, 'mySubscriptionActive') && !str_contains($SubscriptionSource, 'public static function mySubscription('), 'subscription display actions are removed');
+check(str_contains($SubscriptionSource, 'پروفایل کاربری') && str_contains($SubscriptionSource, "'اشتراک آماده'"), 'renewal flow keeps profile action and purchase flow');
 $UserLeafParents = [
 'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'usageRanking' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],
 'App-Link.php' => ['filterMenu' => 'user_device_menu', 'notifications' => 'user_device_menu', 'devices' => 'user_device_menu', 'renderTwoStep' => 'user_device_menu'],
-'Subscription.php' => ['mySubscription' => 'user_subscriptions_menu', 'mySubscriptionActive' => 'user_subscriptions_menu', 'buyMenu' => 'user_subscriptions_menu', 'readyPlansMenu' => 'user_subscriptions_menu', 'customPlansMenu' => 'user_subscriptions_menu', 'walletTopupStart' => 'user_wallet_menu'],
+'Subscription.php' => ['buyMenu' => 'user_subscriptions_menu', 'readyPlansMenu' => 'user_subscriptions_menu', 'customPlansMenu' => 'user_subscriptions_menu', 'walletTopupStart' => 'user_wallet_menu'],
 'Profile.php' => ['begin' => 'user_account_menu', 'askName' => 'user_account_menu'],
 ];
 foreach ($UserLeafParents as $File => $Methods) {
@@ -453,5 +464,25 @@ UserFlow::subscriptionsMenu($UserContext);
 check(!in_array('منوی تمدید خودکار', calls(), true) && (string)Repository::$User['Auto_Renew_Plan'] === '1', 'hiding menu preserves existing renewal setting');
 UserFlow::disableAutoRenew($UserContext);
 check(Repository::$User['Auto_Renew_Plan'] === null, 'cancellation remains available through old callback outside window');
+// Verify one-time free claim & admin-controlled Nowruz menu synchronization.
+Repository::$User = ['Free_Plan_Claimed' => 1, 'Client_ID' => 'account-1'];
+Repository::$Settings['Nowruz_Menu_Enabled'] = '0';
+Repository::$Settings['Nowruz_Claimed_1'] = '0';
+UserFlow::subscriptionsMenu($UserContext);
+check(!in_array('اشتراک رایگان اول', calls(), true), 'claimed free plan hides free menu button');
+check(!in_array('اشتراک نوروزی اول', calls(), true), 'disabled Nowruz setting hides Nowruz button');
+Repository::$Settings['Nowruz_Menu_Enabled'] = '1';
+UserFlow::subscriptionsMenu($UserContext);
+check(in_array('اشتراک نوروزی اول', calls(), true), 'enabled Nowruz setting reveals Nowruz button for unclaimed user');
+Repository::$Settings['Nowruz_Claimed_1'] = '1';
+UserFlow::subscriptionsMenu($UserContext);
+check(!in_array('اشتراک نوروزی اول', calls(), true), 'claimed Nowruz plan hides Nowruz button even while menu enabled');
+AdminFlow::toggleNowruzMenu($Context);
+check(Repository::getSetting('Nowruz_Menu_Enabled') === '0', 'admin toggle turns Nowruz menu off');
+check(in_array('nowruz_menu_toggle', calls(), true), 'configMenu exposes Nowruz toggle button');
+AdminFlow::toggleNowruzMenu($Context);
+check(Repository::getSetting('Nowruz_Menu_Enabled') === '1', 'admin toggle turns Nowruz menu back on');
+Repository::$Settings['Nowruz_Menu_Enabled'] = '0';
+Repository::$Settings['Nowruz_Claimed_1'] = '0';
 ServerClient::$Response = null;
 echo "OK menu structure tests ({$Passed} assertions)\n";
