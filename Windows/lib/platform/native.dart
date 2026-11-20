@@ -28,11 +28,14 @@ class NativeHttpResponse {
 /// وضعیت سبک برق ویندوز؛ مقدار نامشخص هرگز به معنی باتری فرض نمی شود.
 class BatteryPowerState {
   const BatteryPowerState({required this.hasBattery, required this.onBattery,
-    required this.energySaver});
+    required this.energySaver, this.isLaptop, this.powerKnown = true});
   final bool hasBattery;
   final bool onBattery;
   final bool energySaver;
-  bool get shouldOptimize => hasBattery && (onBattery || energySaver);
+  final bool? isLaptop;
+  final bool powerKnown;
+  bool get shouldOptimize => isLaptop == true && powerKnown && hasBattery &&
+      (onBattery || energySaver);
 }
 
 /// پل ارتباط با لایه بومی ویندوز (پلاگین umbrella_native).
@@ -255,10 +258,18 @@ class NativeBridge {
   Future<BatteryPowerState?> powerStatus() async {
     try {
       final raw = await _channel.invokeMapMethod<String, dynamic>('powerStatus');
-      if (raw == null || raw['known'] != true || raw['hasBattery'] is! bool ||
-          raw['onBattery'] is! bool || raw['energySaver'] is! bool) return null;
-      return BatteryPowerState(hasBattery: raw['hasBattery'] as bool,
-          onBattery: raw['onBattery'] as bool, energySaver: raw['energySaver'] as bool);
+      if (raw == null) return null;
+      final bool? laptop = raw['isLaptop'] is bool ? raw['isLaptop'] as bool : null;
+      final bool known = raw['known'] == true && raw['hasBattery'] is bool &&
+          raw['onBattery'] is bool && raw['energySaver'] is bool;
+      if (!known && laptop == null) return null;
+      return BatteryPowerState(
+        isLaptop: laptop,
+        powerKnown: known,
+        hasBattery: known && raw['hasBattery'] == true,
+        onBattery: known && raw['onBattery'] == true,
+        energySaver: known && raw['energySaver'] == true,
+      );
     } on MissingPluginException {
       return null;
     } on PlatformException {

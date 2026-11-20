@@ -28,7 +28,6 @@ class _UpdatesPageState extends State<UpdatesPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSilently());
     _autoCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(

@@ -40,7 +40,6 @@ class _ContentControlCardState extends State<ContentControlCard> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _pollSilently());
     _autoPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(

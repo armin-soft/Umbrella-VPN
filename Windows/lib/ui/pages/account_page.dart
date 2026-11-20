@@ -35,7 +35,7 @@ class _AccountPageState extends State<AccountPage> {
   @override
   void initState() {
     super.initState();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _clockTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(
             WidgetsBinding.instance.lifecycleState,
@@ -55,7 +55,6 @@ class _AccountPageState extends State<AccountPage> {
       }
       unawaited(_autoSync());
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_autoSync()));
   }
 
   @override
@@ -417,7 +416,6 @@ class _AccountPageState extends State<AccountPage> {
     final UmbrellaColors colors = context.colors;
 
     final Account account = auth.account;
-    final DateTime tehranNow = Fa.toTehran(_now);
     final DateTime? expiry = account.effectiveExpiryDate;
     final bool expired = account.isExpiredAt(_now);
     final Duration remDuration = account.remainingDuration(_now);
@@ -716,7 +714,6 @@ class _AccountPageState extends State<AccountPage> {
               final Widget days = _DaysCard(
                 account: account,
                 now: _now,
-                tehranNow: tehranNow,
                 tone: timeTone,
                 colors: colors,
               );
@@ -1097,14 +1094,12 @@ class _DaysCard extends StatelessWidget {
   const _DaysCard({
     required this.account,
     required this.now,
-    required this.tehranNow,
     required this.tone,
     required this.colors,
   });
 
   final Account account;
   final DateTime now;
-  final DateTime tehranNow;
   final Color tone;
   final UmbrellaColors colors;
 
@@ -1233,13 +1228,7 @@ class _DaysCard extends StatelessWidget {
             tooltip: true,
           ),
           const Divider(height: AppMetrics.space2),
-          InfoRow(
-            icon: Icons.today_rounded,
-            label: 'تقویم و ساعت رسمی ایران',
-            value: '${Fa.fullDate(tehranNow)} • ساعت ${Fa.clock(tehranNow)}',
-            valueColor: colors.primary,
-            tooltip: true,
-          ),
+          const _TehranClockRow(),
         ],
       ),
     );
@@ -1667,6 +1656,50 @@ class _GiftOfferTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// تنها ردیف ساعت هر ثانیه بازسازی می شود، نه همه کارت های حساب.
+class _TehranClockRow extends StatefulWidget {
+  const _TehranClockRow();
+
+  @override
+  State<_TehranClockRow> createState() => _TehranClockRowState();
+}
+
+class _TehranClockRowState extends State<_TehranClockRow> {
+  DateTime _now = DateTime.now();
+  Timer? _timer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _timer?.cancel();
+    _timer = null;
+    if (TickerMode.of(context)) {
+      _now = DateTime.now();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _now = DateTime.now());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = Fa.toTehran(_now);
+    return InfoRow(
+      icon: Icons.today_rounded,
+      label: 'تقویم و ساعت رسمی ایران',
+      value: '${Fa.fullDate(now)} • ساعت ${Fa.clock(now)}',
+      valueColor: context.colors.primary,
+      tooltip: true,
     );
   }
 }

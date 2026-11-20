@@ -37,7 +37,7 @@ class _DevicePageState extends State<DevicePage> {
   @override
   void initState() {
     super.initState();
-    _uptimeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _uptimeTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(
             WidgetsBinding.instance.lifecycleState,
@@ -57,9 +57,6 @@ class _DevicePageState extends State<DevicePage> {
       }
       unawaited(_refreshDevice());
     });
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => unawaited(_refreshDevice(includePublicIp: true)),
-    );
   }
 
   @override
@@ -220,7 +217,11 @@ class _DevicePageState extends State<DevicePage> {
 
   @override
   Widget build(BuildContext context) {
-    final VpnController vpn = context.watch<VpnController>();
+    // آمار سرعتِ هر ثانیه روی این صفحه نمایش داده نمی شود.
+    context.select<VpnController, (DeviceProfile, VpnStatus, String)>(
+      (vpn) => (vpn.device, vpn.status, vpn.realIp),
+    );
+    final VpnController vpn = context.read<VpnController>();
     final UmbrellaColors colors = context.colors;
 
     final DeviceProfile device = (_device.hostname.isEmpty &&

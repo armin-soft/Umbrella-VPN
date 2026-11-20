@@ -10,10 +10,10 @@ import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const battery = BatteryPowerState(hasBattery: true, onBattery: true, energySaver: false);
-  const plugged = BatteryPowerState(hasBattery: true, onBattery: false, energySaver: false);
-  const saver = BatteryPowerState(hasBattery: true, onBattery: false, energySaver: true);
-  const desktop = BatteryPowerState(hasBattery: false, onBattery: true, energySaver: true);
+  const battery = BatteryPowerState(hasBattery: true, onBattery: true, energySaver: false, isLaptop: true);
+  const plugged = BatteryPowerState(hasBattery: true, onBattery: false, energySaver: false, isLaptop: true);
+  const saver = BatteryPowerState(hasBattery: true, onBattery: false, energySaver: true, isLaptop: true);
+  const desktop = BatteryPowerState(hasBattery: true, onBattery: true, energySaver: true, isLaptop: false);
 
   test('battery setting defaults on and survives JSON and copy', () {
     expect(AppSettings.fromJson(<String, dynamic>{}).batteryOptimization, true);
@@ -54,6 +54,27 @@ void main() {
     expect(controller.active, true);
     expect(changes, 7);
     controller.dispose();
+  });
+
+  test('disabled optimization still detects laptop; unknown power is safe', () async {
+    var state = const BatteryPowerState(hasBattery: false, onBattery: false,
+        energySaver: false, isLaptop: true, powerKnown: false);
+    final controller = PowerController(readStatus: () async => state, enabled: false);
+    await controller.refresh();
+    expect(controller.isLaptop, true);
+    expect(controller.active, false);
+    controller.setEnabled(true);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.active, false);
+    state = battery;
+    await controller.refresh();
+    expect(controller.active, true);
+    controller.dispose();
+  });
+
+  test('unknown chassis never activates, even with battery', () {
+    expect(const BatteryPowerState(hasBattery: true, onBattery: true,
+        energySaver: false).shouldOptimize, false);
   });
 
   test('late power result cannot re-enable a disabled or disposed controller', () async {

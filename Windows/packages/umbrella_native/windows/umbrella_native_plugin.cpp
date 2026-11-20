@@ -5,6 +5,7 @@
 #include <knownfolders.h>
 #include <shlobj.h>
 
+#include <cstring>
 #include <map>
 #include <string>
 #include <thread>
@@ -13,6 +14,40 @@
 
 namespace umbrella {
 namespace {
+
+// SMBIOS enclosure type distinguishes laptops from desktops with a UPS.
+// Unknown or inaccessible firmware is deliberately not treated as a laptop.
+int LaptopChassis() {
+  constexpr DWORD kRawSmbios = 0x52534d42;  // 'RSMB'
+  const UINT size = GetSystemFirmwareTable(kRawSmbios, 0, nullptr, 0);
+  if (size < 8 || size > 1024 * 1024) return -1;
+  std::vector<BYTE> data(size);
+  if (GetSystemFirmwareTable(kRawSmbios, 0, data.data(), size) != size) return -1;
+  DWORD table_length = 0;
+  std::memcpy(&table_length, data.data() + 4, sizeof(table_length));
+  if (table_length > size - 8) return -1;
+  const size_t end = 8 + table_length;
+  for (size_t pos = 8; pos + 4 <= end;) {
+    const BYTE type = data[pos];
+    const size_t length = data[pos + 1];
+    if (length < 4 || length > end - pos) return -1;
+    if (type == 3 && length >= 6) {
+      const BYTE chassis = data[pos + 5] & 0x7f;
+      switch (chassis) {
+        case 8: case 9: case 10: case 14: case 30: case 31: case 32:
+          return 1;
+        case 1: case 2: return -1;
+        default: return 0;
+      }
+    }
+    if (type == 127) break;
+    size_t next = pos + length;
+    while (next + 1 < end && (data[next] != 0 || data[next + 1] != 0)) ++next;
+    if (next + 1 >= end) return -1;
+    pos = next + 2;
+  }
+  return -1;
+}
 
 std::wstring ToWide(const std::string& value) {
   if (value.empty()) return std::wstring();
@@ -213,27 +248,30 @@ void UmbrellaNativePlugin::HandleMethodCall(
         ops_.RunElevated(StringOf(args, "exe"), StringOf(args, "args"))));
     return;
   }
-  // A cheap native query: do not run the full hardware discovery on a timer.
   if (method == "powerStatus") {
-    SYSTEM_POWER_STATUS power = {};
-    if (!GetSystemPowerStatus(&power)) {
-      result->Success(flutter::EncodableValue());
-      return;
-    }
-    const bool battery_known = power.BatteryFlag != 255;
-    const bool has_battery = battery_known && (power.BatteryFlag & 128) == 0;
-    const bool ac_known = power.ACLineStatus == 0 || power.ACLineStatus == 1;
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("known")] =
-        flutter::EncodableValue(battery_known && (!has_battery || ac_known));
-    map[flutter::EncodableValue("hasBattery")] = flutter::EncodableValue(has_battery);
-    map[flutter::EncodableValue("onBattery")] = flutter::EncodableValue(power.ACLineStatus == 0);
-    map[flutter::EncodableValue("energySaver")] = flutter::EncodableValue(power.SystemStatusFlag == 1);
-    result->Success(flutter::EncodableValue(map));
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      // Cache hardware classification; only the power status is polled.
+      static const int laptop = LaptopChassis();
+      SYSTEM_POWER_STATUS power = {};
+      const bool success = GetSystemPowerStatus(&power) != 0;
+      const bool battery_known = success && power.BatteryFlag != 255;
+      const bool has_battery = battery_known && (power.BatteryFlag & 128) == 0;
+      const bool ac_known = success && (power.ACLineStatus == 0 || power.ACLineStatus == 1);
+      flutter::EncodableMap map;
+      if (laptop >= 0)
+        map[flutter::EncodableValue("isLaptop")] = flutter::EncodableValue(laptop == 1);
+      map[flutter::EncodableValue("known")] =
+          flutter::EncodableValue(battery_known && (!has_battery || ac_known));
+      map[flutter::EncodableValue("hasBattery")] = flutter::EncodableValue(has_battery);
+      map[flutter::EncodableValue("onBattery")] = flutter::EncodableValue(success && power.ACLineStatus == 0);
+      map[flutter::EncodableValue("energySaver")] = flutter::EncodableValue(success && power.SystemStatusFlag == 1);
+      return flutter::EncodableValue(map);
+    });
     return;
   }
   if (method == "deviceInfo") {
-    DeviceInfo info = ops_.CollectDeviceInfo();
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+    DeviceInfo info = SystemOps::Instance().CollectDeviceInfo();
     flutter::EncodableMap map;
     map[flutter::EncodableValue("hostname")] = flutter::EncodableValue(info.hostname);
     map[flutter::EncodableValue("username")] = flutter::EncodableValue(info.username);
@@ -260,7 +298,8 @@ void UmbrellaNativePlugin::HandleMethodCall(
     map[flutter::EncodableValue("localIp")] = flutter::EncodableValue(info.local_ip);
     map[flutter::EncodableValue("mac")] = flutter::EncodableValue(info.adapter_mac);
     map[flutter::EncodableValue("elevated")] = flutter::EncodableValue(info.elevated);
-    result->Success(flutter::EncodableValue(map));
+    return flutter::EncodableValue(map);
+    });
     return;
   }
   if (method == "localIp") {

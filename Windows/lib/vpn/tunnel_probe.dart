@@ -315,82 +315,78 @@ class TunnelProbe {
 /// اتصال باز به پروکسی محلی هسته؛ برای سنجش پینگ و سرعت زنده.
 class ProxyLink {
   ProxyLink._(this._socket) {
-    _socket.listen(
-      (List<int> chunk) {
-        _pending?.addAll(chunk);
-      },
-      onError: (Object _) => _closePending(),
-      onDone: _closePending,
-      cancelOnError: false,
-    );
+    _socket.listen(_onData, onError: (Object _) => _closePending(),
+        onDone: _closePending, cancelOnError: false);
   }
 
   final Socket _socket;
-  List<int>? _pending;
+  Completer<int>? _pending;
+  Stopwatch? _watch;
+  int _headerMatch = 0;
+  int _headerBytes = 0;
   bool _closed = false;
 
   bool get alive => !_closed;
 
-  /// یک درخواست کامل روی همان اتصال باز؛ میلی ثانیه یا -۱.
-  Future<int> fetch(String url) async {
-    if (_closed) {
-      return -1;
-    }
-    final Uri uri = Uri.parse(url);
-    final List<int> buffer = <int>[];
-    _pending = buffer;
-    final Stopwatch watch = Stopwatch()..start();
-    try {
-      _socket.add(
-        utf8.encode(
-          'GET $url HTTP/1.1\r\n'
-          'Host: ${uri.host}\r\n'
-          'User-Agent: UmbrellaVPN/1.0\r\n'
-          'Accept: */*\r\n'
-          '\r\n',
-        ),
-      );
-      await _socket.flush().timeout(const Duration(seconds: 3));
-      final Completer<int> done = Completer<int>();
-      final Timer timer = Timer(const Duration(seconds: 5), () {
-        if (!done.isCompleted) {
-          done.complete(-1);
+  void _onData(List<int> chunk) {
+    final pending = _pending;
+    if (pending == null || pending.isCompleted) return;
+    const marker = <int>[13, 10, 13, 10];
+    for (final byte in chunk) {
+      _headerBytes++;
+      if (_headerBytes > 65536) {
+        close();
+        return;
+      }
+      if (byte == marker[_headerMatch]) {
+        _headerMatch++;
+        if (_headerMatch == marker.length) {
+          pending.complete(_watch!.elapsedMilliseconds);
+          return;
         }
-      });
-      // تا آمدن سرآیند و بدنه ۲۰۴ صبر می کنیم؛ بعد زمان را ثبت می کنیم.
-      final Timer poll = Timer.periodic(const Duration(milliseconds: 4),
-          (Timer tick) {
-        if (!_closed &&
-            !done.isCompleted &&
-            _headersComplete(latin1.decode(buffer, allowInvalid: true))) {
-          done.complete(watch.elapsedMilliseconds);
-          tick.cancel();
-        }
-      });
-      final int result = await done.future;
-      timer.cancel();
-      poll.cancel();
-      return result > 0 ? result : -1;
-    } catch (_) {
-      return -1;
-    } finally {
-      _pending = null;
+      } else {
+        _headerMatch = byte == marker[0] ? 1 : 0;
+      }
     }
   }
 
-  static bool _headersComplete(String text) {
-    if (!text.contains('\r\n\r\n')) {
-      return false;
+  /// یک درخواست در هر لحظه؛ پاسخ با رویداد سوکت، بدون polling دریافت می شود.
+  Future<int> fetch(String url) async {
+    if (_closed || _pending != null) return -1;
+    final pending = Completer<int>();
+    _pending = pending;
+    _watch = Stopwatch()..start();
+    _headerMatch = 0;
+    _headerBytes = 0;
+    try {
+      final uri = Uri.parse(url);
+      _socket.add(utf8.encode(
+        'GET $url HTTP/1.1\r\n'
+        'Host: ${uri.host}\r\n'
+        'User-Agent: UmbrellaVPN/1.0\r\n'
+        'Accept: */*\r\n\r\n',
+      ));
+      await _socket.flush().timeout(const Duration(seconds: 3));
+      final result = await pending.future.timeout(const Duration(seconds: 5));
+      return result > 0 ? result : -1;
+    } catch (_) {
+      // A late response cannot be mistaken for the next request.
+      close();
+      return -1;
+    } finally {
+      if (identical(_pending, pending)) _pending = null;
+      _watch = null;
     }
-    return true;
   }
 
   void _closePending() {
     _closed = true;
+    final pending = _pending;
+    if (pending != null && !pending.isCompleted) pending.complete(-1);
   }
 
   void close() {
-    _closed = true;
+    _closePending();
     _socket.destroy();
   }
 }

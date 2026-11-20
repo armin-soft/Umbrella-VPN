@@ -10,6 +10,7 @@ import '../../core/ui_formatters.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
+import '../../state/power_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/advanced_network_settings.dart';
@@ -17,7 +18,7 @@ import '../widgets/common.dart';
 import '../widgets/content_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
 
-/// شش بخش استاندارد صفحه تنظیمات.
+/// بخش های صفحه تنظیمات؛ باتری فقط برای لپ تاپ شناسایی شده نمایان است.
 enum SettingsCategory {
   general,
   chain,
@@ -25,6 +26,7 @@ enum SettingsCategory {
   dns,
   inbound,
   tlsTricks,
+  battery,
 }
 
 extension SettingsCategoryX on SettingsCategory {
@@ -32,6 +34,8 @@ extension SettingsCategoryX on SettingsCategory {
     switch (this) {
       case SettingsCategory.general:
         return 'عمومی';
+      case SettingsCategory.battery:
+        return 'باتری لپ تاپ';
       case SettingsCategory.chain:
         return 'زنجیره';
       case SettingsCategory.routing:
@@ -49,6 +53,8 @@ extension SettingsCategoryX on SettingsCategory {
     switch (this) {
       case SettingsCategory.general:
         return 'پوسته برنامه، سینی ویندوز، اتصال خودکار و گزارش ها';
+      case SettingsCategory.battery:
+        return 'کاهش مصرف پس زمینه هنگام استفاده از باتری';
       case SettingsCategory.chain:
         return 'امنیت بیشتر و رفع مسدودیت';
       case SettingsCategory.routing:
@@ -66,6 +72,8 @@ extension SettingsCategoryX on SettingsCategory {
     switch (this) {
       case SettingsCategory.general:
         return 'پوسته برنامه، رفتار پنجره و سینی ویندوز، انتخاب خودکار سرور، اعلان ها و گزارش ها';
+      case SettingsCategory.battery:
+        return 'مدیریت مصرف برنامه هنگام کار با باتری لپ تاپ';
       case SettingsCategory.chain:
         return 'امنیت بیشتر و رفع مسدودیت با تونل های زنجیره ای وارپ و سایفون';
       case SettingsCategory.routing:
@@ -83,6 +91,8 @@ extension SettingsCategoryX on SettingsCategory {
     switch (this) {
       case SettingsCategory.general:
         return Icons.tune_rounded;
+      case SettingsCategory.battery:
+        return Icons.battery_saver_rounded;
       case SettingsCategory.chain:
         return Icons.hub_rounded;
       case SettingsCategory.routing:
@@ -100,6 +110,8 @@ extension SettingsCategoryX on SettingsCategory {
     switch (this) {
       case SettingsCategory.general:
         return colors.primary;
+      case SettingsCategory.battery:
+        return colors.success;
       case SettingsCategory.chain:
         return colors.warning;
       case SettingsCategory.routing:
@@ -114,7 +126,7 @@ extension SettingsCategoryX on SettingsCategory {
   }
 }
 
-/// صفحه تنظیمات شش بخشی آمبرلا:
+/// صفحه تنظیمات آمبرلا:
 /// `عمومی` | `زنجیره` | `مسیریابی` | `DNS` | `ورودی` | `ترفندهای TLS`
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, this.initialSection});
@@ -188,15 +200,24 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final SettingsController settings = context.watch<SettingsController>();
-    final VpnController vpn = context.watch<VpnController>();
+    // آمار اتصال هر ثانیه عوض می شود؛ تنظیمات فقط برای فرمان ها به vpn نیاز دارد.
+    final VpnController vpn = context.read<VpnController>();
+    final bool isLaptop = context.select<PowerController?, bool>(
+      (power) => power?.isLaptop == true,
+    );
+    final bool batterySaving = context.select<PowerController?, bool>(
+      (power) => power?.active == true,
+    );
     final ToastController toasts = context.read<ToastController>();
     final AppSettings cfg = settings.settings;
 
     if (_section == null) {
-      return _buildRootMenu(context, colors, cfg);
+      return _buildRootMenu(context, colors, cfg, isLaptop);
     }
 
-    final SettingsCategory active = _section!;
+    final SettingsCategory active =
+        _section == SettingsCategory.battery && !isLaptop
+            ? SettingsCategory.general : _section!;
     return SingleChildScrollView(
       padding: AppMetrics.pagePadding,
       child: Column(
@@ -230,6 +251,7 @@ class _SettingsPageState extends State<SettingsPage> {
             vpn: vpn,
             toasts: toasts,
             cfg: cfg,
+            batterySaving: batterySaving,
           ),
         ],
       ),
@@ -240,7 +262,11 @@ class _SettingsPageState extends State<SettingsPage> {
     BuildContext context,
     UmbrellaColors colors,
     AppSettings cfg,
+    bool isLaptop,
   ) {
+    final categories = SettingsCategory.values
+        .where((category) => category != SettingsCategory.battery || isLaptop)
+        .toList();
     return SingleChildScrollView(
       padding: AppMetrics.pagePadding,
       child: Column(
@@ -259,7 +285,7 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (int i = 0; i < SettingsCategory.values.length; i++) ...<Widget>[
+                for (int i = 0; i < categories.length; i++) ...<Widget>[
                   if (i > 0)
                     Divider(
                       height: AppMetrics.space1,
@@ -268,14 +294,14 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: colors.border,
                     ),
                   _CategoryNavTile(
-                    category: SettingsCategory.values[i],
+                    category: categories[i],
                     badge: _categoryBadge(
                       context,
-                      SettingsCategory.values[i],
+                      categories[i],
                       cfg,
                     ),
                     onTap: () =>
-                        setState(() => _section = SettingsCategory.values[i]),
+                        setState(() => _section = categories[i]),
                   ),
                 ],
               ],
@@ -294,15 +320,18 @@ class _SettingsPageState extends State<SettingsPage> {
     switch (category) {
       case SettingsCategory.general:
         return null;
+      case SettingsCategory.battery:
+        return cfg.batteryOptimization ? 'روشن' : 'خاموش';
       case SettingsCategory.chain:
         if (!cfg.chain.enabled) {
           return null;
         }
         return '${cfg.chain.position.label} · ${cfg.chain.transport.quickLabel}';
       case SettingsCategory.routing:
-        final FilterSettings? filter =
-            Provider.of<AuthController?>(context)?.filter;
-        if (filter != null && filter.hasActiveRules) {
+        final bool hasActiveRules = context.select<AuthController?, bool>(
+          (auth) => auth?.filter.hasActiveRules ?? false,
+        );
+        if (hasActiveRules) {
           return 'کنترل محتوا';
         }
         if (cfg.routingRegion != RoutingRegion.other) {
@@ -333,8 +362,11 @@ class _SettingsPageState extends State<SettingsPage> {
     required VpnController vpn,
     required ToastController toasts,
     required AppSettings cfg,
+    required bool batterySaving,
   }) {
     switch (category) {
+      case SettingsCategory.battery:
+        return _buildBatterySection(settings, cfg, batterySaving);
       case SettingsCategory.general:
         return _buildGeneralSection(
           context,
@@ -369,6 +401,30 @@ class _SettingsPageState extends State<SettingsPage> {
       case SettingsCategory.tlsTricks:
         return _buildTlsTricksSection(context, colors, settings, vpn, cfg);
     }
+  }
+
+  Widget _buildBatterySection(
+    SettingsController settings, AppSettings cfg, bool active,
+  ) {
+    return _Section(
+      icon: Icons.battery_saver_rounded,
+      title: 'بهینه سازی باتری لپ تاپ',
+      subtitle: 'فاصله سنجش سرعت و پینگ نمایشی بیشتر می شود؛ اتصال، پایش سلامت و اعلان ها حفظ می شوند.',
+      children: <Widget>[
+        ToggleRow(
+          key: const ValueKey<String>('battery-optimization-toggle'),
+          icon: Icons.battery_saver_rounded,
+          title: 'بهینه سازی خودکار باتری',
+          subtitle: !cfg.batteryOptimization
+              ? 'خاموش است'
+              : active
+                  ? 'اکنون فعال است'
+                  : 'روی باتری یا در حالت صرفه جویی ویندوز فعال می شود',
+          value: cfg.batteryOptimization,
+          onChanged: settings.setBatteryOptimization,
+        ),
+      ],
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -446,16 +502,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: 'فعال ماندن اتصال در کنار ساعت هنگام بستن پنجره',
                 value: cfg.closeToTray,
                 onChanged: settings.setCloseToTray,
-              ),
-              const Divider(height: AppMetrics.space3),
-              ToggleRow(
-                icon: Icons.battery_saver_rounded,
-                title: 'بهینه سازی باتری لپ تاپ',
-                subtitle: vpn.batterySaving
-                    ? 'فعال روی باتری؛ سنجش های غیرضروری کمتر انجام می شوند'
-                    : 'فعال سازی خودکار روی باتری یا حالت صرفه جویی ویندوز',
-                value: cfg.batteryOptimization,
-                onChanged: settings.setBatteryOptimization,
               ),
               const Divider(height: AppMetrics.space3),
               ToggleRow(

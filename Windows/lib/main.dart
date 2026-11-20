@@ -203,6 +203,7 @@ Future<void> main(List<String> arguments) async {
         Provider<TrayService>.value(value: tray),
         Provider<CoreProvisioner>.value(value: provisioner),
         ChangeNotifierProvider<SettingsController>.value(value: settings),
+        ChangeNotifierProvider<PowerController>.value(value: power),
         ChangeNotifierProvider<AuthController>.value(value: auth),
         ChangeNotifierProvider<ToastController>.value(value: toasts),
         ChangeNotifierProvider<VpnController>.value(value: vpn),
