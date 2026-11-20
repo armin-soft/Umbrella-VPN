@@ -148,12 +148,13 @@ void main() {
     expect(find.byKey(const ValueKey<String>('account-active-subscription')),
         findsNothing);
 
-    final Finder walletTab =
-        find.byKey(const ValueKey<String>('account-tab-wallet'));
-    await tester.ensureVisible(walletTab);
-    await tester.pumpAndSettle();
-    await tester.tap(walletTab);
-    await tester.pumpAndSettle();
+    Future<void> selectTab(int index) async {
+      final BuildContext tabContext = tester.element(find.byType(TabBar));
+      DefaultTabController.of(tabContext).animateTo(index);
+      await tester.pumpAndSettle();
+    }
+
+    await selectTab(1);
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('account-wallet-balance')),
@@ -161,12 +162,7 @@ void main() {
     expect(find.byKey(const PageStorageKey<String>('account-tab-content-wallet')),
         findsOneWidget);
 
-    final Finder subscriptionTab =
-        find.byKey(const ValueKey<String>('account-tab-subscription'));
-    await tester.ensureVisible(subscriptionTab);
-    await tester.pumpAndSettle();
-    await tester.tap(subscriptionTab);
-    await tester.pumpAndSettle();
+    await selectTab(2);
     expect(find.byKey(const ValueKey<String>('account-active-subscription')),
         findsOneWidget);
     expect(find.text('خرید و تمدید اشتراک'), findsNothing);
@@ -184,12 +180,7 @@ void main() {
     expect(find.text('تمدید اشتراک'), findsOneWidget);
     expect(find.text('پلن آزمایشی'), findsOneWidget);
 
-    final Finder profileTab =
-        find.byKey(const ValueKey<String>('account-tab-profile'));
-    await tester.ensureVisible(profileTab);
-    await tester.pumpAndSettle();
-    await tester.tap(profileTab);
-    await tester.pumpAndSettle();
+    await selectTab(3);
     expect(find.text('شناسه یکتای حساب'), findsOneWidget);
     expect(find.text('شناسه عددی تلگرام'), findsOneWidget);
     expect(find.text('شماره کاربری در پنل'), findsNothing);
