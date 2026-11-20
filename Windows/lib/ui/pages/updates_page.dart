@@ -10,7 +10,6 @@ import '../../models/models.dart';
 import '../../state/toast_controller.dart';
 import '../../state/update_controller.dart';
 import '../shell/app_shell.dart';
-import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
 
 /// به روز رسانی کاملاً درون برنامه ای در دو کانال اصلی (پایدار) و بتا (آزمایشی).
@@ -109,70 +108,6 @@ class _UpdatesPageState extends State<UpdatesPage> {
                     ),
                   ]
                 : const <Widget>[],
-            summary: PageBanner(
-              embedded: true,
-              leading: const BrandMark(size: AppMetrics.logoMd, showTitle: false),
-              title: Fa.num(
-                hasUpdate
-                    ? 'نسخه ${available.version} آماده دانلود و نصب است'
-                    : (updates.checking
-                        ? 'در حال بررسی نسخه'
-                        : checked
-                            ? 'نسخه جدیدی برای نمایش پیدا نشد'
-                            : 'وضعیت نسخه هنوز تایید نشده است'),
-              ),
-              subtitle: Fa.num(
-                hasUpdate
-                    ? 'بسته رسمی به صورت مستقیم داخل همین برنامه دانلود، راستی آزمایی و نصب می شود.'
-                    : 'نسخه نصب شده ${AppConfig.version} است؛ برای دریافت وضعیت، کانال انتشار را بررسی کنید.',
-              ),
-              badges: <Widget>[
-                Pill(
-                  label: hasUpdate
-                      ? 'نسخه جدید'
-                      : updates.checking
-                          ? 'در حال بررسی'
-                          : checked
-                              ? 'بررسی شده'
-                              : 'بررسی نشده',
-                  color: hasUpdate
-                      ? colors.warning
-                      : checked
-                          ? colors.success
-                          : colors.textSecondary,
-                  icon: hasUpdate
-                      ? Icons.new_releases_rounded
-                      : checked
-                          ? Icons.check_circle_rounded
-                          : Icons.schedule_rounded,
-                  dense: true,
-                ),
-                Pill(
-                  label: 'کانال ${updates.channel.label}',
-                  color: updates.channel == UpdateChannel.beta
-                      ? colors.info
-                      : colors.primary,
-                  icon: updates.channel == UpdateChannel.beta
-                      ? Icons.science_rounded
-                      : Icons.verified_rounded,
-                  dense: true,
-                ),
-                if (hasUpdate && available.sizeBytes > 0)
-                  Pill(
-                    label: Fa.bytes(available.sizeBytes),
-                    color: colors.textSecondary,
-                    icon: Icons.inventory_2_outlined,
-                    dense: true,
-                  ),
-                if (hasUpdate && available.sha256.isNotEmpty)
-                  Pill(
-                    label: 'تایید اصالت فایل',
-                    color: colors.success,
-                    icon: Icons.verified_user_rounded,
-                    dense: true,
-                  ),
-              ],
-            ),
           ),
           const SizedBox(height: AppMetrics.space4),
 

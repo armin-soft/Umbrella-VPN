@@ -446,8 +446,6 @@ class _AccountPageState extends State<AccountPage> {
     final bool onlineNow = account.isOnlineRecently(_now);
 
     final String name = _ownerNameFa(account);
-    final String initial =
-        name.isEmpty ? 'آ' : String.fromCharCode(name.runes.first);
 
     final Color statusTone = !account.enable || expired || account.quotaFinished
         ? colors.danger
@@ -525,63 +523,6 @@ class _AccountPageState extends State<AccountPage> {
             subtitle:
                 'پایش زنده حجم مصرفی، تقویم دقیق شمسی سرویس و مشخصات حساب کاربری',
             icon: Icons.person_rounded,
-            summary: PageBanner(
-              embedded: true,
-              leading: Container(
-                width: AppMetrics.iconBoxHero,
-                height: AppMetrics.iconBoxHero,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-                  border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.32),
-                  ),
-                ),
-                child: Text(
-                  initial,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: colors.primary,
-                      ),
-                ),
-              ),
-              title: name,
-              subtitle: account.effectivePhone.isNotEmpty
-                  ? '${account.packageDurationLabel}  •  شماره ${_phoneWithOperatorFa(account.effectivePhone)}'
-                  : 'سرویس ${account.planLabel}',
-              badges: <Widget>[
-                Pill(
-                  label: account.statusLabelFa,
-                  icon: account.healthy
-                      ? Icons.verified_rounded
-                      : Icons.error_outline_rounded,
-                  color: statusTone,
-                  dense: true,
-                ),
-                if (onlineNow)
-                  Pill(
-                    label: 'آنلاین در پنل',
-                    icon: Icons.circle,
-                    color: colors.success,
-                    dense: true,
-                  ),
-                if (auth.botLinked == true)
-                  Pill(
-                    label: 'متصل به تلگرام',
-                    icon: Icons.send_rounded,
-                    color: colors.info,
-                    dense: true,
-                  ),
-                if (account.panelId > 0)
-                  Pill(
-                    label: 'کد کاربری ${Fa.grouped(account.panelId)}',
-                    icon: Icons.tag_rounded,
-                    color: colors.primary,
-                    dense: true,
-                  ),
-              ],
-            ),
           ),
           const SizedBox(height: AppMetrics.space4),
 

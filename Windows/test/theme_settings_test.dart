@@ -485,11 +485,9 @@ void main() {
               ],
             ),
             const SizedBox(height: AppMetrics.space4),
-            const PageBanner(
-              key: ValueKey<String>('bnr'),
-              leading: IconSquare(icon: Icons.computer_rounded, color: Colors.red),
-              title: 'DESKTOP',
-              subtitle: 'Windows 11',
+            const SizedBox(
+              key: ValueKey<String>('content'),
+              height: 88,
             ),
           ],
         ),
@@ -497,7 +495,8 @@ void main() {
     ));
     await tester.pump();
     final Rect shortHeader = tester.getRect(find.byKey(const ValueKey<String>('hdr')));
-    final Rect shortBanner = tester.getRect(find.byKey(const ValueKey<String>('bnr')));
+    final Rect shortContent =
+        tester.getRect(find.byKey(const ValueKey<String>('content')));
 
     // 2. Tall scrollable page without header actions (like SettingsPage).
     await tester.pumpWidget(shellFrame(
@@ -513,11 +512,9 @@ void main() {
               icon: Icons.settings_rounded,
             ),
             SizedBox(height: AppMetrics.space4),
-            PageBanner(
-              key: ValueKey<String>('bnr'),
-              leading: IconSquare(icon: Icons.settings_rounded, color: Colors.red),
-              title: 'مرکز تنظیمات آمبرلا',
-              subtitle: 'تمام تغییرات بلافاصله ذخیره می شوند',
+            SizedBox(
+              key: ValueKey<String>('content'),
+              height: 88,
             ),
             SizedBox(height: 1600),
           ],
@@ -526,7 +523,8 @@ void main() {
     ));
     await tester.pump();
     final Rect tallHeader = tester.getRect(find.byKey(const ValueKey<String>('hdr')));
-    final Rect tallBanner = tester.getRect(find.byKey(const ValueKey<String>('bnr')));
+    final Rect tallContent =
+        tester.getRect(find.byKey(const ValueKey<String>('content')));
 
     // 3. Fixed full-height page (like LogsPage).
     await tester.pumpWidget(shellFrame(
@@ -556,7 +554,7 @@ void main() {
     expect(shortHeader.right, tallHeader.right);
     expect(shortHeader.right, fixedHeader.right);
     expect(shortHeader.left, tallHeader.left);
-    expect(shortBanner.top, tallBanner.top);
+    expect(shortContent.top, tallContent.top);
   });
 
   testWidgets('network controls render spacious 2-column grid on desktop width', (WidgetTester tester) async {

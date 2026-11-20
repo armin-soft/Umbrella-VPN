@@ -253,7 +253,6 @@ class PageHeader extends StatelessWidget {
     this.actions = const <Widget>[],
     this.eyebrow = 'مرکز مدیریت آمبرلا',
     this.premium = false,
-    this.summary,
   });
 
   final String title;
@@ -262,7 +261,6 @@ class PageHeader extends StatelessWidget {
   final List<Widget> actions;
   final String eyebrow;
   final bool premium;
-  final Widget? summary;
 
   @override
   Widget build(BuildContext context) {
@@ -506,40 +504,24 @@ class PageHeader extends StatelessWidget {
           colors.surface,
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
         children: <Widget>[
-          Stack(
-            children: <Widget>[
-              PositionedDirectional(
-                start: 0,
-                top: AppMetrics.space4,
-                bottom: AppMetrics.space4,
-                child: Container(
-                  width: AppMetrics.space1,
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.78),
-                    borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-                  ),
-                ),
+          PositionedDirectional(
+            start: 0,
+            top: AppMetrics.space4,
+            bottom: AppMetrics.space4,
+            child: Container(
+              width: AppMetrics.space1,
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
               ),
-              Padding(
-                padding: const EdgeInsets.all(AppMetrics.space4),
-                child: content,
-              ),
-            ],
+            ),
           ),
-          if (summary != null) ...<Widget>[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4),
-              child: Divider(height: 1, color: colors.border),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppMetrics.space4),
-              child: summary,
-            ),
-          ],
+          Padding(
+            padding: const EdgeInsets.all(AppMetrics.space4),
+            child: content,
+          ),
         ],
       ),
     );
@@ -611,130 +593,6 @@ class SectionHeader extends StatelessWidget {
           trailing!,
         ],
       ],
-    );
-  }
-}
-
-/// خلاصه هویتی منو؛ می تواند مستقل یا درون سربرگ اصلی قرار بگیرد.
-class PageBanner extends StatelessWidget {
-  const PageBanner({
-    super.key,
-    required this.leading,
-    required this.title,
-    required this.subtitle,
-    this.subtitleLtr = false,
-    this.badges = const <Widget>[],
-    this.embedded = false,
-  });
-
-  final Widget leading;
-  final String title;
-  final String subtitle;
-  final bool subtitleLtr;
-  final List<Widget> badges;
-  final bool embedded;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final Widget content = LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        final bool compact = constraints.maxWidth <
-            math.max(AppMetrics.breakpointCompact, 720 * textScale);
-        final Widget subtitleWidget = Text(
-          Fa.num(subtitle),
-          textDirection: subtitleLtr ? TextDirection.ltr : null,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary,
-                height: 1.6,
-              ),
-        );
-        final Widget identity = Row(
-          children: <Widget>[
-            leading,
-            const SizedBox(width: AppMetrics.space4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    Fa.num(title),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: (embedded
-                            ? Theme.of(context).textTheme.titleMedium
-                            : Theme.of(context).textTheme.titleLarge)
-                        ?.copyWith(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.w800,
-                      height: 1.25,
-                    ),
-                  ),
-                  const SizedBox(height: AppMetrics.space1),
-                  if (subtitleLtr)
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: subtitleWidget,
-                    )
-                  else
-                    subtitleWidget,
-                ],
-              ),
-            ),
-          ],
-        );
-        if (badges.isEmpty) {
-          return identity;
-        }
-        final Widget badgeWrap = Wrap(
-          spacing: AppMetrics.space2,
-          runSpacing: AppMetrics.space2,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: badges,
-        );
-        if (compact) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              identity,
-              const SizedBox(height: AppMetrics.space3),
-              badgeWrap,
-            ],
-          );
-        }
-        return Row(
-          children: <Widget>[
-            Expanded(child: identity),
-            const SizedBox(width: AppMetrics.space4),
-            Flexible(child: badgeWrap),
-          ],
-        );
-      },
-    );
-
-    if (embedded) {
-      return content;
-    }
-    return GlassCard(
-      padding: AppMetrics.cardPadding,
-      radius: AppMetrics.radiusXl,
-      borderColor: colors.primary.withValues(alpha: 0.24),
-      gradient: LinearGradient(
-        begin: AlignmentDirectional.centerStart,
-        end: AlignmentDirectional.centerEnd,
-        colors: <Color>[
-          Color.alphaBlend(
-            colors.primary.withValues(alpha: 0.12),
-            colors.surface,
-          ),
-          colors.surface,
-        ],
-      ),
-      child: content,
     );
   }
 }

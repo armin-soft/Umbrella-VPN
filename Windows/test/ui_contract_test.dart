@@ -874,7 +874,7 @@ void main() {
       expect(quick.contains('LanSharingDialog.show'), isTrue);
     });
 
-    test('منوها یک سربرگ هماهنگ دارند و خلاصه ها در همان کارت قرار می گیرند', () {
+    test('منوها فقط یک سربرگ اصلی دارند و بنر هویتی دوم ندارند', () {
       for (final String page in <String>[
         'device_page',
         'account_page',
@@ -888,22 +888,34 @@ void main() {
         expect(text.contains('padding: AppMetrics.pagePadding'), isTrue, reason: page);
       }
       for (final String page in <String>[
+        'about_page',
+        'account_page',
+        'connect_page',
+        'connection_page',
+        'device_page',
+        'exit_page',
+        'landing_page',
+        'login_page',
+        'logs_page',
+        'settings_page',
+        'updates_page',
+      ]) {
+        expect(
+          read('lib/ui/pages/$page.dart').contains('PageBanner('),
+          isFalse,
+          reason: '$page نباید سربرگ دومی داشته باشد',
+        );
+      }
+      for (final String page in <String>[
         'device_page',
         'account_page',
         'about_page',
         'updates_page',
       ]) {
         final String text = read('lib/ui/pages/$page.dart');
-        expect(text.contains('summary: PageBanner('), isTrue, reason: page);
-        expect(text.contains('embedded: true'), isTrue, reason: page);
         expect(text.contains('SectionHeader('), isTrue, reason: page);
         expect(text.contains('AppMetrics.radiusXl'), isTrue, reason: page);
       }
-      expect(
-        read('lib/ui/pages/settings_page.dart').contains('PageBanner('),
-        isFalse,
-        reason: 'صفحه تنظیمات باید فقط یک سربرگ داشته باشد',
-      );
       expect(
         read('lib/ui/pages/settings_page.dart').contains('ResponsiveColumns('),
         isTrue,

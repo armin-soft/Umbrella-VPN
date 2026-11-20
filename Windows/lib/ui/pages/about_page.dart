@@ -29,58 +29,6 @@ class AboutPage extends StatelessWidget {
             premium: true,
             subtitle: 'مشخصات نسخه، راه های ارتباط با پشتیبانی و بررسی دسترسی',
             icon: Icons.info_rounded,
-            summary: PageBanner(
-              embedded: true,
-              leading: Container(
-                width: AppMetrics.iconBoxHero,
-                height: AppMetrics.iconBoxHero,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colors.primary.withValues(alpha: 0.14),
-                  border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.32),
-                  ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: ClipOval(
-                  child: TickerMode(
-                    enabled: true,
-                    child: Image.asset(
-                      BrandAssets.logo,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.medium,
-                      errorBuilder: (
-                        BuildContext context,
-                        Object error,
-                        StackTrace? stack,
-                      ) =>
-                          Icon(
-                        Icons.shield_rounded,
-                        size: AppMetrics.iconXl,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              title: AppConfig.appName,
-              subtitle:
-                  'کلاینت رسمی ویندوز • تونل کامل، انتخاب هوشمند سریع ترین سرور و رابط راست به چپ',
-              badges: <Widget>[
-                Pill(
-                  label: Fa.num('نسخه ${AppConfig.version}'),
-                  icon: Icons.verified_rounded,
-                  color: colors.primary,
-                  dense: true,
-                ),
-                const Pill(
-                  label: 'ویندوز ۱۰ و ۱۱ (۶۴ بیت)',
-                  icon: Icons.window_rounded,
-                  dense: true,
-                ),
-              ],
-            ),
           ),
           const SizedBox(height: AppMetrics.space4),
 
