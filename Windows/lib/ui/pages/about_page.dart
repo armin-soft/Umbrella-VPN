@@ -89,7 +89,7 @@ class AboutPage extends StatelessWidget {
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget developer = _DeveloperCard(colors: colors);
               final Widget check = _AccessCheckCard(colors: colors);
-              if (constraints.maxWidth < AppMetrics.breakpointColumns) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) < AppMetrics.breakpointColumns) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[

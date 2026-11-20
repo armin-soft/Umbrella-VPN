@@ -383,7 +383,7 @@ class _DevicePageState extends State<DevicePage> {
           // ── چهار کارت شاخص کلیدی هم اندازه سخت افزار و سیستم ──────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              if (constraints.maxWidth >= AppMetrics.breakpointColumns) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointColumns) {
                 return IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -399,7 +399,7 @@ class _DevicePageState extends State<DevicePage> {
                   ),
                 );
               }
-              if (constraints.maxWidth >= AppMetrics.breakpointCompact) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointCompact) {
                 return Column(
                   children: <Widget>[
                     IntrinsicHeight(
@@ -459,7 +459,7 @@ class _DevicePageState extends State<DevicePage> {
                 bootAt: bootAt,
                 colors: colors,
               );
-              if (constraints.maxWidth >= AppMetrics.breakpointColumns) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointColumns) {
                 return IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,

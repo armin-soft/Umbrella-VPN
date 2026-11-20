@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Size;
 
 import 'package:flutter/services.dart';
 
@@ -253,6 +254,22 @@ class NativeBridge {
         'args': args,
       }) ??
       false;
+
+  /// ابعاد ناحیه کاری نمایشگر اصلی در واحد منطقی، بدون نوار وظیفه.
+  Future<Size?> primaryWorkArea() async {
+    try {
+      final raw = await _channel.invokeMapMethod<String, dynamic>('primaryWorkArea');
+      final width = raw?['width'];
+      final height = raw?['height'];
+      if (width is! num || height is! num || !width.isFinite ||
+          !height.isFinite || width <= 0 || height <= 0) return null;
+      return Size(width.toDouble(), height.toDouble());
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
 
   /// عدم پشتیبانی از این متد نباید کل پل بومی را از کار بیندازد.
   Future<BatteryPowerState?> powerStatus() async {

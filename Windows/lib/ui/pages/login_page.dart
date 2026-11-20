@@ -106,11 +106,34 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-                Row(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < AppMetrics.breakpointColumns * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0)) {
+                      return SingleChildScrollView(
+                        padding: AppMetrics.pagePadding,
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                const BrandMark(size: AppMetrics.logoMd),
+                                const SizedBox(height: AppMetrics.space5),
+                                Text(Fa.num('ورود امن با شماره موبایل'),
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+                                const SizedBox(height: AppMetrics.space4),
+                                _loginCard(context, auth),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    return Row(
                   children: <Widget>[
                     Expanded(
                       flex: 5,
-                      child: Padding(
+                      child: SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space10, vertical: AppMetrics.space9),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,16 +170,16 @@ class _LoginPageState extends State<LoginPage> {
                                   children: <Widget>[
                                     Icon(item.$1, size: AppMetrics.iconSm, color: colors.primary),
                                     const SizedBox(width: AppMetrics.space3),
-                                    Text(
+                                    Expanded(child: Text(
                                       Fa.num(item.$2),
                                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                             color: colors.textSecondary,
                                           ),
-                                    ),
+                                    )),
                                   ],
                                 ),
                               ),
-                            const Spacer(),
+                            const SizedBox(height: AppMetrics.space6),
                             Text(
                               Fa.num(
                                 'نسخه ${AppConfig.versionLabel} | ویندوز ۱۰ و ۱۱',
@@ -176,24 +199,14 @@ class _LoginPageState extends State<LoginPage> {
                           padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space9, vertical: AppMetrics.space9),
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
-                            child: GlassCard(
-                              padding: const EdgeInsets.all(AppMetrics.space7),
-                              radius: AppMetrics.radiusHuge,
-                              elevated: true,
-                              child: AnimatedSize(
-                                duration: const Duration(milliseconds: 280),
-                                curve: Curves.easeOutCubic,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 240),
-                                  child: _step(context, auth),
-                                ),
-                              ),
-                            ),
+                            child: _loginCard(context, auth),
                           ),
                         ),
                       ),
                     ),
                   ],
+                );
+                  },
                 ),
               ],
             ),
@@ -203,6 +216,21 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  Widget _loginCard(BuildContext context, AuthController auth) {
+    return GlassCard(
+      padding: const EdgeInsets.all(AppMetrics.space7),
+      radius: AppMetrics.radiusHuge,
+      elevated: true,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 240),
+          child: _step(context, auth),
+        ),
+      ),
+    );
+  }
 
   Widget _step(BuildContext context, AuthController auth) {
     switch (auth.phase) {
@@ -440,7 +468,10 @@ class _LoginPageState extends State<LoginPage> {
           onSubmitted: (String value) => auth.verifyCode(value),
         ),
         const SizedBox(height: AppMetrics.space4),
-        Row(
+        Wrap(
+          spacing: AppMetrics.space2,
+          runSpacing: AppMetrics.space1,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
             Icon(Icons.timer_outlined, size: AppMetrics.iconSm, color: colors.textSecondary),
             const SizedBox(width: AppMetrics.space2),
@@ -450,7 +481,6 @@ class _LoginPageState extends State<LoginPage> {
                     color: colors.textSecondary,
                   ),
             ),
-            const Spacer(),
             TextButton(
               onPressed: auth.resendIn > 0 ? null : auth.resendCode,
               child: Text(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:crypto/crypto.dart';
@@ -70,6 +71,24 @@ class WindowService with WindowListener {
           ? const Color(0xFF07080B)
           : const Color(0xFFF5F6FA);
 
+  /// اندازه اولیه و کمینه را در ناحیه کاری نگه می دارد، حتی در DPI بالا.
+  static ({Size initial, Size minimum}) fitWindowToWorkArea(Size desired, Size? workArea) {
+    const Size preferredMinimum = Size(800, 480);
+    final bool valid = workArea != null && workArea.width.isFinite &&
+        workArea.height.isFinite && workArea.width > 0 && workArea.height > 0;
+    final Size minimum = valid
+        ? Size(math.min(preferredMinimum.width, workArea.width),
+            math.min(preferredMinimum.height, workArea.height))
+        : preferredMinimum;
+    double fit(double requested, double min, double? max) =>
+        math.max(min, max == null ? requested : math.min(requested, max));
+    return (
+      initial: Size(fit(desired.width, minimum.width, valid ? workArea.width : null),
+          fit(desired.height, minimum.height, valid ? workArea.height : null)),
+      minimum: minimum,
+    );
+  }
+
   Future<void> init({
     Size? size,
     Brightness initialBrightness = Brightness.dark,
@@ -85,9 +104,11 @@ class WindowService with WindowListener {
     });
     await windowManager.ensureInitialized();
     _appliedBrightness = initialBrightness;
+    final workArea = await _native.primaryWorkArea();
+    final fitted = fitWindowToWorkArea(size ?? const Size(1280, 820), workArea);
     final WindowOptions options = WindowOptions(
-      size: size ?? const Size(1280, 820),
-      minimumSize: const Size(1120, 720),
+      size: fitted.initial,
+      minimumSize: fitted.minimum,
       center: true,
       backgroundColor: _backgroundFor(initialBrightness),
       skipTaskbar: false,
@@ -97,7 +118,7 @@ class WindowService with WindowListener {
     // دکمه بستن، برنامه را کامل می کشد.
     await windowManager.setPreventClose(true);
     await windowManager.waitUntilReadyToShow(options, () async {
-      await windowManager.setMinimumSize(const Size(1120, 720));
+      await windowManager.setMinimumSize(fitted.minimum);
       try {
         await windowManager.setBrightness(initialBrightness);
       } catch (_) {}

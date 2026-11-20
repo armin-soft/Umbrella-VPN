@@ -1667,7 +1667,8 @@ class ResponsiveColumns extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (constraints.maxWidth < breakpoint) {
+        final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+        if (constraints.maxWidth < breakpoint * scale) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[left, SizedBox(height: spacing), right],

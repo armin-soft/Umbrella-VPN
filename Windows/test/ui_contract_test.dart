@@ -1198,7 +1198,7 @@ void main() {
       // باریک هیچ وقت دیده نمی شود — همان اشکالی که مرزهای ۸۲۰/۱۰۶۰ داشتند.
       final String theme = read('lib/core/theme.dart');
       final int minWindow = int.parse(
-        RegExp(r'minimumSize: const Size\((\d+),')
+        RegExp(r'preferredMinimum = Size\((\d+),')
             .firstMatch(read('lib/platform/services.dart'))!
             .group(1)!,
       );

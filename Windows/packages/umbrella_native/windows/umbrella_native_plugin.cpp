@@ -248,6 +248,20 @@ void UmbrellaNativePlugin::HandleMethodCall(
         ops_.RunElevated(StringOf(args, "exe"), StringOf(args, "args"))));
     return;
   }
+  if (method == "primaryWorkArea") {
+    RECT area = {};
+    if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &area, 0)) {
+      result->Success(flutter::EncodableValue());
+      return;
+    }
+    const UINT dpi = GetDpiForSystem();
+    const double scale = dpi > 0 ? static_cast<double>(dpi) / 96.0 : 1.0;
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("width")] = flutter::EncodableValue((area.right - area.left) / scale);
+    map[flutter::EncodableValue("height")] = flutter::EncodableValue((area.bottom - area.top) / scale);
+    result->Success(flutter::EncodableValue(map));
+    return;
+  }
   if (method == "powerStatus") {
     RunOffUiThread(reply_guard_, std::move(result), []() {
       // Cache hardware classification; only the power status is polled.

@@ -91,7 +91,12 @@ class _LandingPageState extends State<LandingPage>
             ),
           ),
           SafeArea(
-            child: Padding(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < AppMetrics.breakpointColumns * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0)) {
+                  return _compactLanding(context, colors);
+                }
+                return Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space10, vertical: AppMetrics.space8),
               child: Row(
                 children: <Widget>[
@@ -99,7 +104,8 @@ class _LandingPageState extends State<LandingPage>
                     flex: 5,
                     child: FadeTransition(
                       opacity: CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-                      child: Column(
+                      child: SingleChildScrollView(
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: <Widget>[
@@ -124,7 +130,10 @@ class _LandingPageState extends State<LandingPage>
                                 ),
                           ),
                           const SizedBox(height: AppMetrics.space8),
-                          Row(
+                          Wrap(
+                            spacing: AppMetrics.space4,
+                            runSpacing: AppMetrics.space3,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: <Widget>[
                               SizedBox(
                                 width: AppMetrics.buttonMaxWidth,
@@ -134,7 +143,6 @@ class _LandingPageState extends State<LandingPage>
                                   onPressed: widget.onStart,
                                 ),
                               ),
-                              const SizedBox(width: AppMetrics.space4),
                               Pill(
                                 label: Fa.num('نسخه ${AppConfig.versionLabel}'),
                                 icon: Icons.verified_rounded,
@@ -150,6 +158,7 @@ class _LandingPageState extends State<LandingPage>
                                 ),
                           ),
                         ],
+                        ),
                       ),
                     ),
                   ),
@@ -202,12 +211,57 @@ class _LandingPageState extends State<LandingPage>
                   ),
                 ],
               ),
+            );
+              },
             ),
           ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _compactLanding(BuildContext context, UmbrellaColors colors) {
+    return SingleChildScrollView(
+      padding: AppMetrics.pagePadding,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const BrandMark(size: AppMetrics.logoMd),
+              const SizedBox(height: AppMetrics.space5),
+              Text(Fa.num('اینترنت آزاد، با اتصالی که دوام می آورد.'),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: AppMetrics.space4),
+              Text(Fa.num('اتصال ویندوز، انتخاب سرور و مدیریت حساب در آمبرلا.'),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.textSecondary)),
+              const SizedBox(height: AppMetrics.space5),
+              GradientButton(label: 'شروع', icon: Icons.arrow_back_rounded, onPressed: widget.onStart),
+              const SizedBox(height: AppMetrics.space5),
+              for (final item in _features)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppMetrics.space3),
+                  child: GlassCard(
+                    padding: AppMetrics.cardPadding,
+                    radius: AppMetrics.radiusLg,
+                    child: Row(children: <Widget>[
+                      IconSquare(icon: item.$1, color: colors.primary, size: AppMetrics.iconBoxLg),
+                      const SizedBox(width: AppMetrics.space3),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                        Text(Fa.num(item.$2), style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: AppMetrics.space1),
+                        Text(Fa.num(item.$3), style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.textSecondary)),
+                      ])),
+                    ]),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

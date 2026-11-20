@@ -1,0 +1,135 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/storage.dart';
+import 'package:umbrella_vpn/core/theme.dart';
+import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/platform/native.dart';
+import 'package:umbrella_vpn/platform/services.dart';
+import 'package:umbrella_vpn/state/auth_controller.dart';
+import 'package:umbrella_vpn/state/power_controller.dart';
+import 'package:umbrella_vpn/state/settings_controller.dart';
+import 'package:umbrella_vpn/state/subscription_controller.dart';
+import 'package:umbrella_vpn/state/toast_controller.dart';
+import 'package:umbrella_vpn/state/update_controller.dart';
+import 'package:umbrella_vpn/ui/pages/about_page.dart';
+import 'package:umbrella_vpn/ui/pages/account_page.dart';
+import 'package:umbrella_vpn/ui/pages/connect_page.dart';
+import 'package:umbrella_vpn/ui/pages/device_page.dart';
+import 'package:umbrella_vpn/ui/pages/landing_page.dart';
+import 'package:umbrella_vpn/ui/pages/login_page.dart';
+import 'package:umbrella_vpn/ui/pages/logs_page.dart';
+import 'package:umbrella_vpn/ui/pages/settings_page.dart';
+import 'package:umbrella_vpn/ui/pages/updates_page.dart';
+import 'package:umbrella_vpn/vpn/cores.dart';
+import 'package:umbrella_vpn/vpn/vpn_controller.dart';
+
+class _Native extends NativeBridge {
+  @override
+  Future<DeviceProfile> deviceInfo() async => DeviceProfile.empty;
+  @override
+  Future<int> shutdownCores({bool skipIfClean = false}) async => 0;
+}
+class _Sound implements SoundService {
+  @override
+  bool enabled = false;
+  @override
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+class _Vpn extends VpnController {
+  _Vpn(NativeBridge native, SoundService sound)
+      : super(native: native, ipService: IpService(), sound: sound,
+          tray: TrayService(native), provisioner: CoreProvisioner(),
+          settings: const AppSettings());
+  @override
+  Future<void> refreshIp() async {}
+}
+class _Updates extends UpdateController {
+  _Updates(super.native);
+  @override
+  Future<void> loadSkipped() async {}
+  @override
+  Future<bool> check({bool silent = false, bool ignoreSkipped = false}) async => false;
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await LocalStore.instance.init();
+  });
+
+  test('window fits the logical primary work area with and without DPI space', () {
+    final small = WindowService.fitWindowToWorkArea(const Size(1280, 820), const Size(853, 480));
+    expect(small.initial, const Size(853, 480));
+    expect(small.minimum, const Size(800, 480));
+    final tiny = WindowService.fitWindowToWorkArea(const Size(1280, 820), const Size(720, 400));
+    expect(tiny.initial, const Size(720, 400));
+    expect(tiny.minimum, const Size(720, 400));
+    final desktop = WindowService.fitWindowToWorkArea(const Size(1280, 820), const Size(1920, 1040));
+    expect(desktop.initial, const Size(1280, 820));
+    expect(WindowService.fitWindowToWorkArea(const Size(1280, 820), null).initial, const Size(1280, 820));
+  });
+
+  for (final size in <Size>[const Size(800, 480), const Size(1120, 720), const Size(1920, 1080)]) {
+    for (final textScale in <double>[1.0, 1.25]) {
+      testWidgets('desktop screens at $size, text $textScale', (tester) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final native = _Native();
+        final sound = _Sound();
+        final window = WindowService(native);
+        final settings = SettingsController(native: native, sound: sound, window: window);
+        final vpn = _Vpn(native, sound);
+        final auth = AuthController(native: native);
+        final subs = SubscriptionController(vpn: vpn, auth: auth);
+        final updates = _Updates(native);
+        final power = PowerController(readStatus: () async => const BatteryPowerState(
+            isLaptop: true, hasBattery: true, onBattery: true, energySaver: false));
+        final toasts = ToastController();
+        await power.refresh();
+        final pages = <Widget>[
+          LandingPage(onStart: () {}), const LoginPage(), const ConnectPage(),
+          const DevicePage(), const AccountPage(), const SettingsPage(),
+          const LogsPage(), const AboutPage(), const UpdatesPage(),
+        ];
+        for (final page in pages) {
+          final bool fullWindow = page is LandingPage || page is LoginPage;
+          await tester.pumpWidget(MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: native),
+              Provider<WindowService>.value(value: window),
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+              ChangeNotifierProvider<UpdateController>.value(value: updates),
+              ChangeNotifierProvider<PowerController>.value(value: power),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(theme: AppTheme.dark(), home: MediaQuery(
+              data: MediaQueryData(size: size, textScaler: TextScaler.linear(textScale)),
+              child: Directionality(textDirection: TextDirection.rtl, child: fullWindow
+                  ? page
+                  : Scaffold(body: Row(children: <Widget>[
+                      const SizedBox(width: AppMetrics.navWidthCompact),
+                      Expanded(child: TickerMode(enabled: false, child: page)),
+                    ]))),
+            )),
+          ));
+          await tester.pump();
+          expect(tester.takeException(), isNull, reason: '${page.runtimeType} at $size / $textScale');
+        }
+        await tester.pumpWidget(const SizedBox());
+        subs.dispose();
+        auth.dispose();
+        settings.dispose();
+        power.dispose();
+        toasts.dispose();
+        updates.dispose();
+        vpn.dispose();
+      });
+    }
+  }
+}

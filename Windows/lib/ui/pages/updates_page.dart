@@ -199,7 +199,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                         UpdateChannel.beta,
                       ),
                     );
-                    if (constraints.maxWidth >= AppMetrics.breakpointCompact) {
+                    if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointCompact) {
                       return IntrinsicHeight(
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,

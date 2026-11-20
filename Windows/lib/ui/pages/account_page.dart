@@ -261,14 +261,14 @@ class _AccountPageState extends State<AccountPage> {
           final valid = value != null && value >= auth.walletMinTopup && value <= auth.walletMaxTopup;
           return AlertDialog(
             title: const Text('افزایش اعتبار کیف پول'),
-            content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
               Text('مبلغ شارژ به تومان؛ حداقل ${Fa.grouped(auth.walletMinTopup)} و حداکثر ${Fa.grouped(auth.walletMaxTopup)} تومان.'),
               TextField(controller: controller, autofocus: true, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'مبلغ شارژ (تومان)'),
                 onChanged: (_) => update(() {})),
               const SizedBox(height: AppMetrics.space3),
               const Text('کارمزد درگاه پس از استعلام جداگانه نمایش داده می شود و به موجودی اضافه نمی شود.'),
-            ]),
+            ])),
             actions: <Widget>[
               TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')),
               FilledButton(onPressed: valid ? () => Navigator.pop(dialogContext, value) : null,
@@ -637,7 +637,7 @@ class _AccountPageState extends State<AccountPage> {
           // ── چهار کارت شاخص کلیدی حساب کاربری ──────────────────────────
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              if (constraints.maxWidth >= AppMetrics.breakpointColumns) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointColumns) {
                 return IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -653,7 +653,7 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 );
               }
-              if (constraints.maxWidth >= AppMetrics.breakpointCompact) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointCompact) {
                 return Column(
                   children: <Widget>[
                     IntrinsicHeight(
@@ -717,7 +717,7 @@ class _AccountPageState extends State<AccountPage> {
                 tone: timeTone,
                 colors: colors,
               );
-              if (constraints.maxWidth < AppMetrics.breakpointColumns) {
+              if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) < AppMetrics.breakpointColumns) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -1537,7 +1537,7 @@ class _GiftPlansCard extends StatelessWidget {
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               if (tiles.length == 2 &&
-                  constraints.maxWidth >= AppMetrics.breakpointCompact) {
+                  constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0) >= AppMetrics.breakpointCompact) {
                 return IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
