@@ -48,8 +48,10 @@ void main() {
         hasBattery: true, onBattery: true, energySaver: false, isLaptop: laptop));
       final vpn = _Vpn();
       final toasts = ToastController();
+      print("BATTERY: refresh");
       await power.refresh();
       settings.addListener(() => power.setEnabled(settings.settings.batteryOptimization));
+      print("BATTERY: pump widget");
       await tester.pumpWidget(MultiProvider(
         providers: [
           ChangeNotifierProvider<SettingsController>.value(value: settings),
@@ -61,24 +63,32 @@ void main() {
           textDirection: TextDirection.rtl, child: Scaffold(body: SettingsPage()))),
       ));
       await tester.pump();
+      print("BATTERY: find menu");
       final menu = find.byKey(const ValueKey<String>('settings-category-battery'));
       expect(menu, laptop == true ? findsOneWidget : findsNothing);
       if (laptop == true) {
+        print("BATTERY: ensure visible");
         await tester.ensureVisible(menu);
+        print("BATTERY: tap menu");
         await tester.tap(menu);
+        print("BATTERY: settle menu");
         await tester.pumpAndSettle();
         final toggle = find.byKey(const ValueKey<String>('battery-optimization-toggle'));
         expect(toggle, findsOneWidget);
         expect(tester.widget<ToggleRow>(toggle).value, true);
+        print("BATTERY: tap switch");
         await tester.tap(find.descendant(of: toggle, matching: find.byType(Switch)));
         await tester.pumpAndSettle();
         expect(settings.settings.batteryOptimization, false);
         expect(power.active, false);
+        print("BATTERY: reload");
         final reloaded = SettingsController(native: NativeBridge(), sound: _Sound(), window: _Window());
         await reloaded.load();
+        print("BATTERY: reloaded");
         expect(reloaded.settings.batteryOptimization, false);
         reloaded.dispose();
       }
+      print("BATTERY: cleanup");
       await tester.pumpWidget(const SizedBox());
       settings.dispose();
       power.dispose();
