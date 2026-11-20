@@ -772,6 +772,41 @@ $Plans[] = ['month' => (string)$Month, 'name' => $Name, 'days' => $Days, 'gb' =>
 return $Plans;
 }
 
+/** The app and Telegram use the same wallet minimum and pending-order ledger. */
+public static function appWalletTerms(): array {
+return ['min_topup' => max(self::MIN_TOPUP, (int)ceil(Environment::getMinimumPaymentAmount())),
+'max_topup' => 100000000];
+}
+
+/** Start a pure wallet top-up under the shared purchase lock; no client can mark it paid. */
+public static function startAppWalletTopup(int $User_ID, int $Amount): array {
+$Terms = self::appWalletTerms();
+if ($Amount < $Terms['min_topup'] || $Amount > $Terms['max_topup']) throw new InvalidArgumentException('invalid_topup');
+$Lock = 'subscription_purchase_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 180)) throw new RuntimeException('purchase_busy');
+try {
+$Session = Repository::getUserSession($User_ID);
+if (trim((string)($Session['Pending_Payment'] ?? '')) !== '') throw new RuntimeException('payment_pending');
+$Base = Environment::getPaymentCallbackUrl();
+if (!Zarinpal::isConfigured() || $Base === '') throw new RuntimeException('gateway_unavailable');
+$User = Repository::getUser($User_ID);
+if ($User === []) throw new RuntimeException('account_not_linked');
+$Callback = $Base . (str_contains($Base, '?') ? '&' : '?') . 'Uid=' . $User_ID;
+$Payment = Zarinpal::request((float)$Amount, $Callback, 'شارژ اعتبار کیف پول - سرور آمبرلا', Helper::normalizePhone((string)($User['Phone'] ?? '')));
+if (!is_array($Payment) || !isset($Payment['Authority'], $Payment['RedirectUrl'])) throw new RuntimeException('gateway_request_failed');
+$Final = (float)($Payment['Amount'] ?? $Amount);
+Repository::updateUserSession($User_ID, [
+'Pending_Payment' => 'topup|' . $Final . '|' . (string)$Payment['Authority'],
+'Pending_Topup' => (string)$Amount,
+'Pending_Plan' => null,
+'Pending_Custom_Plan' => null,
+]);
+return $Payment;
+} finally {
+Repository::releaseCronLock($Lock);
+}
+}
+
 /** Custom-plan constraints/rates are sourced from the same live bot settings. */
 public static function appCustomPlanTerms(): array {
 return [

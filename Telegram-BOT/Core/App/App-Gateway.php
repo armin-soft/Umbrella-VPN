@@ -95,6 +95,9 @@ if ($Route === 'subscription/claim') { self::claimSubscription(self::body()); re
 if ($Route === 'subscription/fetch') { self::fetchSubscription(self::body()); return; }
 if ($Route === 'subscription/plans') { self::subscriptionPlans(); return; }
 if ($Route === 'subscription/purchase') { self::purchaseSubscription(self::body()); return; }
+if ($Route === 'wallet/status') { self::walletStatus(); return; }
+if ($Route === 'wallet/topup') { self::walletTopup(self::body()); return; }
+if ($Route === 'wallet/verify') { self::walletVerify(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
@@ -980,6 +983,78 @@ return [
 'nowruz_gb' => 5,
 'nowruz_days' => 13,
 ];
+}
+
+/** Resolve only the bot wallet belonging to this authenticated panel account. */
+private static function walletUser(string $Token): array {
+$Session = self::sessionRow($Token);
+if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+if ($UUID === '' || $User === null || (string)($User['Client_ID'] ?? '') !== $UUID || (int)($User['Telegram_ID'] ?? 0) <= 0) {
+self::fail(409, 'account_not_linked', 'برای استفاده از کیف پول، ابتدا حساب را از بخش عضویت به ربات متصل کنید.');
+}
+if ((int)($User['Is_Blocked'] ?? 0) === 1) self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
+return $User;
+}
+
+private static function walletPayload(int $UserId): array {
+$Session = Repository::getUserSession($UserId);
+$Pending = trim((string)($Session['Pending_Payment'] ?? ''));
+$Parts = array_pad(explode('|', $Pending, 3), 3, '');
+$PureTopup = $Pending !== '' && $Parts[0] === 'topup'
+&& trim((string)($Session['Pending_Plan'] ?? '')) === ''
+&& trim((string)($Session['Pending_Custom_Plan'] ?? '')) === ''
+&& (float)($Session['Pending_Topup'] ?? 0) > 0;
+$Url = '';
+if ($PureTopup && Zarinpal::validAuthority($Parts[2])) {
+$Url = Zarinpal::payLink(['BridgeUrl' => Zarinpal::bridgeUrl($Parts[2], $UserId), 'RedirectUrl' => Zarinpal::startPayUrl($Parts[2])]);
+}
+return [
+'balance' => Repository::getBalance($UserId),
+'min_topup' => SubscriptionFlow::appWalletTerms()['min_topup'],
+'max_topup' => SubscriptionFlow::appWalletTerms()['max_topup'],
+'payment_pending' => $Pending !== '',
+'pending_wallet_topup' => $PureTopup,
+'pending_credit' => $PureTopup ? (float)$Session['Pending_Topup'] : 0,
+'pending_amount' => $PureTopup ? (float)$Parts[1] : 0,
+'checkout_url' => $Url,
+];
+}
+
+private static function walletStatus(): void {
+$User = self::walletUser(self::bearer());
+self::ok(self::walletPayload((int)$User['Telegram_ID']));
+}
+
+private static function walletTopup(array $Body): void {
+$User = self::walletUser((string)($Body['token'] ?? self::bearer()));
+$Raw = $Body['amount'] ?? null;
+$Terms = SubscriptionFlow::appWalletTerms();
+if (!(is_int($Raw) || (is_string($Raw) && preg_match('/^[0-9]{1,9}$/D', $Raw) === 1))) self::fail(422, 'invalid_topup', 'مبلغ شارژ باید عدد صحیح به تومان باشد.');
+$Amount = (int)$Raw;
+if ($Amount < $Terms['min_topup'] || $Amount > $Terms['max_topup']) self::fail(422, 'invalid_topup', 'مبلغ شارژ خارج از محدوده مجاز است.');
+try { $Payment = SubscriptionFlow::startAppWalletTopup((int)$User['Telegram_ID'], $Amount); }
+catch (Throwable $Error) {
+$Code = $Error->getMessage();
+if ($Code === 'payment_pending') self::fail(409, $Code, 'پرداخت قبلی در حال بررسی است؛ ابتدا همان پرداخت را تکمیل یا پیگیری کنید.');
+if ($Code === 'purchase_busy') self::fail(409, $Code, 'درخواست دیگری در حال پردازش است؛ کمی بعد تلاش کنید.');
+if ($Code === 'invalid_topup') self::fail(422, $Code, 'مبلغ شارژ خارج از محدوده مجاز است.');
+if ($Code === 'gateway_unavailable') self::fail(503, $Code, 'درگاه پرداخت یا نشانی بازگشت تنظیم نشده است.');
+error_log('[Umbrella-Bot][App-Wallet] order failed: ' . $Code);
+self::fail(502, 'gateway_request_failed', 'ساخت درخواست پرداخت ناموفق بود؛ دوباره تلاش کنید.');
+}
+self::ok(['status' => 'payment_required', 'credit' => $Amount,
+'gateway_amount' => (float)$Payment['Amount'], 'fee' => (float)($Payment['Fee'] ?? 0),
+'checkout_url' => Zarinpal::payLink($Payment)]);
+}
+
+private static function walletVerify(array $Body): void {
+$User = self::walletUser((string)($Body['token'] ?? self::bearer()));
+$UserId = (int)$User['Telegram_ID'];
+$Before = self::walletPayload($UserId);
+if (!empty($Before['pending_wallet_topup'])) SubscriptionFlow::recoverPendingPayment($UserId);
+self::ok(self::walletPayload($UserId));
 }
 
 /** Return the bot's currently priced plans and the linked wallet balance. */

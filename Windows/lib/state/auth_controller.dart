@@ -182,6 +182,104 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  bool _walletLoaded = false;
+  bool get walletLoaded => _walletLoaded;
+  bool _walletBusy = false;
+  bool get walletBusy => _walletBusy;
+  double _walletExactBalance = 0;
+  double get walletExactBalance => _walletExactBalance;
+  int _walletMinTopup = 0;
+  int get walletMinTopup => _walletMinTopup;
+  int _walletMaxTopup = 0;
+  int get walletMaxTopup => _walletMaxTopup;
+  bool _walletPaymentPending = false;
+  bool get walletPaymentPending => _walletPaymentPending;
+  bool _walletTopupPending = false;
+  bool get walletTopupPending => _walletTopupPending;
+  double _walletPendingCredit = 0;
+  double get walletPendingCredit => _walletPendingCredit;
+  double _walletPendingAmount = 0;
+  double get walletPendingAmount => _walletPendingAmount;
+  String _walletCheckoutUrl = '';
+  String get walletCheckoutUrl => _walletCheckoutUrl;
+
+  void _applyWallet(Map<String, dynamic> value) {
+    _walletLoaded = true;
+    _walletExactBalance = JsonX.number(value['balance']);
+    _walletBalance = _walletExactBalance.round();
+    _walletMinTopup = JsonX.integer(value['min_topup']);
+    _walletMaxTopup = JsonX.integer(value['max_topup']);
+    _walletPaymentPending = JsonX.boolean(value['payment_pending']);
+    _walletTopupPending = JsonX.boolean(value['pending_wallet_topup']);
+    _walletPendingCredit = JsonX.number(value['pending_credit']);
+    _walletPendingAmount = JsonX.number(value['pending_amount']);
+    _walletCheckoutUrl = JsonX.text(value['checkout_url']);
+  }
+
+  Future<bool> refreshWallet({bool verify = false, bool silent = false}) async {
+    final session = _session;
+    if (session == null || _walletBusy) return false;
+    _walletBusy = true;
+    if (!silent) _error = '';
+    notifyListeners();
+    try {
+      final value = verify
+          ? await _gateway.verifyWalletTopup(session.token)
+          : await _gateway.walletStatus(session.token);
+      if (_session?.token != session.token) return false;
+      _applyWallet(value);
+      return true;
+    } on ApiError catch (error) {
+      if (_session?.token != session.token) return false;
+      if (error.code == 'account_not_linked') _walletLoaded = false;
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+      } else if (!silent) {
+        _error = error.message;
+      }
+      return false;
+    } finally {
+      _walletBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>?> startWalletTopup(int amount) async {
+    final session = _session;
+    if (session == null || _walletBusy) return null;
+    _walletBusy = true;
+    _error = '';
+    notifyListeners();
+    try {
+      final result = await _gateway.startWalletTopup(token: session.token, amount: amount);
+      if (_session?.token != session.token) return null;
+      // Pending state is retained even if opening the external browser fails.
+      _walletPaymentPending = true;
+      _walletTopupPending = true;
+      _walletPendingCredit = JsonX.number(result['credit']);
+      _walletPendingAmount = JsonX.number(result['gateway_amount']);
+      _walletCheckoutUrl = JsonX.text(result['checkout_url']);
+      return result;
+    } on ApiError catch (error) {
+      if (_session?.token != session.token) return null;
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+      } else {
+        _error = error.message;
+      }
+      return null;
+    } finally {
+      _walletBusy = false;
+      notifyListeners();
+    }
+  }
+
   bool _loadingSubscriptionPlans = false;
   bool get loadingSubscriptionPlans => _loadingSubscriptionPlans;
   bool _purchasingSubscription = false;
@@ -1423,6 +1521,15 @@ class AuthController extends ChangeNotifier {
     _customSubscriptionTerms = null;
     _botLinked = null;
     _walletBalance = 0;
+    _walletLoaded = false;
+    _walletExactBalance = 0;
+    _walletMinTopup = 0;
+    _walletMaxTopup = 0;
+    _walletPaymentPending = false;
+    _walletTopupPending = false;
+    _walletPendingCredit = 0;
+    _walletPendingAmount = 0;
+    _walletCheckoutUrl = '';
     onFilterChanged?.call(FilterSettings.empty);
     _phase = AuthPhase.phone;
     _stage = SignInStage.unknown;

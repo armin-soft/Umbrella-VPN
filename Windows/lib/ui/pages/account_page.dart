@@ -92,6 +92,7 @@ class _AccountPageState extends State<AccountPage> {
     try {
       await auth.refreshAccount(silent: true);
       await auth.refreshBotLinkStatus();
+      await auth.refreshWallet(silent: true);
       final bool panel = await auth.refreshFromPanel();
       await auth.loadSubscriptionPlans();
       await subs.syncPersonal();
@@ -218,6 +219,91 @@ class _AccountPageState extends State<AccountPage> {
       name: 'دلخواه ${Fa.num(selection[1])} گیگابایت', days: selection[0].toInt(),
       price: terms.priceForDays(selection[0].toInt())),
       customDays: selection[0].toInt(), customGb: selection[1].toDouble());
+  }
+
+  Future<void> _refreshWallet(AuthController auth, ToastController toasts,
+      {bool verify = false}) async {
+    final bool ok = await auth.refreshWallet(verify: verify);
+    if (!mounted) return;
+    if (!ok) {
+      toasts.error('دریافت وضعیت کیف پول ناموفق بود', auth.error);
+    } else if (verify && auth.walletPaymentPending) {
+      toasts.info('پرداخت هنوز در حال بررسی است',
+          'اگر مبلغ کسر شده دوباره پرداخت نکنید؛ دوباره بررسی کنید یا از پشتیبانی پیگیری کنید.');
+    } else {
+      toasts.success('موجودی و وضعیت کیف پول تازه شد.');
+    }
+  }
+
+  Future<void> _openWalletCheckout(String link, ToastController toasts) async {
+    final Uri? uri = Uri.tryParse(link);
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      toasts.error('نشانی امن درگاه در دسترس نیست', 'پرداخت را از ربات یا پشتیبانی پیگیری کنید.');
+      return;
+    }
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+        toasts.error('باز کردن درگاه ناموفق بود', 'از دکمه ادامه پرداخت استفاده کنید.');
+      }
+    } catch (_) {
+      if (mounted) toasts.error('باز کردن درگاه ناموفق بود', 'از دکمه ادامه پرداخت استفاده کنید.');
+    }
+  }
+
+  Future<void> _topupWallet(AuthController auth, ToastController toasts) async {
+    if (!auth.walletLoaded || auth.walletPaymentPending) return;
+    final controller = TextEditingController();
+    final int? amount = await showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter update) {
+          final text = Fa.toEn(controller.text).trim();
+          final value = RegExp(r'^[0-9]+$').hasMatch(text) ? int.tryParse(text) : null;
+          final valid = value != null && value >= auth.walletMinTopup && value <= auth.walletMaxTopup;
+          return AlertDialog(
+            title: const Text('افزایش اعتبار کیف پول'),
+            content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              Text('مبلغ شارژ به تومان؛ حداقل ${Fa.grouped(auth.walletMinTopup)} و حداکثر ${Fa.grouped(auth.walletMaxTopup)} تومان.'),
+              TextField(controller: controller, autofocus: true, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'مبلغ شارژ (تومان)'),
+                onChanged: (_) => update(() {})),
+              const SizedBox(height: 12),
+              const Text('کارمزد درگاه پس از استعلام جداگانه نمایش داده می شود و به موجودی اضافه نمی شود.'),
+            ]),
+            actions: <Widget>[
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')),
+              FilledButton(onPressed: valid ? () => Navigator.pop(dialogContext, value) : null,
+                child: const Text('ثبت درخواست پرداخت')),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+    if (amount == null || !mounted) return;
+    final result = await auth.startWalletTopup(amount);
+    if (!mounted) return;
+    if (result == null) {
+      toasts.error('ساخت درخواست شارژ ناموفق بود', auth.error);
+      await auth.refreshWallet(silent: true);
+      return;
+    }
+    final credit = JsonX.number(result['credit']);
+    final total = JsonX.number(result['gateway_amount']);
+    final fee = JsonX.number(result['fee']);
+    final String link = JsonX.text(result['checkout_url']);
+    final bool open = await showDialog<bool>(context: context, builder: (BuildContext dialogContext) => AlertDialog(
+      title: const Text('جزئیات پرداخت'),
+      content: Text('اعتبار کیف پول: ${_walletMoney(credit)} تومان\n'
+        'کارمزد درگاه: ${_walletMoney(fee)} تومان\n'
+        'جمع قابل پرداخت: ${_walletMoney(total)} تومان\n\n'
+        'تنها پس از تایید سرور درگاه، اعتبار اضافه می شود. در صورت انصراف، سفارش در کیف پول برای پیگیری باقی می ماند.'),
+      actions: <Widget>[
+        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('بعداً')),
+        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('رفتن به درگاه')),
+      ],
+    )) ?? false;
+    if (open && mounted) await _openWalletCheckout(link, toasts);
   }
 
   Future<void> _refreshPaidPlans(
@@ -502,6 +588,15 @@ class _AccountPageState extends State<AccountPage> {
             ),
             const SizedBox(height: AppMetrics.space4),
           ],
+
+          _WalletCard(
+            auth: auth,
+            onTopup: () => _topupWallet(auth, toasts),
+            onRefresh: () => _refreshWallet(auth, toasts),
+            onVerify: () => _refreshWallet(auth, toasts, verify: true),
+            onContinue: () => _openWalletCheckout(auth.walletCheckoutUrl, toasts),
+          ),
+          const SizedBox(height: AppMetrics.space4),
 
           // ── طرح های هدیه همگام با ربات (اشتراک رایگان و نوروزی) ─────────
           if (auth.offers.hasVisibleOffer) ...<Widget>[
@@ -1187,6 +1282,58 @@ class _PercentRing extends StatelessWidget {
                   color: tone,
                 ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+String _walletMoney(double value) {
+  if ((value - value.round()).abs() < 0.000001) return Fa.grouped(value);
+  return Fa.decimal(value, fraction: 1);
+}
+
+/// منوی مستقل کیف پول مشترک برنامه و ربات.
+class _WalletCard extends StatelessWidget {
+  const _WalletCard({required this.auth, required this.onTopup,
+    required this.onRefresh, required this.onVerify, required this.onContinue});
+  final AuthController auth;
+  final VoidCallback onTopup;
+  final VoidCallback onRefresh;
+  final VoidCallback onVerify;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return GlassCard(
+      padding: AppMetrics.cardPadding, radius: AppMetrics.radiusXl,
+      child: ExpansionTile(
+        leading: Icon(Icons.account_balance_wallet_rounded, color: colors.primary),
+        title: const Text('کیف پول'),
+        subtitle: Text(auth.walletLoaded
+            ? 'موجودی مشترک: ${_walletMoney(auth.walletExactBalance)} تومان'
+            : 'مشاهده موجودی و افزایش اعتبار حساب مشترک ربات'),
+        children: <Widget>[
+          if (!auth.walletLoaded)
+            const Padding(padding: EdgeInsets.all(12), child: Text(
+              'برای مشاهده کیف پول، حساب را به ربات متصل و وضعیت را تازه سازی کنید.'))
+          else ...<Widget>[
+            if (auth.walletPaymentPending)
+              Padding(padding: const EdgeInsets.all(12), child: Text(auth.walletTopupPending
+                ? 'درخواست شارژ ${_walletMoney(auth.walletPendingCredit)} تومان در انتظار تأیید است؛ مبلغ درگاه ${_walletMoney(auth.walletPendingAmount)} تومان. اگر مبلغ کسر شده، دوباره پرداخت نکنید.'
+                : 'یک پرداخت اشتراک در حال بررسی است؛ ابتدا آن را تکمیل یا از ربات پیگیری کنید.')),
+            Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
+              FilledButton.icon(onPressed: auth.walletBusy || auth.walletPaymentPending ? null : onTopup,
+                icon: const Icon(Icons.add_card_rounded), label: const Text('افزایش اعتبار')),
+              if (auth.walletTopupPending && auth.walletCheckoutUrl.isNotEmpty)
+                OutlinedButton(onPressed: auth.walletBusy ? null : onContinue, child: const Text('ادامه پرداخت')),
+              if (auth.walletTopupPending)
+                OutlinedButton(onPressed: auth.walletBusy ? null : onVerify, child: const Text('بررسی پرداخت')),
+            ]),
+          ],
+          TextButton.icon(onPressed: auth.walletBusy ? null : onRefresh,
+            icon: const Icon(Icons.refresh_rounded), label: Text(auth.walletBusy ? 'در حال بررسی...' : 'تازه سازی موجودی')),
         ],
       ),
     );

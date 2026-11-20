@@ -615,6 +615,15 @@ class GatewayClient {
     if (quotedPrice != null) 'quoted_price': quotedPrice,
   });
 
+  Future<Map<String, dynamic>> walletStatus(String token) =>
+      _get('wallet/status', <String, String>{'token': token});
+
+  Future<Map<String, dynamic>> startWalletTopup({required String token, required int amount}) =>
+      _post('wallet/topup', <String, dynamic>{'token': token, 'amount': amount});
+
+  Future<Map<String, dynamic>> verifyWalletTopup(String token) =>
+      _post('wallet/verify', <String, dynamic>{'token': token});
+
   Future<SubscriptionOffers> subscriptionOffers(String token) async {
     final Map<String, dynamic> json =
         await _get('subscription/offers', <String, String>{'token': token});
