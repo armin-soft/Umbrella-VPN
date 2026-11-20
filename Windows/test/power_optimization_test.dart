@@ -104,6 +104,12 @@ void main() {
     });
     final native = NativeBridge();
     expect(await native.powerStatus(), isNull);
+    messenger.setMockMethodCallHandler(channel, (call) async => <String, Object>{
+      'known': false, 'isLaptop': true,
+    });
+    final unknownPower = await native.powerStatus();
+    expect(unknownPower?.isLaptop, true);
+    expect(unknownPower?.shouldOptimize, false);
     messenger.setMockMethodCallHandler(channel, (call) async => throw MissingPluginException());
     expect(await native.powerStatus(), isNull);
     expect(native.available, true);
