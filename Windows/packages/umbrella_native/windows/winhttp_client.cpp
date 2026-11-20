@@ -38,7 +38,7 @@ namespace {
 
 constexpr size_t kMaxResponseBytes = 8 * 1024 * 1024;
 constexpr wchar_t kDefaultUserAgent[] =
-    L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) UmbrellaVPN/1.0.0";
+    L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) UmbrellaVPN/0.0.1";
 
 std::wstring Utf8ToWide(const std::string& input) {
   if (input.empty()) return std::wstring();

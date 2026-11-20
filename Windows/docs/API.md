@@ -30,7 +30,7 @@
     "name": "DESKTOP-XXXX",
     "model": "Windows 11 x64",
     "os": "Windows 11 23H2",
-    "app_version": "1.0.0",
+    "app_version": "0.0.1",
     "public_ip": "5.6.7.8",
     "country": "Iran",
     "city": "Tehran"

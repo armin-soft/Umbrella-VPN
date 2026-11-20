@@ -12,6 +12,7 @@ on:
         type: choice
         options:
           - draft
+          - artifact
           - beta
           - release
           - both
@@ -93,6 +94,9 @@ jobs:
           done
   installer:
     needs: telegram-bot
+    # A manually requested installer artifact can be built even when the
+    # separate bot suite is failing. Published/draft releases still require it.
+    if: ${{ always() && (needs.telegram-bot.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact')) }}
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
@@ -220,7 +224,16 @@ jobs:
           $files = @(Get-ChildItem installer/output -Filter '*.exe')
           if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
           Get-FileHash $files[0].FullName -Algorithm SHA256
+      - name: Upload installer artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Setup-0.0.1-x64
+          path: Windows/installer/output/*.exe
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish installer-only release or draft
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact') }}
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
