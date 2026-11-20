@@ -81,6 +81,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
     final UmbrellaColors colors = context.colors;
     final UpdateInfo? available = updates.available;
     final bool hasUpdate = available != null;
+    final bool checked = updates.lastCheckedAt != null && updates.error.isEmpty;
     final bool activeTransfer = updates.downloading || updates.installing;
     final List<String> changelog =
         available?.changelogItems ?? const <String>[];
@@ -115,20 +116,19 @@ class _UpdatesPageState extends State<UpdatesPage> {
             title: Fa.num(
               hasUpdate
                   ? 'نسخه ${available.version} آماده دانلود و نصب است'
-                  : 'برنامه روی آخرین نسخه کانال ${updates.channel.shortLabel} است',
+                  : (updates.checking ? 'در حال بررسی نسخه' : checked
+                      ? 'نسخه جدیدی برای نمایش پیدا نشد' : 'وضعیت نسخه هنوز تایید نشده است'),
             ),
             subtitle: Fa.num(
               hasUpdate
                   ? 'بسته رسمی به صورت مستقیم داخل همین برنامه دانلود، راستی آزمایی و نصب می شود.'
-                  : 'نسخه ${AppConfig.version} با موتور نسل جدید فعال است و نیازی به اقدام دستی نیست.',
+                  : 'نسخه نصب شده ${AppConfig.version} است؛ برای دریافت وضعیت، کانال انتشار را بررسی کنید.',
             ),
             badges: <Widget>[
               Pill(
-                label: hasUpdate ? 'نسخه جدید' : 'به روز',
-                color: hasUpdate ? colors.warning : colors.success,
-                icon: hasUpdate
-                    ? Icons.new_releases_rounded
-                    : Icons.check_circle_rounded,
+                label: hasUpdate ? 'نسخه جدید' : updates.checking ? 'در حال بررسی' : checked ? 'بررسی شده' : 'بررسی نشده',
+                color: hasUpdate ? colors.warning : checked ? colors.success : colors.textSecondary,
+                icon: hasUpdate ? Icons.new_releases_rounded : checked ? Icons.check_circle_rounded : Icons.schedule_rounded,
                 dense: true,
               ),
               Pill(

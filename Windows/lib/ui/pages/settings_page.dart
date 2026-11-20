@@ -218,42 +218,59 @@ class _SettingsPageState extends State<SettingsPage> {
     final SettingsCategory active =
         _section == SettingsCategory.battery && !isLaptop
             ? SettingsCategory.general : _section!;
-    return SingleChildScrollView(
-      padding: AppMetrics.pagePadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          PageHeader(
-            title: active.title,
-            subtitle: active.detailSubtitle,
-            icon: active.icon,
-            actions: <Widget>[
-              SizedBox(
-                height: AppMetrics.controlHeightSmall,
-                child: OutlinedButton.icon(
-                  key: const ValueKey<String>('settings-back-button'),
-                  onPressed: () => setState(() => _section = null),
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    size: AppMetrics.iconSm,
-                  ),
-                  label: const Text('بازگشت به تنظیمات'),
+    // سربرگ و بازگشت همیشه در دسترس هستند، حتی پس از پیمایش گزینه های طولانی.
+    return Shortcuts(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): DismissIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          DismissIntent: CallbackAction<DismissIntent>(onInvoke: (_) {
+            setState(() => _section = null);
+            return null;
+          }),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Padding(
+            padding: AppMetrics.pagePadding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                PageHeader(
+                  title: active.title,
+                  subtitle: active.detailSubtitle,
+                  icon: active.icon,
+                  actions: <Widget>[
+                    OutlinedButton.icon(
+                      key: const ValueKey<String>('settings-back-button'),
+                      onPressed: () => setState(() => _section = null),
+                      icon: const Icon(Icons.arrow_back_rounded, size: AppMetrics.iconSm),
+                      label: const Text('بازگشت به تنظیمات'),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: AppMetrics.space4),
+                Expanded(
+                  child: SingleChildScrollView(
+                    key: ValueKey<String>('settings-detail-${active.name}'),
+                    child: _buildCategoryContent(
+                      context: context,
+                      category: active,
+                      colors: colors,
+                      settings: settings,
+                      vpn: vpn,
+                      toasts: toasts,
+                      cfg: cfg,
+                      batterySaving: batterySaving,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppMetrics.space4),
-          _buildCategoryContent(
-            context: context,
-            category: active,
-            colors: colors,
-            settings: settings,
-            vpn: vpn,
-            toasts: toasts,
-            cfg: cfg,
-            batterySaving: batterySaving,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -268,6 +285,7 @@ class _SettingsPageState extends State<SettingsPage> {
         .where((category) => category != SettingsCategory.battery || isLaptop)
         .toList();
     return SingleChildScrollView(
+      key: const PageStorageKey<String>('settings-root-scroll'),
       padding: AppMetrics.pagePadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

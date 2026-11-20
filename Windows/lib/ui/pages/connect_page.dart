@@ -238,15 +238,10 @@ class _ConnectPageState extends State<ConnectPage> {
             ? 200
             : (constraints.maxHeight < 780 ? 240 : 272);
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            AppMetrics.space7,
-            AppMetrics.space5,
-            AppMetrics.space7,
-            AppMetrics.space6,
-          ),
+          padding: AppMetrics.pagePadding,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minHeight: constraints.maxHeight - 42,
+              minHeight: (constraints.maxHeight - 2 * AppMetrics.space6).clamp(0.0, double.infinity),
             ),
             child: GlassCard(
               radius: AppMetrics.radiusHuge,

@@ -331,7 +331,7 @@ class _LoginPageState extends State<LoginPage> {
         Row(
           children: <Widget>[
             IconAction(
-              icon: Icons.arrow_forward_rounded,
+              icon: Icons.arrow_back_rounded,
               onTap: auth.resetToPhoneStep,
               tooltip: 'بازگشت',
             ),
@@ -395,7 +395,7 @@ class _LoginPageState extends State<LoginPage> {
         Row(
           children: <Widget>[
             IconAction(
-              icon: Icons.arrow_forward_rounded,
+              icon: Icons.arrow_back_rounded,
               onTap: auth.resetToPhoneStep,
               tooltip: 'بازگشت',
             ),

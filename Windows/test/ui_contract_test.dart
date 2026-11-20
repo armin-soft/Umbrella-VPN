@@ -1292,7 +1292,8 @@ void main() {
 
     test('۸. کارت اتصال دست کم به اندازه تمام فضای صفحه است', () {
       final String page = read('lib/ui/pages/connect_page.dart');
-      expect(page.contains('minHeight: constraints.maxHeight - 42'), isTrue);
+      expect(page.contains('minHeight: (constraints.maxHeight - 2 * AppMetrics.space6)'), isTrue);
+      expect(page.contains('padding: AppMetrics.pagePadding'), isTrue);
       expect(page.contains('LayoutBuilder('), isTrue);
     });
 

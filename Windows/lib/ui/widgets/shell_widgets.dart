@@ -349,7 +349,6 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
     return Tooltip(
       message: Fa.num(widget.tooltip),
       waitDuration: const Duration(milliseconds: 500),
-      triggerMode: TooltipTriggerMode.manual,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -712,14 +711,16 @@ class _NavItemState extends State<_NavItem> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final bool highlight = widget.selected || _hover;
-    final Widget tile = MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: Container(
+    final Widget tile = Semantics(
+      selected: widget.selected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          onHover: (value) => setState(() => _hover = value),
+          mouseCursor: SystemMouseCursors.click,
+          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+          child: Container(
           constraints: const BoxConstraints(
             minHeight: AppMetrics.navItemHeight,
           ),
@@ -805,6 +806,7 @@ class _NavItemState extends State<_NavItem> {
                 ],
               ],
             ],
+          ),
           ),
         ),
       ),

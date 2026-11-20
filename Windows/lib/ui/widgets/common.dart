@@ -203,7 +203,10 @@ class PageHeader extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool narrow = constraints.maxWidth < AppMetrics.breakpointCompact;
+        // Actions must not squeeze or overflow the heading at large text scales.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool narrow = constraints.maxWidth <
+            math.max(AppMetrics.breakpointCompact, 620 * textScale);
         final Widget text = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -397,8 +400,9 @@ class PageBanner extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact =
-              constraints.maxWidth < AppMetrics.breakpointCompact;
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool compact = constraints.maxWidth <
+              math.max(AppMetrics.breakpointCompact, 720 * textScale);
           final Widget subtitleWidget = Text(
             Fa.num(subtitle),
             textDirection: subtitleLtr ? TextDirection.ltr : null,
@@ -463,7 +467,7 @@ class PageBanner extends StatelessWidget {
             children: <Widget>[
               Expanded(child: identity),
               const SizedBox(width: AppMetrics.space4),
-              badgeWrap,
+              Flexible(child: badgeWrap),
             ],
           );
         },
@@ -692,14 +696,16 @@ class InfoRow extends StatelessWidget {
         children: <Widget>[
           Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
           const SizedBox(width: AppMetrics.space3),
-          Text(
-            Fa.num(label),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
+          Flexible(
+            child: Text(
+              Fa.num(label),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
           ),
           const SizedBox(width: AppMetrics.space3),
           Expanded(
@@ -1608,10 +1614,12 @@ class IconAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final Widget button = MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+    final Widget button = Material(
+      color: Colors.transparent,
+      child: InkWell(
         onTap: onTap,
+        mouseCursor: SystemMouseCursors.click,
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         child: Container(
           width: size,
           height: size,
