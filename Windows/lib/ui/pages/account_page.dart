@@ -192,12 +192,12 @@ class _AccountPageState extends State<AccountPage> {
                 TextField(controller: days, keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'مدت (روز)'),
                   onChanged: (_) => update(() {})),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppMetrics.space3),
                 Text('حجم مجاز: ${Fa.num(terms.minGb)} تا ${Fa.num(terms.maxGb)} گیگابایت'),
                 TextField(controller: gb, keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'حجم (گیگابایت)'),
                   onChanged: (_) => update(() {})),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppMetrics.space4),
                 Text(valid ? 'قیمت تقریبی: ${Fa.num(terms.priceForDays(dayValue))} تومان'
                     : 'مدت و حجم را در محدوده مجاز وارد کنید.'),
                 const Text('حجم هزینه جداگانه ندارد و مانند ربات به نزدیک ترین گیگابایت گرد می شود؛ قیمت نهایی توسط سرور محاسبه می شود.'),
@@ -267,7 +267,7 @@ class _AccountPageState extends State<AccountPage> {
               TextField(controller: controller, autofocus: true, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'مبلغ شارژ (تومان)'),
                 onChanged: (_) => update(() {})),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppMetrics.space3),
               const Text('کارمزد درگاه پس از استعلام جداگانه نمایش داده می شود و به موجودی اضافه نمی شود.'),
             ]),
             actions: <Widget>[
@@ -1318,11 +1318,11 @@ class _WalletCard extends StatelessWidget {
             : 'مشاهده موجودی و افزایش اعتبار حساب مشترک ربات'),
         children: <Widget>[
           if (!auth.walletLoaded)
-            const Padding(padding: EdgeInsets.all(12), child: Text(
+            const Padding(padding: EdgeInsets.all(AppMetrics.space3), child: Text(
               'برای مشاهده کیف پول، حساب را به ربات متصل و وضعیت را تازه سازی کنید.'))
           else ...<Widget>[
             if (auth.walletPaymentPending)
-              Padding(padding: const EdgeInsets.all(12), child: Text(auth.walletTopupPending
+              Padding(padding: const EdgeInsets.all(AppMetrics.space3), child: Text(auth.walletTopupPending
                 ? 'درخواست شارژ ${_walletMoney(auth.walletPendingCredit)} تومان در انتظار تأیید است؛ مبلغ درگاه ${_walletMoney(auth.walletPendingAmount)} تومان. اگر مبلغ کسر شده، دوباره پرداخت نکنید.'
                 : 'یک پرداخت اشتراک در حال بررسی است؛ ابتدا آن را تکمیل یا از ربات پیگیری کنید.')),
             Wrap(spacing: 8, runSpacing: 8, children: <Widget>[

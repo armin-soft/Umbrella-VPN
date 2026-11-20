@@ -1077,7 +1077,7 @@ class AuthController extends ChangeNotifier {
   }
 
   /// خرید یا تمدید از همان تعرفه/کیف پول ربات؛ checkout URL فقط پس از ساخت
-  /// سفارش سرورمحور برمی‌گردد و نتیجه پرداخت در callback زرین‌پال تایید می‌شود.
+  /// سفارش سرورمحور برمی گردد و نتیجه پرداخت در callback زرین پال تایید می شود.
   Future<({String status, String checkoutUrl, String message})?>
       purchaseSubscriptionPlan(String month, {int? days, double? gb, int? quotedPrice}) async {
     final SessionData? session = _session;
