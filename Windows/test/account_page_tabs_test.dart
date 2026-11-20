@@ -141,7 +141,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey<String>('account-tab-content-summary')),
+    expect(find.byKey(const PageStorageKey<String>('account-tab-content-summary')),
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsNothing);
@@ -154,7 +154,7 @@ void main() {
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('account-wallet-balance')),
         findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('account-tab-content-wallet')),
+    expect(find.byKey(const PageStorageKey<String>('account-tab-content-wallet')),
         findsOneWidget);
 
     await tester.tap(
@@ -185,7 +185,7 @@ void main() {
     expect(find.text('شماره کاربری در پنل'), findsNothing);
     expect(find.textContaining('کاربر شماره'), findsNothing);
     expect(
-      find.byKey(const ValueKey<String>('account-tab-content-profile')),
+      find.byKey(const PageStorageKey<String>('account-tab-content-profile')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

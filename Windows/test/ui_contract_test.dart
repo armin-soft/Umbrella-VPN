@@ -869,8 +869,8 @@ void main() {
       expect(connect.contains('QuickConnectionPanel('), isTrue);
       final String quick = read('lib/ui/widgets/quick_connection_panel.dart');
       expect(quick.contains("'اشتراک گذاری اتصال'"), isTrue);
-      expect(quick.contains("'امنیت بیشتر'"), isTrue);
-      expect(quick.contains("'رفع فیلتر پروکسی'"), isTrue);
+      expect(quick.contains("'امنیت بیشتر'"), isFalse);
+      expect(quick.contains("'رفع فیلتر پروکسی'"), isFalse);
       expect(quick.contains('LanSharingDialog.show'), isTrue);
     });
 

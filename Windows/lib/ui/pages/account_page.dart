@@ -895,13 +895,6 @@ class _AccountPageState extends State<AccountPage> {
                         ? 'در حال ساخت لینک...'
                         : 'عضویت و اتصال ربات',
                   ),
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: () => _autoSync(),
-                      icon: const Icon(Icons.sync_rounded),
-                      label: const Text('بررسی وضعیت اتصال'),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1605,7 +1598,7 @@ class _WalletCard extends StatelessWidget {
                   ? (auth.walletPaymentPending
                       ? Icons.hourglass_top_rounded
                       : Icons.check_circle_rounded)
-                  : Icons.sync_rounded,
+                  : Icons.account_balance_wallet_outlined,
               color: stateColor,
               dense: true,
             ),
