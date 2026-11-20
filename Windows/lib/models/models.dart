@@ -2187,6 +2187,7 @@ class AppSettings {
     this.closeToTray = true,
     this.soundEnabled = true,
     this.notificationsEnabled = true,
+    this.batteryOptimization = true,
     this.selectionMode = SelectionMode.auto,
     this.corePreference = CorePreference.auto,
     this.serviceMode = InboundServiceMode.vpn,
@@ -2252,6 +2253,7 @@ class AppSettings {
   final bool closeToTray;
   final bool soundEnabled;
   final bool notificationsEnabled;
+  final bool batteryOptimization;
   final SelectionMode selectionMode;
 
   /// هسته انتخابی کاربر؛ خودکار یعنی زنجیره پیش فرض.
@@ -2320,6 +2322,7 @@ class AppSettings {
     bool? closeToTray,
     bool? soundEnabled,
     bool? notificationsEnabled,
+    bool? batteryOptimization,
     SelectionMode? selectionMode,
     CorePreference? corePreference,
     InboundServiceMode? serviceMode,
@@ -2383,6 +2386,7 @@ class AppSettings {
       closeToTray: closeToTray ?? this.closeToTray,
       soundEnabled: soundEnabled ?? this.soundEnabled,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      batteryOptimization: batteryOptimization ?? this.batteryOptimization,
       selectionMode: selectionMode ?? this.selectionMode,
       corePreference: corePreference ?? this.corePreference,
       serviceMode: serviceMode ?? this.serviceMode,
@@ -2444,6 +2448,7 @@ class AppSettings {
         'closeToTray': closeToTray,
         'soundEnabled': soundEnabled,
         'notificationsEnabled': notificationsEnabled,
+        'batteryOptimization': batteryOptimization,
         'selectionMode': selectionMode.name,
         'corePreference': corePreference.name,
         'serviceMode': serviceMode.name,
@@ -2561,6 +2566,7 @@ class AppSettings {
       soundEnabled: JsonX.boolean(json['soundEnabled'], fallback: true),
       notificationsEnabled:
           JsonX.boolean(json['notificationsEnabled'], fallback: true),
+      batteryOptimization: JsonX.boolean(json['batteryOptimization'], fallback: true),
       selectionMode:
           // `manual` دیگر در رابط نیست؛ اگر در تنظیمات قدیمی مانده باشد،
           // به خودکار برمی گردد تا کاربر گزینه ای نبیند که نمی تواند

@@ -13,6 +13,7 @@ import 'platform/native.dart';
 import 'platform/services.dart';
 import 'state/auth_controller.dart';
 import 'state/settings_controller.dart';
+import 'state/power_controller.dart';
 import 'state/subscription_controller.dart';
 import 'state/toast_controller.dart';
 import 'state/update_controller.dart';
@@ -138,9 +139,16 @@ Future<void> main(List<String> arguments) async {
         settings.landingSeen && auth.signedIn && auth.account.canConnect,
   );
   vpn.updateSettings(settings.settings);
+  final PowerController power = PowerController(
+    readStatus: native.powerStatus,
+    enabled: settings.settings.batteryOptimization,
+  );
+  power.addListener(() => vpn.setBatterySaving(power.active));
+  power.start();
   settings.onDebugLogExpired = vpn.scheduleLiveReload;
   settings.addListener(() {
     vpn.updateSettings(settings.settings);
+    power.setEnabled(settings.settings.batteryOptimization);
     // خاموش کردن صدا یا اعلان در تنظیمات، همان لحظه روی اعلان ها اثر می گذارد.
     auth
       ..soundEnabled = settings.settings.soundEnabled
@@ -148,7 +156,10 @@ Future<void> main(List<String> arguments) async {
   });
   // هر مسیر خروج برنامه (دکمه بستن، سینی سیستم، خاموشی ویندوز یا نصب آپدیت)
   // پیش از نابود شدن پنجره، هسته و CLI را به طور کامل و قطعی می بندد.
-  window.onBeforeQuit = vpn.shutdownForExit;
+  window.onBeforeQuit = () async {
+    power.dispose();
+    await vpn.shutdownForExit();
+  };
   // همگام سازی زنده کنترل محتوا از ربات تلگرام یا تنظیمات برنامه روی موتور اتصال.
   auth.onFilterChanged = vpn.updateContentFilter;
   // اگر حساب در میانه کار منقضی یا مسدود شد، اتصال همان لحظه بسته می شود.

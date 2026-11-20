@@ -236,6 +236,10 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(soundEnabled: value));
   }
 
+  Future<void> setBatteryOptimization(bool value) async {
+    await update(_settings.copyWith(batteryOptimization: value), applyNative: false);
+  }
+
   Future<void> setNotifications(bool value) async {
     await update(_settings.copyWith(notificationsEnabled: value));
   }

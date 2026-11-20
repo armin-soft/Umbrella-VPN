@@ -449,6 +449,16 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const Divider(height: AppMetrics.space3),
               ToggleRow(
+                icon: Icons.battery_saver_rounded,
+                title: 'بهینه سازی باتری لپ تاپ',
+                subtitle: vpn.batterySaving
+                    ? 'فعال روی باتری؛ سنجش های غیرضروری کمتر انجام می شوند'
+                    : 'فعال سازی خودکار روی باتری یا حالت صرفه جویی ویندوز',
+                value: cfg.batteryOptimization,
+                onChanged: settings.setBatteryOptimization,
+              ),
+              const Divider(height: AppMetrics.space3),
+              ToggleRow(
                 icon: Icons.speed_rounded,
                 title: 'نمایش سرعت در سینی سیستم',
                 subtitle: 'نمایش سرعت زنده دریافت و ارسال کنار ساعت',

@@ -213,6 +213,25 @@ void UmbrellaNativePlugin::HandleMethodCall(
         ops_.RunElevated(StringOf(args, "exe"), StringOf(args, "args"))));
     return;
   }
+  // A cheap native query: do not run the full hardware discovery on a timer.
+  if (method == "powerStatus") {
+    SYSTEM_POWER_STATUS power = {};
+    if (!GetSystemPowerStatus(&power)) {
+      result->Success(flutter::EncodableValue());
+      return;
+    }
+    const bool battery_known = power.BatteryFlag != 255;
+    const bool has_battery = battery_known && (power.BatteryFlag & 128) == 0;
+    const bool ac_known = power.ACLineStatus == 0 || power.ACLineStatus == 1;
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("known")] =
+        flutter::EncodableValue(battery_known && (!has_battery || ac_known));
+    map[flutter::EncodableValue("hasBattery")] = flutter::EncodableValue(has_battery);
+    map[flutter::EncodableValue("onBattery")] = flutter::EncodableValue(power.ACLineStatus == 0);
+    map[flutter::EncodableValue("energySaver")] = flutter::EncodableValue(power.SystemStatusFlag == 1);
+    result->Success(flutter::EncodableValue(map));
+    return;
+  }
   if (method == "deviceInfo") {
     DeviceInfo info = ops_.CollectDeviceInfo();
     flutter::EncodableMap map;

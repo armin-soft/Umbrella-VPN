@@ -26,6 +26,12 @@ import 'tunnel_probe.dart';
 import 'speed_test.dart';
 import 'verified_probe.dart';
 
+/// سرعت میانگین بر حسب بایت در ثانیه با فاصله واقعی نمونه ها.
+double trafficBytesPerSecond(int delta, Duration elapsed) {
+  if (delta <= 0 || elapsed.inMicroseconds <= 0) return 0;
+  return delta * Duration.microsecondsPerSecond / elapsed.inMicroseconds;
+}
+
 enum VpnStatus {
   disconnected,
   preparing,
@@ -275,6 +281,20 @@ class VpnController extends ChangeNotifier {
 
   TunnelStats _stats = TunnelStats.empty;
   TunnelStats get stats => _stats;
+  bool _batterySaving = false;
+  bool get batterySaving => _batterySaving;
+  final Stopwatch _statsClock = Stopwatch();
+  Duration? _lastStatsSample;
+  Duration? _lastTraySpeedUpdate;
+
+  /// تغییر بازه ها بدون بازنشانی اتصال، آمار یا اندازه گیری زنده.
+  void setBatterySaving(bool value) {
+    if (_disposed || _batterySaving == value) return;
+    _batterySaving = value;
+    if (_statsTimer?.isActive ?? false) _scheduleStatsTimer();
+    if (_liveTimer?.isActive ?? false) _scheduleLiveTimer();
+    _notify();
+  }
 
   GeoInfo _geo = GeoInfo.empty;
   GeoInfo get geo => _geo;
@@ -3930,8 +3950,12 @@ class VpnController extends ChangeNotifier {
 
   void _startTimers({int initialPingMs = 0}) {
     _startLiveMeasurement(initialPingMs: initialPingMs);
-    _statsTimer?.cancel();
-    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickStats());
+    _statsClock
+      ..reset()
+      ..start();
+    _lastStatsSample = null;
+    _lastTraySpeedUpdate = null;
+    _scheduleStatsTimer();
     _healthTimer?.cancel();
     _healthTimer =
         Timer.periodic(const Duration(seconds: 15), (_) => _tickHealth());
@@ -3951,6 +3975,18 @@ class VpnController extends ChangeNotifier {
         unawaited(refreshPings(all: false, tunnelProbe: false));
       },
     );
+  }
+
+  void _scheduleStatsTimer() {
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(
+      Duration(seconds: _batterySaving ? 5 : 1), (_) => _tickStats());
+  }
+
+  void _scheduleLiveTimer() {
+    _liveTimer?.cancel();
+    _liveTimer = Timer.periodic(Duration(seconds: _batterySaving ? 30 : 10),
+        (_) => unawaited(_refreshLivePing()));
   }
 
   /// خواندن پینگ واقعی خروجی فعال: ابتدا بدون سربار شبکه از پایش داخلی خود
@@ -3979,9 +4015,7 @@ class VpnController extends ChangeNotifier {
         }
       }),
     );
-    _liveTimer = Timer.periodic(const Duration(seconds: 10), (Timer _) {
-      unawaited(_refreshLivePing());
-    });
+    _scheduleLiveTimer();
   }
 
   Future<void> _refreshLivePing() async {
@@ -4160,8 +4194,12 @@ class VpnController extends ChangeNotifier {
       if (!_status.active) {
         return;
       }
-      final bool hadPrevious =
+      final Duration now = _statsClock.elapsed;
+      final Duration elapsed = _lastStatsSample == null
+          ? Duration.zero : now - _lastStatsSample!;
+      final bool hadPrevious = raw.available &&
           _stats.available && _stats.adapter == raw.adapter;
+      _lastStatsSample = raw.available ? now : null;
       final int downDelta = hadPrevious ? raw.rx - _stats.rx : 0;
       final int upDelta = hadPrevious ? raw.tx - _stats.tx : 0;
       _stats = _stats.copyWith(
@@ -4169,15 +4207,16 @@ class VpnController extends ChangeNotifier {
         tx: raw.tx,
         available: raw.available,
         adapter: raw.adapter,
-        downSpeed: downDelta > 0 ? downDelta.toDouble() : 0,
-        upSpeed: upDelta > 0 ? upDelta.toDouble() : 0,
+        downSpeed: trafficBytesPerSecond(downDelta, elapsed),
+        upSpeed: trafficBytesPerSecond(upDelta, elapsed),
         connectedFor: _connectedAt == null
             ? Duration.zero
             : DateTime.now().difference(_connectedAt!),
       );
       if (_settings.showSpeedInTray && _connectedAt != null) {
-        final int seconds = DateTime.now().difference(_connectedAt!).inSeconds;
-        if (seconds % 5 == 0) {
+        if (_lastTraySpeedUpdate == null ||
+            now - _lastTraySpeedUpdate! >= const Duration(seconds: 5)) {
+          _lastTraySpeedUpdate = now;
           await _tray.update(
             state: 'connected',
             tooltip:

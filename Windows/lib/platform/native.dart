@@ -25,6 +25,16 @@ class NativeHttpResponse {
   final String error;
 }
 
+/// وضعیت سبک برق ویندوز؛ مقدار نامشخص هرگز به معنی باتری فرض نمی شود.
+class BatteryPowerState {
+  const BatteryPowerState({required this.hasBattery, required this.onBattery,
+    required this.energySaver});
+  final bool hasBattery;
+  final bool onBattery;
+  final bool energySaver;
+  bool get shouldOptimize => hasBattery && (onBattery || energySaver);
+}
+
 /// پل ارتباط با لایه بومی ویندوز (پلاگین umbrella_native).
 ///
 /// هر متد در صورت نبود پلاگین مقدار امن برمی گرداند تا رابط کاربری هرگز
@@ -240,6 +250,21 @@ class NativeBridge {
         'args': args,
       }) ??
       false;
+
+  /// عدم پشتیبانی از این متد نباید کل پل بومی را از کار بیندازد.
+  Future<BatteryPowerState?> powerStatus() async {
+    try {
+      final raw = await _channel.invokeMapMethod<String, dynamic>('powerStatus');
+      if (raw == null || raw['known'] != true || raw['hasBattery'] is! bool ||
+          raw['onBattery'] is! bool || raw['energySaver'] is! bool) return null;
+      return BatteryPowerState(hasBattery: raw['hasBattery'] as bool,
+          onBattery: raw['onBattery'] as bool, energySaver: raw['energySaver'] as bool);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
 
   Future<DeviceProfile> deviceInfo() async {
     final Map<Object?, Object?>? raw =
