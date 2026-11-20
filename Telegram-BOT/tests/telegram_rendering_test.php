@@ -81,7 +81,7 @@ public static function showEmergency(): bool { return false; }
 $Source = file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
 eval(preg_replace('/\?>\s*$/', '', substr($Source, strpos($Source, 'final class SubscriptionFlow {'))));
 HttpClient::$Calls = []; HttpClient::$Replies = [];
-SubscriptionFlow::mySubscription(new Context());
+SubscriptionFlow::mySubscriptionActive(new Context());
 $Rendered = implode("\n", array_map(fn($C) => $C[1]['text'] ?? '', HttpClient::$Calls));
 check(str_contains($Rendered, 'private-123+/=') && str_contains($Rendered, 'wire-456+/='), 'actual subscription preserves all keys');
 check(str_contains($Rendered, 'https://sub.test/client-123/sub/'), 'actual subscription includes usable URL');
@@ -91,7 +91,7 @@ SubscriptionFlow::mySubscriptionActive(new Context());
 check(str_contains(end(HttpClient::$Calls)[1]['text'], 'غیرفعال'), 'inactive direct caller has a non-null renderer');
 foreach ([['Phone' => ''], ['Subscription' => null], ['Client_ID' => '_']] as $Change) {
 Repository::$User = array_merge(['Phone' => '09123456789', 'Subscription' => 'standard', 'Client_ID' => 'client-123'], $Change);
-HttpClient::$Calls = []; SubscriptionFlow::mySubscription(new Context());
+HttpClient::$Calls = []; SubscriptionFlow::mySubscriptionActive(new Context());
 check(count(array_filter(HttpClient::$Calls, fn($C) => isset($C[1]['text']) && $C[1]['text'] !== '')) > 0, 'missing profile, no plan and inconsistent client all render');
 }
 echo "OK Telegram rendering ({$N} assertions)\n";

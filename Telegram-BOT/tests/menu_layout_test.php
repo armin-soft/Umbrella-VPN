@@ -219,9 +219,11 @@ $End = strpos($Source, 'private static function categoryMenu(', $Start);
 $Body = substr($Source, $Start, $End - $Start);
 $this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
 $this->check_main_rows($Body, 'Menu_Rows', [
-'user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu',
-'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
+'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu',
+'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
 ]);
+$this->check(str_contains($Body, 'if (!self::ownsCurrentSubscription($User))')
+&& str_contains($Body, "Menu::button('💎مدیریت اشتراک', 'user_subscriptions_menu')"), 'management category is added only for users without a current subscription');
 }
 
 private function test_admin_menu_is_vertical(): void {

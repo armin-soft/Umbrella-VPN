@@ -50,6 +50,7 @@ public static function getUser(string $Id): array { return self::$Response ?? ['
 final class Common {
 public static function greet(Context $Context, string $Section): string { return $Section; }
 public static function isRobotOn(): bool { return (Repository::$Settings['Robot_Status'] ?? '🟢روشن') === '🟢روشن'; }
+public static function syncSubscriptionFromServer(array $User, ?array $Live = null): array { return $User; }
 }
 final class Database {
 public static function getInstance(): self { return new self(); }
@@ -307,14 +308,17 @@ $Expected = $HasSubscription ? ['اشتراک آماده', 'اشتراک دلخ�
 if ($RenewVisible) $Expected[] = 'منوی تمدید خودکار';
 $Expected[] = 'منوی خدمات ربات';
 check(calls() === $Expected, $Label . ': correct subscription actions');
-check(array_map('count', TelegramClient::$Last['inline_keyboard']) === array_merge($HasSubscription ? [2] : [2, 1, 1], $RenewVisible ? [1, 1] : [1]), $Label . ': subscription row grouping');
+$Expected_Widths = array_merge([2], $HasSubscription ? [] : [1], $RenewVisible ? [1] : [], [1]);
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === $Expected_Widths, $Label . ': subscription row grouping');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], $Label . ': navigation preserves payment');
 }
 }
 Repository::$User = [];
 $UserContext->IsCallback = true;
 $SubscriptionSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
-check(!str_contains($SubscriptionSource, 'mySubscriptionActive') && !str_contains($SubscriptionSource, 'public static function mySubscription('), 'subscription display actions are removed');
+$DispatcherSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Dispatcher.php');
+check(!str_contains($SubscriptionSource, 'public static function mySubscription(')
+&& str_contains($DispatcherSource, "'اشتراک من' => [UserFlow::class, 'profile']"), 'subscription display uses the profile flow');
 check(str_contains($SubscriptionSource, 'پروفایل کاربری') && str_contains($SubscriptionSource, "'اشتراک آماده'"), 'renewal flow keeps profile action and purchase flow');
 $UserLeafParents = [
 'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'usageRanking' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],

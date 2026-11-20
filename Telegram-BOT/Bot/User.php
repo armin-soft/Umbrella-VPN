@@ -286,8 +286,12 @@ return;
 }
 
 $Text = Common::greet($Context, 'منوی خدمات ربات') . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
+$User = Repository::getUser($Context->UserId) ?? [];
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+if (!self::ownsCurrentSubscription($User) && $Client_ID !== '' && $Client_ID !== '_') {
+[$User] = self::subscriptionMenuState($Context->UserId);
+}
 $Menu_Rows = Menu::rows([
-[['💎مدیریت اشتراک', 'user_subscriptions_menu']],
 [['💰کیف پول و مالی', 'user_wallet_menu']],
 [['👤حساب کاربری', 'user_account_menu']],
 [['📱دستگاه من', 'user_device_menu']],
@@ -296,6 +300,9 @@ $Menu_Rows = Menu::rows([
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]);
+if (!self::ownsCurrentSubscription($User)) {
+array_unshift($Menu_Rows, [Menu::button('💎مدیریت اشتراک', 'user_subscriptions_menu')]);
+}
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -482,21 +489,20 @@ self::subscriptionsMenu($Context);
 return false;
 }
 
+// A paused client still owns its plan; an explicitly expired plan can be renewed.
+private static function ownsCurrentSubscription(array $User): bool {
+$Subscription = trim((string)($User['Subscription'] ?? ''));
+$Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
+return $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
+}
+
 public static function subscriptionsMenu(Context $Context): void {
 if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
 [$User, $Live] = self::subscriptionMenuState($Context->UserId);
-$Subscription = trim((string)($User['Subscription'] ?? ''));
-$Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
-// توقف کلاینت، مالکیت اشتراک را از بین نمی برد. تاریخ نامشخص نیز
-// نباید باعث نمایش خرید مجدد برای اشتراک ثبت شده شود.
-$Has_Subscription = $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
 $Rows = Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
 ]);
-if (!$Has_Subscription) {
-$Rows = array_merge($Rows, Menu::rows([
-[['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
-]));
+if (!self::ownsCurrentSubscription($User)) {
 if ((int)($User['Free_Plan_Claimed'] ?? 0) !== 1) {
 $Rows[] = [Menu::button('🎁اشتراک رایگان', 'اشتراک رایگان اول')];
 }
@@ -626,6 +632,16 @@ $Days_Remaining = $Diff > 0 ? (int)ceil($Diff / 86400) : 0;
 }
 
 $Client_Raw = trim((string)($User['Client_ID'] ?? ''));
+$Client_ID = htmlspecialchars($Client_Raw !== '' && $Client_Raw !== '_' ? $Client_Raw : 'نامشخص', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$ED_Private = htmlspecialchars(trim((string)($User['ED_25519_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$ED_Public = htmlspecialchars(trim((string)($User['ED_25519_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$WG_Private = htmlspecialchars(trim((string)($User['WireGuard_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$WG_Public = htmlspecialchars(trim((string)($User['WireGuard_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$WG_PSK = htmlspecialchars(trim((string)($User['WireGuard_PSK'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$Has_Keys = false;
+foreach ([$ED_Private, $ED_Public, $WG_Private, $WG_Public, $WG_PSK] as $Key) {
+if ($Key !== '' && $Key !== '-') { $Has_Keys = true; break; }
+}
 $Has_Subscription = (trim((string)($User['Subscription'] ?? '')) !== '')
 || ($Has_Expiry && $Days_Remaining > 0)
 || ($Client_Raw !== '' && $Client_Raw !== '_');
