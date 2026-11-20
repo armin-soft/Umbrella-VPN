@@ -13,7 +13,6 @@ on:
         options:
           - draft
           - artifact
-          - artifact_to_draft
           - beta
           - release
           - both
@@ -28,30 +27,6 @@ concurrency:
   group: windows-installer-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  transfer-verified-installer:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact_to_draft' }}
-    runs-on: windows-2022
-    timeout-minutes: 15
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ github.token }}
-          run-id: 44710606888
-          name: UmbrellaVPN-Setup-0.0.1-x64
-          path: installer-transfer
-      - name: Verify and attach installer to new draft
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $files = @(Get-ChildItem installer-transfer -Filter '*.exe' -File -Recurse)
-          if ($files.Count -ne 1 -or $files[0].Name -ne 'UmbrellaVPN-Setup-0.0.1-x64.exe') { throw 'Expected exactly the Windows installer' }
-          $sha = (Get-FileHash $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          gh release upload v0.0.1-windows-ui $files[0].FullName --repo armin-soft/Umbrella-VPN
-          if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
-          $release = gh api repos/armin-soft/Umbrella-VPN/releases/452495925 | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or !$release.draft -or $release.assets.Count -ne 1 -or $release.assets[0].digest -ne "sha256:$sha") { throw 'Draft digest verification failed' }
-          Write-Output "::notice title=Verified installer SHA-256::$sha"
   telegram-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 10
