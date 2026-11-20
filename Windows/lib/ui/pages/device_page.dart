@@ -262,6 +262,7 @@ class _DevicePageState extends State<DevicePage> {
 
     final DeviceProfile device =
         _hasDeviceData(_device) ? _device : vpn.device;
+    final bool showInitialLoading = _loading && !_hasDeviceData(device);
 
     final int cores =
         device.cpuCores > 0 ? device.cpuCores : Platform.numberOfProcessors;
@@ -561,7 +562,7 @@ class _DevicePageState extends State<DevicePage> {
               subtitle:
                   'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه محلی و شناسه این رایانه',
               icon: Icons.devices_rounded,
-              actions: _loading
+              actions: showInitialLoading
                   ? const <Widget>[
                       SizedBox(
                         key: ValueKey<String>(
