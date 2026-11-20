@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">فیلترشکن آمبرلا</string>
+    <string name="tile_label">آمبرلا</string>
+    <string name="channel_vpn_name">وضعیت اتصال آمبرلا</string>
+    <string name="channel_vpn_desc">نمایش وضعیت زنده تونل امن و سرعت اتصال</string>
+    <string name="channel_alerts_name">اعلان های آمبرلا</string>
+    <string name="channel_alerts_desc">اعلان های حساب کاربری، اشتراک و امنیت اتصال</string>
+    <string name="status_starting">در حال اتصال...</string>
+    <string name="status_connected">متصل • اتصال امن برقرار است</string>
+    <string name="status_stopping">در حال قطع اتصال...</string>
+    <string name="status_stopped">قطع</string>
+    <string name="action_disconnect">قطع اتصال</string>
+    <string name="action_open">باز کردن برنامه</string>
+</resources>

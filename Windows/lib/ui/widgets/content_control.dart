@@ -24,6 +24,8 @@ class _ContentControlCardState extends State<ContentControlCard> {
   static const Map<String, IconData> _categoryIcons = <String, IconData>{
     'adult': Icons.no_adult_content_rounded,
     'gambling': Icons.casino_rounded,
+    'ads': Icons.ad_units_rounded,
+    'dating': Icons.person_off_rounded,
   };
 
   final TextEditingController _domainController = TextEditingController();
@@ -419,8 +421,6 @@ class _ContentControlCardState extends State<ContentControlCard> {
               );
             },
           ),
-          const SizedBox(height: AppMetrics.space3),
-          _ContentFilterInfo(colors: colors),
           const Divider(height: AppMetrics.space5),
 
           // ── مدیریت دامنه های سفارشی (افزودن، جست وجو، حذف تکی و حذف همه) ──
@@ -660,77 +660,6 @@ class _ContentControlCardState extends State<ContentControlCard> {
       busy: busy,
       colors: colors,
       onTap: onTap,
-    );
-  }
-}
-
-/// راهنمای برندشده کنترل محتوا؛ مسدودسازی شبکه ای به مرورگر اجازه نمایش HTML سفارشی نمی دهد.
-class _ContentFilterInfo extends StatelessWidget {
-  const _ContentFilterInfo({required this.colors});
-
-  final UmbrellaColors colors;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey<String>('content-filter-block-info'),
-      padding: const EdgeInsets.all(AppMetrics.space3),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.centerStart,
-          end: AlignmentDirectional.centerEnd,
-          colors: <Color>[
-            colors.primary.withValues(alpha: 0.12),
-            colors.surfaceHigh.withValues(alpha: 0.78),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
-            child: Image.asset(
-              BrandAssets.logo,
-              width: 36,
-              height: 36,
-              fit: BoxFit.contain,
-              errorBuilder:
-                  (BuildContext context, Object error, StackTrace? stack) =>
-                      Icon(
-                        Icons.gpp_bad_rounded,
-                        color: colors.primary,
-                        size: 32,
-                      ),
-            ),
-          ),
-          const SizedBox(width: AppMetrics.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'راهنمای صفحه مسدودشده',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: colors.textPrimary,
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: AppMetrics.space1),
-                Text(
-                  'آمبرلا سایت های این فهرست را در لایه شبکه مسدود می کند؛ بنابراین مرورگر صفحه خطای خودش را نشان می دهد. نمایش صفحه اختصاصی روی همه سایت های HTTPS نیازمند رهگیری رمزگذاری و نصب گواهی روی دستگاه است و برای حفظ امنیت انجام نمی شود. تبلیغاتی که از دامنه اصلی همان سایت بارگذاری می شوند ممکن است باقی بمانند. اگر دامنه ای در فهرست ها نبود، آن را در دامنه های سفارشی اضافه کنید.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                        height: 1.55,
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

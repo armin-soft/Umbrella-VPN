@@ -21,13 +21,17 @@ public const DOMAINS_PER_PAGE = 8;
 public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'gambling' => 'شرط بندی',
+'ads' => 'تبلیغات',
+'dating' => 'دوست یابی',
 ];
 
 public const CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'social' => 'شبکه های اجتماعی',
 'gambling' => 'شرط بندی',
+'ads' => 'تبلیغات',
 'streaming' => 'ویدیو و پخش',
+'dating' => 'دوستیابی',
 'violence' => 'محتوای خشن',
 'messaging' => 'پیام رسان ها',
 ];
@@ -37,7 +41,9 @@ private const COLUMNS = [
 'adult' => 'Adult',
 'social' => 'Social',
 'gambling' => 'Gambling',
+'ads' => 'Ads',
 'streaming' => 'Streaming',
+'dating' => 'Dating',
 'violence' => 'Violence',
 'messaging' => 'Messaging',
 ];
@@ -333,9 +339,6 @@ $Values = [
 'Custom_Domains' => implode("\n", $Domains),
 'Updated_By' => $Source === 'bot' ? 'bot' : 'app',
 ];
-// Retire the legacy dating flag whenever settings are saved. It is deliberately
-// not part of the public categories list, but existing rows may still have it set.
-$Values['Dating'] = 0;
 
 foreach (self::CATEGORIES as $Key => $Label) {
 $Values[self::COLUMNS[$Key]] = in_array($Key, $Categories, true) ? 1 : 0;

@@ -584,12 +584,14 @@ void main() {
         final List<Map<String, dynamic>> rejectRouteRules = routeRules
             .where((Map<String, dynamic> item) => item['action'] == 'reject')
             .toList();
-        expect(rejectRouteRules.length, greaterThanOrEqualTo(3));
+        expect(rejectRouteRules.length, greaterThanOrEqualTo(5));
         expect(
           jsonEncode(rejectRouteRules),
           allOf(
             contains('pornhub.com'),
             contains('bet365.com'),
+            contains('doubleclick.net'),
+            contains('tinder.com'),
             contains('blocked.example.com'),
           ),
         );
@@ -730,12 +732,10 @@ void main() {
           ruleSetDump,
           allOf(
             contains('geosite-category-porn.srs'),
-            contains('geosite-pornhub.srs'),
             contains('geosite-category-betting-ru.srs'),
-            contains('hagezi-gambling.srs'),
-            contains('hagezi-nsfw.srs'),
-            contains('oisd-nsfw.srs'),
-            contains('Iran-sing-box-rules/rule-set/geosite-category-porn.srs'),
+            contains('geosite-category-ads-all.srs'),
+            contains('geosite-category-ads-and-telemetry.srs'),
+            contains('geosite-category-ads-ir.srs'),
             contains('geosite-ir.srs'),
             contains('geoip-ir.srs'),
           ),

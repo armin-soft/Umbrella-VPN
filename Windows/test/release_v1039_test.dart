@@ -69,10 +69,10 @@ void main() {
   });
 
   group('v1.0.39 — همگام سازی کامل کنترل محتوا با ربات تلگرام', () {
-    test('دو دسته رسمی با ربات تلگرام همگام می شوند و دسته بازنشسته نادیده گرفته می شود', () {
+    test('دقیقاً چهار دسته رسمی ربات تلگرام پشتیبانی و همگام می شوند', () {
       expect(
         FilterSettings.categoryLabels.keys.toList(),
-        <String>['adult', 'gambling'],
+        <String>['adult', 'gambling', 'ads', 'dating'],
       );
 
       final FilterSettings parsed = FilterSettings.fromJson(<String, dynamic>{
@@ -88,8 +88,7 @@ void main() {
         'updated_by': 'telegram',
       });
       expect(parsed.enabled, isTrue);
-      expect(parsed.categories, <String>['adult']);
-      expect(FilterSettings.empty.toggleCategory('dating').categories, isEmpty);
+      expect(parsed.categories, <String>['adult', 'ads', 'dating']);
       expect(
         parsed.normalizedCustomDomains,
         <String>['example.com', 'tracker.net'],
@@ -138,7 +137,7 @@ void main() {
         logFile: 'core.log',
         contentFilter: const FilterSettings(
           enabled: true,
-          categories: <String>['adult', 'gambling'],
+          categories: <String>['adult', 'gambling', 'ads', 'dating'],
           customDomains: <String>['custom-block.test'],
         ),
       );
@@ -160,7 +159,7 @@ void main() {
         logFile: 'core.log',
         contentFilter: const FilterSettings(
           enabled: false,
-          categories: <String>['adult'],
+          categories: <String>['adult', 'ads'],
         ),
       );
       expect(disabled.containsKey('route-rule'), isFalse);
@@ -703,7 +702,7 @@ void main() {
       expect(coreJson['enable-fake-dns'], isTrue);
       expect(coreJson['region'], 'ir');
       expect(coreJson['bypass-lan'], isTrue);
-      expect(coreJson['block-ads'], isFalse);
+      expect(coreJson['block-ads'], isTrue);
       expect(coreJson['resolve-destination'], isTrue);
       expect(coreJson['block-quic'], isTrue);
       expect(coreJson['ipv6-mode'], 'prefer_ipv6');

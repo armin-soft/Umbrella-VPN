@@ -46,7 +46,7 @@ final class Database {
 public static array $Notices = [];
 public static array $Queries = [];
 public static int $Writes = 0;
-public static array $Filter = ['Enabled' => 1, 'Adult' => 1, 'Social' => 1, 'Dating' => 1, 'Custom_Domains' => 'old.example'];
+public static array $Filter = ['Enabled' => 1, 'Adult' => 1, 'Social' => 1, 'Custom_Domains' => 'old.example'];
 public static function getInstance(): self { return new self(); }
 private function notices(int $User): array { return array_values(array_filter(self::$Notices, static fn(array $Row): bool => $Row['Owner'] === $User)); }
 public function scalar(string $Query, array $Params, int $Default): int { self::$Queries[] = [$Query, $Params]; return count($this->notices($Params[0])); }
@@ -77,18 +77,14 @@ return TelegramClient::$Rows === [] ? [] : array_column(array_merge(...TelegramC
 }
 $Context = new Context();
 AppFlow::filterMenu($Context);
-check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_domains', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact two categories, custom domains menu, master switch and navigation');
-check(array_map('count', TelegramClient::$Rows) === [2, 1, 1, 1], 'filter categories are paired; custom domains, switch and navigation remain separate');
+check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_toggle:ads', 'app_filter_toggle:dating', 'app_filter_domains', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact four categories, custom domains menu, master switch and navigation');
+check(array_map('count', TelegramClient::$Rows) === [2, 2, 1, 1, 1, 1], 'filter categories are paired; custom domains, switch and navigation remain separate');
 check(str_contains(TelegramClient::$Text, 'دامنه') && !str_contains(TelegramClient::$Text, 'اجتماعی'), 'custom domain count shown and removed social absent from summary');
 $Before = Database::$Filter;
 AppFlow::filterToggle($Context, 'social');
 check(Database::$Writes === 0 && Database::$Filter === $Before, 'old removed category cannot be toggled from bot');
-AppFlow::filterToggle($Context, 'dating');
-check(Database::$Writes === 0 && Database::$Filter === $Before, 'removed dating category cannot be toggled');
-AppFlow::filterToggle($Context, 'ads');
-check(Database::$Writes === 0 && Database::$Filter === $Before, 'removed ads category cannot be toggled');
 AppFlow::filterToggle($Context, 'gambling');
-check(Database::$Filter['Gambling'] === 1 && Database::$Filter['Social'] === 1 && Database::$Filter['Dating'] === 0 && Database::$Filter['Custom_Domains'] === 'old.example', 'visible toggle works without deleting stored app settings');
+check(Database::$Filter['Gambling'] === 1 && Database::$Filter['Social'] === 1 && Database::$Filter['Custom_Domains'] === 'old.example', 'visible toggle works without deleting stored app settings');
 AppFlow::filterDomainsStart($Context);
 check((Repository::$State['Flow'] ?? '') === 'app:filter_domains', 'domain prompt sets flow');
 AppFlow::filterDomainsInput($Context, 'https://www.New.Example/path');

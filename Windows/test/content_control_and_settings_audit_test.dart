@@ -185,10 +185,10 @@ void main() {
   });
 
   group('UmbrellaCore — کنترل محتوای دولایه و هماهنگی با مسیریابی', () {
-    test('مسدودسازی فوری بزرگسالان، قمار و دامنه سفارشی؛ بدون تبلیغات و دسته دوستیابی', () {
+    test('مسدودسازی فوری بزرگسالان، قمار، تبلیغات، دوستیابی و دامنه سفارشی بدون خطای مثبت کاذب', () {
       const FilterSettings all = FilterSettings(
         enabled: true,
-        categories: <String>['adult', 'gambling', 'dating', 'ads'],
+        categories: <String>['adult', 'gambling', 'ads', 'dating'],
         customDomains: <String>['custom-blocked.org'],
       );
 
@@ -206,6 +206,16 @@ void main() {
         'hazarat.com',
         'vip-casino.example',
         'shartbandi-vip.example',
+        'doubleclick.net',
+        'pagead2.googlesyndication.com',
+        'yektanet.com',
+        'tapsell.ir',
+        'ads.yahoo.com',
+        'adserver.example.net',
+        'tinder.com',
+        'api.bumble.com',
+        'badoo.com',
+        'grindr.com',
         'custom-blocked.org',
         'deep.sub.custom-blocked.org',
       ]) {
@@ -215,21 +225,6 @@ void main() {
           reason: 'Expected "$blocked" to be blocked',
         );
       }
-
-      expect(FilterSettings.categoryLabels.keys, <String>['adult', 'gambling']);
-      expect(UmbrellaCore.matchesContentFilter(all, 'tinder.com'), isFalse);
-      final List<Map<String, dynamic>> emitted =
-          UmbrellaCore.contentControlRules(all);
-      expect(emitted[0]['rule_set'], contains(contains('geosite-category-porn.srs')));
-      expect(
-        emitted[0]['rule_set'],
-        contains(contains('Iran-sing-box-rules/rule-set/geosite-category-porn.srs')),
-      );
-      expect(emitted[0]['rule_set'], contains(contains('hagezi-nsfw.srs')));
-      expect(emitted[0]['rule_set'], contains(contains('oisd-nsfw.srs')));
-      expect(emitted[1]['rule_set'], contains(contains('hagezi-gambling.srs')));
-      expect(emitted, hasLength(2));
-      expect(emitted[0]['rule_set'], contains(contains('geosite-pornhub.srs')));
 
       // سایت های سالم و پرکاربرد هرگز نباید به اشتباه مسدود شوند (صفر مثبت کاذب).
       for (final String safe in <String>[
@@ -262,7 +257,7 @@ void main() {
       }
     });
 
-    test('تنظیم قدیمی تبلیغات خاموش می ماند و قوانین geosite و routingRegion تولید می شوند', () {
+    test('مجموعه قوانین رسمی geosite همراه با blockAds و routingRegion حفظ و بدون تکرار تولید می شوند', () {
       final Map<String, dynamic> out = UmbrellaCore.settingsJson(
         tun: true,
         systemProxy: false,
@@ -285,19 +280,34 @@ void main() {
       final List<Map<String, dynamic>> rules =
           ((out['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>)
               .cast<Map<String, dynamic>>();
-      // adult + gambling + customDomains + game.exe + region(ir); legacy blockAds is ignored.
-      expect(rules, hasLength(5));
+      // adult + gambling + customDomains + game.exe + blockAds + region(ir) = 6
+      expect(rules, hasLength(6));
       expect(rules[0]['rule_set'], contains(contains('geosite-category-porn.srs')));
       expect(rules[1]['rule_set'], contains(contains('geosite-category-betting-ru.srs')));
       expect(rules[2]['domain_suffix'], <String>['blocked-user.site']);
       expect(rules[3]['process_name'], <String>['game.exe']);
       expect(rules[3]['outbound'], 'direct');
-      expect(rules[4]['outbound'], 'direct');
-      expect(rules[4]['rule_set'], contains(contains('geosite-ir.srs')));
-      expect(rules[4]['rule_set'], contains(contains('geoip-ir.srs')));
-      expect(out['block-ads'], isFalse);
+      expect(rules[4]['outbound'], 'block');
+      expect(rules[4]['rule_set'], contains(contains('geosite-category-ads-all.srs')));
+      expect(rules[5]['outbound'], 'direct');
+      expect(rules[5]['rule_set'], contains(contains('geosite-ir.srs')));
+      expect(rules[5]['rule_set'], contains(contains('geoip-ir.srs')));
 
-      // تنظیم قدیمی تبلیغات دیگر قانون تبلیغاتی تولید نمی کند.
+      // وقتی دسته ads در کنترل محتوا روشن است، blockAds دوباره تکرار نمی شود.
+      final Map<String, dynamic> dedup = UmbrellaCore.settingsJson(
+        tun: true,
+        systemProxy: false,
+        port: 12334,
+        logFile: 'core.log',
+        networkSettings: const AppSettings(blockAds: true),
+        contentFilter: const FilterSettings(
+          enabled: true,
+          categories: <String>['ads'],
+        ),
+      );
+      final List<dynamic> dedupRules =
+          (dedup['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+      expect(dedupRules, hasLength(1));
     });
   });
 
@@ -679,9 +689,6 @@ void main() {
 
       expect(find.text('کنترل محتوا'), findsOneWidget);
       expect(find.text('دامنه های سفارشی مسدودشده'), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('content-filter-block-info')), findsOneWidget);
-      expect(find.text('راهنمای صفحه مسدودشده'), findsOneWidget);
-      expect(find.textContaining('رهگیری رمزگذاری'), findsOneWidget);
 
       // ورودی نامعتبر باید پیام خطای فارسی نمایش دهد و ذخیره نشود.
       await tester.enterText(

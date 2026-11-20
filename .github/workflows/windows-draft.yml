@@ -1,0 +1,317 @@
+name: Windows installer draft
+on:
+  push:
+    branches: ['arena/**', Default]
+    paths: ['Windows/**', 'Telegram-BOT/**', '.github/workflows/windows-draft.yml']
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release mode (draft, beta, release, or both beta+release)'
+        required: false
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - beta
+          - release
+          - both
+      beta_number:
+        description: 'Beta sequence number when channel is beta (e.g. 1)'
+        required: false
+        default: '1'
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  telegram-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.5']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo, pdo_mysql, pdo_sqlite, mbstring, curl, openssl
+          coverage: none
+      - name: Lint and test Telegram-BOT (PHP ${{ matrix.php }})
+        run: |
+          set -euo pipefail
+          php -v
+          while IFS= read -r -d '' php_file; do
+            if ! lint_out=$(php -d error_reporting=E_ALL -d display_errors=1 -l "$php_file" 2>&1) || echo "$lint_out" | grep -Eq 'Deprecated:|Warning:|Notice:'; then
+              esc="${lint_out//%/%25}"
+              esc="${esc//$'\r'/}"
+              esc="${esc//$'\n'/%0A}"
+              echo "::error title=lint:$php_file::$esc"
+              exit 1
+            fi
+          done < <(find Telegram-BOT -name '*.php' -print0)
+          probe_out=$(php -d error_reporting=E_ALL -d display_errors=1 -r '
+            set_error_handler(static function (int $s, string $m, string $f, int $l): bool {
+              if ((error_reporting() & $s) === 0) return false;
+              fwrite(STDERR, "PHP-ERROR[$s]: $m in $f:$l\n");
+              exit(1);
+            });
+            require_once "Telegram-BOT/Core/Database/Database.php";
+            require_once "Telegram-BOT/Core/Database/Schema.php";
+            require_once "Telegram-BOT/Core/Database/Schema-App.php";
+            require_once "Telegram-BOT/Bot/Dispatcher.php";
+            require_once "Telegram-BOT/Bot/Scheduler.php";
+            require_once "Telegram-BOT/Core/App/App-Gateway.php";
+            $attr = Database::mysqlInitCommandAttribute();
+            if (!is_int($attr)) { fwrite(STDERR, "Expected int init-command attr\n"); exit(1); }
+            if (PHP_VERSION_ID >= 80400 && $attr !== \Pdo\Mysql::ATTR_INIT_COMMAND) {
+              fwrite(STDERR, "Mismatch with Pdo\\Mysql::ATTR_INIT_COMMAND\n"); exit(1);
+            }
+            // Attempt connection to unreachable local port so Database::connection() builds full $Options array on PHP 8.5.
+            putenv("DB_HOST=127.0.0.1"); putenv("DB_PORT=1"); putenv("DB_NAME=test"); putenv("DB_USER=test"); putenv("DB_PASS=test");
+            try { Database::getInstance()->connection(); } catch (PDOException) {}
+            echo "OK runtime load & PDO options probe on PHP " . PHP_VERSION . " (attr=" . $attr . ")\n";
+          ' 2>&1) || {
+            esc="${probe_out//%/%25}"; esc="${esc//$'\r'/}"; esc="${esc//$'\n'/%0A}"
+            echo "::error title=php-runtime-probe::$esc"
+            exit 1
+          }
+          echo "$probe_out"
+          for test_file in Telegram-BOT/tests/*_test.php; do
+            echo "Running $test_file"
+            if ! out=$(php -d error_reporting=E_ALL -d display_errors=1 "$test_file" 2>&1) || echo "$out" | grep -Eq '(^|[[:space:]])(PHP )?(Deprecated|Warning|Notice):'; then
+              esc="${out//%/%25}"
+              esc="${esc//$'\r'/}"
+              esc="${esc//$'\n'/%0A}"
+              echo "::error title=$test_file::$esc"
+              exit 1
+            fi
+            echo "$out"
+          done
+  installer:
+    needs: telegram-bot
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.5'
+          channel: stable
+          cache: true
+      - name: Prepare Flutter scaffold without replacing the custom runner
+        run: |
+          $scaffold = Join-Path $env:RUNNER_TEMP 'umbrella_scaffold'
+          flutter create --platforms=windows --project-name umbrella_vpn $scaffold
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter scaffold failed' }
+          New-Item -ItemType Directory -Force windows/flutter | Out-Null
+          Copy-Item "$scaffold/windows/flutter/CMakeLists.txt" windows/flutter/CMakeLists.txt
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - name: Analyze and test
+        run: |
+          $parseErrors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'diagnostics/Test-NetworkPath.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+          flutter analyze --no-fatal-infos 2>&1 | Tee-Object -Variable analysis
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($analysis | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Analysis failed'
+          }
+          flutter test --reporter expanded 2>&1 | Tee-Object -Variable tests
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($tests | Where-Object { "$_" -notmatch '^\d\d:\d\d ' -or "$_" -match '\[E\]|failed' } | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Tests failed'
+          }
+      - name: Build Windows and bundle verified engine
+        run: |
+          flutter build windows --release 2>&1 | Tee-Object -Variable buildLog
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($buildLog | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Windows build failed'
+          }
+          $bundle = 'build/windows/x64/runner/Release'
+          foreach ($exe in @('UmbrellaVPN.exe','UmbrellaCli.exe','UmbrellaAdmin.exe','UmbrellaCoreEngine.exe','umbrella_native_plugin.dll','flutter_windows.dll')) {
+            if (!(Test-Path "$bundle/$exe")) { throw "Missing binary: $exe" }
+          }
+          # Bundle official Microsoft Visual C++ x64 runtime DLLs so fresh 64-bit
+          # Windows 10 and Windows 11 installations run without pre-installed VC++ redist.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = if (Test-Path $vswhere) { & $vswhere -latest -products * -property installationPath } else { '' }
+          $crtDirs = @()
+          if ($vsRoot) {
+            $crtDirs += Get-ChildItem -Path "$vsRoot\VC\Redist\MSVC" -Recurse -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|spectre' } |
+              Sort-Object FullName -Descending
+          }
+          $crtDlls = @('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','concrt140.dll')
+          foreach ($dll in $crtDlls) {
+            $copied = $false
+            foreach ($dir in $crtDirs) {
+              $candidate = Join-Path $dir.FullName $dll
+              if (Test-Path $candidate) {
+                Copy-Item $candidate "$bundle/$dll" -Force
+                $copied = $true
+                break
+              }
+            }
+            if (!$copied) {
+              $sysCandidate = Join-Path $env:SystemRoot "System32\$dll"
+              if (Test-Path $sysCandidate) {
+                Copy-Item $sysCandidate "$bundle/$dll" -Force
+                $copied = $true
+              }
+            }
+            if (!$copied -and $dll -in @('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll')) {
+              throw "Missing required x64 MSVC runtime DLL: $dll"
+            }
+          }
+          $manifest = Get-Content assets/cores/manifest.json -Raw | ConvertFrom-Json
+          $core = $manifest.cores | Where-Object id -eq 'hiddify'
+          $archive = Join-Path $env:RUNNER_TEMP 'umbrella-core.tar.gz'
+          Invoke-WebRequest $core.url -OutFile $archive
+          $digest = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne $core.sha256) { throw 'Engine digest mismatch' }
+          $extract = Join-Path $env:RUNNER_TEMP 'umbrella-core'
+          New-Item -ItemType Directory -Force $extract | Out-Null
+          tar -xzf $archive -C $extract
+          if ($LASTEXITCODE -ne 0) { throw 'Engine extraction failed' }
+          New-Item -ItemType Directory -Force "$bundle/cores/umbrella" | Out-Null
+          foreach ($mapping in @(@{from='hiddify-core.dll';to='UmbrellaCore.dll'}, @{from='libcronet.dll';to='libcronet.dll'})) {
+            $source = @(Get-ChildItem $extract -Recurse -Filter $mapping.from)
+            if ($source.Count -ne 1) { throw "Missing or ambiguous engine library $($mapping.from)" }
+            Copy-Item $source[0].FullName "$bundle/cores/umbrella/$($mapping.to)"
+          }
+          Copy-Item THIRD-PARTY-NOTICES.txt "$bundle/THIRD-PARTY-NOTICES.txt"
+          Copy-Item licenses "$bundle/licenses" -Recurse
+      - name: Verify generated configuration using the bundled core
+        run: |
+          $env:UMBRELLA_CORE_SMOKE = (Resolve-Path 'build/windows/x64/runner/Release/UmbrellaCli.exe').Path
+          flutter test test/core_engine_contract_test.dart --reporter expanded 2>&1 | Tee-Object -Variable coreTests
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($coreTests | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Bundled core contract tests failed'
+          }
+      - name: Compile installer
+        run: |
+          $iscc = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
+          if (!(Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          & $iscc installer/umbrella.iss 2>&1 | Tee-Object -Variable installerLog
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ($installerLog | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            Write-Output "::error::$detail"
+            throw 'Installer compilation failed'
+          }
+          $files = @(Get-ChildItem installer/output -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
+          Get-FileHash $files[0].FullName -Algorithm SHA256
+      - name: Publish installer-only release or draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          RELEASES_REPO: 'armin-soft/Umbrella-VPN-Releases'
+          CHANNEL: ${{ inputs.channel || 'draft' }}
+          BETA_NUM: ${{ inputs.beta_number || '1' }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          $version = [regex]::Match((Get-Content lib/core/app_config.dart -Raw), "static const String version = '([^']+)'").Groups[1].Value
+          if (!$version) { throw 'Missing version' }
+          $installer = (Get-ChildItem installer/output -Filter '*.exe').FullName
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          $notes = @(
+            "- رفع کامل حلقه قطع و وصل خودکار هنگام فعال بودن تونل (محافظت از آی پی پایه در برابر بازنویسی هنگام فوکوس پنجره و حذف بازنشانی زودهنگام شمارنده بازاتصال)",
+            "- حذف کامل تمام منابع عمومی، رایگان و پشتیبان؛ استفاده انحصاری از اشتراک اختصاصی حساب هر کاربر",
+            "- رفع کامل مشکل دریافت و به روز رسانی اشتراک روی تمامی سیستم های ۶۴ بیتی ویندوز ۱۰ و ۱۱ (WinHTTP و Schannel بومی همراه با دریافت امن از درگاه حساب در صورت محدودیت شبکه)",
+            "- رفع مشکل ورود و ثبت نام کاربران جدید روی ویندوز ۱۰ و ۱۱ شصت و چهار بیتی و همراه سازی کتابخانه های رسمی ۶۴ بیتی مایکروسافت",
+            "- بسته شدن آنی و بدون مکث برنامه همراه با توقف کامل هسته، بازگردانی پروکسی سیستمی و حذف فوری آیکون سینی",
+            "- رابط کاملا فارسی با اعداد فارسی و بدون نیم فاصله در سراسر برنامه",
+            "- هسته آمبرلا نسخه ۵.۹.۱۱ با پایداری تونل و به روز رسانی درون برنامه ای با تایید اصالت فایل",
+            "SHA-256: $sha256"
+          ) -join "`n"
+
+          if (($env:CHANNEL -in @('beta', 'release', 'both')) -and $env:RELEASES_TOKEN) {
+            $env:GH_TOKEN = $env:RELEASES_TOKEN
+            # Ensure target release repository has an empty-tree main branch (ZERO project files/folders)
+            gh api "repos/$env:RELEASES_REPO/git/ref/heads/main" *> $null
+            if ($LASTEXITCODE -ne 0) {
+              $emptyDir = Join-Path $env:RUNNER_TEMP 'umbrella-releases-empty'
+              New-Item -ItemType Directory -Force $emptyDir | Out-Null
+              git -C $emptyDir init -b main
+              git -C $emptyDir config user.name 'Armin Soft'
+              git -C $emptyDir config user.email 'noreply@armin-soft.ir'
+              git -C $emptyDir commit --allow-empty -m 'Initialize installer-only release repository'
+              $authHeader = 'AUTHORIZATION: basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:RELEASES_TOKEN"))
+              git -C $emptyDir -c "http.https://github.com/.extraheader=$authHeader" push "https://github.com/$env:RELEASES_REPO.git" main
+              if ($LASTEXITCODE -ne 0) { throw 'Empty-tree initialization failed' }
+              Remove-Item -Recurse -Force $emptyDir
+            }
+            $treeCount = [int](gh api "repos/$env:RELEASES_REPO/git/trees/main" --jq '.tree | length')
+            if ($treeCount -ne 0) { throw "Refusing to publish: $env:RELEASES_REPO must contain zero project files (found $treeCount)" }
+
+            $betaClean = ($env:BETA_NUM -replace '[^0-9]', '')
+            if (!$betaClean) { $betaClean = '1' }
+            $modes = if ($env:CHANNEL -eq 'both') { @('beta', 'release') } else { @($env:CHANNEL) }
+            foreach ($mode in $modes) {
+              $tag = if ($mode -eq 'beta') { "v$version-beta.$betaClean-windows" } else { "v$version-windows" }
+              $title = if ($mode -eq 'beta') { "Umbrella VPN $version Beta $betaClean - Windows (x64)" } else { "Umbrella VPN $version - Windows (x64)" }
+              gh release view $tag --repo $env:RELEASES_REPO --json tagName *> $null
+              if ($LASTEXITCODE -eq 0) {
+                gh release upload $tag $installer --clobber --repo $env:RELEASES_REPO
+                if ($LASTEXITCODE -ne 0) { throw "Asset upload failed for $tag" }
+                gh release edit $tag --repo $env:RELEASES_REPO --title $title --notes $notes
+              } elseif ($mode -eq 'beta') {
+                gh release create $tag $installer --repo $env:RELEASES_REPO --target main --prerelease --title $title --notes $notes
+              } else {
+                gh release create $tag $installer --repo $env:RELEASES_REPO --target main --latest --title $title --notes $notes
+              }
+              if ($LASTEXITCODE -ne 0) { throw "Release publication failed for $tag" }
+              $rel = gh release view $tag --repo $env:RELEASES_REPO --json url,isDraft,isPrerelease,assets | ConvertFrom-Json
+              if ($rel.assets.Count -ne 1 -or !$rel.assets[0].name.EndsWith('.exe')) {
+                throw "Expected strictly 1 .exe asset on $tag"
+              }
+              Write-Output "Published installer-only release: $($rel.url) -> $($rel.assets[0].name)"
+            }
+            return
+          }
+          if ($env:CHANNEL -in @('beta', 'release', 'both')) {
+            Write-Output '::error::RELEASES_TOKEN secret is not configured. Add a Fine-Grained GitHub token scoped only to armin-soft/Umbrella-VPN-Releases (Contents: Read and write) as RELEASES_TOKEN in Actions secrets.'
+            throw 'Missing RELEASES_TOKEN secret for armin-soft/Umbrella-VPN-Releases'
+          }
+
+          $tag = "v$version-windows"
+          $existing = gh release view $tag --repo $env:SOURCE_REPO --json isDraft,assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (!$release.isDraft) {
+              $tag = "v$version-draft-windows"
+              $existing = gh release view $tag --repo $env:SOURCE_REPO --json isDraft,assets 2>$null
+            }
+          }
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (!$release.isDraft) { throw 'Refusing to replace a published release' }
+            gh release edit $tag --repo $env:SOURCE_REPO --target $env:COMMIT --draft --notes $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Draft update failed' }
+            gh release upload $tag $installer --clobber --repo $env:SOURCE_REPO
+          } else {
+            gh release create $tag $installer --repo $env:SOURCE_REPO --target $env:COMMIT --draft --title "Umbrella VPN $version - Windows (x64)" --notes $notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
+          gh release view $tag --repo $env:SOURCE_REPO --json url,isDraft,assets
+          if ($LASTEXITCODE -ne 0) { throw 'Draft verification failed' }

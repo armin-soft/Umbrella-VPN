@@ -362,6 +362,10 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(bypassLan: value));
   }
 
+  Future<void> setBlockAds(bool value) async {
+    await update(_settings.copyWith(blockAds: value));
+  }
+
   Future<void> setResolveDestination(bool value) async {
     await update(_settings.copyWith(resolveDestination: value));
   }

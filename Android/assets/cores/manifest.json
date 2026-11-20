@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "updated_at": "2026-11-17",
+  "note": "تنها هسته این نسخه همان موتور هسته رسمی ۵٫۹٫۱۱ است که با بررسی اثر انگشت SHA-256 در زمان ساخت داخل بسته APK قرار می گیرد و همه معماری های اندروید (arm64-v8a، armeabi-v7a و x86_64) و صفحه حافظه ۱۶ کیلوبایتی را پشتیبانی می کند. برنامه هیچ هسته ای را در زمان اجرا از اینترنت دانلود نمی کند.",
+  "app": "ir.umbrella.vpn",
+  "cli": "libhiddify-core.so",
+  "cores": [
+    {
+      "id": "hiddify",
+      "title": "موتور آمبرلا",
+      "role": "همه پروتکل ها و همه قالب های اشتراک شخصی با موتور هسته اندروید",
+      "binary": "libhiddify-core.so",
+      "cli_prefix": "umbrella",
+      "version": "5.9.11",
+      "url": "https://github.com/hiddify/hiddify-core/releases/download/v5.9.11/hiddify-lib-android.tar.gz",
+      "archive": "tgz",
+      "inside": "umbrella-core.aar",
+      "required": true,
+      "sha256": "853e897ee2dcbde30801314eb30346e0a4fc61c38f6b4fc4ee901a18fabec3a9"
+    }
+  ]
+}

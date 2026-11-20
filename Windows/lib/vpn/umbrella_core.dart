@@ -196,9 +196,19 @@ class UmbrellaCore {
     };
   }
 
-  /// قوانین کنترل محتوا برای دو دسته همگام با ربات تلگرام
+  /// قوانین مسدودسازی آفلاین و آنی کنترل محتوا برای چهار دسته همگام با ربات تلگرام
   static const String _geoRuleSetBase =
       'https://raw.githubusercontent.com/$id/$id-geo/rule-set';
+
+  /// مجموعه قوانین رسمی مسدودسازی تبلیغات، بدافزار، فیشینگ و استخراج رمز ارز در هسته.
+  static const List<String> adBlockRuleSetUrls = <String>[
+    '$_geoRuleSetBase/block/geoip-phishing.srs',
+    '$_geoRuleSetBase/block/geoip-malware.srs',
+    '$_geoRuleSetBase/block/geosite-malware.srs',
+    '$_geoRuleSetBase/block/geosite-phishing.srs',
+    '$_geoRuleSetBase/block/geosite-cryptominers.srs',
+    '$_geoRuleSetBase/block/geosite-category-ads-all.srs',
+  ];
 
   /// الگوی نشانی قوانین منطقه ای هسته (مستقیم کردن سایت ها و آی پی های داخلی).
   static List<String> regionalRuleSetUrls(String regionCode) => <String>[
@@ -206,12 +216,12 @@ class UmbrellaCore {
         '$_geoRuleSetBase/country/geosite-$regionCode.srs',
       ];
 
-  /// (`adult`, `gambling`) و دامنه های سفارشی کاربر.
+  /// (`adult`, `gambling`, `ads`, `dating`) و دامنه های سفارشی کاربر.
   ///
   /// هر دسته هم قوانین آفلاین فوری (`domain_suffix` / `domain_keyword`) دارد که از
   /// میلی ثانیه اول بدون هیچ وابستگی به دانلود کار می کند و هم مجموعه قوانین رسمی
   /// `.srs` دارد که از داخل تونل بارگذاری و در کش هسته ذخیره می شود تا ده ها هزار
-  /// دامنه و زیردامنه را در لایه DNS و مسیر دامنه مسدود کند.
+  /// دامنه و زیردامنه را در هر دو لایه DNS (`REFUSED`) و مسیر/SNI (`reject`) ببندد.
   static List<Map<String, dynamic>> contentControlRules(
     FilterSettings? filter, {
     int startOrder = 0,
@@ -289,13 +299,6 @@ class UmbrellaCore {
     'adult': _CategoryFilterSpec(
       ruleSets: <String>[
         'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs',
-        // فهرست اختصاصی Pornhub از قوانین Iran-sing-box.
-        'https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-pornhub.srs',
-        // دسته پورن مستقل از قواعد شرط بندی، از فهرست ایران.
-        'https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-category-porn.srs',
-        // فهرست های مستقل و روزآمد HaGeZi و OISD برای پوشش دامنه های جاافتاده.
-        'https://raw.githubusercontent.com/razaxq/dns-blocklists-sing-box/rule-set/hagezi-nsfw.srs',
-        'https://raw.githubusercontent.com/razaxq/dns-blocklists-sing-box/rule-set/oisd-nsfw.srs',
       ],
       suffixes: <String>[
         'xxx',
@@ -387,11 +390,7 @@ class UmbrellaCore {
     ),
     'gambling': _CategoryFilterSpec(
       ruleSets: <String>[
-        // این فهرست رسمی فقط شرط بندی روسی را پوشش می دهد؛ آن را با دامنه های
-        // قمار جهانی/ایرانی تکمیل می کنیم، نه اینکه آن را پوشش جامع فرض کنیم.
         'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-betting-ru.srs',
-        // فهرست اختصاصی شرط بندی HaGeZi (به روزرسانی روزانه، صدها هزار دامنه).
-        'https://raw.githubusercontent.com/razaxq/dns-blocklists-sing-box/rule-set/hagezi-gambling.srs',
       ],
       suffixes: <String>[
         'bet',
@@ -475,7 +474,158 @@ class UmbrellaCore {
         'betting',
       ],
     ),
-
+    'ads': _CategoryFilterSpec(
+      ruleSets: <String>[
+        ...adBlockRuleSetUrls,
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-and-telemetry.srs',
+        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-ir.srs',
+      ],
+      suffixes: <String>[
+        'doubleclick.net',
+        'googlesyndication.com',
+        'googleadservices.com',
+        'google-analytics.com',
+        'googletagmanager.com',
+        'googletagservices.com',
+        'adservice.google.com',
+        '2mdn.net',
+        'adnxs.com',
+        'adsrvr.org',
+        'taboola.com',
+        'outbrain.com',
+        'criteo.com',
+        'criteo.net',
+        'pubmatic.com',
+        'rubiconproject.com',
+        'openx.net',
+        'casalemedia.com',
+        'indexww.com',
+        'smartadserver.com',
+        'advertising.com',
+        'adform.net',
+        'moatads.com',
+        'scorecardresearch.com',
+        'quantserve.com',
+        'popads.net',
+        'popcash.net',
+        'propellerads.com',
+        'adsterra.com',
+        'exoclick.com',
+        'exosrv.com',
+        'juicyads.com',
+        'trafficjunky.net',
+        'trafficstars.com',
+        'hilltopads.net',
+        'clickadu.com',
+        'mgid.com',
+        'revcontent.com',
+        'amazon-adsystem.com',
+        'ads-twitter.com',
+        'ads.yahoo.com',
+        'ads.linkedin.com',
+        'ads.tiktok.com',
+        'analytics.tiktok.com',
+        'an.facebook.com',
+        'pixel.facebook.com',
+        'adcolony.com',
+        'unityads.unity3d.com',
+        'applovin.com',
+        'vungle.com',
+        'ironsrc.com',
+        'chartboost.com',
+        'inmobi.com',
+        'startappservice.com',
+        'appsflyer.com',
+        'adjust.com',
+        'hotjar.com',
+        'mouseflow.com',
+        'clarity.ms',
+        'mc.yandex.ru',
+        'an.yandex.ru',
+        'yektanet.com',
+        'tapsell.ir',
+        'sabavision.com',
+        'mediaad.org',
+        'kaprila.com',
+        'adivery.com',
+        'najva.com',
+        'deemanetwork.com',
+        'raykaad.com',
+      ],
+      keywords: <String>[
+        'doubleclick',
+        'googlesyndication',
+        'googleadservices',
+        'adserver',
+        'popads',
+        'propellerads',
+        'adsterra',
+        'exoclick',
+      ],
+    ),
+    'dating': _CategoryFilterSpec(
+      suffixes: <String>[
+        'dating',
+        'tinder.com',
+        'gotinder.com',
+        'tindersparks.com',
+        'bumble.com',
+        'badoo.com',
+        'badoocdn.com',
+        'okcupid.com',
+        'match.com',
+        'hinge.co',
+        'pof.com',
+        'zoosk.com',
+        'happn.com',
+        'grindr.com',
+        'meetic.com',
+        'eharmony.com',
+        'ashleymadison.com',
+        'seeking.com',
+        'feeld.co',
+        'coffeemeetsbagel.com',
+        'cmb.io',
+        'tantanapp.com',
+        'mamba.ru',
+        'lovoo.com',
+        'tagged.com',
+        'meetme.com',
+        'skout.com',
+        'clover.co',
+        'weareher.com',
+        'scruff.com',
+        'jackd.com',
+        'hornet.com',
+        'muzz.com',
+        'muzmatch.com',
+        'salams.app',
+        'christianmingle.com',
+        'jdate.com',
+        'ourtime.com',
+        'silversingles.com',
+        'elitesingles.com',
+        'parship.de',
+        'theleague.com',
+        'hily.com',
+        'boo.world',
+        'pure.app',
+        'downapp.com',
+        'yubo.live',
+        'azarlive.com',
+        'omegle.com',
+        'ometv.tv',
+        'chatroulette.com',
+      ],
+      keywords: <String>[
+        'tinder',
+        'bumble',
+        'badoo',
+        'okcupid',
+        'grindr',
+        'chatroulette',
+      ],
+    ),
   };
 
   /// پورت های رزروشده ای که همین حالا گرفته اند.
@@ -604,12 +754,13 @@ class UmbrellaCore {
         CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
     final bool timedDiagnostic =
         normalizedLog == 'debug' || normalizedLog == 'trace';
-    // در `hiddify-core v5.9.11` با ارسال `route-rule`، مسیرهای داخلی منطقه و LAN
-    // غیرفعال می شوند (`useAppRules`)؛ گزینه legacy ضدتبلیغات همیشه خاموش است.
+    // در `hiddify-core v5.9.11` به محض ارسال `route-rule`، قوانین داخلی
+    // `block-ads`، `bypass-lan` و `region` خاموش می شوند (`useAppRules`).
     // بنابراین قوانین با ترتیب اولویت دقیق ساخته می شوند:
     // ۱) کنترل محتوا (بالاترین اولویت — حتی دامنه داخلی هم اگر مسدود شده رد می شود)
     // ۲) مسیریابی بر اساس برنامه (در همه حالت های سرویس روی ویندوز فعال است)
-    // ۳) مسیریابی مستقیم منطقه انتخابی (مانند `.ir` + `geoip-ir` + `geosite-ir`)
+    // ۳) مسدودسازی تبلیغات و بدافزار (در صورت روشن بودن `blockAds`)
+    // ۴) مسیریابی مستقیم منطقه انتخابی (مانند `.ir` + `geoip-ir` + `geosite-ir`)
     // قانون `bypass-lan` (`ip_is_private`) نیز در `RuntimeConfig.finalize` حفظ می شود.
     final List<Map<String, dynamic>> combinedRules = <Map<String, dynamic>>[];
     if (!isolatedProbe) {
@@ -630,6 +781,17 @@ class UmbrellaCore {
       }
 
       if (combinedRules.isNotEmpty && networkSettings != null) {
+        final bool adsAlreadyInFilter = (contentFilter?.enabled ?? false) &&
+            (contentFilter?.activeBotCategories.contains('ads') ?? false);
+        if (networkSettings.blockAds && !adsAlreadyInFilter) {
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length,
+            'enabled': true,
+            'name': 'umbrella-block-ads',
+            'outbound': 'block',
+            'rule_set': adBlockRuleSetUrls,
+          });
+        }
         final RoutingRegion region = networkSettings.routingRegion;
         if (region != RoutingRegion.other) {
           final String code = region.coreValue;
@@ -735,7 +897,7 @@ class UmbrellaCore {
       'bypass-lan': networkSettings?.bypassLan ?? false,
       'allow-connection-from-lan': lanShared,
       'block-quic': networkSettings?.blockQuic ?? false,
-      'block-ads': false,
+      'block-ads': networkSettings?.blockAds ?? false,
       'enable-full-config': false,
       'use-xray-core-when-possible': false,
       // رابط کلش روشن است؛ خود هسته در حالت `run` آن را روی ۱۶۷۵۶ باز می
@@ -1069,3 +1231,4 @@ class _CategoryFilterSpec {
   final List<String> keywords;
   final List<String> ruleSets;
 }
+

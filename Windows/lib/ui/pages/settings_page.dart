@@ -313,6 +313,7 @@ class _SettingsPageState extends State<SettingsPage> {
         if (activeApps > 0) {
           return Fa.num('$activeApps برنامه');
         }
+        return cfg.blockAds ? 'ضد تبلیغات' : null;
       case SettingsCategory.dns:
         return cfg.enableFakeDns ? 'دی ان اس مجازی' : null;
       case SettingsCategory.inbound:
@@ -1087,7 +1088,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.route_rounded,
           title: 'منطقه و قوانین مسیریابی',
           subtitle:
-              'عبور مستقیم ترافیک داخلی منطقه انتخابی، شبکه محلی و تنظیم آی پی نسخه ۶',
+              'عبور مستقیم ترافیک داخلی منطقه انتخابی، شبکه محلی، مسدودسازی تبلیغات و تنظیم آی پی نسخه ۶',
           children: <Widget>[
             AnchoredSelectField<RoutingRegion>(
               label: 'منطقه',
@@ -1132,6 +1133,15 @@ class _SettingsPageState extends State<SettingsPage> {
               value: cfg.bypassLan,
               onChanged: (bool v) =>
                   _applyRuntime(vpn, () => settings.setBypassLan(v)),
+            ),
+            const Divider(height: AppMetrics.space3),
+            ToggleRow(
+              icon: Icons.gpp_bad_outlined,
+              title: 'مسدودسازی تبلیغات و بدافزار',
+              subtitle: 'مسدود کردن دامنه های تبلیغاتی و ردیاب در سطح هسته',
+              value: cfg.blockAds,
+              onChanged: (bool v) =>
+                  _applyRuntime(vpn, () => settings.setBlockAds(v)),
             ),
             const Divider(height: AppMetrics.space3),
             ToggleRow(

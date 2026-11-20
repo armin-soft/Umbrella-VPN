@@ -1066,11 +1066,15 @@ class FilterSettings {
   static const Map<String, String> categoryLabels = <String, String>{
     'adult': 'محتوای بزرگسال',
     'gambling': 'شرط بندی',
+    'ads': 'تبلیغات',
+    'dating': 'دوستیابی',
   };
 
   static const Map<String, String> categorySubtitles = <String, String>{
     'adult': 'مسدودسازی دامنه ها و سایت های بزرگسال',
     'gambling': 'مسدودسازی سایت های قمار و شرط بندی',
+    'ads': 'حذف تبلیغات مزاحم و ردیاب ها',
+    'dating': 'مسدودسازی شبکه ها و سایت های دوستیابی',
   };
 
   /// دامنه های زیرساخت خود آمبرلا که مسدودسازی آن ها همگام سازی فیلتر را قفل می کند.
@@ -1088,7 +1092,7 @@ class FilterSettings {
     return out;
   }
 
-  /// دسته های فعال مطابق با سه دسته ربات تلگرام.
+  /// دسته های فعال مطابق با چهار دسته ربات تلگرام.
   List<String> get activeBotCategories =>
       categoryLabels.keys.where(categories.contains).toList(growable: false);
 

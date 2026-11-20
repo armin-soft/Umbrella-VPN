@@ -1014,6 +1014,7 @@ class VpnController extends ChangeNotifier {
         a.enableFakeDns != b.enableFakeDns ||
         a.routingRegion != b.routingRegion ||
         a.bypassLan != b.bypassLan ||
+        a.blockAds != b.blockAds ||
         a.resolveDestination != b.resolveDestination ||
         a.blockQuic != b.blockQuic ||
         a.tlsTricks != b.tlsTricks ||

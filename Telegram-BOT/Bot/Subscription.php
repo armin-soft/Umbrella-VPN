@@ -545,6 +545,180 @@ Menu::userHome(),
 ]));
 }
 
+public static function mySubscriptionActive(Context $Context, ?\Closure $Send = null): void {
+$Send ??= static function (string $Text, array $Markup) use ($Context): void {
+TelegramClient::sendReadableMessage($Context->ChatId, $Context->IsCallback ? $Context->MessageId : null, $Text, $Markup);
+};
+$Greeting = Common::greet($Context, 'اشتراک من');
+$User = Repository::getUser($Context->UserId);
+$Client_ID = (string)($User['Client_ID'] ?? '');
+$Full_Name = $Context->profileName();
+$Subscription = (string)($User['Subscription'] ?? '');
+$Client_Status = (string)($User['Client_Status'] ?? 'فعال');
+$Total_Usage_GB = (float)($User['Total_Usage_GB'] ?? 0);
+$Used_Usage_GB = (float)($User['Used_Usage_GB'] ?? 0);
+$Remaining_GB = (float)($User['Remaining_Usage_GB'] ?? 0);
+$Percent_Val = (float)($User['Percent_Usage'] ?? 0);
+$Package_Start = (string)($User['Package_Start_Date'] ?? '');
+$Package_Duration = (string)($User['Package_Duration'] ?? '');
+$Package_Days = (int)Helper::toEnglish(preg_replace('/[^0-9۰-۹]/u', '', $Package_Duration));
+$Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
+$Expiration = $Expiration_Time_Stamp > 0 ? Helper::formatExpirationShort($Expiration_Time_Stamp) : (string)($User['Expiration_Date'] ?? '');
+$Last_Online = (string)($User['Last_Online'] ?? '');
+$ED_Private = (string)($User['ED_25519_Private_Key'] ?? '');
+$ED_Public = (string)($User['ED_25519_Public_Key'] ?? '');
+$WG_Private = (string)($User['WireGuard_Private_Key'] ?? '');
+$WG_Public = (string)($User['WireGuard_Public_Key'] ?? '');
+$WG_PSK = (string)($User['WireGuard_PSK'] ?? '');
+$Server_Comment = (string)($User['Server_Comment'] ?? '');
+try { $Response = ServerClient::getUser($Client_ID); }
+catch (Throwable) { $Response = ['StatusCode' => 503]; }
+$Data = $Response['Json'] ?? null;
+if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره شده نمایش داده می شود.\n";
+
+if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300) {
+$Usage_Limit = (float)($Data['usage_limit_GB'] ?? 0);
+$Used_GB = (float)($Data['current_usage_GB'] ?? 0);
+$Remaining_GB = max(0, $Usage_Limit - $Used_GB);
+$Percent_Val = $Usage_Limit > 0 ? round(($Used_GB / $Usage_Limit) * 100, 1) : 0;
+$Total_Usage_GB = $Usage_Limit;
+$Used_Usage_GB = $Used_GB;
+$Remaining_GB = $Remaining_GB;
+$Last_Online = (string)($Data['last_online'] ?? $Last_Online);
+$ED_Private = (string)($Data['ed25519_private_key'] ?? $ED_Private);
+$ED_Public = (string)($Data['ed25519_public_key'] ?? $ED_Public);
+$WG_Private = (string)($Data['wg_pk'] ?? $WG_Private);
+$WG_Public = (string)($Data['wg_pub'] ?? $WG_Public);
+$WG_PSK = (string)($Data['wg_psk'] ?? $WG_PSK);
+$Server_Comment = (string)($Data['comment'] ?? $Server_Comment);
+$Updates = [
+'Total_Usage_GB' => $Total_Usage_GB,
+'Used_Usage_GB' => $Used_Usage_GB,
+'Remaining_Usage_GB' => $Remaining_GB,
+'Percent_Usage' => $Percent_Val,
+'Last_Online' => $Last_Online,
+'ED_25519_Private_Key' => $ED_Private,
+'ED_25519_Public_Key' => $ED_Public,
+'WireGuard_Private_Key' => $WG_Private,
+'WireGuard_Public_Key' => $WG_Public,
+'WireGuard_PSK' => $WG_PSK,
+'Server_Comment' => $Server_Comment,
+];
+
+$Server_Active = (bool)($Data['is_active'] ?? true);
+$Server_Enabled = (bool)($Data['enable'] ?? true);
+
+if (!$Server_Active || !$Server_Enabled) {
+$Client_Status = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0 ? '🚫قطع به دلیل عدم عضویت' : '🚫غیر فعال';
+$Updates['Client_Status'] = $Client_Status;
+}
+
+Repository::updateUser($Context->UserId, $Updates);
+}
+
+if (str_contains($Client_Status, 'غیر') || (int)($User['Server_Is_Active'] ?? 1) === 0 || (int)($User['Server_Enable'] ?? 1) === 0) {
+$Reason = (string)($User['Deactivation_Message'] ?? 'از سرور');
+
+if (trim($Reason) === '') $Reason = 'کلاینت شما در سرور غیرفعال است';
+$Text = $Greeting . Helper::noticeBlock(
+'⛔️کلاینت شما در سرور غیرفعال است.',
+'⚠️علت:🔌غیرفعال سازی کلاینت در سرور — ' . $Reason,
+'ℹ️تا زمانی که کلاینت شما فعال نشود، امکان استفاده از سرویس وجود ندارد.'
+) . Helper::userFooter();
+$Send($Text, TelegramClient::inlineKeyboard([
+[['text' => '🔄بررسی مجدد', 'callback_data' => 'اشتراک من']],
+[['text' => '🎫تیکت ها و پشتیبانی', 'callback_data' => 'تیکت های من']],
+[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
+Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
+]));
+return;
+}
+
+$Last_Online_Label = 'نامشخص';
+
+if ($Last_Online !== '' && $Last_Online !== '0001-01-01 00:00:00') {
+try {
+$Lo_Date = substr($Last_Online, 0, 10);
+$Lo_Time = substr($Last_Online, 11, 8);
+$Last_Online_Label = Helper::gregorianToJalali($Lo_Date) . ' - ' . Helper::formatTime($Lo_Time);
+$Lo_Stamp = \Helper::parseServerTimeSafe($Last_Online);
+if ($Lo_Stamp !== false && (time() - $Lo_Stamp) <= 300) { $Last_Online_Label = '🟢آنلاین'; }
+}
+
+catch (Throwable) { $Last_Online_Label = $Last_Online; }
+}
+
+$Client_Status_Label = Helper::translateStatus($Client_Status);
+$Base_Link = (string)(Repository::getSetting('Subscription_Link_Base') ?: Environment::getSubscriptionLinkBase());
+$Text = $Greeting . "➖➖➖➖➖➖➖➖➖\n";
+$Text .= "💎<b>اطلاعات اشتراک:</b>\n";
+$Text .= "├─🪪<b>نوع اشتراک:</b> <b>{$Subscription}</b>\n";
+$Duration_Days = $Package_Days > 0 ? Helper::toPersian((string)$Package_Days) : Helper::durationLabelFromLabel($Package_Duration);
+$Duration_Label = $Package_Days > 0 ? Helper::humanDuration($Package_Days * 86400) : Helper::durationLabelFromLabel($Package_Duration);
+$Text .= "├─📆<b>مدت دقیق اشتراک:</b> <b>{$Duration_Days}</b> <b>({$Duration_Label})</b>\n";
+$Text .= "├─⏱️<b>تاریخ شروع:</b> <b>{$Package_Start}</b>\n";
+$Text .= "├─⏳<b>تاریخ انقضا:</b> <b>{$Expiration}</b>\n";
+$Text .= "├─🕒<b>زمان باقیمانده:</b> <b>" . Helper::remainingDuration($Expiration_Time_Stamp) . "</b>\n";
+$Text .= "├─🚦<b>وضعیت کلاینت:</b> <b>{$Client_Status_Label}</b>\n";
+$Text .= "└─📡<b>آخرین اتصال:</b> <b>{$Last_Online_Label}</b>\n\n";
+$Text .= "📊<b>مصرف:</b>\n";
+$Text .= "├─📊<b>حجم کل:</b> <b>" . Helper::formatGB($Total_Usage_GB) . "</b>\n";
+$Text .= "├─📥<b>مصرف شده:</b> <b>" . Helper::formatGB($Used_Usage_GB) . "</b>\n";
+$Text .= "├─📤<b>باقیمانده:</b> <b>" . Helper::formatGB($Remaining_GB) . "</b>\n";
+$Text .= "└─📈<b>درصد مصرف:</b> <b>" . Helper::formatPercent($Percent_Val) . "٪</b>\n\n";
+$Key_Esc = static fn(string $Value): string => htmlspecialchars(trim($Value), ENT_QUOTES, 'UTF-8');
+$Client_ID_Label = $Key_Esc($Client_ID);
+$ED_Private_Label = $Key_Esc($ED_Private);
+$ED_Public_Label = $Key_Esc($ED_Public);
+$WG_Private_Label = $Key_Esc($WG_Private);
+$WG_Public_Label = $Key_Esc($WG_Public);
+$WG_PSK_Label = $Key_Esc($WG_PSK);
+$Text .= "🔑<b>کلیدهای اتصال</b>\n\n";
+$Text .= "🆔<b>شناسه کلاینت</b>\n<pre>{$Client_ID_Label}</pre>\n";
+$Text .= "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private_Label}</pre>\n";
+$Text .= "🔹<b>کلید عمومی ادی۲۵۵۱۹</b>\n<pre>{$ED_Public_Label}</pre>\n";
+$Text .= "🔸<b>کلید خصوصی وایرگارد</b>\n<pre>{$WG_Private_Label}</pre>\n";
+$Text .= "🔹<b>کلید عمومی وایرگارد</b>\n<pre>{$WG_Public_Label}</pre>\n";
+$Text .= "🔸<b>کلید پیش اشتراکی وایرگارد</b>\n<pre>{$WG_PSK_Label}</pre>\n";
+$Text .= self::configLinks($Base_Link, $Client_ID) . "\n\n";
+$Text .= Helper::userFooter();
+
+$Markup = TelegramClient::inlineKeyboard([
+Common::backTo('🔄💎بروزرسانی اشتراک من', 'اشتراک من'),
+[['text' => '👨‍💻ارتباط با توسعه دهنده (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
+Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
+]);
+
+if ($Send !== null) { $Send($Text, $Markup); return; }
+TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
+}
+
+private static function configLinks(string $Base, string $Client_ID): string {
+$Http_Base = preg_replace('#^https:#', 'http:', $Base);
+$Items = [
+['🚀خودکار', "{$Base}/{$Client_ID}/sub/"],
+['☄️ایکس ری', "{$Base}/{$Client_ID}/all.txt"],
+['🧿سینگ باکس', "{$Base}/{$Client_ID}/full-singbox.json"],
+['⚡️کلش متا', "{$Base}/{$Client_ID}/clash/meta/all.yml"],
+['🌐وایرگارد', "{$Base}/{$Client_ID}/wireguard/?asn=unknown"],
+['🛡️آمنزیا دبلیو جی', "{$Http_Base}/{$Client_ID}/amnezia/?asn=unknown"],
+['🔵میرو', "{$Http_Base}/{$Client_ID}/mieru/?asn=unknown"],
+];
+
+$Text = "⚡️<b>مشخصات اتصال شما به شرح زیر است</b>\n";
+
+if (BotConfig::showEmergency()) {
+$Emergency = BotConfig::emergencyUrl();
+$Text .= "<blockquote>🚱<b>اضطراری موقت:</b>\n<code>{$Emergency}</code></blockquote>\n";
+}
+
+foreach ($Items as [$Label, $Url]) {
+$Text .= "\n{$Label}\n<code>{$Url}</code>\n";
+}
+
+return rtrim($Text);
+}
+
 public static function freePlan(Context $Context): void {
 if (self::hasAlreadyFree($Context) || self::hasActiveSubscriptionNow($Context)) return;
 self::purchase($Context, 'free');

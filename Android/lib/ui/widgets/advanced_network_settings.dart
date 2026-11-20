@@ -1,0 +1,879 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/persian.dart';
+import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
+import '../../models/models.dart';
+import '../../platform/native.dart';
+import '../../state/settings_controller.dart';
+import 'common.dart';
+
+class AdvancedNetworkSettings extends StatelessWidget {
+  const AdvancedNetworkSettings({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsController controller = context.watch<SettingsController>();
+    final AppSettings settings = controller.settings;
+    final UmbrellaColors colors = context.colors;
+    final bool chainActive = settings.chain.enabled;
+    final bool hasRules = settings.appRoutes.isNotEmpty;
+
+    final Widget chainCard = _FeatureCard(
+      icon: Icons.hub_rounded,
+      accent: chainActive ? colors.success : colors.primary,
+      title: 'وارپ و اتصال زنجیره ای',
+      badge: settings.chain.position.label,
+      badgeActive: chainActive,
+      subtitle:
+          'عبور ترکیبی ترافیک از مسیر آمبرلا و واسط وارپ یا سایفون در اتصال بعدی',
+      actionLabel: 'تنظیم زنجیره',
+      actionIcon: Icons.link_rounded,
+      onAction: () async {
+        final ChainSettings? next = await showDialog<ChainSettings>(
+          context: context,
+          builder: (BuildContext context) =>
+              ChainSettingsDialog(initial: settings.chain),
+        );
+        if (next != null) {
+          await controller.setChain(next);
+        }
+      },
+    );
+
+    final Widget routesCard = _FeatureCard(
+      icon: Icons.apps_rounded,
+      accent: hasRules ? colors.info : colors.primary,
+      title: 'جداسازی برنامه های اندروید',
+      badge: hasRules
+          ? Fa.num('${settings.appRoutes.length} قانون')
+          : 'همه از تونل',
+      badgeActive: hasRules,
+      subtitle:
+          'تعیین مسیر مستقیم، تونل یا مسدود برای هر برنامه نصب شده اندروید (مانند همراه بانک ها و پیام رسان ها)',
+      actionLabel: 'افزودن برنامه',
+      actionIcon: Icons.add_rounded,
+      onAction: settings.appRoutes.length >= 64
+          ? null
+          : () => _editRule(context, controller),
+    );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool twoCols =
+            constraints.maxWidth >= AppMetrics.breakpointCompact;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (twoCols)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: chainCard),
+                  const SizedBox(width: AppMetrics.space4),
+                  Expanded(child: routesCard),
+                ],
+              )
+            else ...<Widget>[
+              chainCard,
+              const SizedBox(height: AppMetrics.space3),
+              routesCard,
+            ],
+            if (hasRules) ...<Widget>[
+              const SizedBox(height: AppMetrics.space3),
+              for (int i = 0; i < settings.appRoutes.length; i++)
+                Container(
+                  margin: const EdgeInsets.only(bottom: AppMetrics.space2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppMetrics.space4,
+                    vertical: AppMetrics.space2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceHigh.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                    border: Border.all(color: colors.border),
+                  ),
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: AppMetrics.space2,
+                    runSpacing: AppMetrics.space1,
+                    children: <Widget>[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            Icons.terminal_rounded,
+                            size: AppMetrics.iconSm,
+                            color: colors.textSecondary,
+                          ),
+                          const SizedBox(width: AppMetrics.space2),
+                          Text(
+                            Fa.num(settings.appRoutes[i].process),
+                            textDirection: TextDirection.ltr,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  color: colors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(width: AppMetrics.space2),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppMetrics.space2,
+                              vertical: AppMetrics.space1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.primary.withValues(alpha: 0.1),
+                              borderRadius:
+                                  BorderRadius.circular(AppMetrics.radiusPill),
+                            ),
+                            child: Text(
+                              settings.appRoutes[i].action.label,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Switch.adaptive(
+                            value: settings.appRoutes[i].enabled,
+                            onChanged: (bool enabled) => _saveRules(
+                              context,
+                              controller,
+                              <AppRouteRule>[
+                                for (int j = 0;
+                                    j < settings.appRoutes.length;
+                                    j++)
+                                  j == i
+                                      ? AppRouteRule(
+                                          process:
+                                              settings.appRoutes[j].process,
+                                          action: settings.appRoutes[j].action,
+                                          enabled: enabled,
+                                        )
+                                      : settings.appRoutes[j],
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'ویرایش قانون',
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              size: AppMetrics.iconSm,
+                            ),
+                            onPressed: () =>
+                                _editRule(context, controller, index: i),
+                          ),
+                          IconButton(
+                            tooltip: 'اولویت بالاتر',
+                            icon: const Icon(
+                              Icons.arrow_upward_rounded,
+                              size: AppMetrics.iconSm,
+                            ),
+                            onPressed: i == 0
+                                ? null
+                                : () {
+                                    final List<AppRouteRule> rules =
+                                        List<AppRouteRule>.of(
+                                      settings.appRoutes,
+                                    );
+                                    final AppRouteRule rule =
+                                        rules.removeAt(i);
+                                    rules.insert(i - 1, rule);
+                                    _saveRules(context, controller, rules);
+                                  },
+                          ),
+                          IconButton(
+                            tooltip: 'حذف قانون',
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: AppMetrics.iconSm,
+                            ),
+                            onPressed: () => _saveRules(
+                              context,
+                              controller,
+                              List<AppRouteRule>.of(settings.appRoutes)
+                                ..removeAt(i),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _saveRules(
+    BuildContext context,
+    SettingsController controller,
+    List<AppRouteRule> rules,
+  ) async {
+    try {
+      await controller.setAppRoutes(rules);
+    } on FormatException catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
+  Future<void> _editRule(
+    BuildContext context,
+    SettingsController controller, {
+    int? index,
+  }) async {
+    final List<AppRouteRule> rules =
+        List<AppRouteRule>.of(controller.settings.appRoutes);
+    final AppRouteRule? result = await showDialog<AppRouteRule>(
+      context: context,
+      builder: (BuildContext context) =>
+          AppRouteDialog(initial: index == null ? null : rules[index]),
+    );
+    if (result == null || !context.mounted) return;
+    if (index == null) {
+      rules.add(result);
+    } else {
+      rules[index] = result;
+    }
+    await _saveRules(context, controller, rules);
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  const _FeatureCard({
+    required this.icon,
+    required this.accent,
+    required this.title,
+    required this.badge,
+    required this.badgeActive,
+    required this.subtitle,
+    required this.actionLabel,
+    required this.actionIcon,
+    required this.onAction,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String badge;
+  final bool badgeActive;
+  final String subtitle;
+  final String actionLabel;
+  final IconData actionIcon;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppMetrics.space4),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(
+          color: badgeActive
+              ? accent.withValues(alpha: 0.4)
+              : colors.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              IconSquare(
+                icon: icon,
+                color: accent,
+                size: AppMetrics.iconBoxMd,
+                radius: AppMetrics.radiusMd,
+              ),
+              const SizedBox(width: AppMetrics.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: AppMetrics.space1),
+                    Text(
+                      badge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: badgeActive ? accent : colors.textSecondary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppMetrics.space3),
+          Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.6,
+                ),
+          ),
+          const SizedBox(height: AppMetrics.space4),
+          SizedBox(
+            height: AppMetrics.controlHeightSmall,
+            child: OutlinedButton.icon(
+              icon: Icon(actionIcon, size: AppMetrics.iconSm),
+              label: Text(actionLabel),
+              onPressed: onAction,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ChainSettingsDialog extends StatefulWidget {
+  const ChainSettingsDialog({super.key, required this.initial});
+  final ChainSettings initial;
+  @override
+  State<ChainSettingsDialog> createState() => _ChainSettingsDialogState();
+}
+
+class _ChainSettingsDialogState extends State<ChainSettingsDialog> {
+  late ChainPosition position;
+  late ChainTransport transport;
+  late WarpEndpoint endpoint;
+  late String masqueProtocol, region;
+  late bool searchNoise;
+  final Map<String, TextEditingController> fields =
+      <String, TextEditingController>{};
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    final ChainSettings initial = widget.initial;
+    position = initial.position;
+    transport = initial.transport;
+    endpoint = initial.endpoint;
+    masqueProtocol = initial.masqueProtocol;
+    region = initial.psiphonRegion;
+    searchNoise = initial.searchNoise;
+    final Map<String, String> values = <String, String>{
+      'address': initial.address,
+      'port': '${initial.port}',
+      'mtu': '${initial.mtu}',
+      'scanCount': '${initial.scanCount}',
+      'scanConcurrency': '${initial.scanConcurrency}',
+      'scanTimeout': '${initial.scanTimeout}',
+      'scanMaxRtt': '${initial.scanMaxRtt}',
+      'license': initial.licenseKey,
+    };
+    for (final MapEntry<String, String> entry in values.entries) {
+      fields[entry.key] = TextEditingController(
+        text: entry.key == 'license' ? entry.value : Fa.num(entry.value),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final TextEditingController controller in fields.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Widget _choice<T>(
+    String label,
+    T value,
+    Map<T, String> items,
+    ValueChanged<T> changed,
+  ) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: AppMetrics.space3),
+        child: DropdownButtonFormField<T>(
+          initialValue: value,
+          isExpanded: true,
+          dropdownColor: context.colors.surface,
+          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+          decoration: InputDecoration(labelText: label),
+          items: items.entries
+              .map(
+                (MapEntry<T, String> entry) => DropdownMenuItem<T>(
+                  value: entry.key,
+                  child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: (T? value) {
+            if (value != null) setState(() => changed(value));
+          },
+        ),
+      );
+
+  Widget _field(
+    String id,
+    String label, {
+    bool number = false,
+    bool secret = false,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: AppMetrics.space3),
+        child: TextField(
+          key: ValueKey<String>('chain-$id'),
+          controller: fields[id],
+          obscureText: secret,
+          keyboardType: number ? TextInputType.number : TextInputType.text,
+          textDirection: TextDirection.ltr,
+          inputFormatters: secret
+              ? null
+              : const <TextInputFormatter>[PersianDigitsFormatter()],
+          decoration: InputDecoration(labelText: label),
+        ),
+      );
+
+  int _int(String key) => int.tryParse(Fa.toEn(fields[key]!.text)) ?? -1;
+
+  void _save() {
+    final ChainSettings next = ChainSettings(
+      position: position,
+      transport: transport,
+      endpoint: endpoint,
+      address: Fa.toEn(fields['address']!.text.trim()),
+      port: _int('port'),
+      mtu: _int('mtu'),
+      scanCount: _int('scanCount'),
+      scanConcurrency: _int('scanConcurrency'),
+      scanTimeout: _int('scanTimeout'),
+      scanMaxRtt: _int('scanMaxRtt'),
+      searchNoise: searchNoise,
+      masqueProtocol: masqueProtocol,
+      licenseKey: fields['license']!.text.trim(),
+      psiphonRegion: region,
+    );
+    final String? validation = next.enabled ? next.validationError : null;
+    if (validation != null) {
+      setState(() => error = validation);
+      return;
+    }
+    Navigator.of(context).pop(next);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('وارپ و زنجیره اتصال'),
+        content: SizedBox(
+          width: AppMetrics.dialogMaxWidth,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  'تنظیمات در اتصال بعدی اعمال می شوند و همراه اشتراک آمبرلا کار می کنند.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: AppMetrics.space4),
+                _choice<ChainPosition>(
+                  'ترتیب عبور ترافیک',
+                  position,
+                  <ChainPosition, String>{
+                    for (final ChainPosition item in ChainPosition.values)
+                      item: item.label,
+                  },
+                  (ChainPosition value) => position = value,
+                ),
+                if (position != ChainPosition.off) ...<Widget>[
+                  _choice<ChainTransport>(
+                    'نوع واسط',
+                    transport,
+                    <ChainTransport, String>{
+                      for (final ChainTransport item in ChainTransport.values)
+                        item: item.label,
+                    },
+                    (ChainTransport value) => transport = value,
+                  ),
+                  if (transport == ChainTransport.psiphon)
+                    _choice<String>(
+                      'منطقه سایفون',
+                      region,
+                      ChainSettings.regionLabels,
+                      (String value) => region = value,
+                    )
+                  else ...<Widget>[
+                    _choice<WarpEndpoint>(
+                      'منبع نقطه اتصال',
+                      endpoint,
+                      const <WarpEndpoint, String>{
+                        WarpEndpoint.assigned: 'اختصاص یافته کلادفلر',
+                        WarpEndpoint.scan: 'اسکن توسط هسته',
+                        WarpEndpoint.custom: 'نشانی آی پی مشخص',
+                      },
+                      (WarpEndpoint value) => endpoint = value,
+                    ),
+                    if (endpoint == WarpEndpoint.custom) ...<Widget>[
+                      _field('address', 'نشانی آی پی نقطه اتصال'),
+                      _field('port', 'پورت نقطه اتصال', number: true),
+                    ],
+                    if (endpoint == WarpEndpoint.scan) ...<Widget>[
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(bottom: AppMetrics.space3),
+                        child: Text(
+                          'اسکن فقط قبل از سرور آمبرلا پشتیبانی می شود.',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                      _field('scanCount', 'حداکثر تعداد آی پی (۱ تا ۲۵۶)',
+                          number: true),
+                      _field('scanConcurrency', 'اسکن همزمان (۱ تا ۳۲)',
+                          number: true),
+                      _field('scanTimeout', 'مهلت هر اسکن (میلی ثانیه)',
+                          number: true),
+                      _field('scanMaxRtt', 'حداکثر تاخیر قابل قبول (میلی ثانیه)',
+                          number: true),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('آزمایش الگوهای نویز'),
+                        value: searchNoise,
+                        onChanged: (bool value) =>
+                            setState(() => searchNoise = value),
+                      ),
+                    ],
+                    _field('mtu', 'اندازه بسته واسط؛ صفر برای پیش فرض هسته',
+                        number: true),
+                    if (transport == ChainTransport.masque ||
+                        transport == ChainTransport.automatic) ...<Widget>[
+                      _choice<String>(
+                        'نسخه انتقال در ماسک',
+                        masqueProtocol,
+                        const <String, String>{
+                          'auto': 'خودکار',
+                          'h2': 'نسخه ۲ (پایدار)',
+                          'h3': 'نسخه ۳ (سریع)',
+                        },
+                        (String value) => masqueProtocol = value,
+                      ),
+                    ],
+                    _field('license', 'کلید اشتراک وارپ پلاس (اختیاری)', secret: true),
+                  ],
+                ],
+                if (error != null)
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(onPressed: _save, child: const Text('ذخیره زنجیره')),
+        ],
+      );
+}
+
+class AppRouteDialog extends StatefulWidget {
+  const AppRouteDialog({super.key, this.initial});
+  final AppRouteRule? initial;
+  @override
+  State<AppRouteDialog> createState() => _AppRouteDialogState();
+}
+
+class _AppRouteDialogState extends State<AppRouteDialog> {
+  late final TextEditingController process;
+  late AppRouteAction action;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    process = TextEditingController(text: widget.initial?.process ?? '');
+    action = widget.initial?.action ?? AppRouteAction.proxy;
+  }
+
+  @override
+  void dispose() {
+    process.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickInstalledApp() async {
+    final NativeBridge native = context.read<NativeBridge>();
+    final InstalledAndroidApp? picked = await showDialog<InstalledAndroidApp>(
+      context: context,
+      builder: (BuildContext ctx) => _InstalledAppPickerDialog(native: native),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      process.text = picked.packageName;
+      error = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('قانون مسیریابی برنامه'),
+        content: SizedBox(
+          width: AppMetrics.dialogMaxWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: _pickInstalledApp,
+                icon: const Icon(Icons.apps_rounded, size: AppMetrics.iconSm),
+                label: const Text('انتخاب از برنامه های نصب شده گوشی'),
+              ),
+              const SizedBox(height: AppMetrics.space3),
+              TextField(
+                controller: process,
+                textDirection: TextDirection.ltr,
+                decoration: InputDecoration(
+                  labelText: 'شناسه بسته برنامه اندروید',
+                  hintText: 'org.telegram.messenger',
+                  errorText: error,
+                ),
+              ),
+              const SizedBox(height: AppMetrics.space3),
+              DropdownButtonFormField<AppRouteAction>(
+                initialValue: action,
+                isExpanded: true,
+                dropdownColor: context.colors.surface,
+                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                decoration: const InputDecoration(labelText: 'عملکرد مسیر'),
+                items: <DropdownMenuItem<AppRouteAction>>[
+                  for (final AppRouteAction value in AppRouteAction.values)
+                    DropdownMenuItem<AppRouteAction>(
+                      value: value,
+                      child: Text(value.label),
+                    ),
+                ],
+                onChanged: (AppRouteAction? value) {
+                  if (value != null) setState(() => action = value);
+                },
+              ),
+              const SizedBox(height: AppMetrics.space3),
+              Text(
+                'برای همراه بانک ها و برنامه های داخلی گزینه «مستقیم (خارج از تونل)» را انتخاب کنید تا بدون قطع فیلترشکن مستقیم باز شوند.',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            child: const Text('ذخیره قانون'),
+            onPressed: () {
+              final AppRouteRule rule = AppRouteRule(
+                process: process.text.trim(),
+                action: action,
+                enabled: widget.initial?.enabled ?? true,
+              );
+              if (rule.validationError != null) {
+                setState(() => error = rule.validationError);
+                return;
+              }
+              Navigator.of(context).pop(rule);
+            },
+          ),
+        ],
+      );
+}
+
+class _InstalledAppPickerDialog extends StatefulWidget {
+  const _InstalledAppPickerDialog({required this.native});
+
+  final NativeBridge native;
+
+  @override
+  State<_InstalledAppPickerDialog> createState() =>
+      _InstalledAppPickerDialogState();
+}
+
+class _InstalledAppPickerDialogState extends State<_InstalledAppPickerDialog> {
+  final TextEditingController _search = TextEditingController();
+  bool _includeSystem = false;
+  bool _loading = true;
+  List<InstalledAndroidApp> _apps = const <InstalledAndroidApp>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final List<InstalledAndroidApp> items = await widget.native.installedApps();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _apps = items;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String query = _search.text.trim().toLowerCase();
+    final List<InstalledAndroidApp> filtered = _apps.where(
+      (InstalledAndroidApp app) {
+        if (!_includeSystem && app.isSystem) {
+          return false;
+        }
+        if (query.isEmpty) {
+          return true;
+        }
+        return app.appName.toLowerCase().contains(query) ||
+            app.packageName.toLowerCase().contains(query);
+      },
+    ).toList(growable: false);
+    return AlertDialog(
+      title: const Text('برنامه های نصب شده'),
+      content: SizedBox(
+        width: AppMetrics.dialogMaxWidth,
+        height: 420,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            TextField(
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded),
+                hintText: 'جست و جوی نام برنامه یا بسته...',
+              ),
+            ),
+            const SizedBox(height: AppMetrics.space2),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    Fa.num('نمایش برنامه های سیستمی اندروید'),
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                Switch(
+                  value: _includeSystem,
+                  onChanged: (bool value) {
+                    setState(() => _includeSystem = value);
+                  },
+                ),
+              ],
+            ),
+            const Divider(height: AppMetrics.space3),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            Fa.num('برنامه ای پیدا نشد'),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: colors.textSecondary),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (BuildContext context, int index) =>
+                              const Divider(height: 1),
+                          itemBuilder: (BuildContext context, int index) {
+                            final InstalledAndroidApp app = filtered[index];
+                            return ListTile(
+                              dense: true,
+                              leading: IconSquare(
+                                icon: app.isSystem
+                                    ? Icons.android_rounded
+                                    : Icons.apps_rounded,
+                                color: app.isSystem
+                                    ? colors.textSecondary
+                                    : colors.primary,
+                                size: AppMetrics.iconBoxSm,
+                              ),
+                              title: Text(
+                                Fa.num(app.appName),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: Text(
+                                  app.packageName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(color: colors.textSecondary),
+                                ),
+                              ),
+                              onTap: () => Navigator.of(context).pop(app),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('بستن'),
+        ),
+      ],
+    );
+  }
+}

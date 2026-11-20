@@ -494,6 +494,9 @@ $Rows = Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
 ]);
 if (!$Has_Subscription) {
+$Rows = array_merge($Rows, Menu::rows([
+[['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
+]));
 if ((int)($User['Free_Plan_Claimed'] ?? 0) !== 1) {
 $Rows[] = [Menu::button('🎁اشتراک رایگان', 'اشتراک رایگان اول')];
 }
@@ -676,6 +679,15 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 . "├─📤حجم باقی مانده: *" . ($Remaining_Usage !== '' ? Helper::formatGB((float)$Remaining_Usage) : 'نامشخص') . "*\n"
 . "├─📈درصد مصرف: *" . ($Percent_Usage !== '' && $Percent_Usage !== null ? Helper::formatPercent((float)$Percent_Usage) . '٪' : 'نامشخص') . "*\n"
 . "├─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*\n"
+. "└─🆔شناسه کلاینت: `{$Client_ID}`\n"
+. ($Has_Keys
+? "\n🔑*کلیدهای اتصال شما:*\n\n"
+. "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private}</pre>\n"
+. "🔹<b>کلید عمومی ادی۲۵۵۱۹</b>\n<pre>{$ED_Public}</pre>\n"
+. "🔸<b>کلید خصوصی وایرگارد</b>\n<pre>{$WG_Private}</pre>\n"
+. "🔹<b>کلید عمومی وایرگارد</b>\n<pre>{$WG_Public}</pre>\n"
+. "🔸<b>کلید از پیش اشتراکی وایرگارد</b>\n<pre>{$WG_PSK}</pre>"
+: '')
 : '└─❌اشتراک فعالی ندارید.';
 
 $Rank_Line = '';

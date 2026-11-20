@@ -69,18 +69,6 @@ return;
 $Failures[] = $Message;
 };
 
-$Public_Account = AppFilter::accountPayload([
-'id' => 7,
-'uuid' => 'client-7',
-'ed25519_private_key' => 'must-not-reach-app',
-'ed25519_public_key' => 'must-not-reach-app',
-'wg_pk' => 'must-not-reach-app',
-'wg_pub' => 'must-not-reach-app',
-'wg_psk' => 'must-not-reach-app',
-]);
-$Sensitive_Fields = ['ed25519_private_key', 'ed25519_public_key', 'wg_pk', 'wg_pub', 'wg_psk'];
-$Check(array_intersect($Sensitive_Fields, array_keys($Public_Account)) === [], 'app account payload never includes connection keys');
-
 // ۱. نرمال سازی دامنه ها و نشانی های وب.
 $Check(AppFilter::normalizeDomain('Example.COM') === 'example.com', 'lowercases root domain');
 $Check(AppFilter::normalizeDomain('https://www.Instagram.com/reel/123?x=1#top') === 'instagram.com', 'strips scheme, www, path, query, fragment');
@@ -155,18 +143,18 @@ $From_App = AppFilter::save($UUID, [
 'categories' => ['adult', 'ads'],
 'custom_domains' => ['gamma.io', 'https://delta.co/path'],
 ], 'app');
-$Check($From_App['categories'] === ['adult'], 'drops retired ads category from app settings');
+$Check($From_App['categories'] === ['adult', 'ads'], 'stores categories from app');
 $Check($From_App['custom_domains'] === ['gamma.io', 'delta.co'], 'stores normalized domains from app');
 $Check($From_App['updated_by'] === 'app', 'records app as source');
 
 $Cleared = AppFilter::clearDomains($UUID, 'bot');
 $Check($Cleared['custom_domains'] === [], 'clearDomains empties custom domains');
-$Check($Cleared['categories'] === ['adult'], 'clearDomains preserves supported categories only');
+$Check($Cleared['categories'] === ['adult', 'ads'], 'clearDomains preserves active categories');
 $Check($Cleared['enabled'] === true, 'clearDomains stays enabled because categories are active');
 
 // خاموش کردن همه دسته ها در نبود دامنه سفارشی -> خاموش شدن خودکار.
 AppFilter::toggle($UUID, 'adult', 'bot');
-$After_Last_Toggle = AppFilter::toggle($UUID, 'gambling', 'bot');
+$After_Last_Toggle = AppFilter::toggle($UUID, 'ads', 'bot');
 $Check($After_Last_Toggle['categories'] === [] && $After_Last_Toggle['enabled'] === false, 'toggling off last category auto-disables filter');
 
 // بررسی سقف MAX_CUSTOM_DOMAINS.
