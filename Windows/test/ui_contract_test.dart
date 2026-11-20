@@ -1379,9 +1379,11 @@ void main() {
       expect(account.contains('renewalDueAt(_now)'), isTrue);
       expect(account.contains('account-renewal-notice'), isTrue);
       expect(account.contains('account-active-subscription'), isTrue);
-      expect(account.contains('_buildAccountRail()'), isTrue);
-      expect(account.contains('_buildCompactSectionPicker()'), isTrue);
-      expect(account.contains('AnimatedSwitcher('), isTrue);
+      expect(account.contains('TabBar('), isTrue);
+      expect(account.contains('TabBarView('), isTrue);
+      expect(account.contains('account-section-tabs'), isTrue);
+      expect(account.contains('_buildAccountRail()'), isFalse);
+      expect(account.contains('_buildCompactSectionPicker()'), isFalse);
       expect(account.contains('account.panelId'), isFalse);
     });
 

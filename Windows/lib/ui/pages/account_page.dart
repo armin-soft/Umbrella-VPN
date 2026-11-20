@@ -18,7 +18,7 @@ enum _AccountSection { summary, wallet, subscription, profile }
 
 extension _AccountSectionX on _AccountSection {
   String get title => switch (this) {
-        _AccountSection.summary => 'نمای کلی',
+        _AccountSection.summary => 'خلاصه',
         _AccountSection.wallet => 'کیف پول',
         _AccountSection.subscription => 'اشتراک',
         _AccountSection.profile => 'مشخصات',
@@ -53,7 +53,6 @@ class _AccountPageState extends State<AccountPage> {
   bool _syncInFlight = false;
   bool _panelFresh = false;
   bool _wasTabActive = false;
-  _AccountSection _selectedSection = _AccountSection.summary;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
   Timer? _autoSyncTimer;
@@ -667,244 +666,130 @@ class _AccountPageState extends State<AccountPage> {
       ),
     ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: AppMetrics.pagePadding,
-          child: const PageHeader(
-            title: 'حساب من',
-            eyebrow: 'حساب و سرویس',
-            premium: true,
-            subtitle:
-                'مدیریت موجودی، اشتراک و مشخصات حساب از یک نمای منظم',
-            icon: Icons.person_rounded,
+    return DefaultTabController(
+      length: _AccountSection.values.length,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: AppMetrics.pagePadding,
+            child: const PageHeader(
+              title: 'حساب من',
+              eyebrow: 'حساب و سرویس',
+              premium: true,
+              subtitle:
+                  'مدیریت موجودی، اشتراک و مشخصات حساب از یک نمای منظم',
+              icon: Icons.person_rounded,
+            ),
           ),
-        ),
-        Expanded(
-          child: Padding(
+          Padding(
             padding: const EdgeInsets.only(
               left: AppMetrics.space6,
               right: AppMetrics.space6,
-              bottom: AppMetrics.space6,
+              bottom: AppMetrics.space3,
             ),
             child: LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final Widget selectedContent = switch (_selectedSection) {
-                  _AccountSection.summary => _buildSummaryTab(
-                      account: account,
-                      kpiCards: kpiCards,
-                      used: used,
-                      limit: limit,
-                      unlimited: unlimited,
-                      remaining: remaining,
-                      percent: percent,
-                      quotaTone: quotaTone,
-                      statusTone: statusTone,
-                      timeTone: timeTone,
-                    ),
-                  _AccountSection.wallet => _buildWalletTab(auth, toasts),
-                  _AccountSection.subscription => _buildSubscriptionTab(
-                      auth: auth,
-                      toasts: toasts,
-                      account: account,
-                      expiry: expiry,
-                      daysLeft: daysLeft,
-                      renewalNotice: renewalNotice,
-                      renewalTone: renewalTone,
-                    ),
-                  _AccountSection.profile =>
-                    _buildProfileTab(account: account, name: name, toasts: toasts),
-                };
-                final Widget sectionContent = AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder:
-                      (Widget child, Animation<double> animation) {
-                    final Animation<Offset> slide = Tween<Offset>(
-                      begin: const Offset(0.025, 0),
-                      end: Offset.zero,
-                    ).animate(
-                      CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    );
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(position: slide, child: child),
-                    );
-                  },
-                  child: KeyedSubtree(
-                    key: ValueKey<_AccountSection>(_selectedSection),
-                    child: selectedContent,
-                  ),
-                );
-
                 final double scale = MediaQuery.textScalerOf(context)
                     .scale(1)
                     .clamp(1.0, 2.0)
                     .toDouble();
-                if (constraints.maxWidth / scale >=
-                    AppMetrics.breakpointColumns) {
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      SizedBox(
-                        width: AppMetrics.navWidthMedium,
-                        child: _buildAccountRail(),
+                final bool scrollable = constraints.maxWidth / scale <
+                    AppMetrics.breakpointCompact;
+                return GlassCard(
+                  key: const ValueKey<String>('account-section-tab-card'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppMetrics.space2,
+                    vertical: AppMetrics.space1,
+                  ),
+                  radius: AppMetrics.radiusXl,
+                  child: TabBar(
+                    key: const ValueKey<String>('account-section-tabs'),
+                    isScrollable: scrollable,
+                    tabAlignment: scrollable ? TabAlignment.start : null,
+                    dividerColor: Colors.transparent,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicatorPadding: const EdgeInsets.all(AppMetrics.space1),
+                    indicator: BoxDecoration(
+                      color: colors.primary.withValues(alpha: 0.13),
+                      borderRadius:
+                          BorderRadius.circular(AppMetrics.radiusMd),
+                      border: Border.all(
+                        color: colors.primary.withValues(alpha: 0.28),
                       ),
-                      const SizedBox(width: AppMetrics.space4),
-                      Expanded(child: sectionContent),
+                    ),
+                    labelColor: colors.primary,
+                    unselectedLabelColor: colors.textSecondary,
+                    labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                    unselectedLabelStyle:
+                        Theme.of(context).textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                    tabs: <Widget>[
+                      for (final _AccountSection section
+                          in _AccountSection.values)
+                        Tab(
+                          key: ValueKey<String>(
+                            'account-tab-${section.name}',
+                          ),
+                          icon: Tooltip(
+                            message: Fa.num(section.detail),
+                            child: Icon(
+                              section.icon,
+                              size: AppMetrics.iconMd,
+                            ),
+                          ),
+                          iconMargin: const EdgeInsets.only(
+                            bottom: AppMetrics.space1,
+                          ),
+                          text: Fa.num(section.title),
+                        ),
                     ],
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _buildCompactSectionPicker(),
-                    const SizedBox(height: AppMetrics.space3),
-                    Expanded(child: sectionContent),
-                  ],
+                  ),
                 );
               },
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAccountRail() {
-    final UmbrellaColors colors = context.colors;
-    return GlassCard(
-      key: const ValueKey<String>('account-section-navigation'),
-      padding: const EdgeInsets.all(AppMetrics.space2),
-      radius: AppMetrics.radiusXl,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppMetrics.space3,
-                AppMetrics.space2,
-                AppMetrics.space3,
-                AppMetrics.space3,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(
+                left: AppMetrics.space6,
+                right: AppMetrics.space6,
+                bottom: AppMetrics.space6,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: TabBarView(
                 children: <Widget>[
-                  Text(
-                    'بخش های حساب',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: colors.textPrimary,
-                          fontWeight: FontWeight.w800,
-                        ),
+                  _buildSummaryTab(
+                    account: account,
+                    kpiCards: kpiCards,
+                    used: used,
+                    limit: limit,
+                    unlimited: unlimited,
+                    remaining: remaining,
+                    percent: percent,
+                    quotaTone: quotaTone,
+                    statusTone: statusTone,
+                    timeTone: timeTone,
                   ),
-                  const SizedBox(height: AppMetrics.space1),
-                  Text(
-                    'برای مشاهده جزئیات انتخاب کنید',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
+                  _buildWalletTab(auth, toasts),
+                  _buildSubscriptionTab(
+                    auth: auth,
+                    toasts: toasts,
+                    account: account,
+                    expiry: expiry,
+                    daysLeft: daysLeft,
+                    renewalNotice: renewalNotice,
+                    renewalTone: renewalTone,
                   ),
+                  _buildProfileTab(account: account, name: name, toasts: toasts),
                 ],
               ),
             ),
-            for (final _AccountSection section in _AccountSection.values)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppMetrics.space1),
-                child: _AccountSectionTile(
-                  section: section,
-                  selected: _selectedSection == section,
-                  onTap: () => setState(() => _selectedSection = section),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildCompactSectionPicker() {
-    final UmbrellaColors colors = context.colors;
-    return MenuAnchor(
-      menuChildren: <Widget>[
-        for (final _AccountSection section in _AccountSection.values)
-          MenuItemButton(
-            key: ValueKey<String>('account-section-option-${section.name}'),
-            leadingIcon: Icon(section.icon),
-            trailingIcon: _selectedSection == section
-                ? Icon(Icons.check_rounded, color: colors.primary)
-                : null,
-            onPressed: () => setState(() => _selectedSection = section),
-            child: Text(Fa.num(section.title)),
-          ),
-      ],
-      builder: (
-        BuildContext context,
-        MenuController controller,
-        Widget? child,
-      ) {
-        return OutlinedButton(
-          key: const ValueKey<String>('account-section-picker'),
-          onPressed: () =>
-              controller.isOpen ? controller.close() : controller.open(),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, AppMetrics.controlHeightLarge),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppMetrics.space4,
-              vertical: AppMetrics.space2,
-            ),
-            alignment: AlignmentDirectional.centerStart,
-            foregroundColor: colors.textPrimary,
-            backgroundColor: colors.surfaceHigh.withValues(alpha: 0.38),
-            side: BorderSide(color: colors.border),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-            ),
-          ),
-          child: Row(
-            children: <Widget>[
-              Icon(_selectedSection.icon, color: colors.primary),
-              const SizedBox(width: AppMetrics.space3),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'بخش فعال',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                    Text(
-                      Fa.num(_selectedSection.title),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Icon(
-                controller.isOpen
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                color: colors.textSecondary,
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -1284,99 +1169,6 @@ class _AccountPageState extends State<AccountPage> {
 
 }
 
-class _AccountSectionTile extends StatelessWidget {
-  const _AccountSectionTile({
-    required this.section,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final _AccountSection section;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final Color accent = selected ? colors.primary : colors.textSecondary;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: '${section.title}. ${section.detail}',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: ValueKey<String>('account-section-${section.name}'),
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.all(AppMetrics.space3),
-            decoration: BoxDecoration(
-              color: selected
-                  ? colors.primary.withValues(alpha: 0.11)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-              border: Border.all(
-                color: selected
-                    ? colors.primary.withValues(alpha: 0.32)
-                    : colors.border.withValues(alpha: 0.55),
-              ),
-            ),
-            child: Row(
-              children: <Widget>[
-                IconSquare(
-                  icon: section.icon,
-                  color: accent,
-                  size: AppMetrics.iconBoxMd,
-                  radius: AppMetrics.radiusMd,
-                ),
-                const SizedBox(width: AppMetrics.space2),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        Fa.num(section.title),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: selected
-                                  ? colors.primary
-                                  : colors.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(height: AppMetrics.space1),
-                      Text(
-                        Fa.num(section.detail),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (selected) ...<Widget>[
-                  const SizedBox(width: AppMetrics.space1),
-                  Icon(
-                    Icons.check_circle_rounded,
-                    size: AppMetrics.iconSm,
-                    color: colors.primary,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// کارت شاخص کلیدی ویژه حساب کاربری.
 class _AccountMetricTile extends StatelessWidget {

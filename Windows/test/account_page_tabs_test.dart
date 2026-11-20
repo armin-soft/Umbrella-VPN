@@ -89,7 +89,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'account sections separate content, hide active renewal, and omit panel ID',
+    'account top tabs separate content, hide active renewal, and omit panel ID',
     (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(980, 820));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -150,25 +150,46 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('account-section-navigation')),
+      find.byKey(const ValueKey<String>('account-section-tab-card')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey<String>('account-section-picker')),
-        findsNothing);
+    expect(find.byType(TabBar), findsOneWidget);
+    expect(
+      tester
+          .widget<TabBar>(
+            find.byKey(const ValueKey<String>('account-section-tabs')),
+          )
+          .isScrollable,
+      isFalse,
+    );
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey<String>('account-section-tab-card')),
+      ).dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const PageStorageKey<String>(
+                  'account-section-content-summary',
+                ),
+              ),
+            )
+            .dy,
+      ),
+    );
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsNothing);
     expect(find.byKey(const ValueKey<String>('account-active-subscription')),
         findsNothing);
 
-    Future<void> selectSection(String section) async {
-      final Finder item =
-          find.byKey(ValueKey<String>('account-section-$section'));
-      await tester.ensureVisible(item);
-      await tester.tap(item);
+    Future<void> selectTab(int index) async {
+      final BuildContext tabContext = tester.element(find.byType(TabBar));
+      DefaultTabController.of(tabContext).animateTo(index);
       await tester.pumpAndSettle();
     }
 
-    await selectSection('wallet');
+    await selectTab(1);
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('account-wallet-balance')),
@@ -180,7 +201,7 @@ void main() {
       findsOneWidget,
     );
 
-    await selectSection('subscription');
+    await selectTab(2);
     expect(find.byKey(const ValueKey<String>('account-active-subscription')),
         findsOneWidget);
     expect(find.text('خرید و تمدید اشتراک'), findsNothing);
@@ -198,7 +219,7 @@ void main() {
     expect(find.text('تمدید اشتراک'), findsOneWidget);
     expect(find.text('پلن آزمایشی'), findsOneWidget);
 
-    await selectSection('profile');
+    await selectTab(3);
     expect(find.text('شناسه یکتای حساب'), findsOneWidget);
     expect(find.text('شناسه عددی تلگرام'), findsOneWidget);
     expect(find.text('شماره کاربری در پنل'), findsNothing);
@@ -210,20 +231,18 @@ void main() {
 
     await tester.binding.setSurfaceSize(const Size(700, 820));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('account-section-navigation')),
-        findsNothing);
-    expect(find.byKey(const ValueKey<String>('account-section-picker')),
-        findsOneWidget);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('account-section-picker')),
+    expect(
+      tester.widget<TabBar>(find.byType(TabBar)).isScrollable,
+      isFalse,
     );
+
+    await tester.binding.setSurfaceSize(const Size(520, 820));
     await tester.pumpAndSettle();
-    final Finder walletOption = find.byKey(
-      const ValueKey<String>('account-section-option-wallet'),
+    expect(
+      tester.widget<TabBar>(find.byType(TabBar)).isScrollable,
+      isTrue,
     );
-    expect(walletOption, findsOneWidget);
-    await tester.tap(walletOption);
-    await tester.pumpAndSettle();
+    await selectTab(1);
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsOneWidget);
     expect(
