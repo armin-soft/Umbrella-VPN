@@ -57,11 +57,9 @@ class _LogsPageState extends State<LogsPage> {
     final UmbrellaColors colors = context.colors;
     final ToastController toasts = context.read<ToastController>();
 
-    return Padding(
-      padding: AppMetrics.pagePadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
+    final Widget headingAndFilters = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
           PageHeader(
             title: 'گزارش ها',
             subtitle: 'همه رویدادها، خطاها و هشدارها با تاریخ و ساعت؛ برای پیگیری مشکل اتصال.',
@@ -174,6 +172,20 @@ class _LogsPageState extends State<LogsPage> {
               );
             },
           ),
+      ],
+    );
+    return Padding(
+      padding: AppMetrics.pagePadding,
+      child: LayoutBuilder(builder: (context, constraints) {
+        final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+        final compactHeight = constraints.maxHeight < 500 * scale;
+        return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (compactHeight)
+            Flexible(child: SingleChildScrollView(child: headingAndFilters))
+          else
+            headingAndFilters,
           const SizedBox(height: AppMetrics.space3),
           Expanded(
             child: GlassCard(
@@ -188,7 +200,8 @@ class _LogsPageState extends State<LogsPage> {
                           .where((LogLine line) => line.level == _level)
                           .toList();
                   if (lines.isEmpty) {
-                    return EmptyState(
+                    return SingleChildScrollView(
+                      child: EmptyState(
                       icon: Icons.receipt_long_rounded,
                       title: all.isEmpty
                           ? 'هنوز گزارشی ثبت نشده است'
@@ -196,6 +209,7 @@ class _LogsPageState extends State<LogsPage> {
                       message: all.isEmpty
                           ? 'از لحظه اجرا، هر رویداد اتصال و خطا اینجا ثبت می شود.'
                           : 'یکی از سطح های دیگر را انتخاب کنید.',
+                      ),
                     );
                   }
                   return ListView.builder(
@@ -367,7 +381,8 @@ class _LogsPageState extends State<LogsPage> {
                 ),
           ),
         ],
-      ),
+        );
+      }),
     );
   }
 }
