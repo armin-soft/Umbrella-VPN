@@ -394,12 +394,12 @@ void main() {
       expect(about.contains('LayoutBuilder'), isTrue);
     });
 
-    test('درباره: بخش های فنی حذف شدند و لوگوی توسعه دهنده هست', () {
+    test('درباره: بخش های فنی اضافه ندارد و کارت بررسی دسترسی حفظ شده است', () {
       final String about = read('lib/ui/pages/about_page.dart');
       expect(about.contains('اجزای فنی'), isFalse);
       expect(about.contains('سرویس های متصل'), isFalse);
-      // لوگوی توسعه دهنده با همان تصویر برند.
-      expect(about.contains('BrandAssets.logo'), isTrue);
+      expect(about.contains('PageHeader('), isTrue);
+      expect(about.contains('PageBanner('), isFalse);
       // بررسی اتصال جای مشخص خودش را دارد.
       expect(about.contains('_AccessCheckCard'), isTrue);
     });

@@ -960,7 +960,7 @@ void main() {
         expect(alphaAt(w ~/ 2, h ~/ 2), 255, reason: '$file center');
       }
 
-      // نسخه Runner.rc و THIRD-PARTY-NOTICES و آیکون دایره ای صفحه درباره.
+      // نسخه Runner.rc و THIRD-PARTY-NOTICES و سربرگ اصلی صفحه درباره.
       final String runnerRc =
           File('windows/runner/Runner.rc').readAsStringSync();
       expect(runnerRc, contains('FILEVERSION 0,0,1,0'));
@@ -974,8 +974,9 @@ void main() {
 
       final String aboutPage =
           File('lib/ui/pages/about_page.dart').readAsStringSync();
-      expect(aboutPage, contains('BoxShape.circle'));
-      expect(aboutPage, contains('ClipOval'));
+      expect(aboutPage, contains("title: 'درباره'"));
+      expect(aboutPage, contains('PageHeader('));
+      expect(aboutPage, isNot(contains('PageBanner(')));
     });
   });
 }
