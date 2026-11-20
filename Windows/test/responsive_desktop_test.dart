@@ -82,7 +82,20 @@ void main() {
         addTearDown(() => tester.binding.setSurfaceSize(null));
         final bool splitDisplay =
             size == const Size(800, 480) && textScale == 1.0;
-        addTearDown(() => tester.view.resetDisplayFeatures());
+        final List<DisplayFeature> displayFeatures = splitDisplay
+            ? <DisplayFeature>[
+                DisplayFeature(
+                  bounds: Rect.fromLTRB(
+                    size.width / 2 - 10,
+                    0,
+                    size.width / 2 + 10,
+                    size.height,
+                  ),
+                  type: DisplayFeatureType.hinge,
+                  state: DisplayFeatureState.unknown,
+                ),
+              ]
+            : const <DisplayFeature>[];
         final native = _Native();
         final sound = _Sound();
         final window = WindowService(native);
@@ -117,38 +130,34 @@ void main() {
             ],
             child: MaterialApp(
               theme: AppTheme.dark(),
-              builder: (BuildContext context, Widget? child) => Directionality(
-                textDirection: TextDirection.rtl,
-                child: child!,
-              ),
-              home: MediaQuery(
+              builder: (BuildContext context, Widget? child) => MediaQuery(
                 data: MediaQueryData(
                   size: size,
                   textScaler: TextScaler.linear(textScale),
+                  displayFeatures: displayFeatures,
                 ),
                 child: Directionality(
                   textDirection: TextDirection.rtl,
-                  child: fullWindow
-                      ? page
-                      : Scaffold(
-                          body: Row(
-                            children: <Widget>[
-                              const SizedBox(
-                                width: AppMetrics.navWidthCompact,
-                              ),
-                              Expanded(
-                                child: TickerMode(
-                                  enabled: false,
-                                  child: page is ConnectPage
-                                      ? page
-                                      : MenuPageBackdrop(child: page),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                  child: child!,
                 ),
               ),
+              home: fullWindow
+                  ? page
+                  : Scaffold(
+                      body: Row(
+                        children: <Widget>[
+                          const SizedBox(width: AppMetrics.navWidthCompact),
+                          Expanded(
+                            child: TickerMode(
+                              enabled: false,
+                              child: page is ConnectPage
+                                  ? page
+                                  : MenuPageBackdrop(child: page),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
             ),
           ));
           await tester.pump();
@@ -163,22 +172,7 @@ void main() {
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
           if (page is ConnectPage && problem == null) {
-            if (splitDisplay) {
-              // An RTL fallback would select the right pane of this hinge.
-              tester.view.displayFeatures = <DisplayFeature>[
-                DisplayFeature(
-                  bounds: Rect.fromLTRB(
-                    size.width / 2 - 10,
-                    0,
-                    size.width / 2 + 10,
-                    size.height,
-                  ),
-                  type: DisplayFeatureType.hinge,
-                  state: DisplayFeatureState.unknown,
-                ),
-              ];
-              await tester.pump();
-            }
+            // In RTL, omitting anchorPoint would select this hinge's right pane.
             final Finder settingsButton = find.byKey(
               const ValueKey<String>('connection-settings-button'),
             );
@@ -217,10 +211,6 @@ void main() {
               find.byKey(const ValueKey<String>('quick-settings-close')),
             );
             await tester.pumpAndSettle();
-            if (splitDisplay) {
-              tester.view.resetDisplayFeatures();
-              await tester.pump();
-            }
           }
         }
         await tester.pumpWidget(const SizedBox());

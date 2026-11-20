@@ -389,7 +389,8 @@ void main() {
       final String common2 = read('lib/ui/widgets/common.dart');
       expect(common2.contains('class ResponsiveColumns'), isTrue);
       final String device = read('lib/ui/pages/device_page.dart');
-      expect(device.contains('ResponsiveColumns'), isTrue);
+      expect(device.contains('LayoutBuilder'), isTrue);
+      expect(device.contains('AppMetrics.breakpointColumns'), isTrue);
       final String about = read('lib/ui/pages/about_page.dart');
       expect(about.contains('LayoutBuilder'), isTrue);
     });
