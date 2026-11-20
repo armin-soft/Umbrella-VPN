@@ -90,6 +90,15 @@ public static function __callStatic(string $Name, array $Args): string { return 
 final class Common {
 public static function mainButton(): array { return []; }
 public static function greet(object $Ctx, string $Section): string { return ''; }
+public static function subscriptionFieldsFromServer(array $Row): array {
+$Days = (int)($Row['package_days'] ?? 0);
+$Start = strtotime((string)($Row['start_date'] ?? ''));
+if ($Days <= 0 || $Start === false) return [];
+return ['Package_Duration' => $Days, 'Expiration_Time_Stamp' => $Start + $Days * 86400];
+}
+public static function syncSubscriptionFromServer(array $User, ?array $Row = null): array {
+return array_replace($User, $Row === null ? [] : self::subscriptionFieldsFromServer($Row));
+}
 }
 
 final class Context {
@@ -131,7 +140,7 @@ public static array $Live = [];
 public static int $UpdateStatus = 200;
 public static function liveUsers(): array { return self::$Live; }
 public static function getUser(string $Uuid): array {
-return ['StatusCode' => 200, 'Json' => ['uuid' => $Uuid, 'is_active' => true, 'enable' => true, 'current_usage_GB' => 5.0, 'usage_limit_GB' => 50.0]];
+return ['StatusCode' => 200, 'Json' => ['uuid' => $Uuid, 'is_active' => true, 'enable' => true, 'current_usage_GB' => 5.0, 'usage_limit_GB' => 50.0, 'start_date' => '2000-01-01', 'package_days' => 30]];
 }
 public static function updateUser(string $Uuid, array $Payload): array {
 return ['StatusCode' => self::$UpdateStatus, 'Body' => 'err', 'Json' => self::$UpdateStatus === 200 ? ['uuid' => $Uuid] : null];

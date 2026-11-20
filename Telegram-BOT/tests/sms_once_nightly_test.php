@@ -69,6 +69,18 @@ return ['StatusCode' => self::$Code, 'Json' => ['meta' => ['status' => self::$Ac
 final class ServerClient {
 public static array $Live = []; public static int $Updates = 0;
 public static function liveUsers(): array { return self::$Live; }
+public static function getUser(string $Uuid): array {
+foreach (Repository::$Users as $User) {
+if ((string)($User['Client_ID'] ?? '') !== $Uuid) continue;
+$Expiry = (int)($User['Expiration_Time_Stamp'] ?? 0);
+return ['StatusCode' => 200, 'Json' => [
+'uuid' => $Uuid,
+'start_date' => date('Y-m-d', $Expiry - 30 * 86400),
+'package_days' => 30,
+]];
+}
+return ['StatusCode' => 404, 'Json' => null];
+}
 public static function updateUser(...$Args): array { self::$Updates++; return ['StatusCode' => 200]; }
 }
 final class SystemNotifications {
@@ -82,7 +94,18 @@ public static array $Bodies = [];
 public static function inlineKeyboard(array $Rows): array { return $Rows; }
 public static function sendMessage(int $Id, ...$Args): array { self::$Sent[] = $Id; self::$Bodies[] = (string)($Args[0] ?? ''); return ['ok' => true]; }
 }
-final class Common { public static function mainButton(): array { return []; } }
+final class Common {
+public static function mainButton(): array { return []; }
+public static function subscriptionFieldsFromServer(array $Row): array {
+$Days = (int)($Row['package_days'] ?? 0);
+$Start = strtotime((string)($Row['start_date'] ?? ''));
+if ($Days <= 0 || $Start === false) return [];
+return ['Package_Duration' => $Days, 'Expiration_Time_Stamp' => $Start + $Days * 86400];
+}
+public static function syncSubscriptionFromServer(array $User, ?array $Row = null): array {
+return array_replace($User, $Row === null ? [] : self::subscriptionFieldsFromServer($Row));
+}
+}
 loadProduction('Core/SMS/IPPanel.php');
 loadProduction('Bot/Scheduler.php');
 $Phone = '09123456789';
@@ -155,7 +178,8 @@ check(TelegramClient::$Sent === [1], 'no local-only fallback when live state una
 $Expire = new ReflectionMethod(Scheduler::class, 'expireSubscription');
 $Expire->invoke(null, 1);
 check(ServerClient::$Updates === 0 && Repository::$Locks === [], 'stale expiry job cannot disable renewed subscription, lock released');
-Repository::$Users[1] = array_replace($Base, ['Expiration_Time_Stamp' => time() - 1, 'Phone' => $Phone]);
+$ExpiredAt = strtotime(date('Y-m-d'));
+Repository::$Users[1] = array_replace($Base, ['Expiration_Time_Stamp' => $ExpiredAt, 'Phone' => $Phone]);
 $ExpiredSnapshot = Repository::$Users[1]; $Before = HttpClient::$Calls; Repository::$FailCleanup = true;
 try { $Expire->invoke(null, 1); } catch (RuntimeException $Error) { check(str_contains($Error->getMessage(), 'cleanup'), 'simulated crash after SMS'); }
 Repository::$FailCleanup = false; $Expire->invoke(null, 1); $Expire->invoke(null, 1);

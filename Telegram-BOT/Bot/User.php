@@ -317,7 +317,7 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 public static function appDownloadMenu(Context $Context): void {
 $Text = Common::greet($Context, 'نرم افزار/اپلیکیشن')
 . "🪟فعلاً نسخهٔ ویندوز در دسترس است.\n"
-. "نسخهٔ اندروید بعداً به این بخش اضافه می‌شود؛ اطلاعات انتشار ویندوز از GitHub خوانده می‌شود." . Helper::userFooter();
+. "نسخهٔ اندروید بعداً به این بخش اضافه می شود؛ اطلاعات انتشار ویندوز از GitHub خوانده می شود." . Helper::userFooter();
 $Rows = Menu::rows([
 [['🪟ویندوز', 'app_download_windows']],
 ]);
@@ -344,7 +344,7 @@ foreach (['stable' => '✅نسخه رسمی', 'beta' => '🧪نسخه بتا'] a
 $Release = $Catalog[$Channel] ?? null;
 $Text .= "\n➖➖➖➖➖➖➖➖➖\n{$Channel_Label}\n";
 if (!is_array($Release)) {
-$Text .= "⏳برای این کانال هنوز نسخهٔ منتشرشده‌ای موجود نیست.\n";
+$Text .= "⏳برای این کانال هنوز نسخهٔ منتشرشده ای موجود نیست.\n";
 continue;
 }
 
@@ -360,7 +360,7 @@ if ($Assets === []) {
 $Text .= "⚠️فایل نصب در این انتشار بارگذاری نشده است.\n";
 }
 else {
-$Text .= "📁فایل‌های نصب:\n";
+$Text .= "📁فایل های نصب:\n";
 foreach ($Assets as $Asset) {
 $Size = (int)($Asset['size'] ?? 0);
 $Size_Label = $Size > 0 ? ' — ' . Helper::formatBytes($Size) : '';
