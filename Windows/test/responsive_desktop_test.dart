@@ -94,6 +94,7 @@ void main() {
           const DevicePage(), const AccountPage(), const SettingsPage(),
           const LogsPage(), const AboutPage(), const UpdatesPage(),
         ];
+        final problems = <String>[];
         for (final page in pages) {
           final bool fullWindow = page is LandingPage || page is LoginPage;
           await tester.pumpWidget(MultiProvider(
@@ -122,7 +123,7 @@ void main() {
           final problem = tester.takeException();
           if (problem != null) {
             final stack = problem is Error ? problem.stackTrace : null;
-            fail('${page.runtimeType} at $size / $textScale: $problem\n$stack');
+            problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
         }
         await tester.pumpWidget(const SizedBox());
@@ -133,6 +134,7 @@ void main() {
         toasts.dispose();
         updates.dispose();
         vpn.dispose();
+        expect(problems, isEmpty, reason: problems.join('\n'));
       });
     }
   }
