@@ -874,19 +874,36 @@ void main() {
       expect(quick.contains('LanSharingDialog.show'), isTrue);
     });
 
-    test('چهار منوی دستگاه من، حساب من، تنظیمات و درباره ساختار یکدست دارند', () {
+    test('منوها یک سربرگ هماهنگ دارند و خلاصه ها در همان کارت قرار می گیرند', () {
       for (final String page in <String>[
         'device_page',
         'account_page',
         'settings_page',
+        'logs_page',
         'about_page',
+        'updates_page',
       ]) {
         final String text = read('lib/ui/pages/$page.dart');
         expect(text.contains('PageHeader('), isTrue, reason: page);
-        expect(text.contains('PageBanner('), isTrue, reason: page);
+        expect(text.contains('padding: AppMetrics.pagePadding'), isTrue, reason: page);
+      }
+      for (final String page in <String>[
+        'device_page',
+        'account_page',
+        'about_page',
+        'updates_page',
+      ]) {
+        final String text = read('lib/ui/pages/$page.dart');
+        expect(text.contains('summary: PageBanner('), isTrue, reason: page);
+        expect(text.contains('embedded: true'), isTrue, reason: page);
         expect(text.contains('SectionHeader('), isTrue, reason: page);
         expect(text.contains('AppMetrics.radiusXl'), isTrue, reason: page);
       }
+      expect(
+        read('lib/ui/pages/settings_page.dart').contains('PageBanner('),
+        isFalse,
+        reason: 'صفحه تنظیمات باید فقط یک سربرگ داشته باشد',
+      );
       expect(
         read('lib/ui/pages/settings_page.dart').contains('ResponsiveColumns('),
         isTrue,

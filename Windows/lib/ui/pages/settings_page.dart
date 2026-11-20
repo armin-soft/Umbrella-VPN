@@ -472,32 +472,6 @@ class _SettingsPageState extends State<SettingsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        PageBanner(
-          leading: IconSquare(
-            icon: Icons.layers_rounded,
-            color: colors.primary,
-            size: AppMetrics.iconBoxHero,
-            radius: AppMetrics.radiusLg,
-          ),
-          title: 'تنظیمات عمومی برنامه و سیستم',
-          subtitle:
-              'تمام تغییرات بی درنگ ذخیره و به صورت خودکار اعمال می شوند.',
-          badges: <Widget>[
-            Pill(
-              label: 'پوسته ${cfg.theme.label}',
-              icon: Icons.palette_rounded,
-              color: colors.primary,
-              dense: true,
-            ),
-            Pill(
-              label: settings.elevated ? 'دسترسی مدیر فعال' : 'کاربر استاندارد',
-              icon: Icons.admin_panel_settings_rounded,
-              color: settings.elevated ? colors.success : colors.warning,
-              dense: true,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppMetrics.space5),
         _Section(
           icon: Icons.palette_rounded,
           title: 'حالت پوسته',

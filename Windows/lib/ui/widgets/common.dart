@@ -253,6 +253,7 @@ class PageHeader extends StatelessWidget {
     this.actions = const <Widget>[],
     this.eyebrow = 'مرکز مدیریت آمبرلا',
     this.premium = false,
+    this.summary,
   });
 
   final String title;
@@ -261,6 +262,7 @@ class PageHeader extends StatelessWidget {
   final List<Widget> actions;
   final String eyebrow;
   final bool premium;
+  final Widget? summary;
 
   @override
   Widget build(BuildContext context) {
@@ -504,24 +506,40 @@ class PageHeader extends StatelessWidget {
           colors.surface,
         ],
       ),
-      child: Stack(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          PositionedDirectional(
-            start: 0,
-            top: AppMetrics.space4,
-            bottom: AppMetrics.space4,
-            child: Container(
-              width: AppMetrics.space1,
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.78),
-                borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
+          Stack(
+            children: <Widget>[
+              PositionedDirectional(
+                start: 0,
+                top: AppMetrics.space4,
+                bottom: AppMetrics.space4,
+                child: Container(
+                  width: AppMetrics.space1,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.78),
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
+                  ),
+                ),
               ),
+              Padding(
+                padding: const EdgeInsets.all(AppMetrics.space4),
+                child: content,
+              ),
+            ],
+          ),
+          if (summary != null) ...<Widget>[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4),
+              child: Divider(height: 1, color: colors.border),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(AppMetrics.space4),
-            child: content,
-          ),
+            Padding(
+              padding: const EdgeInsets.all(AppMetrics.space4),
+              child: summary,
+            ),
+          ],
         ],
       ),
     );
@@ -597,7 +615,7 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// نوار هویتی یکدست بالای همه منوها (دستگاه من، حساب من، تنظیمات، درباره).
+/// خلاصه هویتی منو؛ می تواند مستقل یا درون سربرگ اصلی قرار بگیرد.
 class PageBanner extends StatelessWidget {
   const PageBanner({
     super.key,
@@ -606,6 +624,7 @@ class PageBanner extends StatelessWidget {
     required this.subtitle,
     this.subtitleLtr = false,
     this.badges = const <Widget>[],
+    this.embedded = false,
   });
 
   final Widget leading;
@@ -613,10 +632,93 @@ class PageBanner extends StatelessWidget {
   final String subtitle;
   final bool subtitleLtr;
   final List<Widget> badges;
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
+    final Widget content = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool compact = constraints.maxWidth <
+            math.max(AppMetrics.breakpointCompact, 720 * textScale);
+        final Widget subtitleWidget = Text(
+          Fa.num(subtitle),
+          textDirection: subtitleLtr ? TextDirection.ltr : null,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+                height: 1.6,
+              ),
+        );
+        final Widget identity = Row(
+          children: <Widget>[
+            leading,
+            const SizedBox(width: AppMetrics.space4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    Fa.num(title),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: (embedded
+                            ? Theme.of(context).textTheme.titleMedium
+                            : Theme.of(context).textTheme.titleLarge)
+                        ?.copyWith(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: AppMetrics.space1),
+                  if (subtitleLtr)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: subtitleWidget,
+                    )
+                  else
+                    subtitleWidget,
+                ],
+              ),
+            ),
+          ],
+        );
+        if (badges.isEmpty) {
+          return identity;
+        }
+        final Widget badgeWrap = Wrap(
+          spacing: AppMetrics.space2,
+          runSpacing: AppMetrics.space2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: badges,
+        );
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              identity,
+              const SizedBox(height: AppMetrics.space3),
+              badgeWrap,
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            Expanded(child: identity),
+            const SizedBox(width: AppMetrics.space4),
+            Flexible(child: badgeWrap),
+          ],
+        );
+      },
+    );
+
+    if (embedded) {
+      return content;
+    }
     return GlassCard(
       padding: AppMetrics.cardPadding,
       radius: AppMetrics.radiusXl,
@@ -632,80 +734,7 @@ class PageBanner extends StatelessWidget {
           colors.surface,
         ],
       ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final double textScale = MediaQuery.textScalerOf(context).scale(1);
-          final bool compact = constraints.maxWidth <
-              math.max(AppMetrics.breakpointCompact, 720 * textScale);
-          final Widget subtitleWidget = Text(
-            Fa.num(subtitle),
-            textDirection: subtitleLtr ? TextDirection.ltr : null,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.6,
-                ),
-          );
-          final Widget identity = Row(
-            children: <Widget>[
-              leading,
-              const SizedBox(width: AppMetrics.space4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      Fa.num(title),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.w900,
-                          ),
-                    ),
-                    const SizedBox(height: AppMetrics.space1),
-                    if (subtitleLtr)
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: subtitleWidget,
-                      )
-                    else
-                      subtitleWidget,
-                  ],
-                ),
-              ),
-            ],
-          );
-          if (badges.isEmpty) {
-            return identity;
-          }
-          final Widget badgeWrap = Wrap(
-            spacing: AppMetrics.space2,
-            runSpacing: AppMetrics.space2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: badges,
-          );
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                identity,
-                const SizedBox(height: AppMetrics.space3),
-                badgeWrap,
-              ],
-            );
-          }
-          return Row(
-            children: <Widget>[
-              Expanded(child: identity),
-              const SizedBox(width: AppMetrics.space4),
-              Flexible(child: badgeWrap),
-            ],
-          );
-        },
-      ),
+      child: content,
     );
   }
 }
@@ -892,6 +921,7 @@ class InfoRow extends StatelessWidget {
     this.trailing,
     this.ltr = false,
     this.tooltip = false,
+    this.stacked = true,
   });
 
   final IconData icon;
@@ -902,6 +932,7 @@ class InfoRow extends StatelessWidget {
   final Widget? trailing;
   final bool ltr;
   final bool tooltip;
+  final bool stacked;
 
   @override
   Widget build(BuildContext context) {
@@ -910,23 +941,83 @@ class InfoRow extends StatelessWidget {
     Widget valueText = Text(
       display,
       textDirection: ltr ? TextDirection.ltr : null,
-      textAlign: ltr ? TextAlign.left : TextAlign.end,
-      maxLines: 1,
+      textAlign: ltr
+          ? TextAlign.left
+          : (stacked ? TextAlign.start : TextAlign.end),
+      maxLines: stacked ? 2 : 1,
       overflow: TextOverflow.ellipsis,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: valueColor ?? colors.textPrimary,
             fontWeight: FontWeight.w700,
+            height: stacked ? 1.5 : null,
           ),
     );
-    if (tooltip && display.isNotEmpty) {
+    if ((tooltip || stacked) && display.isNotEmpty) {
       valueText = Tooltip(message: display, child: valueText);
     }
-    final Widget row = Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppMetrics.space2,
-        vertical: AppMetrics.space3,
-      ),
-      child: Row(
+
+    final Widget rowContent;
+    if (stacked) {
+      rowContent = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: AppMetrics.space1),
+            child: Icon(
+              icon,
+              size: AppMetrics.iconSm,
+              color: colors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        Fa.num(label),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              height: 1.4,
+                            ),
+                      ),
+                    ),
+                    if (trailing != null) ...<Widget>[
+                      const SizedBox(width: AppMetrics.space2),
+                      trailing!,
+                    ],
+                    if (onTap != null) ...<Widget>[
+                      const SizedBox(width: AppMetrics.space2),
+                      Icon(
+                        Icons.open_in_new_rounded,
+                        size: AppMetrics.iconXs,
+                        color: colors.textSecondary,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: AppMetrics.space1),
+                Align(
+                  alignment: ltr
+                      ? AlignmentDirectional.centerEnd
+                      : AlignmentDirectional.centerStart,
+                  child: valueText,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    } else {
+      rowContent = Row(
         children: <Widget>[
           Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
           const SizedBox(width: AppMetrics.space3),
@@ -961,7 +1052,15 @@ class InfoRow extends StatelessWidget {
             ),
           ],
         ],
+      );
+    }
+
+    final Widget row = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space2,
+        vertical: AppMetrics.space3,
       ),
+      child: rowContent,
     );
     if (onTap == null) {
       return row;

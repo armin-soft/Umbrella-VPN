@@ -343,24 +343,28 @@ class _ServerCard extends StatelessWidget {
           ),
           const SizedBox(height: AppMetrics.space3),
           InfoRow(
+            stacked: false,
             icon: Icons.dns_rounded,
             label: 'سرور',
             value: Fa.num(has ? node.name : 'انتخاب نشده'),
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.lock_outline_rounded,
             label: 'پروتکل',
             value: Fa.num(has ? node.protocol.label : '—'),
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.memory_rounded,
             label: 'هسته',
             value: 'آمبرلا',
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.wifi_tethering_rounded,
             label: 'حالت اتصال',
             value: Fa.num(
@@ -373,6 +377,7 @@ class _ServerCard extends StatelessWidget {
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.public_rounded,
             label: 'کشور خروجی',
             value: Fa.num(
@@ -405,24 +410,28 @@ class _AppCard extends StatelessWidget {
           ),
           const SizedBox(height: AppMetrics.space3),
           InfoRow(
+            stacked: false,
             icon: Icons.tag_rounded,
             label: 'نسخه',
             value: Fa.num(AppConfig.versionLabel),
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.person_rounded,
             label: 'حساب',
             value: Fa.num(auth.account.displayName),
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.workspace_premium_rounded,
             label: 'سرویس',
             value: Fa.num(auth.account.planLabel),
           ),
           const Divider(height: AppMetrics.space4),
           InfoRow(
+            stacked: false,
             icon: Icons.window_rounded,
             label: 'سیستم',
             value: 'ویندوز ۱۰ و ۱۱ (۶۴ بیت)',

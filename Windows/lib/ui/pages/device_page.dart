@@ -325,60 +325,58 @@ class _DevicePageState extends State<DevicePage> {
                     ),
                   ]
                 : const <Widget>[],
-          ),
-          const SizedBox(height: AppMetrics.space4),
-
-          // ── نوار هویت اختصاصی رایانه ───────────────────────────────────
-          PageBanner(
-            leading: IconSquare(
-              icon: device.hasBattery
-                  ? Icons.laptop_windows_rounded
-                  : Icons.computer_rounded,
-              color: colors.primary,
-              size: AppMetrics.iconBoxHero,
-              radius: AppMetrics.radiusLg,
-            ),
-            title: _systemNameFa(device.hostname, device.formFactorFa),
-            subtitle: '${device.platformLabel}  •  ${device.cpuLabelFa}',
-            badges: <Widget>[
-              Pill(
-                label: device.elevated ? 'دسترسی مدیر فعال' : 'کاربر استاندارد',
-                icon: device.elevated
-                    ? Icons.verified_user_rounded
-                    : Icons.gpp_maybe_rounded,
-                color: device.elevated ? colors.success : colors.warning,
-                dense: true,
-              ),
-              Pill(
-                label: hasLocalIp ? 'شبکه محلی متصل' : 'بررسی شبکه',
-                icon: Icons.lan_rounded,
-                color: hasLocalIp ? colors.success : colors.warning,
-                dense: true,
-              ),
-              Pill(
-                label: device.adapterLabelFa,
-                icon: Icons.wifi_rounded,
-                color: colors.info,
-                dense: true,
-              ),
-              Pill(
-                label: device.hasBattery && device.batteryPercent >= 0
-                    ? 'باتری ${Fa.num(device.batteryPercent)}٪'
-                    : 'برق مستقیم',
+            summary: PageBanner(
+              embedded: true,
+              leading: IconSquare(
                 icon: device.hasBattery
-                    ? (device.powerPlugged
-                        ? Icons.battery_charging_full_rounded
-                        : Icons.battery_std_rounded)
-                    : Icons.power_rounded,
-                color: device.hasBattery &&
-                        device.batteryPercent >= 0 &&
-                        device.batteryPercent <= 20 &&
-                        !device.powerPlugged
-                    ? colors.danger
-                    : colors.primary,
-                dense: true,
+                    ? Icons.laptop_windows_rounded
+                    : Icons.computer_rounded,
+                color: colors.primary,
+                size: AppMetrics.iconBoxHero,
+                radius: AppMetrics.radiusLg,
               ),
-            ],
+              title: _systemNameFa(device.hostname, device.formFactorFa),
+              subtitle: '${device.platformLabel}  •  ${device.cpuLabelFa}',
+              badges: <Widget>[
+                Pill(
+                  label: device.elevated ? 'دسترسی مدیر فعال' : 'کاربر استاندارد',
+                  icon: device.elevated
+                      ? Icons.verified_user_rounded
+                      : Icons.gpp_maybe_rounded,
+                  color: device.elevated ? colors.success : colors.warning,
+                  dense: true,
+                ),
+                Pill(
+                  label: hasLocalIp ? 'شبکه محلی متصل' : 'بررسی شبکه',
+                  icon: Icons.lan_rounded,
+                  color: hasLocalIp ? colors.success : colors.warning,
+                  dense: true,
+                ),
+                Pill(
+                  label: device.adapterLabelFa,
+                  icon: Icons.wifi_rounded,
+                  color: colors.info,
+                  dense: true,
+                ),
+                Pill(
+                  label: device.hasBattery && device.batteryPercent >= 0
+                      ? 'باتری ${Fa.num(device.batteryPercent)}٪'
+                      : 'برق مستقیم',
+                  icon: device.hasBattery
+                      ? (device.powerPlugged
+                          ? Icons.battery_charging_full_rounded
+                          : Icons.battery_std_rounded)
+                      : Icons.power_rounded,
+                  color: device.hasBattery &&
+                          device.batteryPercent >= 0 &&
+                          device.batteryPercent <= 20 &&
+                          !device.powerPlugged
+                      ? colors.danger
+                      : colors.primary,
+                  dense: true,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppMetrics.space4),
 

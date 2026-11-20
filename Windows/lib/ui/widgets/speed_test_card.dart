@@ -28,8 +28,8 @@ class SpeedTestCard extends StatelessWidget {
           Text(vpn.speedPhase == 'upload' ? 'اندازه گیری ارسال...' : 'اندازه گیری دریافت...'),
         ],
         if (result != null) ...<Widget>[
-          InfoRow(icon: Icons.download_rounded, label: 'دریافت', value: '${Fa.decimal(result.download.megabitsPerSecond, fraction: 2)} مگابیت بر ثانیه'),
-          InfoRow(icon: Icons.upload_rounded, label: 'ارسال', value: '${Fa.decimal(result.upload.megabitsPerSecond, fraction: 2)} مگابیت بر ثانیه'),
+          InfoRow(stacked: false, icon: Icons.download_rounded, label: 'دریافت', value: '${Fa.decimal(result.download.megabitsPerSecond, fraction: 2)} مگابیت بر ثانیه'),
+          InfoRow(stacked: false, icon: Icons.upload_rounded, label: 'ارسال', value: '${Fa.decimal(result.upload.megabitsPerSecond, fraction: 2)} مگابیت بر ثانیه'),
           Text('زمان سنجش: ${Fa.dateTime(result.measuredAt.toLocal())}'),
         ],
         if (vpn.speedError.isNotEmpty) Text(Fa.num(vpn.speedError), style: TextStyle(color: context.colors.warning)),

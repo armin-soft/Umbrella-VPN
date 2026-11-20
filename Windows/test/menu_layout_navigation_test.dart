@@ -170,6 +170,13 @@ void main() {
                 eyebrow: 'مرکز تنظیمات', premium: true,
                 subtitle: 'تنظیمات شبکه و ورودی برای دستگاه',
                 icon: Icons.settings_rounded,
+                summary: const PageBanner(
+                  embedded: true,
+                  leading: IconSquare(icon: Icons.desktop_windows_rounded, color: Colors.blue),
+                  title: 'این دستگاه',
+                  subtitle: 'مشخصات و وضعیت فعلی',
+                  badges: <Widget>[Pill(label: 'متصل', color: Colors.green, dense: true)],
+                ),
                 actions: [OutlinedButton.icon(onPressed: () {},
                   icon: const Icon(Icons.arrow_back_rounded), label: const Text('بازگشت به تنظیمات'))]),
             )),
@@ -178,6 +185,8 @@ void main() {
       ));
       await tester.pump();
       expect(tester.takeException(), isNull);
+      expect(find.byType(GlassCard), findsOneWidget);
+      expect(find.byType(PageBanner), findsOneWidget);
       expect(tester.getSize(find.byType(OutlinedButton)).height, greaterThanOrEqualTo(AppMetrics.controlHeightSmall));
     });
   }
