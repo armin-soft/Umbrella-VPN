@@ -361,6 +361,9 @@ void main() {
       // دکمه دانلود باید واقعا مرورگر را باز کند، نه فقط گزارش بنویسد.
       final String updates = read('lib/state/update_controller.dart');
       expect(updates.contains('launchUrl'), isTrue);
+      final String main = read('lib/main.dart');
+      expect(main.contains('updates.checkIfDue(silent: true)'), isTrue);
+      expect(main.contains('updates.check(silent: true)'), isFalse);
     });
 
     test('چیدمان ویندوز ریسپانسیو است', () {
@@ -611,6 +614,16 @@ void main() {
       final String nav = read('lib/ui/widgets/shell_widgets.dart');
       expect(nav.contains('AppConfig.developer'), isFalse);
       expect(nav.contains('آرمین سافت'), isFalse);
+    });
+
+    test('صفحه دستگاه و به روز رسانی برای ناوبری مجدد حفظ می شوند', () {
+      final String shell = read('lib/ui/shell/app_shell.dart');
+      expect(shell.contains('offstage: _index != 1'), isTrue);
+      expect(shell.contains('child: const DevicePage()'), isTrue);
+      expect(shell.contains('enabled: _appVisible && _index == 1'), isTrue);
+      expect(shell.contains('offstage: _index != 6'), isTrue);
+      expect(shell.contains('child: const UpdatesPage()'), isTrue);
+      expect(shell.contains('enabled: _appVisible && _index == 6'), isTrue);
     });
   });
 

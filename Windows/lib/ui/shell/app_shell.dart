@@ -322,13 +322,39 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       ),
                       child: SizedBox.expand(
                         child: RepaintBoundary(
-                          child: TickerMode(
-                            enabled: _appVisible,
-                            child: _index == 0
-                                ? _buildActivePage(_index)
-                                : MenuPageBackdrop(
-                                    child: _buildActivePage(_index),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              // این دو صفحه هنگام خروج از منو زنده می مانند؛ در غیر
+                              // این صورت هر بازگشت آن ها را از ابتدا بارگذاری می کرد.
+                              Offstage(
+                                offstage: _index != 1,
+                                child: TickerMode(
+                                  enabled: _appVisible && _index == 1,
+                                  child: MenuPageBackdrop(
+                                    child: const DevicePage(),
                                   ),
+                                ),
+                              ),
+                              Offstage(
+                                offstage: _index != 6,
+                                child: TickerMode(
+                                  enabled: _appVisible && _index == 6,
+                                  child: MenuPageBackdrop(
+                                    child: const UpdatesPage(),
+                                  ),
+                                ),
+                              ),
+                              if (_index != 1 && _index != 6)
+                                TickerMode(
+                                  enabled: _appVisible,
+                                  child: _index == 0
+                                      ? _buildActivePage(_index)
+                                      : MenuPageBackdrop(
+                                          child: _buildActivePage(_index),
+                                        ),
+                                ),
+                            ],
                           ),
                         ),
                       ),

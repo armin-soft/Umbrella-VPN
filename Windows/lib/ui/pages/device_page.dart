@@ -62,6 +62,11 @@ class _DevicePageState extends State<DevicePage> {
   @override
   void initState() {
     super.initState();
+    final DeviceProfile cachedDevice = context.read<VpnController>().device;
+    if (_hasDeviceData(cachedDevice)) {
+      _device = cachedDevice;
+      _loading = false;
+    }
     _uptimeTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(
@@ -105,6 +110,16 @@ class _DevicePageState extends State<DevicePage> {
     super.dispose();
   }
 
+  bool _hasDeviceData(DeviceProfile device) =>
+      device.hostname.isNotEmpty ||
+      device.machineId.isNotEmpty ||
+      device.localIp.isNotEmpty ||
+      device.mac.isNotEmpty ||
+      device.os.isNotEmpty ||
+      device.cpu.isNotEmpty ||
+      device.ramTotalMb > 0 ||
+      device.diskTotalMb > 0;
+
   Future<void> _refreshDevice({bool includePublicIp = false}) async {
     if (_refreshing) {
       return;
@@ -112,7 +127,7 @@ class _DevicePageState extends State<DevicePage> {
     if (mounted) {
       setState(() {
         _refreshing = true;
-        if (_device.machineId.isEmpty && _device.hostname.isEmpty) {
+        if (!_hasDeviceData(_device) && _lastCheckedAt == null) {
           _loading = true;
         }
       });
@@ -135,11 +150,7 @@ class _DevicePageState extends State<DevicePage> {
 
     final DateTime checked = DateTime.now();
     setState(() {
-      if (fetched.hostname.isNotEmpty ||
-          fetched.machineId.isNotEmpty ||
-          fetched.localIp.isNotEmpty ||
-          fetched.ramTotalMb > 0 ||
-          fetched.diskTotalMb > 0) {
+      if (_hasDeviceData(fetched)) {
         _device = fetched;
       }
       _lastCheckedAt = checked;
@@ -249,12 +260,8 @@ class _DevicePageState extends State<DevicePage> {
     final VpnController vpn = context.read<VpnController>();
     final UmbrellaColors colors = context.colors;
 
-    final DeviceProfile device = (_device.hostname.isEmpty &&
-            _device.machineId.isEmpty &&
-            _device.localIp.isEmpty &&
-            _device.ramTotalMb <= 0)
-        ? vpn.device
-        : _device;
+    final DeviceProfile device =
+        _hasDeviceData(_device) ? _device : vpn.device;
 
     final int cores =
         device.cpuCores > 0 ? device.cpuCores : Platform.numberOfProcessors;
@@ -557,6 +564,9 @@ class _DevicePageState extends State<DevicePage> {
               actions: _loading
                   ? const <Widget>[
                       SizedBox(
+                        key: ValueKey<String>(
+                          'device-refresh-indicator',
+                        ),
                         width: AppMetrics.iconSm,
                         height: AppMetrics.iconSm,
                         child: CircularProgressIndicator(strokeWidth: 2),

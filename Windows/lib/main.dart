@@ -227,12 +227,12 @@ Future<void> main(List<String> arguments) async {
     await subscriptions.loadCached();
     await updates.loadSkipped();
     if (settings.settings.checkUpdatesOnStart) {
-      unawaited(updates.check(silent: true));
+      unawaited(updates.checkIfDue(silent: true));
     }
     // بررسی خودکار دوره ای نسخه جدید در پس زمینه (کانال فعال کاربر).
     Timer.periodic(const Duration(minutes: 60), (_) {
       if (settings.settings.checkUpdatesOnStart) {
-        unawaited(updates.check(silent: true));
+        unawaited(updates.checkIfDue(silent: true));
       }
     });
     // همگام سازی کاملا خودکار حساب، پنل، کنترل محتوا، طرح های هدیه و سرورها.

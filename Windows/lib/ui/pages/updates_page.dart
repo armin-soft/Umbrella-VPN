@@ -27,7 +27,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
   @override
   void initState() {
     super.initState();
-    _autoCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _autoCheckTimer = Timer.periodic(UpdateController.autoCheckInterval, (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(
             WidgetsBinding.instance.lifecycleState,
@@ -60,17 +60,21 @@ class _UpdatesPageState extends State<UpdatesPage> {
       return;
     }
     final UpdateController updates = context.read<UpdateController>();
-    if (updates.checking || updates.downloading || updates.installing) {
+    if (updates.checking ||
+        updates.downloading ||
+        updates.installing ||
+        !updates.autoCheckDue) {
       return;
     }
-    updates.loadSkipped().then((_) {
+    unawaited(updates.loadSkipped().then((_) {
       if (mounted &&
           !updates.checking &&
           !updates.downloading &&
-          !updates.installing) {
-        updates.check(silent: true);
+          !updates.installing &&
+          updates.autoCheckDue) {
+        unawaited(updates.checkIfDue(silent: true));
       }
-    });
+    }));
   }
 
   @override

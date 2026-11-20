@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -9,13 +11,22 @@ import 'package:umbrella_vpn/ui/pages/device_page.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _Native extends NativeBridge {
+  _Native({this.deviceInfoResult});
+
+  final Future<DeviceProfile>? deviceInfoResult;
+
   @override
-  Future<DeviceProfile> deviceInfo() async => DeviceProfile.empty;
+  Future<DeviceProfile> deviceInfo() =>
+      deviceInfoResult ?? Future<DeviceProfile>.value(DeviceProfile.empty);
 }
 
 class _Vpn extends ChangeNotifier implements VpnController {
   @override
-  DeviceProfile get device => DeviceProfile.empty;
+  DeviceProfile get device => const DeviceProfile(
+        hostname: 'test-pc',
+        machineId: '12345678',
+        localIp: '192.168.1.20',
+      );
 
   @override
   String get realIp => '';
@@ -39,7 +50,10 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(980, 820));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final _Native native = _Native();
+      final Completer<DeviceProfile> pendingDeviceInfo =
+          Completer<DeviceProfile>();
+      final _Native native =
+          _Native(deviceInfoResult: pendingDeviceInfo.future);
       final _Vpn vpn = _Vpn();
       final ToastController toasts = ToastController();
       addTearDown(() async {
@@ -64,6 +78,12 @@ void main() {
           ),
         ),
       );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('device-refresh-indicator')),
+        findsNothing,
+      );
+      pendingDeviceInfo.complete(DeviceProfile.empty);
       await tester.pumpAndSettle();
 
       expect(find.byType(TabBar), findsOneWidget);
