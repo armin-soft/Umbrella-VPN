@@ -80,7 +80,6 @@ class _UpdatesPageState extends State<UpdatesPage> {
     final UmbrellaColors colors = context.colors;
     final UpdateInfo? available = updates.available;
     final bool hasUpdate = available != null;
-    final bool checked = updates.lastCheckedAt != null && updates.error.isEmpty;
     final bool activeTransfer = updates.downloading || updates.installing;
     final List<String> changelog =
         available?.changelogItems ?? const <String>[];
