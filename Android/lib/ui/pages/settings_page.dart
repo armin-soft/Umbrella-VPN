@@ -1334,12 +1334,12 @@ class _CategoryNavTile extends StatelessWidget {
               ),
             ),
             if (badge != null) ...<Widget>[
-              Pill(
+              Flexible(child: Pill(
                 label: badge!,
                 icon: Icons.check_circle_rounded,
                 color: accent,
                 dense: true,
-              ),
+              )),
               const SizedBox(width: AppMetrics.space2),
             ],
             Icon(

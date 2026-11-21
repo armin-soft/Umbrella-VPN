@@ -638,15 +638,17 @@ class Pill extends StatelessWidget {
             ),
             const SizedBox(width: AppMetrics.space1),
           ],
-          Text(
+          Flexible(child: Text(
             Fa.num(label),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: dense ? AppMetrics.fontCaption : AppMetrics.fontSmall,
               fontWeight: FontWeight.w700,
               color: tone,
               fontFamily: AppTheme.fontFamily,
             ),
-          ),
+          )),
         ],
       ),
     );

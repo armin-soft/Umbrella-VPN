@@ -302,60 +302,25 @@ class _ConnectPageState extends State<ConnectPage> {
                     children: <Widget>[
                       Row(
                         children: <Widget>[
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Row(
-                                  children: <Widget>[
-                                    Icon(
-                                      _greetingIcon(),
-                                      size: AppMetrics.iconMd,
-                                      color: colors.warning,
-                                    ),
-                                    const SizedBox(width: AppMetrics.space2),
-                                    Flexible(
-                                      child: Text(
-                                        Fa.num(
-                                          'سلام ${account.displayName}، '
-                                          '${Fa.greeting()}',
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: AppMetrics.space1),
-                                LiveDateTimeLine(
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(color: colors.textSecondary),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (subs.needsLogin) ...<Widget>[
-                            Pill(
-                              label: 'برای اشتراک وارد شو',
-                              icon: Icons.login_rounded,
-                              color: colors.warning,
-                            ),
-                            const SizedBox(width: AppMetrics.space2),
-                          ],
-                          _IpChip(
-                            ip: shownIp,
-                            flagCode: flagCode,
-                            country: connected ? countryName : '',
-                            connected: connected,
-                          ),
+                          Icon(_greetingIcon(), size: AppMetrics.iconMd, color: colors.warning),
+                          const SizedBox(width: AppMetrics.space2),
+                          Expanded(child: Text(
+                            Fa.num('سلام ${account.displayName}، ${Fa.greeting()}'),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                          )),
+                        ],
+                      ),
+                      const SizedBox(height: AppMetrics.space1),
+                      LiveDateTimeLine(style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.textSecondary)),
+                      const SizedBox(height: AppMetrics.space2),
+                      Wrap(
+                        spacing: AppMetrics.space2,
+                        runSpacing: AppMetrics.space2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: <Widget>[
+                          if (subs.needsLogin) Pill(label: 'برای اشتراک وارد شو', icon: Icons.login_rounded, color: colors.warning),
+                          _IpChip(ip: shownIp, flagCode: flagCode, country: connected ? countryName : '', connected: connected),
                         ],
                       ),
                       if (!account.canConnect)
