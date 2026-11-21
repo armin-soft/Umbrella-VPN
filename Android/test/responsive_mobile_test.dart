@@ -63,8 +63,8 @@ void main() {
     await LocalStore.instance.init();
   });
 
-  for (final size in <Size>[const Size(320, 568)]) {
-    for (final textScale in <double>[1.0]) {
+  for (final size in <Size>[const Size(320, 568), const Size(360, 640), const Size(412, 915), const Size(640, 360), const Size(800, 1280)]) {
+    for (final textScale in <double>[1.0, 1.3]) {
       testWidgets('Android screens at $size, text $textScale', (tester) async {
         await tester.binding.setSurfaceSize(size);
         addTearDown(() => tester.binding.setSurfaceSize(null));
