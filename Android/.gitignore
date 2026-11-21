@@ -5,6 +5,7 @@
 .pub/
 build/
 android/.gradle/
+android/app/libs/umbrella-core.aar
 android/local.properties
 android/key.properties
 android/gradlew

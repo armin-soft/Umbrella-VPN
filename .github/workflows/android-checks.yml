@@ -44,7 +44,11 @@ jobs:
           channel: stable
           flutter-version: '3.29.3'
           cache: true
-      - name: Compile native bridge (test scaffold only)
+      - name: Fetch verified mobile engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash Android/tools/fetch-umbrella-core.sh
+      - name: Compile native bridge and engine (test scaffold only)
         shell: bash
         run: |
           flutter create --platforms android --org ir.umbrella --project-name app "$RUNNER_TEMP/umbrella-native-check"
