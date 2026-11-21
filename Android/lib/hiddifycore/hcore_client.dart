@@ -24,6 +24,11 @@ class HcoreClient extends $grpc.Client {
     (ParseRequest value) => value.writeToBuffer(),
     (List<int> value) => ParseResponse.fromBuffer(value),
   );
+  static final _$coreInfoListener = $grpc.ClientMethod<HEmpty, CoreInfoResponse>(
+    '/hcore.Core/CoreInfoListener',
+    (HEmpty value) => value.writeToBuffer(),
+    (List<int> value) => CoreInfoResponse.fromBuffer(value),
+  );
   static final _$start = $grpc.ClientMethod<StartRequest, CoreInfoResponse>(
     '/hcore.Core/Start',
     (StartRequest value) => value.writeToBuffer(),
@@ -61,6 +66,12 @@ class HcoreClient extends $grpc.Client {
       options: options,
     );
   }
+
+  /// Start returns before the core is ready; observe this stream for its result.
+  $grpc.ResponseStream<CoreInfoResponse> coreInfoListener({
+    $grpc.CallOptions? options,
+  }) => $createStreamingCall(_$coreInfoListener, Stream.value(HEmpty.create()),
+      options: options);
 
   Future<CoreInfoResponse> start(
     StartRequest request, {

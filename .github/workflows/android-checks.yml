@@ -15,6 +15,19 @@ permissions:
   contents: read
 
 jobs:
+  core-archive:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the same engine version as Windows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v5.9.11 --repo hiddify/hiddify-core \
+            --pattern hiddify-lib-android.tar.gz --dir "$RUNNER_TEMP"
+          echo '853e897ee2dcbde30801314eb30346e0a4fc61c38f6b4fc4ee901a18fabec3a9  '"$RUNNER_TEMP"'/hiddify-lib-android.tar.gz' | sha256sum --check
+          tar -tzf "$RUNNER_TEMP/hiddify-lib-android.tar.gz" > "$RUNNER_TEMP/core-files.txt"
+          echo "::notice::Android core archive verified: $(tr '\n' ' ' < "$RUNNER_TEMP/core-files.txt" | cut -c1-1000)"
   tests:
     runs-on: ubuntu-latest
     defaults:
