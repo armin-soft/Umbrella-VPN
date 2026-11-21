@@ -1,6 +1,0 @@
--keep class com.hiddify.core.** { *; }
--keep class go.** { *; }
--keep class ir.umbrella.vpn.** { *; }
--keep class io.flutter.** { *; }
--dontwarn io.grpc.**
--dontwarn javax.annotation.**
