@@ -58,7 +58,14 @@ jobs:
             echo "::error::$message"
             exit 1
           fi
-          echo '::notice::Actual app debug build succeeded; VPN integration remains incomplete and this APK is not published.'
+          echo '::notice::Actual app debug build succeeded; VPN integration remains unverified.'
+      - name: Save experimental debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Android-experimental-debug
+          path: Android/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
   tests:
     runs-on: ubuntu-latest
     defaults:

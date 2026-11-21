@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/platform/native.dart';
+import 'package:umbrella_vpn/umbrella_core/core_messages.dart';
 import 'package:umbrella_vpn/vpn/umbrella_mobile_backend.dart';
 
 class FakeNative extends NativeBridge {
@@ -14,6 +15,13 @@ class FakeNative extends NativeBridge {
 }
 
 void main() {
+  test('only a successful parsed JSON profile can reach Start', () {
+    expect(validatedParsedProfile(ParseResponse(content: '{"outbounds":[]}')), '{"outbounds":[]}');
+    expect(() => validatedParsedProfile(ParseResponse(responseCode: 1, content: '{}')), throwsStateError);
+    expect(() => validatedParsedProfile(ParseResponse()), throwsStateError);
+    expect(() => validatedParsedProfile(ParseResponse(content: 'vless://example')), throwsFormatException);
+    expect(() => validatedParsedProfile(ParseResponse(content: '[]')), throwsFormatException);
+  });
   test('never reports permission without Android consent', () async {
     final native = FakeNative();
     final backend = UmbrellaMobileBackend(

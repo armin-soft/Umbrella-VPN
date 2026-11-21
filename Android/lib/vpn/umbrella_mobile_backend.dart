@@ -9,6 +9,19 @@ import '../umbrella_core/mtls_credentials.dart';
 import '../umbrella_core/start_coordinator.dart';
 import 'mobile_session.dart';
 
+/// Parse converts subscription links into the sing-box profile expected by
+/// the core's non-raw Start. Never pass through errors or an empty profile.
+String validatedParsedProfile(ParseResponse response) {
+  if (response.responseCode != 0 || response.content.trim().isEmpty) {
+    throw StateError('VPN profile parsing failed');
+  }
+  final profile = jsonDecode(response.content);
+  if (profile is! Map<String, dynamic>) {
+    throw const FormatException('Invalid parsed VPN profile');
+  }
+  return response.content;
+}
+
 /// Connects the mobile engine over pinned mutual TLS. The injected verifier
 /// must prove traffic crossed the Android TUN; a direct request from this app
 /// is not sufficient because the app itself is excluded from the VPN.
@@ -84,9 +97,12 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
     if (response.messageType != MessageType.empty) {
       throw StateError('VPN core rejected its settings');
     }
+    final parsed = await client.parse(ParseRequest(content: configContent))
+        .timeout(const Duration(seconds: 30));
+    final parsedContent = validatedParsedProfile(parsed);
     await CoreStartCoordinator.start(
       statuses: client.coreInfoListener(),
-      sendStart: () => client.start(StartRequest(configContent: configContent)),
+      sendStart: () => client.start(StartRequest(configContent: parsedContent)),
     );
   }
 
