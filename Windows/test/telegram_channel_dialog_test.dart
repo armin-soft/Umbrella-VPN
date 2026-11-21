@@ -331,7 +331,7 @@ void main() {
         expect(avatarIcon.color, expectedColors.primary);
 
         final Text titleText = tester.widget<Text>(
-          find.text('به تلگرام آمبرلا بپیوندید'),
+          find.text('به کانال رسمی آمبرلا بپیوندید'),
         );
         expect(titleText.style?.color, expectedColors.textPrimary);
 
