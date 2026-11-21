@@ -27,6 +27,7 @@ dependencies:
   grpc: ^4.0.1
   protobuf: ^4.2.0
   fixnum: ^1.1.1
+  basic_utils: ^5.7.0
 
 dev_dependencies:
   flutter_test:
