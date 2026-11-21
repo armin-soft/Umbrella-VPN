@@ -496,7 +496,8 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   ? all.where((AppNotification n) => !n.read).toList()
                   : all;
 
-              return Column(
+              return SingleChildScrollView(child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   // ── سرصفحه ──────────────────────────────────────────
@@ -556,7 +557,10 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   const SizedBox(height: AppMetrics.space3),
 
                   // ── فیلترها ─────────────────────────────────────────
-                  Row(
+                  Wrap(
+                    spacing: AppMetrics.space2,
+                    runSpacing: AppMetrics.space2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       _FilterChip(
                         icon: Icons.inbox_rounded,
@@ -565,7 +569,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                         selected: !_unreadOnly,
                         onTap: () => setState(() => _unreadOnly = false),
                       ),
-                      const SizedBox(width: AppMetrics.space2),
                       _FilterChip(
                         icon: Icons.mark_email_unread_rounded,
                         label: 'خوانده نشده',
@@ -573,7 +576,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                         selected: _unreadOnly,
                         onTap: () => setState(() => _unreadOnly = true),
                       ),
-                      const Spacer(),
                       if (unread > 0)
                         TextButton.icon(
                           onPressed: widget.auth.markNotificationsRead,
@@ -590,8 +592,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   const SizedBox(height: AppMetrics.space3),
 
                   // ── فهرست اعلان های تازه و قبلی ─────────────────────
-                  Expanded(
-                    child: items.isEmpty
+                  items.isEmpty
                         ? EmptyState(
                             icon: _unreadOnly
                                 ? Icons.mark_email_read_rounded
@@ -604,6 +605,8 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                 : 'اعلان های تازه و قبلی حساب و اشتراک شما اینجا نگهداری و نمایش داده می شوند.',
                           )
                         : ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
                             itemCount: items.length,
                             separatorBuilder:
                                 (BuildContext context, int index) =>
@@ -734,7 +737,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                               );
                             },
                           ),
-                  ),
                   const SizedBox(height: AppMetrics.space3),
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
@@ -745,7 +747,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                     label: Text(Fa.num('بستن')),
                   ),
                 ],
-              );
+              ));
             },
           ),
         ),
