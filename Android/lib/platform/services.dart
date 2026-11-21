@@ -18,6 +18,18 @@ import 'package:path_provider/path_provider.dart';
 import '../core/app_config.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
+import 'native.dart';
+
+/// Same notification interface used by the shared account controller.
+/// Android has no desktop tray; event notifications are delegated to the OS.
+class TrayService {
+  TrayService(this._native);
+  final NativeBridge _native;
+
+  Future<void> balloon(String title, String body, {bool warning = false}) async {
+    await _native.showNotification(title: title, body: body, warning: warning);
+  }
+}
 
 /// پخش صداهای کوتاه برنامه (اتصال، قطع، خطا و اعلان).
 class SoundService {
