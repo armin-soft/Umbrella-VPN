@@ -110,13 +110,14 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          if ! timeout 300s flutter test --reporter expanded > test-output.txt 2>&1; then
+          if ! timeout 120s flutter test --reporter expanded > test-output.txt 2>&1; then
             cat test-output.txt
             message=$(grep -E 'Error:|Actual:|Expected:|overflowed| at Size\(' test-output.txt | head -80 | tr '\n' ' ' | cut -c1-12000 || true)
             if [ -z "$message" ]; then message=$(tail -40 test-output.txt | tr '\n' ' ' | cut -c1-12000); fi
             echo "::error::$message"
             details=$(grep -A 5 'The relevant error-causing widget was:' test-output.txt | head -120 | tr '\n' ' ' | cut -c1-12000 || true)
             if [ -n "$details" ]; then echo "::error::$details"; fi
+            echo "::error::$(tail -80 test-output.txt | tr '\n' ' ' | cut -c1-12000)"
             exit 1
           fi
           cat test-output.txt
