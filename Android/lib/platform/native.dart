@@ -135,6 +135,11 @@ class NativeBridge {
 
   // ── مجوز و سرویس VPN ────────────────────────────────────────────────────
 
+  /// Compatibility with the shared settings UI: elevation means VPN consent.
+  Future<bool> isElevated() => isVpnPrepared();
+  Future<bool> relaunchElevated() => requestVpnPermission();
+  Future<void> minimizeApp() async { await _invoke<bool>('minimizeApp'); }
+
   /// آیا مجوز VPN قبلاً داده شده است؟
   Future<bool> isVpnPrepared() async =>
       await _invoke<bool>('isVpnPrepared') ?? false;

@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Brightness, Color, Size;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -19,6 +20,51 @@ import '../core/app_config.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
 import 'native.dart';
+
+/// Android equivalent of the window controls used by the unchanged shared UI.
+class WindowService {
+  WindowService(this._native);
+  final NativeBridge _native;
+  bool closeToTray = true;
+  bool notificationsEnabled = true;
+  bool get isHiddenToTray => false;
+  Future<void> Function()? onBeforeQuit;
+  Brightness? _brightness;
+  bool _quitting = false;
+
+  Future<void> init({Size? size, Brightness initialBrightness = Brightness.dark}) async {
+    syncBrightness(initialBrightness);
+  }
+
+  void syncBrightness(Brightness brightness) {
+    if (_brightness == brightness) return;
+    _brightness = brightness;
+    final dark = brightness == Brightness.dark;
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: const Color(0x00000000),
+      statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      systemNavigationBarColor: dark ? const Color(0xff07080b) : const Color(0xfff5f6fa),
+      systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+    ));
+  }
+
+  Future<void> minimize() => _native.minimizeApp();
+  Future<void> hide() => _native.minimizeApp();
+  Future<void> show() async {}
+  Future<void> toggleMaximize() async {}
+  Future<void> startDragging() async {}
+  Future<void> onWindowClose() => closeToTray ? hide() : quit();
+  Future<void> quit() async {
+    if (_quitting) return;
+    _quitting = true;
+    try {
+      await onBeforeQuit?.call();
+      await SystemNavigator.pop();
+    } finally {
+      _quitting = false;
+    }
+  }
+}
 
 /// Same notification interface used by the shared account controller.
 /// Android has no desktop tray; event notifications are delegated to the OS.

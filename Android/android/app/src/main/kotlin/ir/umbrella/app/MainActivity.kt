@@ -109,6 +109,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ir.umbrella.app/android")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "minimizeApp" -> result.success(moveTaskToBack(true))
                     "isVpnPrepared" -> result.success(VpnService.prepare(this) == null)
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "coreDirectories" -> {
