@@ -31,5 +31,14 @@ jobs:
           channel: stable
           flutter-version: '3.29.3'
           cache: true
-      - run: flutter pub get
+      - name: Resolve dependencies
+        shell: bash
+        run: |
+          if ! flutter pub get > pub-output.txt 2>&1; then
+            cat pub-output.txt
+            message=$(tail -25 pub-output.txt | tr '\n' ' ')
+            echo "::error::$message"
+            exit 1
+          fi
+          cat pub-output.txt
       - run: flutter test
