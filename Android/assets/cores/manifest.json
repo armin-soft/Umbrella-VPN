@@ -1,0 +1,21 @@
+{
+  "schema": 2,
+  "updated_at": "2026-11-17",
+  "note": "نسخه موبایل همان موتور نسخه ویندوز؛ اصالت آرشیو در زمان ساخت بررسی می‌شود.",
+  "app": "ir.umbrella.app",
+  "cores": [
+    {
+      "id": "hiddify",
+      "title": "موتور آمبرلا",
+      "role": "موتور اتصال اندروید",
+      "binary": "umbrella-core.aar",
+      "cli_prefix": "umbrella",
+      "version": "5.9.11",
+      "url": "https://github.com/hiddify/hiddify-core/releases/download/v5.9.11/hiddify-lib-android.tar.gz",
+      "archive": "tgz",
+      "inside": "umbrella-core.aar",
+      "required": true,
+      "sha256": "853e897ee2dcbde30801314eb30346e0a4fc61c38f6b4fc4ee901a18fabec3a9"
+    }
+  ]
+}

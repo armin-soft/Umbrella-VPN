@@ -46,6 +46,7 @@ flutter:
     - assets/flags/
     - assets/sounds/
     - assets/data/
+    - assets/cores/manifest.json
   fonts:
     - family: Vazirmatn
       fonts:
