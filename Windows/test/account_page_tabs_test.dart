@@ -12,10 +12,10 @@ import 'package:umbrella_vpn/ui/pages/account_page.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _TestAuth extends ChangeNotifier implements AuthController {
-  _TestAuth(this.accountValue, {this.botLinkedValue = true});
+  _TestAuth(this.accountValue);
 
   Account accountValue;
-  bool? botLinkedValue;
+  bool? botLinkedValue = true;
 
   @override
   Account get account => accountValue;
