@@ -29,8 +29,8 @@ jobs:
           tar -tzf "$RUNNER_TEMP/hiddify-lib-android.tar.gz" > "$RUNNER_TEMP/core-files.txt"
           echo "::notice::Android core archive verified: $(tr '\n' ' ' < "$RUNNER_TEMP/core-files.txt" | cut -c1-1000)"
   native-bridge-compile:
-    # Compile the real Kotlin bridge in an isolated Flutter scaffold. This is
-    # not the Umbrella app and no APK from this check is published.
+    # Compile the actual app with the verified engine. It is still incomplete:
+    # the debug APK is not published or presented as a working VPN.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -48,20 +48,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash Android/tools/fetch-umbrella-core.sh
-      - name: Compile native bridge and engine (test scaffold only)
+      - name: Compile actual Android app (debug, not for release)
         shell: bash
+        working-directory: Android
         run: |
-          flutter create --platforms android --org ir.umbrella --project-name app "$RUNNER_TEMP/umbrella-native-check"
-          # Use the project's actual Android Gradle, manifest, resources and Kotlin.
-          # The Dart entrypoint remains the generated fixture; this is not a release APK.
-          cp -a Android/android/. "$RUNNER_TEMP/umbrella-native-check/android/"
-          cd "$RUNNER_TEMP/umbrella-native-check"
           if ! flutter build apk --debug > "$RUNNER_TEMP/native-check.log" 2>&1; then
             cat "$RUNNER_TEMP/native-check.log"
-            message=$(tail -40 "$RUNNER_TEMP/native-check.log" | tr '\n' ' ' | cut -c1-12000)
+            message=$(tail -60 "$RUNNER_TEMP/native-check.log" | tr '\n' ' ' | cut -c1-12000)
             echo "::error::$message"
             exit 1
           fi
+          echo '::notice::Actual app debug build succeeded; VPN integration remains incomplete and this APK is not published.'
   tests:
     runs-on: ubuntu-latest
     defaults:
