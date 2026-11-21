@@ -15,6 +15,8 @@ import android.os.IBinder
 import android.os.Looper
 import java.io.File
 import java.util.concurrent.Executors
+import com.hiddify.core.mobile.CoreStoppedListener
+import com.hiddify.core.mobile.Mobile
 
 /** Owns the Android VPN lifecycle; setup alone is not a connected VPN. */
 class UmbrellaVpnService : VpnService() {
@@ -32,6 +34,16 @@ class UmbrellaVpnService : VpnService() {
     @Volatile private var serverCertificate: ByteArray? = null
     internal val isCoreReady: Boolean get() = ready && !stopping
     internal fun serverCertificate(): ByteArray? = if (isCoreReady) serverCertificate?.clone() else null
+    private val coreStopped = object : CoreStoppedListener {
+        override fun onCoreStopped(messageType: Int, message: String?) {
+            main.post {
+                if (!stopping) {
+                    stopping = true
+                    worker.execute { cleanup(); main.post { stopSelf() } }
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -65,6 +77,7 @@ class UmbrellaVpnService : VpnService() {
                 val working = File(filesDir, "core").apply { check(isDirectory || mkdirs()) }
                 val temp = File(cacheDir, "core").apply { check(isDirectory || mkdirs()) }
                 val certificate = UmbrellaCoreRuntime.setup(filesDir, working, temp, port, platform)
+                Mobile.setCoreStoppedListener(coreStopped)
                 check(!stopping) { "VPN service is stopping" }
                 serverCertificate = certificate.clone()
                 ready = true
@@ -89,11 +102,13 @@ class UmbrellaVpnService : VpnService() {
     private fun cleanup(): Boolean {
         ready = false
         serverCertificate = null
+        // An intentional shutdown must not schedule a second shutdown callback.
+        val listener = runCatching { Mobile.setCoreStoppedListener(null) }.isSuccess
         // Attempt all cleanup even when an earlier step fails.
         val engine = runCatching { UmbrellaCoreRuntime.close() }.isSuccess
         val monitor = runCatching { platform.close() }.isSuccess
         val tunnel = runCatching { tun.close() }.isSuccess
-        return engine && monitor && tunnel
+        return listener && engine && monitor && tunnel
     }
 
     override fun onRevoke() {
