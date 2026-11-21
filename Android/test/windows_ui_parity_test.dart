@@ -13,7 +13,7 @@ void main() {
       // Android uses system navigation and an adaptive mobile shell.
       if (const {'shell/app_shell.dart', 'widgets/shell_widgets.dart', 'pages/login_page.dart',
         'widgets/common.dart', 'widgets/brand_widgets.dart', 'pages/updates_page.dart',
-        'pages/settings_page.dart', 'pages/connect_page.dart'}.contains(relative)) continue;
+        'pages/settings_page.dart', 'pages/connect_page.dart', 'pages/device_page.dart'}.contains(relative)) continue;
       final android = File('lib/ui/$relative');
       expect(android.existsSync(), isTrue, reason: 'Missing $relative');
       expect(android.readAsStringSync(), file.readAsStringSync(),

@@ -538,12 +538,14 @@ class _DevicePageState extends State<DevicePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
-            padding: AppMetrics.pagePadding,
+            padding: MediaQuery.sizeOf(context).height < 450
+                ? const EdgeInsets.symmetric(horizontal: AppMetrics.space6, vertical: AppMetrics.space2)
+                : AppMetrics.pagePadding,
             child: PageHeader(
               title: 'دستگاه من',
               eyebrow: 'وضعیت و مشخصات دستگاه',
-              premium: true,
-              subtitle:
+              premium: MediaQuery.sizeOf(context).height >= 450,
+              subtitle: MediaQuery.sizeOf(context).height < 450 ? null :
                   'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه محلی و شناسه این رایانه',
               icon: Icons.devices_rounded,
               actions: showInitialLoading
