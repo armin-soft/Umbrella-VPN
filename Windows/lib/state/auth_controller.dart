@@ -814,8 +814,8 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// دریافت اعداد زندهٔ حساب فقط از درگاه احراز هویت‌شدهٔ سرور؛ هیچ درخواست
-  /// مستقیمی از برنامه به پنل مدیریتی فرستاده نمی‌شود.
+  /// دریافت اعداد زندهٔ حساب فقط از درگاه احراز هویت شده سرور؛ هیچ درخواست
+  /// مستقیمی از برنامه به پنل مدیریتی ارسال نمی شود.
   Future<bool> refreshAccount({bool silent = false}) async {
     final SessionData? session = _session;
     if (session == null) {
