@@ -164,6 +164,9 @@ class NativeBridge {
   Future<bool> stopService() async =>
       await _invoke<bool>('stopService') ?? false;
 
+  /// گواهی همان سرور محلی که سرویس ساخته؛ برای pin کردن mTLS.
+  Future<Uint8List?> coreServerCertificate() => _invoke<Uint8List>('serverCertificate');
+
   /// آیا سرویس VPN هم اکنون در حال اجراست؟
   Future<bool> isServiceRunning() async =>
       await _invoke<bool>('isServiceRunning') ?? false;

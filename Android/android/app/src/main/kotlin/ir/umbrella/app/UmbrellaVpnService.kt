@@ -29,6 +29,9 @@ class UmbrellaVpnService : VpnService() {
     private lateinit var platform: UmbrellaPlatform
     @Volatile private var stopping = false
     @Volatile private var ready = false
+    @Volatile private var serverCertificate: ByteArray? = null
+    internal val isCoreReady: Boolean get() = ready && !stopping
+    internal fun serverCertificate(): ByteArray? = if (isCoreReady) serverCertificate?.clone() else null
 
     override fun onCreate() {
         super.onCreate()
@@ -63,6 +66,7 @@ class UmbrellaVpnService : VpnService() {
                 val temp = File(cacheDir, "core").apply { check(isDirectory || mkdirs()) }
                 val certificate = UmbrellaCoreRuntime.setup(filesDir, working, temp, port, platform)
                 check(!stopping) { "VPN service is stopping" }
+                serverCertificate = certificate.clone()
                 ready = true
                 certificate
             }
@@ -84,6 +88,7 @@ class UmbrellaVpnService : VpnService() {
 
     private fun cleanup(): Boolean {
         ready = false
+        serverCertificate = null
         // Attempt all cleanup even when an earlier step fails.
         val engine = runCatching { UmbrellaCoreRuntime.close() }.isSuccess
         val monitor = runCatching { platform.close() }.isSuccess
