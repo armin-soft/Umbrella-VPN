@@ -192,7 +192,7 @@ AppAccountRevocation::$Revoked = [];
 AdminFlow::deleteUserConfirm($Admin);
 $Cleared_User = Repository::$UserUpdates[0] ?? [];
 check(ServerClient::$DeleteRequests === ['panel-user-123'], 'admin delete attempts to remove the stored panel UUID');
-check(($Cleared_User['Client_ID'] ?? 'missing') === null && ($Cleared_User['Full_Name'] ?? 'missing') === null, 'panel 404 still clears the local bot account profile');
+check(array_key_exists('Client_ID', $Cleared_User) && $Cleared_User['Client_ID'] === null && array_key_exists('Full_Name', $Cleared_User) && $Cleared_User['Full_Name'] === null, 'panel 404 still clears the local bot account profile');
 check(AppAccountRevocation::$Revoked === ['panel-user-123'], 'panel 404 still revokes linked app sessions');
 check(str_contains(TelegramClient::$Text, 'در پنل سرور وجود نداشت') && str_contains(TelegramClient::$Text, 'دیتابیس ربات پاک شد'), 'admin is told the absent server user was removed locally');
 
