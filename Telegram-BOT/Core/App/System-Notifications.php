@@ -2,11 +2,29 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../Storage/Repository.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
+require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 /** System events only. Manual messaging keeps its explicitly chosen transports. */
 final class SystemNotifications {
+/** Telegram IDs that currently own the administrator account. */
+private static function administratorIds(): array {
+$Ids = [];
+$Env_Admin = 0;
+if (class_exists('Environment') && method_exists('Environment', 'getAdminUserId')) {
+try { $Env_Admin = (int)Environment::getAdminUserId(); } catch (Throwable) {}
+}
+if ($Env_Admin > 0) $Ids[] = $Env_Admin;
+if (method_exists('Repository', 'getSetting')) {
+try {
+$Configured = (int)Repository::getSetting('Administrator', (string)$Env_Admin);
+if ($Configured > 0) $Ids[] = $Configured;
+} catch (Throwable) {}
+}
+return array_values(array_unique($Ids));
+}
+
 public static function queue(int $UserId, string $Title, string $Body, string $Event = '', string $Level = 'info'): int {
-if ($UserId <= 0 || trim($Body) === '') return 0;
+if ($UserId <= 0 || trim($Body) === '' || in_array($UserId, self::administratorIds(), true)) return 0;
 try {
 $Db = Database::getInstance();
 $User = Repository::getUser($UserId);

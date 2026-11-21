@@ -40,6 +40,11 @@ private const ROUTES = [
 'تایید اشتراک دلخواه' => [SubscriptionFlow::class, 'confirmCustomPlanCallback'],
 'مدیریت' => [AdminFlow::class, 'menu'],
 'admin_devices_menu' => [AdminFlow::class, 'devicesMenu'],
+'admin_content_filter' => [AdminFlow::class, 'globalContentFilterMenu'],
+'admin_gfilter_domains' => [AdminFlow::class, 'globalContentFilterDomainsMenu'],
+'admin_gfilter_add' => [AdminFlow::class, 'globalContentFilterDomainsStart'],
+'admin_gfilter_clear' => [AdminFlow::class, 'globalContentFilterClearAsk'],
+'admin_gfilter_clear_ok' => [AdminFlow::class, 'globalContentFilterClearConfirm'],
 'admin_accounts_menu' => [AdminFlow::class, 'accountsMenu'],
 'admin_support_menu' => [AdminFlow::class, 'supportMenu'],
 'admin_subscriptions_menu' => [AdminFlow::class, 'subscriptionsMenu'],
@@ -480,6 +485,27 @@ return;
 
 if (str_starts_with($Data, 'cfg_set:')) {
 AdminFlow::cfgStart($Context, substr($Data, strlen('cfg_set:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_gfilter_toggle:')) {
+AdminFlow::globalContentFilterToggle($Context, substr($Data, strlen('admin_gfilter_toggle:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_gfilter_page:')) {
+$Rest = substr($Data, strlen('admin_gfilter_page:'));
+if (preg_match('/^[0-9]+$/D', $Rest) === 1) {
+AdminFlow::globalContentFilterDomainsMenu($Context, (int)$Rest);
+}
+return;
+}
+
+if (str_starts_with($Data, 'admin_gfilter_del:')) {
+$Rest = substr($Data, strlen('admin_gfilter_del:'));
+if (preg_match('/^([a-f0-9]{12}):([0-9]+)$/D', $Rest, $Match) === 1) {
+AdminFlow::globalContentFilterDomainDelete($Context, $Match[1], (int)$Match[2]);
+}
 return;
 }
 

@@ -515,7 +515,7 @@ self::ok([
 'device_id' => (string)$Row['Device_ID'],
 'sign_in_at' => gmdate('c'),
 'account' => $Profile,
-'filter' => AppFilter::load($UUID),
+'filter' => AppFilter::loadEffective($UUID),
 'offers' => self::offersPayload($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account),
 ]);
 }
@@ -762,7 +762,7 @@ $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
 
 self::ok([
 'account' => $Profile,
-'filter' => AppFilter::load($UUID),
+'filter' => AppFilter::loadEffective($UUID),
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 'channel_url' => BotConfig::getChannelUrl(),
 'checked_at' => gmdate('c'),
@@ -798,7 +798,7 @@ $DeviceId,
 $UUID,
 (int)($Session['Telegram_ID'] ?? 0)
 );
-$Payload['filter'] = AppFilter::load($UUID);
+$Payload['filter'] = AppFilter::loadEffective($UUID);
 $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, null);
 }
 self::ok($Payload);
@@ -825,11 +825,58 @@ Database::getInstance()->execute(
 return $Found;
 }
 
+private static function administratorTelegramIds(): array {
+$Ids = [];
+$Env_Admin = (int)Environment::getAdminUserId();
+if ($Env_Admin > 0) $Ids[] = $Env_Admin;
+try {
+$Configured = (int)Repository::getSetting('Administrator', (string)$Env_Admin);
+if ($Configured > 0) $Ids[] = $Configured;
+} catch (Throwable) {}
+return array_values(array_unique($Ids));
+}
+
+private static function administratorClientUuids(array $Admin_Ids): array {
+$Uuids = [];
+foreach ($Admin_Ids as $Id) {
+$User = Repository::getUser((int)$Id);
+$Uuid = trim((string)($User['Client_ID'] ?? ''));
+if ($Uuid !== '' && $Uuid !== '_') $Uuids[] = $Uuid;
+}
+return array_values(array_unique($Uuids));
+}
+
+/** Also blocks already-queued notices and sessions with an unbackfilled device owner. */
+private static function isAdministratorSession(array $Session): bool {
+$Admin_Ids = self::administratorTelegramIds();
+$Session_Telegram = (int)($Session['Telegram_ID'] ?? 0);
+if ($Session_Telegram > 0 && in_array($Session_Telegram, $Admin_Ids, true)) return true;
+$Admin_Uuids = self::administratorClientUuids($Admin_Ids);
+$Uuid = trim((string)($Session['User_UUID'] ?? ''));
+if ($Uuid !== '' && in_array($Uuid, $Admin_Uuids, true)) return true;
+
+$Device = Database::getInstance()->fetch(
+'SELECT `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Device_ID` = ? LIMIT 1',
+[(string)($Session['Device_ID'] ?? '')]
+);
+if ($Device !== null) {
+$Device_Telegram = (int)($Device['Telegram_ID'] ?? 0);
+$Device_Uuid = trim((string)($Device['User_UUID'] ?? ''));
+if (($Device_Telegram > 0 && in_array($Device_Telegram, $Admin_Ids, true))
+|| ($Device_Uuid !== '' && in_array($Device_Uuid, $Admin_Uuids, true))) return true;
+}
+return false;
+}
+
 private static function notifications(): void {
 $Session = self::sessionRow(self::bearer());
 
 if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+if (self::isAdministratorSession($Session)) {
+self::ok(['items' => []]);
+return;
 }
 
 $IncludeHistory = ((string)($_GET['history'] ?? '')) === '1';
@@ -899,7 +946,7 @@ if (!is_array($Settings)) {
 self::fail(422, 'invalid_settings', 'تنظیمات ارسال نشد.');
 }
 
-self::ok(['settings' => AppFilter::save((string)$Session['User_UUID'], $Settings, 'app')]);
+self::ok(['settings' => AppFilter::saveFromApp((string)$Session['User_UUID'], $Settings)]);
 }
 
 private static function getFilter(array $Body): void {
@@ -909,7 +956,7 @@ if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
 
-self::ok(['settings' => AppFilter::load((string)$Session['User_UUID'])]);
+self::ok(['settings' => AppFilter::loadEffective((string)$Session['User_UUID'])]);
 }
 
 /** Looks up the linked bot `Users` row by Telegram ID or panel UUID. */
@@ -1327,7 +1374,7 @@ self::ok([
 ? 'اشتراک رایگان (۱ گیگابایت، ۱ روز) فعال شد.'
 : 'اشتراک نوروزی (۵ گیگابایت، ۱۳ روز) فعال شد.',
 'account' => $Profile,
-'filter' => AppFilter::load($UUID),
+'filter' => AppFilter::loadEffective($UUID),
 'offers' => self::offersPayload($UUID, $Uid, $Fresh),
 ]);
 } finally {

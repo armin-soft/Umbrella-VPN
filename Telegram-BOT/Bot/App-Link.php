@@ -559,17 +559,20 @@ return;
 $Title = 'مجوز این دستگاه لغو شد';
 $Body = 'به درخواست شما از تلگرام، دسترسی این دستگاه به نرم افزار آمبرلا لغو شد. از حساب خارج می شوید؛ برای استفاده دوباره باید با شماره موبایل و تایید تلگرام وارد شوید.';
 
-// اعلان و لغو نشست در یک تراکنش انجام می شوند؛ کلاینت در ضربان بعدی
-// پیام device_revoked را دریافت می کند، اعلان را نشان می دهد و سپس خارج می شود.
-$Database->transaction(static function (\Database $Database) use ($Devices, $Title, $Body): void {
+// اعلان و لغو نشست در یک تراکنش انجام می شوند؛ اگر حساب متعلق به مدیر است،
+// فقط نشست باطل می شود و اعلان برنامه برای همان حساب ساخته نمی شود.
+$Notify_App = !method_exists($Context, 'isAdmin') || !$Context->isAdmin();
+$Database->transaction(static function (\Database $Database) use ($Devices, $Title, $Body, $Notify_App): void {
 foreach ($Devices as $Device) {
 $Device_Id = (string)$Device['Device_ID'];
 $User_UUID = (string)($Device['User_UUID'] ?? '');
+if ($Notify_App) {
 $Database->execute(
 'INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`)
 VALUES (?, ?, ?, ?, ?)',
 [$User_UUID !== '' ? $User_UUID : null, $Device_Id, $Title, $Body, 'warning']
 );
+}
 $Database->execute(
 'UPDATE `App_Devices` SET `Is_Trusted` = 0 WHERE `Device_ID` = ? AND `Is_Trusted` = 1',
 [$Device_Id]

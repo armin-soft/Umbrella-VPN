@@ -17,6 +17,9 @@ public const MAX_CUSTOM_DOMAINS = 200;
 /** تعداد دامنه های نمایشی در هر صفحه منوی ربات تلگرام. */
 public const DOMAINS_PER_PAGE = 8;
 
+/** Stored separately from per-account choices so administrator rules stay global. */
+private const GLOBAL_SETTINGS_KEY = 'App_Content_Filter_Global';
+
 /** دسته های قابل تنظیم در ربات؛ تنظیمات دیگر برنامه بدون حذف داده حفظ می شوند. */
 public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
@@ -293,6 +296,33 @@ if (is_bool($Value)) return $Value;
 return in_array(strtolower(trim((string)$Value)), ['1', 'true', 'yes', 'on'], true);
 }
 
+/** Normalize a settings snapshot without touching the database. */
+private static function cleanPersonal(array $Settings): array {
+$Categories = self::categoryList($Settings['categories'] ?? []);
+$Raw_Domains = $Settings['custom_domains'] ?? [];
+$Domains = self::splitDomains(is_array($Raw_Domains) ? implode("\n", array_map('strval', $Raw_Domains)) : (string)$Raw_Domains);
+return [
+'enabled' => self::boolOf($Settings['enabled'] ?? false),
+'categories' => $Categories,
+'custom_domains' => $Domains,
+'updated_by' => (string)($Settings['updated_by'] ?? 'app'),
+'updated_at' => (string)($Settings['updated_at'] ?? ''),
+];
+}
+
+/** Normalize the smaller administrator policy (the categories exposed by the bot). */
+private static function cleanGlobal(array $Settings): array {
+$Clean = self::cleanPersonal($Settings);
+$Clean['categories'] = array_values(array_filter(
+$Clean['categories'],
+static fn(string $Category): bool => isset(self::BOT_CATEGORIES[$Category])
+));
+$Has_Rules = $Clean['categories'] !== [] || $Clean['custom_domains'] !== [];
+$Clean['enabled'] = $Clean['enabled'] && $Has_Rules;
+$Clean['updated_by'] = 'global';
+return $Clean;
+}
+
 /** The settings for one account, in the shape the app expects. */
 public static function load(string $UUID): array {
 $UUID = trim($UUID);
@@ -321,6 +351,255 @@ return [
 'updated_by' => (string)($Row['Updated_By'] ?? 'app'),
 'updated_at' => (string)($Row['Updated_At'] ?? ''),
 ];
+}
+
+/** Read the single administrator-owned filter policy. */
+public static function loadGlobal(): array {
+$Value = Database::getInstance()->scalar(
+'SELECT `Value` FROM `Settings` WHERE `Key` = ? LIMIT 1',
+[self::GLOBAL_SETTINGS_KEY]
+);
+$Decoded = json_decode((string)($Value ?? ''), true);
+return self::cleanGlobal(is_array($Decoded) ? $Decoded : []);
+}
+
+/** Persist the global policy independently of any user's personal settings. */
+public static function saveGlobal(array $Settings): array {
+$Global = self::cleanGlobal($Settings);
+$Global['updated_by'] = 'global';
+$Global['updated_at'] = gmdate('c');
+$Json = json_encode($Global, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if (!is_string($Json)) throw new RuntimeException('Could not encode global content filter settings.');
+
+Database::getInstance()->execute(
+'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
+[self::GLOBAL_SETTINGS_KEY, $Json]
+);
+return $Global;
+}
+
+/**
+ * Build the effective policy consumed by every app session. Active global rules
+ * are merged first so the 200-domain cap can never truncate an administrator rule.
+ */
+public static function loadEffective(string $UUID): array {
+$Personal = self::load($UUID);
+$Global = self::loadGlobal();
+$Global_Active = !empty($Global['enabled']);
+$Personal_Active = !empty($Personal['enabled']);
+
+if (!$Global_Active) {
+$Effective = $Personal;
+}
+else {
+$Categories = array_values(array_unique(array_merge(
+$Global['categories'],
+$Personal_Active ? $Personal['categories'] : []
+)));
+$Domains = array_values(array_unique(array_merge(
+$Global['custom_domains'],
+$Personal_Active ? $Personal['custom_domains'] : []
+)));
+$Effective = [
+'enabled' => true,
+'categories' => $Categories,
+'custom_domains' => array_slice($Domains, 0, self::MAX_CUSTOM_DOMAINS),
+'updated_by' => 'global',
+'updated_at' => max((string)$Global['updated_at'], (string)$Personal['updated_at']),
+];
+}
+
+$Effective['global'] = $Global;
+$Effective['personal'] = $Personal;
+return $Effective;
+}
+
+/**
+ * Save the app's edited effective view back into its personal policy. Global
+ * rules from both the last response and the current server policy are removed
+ * before writing, so a policy change cannot be copied into every account.
+ */
+public static function saveFromApp(string $UUID, array $Settings): array {
+$Snapshot_Global = is_array($Settings['global'] ?? null)
+? self::cleanGlobal($Settings['global'])
+: self::cleanGlobal([]);
+$Current_Global = self::loadGlobal();
+$Snapshot_Personal = is_array($Settings['personal'] ?? null)
+? self::cleanPersonal($Settings['personal'])
+: self::load($UUID);
+$Current_Personal = self::load($UUID);
+// The Windows screen only edits BOT_CATEGORIES. Preserve any other known
+// personal category flags that its current UI/model does not expose.
+$Preserved_Categories = array_values(array_filter(
+$Current_Personal['categories'],
+static fn(string $Category): bool => !isset(self::BOT_CATEGORIES[$Category])
+));
+
+$Reserved_Categories = [];
+$Reserved_Domains = [];
+foreach ([$Snapshot_Global, $Current_Global] as $Policy) {
+if (empty($Policy['enabled'])) continue;
+$Reserved_Categories = array_merge($Reserved_Categories, $Policy['categories']);
+$Reserved_Domains = array_merge($Reserved_Domains, $Policy['custom_domains']);
+}
+$Reserved_Categories = array_values(array_unique($Reserved_Categories));
+$Reserved_Domains = array_values(array_unique($Reserved_Domains));
+
+$Submitted_Categories = self::categoryList($Settings['categories'] ?? []);
+$Raw_Domains = $Settings['custom_domains'] ?? [];
+$Submitted_Domains = self::splitDomains(is_array($Raw_Domains) ? implode("\n", array_map('strval', $Raw_Domains)) : (string)$Raw_Domains);
+$Categories = array_values(array_filter(
+$Submitted_Categories,
+static fn(string $Category): bool => !in_array($Category, $Reserved_Categories, true)
+));
+$Categories = array_values(array_unique(array_merge($Categories, $Preserved_Categories)));
+$Domains = array_values(array_filter(
+$Submitted_Domains,
+static fn(string $Domain): bool => !in_array($Domain, $Reserved_Domains, true)
+));
+$Forced_In_View = !empty($Snapshot_Global['enabled']) || !empty($Current_Global['enabled']);
+
+if ($Forced_In_View) {
+// Rules overlapping the global policy cannot be edited from a user's app;
+// preserve any matching personal choices so they survive a later policy-off.
+$Categories = array_values(array_unique(array_merge(
+$Categories,
+array_values(array_intersect($Snapshot_Personal['categories'], $Reserved_Categories))
+)));
+$Domains = array_values(array_unique(array_merge(
+$Domains,
+array_values(array_intersect($Snapshot_Personal['custom_domains'], $Reserved_Domains))
+)));
+
+$Added_Categories = array_values(array_filter(
+array_diff($Categories, $Snapshot_Personal['categories']),
+static fn(string $Category): bool => isset(self::BOT_CATEGORIES[$Category])
+));
+$Added_Domains = array_values(array_diff($Domains, $Snapshot_Personal['custom_domains']));
+$Added_Rule = $Added_Categories !== [] || $Added_Domains !== [];
+if (empty($Snapshot_Personal['enabled'])) {
+// A disabled personal filter is not activated just because a global policy
+// made the effective view active; a new user-added rule turns it on normally.
+$Categories = array_values(array_unique(array_merge($Snapshot_Personal['categories'], $Categories)));
+$Domains = array_values(array_unique(array_merge($Snapshot_Personal['custom_domains'], $Domains)));
+$Enabled = $Added_Rule;
+} else {
+$Enabled = !empty($Snapshot_Personal['enabled']) || $Added_Rule;
+}
+}
+else {
+$Enabled = self::boolOf($Settings['enabled'] ?? false);
+}
+
+$Has_Rules = $Categories !== [] || $Domains !== [];
+if (!$Has_Rules) $Enabled = false;
+
+self::save($UUID, [
+'enabled' => $Enabled,
+'categories' => $Categories,
+'custom_domains' => $Domains,
+], 'app');
+return self::loadEffective($UUID);
+}
+
+/** Toggle one administrator-controlled category (all users see the result). */
+public static function toggleGlobalCategory(string $Category): array {
+if (!isset(self::BOT_CATEGORIES[$Category])) return self::loadGlobal();
+$Current = self::loadGlobal();
+$Categories = $Current['categories'];
+if (in_array($Category, $Categories, true)) {
+$Categories = array_values(array_filter($Categories, static fn(string $Item): bool => $Item !== $Category));
+} else {
+$Categories[] = $Category;
+}
+return self::saveGlobal([
+'enabled' => $Categories !== [] || $Current['custom_domains'] !== [],
+'categories' => $Categories,
+'custom_domains' => $Current['custom_domains'],
+]);
+}
+
+/** Add/remove global domains using the same normalization and cap as user filters. */
+public static function applyGlobalDomainChanges(array $Add_List, array $Remove_List = []): array {
+$Current = self::loadGlobal();
+$Domains = $Current['custom_domains'];
+$Added = [];
+$Removed = [];
+$Duplicates = [];
+$Skipped_Limit = [];
+foreach ($Remove_List as $Raw) {
+$Domain = self::normalizeDomain((string)$Raw);
+$Index = $Domain === null ? false : array_search($Domain, $Domains, true);
+if ($Index !== false) {
+array_splice($Domains, (int)$Index, 1);
+$Removed[] = $Domain;
+}
+}
+foreach ($Add_List as $Raw) {
+$Domain = self::normalizeDomain((string)$Raw);
+if ($Domain === null) continue;
+if (in_array($Domain, $Domains, true)) {
+if (!in_array($Domain, $Duplicates, true)) $Duplicates[] = $Domain;
+continue;
+}
+if (count($Domains) >= self::MAX_CUSTOM_DOMAINS) {
+$Skipped_Limit[] = $Domain;
+continue;
+}
+$Domains[] = $Domain;
+$Added[] = $Domain;
+}
+if ($Added !== [] || $Removed !== []) {
+$Has_Rules = $Current['categories'] !== [] || $Domains !== [];
+self::saveGlobal([
+'enabled' => $Added !== [] || (!empty($Current['enabled']) && $Has_Rules),
+'categories' => $Current['categories'],
+'custom_domains' => $Domains,
+]);
+}
+return [
+'settings' => self::loadGlobal(),
+'added' => $Added,
+'removed' => $Removed,
+'duplicates' => $Duplicates,
+'skipped_limit' => $Skipped_Limit,
+];
+}
+
+/** Remove one administrator-owned global domain by exact name or callback token. */
+public static function removeGlobalDomainByToken(string $Token_Or_Domain): array {
+$Current = self::loadGlobal();
+$Domains = $Current['custom_domains'];
+$Removed = null;
+$Direct = self::normalizeDomain($Token_Or_Domain);
+foreach ($Domains as $Index => $Domain) {
+if (($Direct !== null && $Domain === $Direct)
+|| hash_equals(self::domainToken($Domain), $Token_Or_Domain)) {
+$Removed = $Domain;
+array_splice($Domains, $Index, 1);
+break;
+}
+}
+if ($Removed !== null) {
+$Has_Rules = $Current['categories'] !== [] || $Domains !== [];
+$Current = self::saveGlobal([
+'enabled' => !empty($Current['enabled']) && $Has_Rules,
+'categories' => $Current['categories'],
+'custom_domains' => $Domains,
+]);
+}
+return ['removed' => $Removed, 'settings' => $Current];
+}
+
+/** Clear only administrator-owned custom domains. */
+public static function clearGlobalDomains(): array {
+$Current = self::loadGlobal();
+if ($Current['custom_domains'] === []) return $Current;
+return self::saveGlobal([
+'enabled' => !empty($Current['enabled']) && $Current['categories'] !== [],
+'categories' => $Current['categories'],
+'custom_domains' => [],
+]);
 }
 
 /** Writes settings coming from the app (`categories` list) or the bot. */

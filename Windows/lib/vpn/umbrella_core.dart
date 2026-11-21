@@ -1231,4 +1231,3 @@ class _CategoryFilterSpec {
   final List<String> keywords;
   final List<String> ruleSets;
 }
-

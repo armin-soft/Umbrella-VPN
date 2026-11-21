@@ -126,7 +126,7 @@ if (in_array($Button['text'], [Menu::BACK_LABEL, Menu::HOME_LABEL, Menu::ADMIN_H
 return $Rows === [] ? [] : array_column(array_merge(...$Rows), 'callback_data');
 }
 $Menus = [
-'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
+'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_content_filter', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
 'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu']],
@@ -141,7 +141,7 @@ $Menus = [
 'systemMenu' => ['منوی سیستم', 'مدیریت', ['پشتیبان گیری دیتابیس', 'تنظیم مجدد دیتابیس']],
 ];
 $AdminWidths = [
-'menu' => array_fill(0, 13, 1),
+'menu' => array_fill(0, 14, 1),
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
 'devicesMenu' => [1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],

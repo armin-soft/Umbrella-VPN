@@ -157,6 +157,7 @@ $Required = [
 'منوی پیامک',
 'مدیریت تیکت ها',
 'device_limit_menu',
+'admin_content_filter',
 'تنظیمات ربات',
 'cfg_pricing',
 'cfg_links',

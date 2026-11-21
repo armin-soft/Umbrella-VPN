@@ -11,7 +11,9 @@ eval($Source);
 }
 final class Repository {
 public static array $User = []; public static bool $Locked = false;
+public static int $AdminId = 0;
 public static function getUser(int $Id): array { return self::$User; }
+public static function getSetting(string $Key, string $Default = ''): string { return $Key === 'Administrator' && self::$AdminId > 0 ? (string)self::$AdminId : $Default; }
 public static function updateUser(int $Id, array $Fields): void { self::$User = array_replace(self::$User, $Fields); }
 public static function tryCronLock(...$Args): bool { if (self::$Locked) return false; return self::$Locked = true; }
 public static function releaseCronLock(...$Args): void { self::$Locked = false; }
@@ -52,7 +54,11 @@ final class BotConfig {
 public static function getTelegramChannelId(): string { return '-100123'; }
 public static function getChannelUrl(): string { return 'https://t.me/example'; }
 }
-final class Environment { public static function getChannelGraceSeconds(): int { return 3600; } }
+final class Environment {
+public static int $AdminId = 0;
+public static function getAdminUserId(): int { return self::$AdminId; }
+public static function getChannelGraceSeconds(): int { return 3600; }
+}
 final class Helper {
 public static function humanDuration(int $Seconds): string { return (string)$Seconds; }
 public static function toPersian(string $Text): string { return $Text; }
@@ -64,7 +70,15 @@ function resetState(): void {
 Repository::$User = ['Telegram_ID' => 7, 'Chat_ID' => 7, 'Client_ID' => 'account-7', 'Client_Status' => 'فعال', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => time() + 86400, 'Channel_Grace_Started_At' => time() - 7200];
 Repository::$Locked = false; Database::$Devices = [['Device_ID' => 'first'], ['Device_ID' => 'second']]; Database::$Notices = []; Database::$Fail = false;
 ServerClient::$Code = 200; ServerClient::$UpdateCode = null; ServerClient::$Exhausted = false; ServerClient::$Active = true; ServerClient::$Throw = false; ServerClient::$Calls = []; TelegramClient::$Messages = []; TelegramClient::$Fail = false;
+Environment::$AdminId = 0;
+Repository::$AdminId = 0;
 }
+resetState();
+Environment::$AdminId = 7;
+check(SystemNotifications::queue(7, 'admin notice', 'not for the admin app', 'admin-event') === 0 && Database::$Notices === [], 'system notifications are suppressed for the environment-configured admin');
+resetState();
+Repository::$AdminId = 7;
+check(SystemNotifications::queue(7, 'admin notice', 'not for the admin app', 'admin-setting-event') === 0 && Database::$Notices === [], 'system notifications are suppressed for the database-configured admin');
 resetState();
 check(SystemNotifications::queue(7, 'notice', '<b>hello</b> &amp; world', 'event-1') === 2, 'all trusted devices queued');
 $Rows = array_values(Database::$Notices);

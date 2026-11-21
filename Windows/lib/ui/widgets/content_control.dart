@@ -102,6 +102,13 @@ class _ContentControlCardState extends State<ContentControlCard> {
     bool value,
   ) async {
     final FilterSettings current = auth.filter;
+    if (current.globalEnabled) {
+      toasts.info(
+        'این کنترل توسط مدیریت برای همه کاربران فعال شده است',
+        'کنترل محتوای سراسری',
+      );
+      return;
+    }
     if (value && !current.hasConfiguredRules) {
       toasts.info(
         'یک دسته را انتخاب کنید یا دامنه سفارشی اضافه کنید',
@@ -125,6 +132,13 @@ class _ContentControlCardState extends State<ContentControlCard> {
     ToastController toasts,
     String key,
   ) async {
+    if (auth.filter.isGlobalCategory(key)) {
+      toasts.info(
+        'این دسته توسط مدیریت برای همه کاربران اعمال شده است',
+        'کنترل محتوای سراسری',
+      );
+      return;
+    }
     await _applyAndSave(auth, toasts, auth.filter.toggleCategory(key));
   }
 
@@ -196,6 +210,13 @@ class _ContentControlCardState extends State<ContentControlCard> {
     ToastController toasts,
     String domain,
   ) async {
+    if (auth.filter.isGlobalDomain(domain)) {
+      toasts.info(
+        'این دامنه توسط مدیریت برای همه کاربران اعمال شده است',
+        'کنترل محتوای سراسری',
+      );
+      return;
+    }
     final FilterSettings next = auth.filter.removeCustomDomain(domain);
     final bool ok = await _applyAndSave(auth, toasts, next);
     if (!mounted || !ok) {
@@ -265,7 +286,12 @@ class _ContentControlCardState extends State<ContentControlCard> {
       _searchQuery = '';
       _showAllDomains = false;
     });
-    toasts.info('تمام دامنه های سفارشی حذف شدند', 'کنترل محتوا');
+    toasts.info(
+      auth.filter.globalEnabled && auth.filter.globalCustomDomains.isNotEmpty
+          ? 'دامنه های شخصی حذف شدند؛ دامنه های سراسری مدیریت همچنان فعال هستند'
+          : 'تمام دامنه های سفارشی حذف شدند',
+      'کنترل محتوا',
+    );
   }
 
   String _statusBadgeLabel(
@@ -293,6 +319,9 @@ class _ContentControlCardState extends State<ContentControlCard> {
     final bool canEdit = auth.signedIn && !busy;
     final List<String> activeCategories = filter.activeBotCategories;
     final List<String> customDomains = filter.normalizedCustomDomains;
+    final List<String> editableCustomDomains = customDomains
+        .where((String domain) => !filter.isGlobalDomain(domain))
+        .toList(growable: false);
     final List<MapEntry<String, String>> entries =
         FilterSettings.categoryLabels.entries.toList(growable: false);
     final int activeCatCount = filter.enabled ? activeCategories.length : 0;
@@ -343,13 +372,24 @@ class _ContentControlCardState extends State<ContentControlCard> {
                 Switch.adaptive(
                   key: const ValueKey<String>('content-filter-master-switch'),
                   value: active,
-                  onChanged: !canEdit
+                  onChanged: !canEdit || filter.globalEnabled
                       ? null
                       : (bool value) => _onToggleMaster(auth, toasts, value),
                 ),
               ],
             ),
           ),
+          if (filter.globalEnabled)
+            Padding(
+              padding: const EdgeInsets.only(top: AppMetrics.space2),
+              child: Text(
+                '🛡 بخشی از این قوانین به صورت سراسری توسط مدیریت برای همه کاربران اعمال شده و از اینجا قابل خاموش کردن نیست.',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.warning,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
           const Divider(height: AppMetrics.space5),
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
@@ -371,7 +411,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
                           child: _buildTile(
                             entry: first,
                             filter: filter,
-                            busy: !canEdit,
+                            busy: !canEdit || filter.isGlobalCategory(first.key),
                             colors: colors,
                             onTap: () =>
                                 _onToggleCategory(auth, toasts, first.key),
@@ -383,7 +423,8 @@ class _ContentControlCardState extends State<ContentControlCard> {
                               ? _buildTile(
                                   entry: second,
                                   filter: filter,
-                                  busy: !canEdit,
+                                  busy: !canEdit ||
+                                      filter.isGlobalCategory(second.key),
                                   colors: colors,
                                   onTap: () => _onToggleCategory(
                                     auth,
@@ -407,7 +448,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
                     _buildTile(
                       entry: entry,
                       filter: filter,
-                      busy: !canEdit,
+                      busy: !canEdit || filter.isGlobalCategory(entry.key),
                       colors: colors,
                       onTap: () => _onToggleCategory(auth, toasts, entry.key),
                     ),
@@ -460,7 +501,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
                   ],
                 ),
               ),
-              if (customDomains.length > 1) ...<Widget>[
+              if (editableCustomDomains.length > 1) ...<Widget>[
                 const SizedBox(width: AppMetrics.space2),
                 SizedBox(
                   height: AppMetrics.controlHeightSmall,
@@ -471,7 +512,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
                         : () => _onClearAllDomains(
                               auth,
                               toasts,
-                              customDomains.length,
+                              editableCustomDomains.length,
                             ),
                     icon: Icon(
                       Icons.delete_sweep_rounded,
@@ -606,7 +647,8 @@ class _ContentControlCardState extends State<ContentControlCard> {
                   _CustomDomainChip(
                     domain: domain,
                     active: filter.enabled,
-                    enabled: canEdit,
+                    global: filter.isGlobalDomain(domain),
+                    enabled: canEdit && !filter.isGlobalDomain(domain),
                     colors: colors,
                     onDelete: () => _onRemoveDomain(auth, toasts, domain),
                   ),
@@ -650,13 +692,17 @@ class _ContentControlCardState extends State<ContentControlCard> {
   }) {
     final bool selected =
         filter.enabled && filter.activeBotCategories.contains(entry.key);
+    final bool managed = filter.isGlobalCategory(entry.key);
     return _CategoryTile(
       icon: _categoryIcons[entry.key] ?? Icons.shield_outlined,
       label: entry.value,
-      hint: FilterSettings.categorySubtitles[entry.key] ??
-          'مسدودسازی خودکار این دسته',
+      hint: managed
+          ? 'این دسته به صورت سراسری توسط مدیریت اعمال می شود'
+          : FilterSettings.categorySubtitles[entry.key] ??
+              'مسدودسازی خودکار این دسته',
       selected: selected,
       busy: busy,
+      managed: managed,
       colors: colors,
       onTap: onTap,
     );
@@ -667,6 +713,7 @@ class _CustomDomainChip extends StatelessWidget {
   const _CustomDomainChip({
     required this.domain,
     required this.active,
+    required this.global,
     required this.enabled,
     required this.colors,
     required this.onDelete,
@@ -674,6 +721,7 @@ class _CustomDomainChip extends StatelessWidget {
 
   final String domain;
   final bool active;
+  final bool global;
   final bool enabled;
   final UmbrellaColors colors;
   final VoidCallback onDelete;
@@ -719,22 +767,36 @@ class _CustomDomainChip extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppMetrics.space1),
-          Tooltip(
-            message: 'حذف دامنه',
-            child: InkWell(
-              key: ValueKey<String>('delete-domain-$domain'),
-              customBorder: const CircleBorder(),
-              onTap: enabled ? onDelete : null,
+          if (global)
+            Tooltip(
+              message: 'این دامنه توسط مدیریت سراسری اعمال می شود',
               child: Padding(
                 padding: const EdgeInsets.all(AppMetrics.space1),
                 child: Icon(
-                  Icons.close_rounded,
+                  Icons.lock_rounded,
+                  key: ValueKey<String>('global-domain-$domain'),
                   size: AppMetrics.iconSm,
-                  color: enabled ? colors.textSecondary : colors.border,
+                  color: colors.warning,
+                ),
+              ),
+            )
+          else
+            Tooltip(
+              message: 'حذف دامنه',
+              child: InkWell(
+                key: ValueKey<String>('delete-domain-$domain'),
+                customBorder: const CircleBorder(),
+                onTap: enabled ? onDelete : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppMetrics.space1),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: AppMetrics.iconSm,
+                    color: enabled ? colors.textSecondary : colors.border,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -748,6 +810,7 @@ class _CategoryTile extends StatelessWidget {
     required this.hint,
     required this.selected,
     required this.busy,
+    required this.managed,
     required this.colors,
     required this.onTap,
   });
@@ -757,6 +820,7 @@ class _CategoryTile extends StatelessWidget {
   final String hint;
   final bool selected;
   final bool busy;
+  final bool managed;
   final UmbrellaColors colors;
   final VoidCallback onTap;
 
@@ -819,12 +883,25 @@ class _CategoryTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppMetrics.space2),
-                Icon(
-                  selected
-                      ? Icons.check_circle_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: AppMetrics.iconMd,
-                  color: selected ? colors.primary : colors.textSecondary,
+                Tooltip(
+                  message: managed
+                      ? 'توسط مدیریت سراسری قفل شده'
+                      : selected
+                          ? 'فعال'
+                          : 'غیرفعال',
+                  child: Icon(
+                    managed
+                        ? Icons.lock_rounded
+                        : selected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                    size: AppMetrics.iconMd,
+                    color: managed
+                        ? colors.warning
+                        : selected
+                            ? colors.primary
+                            : colors.textSecondary,
+                  ),
                 ),
               ],
             ),

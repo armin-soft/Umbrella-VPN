@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
 require_once __DIR__ . '/../Core/App/Device-Deletion.php';
+require_once __DIR__ . '/../Core/App/App-Filter.php';
 require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
@@ -70,6 +71,7 @@ $Markup = Menu::rows([
 [['💳مدیریت اعتبار', 'اعتبار حساب کاربری']],
 [['🔒مسدود سازی کاربران', 'جرایم']],
 [['📱مدیریت دستگاه ها', 'admin_devices_menu']],
+[['🛡کنترل محتوا برای همه کاربران', 'admin_content_filter']],
 [['👤مدیریت حساب کاربری', 'admin_accounts_menu']],
 [['🖥مدیریت کلاینت', 'عملیات کلاینت سرور']],
 [['🖥مدیریت سرور', 'پیکربندی سرور']],
@@ -121,6 +123,176 @@ $Rows = Menu::rows([
 [['⌛️منقضی کردن اشتراک', 'منقضی اشتراک اول']],
 ]);
 self::categoryMenu($Context, 'مدیریت حساب کاربری', $Rows, 'مدیریت');
+}
+
+/** Global content policy editor for every app account. */
+public static function globalContentFilterMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+$Settings = AppFilter::loadGlobal();
+$Rows = [];
+$Pair = [];
+foreach (AppFilter::BOT_CATEGORIES as $Key => $Label) {
+$Pair[] = [
+'text' => (in_array($Key, $Settings['categories'], true) ? '✅ ' : '⚪️ ') . $Label,
+'callback_data' => 'admin_gfilter_toggle:' . $Key,
+];
+if (count($Pair) === 2) { $Rows[] = $Pair; $Pair = []; }
+}
+if ($Pair !== []) $Rows[] = $Pair;
+$Domain_Count = count($Settings['custom_domains']);
+$Rows[] = [[
+'text' => $Domain_Count > 0 ? '🌐دامنه های سراسری (' . Helper::toPersian((string)$Domain_Count) . ')' : '🌐دامنه های سراسری',
+'callback_data' => 'admin_gfilter_domains',
+]];
+$Has_Rules = $Settings['categories'] !== [] || $Settings['custom_domains'] !== [];
+$Rows[] = [[
+'text' => !empty($Settings['enabled']) ? '🔴خاموش کردن کنترل محتوا برای همه' : '🟢روشن کردن کنترل محتوا برای همه',
+'callback_data' => 'admin_gfilter_toggle:enabled',
+]];
+$Rows[] = Menu::back('منوی قبلی', 'مدیریت');
+$Rows[] = Menu::adminHome();
+$Text = Helper::adminGreeting($Context, 'کنترل محتوا برای همه کاربران')
+. AppFilter::summary($Settings)
+. "\n➖➖➖➖➖➖➖➖➖\n"
+. ($Has_Rules
+? '🌐 با روشن بودن کلید سراسری، دسته ها و دامنه های انتخاب شده روی اتصال همه کاربران برنامه اعمال می شود.'
+: 'ℹ️ ابتدا یک دسته یا دامنه اضافه کنید؛ سپس کنترل محتوا را برای همه روشن کنید.')
+. Helper::adminFooter();
+self::logMenuProblems('global_content_filter', $Rows);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+/** Toggle the global master switch or one globally enforced category. */
+public static function globalContentFilterToggle(Context $Context, string $Key): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Current = AppFilter::loadGlobal();
+if ($Key === 'enabled') {
+$Has_Rules = $Current['categories'] !== [] || $Current['custom_domains'] !== [];
+if (empty($Current['enabled']) && !$Has_Rules) {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'ابتدا یک دسته یا دامنه اضافه کنید.', true);
+self::globalContentFilterMenu($Context);
+return;
+}
+$Saved = AppFilter::saveGlobal([
+'enabled' => empty($Current['enabled']),
+'categories' => $Current['categories'],
+'custom_domains' => $Current['custom_domains'],
+]);
+}
+elseif (isset(AppFilter::BOT_CATEGORIES[$Key])) {
+$Saved = AppFilter::toggleGlobalCategory($Key);
+}
+else {
+self::globalContentFilterMenu($Context);
+return;
+}
+try { Repository::logAdminAction($Context->UserId, 'global_content_filter_update', null, 'enabled=' . (int)!empty($Saved['enabled'])); } catch (Throwable) {}
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'تنظیم سراسری ذخیره شد ✅');
+self::globalContentFilterMenu($Context);
+}
+
+/** Paginated list of administrator-wide blocked domains. */
+public static function globalContentFilterDomainsMenu(Context $Context, int $Page = 0, string $Notice = ''): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Settings = AppFilter::loadGlobal();
+$Domains = array_values($Settings['custom_domains']);
+$Total = count($Domains);
+$Page_Size = AppFilter::DOMAINS_PER_PAGE;
+$Page_Count = max(1, (int)ceil($Total / $Page_Size));
+$Page = max(0, min($Page, $Page_Count - 1));
+$Slice = array_slice($Domains, $Page * $Page_Size, $Page_Size);
+$Text = Helper::adminGreeting($Context, 'دامنه های کنترل محتوای سراسری')
+. Menu::pageLabel($Page, $Page_Count);
+if ($Notice !== '') $Text .= $Notice . "\n➖➖➖➖➖➖➖➖➖\n";
+$Text .= '📊تعداد دامنه ها: ' . Helper::toPersian((string)$Total) . ' از ' . Helper::toPersian((string)AppFilter::MAX_CUSTOM_DOMAINS) . "\n";
+foreach ($Slice as $Index => $Domain) {
+$Text .= Helper::toPersian((string)($Page * $Page_Size + $Index + 1)) . '. ' . self::listText($Domain, 100) . "\n";
+}
+if ($Slice === []) $Text .= '📭هنوز دامنه سراسری ثبت نشده است.' . "\n";
+$Text .= "\nℹ️ این دامنه ها هنگام فعال بودن سیاست سراسری برای همه کاربران برنامه اعمال می شوند." . Helper::adminFooter();
+$Rows = [[['text' => '➕افزودن دامنه سراسری', 'callback_data' => 'admin_gfilter_add']]];
+foreach ($Slice as $Domain) {
+$Label = strlen($Domain) > 32 ? substr($Domain, 0, 29) . '...' : $Domain;
+$Rows[] = [[
+'text' => '🗑حذف ' . $Label,
+'callback_data' => 'admin_gfilter_del:' . AppFilter::domainToken($Domain) . ':' . $Page,
+]];
+}
+if ($Page_Count > 1) $Rows = array_merge($Rows, Menu::pages($Page, $Page_Count, 'admin_gfilter_page:'));
+if ($Total > 0) $Rows[] = [[ 'text' => '🧹حذف همه دامنه ها', 'callback_data' => 'admin_gfilter_clear' ]];
+$Rows[] = Menu::back('کنترل محتوا', 'admin_content_filter');
+$Rows[] = Menu::adminHome();
+self::logMenuProblems('global_content_filter_domains', $Rows);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function globalContentFilterDomainsStart(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Settings = AppFilter::loadGlobal();
+if (count($Settings['custom_domains']) >= AppFilter::MAX_CUSTOM_DOMAINS) {
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'ظرفیت دامنه های سراسری پر شده است.', true);
+self::globalContentFilterDomainsMenu($Context);
+return;
+}
+Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:global_filter_domains']);
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'دامنه های کنترل محتوای سراسری')
+. "🌐 دامنه یا نشانی سایت را بفرستید؛ می توانید چند مورد را با فاصله یا خط جدید جدا کنید.\n"
+. "برای حذف موردی پیش از دامنه - بگذارید (مانند -example.com).\n"
+. 'این فهرست فقط هنگام روشن بودن کنترل محتوای سراسری روی همه کاربران اعمال می شود.' . Helper::adminFooter(),
+TelegramClient::inlineKeyboard([Menu::back('انصراف', 'admin_gfilter_domains'), Menu::adminHome()]));
+}
+
+private static function globalContentFilterDomainsInput(Context $Context, string $Text): void {
+$Trimmed = trim($Text);
+if (in_array($Trimmed, ['لغو', 'انصراف', '/cancel'], true)) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+self::globalContentFilterDomainsMenu($Context);
+return;
+}
+$Parsed = AppFilter::parseDomainsInput($Trimmed);
+if ($Parsed['add'] === [] && $Parsed['remove'] === []) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'دامنه نامعتبر')
+. '⚠️دامنه معتبری پیدا نشد؛ نمونه درست: example.com' . Helper::adminFooter(),
+TelegramClient::inlineKeyboard(Menu::adminNav('دامنه های سراسری', 'admin_gfilter_domains')));
+return;
+}
+$Result = AppFilter::applyGlobalDomainChanges($Parsed['add'], $Parsed['remove']);
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Lines = [];
+if ($Result['added'] !== []) $Lines[] = '✅' . Helper::toPersian((string)count($Result['added'])) . ' دامنه اضافه شد.';
+if ($Result['removed'] !== []) $Lines[] = '🗑' . Helper::toPersian((string)count($Result['removed'])) . ' دامنه حذف شد.';
+if ($Result['duplicates'] !== []) $Lines[] = 'ℹ️' . Helper::toPersian((string)count($Result['duplicates'])) . ' مورد از قبل ثبت بود.';
+if ($Result['skipped_limit'] !== []) $Lines[] = '⚠️به سقف دامنه های سراسری رسیدید؛ موارد مازاد نادیده گرفته شد.';
+if ($Parsed['invalid'] !== []) $Lines[] = '⚠️' . Helper::toPersian((string)count($Parsed['invalid'])) . ' مورد نامعتبر نادیده گرفته شد.';
+self::globalContentFilterDomainsMenu($Context, 0, implode("\n", $Lines));
+}
+
+public static function globalContentFilterDomainDelete(Context $Context, string $Token, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Result = AppFilter::removeGlobalDomainByToken($Token);
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, $Result['removed'] !== null ? 'دامنه سراسری حذف شد ✅' : 'این دامنه قبلا حذف شده است.');
+self::globalContentFilterDomainsMenu($Context, max(0, $Page));
+}
+
+public static function globalContentFilterClearAsk(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Count = count(AppFilter::loadGlobal()['custom_domains']);
+if ($Count === 0) { self::globalContentFilterDomainsMenu($Context); return; }
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId,
+self::header($Context, 'تأیید حذف دامنه های سراسری') . '⚠️آیا تمام ' . Helper::toPersian((string)$Count) . ' دامنه سراسری حذف شوند؟' . Helper::adminFooter(),
+TelegramClient::inlineKeyboard([
+[['text' => '🧹تأیید حذف همه', 'callback_data' => 'admin_gfilter_clear_ok']],
+Menu::back('انصراف', 'admin_gfilter_domains'), Menu::adminHome(),
+]));
+}
+
+public static function globalContentFilterClearConfirm(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+AppFilter::clearGlobalDomains();
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'دامنه های سراسری پاک شدند ✅');
+self::globalContentFilterDomainsMenu($Context, 0, '🧹تمام دامنه های سراسری پاک شدند.');
 }
 
 /** سازگاری با دکمه قدیمی پشتیبانی؛ بدون صفحه واسطه به تیکت ها می رود. */
@@ -355,8 +527,13 @@ $Notice = 'مجوز دستگاه صادر شد';
 else {
 $Title = 'مجوز دستگاه لغو شد';
 $Body = 'دسترسی این دستگاه به درخواست مدیر سامانه لغو شد.';
-$Database->transaction(static function (Database $Database) use ($Device, $Device_Id, $Title, $Body): void {
+$Admin_Ids = self::administratorTelegramIds((int)$Context->UserId);
+$Admin_Uuids = self::administratorClientUuids($Admin_Ids);
+$Notify_Device = !self::isAdministratorDevice($Device, $Admin_Ids, $Admin_Uuids);
+$Database->transaction(static function (Database $Database) use ($Device, $Device_Id, $Title, $Body, $Notify_Device): void {
+if ($Notify_Device) {
 $Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (?, ?, ?, ?, ?)', [trim((string)($Device['User_UUID'] ?? '')) ?: null, $Device_Id, $Title, $Body, 'warning']);
+}
 $Database->execute('UPDATE `App_Devices` SET `Is_Trusted` = 0 WHERE `Device_ID` = ?', [$Device_Id]);
 $Database->execute('UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP WHERE `Device_ID` = ? AND `Revoked_At` IS NULL', [$Device_Id]);
 });
@@ -528,6 +705,7 @@ $Map = [
 'version_changes' => 'بروز رسانی نسخه',
 'emergency_url' => 'تنظیمات ربات',
 'ticket_reply_text' => 'مدیریت تیکت ها',
+'global_filter_domains' => 'کنترل محتوا برای همه کاربران',
 ];
 
 if (str_starts_with($Flow, 'cfg:')) {
@@ -1839,6 +2017,7 @@ $Flow === 'admin:notify_broadcast_text' => self::broadcastNotify($Context, trim(
 $Flow === 'admin:device_limit_target' => self::deviceLimitTarget($Context, trim($Text)),
 $Flow === 'admin:device_limit_pick' => self::deviceLimitPickInput($Context, trim($Text)),
 $Flow === 'admin:notify_all_text' => self::broadcastTelegramAndApp($Context, $Text),
+$Flow === 'admin:global_filter_domains' => self::globalContentFilterDomainsInput($Context, $Text),
 $Flow === 'admin:app_push_target' => self::appPushTarget($Context, trim($Text)),
 $Flow === 'admin:app_push_text' => self::appPushText($Context, $Text),
 $Flow === 'admin:expire_uid' => self::manualExpire($Context, trim($Text)),
@@ -2521,13 +2700,49 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع
  * its own message up, so a shared row (Device_ID NULL) would vanish for every
  * later device after the first one polled it.
  */
+private static function administratorTelegramIds(int $Extra_Admin = 0): array {
+$Ids = $Extra_Admin > 0 ? [$Extra_Admin] : [];
+$Env_Admin = 0;
+if (class_exists('Environment') && method_exists('Environment', 'getAdminUserId')) {
+try { $Env_Admin = (int)Environment::getAdminUserId(); } catch (Throwable) {}
+}
+if ($Env_Admin > 0) $Ids[] = $Env_Admin;
+try {
+$Configured = (int)Repository::getSetting('Administrator', (string)$Env_Admin);
+if ($Configured > 0) $Ids[] = $Configured;
+} catch (Throwable) {}
+return array_values(array_unique($Ids));
+}
+
+/** Panel UUIDs tied to admin Telegram accounts, including devices not yet backfilled. */
+private static function administratorClientUuids(array $Admin_Ids): array {
+$Uuids = [];
+foreach ($Admin_Ids as $Id) {
+$User = Repository::getUser((int)$Id);
+$Uuid = trim((string)($User['Client_ID'] ?? ''));
+if ($Uuid !== '' && $Uuid !== '_') $Uuids[] = $Uuid;
+}
+return array_values(array_unique($Uuids));
+}
+
+private static function isAdministratorDevice(array $Row, array $Admin_Ids, array $Admin_Uuids): bool {
+$Telegram_Id = (int)($Row['Telegram_ID'] ?? 0);
+$Uuid = trim((string)($Row['User_UUID'] ?? ''));
+return ($Telegram_Id > 0 && in_array($Telegram_Id, $Admin_Ids, true))
+|| ($Uuid !== '' && in_array($Uuid, $Admin_Uuids, true));
+}
+
 public static function queueAppPush(int $Target_Telegram_ID, string $Text, int $Admin_ID): int {
 $Database = \Database::getInstance();
 $Title = mb_substr($Text, 0, 60);
 $Body = $Text;
+$Admin_Ids = self::administratorTelegramIds($Admin_ID);
+$Admin_Uuids = self::administratorClientUuids($Admin_Ids);
 
 if ($Target_Telegram_ID > 0) {
-$Rows = $Database->fetchAll('SELECT `Device_ID` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1', [$Target_Telegram_ID]);
+if (in_array($Target_Telegram_ID, $Admin_Ids, true)) return 0;
+$Rows = $Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1', [$Target_Telegram_ID]);
+$Rows = array_values(array_filter($Rows, static fn(array $Row): bool => !self::isAdministratorDevice($Row, $Admin_Ids, $Admin_Uuids)));
 
 if ($Rows === []) {
 // The user has no app device yet: park the message against their panel
@@ -2536,7 +2751,7 @@ if ($Rows === []) {
 $Client_Row = $Database->fetch('SELECT `Client_ID` FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$Target_Telegram_ID]);
 $Client_ID = trim((string)($Client_Row['Client_ID'] ?? ''));
 
-if ($Client_ID !== '') {
+if ($Client_ID !== '' && !in_array($Client_ID, $Admin_Uuids, true)) {
 $Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (?, NULL, ?, ?, ?)', [$Client_ID, $Title, $Body, 'info']);
 Repository::logAdminAction($Admin_ID, 'app_push_user_deferred', $Target_Telegram_ID, null);
 return 1;
@@ -2554,9 +2769,13 @@ Repository::logAdminAction($Admin_ID, 'app_push_user', $Target_Telegram_ID, mb_s
 return count($Rows);
 }
 
-$Database->execute('INSERT INTO `App_Notifications` (`Device_ID`, `Title`, `Body`, `Level`) SELECT `Device_ID`, ?, ?, \'notice\' FROM `App_Devices` WHERE `Is_Trusted` = 1', [$Title, $Body]);
+$Rows = $Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Is_Trusted` = 1');
+$Rows = array_values(array_filter($Rows, static fn(array $Row): bool => !self::isAdministratorDevice($Row, $Admin_Ids, $Admin_Uuids)));
+foreach ($Rows as $Row) {
+$Database->execute('INSERT INTO `App_Notifications` (`Device_ID`, `Title`, `Body`, `Level`) VALUES (?, ?, ?, \'notice\')', [(string)$Row['Device_ID'], $Title, $Body]);
+}
 Repository::logAdminAction($Admin_ID, 'app_push_all_devices', null, mb_substr($Text, 0, 120));
-return (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1');
+return count($Rows);
 }
 
 /** «📣تلگرام + برنامه همزمان» — one text, Telegram and the app. */

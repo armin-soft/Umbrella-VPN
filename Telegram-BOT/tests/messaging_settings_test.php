@@ -8,7 +8,9 @@ final class Helper {
 public static function validatePhone(string $Phone): bool { return $Phone === '09123456789'; }
 public static function frame(string $Type, string $Name, string $Section, int $Id): string { return $Section; }
 public static function userFooter(): string { return ''; }
+public static function adminFooter(): string { return ''; }
 public static function userGreeting(Context $C, string $S): string { return $S; }
+public static function adminGreeting(Context $C, string $S): string { return $S; }
 public static function toPersian(string $S): string { return $S; }
 public static function normalizePhone(string $S): string { return $S; }
 }
@@ -20,6 +22,7 @@ public static function call(string $Method, array $Args): array { self::$ApiCall
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function sendMessage(int $Chat, string $Text, array $Markup): array { self::$Sent[] = $Chat; if (self::$FailSend) throw new RuntimeException('simulated Telegram failure'); return ['ok' => true]; }
 public static function editMessageText(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
+public static function editOrSendMessage(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
 }
 final class IppanelClient { public static array $Sent = []; public static bool $Fail = false; public static function send(int $Id, string $Phone, string $Text): bool { self::$Sent[] = $Id; return !self::$Fail; } }
@@ -30,8 +33,14 @@ public function transaction(callable $Fn): mixed { $Before = self::$Settings; tr
 public function scalar(string $Q, array $P = [], mixed $Default = null): mixed { if (str_contains($Q, '`Settings`')) return self::$Settings[$P[0]] ?? null; return count(self::$Devices); }
 public function fetch(string $Q, array $P): ?array { return self::$Users[$P[0]] ?? null; }
 public function fetchAll(string $Q, array $P = []): array {
-if (str_contains($Q, 'Device_ID` LIKE')) return array_values(array_filter(self::$Devices, fn($D) => str_starts_with($D['Device_ID'], rtrim($P[0], '%')) && $D['Is_Trusted'] === 1 && ($D['User_UUID'] === $P[1] || $D['Telegram_ID'] === $P[2])));
-if (str_contains($Q, 'LIMIT ? OFFSET ?')) return array_slice(self::$Devices, $P[3], $P[2]);
+if (str_contains($Q, 'Device_ID` LIKE')) {
+$Matches = array_values(array_filter(self::$Devices, fn($D) => str_starts_with($D['Device_ID'], rtrim($P[0], '%'))));
+if (count($P) === 1) return array_slice($Matches, 0, 2);
+return array_values(array_filter($Matches, fn($D) => $D['Is_Trusted'] === 1 && ($D['User_UUID'] === $P[1] || $D['Telegram_ID'] === $P[2])));
+}
+if (str_contains($Q, 'LIMIT ? OFFSET ?')) return count($P) >= 4 ? array_slice(self::$Devices, $P[3], $P[2]) : array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? 0);
+if (str_contains($Q, 'FROM `App_Devices` AS `D`')) return array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? count(self::$Devices));
+if (str_contains($Q, 'FROM `App_Devices` WHERE `Is_Trusted` = 1')) return array_values(array_filter(self::$Devices, fn($D) => $D['Is_Trusted'] === 1));
 return array_values(array_filter(self::$Devices, fn($D) => $D['Telegram_ID'] === $P[0] && $D['Is_Trusted'] === 1));
 }
 public function execute(string $Q, array $P): void {
@@ -88,7 +97,17 @@ TelegramClient::$FailSend = false; IppanelClient::$Fail = false;
 Database::$Devices = []; Database::$Queued = [];
 check(AdminFlow::queueAppPush(1, 'private', 99) === 1, 'offline known account gets deferred notification');
 check(Database::$Queued[0][1][0] === 'owner', 'deferred notification bound to correct account');
-Database::$Users = []; Database::$Queued = [];
+Database::$Users[99] = ['Telegram_ID' => 99, 'Client_ID' => 'admin-owner'];
+Database::$Devices = [
+['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1],
+['Device_ID' => 'admin-device', 'User_UUID' => 'admin-owner', 'Telegram_ID' => 99, 'Is_Trusted' => 1],
+['Device_ID' => 'admin-unlinked-device', 'User_UUID' => 'admin-owner', 'Telegram_ID' => null, 'Is_Trusted' => 1],
+];
+Database::$Queued = [];
+check(AdminFlow::queueAppPush(99, 'admin private', 99) === 0 && Database::$Queued === [], 'targeted app push skips the administrator account');
+check(AdminFlow::queueAppPush(0, 'broadcast', 99) === 1, 'app broadcast still reaches normal users');
+check(Database::$Queued[0][1][0] === 'device-one', 'app broadcast excludes admin devices by Telegram ID and UUID');
+Database::$Users = []; Database::$Queued = []; Database::$Devices = [];
 check(AdminFlow::queueAppPush(1, 'private', 99) === 0 && Database::$Queued === [], 'no private-message broadcast fallback');
 $Context = new Context();
 Database::$Devices = [['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1, 'Device_Name' => 'phone', 'Platform' => 'Android']];
@@ -96,10 +115,18 @@ AppFlow::devices($Context);
 check(str_contains(TelegramClient::$Rows[0][0]['text'], '⛔️ لغو اعتماد'), 'trusted device has revoke action');
 AppFlow::confirmRevokeDevice($Context, 'device-one');
 check(Database::$Devices[0]['Is_Trusted'] === 0 && Database::$Revoked === ['device-one'], 'revocation clears trust and invalidates sessions');
+check(Database::$Queued === [], 'administrator-session revocation does not enqueue an app notification');
 check(str_contains(TelegramClient::$Rows[0][0]['text'], '⚪️ اعتماد لغو شده'), 'revoked device button changes icon and text');
 check(str_starts_with(TelegramClient::$Rows[0][0]['callback_data'], 'app_device_status:'), 'revoked button cannot re-grant or repeat revoke');
 $Queued = count(Database::$Queued); AppFlow::confirmRevokeDevice($Context, 'device-one');
 check(count(Database::$Queued) === $Queued, 'repeat revoke does not queue duplicate notice');
+$AdminContext = new Context(); $AdminContext->UserId = 99; $AdminContext->ChatId = 99;
+Database::$Users[99] = ['Telegram_ID' => 99, 'Client_ID' => 'admin-owner'];
+Database::$Devices = [['ID' => 3, 'Device_ID' => 'admin-device', 'User_UUID' => 'admin-owner', 'Telegram_ID' => 99, 'Phone' => '09123456789', 'Is_Trusted' => 1, 'Device_Name' => 'admin laptop', 'Platform' => 'Windows']];
+Database::$Queued = [];
+AdminFlow::toggleAppDevice($AdminContext, 'admin-device');
+check(Database::$Devices[0]['Is_Trusted'] === 0 && in_array('admin-device', Database::$Revoked, true), 'admin can revoke their device and invalidate its session');
+check(Database::$Queued === [], 'admin device permission revocation does not enqueue a direct app notification');
 $Scheduler = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');
 check(str_contains($Scheduler, 'if (!Repository::nightlyReportEnabled($User_ID)) continue;'), 'nightly scheduler observes persisted preference');
 echo "OK messaging/settings tests ({$N} assertions)\n";

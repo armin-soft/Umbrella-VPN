@@ -182,6 +182,42 @@ void main() {
       expect(a.effectSignature, aSame.effectSignature);
       expect(a.effectSignature, isNot(b.effectSignature));
     });
+
+    test('سیاست سراسری و snapshot شخصی در ذخیره سازی حفظ می شوند', () {
+      final FilterSettings policy = FilterSettings.fromJson(
+        <String, dynamic>{
+          'enabled': true,
+          'categories': <String>['adult', 'dating'],
+          'custom_domains': <String>['global.example', 'personal.example'],
+          'global': <String, dynamic>{
+            'enabled': true,
+            'categories': <String>['adult'],
+            'custom_domains': <String>['global.example'],
+          },
+          'personal': <String, dynamic>{
+            'enabled': false,
+            'categories': <String>['gambling'],
+            'custom_domains': <String>['personal.example'],
+          },
+        },
+      );
+
+      expect(policy.isGlobalCategory('adult'), isTrue);
+      expect(policy.isGlobalDomain('https://www.global.example/path'), isTrue);
+      expect(policy.isGlobalCategory('dating'), isFalse);
+
+      final FilterSettings edited = policy.copyWith(
+        categories: <String>['adult', 'dating', 'ads'],
+      );
+      final Map<String, dynamic> json = edited.toJson();
+      expect((json['global'] as Map<String, dynamic>)['categories'], <String>['adult']);
+      expect((json['personal'] as Map<String, dynamic>)['enabled'], isFalse);
+      expect(
+        (json['personal'] as Map<String, dynamic>)['custom_domains'],
+        <String>['personal.example'],
+      );
+      expect(edited.removeCustomDomain('global.example').globalEnabled, isTrue);
+    });
   });
 
   group('UmbrellaCore — کنترل محتوای دولایه و هماهنگی با مسیریابی', () {

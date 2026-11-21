@@ -232,7 +232,7 @@ $Start = strpos($Source, 'public static function menu(');
 $End = strpos($Source, 'private static function categoryMenu(', $Start);
 $Body = substr($Source, $Start, $End - $Start);
 $this->check_main_rows($Body, 'Markup', [
-'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_accounts_menu',
+'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_content_filter', 'admin_accounts_menu',
 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک',
 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی',
 ]);

@@ -1066,13 +1066,40 @@ class FilterSettings {
     this.customDomains = const <String>[],
     this.updatedBy = 'app',
     this.updatedAt = '',
+    this.globalEnabled = false,
+    this.globalCategories = const <String>[],
+    this.globalCustomDomains = const <String>[],
+    this.personalEnabled,
+    this.personalCategories,
+    this.personalCustomDomains,
   });
 
+  /// Effective policy returned by the gateway, including administrator rules.
   final bool enabled;
   final List<String> categories;
   final List<String> customDomains;
   final String updatedBy;
   final String updatedAt;
+
+  /// Read-only policy metadata lets the app protect global rules from edits.
+  final bool globalEnabled;
+  final List<String> globalCategories;
+  final List<String> globalCustomDomains;
+
+  /// Last personal snapshot. The gateway uses it to separate edits from the
+  /// effective (personal + global) view without copying global rules per user.
+  final bool? personalEnabled;
+  final List<String>? personalCategories;
+  final List<String>? personalCustomDomains;
+
+  bool isGlobalCategory(String key) =>
+      globalEnabled && globalCategories.contains(key);
+
+  bool isGlobalDomain(String domain) {
+    final String? normalized = normalizeDomainSuffix(domain);
+    return globalEnabled && normalized != null &&
+        globalCustomDomains.contains(normalized);
+  }
 
   /// حداکثر تعداد دامنه های سفارشی برای هر حساب (همگام با ربات تلگرام).
   static const int maxCustomDomains = 200;
@@ -1316,6 +1343,7 @@ class FilterSettings {
   String get sourceLabel => switch (updatedBy.trim().toLowerCase()) {
         'bot' || 'telegram' => 'ربات تلگرام',
         'app' || 'windows' => 'برنامه ویندوز',
+        'global' => 'مدیریت سراسری',
         _ => 'همگام با ربات',
       };
 
@@ -1334,7 +1362,16 @@ class FilterSettings {
   bool sameAs(FilterSettings other) =>
       sameEffectAs(other) &&
       updatedBy == other.updatedBy &&
-      updatedAt == other.updatedAt;
+      updatedAt == other.updatedAt &&
+      globalEnabled == other.globalEnabled &&
+      globalCategories.join('\u0000') == other.globalCategories.join('\u0000') &&
+      globalCustomDomains.join('\u0000') ==
+          other.globalCustomDomains.join('\u0000') &&
+      personalEnabled == other.personalEnabled &&
+      (personalCategories ?? const <String>[]).join('\u0000') ==
+          (other.personalCategories ?? const <String>[]).join('\u0000') &&
+      (personalCustomDomains ?? const <String>[]).join('\u0000') ==
+          (other.personalCustomDomains ?? const <String>[]).join('\u0000');
 
   /// تغییر وضعیت یک دسته دقیقاً مشابه دکمه های کنترل محتوا در ربات تلگرام.
   FilterSettings toggleCategory(String key) {
@@ -1359,6 +1396,12 @@ class FilterSettings {
     List<String>? customDomains,
     String? updatedBy,
     String? updatedAt,
+    bool? globalEnabled,
+    List<String>? globalCategories,
+    List<String>? globalCustomDomains,
+    bool? personalEnabled,
+    List<String>? personalCategories,
+    List<String>? personalCustomDomains,
   }) {
     final List<String> rawCategories = categories ?? this.categories;
     final List<String> cleanCategories =
@@ -1369,6 +1412,12 @@ class FilterSettings {
       customDomains: customDomains ?? this.customDomains,
       updatedBy: updatedBy ?? this.updatedBy,
       updatedAt: updatedAt ?? this.updatedAt,
+      globalEnabled: globalEnabled ?? this.globalEnabled,
+      globalCategories: globalCategories ?? this.globalCategories,
+      globalCustomDomains: globalCustomDomains ?? this.globalCustomDomains,
+      personalEnabled: personalEnabled ?? this.personalEnabled,
+      personalCategories: personalCategories ?? this.personalCategories,
+      personalCustomDomains: personalCustomDomains ?? this.personalCustomDomains,
     );
   }
 
@@ -1378,27 +1427,60 @@ class FilterSettings {
         'custom_domains': normalizedCustomDomains,
         if (updatedBy.isNotEmpty) 'updated_by': updatedBy,
         if (updatedAt.isNotEmpty) 'updated_at': updatedAt,
+        if (globalEnabled ||
+            globalCategories.isNotEmpty ||
+            globalCustomDomains.isNotEmpty)
+          'global': <String, dynamic>{
+            'enabled': globalEnabled,
+            'categories': globalCategories,
+            'custom_domains': globalCustomDomains,
+          },
+        if (personalEnabled != null)
+          'personal': <String, dynamic>{
+            'enabled': personalEnabled,
+            'categories': personalCategories ?? const <String>[],
+            'custom_domains': personalCustomDomains ?? const <String>[],
+          },
       };
 
   factory FilterSettings.fromJson(Map<String, dynamic> json) {
-    final Set<String> incoming = JsonX.asList(json['categories'])
-        .map((Object? item) => item.toString().trim().toLowerCase())
-        .toSet();
-    final List<String> botMatched =
-        categoryLabels.keys.where(incoming.contains).toList();
-    final List<String> domains = <String>[];
-    for (final Object? item in JsonX.asList(json['custom_domains'])) {
-      final String? clean = normalizeDomainSuffix(item.toString());
-      if (clean != null && !domains.contains(clean)) {
-        domains.add(clean);
-      }
+    List<String> parseCategories(Object? raw) {
+      final Set<String> incoming = JsonX.asList(raw)
+          .map((Object? item) => item.toString().trim().toLowerCase())
+          .toSet();
+      return categoryLabels.keys.where(incoming.contains).toList();
     }
+
+    List<String> parseDomains(Object? raw) {
+      final List<String> domains = <String>[];
+      for (final Object? item in JsonX.asList(raw)) {
+        final String? clean = normalizeDomainSuffix(item.toString());
+        if (clean != null && !domains.contains(clean)) {
+          domains.add(clean);
+        }
+      }
+      return domains;
+    }
+
+    final Map<String, dynamic> global = JsonX.asMap(json['global']);
+    final Map<String, dynamic> personal = JsonX.asMap(json['personal']);
+    final bool hasPersonal = json['personal'] is Map;
     return FilterSettings(
       enabled: JsonX.boolean(json['enabled']),
-      categories: botMatched,
-      customDomains: domains,
+      categories: parseCategories(json['categories']),
+      customDomains: parseDomains(json['custom_domains']),
       updatedBy: JsonX.text(json['updated_by'], 'app'),
       updatedAt: JsonX.text(json['updated_at']),
+      globalEnabled: JsonX.boolean(global['enabled']),
+      globalCategories: parseCategories(global['categories']),
+      globalCustomDomains: parseDomains(global['custom_domains']),
+      personalEnabled: hasPersonal ? JsonX.boolean(personal['enabled']) : null,
+      personalCategories: hasPersonal
+          ? parseCategories(personal['categories'])
+          : null,
+      personalCustomDomains: hasPersonal
+          ? parseDomains(personal['custom_domains'])
+          : null,
     );
   }
 
