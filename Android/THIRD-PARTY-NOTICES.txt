@@ -1,0 +1,9 @@
+Umbrella VPN's Android integration targets the hiddify-core 5.9.11 mobile library.
+Upstream source: https://github.com/hiddify/hiddify-core/tree/v5.9.11
+Upstream release: https://github.com/hiddify/hiddify-core/releases/tag/v5.9.11
+License: licenses/umbrella-core-license.md (upstream GPLv3 with additional terms, including NonCommercial).
+Umbrella branding and filenames do not claim authorship of the upstream library or imply upstream endorsement.
+Review the upstream terms and obtain any necessary permissions before distribution. The Android application and its core integration are not yet complete.
+
+Vazirmatn font: SIL Open Font License, assets/fonts/OFL.txt.
+Flutter and package notices are available through Flutter's license registry.

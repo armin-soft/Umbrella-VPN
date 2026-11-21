@@ -1,7 +1,7 @@
 Umbrella VPN includes an unmodified hiddify-core 5.9.11 Windows library and its bundled libcronet dependency.
 Upstream: https://github.com/hiddify/hiddify-core/tree/v5.9.11
 Release/source: https://github.com/hiddify/hiddify-core/releases/tag/v5.9.11
-License: licenses/hiddify-core-LICENSE.md (upstream GPLv3 with additional terms, including NonCommercial).
+License: licenses/umbrella-core-license.md (upstream GPLv3 with additional terms, including NonCommercial).
 The library is installed as UmbrellaCore.dll and loaded by Umbrella's own launchers. This filename change is not a claim of authorship. No upstream endorsement is implied.
 Review upstream terms and obtain any necessary permissions before commercial distribution; this draft is not legal clearance.
 

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/app_config.dart';
+import '../core/core_display.dart';
 import '../core/storage.dart';
 import '../core/theme.dart';
 import '../core/utils.dart';
@@ -3375,7 +3376,7 @@ class VpnController extends ChangeNotifier {
             ? 'هسته هیچ خروجی ای نداد. یعنی پیش از نوشتن هر خطی بسته شد؛ '
                 'بیشتر وقت ها دلیلش نبود دسترسی، آنتی ویروس یا فایل اجرایی '
                 'ناقص است.'
-            : full,
+            : displayOwnCoreOutput(full, engineId: UmbrellaCore.id),
       ),
     );
 
@@ -3608,7 +3609,7 @@ class VpnController extends ChangeNotifier {
       if (last.length > maxChars) {
         last = '…${last.substring(last.length - maxChars)}';
       }
-      return last;
+      return displayOwnCoreOutput(last, engineId: UmbrellaCore.id);
     } on FileSystemException {
       return '';
     }
