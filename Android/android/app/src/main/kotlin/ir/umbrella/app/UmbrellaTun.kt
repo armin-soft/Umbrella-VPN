@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import com.hiddify.core.libbox.Libbox
 import com.hiddify.core.libbox.TunOptions
-import java.net.InetAddress
 
 /** Owns the TUN descriptor until the service stops or VPN consent is revoked.
  * This class is not a service and does not start the engine on its own.
@@ -48,23 +47,23 @@ internal class UmbrellaTun(private val service: VpnService) : AutoCloseable {
                 if (!routes4.hasNext()) builder.addRoute("0.0.0.0", 0)
                 while (routes4.hasNext()) {
                     val route = routes4.next()
-                    builder.addRoute(IpPrefix(InetAddress.getByName(route.address()), route.prefix()))
+                    builder.addRoute(IpPrefix("${route.address()}/${route.prefix()}"))
                 }
                 val routes6 = options.inet6RouteAddress
                 if (!routes6.hasNext()) builder.addRoute("::", 0)
                 while (routes6.hasNext()) {
                     val route = routes6.next()
-                    builder.addRoute(IpPrefix(InetAddress.getByName(route.address()), route.prefix()))
+                    builder.addRoute(IpPrefix("${route.address()}/${route.prefix()}"))
                 }
                 val excluded4 = options.inet4RouteExcludeAddress
                 while (excluded4.hasNext()) {
                     val route = excluded4.next()
-                    builder.excludeRoute(IpPrefix(InetAddress.getByName(route.address()), route.prefix()))
+                    builder.excludeRoute(IpPrefix("${route.address()}/${route.prefix()}"))
                 }
                 val excluded6 = options.inet6RouteExcludeAddress
                 while (excluded6.hasNext()) {
                     val route = excluded6.next()
-                    builder.excludeRoute(IpPrefix(InetAddress.getByName(route.address()), route.prefix()))
+                    builder.excludeRoute(IpPrefix("${route.address()}/${route.prefix()}"))
                 }
             } else {
                 // The core supplies precomputed non-overlapping ranges on older Android.
@@ -83,7 +82,11 @@ internal class UmbrellaTun(private val service: VpnService) : AutoCloseable {
             val excluded = options.excludePackage
             check(!(included.hasNext() && excluded.hasNext())) { "Conflicting app routing rules" }
             if (included.hasNext()) {
-                while (included.hasNext()) addApp(builder, included.next(), allowed = true)
+                while (included.hasNext()) {
+                    val name = included.next()
+                    require(name != service.packageName) { "Core app cannot route itself into its VPN" }
+                    addApp(builder, name, allowed = true)
+                }
             } else {
                 while (excluded.hasNext()) {
                     val name = excluded.next()
