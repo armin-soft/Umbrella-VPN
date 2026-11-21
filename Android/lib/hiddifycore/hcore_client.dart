@@ -1,18 +1,12 @@
-// کلاینت gRPC هسته موبایل روی 127.0.0.1:17078.
-//
-// هسته با Mobile.setup (حالت GRPC_NORMAL_INSECURE) در سرویس پیش زمینه
-// اندروید بالا می آید و سرور gRPC را روی همین پورت باز می کند. Dart از
-// اینجا فقط RPC های لازم را صدا می زند؛ شروع/توقف سرویس و TUN در Kotlin است.
-//
-// هشدار امنیتی: loopback در اندروید بین برنامه ها مشترک است؛ اتصال بدون
-// TLS و احراز هویت از هسته در برابر برنامه های دیگر محافظت نمی کند. پیش از
-// انتشار باید حالت امن هسته و احراز هویت مشتری پیاده و بررسی شود.
+// کلاینت gRPC هسته موبایل. کنترل هسته به گواهی مشتری و TLS نیاز دارد؛
+// loopback اندروید بین برنامه ها مشترک است و نباید بدون احراز هویت باز بماند.
 
 import 'dart:async';
 
 import 'package:grpc/grpc.dart' as $grpc;
 
 import 'hcore_messages.dart';
+import 'mtls_credentials.dart';
 
 /// کلاینت RPC های هسته؛ یک کانال برای همه فراخوانی ها.
 class HcoreClient extends $grpc.Client {
@@ -102,12 +96,11 @@ class HcoreClient extends $grpc.Client {
 
 /// مدیریت کانال gRPC هسته: ساخت یک باره، بستن هنگام خروج.
 ///
-/// کانال روی loopback بدون TLS است؛ اگر هسته هنوز بالا نیامده باشد،
-/// فراخوانی ها با UNAVAILABLE برمی گردند و کنترلر اتصال دوباره تلاش می کند.
+/// The core must be started in its mTLS mode before the channel is used.
 class HcoreConnection {
-  HcoreConnection({this.host = '127.0.0.1', this.port = 17078});
+  HcoreConnection({required this.credentials, this.port = 17078});
 
-  final String host;
+  final CoreMtlsCredentials credentials;
   final int port;
 
   $grpc.ClientChannel? _channel;
@@ -115,11 +108,9 @@ class HcoreConnection {
 
   HcoreClient get client {
     _channel ??= $grpc.ClientChannel(
-      host,
+      '127.0.0.1',
       port: port,
-      options: const $grpc.ChannelOptions(
-        credentials: $grpc.ChannelCredentials.insecure(),
-      ),
+      options: $grpc.ChannelOptions(credentials: credentials),
     );
     return _client ??= HcoreClient(_channel!);
   }
