@@ -172,10 +172,12 @@ void main() {
               currentPage = 'AppShell.$label';
               try {
               await tester.tap(find.byTooltip('منو'));
+              await tester.pump();
               await tester.pump(const Duration(milliseconds: 350));
               final item = find.descendant(of: find.byType(Drawer), matching: find.text(label));
               await tester.ensureVisible(item);
               await tester.tap(item);
+              await tester.pump();
               await tester.pump(const Duration(milliseconds: 350));
               } catch (error) {
                 print('Error: navigation $label: $error');
