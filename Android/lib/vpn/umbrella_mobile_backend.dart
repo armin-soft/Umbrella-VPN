@@ -91,19 +91,32 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
     _validateConfiguration();
     final client = _connection?.client;
     if (client == null) throw StateError('VPN core is not initialized');
-    final response = await client.changeHiddifySettings(
-      ChangeHiddifySettingsRequest(hiddifySettingsJson: settingsJson),
-    ).timeout(const Duration(seconds: 15));
-    if (response.messageType != MessageType.empty) {
-      throw StateError('VPN core rejected its settings');
+    try {
+      final response = await client.changeHiddifySettings(
+        ChangeHiddifySettingsRequest(hiddifySettingsJson: settingsJson),
+      ).timeout(const Duration(seconds: 15));
+      if (response.messageType != MessageType.empty) {
+        throw StateError('Core rejected settings');
+      }
+    } catch (_) {
+      throw const MobileVpnFailure('ارتباط امن با هسته یا تنظیمات VPN ناموفق بود.');
     }
-    final parsed = await client.parse(ParseRequest(content: configContent))
-        .timeout(const Duration(seconds: 30));
-    final parsedContent = validatedParsedProfile(parsed);
-    await CoreStartCoordinator.start(
-      statuses: client.coreInfoListener(),
-      sendStart: () => client.start(StartRequest(configContent: parsedContent)),
-    );
+    final String parsedContent;
+    try {
+      final parsed = await client.parse(ParseRequest(content: configContent))
+          .timeout(const Duration(seconds: 30));
+      parsedContent = validatedParsedProfile(parsed);
+    } catch (_) {
+      throw const MobileVpnFailure('پردازش تنظیمات سرور ناموفق بود.');
+    }
+    try {
+      await CoreStartCoordinator.start(
+        statuses: client.coreInfoListener(),
+        sendStart: () => client.start(StartRequest(configContent: parsedContent)),
+      );
+    } catch (_) {
+      throw const MobileVpnFailure('شروع تونل در هسته ناموفق بود.');
+    }
   }
 
   @override

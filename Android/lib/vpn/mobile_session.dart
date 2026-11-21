@@ -11,6 +11,12 @@ abstract class MobileVpnBackend {
   Future<void> stopService();
 }
 
+/// Safe, user-facing stage only; never include profile links or credentials.
+class MobileVpnFailure implements Exception {
+  const MobileVpnFailure(this.message);
+  final String message;
+}
+
 enum MobileSessionState { disconnected, connecting, connected, disconnecting, failed }
 
 /// Serializes start/stop and ensures that cancellation cannot publish a stale
@@ -65,9 +71,9 @@ class MobileVpnSession {
       if (generation != _generation) return false;
       _state = MobileSessionState.connected;
       return true;
-    } catch (_) {
+    } catch (error) {
       if (generation == _generation) {
-        _error = failureMessage;
+        _error = error is MobileVpnFailure ? error.message : failureMessage;
         _state = MobileSessionState.failed;
       }
       return false;

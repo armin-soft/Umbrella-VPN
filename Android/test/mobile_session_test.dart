@@ -10,13 +10,17 @@ class FakeBackend implements MobileVpnBackend {
   int starts = 0;
   int stops = 0;
   Completer<void>? configuring;
+  bool failConfiguration = false;
 
   @override
   Future<bool> requestPermission() async => permission;
   @override
   Future<void> startService() async { starts++; }
   @override
-  Future<void> configureAndStart() async { await configuring?.future; }
+  Future<void> configureAndStart() async {
+    await configuring?.future;
+    if (failConfiguration) throw const MobileVpnFailure('پردازش تنظیمات سرور ناموفق بود.');
+  }
   @override
   Future<bool> verifyTraffic() async => verified;
   @override
@@ -33,6 +37,14 @@ void main() {
     expect(await session.connect(), isFalse);
     expect(session.state, MobileSessionState.failed);
     expect(session.error, contains('ترافیک'));
+    expect(backend.stops, 1);
+  });
+
+  test('reports a safe stage-specific failure and cleans up', () async {
+    final backend = FakeBackend()..failConfiguration = true;
+    final session = MobileVpnSession(backend);
+    expect(await session.connect(), isFalse);
+    expect(session.error, 'پردازش تنظیمات سرور ناموفق بود.');
     expect(backend.stops, 1);
   });
 
