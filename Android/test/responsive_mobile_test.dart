@@ -26,6 +26,7 @@ import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
+import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
@@ -62,6 +63,7 @@ void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await LocalStore.instance.init();
+    await TelegramChannelPrompt.markShown();
   });
 
   for (final size in <Size>[const Size(320, 568), const Size(360, 640), const Size(412, 915), const Size(640, 360), const Size(800, 1280)]) {
