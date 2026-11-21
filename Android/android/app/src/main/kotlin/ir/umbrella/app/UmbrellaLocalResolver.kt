@@ -21,7 +21,7 @@ import kotlin.coroutines.resumeWithException
 
 // Adapted from hiddify-app v5.9.11. See THIRD-PARTY-NOTICES.txt.
 internal class UmbrellaLocalResolver(private val monitor: UmbrellaNetworkMonitor) : LocalDNSTransport {
-    private const val RCODE_NXDOMAIN = 3
+    private val RCODE_NXDOMAIN = 3
 
     override fun raw(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
