@@ -39,6 +39,7 @@ flutter:
   assets:
     - THIRD-PARTY-NOTICES.txt
     - licenses/umbrella-core-license.md
+    - licenses/umbrella-app-upstream-license.md
     - assets/images/
     - assets/icons/
     - assets/icons/operators/

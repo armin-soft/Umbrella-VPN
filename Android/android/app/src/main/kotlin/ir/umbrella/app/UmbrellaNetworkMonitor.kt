@@ -50,8 +50,9 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
     private fun update(network: Network) {
         synchronized(lock) {
             if (!registered) return
-            val capabilities = connectivity.getNetworkCapabilities(network) ?: return
-            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return
+            // Capabilities and link properties may arrive after onAvailable.
+            // Remember the candidate so later callbacks can publish it.
+            if (current != network) listener?.updateDefaultInterface("", -1, false, false)
             current = network
             publishLocked(network)
         }
@@ -60,7 +61,10 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
     private fun publishLocked(network: Network) {
         if (!registered) return
         val capabilities = connectivity.getNetworkCapabilities(network) ?: return
-        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+            listener?.updateDefaultInterface("", -1, false, false)
+            return
+        }
         val name = connectivity.getLinkProperties(network)?.interfaceName ?: return
         val index = try { NetworkInterface.getByName(name)?.index ?: return } catch (_: Exception) { return }
         listener?.updateDefaultInterface(
