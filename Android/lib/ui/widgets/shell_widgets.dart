@@ -287,7 +287,8 @@ class TitleBar extends StatelessWidget {
                 onTap: onToggleTheme!,
               ),
             ),
-          Padding(
+          Flexible(
+            child: Padding(
             padding: const EdgeInsetsDirectional.only(start: AppMetrics.space3, end: AppMetrics.space4),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -309,11 +310,11 @@ class TitleBar extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: AppMetrics.space2),
-                  Text(Fa.num(AppConfig.appName), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: colors.textPrimary)),
+                  Flexible(child: Text(Fa.num(AppConfig.appName), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: colors.textPrimary))),
                 ],
               ),
             ),
-          ),
+          )),
         ],
       ),
     );
