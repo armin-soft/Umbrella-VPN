@@ -549,7 +549,10 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
         if (icon != null) ...<Widget>[
@@ -590,8 +593,10 @@ class SectionHeader extends StatelessWidget {
             ],
           ),
         ),
+      ],
+        ),
         if (trailing != null) ...<Widget>[
-          const SizedBox(width: AppMetrics.space3),
+          const SizedBox(height: AppMetrics.space2),
           trailing!,
         ],
       ],

@@ -1396,14 +1396,16 @@ class _EditableValueRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppMetrics.space2),
-            Text(
+            Flexible(child: Text(
               Fa.num(value),
               textDirection: ltrValue ? TextDirection.ltr : null,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: valueColor ?? colors.textSecondary,
                     fontWeight: FontWeight.w700,
                   ),
-            ),
+            )),
             const SizedBox(width: AppMetrics.space2),
             Icon(
               Icons.edit_rounded,
@@ -1633,24 +1635,27 @@ class _ThemeCardSelector extends StatelessWidget {
         <(ThemePreference, String, String)>[
       (ThemePreference.dark, 'تیره', 'کنتراست بالا و مناسب شب'),
       (ThemePreference.light, 'روشن', 'خوانا در محیط های پرنور'),
-      (ThemePreference.system, 'هماهنگ با ویندوز', 'تغییر خودکار با سیستم'),
+      (ThemePreference.system, 'هماهنگ با سیستم', 'تغییر خودکار با سیستم'),
     ];
-    return Row(
-      children: <Widget>[
-        for (int i = 0; i < items.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: AppMetrics.space3),
-          Expanded(
-            child: _ThemeOptionCard(
-              preference: items[i].$1,
-              title: items[i].$2,
-              subtitle: items[i].$3,
-              selected: selected == items[i].$1,
-              onTap: () => onChanged(items[i].$1),
-            ),
-          ),
+    return LayoutBuilder(builder: (context, constraints) {
+      final narrow = constraints.maxWidth < 480 * MediaQuery.textScalerOf(context).scale(1);
+      Widget card(int i) => _ThemeOptionCard(
+        preference: items[i].$1, title: items[i].$2, subtitle: items[i].$3,
+        selected: selected == items[i].$1, onTap: () => onChanged(items[i].$1),
+      );
+      if (narrow) {
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (int i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppMetrics.space3), card(i),
+          ],
+        ]);
+      }
+      return Row(children: [
+        for (int i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(width: AppMetrics.space3), Expanded(child: card(i)),
         ],
-      ],
-    );
+      ]);
+    });
   }
 }
 
