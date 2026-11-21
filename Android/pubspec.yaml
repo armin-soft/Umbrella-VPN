@@ -37,6 +37,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - THIRD-PARTY-NOTICES.txt
+    - licenses/umbrella-core-license.md
     - assets/images/
     - assets/icons/
     - assets/icons/operators/
