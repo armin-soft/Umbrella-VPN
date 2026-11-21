@@ -202,14 +202,14 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
               color: colors.textSecondary,
             ),
             const SizedBox(width: AppMetrics.space1),
-            Text(
+            Flexible(child: Text(
               Fa.num('پروکسی ساکس ۵ · فقط همان شبکه'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
               textAlign: TextAlign.center,
-            ),
+            )),
             if (_lanIps.length > 1) ...<Widget>[
               const SizedBox(width: AppMetrics.space2),
               InkWell(
