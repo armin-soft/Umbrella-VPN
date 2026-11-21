@@ -99,12 +99,32 @@ check(
 Webhook::expectedUrl() === 'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php',
 'non-HTTPS webhook configuration must fall back to the canonical HTTPS URL'
 );
+$IndexSource = file_get_contents(dirname(__DIR__) . '/index.php');
+$WebhookSource = file_get_contents(dirname(__DIR__) . '/Core/Telegram/Webhook.php');
+$CliGuard = strpos($IndexSource, "if (PHP_SAPI === 'cli') {");
+$SyncCommand = strpos($IndexSource, "if (\$Command === 'syncwebhook') {");
+$SyncCall = strpos($IndexSource, '\\Webhook::syncFromCli();');
+$CliEnd = $CliGuard === false ? false : strpos($IndexSource, "\n}\n\n// وبهوک", $CliGuard);
+check(
+$CliGuard !== false && $SyncCommand !== false && $SyncCall !== false && $CliEnd !== false
+&& $SyncCommand > $CliGuard && $SyncCall > $SyncCommand && $SyncCall < $CliEnd
+&& substr_count($IndexSource, '\\Webhook::syncFromCli();') === 1,
+'explicit URL sync is available only as a CLI command'
+);
+check(
+!str_contains($IndexSource, '\\Webhook::ensureRegistered(true)'),
+'public request routes cannot authorize webhook URL changes'
+);
+check(
+ preg_match("/public static function syncFromCli\\(\\): void\\s*\\{\\s*if \\(PHP_SAPI !== 'cli'\\)/", $WebhookSource) === 1,
+'webhook URL-changing operation rejects non-CLI SAPI'
+);
 $_SERVER['BOT_WEBHOOK_URL'] = 'https://example.test/index.php';
-Webhook::ensureRegistered(true);
-check(in_array('setWebhook', TelegramClient::$Calls, true), 'webhook success path exercised');
+Webhook::syncFromCli();
+check(in_array('setWebhook', TelegramClient::$Calls, true), 'explicit CLI webhook sync path exercised');
 check(file_get_contents($Log) === '', 'secret creation and webhook registration successes not logged');
 Database::$Settings['Webhook_Registration'] = '';
-TelegramClient::$Fail = true; Webhook::ensureRegistered(true);
+TelegramClient::$Fail = true; Webhook::syncFromCli();
 check(str_contains(file_get_contents($Log), 'setWebhook failed'), 'webhook failure remains logged');
 file_put_contents($Log, '');
 ServerClient::$Fail = true; Database::$Fail = true;

@@ -34,6 +34,7 @@ error_log('[Umbrella-Bot][Schema-AutoInstall] ' . $Error->getMessage());
 // کارهای نگهداری فقط از ترمینال سرور اجرا می شوند:
 //   php index.php RunScheduler [all|daily|operations|membership]
 //   php index.php NightlyDiag
+//   php index.php SyncWebhook
 if (PHP_SAPI === 'cli') {
 $Command = strtolower(trim((string)($argv[1] ?? '')));
 
@@ -50,6 +51,12 @@ else {
 echo "SCHEDULER DONE\n";
 }
 
+exit;
+}
+
+if ($Command === 'syncwebhook') {
+\Webhook::syncFromCli();
+echo "WEBHOOK SYNCED\n";
 exit;
 }
 }
@@ -127,11 +134,9 @@ exit;
 $Is_Post = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
 
 if (!$Is_Post) {
-// بازدید ساده از آدرس ربات: وبهوک فقط به مقصد canonical پیکربندی شده
-// همگام می شود و بازدیدکننده به ربات می رود؛ Host ورودی هرگز مقصد را عوض نمی کند.
+// بازدید ساده از آدرس ربات به پیوند ربات هدایت می شود؛ هدرهای درخواست مقصد را عوض نمی کنند.
+// همگام سازی مقصد جدید فقط با دستور SyncWebhook از ترمینال سرور مجاز است.
 // کارهای زمان بندی شده بعد از بسته شدن پاسخ اجرا می شوند تا هدایت کند نباشد.
-\Webhook::ensureRegistered(true);
-
 register_shutdown_function(static function (): void {
 require_once __DIR__ . '/Bot/Scheduler.php';
 \Scheduler::tick();

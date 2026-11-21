@@ -91,13 +91,24 @@ return self::DEFAULT_WEBHOOK_URL;
 return rtrim($Url, '/');
 }
 
+/** ثبت دوره ای وبهوک بدون اجازهٔ تغییر مقصد ذخیره شده. */
+public static function ensureRegistered(): void {
+self::register(false);
+}
+
 /**
- * ثبت یا به روزرسانی وبهوک در تلگرام.
- *
- * @param bool $AllowUrlChange اجازهٔ همگام سازی آدرس ذخیره شده با مقصدی را
- *        می دهد که از پیکربندی مورداعتماد سرور آمده؛ خود درخواست هیچ URLی نمی سازد.
+ * همگام سازی صریح مقصد وبهوک با پیکربندی سرور؛ فقط از ترمینال سرور مجاز است.
  */
-public static function ensureRegistered(bool $AllowUrlChange = false): void {
+public static function syncFromCli(): void {
+if (PHP_SAPI !== 'cli') {
+return;
+}
+
+self::register(true);
+}
+
+/** پیاده سازی داخلی ثبت وبهوک. */
+private static function register(bool $AllowUrlChange): void {
 $Url = self::expectedUrl();
 
 if ($Url === '') {
@@ -123,7 +134,7 @@ $State = self::readState();
 $Known_Url = (string)($State['url'] ?? '');
 
 if (!$AllowUrlChange && $Known_Url !== '' && $Known_Url !== $Url) {
-// آدرس ثبت شده را فقط یک بازدید واقعی از دامنه می تواند عوض کند.
+// درخواست های عادی اجازه تغییر مقصد ثبت شده را ندارند؛ تغییر فقط با CLI صریح است.
 return;
 }
 
