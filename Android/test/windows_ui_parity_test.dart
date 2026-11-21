@@ -11,7 +11,7 @@ void main() {
       if (!file.path.endsWith('.dart')) continue;
       final relative = file.path.substring(windows.path.length + 1);
       // Android uses system navigation and an adaptive mobile shell.
-      if (relative == 'shell/app_shell.dart' || relative == 'widgets/shell_widgets.dart') continue;
+      if (relative == 'shell/app_shell.dart' || relative == 'widgets/shell_widgets.dart' || relative == 'pages/login_page.dart') continue;
       final android = File('lib/ui/$relative');
       expect(android.existsSync(), isTrue, reason: 'Missing $relative');
       expect(android.readAsStringSync(), file.readAsStringSync(),

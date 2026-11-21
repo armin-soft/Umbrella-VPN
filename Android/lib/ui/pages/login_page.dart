@@ -9,6 +9,7 @@ import '../../core/ui_formatters.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
+import '../../platform/sms_consent.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../widgets/brand_widgets.dart';
@@ -33,10 +34,22 @@ class _LoginPageState extends State<LoginPage> {
   final FocusNode _codeFocus = FocusNode();
   MobileOperator _operator = MobileOperator.unknown;
   bool _autoSubmittingCode = false;
+  final SmsConsent _smsConsent = SmsConsent();
+  bool _smsArmed = false;
+  String? _pendingSmsCode;
 
   @override
   void initState() {
     super.initState();
+    _smsConsent.listen((code) {
+      if (!mounted || !_smsArmed) return;
+      final auth = context.read<AuthController>();
+      if (auth.phase == AuthPhase.code) {
+        _fillSmsCode(code);
+      } else {
+        _pendingSmsCode = code;
+      }
+    });
     final AuthController auth = context.read<AuthController>();
     if (auth.phone.isNotEmpty) {
       _phone.text = IranPhone.display(auth.phone);
@@ -56,6 +69,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
+    _smsArmed = false;
+    _smsConsent.dispose();
     _phone.dispose();
     _firstName.dispose();
     _lastName.dispose();
@@ -432,7 +447,7 @@ class _LoginPageState extends State<LoginPage> {
           loading: auth.busy,
           onPressed: auth.busy
               ? null
-              : () => auth.submitProfile(_firstName.text, _lastName.text),
+              : () => _withSmsConsent(auth, () async { await auth.submitProfile(_firstName.text, _lastName.text); }),
         ),
       ],
     );
@@ -448,7 +463,13 @@ class _LoginPageState extends State<LoginPage> {
           children: <Widget>[
             IconAction(
               icon: Icons.arrow_back_rounded,
-              onTap: auth.resetToPhoneStep,
+              onTap: () {
+                _smsArmed = false;
+                _pendingSmsCode = null;
+                _code.clear();
+                _smsConsent.stop();
+                auth.resetToPhoneStep();
+              },
               tooltip: 'بازگشت',
             ),
             const SizedBox(width: AppMetrics.space3),
@@ -474,6 +495,7 @@ class _LoginPageState extends State<LoginPage> {
           controller: _code,
           focusNode: _codeFocus,
           autofocus: true,
+          autofillHints: const <String>[AutofillHints.oneTimeCode],
           textAlign: TextAlign.center,
           keyboardType: TextInputType.number,
           inputFormatters: <TextInputFormatter>[
@@ -506,7 +528,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
             ),
             TextButton(
-              onPressed: auth.resendIn > 0 ? null : auth.resendCode,
+              onPressed: auth.resendIn > 0 || auth.busy ? null : () => _withSmsConsent(auth, auth.resendCode),
               child: Text(
                 auth.resendIn > 0
                     ? Fa.num('ارسال دوباره تا ${Fa.num(auth.resendIn)} ثانیه')
@@ -615,10 +637,38 @@ class _LoginPageState extends State<LoginPage> {
     _autoSubmittingCode = false;
   }
 
+  void _fillSmsCode(String code) {
+    // Do not replace a code the user is already entering, and do not submit a
+    // potentially unrelated SMS automatically. The user confirms with the button.
+    if (_code.text.isNotEmpty) return;
+    _code.text = Fa.num(code);
+    _smsArmed = false;
+    _pendingSmsCode = null;
+  }
+
+  Future<void> _withSmsConsent(AuthController auth, Future<void> Function() send) async {
+    _smsArmed = true;
+    _pendingSmsCode = null;
+    await _smsConsent.start();
+    if (!mounted) return;
+    try {
+      await send();
+    } finally {
+      if (!mounted) return;
+      if (auth.phase != AuthPhase.code) {
+        _smsArmed = false;
+        _pendingSmsCode = null;
+        await _smsConsent.stop();
+      } else if (_pendingSmsCode != null) {
+        _fillSmsCode(_pendingSmsCode!);
+      }
+    }
+  }
+
   Future<void> _submitPhone(AuthController auth) async {
-    final bool ok = await auth.submitPhone(_phone.text);
-    if (ok) {
-      _code.clear();
+    _code.clear();
+    await _withSmsConsent(auth, () async { await auth.submitPhone(_phone.text); });
+    if (mounted && auth.phase == AuthPhase.code) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && context.read<AuthController>().phase == AuthPhase.code) {
           _codeFocus.requestFocus();

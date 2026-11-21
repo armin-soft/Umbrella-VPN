@@ -4,7 +4,13 @@ import android.app.Activity
 import android.content.Intent
 import android.content.ComponentName
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.ServiceConnection
+import androidx.core.content.ContextCompat
+import com.google.android.gms.auth.api.phone.SmsRetriever
+import com.google.android.gms.common.api.CommonStatusCodes
+import com.google.android.gms.common.api.Status
 import android.net.VpnService
 import android.net.Uri
 import android.provider.Settings
@@ -22,7 +28,59 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private var pendingVpnPermission: MethodChannel.Result? = null
     private val vpnRequestCode = 4701
+    private val smsRequestCode = 4702
+    private var smsReceiver: BroadcastReceiver? = null
+    private var smsChannel: MethodChannel? = null
     private val handler = Handler(Looper.getMainLooper())
+
+    private fun stopSmsConsent() {
+        smsReceiver?.let { runCatching { unregisterReceiver(it) } }
+        smsReceiver = null
+    }
+
+    private fun startSmsConsent(result: MethodChannel.Result) {
+        stopSmsConsent()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != SmsRetriever.SMS_RETRIEVED_ACTION) return
+                val extras = intent.extras ?: return
+                @Suppress("DEPRECATION")
+                val status = extras.get(SmsRetriever.EXTRA_STATUS) as? Status ?: return
+                if (status.statusCode == CommonStatusCodes.SUCCESS) {
+                    @Suppress("DEPRECATION")
+                    val consent = extras.get(SmsRetriever.EXTRA_CONSENT_INTENT) as? Intent
+                    stopSmsConsent()
+                    if (consent != null) runCatching { startActivityForResult(consent, smsRequestCode) }
+                } else if (status.statusCode == CommonStatusCodes.TIMEOUT) stopSmsConsent()
+            }
+        }
+        try {
+            ContextCompat.registerReceiver(this, receiver, IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION),
+                SmsRetriever.SEND_PERMISSION, handler, ContextCompat.RECEIVER_EXPORTED)
+            smsReceiver = receiver
+            SmsRetriever.getClient(this).startSmsUserConsent(null)
+                .addOnSuccessListener { result.success(true) }
+                .addOnFailureListener { stopSmsConsent(); result.success(false) }
+        } catch (_: Exception) {
+            stopSmsConsent()
+            result.success(false)
+        }
+    }
+
+    // The user must approve access to this one SMS in the system dialog.
+    // Only a single unambiguous six-digit candidate is sent to Flutter.
+    private fun deliverSmsCode(message: String) {
+        val normalized = buildString {
+            for (c in message) append(when (c) {
+                in '۰'..'۹' -> ('0'.code + (c - '۰')).toChar()
+                in '٠'..'٩' -> ('0'.code + (c - '٠')).toChar()
+                else -> c
+            })
+        }
+        val codes = Regex("(?<![0-9])([0-9]{6})(?![0-9])")
+            .findAll(normalized).map { it.groupValues[1] }.toList()
+        if (codes.size == 1) smsChannel?.invokeMethod("smsCode", codes.single())
+    }
     private var service: UmbrellaVpnService? = null
     private var bound = false
     private var pendingStart: MethodChannel.Result? = null
@@ -130,6 +188,15 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        smsChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ir.umbrella.app/sms_consent").also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> startSmsConsent(result)
+                    "stop" -> { stopSmsConsent(); result.success(null) }
+                    else -> result.notImplemented()
+                }
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ir.umbrella.app/android")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -196,6 +263,12 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Used for VPN consent across supported Android versions")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == smsRequestCode) {
+            if (resultCode == Activity.RESULT_OK) {
+                data?.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE)?.let { deliverSmsCode(it) }
+            }
+            return
+        }
         if (requestCode != vpnRequestCode) return
         val pending = pendingVpnPermission
         pendingVpnPermission = null
@@ -203,6 +276,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        stopSmsConsent()
+        smsChannel?.setMethodCallHandler(null)
+        smsChannel = null
         pendingVpnPermission?.success(false)
         pendingVpnPermission = null
         if (pendingStart != null) {
