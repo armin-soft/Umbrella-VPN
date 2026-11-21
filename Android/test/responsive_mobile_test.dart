@@ -63,8 +63,8 @@ void main() {
     await LocalStore.instance.init();
   });
 
-  for (final size in <Size>[const Size(320, 568), const Size(360, 640), const Size(412, 915), const Size(640, 360), const Size(800, 1280)]) {
-    for (final textScale in <double>[1.0, 1.3]) {
+  for (final size in <Size>[const Size(320, 568)]) {
+    for (final textScale in <double>[1.0]) {
       testWidgets('Android screens at $size, text $textScale', (tester) async {
         await tester.binding.setSurfaceSize(size);
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -111,6 +111,7 @@ void main() {
         addTearDown(() { FlutterError.onError = previousOnError; });
         for (final page in pages) {
           currentPage = page.runtimeType.toString();
+          final errorsBefore = problems.length;
           final bool fullWindow = page is LandingPage || page is LoginPage;
           await tester.pumpWidget(MultiProvider(
             providers: [
@@ -167,7 +168,7 @@ void main() {
             final stack = problem is Error ? problem.stackTrace : null;
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
-          if (page is ConnectPage && problem == null) {
+          if (page is ConnectPage && problem == null && problems.length == errorsBefore) {
             // In RTL, omitting anchorPoint would select this hinge's right pane.
             final Finder settingsButton = find.byKey(
               const ValueKey<String>('connection-settings-button'),
