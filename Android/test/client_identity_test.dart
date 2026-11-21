@@ -25,6 +25,19 @@ void main() {
     expect(credentials.isSecure, isTrue);
   });
 
+  test('replaces a mismatched but valid private key', () async {
+    final dir = await Directory.systemTemp.createTemp('umbrella-identity-');
+    final otherDir = await Directory.systemTemp.createTemp('umbrella-identity-other-');
+    addTearDown(() => dir.delete(recursive: true));
+    addTearDown(() => otherDir.delete(recursive: true));
+    final original = await CoreClientIdentity.loadOrCreate(dir);
+    final other = await CoreClientIdentity.loadOrCreate(otherDir);
+    await File('${dir.path}/grpc/client.key').writeAsString(other.privateKey);
+    final recovered = await CoreClientIdentity.loadOrCreate(dir);
+    expect(recovered.certificate, isNot(original.certificate));
+    expect(recovered.privateKey, isNot(other.privateKey));
+  });
+
   test('replaces a corrupted key before using the identity', () async {
     final dir = await Directory.systemTemp.createTemp('umbrella-identity-');
     addTearDown(() => dir.delete(recursive: true));
