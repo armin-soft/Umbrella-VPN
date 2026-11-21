@@ -68,5 +68,11 @@ void main() {
     expect(await connecting, isFalse);
     await disconnecting;
     expect(session.state, MobileSessionState.failed);
+    expect(await session.connect(), isFalse);
+    expect(backend.starts, 1);
+    backend.failStop = false;
+    await session.disconnect();
+    expect(session.state, MobileSessionState.disconnected);
+    expect(await session.connect(), isTrue);
   });
 }

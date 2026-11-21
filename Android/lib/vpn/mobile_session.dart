@@ -30,7 +30,9 @@ class MobileVpnSession {
 
   Future<bool> connect() async {
     if (_state == MobileSessionState.connected) return true;
-    if (_start != null || _stop != null) return false;
+    // Never start a second core while cleanup of the previous one is uncertain.
+    // A successful disconnect must clear this condition first.
+    if (_start != null || _stop != null || _cleanupFailed) return false;
     final int generation = ++_generation;
     _state = MobileSessionState.connecting;
     _error = '';
@@ -99,9 +101,11 @@ class MobileVpnSession {
         } else {
           await _backend.stopService();
         }
+        _cleanupFailed = false;
         _state = MobileSessionState.disconnected;
         _error = '';
       } catch (_) {
+        _cleanupFailed = true;
         _state = MobileSessionState.failed;
         _error = 'توقف سرویس VPN ناموفق بود.';
       } finally {
