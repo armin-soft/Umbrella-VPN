@@ -58,6 +58,23 @@ class _Updates extends UpdateController {
   Future<bool> check({bool silent = false, bool ignoreSkipped = false}) async => false;
 }
 
+/// Visit intermediate and end positions so lazily built content gets laid out.
+Future<void> inspectVerticalScrolls(WidgetTester tester) async {
+  for (var pass = 0; pass < 2; pass++) {
+    final scrolls = tester.stateList<ScrollableState>(find.byType(Scrollable)).toList();
+    for (final scroll in scrolls) {
+      if (!scroll.mounted || scroll.position.axis != Axis.vertical || !scroll.position.hasContentDimensions) continue;
+      final position = scroll.position;
+      if (!position.maxScrollExtent.isFinite || position.maxScrollExtent <= 0) continue;
+      for (final fraction in [0.25, 0.5, 0.75, 1.0, 0.0]) {
+        if (!scroll.mounted || !position.hasPixels) break;
+        position.jumpTo(position.maxScrollExtent * fraction);
+        await tester.pump(const Duration(milliseconds: 80));
+      }
+    }
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -199,7 +216,10 @@ void main() {
               currentPage = '${page.runtimeType}.tab$i';
               controller.index = i;
               await tester.pump(const Duration(milliseconds: 350));
+              await inspectVerticalScrolls(tester);
             }
+          } else if (page is! AppShell) {
+            await inspectVerticalScrolls(tester);
           }
           final problem = tester.takeException();
           if (problem != null) {
