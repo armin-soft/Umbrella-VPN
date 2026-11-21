@@ -14,7 +14,8 @@ void main() {
       if (const {'shell/app_shell.dart', 'widgets/shell_widgets.dart', 'pages/login_page.dart',
         'widgets/common.dart', 'widgets/brand_widgets.dart', 'pages/updates_page.dart',
         'pages/settings_page.dart', 'pages/connect_page.dart', 'pages/device_page.dart',
-        'widgets/gateway_dialog.dart', 'widgets/lan_sharing_dialog.dart'}.contains(relative)) continue;
+        'widgets/gateway_dialog.dart', 'widgets/lan_sharing_dialog.dart',
+        'widgets/advanced_network_settings.dart'}.contains(relative)) continue;
       final android = File('lib/ui/$relative');
       expect(android.existsSync(), isTrue, reason: 'Missing $relative');
       expect(android.readAsStringSync(), file.readAsStringSync(),

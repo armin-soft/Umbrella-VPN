@@ -332,6 +332,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        scrollable: true,
         title: const Text('قانون برنامه'),
         content: SizedBox(
           width: AppMetrics.dialogMaxWidth,

@@ -665,16 +665,17 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
           borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           border: Border.all(color: colors.danger.withValues(alpha: 0.28)),
         ),
-        child: Row(
+        child: Wrap(
+          spacing: AppMetrics.space2,
+          runSpacing: AppMetrics.space1,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            Expanded(
-              child: Text(
-                'رمز تنظیم نشده',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: colors.danger,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
+            Text(
+              'رمز تنظیم نشده',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.danger,
+                    fontWeight: FontWeight.w700,
+                  ),
             ),
             InkWell(
               borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
