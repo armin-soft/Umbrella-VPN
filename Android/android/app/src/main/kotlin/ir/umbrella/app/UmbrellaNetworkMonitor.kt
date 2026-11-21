@@ -73,6 +73,17 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
         )
     }
 
+    /** DNS must use the underlying network, never the VPN itself. */
+    fun requireNetwork(): Network = synchronized(lock) {
+        check(registered) { "Network monitor is not active" }
+        val network = checkNotNull(current) { "No underlying network available" }
+        val caps = connectivity.getNetworkCapabilities(network)
+        check(caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true) {
+            "Underlying network is unavailable"
+        }
+        network
+    }
+
     /** Registration fails closed if Android denies the required network request. */
     fun start(target: InterfaceUpdateListener) {
         synchronized(lock) {
