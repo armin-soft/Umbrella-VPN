@@ -117,7 +117,7 @@ jobs:
             echo "::error::$message"
             details=$(grep -A 5 'The relevant error-causing widget was:' test-output.txt | head -120 | tr '\n' ' ' | cut -c1-12000 || true)
             if [ -n "$details" ]; then echo "::error::$details"; fi
-            echo "::error::$(tail -80 test-output.txt | tr '\n' ' ' | cut -c1-12000)"
+            echo "::error::$(grep -B 25 -A 5 '\[E\]' test-output.txt | head -100 | tr '\n' ' ' | cut -c1-12000 || true)"
             exit 1
           fi
           cat test-output.txt

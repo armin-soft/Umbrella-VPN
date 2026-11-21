@@ -170,12 +170,17 @@ void main() {
           if (page is AppShell && size.width < 700) {
             for (final label in ['اتصال', 'دستگاه من', 'حساب من', 'تنظیمات', 'گزارش ها', 'درباره', 'به روز رسانی']) {
               currentPage = 'AppShell.$label';
+              try {
               await tester.tap(find.byTooltip('منو'));
               await tester.pump(const Duration(milliseconds: 350));
               final item = find.descendant(of: find.byType(Drawer), matching: find.text(label));
               await tester.ensureVisible(item);
               await tester.tap(item);
               await tester.pump(const Duration(milliseconds: 350));
+              } catch (error) {
+                print('Error: navigation $label: $error');
+                rethrow;
+              }
             }
           }
           if (page is DevicePage || page is AccountPage) {
