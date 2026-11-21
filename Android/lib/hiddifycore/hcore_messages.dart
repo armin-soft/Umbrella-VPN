@@ -19,6 +19,9 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 /// hcommon.Empty — پیام خالی برای RPC های بدون ورودی.
 class HEmpty extends $pb.GeneratedMessage {
+  @override
+  HEmpty clone() => create()..mergeFromMessage(this);
+
   HEmpty._() : super();
   factory HEmpty.fromBuffer(List<int> i,
           [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) =>
@@ -41,6 +44,9 @@ class HEmpty extends $pb.GeneratedMessage {
 
 /// hcommon.Response — کد پاسخ (OK=0, FAILED=1, AUTH_NEED=2) و پیام.
 class HResponse extends $pb.GeneratedMessage {
+  @override
+  HResponse clone() => create()..mergeFromMessage(this);
+
   factory HResponse({int? code, String? message}) {
     final HResponse result = create();
     if (code != null) {
@@ -106,6 +112,9 @@ class HResponse extends $pb.GeneratedMessage {
 ///   HOT_RELOADING=4, WAITING=5, NO_AVAILABLE_PROXIES=6
 /// MessageType: EMPTY=0, ... ERROR_BUILDING_CONFIG=11, ...
 class CoreInfoResponse extends $pb.GeneratedMessage {
+  @override
+  CoreInfoResponse clone() => create()..mergeFromMessage(this);
+
   factory CoreInfoResponse({int? coreState, int? messageType, String? message}) {
     final CoreInfoResponse result = create();
     if (coreState != null) {
@@ -182,6 +191,9 @@ class CoreInfoResponse extends $pb.GeneratedMessage {
 
 /// hcore.StartRequest — شروع هسته با مسیر یا محتوای پروفایل.
 class StartRequest extends $pb.GeneratedMessage {
+  @override
+  StartRequest clone() => create()..mergeFromMessage(this);
+
   factory StartRequest({
     String? configPath,
     String? configContent,
@@ -329,6 +341,9 @@ class StartRequest extends $pb.GeneratedMessage {
 
 /// hcore.ParseRequest — اعتبارسنجی پروفایل بدون شروع هسته.
 class ParseRequest extends $pb.GeneratedMessage {
+  @override
+  ParseRequest clone() => create()..mergeFromMessage(this);
+
   factory ParseRequest({
     String? content,
     String? configPath,
@@ -425,6 +440,9 @@ class ParseRequest extends $pb.GeneratedMessage {
 
 /// hcore.ParseResponse — نتیجه اعتبارسنجی (response_code: OK=0, FAILED=1).
 class ParseResponse extends $pb.GeneratedMessage {
+  @override
+  ParseResponse clone() => create()..mergeFromMessage(this);
+
   factory ParseResponse({int? responseCode, String? content, String? message}) {
     final ParseResponse result = create();
     if (responseCode != null) {
@@ -503,6 +521,9 @@ class ParseResponse extends $pb.GeneratedMessage {
 /// هسته ابتدا HiddifyOptions را به پیش فرض برمی گرداند و سپس JSON را روی
 /// آن اعمال می کند؛ پس JSON باید کامل باشد (UmbrellaCore.settingsJson).
 class ChangeHiddifySettingsRequest extends $pb.GeneratedMessage {
+  @override
+  ChangeHiddifySettingsRequest clone() => create()..mergeFromMessage(this);
+
   factory ChangeHiddifySettingsRequest({String? hiddifySettingsJson}) {
     final ChangeHiddifySettingsRequest result = create();
     if (hiddifySettingsJson != null) {
@@ -548,6 +569,9 @@ class ChangeHiddifySettingsRequest extends $pb.GeneratedMessage {
 
 /// hcore.SystemInfo — آمار زنده هسته (ترافیک، اتصال ها، خروجی فعال).
 class SystemInfo extends $pb.GeneratedMessage {
+  @override
+  SystemInfo clone() => create()..mergeFromMessage(this);
+
   factory SystemInfo({
     $fixnum.Int64? memory,
     int? goroutines,
