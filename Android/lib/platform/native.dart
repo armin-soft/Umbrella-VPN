@@ -36,6 +36,14 @@ class NativeHttpResponse {
   final String error;
 }
 
+/// Result type retained while the legacy controller is adapted to mobile.
+class AndroidCoreStartResult {
+  const AndroidCoreStartResult({required this.ok, this.error = '', this.permissionDenied = false});
+  final bool ok;
+  final String error;
+  final bool permissionDenied;
+}
+
 /// وضعیت باتری اندروید؛ مقدار نامشخص هرگز به معنی باتری فرض نمی شود.
 class BatteryPowerState {
   const BatteryPowerState({
@@ -132,6 +140,34 @@ class NativeBridge {
   Future<bool> isRunning(String name) async => false;
 
   Future<List<String>> runningCores() async => <String>[];
+
+  // Desktop-only operations: unsupported on Android, never report success.
+  Stream<String> get trayEvents => const Stream<String>.empty();
+  Future<bool> coreInstalled() => coreAvailable();
+  Future<bool> attachCoreJob(int pid) async => false;
+  Future<bool> setSystemProxy({String host = '127.0.0.1', required int port}) async => false;
+  Future<bool> disableSystemProxy() async => false;
+  Future<bool> systemProxyEnabled() async => false;
+  Future<bool> flushDns() async => false;
+  Future<bool> restoreNetworkDefaults() async => false;
+  Future<TunnelStats> tunnelStats({String hint = 'tun0'}) async => TunnelStats.empty;
+  Future<int> shutdownCores({bool skipIfClean = false}) async => await stopService() ? 1 : 0;
+  Future<int> stopAndroidCore() => shutdownCores();
+
+  // The old controller path is deliberately disabled until it is wired to
+  // UmbrellaMobileBackend and verified through the Android TUN.
+  Future<AndroidCoreStartResult> startAndroidCore({
+    required String linksPath, required String settingsJson, required String serviceMode,
+    String perAppMode = 'off', List<String> perAppPackages = const [],
+    bool showSpeed = true, bool debugMode = false, bool autoConnect = false,
+    int proxyPort = 12334, int clashPort = 16756,
+  }) async => const AndroidCoreStartResult(ok: false, error: 'Mobile controller not ready');
+
+  static Future<NativeHttpResponse?> performHttpRequest({
+    required String method, required String url,
+    Map<String, String> headers = const {}, String body = '',
+    int timeoutMs = 15000, bool useProxy = false,
+  }) async => null; // Fall back to Dart's HTTPS transport.
 
   // ── مجوز و سرویس VPN ────────────────────────────────────────────────────
 

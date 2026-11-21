@@ -73,6 +73,11 @@ class TrayService {
   TrayService(this._native);
   final NativeBridge _native;
 
+  // Android has no desktop tray; notification functionality is separate.
+  Future<bool> init() async => false;
+  Future<void> update({required String state, required String tooltip, required bool connected}) async {}
+  Future<void> destroy() async {}
+
   Future<void> balloon(String title, String body, {bool warning = false}) async {
     await _native.showNotification(title: title, body: body, warning: warning);
   }

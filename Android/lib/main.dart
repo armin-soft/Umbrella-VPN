@@ -221,7 +221,6 @@ Future<void> main(List<String> arguments) async {
       unawaited(() async {
         try {
           await auth.refreshAccount(silent: true);
-          await auth.refreshFromPanel();
           await subscriptions.syncPersonal();
         } finally {
           syncing = false;
@@ -230,7 +229,7 @@ Future<void> main(List<String> arguments) async {
     });
     if (auth.signedIn) {
       unawaited(auth.fetchNotifications(includeHistory: true));
-      unawaited(auth.refreshFromPanel());
+      unawaited(auth.refreshAccount(silent: true));
       // فقط اشتراک اختصاصی حساب کاربر واردشده دریافت می شود؛ هیچ منبع عمومی
       // یا رایگان وجود ندارد.
       unawaited(subscriptions.syncPersonal());
