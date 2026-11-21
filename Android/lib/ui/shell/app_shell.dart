@@ -800,13 +800,15 @@ class _FilterChip extends StatelessWidget {
           children: <Widget>[
             Icon(icon, size: AppMetrics.iconXs, color: fg),
             const SizedBox(width: AppMetrics.space1),
-            Text(
+            Flexible(child: Text(
               Fa.num(label),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
                     color: fg,
                   ),
-            ),
+            )),
             const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num(count),
