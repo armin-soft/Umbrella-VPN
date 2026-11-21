@@ -22,7 +22,7 @@ dependencies:
   audioplayers: ^6.1.0
   qr_flutter: ^4.1.0
   # کلاینت gRPC برای ارتباط با هسته موبایل (hiddify-core) روی 127.0.0.1:17078.
-  # پیام های پروتوباف به صورت دستی نوشته شده اند (lib/hiddifycore/hcore_messages.dart)
+  # پیام های پروتوباف به صورت دستی نوشته شده اند (lib/umbrella_core/core_messages.dart)
   # تا بدون تولید کد (protoc) کار کند؛ فقط RPC های لازم برای اندروید پوشش داده شده.
   grpc: ^4.0.1
   protobuf: ^4.2.0

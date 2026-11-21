@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:umbrella_vpn/hiddifycore/client_identity.dart';
-import 'package:umbrella_vpn/hiddifycore/mtls_credentials.dart';
+import 'package:umbrella_vpn/umbrella_core/client_identity.dart';
+import 'package:umbrella_vpn/umbrella_core/mtls_credentials.dart';
 
 void main() {
   test('creates and reuses a private core identity', () async {

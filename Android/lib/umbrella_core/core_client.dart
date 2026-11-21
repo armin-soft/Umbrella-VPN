@@ -5,12 +5,12 @@ import 'dart:async';
 
 import 'package:grpc/grpc.dart' as $grpc;
 
-import 'hcore_messages.dart';
+import 'core_messages.dart';
 import 'mtls_credentials.dart';
 
 /// کلاینت RPC های هسته؛ یک کانال برای همه فراخوانی ها.
-class HcoreClient extends $grpc.Client {
-  HcoreClient(super.channel, {super.options});
+class UmbrellaCoreClient extends $grpc.Client {
+  UmbrellaCoreClient(super.channel, {super.options});
 
   static final _$changeHiddifySettings = $grpc.ClientMethod<
       ChangeHiddifySettingsRequest, CoreInfoResponse>(
@@ -108,22 +108,22 @@ class HcoreClient extends $grpc.Client {
 /// مدیریت کانال gRPC هسته: ساخت یک باره، بستن هنگام خروج.
 ///
 /// The core must be started in its mTLS mode before the channel is used.
-class HcoreConnection {
-  HcoreConnection({required this.credentials, this.port = 17078});
+class UmbrellaCoreConnection {
+  UmbrellaCoreConnection({required this.credentials, this.port = 17078});
 
   final CoreMtlsCredentials credentials;
   final int port;
 
   $grpc.ClientChannel? _channel;
-  HcoreClient? _client;
+  UmbrellaCoreClient? _client;
 
-  HcoreClient get client {
+  UmbrellaCoreClient get client {
     _channel ??= $grpc.ClientChannel(
       '127.0.0.1',
       port: port,
       options: $grpc.ChannelOptions(credentials: credentials),
     );
-    return _client ??= HcoreClient(_channel!);
+    return _client ??= UmbrellaCoreClient(_channel!);
   }
 
   bool get isConnected => _channel != null;

@@ -1,6 +1,6 @@
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:umbrella_vpn/hiddifycore/hcore_messages.dart';
+import 'package:umbrella_vpn/umbrella_core/core_messages.dart';
 
 void main() {
   test('empty request has no wire fields', () {
