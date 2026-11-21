@@ -112,7 +112,8 @@ jobs:
         run: |
           if ! flutter test --reporter expanded > test-output.txt 2>&1; then
             cat test-output.txt
-            message=$(grep 'Error:' test-output.txt | head -60 | tr '\n' ' ' | cut -c1-12000)
+            message=$(grep -E 'Error:|Actual:|Expected:|overflowed| at Size\(' test-output.txt | head -80 | tr '\n' ' ' | cut -c1-12000 || true)
+            if [ -z "$message" ]; then message=$(tail -40 test-output.txt | tr '\n' ' ' | cut -c1-12000); fi
             echo "::error::$message"
             exit 1
           fi
