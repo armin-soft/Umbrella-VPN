@@ -137,6 +137,10 @@ class MainActivity : FlutterActivity() {
                     "coreAvailable" -> result.success(runCatching { com.hiddify.core.mobile.Mobile.test().isNotEmpty() }.getOrDefault(false))
                     "isServiceRunning" -> result.success(service?.isCoreReady == true)
                     "serverCertificate" -> result.success(service?.serverCertificate())
+                    "verifyTunTraffic" -> {
+                        val vpn = service
+                        if (vpn == null) result.success(false) else vpn.verifyTunTraffic { result.success(it) }
+                    }
                     "startService" -> startVpn(call.argument<Int>("grpcPort") ?: 17078, result)
                     "stopService" -> stopVpn(result)
                     else -> result.notImplemented()

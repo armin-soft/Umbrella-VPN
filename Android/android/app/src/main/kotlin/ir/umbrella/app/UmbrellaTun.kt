@@ -14,6 +14,8 @@ import com.hiddify.core.libbox.TunOptions
  */
 internal class UmbrellaTun(private val service: VpnService) : AutoCloseable {
     private var descriptor: ParcelFileDescriptor? = null
+    val isOpen: Boolean
+        @Synchronized get() = descriptor != null
 
     /** Protect the core's outbound sockets against looping back into its TUN. */
     fun protectSocket(fd: Int) {

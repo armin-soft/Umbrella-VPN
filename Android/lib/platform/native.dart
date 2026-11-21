@@ -172,6 +172,10 @@ class NativeBridge {
   /// گواهی همان سرور محلی که سرویس ساخته؛ برای pin کردن mTLS.
   Future<Uint8List?> coreServerCertificate() => _invoke<Uint8List>('serverCertificate');
 
+  /// Probe is bound to this app's VPN network and fails closed on unsupported devices.
+  Future<bool> verifyTunTraffic() async =>
+      await _invoke<bool>('verifyTunTraffic') ?? false;
+
   /// آیا سرویس VPN هم اکنون در حال اجراست؟
   Future<bool> isServiceRunning() async =>
       await _invoke<bool>('isServiceRunning') ?? false;
