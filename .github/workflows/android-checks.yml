@@ -41,4 +41,13 @@ jobs:
             exit 1
           fi
           cat pub-output.txt
-      - run: flutter test
+      - name: Run tests
+        shell: bash
+        run: |
+          if ! flutter test --reporter expanded > test-output.txt 2>&1; then
+            cat test-output.txt
+            message=$(tail -60 test-output.txt | tr '\n' ' ' | cut -c1-12000)
+            echo "::error::$message"
+            exit 1
+          fi
+          cat test-output.txt
