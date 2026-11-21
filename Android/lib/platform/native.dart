@@ -135,6 +135,12 @@ class NativeBridge {
 
   // ── مجوز و سرویس VPN ────────────────────────────────────────────────────
 
+  /// Desktop laptop optimization is not inferred from an Android battery.
+  Future<BatteryPowerState?> powerStatus() async => const BatteryPowerState(
+        hasBattery: false, onBattery: false, energySaver: false,
+        isLaptop: false, powerKnown: false,
+      );
+
   /// Compatibility with the shared settings UI: elevation means VPN consent.
   Future<bool> isElevated() => isVpnPrepared();
   Future<bool> relaunchElevated() => requestVpnPermission();

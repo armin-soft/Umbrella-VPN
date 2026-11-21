@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Brightness, Color, Size;
 import 'package:flutter/services.dart';
@@ -692,3 +693,584 @@ class AppLogger extends ChangeNotifier {
     return file.path;
   }
 }
+
+class _DigestCapture implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) {
+    value = data;
+  }
+
+  @override
+  void close() {}
+}
+
+/// بررسی، دانلود درون برنامه ای با تایید SHA-256 و نصب نسخه اندروید
+/// در دو کانال اصلی (پایدار) و بتا (آزمایشی).
+class UpdateService {
+  UpdateService({http.Client? client}) : _client = client ?? http.Client();
+
+  final http.Client _client;
+
+  Future<UpdateInfo?> check({
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    final ({UpdateInfo? available, List<UpdateInfo> releases}) catalog =
+        await fetchCatalog(channel: channel);
+    return catalog.available;
+  }
+
+  Future<({UpdateInfo? available, List<UpdateInfo> releases})> fetchCatalog({
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    if (AppConfig.updateManifestUrl.isNotEmpty) {
+      final UpdateInfo? manual = await _checkManifest(channel: channel);
+      if (manual != null) {
+        return (available: manual, releases: <UpdateInfo>[manual]);
+      }
+    }
+    final List<UpdateInfo> list = await _fetchGithubReleases(channel: channel);
+    if (list.isNotEmpty) {
+      UpdateInfo latest = list.first;
+      if (latest.isNewer && latest.sha256.isEmpty && latest.tagName.isNotEmpty) {
+        final String sha = await _shaForRelease(
+          tag: latest.tagName,
+          version: latest.version,
+          assetName: latest.assetName,
+        );
+        if (sha.isNotEmpty) {
+          latest = UpdateInfo(
+            version: latest.version,
+            url: latest.url,
+            sha256: sha,
+            notes: latest.notes,
+            mandatory: latest.mandatory,
+            sizeBytes: latest.sizeBytes,
+            publishedAt: latest.publishedAt,
+            preRelease: latest.preRelease,
+            tagName: latest.tagName,
+            assetName: latest.assetName,
+          );
+          list[0] = latest;
+        }
+      }
+      return (
+        available: latest.isNewer ? latest : null,
+        releases: list,
+      );
+    }
+    if (channel == UpdateChannel.stable) {
+      final UpdateInfo? single = await _checkGithubRelease();
+      if (single != null) {
+        return (
+          available: single.isNewer ? single : null,
+          releases: <UpdateInfo>[single],
+        );
+      }
+    }
+    return (available: null, releases: const <UpdateInfo>[]);
+  }
+
+  /// خواندن فهرست JSON دستی (اگر کسی تنظیم کرده باشد).
+  Future<UpdateInfo?> _checkManifest({
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    try {
+      final http.Response response = await _client
+          .get(
+            Uri.parse(AppConfig.updateManifestUrl),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode >= 300) {
+        return null;
+      }
+      final Map<String, dynamic> json = JsonX.asMap(
+        jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
+      );
+      final UpdateInfo? candidate = _accept(json);
+      if (candidate == null) {
+        return null;
+      }
+      if (channel == UpdateChannel.stable && candidate.preRelease) {
+        return null;
+      }
+      return candidate;
+    } on Exception {
+      return null;
+    }
+  }
+
+  /// خواندن فهرست انتشارها از API گیت هاب برای هر دو کانال پایدار و بتا.
+  Future<List<UpdateInfo>> _fetchGithubReleases({
+    required UpdateChannel channel,
+  }) async {
+    try {
+      final http.Response response = await _client
+          .get(Uri.parse(AppConfig.releasesListApiUrl), headers: _headers)
+          .timeout(const Duration(seconds: 14));
+      if (response.statusCode >= 300) {
+        return <UpdateInfo>[];
+      }
+      final Object? decoded =
+          jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
+      final List<Object?> items = JsonX.asList(decoded);
+      final List<UpdateInfo> parsed = <UpdateInfo>[];
+      for (final Object? raw in items) {
+        final UpdateInfo? info = parseGithubRelease(
+          JsonX.asMap(raw),
+          includePreReleases: channel == UpdateChannel.beta,
+        );
+        if (info != null) {
+          parsed.add(info);
+        }
+      }
+      parsed.sort(
+        (UpdateInfo a, UpdateInfo b) =>
+            UpdateInfo.compareVersions(b.version, a.version),
+      );
+      return parsed;
+    } on Exception {
+      return <UpdateInfo>[];
+    }
+  }
+
+  /// خواندن آخرین انتشار پایدار از API گیت هاب (مسیر پشتیبان کانال اصلی).
+  Future<UpdateInfo?> _checkGithubRelease() async {
+    try {
+      final http.Response response = await _client
+          .get(Uri.parse(AppConfig.releaseApiUrl), headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode >= 300) {
+        return null;
+      }
+      final Map<String, dynamic> json = JsonX.asMap(
+        jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
+      );
+      final UpdateInfo? info =
+          parseGithubRelease(json, includePreReleases: false);
+      if (info == null) {
+        return null;
+      }
+      if (info.sha256.isNotEmpty || !info.isNewer) {
+        return info;
+      }
+      final String sha = await _shaForRelease(
+        tag: info.tagName,
+        version: info.version,
+        assetName: info.assetName,
+      );
+      return UpdateInfo(
+        version: info.version,
+        url: info.url,
+        sha256: sha,
+        notes: info.notes,
+        mandatory: info.mandatory,
+        sizeBytes: info.sizeBytes,
+        publishedAt: info.publishedAt,
+        preRelease: info.preRelease,
+        tagName: info.tagName,
+        assetName: info.assetName,
+      );
+    } on Exception {
+      return null;
+    }
+  }
+
+  /// تجزیه یک انتشار گیت هاب، تشخیص دقیق بتا / پایدار و استخراج فایل نصبی و SHA-256.
+  static UpdateInfo? parseGithubRelease(
+    Map<String, dynamic> json, {
+    required bool includePreReleases,
+    String? preferredAbi,
+  }) {
+    if (json.isEmpty || JsonX.boolean(json['draft'])) {
+      return null;
+    }
+    final String tag = JsonX.text(json['tag_name']);
+    if (RegExp(r'-(windows|ios|macos)$', caseSensitive: false).hasMatch(tag)) {
+      return null;
+    }
+    final String version = UpdateInfo.normalizeVersion(tag);
+    if (version.isEmpty || !RegExp(r'^\d+\.\d+\.\d+').hasMatch(version)) {
+      return null;
+    }
+    final List<Map<String, dynamic>> assets = JsonX.asList(json['assets'])
+        .map(JsonX.asMap)
+        .where((Map<String, dynamic> item) => item.isNotEmpty)
+        .toList();
+    final Map<String, dynamic>? installerAsset = _pickAndroidApk(
+      assets,
+      preferredAbi: preferredAbi,
+    );
+    if (installerAsset == null && !_isReleaseForAndroid(tag)) {
+      return null;
+    }
+    final bool isPreRelease =
+        JsonX.boolean(json['prerelease']) || UpdateInfo.isPreReleaseTag(tag);
+    if (isPreRelease && !includePreReleases) {
+      return null;
+    }
+
+    final String releaseBody = JsonX.text(json['body']);
+    String url = '';
+    String assetName = '';
+    int size = 0;
+    String sha = '';
+    if (installerAsset != null) {
+      url = JsonX.text(installerAsset['browser_download_url']);
+      assetName = JsonX.text(installerAsset['name']);
+      size = JsonX.integer(installerAsset['size']);
+      sha = _extractDigestSha256(JsonX.text(installerAsset['digest']));
+    }
+    if (sha.isEmpty && releaseBody.isNotEmpty) {
+      sha = _extractBodySha256(releaseBody, assetName: assetName);
+    }
+    if (url.isEmpty) {
+      final String coreVersion = _versionOf(tag);
+      if (coreVersion.isEmpty) {
+        return null;
+      }
+      assetName = 'UmbrellaVPN-$coreVersion-universal.apk';
+      url = _installerUrl(tag, coreVersion);
+    }
+    return UpdateInfo(
+      version: version,
+      url: url,
+      sha256: sha,
+      notes: releaseBody,
+      mandatory: false,
+      sizeBytes: size,
+      publishedAt: JsonX.dateTime(json['published_at']),
+      preRelease: isPreRelease,
+      tagName: tag,
+      assetName: assetName,
+    );
+  }
+
+  static String _preferredAbi() {
+    final String v = Platform.version.toLowerCase();
+    if (v.contains('android_arm64') || v.contains('arm64')) {
+      return 'arm64-v8a';
+    }
+    if (v.contains('android_arm')) {
+      return 'armeabi-v7a';
+    }
+    if (v.contains('android_x64') || v.contains('x86_64')) {
+      return 'x86_64';
+    }
+    return 'universal';
+  }
+
+  static Map<String, dynamic>? _pickAndroidApk(
+    List<Map<String, dynamic>> assets, {
+    String? preferredAbi,
+  }) {
+    final String abi = (preferredAbi ?? _preferredAbi()).toLowerCase();
+    Map<String, dynamic>? universalApk;
+    Map<String, dynamic>? fallbackApk;
+    for (final Map<String, dynamic> asset in assets) {
+      final String name = JsonX.text(asset['name']).toLowerCase();
+      final String url = JsonX.text(asset['browser_download_url']);
+      if (url.isEmpty || !name.endsWith('.apk')) continue;
+      if (abi != 'universal' && name.contains(abi)) {
+        return asset;
+      }
+      if (universalApk == null && name.contains('universal')) {
+        universalApk = asset;
+      }
+      fallbackApk ??= asset;
+    }
+    return universalApk ?? fallbackApk;
+  }
+
+  static String _extractDigestSha256(String digest) {
+    final RegExpMatch? match = RegExp(
+      r'^(?:sha256:)?([0-9a-fA-F]{64})$',
+    ).firstMatch(digest.trim());
+    return match?.group(1)?.toLowerCase() ?? '';
+  }
+
+  static String _extractBodySha256(String body, {String assetName = ''}) {
+    final String fromSums = parseSha256Sums(body, assetName: assetName);
+    if (fromSums.isNotEmpty) {
+      return fromSums;
+    }
+    final RegExpMatch? labeled = RegExp(
+      r'sha[-_ ]?256\s*[:=]\s*`?([0-9a-fA-F]{64})`?',
+      caseSensitive: false,
+    ).firstMatch(body);
+    return labeled?.group(1)?.toLowerCase() ?? '';
+  }
+
+  Map<String, String> get _headers => <String, String>{
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Umbrella-Android/${AppConfig.version}',
+      };
+
+  /// فقط نسخه اندروید این مخزن به روز رسانی دارد.
+  static bool _isReleaseForAndroid(String tag) =>
+      tag.toLowerCase().contains('android');
+
+  /// `v1.0.0-android` یا `1.0.0` → `1.0.0`.
+  static String _versionOf(String tag) {
+    final RegExpMatch? match = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(tag);
+    return match?.group(1) ?? '';
+  }
+
+  /// مسیر مستقیم بسته نصب اندروید در مخزن رسمی انتشار.
+  static String _installerUrl(String tag, String version) =>
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/'
+      '$tag/UmbrellaVPN-$version-universal.apk';
+
+  /// اثر انگشت SHA-256 فایل نصب در صورتی که در گیت هاب یا متن انتشار نیامده باشد.
+  Future<String> _shaForRelease({
+    required String tag,
+    required String version,
+    String assetName = '',
+  }) async {
+    final List<String> candidates = <String>[
+      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/'
+          '$tag/SHA256SUMS.txt',
+    ];
+    for (final String url in candidates) {
+      try {
+        final http.Response response = await _client
+            .get(Uri.parse(url), headers: _headers)
+            .timeout(const Duration(seconds: 10));
+        if (response.statusCode >= 300) {
+          continue;
+        }
+        final String body =
+            utf8.decode(response.bodyBytes, allowMalformed: true);
+        final String parsed = parseSha256Sums(body, assetName: assetName);
+        if (parsed.isNotEmpty) {
+          return parsed;
+        }
+      } on Exception {
+        // نشانی بعدی امتحان می شود.
+      }
+    }
+    return '';
+  }
+
+  static String parseSha256Sums(String body, {String assetName = ''}) {
+    final String wanted = assetName.trim().toLowerCase();
+    String firstHash = '';
+    for (final String rawLine in body.split(RegExp(r'\r?\n'))) {
+      final RegExpMatch? match = RegExp(
+        r'^\s*([0-9a-fA-F]{64})(?:\s+[* ]?(.+))?$',
+      ).firstMatch(rawLine.trim());
+      if (match == null) continue;
+      final String hash = match.group(1)!.toLowerCase();
+      final String file = (match.group(2) ?? '').trim().toLowerCase();
+      firstHash = firstHash.isEmpty ? hash : firstHash;
+      if (wanted.isNotEmpty && file.endsWith(wanted)) {
+        return hash;
+      }
+      if (wanted.isEmpty && file.endsWith('.apk')) {
+        return hash;
+      }
+    }
+    return firstHash;
+  }
+
+  /// پذیرش فقط اگر نسخه واقعا تازه تر باشد.
+  UpdateInfo? _accept(Map<String, dynamic> json) {
+    if (json.isEmpty) {
+      return null;
+    }
+    final UpdateInfo info = UpdateInfo.fromJson(json);
+    if (info.version.isEmpty || info.url.isEmpty || !info.isNewer) {
+      return null;
+    }
+    return info;
+  }
+
+  static String _safeInstallerName(UpdateInfo info) {
+    final String raw = info.assetName.isNotEmpty
+        ? info.assetName
+        : Uri.tryParse(info.url)?.pathSegments.lastOrNull ?? '';
+    final String cleaned =
+        raw.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '').trim();
+    if (cleaned.toLowerCase().endsWith('.apk')) {
+      return cleaned;
+    }
+    return 'UmbrellaVPN-${info.version}-universal.apk';
+  }
+
+  Future<bool> _matchesSha256(File file, String expectedHex) async {
+    final _DigestCapture capture = _DigestCapture();
+    final ByteConversionSink hashSink =
+        sha256.startChunkedConversion(capture);
+    await for (final List<int> chunk in file.openRead()) {
+      hashSink.add(chunk);
+    }
+    hashSink.close();
+    final String actual = capture.value?.toString().toLowerCase() ?? '';
+    return actual == expectedHex.toLowerCase();
+  }
+
+  Future<File?> download(
+    UpdateInfo info, {
+    required void Function(double progress, int received, int total) onProgress,
+    bool Function()? isCancelled,
+    Directory? targetDir,
+  }) async {
+    // Never offer an unverified installer, even if a release omits its hash.
+    if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(info.sha256)) return null;
+    File? partFile;
+    IOSink? sink;
+    try {
+      final Directory dir;
+      if (targetDir != null) {
+        dir = targetDir;
+      } else {
+        final Directory base = await getTemporaryDirectory();
+        dir = Directory(
+          '${base.path}${Platform.pathSeparator}umbrella-updates',
+        );
+      }
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final String name = _safeInstallerName(info);
+      final File target = File('${dir.path}${Platform.pathSeparator}$name');
+
+      // اگر فایل معتبر قبلاً کامل دریافت و تایید شده باشد، بی درنگ آماده نصب است.
+      if (info.sha256.isNotEmpty && await target.exists()) {
+        if (await _matchesSha256(target, info.sha256)) {
+          final int len = await target.length();
+          onProgress(1.0, len, len);
+          return target;
+        }
+        await target.delete();
+      }
+
+      final Uri? downloadUri = Uri.tryParse(info.url.trim());
+      if (downloadUri == null ||
+          downloadUri.scheme.toLowerCase() != 'https' ||
+          downloadUri.host.isEmpty) {
+        return null;
+      }
+
+      partFile = File('${target.path}.part');
+      if (await partFile.exists()) {
+        await partFile.delete();
+      }
+
+      final http.Request request = http.Request('GET', downloadUri);
+      request.headers['User-Agent'] = 'Umbrella-Android/${AppConfig.version}';
+      final http.StreamedResponse response =
+          await _client.send(request).timeout(const Duration(seconds: 30));
+      if (response.statusCode >= 300) {
+        return null;
+      }
+      final int total = (response.contentLength ?? 0) > 0
+          ? response.contentLength!
+          : info.sizeBytes;
+      final IOSink activeSink = partFile.openWrite();
+      sink = activeSink;
+      final _DigestCapture capture = _DigestCapture();
+      final ByteConversionSink hashSink =
+          sha256.startChunkedConversion(capture);
+      int received = 0;
+
+      await for (final List<int> chunk
+          in response.stream.timeout(const Duration(seconds: 45))) {
+        if (isCancelled?.call() == true) {
+          await activeSink.close();
+          sink = null;
+          hashSink.close();
+          if (await partFile.exists()) {
+            await partFile.delete();
+          }
+          return null;
+        }
+        activeSink.add(chunk);
+        hashSink.add(chunk);
+        received += chunk.length;
+        onProgress(
+          total > 0 ? (received / total).clamp(0.0, 1.0) : 0.0,
+          received,
+          total,
+        );
+      }
+      await activeSink.flush();
+      await activeSink.close();
+      sink = null;
+      hashSink.close();
+
+      if (received <= 0 || (total > 0 && received < total)) {
+        if (await partFile.exists()) {
+          await partFile.delete();
+        }
+        return null;
+      }
+
+      if (info.sha256.isNotEmpty) {
+        final String actual = capture.value?.toString().toLowerCase() ?? '';
+        if (actual != info.sha256.toLowerCase()) {
+          if (await partFile.exists()) {
+            await partFile.delete();
+          }
+          return null;
+        }
+      }
+
+      if (await target.exists()) {
+        await target.delete();
+      }
+      final File ready = await partFile.rename(target.path);
+      await _pruneOldInstallers(dir, keepName: name);
+      return ready;
+    } on Exception {
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        if (partFile != null && await partFile.exists()) {
+          await partFile.delete();
+        }
+      } catch (_) {}
+      return null;
+    }
+  }
+
+  /// نصب درون برنامه ای بسته رسمی APK در اندروید از طریق نصب کننده امن سیستم.
+  Future<bool> install(
+    File file,
+    NativeBridge native, {
+    bool silentRelaunch = true,
+  }) async {
+    final String lower = file.path.toLowerCase();
+    if (lower.endsWith('.apk')) {
+      return native.installApk(file.path);
+    }
+    return false;
+  }
+
+  static Future<void> _pruneOldInstallers(
+    Directory dir, {
+    required String keepName,
+  }) async {
+    try {
+      await for (final FileSystemEntity entity in dir.list()) {
+        if (entity is! File) continue;
+        final String base =
+            entity.path.split(Platform.pathSeparator).last.toLowerCase();
+        if (base == keepName.toLowerCase()) continue;
+        if (base.endsWith('.apk') || base.endsWith('.part')) {
+          try {
+            await entity.delete();
+          } on FileSystemException {
+            // فایل قدیمی قفل شده نادیده گرفته می شود.
+          }
+        }
+      }
+    } on FileSystemException {
+      // پاک سازی کش موقت اختیاری است.
+    }
+  }
+}
+

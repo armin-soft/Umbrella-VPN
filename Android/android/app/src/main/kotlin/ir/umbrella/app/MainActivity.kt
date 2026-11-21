@@ -6,6 +6,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
 import android.net.VpnService
+import android.net.Uri
+import android.provider.Settings
+import androidx.core.content.FileProvider
 import android.os.Build
 import android.os.IBinder
 import android.os.Handler
@@ -90,6 +93,27 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun installUpdate(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        return try {
+            val allowedDir = File(cacheDir, "umbrella-updates").canonicalFile
+            val apk = File(path).canonicalFile
+            if (apk.parentFile != allowedDir || !apk.isFile || !apk.name.endsWith(".apk", ignoreCase = true)) return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                return false
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.updates", apk)
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun stopVpn(result: MethodChannel.Result) {
         if (pendingStart != null) { result.error("CORE_BUSY", "VPN setup in progress", null); return }
         val vpn = service
@@ -110,6 +134,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "minimizeApp" -> result.success(moveTaskToBack(true))
+                    "installApk" -> result.success(installUpdate(call.argument<String>("path")))
                     "isVpnPrepared" -> result.success(VpnService.prepare(this) == null)
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "coreDirectories" -> {
