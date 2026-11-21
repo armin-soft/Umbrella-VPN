@@ -581,7 +581,7 @@ class BrandMark extends StatelessWidget {
         ),
         if (showTitle) ...<Widget>[
           const SizedBox(width: AppMetrics.space3),
-          Column(
+          Flexible(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -598,7 +598,7 @@ class BrandMark extends StatelessWidget {
                     ),
               ),
             ],
-          ),
+          )),
         ],
       ],
     );

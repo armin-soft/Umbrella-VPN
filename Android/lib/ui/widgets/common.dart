@@ -382,14 +382,16 @@ class PageHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppMetrics.space2),
-                Text(
+                Flexible(child: Text(
                   Fa.num(eyebrow),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colors.primary,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.35,
                       ),
-                ),
+                )),
               ],
             ),
             const SizedBox(height: AppMetrics.space1),

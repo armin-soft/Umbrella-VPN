@@ -102,7 +102,15 @@ void main() {
           const LogsPage(), const AboutPage(), const UpdatesPage(),
         ];
         final problems = <String>[];
+        var currentPage = '';
+        final previousOnError = FlutterError.onError;
+        FlutterError.onError = (details) {
+          problems.add('$currentPage at $size / $textScale: ${details.exception}');
+          FlutterError.presentError(details);
+        };
+        addTearDown(() { FlutterError.onError = previousOnError; });
         for (final page in pages) {
+          currentPage = page.runtimeType.toString();
           final bool fullWindow = page is LandingPage || page is LoginPage;
           await tester.pumpWidget(MultiProvider(
             providers: [
