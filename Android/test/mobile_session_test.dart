@@ -32,6 +32,7 @@ void main() {
     final session = MobileVpnSession(backend);
     expect(await session.connect(), isFalse);
     expect(session.state, MobileSessionState.failed);
+    expect(session.error, contains('ترافیک'));
     expect(backend.stops, 1);
   });
 

@@ -40,6 +40,7 @@ class MobileVpnSession {
     final Completer<void> completed = Completer<void>();
     _start = completed.future;
     bool serviceStarted = false;
+    var failureMessage = 'درخواست مجوز VPN ناموفق بود.';
     try {
       if (!await _backend.requestPermission()) {
         if (generation == _generation) {
@@ -51,10 +52,13 @@ class MobileVpnSession {
       if (generation != _generation) return false;
       // startService can partially succeed before throwing: cleanup is required.
       serviceStarted = true;
+      failureMessage = 'راه‌اندازی سرویس VPN ناموفق بود.';
       await _backend.startService();
       if (generation != _generation) return false;
+      failureMessage = 'آماده‌سازی هسته یا تنظیمات سرور ناموفق بود.';
       await _backend.configureAndStart();
       if (generation != _generation) return false;
+      failureMessage = 'عبور ترافیک از تونل تأیید نشد؛ سرور و شبکه را بررسی کنید.';
       if (!await _backend.verifyTraffic()) {
         throw StateError('VPN traffic verification failed');
       }
@@ -63,7 +67,7 @@ class MobileVpnSession {
       return true;
     } catch (_) {
       if (generation == _generation) {
-        _error = 'اتصال امن برقرار نشد.';
+        _error = failureMessage;
         _state = MobileSessionState.failed;
       }
       return false;

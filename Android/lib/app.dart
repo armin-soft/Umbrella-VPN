@@ -49,7 +49,7 @@ class UmbrellaApp extends StatelessWidget {
         windowService.syncBrightness(Theme.of(context).brightness);
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: child ?? const SizedBox.shrink(),
+          child: SafeArea(child: child ?? const SizedBox.shrink()),
         );
       },
       home: Stack(

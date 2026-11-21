@@ -186,8 +186,10 @@ class TitleBar extends StatelessWidget {
     this.onNotifications,
     this.onToggleTheme,
     this.darkTheme = true,
+    this.onOpenNavigation,
   });
 
+  final VoidCallback? onOpenNavigation;
   final VpnStatus? status;
   final VoidCallback onDragStart;
   final VoidCallback onMinimize;
@@ -217,17 +219,18 @@ class TitleBar extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          // ── راست: دکمه های پنجره ───────────────────────────────────
-          _WindowButton(icon: Icons.close_rounded, onTap: onClose, danger: true),
-          _WindowButton(icon: Icons.crop_square_rounded, onTap: onMaximize),
-          _WindowButton(icon: Icons.remove_rounded, onTap: onMinimize),
+          // Android uses system navigation, not desktop window controls.
+          if (onOpenNavigation != null)
+            IconButton(
+              tooltip: 'منو',
+              onPressed: onOpenNavigation,
+              icon: const Icon(Icons.menu_rounded),
+            ),
 
           // وضعیت اتصال در مرکز می ماند؛ نام برنامه در لبه چپ است.
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => onDragStart(),
-              onDoubleTap: onMaximize,
               child: Center(
                 child: current == null
                     ? const SizedBox.shrink()
@@ -288,8 +291,6 @@ class TitleBar extends StatelessWidget {
             padding: const EdgeInsetsDirectional.only(start: AppMetrics.space3, end: AppMetrics.space4),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => onDragStart(),
-              onDoubleTap: onMaximize,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[

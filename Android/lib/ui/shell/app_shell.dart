@@ -268,12 +268,35 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final SettingsController settings = context.read<SettingsController>();
     final UmbrellaColors colors = context.colors;
+    final bool mobileNavigation = MediaQuery.sizeOf(context).width < 700;
+    void selectPage(int value) {
+      setState(() {
+        if (value == 3) _settingsNavVersion++;
+        _index = value;
+      });
+    }
 
     return Scaffold(
       backgroundColor: colors.background,
+      drawer: mobileNavigation ? Drawer(
+        child: SafeArea(
+          child: ListView(
+            children: <Widget>[
+              for (int i = 0; i < _destinations.length; i++)
+                ListTile(
+                  leading: Icon(i == _index ? _destinations[i].activeIcon : _destinations[i].icon),
+                  title: Text(_destinations[i].label),
+                  selected: i == _index,
+                  onTap: () { Navigator.of(context).pop(); selectPage(i); },
+                ),
+            ],
+          ),
+        ),
+      ) : null,
       body: Column(
         children: <Widget>[
-          TitleBar(
+          Builder(builder: (context) => TitleBar(
+            onOpenNavigation: mobileNavigation ? () => Scaffold.of(context).openDrawer() : null,
             status: vpnStatus,
             onDragStart: widget.windowService.startDragging,
             onMinimize: widget.windowService.minimize,
@@ -285,23 +308,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               effectiveBrightness: Theme.of(context).brightness,
             ),
             darkTheme: Theme.of(context).brightness == Brightness.dark,
-          ),
+          )),
           Expanded(
             // در چیدمان راست به چپ، فرزند اول سمت راست می نشیند؛ پس نوار کنار
             // اول می آید تا در لبه راست پنجره باشد.
             child: Row(
               children: <Widget>[
-                SideNav(
+                if (!mobileNavigation) SideNav(
                   destinations: _destinations,
                   index: _index,
-                  onSelect: (int value) {
-                    setState(() {
-                      if (value == 3) {
-                        _settingsNavVersion++;
-                      }
-                      _index = value;
-                    });
-                  },
+                  onSelect: selectPage,
                   status: vpnStatus,
                   onStatusTap: () {
                     if (_index != 0) {
