@@ -2,11 +2,13 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Channel-Membership.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/SMS/IPPanel.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Config/Environment.php';
@@ -17,7 +19,7 @@ final class Scheduler {
 private const REPORT_TIME = '00:00';
 private function __construct() {
 }
-public static function diagnoseNightly(): void {
+public static function diagnoseNightly(): array {
 $Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
 $Today = $Now->format('Y-m-d');
 $Out = [];
@@ -40,6 +42,7 @@ $Out[] = 'Server liveUsers = ' . count($Live);
 }
 catch (Throwable $E) {
 $Out[] = 'Server liveUsers FAILED = ' . $E->getMessage();
+error_log('[Umbrella-Bot][Nightly-DIAG] Server liveUsers failed: ' . $E->getMessage());
 }
 
 try {
@@ -53,9 +56,10 @@ $Out[] = 'Eligible active subscribers = ' . (is_array($Rows) ? count($Rows) : 'q
 }
 catch (Throwable $E) {
 $Out[] = 'Eligible query FAILED = ' . $E->getMessage();
+error_log('[Umbrella-Bot][Nightly-DIAG] Eligible query failed: ' . $E->getMessage());
 }
 
-error_log('[Umbrella-Bot][Nightly-DIAG] ' . implode(PHP_EOL . '[Nightly-DIAG] ', $Out));
+return $Out;
 }
 
 public static function run(string $Mode = 'all'): void {
@@ -87,6 +91,7 @@ self::runOperations();
 
 if ($Mode !== 'all') return;
 self::purgeStaleCronLocks();
+self::purgeOldDailyNoticesIfDue();
 self::checkChannelMemberships();
 self::sendExpiryWarnings();
 self::sendDailyReportIfDue();
@@ -94,51 +99,136 @@ self::sendUserUsageReportsIfDue();
 self::sendNowruzWishesIfDue();
 }
 
-public static function debugDailyReport(): void {
-$Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
-$Today = $Now->format('Y-m-d');
-$Enabled = strtolower(trim((string)Repository::getSetting('Daily_Report_Enabled', '1')));
-$Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
-$Report_Time = self::reportTime();
-$Last_Report = (string)Repository::getSetting('Last_Daily_Report', '');
-$Last_Users = (string)Repository::getSetting('Last_User_Usage_Report', '');
-
-error_log('[Umbrella-Bot][Daily-Report][DEBUG]'
-. ' | Now=' . $Now->format('Y-m-d H:i')
-. ' | Enabled=' . ($Enabled === '' ? 'empty' : $Enabled)
-. ' | ReportTime=' . $Report_Time
-. ' | IsDue=' . var_export(self::isReportDue($Now), true)
-. ' | Admin=' . $Admin
-. ' | LastDaily=' . ($Last_Report === '' ? 'never' : $Last_Report)
-. ' | LastDailyIsToday=' . var_export($Last_Report === $Today, true)
-. ' | LastUsersReport=' . ($Last_Users === '' ? 'never' : $Last_Users)
-. ' | UsersReportAlreadySentToday=' . var_export($Last_Users === $Today, true));
+/**
+ * اجرای خودکار کارهای زمان بندی شده، بدون cron و بدون کلید.
+ *
+ * از مسیر وبهوک (و بازدیدهای ساده از آدرس ربات) صدا زده می شود و با قفل اتمی
+ * از اجرای هم زمان چند درخواست جلوگیری می کند (حداکثر یک بار در هر دقیقه).
+ */
+public static function tick(int $MinInterval = 60): void {
+$Now = time();
 
 try {
-$Lock = Repository::tryCronLock('daily_report', 300);
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] CronLock daily_report acquired=' . var_export($Lock, true));
-if ($Lock) Repository::releaseCronLock('daily_report');
+$Last = (int)Repository::getSetting('Last_Scheduler_Tick', 0);
+}
+catch (Throwable) {
+return;
 }
 
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] CronLock threw: ' . $E->getMessage());
+if ($Last > 0 && ($Now - $Last) < max(10, $MinInterval)) {
+return;
+}
+
+if (!Repository::tryCronLock('scheduler_tick', 600)) {
+return;
 }
 
 try {
-$Rows = Database::getInstance()->fetchAll(
-"SELECT `Telegram_ID`, `Chat_ID` FROM `Users`
-WHERE `Is_Blocked` = 0 AND `Chat_ID` > 0 AND " . Repository::CLIENT_CONDITION);
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] Eligible user rows=' . (is_array($Rows) ? count($Rows) : 'query-failed'));
+$Fresh_Last = (int)Repository::getSetting('Last_Scheduler_Tick', 0);
+
+if ($Fresh_Last > 0 && ($Now - $Fresh_Last) < max(10, $MinInterval)) {
+return;
 }
 
-catch (Throwable $E) {
-error_log('[Umbrella-Bot][Daily-Report][DEBUG] User query failed: ' . $E->getMessage());
+Repository::setSetting('Last_Scheduler_Tick', $Now);
+self::run('all');
 }
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Scheduler] automatic tick failed: ' . $Error->getMessage());
+}
+finally {
+Repository::releaseCronLock('scheduler_tick');
+}
+}
+
+/** Manual diagnostics are returned to the caller, never mixed into error_log. */
+public static function debugDailyReport(): array {
+return self::diagnoseNightly();
+}
+
+private static function tehranDay(): string {
+if (method_exists(Repository::class, 'tehranToday')) {
+return Repository::tehranToday();
+}
+return (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
+}
+
+/**
+ * قفل اتمی حداکثر یک بار در روز برای هر اعلان خودکار (تلگرام، برنامه و پیامک).
+ */
+private static function claimDaily(string $Category, int|string $Target, ?string $Day = null): bool {
+if (method_exists(Repository::class, 'claimDailyNotice')) {
+return Repository::claimDailyNotice($Category, $Target, $Day);
+}
+$Category = trim($Category);
+$Target_Key = trim((string)$Target);
+if ($Category === '' || $Target_Key === '') return false;
+$Day_Key = ($Day !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($Day)) === 1)
+? trim($Day)
+: self::tehranDay();
+$Key = 'DailyNotice_' . $Day_Key . '_' . hash('sha256', $Category . ':' . $Target_Key);
+if (method_exists(Repository::class, 'getSetting') && (string)Repository::getSetting($Key, '') !== '') {
+return false;
+}
+try {
+$Stmt = Database::getInstance()->execute(
+'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',
+[$Key, '1']
+);
+return is_object($Stmt) && method_exists($Stmt, 'rowCount') ? $Stmt->rowCount() === 1 : true;
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Daily-Once] ' . $Error->getMessage());
+return false;
+}
+}
+
+private static function claimOnce(string $Key, string $Value = '1'): bool {
+if (method_exists(Repository::class, 'claimOnceNotice')) {
+return Repository::claimOnceNotice($Key, $Value);
+}
+$Key = trim($Key);
+if ($Key === '') return false;
+if (method_exists(Repository::class, 'getSetting') && (string)Repository::getSetting($Key, '') !== '') {
+return false;
+}
+try {
+$Stmt = Database::getInstance()->execute(
+'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',
+[$Key, $Value]
+);
+return is_object($Stmt) && method_exists($Stmt, 'rowCount') ? $Stmt->rowCount() === 1 : true;
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Once-Notice] ' . $Error->getMessage());
+return false;
+}
+}
+
+private static function hasSetting(string $Key): bool {
+if (!method_exists(Repository::class, 'getSetting')) return false;
+try {
+return (string)Repository::getSetting($Key, '') !== '';
+}
+catch (Throwable) {
+return false;
+}
+}
+
+private static function purgeOldDailyNoticesIfDue(): void {
+if (!method_exists(Repository::class, 'purgeOldDailyNotices')) return;
+$Today = self::tehranDay();
+if ((string)Repository::getSetting('Last_Daily_Notice_Purge', '') === $Today) return;
+try {
+Repository::purgeOldDailyNotices(14);
+Repository::setSetting('Last_Daily_Notice_Purge', $Today);
+}
+catch (Throwable) {}
 }
 
 private static function purgeStaleCronLocks(): void {
 try {
-Database::getInstance()->execute('DELETE FROM `Cron_Lock` WHERE `Locked_At` < DATE_SUB(NOW(), INTERVAL 30 MINUTE)');
+Database::getInstance()->execute('DELETE FROM `Cron_Lock` WHERE `Locked_At` < DATE_SUB(NOW(), INTERVAL 120 MINUTE)');
 }
 
 catch (Throwable $Error) {
@@ -174,28 +264,33 @@ private static function sendExpiryWarnings(): void {
 if (!Repository::tryCronLock('expiry_warnings', 3600)) return;
 
 try {
+$Today = self::tehranDay();
 $Warn_3 = (string)Repository::getSetting('Expiry_Warning_3Days', '1') === '1';
+$Warn_2 = (string)Repository::getSetting('Expiry_Warning_2Days', '1') === '1';
 $Warn_1 = (string)Repository::getSetting('Expiry_Warning_1Day', '1') === '1';
-$Warn_0 = (string)Repository::getSetting('Expiry_Warning_Today', '1') === '1';
 $Boundaries = [];
 
-if ($Warn_3) $Boundaries[] = 3;
 if ($Warn_1) $Boundaries[] = 1;
-if ($Warn_0) $Boundaries[] = 0;
+if ($Warn_2) $Boundaries[] = 2;
+if ($Warn_3) $Boundaries[] = 3;
 
 foreach ($Boundaries as $Days) {
-$Lower = ($Days) * 86400;
+$Now = time();
+$Lower = $Days * 86400;
 $Upper = ($Days + 1) * 86400;
 $Rows = Database::getInstance()->fetchAll(
 "SELECT `Telegram_ID` FROM `Users`
-WHERE `Subscription` IS NOT NULL AND `Subscription` != ''
+WHERE `Is_Blocked` = 0
+AND `Subscription` IS NOT NULL AND `Subscription` != ''
 AND `Expiration_Time_Stamp` IS NOT NULL
 AND `Expiration_Time_Stamp` > ?
 AND `Expiration_Time_Stamp` <= ?",
-[time() + $Lower, time() + $Upper]
+[$Now + $Lower, $Now + $Upper]
 );
 
-$Code = $Days === 0 ? 'expire_today' : "expire_warn_{$Days}";
+if (!is_array($Rows) || $Rows === []) continue;
+
+$Code = "expire_warn_{$Days}";
 $Template = Repository::getSmsTemplate($Code);
 
 foreach ($Rows as $Row) {
@@ -203,31 +298,67 @@ $User_ID = (int)($Row['Telegram_ID'] ?? 0);
 
 if ($User_ID <= 0) continue;
 $User = Repository::getUser($User_ID);
+if ((int)($User['Is_Blocked'] ?? 0) !== 0) continue;
+if (trim((string)($User['Deactivation_Message'] ?? '')) !== '') continue;
+$Status = (string)($User['Client_Status'] ?? '');
+if ($Status !== '' && str_contains($Status, 'غیر')) continue;
+
 $Chat_ID = (int)($User['Chat_ID'] ?? 0);
 $Phone = (string)($User['Phone'] ?? '');
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
-$Subscription = (string)($User['Subscription'] ?? '');
+$Subscription = trim((string)($User['Subscription'] ?? ''));
 $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
+if ($Subscription === '' || $Exp_Stamp <= $Now) continue;
+
 $Remaining_Label = Helper::remainingDuration($Exp_Stamp);
+$Event = implode(':', [$User_ID, $Exp_Stamp, $Days]);
+
+// هر مرز انقضا برای هر اشتراک فقط یک بار و برای هر کاربر در کل روز حداکثر
+// یک بار ارسال می شود (حتی اگر مرز روز تغییر کند، تمدید خودکار فعال باشد یا
+// زمان انقضا از سرور همگام سازی شود).
+$App_Key = 'ExpiryNotice_' . hash('sha256', $Event . ':app');
+if (!self::hasSetting($App_Key) && self::claimDaily('renewal_app', $User_ID, $Today)) {
+if (self::claimOnce($App_Key, '1')) {
+SystemNotifications::queue($User_ID, 'یادآور تمدید اشتراک', '⚠️اشتراک ' . $Subscription . ' شما ' . Helper::toPersian((string)$Days) . ' روز دیگر به اتمام می رسد. زمان باقی مانده: ' . $Remaining_Label, 'expiry-warning:' . $Event, 'warning');
+}
+}
 
 if ($Chat_ID > 0) {
-$Message = $Days > 0
-? "⚠️اشتراک {$Subscription} شما " . Helper::toPersian((string)$Days) . " روز دیگر منقضی می شود.\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\nبرای جلوگیری از قطع، همین الان تمدید کنید."
-: "⚠️اشتراک {$Subscription} شما امروز منقضی می شود!\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\nبرای جلوگیری از قطع، فوراً تمدید کنید.";
-TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'تمدید اشتراک', $User_ID) . "📨{$Message}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '💎تمدید اشتراک', 'callback_data' => 'اشتراک من']],
+$Telegram_Key = 'ExpiryNotice_' . hash('sha256', $Event . ':telegram');
+if (!self::hasSetting($Telegram_Key) && self::claimDaily('renewal_tg', $User_ID, $Today)) {
+if (self::claimOnce($Telegram_Key, '1')) {
+Repository::setSetting($Telegram_Key, '1');
+$Message = "⚠️اشتراک {$Subscription} شما " . Helper::toPersian((string)$Days)
+. " روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: *{$Remaining_Label}*\n\n⏳برای جلوگیری از قطع، همین الان تمدید کنید.";
+$Result = TelegramClient::sendMessage(
+$Chat_ID,
+Helper::frame('کاربر', $Full_Name, 'تمدید اشتراک', $User_ID) . "📨{$Message}" . Helper::userFooter(),
+TelegramClient::inlineKeyboard([
+[['text' => '💳خرید یا تمدید اشتراک', 'callback_data' => 'user_subscriptions_menu']],
 Common::mainButton(),
-]));
+])
+);
+if (($Result['ok'] ?? false) !== true) {
+error_log('[Umbrella-Bot][Scheduler] expiry Telegram warning failed | User=' . $User_ID . ' Days=' . $Days);
+}
+}
+}
 }
 
 if (Helper::validatePhone($Phone) && $Template !== null) {
+$Sms_Key = 'ExpiryNotice_' . hash('sha256', $Event . ':sms');
+if (!self::hasSetting($Sms_Key) && self::claimDaily('renewal_sms', $User_ID, $Today)) {
+if (self::claimOnce($Sms_Key, '1')) {
+Repository::setSetting($Sms_Key, '1');
 $Sms_Text = strtr($Template, [
 '{full_name}' => $Full_Name,
 '{days}' => Helper::toPersian((string)$Days),
 '{plan}' => Helper::smsPlan($Subscription),
 '{remaining}' => $Remaining_Label,
 ]);
-IppanelClient::send($User_ID, $Phone, $Sms_Text);
+IppanelClient::sendOnce($User_ID, $Phone, $Sms_Text, 'expiry-warning:' . $Event);
+}
+}
 }
 }
 }
@@ -248,40 +379,42 @@ AutoRenew::processDue(3);
 catch (Throwable $Error) {
 error_log('[Umbrella-Bot][AutoRenew] ' . $Error->getMessage());
 }
+
+finally {
+Repository::releaseCronLock('auto_renewals');
+}
 }
 
+/**
+ * سفارش های درگاهی که کاربر پول را پرداخت کرده ولی به ربات برنگشته است.
+ * پیش از این فقط جدول Payment_Queue خوانده می شد که هیچ نویسنده ای نداشت و
+ * فراخوانی تایید پرداخت هم با امضای اشتباه انجام می شد.
+ */
 private static function processPaymentQueue(): void {
-if (!Repository::tryCronLock('payment_queue', 1800)) return;
+if (!Repository::tryCronLock('payment_queue', 900)) return;
+
 try {
-$Rows = Repository::pendingPayments(20);
+if (!class_exists('SubscriptionFlow')) {
+require_once __DIR__ . '/Subscription.php';
+}
 
-foreach ($Rows as $Row) {
-$Authority = (string)($Row['Authority'] ?? '');
-$User_ID = (int)($Row['User_ID'] ?? 0);
-$Amount = (int)($Row['Amount'] ?? 0);
-$Type = (string)($Row['Type'] ?? '');
+foreach (Repository::sessionsAwaitingPayment(15) as $Row) {
+$User_ID = (int)($Row['Telegram_ID'] ?? 0);
 
-if ($Authority === '' || $User_ID <= 0) continue;
-$Result = \Zarinpal::verify(['Authority' => $Authority, 'Amount' => $Amount]);
-$Status = (string)($Result['Status'] ?? '');
-$Code = (int)($Result['Code'] ?? 0);
+if ($User_ID <= 0) continue;
 
-if ($Status === 'OK' || $Code === 101) {
-Repository::markPaymentStatus($Authority, 'verified');
+try {
+SubscriptionFlow::recoverPendingPayment($User_ID);
+}
 
-if ($Type === 'topup') {
-$User = Repository::getUser($User_ID);
-$Balance = (int)($User['Balance'] ?? 0);
-$New_Balance = $Balance + $Amount;
-Repository::updateUser($User_ID, ['Balance' => $New_Balance, 'Total_Recharge' => (int)($User['Total_Recharge'] ?? 0) + $Amount]);
-Repository::addTransaction($User_ID, 'topup', $Amount, $Balance, $New_Balance, 'شارژ از صف پرداخت', 'gateway');
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Payment-Recovery] User=' . $User_ID . ' | ' . $Error->getMessage());
+}
 }
 }
 
-elseif ($Code === -50 || $Code === -51) {
-Repository::markPaymentStatus($Authority, 'expired');
-}
-}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Payment-Recovery] job failed: ' . $Error->getMessage());
 }
 
 finally {
@@ -324,7 +457,7 @@ $Live_Quota = 0.0; $Live_Remaining = 0.0;
 foreach ($Live_Users as $Live_Row) { $Live_Quota += (float)($Live_Row['Total_Usage_GB'] ?? 0); $Live_Remaining += (float)($Live_Row['Remaining_Usage_GB'] ?? 0); }
 $Stats['server_clients'] = (int)$Live_Stats['total'];
 $Stats['server_clients_active'] = (int)$Live_Stats['active'];
-$Stats['server_clients_disabled'] = (int)$Live_Stats['disabled'];
+$Stats['server_clients_disabled'] = max(0, (int)$Live_Stats['disabled'] - (int)($Stats['server_clients_expired'] ?? 0));
 $Stats['server_quota'] = $Live_Quota;
 $Stats['server_used'] = (float)$Live_Stats['total_used'];
 $Stats['server_remaining'] = $Live_Remaining;
@@ -365,12 +498,25 @@ if ($Day_Top !== []) {
 $Text .= "🏆*پرمصرف ترین های روز:*\n";
 $Index = 0;
 
+$Day_Top_Max = 0.0;
+
+foreach ($Day_Top as $Row) {
+$Day_Top_Max = max($Day_Top_Max, (float)($Row['Gain'] ?? 0));
+}
+
 foreach ($Day_Top as $Row) {
 $Index++;
 $Name = trim((string)($Row['Full_Name'] ?? ''));
 
 if ($Name === '') $Name = trim((string)($Row['First_Name'] ?? '')) ?: 'کاربر';
-$Text .= "├─" . Helper::rankMedal($Index) . " {$Name} — *" . Helper::formatGB((float)($Row['Gain'] ?? 0)) . "*\n";
+$Name_Link = Helper::mention($Name, (int)($Row['User_ID'] ?? 0));
+$Gain = (float)($Row['Gain'] ?? 0);
+$Gain_Bar = $Day_Top_Max > 0 ? min(100.0, ($Gain / $Day_Top_Max) * 100.0) : 0.0;
+$Gain_Marks = $Index === 1 ? '👑' : '';
+
+if ($Gain >= 100.0) $Gain_Marks .= '💎';
+
+$Text .= "├─" . Helper::rankLine($Index, $Name_Link, Helper::formatGB($Gain), -1.0, $Gain_Bar, $Gain_Marks) . "\n";
 }
 }
 
@@ -403,7 +549,7 @@ if (in_array($Enabled, ['0', 'false', 'off', 'no', 'disabled'], true)) return;
 $Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
 
 if (!self::isReportDue($Now)) return;
-if (!Repository::tryCronLock('daily_report', 300)) return;
+if (!Repository::tryCronLock('daily_report', 3600)) return;
 
 try {
 $Today = $Now->format('Y-m-d');
@@ -413,7 +559,6 @@ $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAd
 
 if ($Admin <= 0) {
 error_log('[Umbrella-Bot][Daily-Report] شناسه مدیر تنظیم نشده است (Administrator خالی است).');
-Repository::releaseCronLock('daily_report');
 return;
 }
 
@@ -425,19 +570,20 @@ $Text = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_N
 
 catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Daily-Report] ساخت متن گزارش ناموفق بود: ' . $Error->getMessage());
-Repository::releaseCronLock('daily_report');
 return;
 }
 
-$Result = TelegramClient::sendMessage($Admin, $Text);
-
-if (is_array($Result) && ($Result['ok'] ?? false) !== true) {
-error_log('[Umbrella-Bot][Daily-Report] ارسال گزارش روزانه ناموفق بود: ' . json_encode($Result, JSON_UNESCAPED_UNICODE));
-Repository::releaseCronLock('daily_report');
+if (!self::claimDaily('admin_daily_report', $Admin, $Today)) {
+Repository::setSetting('Last_Daily_Report', $Today);
 return;
 }
 
 Repository::setSetting('Last_Daily_Report', $Today);
+$Result = TelegramClient::sendSystemMessage($Admin, $Text);
+
+if (is_array($Result) && ($Result['ok'] ?? false) !== true) {
+error_log('[Umbrella-Bot][Daily-Report] ارسال گزارش روزانه ناموفق بود: ' . json_encode($Result, JSON_UNESCAPED_UNICODE));
+}
 }
 
 finally {
@@ -445,18 +591,36 @@ Repository::releaseCronLock('daily_report');
 }
 }
 
+private static function nightlyRecipientEligible(array $User, ?array $Live): bool {
+$Client = trim((string)($User['Client_ID'] ?? ''));
+if ((int)($User['Is_Blocked'] ?? 1) !== 0
+|| trim((string)($User['Subscription'] ?? '')) === ''
+|| (int)($User['Expiration_Time_Stamp'] ?? 0) <= time()
+|| !in_array((string)($User['Client_Status'] ?? ''), ['فعال', '✅فعال'], true)
+|| trim((string)($User['Deactivation_Message'] ?? '')) !== ''
+|| (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0
+|| $Client === '' || $Client === '_' || $Live === null) return false;
+if ((string)($Live['Client_ID'] ?? '') !== $Client
+|| (int)($Live['Server_Is_Active'] ?? 0) !== 1
+|| (int)($Live['Server_Enable'] ?? 0) !== 1) return false;
+$Limit = (float)($Live['Total_Usage_GB'] ?? 0);
+return $Limit <= 0 || (float)($Live['Used_Usage_GB'] ?? 0) < $Limit;
+}
+
 private static function sendUserUsageReportsIfDue(): void {
 $Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
 if (!self::isReportDue($Now)) return;
 
-if (!Repository::tryCronLock('user_usage_report', 300)) return;
+if (!Repository::tryCronLock('user_usage_report', 3600)) return;
 
 try {
 $Today = $Now->format('Y-m-d');
 
 if ((string)Repository::getSetting('Last_User_Usage_Report', '') === $Today) return;
 try { $Live_Users = ServerClient::liveUsers(); }
-catch (Throwable) { $Live_Users = []; }
+catch (Throwable $Error) { error_log('[Umbrella-Bot][Nightly] live status unavailable: ' . $Error->getMessage()); $Live_Users = []; }
+// Without confirmed live state, skip delivery and allow a later scheduler retry.
+if ($Live_Users === []) return;
 $Board = $Live_Users;
 $Rank_Map = [];
 $Live_Map = [];
@@ -475,7 +639,10 @@ $Rows = Database::getInstance()->fetchAll(
 `Total_Usage_GB`, `Used_Usage_GB`, `Remaining_Usage_GB`, `Percent_Usage`,
 `Expiration_Time_Stamp`
 FROM `Users`
-WHERE `Is_Blocked` = 0 AND `Chat_ID` > 0
+WHERE `Is_Blocked` = 0
+AND `Client_Status` IN ('فعال', '✅فعال')
+AND (`Deactivation_Message` IS NULL OR `Deactivation_Message` = '')
+AND (`Channel_Client_Disabled_At` IS NULL OR `Channel_Client_Disabled_At` = 0)
 AND `Subscription` IS NOT NULL AND `Subscription` != ''
 AND `Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > ?
 AND " . Repository::CLIENT_CONDITION,
@@ -494,7 +661,12 @@ foreach ($Rows as $U) {
 $User_ID = (int)($U['Telegram_ID'] ?? 0);
 $Chat_ID = (int)($U['Chat_ID'] ?? 0);
 
-if ($User_ID <= 0 || $Chat_ID <= 0) continue;
+if ($User_ID <= 0) continue;
+if (!Repository::nightlyReportEnabled($User_ID)) continue;
+$U = Repository::getUser($User_ID) ?? [];
+$Live = $Live_Map[$User_ID] ?? null;
+if (!self::nightlyRecipientEligible($U, $Live)) continue;
+$Chat_ID = (int)($U['Chat_ID'] ?? 0);
 $Has_Subscription = trim((string)($U['Subscription'] ?? '')) !== '';
 $Expiry_Stamp = (int)($U['Expiration_Time_Stamp'] ?? 0);
 
@@ -559,9 +731,15 @@ $Text = Helper::frame('کاربر', $Name, 'گزارش شبانه مصرف', $Us
 . "\n💡<b>نکته:</b> با مدیریت هوشمند مصرف، اتصال پایدارتری خواهید داشت."
 . Helper::userFooter();
 
+// Recheck local holds/preferences and enforce strict per-user once-per-day cap
+// immediately before either transport so even an interrupted batch never resends.
+if (!Repository::nightlyReportEnabled($User_ID)
+|| !self::nightlyRecipientEligible(Repository::getUser($User_ID) ?? [], $Live)) continue;
+if (!self::claimDaily('nightly_report', $User_ID, $Today)) continue;
+SystemNotifications::queue($User_ID, 'گزارش شبانه مصرف', $Text, 'nightly:' . $Today);
+if ($Chat_ID <= 0) continue;
 $Result = TelegramClient::sendMessage($Chat_ID, $Text, TelegramClient::inlineKeyboard([
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-[['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
+[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری'], ['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
 Common::mainButton(),
 ]));
 
@@ -595,12 +773,6 @@ if ($Failed_Count > 0) {
 error_log('[Umbrella-Bot][Daily-Report] خطای موقت در ارسال: ' . $Failed_Count . ' مورد.');
 }
 
-error_log('[Umbrella-Bot][Daily-Report] نتیجه ارسال | واجد شرایط: ' . count($Rows)
-. ' | موفق: ' . $Sent
-. ' | غیرقابل پیام: ' . count($Dead_Chats)
-. ' | بدون اشتراک فعال: ' . $Skipped_No_Subscription
-. ' | خطای موقت: ' . $Failed_Count);
-
 Repository::setSetting('Last_User_Usage_Report', $Today);
 }
 
@@ -611,28 +783,34 @@ Repository::releaseCronLock('user_usage_report');
 
 private static function sendNowruzWishesIfDue(): void {
 $Nowruz_Already_Sent = (string)Repository::getSetting('Nowruz_Last_Sent', '');
-$Current_Year = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y');
-$Today_Month_Day = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('m-d');
+$Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
+$Current_Year = BotConfig::nowruzSeasonKey($Now);
 
-if ($Today_Month_Day !== '03-20' || $Nowruz_Already_Sent === $Current_Year) return;
+if (!BotConfig::isNowruzFirstDay($Now) || $Nowruz_Already_Sent === $Current_Year) return;
 if (!Repository::tryCronLock('nowruz', 86400)) return;
 
 try {
 $Template = Repository::getSmsTemplate('nowruz') ?? "سرور آمبرلا\n\nفرا رسیدن سال نو را تبریک می گوییم.";
 
 foreach (Repository::allUserIds() as $User_ID) {
-$User = Repository::getUser((int)$User_ID);
+$Uid = (int)$User_ID;
+if ($Uid <= 0) continue;
+$User = Repository::getUser($Uid);
+if ((int)($User['Is_Blocked'] ?? 0) !== 0) continue;
+if (!self::claimOnce('NowruzNotice_' . $Current_Year . '_' . $Uid, '1')) continue;
+if (!self::claimDaily('nowruz', $Uid)) continue;
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
 $Chat_ID = (int)($User['Chat_ID'] ?? 0);
 $Phone = (string)($User['Phone'] ?? '');
 $Message = strtr($Template, ['{full_name}' => $Full_Name]);
+SystemNotifications::queue($Uid, 'تبریک سال نو', $Message, 'nowruz:' . $Current_Year);
 
 if ($Chat_ID > 0) {
-TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'تبریک سال نو', (int)$User_ID) . "🌷{$Message}" . Helper::userFooter());
+TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'تبریک سال نو', $Uid) . "🌷{$Message}" . Helper::userFooter());
 }
 
 if (Helper::validatePhone($Phone)) {
-IppanelClient::send((int)$User_ID, $Phone, $Message);
+IppanelClient::sendOnce($Uid, $Phone, $Message, 'nowruz:' . $Current_Year);
 }
 }
 
@@ -668,19 +846,21 @@ $Interval_Hours = (int)Repository::getSetting('Channel_Check_Interval_Hours', '1
 $Interval = max(1, $Interval_Hours > 0 ? $Interval_Hours : 12) * 3600;
 $Last_Check = (int)Repository::getSetting('Last_Channel_Check_At', 0);
 
-if (!$Force && $Last_Check > 0 && (time() - $Last_Check) < $Interval) return;
+$Full_Check = $Force || $Last_Check <= 0 || (time() - $Last_Check) >= $Interval;
 if (!Repository::tryCronLock('channel_membership', 3600)) return;
 
 try {
-$Channel_Url = (string)Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Channel_Name = self::extractChannelName($Channel_Url);
-$Channel_ID = Environment::getTelegramChannelId();
+$Channel_ID = BotConfig::getTelegramChannelId();
 
 if ($Channel_Name === '' && $Channel_ID === '') return;
-Repository::setSetting('Last_Channel_Check_At', (string)time());
+if ($Full_Check) Repository::setSetting('Last_Channel_Check_At', (string)time());
 $Grace_Seconds = Environment::getChannelGraceSeconds();
-
-foreach (Repository::allUserIds() as $User_ID) {
+$Ids = $Full_Check ? Repository::allUserIds() : array_column(Database::getInstance()->fetchAll(
+'SELECT `Telegram_ID` FROM `Users` WHERE (`Channel_Grace_Started_At` > 0 OR `Channel_Client_Disabled_At` > 0) AND (`Channel_Member_Check_At` IS NULL OR `Channel_Member_Check_At` < ?) ORDER BY `Channel_Member_Check_At` ASC LIMIT 200', [time() - 60]
+), 'Telegram_ID');
+foreach ($Ids as $User_ID) {
 $User_ID = (int)$User_ID;
 
 if ($User_ID <= 0) continue;
@@ -693,6 +873,16 @@ Repository::releaseCronLock('channel_membership');
 }
 }
 
+public static function channelMembershipChanged(array $Update): void {
+$Channel = (string)BotConfig::getTelegramChannelId();
+$Member = $Update['chat_member'] ?? [];
+if ($Channel === '' || (string)($Member['chat']['id'] ?? '') !== $Channel) return;
+$UserId = (int)($Member['new_chat_member']['user']['id'] ?? 0);
+if ($UserId <= 0) return;
+// Recheck through Telegram; do not trust a callback or a different channel.
+self::checkMembership($UserId, self::extractChannelName(BotConfig::getChannelUrl()), $Channel, Environment::getChannelGraceSeconds());
+}
+
 private static function checkMembership(int $User_ID, string $Channel_Name, string $Channel_ID, int $Grace_Seconds): void {
 $User = Repository::getUser($User_ID);
 $Chat_ID = (int)($User['Chat_ID'] ?? 0);
@@ -700,16 +890,12 @@ $Client_ID = (string)($User['Client_ID'] ?? '');
 $Full_Name = (string)($User['Full_Name'] ?? 'کاربر');
 $Has_Client = $Client_ID !== '' && $Client_ID !== '_';
 
-if ($Chat_ID === 0) {
-return;
-}
-
 $Status = ($Channel_Name === '' && $Channel_ID === '')
 ? 'unknown'
 : TelegramClient::channelMemberStatus($User_ID, $Channel_Name, $Channel_ID);
-$Grace_Started_At = $User['Channel_Grace_Started_At'] !== null ? (int)$User['Channel_Grace_Started_At'] : 0;
-$Disabled_At = $User['Channel_Client_Disabled_At'] !== null ? (int)$User['Channel_Client_Disabled_At'] : 0;
-$Channel_Url = (string)Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Grace_Started_At = (int)($User['Channel_Grace_Started_At'] ?? 0);
+$Disabled_At = (int)($User['Channel_Client_Disabled_At'] ?? 0);
+$Channel_Url = BotConfig::getChannelUrl();
 $Minutes = (int)ceil($Grace_Seconds / 60);
 
 if ($Status === 'unknown_participant') {
@@ -725,20 +911,7 @@ Repository::updateUser($User_ID, ['Channel_Member_Check_At' => time()]);
 $Is_Member = $Status === 'member';
 
 if ($Is_Member) {
-if ($Disabled_At > 0 || $Grace_Started_At > 0) {
-Repository::updateUser($User_ID, ['Channel_Grace_Started_At' => null, 'Channel_Client_Disabled_At' => null]);
-
-if ($Has_Client && $Disabled_At > 0) {
-$Update_Response = ServerClient::updateUser($Client_ID, ['is_active' => true, 'enable' => true]);
-
-if (($Update_Response['StatusCode'] ?? 0) >= 300) {
-AdminFlow::notifyAdminServerError('فعالسازی کلاینت (کانال)', $User_ID, $Full_Name, $Update_Response['StatusCode'] ?? 0, (string)($Update_Response['Body'] ?? ''));
-}
-
-Repository::updateUser($User_ID, ['Client_Status' => 'فعال']);
-}
-}
-
+ChannelMembership::restore($User_ID);
 return;
 }
 
@@ -755,37 +928,26 @@ return;
 if (!$Has_Client) return;
 if ($Disabled_At > 0) return;
 if (time() - $Grace_Started_At < $Grace_Seconds) {
-$Remaining = $Grace_Seconds - (time() - $Grace_Started_At);
-$Halfway = $Grace_Started_At + (int)floor($Grace_Seconds / 2);
-
-if (time() >= $Halfway && (time() - $Grace_Started_At) % 240 < 60) {
-$Rem_Min = (int)ceil($Remaining / 60);
-
-if ($Rem_Min > 0) {
-self::sendLeaveWarning($Chat_ID, $User_ID, $Full_Name, $Channel_Url, $Rem_Min, false);
-}
-}
-
+// در طول مهلت عضویت، اعلان تکراری ارسال نمی شود (حداکثر یک هشدار در روز).
 return;
 }
 
-Repository::updateUser($User_ID, ['Channel_Client_Disabled_At' => time()]);
-$Disable_Response = ServerClient::updateUser($Client_ID, ['is_active' => false, 'enable' => false]);
-
-if (($Disable_Response['StatusCode'] ?? 0) >= 300) {
-AdminFlow::notifyAdminServerError('غیرفعالسازی کلاینت (کانال)', $User_ID, $Full_Name, $Disable_Response['StatusCode'] ?? 0, (string)($Disable_Response['Body'] ?? ''));
+if (!ChannelMembership::suspend($User_ID)) return;
+if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_disabled_app', $User_ID)) {
+SystemNotifications::queue($User_ID, 'قطع به دلیل عضویت کانال', '⛔️مهلت عضویت تمام شد؛ کلاینت به دلیل عدم عضویت قطع شد. برای اتصال دوباره عضو شوید: ' . $Channel_Url, 'channel-disabled:' . $Grace_Started_At, 'warning');
 }
 
-Repository::updateUser($User_ID, ['Client_Status' => '🚫قطع به دلیل عدم عضویت']);
-
 $Phone = (string)($User['Phone'] ?? '');
+if (Helper::validatePhone($Phone) && self::claimDaily('channel_disabled_sms', $User_ID)) {
 self::sendChannelDisabledSms($User_ID, $Phone, $Channel_Url);
+}
 
-if ($Chat_ID > 0) {
+if ($Chat_ID > 0 && self::claimDaily('channel_disabled_tg', $User_ID)) {
 $Greeting = Common::greet(new Context([], $User_ID, $Chat_ID, $Full_Name, false, null, null, null, null), 'عضویت در کانال');
 TelegramClient::sendMessage($Chat_ID, "{$Greeting}⛔️مهلت عضویت شما به اتمام رسید.\n\n⚠️کلاینت شما به دلیل عدم عضویت در کانال اطلاع رسانی قطع گردید.\n👌جهت اتصال مجدد باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
+Common::mainButton(),
 ]));
 }
 }
@@ -818,17 +980,16 @@ return $Parts === [] ? 'کمتر از یک دقیقه' : implode(' و ', $Parts)
 private static function sendLeaveWarning(int $Chat_ID, int $User_ID, string $Full_Name, string $Channel_Url, int $Minutes, bool $First): void {
 $User = Repository::getUser($User_ID);
 $Phone = (string)($User['Phone'] ?? '');
-$Remaining_Label = Helper::humanDuration(max(0, $Minutes) * 60);
-
-if ($First) {
-self::sendChannelWarningSms($User_ID, $Phone, $Channel_Url, $Minutes);
+if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_warn_app', $User_ID)) {
+SystemNotifications::queue($User_ID, 'هشدار عضویت کانال', '⚠️شما عضو کانال نیستید. مهلت باقی مانده: ' . self::graceLabel(max(0, $Minutes) * 60) . ' — ' . $Channel_Url, 'channel-warning:' . (int)($User['Channel_Grace_Started_At'] ?? 0) . ':' . ($First ? 'first' : 'reminder'), 'warning');
 }
 
-elseif ($Minutes <= 3) {
+if ($First && Helper::validatePhone($Phone) && self::claimDaily('channel_warn_sms', $User_ID)) {
 self::sendChannelWarningSms($User_ID, $Phone, $Channel_Url, $Minutes);
 }
 
 if ($Chat_ID <= 0) return;
+if (!self::claimDaily('channel_warn_tg', $User_ID)) return;
 $Greeting = Common::greet(new Context([], $User_ID, $Chat_ID, $Full_Name, false, null, null, null, null), 'عضویت در کانال');
 $Title = $First
 ? "⚠️شما از کانال اطلاع رسانی خارج شده اید."
@@ -837,6 +998,7 @@ $Body = "⚠️شما از کانال اطلاع رسانی خارج شده ای
 TelegramClient::sendMessage($Chat_ID, $Greeting . $Title . "\n" . $Body . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '✅بررسی عضویت', 'callback_data' => 'بررسی عضویت کانال']],
+Common::mainButton(),
 ]));
 }
 
@@ -854,7 +1016,7 @@ $Sms_Text = $Template !== null
 ])
 : "کاربر گرامی، شما از کانال اطلاع رسانی خارج شده اید.\nمهلت باقیمانده: " . $Remaining_Label . "\nدر غیر این صورت کلاینت شما قطع می گردد.\nلطفا از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا";
 
-if (!IppanelClient::send($User_ID, $Phone, trim($Sms_Text))) {
+if (!IppanelClient::sendOnce($User_ID, $Phone, trim($Sms_Text), 'channel-warning:' . (int)(Repository::getUser($User_ID)['Channel_Grace_Started_At'] ?? 0))) {
 error_log("[Umbrella-Bot][Scheduler][ChannelWarning] SMS failed for User={$User_ID} Phone={$Phone}");
 }
 }
@@ -870,7 +1032,7 @@ $Sms_Text = $Template !== null
 ])
 : "کاربر گرامی، مهلت عضویت شما در کانال به اتمام رسید.\nکلاینت شما به دلیل عدم عضویت قطع گردید.\nبرای اتصال مجدد از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا";
 
-if (!IppanelClient::send($User_ID, $Phone, trim($Sms_Text))) {
+if (!IppanelClient::sendOnce($User_ID, $Phone, trim($Sms_Text), 'channel-disabled:' . (int)(Repository::getUser($User_ID)['Channel_Grace_Started_At'] ?? 0))) {
 error_log("[Umbrella-Bot][Scheduler][ChannelDisabled] SMS failed for User={$User_ID} Phone={$Phone}");
 }
 }
@@ -885,7 +1047,23 @@ return trim($Template);
 }
 
 private static function expireSubscription(int $User_ID): void {
+$Lock = 'expire_user_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 3600)) return;
+try {
 $Row = Repository::getUser($User_ID);
+$Client_ID = trim((string)($Row['Client_ID'] ?? ''));
+if ($Client_ID !== '' && $Client_ID !== '_') {
+$Panel_Response = ServerClient::getUser($Client_ID);
+$Panel_Status = (int)($Panel_Response['StatusCode'] ?? 0);
+$Panel_Row = $Panel_Response['Json'] ?? null;
+// If the panel cannot be reached, never expire a client from a stale local date.
+if ($Panel_Status < 200 || $Panel_Status >= 300 || !is_array($Panel_Row)) return;
+$Panel_UUID = trim((string)($Panel_Row['uuid'] ?? ''));
+if (($Panel_UUID !== '' && $Panel_UUID !== $Client_ID) || Common::subscriptionFieldsFromServer($Panel_Row) === []) return;
+$Row = Common::syncSubscriptionFromServer($Row, $Panel_Row);
+}
+// Old scheduled jobs must never expire a renewed subscription.
+if ((int)($Row['Expiration_Time_Stamp'] ?? 0) > time()) return;
 $Subscription = $Row['Subscription'] ?? null;
 
 if (!is_string($Subscription) || $Subscription === '') {
@@ -903,35 +1081,48 @@ if ($Client_ID !== '' && $Client_ID !== '_') {
 $Disable_Response = ServerClient::updateUser($Client_ID, ['is_active' => false, 'enable' => false]);
 $Status = (int)($Disable_Response['StatusCode'] ?? 0);
 
-if ($Status >= 300) {
+if ($Status < 200 || $Status >= 300) {
 $Server_Disabled = false;
+if (self::claimDaily('admin_expire_error', $User_ID)) {
 AdminFlow::notifyAdminServerError('منقضی اشتراک (خودکار)', $User_ID, $Full_Name, $Status, (string)($Disable_Response['Body'] ?? ''));
+}
 }
 }
 
 if ($Server_Disabled) {
-Repository::updateUser($User_ID, ['Client_Status' => '🚫غیر فعال']);
+Repository::updateUser($User_ID, ['Client_Status' => '🚫غیر فعال', 'Channel_Client_Disabled_At' => null]);
 Repository::addSubscriptionLog($User_ID, 'expire', $Subscription, null, null, 'انقضای خودکار اشتراک (زمان بند خودکار)', 'scheduler');
 }
 
+$Expired_Event = IppanelClient::subscriptionEvent('expired', $Row);
+$Expire_App_Key = 'ExpireNotice_' . hash('sha256', $User_ID . ':' . $Expired_Event . ':app');
+if (!self::hasSetting($Expire_App_Key) && self::claimDaily('expired_app', $User_ID) && self::claimOnce($Expire_App_Key, '1')) {
+SystemNotifications::queue($User_ID, 'انقضای اشتراک', '⏳اشتراک ' . $Subscription . ' شما به پایان رسید؛ برای ادامه سرویس تمدید کنید.', 'expired:' . (int)($Row['Expiration_Time_Stamp'] ?? 0), 'warning');
+}
+
 if ($Chat_ID > 0) {
-$Status_Notice = $Server_Disabled ? '⚠️اتصال شما از سرور قطع گردید.' : '⚠️سرور موقتاً در دسترس نیست. اشتراک شما به زودی در سرور نیز غیرفعال خواهد شد.';
+$Expire_Tg_Key = 'ExpireNotice_' . hash('sha256', $User_ID . ':' . $Expired_Event . ':telegram');
+if (!self::hasSetting($Expire_Tg_Key) && self::claimDaily('expired_tg', $User_ID) && self::claimOnce($Expire_Tg_Key, '1')) {
+$Status_Notice = $Server_Disabled ? '⚠️اتصال شما از سرور قطع گردید.' : '⚠️سرور موقتا در دسترس نیست. اشتراک شما به زودی در سرور نیز غیرفعال خواهد شد.';
 TelegramClient::sendMessage($Chat_ID, Helper::frame('کاربر', $Full_Name, 'انقضای اشتراک', $User_ID) . "🌹اشتراک {$Subscription} شما به اتمام رسید.\n\n{$Status_Notice}" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '💎تمدید اشتراک', 'callback_data' => 'اشتراک من']],
+[['text' => '💳خرید یا تمدید اشتراک', 'callback_data' => 'user_subscriptions_menu']],
 Common::mainButton(),
 ]));
 }
+}
 
 if (Helper::validatePhone($Phone)) {
+if (self::claimDaily('expired_sms', $User_ID)) {
 $Plan = Helper::smsPlan((string)($Subscription ?? ''));
 $Template = Repository::getSmsTemplate('expired');
 $Sms_Text = $Template !== null
 ? strtr($Template, ['{full_name}' => $Full_Name, '{plan}' => $Plan])
 : "{$Full_Name} گرامی اشتراک {$Plan} شما به اتمام رسید.\nاتصال شما از سرور قطع گردید.\n\nسرور آمبرلا";
-$Sent = IppanelClient::send($User_ID, $Phone, $Sms_Text);
+$Sent = IppanelClient::sendOnce($User_ID, $Phone, $Sms_Text, IppanelClient::subscriptionEvent('expired', $Row));
 
 if (!$Sent) {
 error_log("[Umbrella-Bot][Scheduler][Expire] SMS failed for User={$User_ID} Phone={$Phone}");
+}
 }
 }
 
@@ -954,6 +1145,7 @@ Repository::updateUser($User_ID, [
 'Expiration_Time_Stamp' => $Keep_For_Auto_Renew ? (int)($Row['Expiration_Time_Stamp'] ?? 0) : time() - 1,
 ]);
 }
+} finally { Repository::releaseCronLock($Lock); }
 }
 
 private static function autoRefreshUsages(): void {
@@ -968,19 +1160,19 @@ self::refreshUsagesNow();
 
 private static function alertUsageSyncFailure(int $Status, string $Detail): void {
 try {
-$Hour = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H');
+$Today = self::tehranDay();
 
-if ((string)Repository::getSetting('Usage_Sync_Alert_At', '') === $Hour) return;
-Repository::setSetting('Usage_Sync_Alert_At', $Hour);
-
+if ((string)Repository::getSetting('Usage_Sync_Alert_At', '') === $Today) return;
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 if ($Admin <= 0) return;
+if (!self::claimDaily('usage_sync_alert', $Admin, $Today)) return;
+Repository::setSetting('Usage_Sync_Alert_At', $Today);
 
-TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin)
-. '❌خطای همگام‌سازی مصرف کاربران (Usage-Sync)' . "\n\n"
-. '📡وضعیت: ' . ($Status > 0 ? 'HTTP ' . $Status : 'خطا در ارتباط') . "\n"
+TelegramClient::sendSystemMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'خطای سرور', $Admin)
+. '❌خطای همگام سازی مصرف کاربران' . "\n\n"
+. '📡وضعیت: ' . ($Status > 0 ? 'کد وضعیت ' . Helper::toPersian((string)$Status) : 'خطا در ارتباط') . "\n"
 . '⚠️پاسخ: ' . mb_substr($Detail !== '' ? $Detail : 'نامشخص', 0, 500) . "\n"
-. '➖➖➖➖➖➖➖➖➖➖' . "\n"
+. '➖➖➖➖➖➖➖➖➖' . "\n"
 . Helper::adminFooter());
 }
 catch (Throwable) {
@@ -1037,6 +1229,7 @@ $Fields = [
 'Server_Is_Active' => $Is_Active ? 1 : 0,
 'Server_Enable' => $Enable ? 1 : 0,
 ];
+$Fields = array_merge($Fields, Common::subscriptionFieldsFromServer($Row));
 
 if ($Limit > 0) $Fields['Total_Usage_GB'] = $Limit;
 

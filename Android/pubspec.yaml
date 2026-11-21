@@ -1,0 +1,62 @@
+name: umbrella_vpn
+description: "فیلترشکن آمبرلا - کلاینت اندروید با تونل کامل و هسته موبایل"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  provider: ^6.1.2
+  http: ^1.2.2
+  shared_preferences: ^2.3.3
+  path_provider: ^2.1.5
+  url_launcher: ^6.3.1
+  yaml: ^3.1.2
+  crypto: ^3.0.6
+  audioplayers: ^6.1.0
+  qr_flutter: ^4.1.0
+  # کلاینت gRPC برای ارتباط با هسته موبایل (hiddify-core) روی 127.0.0.1:17078.
+  # پیام های پروتوباف به صورت دستی نوشته شده اند (lib/umbrella_core/core_messages.dart)
+  # تا بدون تولید کد (protoc) کار کند؛ فقط RPC های لازم برای اندروید پوشش داده شده.
+  grpc: ^4.0.1
+  protobuf: ^4.2.0
+  fixnum: ^1.1.1
+  basic_utils: ^5.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - THIRD-PARTY-NOTICES.txt
+    - licenses/umbrella-core-license.md
+    - assets/images/
+    - assets/icons/
+    - assets/icons/operators/
+    - assets/flags/
+    - assets/sounds/
+    - assets/data/
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Vazirmatn-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Vazirmatn-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Vazirmatn-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Vazirmatn-Black.ttf
+          weight: 900

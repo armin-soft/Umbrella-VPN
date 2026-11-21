@@ -2,11 +2,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Channel-Membership.php';
+require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Panel.php';
+require_once __DIR__ . '/../Core/App/Release-Catalog.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 require_once __DIR__ . '/../Core/Support/Http.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 require_once __DIR__ . '/../Core/Subscription/Auto-Renew.php';
@@ -25,16 +29,6 @@ private const AUTO_RENEW_PLANS = [
 private function __construct() {
 }
 
-private static function liveUsageBoard(): array {
-try {
-return ServerClient::liveUsers();
-}
-
-catch (Throwable) {
-return [];
-}
-}
-
 public static function start(Context $Context): void {
 TelegramClient::sendChatAction($Context->ChatId);
 $Context->saveUser();
@@ -45,7 +39,7 @@ Common::robotOff($Context);
 return;
 }
 
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Status = self::membershipStatus($Context->UserId);
 
 if (in_array($Status, ['unknown', 'unknown_participant'], true)) {
@@ -57,14 +51,14 @@ return;
 
 if ($Status === 'member') {
 self::registerNewUserFeedback($Context);
-$Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید." . Helper::userFooter();
+$Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید.\n👇برای دیدن خدمات ربات، دکمه زیر را بزنید:";
 TelegramClient::sendMessage($Context->ChatId, $Welcome_Text, TelegramClient::inlineKeyboard([
 [['text' => '🤖📋منوی خدمات ربات', 'callback_data' => 'منوی خدمات ربات']],
 ]));
 }
 
 else {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}جهت استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🔒برای استفاده از امکانات ربات باید ابتدا عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '📢🔍بررسی عضویت در کانال', 'callback_data' => 'start']],
 ]));
@@ -77,7 +71,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بر�
 }
 
 $Greeting = Common::greet($Context, 'بررسی عضویت کانال');
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Status = self::membershipStatus($Context->UserId);
 $Is_Member = $Status === 'member';
 
@@ -89,48 +83,28 @@ return;
 }
 
 if ($Is_Member) {
-$User = Repository::getUser($Context->UserId);
-$Was_Disabled = ($User['Channel_Client_Disabled_At'] ?? null) !== null;
-Repository::updateUser($Context->UserId, ['Channel_Grace_Started_At' => null, 'Channel_Client_Disabled_At' => null, 'Channel_Member_Check_At' => time()]);
-
-if ($Was_Disabled) {
-$Client_ID = (string)($User['Client_ID'] ?? '');
-
-if ($Client_ID !== '' && $Client_ID !== '_') {
-$Update_Response = ServerClient::updateUser($Client_ID, ['is_active' => true, 'enable' => true]);
-
-if (($Update_Response['StatusCode'] ?? 0) >= 300) {
-AdminFlow::notifyAdminServerError('فعالسازی کلاینت (کانال)', $Context->UserId, $Context->profileName(), $Update_Response['StatusCode'] ?? 0, (string)($Update_Response['Body'] ?? ''));
-}
-}
-
-Repository::updateUser($Context->UserId, ['Client_Status' => 'فعال']);
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🎉عضویت شما در کانال مجددا تایید گردید و کلاینت شما فعال شد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-Common::mainButton(),
-]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}✅عضویت شما در کانال تایید گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Common::mainButton(),
-]));
-}
-
+$Result = ChannelMembership::restore($Context->UserId);
+$Notice = match ($Result) {
+'restored' => '✅عضویت تأیید و کلاینت دوباره فعال شد.',
+'pending' => '⚠️عضویت تأیید شد، اما فعال سازی هنوز موفق نشده؛ دوباره تلاش کنید. بررسی خودکار نیز تکرار می شود.',
+'ineligible' => '✅عضویت تأیید شد؛ اشتراک منقضی یا محدودیت دیگری مانع فعال سازی خودکار است. با پشتیبانی تماس بگیرید.',
+default => '✅عضویت شما در کانال تأیید گردید.',
+};
+TelegramClient::sendMessage($Context->ChatId, $Greeting . $Notice . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
 $Minutes = (int)ceil(Environment::getChannelGraceSeconds() / 60);
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما عضو کانال اطلاع رسانی نیستید.\n\nبرای استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما عضو کانال اطلاع رسانی نیستید.\n\n🔒برای استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 [['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
 ]));
 }
 
-private static function membershipStatus(int $UserId): string {
-$Channel_Link = (string)Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+public static function membershipStatus(int $UserId): string {
+$Channel_Link = BotConfig::getChannelUrl();
 $Channel_Name = self::extractChannelName($Channel_Link);
-$Channel_ID = Environment::getTelegramChannelId();
+$Channel_ID = BotConfig::getTelegramChannelId();
 
 if ($Channel_Name === '' && $Channel_ID === '') return 'member';
 return \TelegramClient::channelMemberStatus($UserId, $Channel_Name, $Channel_ID);
@@ -146,7 +120,7 @@ $Last_Check = (int)($User['Channel_Member_Check_At'] ?? 0);
 $Grace_Started_At = (int)($User['Channel_Grace_Started_At'] ?? 0);
 $Is_Disabled = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0;
 $TTL = 1800;
-$Should_Call = $Last_Check <= 0 || (time() - $Last_Check) >= $TTL || ($Grace_Started_At > 0 && !$Is_Disabled);
+$Should_Call = $Last_Check <= 0 || (time() - $Last_Check) >= $TTL || $Grace_Started_At > 0 || $Is_Disabled;
 
 if (!$Should_Call) return true;
 $Status = self::membershipStatus($UserId);
@@ -166,7 +140,7 @@ Repository::updateUser($UserId, ['Channel_Grace_Started_At' => time()]);
 return false;
 }
 
-Repository::updateUser($UserId, ['Channel_Member_Check_At' => time()]);
+ChannelMembership::restore($UserId);
 return true;
 }
 
@@ -195,14 +169,14 @@ $User = Repository::getUser($Context->UserId);
 
 if (($User['Registered_At'] ?? null) !== null) return;
 
-Repository::updateUser($Context->UserId, ['Registered_At' => date('Y-m-d H:i:s')]);
+Repository::touchUserTime($Context->UserId, 'Registered_At');
 self::linkPanelAccount($Context);
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 
 if ($Admin <= 0) return;
 
 try {
-TelegramClient::sendMessage(
+TelegramClient::sendSystemMessage(
 $Admin,
 Helper::adminGreetingNamed(
 (string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()),
@@ -277,6 +251,7 @@ error_log('[Umbrella-Bot][Panel-Link] write failed: ' . $Error->getMessage());
 }
 
 public static function serviceMenu(Context $Context): void {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 TelegramClient::sendChatAction($Context->ChatId);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -300,17 +275,24 @@ Common::robotOff($Context, 'منوی خدمات ربات');
 return;
 }
 
-$Text = Common::greet($Context, 'منوی خدمات ربات') . "\n➖➖➖➖➖➖➖➖➖\n📌لطفاً یکی از بخش های زیر را انتخاب کنید:" . Helper::userFooter();
-$User = Repository::getUser($Context->UserId);
-$Client_ID = (string)($User['Client_ID'] ?? '');
-$Has_Client = $Client_ID !== '' && $Client_ID !== '_';
-$Menu_Rows = [
-[['text' => '👤پروفایل کاربری', 'callback_data' => 'پروفایل کاربری']],
-[['text' => '💎اشتراک من', 'callback_data' => 'اشتراک من']],
-[['text' => '🎫تیکت ها و پشتیبانی', 'callback_data' => 'منوی پشتیبانی']],
-];
-
-$Menu_Rows[] = [['text' => '🔄📄تغییرات نسخه', 'callback_data' => 'تغییرات نسخه']];
+$Text = Common::greet($Context, 'منوی خدمات ربات') . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
+$User = Repository::getUser($Context->UserId) ?? [];
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+if (!self::ownsCurrentSubscription($User) && $Client_ID !== '' && $Client_ID !== '_') {
+[$User] = self::subscriptionMenuState($Context->UserId);
+}
+$Menu_Rows = Menu::rows([
+[['👤حساب کاربری', 'user_account_menu']],
+[['📱دستگاه من', 'user_device_menu']],
+[['💰کیف پول و مالی', 'user_wallet_menu']],
+[['📊سوابق و آمار', 'user_stats_menu']],
+[['🖥️نرم افزار/اپلیکیشن', 'app_download_menu']],
+[['🎫پشتیبانی', 'منوی پشتیبانی']],
+[['🔄تغییرات نسخه', 'تغییرات نسخه']],
+]);
+if (!self::ownsCurrentSubscription($User)) {
+array_unshift($Menu_Rows, [Menu::button('💎مدیریت اشتراک', 'user_subscriptions_menu')]);
+}
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -322,20 +304,282 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 }
 }
 
-public static function supportMenu(Context $Context): void {
-TelegramClient::sendChatAction($Context->ChatId);
-
-if ($Context->IsCallback && $Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄منوی تیکت در حال بارگذاری...', false);
+public static function appDownloadMenu(Context $Context): void {
+$Text = Common::greet($Context, 'نرم افزار/اپلیکیشن')
+. "📦فایل نصبی همه سیستم عامل ها در همان انتشار رسمی نسخه قرار می گیرد.\n"
+. "سیستم عامل خود را انتخاب کنید؛ اگر فایل منتشر شده باشد، پیوند مستقیم آن نمایش داده می شود." . Helper::userFooter();
+$Rows = Menu::rows([
+[['🪟ویندوز', 'app_download_windows'], ['🤖اندروید', 'app_download_android']],
+[['🍎مک', 'app_download_macos']],
+]);
+$Rows[] = Menu::userHome();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
-$Text = Common::greet($Context, 'تیکت ها و پشتیبانی') . "\n➖➖➖➖➖➖➖➖➖\n📌لطفاً یکی از بخش های تیکت را انتخاب کنید:" . Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '➕ایجاد تیکت جدید', 'callback_data' => 'تیکت جدید']],
-[['text' => '🎫تیکت های من', 'callback_data' => 'لیست تیکت های من']],
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'منوی خدمات ربات']],
+public static function appDownloadWindows(Context $Context): void {
+self::appDownloadPlatform($Context, 'windows');
+}
+
+public static function appDownloadAndroid(Context $Context): void {
+self::appDownloadPlatform($Context, 'android');
+}
+
+public static function appDownloadMacOS(Context $Context): void {
+self::appDownloadPlatform($Context, 'macos');
+}
+
+public static function appDownloadPlatform(Context $Context, string $Platform): void {
+$Platform = strtolower(trim($Platform));
+$Platform_Names = ['windows' => 'ویندوز', 'android' => 'اندروید', 'macos' => 'مک'];
+if (!isset($Platform_Names[$Platform])) { self::appDownloadMenu($Context); return; }
+
+$Catalog = ReleaseCatalog::forPlatform($Platform);
+$Greeting = Common::greet($Context, 'نرم افزار/اپلیکیشن');
+$Text = $Greeting . "📱نسخه های {$Platform_Names[$Platform]} آمبرلا\n"
+. "اطلاعات مستقیماً از آخرین انتشار رسمی و بتای منتشرشده خوانده شده است.\n";
+$Rows = [];
+
+foreach (['stable' => '✅نسخه رسمی', 'beta' => '🧪نسخه بتا'] as $Channel => $Channel_Label) {
+$Release = $Catalog[$Channel] ?? null;
+$Text .= "\n➖➖➖➖➖➖➖➖➖\n{$Channel_Label}\n";
+if (!is_array($Release)) {
+$Text .= "⏳برای این کانال هنوز فایل نصبی برای این سیستم عامل منتشر نشده است.\n";
+continue;
+}
+
+$Text .= "📦نام: " . (string)$Release['name'] . "\n"
+. "🏷نسخه: `" . (string)$Release['tag'] . "`\n"
+. "📅زمان انتشار: " . self::releaseDateLabel((string)($Release['published_at'] ?? '')) . "\n"
+. "📝توضیحات و آخرین تغییرات:\n";
+$Notes = trim((string)($Release['notes'] ?? ''));
+$Text .= $Notes !== '' ? mb_substr($Notes, 0, 1800) . "\n" : "توضیحی برای این انتشار ثبت نشده است.\n";
+
+$Assets = self::downloadableReleaseAssets($Release, $Platform);
+if ($Assets === []) {
+$Text .= "⚠️فایل نصب در این انتشار بارگذاری نشده است.\n";
+}
+else {
+$Text .= "📁فایل های نصب:\n";
+foreach ($Assets as $Asset) {
+$Size = (int)($Asset['size'] ?? 0);
+$Size_Label = $Size > 0 ? ' — ' . Helper::formatBytes($Size) : '';
+$Text .= '• ' . (string)$Asset['name'] . $Size_Label . "\n";
+$Rows[] = [['text' => self::downloadButtonLabel($Platform, $Channel, (string)$Asset['name']), 'url' => (string)$Asset['url']]];
+}
+}
+
+if ((string)($Release['url'] ?? '') !== '') {
+$Rows[] = [['text' => '🌐جزئیات کامل انتشار ' . ($Channel === 'beta' ? 'بتا' : 'رسمی'), 'url' => (string)$Release['url']]];
+}
+}
+
+$Text .= "\nℹ️نسخه بتا آزمایشی است؛ برای استفاده معمول، نسخه رسمی را نصب کنید.";
+$Text .= Helper::userFooter();
+$Rows[] = Menu::back('انتخاب سیستم عامل', 'app_download_menu');
+$Rows[] = Menu::userHome();
+$Markup = TelegramClient::inlineKeyboard($Rows);
+$Plain_Length = mb_strlen(html_entity_decode(strip_tags(TelegramClient::md($Text)), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+$Message_Id = $Context->MessageId;
+if ($Plain_Length > 3000 && $Message_Id !== null) {
+TelegramClient::deleteMessage($Context->ChatId, $Message_Id);
+$Message_Id = null;
+}
+TelegramClient::sendReadableMessage($Context->ChatId, $Message_Id, $Text, $Markup);
+}
+
+private static function releaseDateLabel(string $Raw): string {
+$Timestamp = $Raw !== '' ? strtotime($Raw) : false;
+if ($Timestamp === false) return 'نامشخص';
+$Date = new DateTimeImmutable('@' . $Timestamp);
+$Date = $Date->setTimezone(new DateTimeZone('Asia/Tehran'));
+return Helper::gregorianToJalali($Date->format('Y-m-d')) . ' — ' . Helper::formatTime($Date->format('H:i:s'));
+}
+
+private static function downloadableReleaseAssets(array $Release, string $Platform): array {
+$Extensions = [
+'windows' => ['.exe'],
+'android' => ['.apk'],
+'macos' => ['.dmg', '.pkg'],
+];
+$Assets = array_values(array_filter($Release['assets'] ?? [], static function (array $Asset) use ($Extensions, $Platform): bool {
+$Name = strtolower((string)($Asset['name'] ?? ''));
+$Url = trim((string)($Asset['url'] ?? ''));
+if ($Url === '' || !isset($Extensions[$Platform])) return false;
+foreach ($Extensions[$Platform] as $Extension) {
+if (str_ends_with($Name, $Extension)) return true;
+}
+return false;
+}));
+
+if ($Platform === 'android') {
+usort($Assets, static function (array $A, array $B): int {
+$Rank = static function (array $Asset): int {
+$Name = strtolower((string)($Asset['name'] ?? ''));
+return str_contains($Name, 'universal') ? 0 : (str_contains($Name, 'arm64') ? 1 : (str_contains($Name, 'armeabi') ? 2 : 3));
+};
+return $Rank($A) <=> $Rank($B);
+});
+}
+return $Assets;
+}
+
+private static function downloadButtonLabel(string $Platform, string $Channel, string $Asset_Name): string {
+$Platform_Names = ['windows' => 'ویندوز', 'android' => 'اندروید', 'macos' => 'مک'];
+$Platform_Label = $Platform_Names[$Platform] ?? 'نرم افزار';
+$Channel_Label = $Channel === 'beta' ? 'بتا' : 'رسمی';
+$Asset_Label = pathinfo($Asset_Name, PATHINFO_FILENAME);
+return mb_substr("⬇️دانلود {$Platform_Label} {$Channel_Label} · {$Asset_Label}", 0, 64);
+}
+
+/** هر دسته ورودی قبلی را لغو می کند، بدون دست زدن به اطلاعات پرداخت. */
+private static function categoryMenu(Context $Context, string $Title, array $Rows): void {
+if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بارگذاری...', false);
+}
+$Rows[] = Menu::userHome();
+$Text = Common::greet($Context, $Title) . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+/** Menu eligibility uses the current subscription, not merely a leftover UUID. */
+private static function subscriptionMenuState(int $UserId): array {
+$User = Repository::getUser($UserId) ?? [];
+$Live = null;
+$Client = trim((string)($User['Client_ID'] ?? ''));
+if ($Client !== '' && $Client !== '_') {
+try {
+$Response = ServerClient::getUser($Client);
+$Code = (int)($Response['StatusCode'] ?? 0);
+$Data = $Response['Json'] ?? null;
+if ($Code >= 200 && $Code < 300 && is_array($Data)
+&& (!isset($Data['uuid']) || (string)$Data['uuid'] === $Client)) $Live = $Data;
+} catch (Throwable $Error) { error_log('[Umbrella-Bot][Menu-Subscription] ' . $Error->getMessage()); }
+}
+if ($Live !== null) $User = Common::syncSubscriptionFromServer($User, $Live);
+return [$User, $Live];
+}
+
+private static function hasMenuSubscription(array $User): bool {
+$Client = trim((string)($User['Client_ID'] ?? ''));
+return $Client !== '' && $Client !== '_' && trim((string)($User['Subscription'] ?? '')) !== ''
+&& (int)($User['Is_Blocked'] ?? 0) === 0
+&& trim((string)($User['Deactivation_Message'] ?? '')) === ''
+&& (int)($User['Channel_Client_Disabled_At'] ?? 0) <= 0;
+}
+
+private static function nightlyMenuVisible(array $User, ?array $Live): bool {
+if (!self::hasMenuSubscription($User) || (int)($User['Expiration_Time_Stamp'] ?? 0) <= time()
+|| !in_array((string)($User['Client_Status'] ?? ''), ['فعال', '✅فعال'], true)
+|| $Live === null || (int)($Live['is_active'] ?? 0) !== 1 || (int)($Live['enable'] ?? 0) !== 1) return false;
+$Limit = (float)($Live['usage_limit_GB'] ?? 0);
+return $Limit <= 0 || (isset($Live['current_usage_GB']) && (float)$Live['current_usage_GB'] < $Limit);
+}
+
+private static function autoRenewMenuVisible(array $User, ?array $Live): bool {
+if (!self::hasMenuSubscription($User)) return false;
+$Expires = (int)($User['Expiration_Time_Stamp'] ?? 0);
+// Exact inclusive 72-hour boundary; unknown/zero dates are not "due".
+$Due = $Expires > 0 && $Expires <= time() + 3 * 86400;
+$Limit = (float)($Live['usage_limit_GB'] ?? 0);
+$Exhausted = $Live !== null && $Limit > 0 && isset($Live['current_usage_GB'])
+&& (float)$Live['current_usage_GB'] >= $Limit;
+return $Due || $Exhausted;
+}
+
+private static function guardAutoRenewMenu(Context $Context): bool {
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+if (self::autoRenewMenuVisible($User, $Live)) return true;
+self::subscriptionsMenu($Context);
+return false;
+}
+
+// A paused client still owns its plan; an explicitly expired plan can be renewed.
+private static function ownsCurrentSubscription(array $User): bool {
+$Subscription = trim((string)($User['Subscription'] ?? ''));
+$Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
+return $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
+}
+
+public static function subscriptionsMenu(Context $Context): void {
+if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+$Rows = Menu::rows([
+[['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
+]);
+if (!self::ownsCurrentSubscription($User)) {
+$Client_Uuid = trim((string)($User['Client_ID'] ?? ''));
+$Free_Claimed = (int)($User['Free_Plan_Claimed'] ?? 0) === 1
+|| ($Client_Uuid !== '' && $Client_Uuid !== '_'
+&& trim((string)Repository::getSetting('App_Free_Claimed_' . $Client_Uuid, '')) === '1');
+if (!$Free_Claimed) {
+$Rows[] = [Menu::button('🎁اشتراک رایگان', 'اشتراک رایگان اول')];
+}
+if (class_exists('BotConfig')
+&& method_exists(BotConfig::class, 'isNowruzMenuEnabled')
+&& BotConfig::isNowruzMenuEnabled()
+&& !BotConfig::hasClaimedNowruz($Context->UserId, $Client_Uuid)) {
+$Rows[] = [Menu::button('🌷اشتراک نوروزی', 'اشتراک نوروزی اول')];
+}
+}
+if (self::autoRenewMenuVisible($User, $Live)) {
+$Rows[] = [Menu::button('🔄تمدید خودکار', 'منوی تمدید خودکار')];
+}
+self::categoryMenu($Context, 'مدیریت اشتراک', $Rows);
+}
+
+public static function walletMenu(Context $Context): void {
+$Rows = Menu::rows([
+[['💰شارژ کیف پول', 'شارژ اعتبار حساب کاربری']],
+[['📋سابقه تراکنش', 'سابقه تراکنش']],
+]);
+self::categoryMenu($Context, 'کیف پول و مالی', $Rows);
+}
+
+public static function accountMenu(Context $Context): void {
+$Rows = Menu::rows([
+[['👤پروفایل کاربری', 'پروفایل کاربری']],
+[['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
+]);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+if (self::nightlyMenuVisible($User, $Live)) {
+$On = Repository::nightlyReportEnabled($Context->UserId);
+$Rows[] = [Menu::button($On ? '🔔گزارش شبانه: روشن — خاموش کردن' : '🔕گزارش شبانه: خاموش — روشن کردن', $On ? 'nightly_report_off' : 'nightly_report_on')];
+}
+self::categoryMenu($Context, 'حساب کاربری', $Rows);
+}
+
+public static function deviceMenu(Context $Context): void {
+self::categoryMenu($Context, 'دستگاه من', Menu::rows([
+[['🛡کنترل محتوا', 'app_filter']],
+[['🔐تأیید دومرحله ای', 'app_2fa']],
+[['📱دستگاه های من', 'app_devices']],
 ]));
 }
+
+public static function setNightlyReport(Context $Context, bool $Enabled): void {
+[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+if (self::nightlyMenuVisible($User, $Live)) Repository::setNightlyReportEnabled($Context->UserId, $Enabled);
+self::accountMenu($Context);
+}
+
+public static function statsMenu(Context $Context): void {
+$Rows = Menu::rows([
+[['📋سابقه اشتراک', 'سابقه اشتراک'], ['📊گزارش مصرف', 'گزارش مصرف']],
+]);
+self::categoryMenu($Context, 'سوابق و آمار', $Rows);
+}
+
+/** دسته پشتیبانی و تیکت ها. */
+public static function supportMenu(Context $Context): void {
+$Rows = Menu::rows([
+[['🎫تیکت های من', 'لیست تیکت های من']],
+[['➕ایجاد تیکت جدید', 'تیکت جدید']],
+]);
+self::categoryMenu($Context, 'پشتیبانی', $Rows);
+}
+
 
 public static function profile(Context $Context, bool $Answer_Callback = true): void {
 TelegramClient::sendChatAction($Context->ChatId);
@@ -346,6 +590,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄پروفایل ک
 
 $Greeting = Common::greet($Context, 'پروفایل کاربری');
 $User = Common::liveUser(Repository::getUser($Context->UserId));
+$User = Common::syncSubscriptionFromServer($User);
 $Auto_Renew_Plan_On = trim((string)($User['Auto_Renew_Plan'] ?? '')) !== '';
 $Phone = $User['Phone'] ?? null;
 $FullName = $User['Full_Name'] ?? null;
@@ -355,21 +600,16 @@ $Balance_Formatted = Helper::formatCurrency($Balance);
 if (!is_string($Phone) || $Phone === '') {
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "⛔️بدلیل عدم ثبت پروفایل کاربری مجاز به ورود به این بخش نیستید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📝👤ثبت اطلاعات پروفایل کاربری', 'callback_data' => 'ویرایش و ثبت پروفایل']],
-Common::mainButton()
+Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()
 ]));
 
 return;
 }
 
 $Subscription = $User['Subscription'] ?? null;
-$Client_ID = (string)($User['Client_ID'] ?? '');
 $Client_Status = (string)($User['Client_Status'] ?? 'نامشخص');
 $Last_Online = (string)($User['Last_Online'] ?? '');
-$Operator = (string)($User['Operator'] ?? '');
-
-if ($Operator === '') {
 $Operator = Helper::detectOperator((string)$Phone);
-}
 
 $Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Package_Start_Date = (string)($User['Package_Start_Date'] ?? '');
@@ -400,16 +640,19 @@ $Days_Remaining = $Diff > 0 ? (int)ceil($Diff / 86400) : 0;
 }
 
 $Client_Raw = trim((string)($User['Client_ID'] ?? ''));
+$ED_Private = htmlspecialchars(trim((string)($User['ED_25519_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$ED_Public = htmlspecialchars(trim((string)($User['ED_25519_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$WG_Private = htmlspecialchars(trim((string)($User['WireGuard_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$WG_Public = htmlspecialchars(trim((string)($User['WireGuard_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$WG_PSK = htmlspecialchars(trim((string)($User['WireGuard_PSK'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$Has_Keys = false;
+foreach ([$ED_Private, $ED_Public, $WG_Private, $WG_Public, $WG_PSK] as $Key) {
+if ($Key !== '' && $Key !== '-') { $Has_Keys = true; break; }
+}
 $Has_Subscription = (trim((string)($User['Subscription'] ?? '')) !== '')
 || ($Has_Expiry && $Days_Remaining > 0)
 || ($Client_Raw !== '' && $Client_Raw !== '_');
 $Auto_Renew_Visible = $Has_Subscription;
-$ED_Private = (string)($User['ED_25519_Private_Key'] ?? '');
-$ED_Public = (string)($User['ED_25519_Public_Key'] ?? '');
-$WG_Private = (string)($User['WireGuard_Private_Key'] ?? '');
-$WG_Public = (string)($User['WireGuard_Public_Key'] ?? '');
-$WG_PSK = (string)($User['WireGuard_PSK'] ?? '');
-$Has_Keys = $ED_Private !== '' || $ED_Public !== '' || $WG_Private !== '' || $WG_Public !== '' || $WG_PSK !== '';
 $Last_Online_Label = 'نامشخص';
 
 if ($Last_Online !== '' && $Last_Online !== '0001-01-01 00:00:00') {
@@ -459,7 +702,6 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 . "├─📤حجم باقی مانده: *" . ($Remaining_Usage !== '' ? Helper::formatGB((float)$Remaining_Usage) : 'نامشخص') . "*\n"
 . "├─📈درصد مصرف: *" . ($Percent_Usage !== '' && $Percent_Usage !== null ? Helper::formatPercent((float)$Percent_Usage) . '٪' : 'نامشخص') . "*\n"
 . "├─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*\n"
-. "└─🆔UUID: `{$Client_ID}`\n"
 . ($Has_Keys
 ? "\n🔑*کلیدهای اتصال شما:*\n\n"
 . "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private}</pre>\n"
@@ -470,33 +712,16 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 : '')
 : '└─❌اشتراک فعالی ندارید.';
 
-$Rank_Line = '';
-$Used_Val = (float)($Used_Usage !== '' && $Used_Usage !== null ? $Used_Usage : 0);
-
-if ($Used_Val > 0) {
-$Board = self::liveUsageBoard();
-$My_Rank = 0;
-
-foreach ($Board as $Idx => $Row) {
-if ((int)($Row['Telegram_ID'] ?? 0) === $Context->UserId) { $My_Rank = $Idx + 1; break; }
-}
-
-if ($My_Rank > 0) {
-$Rank_Line = "🏆رتبه در رتبه بندی مصرف: " . Helper::rankEmoji($My_Rank) . " " . Helper::rankTitle($My_Rank) . "\n";
-}
-}
-
 $Auto_Renew_Plan = trim((string)($User['Auto_Renew_Plan'] ?? ''));
 $Ar_Price = 0;
 $Ar_Balance = Repository::getBalance($Context->UserId);
 $Ar_Has_Balance = true;
-$Auto_Renew_Button = '✅فعال کردن تمدید خودکار';
 
 if ($Auto_Renew_Plan !== '') {
 $Ar_Plan_Name = AutoRenew::planName($Auto_Renew_Plan);
 
 if ($Ar_Plan_Name === '') $Ar_Plan_Name = 'پلن فعلی';
-$Ar_Price = Environment::getPlanPrice($Auto_Renew_Plan);
+$Ar_Price = BotConfig::getPlanPrice($Auto_Renew_Plan);
 $Ar_Has_Balance = ($Ar_Price <= 0) || ($Ar_Balance >= $Ar_Price);
 $Ar_Balance_Label = Helper::formatCurrency($Ar_Balance);
 $Ar_Price_Label = Helper::formatCurrency($Ar_Price);
@@ -507,54 +732,29 @@ $Auto_Renew_Label = $Ar_Has_Balance
 ? '*🟢فعال (' . $Ar_Plan_Name . ')*' . $Ar_Suffix
 : '*🟠فعال (' . $Ar_Plan_Name . ') — در انتظار شارژ*' . $Ar_Suffix
 . "\n└─⚠️به دلیل کمبود موجودی، تمدید خودکار انجام نمی شود.";
-$Auto_Renew_Button = '⛔️غیرفعال کردن تمدید خودکار';
 }
 
 else {
 $Auto_Renew_Label = '*🔴غیرفعال*';
-$Auto_Renew_Button = '✅فعال کردن تمدید خودکار';
 }
 
-$Profile_Text = "👤نام و نام خانوادگی: *{$FullName}*\n"
-. "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*{$Operator}*)\n"
+$Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((string)$FullName, $Context->UserId) . "*\n"
+. "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*اپراتور پایه: {$Operator}*)\n"
 . "💳اعتبار حساب: *{$Balance_Formatted}*\n"
 . "🆔شناسه تلگرام: `" . Helper::toPersian((string)$Context->UserId) . "`\n"
-. $Rank_Line
 . ($Auto_Renew_Visible ? "🔄تمدید خودکار: {$Auto_Renew_Label}\n" : '')
 . "📅تاریخ عضویت: *{$Created_At_Label}*\n"
 . "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*\n"
-. "➖➖➖➖➖➖➖➖➖➖\n"
+. "➖➖➖➖➖➖➖➖➖\n"
 . "💎*اشتراک:*\n"
 . "{$Subscription_Text}";
-$Profile_Buttons = [];
 
-if ($Has_Subscription) {
-$Profile_Buttons[] = [['text' => $Auto_Renew_Button, 'callback_data' => 'toggle_auto_renew']];
-
-if ($Auto_Renew_Plan !== '' && !$Ar_Has_Balance) {
-$Profile_Buttons[] = [['text' => '💰شارژ اعتبار برای تمدید خودکار', 'callback_data' => 'شارژ اعتبار حساب کاربری']];
-}
-}
-
-else {
-$Profile_Buttons[] = [['text' => '💎خرید اشتراک', 'callback_data' => 'اشتراک من']];
-}
-
-$Profile_Buttons[] = [['text' => '✏️ویرایش پروفایل', 'callback_data' => 'ویرایش پروفایل']];
-
-if ($Has_Subscription) {
-$Profile_Buttons[] = [['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']];
-}
-
-$Profile_Buttons[] = [['text' => '💰شارژ اعتبار حساب کاربری', 'callback_data' => 'شارژ اعتبار حساب کاربری']];
-$Profile_Buttons[] = [['text' => '📋سابقه تراکنش', 'callback_data' => 'سابقه تراکنش'], ['text' => '📋سابقه اشتراک', 'callback_data' => 'سابقه اشتراک']];
-$Profile_Buttons[] = [['text' => '🛡کنترل محتوا', 'callback_data' => 'app_filter'], ['text' => '📱دستگاه من', 'callback_data' => 'app_devices']];
-$Profile_Buttons[] = [['text' => '🔔اعلانات', 'callback_data' => 'app_notifications']];
-$Profile_Buttons[] = Common::mainButton();
+$Profile_Buttons = [Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()];
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "🔰اطلاعات پروفایل شما به شرح زیر است:\n\n" . $Profile_Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Profile_Buttons));
 }
 
 public static function autoRenewMenu(Context $Context): void {
+if (!self::guardAutoRenewMenu($Context)) return;
 TelegramClient::sendChatAction($Context->ChatId);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -568,28 +768,32 @@ $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Current_Name = $Current !== '' ? (self::AUTO_RENEW_PLANS[$Current] ?? AutoRenew::planName($Current)) : '';
 $Status = $Current !== '' ? "🟢فعال ({$Current_Name})" : '🔴غیرفعال';
 $Text = Common::greet($Context, 'تمدید خودکار اشتراک')
-. "🔄*تمدید خودکار اشتراک*\n➖➖➖➖➖➖➖➖➖\n"
-. "📌وضعیت فعلی: *{$Status}*\n"
-. "💳موجودی کیف پول: *" . Helper::formatCurrency($Balance) . "*\n"
-. "⏳زمان باقیمانده اشتراک: *" . Helper::remainingDuration($Exp_Stamp) . "*\n\n"
-. "ℹ️در صورت فعال بودن، " . Helper::toPersian('3') . " روز قبل از انقضا، اشتراک شما به صورت خودکار از موجودی کیف پول تمدید می شود.\n\n"
-. "👇برای فعال کردن، پلن مورد نظر را انتخاب کنید:";
+. Menu::section('🔄', 'تمدید خودکار اشتراک', [
+'📌وضعیت فعلی: *' . $Status . '*',
+'💳موجودی کیف پول: *' . Helper::formatCurrency($Balance) . '*',
+'⏳زمان باقیمانده اشتراک: *' . Helper::remainingDuration($Exp_Stamp) . '*',
+])
+. 'ℹ️در صورت فعال بودن، ' . Helper::toPersian('3') . " روز قبل از انقضا، ⏳اشتراک شما به صورت خودکار از موجودی کیف پول تمدید می شود.\n"
+. '📌*برای فعال کردن، پلن مورد نظر را انتخاب کنید:*';
 $Rows = [];
 
 foreach (self::AUTO_RENEW_PLANS as $Key => $Label) {
-$Price = Environment::getPlanPrice((int)$Key);
+$Price = BotConfig::getPlanPrice((int)$Key);
 $Price_Label = $Price > 0 ? Helper::formatCurrency($Price) : 'قیمت ثبت نشده';
 $Mark = $Current === $Key ? '✅' : '🟢';
 $Rows[] = [['text' => "{$Mark}فعال: {$Label} - {$Price_Label}", 'callback_data' => 'auto_renew_on_' . $Key]];
 }
 
-$Rows[] = [['text' => '⛔️غیرفعال کردن تمدید خودکار', 'callback_data' => 'auto_renew_off']];
-$Rows[] = Common::backTo('🔙بازگشت به پروفایل', 'پروفایل کاربری');
-$Rows[] = Common::mainButton();
+$Rows = array_merge($Rows, Menu::rows([
+[['⛔️غیرفعال کردن تمدید خودکار', 'auto_renew_off']],
+]));
+$Rows[] = Menu::back('منوی قبلی', 'user_subscriptions_menu');
+$Rows[] = Menu::userHome();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Rows));
 }
 
 public static function enableAutoRenew(Context $Context): void {
+if (!self::guardAutoRenewMenu($Context)) return;
 $Plan = str_replace('auto_renew_on_', '', trim((string)($Context->CallbackData ?? '')));
 $Plan_Name = self::AUTO_RENEW_PLANS[$Plan] ?? '';
 
@@ -602,7 +806,7 @@ self::autoRenewMenu($Context);
 return;
 }
 
-$Price = Environment::getPlanPrice((int)$Plan);
+$Price = BotConfig::getPlanPrice((int)$Plan);
 $Balance = Repository::getBalance($Context->UserId);
 Repository::updateUser($Context->UserId, ['Auto_Renew_Plan' => $Plan]);
 
@@ -652,6 +856,8 @@ self::profile($Context, false);
 return;
 }
 
+if (!self::guardAutoRenewMenu($Context)) return;
+
 $Duration = (int)($User['Package_Duration'] ?? 0);
 $Has_Subscription = $Duration > 0 || trim((string)($User['Client_ID'] ?? '')) !== '';
 
@@ -667,7 +873,7 @@ $Plan = self::currentAutoRenewPlanKey($Duration);
 $Plan_Name = self::AUTO_RENEW_PLANS[$Plan] ?? AutoRenew::planName($Plan);
 
 if ($Plan_Name === '') $Plan_Name = 'پلن فعلی';
-$Plan_Price = Environment::getPlanPrice($Plan);
+$Plan_Price = BotConfig::getPlanPrice($Plan);
 $Wallet_Balance = Repository::getBalance($Context->UserId);
 $Wallet_Short = ($Plan_Price > 0 && $Wallet_Balance < $Plan_Price);
 
@@ -682,7 +888,7 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تمدی�
 '⚠️علت:🚫قیمت پلن «' . $Plan_Name . '» در تنظیمات سرور ثبت نشده است.',
 'ℹ️لطفاً با پشتیبانی تماس بگیرید.'
 ) . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]));
 return;
 }
@@ -701,10 +907,9 @@ TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تمدی�
 . "💳موجودی کیف پول: *" . Helper::formatCurrency($Wallet_Balance) . "*\n"
 . "💵کسری شما: *" . Helper::formatCurrency($Plan_Price - $Wallet_Balance) . "*\n"
 . 'ℹ️برای فعال سازی تمدید خودکار ابتدا کیف پول خود را شارژ کنید.'
-) . Helper::userFooter(), TelegramClient::inlineKeyboard([
+) . Helper::userFooter(), TelegramClient::inlineKeyboard(array_merge([
 [['text' => '💰شارژ اعتبار حساب کاربری', 'callback_data' => 'شارژ اعتبار حساب کاربری']],
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'پروفایل کاربری']],
-]));
+], Menu::userNav('پروفایل کاربری', 'پروفایل کاربری'))));
 return;
 }
 
@@ -736,9 +941,10 @@ $Page = (int)($Parts[1] ?? 1);
 }
 
 if ($Page <= 0) $Page = 1;
-$Transactions = Repository::getTransactions($Context->UserId, $Page, 5);
 $Total = Repository::countTransactions($Context->UserId);
 $Total_Pages = max(1, (int)ceil($Total / 5));
+$Page = min($Page, $Total_Pages);
+$Transactions = Repository::getTransactions($Context->UserId, $Page, 5);
 $Text = Helper::userGreeting($Context, 'سابقه تراکنش های اعتبار');
 
 if (empty($Transactions)) {
@@ -755,26 +961,28 @@ $Source_Label = Helper::sourceLabel((string)($Tx['Source'] ?? ''), (string)($Tx[
 $Type_Label = Helper::actionLabel((string)($Tx['Type'] ?? ''));
 $Sign_Icon = (float)$Tx['Amount'] >= 0 ? '➕' : '➖';
 $Balance_After = Helper::formatCurrency((float)($Tx['Balance_After'] ?? 0));
-$Text .= "📋تراکنش #" . Helper::toPersian((string)($Index + 1)) . ":\n";
+$Text .= "📋تراکنش #" . Helper::toPersian((string)(($Page - 1) * 5 + $Index + 1)) . ":\n";
 $Text .= "🔸{$Type_Label}\n";
 $Text .= "🏷️انجام شده توسط: <b>{$Source_Label}</b>\n";
 $Text .= "📝{$Desc}\n";
 $Text .= "📆{$Date}🕰{$Time}\n";
 $Text .= "{$Sign_Icon}مبلغ: <b>{$Amount}</b>\n";
 $Text .= "👛موجودی پس از تراکنش: <b>{$Balance_After}</b>\n";
-$Text .= "➖➖➖➖➖➖➖➖➖➖\n";
+$Text .= "➖➖➖➖➖➖➖➖➖\n";
 }
 
 $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper::toPersian((string)$Total_Pages) . Helper::userFooter() . "*";
 }
 
 $Buttons = [];
-$Buttons[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'پروفایل کاربری']];
-$Buttons[] = [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+if ($Page > 1) $Buttons[] = [Menu::button('⬅️صفحه قبل', 'سابقه تراکنش|' . ($Page - 1))];
 
 if ($Page < $Total_Pages) {
-$Buttons[] = [['text' => '📄صفحه بعد', 'callback_data' => 'سابقه تراکنش|' . ($Page + 1)]];
+$Buttons[] = [['text' => 'صفحه بعد➡️', 'callback_data' => 'سابقه تراکنش|' . ($Page + 1)]];
 }
+
+$Buttons[] = Menu::back('منوی قبلی', 'user_wallet_menu');
+$Buttons[] = Menu::userHome();
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -790,9 +998,10 @@ $Page = (int)($Parts[1] ?? 1);
 }
 
 if ($Page <= 0) $Page = 1;
-$Logs = Repository::getSubscriptionLogs($Context->UserId, $Page, 5);
 $Total = Repository::countSubscriptionLogs($Context->UserId);
 $Total_Pages = max(1, (int)ceil($Total / 5));
+$Page = min($Page, $Total_Pages);
+$Logs = Repository::getSubscriptionLogs($Context->UserId, $Page, 5);
 $Text = Helper::userGreeting($Context, 'سابقه اشتراک ها');
 
 if (empty($Logs)) {
@@ -810,7 +1019,7 @@ $Days = ($Log['Days'] ?? null) !== null ? (int)$Log['Days'] : 0;
 
 $Plan = $Log['Plan_Name'] !== '' ? $Log['Plan_Name'] : 'اشتراک';
 $Usage = $Log['Usage_GB'] !== null ? Helper::formatGB((float)$Log['Usage_GB']) : '';
-$Text .= "📋سابقه #" . Helper::toPersian((string)($Index + 1)) . ":\n";
+$Text .= "📋سابقه #" . Helper::toPersian((string)(($Page - 1) * 5 + $Index + 1)) . ":\n";
 $Text .= "🔸{$Action}: {$Plan}\n";
 $Text .= "🏷️انجام شده توسط: <b>{$Source_Label}</b>\n";
 
@@ -832,12 +1041,14 @@ $Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper:
 }
 
 $Buttons = [];
-$Buttons[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'پروفایل کاربری']];
-$Buttons[] = [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
+if ($Page > 1) $Buttons[] = [Menu::button('⬅️صفحه قبل', 'سابقه اشتراک|' . ($Page - 1))];
 
 if ($Page < $Total_Pages) {
-$Buttons[] = [['text' => '📄صفحه بعد', 'callback_data' => 'سابقه اشتراک|' . ($Page + 1)]];
+$Buttons[] = [['text' => 'صفحه بعد➡️', 'callback_data' => 'سابقه اشتراک|' . ($Page + 1)]];
 }
+
+$Buttons[] = Menu::back('منوی قبلی', 'user_stats_menu');
+$Buttons[] = Menu::userHome();
 
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
@@ -850,56 +1061,52 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄تغییرات ن
 }
 
 $Greeting = Common::greet($Context, 'تغییرات نسخه');
-$Version = (string)(Repository::getSetting('Robot_Version') ?: Environment::getRobotVersion());
+$Version = BotConfig::robotVersion();
 $Version_P = Helper::toPersian($Version);
 $Changes = (string)Repository::getSetting('Robot_Changes', '');
 $Changes_Text = $Changes !== '' ? $Changes : '⚠️تغییراتی جهت برای نمایش وجود ندارد';
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "🔰اطلاعات بروز رسانی جدید بدین شرح است:\n\n🔄نسخه جدید ربات: {$Version_P}\n\n{$Changes_Text}" . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::mainButton()]));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "🔰اطلاعات بروز رسانی جدید بدین شرح است:\n\n🔄نسخه جدید ربات: {$Version_P}\n\n{$Changes_Text}" . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 }
 
+/** سازگاری با دکمه های قدیمی: هدایت به صفحه یکپارچه تیکت های من. */
 public static function ticketMenu(Context $Context): void {
-TelegramClient::sendChatAction($Context->ChatId);
-
-$User = Repository::getUser($Context->UserId);
-$Tickets = Repository::userTickets($Context->UserId);
-$Open_Count = 0;
-foreach ($Tickets as $T) {
-if (in_array($T['Status'], ['open', 'pending', 'answered'], true)) $Open_Count++;
-}
-
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Helper::userGreeting($Context, 'تیکت های من') . "📊تیکت های باز: *" . Helper::toPersian((string)$Open_Count) . "*\n📋کل: *" . Helper::toPersian((string)count($Tickets)) . "*" . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '➕ایجاد تیکت جدید', 'callback_data' => 'تیکت جدید']],
-[['text' => '📋تیکت های من', 'callback_data' => 'لیست تیکت های من']],
-Common::mainButton(),
-]));
+self::ticketUserList($Context);
 }
 
 public static function ticketNewStart(Context $Context): void {
-Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_subject']);
-$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "موضوع تیکت را وارد کنید:\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙انصراف و بازگشت', 'callback_data' => 'تیکت های من']],
-]));
+Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_subject', 'Ticket_Media_JSON' => null, 'Ticket_Description' => null]);
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📝موضوع تیکت را وارد کنید:\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'منوی پشتیبانی'), Menu::userHome()]));
 }
 
 public static function ticketCreate(Context $Context, string $Subject): void {
+$Media = TicketMedia::extract($Context);
+if ($Media !== null && trim($Subject) === '') $Subject = 'پشتیبانی با پیوست';
 $Subject = mb_substr(trim($Subject), 0, 200);
 
 if ($Subject === '') {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "❌موضوع نمی تواند خالی باشد.\n⚠️لطفاً موضوع تیکت را وارد کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "❌موضوع نمی تواند خالی باشد.\n⚠️لطفاً موضوع تیکت را وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 return;
 }
 
 Repository::updateUserSession($Context->UserId, ['Ticket_Subject' => $Subject, 'Flow' => 'user:ticket_description']);
-$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\nتوضیحات تکمیلی را وارد کنید (یا «ندارد» بفرستید):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙انصراف و بازگشت', 'callback_data' => 'تیکت های من']],
-]));
+if ($Media !== null) { self::ticketDescriptionInput($Context, (string)($Context->Caption ?? '')); return; }
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید') . "📋موضوع: {$Subject}\n\n📝توضیحات یا عکس، ویدیو، فایل، صدا یا استیکر را با کپشن یا بدون کپشن بفرستید (یا «ندارد»):\n➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::userNav('ویرایش موضوع', 'تیکت جدید')));
 }
 
 public static function ticketDescriptionInput(Context $Context, string $Text): void {
+$Media = TicketMedia::extract($Context);
+$Draft = Repository::getUserSession($Context->UserId);
 $Description = mb_substr(trim($Text), 0, 1000);
-$Session_Subject = (string)(Repository::getUserSession($Context->UserId)['Ticket_Subject'] ?? '');
+if ($Media !== null && ($Draft['Flow'] ?? '') === 'user:ticket_category' && !empty($Draft['Ticket_Description'])) $Description = (string)$Draft['Ticket_Description'];
+if ($Media !== null) {
+$Saved = json_decode((string)($Draft['Ticket_Media_JSON'] ?? ''), true) ?: [];
+if (count($Saved) >= 10) { TelegramClient::sendMessage($Context->ChatId, '⚠️حداکثر ۱۰ پیوست برای ایجاد تیکت؛ موارد بیشتر را پس از ثبت در پاسخ تیکت بفرستید.'); return; }
+$Saved[] = $Media;
+Repository::updateUserSession($Context->UserId, ['Ticket_Media_JSON' => json_encode($Saved, JSON_UNESCAPED_UNICODE)]);
+if ($Description === '') $Description = '📎پیوست بدون کپشن';
+}
 Repository::updateUserSession($Context->UserId, ['Ticket_Description' => $Description, 'Flow' => 'user:ticket_category']);
 self::ticketCategoryMenu($Context);
 }
@@ -908,19 +1115,39 @@ public static function ticketCategoryMenu(Context $Context): void {
 $Session = Repository::getUserSession($Context->UserId);
 $Subject = (string)($Session['Ticket_Subject'] ?? '');
 $Description = (string)($Session['Ticket_Description'] ?? '');
-$Rows = [['text' => '👇دسته تیکت را انتخاب کنید:', 'callback_data' => 'تیکت بدون تغییر']];
+$Rows = [];
 
 foreach (Helper::ticketCategories() as $Key => $Label) {
 $Rows[] = [['text' => $Label, 'callback_data' => 'دسته تیکت:' . $Key]];
 }
 
-$Rows[] = Common::mainButton();
+$Rows[] = Menu::back('ویرایش توضیحات', 'ویرایش توضیحات تیکت');
+$Rows[] = Menu::userHome();
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
 . "📋موضوع: {$Subject}\n"
 . "📝توضیحات: " . ($Description !== '' && $Description !== 'ندارد' ? $Description : 'ندارد') . "\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . "📂*مرحله ۱ از ۲ — انتخاب دسته تیکت*" . Helper::userFooter();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function ticketDescriptionStart(Context $Context): void {
+$Session = Repository::getUserSession($Context->UserId);
+$Subject = trim((string)($Session['Ticket_Subject'] ?? ''));
+if ($Subject === '') {
+self::ticketNewStart($Context);
+return;
+}
+Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_description']);
+$Description = trim((string)($Session['Ticket_Description'] ?? ''));
+$Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
+. "📋موضوع: {$Subject}\n\n📝توضیحات یا عکس، ویدیو، فایل، صدا یا استیکر را با کپشن یا بدون کپشن بفرستید (یا «ندارد»):\n"
+. ($Description !== '' ? "✏️توضیحات قبلی: {$Description}\n" : '')
+. "➖➖➖➖➖➖➖➖➖\n⚠️جهت انصراف «لغو» را ارسال کنید." . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+Menu::back('ویرایش موضوع', 'تیکت جدید'),
+Menu::userHome(),
+]));
 }
 
 public static function ticketCategoryCallback(Context $Context, string $Category): void {
@@ -946,14 +1173,14 @@ $Session = Repository::getUserSession($Context->UserId);
 $Subject = (string)($Session['Ticket_Subject'] ?? '');
 $Description = (string)($Session['Ticket_Description'] ?? '');
 $Category = (string)($Session['Ticket_Category'] ?? 'other');
-$Rows = [['text' => '🚦اولویت تیکت را انتخاب کنید:', 'callback_data' => 'اولویت تیکت:medium']];
+$Rows = [];
 
 foreach (Helper::ticketPriorities() as $Key => $Label) {
 $Rows[] = [['text' => $Label, 'callback_data' => 'اولویت تیکت:' . $Key]];
 }
 
-$Rows[] = Common::backTo('🔙بازگشت به انتخاب دسته', 'انتخاب دسته تیکت');
-$Rows[] = Common::mainButton();
+$Rows[] = Menu::back('انتخاب دسته تیکت', 'انتخاب دسته تیکت');
+$Rows[] = Menu::userHome();
 $Text = Helper::userGreeting($Context, 'ایجاد تیکت جدید')
 . "📋موضوع: {$Subject}\n"
 . "📝توضیحات: " . ($Description !== '' && $Description !== 'ندارد' ? $Description : 'ندارد') . "\n"
@@ -993,7 +1220,10 @@ $Session = Repository::getUserSession($Context->UserId);
 $Subject = (string)($Session['Ticket_Subject'] ?? '');
 $Description = (string)($Session['Ticket_Description'] ?? '');
 $Media_Text = trim((string)($Context->Caption ?? $Context->Text ?? ''));
-$Has_Media = $Context->Photo !== null || ($Media_Text !== '' && $Media_Text !== 'ندارد');
+$Attachments = json_decode((string)($Session['Ticket_Media_JSON'] ?? ''), true) ?: [];
+$NewMedia = TicketMedia::extract($Context);
+if ($NewMedia !== null) $Attachments[] = $NewMedia;
+$Has_Media = $Attachments !== [];
 
 if ($Subject === '') {
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null]);
@@ -1016,14 +1246,12 @@ if ($Description !== '' && $Description !== 'ندارد') {
 Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', "📝توضیحات: {$Description}");
 }
 
-if ($Has_Media) {
-$Photo_File_ID = $Context->Photo !== null ? $Context->Photo : null;
-$Caption = $Media_Text !== '' ? "📎پیوست: {$Media_Text}" : '📎پیوست';
-Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Caption, $Photo_File_ID);
+foreach ($Attachments as $Media) {
+Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', (string)($Media['caption'] ?? '📎پیوست'), null, json_encode($Media, JSON_UNESCAPED_UNICODE));
 }
 
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null, 'Ticket_Category' => 'other', 'Ticket_Priority' => 'medium']);
-Repository::addNotification($Context->UserId, 'ticket', 'تیکت ایجاد شد', "تیکت #{$Ticket_ID}: {$Subject}");
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null, 'Ticket_Media_JSON' => null, 'Ticket_Category' => 'other', 'Ticket_Priority' => 'medium']);
+Repository::addNotification($Context->UserId, 'ticket', '🎫تیکت ایجاد شد', "🎫تیکت #{$Ticket_ID}: {$Subject}");
 
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 
@@ -1040,51 +1268,63 @@ $Admin_Text .= "📎دارای پیوست (عکس/فایل)\n";
 
 $Admin_Text .= Helper::adminFooter();
 
-if ($Context->Photo !== null) {
-TelegramClient::sendPhoto($Admin, $Context->Photo, $Admin_Text, TelegramClient::inlineKeyboard([
+TelegramClient::sendReadableMessage($Admin, null, $Admin_Text, TelegramClient::inlineKeyboard([
 [['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
 [['text' => '✏️پاسخ به تیکت', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
 ]));
+foreach ($Attachments as $Media) {
+if (!TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️ارسال پیوست ناموفق بود؛ از بخش پیوست های تیکت دوباره تلاش کنید.');
 }
 
-else {
-TelegramClient::sendMessage($Admin, $Admin_Text, TelegramClient::inlineKeyboard([
-[['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
-[['text' => '✏️پاسخ به تیکت', 'callback_data' => 'ticket_reply:' . $Ticket_ID]],
-]));
-}
 }
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'تیکت های من') . "✅تیکت #" . Helper::toPersian((string)$Ticket_ID) . " ایجاد شد.\n➖➖➖➖➖➖➖➖➖\n📋موضوع: {$Subject}\n📂دسته: {$Category_Label}\n🚦اولویت: {$Priority_Label}\n\n⚠️ادمین به زودی پاسخ خواهد داد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🎫تیکت های من', 'callback_data' => 'تیکت های من']],
-Common::mainButton(),
+TelegramClient::sendSystemMessage($Context->ChatId, Common::greet($Context, 'تیکت های من') . "✅تیکت #" . Helper::toPersian((string)$Ticket_ID) . " ایجاد شد.\n➖➖➖➖➖➖➖➖➖\n📋موضوع: {$Subject}\n📂دسته: {$Category_Label}\n🚦اولویت: {$Priority_Label}\n\n⚠️ادمین به زودی پاسخ خواهد داد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+[['text' => '🎫تیکت های من', 'callback_data' => 'لیست تیکت های من']],
+Menu::userHome(),
 ]));
 }
 
-public static function ticketUserList(Context $Context): void {
+public static function ticketUserList(Context $Context, int $Page = 0): void {
+TelegramClient::sendChatAction($Context->ChatId);
 $Tickets = Repository::userTickets($Context->UserId);
+$PageCount = max(1, (int)ceil(count($Tickets) / 8));
+$Page = max(0, min($Page, $PageCount - 1));
+$Open_Count = 0;
+
+foreach ($Tickets as $T) {
+if (in_array($T['Status'], ['open', 'pending', 'answered'], true)) $Open_Count++;
+}
+
+$Text = Helper::userGreeting($Context, 'تیکت های من')
+. Menu::section('🎫', 'آمار تیکت های شما', [
+'📊تیکت های باز: *' . Helper::toPersian((string)$Open_Count) . '*',
+'📋کل تیکت ها: *' . Helper::toPersian((string)count($Tickets)) . '*',
+]);
 
 if (empty($Tickets)) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Common::greet($Context, 'تیکت های من') . "❌هیچ تیکتی ندارید.\n➖➖➖➖➖➖➖➖➖\n⚠️ابتدا یک تیکت جدید ایجاد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '➕ایجاد تیکت جدید', 'callback_data' => 'تیکت جدید']],
-Common::mainButton(),
+$Text .= "❌*هیچ تیکتی ثبت نکرده اید.*" . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+Menu::back('منوی قبلی', 'منوی پشتیبانی'), Menu::userHome(),
 ]));
 return;
 }
 
+$Text .= '📌*برای مشاهده جزئیات و پاسخ، تیکت مورد نظر را انتخاب کنید:*' . Helper::userFooter();
 $Buttons = [];
 
-foreach (array_slice($Tickets, 0, 10) as $T) {
+foreach (array_slice($Tickets, $Page * 8, 8) as $T) {
 $Status_Icon = ['open' => '🟡', 'pending' => '🟠', 'answered' => '🟢', 'closed' => '⚫'][$T['Status']] ?? '🟡';
 $Buttons[] = [['text' => "{$Status_Icon} #{$T['ID']} - " . mb_substr((string)$T['Subject'], 0, 30), 'callback_data' => 'ticket_user_view:' . $T['ID']]];
 }
 
-$Buttons[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'تیکت های من']];
-$Buttons[] = [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, Common::greet($Context, 'تیکت های من') . "📋تیکت های من" . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
+$Text .= Menu::pageLabel($Page, $PageCount);
+$Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'user_tickets_page:'));
+$Buttons[] = Menu::back('منوی قبلی', 'منوی پشتیبانی');
+$Buttons[] = Menu::userHome();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Buttons));
 }
 
-public static function ticketUserView(Context $Context, int $Ticket_ID): void {
+public static function ticketUserView(Context $Context, int $Ticket_ID, int $Page = 0): void {
 $Ticket = Repository::getTicket($Ticket_ID);
 
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) {
@@ -1101,40 +1341,54 @@ $Text .= "📋موضوع: " . $Ticket['Subject'] . "\n";
 $Text .= "📂دسته: *{$Persian_Category}*\n";
 $Text .= "📊وضعیت: *{$Persian_Status}*\n\n";
 
+$Thread = '';
 foreach ($Messages as $Msg) {
 $Sender = ($Msg['Sender_Type'] ?? 'user') === 'admin' ? '🛡ادمین' : '👤شما';
 $Msg_Text = (string)($Msg['Message'] ?? '');
 
 if ($Msg_Text === '') {
-$Msg_Text = ($Msg['Photo_File_ID'] ?? null) !== null ? '[📎تصویر]' : '[💬هیچ متنی]';
+$Msg_Text = TicketMedia::decode($Msg) !== null ? '[📎پیوست]' : '[💬هیچ متنی]';
 }
 
-$Text .= "{$Sender}: {$Msg_Text}\n";
+$Thread .= "{$Sender}: {$Msg_Text}\n";
 
-if (!empty($Msg['Photo_File_ID'])) {
-$Text .= "📎[پیوست تصویری]\n";
+if (TicketMedia::decode($Msg) !== null) {
+$Thread .= "📎[پیوست؛ از دکمه پیوست های تیکت باز کنید]\n";
 }
 }
 
-$Buttons = [];
+[$ThreadPage, $Page, $PageCount] = Menu::textPage($Thread, $Page);
+$Text .= Menu::pageLabel($Page, $PageCount) . $ThreadPage;
+
+$Buttons = Menu::pages($Page, $PageCount, 'user_ticket_messages:' . $Ticket_ID . ':');
 
 if ($Ticket['Status'] !== 'closed') {
 $Buttons[] = [['text' => '✏️پاسخ', 'callback_data' => 'ticket_user_reply:' . $Ticket_ID]];
 }
 
-$Buttons[] = [['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'لیست تیکت های من']];
-$Buttons[] = [['text' => '🏠بازگشت به منوی اصلی', 'callback_data' => 'منوی خدمات ربات']];
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
+$Buttons[] = [Menu::button('📎پیوست های تیکت', 'ticket_attachments:' . $Ticket_ID . ':0')];
+$Buttons = array_merge($Buttons, Menu::userNav('لیست تیکت های من', 'لیست تیکت های من'));
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+public static function ticketAttachments(Context $Context, int $TicketId, int $Page = 0): void {
+$Ticket = Repository::getTicket($TicketId);
+if ($Ticket === null || (!$Context->isAdmin() && (int)$Ticket['User_ID'] !== $Context->UserId)) return;
+[$Rows, $Page, $Count] = TicketMedia::buttons(Repository::getTicketMessages($TicketId), $Page);
+$Empty = $Rows === [];
+$Rows = array_merge($Rows, Menu::pages($Page, $Count, 'ticket_attachments:' . $TicketId . ':'));
+$Rows[] = Menu::back('تیکت', ($Context->isAdmin() ? 'ticket_view:' : 'ticket_user_view:') . $TicketId);
+$Rows[] = $Context->isAdmin() ? Menu::adminHome() : Menu::userHome();
+$Text = ($Context->isAdmin() ? Helper::adminGreeting($Context, 'پیوست های تیکت') : Helper::userGreeting($Context, 'پیوست های تیکت')) . Menu::pageLabel($Page, $Count) . ($Empty ? '📭پیوستی ثبت نشده است.' : '📎پیوست مورد نظر را انتخاب کنید.');
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
 public static function ticketUserReplyStart(Context $Context, int $Ticket_ID): void {
 $Ticket = Repository::getTicket($Ticket_ID);
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'user:ticket_reply_text', 'Temp_Ticket_ID' => $Ticket_ID]);
-$Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . 'پاسخ خود را وارد کنید:' . Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔙انصراف و بازگشت', 'callback_data' => 'لیست تیکت های من']],
-]));
+$Text = Helper::userGreeting($Context, "پاسخ به تیکت #{$Ticket_ID}") . '✏️📝پاسخ یا رسانه را با کپشن یا بدون کپشن بفرستید؛ برای پایان از بازگشت استفاده کنید:' . Helper::userFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(Menu::userNav('مشاهده تیکت', 'ticket_user_view:' . $Ticket_ID)));
 }
 
 public static function ticketUserReplySend(Context $Context, string $Text): void {
@@ -1143,21 +1397,23 @@ $Ticket_ID = (int)($Session['Temp_Ticket_ID'] ?? 0);
 $Ticket = Repository::getTicket($Ticket_ID);
 
 if ($Ticket === null || (int)$Ticket['User_ID'] !== $Context->UserId) return;
-Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Text);
-Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null]);
+if ($Ticket['Status'] === 'closed') return;
+$Media = TicketMedia::extract($Context);
+if (trim($Text) === '' && $Media === null) return;
+Repository::addTicketMessage($Ticket_ID, $Context->UserId, 'user', $Text, null, $Media !== null ? json_encode($Media, JSON_UNESCAPED_UNICODE) : null);
+// حالت پاسخ باز می ماند تا فایل های پشت سرهم/آلبوم گم نشوند؛ بازگشت آن را لغو می کند.
+
 
 $Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
 
 if ($Admin > 0) {
-TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'مدیریت تیکت ها', $Admin) . "📨پاسخ جدید به تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendReadableMessage($Admin, null, Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'مدیریت تیکت ها', $Admin) . "📨پاسخ جدید به تیکت #{$Ticket_ID}\n➖➖➖➖➖➖➖➖➖\n{$Text}" . Helper::adminFooter(), TelegramClient::inlineKeyboard([
 [['text' => '🎫مشاهده تیکت', 'callback_data' => 'ticket_view:' . $Ticket_ID]],
 ]));
+if ($Media !== null && !TicketMedia::send($Admin, $Media)) TelegramClient::sendMessage($Admin, '⚠️پیوست دریافت نشد؛ از پیوست های تیکت دوباره تلاش کنید.');
 }
 
-TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پاسخ به تیکت') . "✅پاسخ شما ارسال شد." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🎫تیکت های من', 'callback_data' => 'تیکت های من']],
-Common::mainButton(),
-]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پاسخ به تیکت') . "✅پاسخ در تیکت ثبت شد. می توانید پیام یا پیوست بعدی را بفرستید؛ برای پایان دکمه بازگشت را بزنید." . Helper::userFooter(), TelegramClient::inlineKeyboard(Menu::userNav('لیست تیکت های من', 'لیست تیکت های من')));
 }
 
 public static function usageAnalytics(Context $Context): void {
@@ -1171,8 +1427,8 @@ $User = Common::liveUser(Repository::getUser($Context->UserId));
 $Client_ID = (string)($User['Client_ID'] ?? '');
 
 if ($Client_ID === '' || $Client_ID === '_') {
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Common::greet($Context, 'گزارش مصرف') . "❌شما اشتراک فعالی ندارید.\n➖➖➖➖➖➖➖➖➖\n⚠️از بخش اشتراک من اقدام به خرید اشتراک کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-Common::mainButton(),
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Common::greet($Context, 'گزارش مصرف') . "❌شما اشتراک فعالی ندارید.\n➖➖➖➖➖➖➖➖➖\n⚠️از بخش مدیریت اشتراک برای خرید اشتراک اقدام کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+Menu::back('منوی قبلی', 'user_stats_menu'), Menu::userHome(),
 ]));
 return;
 }
@@ -1205,19 +1461,6 @@ $Is_Online = false;
 }
 }
 
-$Board = self::liveUsageBoard();
-$Board_Total = 0.0;
-$My_Rank = 0;
-
-foreach ($Board as $Index => $Row) {
-$Board_Total += (float)($Row['Value'] ?? 0);
-
-if ((int)($Row['Telegram_ID'] ?? 0) === $Context->UserId) {
-$My_Rank = $Index + 1;
-}
-}
-
-$Board_Count = count($Board);
 $Today_Gain = Repository::userUsageGain($Context->UserId);
 $History = Repository::userUsageHistory($Context->UserId, 7);
 $History_Days = count($History);
@@ -1225,11 +1468,6 @@ $Daily_Avg = $History_Days > 0 ? array_sum($History) / $History_Days : null;
 $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Subscription = trim((string)($User['Subscription'] ?? '')) ?: 'نامشخص';
 $Text = Common::greet($Context, 'گزارش مصرف') . "📊<b>گزارش پیشرفته مصرف</b>\n➖➖➖➖➖➖➖➖➖\n";
-
-if ($My_Rank > 0) {
-$Text .= "🏆<b>رتبه شما در مصرف:</b> " . Helper::rankEmoji($My_Rank) . " <b>" . Helper::rankTitle($My_Rank) . "</b>\n";
-$Text .= "📊<b>سهم شما از مصرف سرور:</b> *" . Helper::percentShare($Used_GB, $Board_Total) . "*\n\n";
-}
 
 $Text .= "📈<b>میزان مصرف شما:</b>\n`{$Bar}`\n";
 $Text .= "{$Status_Icon}وضعیت: <b>{$Status_Label}</b> |📊درصد مصرف: <b>" . Helper::formatPercent($Percent) . "٪</b>\n";
@@ -1255,75 +1493,15 @@ $Text .= "├─📅<b>تاریخ انقضا:</b> <b>" . ($Exp_Stamp > 0 ? Helpe
 $Text .= "└─🕓<b>آخرین اتصال:</b> " . ($Is_Online ? "🟢" : "⚪️") . " <b>" . $Last_Online_Label . "</b>\n";
 
 $Text .= Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔄بروزرسانی گزارش', 'callback_data' => 'گزارش مصرف']],
-[['text' => '🔙بازگشت به منوی قبل', 'callback_data' => 'پروفایل کاربری']],
-Common::mainButton(),
-]));
+$Markup = array_merge(
+Menu::rows([
+[['🔄بروزرسانی گزارش', 'گزارش مصرف']],
+]),
+[Menu::back('منوی قبلی', 'user_stats_menu'), Menu::userHome()]
+);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
 }
 
-public static function usageRanking(Context $Context): void {
-TelegramClient::sendChatAction($Context->ChatId);
 
-if ($Context->IsCallback && $Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, '🏆در حال بارگذاری رتبه بندی...', false);
-}
-
-$Board = self::liveUsageBoard();
-$Board_Total = 0.0;
-
-foreach ($Board as $Row) {
-$Board_Total += (float)($Row['Value'] ?? 0);
-}
-
-$My_Rank = 0;
-$My_Row = [];
-$Index = 0;
-
-foreach ($Board as $Row) {
-$Index++;
-
-if ((int)($Row['Telegram_ID'] ?? 0) === $Context->UserId) {
-$My_Rank = $Index;
-$My_Row = $Row;
-}
-}
-
-$Text = Common::greet($Context, 'رتبه بندی کاربران') . "🏆*رتبه بندی کاربران سرور بر اساس مصرف:*\n";
-$Text .= "📊مجموع مصرف کاربران سرور: *" . Helper::formatGB($Board_Total) . "*\n";
-$Text .= "➖➖➖➖➖➖➖➖➖\n";
-$Shown = 0;
-
-foreach ($Board as $Row) {
-$Shown++;
-
-if ($Shown > 10) break;
-$Name = trim((string)($Row['Full_Name'] ?? '')) ?: (trim((string)($Row['First_Name'] ?? '')) ?: 'کاربر');
-$Name_Link = Helper::mention($Name, (int)($Row['Telegram_ID'] ?? 0), trim((string)($Row['Username'] ?? '')));
-$Usage = (float)($Row['Value'] ?? 0);
-$Share = $Board_Total > 0 ? ($Usage / $Board_Total) * 100.0 : 0.0;
-$Text .= Helper::toPersian((string)$Shown) . ". " . Helper::rankMedal($Shown) . " {$Name_Link} — *" . Helper::formatGB($Usage) . "* (" . Helper::formatPercent($Share) . "٪)\n";
-}
-
-$Text .= "➖➖➖➖➖➖➖➖➖\n";
-
-if ($My_Rank > 0) {
-$Text .= "📌رتبه شما: " . Helper::rankEmoji($My_Rank) . "\n";
-$Text .= "📊مصرف شما: *" . Helper::formatGB((float)($My_Row['Value'] ?? 0)) . "* از مجموع *" . Helper::formatGB($Board_Total) . "*\n";
-$My_Share = $Board_Total > 0 ? (((float)($My_Row['Value'] ?? 0) / $Board_Total) * 100.0) : 0.0;
-$Text .= "📈سهم شما از مصرف سرور: *" . Helper::formatPercent($My_Share) . "٪*\n";
-}
-
-else {
-$Text .= "📌رتبه شما: *هنوز مصرفی روی سرور ثبت نشده است.*\n";
-}
-
-$Text .= Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-[['text' => '🔄بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی کاربران']],
-[['text' => '📊گزارش مصرف', 'callback_data' => 'گزارش مصرف']],
-Common::mainButton(),
-]));
-}
 }
 ?>

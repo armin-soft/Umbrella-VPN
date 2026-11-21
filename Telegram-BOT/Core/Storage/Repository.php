@@ -24,7 +24,7 @@ private const USER_COLUMNS = [
 'Last_Login_At', 'Auto_Renew_Plan', 'Username',
 ];
 
-private const SESSION_COLUMNS = ['Flow', 'Temp_UID', 'Temp_Ticket_ID', 'Ticket_Subject', 'Ticket_Description', 'Ticket_Category', 'Ticket_Priority', 'Custom_Days', 'Custom_GB', 'Template_Code', 'Pending_Plan', 'Pending_Payment', 'Pending_Custom_Plan', 'Pending_Topup', 'Broadcast_Mode', 'Idle_Notify_Users', 'Is_In_Support'];
+private const SESSION_COLUMNS = ['Flow', 'Temp_UID', 'Temp_Ticket_ID', 'Ticket_Subject', 'Ticket_Description', 'Ticket_Media_JSON', 'Ticket_Category', 'Ticket_Priority', 'Custom_Days', 'Custom_GB', 'Template_Code', 'Pending_Plan', 'Pending_Payment', 'Pending_Custom_Plan', 'Pending_Topup', 'Broadcast_Mode', 'Idle_Notify_Users', 'Is_In_Support'];
 public const CLIENT_CONDITION = "`Client_ID` IS NOT NULL AND `Client_ID` != '' AND `Client_ID` != '_'";
 
 public static function createUserIfMissing(int $User_Id): void {
@@ -296,12 +296,20 @@ $Params
 );
 }
 
+/**
+ * Writes a datetime column with the database clock (NOW()) instead of PHP's,
+ * so every timestamp in the table shares one clock and day buckets stay exact.
+ */
+public static function touchUserTime(int $User_ID, string $Column): void {
+if (!in_array($Column, ['Registered_At', 'Profile_Updated_At'], true)) return;
+Database::getInstance()->execute('UPDATE `Users` SET `' . $Column . '` = NOW() WHERE `Telegram_ID` = ?', [$User_ID]);
+}
+
 public static function setBlocked(int $User_ID, bool $Blocked): void {
 try {
-$Now = $Blocked ? date('Y-m-d H:i:s') : null;
 Database::getInstance()->execute(
-'UPDATE `Users` SET `Is_Blocked` = ?, `Blocked_At` = ? WHERE `Telegram_ID` = ?',
-[(int)$Blocked, $Now, $User_ID]
+'UPDATE `Users` SET `Is_Blocked` = ?, `Blocked_At` = ' . ($Blocked ? 'NOW()' : 'NULL') . ' WHERE `Telegram_ID` = ?',
+[(int)$Blocked, $User_ID]
 );
 return;
 }
@@ -425,7 +433,7 @@ if ($Reference !== '') $Note .= ' | رهگیری: ' . $Reference;
 self::addTransaction($User_ID, 'payment_success', (string)$Amount, (string)$Balance, (string)$Balance, $Note, 'gateway');
 }
 
-public static function removeMoney(int $User_ID, float $Amount): bool {
+public static function removeMoney(int $User_ID, float $Amount, string $Description = 'کسر اعتبار توسط مدیریت', string $Source = 'admin'): bool {
 $Before = self::getBalance($User_ID);
 $Affected = Database::getInstance()->execute(
 'UPDATE `Users` SET `Balance` = `Balance` - ?
@@ -435,7 +443,7 @@ WHERE `Telegram_ID` = ? AND `Balance` >= ?',
 
 if ($Affected > 0) {
 $After = self::getBalance($User_ID);
-self::addTransaction($User_ID, 'credit_sub', (string)$Amount, (string)$Before, (string)$After, 'کسر اعتبار توسط مدیریت', 'admin');
+self::addTransaction($User_ID, 'credit_sub', (string)$Amount, (string)$Before, (string)$After, $Description, $Source);
 self::addUserTotals($User_ID, 0.0, $Amount);
 }
 
@@ -458,26 +466,135 @@ public static function totalUsers(): int {
 return (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users`');
 }
 
+public static function nightlyReportEnabled(int $UserId): bool {
+return (string)self::getSetting('Nightly_Report_User_' . $UserId, '1') !== '0';
+}
+
+public static function setNightlyReportEnabled(int $UserId, bool $Enabled): void {
+self::setSetting('Nightly_Report_User_' . $UserId, $Enabled ? '1' : '0');
+}
+
 public static function getSetting(string $Key, mixed $Default = null): mixed {
 $Value = Database::getInstance()->scalar(
 'SELECT `Value` FROM `Settings` WHERE `Key` = ? LIMIT 1',
 [$Key]
 );
 
-return $Value === null ? $Default : $Value;
+if ($Value === null) {
+return $Default;
+}
+
+if (is_string($Value) && !self::isOpaqueSettingKey($Key) && method_exists('Helper', 'repairMojibake')) {
+return Helper::repairMojibake($Value);
+}
+
+return $Value;
 }
 
 public static function setSetting(string $Key, mixed $Value): void {
+$Text = (string)$Value;
+
+if (!self::isOpaqueSettingKey($Key) && method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+
 Database::getInstance()->execute(
 'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?)
 ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
-[$Key, (string)$Value]
+[$Key, $Text]
 );
 }
 
+private static function isOpaqueSettingKey(string $Key): bool {
+return $Key === 'App_Gateway_Secret'
+|| str_ends_with($Key, '_Secret')
+|| str_ends_with($Key, '_Token')
+|| str_starts_with($Key, 'DailyNotice_');
+}
+
+
+public static function tehranToday(): string {
+return (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
+}
+
+/**
+ * قفل اتمی حداکثر یک بار در روز (بر اساس تاریخ تهران) برای هر اعلان خودکار.
+ * با INSERT IGNORE روی کلید اصلی Settings ثبت می شود تا حتی در اجرای هم زمان
+ * چند وبهوک یا خطای تایم اوت شبکه، هیچ اعلان خودکاری در یک روز تکرار نشود.
+ */
+public static function claimDailyNotice(string $Category, int|string $Target, ?string $Day = null): bool {
+$Category = trim($Category);
+$Target_Key = trim((string)$Target);
+
+if ($Category === '' || $Target_Key === '') {
+return false;
+}
+
+$Day_Key = ($Day !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($Day)) === 1)
+? trim($Day)
+: self::tehranToday();
+$Key = 'DailyNotice_' . $Day_Key . '_' . hash('sha256', $Category . ':' . $Target_Key);
+
+try {
+return Database::getInstance()->execute(
+'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',
+[$Key, (string)time()]
+)->rowCount() === 1;
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Daily-Once] claim failed for ' . $Category . ':' . $Target_Key . ' | ' . $Error->getMessage());
+return false;
+}
+}
+
+/**
+ * قفل اتمی یک بار برای هر رویداد یکتا (مانند هشدار یک مرز انقضای مشخص).
+ */
+public static function claimOnceNotice(string $Key, string $Value = '1'): bool {
+$Key = trim($Key);
+
+if ($Key === '') {
+return false;
+}
+
+try {
+return Database::getInstance()->execute(
+'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',
+[$Key, $Value]
+)->rowCount() === 1;
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Once-Notice] claim failed for ' . $Key . ' | ' . $Error->getMessage());
+return false;
+}
+}
+
+public static function purgeOldDailyNotices(int $Keep_Days = 14): void {
+$Cutoff = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))
+->modify('-' . max(2, $Keep_Days) . ' days')
+->format('Y-m-d');
+
+try {
+Database::getInstance()->execute(
+"DELETE FROM `Settings` WHERE `Key` LIKE 'DailyNotice\\_%' AND SUBSTRING(`Key`, 13, 10) < ?",
+[$Cutoff]
+);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Daily-Once] purge failed: ' . $Error->getMessage());
+}
+}
 
 public static function schedule(string $Command, int $User_ID, int $Run_After_Time_Stamp): void {
-Database::getInstance()->execute(
+$Db = Database::getInstance();
+$Db->execute(
+'DELETE FROM `Scheduled_Jobs` WHERE `Command` = ? AND `User_ID` = ?',
+[$Command, $User_ID]
+);
+$Db->execute(
 'INSERT INTO `Scheduled_Jobs` (`Command`, `User_ID`, `Run_At`, `Created_At`)
 VALUES (?, ?, FROM_UNIXTIME(?), NOW())',
 [$Command, $User_ID, $Run_After_Time_Stamp]
@@ -506,13 +623,14 @@ VALUES (?, ?, ?, ?, NOW())',
 
 public static function operatorDistribution(): array {
 $Rows = Database::getInstance()->fetchAll(
-"SELECT `Operator` AS `Operator`, COUNT(*) AS `Count` FROM `Users` WHERE `Operator` IS NOT NULL AND `Operator` != '' GROUP BY `Operator`"
+"SELECT `Phone`, COUNT(*) AS `Count` FROM `Users` WHERE `Phone` IS NOT NULL AND `Phone` != '' GROUP BY `Phone`"
 );
 
 $Result = [];
 
 foreach ($Rows as $Row) {
-$Result[(string)($Row['Operator'] ?? 'ناشناخته')] = (int)$Row['Count'];
+$Operator = Helper::detectOperator((string)($Row['Phone'] ?? ''));
+$Result[$Operator] = ($Result[$Operator] ?? 0) + (int)$Row['Count'];
 }
 
 return $Result;
@@ -529,7 +647,7 @@ $Rows = Database::getInstance()->fetchAll(
 $Result = [];
 
 foreach ($Rows as $Row) {
-$Result[(string)($Row['Subscription'] ?? 'Unknown')] = (int)$Row['Count'];
+$Result[(string)($Row['Subscription'] ?? 'نامشخص')] = (int)$Row['Count'];
 }
 
 return $Result;
@@ -546,8 +664,10 @@ return [
 }
 
 public static function clientStatusDistribution(): array {
-$Active = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Client_Status` = 'فعال' OR `Client_Status` = '✅فعال'");
-$Inactive = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Client_Status` LIKE '%غیر فعال%' OR `Client_Status` LIKE '%غیرفعال%'");
+$Now = time();
+$Expired_Cond = "(`Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > 0 AND `Expiration_Time_Stamp` <= {$Now})";
+$Active = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE (`Client_Status` = 'فعال' OR `Client_Status` = '✅فعال') AND NOT {$Expired_Cond}");
+$Inactive = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE (`Client_Status` LIKE '%غیر فعال%' OR `Client_Status` LIKE '%غیرفعال%') AND NOT {$Expired_Cond}");
 
 return [
 'active' => $Active,
@@ -556,7 +676,7 @@ return [
 }
 
 public static function balanceBuckets(): array {
-$Zero = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Balance` = 0');
+$Zero = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE COALESCE(`Balance`, 0) = 0');
 $Low = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Balance` > 0 AND `Balance` < 50000');
 $Medium = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Balance` >= 50000 AND `Balance` < 200000');
 $High = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE `Balance` >= 200000 AND `Balance` < 1000000');
@@ -648,8 +768,11 @@ return (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Subscription_
 
 public static function globalStatistics(): array {
 $Total_Users = self::totalUsers();
-$Active_Users = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Client_Status` IN ('فعال', '✅فعال')");
-$Expired_Users = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Client_Status` LIKE '%منقضی%'");
+$Now_For_Life = time();
+$Expired_Cond = "(`Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > 0 AND `Expiration_Time_Stamp` <= {$Now_For_Life})";
+$Active_Cond = "`Client_Status` IN ('فعال', '✅فعال') AND NOT {$Expired_Cond}";
+$Active_Users = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Active_Cond}");
+$Expired_Users = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Client_Status` LIKE '%منقضی%' OR {$Expired_Cond}");
 $Blocked_Users = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Is_Blocked` = 1");
 $Has_Phone = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Phone` IS NOT NULL AND `Phone` != ''");
 $Has_Profile = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE `Full_Name` IS NOT NULL AND `Full_Name` != ''");
@@ -663,16 +786,21 @@ $Total_Subscription_Logs = (int)Database::getInstance()->scalar("SELECT COUNT(*)
 $Total_SMS = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs`");
 $Total_SMS_Success = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE `Status` = 'موفق'");
 $Total_SMS_Failed = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE `Status` = 'ناموفق'");
-$New_Today = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE DATE(COALESCE(NULLIF(CAST(`Registered_At` AS CHAR), '0000-00-00 00:00:00'), CAST(`Created_At` AS CHAR))) = CURDATE()");
-$New_Week = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE COALESCE(NULLIF(CAST(`Registered_At` AS CHAR), '0000-00-00 00:00:00'), CAST(`Created_At` AS CHAR)) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)");
-$New_Month = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE COALESCE(NULLIF(CAST(`Registered_At` AS CHAR), '0000-00-00 00:00:00'), CAST(`Created_At` AS CHAR)) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)");
+$Today_Start = self::tehranDayStart();
+$Tomorrow_Start = $Today_Start + 86400;
+$Week_Start = $Today_Start - (6 * 86400);
+$Month_Start = $Today_Start - (29 * 86400);
+$Registered_Expr = "COALESCE(NULLIF(CAST(`Registered_At` AS CHAR), '0000-00-00 00:00:00'), CAST(`Created_At` AS CHAR))";
+$New_Today = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Registered_Expr} >= " . self::dbMoment($Today_Start) . " AND {$Registered_Expr} < " . self::dbMoment($Tomorrow_Start));
+$New_Week = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Registered_Expr} >= " . self::dbMoment($Week_Start));
+$New_Month = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Registered_Expr} >= " . self::dbMoment($Month_Start));
 $Revenue_Condition = self::revenueCondition();
-$Revenue_Today = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition} AND DATE(`Created_At`) = CURDATE()");
-$Revenue_Week = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
-$Revenue_Month = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+$Revenue_Today = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= " . self::dbMoment($Today_Start) . " AND `Created_At` < " . self::dbMoment($Tomorrow_Start));
+$Revenue_Week = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= " . self::dbMoment($Week_Start));
+$Revenue_Month = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= " . self::dbMoment($Month_Start));
 $Revenue_Total = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(ABS(`Amount`)), 0) FROM `Transactions` WHERE {$Revenue_Condition}");
-$Revenue_Today_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Transactions` WHERE {$Revenue_Condition} AND DATE(`Created_At`) = CURDATE()");
-$Revenue_Month_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+$Revenue_Today_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= " . self::dbMoment($Today_Start) . " AND `Created_At` < " . self::dbMoment($Tomorrow_Start));
+$Revenue_Month_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Transactions` WHERE {$Revenue_Condition} AND `Created_At` >= " . self::dbMoment($Month_Start));
 $Total_Recharge_All = (float)Database::getInstance()->scalar('SELECT COALESCE(SUM(`Total_Recharge`), 0) FROM `Users`');
 $Total_Spent_All = (float)Database::getInstance()->scalar('SELECT COALESCE(SUM(`Total_Spent`), 0) FROM `Users`');
 $Now_Stamp = time();
@@ -681,9 +809,10 @@ $Active_Subscriptions = (int)Database::getInstance()->scalar("SELECT COUNT(*) FR
 $Expiring_Today_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Clients_Cond} AND `Expiration_Time_Stamp` > {$Now_Stamp} AND `Expiration_Time_Stamp` <= " . ($Now_Stamp + 86400));
 $Expiring_3_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Clients_Cond} AND `Expiration_Time_Stamp` > {$Now_Stamp} AND `Expiration_Time_Stamp` <= " . ($Now_Stamp + 259200));
 $Expiring_7_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE {$Clients_Cond} AND `Expiration_Time_Stamp` > {$Now_Stamp} AND `Expiration_Time_Stamp` <= " . ($Now_Stamp + 604800));
-$SMS_Today_Total = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE DATE(`Created_At`) = CURDATE()");
-$SMS_Today_Success = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE `Status` = 'موفق' AND DATE(`Created_At`) = CURDATE()");
-$SMS_Today_Failed = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE `Status` = 'ناموفق' AND DATE(`Created_At`) = CURDATE()");
+$Today_Window = "`Created_At` >= " . self::dbMoment($Today_Start) . " AND `Created_At` < " . self::dbMoment($Tomorrow_Start);
+$SMS_Today_Total = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE {$Today_Window}");
+$SMS_Today_Success = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE `Status` = 'موفق' AND {$Today_Window}");
+$SMS_Today_Failed = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `SMS_Logs` WHERE `Status` = 'ناموفق' AND {$Today_Window}");
 $Open_Tickets_Count = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Tickets` WHERE `Status` IN ('open','pending')");
 $Server_Stats = self::serverClientsStats();
 $Total_Used = (float)Database::getInstance()->scalar("SELECT COALESCE(SUM(`Used_Usage_GB`), 0) FROM `Users` WHERE `Used_Usage_GB` IS NOT NULL");
@@ -758,10 +887,10 @@ self::addTicketMessage($ID, $User_ID, 'user', $Subject, null);
 return $ID;
 }
 
-public static function addTicketMessage(int $Ticket_ID, int $Sender_ID, string $Sender_Type, ?string $Message, ?string $Photo_File_ID = null): void {
+public static function addTicketMessage(int $Ticket_ID, int $Sender_ID, string $Sender_Type, ?string $Message, ?string $Photo_File_ID = null, ?string $Media_JSON = null): void {
 Database::getInstance()->execute(
-'INSERT INTO `Ticket_Messages` (`Ticket_ID`, `Sender_ID`, `Sender_Type`, `Message`, `Photo_File_ID`) VALUES (?, ?, ?, ?, ?)',
-[$Ticket_ID, $Sender_ID, $Sender_Type, $Message, $Photo_File_ID]
+'INSERT INTO `Ticket_Messages` (`Ticket_ID`, `Sender_ID`, `Sender_Type`, `Message`, `Photo_File_ID`, `Media_JSON`) VALUES (?, ?, ?, ?, ?, ?)',
+[$Ticket_ID, $Sender_ID, $Sender_Type, $Message, $Photo_File_ID, $Media_JSON]
 );
 Database::getInstance()->execute(
 'UPDATE `Tickets` SET `Last_Reply_At` = NOW(), `Last_Reply_By` = ?, `Status` = ? WHERE `ID` = ?',
@@ -772,6 +901,10 @@ Database::getInstance()->execute(
 public static function getTicket(int $ID): ?array {
 $Row = Database::getInstance()->fetch('SELECT * FROM `Tickets` WHERE `ID` = ? LIMIT 1', [$ID]);
 return $Row === null ? null : $Row;
+}
+
+public static function getTicketMessage(int $Id): ?array {
+return Database::getInstance()->fetch('SELECT * FROM `Ticket_Messages` WHERE `ID` = ? LIMIT 1', [$Id]);
 }
 
 public static function getTicketMessages(int $Ticket_ID): array {
@@ -788,9 +921,9 @@ return Database::getInstance()->fetchAll(
 );
 }
 
-public static function openTickets(int $Limit = 100): array {
+public static function openTickets(int $Limit = 100, int $Offset = 0): array {
 return Database::getInstance()->fetchAll(
-'SELECT * FROM `Tickets` WHERE `Status` IN (\'open\',\'pending\',\'answered\') ORDER BY `Priority` DESC, `ID` DESC LIMIT ' . max(1, $Limit)
+'SELECT * FROM `Tickets` WHERE `Status` IN (\'open\',\'pending\',\'answered\') ORDER BY `Priority` DESC, `ID` DESC LIMIT ' . max(1, $Limit) . ' OFFSET ' . max(0, $Offset)
 );
 }
 
@@ -817,13 +950,60 @@ Database::getInstance()->execute(
 );
 }
 
+/** Commit receipt, wallet credit and claim together; database failures keep the order retryable. */
+public static function settleGatewayFunds(int $User_ID, array $Snapshot, float $Amount, string $Reference, float $Credit): bool {
+$Pending = (string)($Snapshot['Pending_Payment'] ?? '');
+if ($User_ID <= 0 || $Pending === '' || !is_finite($Amount) || $Amount <= 0
+|| !is_finite($Credit) || $Credit < 0 || $Credit > $Amount || !preg_match('/^[1-9][0-9]*$/D', $Reference)) {
+throw new InvalidArgumentException('Invalid gateway settlement');
+}
+return Database::getInstance()->transaction(static function ($Db) use ($User_ID, $Snapshot, $Amount, $Reference, $Credit, $Pending): bool {
+$Current = $Db->fetch('SELECT * FROM `User_Sessions` WHERE `Telegram_ID` = ? FOR UPDATE', [$User_ID]);
+foreach (['Pending_Payment', 'Pending_Topup', 'Pending_Plan', 'Pending_Custom_Plan'] as $Key) {
+if ((string)($Current[$Key] ?? '') !== (string)($Snapshot[$Key] ?? '')) return false;
+}
+$User = $Db->fetch('SELECT `Balance` FROM `Users` WHERE `Telegram_ID` = ? FOR UPDATE', [$User_ID]);
+if ($User === null) throw new RuntimeException('Gateway user missing');
+if (!self::claimPendingPayment($User_ID, $Pending)) return false;
+self::recordGatewayPayment($User_ID, $Amount, $Reference);
+if ($Credit > 0) self::addMoney($User_ID, $Credit, 'شارژ اعتبار از طریق درگاه پرداخت زرین پال', 'gateway');
+return true;
+});
+}
+
+/** سفارش پرداخت را به صورت اتمی تصاحب می کند؛ فقط یک مسیر تسویه می کند. */
+public static function claimPendingPayment(int $User_ID, string $Pending): bool {
+if ($User_ID <= 0 || $Pending === '') return false;
+
+return Database::getInstance()->execute(
+'UPDATE `User_Sessions` SET `Pending_Payment` = NULL, `Pending_Topup` = NULL, `Pending_Plan` = NULL, `Pending_Custom_Plan` = NULL WHERE `Telegram_ID` = ? AND `Pending_Payment` = ?',
+[$User_ID, $Pending]
+)->rowCount() > 0;
+}
+
+/** کاربرانی که سفارش درگاه بازی دارند و چند دقیقه از آن گذشته است. */
+public static function sessionsAwaitingPayment(int $Limit = 15): array {
+return Database::getInstance()->fetchAll(
+"SELECT `Telegram_ID` FROM `User_Sessions`
+WHERE `Pending_Payment` IS NOT NULL AND `Pending_Payment` != ''
+AND `Updated_At` < (NOW() - INTERVAL 2 MINUTE)
+AND `Updated_At` > (NOW() - INTERVAL 3 DAY)
+ORDER BY `Updated_At` ASC LIMIT " . max(1, $Limit)
+);
+}
+
 public static function getSmsTemplate(string $Code): ?string {
 $Row = Database::getInstance()->fetch(
 'SELECT `Template` FROM `SMS_Templates` WHERE `Code` = ? AND `Is_Active` = 1 LIMIT 1',
 [$Code]
 );
 
-return $Row === null ? null : (string)($Row['Template'] ?? null);
+if ($Row === null || !isset($Row['Template'])) {
+return null;
+}
+
+$Template = (string)$Row['Template'];
+return method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Template) : $Template;
 }
 
 
@@ -842,7 +1022,8 @@ public static function tryCronLock(string $Job_Name, int $Ttl_Seconds = 3600): b
 try {
 $Database = Database::getInstance();
 $Database->execute(
-'DELETE FROM `Cron_Lock` WHERE `Locked_At` < DATE_SUB(NOW(), INTERVAL ' . max(60, $Ttl_Seconds) . ' SECOND)'
+'DELETE FROM `Cron_Lock` WHERE `Job_Name` = ? AND `Locked_At` < DATE_SUB(NOW(), INTERVAL ' . max(60, $Ttl_Seconds) . ' SECOND)',
+[$Job_Name]
 );
 $Affected = $Database->execute('INSERT IGNORE INTO `Cron_Lock` (`Job_Name`) VALUES (?)', [$Job_Name])->rowCount();
 return $Affected > 0;
@@ -909,8 +1090,9 @@ public static function serverClientsStats(): array {
 $Clients = self::CLIENT_CONDITION;
 $Now = time();
 $Total = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE ' . $Clients);
-$Active = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE " . $Clients . " AND (`Server_Is_Active` = 1 OR `Client_Status` = 'فعال' OR `Client_Status` = '✅فعال')");
-$Expired = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE ' . $Clients . ' AND `Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > 0 AND `Expiration_Time_Stamp` <= ' . $Now);
+$Expired_Cond = '`Expiration_Time_Stamp` IS NOT NULL AND `Expiration_Time_Stamp` > 0 AND `Expiration_Time_Stamp` <= ' . $Now;
+$Active = (int)Database::getInstance()->scalar("SELECT COUNT(*) FROM `Users` WHERE " . $Clients . " AND (`Server_Is_Active` = 1 OR `Client_Status` = 'فعال' OR `Client_Status` = '✅فعال') AND NOT (" . $Expired_Cond . ")");
+$Expired = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE ' . $Clients . ' AND ' . $Expired_Cond);
 $With_Usage = (int)Database::getInstance()->scalar('SELECT COUNT(*) FROM `Users` WHERE ' . $Clients . ' AND COALESCE(`Used_Usage_GB`, 0) > 0');
 $Total_Quota = (float)Database::getInstance()->scalar('SELECT COALESCE(SUM(`Total_Usage_GB`), 0) FROM `Users` WHERE ' . $Clients);
 $Total_Used = (float)Database::getInstance()->scalar('SELECT COALESCE(SUM(`Used_Usage_GB`), 0) FROM `Users` WHERE ' . $Clients);
@@ -925,7 +1107,7 @@ $Top = Database::getInstance()->fetch(
 return [
 'total' => $Total,
 'active' => $Active,
-'disabled' => max(0, $Total - $Active),
+'disabled' => max(0, $Total - $Active - $Expired),
 'expired' => $Expired,
 'with_usage' => $With_Usage,
 'total_quota' => max(0.0, $Total_Quota),
@@ -941,6 +1123,40 @@ return [
 
 public static function revenueCondition(): string {
 return "`Type` IN ('payment_success', 'topup')";
+}
+
+/**
+ * Difference between the database clock (NOW()) and PHP's clock, cached for
+ * the request. Every "today" filter is expressed in the database clock, so
+ * day buckets stay correct even when MySQL and PHP run in different zones.
+ */
+private static function dbClockSkew(): int {
+static $Skew = null;
+
+if ($Skew !== null) return $Skew;
+
+try {
+$Db_Now = (int)Database::getInstance()->scalar('SELECT UNIX_TIMESTAMP(NOW())');
+}
+
+catch (Throwable) {
+$Db_Now = 0;
+}
+
+$Skew = $Db_Now > 0 ? $Db_Now - time() : 0;
+return $Skew;
+}
+
+/** Start of today in Tehran, expressed in the database clock. */
+private static function tehranDayStart(int $Days_Back = 0): int {
+return (new DateTimeImmutable('today', new DateTimeZone('Asia/Tehran')))->getTimestamp()
+- ($Days_Back * 86400)
++ self::dbClockSkew();
+}
+
+/** SQL literal for a moment of the database clock. */
+private static function dbMoment(int $Timestamp): string {
+return 'FROM_UNIXTIME(' . $Timestamp . ')';
 }
 
 
@@ -978,6 +1194,27 @@ self::setSetting('Usage_Snapshot_Date', $Today);
 
 catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Usage-Snapshot] rotate failed: ' . $Error->getMessage());
+}
+}
+
+/**
+ * A client created after the daily rotation would otherwise be missing from
+ * today's usage snapshot, so the daily report silently skipped its traffic.
+ */
+public static function seedUsageSnapshot(int $User_ID): void {
+if ($User_ID <= 0) return;
+$Today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
+
+try {
+Database::getInstance()->execute(
+'INSERT IGNORE INTO `Usage_Snapshots` (`Snapshot_Date`, `User_ID`, `Start_Used_GB`, `Last_Used_GB`, `Total_GB`)
+VALUES (?, ?, 0, 0, 0)',
+[$Today, $User_ID]
+);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Usage-Snapshot] seed failed: ' . $Error->getMessage());
 }
 }
 

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../Support/Http.php';
+require_once __DIR__ . '/../Support/Helper.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
 final class TelegramClient {
@@ -44,7 +45,16 @@ return trim($Text);
 
 public static function md(string $Text): string {
 if ($Text === '') return $Text;
+if (method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+if (method_exists('Helper', 'stripZwnj')) {
+$Text = Helper::stripZwnj($Text);
+}
 $Text = str_replace(["\r\n", "\r"], "\n", $Text);
+// همه پیام ها از این نقطه عبور می کنند: حذف نیم فاصله و تبدیل ارقام به فارسی
+// در حالی که کلیدها، لینک ها و نام های کاربری دست نخورده باقی می مانند.
+$Text = Helper::digitsToPersian($Text);
 $Text = static::normalizeStars($Text);
 $Text = static::normalizeLayout($Text);
 $Link_Map = [];
@@ -65,7 +75,27 @@ $Text = str_replace($Key, $Replacement, $Text);
 
 $Text = static::sanitizeHtml($Text);
 $Text = preg_replace('/&(?!(?:amp|lt|gt|quot|#039);)/', '&amp;', $Text) ?? $Text;
-return $Text;
+// Telegram forbids bold entities overlapping code/pre entities. Keep the
+// ordinary prose bold, but render copyable keys and URLs outside bold spans.
+$Text = str_replace(['<b>', '</b>'], '', $Text);
+return self::boldProse($Text);
+}
+
+private static function boldProse(string $Text): string {
+$Parts = preg_split('/(<[^>]+>)/s', $Text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+$CodeDepth = 0;
+$Result = '';
+foreach ($Parts as $Part) {
+if ($Part === '') continue;
+if ($Part[0] === '<') {
+if (preg_match('/^<(pre|code)>$/', $Part)) $CodeDepth++;
+if (preg_match('/^<\/(pre|code)>$/', $Part)) $CodeDepth = max(0, $CodeDepth - 1);
+$Result .= $Part;
+} else {
+$Result .= $CodeDepth > 0 || trim($Part) === '' ? $Part : '<b>' . $Part . '</b>';
+}
+}
+return $Result;
 }
 
 /**
@@ -73,15 +103,19 @@ return $Text;
  * user typed (a name, a ticket subject, a rule the panel returned) makes the
  * whole API call fail and the message silently never arrives. md() converts
  * our own markup first; this pass then allows only the tags we generate —
- * <b> <code> <pre> <i> <u> <s> <tg-spoiler> and <a href="http(s)/tg://…"> —
+ * <b> <code> <pre> <i> <u> <s> <tg-spoiler> <blockquote> and <a href="http(s)/tg://…"> —
  * and escapes everything else.
  */
 private static function sanitizeHtml(string $Text): string {
 $Text = (string)preg_replace_callback('/<[^>]*>/s', static function (array $M): string {
 $Tag = $M[0];
 
-if (preg_match('/^<\s*(\/?)\s*(b|code|pre|i|u|s|tg-spoiler)\s*>$/i', $Tag, $M2)) {
+if (preg_match('/^<\s*(\/?)\s*(b|code|pre|i|u|s|tg-spoiler|blockquote)\s*>$/i', $Tag, $M2)) {
 return '<' . ($M2[1] === '/' ? '/' : '') . strtolower($M2[2]) . '>';
+}
+
+if (preg_match('/^<\s*blockquote\s+expandable\s*>$/i', $Tag)) {
+return '<blockquote expandable>';
 }
 
 if (preg_match('/^<\s*\/\s*a\s*>$/i', $Tag)) {
@@ -116,7 +150,7 @@ private static function balanceTags(string $Text): string {
 $Out = '';
 $Stack = [];
 $Pos = 0;
-$Pattern = '/<(\/?)(b|code|pre|i|u|s|tg-spoiler|a)(?:\s[^>]*)?>/i';
+$Pattern = '/<(\/?)(b|code|pre|i|u|s|tg-spoiler|blockquote|a)(?:\s[^>]*)?>/i';
 
 while (preg_match($Pattern, $Text, $M, PREG_OFFSET_CAPTURE, $Pos)) {
 $Tag = $M[0][0];
@@ -157,10 +191,53 @@ $Out .= '</' . array_pop($Stack) . '>';
 return $Out;
 }
 
+/**
+ * The footer ("…بر روی منوی مورد نظر کلیک کنید") only makes sense when the
+ * message actually offers something to pick. Two cases are dropped together
+ * with the sentence and its separator:
+ *
+ *   1. there is no inline keyboard at all, or
+ *   2. the keyboard only holds navigation — «بازگشت» and «خانه» — as on the
+ *      "send me the user id" screens, where nothing is left to choose.
+ */
+private static function trimFooterWithoutKeyboard(string $Text, array $Markup): string {
+if ($Text === '') return $Text;
+if ($Markup !== [] && !self::hasOnlyNavigationButtons($Markup)) return $Text;
+return self::stripFooter($Text);
+}
+
+/**
+ * حذف جمله پایانی «👌جهت استفاده …» همراه با خط جداکننده بالای آن (قاعده در Menu).
+ */
+private static function stripFooter(string $Text): string {
+if (!class_exists('Menu', false)) return $Text;
+
+return Menu::stripFooter($Text);
+}
+
+/**
+ * آیا کیبورد فقط دکمه های ناوبری دارد؟
+ *
+ * قاعده در Bot/Menu.php است تا آزمون ها هم همان را بسنجند؛ اگر Menu در دسترس
+ * نبود (مثلاً اسکریپت مستقل)، محافظه کارانه «خیر» برمی گردد و جمله پایانی
+ * دست نخورده می ماند.
+ */
+private static function hasOnlyNavigationButtons(array $Markup): bool {
+if (!class_exists('Menu', false)) return false;
+return Menu::isNavigationOnly($Markup);
+}
+
+/** App queue is independent of Telegram availability. Never use for manual text. */
+public static function sendSystemMessage(int $Chat_ID, string $Text, array $Markup = []): array {
+require_once __DIR__ . '/../App/System-Notifications.php';
+SystemNotifications::mirrorChat($Chat_ID, $Text);
+return self::sendMessage($Chat_ID, $Text, $Markup);
+}
+
 public static function sendMessage(int $Chat_ID, string $Text, array $Markup = [], string $Parse_Mode = 'HTML', ?int $Reply_To = null): array {
 $Payload = [
 'chat_id' => $Chat_ID,
-'text' => self::md($Text),
+'text' => self::md(self::trimFooterWithoutKeyboard($Text, $Markup)),
 'parse_mode' => $Parse_Mode,
 'disable_web_page_preview' => true,
 ];
@@ -170,11 +247,52 @@ if ($Reply_To !== null) $Payload['reply_to_message_id'] = $Reply_To;
 return self::call('sendMessage', $Payload);
 }
 
+/** تحویل متن بلند با عقب گرد به متن ساده؛ خطای قالب نباید صفحه را بی پاسخ بگذارد. */
+public static function sendReadableMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): bool {
+$Html = self::md(self::trimFooterWithoutKeyboard($Text, $Markup));
+// Keep hyperlink destinations in the plain-text fallback too.
+$FallbackHtml = preg_replace_callback('/<a href="([^"]*)">(.*?)<\/a>/su', static fn(array $M): string => $M[2] . ' (' . $M[1] . ')', $Html) ?? $Html;
+$Plain = html_entity_decode(strip_tags($FallbackHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+if (mb_strlen($Plain) <= 3000) {
+try {
+$Result = $MessageId !== null ? self::editMessageText($ChatId, $MessageId, $Text, $Markup) : self::sendMessage($ChatId, $Text, $Markup);
+if (($Result['ok'] ?? false) === true || str_contains((string)($Result['description'] ?? ''), 'message is not modified')) return true;
+} catch (Throwable) {}
+}
+// قطعه بندی متن ساده، ترجیحاً در پایان خط، بدون حذف هیچ بخشی از متن.
+$Parts = [];
+while (mb_strlen($Plain) > 1800) {
+$Head = mb_substr($Plain, 0, 1800);
+$Cut = mb_strrpos($Head, "\n");
+if ($Cut === false || $Cut < 500) $Cut = 1800;
+$Parts[] = mb_substr($Plain, 0, $Cut);
+$Plain = mb_substr($Plain, $Cut);
+}
+$Parts[] = $Plain;
+foreach ($Parts as $Index => $Part) {
+$Payload = ['chat_id' => $ChatId, 'text' => $Part, 'disable_web_page_preview' => true];
+$Payload['reply_markup'] = $Index === count($Parts) - 1 ? $Markup : ['inline_keyboard' => []];
+try {
+if ($Index === 0 && $MessageId !== null) {
+try { $Result = self::call('editMessageText', $Payload + ['message_id' => $MessageId]); }
+catch (Throwable) { $Result = ['ok' => false]; }
+if (str_contains((string)($Result['description'] ?? ''), 'message is not modified')) $Result = ['ok' => true];
+if (($Result['ok'] ?? false) !== true) $Result = self::call('sendMessage', $Payload);
+} else { $Result = self::call('sendMessage', $Payload); }
+} catch (Throwable) { $Result = ['ok' => false]; }
+if (($Result['ok'] ?? false) !== true) {
+error_log('[Umbrella-Telegram][Readable] delivery failed code=' . (int)($Result['error_code'] ?? 0));
+return false;
+}
+}
+return true;
+}
+
 public static function editMessageText(int $Chat_ID, int $Message_ID, string $Text, array $Markup = []): array {
 $Payload = [
 'chat_id' => $Chat_ID,
 'message_id' => $Message_ID,
-'text' => self::md($Text),
+'text' => self::md(self::trimFooterWithoutKeyboard($Text, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
@@ -233,7 +351,15 @@ return $Clean === [] ? [] : ['inline_keyboard' => $Clean];
 public static function answerCallbackQuery(string $Callback_Query_ID, string $Text = '', bool $Show_Alert = false): array {
 $Payload = ['callback_query_id' => $Callback_Query_ID, 'show_alert' => $Show_Alert];
 
-if ($Text !== '') $Payload['text'] = $Text;
+if ($Text !== '') {
+if (method_exists('Helper', 'repairMojibake')) {
+$Text = Helper::repairMojibake($Text);
+}
+if (method_exists('Helper', 'stripZwnj')) {
+$Text = Helper::stripZwnj($Text);
+}
+$Payload['text'] = Helper::digitsToPersian($Text);
+}
 return self::call('answerCallbackQuery', $Payload);
 }
 
@@ -248,23 +374,33 @@ if ($Is_Local) {
 $Fields = [
 'chat_id' => $Chat_ID,
 'photo' => new \CURLFile($PhotoUrl),
-'caption' => self::md($Caption),
+'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
 
-if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup);
+if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 $Response = HttpClient::postMultipart(self::url('sendPhoto'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
 
-$Payload = ['chat_id' => $Chat_ID, 'photo' => $PhotoUrl, 'caption' => self::md($Caption), 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
+$Payload = ['chat_id' => $Chat_ID, 'photo' => $PhotoUrl, 'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)), 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
 
 if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
 return self::call('sendPhoto', $Payload);
 }
 
 public static function sendMediaGroup(int $Chat_ID, array $Media, array $Markup = []): array {
+foreach ($Media as $Index => $Item) {
+if (is_array($Item) && isset($Item['caption']) && is_string($Item['caption']) && $Item['caption'] !== '') {
+$Caption = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Item['caption']) : $Item['caption'];
+if (method_exists('Helper', 'stripZwnj')) {
+$Caption = Helper::stripZwnj($Caption);
+}
+$Item['caption'] = Helper::digitsToPersian($Caption);
+$Media[$Index] = $Item;
+}
+}
 $Payload = ['chat_id' => $Chat_ID, 'media' => $Media];
 
 if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
@@ -275,12 +411,12 @@ public static function sendDocument(int $Chat_ID, string $Document_Path, string 
 $Fields = [
 'chat_id' => $Chat_ID,
 'document' => new \CURLFile($Document_Path),
-'caption' => self::md($Caption),
+'caption' => self::md(self::trimFooterWithoutKeyboard($Caption, $Markup)),
 'parse_mode' => 'HTML',
 'disable_web_page_preview' => true,
 ];
 
-if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup);
+if (!empty($Markup)) $Fields['reply_markup'] = json_encode($Markup, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 $Response = HttpClient::postMultipart(self::url('sendDocument'), $Fields);
 return $Response['Json'] ?? ['ok' => false];
 }
@@ -334,7 +470,46 @@ return 'unknown';
 }
 
 public static function inlineKeyboard(array $Rows): array {
-return ['inline_keyboard' => $Rows];
+$Clean = [];
+
+foreach ($Rows as $Row) {
+if (!is_array($Row)) continue;
+$Buttons = [];
+
+foreach ($Row as $Button) {
+if (!is_array($Button)) continue;
+if (!isset($Button['text']) || !is_string($Button['text']) || trim($Button['text']) === '') continue;
+if (!isset($Button['callback_data']) && !isset($Button['url']) && !isset($Button['web_app'])) continue;
+
+if (isset($Button['callback_data'])) {
+$Data = (string)$Button['callback_data'];
+
+// تلگرام callback_data بیشتر از ۶۴ بایت را رد می کند و کل پیام ناموفق می شود.
+if ($Data === '') continue;
+
+if (strlen($Data) > 64) {
+error_log('[Umbrella-Bot][Keyboard] callback_data longer than 64 bytes dropped: ' . mb_substr($Data, 0, 40));
+continue;
+}
+}
+
+$Raw_Button_Text = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Button['text']) : $Button['text'];
+if (method_exists('Helper', 'stripZwnj')) {
+$Raw_Button_Text = Helper::stripZwnj($Raw_Button_Text);
+}
+$Text = Helper::digitsToPersian($Raw_Button_Text);
+
+// متن دکمه حداکثر ۶۴ کاراکتر است.
+if (mb_strlen($Text) > 64) $Text = mb_substr($Text, 0, 61) . '…';
+
+$Button['text'] = $Text;
+$Buttons[] = $Button;
+}
+
+if ($Buttons !== []) $Clean[] = $Buttons;
+}
+
+return ['inline_keyboard' => $Clean];
 }
 }
 ?>

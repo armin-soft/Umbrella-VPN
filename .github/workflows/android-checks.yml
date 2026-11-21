@@ -1,0 +1,100 @@
+name: Android dependency and tests
+
+on:
+  push:
+    paths:
+      - 'Android/**'
+      - '.github/workflows/android-checks.yml'
+  pull_request:
+    paths:
+      - 'Android/**'
+      - '.github/workflows/android-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-archive:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the same engine version as Windows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v5.9.11 --repo hiddify/hiddify-core \
+            --pattern hiddify-lib-android.tar.gz --dir "$RUNNER_TEMP"
+          echo '853e897ee2dcbde30801314eb30346e0a4fc61c38f6b4fc4ee901a18fabec3a9  '"$RUNNER_TEMP"'/hiddify-lib-android.tar.gz' | sha256sum --check
+          tar -tzf "$RUNNER_TEMP/hiddify-lib-android.tar.gz" > "$RUNNER_TEMP/core-files.txt"
+          echo "::notice::Android core archive verified: $(tr '\n' ' ' < "$RUNNER_TEMP/core-files.txt" | cut -c1-1000)"
+  native-bridge-compile:
+    # Compile the real Kotlin bridge in an isolated Flutter scaffold. This is
+    # not the Umbrella app and no APK from this check is published.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.29.3'
+          cache: true
+      - name: Fetch verified mobile engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash Android/tools/fetch-umbrella-core.sh
+      - name: Compile native bridge and engine (test scaffold only)
+        shell: bash
+        run: |
+          flutter create --platforms android --org ir.umbrella --project-name app "$RUNNER_TEMP/umbrella-native-check"
+          # Use the project's actual Android Gradle, manifest, resources and Kotlin.
+          # The Dart entrypoint remains the generated fixture; this is not a release APK.
+          cp -a Android/android/. "$RUNNER_TEMP/umbrella-native-check/android/"
+          cd "$RUNNER_TEMP/umbrella-native-check"
+          if ! flutter build apk --debug > "$RUNNER_TEMP/native-check.log" 2>&1; then
+            cat "$RUNNER_TEMP/native-check.log"
+            message=$(tail -40 "$RUNNER_TEMP/native-check.log" | tr '\n' ' ' | cut -c1-12000)
+            echo "::error::$message"
+            exit 1
+          fi
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.29.3'
+          cache: true
+      - name: Resolve dependencies
+        shell: bash
+        run: |
+          if ! flutter pub get > pub-output.txt 2>&1; then
+            cat pub-output.txt
+            message=$(tail -25 pub-output.txt | tr '\n' ' ')
+            echo "::error::$message"
+            exit 1
+          fi
+          cat pub-output.txt
+      - name: Run tests
+        shell: bash
+        run: |
+          if ! flutter test --reporter expanded > test-output.txt 2>&1; then
+            cat test-output.txt
+            message=$(tail -60 test-output.txt | tr '\n' ' ' | cut -c1-12000)
+            echo "::error::$message"
+            exit 1
+          fi
+          cat test-output.txt

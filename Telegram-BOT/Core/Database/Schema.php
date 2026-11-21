@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/Database/Database.php';
+require_once dirname(__DIR__) . '/Support/Helper.php';
 require_once __DIR__ . '/Schema-App.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
@@ -53,7 +54,11 @@ public static function migrate(): void {
 $Database = Database::getInstance();
 
 $Migrations = [
+['table' => 'Ticket_Messages', 'column' => 'Media_JSON', 'definition' => 'TEXT NULL'],
+['table' => 'User_Sessions', 'column' => 'Ticket_Media_JSON', 'definition' => 'TEXT NULL'],
 ['table' => 'Users', 'column' => 'Channel_Member_Check_At', 'definition' => 'INT UNSIGNED NULL'],
+['table' => 'Users', 'column' => 'Channel_Grace_Started_At', 'definition' => 'INT UNSIGNED NULL'],
+['table' => 'Users', 'column' => 'Channel_Client_Disabled_At', 'definition' => 'INT UNSIGNED NULL'],
 ['table' => 'User_Sessions', 'column' => 'Pending_Custom_Plan', 'definition' => 'TEXT NULL'],
 ['table' => 'User_Sessions', 'column' => 'Pending_Topup', 'definition' => 'DECIMAL(18,0) NULL'],
 ['table' => 'User_Sessions', 'column' => 'Broadcast_Mode', 'definition' => 'VARCHAR(20) NULL'],
@@ -79,23 +84,37 @@ $Migrations = [
 ['table' => 'Subscription_Logs', 'column' => 'Actor_ID', 'definition' => 'BIGINT NULL'],
 ];
 
+// همه ستون ها با یک پرس وجو خوانده می شوند تا هر آپدیت تلگرام چند ده
+// پرس وجوی اضافه به information_schema نزند.
+$Existing = [];
+
+try {
+foreach ($Database->fetchAll(
+"SELECT table_name AS t, column_name AS c FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name IN ('Users', 'User_Sessions', 'Transactions', 'Subscription_Logs', 'Ticket_Messages')"
+) as $Row) {
+$Existing[strtolower((string)($Row['t'] ?? ''))][strtolower((string)($Row['c'] ?? ''))] = true;
+}
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Schema-Migration] cannot read the current columns: ' . $Error->getMessage());
+}
+
 foreach ($Migrations as $Migration) {
 $Table = $Migration['table'];
 $Column = $Migration['column'];
 $Definition = $Migration['definition'];
-$Exists = (int)$Database->scalar(
-"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-[$Table, $Column]
-);
 
-if ($Exists === 0) {
+if (isset($Existing[strtolower($Table)][strtolower($Column)])) continue;
+
 try {
 $Database->connection()->exec("ALTER TABLE `{$Table}` ADD COLUMN `{$Column}` {$Definition}");
+$Existing[strtolower($Table)][strtolower($Column)] = true;
 }
 
 catch (Throwable $Error) {
 error_log("[Umbrella-Bot][Schema-Migration] Failed to add column {$Table}.{$Column}: " . $Error->getMessage());
-}
 }
 }
 
@@ -107,6 +126,7 @@ self::migrateSessionTicketColumns();
 self::migrateLegacyRevenue();
 self::migrateHistorySources();
 self::ensureTables();
+self::migrateUtf8AndMojibake();
 }
 
 private static function migrateSessionTicketColumns(): void {
@@ -234,7 +254,8 @@ $Templates = [
 'channel_leave_warning' => "{full_name} گرامی، شما از کانال اطلاع رسانی خارج شده اید.\n⏳مهلت باقیمانده: {remaining}\nدر غیر این صورت کلاینت شما قطع می گردد.\nلطفا از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا",
 'channel_disabled' => "{full_name} گرامی، مهلت عضویت شما در کانال به اتمام رسید.\nکلاینت شما به دلیل عدم عضویت قطع گردید.\nبرای اتصال مجدد از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا",
 'expire_warn_3' => "{full_name} گرامی اشتراک {plan} شما {days} روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: {remaining}\n\nسرور آمبرلا",
-'expire_warn_1' => "{full_name} گرامی اشتراک {plan} شما فردا ({remaining} دیگر) به اتمام می رسد.\n\nسرور آمبرلا",
+'expire_warn_2' => "{full_name} گرامی اشتراک {plan} شما {days} روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: {remaining}\n\nسرور آمبرلا",
+'expire_warn_1' => "{full_name} گرامی اشتراک {plan} شما {days} روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: {remaining}\n\nسرور آمبرلا",
 'expire_today' => "{full_name} گرامی اشتراک {plan} شما امروز ({remaining} دیگر) به اتمام می رسد.\n\nسرور آمبرلا",
 'expired' => "{full_name} گرامی اشتراک {plan} شما به اتمام رسید.\nاتصال شما از سرور قطع گردید.\n\nسرور آمبرلا",
 'topup_success' => "{full_name} گرامی کیف پول شما به مبلغ {amount} تومان شارژ شد.\nموجودی فعلی: {balance} تومان\n\nسرور آمبرلا",
@@ -299,6 +320,7 @@ KEY `IDX_Tickets_Priority` (`Priority`)
 `Sender_Type` ENUM('user','admin') NOT NULL,
 `Message` TEXT NULL,
 `Photo_File_ID` VARCHAR(255) NULL,
+`Media_JSON` TEXT NULL,
 `Created_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 PRIMARY KEY (`ID`),
 KEY `IDX_Ticket_Messages_Ticket_ID` (`Ticket_ID`)
@@ -407,7 +429,8 @@ $Defaults = [
 ['channel_leave_warning', 'هشدار خروج از کانال', "{full_name} گرامی، شما از کانال اطلاع رسانی خارج شده اید.\n⏳مهلت باقیمانده: {remaining}\nدر غیر این صورت کلاینت شما قطع می گردد.\nلطفا از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا"],
 ['channel_disabled', 'قطع کلاینت به دلیل خروج از کانال', "{full_name} گرامی، مهلت عضویت شما در کانال به اتمام رسید.\nکلاینت شما به دلیل عدم عضویت قطع گردید.\nبرای اتصال مجدد از طریق ربات عضو کانال اطلاع رسانی شوید.\n\nسرور آمبرلا"],
 ['expire_warn_3', 'هشدار ۳ روز قبل از انقضا', "{full_name} گرامی اشتراک {plan} شما {days} روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: {remaining}\n\nسرور آمبرلا"],
-['expire_warn_1', 'هشدار ۱ روز قبل از انقضا', "{full_name} گرامی اشتراک {plan} شما فردا ({remaining} دیگر) به اتمام می رسد.\n\nسرور آمبرلا"],
+['expire_warn_2', 'هشدار ۲ روز قبل از انقضا', "{full_name} گرامی اشتراک {plan} شما {days} روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: {remaining}\n\nسرور آمبرلا"],
+['expire_warn_1', 'هشدار ۱ روز قبل از انقضا', "{full_name} گرامی اشتراک {plan} شما {days} روز دیگر به اتمام می رسد.\n⏳زمان باقیمانده: {remaining}\n\nسرور آمبرلا"],
 ['expire_today', 'هشدار روز انقضا', "{full_name} گرامی اشتراک {plan} شما امروز ({remaining} دیگر) به اتمام می رسد.\n\nسرور آمبرلا"],
 ['expired', 'انقضای اشتراک', "{full_name} گرامی اشتراک {plan} شما به اتمام رسید.\nاتصال شما از سرور قطع گردید.\n\nسرور آمبرلا"],
 ['topup_success', 'شارژ کیف پول', "{full_name} گرامی کیف پول شما به مبلغ {amount} تومان شارژ شد.\nموجودی فعلی: {balance} تومان\n\nسرور آمبرلا"],
@@ -432,9 +455,11 @@ error_log("[Umbrella-Bot][Schema-Seed] SMS template failed: " . $Error->getMessa
 private static function seedSettings(): void {
 $Database = Database::getInstance();
 $Settings = [
+['Robot_Status', '🟢روشن'],
 ['Daily_Report_Enabled', '1'],
 ['Daily_Report_Time', '00:00'],
 ['Expiry_Warning_3Days', '1'],
+['Expiry_Warning_2Days', '1'],
 ['Expiry_Warning_1Day', '1'],
 ['Expiry_Warning_Today', '1'],
 ['Auto_Ban_Inactive_Days', '180'],
@@ -452,6 +477,186 @@ error_log("[Umbrella-Bot][Schema-Seed] Setting failed: " . $Error->getMessage())
 }
 }
 
+public static function normalizeRobotStatus(string $Value): string {
+$Clean = trim(method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Value) : $Value);
+$Lower = strtolower($Clean);
+
+if ($Clean !== '' && (str_contains($Clean, 'خاموش') || $Lower === 'off' || $Lower === '0' || $Lower === 'false')) {
+return '🔴خاموش';
+}
+
+return '🟢روشن';
+}
+
+/**
+ * تعمیر یک باره کدگذاری utf8mb4 و پاکسازی تمام رشته های به هم ریخته قدیمی
+ * (از جمله مقدار پیش فرض ستون SMS_Logs.Status و کلید Robot_Status در Settings).
+ */
+private static function migrateUtf8AndMojibake(): void {
+if ((string)self::safeSetting('Utf8_Mojibake_Migration_v1') === '1') return;
+
+try {
+$Database = Database::getInstance();
+$Db_Name = Environment::getDatabaseName();
+
+if ($Db_Name !== '') {
+$Safe_Db = str_replace('`', '', $Db_Name);
+try {
+$Database->connection()->exec("ALTER DATABASE `{$Safe_Db}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+catch (Throwable) {}
+}
+
+$Non_Utf8_Tables = $Database->fetchAll(
+"SELECT TABLE_NAME AS t FROM information_schema.tables
+WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+AND (TABLE_COLLATION IS NULL OR TABLE_COLLATION NOT LIKE 'utf8mb4\\_%')"
+);
+
+foreach ($Non_Utf8_Tables as $Row) {
+$Table = (string)($Row['t'] ?? '');
+if ($Table === '' || preg_match('/^[A-Za-z0-9_]+$/', $Table) !== 1) continue;
+try {
+$Database->connection()->exec("ALTER TABLE `{$Table}` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+catch (Throwable $Convert_Error) {
+error_log("[Umbrella-Bot][UTF8-Migration] Failed to convert table {$Table}: " . $Convert_Error->getMessage());
+}
+}
+
+$Sms_Default = $Database->scalar(
+"SELECT COLUMN_DEFAULT FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name = 'SMS_Logs' AND column_name = 'Status'"
+);
+
+if ($Sms_Default !== null && (string)$Sms_Default !== 'ناموفق') {
+try {
+$Database->connection()->exec(
+"ALTER TABLE `SMS_Logs` MODIFY COLUMN `Status` VARCHAR(20) NOT NULL DEFAULT 'ناموفق'"
+);
+}
+catch (Throwable $Default_Error) {
+error_log('[Umbrella-Bot][UTF8-Migration] Failed to update SMS_Logs.Status default: ' . $Default_Error->getMessage());
+}
+}
+
+$Targets = [
+'Settings' => ['pk' => 'Key', 'columns' => ['Value']],
+'SMS_Logs' => ['pk' => 'ID', 'columns' => ['Status', 'Message']],
+'SMS_Templates' => ['pk' => 'ID', 'columns' => ['Name', 'Template']],
+'Users' => ['pk' => 'ID', 'columns' => [
+'First_Name', 'Full_Name', 'Gender', 'Operator', 'Rank_Title',
+'Client_Status', 'Subscription', 'Package_Duration',
+'Package_Start_Date', 'Expiration_Date', 'Deactivation_Message',
+'Server_Comment', 'Tags',
+]],
+'User_Sessions' => ['pk' => 'Telegram_ID', 'columns' => ['Flow', 'Ticket_Subject', 'Ticket_Description']],
+'Transactions' => ['pk' => 'ID', 'columns' => ['Description']],
+'Subscription_Logs' => ['pk' => 'ID', 'columns' => ['Plan_Name', 'Server_Response']],
+'Tickets' => ['pk' => 'ID', 'columns' => ['Subject']],
+'Ticket_Messages' => ['pk' => 'ID', 'columns' => ['Message']],
+'Notifications' => ['pk' => 'ID', 'columns' => ['Title', 'Message']],
+'Admin_Logs' => ['pk' => 'ID', 'columns' => ['Details']],
+'Ratings' => ['pk' => 'ID', 'columns' => ['Comment']],
+'Versions' => ['pk' => 'ID', 'columns' => ['Changes']],
+'App_Devices' => ['pk' => 'ID', 'columns' => ['Device_Name', 'Platform']],
+'App_SignIn_Requests' => ['pk' => 'ID', 'columns' => ['Device_Name', 'Platform']],
+'App_Notifications' => ['pk' => 'ID', 'columns' => ['Title', 'Body']],
+];
+
+foreach ($Targets as $Table => $Spec) {
+self::repairTableMojibake($Database, $Table, $Spec['pk'], $Spec['columns']);
+}
+
+$Robot_Status = self::safeSetting('Robot_Status');
+
+if ($Robot_Status !== null) {
+$Normalized_Status = self::normalizeRobotStatus($Robot_Status);
+
+if ($Robot_Status !== $Normalized_Status) {
+$Database->execute('UPDATE `Settings` SET `Value` = ? WHERE `Key` = ?', [$Normalized_Status, 'Robot_Status']);
+}
+}
+
+else {
+$Database->execute('INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)', ['Robot_Status', '🟢روشن']);
+}
+
+$Database->execute(
+'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
+['Utf8_Mojibake_Migration_v1', '1']
+);
+}
+
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][UTF8-Migration] Migration failed: ' . $Error->getMessage());
+}
+}
+
+private static function repairTableMojibake(Database $Database, string $Table, string $Primary_Key, array $Columns): void {
+try {
+$Existing_Rows = $Database->fetchAll(
+'SELECT COLUMN_NAME AS c FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?',
+[$Table]
+);
+
+if ($Existing_Rows === []) return;
+$Available = [];
+
+foreach ($Existing_Rows as $Row) {
+$Available[strtolower((string)($Row['c'] ?? ''))] = true;
+}
+
+if (!isset($Available[strtolower($Primary_Key)])) return;
+$Active_Cols = array_values(array_filter(
+$Columns,
+static fn (string $Col): bool => isset($Available[strtolower($Col)])
+));
+
+if ($Active_Cols === []) return;
+$Select_Cols = array_merge(["`{$Primary_Key}`"], array_map(static fn (string $Col): string => "`{$Col}`", $Active_Cols));
+$Non_Ascii_Where = implode(' OR ', array_map(
+static fn (string $Col): string => "(`{$Col}` IS NOT NULL AND CHAR_LENGTH(`{$Col}`) < OCTET_LENGTH(`{$Col}`))",
+$Active_Cols
+));
+$Sql = 'SELECT ' . implode(', ', $Select_Cols) . " FROM `{$Table}` WHERE {$Non_Ascii_Where}";
+
+if ($Table === 'Settings') {
+$Sql .= " AND `Key` NOT IN ('App_Gateway_Secret', 'Webhook_State') AND `Key` NOT LIKE 'DailyNotice\\_%'";
+}
+
+$Rows = $Database->fetchAll($Sql);
+
+foreach ($Rows as $Row) {
+$Set_Parts = [];
+$Params = [];
+
+foreach ($Active_Cols as $Col) {
+$Original = $Row[$Col] ?? null;
+
+if (!is_string($Original) || $Original === '') continue;
+$Repaired = Helper::repairMojibake($Original);
+
+if ($Repaired !== $Original) {
+$Set_Parts[] = "`{$Col}` = ?";
+$Params[] = $Repaired;
+}
+}
+
+if ($Set_Parts === []) continue;
+$Params[] = $Row[$Primary_Key];
+$Database->execute(
+"UPDATE `{$Table}` SET " . implode(', ', $Set_Parts) . " WHERE `{$Primary_Key}` = ?",
+$Params
+);
+}
+}
+
+catch (Throwable $Error) {
+error_log("[Umbrella-Bot][UTF8-Migration] Table {$Table} scan skipped: " . $Error->getMessage());
+}
+}
+
 private static function ensureDatabase(): void {
 $Name = Environment::getDatabaseName();
 
@@ -464,11 +669,19 @@ return;
 catch (PDOException) {
 }
 
+$Init_Options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+
+$Init_Command = Database::mysqlInitCommandAttribute();
+
+if ($Init_Command !== null) {
+$Init_Options[$Init_Command] = 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci';
+}
+
 $Server = new PDO(
 sprintf('mysql:host=%s;port=%d;charset=utf8mb4', Environment::getDatabaseHost(), Environment::getDatabasePort()),
 Environment::getDatabaseUser(),
 Environment::getDatabasePassword(),
-[PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+$Init_Options
 );
 
 $Safe = str_replace('`', '', $Name);

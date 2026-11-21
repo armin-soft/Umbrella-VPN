@@ -2,23 +2,37 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/../Core/App/System-Notifications.php';
+require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/Admin.php';
 require_once __DIR__ . '/User.php';
 require_once __DIR__ . '/Profile.php';
-require_once __DIR__ . '/AppLink.php';
+require_once __DIR__ . '/App-Link.php';
 require_once __DIR__ . '/../Core/App/App-Gateway.php';
 require_once __DIR__ . '/Subscription.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
+require_once __DIR__ . '/../Core/Support/Bot-Config.php';
 
 final class Dispatcher {
 private const ROUTES = [
 'منوی خدمات ربات' => [UserFlow::class, 'serviceMenu'],
+'user_subscriptions_menu' => [UserFlow::class, 'subscriptionsMenu'],
+'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
+'user_account_menu' => [UserFlow::class, 'accountMenu'],
+'user_device_menu' => [UserFlow::class, 'deviceMenu'],
+// سازگاری با پیام های قدیمی؛ دسته امنیت دیگر نمایش داده نمی شود.
+'user_security_menu' => [UserFlow::class, 'accountMenu'],
+'user_stats_menu' => [UserFlow::class, 'statsMenu'],
+'app_download_menu' => [UserFlow::class, 'appDownloadMenu'],
+'app_download_windows' => [UserFlow::class, 'appDownloadWindows'],
+'app_download_android' => [UserFlow::class, 'appDownloadAndroid'],
+'app_download_macos' => [UserFlow::class, 'appDownloadMacOS'],
 'منوی پشتیبانی' => [UserFlow::class, 'supportMenu'],
 'گزارش مصرف' => [UserFlow::class, 'usageAnalytics'],
 'ویرایش و ثبت پروفایل' => [ProfileFlow::class, 'begin'],
 'ویرایش پروفایل' => [ProfileFlow::class, 'begin'],
-'اشتراک من' => [SubscriptionFlow::class, 'mySubscription'],
+'اشتراک من' => [UserFlow::class, 'profile'],
 'اشتراک رایگان اول' => [SubscriptionFlow::class, 'freePlan'],
 'اشتراک نوروزی اول' => [SubscriptionFlow::class, 'nowruzPlan'],
 'اشتراک آماده' => [SubscriptionFlow::class, 'readyPlansMenu'],
@@ -27,20 +41,36 @@ private const ROUTES = [
 'حجم اشتراک دلخواه' => [SubscriptionFlow::class, 'startCustomPlanGB'],
 'تایید اشتراک دلخواه' => [SubscriptionFlow::class, 'confirmCustomPlanCallback'],
 'مدیریت' => [AdminFlow::class, 'menu'],
+'admin_devices_menu' => [AdminFlow::class, 'devicesMenu'],
+'admin_content_filter' => [AdminFlow::class, 'globalContentFilterMenu'],
+'admin_gfilter_domains' => [AdminFlow::class, 'globalContentFilterDomainsMenu'],
+'admin_gfilter_add' => [AdminFlow::class, 'globalContentFilterDomainsStart'],
+'admin_gfilter_clear' => [AdminFlow::class, 'globalContentFilterClearAsk'],
+'admin_gfilter_clear_ok' => [AdminFlow::class, 'globalContentFilterClearConfirm'],
+'admin_accounts_menu' => [AdminFlow::class, 'accountsMenu'],
+'admin_support_menu' => [AdminFlow::class, 'supportMenu'],
+'admin_subscriptions_menu' => [AdminFlow::class, 'subscriptionsMenu'],
 'آمار کلی' => [AdminFlow::class, 'globalStats'],
 'تنظیمات' => [AdminFlow::class, 'menu'],
 'اعتبار حساب کاربری' => [AdminFlow::class, 'creditMenu'],
 'پیکربندی سرور' => [AdminFlow::class, 'serverConfig'],
+'اطلاعات سرور' => [AdminFlow::class, 'serverHealthMenu'],
+'همگام سازی سرور' => [AdminFlow::class, 'serverSyncMenu'],
+'عملیات کلاینت سرور' => [AdminFlow::class, 'serverClientsMenu'],
 'بروز رسانی' => [AdminFlow::class, 'updateMenu'],
 'جرایم' => [AdminFlow::class, 'crimes'],
 'رتبه بندی' => [AdminFlow::class, 'userRanking'],
 'گزارش روزانه' => [AdminFlow::class, 'dailyReport'],
-'رتبه بندی کاربران' => [UserFlow::class, 'usageRanking'],
 ];
 private function __construct() {
 }
 
 public static function dispatch(Context $Context): void {
+if (isset($Context->Raw['chat_member'])) {
+require_once __DIR__ . '/Scheduler.php';
+Scheduler::channelMembershipChanged($Context->Raw);
+return;
+}
 if ($Context->UserId <= 0) return;
 $Context->saveUser();
 
@@ -55,6 +85,7 @@ $Text = trim((string)$Context->Text);
 $Is_Start = $Callback === 'start' || $Callback === '/start'
 || mb_strtolower($Callback) === 'start'
 || $Text === '/start' || mb_strtolower($Text) === 'start'
+|| preg_match('/^\/start(?:@\w+)? app_[a-f0-9]{32}$/D', $Text) === 1
 || $Callback === 'بررسی عضویت کانال';
 
 if (!$Is_Start && !UserFlow::checkChannelMembershipCached($Context->UserId)) {
@@ -94,7 +125,7 @@ error_log('[Umbrella-Bot][Dispatch-' . $Type . '] ' . get_class($Error) . ': ' .
 
 if ($Context->ChatId > 0) {
 try {
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "⚠️خطای موقت در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "⚠️خطای موقت در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖\n🔁لطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
 }
 
 catch (Throwable) {
@@ -103,7 +134,7 @@ catch (Throwable) {
 }
 
 private static function channelGuard(Context $Context): void {
-$Channel_Url = Repository::getSetting('Channel_Url', Environment::getChannelUrl());
+$Channel_Url = BotConfig::getChannelUrl();
 $Greeting = Common::greet($Context, 'عضویت در کانال');
 $User = Repository::getUser($Context->UserId);
 $Client_ID = (string)($User['Client_ID'] ?? '');
@@ -146,6 +177,9 @@ $Text = $Greeting . Helper::noticeBlock(
 ) . Helper::userFooter();
 }
 
+if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_warn_app', $Context->UserId)) {
+SystemNotifications::queue($Context->UserId, 'عضویت کانال', '⚠️شما عضو کانال اطلاع رسانی نیستید؛ برای ادامه سرویس عضو شوید: ' . $Channel_Url, 'channel-warning:' . (int)($Grace_Started_At ?? 0) . ':first', 'warning');
+}
 if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️ابتدا عضو کانال شوید.', true);
 }
@@ -169,7 +203,7 @@ $Text = Helper::userGreeting($Context, 'وضعیت ربات')
 'ℹ️لطفاً کمی بعد دوباره تلاش کنید.'
 ) . Helper::userFooter();
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -199,7 +233,7 @@ $Text = Helper::userGreeting($Context, 'وضعیت حساب کاربری')
 ) . Helper::userFooter();
 
 $Markup = TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
@@ -224,15 +258,24 @@ self::routeCallbackInner($Context);
 
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Callback] ' . $E->getMessage());
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "❌خطایی در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖➖\nلطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'خطا') . "❌خطایی در پردازش درخواست رخ داد.\n➖➖➖➖➖➖➖➖➖\n🔁لطفاً چند لحظه دیگر دوباره تلاش کنید." . Helper::userFooter());
 }
 }
 
 private static function routeCallbackInner(Context $Context): void {
 $Data = trim((string)$Context->CallbackData);
+$SessionFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
+if (str_starts_with($SessionFlow, 'app:device_photo:') || in_array($SessionFlow, ['user:ticket_reply_text', 'admin:ticket_reply_text'], true)) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null]);
+}
 
 if ($Data === '' || $Data === 'start' || $Data === '/start') {
 UserFlow::start($Context);
+return;
+}
+
+if (preg_match('/^app_link:([a-f0-9]{32})$/D', $Data, $Match) === 1) {
+AppBotLink::confirm($Context, $Match[1]);
 return;
 }
 
@@ -290,6 +333,13 @@ match($Data) {
 'اطلاع رسانی سفارشی اول' => AdminFlow::serverNotifyCustomStart($Context),
 'اطلاع رسانی عدم استفاده' => AdminFlow::serverNotifyIdle($Context),
 'تایید اطلاع رسانی غیرفعال' => AdminFlow::serverNotifyIdleSend($Context),
+'منوی کاربران' => AdminFlow::usersMenu($Context),
+'admin_devices' => AdminFlow::appDevicesMenu($Context),
+'admin_users' => AdminFlow::accountUsers($Context),
+'اطلاعات سرور' => AdminFlow::serverHealthMenu($Context),
+'همگام سازی سرور' => AdminFlow::serverSyncMenu($Context),
+'عملیات کلاینت سرور' => AdminFlow::serverClientsMenu($Context),
+'منوی سیستم' => AdminFlow::systemMenu($Context),
 'دیتابیس' => AdminFlow::databaseMenu($Context),
 'پشتیبان گیری دیتابیس' => AdminFlow::databaseBackup($Context),
 'تنظیم مجدد دیتابیس' => AdminFlow::databaseReset($Context),
@@ -309,13 +359,29 @@ match($Data) {
 'حساب آمبرلا' => AppFlow::menu($Context),
 'برنامه آمبرلا' => AppFlow::menu($Context),
 'app_menu' => AppFlow::menu($Context),
+// Legacy shortcut: the removed information/photo screen is never reopened.
+'app_device_info' => UserFlow::deviceMenu($Context),
 'app_filter' => AppFlow::filterMenu($Context),
+'app_2fa' => AppFlow::twoStepMenu($Context),
+'app_2fa_on' => AppFlow::setTwoStep($Context, true),
+'app_2fa_off' => AppFlow::setTwoStep($Context, false),
 'app_devices' => AppFlow::devices($Context),
-'app_notifications' => AppFlow::notifications($Context),
-'app_filter_domains' => AppFlow::filterDomainsStart($Context),
-'app_push_start' => AdminFlow::appPushStart($Context),
+'app_notifications' => UserFlow::accountMenu($Context),
+'nightly_report_on' => UserFlow::setNightlyReport($Context, true),
+'nightly_report_off' => UserFlow::setNightlyReport($Context, false),
+'app_filter_domains' => AppFlow::filterDomainsMenu($Context),
+'app_fdom_add' => AppFlow::filterDomainsStart($Context),
+'app_fdom_clear' => AppFlow::filterDomainsClearAsk($Context),
+'app_fdom_clear_ok' => AppFlow::filterDomainsClearConfirm($Context),
+'app_push_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
-'notify_all_start' => AdminFlow::notifyAllStart($Context),
+'تنظیمات ربات' => AdminFlow::configMenu($Context),
+'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
+'nowruz_menu_toggle' => AdminFlow::toggleNowruzMenu($Context),
+'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
+'cfg_pricing' => AdminFlow::pricingMenu($Context),
+'cfg_links' => AdminFlow::linksMenu($Context),
+'notify_all_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_set_1' => AdminFlow::deviceLimitSet($Context, 1),
 'device_limit_set_2' => AdminFlow::deviceLimitSet($Context, 2),
 'device_limit_set_3' => AdminFlow::deviceLimitSet($Context, 3),
@@ -326,12 +392,13 @@ match($Data) {
 'سابقه تراکنش' => UserFlow::transactionHistory($Context),
 'سابقه اشتراک' => UserFlow::subscriptionHistory($Context),
 'تیکت جدید' => UserFlow::ticketNewStart($Context),
+'ویرایش توضیحات تیکت' => UserFlow::ticketDescriptionStart($Context),
 'انتخاب دسته تیکت' => UserFlow::ticketCategoryMenu($Context),
 'لیست تیکت های من' => UserFlow::ticketUserList($Context),
 'تیکت های من' => UserFlow::ticketMenu($Context),
 'پروفایل کاربری' => UserFlow::profile($Context),
 'toggle_auto_renew' => UserFlow::toggleAutoRenew($Context),
-'منوی تمدید خودکار' => UserFlow::toggleAutoRenew($Context),
+'منوی تمدید خودکار' => UserFlow::autoRenewMenu($Context),
 'auto_renew_off' => UserFlow::disableAutoRenew($Context),
 'تغییرات نسخه' => UserFlow::changes($Context),
 default => null,
@@ -393,6 +460,16 @@ if ($ID > 0) AdminFlow::ticketAdminClose($Context, $ID);
 return;
 }
 
+if (str_starts_with($Data, 'ticket_attachment:')) {
+TicketMedia::show($Context, (int)substr($Data, strlen('ticket_attachment:')));
+return;
+}
+if (str_starts_with($Data, 'ticket_attachments:')) {
+$Parts = explode(':', $Data);
+UserFlow::ticketAttachments($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0));
+return;
+}
+
 if (str_starts_with($Data, 'ticket_user_view:')) {
 $ID = (int)substr($Data, strlen('ticket_user_view:'));
 
@@ -407,13 +484,162 @@ if ($ID > 0) UserFlow::ticketUserReplyStart($Context, $ID);
 return;
 }
 
+if (str_starts_with($Data, 'cfg_set:')) {
+AdminFlow::cfgStart($Context, substr($Data, strlen('cfg_set:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_gfilter_toggle:')) {
+AdminFlow::globalContentFilterToggle($Context, substr($Data, strlen('admin_gfilter_toggle:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_gfilter_page:')) {
+$Rest = substr($Data, strlen('admin_gfilter_page:'));
+if (preg_match('/^[0-9]+$/D', $Rest) === 1) {
+AdminFlow::globalContentFilterDomainsMenu($Context, (int)$Rest);
+}
+return;
+}
+
+if (str_starts_with($Data, 'admin_gfilter_del:')) {
+$Rest = substr($Data, strlen('admin_gfilter_del:'));
+if (preg_match('/^([a-f0-9]{12}):([0-9]+)$/D', $Rest, $Match) === 1) {
+AdminFlow::globalContentFilterDomainDelete($Context, $Match[1], (int)$Match[2]);
+}
+return;
+}
+
 if (str_starts_with($Data, 'app_filter_toggle:')) {
 AppFlow::filterToggle($Context, substr($Data, strlen('app_filter_toggle:')));
 return;
 }
 
+if (str_starts_with($Data, 'app_fdom_page:')) {
+$Rest = substr($Data, strlen('app_fdom_page:'));
+if (preg_match('/^[0-9]+$/D', $Rest) === 1) {
+AppFlow::filterDomainsMenu($Context, (int)$Rest);
+}
+return;
+}
+
+if (str_starts_with($Data, 'app_fdom_del:')) {
+$Rest = substr($Data, strlen('app_fdom_del:'));
+if (preg_match('/^([a-f0-9]{12}):([0-9]+)$/D', $Rest, $Match) === 1) {
+AppFlow::filterDomainDelete($Context, $Match[1], (int)$Match[2]);
+}
+return;
+}
+
+if (preg_match('/^admin_device_delete:([1-9][0-9]*):([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesPrompt($Context, (int)$Match[1], (int)$Match[2]); return;
+}
+if (preg_match('/^admin_devices_delete_page:([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesPrompt($Context, 0, (int)$Match[1]); return;
+}
+if (preg_match('/^admin_devices_delete_cancel:([a-f0-9]{24})$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesConfirm($Context, $Match[1], true); return;
+}
+if (preg_match('/^admin_devices_delete_confirm:([a-f0-9]{24})$/D', $Data, $Match)) {
+AdminFlow::deleteDevicesConfirm($Context, $Match[1]); return;
+}
+if (preg_match('/^admin_users_page:([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::accountUsers($Context, (int)$Match[1]); return;
+}
+if (preg_match('/^admin_user_view:([1-9][0-9]*):([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::accountUserView($Context, (int)$Match[1], (int)$Match[2]); return;
+}
+
+if (str_starts_with($Data, 'admin_devices_page:')) {
+AdminFlow::appDevicesMenu($Context, (int)substr($Data, strlen('admin_devices_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_device_toggle:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('admin_device_toggle:')), 2), 2, '0');
+AdminFlow::toggleAppDevice($Context, $Prefix, (int)$Page);
+return;
+}
+
+if (str_starts_with($Data, 'admin_ranking_page:')) {
+AdminFlow::userRanking($Context, (int)substr($Data, strlen('admin_ranking_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'user_ticket_messages:')) {
+$Parts = explode(':', $Data);
+UserFlow::ticketUserView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0));
+return;
+}
+
+if (str_starts_with($Data, 'admin_ticket_messages:')) {
+$Parts = explode(':', $Data);
+AdminFlow::ticketAdminView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0));
+return;
+}
+
+if (str_starts_with($Data, 'delivery_mode:')) {
+$Parts = explode(':', $Data);
+AdminFlow::selectDeliveryMode($Context, $Parts[1] ?? '', $Parts[2] ?? '');
+return;
+}
+
+if (str_starts_with($Data, 'app_notifications_page:')) {
+AppFlow::notifications($Context, (int)substr($Data, strlen('app_notifications_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'user_tickets_page:')) {
+UserFlow::ticketUserList($Context, (int)substr($Data, strlen('user_tickets_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_blocked_page:')) {
+AdminFlow::blockedList($Context, (int)substr($Data, strlen('admin_blocked_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_tickets_page:')) {
+AdminFlow::ticketAdminMenu($Context, (int)substr($Data, strlen('admin_tickets_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'app_notification:')) {
+$Parts = explode(':', $Data);
+AppFlow::notificationView($Context, (int)($Parts[1] ?? 0), (int)($Parts[2] ?? 0), (int)($Parts[3] ?? 0));
+return;
+}
+
+// Old messages may still carry these callbacks. Clear any pending upload and
+// return to the remaining device controls without reading/sending an image.
+if (str_starts_with($Data, 'app_device_card:')
+|| str_starts_with($Data, 'app_device_photo:')
+|| str_starts_with($Data, 'app_device_art:')) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+UserFlow::deviceMenu($Context);
+return;
+}
+
+if (str_starts_with($Data, 'app_device_status:')) {
+$Parts = explode(':', $Data);
+AppFlow::devices($Context, (int)($Parts[2] ?? 0));
+return;
+}
+
+if (str_starts_with($Data, 'app_devices_page:')) {
+AppFlow::devices($Context, (int)substr($Data, strlen('app_devices_page:')));
+return;
+}
+
+if (str_starts_with($Data, 'app_device_revoke_confirm:')) {
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_revoke_confirm:')), 2), 2, '0');
+AppFlow::confirmRevokeDevice($Context, $Prefix, (int)$Page);
+return;
+}
+
 if (str_starts_with($Data, 'app_device_revoke:')) {
-AppFlow::revokeDevice($Context, substr($Data, strlen('app_device_revoke:')));
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_revoke:')), 2), 2, '0');
+AppFlow::revokeDevice($Context, $Prefix, (int)$Page);
 return;
 }
 }
@@ -446,7 +672,7 @@ TelegramClient::answerCallbackQuery(
 $Context->CallbackId,
 $Ok
 ? ($Approved ? '✅ ورود تأیید شد' : '⛔️ ورود مسدود شد')
-: 'این درخواست معتبر نیست یا منقضی شده است.',
+: '⌛️این درخواست معتبر نیست یا منقضی شده است.',
 !$Ok
 );
 }
@@ -454,13 +680,13 @@ $Ok
 $Section = 'تأیید دستگاه';
 $Text = $Ok
 ? ($Approved
-? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖➖\nحالا برنامه به‌صورت خودکار وارد می‌شود." . Helper::userFooter()
-: Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
-: Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖➖\nاز برنامه دوباره وارد شوید." . Helper::userFooter();
+? Helper::userGreeting($Context, $Section) . "✅ورود شما به برنامه تأیید شد.\n➖➖➖➖➖➖➖➖➖\nحالا برنامه به صورت خودکار وارد می شود." . Helper::userFooter()
+: Helper::userGreeting($Context, $Section) . "⛔️ورود شما به برنامه مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️اگر خودتان نبودید، حتماً در ربات پشتیبانی را خبر کنید." . Helper::userFooter())
+: Helper::userGreeting($Context, $Section) . "⌛️این درخواست دیگر معتبر نیست.\n➖➖➖➖➖➖➖➖➖\n🔁از برنامه دوباره وارد شوید." . Helper::userFooter();
 
-$Markup = TelegramClient::inlineKeyboard([[
-['text' => '📱 حساب آمبرلا', 'callback_data' => 'app_menu'],
-]]);
+$Markup = TelegramClient::inlineKeyboard([
+Menu::userHome(),
+]);
 
 if ($Context->MessageId !== null) {
 try {
@@ -476,11 +702,19 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Markup);
 }
 
 private static function routeMessage(Context $Context): void {
-$Text = trim((string)$Context->Text);
-$Has_Media = $Context->Photo !== null || ($Context->Caption ?? '') !== '';
+$Text = trim((string)($Context->Text ?? $Context->Caption ?? ''));
+$Has_Media = TicketMedia::extract($Context) !== null;
 
-if (!$Has_Media && $Text === '') return;
-if ($Text === '/start' || mb_strtolower($Text) === 'start') {
+if (!$Has_Media && $Text === '') {
+$InputFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
+if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به صورت عکس، فایل یا متن ارسال کنید.');
+return;
+}
+if (!$Has_Media && preg_match('/^\/start(?:@\w+)? app_([a-f0-9]{32})$/D', $Text, $Match) === 1) {
+AppBotLink::begin($Context, $Match[1]);
+return;
+}
+if (!$Has_Media && ($Text === '/start' || mb_strtolower($Text) === 'start')) {
 UserFlow::start($Context);
 return;
 }
@@ -491,6 +725,8 @@ $CleanText = trim((string)$CleanText);
 if (!$Context->isAdmin() && Helper::containsProfanity($CleanText)) {
 try { Repository::setBlocked($Context->UserId, true); } catch (Throwable $E) {
 error_log('[Umbrella-Bot][Profanity-Block] setBlocked failed: ' . $E->getMessage());
+TelegramClient::sendMessage($Context->ChatId, '⚠️این پیام قابل پردازش نیست؛ خطای موقت در ثبت وضعیت حساب رخ داد.');
+return;
 }
 
 $Name = $Context->profileName();
@@ -507,15 +743,15 @@ TelegramClient::sendMessage($Admin, Helper::adminGreetingNamed((string)(Reposito
 catch (Throwable) {}
 }
 
-TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
-. "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
+TelegramClient::sendSystemMessage($Context->ChatId, Helper::userGreeting($Context, 'وضعیت حساب کاربری')
+. "⛔️با عرض پوزش به دلیل رعایت نکردن اصول اخلاقی، حساب کاربری شما به طور دائمی مسدود شد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:اگر فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(),
 TelegramClient::inlineKeyboard([
-[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => Repository::getSetting('Support_Url', Environment::getSupportUrl())]],
+[['text' => '📞🧑‍💻ارتباط با پشتیبانی (آرمین سافت)', 'url' => BotConfig::getSupportUrl()]],
 ]));
 return;
 }
 
-if ($CleanText === 'مدیریت' || mb_strtolower($CleanText) === '/admin' || mb_strtolower($CleanText) === '/panel' || $CleanText === 'admin' || $CleanText === 'panel') {
+if (!$Has_Media && ($CleanText === 'مدیریت' || mb_strtolower($CleanText) === '/admin' || mb_strtolower($CleanText) === '/panel' || $CleanText === 'admin' || $CleanText === 'panel')) {
 if ($Context->isAdmin()) {
 try {
 AdminFlow::menu($Context);
@@ -538,12 +774,12 @@ $Session = Repository::getUserSession($Context->UserId);
 $Flow = (string)($Session['Flow'] ?? '');
 
 if ($Flow !== '') {
-if ($Context->isAdmin() && in_array($CleanText, ['مدیریت', '/admin', '/panel', 'admin', 'panel'], true)) {
+if (!$Has_Media && $Context->isAdmin() && in_array($CleanText, ['مدیریت', '/admin', '/panel', 'admin', 'panel'], true)) {
 AdminFlow::menu($Context);
 return;
 }
 
-if (!str_starts_with($Flow, 'admin:') && in_array($CleanText, ['لغو', 'انصراف', '/cancel', 'cancel'], true)) {
+if (!$Has_Media && !str_starts_with($Flow, 'admin:') && in_array($CleanText, ['لغو', 'انصراف', '/cancel', 'cancel'], true)) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_Ticket_ID' => null, 'Ticket_Subject' => null, 'Ticket_Description' => null]);
 UserFlow::serviceMenu($Context);
 return;
@@ -559,7 +795,7 @@ AdminFlow::handleInput($Context, $Flow, $Text);
 catch (Throwable $E) {
 error_log('[Umbrella-Bot][Admin-Input] Flow=' . $Flow . ' | ' . $E->getMessage());
 TelegramClient::sendMessage($Context->ChatId, Helper::adminGreeting($Context, 'خطای ورودی') . '❌خطا در پردازش ورودی مدیریتی؛ لطفاً دوباره تلاش کنید.' . Helper::adminFooter(), TelegramClient::inlineKeyboard([
-[['text' => '🏠بازگشت به منوی مدیریت', 'callback_data' => 'مدیریت']],
+Menu::adminHome(),
 ]));
 }
 
@@ -568,6 +804,11 @@ return;
 
 if ($Flow === 'profile_name') { ProfileFlow::processName($Context, $Text); return; }
 if ($Flow === 'profile_phone') { ProfileFlow::processPhone($Context, $Text); return; }
+if (str_starts_with($Flow, 'app:device_photo:')) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+UserFlow::deviceMenu($Context);
+return;
+}
 if ($Flow === 'app:filter_domains') { AppFlow::filterDomainsInput($Context, $Text); return; }
 if ($Flow === 'custom_plan_days' || $Flow === 'custom_plan_gb') { SubscriptionFlow::handleCustomPlanInput($Context, $Text); return; }
 if ($Flow === 'wallet_topup_amount') { SubscriptionFlow::handleWalletTopupInput($Context, $Text); return; }
@@ -575,21 +816,36 @@ if ($Flow === 'user:ticket_subject') { UserFlow::ticketCreate($Context, $Text); 
 if ($Flow === 'user:ticket_description') { UserFlow::ticketDescriptionInput($Context, $Text); return; }
 if ($Flow === 'user:ticket_media') { UserFlow::ticketMediaInput($Context); return; }
 if ($Flow === 'user:ticket_reply_text') { UserFlow::ticketUserReplySend($Context, $Text); return; }
+// انتخاب دسته تیکت فقط با دکمه انجام می شود؛ متن فرستاده شده دوباره همان صفحه را نشان می دهد.
+if ($Flow === 'user:ticket_category') {
+if ($Has_Media) UserFlow::ticketDescriptionInput($Context, $Text);
+else UserFlow::ticketCategoryMenu($Context);
+return;
+}
 }
 
 if (!$Has_Media) {
 $Typed = preg_replace('/[\x{200B}-\x{200F}\x{2060}\x{FEFF}]/u', '', $Text);
 $Typed = trim((string)$Typed);
 $Typed_Routes = [
-'اشتراک من' => fn() => SubscriptionFlow::mySubscription($Context),
+'مدیریت اشتراک' => fn() => UserFlow::subscriptionsMenu($Context),
+'کیف پول و مالی' => fn() => UserFlow::walletMenu($Context),
+'حساب کاربری' => fn() => UserFlow::accountMenu($Context),
+'دستگاه من' => fn() => UserFlow::deviceMenu($Context),
+'امنیت' => fn() => UserFlow::accountMenu($Context),
+'سوابق و آمار' => fn() => UserFlow::statsMenu($Context),
+'نرم افزار/اپلیکیشن' => fn() => UserFlow::appDownloadMenu($Context),
+'اشتراک من' => fn() => UserFlow::profile($Context),
 'منوی خدمات کاربری' => fn() => UserFlow::serviceMenu($Context),
 'منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
+'بازگشت به منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
 'پروفایل کاربری' => fn() => UserFlow::profile($Context),
 'شارژ اعتبار حساب کاربری' => fn() => SubscriptionFlow::walletTopupStart($Context),
 'سابقه اشتراک' => fn() => UserFlow::subscriptionHistory($Context),
 'گزارش مصرف' => fn() => UserFlow::usageAnalytics($Context),
 'پشتیبانی' => fn() => UserFlow::supportMenu($Context),
 'تیکت ها و پشتیبانی' => fn() => UserFlow::supportMenu($Context),
+'تیکت های من' => fn() => UserFlow::ticketUserList($Context),
 'تغییرات نسخه' => fn() => UserFlow::changes($Context),
 'حساب آمبرلا' => fn() => AppFlow::menu($Context),
 'کنترل محتوا' => fn() => AppFlow::filterMenu($Context),
