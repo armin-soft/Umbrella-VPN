@@ -165,6 +165,16 @@ void main() {
           } else if (!fullWindow) {
             expect(find.byType(MenuPageBackdrop), findsOneWidget);
           }
+          if (page is DevicePage || page is AccountPage) {
+            final tabKey = page is DevicePage ? 'device-section-tabs' : 'account-section-tabs';
+            final tab = find.byKey(ValueKey<String>(tabKey));
+            final controller = DefaultTabController.of(tester.element(tab));
+            for (var i = 0; i < controller.length; i++) {
+              currentPage = '${page.runtimeType}.tab$i';
+              controller.index = i;
+              await tester.pump(const Duration(milliseconds: 350));
+            }
+          }
           final problem = tester.takeException();
           if (problem != null) {
             final stack = problem is Error ? problem.stackTrace : null;
