@@ -25,6 +25,8 @@ import 'ping.dart';
 import 'tunnel_probe.dart';
 import 'speed_test.dart';
 import 'verified_probe.dart';
+import 'mobile_session.dart';
+import 'umbrella_mobile_backend.dart';
 
 enum VpnStatus {
   disconnected,
@@ -240,6 +242,7 @@ class VpnController extends ChangeNotifier {
   final CorePinger _corePing;
   final NodeBalancer _balancer = NodeBalancer();
   final AppLogger _log = AppLogger.instance;
+  MobileVpnSession? _mobileSession;
 
   final ValueChanged<AppSettings>? onSettingsChanged;
   final VoidCallback? onRequireElevation;
@@ -458,7 +461,7 @@ class VpnController extends ChangeNotifier {
       );
       unawaited(() async {
         final VpnNode? requested = _singleNodeSession ? _activeNode : null;
-        unawaited(ClashApi.closeAllConnections());
+        if (!Platform.isAndroid) unawaited(ClashApi.closeAllConnections());
         await disconnect(silent: true);
         unawaited(_native.flushDns());
         if (!_disposed && !_shuttingDown) {
@@ -1122,9 +1125,14 @@ class VpnController extends ChangeNotifier {
     _cancelRequested = true;
     _log.add('درخواست لغو اتصال از طرف کاربر.', level: 'warning');
     _setStatus(VpnStatus.disconnecting, 'لغو اتصال...');
-    await _stopCores();
-    await _disableProxy();
-    _finishCancel();
+    try {
+      await _stopCores();
+      await _disableProxy();
+      _finishCancel();
+    } catch (_) {
+      _tunnelVerified = false;
+      _setStatus(VpnStatus.failed, 'توقف سرویس VPN ناموفق بود.');
+    }
   }
 
   void _finishCancel() {
@@ -1185,9 +1193,14 @@ class VpnController extends ChangeNotifier {
     } finally {
       final bool wasCancelled = _cancelRequested;
       if (wasCancelled) {
-        await _stopCores();
-        await _disableProxy();
-        _finishCancel();
+        try {
+          await _stopCores();
+          await _disableProxy();
+          _finishCancel();
+        } catch (_) {
+          _tunnelVerified = false;
+          _setStatus(VpnStatus.failed, 'توقف سرویس VPN ناموفق بود.');
+        }
       }
       _connectInFlight = false;
       _cancelRequested = false;
@@ -1203,13 +1216,100 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  Future<ConnectOutcome> _connectInner({VpnNode? requested}) async {
-    // The legacy desktop-derived connection path is not safe on Android until
-    // it is wired to the mobile session, per-app routing and TUN verification.
-    // Never claim an active VPN or start a desktop process in the meantime.
-    if (Platform.isAndroid) {
-      return const ConnectOutcome(ok: false, message: 'سرویس اتصال اندروید هنوز آماده نیست.');
+  /// Android never starts the Windows executable. The mobile service owns the
+  /// engine and only a positive, VPN-network-bound probe can publish connected.
+  Future<ConnectOutcome> _connectMobile({VpnNode? requested}) async {
+    final blocked = accessGuard?.call() ?? '';
+    if (blocked.isNotEmpty) {
+      _setStatus(VpnStatus.failed, blocked);
+      return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
+    if (_mobileSession != null) {
+      return const ConnectOutcome(ok: false, message: 'سرویس قبلی هنوز به طور کامل متوقف نشده است.');
+    }
+    if (_settings.serviceMode != InboundServiceMode.vpn ||
+        _settings.chain.enabled || _settings.appRoutes.any((rule) => rule.enabled)) {
+      return const ConnectOutcome(ok: false, message: 'این حالت اتصال هنوز در اندروید پشتیبانی نمی‌شود؛ تونل کامل را انتخاب کنید.');
+    }
+    final candidates = _nodes.where((node) => !node.disabled && usable(node)).toList();
+    if (candidates.isEmpty || (requested != null && !candidates.any((node) => node.id == requested.id))) {
+      return const ConnectOutcome(ok: false, message: 'سرور معتبر در اشتراک موجود نیست.');
+    }
+    final node = requested == null ? candidates.first : candidates.firstWhere((node) => node.id == requested.id);
+    _singleNodeSession = requested != null ||
+        _settings.selectionMode == SelectionMode.manual || !_settings.autoFailover;
+    _cancelRequested = false;
+    _activeNode = node;
+    _setStatus(VpnStatus.preparing, 'آماده سازی تونل امن...');
+    final PreparedLinks prepared;
+    try {
+      prepared = await LinkPreparation.prepare(_linkPool(node), resolveEndpoints: false);
+    } catch (_) {
+      _setStatus(VpnStatus.failed, 'آماده سازی سرور ناموفق بود.');
+      return const ConnectOutcome(ok: false, message: 'آماده سازی سرور ناموفق بود.');
+    }
+    if (_cancelRequested || _disposed) {
+      return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+    }
+    if (prepared.links.isEmpty) {
+      return const ConnectOutcome(ok: false, message: 'هیچ سرور معتبری پیدا نشد.');
+    }
+    final settingsJson = jsonEncode(UmbrellaCore.settingsJson(
+      tun: true, systemProxy: false, port: _configuredMixedPort,
+      networkSettings: _settings, contentFilter: _contentFilter,
+    ));
+    final session = MobileVpnSession(UmbrellaMobileBackend(
+      native: _native, settingsJson: settingsJson,
+      configContent: '${prepared.links.join('\n')}\n',
+      verifyTunTraffic: () => StartupVerification.wait(
+        probe: (_) => _native.verifyTunTraffic(),
+        cancelled: () => _cancelRequested || _disposed,
+        alive: _native.isServiceRunning,
+        attemptTimeout: const Duration(seconds: 25),
+      ),
+    ));
+    _mobileSession = session;
+    _launchedFilterSignature = _contentFilter.effectSignature;
+    _setStatus(VpnStatus.connecting, 'در حال برقراری تونل...');
+    final connected = await session.connect();
+    if (!connected) {
+      final reason = session.error.isEmpty ? 'اتصال امن برقرار نشد.' : session.error;
+      if (!_cancelRequested && !_disposed) {
+        await session.disconnect();
+        if (session.state == MobileSessionState.disconnected) _mobileSession = null;
+        _setStatus(VpnStatus.failed, reason);
+      }
+      return ConnectOutcome(ok: false, cancelled: _cancelRequested, message: reason);
+    }
+    if (_cancelRequested || _disposed) {
+      await session.disconnect();
+      if (session.state == MobileSessionState.disconnected) _mobileSession = null;
+      return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+    }
+    _runningBinaries.add('umbrella-core');
+    _connectedAt = DateTime.now();
+    _activePlanTun = true;
+    _tunnelVerified = true;
+    _setStatus(VpnStatus.connected, 'اتصال امن برقرار است');
+    _healthTimer?.cancel();
+    _healthTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_healthInFlight || _disposed || _status != VpnStatus.connected) return;
+      _healthInFlight = true;
+      try {
+        if (!await _native.isServiceRunning() && !_disposed && _status == VpnStatus.connected) {
+          _tunnelVerified = false;
+          await disconnect(silent: true);
+          if (!_disposed) _setStatus(VpnStatus.failed, 'سرویس VPN متوقف شد.');
+        }
+      } finally {
+        _healthInFlight = false;
+      }
+    });
+    return const ConnectOutcome(ok: true, message: 'اتصال امن برقرار است');
+  }
+
+  Future<ConnectOutcome> _connectInner({VpnNode? requested}) async {
+    if (Platform.isAndroid) return _connectMobile(requested: requested);
     _cancelRequested = false;
     _singleNodeSession = requested != null ||
         _settings.selectionMode == SelectionMode.manual || !_settings.autoFailover;
@@ -4431,9 +4531,15 @@ class VpnController extends ChangeNotifier {
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
     // سنجشی که بعد از قطع اتصال شروع شود، هسته ای بالا می آورد و پورت ها را
     // می گیرد؛ همان چیزی که اتصال بعدی را رد می کرد.
-    await _stopProbes();
-    await _stopCores();
-    await _disableProxy();
+    try {
+      await _stopProbes();
+      await _stopCores();
+      await _disableProxy();
+    } catch (_) {
+      _tunnelVerified = false;
+      _setStatus(VpnStatus.failed, 'توقف سرویس VPN ناموفق بود.');
+      return;
+    }
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
@@ -4482,6 +4588,11 @@ class VpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     _stopLiveMeasurement();
     cancelSpeedTest();
+    if (Platform.isAndroid) {
+      await _stopCores();
+      await _tray.destroy();
+      return;
+    }
 
     // آیکون سینی در همان ابتدا برداشته می شود تا روی نوار وظیفه باقی نماند.
     try {
@@ -4588,7 +4699,14 @@ class VpnController extends ChangeNotifier {
 
   Future<void> _stopCoresInner() async {
     if (Platform.isAndroid) {
-      await _native.stopAndroidCore();
+      final session = _mobileSession;
+      if (session != null) {
+        await session.disconnect();
+        if (session.state != MobileSessionState.disconnected) {
+          throw StateError('VPN cleanup failed');
+        }
+        if (identical(_mobileSession, session)) _mobileSession = null;
+      }
       _coreProcesses.clear();
       _runningPids.clear();
       _runningBinaries.clear();
@@ -4768,7 +4886,7 @@ class VpnController extends ChangeNotifier {
     _ipTimer?.cancel();
     _pingTimer?.cancel();
     unawaited(_stopCores());
-    unawaited(_native.shutdownCores());
+    if (!Platform.isAndroid) unawaited(_native.shutdownCores());
     super.dispose();
   }
 }
