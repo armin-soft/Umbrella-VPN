@@ -26,6 +26,9 @@ import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
+import 'package:umbrella_vpn/ui/widgets/gateway_dialog.dart';
+import 'package:umbrella_vpn/ui/widgets/advanced_network_settings.dart';
+import 'package:umbrella_vpn/ui/widgets/lan_sharing_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
@@ -220,6 +223,25 @@ void main() {
             }
           } else if (page is! AppShell) {
             await inspectVerticalScrolls(tester);
+          }
+          if (page is LoginPage || (page is SettingsPage &&
+              (page.initialSection == SettingsCategory.routing || page.initialSection == SettingsCategory.inbound))) {
+            final context = tester.element(find.byWidget(page));
+            currentPage = '${page.runtimeType}.dialog';
+            if (page is LoginPage) {
+              showGatewayDialog(context);
+            } else if ((page as SettingsPage).initialSection == SettingsCategory.routing) {
+              showDialog<void>(context: context, builder: (_) => const AppRouteDialog());
+            } else {
+              LanSharingDialog.show(context);
+            }
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(find.byType(Dialog), findsWidgets);
+            await inspectVerticalScrolls(tester);
+            Navigator.of(context).pop();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
           }
           final problem = tester.takeException();
           if (problem != null) {
