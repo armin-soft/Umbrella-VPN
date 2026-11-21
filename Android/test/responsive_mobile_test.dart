@@ -99,6 +99,8 @@ void main() {
         final pages = <Widget>[
           LandingPage(onStart: () {}), const LoginPage(), const ConnectPage(),
           const DevicePage(), const AccountPage(), const SettingsPage(),
+          for (final section in SettingsCategory.navigationItems)
+            SettingsPage(key: ValueKey(section.name), initialSection: section),
           const LogsPage(), const AboutPage(), const UpdatesPage(),
         ];
         final problems = <String>[];
@@ -110,7 +112,7 @@ void main() {
         };
         addTearDown(() { FlutterError.onError = previousOnError; });
         for (final page in pages) {
-          currentPage = page.runtimeType.toString();
+          currentPage = page is SettingsPage ? 'SettingsPage.${page.initialSection?.name ?? "menu"}' : page.runtimeType.toString();
           final errorsBefore = problems.length;
           final bool fullWindow = page is LandingPage || page is LoginPage;
           await tester.pumpWidget(MultiProvider(
