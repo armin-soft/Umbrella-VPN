@@ -1001,8 +1001,16 @@ return '';
 
 private static function hasAlreadyFree(Context $Context): bool {
 $User = Repository::getUser($Context->UserId);
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+$Free_Claimed = (int)($User['Free_Plan_Claimed'] ?? 0) === 1;
+$App_Free_Claimed = $Client_ID !== '' && $Client_ID !== '_'
+&& trim((string)Repository::getSetting('App_Free_Claimed_' . $Client_ID, '')) === '1';
 
-if (isset($User['Free_Plan_Claimed']) && (int)$User['Free_Plan_Claimed'] === 1) {
+if ($Free_Claimed || $App_Free_Claimed) {
+if (!$Free_Claimed) {
+try { Repository::updateUser($Context->UserId, ['Free_Plan_Claimed' => 1]); }
+catch (Throwable $Error) { error_log('[Umbrella-Bot][Subscription] app free plan flag sync failed: ' . $Error->getMessage()); }
+}
 if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '❌اشتراک رایگان را دریافت کرده اید.', true);
 }

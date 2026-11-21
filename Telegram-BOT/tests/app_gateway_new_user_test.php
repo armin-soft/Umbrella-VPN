@@ -13,10 +13,16 @@ declare(strict_types=1);
 $Gateway_Path = dirname(__DIR__) . '/Core/App/App-Gateway.php';
 $Panel_Path = dirname(__DIR__) . '/Core/Server/Umbrella-Panel.php';
 $Server_Path = dirname(__DIR__) . '/Core/Server/Umbrella-Server.php';
+$Subscription_Path = dirname(__DIR__) . '/Bot/Subscription.php';
+$Common_Path = dirname(__DIR__) . '/Bot/Common.php';
+$User_Path = dirname(__DIR__) . '/Bot/User.php';
 
 $Gateway_Code = (string)file_get_contents($Gateway_Path);
 $Panel_Code = (string)file_get_contents($Panel_Path);
 $Server_Code = (string)file_get_contents($Server_Path);
+$Subscription_Code = (string)file_get_contents($Subscription_Path);
+$Common_Code = (string)file_get_contents($Common_Path);
+$User_Code = (string)file_get_contents($User_Path);
 
 $Assert = static function (bool $Condition, string $Message): void {
 if (!$Condition) {
@@ -82,6 +88,26 @@ $Assert(str_contains($Panel_Code, "'added_by_uuid' => Environment::getUmbrellaAp
 $Assert(str_contains($Panel_Code, "'current_usage_GB' => 0"), 'PanelClient::create() must include current_usage_GB');
 $Assert(str_contains($Panel_Code, "'results'"), 'PanelClient::fullClientList() must support results wrapper');
 $Assert(str_contains($Panel_Code, "'records'"), 'PanelClient::fullClientList() must support records wrapper');
+$Assert(str_contains($Panel_Code, "'usage_limit_GB' => 1") && str_contains($Panel_Code, "'package_days' => 1"), 'new app-created panel users default to the free 1 GB / 1 day plan, not 30 days');
+
+// New app sign-ups receive the existing free plan only after SMS verification;
+// the UUID marker prevents another free claim through either app or Telegram.
+$Assert(str_contains($Gateway_Code, 'private const FREE_PLAN_GB = 1;') && str_contains($Gateway_Code, 'private const FREE_PLAN_DAYS = 1;'), 'the app free plan matches the established 1 GB / 1 day offer');
+$Resolve_Start = strpos($Gateway_Code, 'private static function resolveAccount(');
+$Resolve_End = $Resolve_Start === false ? false : strpos($Gateway_Code, 'private static function syncBotUserClientId(', $Resolve_Start);
+$Resolve_Code = $Resolve_Start === false || $Resolve_End === false ? '' : substr($Gateway_Code, $Resolve_Start, $Resolve_End - $Resolve_Start);
+$Assert(
+str_contains($Resolve_Code, "'usage_limit_GB' => self::FREE_PLAN_GB")
+&& str_contains($Resolve_Code, "'package_days' => self::FREE_PLAN_DAYS")
+&& str_contains($Resolve_Code, "'is_active' => true")
+&& str_contains($Resolve_Code, "'enable' => true")
+&& str_contains($Resolve_Code, "Repository::setSetting('App_Free_Claimed_' . \$New_UUID, '1')"),
+'new verified app sign-ups are activated on the one-time free plan'
+);
+$Assert(str_contains($Resolve_Code, "['Free_Plan_Claimed' => 1]"), 'new app free plans are synchronized to an already linked bot user');
+$Assert(str_contains($Subscription_Code, "App_Free_Claimed_' . \$Client_ID"), 'Telegram rejects a second free-plan claim for app-awarded accounts');
+$Assert(str_contains($Common_Code, "App_Free_Claimed_' . \$Client"), 'Telegram profile sync marks app-awarded free plans as claimed');
+$Assert(str_contains($User_Code, "App_Free_Claimed_' . \$Client_Uuid"), 'Telegram subscription menu hides the already-awarded free plan');
 
 // 6. ServerClient::listUsers() retries transient failures.
 $Assert(str_contains($Server_Code, 'public static function listUsers(int $Attempts = 2'), 'ServerClient::listUsers() must retry transient failures');

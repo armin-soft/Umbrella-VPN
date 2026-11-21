@@ -493,10 +493,13 @@ $Rows = Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
 ]);
 if (!self::ownsCurrentSubscription($User)) {
-if ((int)($User['Free_Plan_Claimed'] ?? 0) !== 1) {
+$Client_Uuid = trim((string)($User['Client_ID'] ?? ''));
+$Free_Claimed = (int)($User['Free_Plan_Claimed'] ?? 0) === 1
+|| ($Client_Uuid !== '' && $Client_Uuid !== '_'
+&& trim((string)Repository::getSetting('App_Free_Claimed_' . $Client_Uuid, '')) === '1');
+if (!$Free_Claimed) {
 $Rows[] = [Menu::button('🎁اشتراک رایگان', 'اشتراک رایگان اول')];
 }
-$Client_Uuid = (string)($User['Client_ID'] ?? '');
 if (class_exists('BotConfig')
 && method_exists(BotConfig::class, 'isNowruzMenuEnabled')
 && BotConfig::isNowruzMenuEnabled()

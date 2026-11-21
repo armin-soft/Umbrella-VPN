@@ -47,6 +47,8 @@ require_once dirname(__DIR__, 2) . '/Config/Environment.php';
  */
 final class AppGateway {
 private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
+private const FREE_PLAN_GB = 1;
+private const FREE_PLAN_DAYS = 1;
 private function __construct() {
 }
 
@@ -1042,8 +1044,8 @@ $NowruzAvailable = $Has_UUID && $NowruzEnabled && !$Blocked && !$HasActive && !$
 return [
 'free_available' => $FreeAvailable,
 'free_claimed' => $FreeClaimed,
-'free_gb' => 1,
-'free_days' => 1,
+'free_gb' => self::FREE_PLAN_GB,
+'free_days' => self::FREE_PLAN_DAYS,
 'nowruz_menu_enabled' => $NowruzEnabled,
 'nowruz_available' => $NowruzAvailable,
 'nowruz_claimed' => $NowruzClaimed,
@@ -1314,8 +1316,8 @@ if ((int)($User['Free_Plan_Claimed'] ?? 0) === 1
 self::fail(409, 'already_claimed', 'اشتراک رایگان قبلاً برای این حساب فعال شده است.');
 }
 $Name = '۱ روزه';
-$Gb = 1;
-$Days = 1;
+$Gb = self::FREE_PLAN_GB;
+$Days = self::FREE_PLAN_DAYS;
 } else {
 if (!BotConfig::isNowruzMenuEnabled()) {
 self::fail(403, 'nowruz_disabled', 'اشتراک نوروزی در حال حاضر فعال نیست.');
@@ -1647,6 +1649,10 @@ $Created = PanelClient::create([
 'name' => $Full_Name !== '' ? $Full_Name : 'کاربر آمبرلا',
 'comment' => $Phone,
 'telegram_id' => max(0, $Telegram_Id),
+'usage_limit_GB' => self::FREE_PLAN_GB,
+'package_days' => self::FREE_PLAN_DAYS,
+'is_active' => true,
+'enable' => true,
 ]);
 
 if ($Created === null) {
@@ -1656,8 +1662,19 @@ return [];
 
 $New_UUID = trim((string)($Created['uuid'] ?? ''));
 
+if ($New_UUID !== '') {
+try {
+Repository::setSetting('App_Free_Claimed_' . $New_UUID, '1');
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Gateway] automatic free plan marker failed for masked-' . substr(md5($Phone), 0, 8) . ': ' . $Error->getMessage());
+}
+}
+
 if ($Telegram_Id > 0 && $New_UUID !== '') {
 self::syncBotUserClientId($Telegram_Id, $New_UUID);
+try { Repository::updateUser($Telegram_Id, ['Free_Plan_Claimed' => 1]); }
+catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] automatic free plan user flag failed: ' . $Error->getMessage()); }
 if ((int)($Created['telegram_id'] ?? 0) !== $Telegram_Id) {
 try { PanelClient::update($New_UUID, ['telegram_id' => $Telegram_Id]); }
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] telegram_id link after create failed for ' . $Phone . ': ' . $Error->getMessage()); }

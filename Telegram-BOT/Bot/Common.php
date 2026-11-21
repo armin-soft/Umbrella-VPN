@@ -117,6 +117,9 @@ $Server_UUID = trim((string)($Server_Row['uuid'] ?? ''));
 if ($Server_UUID !== '' && $Server_UUID !== $Client) return $User;
 $Fields = self::subscriptionFieldsFromServer($Server_Row);
 if ($Fields === []) return $User;
+if (trim((string)Repository::getSetting('App_Free_Claimed_' . $Client, '')) === '1') {
+$Fields['Free_Plan_Claimed'] = 1;
+}
 if (trim((string)($User['Subscription'] ?? '')) === '') {
 $Fields['Subscription'] = Helper::durationLabel((int)$Fields['Package_Duration']);
 }

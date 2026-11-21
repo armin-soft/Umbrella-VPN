@@ -131,8 +131,8 @@ $Comment = $Phone !== '' ? $Phone : 'Umbrella VPN';
 
 $Body = array_merge([
 'name' => '',
-'usage_limit_GB' => 100,
-'package_days' => 30,
+'usage_limit_GB' => 1,
+'package_days' => 1,
 'comment' => $Comment,
 'telegram_id' => 0,
 'start_date' => $Today,
