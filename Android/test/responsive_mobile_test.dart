@@ -114,6 +114,10 @@ void main() {
         };
         addTearDown(() { FlutterError.onError = previousOnError; });
         for (final page in pages) {
+          // Each screen gets its own navigator; a sheet from the previous
+          // screen must not block pointer events on the next one.
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
           currentPage = page is SettingsPage ? 'SettingsPage.${page.initialSection?.name ?? "menu"}' : page.runtimeType.toString();
           final errorsBefore = problems.length;
           final bool fullWindow = page is LandingPage || page is LoginPage || page is AppShell;
