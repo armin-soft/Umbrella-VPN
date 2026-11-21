@@ -298,6 +298,8 @@ void main() {
         toasts.dispose();
         updates.dispose();
         vpn.dispose();
+        await tester.pump(const Duration(seconds: 10));
+        FlutterError.onError = previousOnError;
         expect(problems, isEmpty, reason: problems.join('\n'));
       });
     }
