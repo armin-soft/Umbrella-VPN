@@ -120,7 +120,8 @@ void main() {
         final toasts = ToastController();
         await power.refresh();
         final pages = <Widget>[
-          LandingPage(onStart: () {}), const LoginPage(), const ConnectPage(),
+          LandingPage(onStart: () {}), const LoginPage(),
+          const LoginPage(key: ValueKey('keyboard')), const ConnectPage(),
           const DevicePage(), const AccountPage(), const SettingsPage(),
           for (final section in SettingsCategory.navigationItems)
             SettingsPage(key: ValueKey(section.name), initialSection: section),
@@ -160,6 +161,7 @@ void main() {
               builder: (BuildContext context, Widget? child) => MediaQuery(
                 data: MediaQueryData(
                   size: size,
+                  viewInsets: EdgeInsets.only(bottom: page is LoginPage && page.key == const ValueKey('keyboard') ? size.height * 0.4 : 0),
                   textScaler: TextScaler.linear(textScale),
                   displayFeatures: displayFeatures,
                 ),
@@ -194,6 +196,15 @@ void main() {
             expect(find.byType(MenuPageBackdrop), findsOneWidget);
           }
           if (page is AppShell && size.width < 700) {
+            currentPage = 'AppShell.notifications';
+            await tester.tap(find.byTooltip('اعلان ها'));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 350));
+            expect(find.byType(Dialog), findsWidgets);
+            await inspectVerticalScrolls(tester);
+            Navigator.of(tester.element(find.byType(Dialog).first)).pop();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 350));
             for (final label in ['اتصال', 'دستگاه من', 'حساب من', 'تنظیمات', 'گزارش ها', 'درباره', 'به روز رسانی']) {
               currentPage = 'AppShell.$label';
               try {
