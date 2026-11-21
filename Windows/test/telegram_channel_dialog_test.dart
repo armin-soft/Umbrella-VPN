@@ -361,7 +361,7 @@ void main() {
           of: joinBtn,
           matching: find.byIcon(Icons.telegram),
         );
-        final Finder btnLabel = find.text('عضویت در کانال');
+        final Finder btnLabel = find.text('عضویت در کانال رسمی');
         expect(
           tester.getCenter(btnIcon).dx,
           greaterThan(tester.getCenter(btnLabel).dx),
