@@ -14,6 +14,8 @@ import '../platform/services.dart';
 /// به روز رسانی درون برنامه ای در دو کانال اصلی (پایدار) و بتا (آزمایشی):
 /// بررسی انتشار، دانلود جریانی با سرعت و امکان لغو، تایید SHA-256 و نصب خودکار.
 class UpdateController extends ChangeNotifier {
+  static const Duration autoCheckInterval = Duration(minutes: 5);
+
   UpdateController(this._native, {UpdateService? service})
       : _service = service ?? UpdateService();
 
@@ -36,6 +38,10 @@ class UpdateController extends ChangeNotifier {
 
   DateTime? _lastCheckedAt;
   DateTime? get lastCheckedAt => _lastCheckedAt;
+  DateTime? _lastCheckAttemptAt;
+  DateTime? get lastCheckAttemptAt => _lastCheckAttemptAt;
+  bool get autoCheckDue => _lastCheckAttemptAt == null ||
+      DateTime.now().difference(_lastCheckAttemptAt!) >= autoCheckInterval;
 
   bool _checking = false;
   bool get checking => _checking;
@@ -92,10 +98,18 @@ class UpdateController extends ChangeNotifier {
     await check(silent: false, ignoreSkipped: true);
   }
 
+  Future<bool> checkIfDue({bool silent = true}) {
+    if (!autoCheckDue || _checking || _downloading || _installing) {
+      return Future<bool>.value(false);
+    }
+    return check(silent: silent);
+  }
+
   Future<bool> check({bool silent = false, bool ignoreSkipped = false}) async {
     if (_checking || _downloading || _installing) {
       return false;
     }
+    _lastCheckAttemptAt = DateTime.now();
     _checking = true;
     _error = '';
     if (!silent) {

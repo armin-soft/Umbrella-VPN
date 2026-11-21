@@ -42,7 +42,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.29.3'
+          flutter-version: '3.38.5'
           cache: true
       - name: Fetch verified mobile engine
         env:
@@ -76,7 +76,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.29.3'
+          flutter-version: '3.38.5'
           cache: true
       - name: Resolve dependencies
         shell: bash
@@ -93,7 +93,7 @@ jobs:
         run: |
           if ! flutter test --reporter expanded > test-output.txt 2>&1; then
             cat test-output.txt
-            message=$(tail -60 test-output.txt | tr '\n' ' ' | cut -c1-12000)
+            message=$(grep 'Error:' test-output.txt | head -60 | tr '\n' ' ' | cut -c1-12000)
             echo "::error::$message"
             exit 1
           fi
