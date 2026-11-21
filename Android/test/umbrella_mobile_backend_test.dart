@@ -17,7 +17,7 @@ void main() {
   test('never reports permission without Android consent', () async {
     final native = FakeNative();
     final backend = UmbrellaMobileBackend(
-      native: native, settingsJson: '{}', configContent: '{}',
+      native: native, settingsJson: '{"enable-tun":true}', configContent: '{}',
       verifyTunTraffic: () async => false,
     );
     expect(await backend.requestPermission(), isFalse);
@@ -26,10 +26,21 @@ void main() {
     await backend.stopService();
   });
 
+  test('rejects proxy-only and desktop system proxy settings', () async {
+    for (final settings in ['{}', '{"enable-tun":true,"set-system-proxy":true}']) {
+      final backend = UmbrellaMobileBackend(
+        native: FakeNative(), settingsJson: settings, configContent: '{}',
+        verifyTunTraffic: () async => false,
+      );
+      await expectLater(backend.startService(), throwsFormatException);
+      await expectLater(backend.configureAndStart(), throwsFormatException);
+    }
+  });
+
   test('traffic verification is supplied explicitly and cannot default to success', () async {
     var calls = 0;
     final backend = UmbrellaMobileBackend(
-      native: FakeNative(), settingsJson: '{}', configContent: '{}',
+      native: FakeNative(), settingsJson: '{"enable-tun":true}', configContent: '{}',
       verifyTunTraffic: () async { calls++; return false; },
     );
     expect(await backend.verifyTraffic(), isFalse);

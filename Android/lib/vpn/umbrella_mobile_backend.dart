@@ -32,8 +32,18 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
   @override
   Future<bool> requestPermission() => native.requestVpnPermission();
 
+  void _validateConfiguration() {
+    if (configContent.trim().isEmpty) throw StateError('VPN profile is empty');
+    final decoded = jsonDecode(settingsJson);
+    if (decoded is! Map || decoded['enable-tun'] != true ||
+        decoded['set-system-proxy'] == true) {
+      throw const FormatException('Core settings do not enable Android VPN');
+    }
+  }
+
   @override
   Future<void> startService() async {
+    _validateConfiguration();
     if (_connection != null) throw StateError('Core is already initialized');
     final dirs = await native.coreDirectories();
     final base = dirs['baseDir'];
@@ -65,11 +75,9 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
 
   @override
   Future<void> configureAndStart() async {
-    if (configContent.trim().isEmpty) throw StateError('VPN profile is empty');
+    _validateConfiguration();
     final client = _connection?.client;
     if (client == null) throw StateError('VPN core is not initialized');
-    // Validate locally before sending; do not start a stale configuration.
-    if (jsonDecode(settingsJson) is! Map) throw const FormatException('Invalid core settings');
     final response = await client.changeHiddifySettings(
       ChangeHiddifySettingsRequest(hiddifySettingsJson: settingsJson),
     ).timeout(const Duration(seconds: 15));
