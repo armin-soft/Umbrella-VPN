@@ -1,5 +1,7 @@
 Umbrella VPN's Android integration targets the hiddify-core 5.9.11 mobile library.
 Upstream source: https://github.com/hiddify/hiddify-core/tree/v5.9.11
+Android network-monitor integration is adapted from hiddify-app v5.9.11:
+https://github.com/hiddify/hiddify-app/tree/v5.9.11 (GPLv3; see upstream LICENSE).
 Upstream release: https://github.com/hiddify/hiddify-core/releases/tag/v5.9.11
 License: licenses/umbrella-core-license.md (upstream GPLv3 with additional terms, including NonCommercial).
 Umbrella branding and filenames do not claim authorship of the upstream library or imply upstream endorsement.
