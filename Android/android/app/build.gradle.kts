@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -20,8 +22,31 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
-    // Release signing is intentionally not configured with the debug key.
-    // Production signing must use the owner's persistent release keystore.
+    val releaseStore = System.getenv("UMBRELLA_ANDROID_KEYSTORE")
+    val releaseStorePassword = System.getenv("UMBRELLA_ANDROID_STORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("UMBRELLA_ANDROID_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("UMBRELLA_ANDROID_KEY_PASSWORD")
+    val hasReleaseSigning = listOf(releaseStore, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+        .all { !it.isNullOrBlank() } && releaseStore != null && File(releaseStore).isFile
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("production") {
+                storeFile = File(releaseStore!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("production")
+        }
+    }
+    // Refuse to produce an unsigned or debug-signed release by accident.
+    if (gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) } && !hasReleaseSigning) {
+        throw GradleException("Release requires UMBRELLA_ANDROID_KEYSTORE, UMBRELLA_ANDROID_STORE_PASSWORD, UMBRELLA_ANDROID_KEY_ALIAS and UMBRELLA_ANDROID_KEY_PASSWORD")
+    }
 }
 flutter { source = "../.." }
 

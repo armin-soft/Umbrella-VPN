@@ -59,6 +59,21 @@ jobs:
             exit 1
           fi
           echo '::notice::Actual app debug build succeeded; VPN integration remains unverified.'
+      - name: Test release build with a disposable CI key
+        working-directory: Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -keystore "$RUNNER_TEMP/ci-test.keystore" -storepass testonly -keypass testonly -alias test -dname 'CN=CI test only' -keyalg RSA -keysize 2048 -validity 1
+          export UMBRELLA_ANDROID_KEYSTORE="$RUNNER_TEMP/ci-test.keystore"
+          export UMBRELLA_ANDROID_STORE_PASSWORD=testonly UMBRELLA_ANDROID_KEY_ALIAS=test UMBRELLA_ANDROID_KEY_PASSWORD=testonly
+          if ! flutter build apk --release > "$RUNNER_TEMP/release-check.log" 2>&1; then
+            cat "$RUNNER_TEMP/release-check.log"
+            message=$(tail -60 "$RUNNER_TEMP/release-check.log" | tr '\n' ' ' | cut -c1-12000)
+            echo "::error::$message"
+            exit 1
+          fi
+          rm -f "$RUNNER_TEMP/ci-test.keystore"
       - name: Save experimental debug APK
         uses: actions/upload-artifact@v4
         with:
