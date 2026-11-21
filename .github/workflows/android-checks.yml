@@ -110,7 +110,7 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          if ! flutter test --reporter expanded > test-output.txt 2>&1; then
+          if ! timeout 120s flutter test --reporter expanded > test-output.txt 2>&1; then
             cat test-output.txt
             message=$(grep -E 'Error:|Actual:|Expected:|overflowed| at Size\(' test-output.txt | head -80 | tr '\n' ' ' | cut -c1-12000 || true)
             if [ -z "$message" ]; then message=$(tail -40 test-output.txt | tr '\n' ' ' | cut -c1-12000); fi

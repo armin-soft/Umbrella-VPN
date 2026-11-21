@@ -106,7 +106,7 @@ void main() {
         final previousOnError = FlutterError.onError;
         FlutterError.onError = (details) {
           problems.add('$currentPage at $size / $textScale: ${details.exception}');
-          FlutterError.presentError(details);
+          print("LAYOUT_DIAGNOSTIC: ${details.toString()}");
         };
         addTearDown(() { FlutterError.onError = previousOnError; });
         for (final page in pages) {
