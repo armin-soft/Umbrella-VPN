@@ -1,6 +1,7 @@
 package ir.umbrella.app
 
 import android.content.pm.PackageManager
+import android.net.InetAddresses
 import android.net.IpPrefix
 import android.net.VpnService
 import android.os.Build
@@ -47,23 +48,23 @@ internal class UmbrellaTun(private val service: VpnService) : AutoCloseable {
                 if (!routes4.hasNext()) builder.addRoute("0.0.0.0", 0)
                 while (routes4.hasNext()) {
                     val route = routes4.next()
-                    builder.addRoute(IpPrefix("${route.address()}/${route.prefix()}"))
+                    builder.addRoute(IpPrefix(InetAddresses.parseNumericAddress(route.address()), route.prefix()))
                 }
                 val routes6 = options.inet6RouteAddress
                 if (!routes6.hasNext()) builder.addRoute("::", 0)
                 while (routes6.hasNext()) {
                     val route = routes6.next()
-                    builder.addRoute(IpPrefix("${route.address()}/${route.prefix()}"))
+                    builder.addRoute(IpPrefix(InetAddresses.parseNumericAddress(route.address()), route.prefix()))
                 }
                 val excluded4 = options.inet4RouteExcludeAddress
                 while (excluded4.hasNext()) {
                     val route = excluded4.next()
-                    builder.excludeRoute(IpPrefix("${route.address()}/${route.prefix()}"))
+                    builder.excludeRoute(IpPrefix(InetAddresses.parseNumericAddress(route.address()), route.prefix()))
                 }
                 val excluded6 = options.inet6RouteExcludeAddress
                 while (excluded6.hasNext()) {
                     val route = excluded6.next()
-                    builder.excludeRoute(IpPrefix("${route.address()}/${route.prefix()}"))
+                    builder.excludeRoute(IpPrefix(InetAddresses.parseNumericAddress(route.address()), route.prefix()))
                 }
             } else {
                 // The core supplies precomputed non-overlapping ranges on older Android.
