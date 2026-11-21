@@ -1334,7 +1334,7 @@ void main() {
       );
       final String device = read('lib/ui/pages/device_page.dart');
       expect(device.contains('value: _technicalAddress(device.localIp)'), isTrue);
-      expect(device.contains('technicalValue: true'), isTrue);
+      expect(device.contains('technicalValue: hasLocalIp'), isTrue);
       final String account = read('lib/ui/pages/account_page.dart');
       expect(account.contains('technicalValue: true'), isTrue);
       expect(account.contains('value: account.telegramId'), isTrue);
