@@ -53,6 +53,13 @@ str_contains($Gateway_Code, 'proceeding with new-user flow'),
 $Assert(str_contains($Gateway_Code, 'FROM `App_Devices`'), 'findCustomerAccount() must check App_Devices');
 $Assert(str_contains($Gateway_Code, 'FROM `App_SignIn_Requests`'), 'findCustomerAccount() must check App_SignIn_Requests');
 $Assert(str_contains($Gateway_Code, 'PanelClient::lastGetStatus() !== 404'), 'findCustomerAccount() must preserve local UUID on non-404 panel errors');
+$Assert(str_contains($Gateway_Code, 'AppAccountRevocation::revoke($UUID)'), 'deleted panel accounts revoke all app sessions');
+$Assert(str_contains($Gateway_Code, "self::fail(403, 'device_revoked'"), 'deleted panel account forces the normal VPN disconnect and sign-out path');
+$Assert(str_contains($Gateway_Code, 'session profile fallback for uuid=')
+    && str_contains($Gateway_Code, "if (PanelClient::lastGetStatus() === 404)"), 'deleted panel account is revoked before an app session can be issued');
+$Assert(str_contains($Gateway_Code, "if (\$UUID === '' || \$UUID === '_')"), 'refresh rejects empty and placeholder panel account IDs');
+$Assert(str_contains($Gateway_Code, '$PanelAccount = PanelClient::get($UUID);')
+    && str_contains($Gateway_Code, "\$Payload['offers'] = self::offersPayload(\$UUID, \$LinkedTg, \$PanelAccount);"), 'heartbeat checks and passes the panel account to the offers payload');
 $Assert(str_contains($Gateway_Code, 'syncBotUserClientId'), 'AppGateway must sync newly minted UUID back to Users.Client_ID');
 
 // 5. PanelClient::create() matches Hiddify v2 admin schema (no bogus `phone`

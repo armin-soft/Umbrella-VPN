@@ -314,6 +314,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Persian, branding, and Android source contracts', () {
+    test('domain search hint is Persian', () {
+      final String source =
+          File('lib/ui/widgets/content_control.dart').readAsStringSync();
+      expect(source.contains("hintText: 'جست وجوی دامنه...'"), isTrue);
+      expect(source.contains('search domain...'), isFalse);
+    });
+
     test('zero invisible Unicode characters across Android app and host files', () {
       final RegExp forbidden = RegExp(
         r'[\u200B\u200C\u200D\u200E\u200F\uFEFF\u202A-\u202E\u2066-\u2069]',

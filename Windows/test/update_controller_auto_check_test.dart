@@ -33,7 +33,7 @@ void main() {
     await updates.checkIfDue();
     expect(requests, requestsAfterFirstCheck);
 
-    // دستی‌زدن به «بررسی دوباره» همچنان باید محدودیت خودکار را دور بزند.
+    // دستی زدن به «بررسی دوباره» همچنان باید محدودیت خودکار را دور بزند.
     await updates.check(silent: false);
     expect(requests, greaterThan(requestsAfterFirstCheck));
   });

@@ -776,6 +776,63 @@ void main() {
       expect(Fa.num('٠١٢٣٤٥٦٧٨٩'), '۰۱۲۳۴۵۶۷۸۹');
       expect(Fa.num('می\u200Cشود 2026'), 'می شود ۲۰۲۶');
       expect(Fa.toEn('۱۲۳۳۸'), '12338');
+      expect(
+        Fa.num('نشانی درگاه: 192.168.10.20:2087'),
+        'نشانی درگاه: 192.168.10.20:2087',
+      );
+      expect(
+        Fa.num('نشانی امن: https://node2.example.com/u/123?key=9'),
+        'نشانی امن: https://node2.example.com/u/123?key=9',
+      );
+      expect(
+        Fa.num('دامنه فنی: node2.example.com#key/123'),
+        'دامنه فنی: node2.example.com#key/123',
+      );
+      expect(
+        Fa.num('نشانی مسیر: 192.0.2.10#route=2026'),
+        'نشانی مسیر: 192.0.2.10#route=2026',
+      );
+      expect(
+        Fa.num('شناسه عددی تلگرام: 123456789'),
+        'شناسه عددی تلگرام: 123456789',
+      );
+      expect(
+        Fa.num('کلید wg-key-99 و مقدار 2026'),
+        'کلید wg-key-99 و مقدار ۲۰۲۶',
+      );
+      expect(Fa.num('نشانی IPv6: 2001:db8::1'), 'نشانی IPv6: 2001:db8::1');
+      expect(
+        Fa.num('نشانی IPv6: [2001:db8::1]:8080/api/1'),
+        'نشانی IPv6: [2001:db8::1]:8080/api/1',
+      );
+      expect(Fa.num('نشانی IPv6: 2001:db8::1.'), 'نشانی IPv6: 2001:db8::1.');
+      expect(
+        Fa.num('نشانی IPv6 نگاشته: [::ffff:192.0.2.1]:443'),
+        'نشانی IPv6 نگاشته: [::ffff:192.0.2.1]:443',
+      );
+      expect(
+        Fa.num('نشانی محلی IPv6: [fe80::1%25en0]:5353/path/123.'),
+        'نشانی محلی IPv6: [fe80::1%25en0]:5353/path/123.',
+      );
+      expect(
+        Fa.num('شناسه فنی: 970f3fa0-3714-4d9a-a95d-8c4ddd696bfd'),
+        'شناسه فنی: 970f3fa0-3714-4d9a-a95d-8c4ddd696bfd',
+      );
+      expect(
+        Fa.num('نشانی سخت افزاری: 00:1A:2B:3C:4D:5E'),
+        'نشانی سخت افزاری: 00:1A:2B:3C:4D:5E',
+      );
+      expect(
+        Fa.num('نشانی سخت افزاری: 00-1A-2B-3C-4D-5E'),
+        'نشانی سخت افزاری: 00-1A-2B-3C-4D-5E',
+      );
+      expect(
+        Fa.num(
+          'پروتکل IPv4 و TLS 1.3 یا TLS/1.3، وضعیت HTTP/404 و نسخه برنامه 1.0.39',
+        ),
+        'پروتکل IPv4 و TLS 1.3 یا TLS/1.3، وضعیت HTTP/404 و نسخه برنامه ۱.۰.۳۹',
+      );
+      expect(Fa.num('کد وضعیت 503'), 'کد وضعیت 503');
       expect(AppConfig.versionPhrase, isNot(contains(RegExp(r'[0-9]'))));
       expect(AppConfig.versionPhrase, contains('۰٫۰٫۱'));
 
@@ -802,6 +859,15 @@ void main() {
         for (final WarpEndpoint e in WarpEndpoint.values) e.label,
         for (final AppRouteAction a in AppRouteAction.values) a.label,
         for (final TunStack s in TunStack.values) s.label,
+        for (final SubscriptionFormat format in SubscriptionFormat.values)
+          format.label,
+        for (final NodeProtocol protocol in NodeProtocol.values)
+          protocol.label,
+        for (final UpdateChannel channel in UpdateChannel.values) ...<String>[
+          channel.label,
+          channel.shortLabel,
+          channel.subtitle,
+        ],
         for (final CorePreference c in CorePreference.values) ...<String>[
           c.faName,
           c.description,

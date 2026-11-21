@@ -172,44 +172,10 @@ class _DevicePageState extends State<DevicePage> {
     context.read<ToastController>().success('$label کپی شد');
   }
 
-  /// نمایش فشرده و کاملاً فارسی شناسه سخت افزاری بدون حروف لاتین.
-  static String _hardwareCodeFa(String raw) {
+  /// نشانی اینترنتی باید به شکل دقیق و قابل کپی بماند.
+  static String _technicalAddress(String raw) {
     final String clean = raw.trim();
-    if (clean.isEmpty) {
-      return 'شناسایی نشده';
-    }
-    final String digits = clean.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.length >= 8) {
-      return 'کد ${Fa.num(digits.substring(0, 4))}•••${Fa.num(digits.substring(digits.length - 4))}';
-    }
-    if (digits.isNotEmpty) {
-      return 'کد ${Fa.num(digits)}';
-    }
-    return 'ثبت شده و آماده کپی';
-  }
-
-  /// قالب بندی نشانی شبکه با ارقام فارسی و بدون حروف لاتین.
-  static String _ipLabelFa(String raw) {
-    final String clean = raw.trim();
-    if (clean.isEmpty) {
-      return 'شناسایی نشده';
-    }
-    if (RegExp(r'^[0-9.]+$').hasMatch(clean)) {
-      return Fa.num(clean);
-    }
-    return 'فعال (نسل ششم)';
-  }
-
-  /// نمایش فارسی نام رایانه یا حساب ویندوز بدون نشت حروف لاتین.
-  static String _systemNameFa(String raw, String fallback) {
-    final String clean = raw.trim();
-    if (clean.isEmpty) {
-      return 'شناسایی نشده';
-    }
-    if (RegExp(r'[A-Za-z]').hasMatch(clean)) {
-      return fallback;
-    }
-    return Fa.num(clean);
+    return clean.isEmpty ? 'شناسایی نشده' : clean;
   }
 
   /// گزارش متنی کاملاً فارسی و اختصاصی مشخصات فنی همین رایانه.
@@ -246,7 +212,7 @@ class _DevicePageState extends State<DevicePage> {
         'زمان روشن شدن رایانه: ${Fa.tehranFullDateTime(bootAt, seconds: false)}',
       'نوع کارت شبکه: ${device.adapterLabelFa}',
       if (device.localIp.isNotEmpty)
-        'نشانی شبکه داخلی: ${_ipLabelFa(device.localIp)}',
+        'نشانی شبکه داخلی: ${_technicalAddress(device.localIp)}',
       'نسخه نرم افزار: ${Fa.num(AppConfig.versionPhrase)}',
     ].join('\n');
   }
@@ -293,7 +259,7 @@ class _DevicePageState extends State<DevicePage> {
     final String internetAddressStatus = tunnelProtected
         ? 'محافظت شده در تونل امن'
         : (vpn.realIp.isNotEmpty
-            ? _ipLabelFa(vpn.realIp)
+            ? _technicalAddress(vpn.realIp)
             : (hasLocalIp ? 'متصل به اینترنت' : 'در حال بررسی شبکه'));
 
     final List<Widget> summaryTiles = <Widget>[
@@ -406,7 +372,9 @@ class _DevicePageState extends State<DevicePage> {
           InfoRow(
             icon: Icons.router_rounded,
             label: 'نشانی شبکه داخلی',
-            value: _ipLabelFa(device.localIp),
+            value: _technicalAddress(device.localIp),
+            ltr: hasLocalIp,
+            technicalValue: hasLocalIp,
             trailing: hasLocalIp
                 ? IconAction(
                     icon: Icons.copy_rounded,
@@ -422,6 +390,8 @@ class _DevicePageState extends State<DevicePage> {
             label: 'وضعیت نشانی اینترنت',
             value: internetAddressStatus,
             valueColor: tunnelProtected ? colors.success : colors.textPrimary,
+            ltr: !tunnelProtected && vpn.realIp.isNotEmpty,
+            technicalValue: !tunnelProtected && vpn.realIp.isNotEmpty,
             trailing: (!tunnelProtected && vpn.realIp.isNotEmpty)
                 ? IconAction(
                     icon: Icons.copy_rounded,
@@ -435,7 +405,9 @@ class _DevicePageState extends State<DevicePage> {
           InfoRow(
             icon: Icons.perm_device_information_rounded,
             label: 'شناسه فیزیکی کارت شبکه',
-            value: hasMac ? 'ثبت شده و آماده کپی' : 'شناسایی نشده',
+            value: hasMac ? device.mac.trim() : 'شناسایی نشده',
+            ltr: hasMac,
+            technicalValue: hasMac,
             trailing: hasMac
                 ? IconAction(
                     icon: Icons.copy_rounded,
@@ -482,7 +454,11 @@ class _DevicePageState extends State<DevicePage> {
           InfoRow(
             icon: Icons.desktop_windows_rounded,
             label: 'نام رایانه در ویندوز',
-            value: _systemNameFa(device.hostname, 'ثبت شده در ویندوز'),
+            value: device.hostname.trim().isEmpty
+                ? 'شناسایی نشده'
+                : device.hostname.trim(),
+            ltr: device.hostname.trim().isNotEmpty,
+            technicalValue: device.hostname.trim().isNotEmpty,
             trailing: device.hostname.isEmpty
                 ? null
                 : IconAction(
@@ -496,7 +472,11 @@ class _DevicePageState extends State<DevicePage> {
           InfoRow(
             icon: Icons.account_box_rounded,
             label: 'حساب کاربری ویندوز',
-            value: _systemNameFa(device.username, 'کاربر محلی ویندوز'),
+            value: device.username.trim().isEmpty
+                ? 'شناسایی نشده'
+                : device.username.trim(),
+            ltr: device.username.trim().isNotEmpty,
+            technicalValue: device.username.trim().isNotEmpty,
             trailing: device.username.isEmpty
                 ? null
                 : IconAction(
@@ -510,7 +490,11 @@ class _DevicePageState extends State<DevicePage> {
           InfoRow(
             icon: Icons.fingerprint_rounded,
             label: 'شناسه یکتای سخت افزاری',
-            value: _hardwareCodeFa(device.machineId),
+            value: device.machineId.trim().isEmpty
+                ? 'شناسایی نشده'
+                : device.machineId.trim(),
+            ltr: device.machineId.trim().isNotEmpty,
+            technicalValue: device.machineId.trim().isNotEmpty,
             trailing: device.machineId.isEmpty
                 ? null
                 : IconAction(

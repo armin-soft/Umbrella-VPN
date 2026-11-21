@@ -11,11 +11,23 @@
       "tint": "#C2185B"
     },
     {
+      "id": "christmas",
+      "title": "کریسمس",
+      "subtitle": "جشن میلاد مسیح؛ روشنایی، امید و مهربانی",
+      "start": "12-24",
+      "end": "12-25",
+      "calendar": "gregorian",
+      "icon": "christmas_tree",
+      "tint": "#1B5E20",
+      "secondary_tint": "#B71C1C",
+      "accent_tint": "#F9A825"
+    },
+    {
       "id": "nowruz",
       "title": "نوروز",
       "subtitle": "سال نو مبارک؛ سبز و تازه مثل بهار",
-      "start": "03-15",
-      "end": "04-03",
+      "start": "01-01",
+      "end": "01-13",
       "icon": "spa",
       "tint": "#2E7D32"
     },

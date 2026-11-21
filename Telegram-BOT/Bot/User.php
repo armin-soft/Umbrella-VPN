@@ -29,16 +29,6 @@ private const AUTO_RENEW_PLANS = [
 private function __construct() {
 }
 
-private static function liveUsageBoard(): array {
-try {
-return ServerClient::liveUsers();
-}
-
-catch (Throwable) {
-return [];
-}
-}
-
 public static function start(Context $Context): void {
 TelegramClient::sendChatAction($Context->ChatId);
 $Context->saveUser();
@@ -292,9 +282,9 @@ if (!self::ownsCurrentSubscription($User) && $Client_ID !== '' && $Client_ID !==
 [$User] = self::subscriptionMenuState($Context->UserId);
 }
 $Menu_Rows = Menu::rows([
-[['💰کیف پول و مالی', 'user_wallet_menu']],
 [['👤حساب کاربری', 'user_account_menu']],
 [['📱دستگاه من', 'user_device_menu']],
+[['💰کیف پول و مالی', 'user_wallet_menu']],
 [['📊سوابق و آمار', 'user_stats_menu']],
 [['🖥️نرم افزار/اپلیکیشن', 'app_download_menu']],
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
@@ -558,7 +548,6 @@ self::accountMenu($Context);
 public static function statsMenu(Context $Context): void {
 $Rows = Menu::rows([
 [['📋سابقه اشتراک', 'سابقه اشتراک'], ['📊گزارش مصرف', 'گزارش مصرف']],
-[['🏆رتبه بندی کاربران', 'رتبه بندی کاربران']],
 ]);
 self::categoryMenu($Context, 'سوابق و آمار', $Rows);
 }
@@ -632,7 +621,6 @@ $Days_Remaining = $Diff > 0 ? (int)ceil($Diff / 86400) : 0;
 }
 
 $Client_Raw = trim((string)($User['Client_ID'] ?? ''));
-$Client_ID = htmlspecialchars($Client_Raw !== '' && $Client_Raw !== '_' ? $Client_Raw : 'نامشخص', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 $ED_Private = htmlspecialchars(trim((string)($User['ED_25519_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 $ED_Public = htmlspecialchars(trim((string)($User['ED_25519_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 $WG_Private = htmlspecialchars(trim((string)($User['WireGuard_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -695,7 +683,6 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 . "├─📤حجم باقی مانده: *" . ($Remaining_Usage !== '' ? Helper::formatGB((float)$Remaining_Usage) : 'نامشخص') . "*\n"
 . "├─📈درصد مصرف: *" . ($Percent_Usage !== '' && $Percent_Usage !== null ? Helper::formatPercent((float)$Percent_Usage) . '٪' : 'نامشخص') . "*\n"
 . "├─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*\n"
-. "└─🆔شناسه کلاینت: `{$Client_ID}`\n"
 . ($Has_Keys
 ? "\n🔑*کلیدهای اتصال شما:*\n\n"
 . "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private}</pre>\n"
@@ -705,22 +692,6 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 . "🔸<b>کلید از پیش اشتراکی وایرگارد</b>\n<pre>{$WG_PSK}</pre>"
 : '')
 : '└─❌اشتراک فعالی ندارید.';
-
-$Rank_Line = '';
-$Used_Val = (float)($Used_Usage !== '' && $Used_Usage !== null ? $Used_Usage : 0);
-
-if ($Used_Val > 0) {
-$Board = self::liveUsageBoard();
-$My_Rank = 0;
-
-foreach ($Board as $Idx => $Row) {
-if ((int)($Row['Telegram_ID'] ?? 0) === $Context->UserId) { $My_Rank = $Idx + 1; break; }
-}
-
-if ($My_Rank > 0) {
-$Rank_Line = "🏆رتبه در رتبه بندی مصرف: " . Helper::rankEmoji($My_Rank) . " " . Helper::rankTitle($My_Rank) . "\n";
-}
-}
 
 $Auto_Renew_Plan = trim((string)($User['Auto_Renew_Plan'] ?? ''));
 $Ar_Price = 0;
@@ -752,7 +723,6 @@ $Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((st
 . "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*اپراتور پایه: {$Operator}*)\n"
 . "💳اعتبار حساب: *{$Balance_Formatted}*\n"
 . "🆔شناسه تلگرام: `" . Helper::toPersian((string)$Context->UserId) . "`\n"
-. $Rank_Line
 . ($Auto_Renew_Visible ? "🔄تمدید خودکار: {$Auto_Renew_Label}\n" : '')
 . "📅تاریخ عضویت: *{$Created_At_Label}*\n"
 . "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*\n"
@@ -1472,19 +1442,6 @@ $Is_Online = false;
 }
 }
 
-$Board = self::liveUsageBoard();
-$Board_Total = 0.0;
-$My_Rank = 0;
-
-foreach ($Board as $Index => $Row) {
-$Board_Total += (float)($Row['Value'] ?? 0);
-
-if ((int)($Row['Telegram_ID'] ?? 0) === $Context->UserId) {
-$My_Rank = $Index + 1;
-}
-}
-
-$Board_Count = count($Board);
 $Today_Gain = Repository::userUsageGain($Context->UserId);
 $History = Repository::userUsageHistory($Context->UserId, 7);
 $History_Days = count($History);
@@ -1492,11 +1449,6 @@ $Daily_Avg = $History_Days > 0 ? array_sum($History) / $History_Days : null;
 $Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Subscription = trim((string)($User['Subscription'] ?? '')) ?: 'نامشخص';
 $Text = Common::greet($Context, 'گزارش مصرف') . "📊<b>گزارش پیشرفته مصرف</b>\n➖➖➖➖➖➖➖➖➖\n";
-
-if ($My_Rank > 0) {
-$Text .= "🏆<b>رتبه شما در مصرف:</b> " . Helper::rankEmoji($My_Rank) . " <b>" . Helper::rankTitle($My_Rank) . "</b>\n";
-$Text .= "📊<b>سهم شما از مصرف سرور:</b> *" . Helper::percentShare($Used_GB, $Board_Total) . "*\n\n";
-}
 
 $Text .= "📈<b>میزان مصرف شما:</b>\n`{$Bar}`\n";
 $Text .= "{$Status_Icon}وضعیت: <b>{$Status_Label}</b> |📊درصد مصرف: <b>" . Helper::formatPercent($Percent) . "٪</b>\n";
@@ -1531,85 +1483,6 @@ Menu::rows([
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
 }
 
-public static function usageRanking(Context $Context, int $Page = 0): void {
-TelegramClient::sendChatAction($Context->ChatId);
 
-if ($Context->IsCallback && $Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, '🏆در حال بارگذاری رتبه بندی...', false);
-}
-
-$Board = self::liveUsageBoard();
-$Board_Total = 0.0;
-
-foreach ($Board as $Row) {
-$Board_Total += (float)($Row['Value'] ?? 0);
-}
-
-$My_Rank = 0;
-$My_Row = [];
-$Index = 0;
-
-foreach ($Board as $Row) {
-$Index++;
-
-if ((int)($Row['Telegram_ID'] ?? 0) === $Context->UserId) {
-$My_Rank = $Index;
-$My_Row = $Row;
-}
-}
-
-$Board_Count = count($Board);
-$Board_Top = 0.0;
-
-foreach ($Board as $Row) {
-$Board_Top = max($Board_Top, (float)($Row['Value'] ?? 0));
-}
-
-$Board_Avg = $Board_Count > 0 ? $Board_Total / $Board_Count : 0.0;
-$Text = Common::greet($Context, 'رتبه بندی کاربران') . "🏆👑*رتبه بندی کاربران سرور بر اساس مصرف:*\n";
-$Text .= "👥کاربران سرور: *" . Helper::toPersian((string)$Board_Count) . "* |📥مجموع مصرف: *" . Helper::formatGB($Board_Total) . "* |🧮میانگین: *" . Helper::formatGB($Board_Avg) . "*\n";
-$Text .= "🥇جایگاه اول |🥈دوم |🥉سوم |🔥سهم بیش از ۲۵٪ |⭐️ردیف خود شما\n";
-$Text .= "➖➖➖➖➖➖➖➖➖\n";
-$PageCount = max(1, (int)ceil($Board_Count / 10));
-$Page = max(0, min($Page, $PageCount - 1));
-$Text .= Menu::pageLabel($Page, $PageCount);
-$Shown = $Page * 10;
-
-foreach (array_slice($Board, $Page * 10, 10) as $Row) {
-$Shown++;
-$Name = trim((string)($Row['Full_Name'] ?? '')) ?: (trim((string)($Row['First_Name'] ?? '')) ?: 'کاربر');
-$Name_Link = Helper::mention($Name, (int)($Row['Telegram_ID'] ?? 0), trim((string)($Row['Username'] ?? '')));
-$Usage = (float)($Row['Value'] ?? 0);
-$Share = $Board_Total > 0 ? ($Usage / $Board_Total) * 100.0 : 0.0;
-$Is_Me = (int)($Row['Telegram_ID'] ?? 0) === $Context->UserId;
-$Marks = ($Is_Me ? '⭐️' : '') . ($Shown === 1 ? '👑' : '');
-
-if ($Share >= 25.0) $Marks .= '🔥';
-
-$Bar_Percent = $Board_Top > 0 ? min(100.0, ($Usage / $Board_Top) * 100.0) : 0.0;
-$Row_Name = $Name_Link . ($Is_Me ? ' (شما)' : '');
-$Text .= Helper::rankLine($Shown, $Row_Name, Helper::formatGB($Usage), $Share, $Bar_Percent, $Marks) . "\n";
-}
-
-$Text .= "➖➖➖➖➖➖➖➖➖\n";
-
-if ($My_Rank > 0) {
-$My_Share = $Board_Total > 0 ? (((float)($My_Row['Value'] ?? 0) / $Board_Total) * 100.0) : 0.0;
-$Text .= "📌رتبه شما: " . Helper::rankEmoji($My_Rank) . " *" . Helper::toPersian((string)$My_Rank) . "* از *" . Helper::toPersian((string)$Board_Count) . "* کاربر\n";
-$Text .= "🏅عنوان شما: *" . Helper::rankTitle($My_Rank) . "*\n";
-$Text .= "📊مصرف شما: *" . Helper::formatGB((float)($My_Row['Value'] ?? 0)) . "* از مجموع *" . Helper::formatGB($Board_Total) . "*\n";
-$Text .= "📈سهم شما از مصرف سرور: *" . Helper::formatPercent($My_Share) . "٪* " . Helper::usageBar($My_Share, 10) . "\n";
-}
-
-else {
-$Text .= "📌رتبه شما: *هنوز مصرفی روی سرور ثبت نشده است.*\n";
-}
-
-$Text .= Helper::userFooter();
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard(array_merge(Menu::pages($Page, $PageCount, 'user_ranking_page:'), [
-[['text' => '🔄بروزرسانی رتبه بندی', 'callback_data' => 'رتبه بندی کاربران']],
-Menu::back('منوی قبلی', 'user_stats_menu'), Menu::userHome(),
-])));
-}
 }
 ?>

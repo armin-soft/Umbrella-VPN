@@ -144,12 +144,15 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('نوع کارت شبکه فعال'), findsOneWidget);
+      expect(find.text('192.168.1.20'), findsOneWidget);
       await selectTab(3);
       expect(
         find.byKey(const ValueKey<String>('device-identity-card')),
         findsOneWidget,
       );
       expect(find.text('شناسه یکتای سخت افزاری'), findsOneWidget);
+      expect(find.text('test-pc'), findsOneWidget);
+      expect(find.text('12345678'), findsOneWidget);
       expect(find.text('کپی مشخصات فنی این دستگاه'), findsOneWidget);
 
       await tester.binding.setSurfaceSize(const Size(700, 820));

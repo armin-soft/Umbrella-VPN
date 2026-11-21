@@ -1800,7 +1800,7 @@ class VpnController extends ChangeNotifier {
       );
       if (initialIpInfo != null && initialIpInfo!.ip.isNotEmpty) {
         _log.add(
-          'آی پی خروجی: ${Fa.num(_geo.ip)}'
+          'آی پی خروجی: ${_geo.ip}'
           '${_geo.flagEmojiFreeLabel.isEmpty ? '' : ' | ${_geo.flagEmojiFreeLabel}'}',
         );
       }

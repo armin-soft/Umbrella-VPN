@@ -38,7 +38,11 @@ throw new RuntimeException($sql);
 require_once __DIR__.'/../Core/App/App-Bot-Link.php';
 $n=0; function check(bool $x,string $why): void { global $n; $n++; if (!$x) throw new RuntimeException($why); }
 $session=['User_UUID'=>'uuid-1','Device_ID'=>'device-1','Token_Hash'=>str_repeat('a',64)];
-$db=Database::getInstance(); $issued=AppBotLink::issue($session);
+$db=Database::getInstance();
+$placeholder=$session; $placeholder['User_UUID']='_'; $placeholderRejected=false;
+try { AppBotLink::issue($placeholder); } catch (RuntimeException $Error) { $placeholderRejected=$Error->getMessage()==='invalid_account'; }
+check($placeholderRejected,'placeholder panel UUID cannot be linked to a Telegram account');
+$issued=AppBotLink::issue($session);
 check(preg_match('/^https:\/\/t.me\/test_bot\?start=app_([a-f0-9]{32})$/',$issued['url'],$m)===1,'personal one-time link'); $token=$m[1];
 check($db->link['Token_Hash']===hash('sha256',$token) && !in_array($token,$db->link,true),'store hash not token');
 check($db->link['Expires_At'] <= time()+600,'short expiry');

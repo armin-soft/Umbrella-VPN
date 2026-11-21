@@ -116,6 +116,7 @@ class _DeveloperCard extends StatelessWidget {
             label: 'کانال اطلاع رسانی',
             value: AppConfig.channelHandle,
             ltr: true,
+            technicalValue: true,
             onTap: () => unawaited(TelegramChannelPrompt.openChannel()),
           ),
           const Divider(height: AppMetrics.space2),

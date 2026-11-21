@@ -73,7 +73,9 @@ public static function getPlanPrice(int|string $Key): float { return 1000; }
 public static function showEmergency(): bool { return false; }
 public static function emergencyUrl(): string { return 'https://example.invalid/emg'; }
 public static function source(string $Key): string { return 'env'; }
-public static function isNowruzMenuEnabled(): bool { return (Repository::$Settings['Nowruz_Menu_Enabled'] ?? '0') === '1'; }
+public static function isNowruzMenuConfigured(): bool { return (Repository::$Settings['Nowruz_Menu_Enabled'] ?? '0') === '1'; }
+public static function isNowruzSeasonActive(): bool { return true; }
+public static function isNowruzMenuEnabled(): bool { return self::isNowruzMenuConfigured() && self::isNowruzSeasonActive(); }
 public static function setNowruzMenuEnabled(bool $Show): void { Repository::$Settings['Nowruz_Menu_Enabled'] = $Show ? '1' : '0'; }
 public static function hasClaimedNowruz(int $UserId = 0, string $Uuid = '', ?string $Season = null): bool {
 return (Repository::$Settings['Nowruz_Claimed_' . $UserId] ?? '0') === '1';
@@ -160,6 +162,11 @@ Repository::$Session = ['Flow' => 'admin:credit_add_uid', 'Temp_UID' => 123, 'Br
 AdminFlow::$Method($Context);
 check(calls() === $Expected, $Method . ': exact actions and parent navigation');
 check(array_map('count', TelegramClient::$Last['inline_keyboard']) === $AdminWidths[$Method], $Method . ': exact row grouping');
+if ($Method === 'menu') {
+$Buttons = array_merge(...TelegramClient::$Last['inline_keyboard']);
+$Labels = array_column($Buttons, 'text', 'callback_data');
+check(($Labels['admin_content_filter'] ?? null) === '🛡کنترل محتوا', 'content-filter menu uses the concise label');
+}
 check(Repository::$Session === ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null], $Method . ': cancels stale input');
 check(Repository::$Settings === [], $Method . ': opening menu does not mutate settings');
 }
@@ -230,18 +237,18 @@ check(str_contains($Body, "Menu::back('منوی قبلی', '{$Parent}')"), $Meth
 check(str_contains($Body, 'Menu::adminHome()'), $Method . ': leaf keeps main menu');
 }
 $UserMenus = [
-'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
+'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
 'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل']],
 'deviceMenu' => ['user_device_menu', ['app_filter', 'app_2fa', 'app_devices']],
-'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف', 'رتبه بندی کاربران']],
+'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
 $UserWidths = [
 'serviceMenu' => [1, 1, 1, 1, 1, 1, 1, 1],
 'subscriptionsMenu' => [2, 1, 1], 'walletMenu' => [1, 1, 1],
-'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1], 'statsMenu' => [2, 1, 1], 'supportMenu' => [1, 1, 1],
+'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1], 'statsMenu' => [2, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);
@@ -321,7 +328,7 @@ check(!str_contains($SubscriptionSource, 'public static function mySubscription(
 && str_contains($DispatcherSource, "'اشتراک من' => [UserFlow::class, 'profile']"), 'subscription display uses the profile flow');
 check(str_contains($SubscriptionSource, 'پروفایل کاربری') && str_contains($SubscriptionSource, "'اشتراک آماده'"), 'renewal flow keeps profile action and purchase flow');
 $UserLeafParents = [
-'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'usageRanking' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],
+'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],
 'App-Link.php' => ['filterMenu' => 'user_device_menu', 'notifications' => 'user_device_menu', 'devices' => 'user_device_menu', 'renderTwoStep' => 'user_device_menu'],
 'Subscription.php' => ['buyMenu' => 'user_subscriptions_menu', 'readyPlansMenu' => 'user_subscriptions_menu', 'customPlansMenu' => 'user_subscriptions_menu', 'walletTopupStart' => 'user_wallet_menu'],
 'Profile.php' => ['begin' => 'user_account_menu', 'askName' => 'user_account_menu'],

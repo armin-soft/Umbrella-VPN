@@ -1068,7 +1068,7 @@ class UpdateService {
   }
 }
 
-/// مناسبت های ایرانی: شب یلدا، نوروز، چهارشنبه سوری، سیزده بدر و مهرگان.
+/// مناسبت های تقویم شمسی و میلادی به همراه مناسبت های قمری.
 class Occasion {
   const Occasion({
     required this.id,
@@ -1080,6 +1080,9 @@ class Occasion {
     required this.startDay,
     required this.endMonth,
     required this.endDay,
+    this.secondaryTint,
+    this.accentTint,
+    this.gregorian = false,
     this.hijri = false,
   });
 
@@ -1088,10 +1091,13 @@ class Occasion {
   final String subtitle;
   final String icon;
   final int tint;
+  final int? secondaryTint;
+  final int? accentTint;
   final int startMonth;
   final int startDay;
   final int endMonth;
   final int endDay;
+  final bool gregorian;
   final bool hijri;
 
   factory Occasion.fromJson(Map<String, dynamic> json) {
@@ -1103,10 +1109,13 @@ class Occasion {
       subtitle: JsonX.text(json['subtitle']),
       icon: JsonX.text(json['icon'], 'auto_awesome'),
       tint: _color(JsonX.text(json['tint'])),
+      secondaryTint: _optionalColor(json['secondary_tint']),
+      accentTint: _optionalColor(json['accent_tint']),
       startMonth: start[0],
       startDay: start[1],
       endMonth: end[0],
       endDay: end[1],
+      gregorian: JsonX.text(json['calendar']).toLowerCase() == 'gregorian',
       hijri: JsonX.boolean(json['hijri']),
     );
   }
@@ -1126,6 +1135,16 @@ class Occasion {
       return 0xFFE11D2E;
     }
     return 0xFF000000 | parsed;
+  }
+
+  static int? _optionalColor(Object? value) {
+    final String text = JsonX.text(value).trim();
+    if (text.isEmpty) {
+      return null;
+    }
+    final String hex = text.replaceAll('#', '').replaceAll('0x', '');
+    final int? parsed = int.tryParse(hex, radix: 16);
+    return parsed == null ? null : 0xFF000000 | parsed;
   }
 }
 
@@ -1161,15 +1180,19 @@ class OccasionService {
     }
   }
 
-  Occasion? get active {
+  Occasion? get active => activeAt(DateTime.now());
+
+  /// Resolves an occasion using its declared calendar.
+  /// Accepts a date for deterministic checks.
+  Occasion? activeAt(DateTime now) {
     if (_items.isEmpty) {
       return null;
     }
-    final DateTime now = DateTime.now();
-    final List<int> today = <int>[
+    final List<int> jalaliToday = <int>[
       Fa.jalali(now).month,
       Fa.jalali(now).day,
     ];
+    final List<int> gregorianToday = <int>[now.month, now.day];
     final int hijriMonth = _hijriMonth(now);
     for (final Occasion occasion in _items) {
       if (occasion.hijri) {
@@ -1178,6 +1201,7 @@ class OccasionService {
         }
         continue;
       }
+      final List<int> today = occasion.gregorian ? gregorianToday : jalaliToday;
       if (_within(today, occasion.startMonth, occasion.startDay,
           occasion.endMonth, occasion.endDay)) {
         return occasion;

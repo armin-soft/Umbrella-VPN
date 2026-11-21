@@ -550,7 +550,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
                 textAlign: TextAlign.left,
                 onChanged: (String v) => setState(() => _searchQuery = v),
                 decoration: InputDecoration(
-                  hintText: 'search domain...',
+                  hintText: 'جست وجوی دامنه...',
                   isDense: true,
                   prefixIcon: const Icon(
                     Icons.search_rounded,

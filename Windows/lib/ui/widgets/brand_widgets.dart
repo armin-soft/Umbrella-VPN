@@ -235,27 +235,41 @@ class OccasionBanner extends StatelessWidget {
     final Occasion item = occasion!;
     final UmbrellaColors colors = context.colors;
     final Color tint = Color(item.tint);
+    final Color secondaryTint = Color(item.secondaryTint ?? item.tint);
+    final Color accentTint = Color(item.accentTint ?? item.tint);
+    final bool isChristmas = item.id == 'christmas';
+    final List<Color> gradientColors = isChristmas
+        ? <Color>[
+            tint.withValues(alpha: 0.19),
+            secondaryTint.withValues(alpha: 0.07),
+            colors.surface,
+          ]
+        : <Color>[tint.withValues(alpha: 0.22), colors.surface];
     return Stack(
       children: <Widget>[
         GlassCard(
           padding: const EdgeInsets.all(AppMetrics.space5),
           radius: AppMetrics.radiusXl,
-          borderColor: tint.withValues(alpha: 0.45),
+          borderColor: accentTint.withValues(alpha: isChristmas ? 0.56 : 0.45),
           gradient: LinearGradient(
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
-            colors: <Color>[
-              tint.withValues(alpha: 0.22),
-              colors.surface,
-            ],
+            colors: gradientColors,
           ),
           child: Row(
             children: <Widget>[
-              IconSquare(
-                icon: _iconFor(item),
-                color: tint,
-                size: AppMetrics.iconBoxLg,
-              ),
+              if (isChristmas)
+                _ChristmasTreeMark(
+                  foliage: tint,
+                  red: secondaryTint,
+                  gold: accentTint,
+                )
+              else
+                IconSquare(
+                  icon: _iconFor(item),
+                  color: tint,
+                  size: AppMetrics.iconBoxLg,
+                ),
               const SizedBox(width: AppMetrics.space4),
               Expanded(
                 child: Column(
@@ -277,14 +291,23 @@ class OccasionBanner extends StatelessWidget {
                   ],
                 ),
               ),
-              Pill(label: 'مناسبت', icon: Icons.auto_awesome_rounded, color: tint, dense: true),
+              Pill(
+                label: 'مناسبت',
+                icon: isChristmas
+                    ? Icons.star_rounded
+                    : Icons.auto_awesome_rounded,
+                color: isChristmas ? accentTint : tint,
+                dense: true,
+              ),
             ],
           ),
         ),
         Positioned.fill(
           child: IgnorePointer(
             child: CustomPaint(
-              painter: _SparklePainter(color: tint),
+              painter: isChristmas
+                  ? _ChristmasPainter(red: secondaryTint, gold: accentTint)
+                  : _SparklePainter(color: tint),
             ),
           ),
         ),
@@ -312,6 +335,116 @@ class OccasionBanner extends StatelessWidget {
   }
 }
 
+class _ChristmasTreeMark extends StatelessWidget {
+  const _ChristmasTreeMark({
+    required this.foliage,
+    required this.red,
+    required this.gold,
+  });
+
+  final Color foliage;
+  final Color red;
+  final Color gold;
+
+  @override
+  Widget build(BuildContext context) {
+    final double size = AppMetrics.iconBoxLg;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: foliage.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(size * 0.32),
+        border: Border.all(color: gold.withValues(alpha: 0.38)),
+      ),
+      child: CustomPaint(
+        size: Size.square(size),
+        painter: _PineTreePainter(foliage: foliage, red: red, gold: gold),
+      ),
+    );
+  }
+}
+
+class _PineTreePainter extends CustomPainter {
+  const _PineTreePainter({
+    required this.foliage,
+    required this.red,
+    required this.gold,
+  });
+
+  final Color foliage;
+  final Color red;
+  final Color gold;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double width = size.width;
+    final double height = size.height;
+    final double center = width / 2;
+    final Path tree = Path()
+      ..moveTo(center, height * 0.18)
+      ..lineTo(width * 0.70, height * 0.48)
+      ..lineTo(width * 0.61, height * 0.48)
+      ..lineTo(width * 0.82, height * 0.73)
+      ..lineTo(width * 0.18, height * 0.73)
+      ..lineTo(width * 0.39, height * 0.48)
+      ..lineTo(width * 0.30, height * 0.48)
+      ..close();
+    canvas.drawPath(tree, Paint()..color = foliage);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTRB(
+          width * 0.45,
+          height * 0.71,
+          width * 0.55,
+          height * 0.88,
+        ),
+        const Radius.circular(1.5),
+      ),
+      Paint()..color = gold,
+    );
+    canvas.drawCircle(
+      Offset(width * 0.40, height * 0.59),
+      2.2,
+      Paint()..color = red,
+    );
+    canvas.drawCircle(
+      Offset(width * 0.61, height * 0.62),
+      2.2,
+      Paint()..color = gold,
+    );
+    canvas.drawCircle(
+      Offset(width * 0.50, height * 0.43),
+      2.0,
+      Paint()..color = red,
+    );
+    _drawStar(canvas, Offset(center, height * 0.14), width * 0.085);
+  }
+
+  void _drawStar(Canvas canvas, Offset center, double radius) {
+    final Path star = Path();
+    for (int point = 0; point < 10; point++) {
+      final double angle = -math.pi / 2 + point * math.pi / 5;
+      final double pointRadius = point.isEven ? radius : radius * 0.46;
+      final Offset position = center + Offset(
+        math.cos(angle) * pointRadius,
+        math.sin(angle) * pointRadius,
+      );
+      if (point == 0) {
+        star.moveTo(position.dx, position.dy);
+      } else {
+        star.lineTo(position.dx, position.dy);
+      }
+    }
+    star.close();
+    canvas.drawPath(star, Paint()..color = gold);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PineTreePainter old) =>
+      old.foliage != foliage || old.red != red || old.gold != gold;
+}
+
 class _SparklePainter extends CustomPainter {
   _SparklePainter({required this.color});
 
@@ -332,6 +465,86 @@ class _SparklePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SparklePainter old) => old.color != color;
+}
+
+/// Subtle snowflakes, baubles and a star give Christmas its own ornamentation.
+class _ChristmasPainter extends CustomPainter {
+  _ChristmasPainter({required this.red, required this.gold});
+
+  final Color red;
+  final Color gold;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint snow = Paint()
+      ..color = const Color(0xFFB3E5FC).withValues(alpha: 0.42)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
+    _drawSnowflake(
+      canvas,
+      Offset(size.width * 0.08, size.height * 0.28),
+      4,
+      snow,
+    );
+    _drawSnowflake(
+      canvas,
+      Offset(size.width * 0.92, size.height * 0.76),
+      3.5,
+      snow,
+    );
+    _drawBauble(canvas, Offset(size.width * 0.08, size.height * 0.76), red);
+    _drawBauble(canvas, Offset(size.width * 0.92, size.height * 0.25), gold);
+    _drawStar(canvas, Offset(size.width * 0.84, size.height * 0.16), 4.2);
+  }
+
+  void _drawSnowflake(Canvas canvas, Offset center, double radius, Paint paint) {
+    for (int arm = 0; arm < 3; arm++) {
+      final double angle = arm * math.pi / 3;
+      final Offset delta = Offset(
+        math.cos(angle) * radius,
+        math.sin(angle) * radius,
+      );
+      canvas.drawLine(center - delta, center + delta, paint);
+    }
+  }
+
+  void _drawBauble(Canvas canvas, Offset center, Color color) {
+    canvas.drawCircle(
+      center,
+      2.8,
+      Paint()..color = color.withValues(alpha: 0.48),
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy - 4.2),
+      Offset(center.dx, center.dy - 2.5),
+      Paint()
+        ..color = gold.withValues(alpha: 0.58)
+        ..strokeWidth = 0.8,
+    );
+  }
+
+  void _drawStar(Canvas canvas, Offset center, double radius) {
+    final Path path = Path();
+    for (int point = 0; point < 10; point++) {
+      final double angle = -math.pi / 2 + point * math.pi / 5;
+      final double pointRadius = point.isEven ? radius : radius * 0.46;
+      final Offset position = center + Offset(
+        math.cos(angle) * pointRadius,
+        math.sin(angle) * pointRadius,
+      );
+      if (point == 0) {
+        path.moveTo(position.dx, position.dy);
+      } else {
+        path.lineTo(position.dx, position.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color = gold.withValues(alpha: 0.5));
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChristmasPainter old) =>
+      old.red != red || old.gold != gold;
 }
 
 /// نشان کوچک لوگو و نام برنامه.

@@ -1,7 +1,9 @@
+import 'dart:io';
+
 /// ابزارهای فارسی سازی: ارقام، تاریخ شمسی، حجم، سرعت و مدت زمان.
 ///
 /// همه متن های برنامه فارسی و بدون نیم فاصله هستند و همه ارقام با این فایل
-/// به شکل فارسی نمایش داده می شوند.
+/// به شکل فارسی نمایش داده می شوند، جز مقدارهای فنی که باید دقیق بمانند.
 /// نام دیگر نوع عدد، چون متد ایستای [Fa.num] نام نوع num را در بدنه کلاس
 /// پنهان می کند و در امضای متدها قابل استفاده نیست.
 typedef NumericValue = num;
@@ -47,9 +49,95 @@ class Fa {
     'یکشنبه',
   ];
 
-  /// تبدیل ارقام لاتین و عربی یک متن به فارسی و حذف نیم فاصله.
+  static final List<RegExp> _technicalValuePatterns = <RegExp>[
+    RegExp(
+      r'\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>"`]+',
+      caseSensitive: false,
+    ),
+    RegExp(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'),
+    RegExp(r'@[A-Za-z][A-Za-z0-9_]{2,}\b'),
+    RegExp(
+      r'\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?::\d{1,5})?\b(?:[/?#][^\s<>"`]*)?',
+    ),
+    RegExp(r'\b[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\b'),
+    RegExp(r'\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b'),
+    RegExp(
+      r'\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:/\d{1,2})?\b(?:[/?#][^\s<>"`]*)?',
+    ),
+    RegExp(r'\b0x[0-9A-Fa-f]+\b', caseSensitive: false),
+    RegExp(
+      r'\b(?:IPv[46]|(?:TLS|SSL|HTTP|SOCKS|TCP|UDP|QUIC)\s*v?\d+(?:\.\d+)*|(?:TCP|UDP|HTTP|HTTPS|TLS|SSL|SOCKS|QUIC)[/:]\d{1,5}(?:\.\d+)*)\b',
+      caseSensitive: false,
+    ),
+    RegExp(r'(?:پورت|port)\s*[:=]?\s*\d{1,5}\b', caseSensitive: false),
+    RegExp(
+      r'(?:شناسه(?:\s+(?:عدد(?:ی)?|فنی|یکتا|یکتای|حساب|کاربری|تلگرام|دستگاه|پردازش|سیستم)){0,3}|(?:process|thread)\s*(?:id|pid)|pid)\s*[:=#]?\s*(?:0x[0-9a-f]+|\d+)\b',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'(?:کد\s+خطا(?:ی)?(?:\s+ویندوز)?|کد\s+خروج|کد\s+(?:وضعیت|پاسخ)|(?:error|exit)\s*code)\s*[:=]?\s*(?:0x[0-9a-f]+|\d+)\b',
+      caseSensitive: false,
+    ),
+  ];
+
+  static final RegExp _ipv6Candidate = RegExp(
+    r'(?<![A-Za-z0-9])(?:\[[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.-]+)?\](?::\d{1,5})?(?:[/?#][^\s<>"`]*)?|[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(?:%[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9])',
+  );
+  static final RegExp _technicalCodePattern = RegExp(
+    r'\b(?=[A-Za-z0-9._/-]*[A-Za-z])(?=[A-Za-z0-9._/-]*\d)[A-Za-z][A-Za-z0-9._/-]*\b',
+  );
+  static final RegExp _needsPersianNormalization =
+      RegExp(r'[0-9\u0660-\u0669\u200C]');
+
+  /// تبدیل ارقام لاتین و عربی به فارسی، بدون تغییر مقدارهای فنی قابل کپی.
   static String num(Object? value) {
-    final String text = (value ?? '').toString();
+    String text = (value ?? '').toString();
+    if (!_needsPersianNormalization.hasMatch(text)) return text;
+    final Map<String, String> preserved = <String, String>{};
+    int tokenIndex = 0;
+
+    String hold(String value) {
+      String token;
+      do {
+        token = String.fromCharCode(0xF0000 + tokenIndex++);
+      } while (text.contains(token));
+      preserved[token] = value;
+      return token;
+    }
+
+    String keep(Match match) => hold(match[0]!);
+
+    // حفظ URIها و نام های دامنه پیش از تشخیص IPv6 تا نشانی های کامل یکپارچه بمانند.
+    for (final RegExp pattern in _technicalValuePatterns.take(4)) {
+      text = text.replaceAllMapped(pattern, keep);
+    }
+    text = text.replaceAllMapped(_ipv6Candidate, (Match match) {
+      final String candidate = match[0]!;
+      final bool bracketed = candidate.startsWith('[');
+      final int closeBracket = candidate.indexOf(']');
+      final String address = bracketed
+          ? candidate.substring(1, closeBracket)
+          : candidate.replaceFirst(RegExp(r'[.,;!?]+$'), '');
+      final String addressWithoutZone = address.replaceFirst(
+        RegExp(r'%[A-Za-z0-9_.-]+$'),
+        '',
+      );
+      bool isIpv6 = false;
+      try {
+        isIpv6 = InternetAddress.tryParse(addressWithoutZone)?.type ==
+            InternetAddressType.IPv6;
+      } on FormatException {
+        // Invalid colon-separated values such as a time are ordinary text.
+      }
+      if (isIpv6) return keep(match);
+      return candidate;
+    });
+    // سپس UUID، MAC، IPv4، کدها و مقدارهای دارای برچسب حفظ می شوند.
+    for (final RegExp pattern in _technicalValuePatterns.skip(4)) {
+      text = text.replaceAllMapped(pattern, keep);
+    }
+    text = text.replaceAllMapped(_technicalCodePattern, keep);
+
     final StringBuffer buffer = StringBuffer();
     for (final int rune in text.runes) {
       if (rune >= 48 && rune <= 57) {
@@ -62,7 +150,11 @@ class Fa {
         buffer.writeCharCode(rune);
       }
     }
-    return buffer.toString();
+    String result = buffer.toString();
+    for (final MapEntry<String, String> entry in preserved.entries) {
+      result = result.replaceAll(entry.key, entry.value);
+    }
+    return result;
   }
 
   /// تبدیل ارقام فارسی و عربی یک متن به لاتین، برای ارسال به سرور.

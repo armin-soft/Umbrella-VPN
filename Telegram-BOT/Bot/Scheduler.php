@@ -783,10 +783,10 @@ Repository::releaseCronLock('user_usage_report');
 
 private static function sendNowruzWishesIfDue(): void {
 $Nowruz_Already_Sent = (string)Repository::getSetting('Nowruz_Last_Sent', '');
-$Current_Year = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y');
-$Today_Month_Day = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('m-d');
+$Now = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
+$Current_Year = BotConfig::nowruzSeasonKey($Now);
 
-if ($Today_Month_Day !== '03-20' || $Nowruz_Already_Sent === $Current_Year) return;
+if (!BotConfig::isNowruzFirstDay($Now) || $Nowruz_Already_Sent === $Current_Year) return;
 if (!Repository::tryCronLock('nowruz', 86400)) return;
 
 try {

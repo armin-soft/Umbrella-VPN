@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Context.php';
 require_once __DIR__ . '/../Core/App/Device-Deletion.php';
+require_once __DIR__ . '/../Core/App/Account-Revocation.php';
 require_once __DIR__ . '/../Core/App/App-Filter.php';
 require_once __DIR__ . '/Ticket-Media.php';
 require_once __DIR__ . '/Common.php';
@@ -71,7 +72,7 @@ $Markup = Menu::rows([
 [['💳مدیریت اعتبار', 'اعتبار حساب کاربری']],
 [['🔒مسدود سازی کاربران', 'جرایم']],
 [['📱مدیریت دستگاه ها', 'admin_devices_menu']],
-[['🛡کنترل محتوا برای همه کاربران', 'admin_content_filter']],
+[['🛡کنترل محتوا', 'admin_content_filter']],
 [['👤مدیریت حساب کاربری', 'admin_accounts_menu']],
 [['🖥مدیریت کلاینت', 'عملیات کلاینت سرور']],
 [['🖥مدیریت سرور', 'پیکربندی سرور']],
@@ -152,7 +153,7 @@ $Rows[] = [[
 ]];
 $Rows[] = Menu::back('منوی قبلی', 'مدیریت');
 $Rows[] = Menu::adminHome();
-$Text = Helper::adminGreeting($Context, 'کنترل محتوا برای همه کاربران')
+$Text = Helper::adminGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
 . "\n➖➖➖➖➖➖➖➖➖\n"
 . ($Has_Rules
@@ -705,7 +706,7 @@ $Map = [
 'version_changes' => 'بروز رسانی نسخه',
 'emergency_url' => 'تنظیمات ربات',
 'ticket_reply_text' => 'مدیریت تیکت ها',
-'global_filter_domains' => 'کنترل محتوا برای همه کاربران',
+'global_filter_domains' => 'کنترل محتوا',
 ];
 
 if (str_starts_with($Flow, 'cfg:')) {
@@ -733,6 +734,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '⚙️تنظیمات 
 }
 
 $Show = BotConfig::showEmergency();
+$Nowruz_Configured = BotConfig::isNowruzMenuConfigured();
 $Nowruz_Show = BotConfig::isNowruzMenuEnabled();
 $Url = BotConfig::emergencyUrl();
 $Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل تنظیمات';
@@ -742,7 +744,9 @@ $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 'آدرس: <code>' . $Url . '</code>',
 ])
 . Menu::section('🌷', 'اشتراک نوروزی', [
-'وضعیت منو در ربات و نرم افزار: *' . ($Nowruz_Show ? '🟢روشن' : '🔴خاموش') . '*',
+'تنظیم دستی: *' . ($Nowruz_Configured ? '🟢روشن' : '🔴خاموش') . '*',
+'وضعیت منو اکنون: *' . ($Nowruz_Show ? '🟢نمایش داده می شود' : '🔴نمایش داده نمی شود') . '*',
+'بازه نمایش: *۱ تا ۱۳ فروردین (تقویم شمسی)*',
 ])
 . ($Show
 ? "ℹ️خط «اضطراری موقت» در پیام کانفیگ کاربران نمایش داده می شود.\n"
@@ -764,11 +768,16 @@ TelegramClient::sendMessage($Context->ChatId, $Text, TelegramClient::inlineKeybo
 
 public static function toggleNowruzMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-$Next = !BotConfig::isNowruzMenuEnabled();
+$Next = !BotConfig::isNowruzMenuConfigured();
 BotConfig::setNowruzMenuEnabled($Next);
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, $Next ? '✅منوی اشتراک نوروزی روشن شد.' : '⛔️منوی اشتراک نوروزی خاموش شد.', false);
+$Message = !$Next
+? '⛔️تنظیم منوی اشتراک نوروزی خاموش شد.'
+: (BotConfig::isNowruzSeasonActive()
+    ? '✅منوی اشتراک نوروزی روشن شد.'
+    : '✅تنظیم روشن شد؛ منو در بازه ۱ تا ۱۳ فروردین نمایش داده می شود.');
+TelegramClient::answerCallbackQuery($Context->CallbackId, $Message, false);
 }
 
 self::configMenu($Context);
@@ -2496,6 +2505,10 @@ $Name = self::targetDisplayName($Target, $User);
 self::notifyAdminServerError('حذف کاربر', $Target, $Name, $Delete_Response['StatusCode'] ?? 0, $Delete_Error);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: حذف کاربر {$Name} از سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr($Delete_Error, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
 return;
+}
+
+if (!AppAccountRevocation::revoke($Client_ID)) {
+error_log('[Umbrella-Bot][App-Account-Revocation] failed after deleting panel user ' . $Target);
 }
 
 Repository::updateUser($Target, [

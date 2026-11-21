@@ -9,10 +9,8 @@ require_once __DIR__ . '/../Storage/Repository.php';
 final class ReleaseCatalog {
 private const CACHE_KEY = 'App_Release_Catalog_Token';
 private const CACHE_TTL = 900;
-private const SOURCES = [
-'armin-soft/Umbrella-VPN-Releases',
-'armin-soft/Umbrella-VPN',
-];
+// Windows installers are uploaded manually to this public release repository.
+private const SOURCES = ['armin-soft/Umbrella-VPN-Releases'];
 private const PLATFORMS = ['windows'];
 private static ?array $Catalog = null;
 

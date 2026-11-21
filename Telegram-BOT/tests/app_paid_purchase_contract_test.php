@@ -5,6 +5,7 @@ $Gateway = (string)file_get_contents(__DIR__ . '/../Core/App/App-Gateway.php');
 $Flow = (string)file_get_contents(__DIR__ . '/../Bot/Subscription.php');
 $Index = (string)file_get_contents(__DIR__ . '/../index.php');
 $Checks = [
+    'wallet and paid plans reject empty or placeholder account IDs' => str_contains($Gateway, "if (\$UUID === '' || \$UUID === '_') self::fail(409, 'account_not_linked'"),
     'authenticated paid-plan catalog endpoint' => str_contains($Gateway, 'if ($Route === \'subscription/plans\')') && str_contains($Gateway, 'self::sessionRow(self::bearer())'),
     'purchase endpoint validates the authenticated account and server-side month tariff' => str_contains($Gateway, 'if ($Route === \'subscription/purchase\')') && str_contains($Gateway, '\\SubscriptionFlow::appPlanCatalog()'),
     'wallet purchase delegates to the bot activation flow' => str_contains($Gateway, '\\SubscriptionFlow::purchaseFromAppWallet($UserId, $Month, $Quote)'),

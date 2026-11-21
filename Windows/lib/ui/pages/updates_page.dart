@@ -504,7 +504,7 @@ class _ChannelOptionCard extends StatelessWidget {
                         children: <Widget>[
                           Flexible(
                             child: Text(
-                              'کانال ${channel.label}',
+                              Fa.num('کانال ${channel.label}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
@@ -524,7 +524,7 @@ class _ChannelOptionCard extends StatelessWidget {
                       ),
                       const SizedBox(height: AppMetrics.space1),
                       Text(
-                        channel.subtitle,
+                        Fa.num(channel.subtitle),
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: colors.textSecondary,
                               height: 1.55,

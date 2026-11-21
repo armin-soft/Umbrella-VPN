@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_config.dart';
+import '../../core/persian.dart';
 import '../../core/storage.dart';
 import '../../core/theme.dart';
 
@@ -324,7 +325,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
               child: Column(
                 children: <Widget>[
                   Text(
-                    'به تلگرام آمبرلا بپیوندید',
+                    'به کانال رسمی آمبرلا بپیوندید',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.titleLarge?.copyWith(
                       color: colors.textPrimary,
@@ -334,7 +335,9 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                   ),
                   const SizedBox(height: AppMetrics.fontMicro),
                   Text(
-                    'کانال رسمی آمبرلا را برای اخبار، نسخه های جدید و ترفندهای متصل ماندن دنبال کنید.',
+                    Fa.num(
+                      '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
+                    ),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colors.textSecondary,
@@ -372,7 +375,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                   size: AppMetrics.iconLg,
                   color: colors.onPrimary,
                 ),
-                label: const Text('عضویت در کانال'),
+                label: const Text('عضویت در کانال رسمی'),
                 onPressed: _handleJoin,
               ),
             ),

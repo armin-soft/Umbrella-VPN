@@ -5,6 +5,7 @@ require_once __DIR__ . '/../Database/Database.php';
 require_once __DIR__ . '/../Database/Schema-App.php';
 require_once __DIR__ . '/../Server/Umbrella-Panel.php';
 require_once __DIR__ . '/App-Device-Limit.php';
+require_once __DIR__ . '/Account-Revocation.php';
 require_once __DIR__ . '/App-Two-Step.php';
 require_once __DIR__ . '/App-Secret.php';
 require_once __DIR__ . '/App-Bot-Link.php';
@@ -476,13 +477,17 @@ self::fail(409, 'not_approved', 'این ورود هنوز تأیید نشده ا
 
 $UUID = trim((string)($Row['User_UUID'] ?? ''));
 
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
 self::fail(409, 'no_account', 'حسابی به این شماره وصل نیست.');
 }
 
-$Account = PanelClient::get($UUID) ?? [];
+$Account = PanelClient::get($UUID);
 
-if ($Account === []) {
+if ($Account === null || $Account === []) {
+if (PanelClient::lastGetStatus() === 404) {
+AppAccountRevocation::revoke($UUID);
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
+}
 error_log('[Umbrella-Bot][Gateway] session profile fallback for uuid=' . $UUID . ' status=' . PanelClient::lastGetStatus());
 $Account = [
 'uuid' => $UUID,
@@ -702,7 +707,9 @@ private static function botMembershipStatus(): void {
 $Session = self::sessionRow(self::bearer());
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
-$User = $UUID === '' ? null : Database::getInstance()->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
+$User = ($UUID === '' || $UUID === '_')
+? null
+: Database::getInstance()->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
 $Linked = (int)($User['Telegram_ID'] ?? 0);
 if ($Linked <= 0) self::ok(['linked' => false]);
 $Panel = PanelClient::get($UUID);
@@ -737,13 +744,17 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 
 $UUID = trim((string)$Session['User_UUID']);
 
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
 self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
 }
 
 $Account = PanelClient::get($UUID);
 
 if ($Account === null || $Account === []) {
+if (PanelClient::lastGetStatus() === 404) {
+AppAccountRevocation::revoke($UUID);
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
+}
 self::fail(502, 'panel_unavailable', 'دریافت اطلاعات حساب ناموفق بود.');
 }
 
@@ -783,6 +794,17 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 
 $DeviceId = (string)$Session['Device_ID'];
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
+$PanelAccount = null;
+if ($UUID !== '' && $UUID !== '_') {
+$PanelAccount = PanelClient::get($UUID);
+if (($PanelAccount === null || $PanelAccount === []) && PanelClient::lastGetStatus() === 404) {
+AppAccountRevocation::revoke($UUID);
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
+}
+if ($PanelAccount === null || $PanelAccount === []) {
+self::fail(502, 'panel_unavailable', 'بررسی حساب پنل ناموفق بود؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.');
+}
+}
 Database::getInstance()->execute(
 'UPDATE `App_Devices` SET `Last_Seen_At` = ? WHERE `Device_ID` = ?',
 [time(), $DeviceId]
@@ -792,14 +814,14 @@ $Payload = [
 'seen_at' => gmdate('c'),
 'channel_url' => BotConfig::getChannelUrl(),
 ];
-if ($UUID !== '') {
+if ($UUID !== '' && $UUID !== '_') {
 $LinkedTg = self::autoLinkTelegramOwner(
 $DeviceId,
 $UUID,
 (int)($Session['Telegram_ID'] ?? 0)
 );
 $Payload['filter'] = AppFilter::loadEffective($UUID);
-$Payload['offers'] = self::offersPayload($UUID, $LinkedTg, null);
+$Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
 }
 self::ok($Payload);
 }
@@ -1005,6 +1027,8 @@ return false;
  * and the seasonal Nowruz gift (5 GB / 13 days, gated by the bot's Nowruz menu).
  */
 private static function offersPayload(string $UUID, int $TelegramId = 0, ?array $PanelAccount = null): array {
+$UUID = trim($UUID);
+$Has_UUID = $UUID !== '' && $UUID !== '_';
 $User = self::resolveBotUser($UUID, $TelegramId);
 $Uid = (int)($User['Telegram_ID'] ?? $TelegramId);
 $Blocked = (int)($User['Is_Blocked'] ?? 0) === 1;
@@ -1012,12 +1036,12 @@ $HasActive = self::userHasActivePlan($User, $PanelAccount);
 
 $FreeKey = 'App_Free_Claimed_' . $UUID;
 $FreeClaimed = ((int)($User['Free_Plan_Claimed'] ?? 0) === 1)
-|| ($UUID !== '' && trim((string)Repository::getSetting($FreeKey, '')) === '1');
-$FreeAvailable = !$Blocked && !$HasActive && !$FreeClaimed && $UUID !== '';
+|| ($Has_UUID && trim((string)Repository::getSetting($FreeKey, '')) === '1');
+$FreeAvailable = $Has_UUID && !$Blocked && !$HasActive && !$FreeClaimed;
 
 $NowruzEnabled = BotConfig::isNowruzMenuEnabled();
-$NowruzClaimed = BotConfig::hasClaimedNowruz($Uid, $UUID);
-$NowruzAvailable = $NowruzEnabled && !$Blocked && !$HasActive && !$NowruzClaimed && $UUID !== '';
+$NowruzClaimed = $Has_UUID && BotConfig::hasClaimedNowruz($Uid, $UUID);
+$NowruzAvailable = $Has_UUID && $NowruzEnabled && !$Blocked && !$HasActive && !$NowruzClaimed;
 
 return [
 'free_available' => $FreeAvailable,
@@ -1037,8 +1061,9 @@ private static function walletUser(string $Token): array {
 $Session = self::sessionRow($Token);
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
+if ($UUID === '' || $UUID === '_') self::fail(409, 'account_not_linked', 'برای استفاده از کیف پول، ابتدا حساب را از بخش عضویت به ربات متصل کنید.');
 $User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
-if ($UUID === '' || $User === null || (string)($User['Client_ID'] ?? '') !== $UUID || (int)($User['Telegram_ID'] ?? 0) <= 0) {
+if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID || (int)($User['Telegram_ID'] ?? 0) <= 0) {
 self::fail(409, 'account_not_linked', 'برای استفاده از کیف پول، ابتدا حساب را از بخش عضویت به ربات متصل کنید.');
 }
 if ((int)($User['Is_Blocked'] ?? 0) === 1) self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
@@ -1109,8 +1134,9 @@ private static function subscriptionPlans(): void {
 $Session = self::sessionRow(self::bearer());
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
+if ($UUID === '' || $UUID === '_') self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
 $User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
-if ($UUID === '' || $User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
 self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
 }
 if ((int)($User['Is_Blocked'] ?? 0) === 1) self::fail(403, 'account_blocked', 'حساب کاربری شما غیرفعال است.');
@@ -1130,8 +1156,9 @@ private static function purchaseSubscription(array $Body): void {
 $Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
+if ($UUID === '' || $UUID === '_') self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
 $User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
-if ($UUID === '' || $User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
 self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
 }
 $UserId = (int)($User['Telegram_ID'] ?? 0);
@@ -1236,7 +1263,7 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
 self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
 }
 
@@ -1255,7 +1282,7 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
 self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
 }
 
@@ -1391,7 +1418,7 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
 self::fail(409, 'no_account', 'حسابی به این نشست وصل نیست.');
 }
 
@@ -1772,7 +1799,7 @@ if ($Row === null) return null;
 // ابتدا اعتماد دستگاه بررسی می شود تا کد مشخص device_revoked به کلاینت برسد،
 // حتی اگر نشست همان لحظه در جدول نشست ها هم باطل شده باشد.
 if ((int)($Row['Device_Trusted'] ?? 0) !== 1) {
-self::fail(403, 'device_revoked', 'مجوز استفاده از این دستگاه در ربات تلگرام لغو شده است. از حساب خارج می شوید؛ برای استفاده دوباره، دوباره وارد شوید.');
+self::fail(403, 'device_revoked', 'مجوز این دستگاه لغو شده یا حساب پنلی حذف شده است. اتصال VPN قطع و از حساب خارج می شوید؛ برای استفاده دوباره وارد شوید.');
 }
 
 if (($Row['Revoked_At'] ?? null) !== null) return null;

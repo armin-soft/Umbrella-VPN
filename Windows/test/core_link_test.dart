@@ -25,7 +25,7 @@ void main() {
 
   group('لینک وی لس', () {
     test('نوع پروتکل هرگز به جای نوع انتقال نمی نشیند', () {
-      // همان داده‌ای که در گزارش بود: type نام پروتکل است، network نداریم.
+      // همان داده ای که در گزارش بود: type نام پروتکل است، network نداریم.
       final String link = VpnController.linkFor(
         nodeOf(<String, dynamic>{
           'type': 'vless',
@@ -286,7 +286,7 @@ proxies:
     });
   });
 
-  group('گره‌ای که خود هسته رد می‌کند', () {
+  group('گره ای که خود هسته رد می کند', () {
     VpnNode rawNode(String raw) => VpnNode(
           id: 'r1',
           name: 'xhttp node',

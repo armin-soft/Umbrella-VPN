@@ -82,8 +82,8 @@ ServerClient::$Calls = 0;
 Repository::$Session = ['Flow' => 'custom_plan', 'Pending_Payment' => 'keep'];
 UserFlow::serviceMenu($context);
 $Expected = $visible
-? ['user_subscriptions_menu', 'user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']
-: ['user_wallet_menu', 'user_account_menu', 'user_device_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'];
+? ['user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']
+: ['user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'];
 check(buttons() === $Expected, $label . ': subscription menu visibility and other actions');
 $localExpiry = (int)($user['Expiration_Time_Stamp'] ?? 0);
 $hasLocalPlan = trim((string)($user['Subscription'] ?? '')) !== '' && ($localExpiry <= 0 || $localExpiry > $now);
@@ -105,10 +105,10 @@ foreach ([
 Repository::$User = $user;
 UserFlow::profile($context);
 check(TelegramClient::$Text !== '', 'profile rendered without PHP warnings');
-if (($user['Client_ID'] ?? '') === 'client-123') check(str_contains(TelegramClient::$Text, 'client-123'), 'client id displayed');
+check(!str_contains(TelegramClient::$Text, 'شناسه کلاینت') && !str_contains(TelegramClient::$Text, 'client-123'), 'client UUID is not exposed in profile');
 if (isset($user['ED_25519_Private_Key'])) check(str_contains(TelegramClient::$Text, 'key-123+/='), 'stored key displayed');
 else check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما'), 'no key section for missing keys');
-if (($user['Client_ID'] ?? '') === '_') check(str_contains(TelegramClient::$Text, '`نامشخص`'), 'placeholder for missing client ID');
+if (($user['Client_ID'] ?? '') === '_') check(!str_contains(TelegramClient::$Text, '🆔شناسه کلاینت:'), 'missing client ID is not shown in profile');
 }
 Repository::$User = [
 'Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => 'client-123',

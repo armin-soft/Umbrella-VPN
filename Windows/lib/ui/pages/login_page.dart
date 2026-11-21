@@ -268,6 +268,8 @@ class _LoginPageState extends State<LoginPage> {
         const SizedBox(height: AppMetrics.space6),
         TextField(
           controller: _phone,
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.left,
           keyboardType: TextInputType.phone,
           textInputAction: TextInputAction.done,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -311,11 +313,33 @@ class _LoginPageState extends State<LoginPage> {
                 Icon(Icons.dns_rounded, size: AppMetrics.iconXs, color: colors.textSecondary),
                 const SizedBox(width: AppMetrics.space2),
                 Expanded(
-                  child: Text(
-                    Fa.num('نشانی فعلی درگاه: ${auth.gatewayHost}'),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
+                  child: Row(
+                    children: <Widget>[
+                      Text(
+                        'نشانی فعلی درگاه:',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: colors.textSecondary),
+                      ),
+                      const SizedBox(width: AppMetrics.space1),
+                      Expanded(
+                        child: Directionality(
+                          textDirection: TextDirection.ltr,
+                          child: Text(
+                            auth.gatewayHost,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.textSecondary),
+                          ),
                         ),
+                      ),
+                    ],
                   ),
                 ),
                 TextButton(

@@ -180,7 +180,7 @@ void main() {
       expect(device.diskFreeGb, closeTo(256.0, 0.01));
       expect(device.diskPercent, closeTo(50.0, 0.01));
       expect(device.summary.contains('PC'), isTrue);
-      expect(device.summary.contains('۱۹۲.۱۶۸.۱.۵'), isTrue);
+      expect(device.summary.contains('192.168.1.5'), isTrue);
     });
   });
 }

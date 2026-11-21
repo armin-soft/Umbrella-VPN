@@ -174,8 +174,9 @@ class AdvancedNetworkSettings extends StatelessWidget {
       await controller.setAppRoutes(rules);
     } on FormatException catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(Fa.num(error.message))),
+        );
       }
     }
   }

@@ -778,6 +778,7 @@ class InfoRow extends StatelessWidget {
     this.valueColor,
     this.trailing,
     this.ltr = false,
+    this.technicalValue = false,
     this.tooltip = false,
     this.stacked = true,
   });
@@ -789,13 +790,16 @@ class InfoRow extends StatelessWidget {
   final Color? valueColor;
   final Widget? trailing;
   final bool ltr;
+
+  /// Keeps copyable addresses and identifiers byte-for-byte unchanged.
+  final bool technicalValue;
   final bool tooltip;
   final bool stacked;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final String display = Fa.num(value);
+    final String display = technicalValue ? value : Fa.num(value);
     Widget valueText = Text(
       display,
       textDirection: ltr ? TextDirection.ltr : null,

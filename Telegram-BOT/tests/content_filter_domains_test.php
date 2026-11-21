@@ -69,6 +69,10 @@ return;
 $Failures[] = $Message;
 };
 
+$Check(AppFilter::load('_')['enabled'] === false, 'placeholder account UUID returns default filter settings');
+AppFilter::save('_', ['enabled' => true, 'categories' => ['adult'], 'custom_domains' => ['ignored.example']]);
+$Check(!isset(Database::getInstance()->Rows['_']), 'placeholder account UUID cannot create a filter row');
+
 // ۱. نرمال سازی دامنه ها و نشانی های وب.
 $Check(AppFilter::normalizeDomain('Example.COM') === 'example.com', 'lowercases root domain');
 $Check(AppFilter::normalizeDomain('https://www.Instagram.com/reel/123?x=1#top') === 'instagram.com', 'strips scheme, www, path, query, fragment');

@@ -327,7 +327,7 @@ return $Clean;
 public static function load(string $UUID): array {
 $UUID = trim($UUID);
 
-if ($UUID === '') return self::defaults();
+if ($UUID === '' || $UUID === '_') return self::defaults();
 
 $Row = Database::getInstance()->fetch(
 'SELECT * FROM `App_Filter_Settings` WHERE `User_UUID` = ? LIMIT 1',
@@ -606,7 +606,7 @@ return self::saveGlobal([
 public static function save(string $UUID, array $Settings, string $Source = 'app'): array {
 $UUID = trim($UUID);
 
-if ($UUID === '') return self::defaults();
+if ($UUID === '' || $UUID === '_') return self::defaults();
 
 $Enabled = self::boolOf($Settings['enabled'] ?? false);
 $Categories = self::categoryList($Settings['categories'] ?? ($Settings['category'] ?? []));

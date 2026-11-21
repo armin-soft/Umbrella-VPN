@@ -978,23 +978,19 @@ class Account {
 
   /// دلیل بسته بودن دسترسی، به فارسی؛ اگر دسترسی باز باشد رشته خالی است.
   String get accessReason {
-    final List<String> reasons = <String>[];
     if (!enable) {
-      reasons.add('حساب شما مسدود شده است');
-    }
-    if (!isActive) {
-      reasons.add('اشتراک شما فعال نیست');
+      return 'حساب شما مسدود شده است؛ برای بررسی با پشتیبانی تماس بگیرید.';
     }
     if (expired) {
-      reasons.add('اشتراک شما منقضی شده است');
+      return 'اشتراک شما منقضی شده است؛ برای ادامه آن را تمدید کنید.';
     }
     if (quotaFinished) {
-      reasons.add('حجم اشتراک شما تمام شده است');
+      return 'حجم اشتراک شما به پایان رسیده است؛ برای ادامه بسته را تمدید کنید.';
     }
-    if (reasons.isEmpty) {
-      return '';
+    if (!isActive) {
+      return 'اشتراک شما غیرفعال است؛ برای بررسی با پشتیبانی تماس بگیرید.';
     }
-    return '${reasons.join(' و ')}؛ برای ادامه باید اشتراک را تمدید کنید.';
+    return '';
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -3196,7 +3192,7 @@ class DeviceProfile {
     }
     buffer.write(' | $platformLabel');
     if (localIp.isNotEmpty) {
-      buffer.write(' | نشانی داخلی: ${Fa.num(localIp)}');
+      buffer.write(' | نشانی داخلی: $localIp');
     }
     if (city.isNotEmpty || country.isNotEmpty) {
       buffer.write(' | موقعیت: ${Fa.num(country)} ${Fa.num(city)}');

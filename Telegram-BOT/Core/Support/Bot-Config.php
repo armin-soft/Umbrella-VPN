@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../Storage/Repository.php';
+require_once __DIR__ . '/Helper.php';
 require_once __DIR__ . '/../Telegram/Telegram.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
@@ -62,7 +63,7 @@ public static function setEmergencyUrl(string $Url): void {
 Repository::setSetting(self::KEY_EMERGENCY_URL, trim($Url));
 }
 
-public static function isNowruzMenuEnabled(): bool {
+public static function isNowruzMenuConfigured(): bool {
 $Stored = Repository::getSetting(self::KEY_NOWRUZ_MENU, null);
 
 if ($Stored !== null && trim((string)$Stored) !== '') {
@@ -73,12 +74,50 @@ return $Normalized === '1' || $Normalized === 'true' || $Normalized === 'on';
 return method_exists(Environment::class, 'showNowruzMenu') && Environment::showNowruzMenu();
 }
 
+/** Menu and gift are available only during the selected Solar Hijri window. */
+public static function isNowruzMenuEnabled(?DateTimeImmutable $Now = null): bool {
+return self::isNowruzMenuConfigured() && self::isNowruzSeasonActive($Now);
+}
+
+public static function isNowruzSeasonActive(?DateTimeImmutable $Now = null): bool {
+$Date = self::jalaliDateParts($Now);
+return $Date['month'] === 1 && $Date['day'] >= 1 && $Date['day'] <= 13;
+}
+
+public static function isNowruzFirstDay(?DateTimeImmutable $Now = null): bool {
+$Date = self::jalaliDateParts($Now);
+return $Date['month'] === 1 && $Date['day'] === 1;
+}
+
 public static function setNowruzMenuEnabled(bool $Show): void {
 Repository::setSetting(self::KEY_NOWRUZ_MENU, $Show ? '1' : '0');
 }
 
-public static function nowruzSeasonKey(): string {
-return (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y');
+/** The current Solar Hijri year, used to limit the Nowruz gift to once a year. */
+public static function nowruzSeasonKey(?DateTimeImmutable $Now = null): string {
+$Date = self::jalaliDateParts($Now);
+return (string)$Date['year'];
+}
+
+/** @return array{year:int, month:int, day:int} */
+private static function jalaliDateParts(?DateTimeImmutable $Now = null): array {
+$Zone = new DateTimeZone('Asia/Tehran');
+$Date = ($Now ?? new DateTimeImmutable('now', $Zone))->setTimezone($Zone);
+$Label = Helper::gregorianToJalali($Date->format('Y-m-d'));
+$English = Helper::toEnglish($Label);
+$Months = [
+'فروردین' => 1, 'اردیبهشت' => 2, 'خرداد' => 3, 'تیر' => 4,
+'مرداد' => 5, 'شهریور' => 6, 'مهر' => 7, 'آبان' => 8,
+'آذر' => 9, 'دی' => 10, 'بهمن' => 11, 'اسفند' => 12,
+];
+if (preg_match('/\\s(\\d{1,2})\\s+(فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)\\s+(\\d{4})$/u', $English, $Match) !== 1) {
+return ['year' => (int)$Date->format('Y'), 'month' => 0, 'day' => 0];
+}
+return [
+'year' => (int)$Match[3],
+'month' => $Months[$Match[2]],
+'day' => (int)$Match[1],
+];
 }
 
 public static function hasClaimedNowruz(int $UserId = 0, string $Uuid = '', ?string $Season = null): bool {

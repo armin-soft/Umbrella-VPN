@@ -116,9 +116,11 @@ class _AccountPageState extends State<AccountPage> {
     try {
       await auth.refreshAccount(silent: true);
       await auth.refreshBotLinkStatus();
-      await auth.refreshWallet(silent: true);
+      if (auth.botLinked == true) {
+        await auth.refreshWallet(silent: true);
+        await auth.loadSubscriptionPlans();
+      }
       final bool panel = await auth.refreshFromPanel();
-      await auth.loadSubscriptionPlans();
       await subs.syncPersonal();
       if (!mounted) {
         return;
@@ -140,14 +142,22 @@ class _AccountPageState extends State<AccountPage> {
     SubscriptionPlan plan, {
     int? customDays, double? customGb,
   }) async {
+    if (auth.botLinked != true) {
+      toasts.info(
+        'اتصال ربات لازم است',
+        'برای خرید یا تمدید، ابتدا حساب را به ربات تلگرام پیوند دهید.',
+      );
+      return;
+    }
     final bool confirmed = await showDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog(
             title: const Text('خرید یا تمدید اشتراک'),
             content: Text(
-              'پلن ${plan.name} به مدت ${Fa.num(plan.days)} روز با قیمت '
-              '${Fa.num(plan.price)} تومان انتخاب شده است. موجودی کیف پول '
-              'مشترک شما ${Fa.num(auth.walletBalance)} تومان است. ادامه می دهید؟',
+              'پلن ${Fa.num(plan.name)} به مدت ${Fa.num(plan.days)} روز با قیمت '
+              '${Fa.num(plan.price)} تومان انتخاب شده است.'
+              '${auth.botLinked == true ? ' موجودی کیف پول مشترک شما ${Fa.num(auth.walletBalance)} تومان است.' : ''} '
+              'ادامه می دهید؟',
             ),
             actions: <Widget>[
               TextButton(
@@ -191,10 +201,20 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _purchaseCustomPlan(AuthController auth, ToastController toasts) async {
+    if (auth.botLinked != true) {
+      toasts.info(
+        'اتصال ربات لازم است',
+        'برای خرید اشتراک دلخواه، ابتدا حساب را به ربات تلگرام پیوند دهید.',
+      );
+      return;
+    }
     final CustomSubscriptionTerms? terms = auth.customSubscriptionTerms;
     if (terms == null || !terms.available) return;
-    final TextEditingController days = TextEditingController(text: '${terms.minDays}');
-    final TextEditingController gb = TextEditingController(text: '${terms.minGb}');
+    final TextEditingController days =
+        TextEditingController(text: Fa.num(terms.minDays));
+    final TextEditingController gb = TextEditingController(
+      text: Fa.num(terms.minGb).replaceAll('.', '٫'),
+    );
     final selection = await showDialog<List<num>>(
       context: context,
       builder: (BuildContext dialogContext) => StatefulBuilder(
@@ -247,6 +267,10 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> _refreshWallet(AuthController auth, ToastController toasts,
       {bool verify = false}) async {
+    if (auth.botLinked != true) {
+      toasts.info('اتصال ربات لازم است', 'ابتدا حساب را به ربات تلگرام پیوند دهید.');
+      return;
+    }
     final bool ok = await auth.refreshWallet(verify: verify);
     if (!mounted) return;
     if (!ok) {
@@ -275,6 +299,10 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _topupWallet(AuthController auth, ToastController toasts) async {
+    if (auth.botLinked != true) {
+      toasts.info('اتصال ربات لازم است', 'برای شارژ کیف پول، ابتدا حساب را پیوند دهید.');
+      return;
+    }
     if (!auth.walletLoaded || auth.walletPaymentPending) return;
     final TextEditingController controller = TextEditingController();
     final int? amount = await showDialog<int>(
@@ -465,6 +493,16 @@ class _AccountPageState extends State<AccountPage> {
     AuthController auth,
     ToastController toasts,
   ) async {
+    await auth.refreshBotLinkStatus();
+    if (auth.botLinked != true) {
+      if (mounted) {
+        toasts.info(
+          'اتصال ربات لازم است',
+          'برای دریافت کیف پول و تعرفه ها، حساب را به ربات پیوند دهید.',
+        );
+      }
+      return;
+    }
     await auth.refreshAccount(silent: true);
     await auth.refreshFromPanel();
     final bool loaded = await auth.loadSubscriptionPlans(silent: false);
@@ -540,29 +578,6 @@ class _AccountPageState extends State<AccountPage> {
       return formatted;
     }
     return '$formatted (${op.label})';
-  }
-
-  static String _compactUuidFa(String raw) {
-    final String clean = raw.trim();
-    if (clean.isEmpty) {
-      return 'نامشخص';
-    }
-    final String digits = clean.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.length >= 8) {
-      return 'کد ${Fa.num(digits.substring(0, 4))}•••${Fa.num(digits.substring(digits.length - 4))}';
-    }
-    if (digits.isNotEmpty) {
-      return 'کد ${Fa.num(digits)}';
-    }
-    return 'ثبت شده و آماده کپی';
-  }
-
-  static String _tunnelIpv4Fa(String raw) {
-    final String clean = raw.trim();
-    if (clean.isEmpty || !RegExp(r'^[0-9.]+$').hasMatch(clean)) {
-      return 'تخصیص خودکار';
-    }
-    return Fa.num(clean);
   }
 
   @override
@@ -735,16 +750,29 @@ class _AccountPageState extends State<AccountPage> {
                             'account-tab-${section.name}',
                           ),
                           icon: Tooltip(
-                            message: Fa.num(section.detail),
+                            message: Fa.num(
+                              section == _AccountSection.wallet &&
+                                      auth.botLinked != true
+                                  ? 'برای دیدن موجودی، حساب را به ربات پیوند دهید'
+                                  : section.detail,
+                            ),
                             child: Icon(
-                              section.icon,
+                              section == _AccountSection.wallet &&
+                                      auth.botLinked != true
+                                  ? Icons.send_rounded
+                                  : section.icon,
                               size: AppMetrics.iconMd,
                             ),
                           ),
                           iconMargin: const EdgeInsets.only(
                             bottom: AppMetrics.space1,
                           ),
-                          text: Fa.num(section.title),
+                          text: Fa.num(
+                            section == _AccountSection.wallet &&
+                                    auth.botLinked != true
+                                ? 'اتصال ربات'
+                                : section.title,
+                          ),
                         ),
                     ],
                   ),
@@ -958,13 +986,15 @@ class _AccountPageState extends State<AccountPage> {
             ),
             const SizedBox(height: AppMetrics.space4),
           ],
-          _WalletCard(
-            auth: auth,
-            onTopup: () => _topupWallet(auth, toasts),
-            onRefresh: () => _refreshWallet(auth, toasts),
-            onVerify: () => _refreshWallet(auth, toasts, verify: true),
-            onContinue: () => _openWalletCheckout(auth.walletCheckoutUrl, toasts),
-          ),
+          if (auth.botLinked == true)
+            _WalletCard(
+              auth: auth,
+              onTopup: () => _topupWallet(auth, toasts),
+              onRefresh: () => _refreshWallet(auth, toasts),
+              onVerify: () => _refreshWallet(auth, toasts, verify: true),
+              onContinue: () =>
+                  _openWalletCheckout(auth.walletCheckoutUrl, toasts),
+            ),
           const SizedBox(height: AppMetrics.space4),
         ],
       ),
@@ -1014,6 +1044,9 @@ class _AccountPageState extends State<AccountPage> {
             _PaidPlansCard(
               plans: auth.subscriptionPlans,
               balance: auth.walletBalance,
+              showBalance: auth.botLinked == true,
+              canPurchase: auth.botLinked == true,
+              onLinkBot: () => _joinBot(auth, toasts),
               custom: auth.customSubscriptionTerms,
               renewalNotice: renewalNotice,
               renewalTone: renewalTone,
@@ -1093,7 +1126,11 @@ class _AccountPageState extends State<AccountPage> {
                 InfoRow(
                   icon: Icons.fingerprint_rounded,
                   label: 'شناسه یکتای حساب',
-                  value: _compactUuidFa(account.uuid),
+                  value: account.uuid.trim().isEmpty
+                      ? 'نامشخص'
+                      : account.uuid.trim(),
+                  ltr: account.uuid.trim().isNotEmpty,
+                  technicalValue: account.uuid.trim().isNotEmpty,
                   trailing: account.uuid.isEmpty
                       ? null
                       : IconAction(
@@ -1109,7 +1146,9 @@ class _AccountPageState extends State<AccountPage> {
                   InfoRow(
                     icon: Icons.alternate_email_rounded,
                     label: 'شناسه عددی تلگرام',
-                    value: Fa.num(account.telegramId),
+                    value: account.telegramId,
+                    ltr: true,
+                    technicalValue: true,
                     trailing: IconAction(
                       icon: Icons.copy_rounded,
                       tooltip: 'کپی شناسه تلگرام',
@@ -1127,7 +1166,9 @@ class _AccountPageState extends State<AccountPage> {
                   InfoRow(
                     icon: Icons.hub_rounded,
                     label: 'نشانی اختصاصی تونل استاندارد',
-                    value: _tunnelIpv4Fa(account.wgIpv4),
+                    value: account.wgIpv4,
+                    ltr: true,
+                    technicalValue: true,
                     trailing: IconAction(
                       icon: Icons.copy_rounded,
                       tooltip: 'کپی نشانی تونل استاندارد',
@@ -1145,7 +1186,9 @@ class _AccountPageState extends State<AccountPage> {
                   InfoRow(
                     icon: Icons.auto_fix_high_rounded,
                     label: 'نشانی اختصاصی تونل پیشرفته',
-                    value: _tunnelIpv4Fa(account.awgIpv4),
+                    value: account.awgIpv4,
+                    ltr: true,
+                    technicalValue: true,
                     trailing: IconAction(
                       icon: Icons.copy_rounded,
                       tooltip: 'کپی نشانی تونل پیشرفته',
@@ -1917,6 +1960,9 @@ class _PaidPlansCard extends StatelessWidget {
   const _PaidPlansCard({
     required this.plans,
     required this.balance,
+    required this.showBalance,
+    required this.canPurchase,
+    required this.onLinkBot,
     required this.custom,
     required this.renewalNotice,
     required this.renewalTone,
@@ -1929,6 +1975,9 @@ class _PaidPlansCard extends StatelessWidget {
 
   final List<SubscriptionPlan> plans;
   final int balance;
+  final bool showBalance;
+  final bool canPurchase;
+  final VoidCallback onLinkBot;
   final CustomSubscriptionTerms? custom;
   final String? renewalNotice;
   final Color? renewalTone;
@@ -2012,14 +2061,16 @@ class _PaidPlansCard extends StatelessWidget {
             ),
             const SizedBox(height: AppMetrics.space3),
           ],
-          Text(
-            'موجودی کیف پول: ${Fa.num(balance)} تومان',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: colors.success,
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: AppMetrics.space3),
+          if (showBalance) ...<Widget>[
+            Text(
+              'موجودی کیف پول: ${Fa.num(balance)} تومان',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colors.success,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: AppMetrics.space3),
+          ],
           if (plans.isEmpty)
             Text(
               loading
@@ -2046,7 +2097,7 @@ class _PaidPlansCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          plans[i].name,
+                          Fa.num(plans[i].name),
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w800,
                               ),
@@ -2062,7 +2113,9 @@ class _PaidPlansCard extends StatelessWidget {
                   ),
                   const SizedBox(width: AppMetrics.space2),
                   OutlinedButton(
-                    onPressed: busy ? null : () => onPurchase(plans[i]),
+                    onPressed: busy || !canPurchase
+                        ? null
+                        : () => onPurchase(plans[i]),
                     child: Text(busy ? '...' : 'انتخاب'),
                   ),
                 ],
@@ -2071,9 +2124,27 @@ class _PaidPlansCard extends StatelessWidget {
           if (custom?.available == true) ...<Widget>[
             const Divider(height: AppMetrics.space3),
             OutlinedButton.icon(
-              onPressed: busy || loading ? null : onCustom,
+              onPressed: busy || loading || !canPurchase ? null : onCustom,
               icon: const Icon(Icons.tune_rounded),
               label: const Text('اشتراک دلخواه: انتخاب مدت و حجم'),
+            ),
+          ],
+          if (!canPurchase) ...<Widget>[
+            const SizedBox(height: AppMetrics.space3),
+            Text(
+              'برای خرید با کیف پول مشترک، ابتدا حساب را به ربات تلگرام پیوند دهید.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textSecondary,
+                    height: 1.5,
+                  ),
+            ),
+            const SizedBox(height: AppMetrics.space2),
+            GradientButton(
+              label: 'پیوند حساب به ربات',
+              icon: Icons.link_rounded,
+              loading: false,
+              height: AppMetrics.controlHeightSmall,
+              onPressed: onLinkBot,
             ),
           ],
           const SizedBox(height: AppMetrics.space2),

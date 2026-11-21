@@ -538,7 +538,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     ),
                     const SizedBox(height: AppMetrics.space1),
                     Text(
-                      Fa.num(hostValue),
+                      hostValue,
                       textDirection: TextDirection.ltr,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

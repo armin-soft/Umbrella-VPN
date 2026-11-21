@@ -279,14 +279,14 @@ void main() {
         await tester.pump(const Duration(milliseconds: 1200));
 
         expect(find.text('@UmbrellaVPN_Channel'), findsOneWidget);
-        expect(find.text('به تلگرام آمبرلا بپیوندید'), findsOneWidget);
+        expect(find.text('به کانال رسمی آمبرلا بپیوندید'), findsOneWidget);
         expect(
           find.text(
-            'کانال رسمی آمبرلا را برای اخبار، نسخه های جدید و ترفندهای متصل ماندن دنبال کنید.',
+            '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
           ),
           findsOneWidget,
         );
-        expect(find.text('عضویت در کانال'), findsOneWidget);
+        expect(find.text('عضویت در کانال رسمی'), findsOneWidget);
         expect(find.text('بعداً'), findsOneWidget);
         expect(find.byIcon(Icons.telegram), findsNWidgets(2));
         expect(find.byIcon(Icons.auto_awesome), findsNWidgets(4));

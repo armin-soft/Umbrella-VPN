@@ -12,16 +12,17 @@ import 'package:umbrella_vpn/ui/pages/account_page.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _TestAuth extends ChangeNotifier implements AuthController {
-  _TestAuth(this.accountValue);
+  _TestAuth(this.accountValue, {this.botLinkedValue = true});
 
   Account accountValue;
+  bool? botLinkedValue;
 
   @override
   Account get account => accountValue;
   @override
   bool get signedIn => false;
   @override
-  bool? get botLinked => true;
+  bool? get botLinked => botLinkedValue;
   @override
   SubscriptionOffers get offers => const SubscriptionOffers();
   @override
@@ -102,6 +103,8 @@ void main() {
         name: 'کاربر آزمایشی',
         phone: '09120000000',
         telegramId: '1234567',
+        wgIpv4: '10.90.0.3',
+        awgIpv4: '10.91.0.3',
         isActive: true,
         usageLimitGb: 100,
         currentUsageGb: 12,
@@ -189,7 +192,19 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    auth.botLinkedValue = false;
+    auth.notifyListeners();
+    await tester.pumpAndSettle();
     await selectTab(1);
+    expect(find.byKey(const ValueKey<String>('account-wallet-card')),
+        findsNothing);
+    expect(find.byKey(const ValueKey<String>('account-wallet-balance')),
+        findsNothing);
+    expect(find.text('عضویت و اتصال ربات'), findsOneWidget);
+
+    auth.botLinkedValue = true;
+    auth.notifyListeners();
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey<String>('account-wallet-card')),
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('account-wallet-balance')),
@@ -219,9 +234,23 @@ void main() {
     expect(find.text('تمدید اشتراک'), findsOneWidget);
     expect(find.text('پلن آزمایشی'), findsOneWidget);
 
+    auth.botLinkedValue = false;
+    auth.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('موجودی کیف پول:'), findsNothing);
+    expect(find.text('پیوند حساب به ربات'), findsOneWidget);
+    auth.botLinkedValue = true;
+    auth.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('موجودی کیف پول:'), findsOneWidget);
+
     await selectTab(3);
     expect(find.text('شناسه یکتای حساب'), findsOneWidget);
+    expect(find.text('abcd1234-5678-9876'), findsOneWidget);
     expect(find.text('شناسه عددی تلگرام'), findsOneWidget);
+    expect(find.text('1234567'), findsOneWidget);
+    expect(find.text('10.90.0.3'), findsOneWidget);
+    expect(find.text('10.91.0.3'), findsOneWidget);
     expect(find.text('شماره کاربری در پنل'), findsNothing);
     expect(find.textContaining('کاربر شماره'), findsNothing);
     expect(

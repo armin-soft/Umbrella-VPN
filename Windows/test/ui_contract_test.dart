@@ -1297,6 +1297,60 @@ void main() {
       expect(read('lib/ui/shell/app_shell.dart').contains('darkTheme: Theme.of(context).brightness == Brightness.dark'), isTrue);
     });
 
+    test('ورودی شماره تلفن صریحاً چپ به راست است', () {
+      final String login = read('lib/ui/pages/login_page.dart');
+      expect(login.contains('textDirection: TextDirection.ltr'), isTrue);
+      expect(login.contains('textAlign: TextAlign.left'), isTrue);
+    });
+
+    test('متن های جست و جو و دعوت کانال فارسی و بدون نیم فاصله هستند', () {
+      final String contentFilter =
+          read('lib/ui/widgets/content_control.dart');
+      expect(contentFilter.contains('search domain...'), isFalse);
+      expect(contentFilter.contains('جست وجوی دامنه'), isTrue);
+      final String channelDialog =
+          read('lib/ui/widgets/telegram_channel_dialog.dart');
+      expect(channelDialog.contains('به روز رسانی ها'), isTrue);
+      expect(channelDialog.contains('\u200C'), isFalse);
+    });
+
+    test('ورودی های تعرفه دلخواه رقم فارسی نشان می دهند و محاسبه دقیق می ماند', () {
+      final String account = read('lib/ui/pages/account_page.dart');
+      expect(
+        account.contains('TextEditingController(text: Fa.num(terms.minDays))'),
+        isTrue,
+      );
+      expect(account.contains("Fa.num(terms.minGb).replaceAll('.', '٫')"), isTrue);
+      expect(account.contains('Fa.toEn(days.text)'), isTrue);
+      expect(account.contains("replaceAll('٫', '.')"), isTrue);
+    });
+
+    test('نشانی ها و شناسه های فنی در نمایش فارسی دقیق می مانند', () {
+      final String common = read('lib/ui/widgets/common.dart');
+      expect(common.contains('this.technicalValue = false'), isTrue);
+      expect(
+        common.contains('technicalValue ? value : Fa.num(value)'),
+        isTrue,
+      );
+      final String device = read('lib/ui/pages/device_page.dart');
+      expect(device.contains('value: _technicalAddress(device.localIp)'), isTrue);
+      expect(device.contains('technicalValue: true'), isTrue);
+      final String account = read('lib/ui/pages/account_page.dart');
+      expect(account.contains('technicalValue: true'), isTrue);
+      expect(account.contains('value: account.telegramId'), isTrue);
+      expect(account.contains('value: account.wgIpv4'), isTrue);
+      expect(account.contains('value: account.awgIpv4'), isTrue);
+      final String login = read('lib/ui/pages/login_page.dart');
+      expect(login.contains('auth.gatewayHost,'), isTrue);
+      expect(login.contains('textDirection: TextDirection.ltr'), isTrue);
+      expect(login.contains("Fa.num('نشانی فعلی درگاه:"), isFalse);
+      final String vpn = read('lib/vpn/vpn_controller.dart');
+      expect(vpn.contains(r"'آی پی خروجی: ${_geo.ip}'"), isTrue);
+      final String models = read('lib/models/models.dart');
+      expect(models.contains(r"buffer.write(' | نشانی داخلی: $localIp');"), isTrue);
+      expect(models.contains('Fa.num(localIp)'), isFalse);
+    });
+
     test('۲. فوتر حقوق محفوظ از صفحات ورود و معرفی حذف شده است', () {
       expect(read('lib/ui/pages/landing_page.dart').contains('حقوق محفوظ'), isFalse);
       expect(read('lib/ui/pages/about_page.dart').contains('حقوق محفوظ'), isFalse);

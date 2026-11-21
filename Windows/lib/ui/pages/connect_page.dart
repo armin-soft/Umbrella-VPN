@@ -184,7 +184,7 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     if (!auth.account.canConnect) {
-      toasts.error('اجازه اتصال نیست', auth.account.accessReason);
+      toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
       return;
     }
     if (vpn.nodes.isEmpty) {
@@ -870,7 +870,8 @@ class _IpChip extends StatelessWidget {
               ),
               const SizedBox(height: AppMetrics.space1),
               Text(
-                Fa.num(ip),
+                ip,
+                textDirection: TextDirection.ltr,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context)

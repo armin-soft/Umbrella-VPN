@@ -13,7 +13,7 @@ $Db = Database::getInstance();
 $DeviceRow = $Db->fetch('SELECT `Phone`, `Is_Trusted`, `User_UUID` FROM `App_Devices` WHERE `Device_ID` = ? LIMIT 1', [$Device]);
 $SignIn = $Db->fetch("SELECT `Phone` FROM `App_SignIn_Requests` WHERE `Device_ID` = ? AND `User_UUID` = ? AND `Stage` = 'approved' AND SHA2(`Token`, 256) = ? ORDER BY `ID` DESC LIMIT 1", [$Device, $UUID, (string)($Session['Token_Hash'] ?? '')]);
 $Phone = Helper::normalizePhone((string)($SignIn['Phone'] ?? ''));
-if ($UUID === '' || (string)($DeviceRow['User_UUID'] ?? '') !== $UUID || (int)($DeviceRow['Is_Trusted'] ?? 0) !== 1 || !Helper::validatePhone($Phone)) throw new RuntimeException('invalid_account');
+if ($UUID === '' || $UUID === '_' || (string)($DeviceRow['User_UUID'] ?? '') !== $UUID || (int)($DeviceRow['Is_Trusted'] ?? 0) !== 1 || !Helper::validatePhone($Phone)) throw new RuntimeException('invalid_account');
 $Linked = $Db->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
 if ((int)($Linked['Telegram_ID'] ?? 0) > 0) {
 $Panel = PanelClient::get($UUID);

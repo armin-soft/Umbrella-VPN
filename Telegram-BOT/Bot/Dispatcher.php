@@ -59,7 +59,6 @@ private const ROUTES = [
 'جرایم' => [AdminFlow::class, 'crimes'],
 'رتبه بندی' => [AdminFlow::class, 'userRanking'],
 'گزارش روزانه' => [AdminFlow::class, 'dailyReport'],
-'رتبه بندی کاربران' => [UserFlow::class, 'usageRanking'],
 ];
 private function __construct() {
 }
@@ -590,11 +589,6 @@ return;
 
 if (str_starts_with($Data, 'user_tickets_page:')) {
 UserFlow::ticketUserList($Context, (int)substr($Data, strlen('user_tickets_page:')));
-return;
-}
-
-if (str_starts_with($Data, 'user_ranking_page:')) {
-UserFlow::usageRanking($Context, (int)substr($Data, strlen('user_ranking_page:')));
 return;
 }
 

@@ -80,7 +80,7 @@ void main() {
       expect(account.canConnect, isTrue);
     });
 
-    test('چند دلیل هم زمان، همه در پیام می آیند', () {
+    test('وقتی چند محدودیت هم زمان است فقط علت اصلی مسدودی نمایش داده می شود', () {
       final Account account = Account(
         enable: false,
         isActive: true,
@@ -89,9 +89,22 @@ void main() {
         expiryDate: past,
       );
       expect(account.accessReason, contains('مسدود'));
+      expect(account.accessReason, isNot(contains('منقضی')));
+      expect(account.accessReason, isNot(contains('حجم')));
+      expect(account.accessReason, contains('پشتیبانی'));
+    });
+
+    test('برای اشتراک منقضی شده اتمام حجم و غیرفعالی دلیل جداگانه نمی شوند', () {
+      final Account account = Account(
+        enable: true,
+        isActive: false,
+        usageLimitGb: 5,
+        currentUsageGb: 5,
+        expiryDate: past,
+      );
       expect(account.accessReason, contains('منقضی'));
-      expect(account.accessReason, contains('حجم'));
-      expect(account.accessReason, contains('تمدید'));
+      expect(account.accessReason, isNot(contains('حجم')));
+      expect(account.accessReason, isNot(contains('غیرفعال')));
     });
   });
 }
