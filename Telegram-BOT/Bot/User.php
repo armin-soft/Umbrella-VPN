@@ -306,10 +306,11 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 
 public static function appDownloadMenu(Context $Context): void {
 $Text = Common::greet($Context, 'نرم افزار/اپلیکیشن')
-. "🪟فعلاً نسخهٔ ویندوز در دسترس است.\n"
-. "نسخهٔ اندروید بعداً به این بخش اضافه می شود؛ اطلاعات انتشار ویندوز از GitHub خوانده می شود." . Helper::userFooter();
+. "📦فایل نصبی همه سیستم عامل ها در همان انتشار رسمی نسخه قرار می گیرد.\n"
+. "سیستم عامل خود را انتخاب کنید؛ اگر فایل منتشر شده باشد، پیوند مستقیم آن نمایش داده می شود." . Helper::userFooter();
 $Rows = Menu::rows([
-[['🪟ویندوز', 'app_download_windows']],
+[['🪟ویندوز', 'app_download_windows'], ['🤖اندروید', 'app_download_android']],
+[['🍎مک', 'app_download_macos']],
 ]);
 $Rows[] = Menu::userHome();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
@@ -319,9 +320,17 @@ public static function appDownloadWindows(Context $Context): void {
 self::appDownloadPlatform($Context, 'windows');
 }
 
+public static function appDownloadAndroid(Context $Context): void {
+self::appDownloadPlatform($Context, 'android');
+}
+
+public static function appDownloadMacOS(Context $Context): void {
+self::appDownloadPlatform($Context, 'macos');
+}
+
 public static function appDownloadPlatform(Context $Context, string $Platform): void {
 $Platform = strtolower(trim($Platform));
-$Platform_Names = ['windows' => 'ویندوز'];
+$Platform_Names = ['windows' => 'ویندوز', 'android' => 'اندروید', 'macos' => 'مک'];
 if (!isset($Platform_Names[$Platform])) { self::appDownloadMenu($Context); return; }
 
 $Catalog = ReleaseCatalog::forPlatform($Platform);
@@ -334,7 +343,7 @@ foreach (['stable' => '✅نسخه رسمی', 'beta' => '🧪نسخه بتا'] a
 $Release = $Catalog[$Channel] ?? null;
 $Text .= "\n➖➖➖➖➖➖➖➖➖\n{$Channel_Label}\n";
 if (!is_array($Release)) {
-$Text .= "⏳برای این کانال هنوز نسخهٔ منتشرشده ای موجود نیست.\n";
+$Text .= "⏳برای این کانال هنوز فایل نصبی برای این سیستم عامل منتشر نشده است.\n";
 continue;
 }
 
@@ -387,7 +396,11 @@ return Helper::gregorianToJalali($Date->format('Y-m-d')) . ' — ' . Helper::for
 }
 
 private static function downloadableReleaseAssets(array $Release, string $Platform): array {
-$Extensions = ['windows' => ['.exe']];
+$Extensions = [
+'windows' => ['.exe'],
+'android' => ['.apk'],
+'macos' => ['.dmg', '.pkg'],
+];
 $Assets = array_values(array_filter($Release['assets'] ?? [], static function (array $Asset) use ($Extensions, $Platform): bool {
 $Name = strtolower((string)($Asset['name'] ?? ''));
 $Url = trim((string)($Asset['url'] ?? ''));
@@ -411,8 +424,11 @@ return $Assets;
 }
 
 private static function downloadButtonLabel(string $Platform, string $Channel, string $Asset_Name): string {
+$Platform_Names = ['windows' => 'ویندوز', 'android' => 'اندروید', 'macos' => 'مک'];
+$Platform_Label = $Platform_Names[$Platform] ?? 'نرم افزار';
 $Channel_Label = $Channel === 'beta' ? 'بتا' : 'رسمی';
-return "⬇️دانلود ویندوز {$Channel_Label}";
+$Asset_Label = pathinfo($Asset_Name, PATHINFO_FILENAME);
+return mb_substr("⬇️دانلود {$Platform_Label} {$Channel_Label} · {$Asset_Label}", 0, 64);
 }
 
 /** هر دسته ورودی قبلی را لغو می کند، بدون دست زدن به اطلاعات پرداخت. */

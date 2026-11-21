@@ -711,7 +711,9 @@ class UpdateService {
         .where((Map<String, dynamic> item) => item.isNotEmpty)
         .toList();
     final Map<String, dynamic>? installerAsset = _pickWindowsInstaller(assets);
-    if (installerAsset == null && !_isReleaseForWindows(tag)) {
+    if (installerAsset == null && !_isLegacyWindowsReleaseTag(tag)) {
+      // A plain version tag identifies the shared release; without a Windows
+      // installer asset it may only contain Android or macOS packages.
       return null;
     }
     final bool isPreRelease =
@@ -800,9 +802,13 @@ class UpdateService {
         'User-Agent': 'Umbrella-Windows/${AppConfig.version}',
       };
 
-  /// فقط نسخه ویندوز این مخزن به روز رسانی دارد.
-  static bool _isReleaseForWindows(String tag) =>
-      tag.toLowerCase().contains('windows');
+  /// تگ های قدیمی ویندوز برای سازگاری پذیرفته می شوند؛ انتشارهای جدید به فایل exe نیاز دارند.
+  static bool _isLegacyWindowsReleaseTag(String tag) {
+    final String normalized = tag.trim().toLowerCase();
+    return RegExp(
+      r'^v?\d+\.\d+\.\d+(?:[-.](?:alpha|beta|rc|pre|preview|dev|nightly|canary)(?:[.-]?\d+)?)?-windows$',
+    ).hasMatch(normalized);
+  }
 
   /// `v1.0.39-windows` یا `1.0.39` → `1.0.39`.
   static String _versionOf(String tag) {

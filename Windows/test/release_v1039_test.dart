@@ -379,6 +379,80 @@ void main() {
       expect(UpdateService.hasValidSha256('sha256:$sampleDigest'), isFalse);
     });
 
+    test('برچسب ساده نسخه و انتشار چند فایل پلتفرم های مختلف را تشخیص می دهد', () {
+      const String sampleDigest =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final UpdateInfo? stable = UpdateService.parseGithubRelease(
+        <String, dynamic>{
+          'tag_name': '1.0.0',
+          'draft': false,
+          'prerelease': false,
+          'body': 'نسخه رسمی\nSHA-256: $sampleDigest',
+          'assets': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'UmbrellaVPN-1.0.0-universal.apk',
+              'browser_download_url': 'https://github.com/releases/1.0.0/app.apk',
+            },
+            <String, dynamic>{
+              'name': 'UmbrellaVPN-1.0.0-macos.dmg',
+              'browser_download_url': 'https://github.com/releases/1.0.0/app.dmg',
+            },
+            <String, dynamic>{
+              'name': 'Umbrella.VPN-Setup-1.0.0-x64.exe',
+              'browser_download_url':
+                  'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/1.0.0/Umbrella.VPN-Setup-1.0.0-x64.exe',
+              'size': 49821563,
+              'digest': 'sha256:$sampleDigest',
+            },
+          ],
+        },
+        includePreReleases: false,
+      );
+      expect(stable, isNotNull);
+      expect(stable!.tagName, '1.0.0');
+      expect(stable.version, '1.0.0');
+      expect(stable.assetName, 'Umbrella.VPN-Setup-1.0.0-x64.exe');
+      expect(stable.url, contains('/1.0.0/Umbrella.VPN-Setup-1.0.0-x64.exe'));
+      expect(stable.sha256, sampleDigest);
+      expect(stable.preRelease, isFalse);
+      expect(UpdateInfo.normalizeVersion('1.0.1'), '1.0.1');
+      expect(UpdateInfo.normalizeVersion('1.0.1-beta.1'), '1.0.1-beta.1');
+
+      final UpdateInfo? androidAndMacOnly = UpdateService.parseGithubRelease(
+        <String, dynamic>{
+          'tag_name': '1.0.2',
+          'draft': false,
+          'prerelease': false,
+          'assets': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'UmbrellaVPN-1.0.2.apk',
+              'browser_download_url': 'https://github.com/releases/1.0.2/app.apk',
+            },
+            <String, dynamic>{
+              'name': 'UmbrellaVPN-1.0.2.dmg',
+              'browser_download_url': 'https://github.com/releases/1.0.2/app.dmg',
+            },
+          ],
+        },
+        includePreReleases: false,
+      );
+      expect(androidAndMacOnly, isNull,
+          reason: 'a shared plain tag without a Windows installer is not a Windows update');
+
+      final UpdateInfo? legacyWithoutAsset = UpdateService.parseGithubRelease(
+        <String, dynamic>{
+          'tag_name': 'v1.0.44-windows',
+          'draft': false,
+          'prerelease': false,
+          'assets': <Map<String, dynamic>>[],
+        },
+        includePreReleases: false,
+      );
+      expect(legacyWithoutAsset, isNotNull,
+          reason: 'legacy Windows-tag releases retain their direct-download fallback');
+      expect(legacyWithoutAsset!.url, contains('/v1.0.44-windows/'));
+    });
+
     test('کانال به روز رسانی ذخیره می شود و دانلود جریانی چک سام و لغو را رعایت می کند', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       SharedPreferences.setMockInitialValues(<String, Object>{});

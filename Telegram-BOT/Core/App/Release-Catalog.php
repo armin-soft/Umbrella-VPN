@@ -5,13 +5,18 @@ require_once __DIR__ . '/../Support/Http.php';
 require_once __DIR__ . '/../Support/Helper.php';
 require_once __DIR__ . '/../Storage/Repository.php';
 
-/** Public, cached catalog of published Windows app releases. */
+/** Public, cached catalog of published app releases grouped by platform. */
 final class ReleaseCatalog {
 private const CACHE_KEY = 'App_Release_Catalog_Token';
 private const CACHE_TTL = 900;
-// Windows installers are uploaded manually to this public release repository.
+// Installers for every supported platform are uploaded to this public release repository.
 private const SOURCES = ['armin-soft/Umbrella-VPN-Releases'];
-private const PLATFORMS = ['windows'];
+private const PLATFORM_EXTENSIONS = [
+'windows' => ['.exe'],
+'android' => ['.apk'],
+'macos' => ['.dmg', '.pkg'],
+];
+private const PLATFORMS = ['windows', 'android', 'macos'];
 private static ?array $Catalog = null;
 
 private function __construct() {
@@ -88,12 +93,17 @@ $Catalog = self::emptyCatalog();
 foreach ($Rows as $Release) {
 if (!empty($Release['draft'])) continue;
 $Tag = trim((string)($Release['tag_name'] ?? ''));
-if ($Tag === '' || preg_match('/-(windows)$/i', $Tag, $Match) !== 1) continue;
-$Platform = strtolower($Match[1]);
-$Is_Beta = !empty($Release['prerelease']) || preg_match('/(?:^|[-.])beta(?:[.-]|$)/i', $Tag) === 1;
+if ($Tag === '' || !self::isSupportedVersionTag($Tag)) continue;
+$Assets = self::normalizeAssets($Release['assets'] ?? []);
+$Platforms = self::platformsForRelease($Tag, $Assets);
+if ($Platforms === []) continue;
+$Is_Beta = !empty($Release['prerelease'])
+|| preg_match('/(?:^|[-.])(?:alpha|beta|rc|pre|preview|dev|nightly|canary)(?:[.-]|$)/i', $Tag) === 1;
 $Channel = $Is_Beta ? 'beta' : 'stable';
 $Published = trim((string)($Release['published_at'] ?? $Release['created_at'] ?? ''));
 $Timestamp = $Published !== '' ? (strtotime($Published) ?: 0) : 0;
+
+foreach ($Platforms as $Platform) {
 $Entry = [
 'platform' => $Platform,
 'channel' => $Channel,
@@ -103,15 +113,49 @@ $Entry = [
 'published_at' => $Published,
 'timestamp' => $Timestamp,
 'notes' => trim((string)($Release['body'] ?? '')),
-'assets' => self::normalizeAssets($Release['assets'] ?? []),
+'assets' => self::assetsForPlatform($Assets, $Platform),
 ];
 $Current = $Catalog[$Platform][$Channel];
 if ($Current === null || $Timestamp > (int)($Current['timestamp'] ?? 0)) {
 $Catalog[$Platform][$Channel] = $Entry;
 }
 }
+}
 
 return $Catalog;
+}
+
+private static function isSupportedVersionTag(string $Tag): bool {
+$Version = preg_replace('/^v/i', '', trim($Tag)) ?? trim($Tag);
+$Version = preg_replace('/-(?:windows|android|macos)$/i', '', $Version) ?? $Version;
+return preg_match('/^\d+\.\d+\.\d+(?:[-.](?:alpha|beta|rc|pre|preview|dev|nightly|canary)(?:[.-]?\d+)?)?$/i', $Version) === 1;
+}
+
+private static function platformsForRelease(string $Tag, array $Assets): array {
+$Platforms = [];
+foreach (self::PLATFORM_EXTENSIONS as $Platform => $_Extensions) {
+if (self::assetsForPlatform($Assets, $Platform) !== []) $Platforms[] = $Platform;
+}
+
+if (preg_match('/-(windows|android|macos)$/i', $Tag, $Match) === 1) {
+$Tag_Platform = strtolower($Match[1]);
+if (!in_array($Tag_Platform, $Platforms, true)) $Platforms[] = $Tag_Platform;
+}
+
+return $Platforms;
+}
+
+private static function assetsForPlatform(array $Assets, string $Platform): array {
+$Extensions = self::PLATFORM_EXTENSIONS[$Platform] ?? [];
+if ($Extensions === []) return [];
+
+return array_values(array_filter($Assets, static function (array $Asset) use ($Extensions): bool {
+$Name = strtolower(trim((string)($Asset['name'] ?? '')));
+foreach ($Extensions as $Extension) {
+if (str_ends_with($Name, $Extension)) return true;
+}
+return false;
+}));
 }
 
 private static function emptyCatalog(): array {
