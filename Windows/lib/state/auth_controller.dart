@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import '../core/app_config.dart';
 import '../core/storage.dart';
 import '../core/utils.dart';
-import '../data/panel_client.dart';
 import '../data/gateway_client.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
@@ -338,7 +337,7 @@ class AuthController extends ChangeNotifier {
         await _syncNotificationOwner(_session!.ownerKey);
         onFilterChanged?.call(filter);
         _startHeartbeat();
-        unawaited(refreshAccount(silent: true));
+        unawaited(refreshAccount(silent: true).then<void>((_) {}));
       }
     }
     notifyListeners();
@@ -630,7 +629,7 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       // نشست فقط خلاصه حساب را دارد؛ پروفایل کامل و نشانی اشتراک از همین
       // مسیر از سرور گرفته می شود.
-      unawaited(refreshAccount(silent: true));
+      unawaited(refreshAccount(silent: true).then<void>((_) {}));
     } on ApiError catch (error) {
       _error = error.message;
       _logError(error.message);
@@ -766,56 +765,6 @@ class AuthController extends ChangeNotifier {
   /// اعلان و قطع اتصال برای سلب مجوز دستگاه (جدا از اتمام اشتراک).
   Future<void> Function(String reason)? onSessionRevoked;
 
-  /// خواندن اعداد دقیق حساب از پنل؛ اگر پنل جواب ندهد همان داده درگاه
-  /// استفاده می شود و چیزی خراب نمی شود.
-  Future<bool> refreshFromPanel() async {
-    final SessionData? session = _session;
-    if (session == null) {
-      return false;
-    }
-    final String uuid = session.account.uuid;
-    if (uuid.isEmpty) {
-      return false;
-    }
-    final Account? panel = await PanelUserApi().user(uuid);
-    if (panel == null) {
-      return false;
-    }
-    final Account merged = session.account.copyWith(
-      panelId: panel.panelId > 0 ? panel.panelId : null,
-      name: panel.name.isNotEmpty ? panel.name : null,
-      phone: panel.effectivePhone.isNotEmpty ? panel.effectivePhone : null,
-      telegramId: panel.telegramId.isNotEmpty ? panel.telegramId : null,
-      comment: panel.comment.isNotEmpty ? panel.comment : null,
-      enable: panel.enable,
-      isActive: panel.isActive,
-      usageLimitGb: panel.usageLimitGb >= 0 ? panel.usageLimitGb : null,
-      currentUsageGb: panel.currentUsageGb,
-      packageDays: panel.packageDays > 0 ? panel.packageDays : null,
-      startDate: panel.startDate,
-      expiryDate: panel.expiryDate,
-      clearExpiryDate: panel.expiryDate == null &&
-          panel.startDate != null &&
-          panel.packageDays > 0,
-      lastResetTime: panel.lastResetTime,
-      lastOnline: panel.lastOnline,
-      mode: panel.mode.isNotEmpty ? panel.mode : null,
-      lang: panel.lang.isNotEmpty ? panel.lang : null,
-      wgIpv4: panel.wgIpv4.isNotEmpty ? panel.wgIpv4 : null,
-      wgIpv6: panel.wgIpv6.isNotEmpty ? panel.wgIpv6 : null,
-      awgIpv4: panel.awgIpv4.isNotEmpty ? panel.awgIpv4 : null,
-      awgIpv6: panel.awgIpv6.isNotEmpty ? panel.awgIpv6 : null,
-    );
-    _session = session.copyWith(account: merged, filter: session.filter);
-    await _store.writeJson(StoreKeys.session, _session!.toJson());
-    // اگر پنل بگوید اشتراک تمام شده، اتصال باید فورا قطع شود.
-    if (!merged.canConnect) {
-      onAccessRevoked?.call(merged.accessReason);
-    }
-    notifyListeners();
-    return true;
-  }
-
   /// وقتی دسترسی حساب از بین می رود (انقضا، مسدود شدن یا اتمام حجم) صدا زده
   /// می شود تا اتصال فعال قطع شود. در main به VpnController وصل می شود.
   void Function(String reason)? onAccessRevoked;
@@ -865,13 +814,18 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshAccount({bool silent = false}) async {
+  /// دریافت اعداد زندهٔ حساب فقط از درگاه احراز هویت‌شدهٔ سرور؛ هیچ درخواست
+  /// مستقیمی از برنامه به پنل مدیریتی فرستاده نمی‌شود.
+  Future<bool> refreshAccount({bool silent = false}) async {
     final SessionData? session = _session;
     if (session == null) {
-      return;
+      return false;
     }
     try {
       final SessionData fresh = await _gateway.refresh(session.token);
+      if (_session?.token != session.token) {
+        return false;
+      }
       final Account prev = session.account;
       final Account next = fresh.account;
       final Account preserved = next.copyWith(
@@ -894,7 +848,11 @@ class AuthController extends ChangeNotifier {
       if (!previousFilter.sameEffectAs(fresh.filter)) {
         onFilterChanged?.call(fresh.filter);
       }
+      if (!preserved.canConnect) {
+        onAccessRevoked?.call(preserved.accessReason);
+      }
       notifyListeners();
+      return true;
     } on ApiError catch (error) {
       if (error.code == 'device_revoked') {
         await _handleDeviceRevoked(error.message);
@@ -903,6 +861,7 @@ class AuthController extends ChangeNotifier {
         _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
         notifyListeners();
       }
+      return false;
     }
   }
 
@@ -946,7 +905,7 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// همگام سازی کاملاً خودکار پس زمینه (کنترل محتوا، هدیه ها، حساب، پنل و اعلان ها).
+  /// همگام سازی کاملاً خودکار پس زمینه (کنترل محتوا، هدیه ها، حساب و اعلان ها).
   DateTime? _lastAutoSyncAt;
   bool _autoSyncInFlight = false;
 
@@ -965,7 +924,6 @@ class AuthController extends ChangeNotifier {
       await _checkDeviceAccess();
       if (includeAccount && signedIn && !_revokingSession) {
         await refreshAccount(silent: true);
-        await refreshFromPanel();
       }
     } catch (_) {
       // همگام سازی پس زمینه کاملاً بی صداست و خطای موقت شبکه کاربر را آزار نمی دهد.
@@ -1100,7 +1058,6 @@ class AuthController extends ChangeNotifier {
       }
       if (status == 'activated') {
         await refreshAccount(silent: true);
-        await refreshFromPanel();
         await loadSubscriptionPlans();
         if (onSubscriptionClaimed != null) {
           unawaited(onSubscriptionClaimed!());
@@ -1175,7 +1132,7 @@ class AuthController extends ChangeNotifier {
           error.code == 'nowruz_disabled' ||
           error.code == 'active_subscription') {
         _error = error.message;
-        unawaited(refreshAccount(silent: true));
+        unawaited(refreshAccount(silent: true).then<void>((_) {}));
       } else {
         _error = error.message;
         _logError(error.message);

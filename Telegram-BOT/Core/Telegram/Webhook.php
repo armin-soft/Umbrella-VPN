@@ -11,8 +11,8 @@ require_once __DIR__ . '/../Storage/Repository.php';
  * رویکرد:
  *   • یک secret_token تصادفی (۶۴ کاراکتر هگز) ساخته و در جدول Settings ذخیره
  *     می شود؛ هیچ متغیری در .env لازم نیست.
- *   • آدرس وبهوک از همان درخواستی که به این فایل می رسد ساخته می شود، پس با
- *     تغییر دامنه هم خودکار به روز می شود.
+ *   • نشانی وبهوک از پیکربندی مورداعتماد سرور (یا دامنهٔ canonical) می آید؛
+ *     هرگز از Host یا X-Forwarded-Proto درخواست ورودی ساخته نمی شود.
  *   • تا یک ساعت پس از هر ثبت موفق، ثبت دوباره انجام نمی شود و درخواست های
  *     بعدی فقط یک خواندن از جدول Settings دارند.
  *   • Telegram هر به روزرسانی را با هدر X-Telegram-Bot-Api-Secret-Token
@@ -24,6 +24,7 @@ final class Webhook {
 private const SECRET_KEY = 'Webhook_Secret';
 private const STATE_KEY = 'Webhook_Registration';
 private const REFRESH_SECONDS = 3600;
+private const DEFAULT_WEBHOOK_URL = 'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php';
 
 private static string $Secret = '';
 private static bool $Loaded = false;
@@ -69,42 +70,32 @@ return $Secret !== '' && $Provided !== '' && hash_equals($Secret, $Provided);
 }
 
 /**
- * آدرس این فایل روی همین دامنه. مقدار BOT_WEBHOOK_URL در .env (اختیاری) بر
- * تشخیص خودکار اولویت دارد.
+ * نشانی وبهوک از پیکربندی مورداعتماد سرور یا دامنهٔ ثابت برنامه.
+ * HTTP_HOST و X-Forwarded-Proto ورودی درخواست هستند و نباید مقصد تلگرام را
+ * تعیین کنند؛ BOT_WEBHOOK_URL فقط از تنظیمات محیط سرور خوانده می شود.
  */
 public static function expectedUrl(): string {
-$Override = trim((string)Environment::get('BOT_WEBHOOK_URL'));
+$Url = trim(Environment::get('BOT_WEBHOOK_URL', self::DEFAULT_WEBHOOK_URL));
+$Parts = parse_url($Url);
 
-if ($Override !== '') {
-return $Override;
+if (!is_array($Parts)
+|| strtolower((string)($Parts['scheme'] ?? '')) !== 'https'
+|| trim((string)($Parts['host'] ?? '')) === ''
+|| isset($Parts['user'])
+|| isset($Parts['pass'])
+|| isset($Parts['query'])
+|| isset($Parts['fragment'])) {
+return self::DEFAULT_WEBHOOK_URL;
 }
 
-if (empty($_SERVER['HTTP_HOST'])) {
-return '';
-}
-
-$Https = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
-|| strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
-
-$Path = parse_url((string)($_SERVER['REQUEST_URI'] ?? '/index.php'), PHP_URL_PATH);
-$Path = is_string($Path) && $Path !== '' ? $Path : '/index.php';
-
-if (str_ends_with($Path, '/')) {
-$Path .= 'index.php';
-}
-
-elseif (!str_ends_with(strtolower($Path), '.php')) {
-$Path .= '/index.php';
-}
-
-return ($Https ? 'https' : 'http') . '://' . (string)$_SERVER['HTTP_HOST'] . $Path;
+return rtrim($Url, '/');
 }
 
 /**
  * ثبت یا به روزرسانی وبهوک در تلگرام.
  *
- * @param bool $AllowUrlChange فقط بازدید مرورگری اجازه دارد آدرس ثبت شده را
- *        عوض کند؛ درخواست های برنامه و API هرگز وبهوک را جابه جا نمی کنند.
+ * @param bool $AllowUrlChange اجازهٔ همگام سازی آدرس ذخیره شده با مقصدی را
+ *        می دهد که از پیکربندی مورداعتماد سرور آمده؛ خود درخواست هیچ URLی نمی سازد.
  */
 public static function ensureRegistered(bool $AllowUrlChange = false): void {
 $Url = self::expectedUrl();

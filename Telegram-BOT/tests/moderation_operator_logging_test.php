@@ -84,6 +84,21 @@ $Report = Scheduler::diagnoseNightly();
 check(count($Report) >= 10 && str_contains(implode('\n', $Report), 'Eligible active subscribers = 1'), 'manual diagnostics returned to caller');
 Scheduler::debugDailyReport();
 check(file_get_contents($Log) === '', 'successful diagnostics produce no error log');
+$_SERVER['HTTP_HOST'] = 'attacker.example';
+$_SERVER['HTTP_X_FORWARDED_PROTO'] = 'http';
+$_SERVER['REQUEST_URI'] = '/attacker-controlled/path';
+$_SERVER['BOT_WEBHOOK_URL'] = '';
+check(
+Webhook::expectedUrl() === 'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php',
+'Host and forwarded-proto headers must never control the Telegram webhook URL'
+);
+$_SERVER['BOT_WEBHOOK_URL'] = 'https://example.test/index.php';
+check(Webhook::expectedUrl() === 'https://example.test/index.php', 'trusted server config may explicitly set the webhook URL');
+$_SERVER['BOT_WEBHOOK_URL'] = 'http://attacker.example/index.php';
+check(
+Webhook::expectedUrl() === 'https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php',
+'non-HTTPS webhook configuration must fall back to the canonical HTTPS URL'
+);
 $_SERVER['BOT_WEBHOOK_URL'] = 'https://example.test/index.php';
 Webhook::ensureRegistered(true);
 check(in_array('setWebhook', TelegramClient::$Calls, true), 'webhook success path exercised');
@@ -106,7 +121,7 @@ $Source = str_replace("dirname(__DIR__, 2) . '/Resources/Persian-Forms.json'", v
 eval(preg_replace('/\?>\s*$/', '', $Source));
 check(FallbackHelper::containsProfanity('کسکش') && !FallbackHelper::containsProfanity('سلام'), 'fallback remains conservative and active');
 check(str_contains(file_get_contents($Log), 'fallback active'), 'missing dictionary produces actionable error');
-} finally { ini_set('error_log', $OldLog); unlink($Log); unset($_SERVER['BOT_WEBHOOK_URL']); }
+} finally { ini_set('error_log', $OldLog); unlink($Log); unset($_SERVER['BOT_WEBHOOK_URL'], $_SERVER['HTTP_HOST'], $_SERVER['HTTP_X_FORWARDED_PROTO'], $_SERVER['REQUEST_URI']); }
 $Gateway = file_get_contents(dirname(__DIR__) . '/Core/App/App-Gateway.php');
 foreach (['[App-Auth] start |', 'verify: panel account created for challenge', "[Gateway] decision ' . (\$Approved"] as $Success) check(!str_contains($Gateway, $Success), 'normal authentication events not written to error_log');
 check(str_contains($Gateway, 'decision transaction failed') && str_contains($Gateway, 'decision from unexpected telegram id'), 'auth failures/security problems still logged');

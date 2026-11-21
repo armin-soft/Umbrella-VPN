@@ -488,14 +488,10 @@ if (PanelClient::lastGetStatus() === 404) {
 AppAccountRevocation::revoke($UUID);
 self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
 }
-error_log('[Umbrella-Bot][Gateway] session profile fallback for uuid=' . $UUID . ' status=' . PanelClient::lastGetStatus());
-$Account = [
-'uuid' => $UUID,
-'name' => trim((string)($Row['Full_Name'] ?? '')),
-'telegram_id' => (int)($Row['Telegram_ID'] ?? 0),
-'is_active' => true,
-'enable' => true,
-];
+error_log('[Umbrella-Bot][Gateway] session profile unavailable for uuid=' . $UUID . ' status=' . PanelClient::lastGetStatus());
+// Unknown panel state is never an active account. Do not issue or reuse a
+// session token until a real account record has been read successfully.
+self::fail(502, 'panel_unavailable', 'بررسی حساب در پنل انجام نشد؛ کمی بعد دوباره تلاش کنید.');
 }
 
 $Token = (string)($Row['Token'] ?? '');

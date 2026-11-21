@@ -519,6 +519,9 @@ class UpdateService {
 
   final http.Client _client;
 
+  static bool hasValidSha256(String value) =>
+      RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value.trim());
+
   Future<UpdateInfo?> check({
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
@@ -539,13 +542,15 @@ class UpdateService {
     final List<UpdateInfo> list = await _fetchGithubReleases(channel: channel);
     if (list.isNotEmpty) {
       UpdateInfo latest = list.first;
-      if (latest.isNewer && latest.sha256.isEmpty && latest.tagName.isNotEmpty) {
+      if (latest.isNewer &&
+          !hasValidSha256(latest.sha256) &&
+          latest.tagName.isNotEmpty) {
         final String sha = await _shaForRelease(
           tag: latest.tagName,
           version: latest.version,
           assetName: latest.assetName,
         );
-        if (sha.isNotEmpty) {
+        if (hasValidSha256(sha)) {
           latest = UpdateInfo(
             version: latest.version,
             url: latest.url,
@@ -562,7 +567,9 @@ class UpdateService {
         }
       }
       return (
-        available: latest.isNewer ? latest : null,
+        available: latest.isNewer && hasValidSha256(latest.sha256)
+            ? latest
+            : null,
         releases: list,
       );
     }
@@ -570,7 +577,9 @@ class UpdateService {
       final UpdateInfo? single = await _checkGithubRelease();
       if (single != null) {
         return (
-          available: single.isNewer ? single : null,
+          available: single.isNewer && hasValidSha256(single.sha256)
+              ? single
+              : null,
           releases: <UpdateInfo>[single],
         );
       }
@@ -659,7 +668,7 @@ class UpdateService {
       if (info == null) {
         return null;
       }
-      if (info.sha256.isNotEmpty || !info.isNewer) {
+      if (hasValidSha256(info.sha256) || !info.isNewer) {
         return info;
       }
       final String sha = await _shaForRelease(
@@ -864,7 +873,10 @@ class UpdateService {
       return null;
     }
     final UpdateInfo info = UpdateInfo.fromJson(json);
-    if (info.version.isEmpty || info.url.isEmpty || !info.isNewer) {
+    if (info.version.isEmpty ||
+        info.url.isEmpty ||
+        !info.isNewer ||
+        !hasValidSha256(info.sha256)) {
       return null;
     }
     return info;
@@ -904,6 +916,10 @@ class UpdateService {
     File? partFile;
     IOSink? sink;
     try {
+      final String expectedSha256 = info.sha256.trim().toLowerCase();
+      if (!hasValidSha256(expectedSha256)) {
+        return null;
+      }
       final Directory dir;
       if (targetDir != null) {
         dir = targetDir;
@@ -920,8 +936,8 @@ class UpdateService {
       final File target = File('${dir.path}${Platform.pathSeparator}$name');
 
       // اگر فایل معتبر قبلاً کامل دریافت و تایید شده باشد، بی درنگ آماده نصب است.
-      if (info.sha256.isNotEmpty && await target.exists()) {
-        if (await _matchesSha256(target, info.sha256)) {
+      if (await target.exists()) {
+        if (await _matchesSha256(target, expectedSha256)) {
           final int len = await target.length();
           onProgress(1.0, len, len);
           return target;
@@ -990,14 +1006,13 @@ class UpdateService {
         return null;
       }
 
-      if (info.sha256.isNotEmpty) {
-        final String actual = capture.value?.toString().toLowerCase() ?? '';
-        if (actual != info.sha256.toLowerCase()) {
-          if (await partFile.exists()) {
-            await partFile.delete();
-          }
-          return null;
+      final String actualSha256 =
+          capture.value?.toString().toLowerCase() ?? '';
+      if (actualSha256 != expectedSha256) {
+        if (await partFile.exists()) {
+          await partFile.delete();
         }
+        return null;
       }
 
       if (await target.exists()) {
@@ -1019,27 +1034,38 @@ class UpdateService {
     }
   }
 
-  /// نصب درون برنامه ای با ارتقای خودکار و بازگشایی مجدد برنامه پس از نصب.
+  /// نصب خودکار فقط پس از اعتبارسنجی دوبارهٔ همان SHA-256 مورد انتظار.
   Future<bool> install(
     File file,
     NativeBridge native, {
+    required String expectedSha256,
     bool silentRelaunch = true,
   }) async {
     final String lower = file.path.toLowerCase();
+    final String digest = expectedSha256.trim().toLowerCase();
+    if (!hasValidSha256(digest) ||
+        (!lower.endsWith('.exe') && !lower.endsWith('.msi'))) {
+      return false;
+    }
+    try {
+      if (!await file.exists() || !await _matchesSha256(file, digest)) {
+        return false;
+      }
+    } on Exception {
+      return false;
+    }
+
     if (lower.endsWith('.msi')) {
       return native.runElevated(
         'msiexec.exe',
         args: '/i "${file.path}" /passive /norestart',
       );
     }
-    if (lower.endsWith('.exe')) {
-      final String args = silentRelaunch
-          ? '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS '
-              '/SP- /RelaunchAfterUpdate=1'
-          : '';
-      return native.runElevated(file.path, args: args);
-    }
-    return native.openPath(file.path);
+    final String args = silentRelaunch
+        ? '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS '
+            '/SP- /RelaunchAfterUpdate=1'
+        : '';
+    return native.runElevated(file.path, args: args);
   }
 
   static Future<void> _pruneOldInstallers(

@@ -228,7 +228,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact' }}
         uses: actions/upload-artifact@v4
         with:
-          name: UmbrellaVPN-Setup-0.0.1-x64
+          name: UmbrellaVPN-Setup-1.0.0-x64
           path: Windows/installer/output/*.exe
           if-no-files-found: error
           retention-days: 7

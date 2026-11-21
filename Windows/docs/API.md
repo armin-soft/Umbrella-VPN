@@ -1,21 +1,24 @@
-# قرارداد درگاه وب سرویس آمبرلا
+# قرارداد درگاه برنامهٔ آمبرلا
 
-پیاده سازی کلاینت: `lib/data/gateway_client.dart`
-پایه: `https://user.umbrella-server.ir/5mkVYdBkp8OS/`
-کلید: `ae467ee4-2249-4b67-bfa8-e59ca3125286`
+کلاینت ویندوز فقط با درگاه برنامه روی سرور ارتباط می‌گیرد:
 
-همه درخواست ها `POST` با بدنه `application/json` هستند و کلید در هدر
-`X-Api-Key` و همچنین در بدنه با نام `api_key` فرستاده می شود تا با هر دو
-سبک پیاده سازی سرور سازگار باشد.
-
-## پاسخ مشترک
-
-```json
-{ "ok": true, "data": { }, "message": "متن فارسی", "code": "OK" }
+```text
+https://armin-soft.ir/Tools/Telegram-BOT/Umbrella-VPN/index.php?AppApi=
 ```
 
-اگر `ok` نباشد یا کد HTTP غیر ۲۰۰ باشد، خطای `ApiError` با پیام فارسی ساخته
-می شود. خطاهای شبکه با تلاش دوباره در لایه کنترلر مدیریت می شوند.
+هیچ نشانی پنل مدیریتی، کلید API پنل یا اعتبارنامهٔ مدیریتی در برنامهٔ ویندوز
+وجود ندارد. خواندن و تغییر حساب پنل فقط از سمت سرور انجام می‌شود و کلیدهای لازم
+باید در پیکربندی خصوصی همان سرور نگه‌داری شوند.
+
+همهٔ درخواست‌های تغییردهنده `POST` با بدنهٔ JSON هستند. درگاه در صورت نیاز
+`_json` فرم‌کدشده را نیز می‌پذیرد. پاسخ مشترک:
+
+```json
+{ "ok": true, "data": { }, "message": "", "code": "OK" }
+```
+
+برای پاسخ ناموفق، کلاینت `ApiError` می‌سازد؛ خطاهای شبکه نیز بدون دور زدن درگاه
+و بدون اتصال مستقیم به پنل مدیریت می‌شوند.
 
 ## مسیرها
 
@@ -24,102 +27,53 @@
 ```json
 {
   "phone": "09123456789",
-  "operator": "mci",
   "device": {
-    "id": "uuid-دستگاه",
+    "id": "device-id",
     "name": "DESKTOP-XXXX",
     "model": "Windows 11 x64",
-    "os": "Windows 11 23H2",
-    "app_version": "0.0.1",
-    "public_ip": "5.6.7.8",
-    "country": "Iran",
-    "city": "Tehran"
+    "app_version": "1.0.0"
   }
 }
 ```
 
-پاسخ `data`:
+شماره و دستگاه را بررسی می‌کند و مرحلهٔ بعد (`needs_profile` یا ارسال کد) را
+برمی‌گرداند. برای حساب تازه، نام و نام خانوادگی نیز به همین درخواست افزوده
+می‌شود؛ ساخت حساب پنل پیش از اثبات مالکیت شماره انجام نمی‌شود.
 
-```json
-{
-  "stage": "needsProfile",
-  "user_exists": false,
-  "bot_url": "https://t.me/umbrella_bot",
-  "masked_phone": "0912***6789",
-  "resend_in": 60
-}
-```
+### `auth/verify`, `auth/status`, `auth/session`
 
-مقادیر `stage`: `needsProfile`، `code_sent`، `awaitingTelegram`، `approved`،
-`blocked`.
-
-### `auth/verify`
-
-```json
-{ "phone": "09123456789", "code": "123456", "request_id": "..." }
-```
-
-پاسخ: همان ساختار `stage` به همراه `token` در صورت تایید.
-
-برای ثبت پروفایل کاربر تازه، پیش از `auth/verify` یک درخواست
-`auth/profile` با `first_name` و `last_name` فرستاده می شود؛ اگر سرور این
-مسیر را نداشته باشد، همین فیلدها در `auth/verify` هم ارسال می شوند.
-
-### `auth/status`
-
-برای انتظار تایید تلگرام. پاسخ: `{ "stage": "awaitingTelegram" }` تا زمانی که
-کاربر در ربات دکمه «خودم بودم» را بزند؛ سپس `approved`.
+کد پیامکی و تایید تلگرام در سرور بررسی می‌شوند. `auth/session` فقط پس از تایید
+دستگاه و خواندن موفق حساب از پنل، نشست برنامه را صادر می‌کند. خطا یا پاسخ
+نامعتبر پنل هرگز به ساخت پروفایل فعالِ جایگزین منجر نمی‌شود؛ وضعیت نامعلوم با
+خطای موقت برمی‌گردد و حساب حذف‌شده نشست را لغو می‌کند.
 
 ### `account/refresh`
 
-همان پاسخ `auth/session` است و علاوه بر آن همیشه `subscription_url` را برمی
-گرداند. کلاینت این نشانی را خودش می خواند و هیچ نشانی از کاربر نمی پرسد.
-
-پاسخ `data`:
-
-```json
-{ "account": { "...": "...", "account_base": "https://...", "subscription_url": "https://.../<uuid>/sub/" }, "filter": { }, "checked_at": "2026-11-11T10:00:00Z" }
-```
-
-### `auth/session`
+با توکن نشست، اطلاعات تازهٔ حساب را از سمت سرور می‌گیرد:
 
 ```json
 {
-  "user": { "id": 12, "uuid": "...", "phone": "09123456789", "first_name": "...", "last_name": "...", "telegram_id": 123456 },
-  "account": { "plan": "حرفه ای", "usage_used_gb": 12.4, "usage_limit_gb": 100, "expire_at": "2026-12-01", "days_left": 20, "devices": 2, "device_limit": 5, "usage_percent": 12.4 },
-  "token": "..."
+  "account": {
+    "uuid": "...",
+    "enable": true,
+    "is_active": true,
+    "usage_limit_GB": 100,
+    "current_usage_GB": 12.4,
+    "subscription_url": "https://.../<uuid>/sub/"
+  },
+  "filter": { },
+  "offers": { },
+  "checked_at": "2026-11-17T10:00:00Z"
 }
 ```
 
-### `filter/get`
+در صورت قطع ارتباط پنل، درگاه خطای موقت می‌دهد؛ کلاینت از دادهٔ ساختگی یا
+دسترسی مستقیم مدیریتی استفاده نمی‌کند.
 
-```json
-{ "categories": { "adult": true, "ads": true, "malware": false, "phishing": false, "gambling": false, "social": false }, "enabled": true }
-```
+### سایر مسیرها
 
-### `filter/save`
-
-بدنه: `{ "categories": { ... }, "enabled": true }`
-
-### `app/notifications`
-
-```json
-{ "items": [ { "id": 1, "title": "...", "body": "...", "created_at": "2026-11-01T10:00:00Z", "read": false } ] }
-```
-
-## نگاشت فیلدها
-
-کلاینت هر دو سبک `snake_case` و `camelCase` را می خواند و اگر فیلدی نبود مقدار
-پیش فرض می گذارد، بنابراین ناسازگاری جزئی نام فیلد باعث خرابی نمی شود.
-
-## کدهای خطا
-
-| کد | معنا | رفتار کلاینت |
-| --- | --- | --- |
-| `invalid_phone` | شماره نامعتبر | پیام در فرم |
-| `user_not_found` | کاربر نیست | انتقال به ثبت نام |
-| `code_invalid` | کد اشتباه | پیام و شمارش تلاش |
-| `code_expired` | کد منقضی | فعال شدن ارسال دوباره |
-| `rate_limited` | ارسال پیاپی | شمارش معکوس |
-| `blocked` | حساب مسدود | پیام و توقف |
-| `maintenance` | سرویس در تعمیر | پیام و تلاش دوباره |
+`auth/resend`, `auth/signout`, `auth/device`, `app/notifications`, `app/ping`,
+`filter/get`, `filter/save`, `subscription/offers`, `subscription/claim`,
+`subscription/fetch`, `subscription/plans`, `subscription/purchase`,
+`wallet/status`, `wallet/topup` و `wallet/verify` نیز از همین درگاه استفاده
+می‌کنند. دسترسی‌های وابسته به نشست باید توکن معتبر داشته باشند.

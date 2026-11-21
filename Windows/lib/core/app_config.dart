@@ -10,7 +10,7 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '0.0.1';
+  static const String version = '1.0.0';
   static const int buildNumber = 1;
   /// شماره نسخه برای نمایش، از همان `version` ساخته می شود تا هیچ وقت عقب نماند.
   static String get versionLabel => version;
@@ -45,16 +45,6 @@ class AppConfig {
   /// نشانی پایه درگاه؛ کاربر می تواند در تنظیمات آن را عوض کند و مقدار
   /// ذخیره شده بر این پیش فرض اولویت دارد.
   static const String gatewayStoreKey = 'gateway.base';
-
-  /// پنل وب سرویس برای دریافت مستقیم مصرف و پروفایل (مسیر پشتیبان).
-  static const String panelBase = String.fromEnvironment(
-    'UMBRELLA_PANEL',
-    defaultValue: 'https://user.umbrella-server.ir/5mkVYdBkp8OS/',
-  );
-  static const String panelApiKey = String.fromEnvironment(
-    'UMBRELLA_PANEL_KEY',
-    defaultValue: 'ae467ee4-2249-4b67-bfa8-e59ca3125286',
-  );
 
   /// پیشوند مسیر اشتراک پنل (بدون شناسه کاربر)؛ فقط برای ساخت نشانی اختصاصی
   /// `<base><uuid>/sub/` کاربر واردشده به کار می رود و هیچ منبع عمومی یا

@@ -11,6 +11,7 @@ import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/persian.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/models/models.dart';
+import 'package:umbrella_vpn/platform/native.dart';
 import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
@@ -356,6 +357,26 @@ void main() {
         includePreReleases: true,
       );
       expect(draft, isNull);
+
+      final UpdateInfo? unhashed = UpdateService.parseGithubRelease(
+        <String, dynamic>{
+          'tag_name': 'v1.0.43-windows',
+          'draft': false,
+          'prerelease': false,
+          'assets': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'UmbrellaVPN-Setup-1.0.43-x64.exe',
+              'browser_download_url': 'https://example.com/setup.exe',
+            },
+          ],
+        },
+        includePreReleases: false,
+      );
+      expect(unhashed, isNotNull);
+      expect(unhashed!.sha256, isEmpty);
+      expect(UpdateService.hasValidSha256(sampleDigest), isTrue);
+      expect(UpdateService.hasValidSha256(''), isFalse);
+      expect(UpdateService.hasValidSha256('sha256:$sampleDigest'), isFalse);
     });
 
     test('کانال به روز رسانی ذخیره می شود و دانلود جریانی چک سام و لغو را رعایت می کند', () async {
@@ -382,6 +403,43 @@ void main() {
         final List<int> payload =
             List<int>.generate(65536, (int i) => i % 251);
         final String validSha = sha256.convert(payload).toString();
+
+        final List<Uri> catalogRequests = <Uri>[];
+        final UpdateService noDigestCatalog = UpdateService(
+          client: _StreamingMockClient((http.BaseRequest request) async {
+            catalogRequests.add(request.url);
+            if (request.url.toString() == AppConfig.releasesListApiUrl) {
+              final List<int> json = utf8.encode(jsonEncode(<Map<String, dynamic>>[
+                <String, dynamic>{
+                  'tag_name': 'v1.0.40-windows',
+                  'draft': false,
+                  'prerelease': false,
+                  'assets': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-Setup-1.0.40-x64.exe',
+                      'browser_download_url': 'https://example.com/setup.exe',
+                      'size': payload.length,
+                    },
+                  ],
+                },
+              ]));
+              return http.StreamedResponse(
+                Stream<List<int>>.value(json),
+                200,
+                headers: <String, String>{'content-type': 'application/json'},
+              );
+            }
+            return http.StreamedResponse(
+              const Stream<List<int>>.empty(),
+              404,
+            );
+          }),
+        );
+        final ({UpdateInfo? available, List<UpdateInfo> releases}) catalog =
+            await noDigestCatalog.fetchCatalog();
+        expect(catalog.available, isNull);
+        expect(catalog.releases, hasLength(1));
+        expect(catalogRequests, hasLength(2)); // metadata and SHA256SUMS only
 
         final UpdateService okService = UpdateService(
           client: _StreamingMockClient((_) async {
@@ -416,6 +474,41 @@ void main() {
         expect(lastReceived, payload.length);
         expect(await staleExe.exists(), isFalse);
         await okFile.delete();
+
+        int digestlessRequests = 0;
+        final UpdateService digestlessService = UpdateService(
+          client: _StreamingMockClient((_) async {
+            digestlessRequests++;
+            return http.StreamedResponse(
+              Stream<List<int>>.value(payload),
+              200,
+              contentLength: payload.length,
+            );
+          }),
+        );
+        final File? digestless = await digestlessService.download(
+          UpdateInfo(
+            version: '1.0.40',
+            url:
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
+          ),
+          targetDir: tempDir,
+          onProgress: (_, __, ___) {},
+        );
+        expect(digestless, isNull);
+        expect(digestlessRequests, 0);
+        final File? malformedDigest = await digestlessService.download(
+          UpdateInfo(
+            version: '1.0.40',
+            url:
+                'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
+            sha256: 'sha256:$validSha',
+          ),
+          targetDir: tempDir,
+          onProgress: (_, __, ___) {},
+        );
+        expect(malformedDigest, isNull);
+        expect(digestlessRequests, 0);
 
         // نشانی غیرامن http باید پیش از شبکه رد شود.
         final File? insecure = await okService.download(
@@ -462,16 +555,40 @@ void main() {
           }),
         );
         final File? cancelled = await cancelService.download(
-          const UpdateInfo(
+          UpdateInfo(
             version: '1.0.40',
             url:
                 'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v1.0.40-windows/UmbrellaVPN-Setup-1.0.40-x64.exe',
+            sha256: validSha,
           ),
           targetDir: tempDir,
           onProgress: (_, __, ___) {},
           isCancelled: () => cancelFlag,
         );
         expect(cancelled, isNull);
+
+        final File installCandidate = File(
+          '${tempDir.path}${Platform.pathSeparator}UmbrellaVPN-Setup-1.0.40-x64.exe',
+        )..writeAsBytesSync(payload);
+        final NativeBridge native = NativeBridge();
+        expect(
+          await okService.install(
+            installCandidate,
+            native,
+            expectedSha256: '',
+          ),
+          isFalse,
+        );
+        expect(
+          await okService.install(
+            installCandidate,
+            native,
+            expectedSha256: '0' * 64,
+          ),
+          isFalse,
+        );
+        expect(native.available, isTrue,
+            reason: 'invalid or mismatched installers must not reach elevation');
       } finally {
         if (await tempDir.exists()) {
           await tempDir.delete(recursive: true);
@@ -488,18 +605,26 @@ void main() {
   });
 
   group('نسخه ۱.۰.۰ — هسته ۵.۹.۱۱ و یکپارچگی نسخه در همه فایل ها', () {
-    test('مانیفست هسته به 5.9.11 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 0.0.1 است', () {
-      expect(AppConfig.version, '0.0.1');
-      expect(AppConfig.versionLabel, '0.0.1');
+    test('مانیفست هسته به 5.9.11 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 1.0.0 است', () {
+      expect(AppConfig.version, '1.0.0');
+      expect(AppConfig.versionLabel, '1.0.0');
       expect(AppConfig.buildNumber, 1);
-      expect(File('pubspec.yaml').readAsStringSync(), contains('version: 0.0.1+1'));
+      expect(File('pubspec.yaml').readAsStringSync(), contains('version: 1.0.0+1'));
       expect(
         File('installer/umbrella.iss').readAsStringSync(),
-        contains('#define AppVersion "0.0.1"'),
+        contains('#define AppVersion "1.0.0"'),
       );
       expect(
         File('windows/CMakeLists.txt').readAsStringSync(),
-        contains('project(UmbrellaVPN VERSION "0.0.1" LANGUAGES C CXX)'),
+        contains('project(UmbrellaVPN VERSION "1.0.0" LANGUAGES C CXX)'),
+      );
+      final String workflow =
+          File('../.github/workflows/windows-draft.yml').readAsStringSync();
+      expect(workflow, contains('name: UmbrellaVPN-Setup-1.0.0-x64'));
+      expect(
+        File('packages/umbrella_native/windows/winhttp_client.cpp')
+            .readAsStringSync(),
+        contains('UmbrellaVPN/1.0.0'),
       );
       expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v4');
       final Map<String, dynamic> manifest =
@@ -1029,10 +1154,10 @@ void main() {
       // نسخه Runner.rc و THIRD-PARTY-NOTICES و سربرگ اصلی صفحه درباره.
       final String runnerRc =
           File('windows/runner/Runner.rc').readAsStringSync();
-      expect(runnerRc, contains('FILEVERSION 0,0,1,0'));
-      expect(runnerRc, contains('PRODUCTVERSION 0,0,1,0'));
-      expect(runnerRc, contains('VALUE "FileVersion", "0.0.1.0"'));
-      expect(runnerRc, contains('VALUE "ProductVersion", "0.0.1.0"'));
+      expect(runnerRc, contains('FILEVERSION 1,0,0,0'));
+      expect(runnerRc, contains('PRODUCTVERSION 1,0,0,0'));
+      expect(runnerRc, contains('VALUE "FileVersion", "1.0.0.0"'));
+      expect(runnerRc, contains('VALUE "ProductVersion", "1.0.0.0"'));
       expect(runnerRc, contains('VALUE "CompanyName", "Umbrella"'));
 
       final String notices = File('THIRD-PARTY-NOTICES.txt').readAsStringSync();

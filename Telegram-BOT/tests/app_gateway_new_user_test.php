@@ -55,8 +55,19 @@ $Assert(str_contains($Gateway_Code, 'FROM `App_SignIn_Requests`'), 'findCustomer
 $Assert(str_contains($Gateway_Code, 'PanelClient::lastGetStatus() !== 404'), 'findCustomerAccount() must preserve local UUID on non-404 panel errors');
 $Assert(str_contains($Gateway_Code, 'AppAccountRevocation::revoke($UUID)'), 'deleted panel accounts revoke all app sessions');
 $Assert(str_contains($Gateway_Code, "self::fail(403, 'device_revoked'"), 'deleted panel account forces the normal VPN disconnect and sign-out path');
-$Assert(str_contains($Gateway_Code, 'session profile fallback for uuid=')
-    && str_contains($Gateway_Code, "if (PanelClient::lastGetStatus() === 404)"), 'deleted panel account is revoked before an app session can be issued');
+$Session_Start = strpos($Gateway_Code, 'private static function session(): void {');
+$Session_End = $Session_Start === false ? false : strpos($Gateway_Code, 'private static function resend(', $Session_Start);
+$Session_Code = $Session_Start === false || $Session_End === false
+? ''
+: substr($Gateway_Code, $Session_Start, $Session_End - $Session_Start);
+$Assert(
+str_contains($Session_Code, "if (PanelClient::lastGetStatus() === 404)")
+&& str_contains($Session_Code, "self::fail(403, 'device_revoked'")
+&& str_contains($Session_Code, "self::fail(502, 'panel_unavailable'")
+&& strpos($Session_Code, "self::fail(502, 'panel_unavailable'") < strpos($Session_Code, '$Token =')
+&& !str_contains($Session_Code, "'is_active' => true"),
+'login must revoke deleted panel accounts and fail closed on all other panel errors'
+);
 $Assert(str_contains($Gateway_Code, "if (\$UUID === '' || \$UUID === '_')"), 'refresh rejects empty and placeholder panel account IDs');
 $Assert(str_contains($Gateway_Code, '$PanelAccount = PanelClient::get($UUID);')
     && str_contains($Gateway_Code, "\$Payload['offers'] = self::offersPayload(\$UUID, \$LinkedTg, \$PanelAccount);"), 'heartbeat checks and passes the panel account to the offers payload');

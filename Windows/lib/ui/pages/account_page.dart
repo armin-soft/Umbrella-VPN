@@ -51,7 +51,7 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   bool _syncInFlight = false;
-  bool _panelFresh = false;
+  bool _accountFresh = false;
   bool _wasTabActive = false;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
@@ -114,19 +114,18 @@ class _AccountPageState extends State<AccountPage> {
     }
     _syncInFlight = true;
     try {
-      await auth.refreshAccount(silent: true);
+      final bool accountFresh = await auth.refreshAccount(silent: true);
       await auth.refreshBotLinkStatus();
       if (auth.botLinked == true) {
         await auth.refreshWallet(silent: true);
         await auth.loadSubscriptionPlans();
       }
-      final bool panel = await auth.refreshFromPanel();
       await subs.syncPersonal();
       if (!mounted) {
         return;
       }
       setState(() {
-        _panelFresh = panel;
+        _accountFresh = accountFresh;
         _now = DateTime.now();
       });
     } catch (_) {
@@ -504,7 +503,6 @@ class _AccountPageState extends State<AccountPage> {
       return;
     }
     await auth.refreshAccount(silent: true);
-    await auth.refreshFromPanel();
     final bool loaded = await auth.loadSubscriptionPlans(silent: false);
     if (mounted && loaded) toasts.success('وضعیت اشتراک و کیف پول تازه شد.');
   }
@@ -907,7 +905,7 @@ class _AccountPageState extends State<AccountPage> {
                 unlimited: unlimited,
                 remaining: remaining,
                 percent: percent,
-                panelFresh: _panelFresh,
+                accountFresh: _accountFresh,
                 tone: quotaTone,
                 statusTone: statusTone,
                 colors: colors,
@@ -1295,7 +1293,7 @@ class _UsageCard extends StatelessWidget {
     required this.unlimited,
     required this.remaining,
     required this.percent,
-    required this.panelFresh,
+    required this.accountFresh,
     required this.tone,
     required this.statusTone,
     required this.colors,
@@ -1307,7 +1305,7 @@ class _UsageCard extends StatelessWidget {
   final bool unlimited;
   final double remaining;
   final double percent;
-  final bool panelFresh;
+  final bool accountFresh;
   final Color tone;
   final Color statusTone;
   final UmbrellaColors colors;
@@ -1323,8 +1321,8 @@ class _UsageCard extends StatelessWidget {
           SectionHeader(
             icon: Icons.donut_large_rounded,
             title: 'مصرف ترافیک',
-            subtitle: panelFresh
-                ? 'آمار زنده و مستقیم از پنل کاربری'
+            subtitle: accountFresh
+                ? 'آمار زنده و تاییدشدهٔ حساب'
                 : 'آخرین آمار ثبت شده برای حساب شما',
             trailing: Pill(
               label: unlimited

@@ -182,6 +182,12 @@ class UpdateController extends ChangeNotifier {
     if (info == null || _downloading || _installing) {
       return false;
     }
+    if (!UpdateService.hasValidSha256(info.sha256)) {
+      _error = 'برای امنیت، نصب این نسخه بدون SHA-256 معتبر متوقف شد.';
+      _log.add(_error, level: 'error');
+      notifyListeners();
+      return false;
+    }
     _downloading = true;
     _cancelRequested = false;
     _progress = 0;
@@ -254,6 +260,7 @@ class UpdateController extends ChangeNotifier {
       final bool ok = await _service.install(
         file,
         _native,
+        expectedSha256: info.sha256,
         silentRelaunch: true,
       );
       if (!ok) {

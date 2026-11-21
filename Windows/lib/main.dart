@@ -235,7 +235,7 @@ Future<void> main(List<String> arguments) async {
         unawaited(updates.checkIfDue(silent: true));
       }
     });
-    // همگام سازی کاملا خودکار حساب، پنل، کنترل محتوا، طرح های هدیه و سرورها.
+    // همگام سازی خودکار حساب از درگاه سرور، کنترل محتوا، طرح های هدیه و سرورها.
     bool syncing = false;
     Timer.periodic(const Duration(minutes: 5), (_) {
       if (!auth.signedIn || syncing) {
@@ -245,7 +245,6 @@ Future<void> main(List<String> arguments) async {
       unawaited(() async {
         try {
           await auth.refreshAccount(silent: true);
-          await auth.refreshFromPanel();
           await subscriptions.syncPersonal();
         } finally {
           syncing = false;
@@ -254,7 +253,7 @@ Future<void> main(List<String> arguments) async {
     });
     if (auth.signedIn) {
       unawaited(auth.fetchNotifications(includeHistory: true));
-      unawaited(auth.refreshFromPanel());
+      unawaited(auth.refreshAccount(silent: true).then<void>((_) {}));
       // فقط اشتراک اختصاصی حساب کاربر واردشده دریافت می شود؛ هیچ منبع عمومی
       // یا رایگان وجود ندارد.
       unawaited(subscriptions.syncPersonal());
