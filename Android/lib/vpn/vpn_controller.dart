@@ -1255,11 +1255,16 @@ class VpnController extends ChangeNotifier {
     if (prepared.links.isEmpty) {
       return const ConnectOutcome(ok: false, message: 'هیچ سرور معتبری پیدا نشد.');
     }
-    final settingsJson = jsonEncode(UmbrellaCore.settingsJson(
+    final mobileSettings = UmbrellaCore.settingsJson(
       tun: true, systemProxy: false, port: _configuredMixedPort,
       networkSettings: _settings.copyWith(localProxyInVpn: false, localProxyAuth: false),
       contentFilter: _contentFilter,
-    ));
+    );
+    // Loopback is shared between Android apps. The desktop API has a fixed
+    // secret, so do not expose it (or a mixed inbound) on mobile.
+    mobileSettings['enable-clash-api'] = false;
+    mobileSettings['enable-mixed-port'] = false;
+    final settingsJson = jsonEncode(mobileSettings);
     final session = MobileVpnSession(UmbrellaMobileBackend(
       native: _native, settingsJson: settingsJson,
       configContent: '${prepared.links.join('\n')}\n',
