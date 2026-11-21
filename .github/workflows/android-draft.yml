@@ -1,0 +1,65 @@
+name: Android experimental draft
+
+# This is an experimental debug-signed APK, not a production release.
+on:
+  workflow_dispatch:
+  # This branch is the only automatic draft source; ordinary Android changes
+  # do not trigger a new draft unless this workflow itself changes.
+  push:
+    branches: [arena/41b839a7-umbrella-vpn]
+    paths: ['.github/workflows/android-draft.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.38.5'
+          cache: true
+      - name: Fetch verified mobile engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash Android/tools/fetch-umbrella-core.sh
+      - name: Run tests and build experimental APK
+        working-directory: Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter test
+          flutter build apk --debug
+          mkdir -p "$RUNNER_TEMP/umbrella-android"
+          cp build/app/outputs/flutter-apk/app-debug.apk "$RUNNER_TEMP/umbrella-android/UmbrellaVPN-Android-experimental-debug.apk"
+          cd "$RUNNER_TEMP/umbrella-android"
+          sha256sum UmbrellaVPN-Android-experimental-debug.apk > SHA256SUMS
+      - name: Create draft (never publish automatically)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/android-draft-notes.md" <<'EOF'
+          Experimental Android debug build, not a production release.
+
+          - The APK uses an ephemeral debug signing key. It is not suitable for distribution or reliable upgrades; uninstalling it may remove app data.
+          - VPN traffic, installation, upgrades, and Android lifecycle behavior have not been verified on a physical device. Android versions below 29 currently fail closed when checking traffic.
+          - Some connection modes are not supported. Do not rely on this build to protect traffic or privacy.
+          - Bundled components have upstream licensing conditions that must be reviewed before any public release.
+          - SHA256SUMS provides the APK checksum. This draft is not published automatically.
+          EOF
+          gh release create "android-draft-${GITHUB_RUN_ID}" \
+            "$RUNNER_TEMP/umbrella-android/UmbrellaVPN-Android-experimental-debug.apk" \
+            "$RUNNER_TEMP/umbrella-android/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Umbrella VPN Android — experimental draft' \
+            --notes-file "$RUNNER_TEMP/android-draft-notes.md"
