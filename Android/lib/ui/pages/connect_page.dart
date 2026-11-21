@@ -818,7 +818,7 @@ class _IpChip extends StatelessWidget {
             FlagView(code: flagCode, width: AppMetrics.flagWidth),
             const SizedBox(width: AppMetrics.space2),
           ],
-          Column(
+          Flexible(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -845,7 +845,7 @@ class _IpChip extends StatelessWidget {
                     ?.copyWith(fontWeight: FontWeight.w800),
               ),
             ],
-          ),
+          )),
         ],
       ),
     );
