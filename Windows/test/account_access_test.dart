@@ -52,7 +52,7 @@ void main() {
         currentUsageGb: 1,
       );
       expect(account.canConnect, isFalse);
-      expect(account.accessReason, contains('فعال نیست'));
+      expect(account.accessReason, contains('غیرفعال است'));
     });
 
     test('اتمام حجم اجازه اتصال را می بندد', () {

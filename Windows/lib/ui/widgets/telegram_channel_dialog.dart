@@ -306,96 +306,98 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
         constraints: const BoxConstraints(
           maxWidth: AppMetrics.telegramDialogWidth,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _TelegramHeader(
-              float: _floatController,
-              channelHandle: widget.channelHandle,
-              onTapHandle: _handleJoin,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppMetrics.space6,
-                AppMetrics.space5,
-                AppMetrics.space6,
-                AppMetrics.space2,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _TelegramHeader(
+                float: _floatController,
+                channelHandle: widget.channelHandle,
+                onTapHandle: _handleJoin,
               ),
-              child: Column(
-                children: <Widget>[
-                  Text(
-                    'به کانال رسمی آمبرلا بپیوندید',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.w800,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: AppMetrics.fontMicro),
-                  Text(
-                    Fa.num(
-                      '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
-                    ),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                      height: 1.6,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppMetrics.space6,
-                AppMetrics.space4,
-                AppMetrics.space6,
-                AppMetrics.space2,
-              ),
-              child: FilledButton.icon(
-                key: const Key('telegram_channel_join_button'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary,
-                  foregroundColor: colors.onPrimary,
-                  elevation: 0,
-                  minimumSize: const Size.fromHeight(AppMetrics.space10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(
-                      AppMetrics.radiusButton,
-                    ),
-                  ),
-                  textStyle: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppMetrics.space6,
+                  AppMetrics.space5,
+                  AppMetrics.space6,
+                  AppMetrics.space2,
                 ),
-                icon: Icon(
-                  Icons.telegram,
-                  size: AppMetrics.iconLg,
-                  color: colors.onPrimary,
-                ),
-                label: const Text('عضویت در کانال رسمی'),
-                onPressed: _handleJoin,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppMetrics.space3),
-              child: Center(
-                child: TextButton(
-                  key: const Key('telegram_channel_later_button'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: colors.textSecondary,
-                    textStyle: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
+                child: Column(
+                  children: <Widget>[
+                    Text(
+                      'به کانال رسمی آمبرلا بپیوندید',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: colors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        height: 1.4,
+                      ),
                     ),
-                  ),
-                  onPressed: _handleLater,
-                  child: const Text('بعداً'),
+                    const SizedBox(height: AppMetrics.fontMicro),
+                    Text(
+                      Fa.num(
+                        '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.6,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppMetrics.space6,
+                  AppMetrics.space4,
+                  AppMetrics.space6,
+                  AppMetrics.space2,
+                ),
+                child: FilledButton.icon(
+                  key: const Key('telegram_channel_join_button'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colors.primary,
+                    foregroundColor: colors.onPrimary,
+                    elevation: 0,
+                    minimumSize: const Size.fromHeight(AppMetrics.space10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppMetrics.radiusButton,
+                      ),
+                    ),
+                    textStyle: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  icon: Icon(
+                    Icons.telegram,
+                    size: AppMetrics.iconLg,
+                    color: colors.onPrimary,
+                  ),
+                  label: const Text('عضویت در کانال رسمی'),
+                  onPressed: _handleJoin,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppMetrics.space3),
+                child: Center(
+                  child: TextButton(
+                    key: const Key('telegram_channel_later_button'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: colors.textSecondary,
+                      textStyle: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    onPressed: _handleLater,
+                    child: const Text('بعداً'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
