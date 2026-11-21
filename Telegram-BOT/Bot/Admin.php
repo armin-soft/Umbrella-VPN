@@ -2498,11 +2498,19 @@ return;
 }
 
 $Delete_Response = ServerClient::deleteUser($Client_ID);
+$Delete_Status = (int)($Delete_Response['StatusCode'] ?? 0);
+$Panel_Already_Missing = $Delete_Status === 404;
 
-if (($Delete_Response['StatusCode'] ?? 0) >= 300) {
-$Delete_Error = $Delete_Response['Body'] ?? 'خطا در ارتباط با سرور';
+// A 404 is an idempotent delete: the remote account is already absent, so
+// still clear its local bot profile and revoke any app sessions. Other
+// non-2xx responses (including transport failures with status 0) must not
+// discard local data while the panel's state is uncertain.
+if (!$Panel_Already_Missing && ($Delete_Status < 200 || $Delete_Status >= 300)) {
+$Delete_Error = trim((string)($Delete_Response['Body'] ?? ''));
+if ($Delete_Error === '') $Delete_Error = trim((string)($Delete_Response['Error'] ?? ''));
+if ($Delete_Error === '') $Delete_Error = 'خطا در ارتباط با سرور';
 $Name = self::targetDisplayName($Target, $User);
-self::notifyAdminServerError('حذف کاربر', $Target, $Name, $Delete_Response['StatusCode'] ?? 0, $Delete_Error);
+self::notifyAdminServerError('حذف کاربر', $Target, $Name, $Delete_Status, $Delete_Error);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "❌خطا: حذف کاربر {$Name} از سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr($Delete_Error, 0, 200) . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
 return;
 }
@@ -2535,9 +2543,12 @@ Menu::userHome(),
 );
 }
 
+$Delete_Summary = $Panel_Already_Missing
+? "ℹ️کاربر {$Name} در پنل سرور وجود نداشت؛ اطلاعات حساب از دیتابیس ربات پاک شد."
+: "👤کاربر {$Name} با شناسه کلاینت {$Client_ID} با موفقیت از پنل سرور و دیتابیس ربات حذف گردید.";
+
 TelegramClient::sendMessage($Context->ChatId,
-self::header($Context) .
-"👤کاربر {$Name} با شناسه کلاینت {$Client_ID} با موفقیت حذف گردید." .
+self::header($Context) . $Delete_Summary .
 Helper::adminFooter(),
 TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول'))
 );

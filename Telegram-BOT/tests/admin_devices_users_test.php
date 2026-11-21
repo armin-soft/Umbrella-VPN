@@ -14,24 +14,44 @@ public function __construct(private bool $Admin = true) {} public function isAdm
 }
 final class Repository {
 public static array $Settings = []; public static array $Logs = [];
-public static function getUserSession(int $Id): array { return []; }
+public static array $Session = []; public static ?array $DeleteTarget = null; public static array $UserUpdates = [];
+public static function getUserSession(int $Id): array { return self::$Session; }
+public static function updateUserSession(int $Id, array $Fields): void { self::$Session = array_replace(self::$Session, $Fields); }
 public static function setSetting(string $Key, string $Value): void { self::$Settings[$Key] = $Value; }
+public static function getSetting(string $Key, mixed $Default = null): mixed { return self::$Settings[$Key] ?? $Default; }
 public static function logAdminAction(...$Args): void { self::$Logs[] = $Args; }
 public static function getUser(int $Id): ?array { return Database::$Users[$Id] ?? null; }
+public static function findUserByIdentifier(string $Identifier): ?array { return self::$DeleteTarget; }
+public static function updateUser(int $Id, array $Fields): void { self::$UserUpdates[] = $Fields; }
 }
 final class Common { public static function greet(Context $Context, string $Title): string { return $Title; } }
 final class Helper {
 public static function userFooter(): string { return ''; }
-public static function toPersian(string $Text): string { return $Text; }
+public static function toPersian(int|float|string $Text): string { return (string)$Text; }
 public static function adminGreeting(Context $C, string $Title): string { return $Title . "\n"; }
+public static function adminGreetingNamed(string $Name, string $Title, int $Id = 0): string { return $Title . "\n"; }
+public static function frame(string $Role, string $Name, string $Title, int $Id = 0): string { return $Title . "\n"; }
 public static function adminFooter(): string { return ''; }
 }
 final class TelegramClient {
 public static string $Text = ''; public static array $Rows = []; public static array $Answers = [];
 public static function sendMessage(int $Id, string $Text, array $Markup = []): void { self::$Text = $Text; self::$Rows = $Markup; }
+public static function sendSystemMessage(int $Id, string $Text, array $Markup = []): void { self::$Text = $Text; self::$Rows = $Markup; }
 public static function inlineKeyboard(array $Rows): array { return $Rows; }
 public static function editOrSendMessage(int $Chat, ?int $Message, string $Text, array $Rows): void { self::$Text = $Text; self::$Rows = $Rows; }
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void { self::$Answers[] = $Text; }
+}
+final class ServerClient {
+public static ?array $DeleteResponse = null; public static array $DeleteRequests = [];
+public static function deleteUser(string $Id): array { self::$DeleteRequests[] = $Id; return self::$DeleteResponse ?? ['StatusCode' => 204, 'Body' => '', 'Error' => '']; }
+}
+final class AppAccountRevocation {
+public static array $Revoked = [];
+public static function revoke(string $Id): bool { self::$Revoked[] = $Id; return true; }
+}
+final class Environment {
+public static function getAdminUserId(): int { return 99; }
+public static function getAdminFullName(): string { return 'Admin'; }
 }
 final class Database {
 public static array $Devices = []; public static array $Users = []; public static array $Sessions = []; public static array $Requests = []; public static array $Notices = [];
@@ -156,4 +176,42 @@ $Gateway=file_get_contents(__DIR__.'/../Core/App/App-Gateway.php');
 check(str_contains($Gateway,"(int)(\$Row['Device_Trusted'] ?? 0) !== 1"), 'missing/deleted device still fails session authorization');
 $App=file_get_contents(__DIR__.'/../Bot/App-Link.php');
 check(str_contains($App,"'⬅️صفحه قبل'") && str_contains($App,"'صفحه بعد➡️'"), 'user device navigation has explicit previous/next labels');
-echo "OK admin device deletion and users list ($Count assertions)\n";
+
+// Deleting an account is idempotent when the panel already returns 404, but
+// transport/server failures must leave local user data intact for a retry.
+$Repository_User = [
+'Telegram_ID' => 12345, 'Chat_ID' => 12345, 'Client_ID' => 'panel-user-123',
+'Full_Name' => 'Test User', 'Phone' => '09123456789', 'Subscription' => '30 روز',
+];
+Repository::$DeleteTarget = $Repository_User;
+Repository::$Session = ['Temp_UID' => 12345];
+Repository::$UserUpdates = [];
+ServerClient::$DeleteRequests = [];
+ServerClient::$DeleteResponse = ['StatusCode' => 404, 'Body' => 'not found', 'Error' => ''];
+AppAccountRevocation::$Revoked = [];
+AdminFlow::deleteUserConfirm($Admin);
+$Cleared_User = Repository::$UserUpdates[0] ?? [];
+check(ServerClient::$DeleteRequests === ['panel-user-123'], 'admin delete attempts to remove the stored panel UUID');
+check(($Cleared_User['Client_ID'] ?? 'missing') === null && ($Cleared_User['Full_Name'] ?? 'missing') === null, 'panel 404 still clears the local bot account profile');
+check(AppAccountRevocation::$Revoked === ['panel-user-123'], 'panel 404 still revokes linked app sessions');
+check(str_contains(TelegramClient::$Text, 'در پنل سرور وجود نداشت') && str_contains(TelegramClient::$Text, 'دیتابیس ربات پاک شد'), 'admin is told the absent server user was removed locally');
+
+Repository::$Session = ['Temp_UID' => 12345];
+Repository::$UserUpdates = [];
+ServerClient::$DeleteRequests = [];
+ServerClient::$DeleteResponse = ['StatusCode' => 204, 'Body' => '', 'Error' => ''];
+AppAccountRevocation::$Revoked = [];
+AdminFlow::deleteUserConfirm($Admin);
+check(count(Repository::$UserUpdates) === 1 && AppAccountRevocation::$Revoked === ['panel-user-123'], 'successful panel deletion also clears bot data and revokes app sessions');
+check(str_contains(TelegramClient::$Text, 'با موفقیت از پنل سرور و دیتابیس ربات حذف گردید'), 'normal delete success is reported');
+
+Repository::$Session = ['Temp_UID' => 12345];
+Repository::$UserUpdates = [];
+ServerClient::$DeleteRequests = [];
+ServerClient::$DeleteResponse = ['StatusCode' => 0, 'Body' => '', 'Error' => 'connection timeout'];
+AppAccountRevocation::$Revoked = [];
+AdminFlow::deleteUserConfirm($Admin);
+check(Repository::$UserUpdates === [] && AppAccountRevocation::$Revoked === [], 'network failure does not discard local data or revoke app sessions');
+check(str_contains(TelegramClient::$Text, 'connection timeout'), 'transport error is shown to admin for retry');
+
+echo "OK admin device deletion, user deletion and users list ($Count assertions)\n";
