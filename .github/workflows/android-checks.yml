@@ -48,7 +48,9 @@ jobs:
         shell: bash
         run: |
           flutter create --platforms android --org ir.umbrella --project-name app "$RUNNER_TEMP/umbrella-native-check"
-          cp Android/android/app/src/main/kotlin/ir/umbrella/app/MainActivity.kt "$RUNNER_TEMP/umbrella-native-check/android/app/src/main/kotlin/ir/umbrella/app/MainActivity.kt"
+          # Use the project's actual Android Gradle, manifest, resources and Kotlin.
+          # The Dart entrypoint remains the generated fixture; this is not a release APK.
+          cp -a Android/android/. "$RUNNER_TEMP/umbrella-native-check/android/"
           cd "$RUNNER_TEMP/umbrella-native-check"
           if ! flutter build apk --debug > "$RUNNER_TEMP/native-check.log" 2>&1; then
             cat "$RUNNER_TEMP/native-check.log"
