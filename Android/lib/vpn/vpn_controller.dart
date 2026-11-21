@@ -1228,7 +1228,8 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, message: 'سرویس قبلی هنوز به طور کامل متوقف نشده است.');
     }
     if (_settings.serviceMode != InboundServiceMode.vpn ||
-        _settings.chain.enabled || _settings.appRoutes.any((rule) => rule.enabled)) {
+        _settings.chain.enabled || _settings.allowConnectionFromLan ||
+        _settings.appRoutes.any((rule) => rule.enabled)) {
       return const ConnectOutcome(ok: false, message: 'این حالت اتصال هنوز در اندروید پشتیبانی نمی‌شود؛ تونل کامل را انتخاب کنید.');
     }
     final candidates = _nodes.where((node) => !node.disabled && usable(node)).toList();
@@ -1256,7 +1257,8 @@ class VpnController extends ChangeNotifier {
     }
     final settingsJson = jsonEncode(UmbrellaCore.settingsJson(
       tun: true, systemProxy: false, port: _configuredMixedPort,
-      networkSettings: _settings, contentFilter: _contentFilter,
+      networkSettings: _settings.copyWith(localProxyInVpn: false, localProxyAuth: false),
+      contentFilter: _contentFilter,
     ));
     final session = MobileVpnSession(UmbrellaMobileBackend(
       native: _native, settingsJson: settingsJson,
@@ -1289,6 +1291,7 @@ class VpnController extends ChangeNotifier {
     _runningBinaries.add('umbrella-core');
     _connectedAt = DateTime.now();
     _activePlanTun = true;
+    _activeLocalProxyOpen = false;
     _tunnelVerified = true;
     _setStatus(VpnStatus.connected, 'اتصال امن برقرار است');
     _healthTimer?.cancel();
@@ -4842,7 +4845,9 @@ class VpnController extends ChangeNotifier {
     // هنگام اتصال فعال هرگز `_realIp` (آی پی واقعی پیش از تونل) را با آی پی
     // خروجی تونل بازنویسی نکن؛ فقط اطلاعات آی پی خروجی تونل را به روز کن.
     if (_status == VpnStatus.connected) {
-      await _verifyTunnel(allowRetry: false);
+      // The Android app itself is excluded from the VPN; desktop IP probes
+      // would expose the physical address and cannot verify tunnel traffic.
+      if (!Platform.isAndroid) await _verifyTunnel(allowRetry: false);
       return;
     }
     if (!_canCaptureBaselineIp) {
