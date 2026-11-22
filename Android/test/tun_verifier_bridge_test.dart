@@ -15,7 +15,10 @@ void main() {
     expect(tun, contains('check(service.protect(fd))'));
     expect(platform, contains('autoDetectInterfaceControl(fd: Int) = tun.protectSocket(fd)'));
     expect(verifier, contains('caps.ownerUid == Process.myUid()'));
-    expect(verifier, contains('network.openConnection'));
+    expect(verifier, contains('network.socketFactory.createSocket()'));
+    expect(verifier, contains('DnsResolver.getInstance().query('));
+    expect(verifier, contains('params.endpointIdentificationAlgorithm = "HTTPS"'));
+    expect(verifier, contains('signal.cancel()'));
   });
   test('traffic verification does not default to connected', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

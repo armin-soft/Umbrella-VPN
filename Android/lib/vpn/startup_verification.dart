@@ -24,11 +24,24 @@ class StartupVerification {
         if (remaining <= Duration.zero) return false;
         final Duration timeout =
             remaining < attemptTimeout ? remaining : attemptTimeout;
-        final bool ok = await Future.any(<Future<bool>>[
-          probe(timeout).timeout(timeout, onTimeout: () => false), stopped.future,
+        // A Dart timeout cannot cancel a native DNS/socket operation. Never
+        // launch another probe while that operation is still running.
+        final Future<bool> pending = Future<bool>.sync(() => probe(timeout))
+            .catchError((Object _) => false);
+        final bool? first = await Future.any<bool?>(<Future<bool?>>[
+          pending.then<bool?>((value) => value).timeout(timeout, onTimeout: () => null), stopped.future,
         ]);
         if (cancelled()) return false;
-        if (ok) return true;
+        bool? result = first;
+        if (result == null) {
+          final Duration left = budget - clock.elapsed;
+          if (left <= Duration.zero) return false;
+          result = await Future.any<bool?>(<Future<bool?>>[
+            pending.then<bool?>((value) => value).timeout(left, onTimeout: () => null), stopped.future,
+          ]);
+        }
+        if (cancelled() || result == null) return false;
+        if (result) return true;
         await Future.any(<Future<void>>[
           Future<void>.delayed(interval), stopped.future.then((_) {}),
         ]);

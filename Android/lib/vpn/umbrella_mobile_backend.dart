@@ -157,7 +157,26 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
   }
 
   @override
-  Future<bool> verifyTraffic() => verifyTunTraffic();
+  Future<bool> verifyTraffic() async {
+    final client = _connection?.client;
+    StreamSubscription<CoreInfoResponse>? subscription;
+    if (client != null) {
+      int? lastState;
+      int? lastMessage;
+      subscription = client.coreInfoListener().listen((info) {
+        if (lastState != info.coreState || lastMessage != info.messageType) {
+          lastState = info.coreState;
+          lastMessage = info.messageType;
+          _trace('verify.core_event_${info.coreState}_message_${info.messageType}');
+        }
+      }, onError: (Object error) { _traceError('verify.core_listener', error); });
+    }
+    try {
+      return await verifyTunTraffic();
+    } finally {
+      await subscription?.cancel();
+    }
+  }
 
   @override
   Future<void> stopService() async {

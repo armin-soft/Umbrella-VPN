@@ -1297,20 +1297,27 @@ class VpnController extends ChangeNotifier {
       native: _native, settingsJson: settingsJson,
       configContent: '${prepared.links.join('\n')}\n',
       onTrace: trace,
-      verifyTunTraffic: () => StartupVerification.wait(
-        probe: (_) async {
-          final code = await _native.verifyTunTrafficDiagnostic();
-          const allowed = {'OK', 'UNSUPPORTED_ANDROID', 'TUN_NOT_OPEN',
-            'VPN_NETWORK_NOT_VISIBLE', 'PROBE_FAILED', 'TIMEOUT', 'TLS_FAILED',
-            'DNS_FAILED', 'HTTP_UNEXPECTED', 'SERVICE_UNAVAILABLE', 'BRIDGE_UNAVAILABLE'};
-          final safe = allowed.contains(code) ? code : 'UNKNOWN';
-          if (safe != lastProbe) { trace('probe.$safe'); lastProbe = safe; }
-          return safe == 'OK';
-        },
-        cancelled: () => _cancelRequested || _disposed,
-        alive: _native.isServiceRunning,
-        attemptTimeout: const Duration(seconds: 25),
-      ),
+      verifyTunTraffic: () async {
+        var observing = true;
+        try {
+          return await StartupVerification.wait(
+            probe: (_) async {
+              final code = await _native.verifyTunTrafficDiagnostic();
+              const allowed = {'OK', 'UNSUPPORTED_ANDROID', 'TUN_NOT_OPEN',
+                'VPN_NETWORK_NOT_VISIBLE', 'PROBE_FAILED', 'TIMEOUT', 'TLS_FAILED',
+                'DNS_FAILED', 'CONNECT_FAILED', 'HTTP_UNEXPECTED', 'SERVICE_UNAVAILABLE', 'BRIDGE_UNAVAILABLE'};
+              final safe = allowed.contains(code) ? code : 'UNKNOWN';
+              if (observing && safe != lastProbe) { trace('probe.$safe'); lastProbe = safe; }
+              return safe == 'OK';
+            },
+            cancelled: () => _cancelRequested || _disposed,
+            alive: _native.isServiceRunning,
+            attemptTimeout: const Duration(seconds: 30),
+          );
+        } finally {
+          observing = false;
+        }
+      },
     ), onTrace: trace);
     _mobileSession = session;
     _launchedFilterSignature = _contentFilter.effectSignature;
