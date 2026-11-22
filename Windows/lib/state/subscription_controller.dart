@@ -84,6 +84,7 @@ class SubscriptionController extends ChangeNotifier {
   String _personalFetchedFor = '';
   String _lastLoggedNodesSignature = '';
   Future<void>? _syncInFlight;
+  String _syncSignature = '';
   bool _disposed = false;
 
   /// نشانی های اشتراک بدون ورود به حساب در دسترس نیستند (کد ۴۰۱/۴۰۳/۴۰۴).
@@ -255,8 +256,14 @@ class SubscriptionController extends ChangeNotifier {
   Future<void> syncPersonal() {
     final Future<void>? active = _syncInFlight;
     if (active != null) {
-      return active;
+      final String activeSignature = _syncSignature;
+      return active.then((_) {
+        if (!_disposed && _auth.signedIn && _signature != activeSignature) {
+          return syncPersonal();
+        }
+      });
     }
+    _syncSignature = _signature;
     final Future<void> run = _performSyncPersonal();
     _syncInFlight = run;
     return run.whenComplete(() {
@@ -434,8 +441,11 @@ class SubscriptionController extends ChangeNotifier {
   }
 
   Future<void> refreshOne(SourceState state) async {
+    final String signature = _signature;
     final ParseReport? report = await _fetch(state);
-    if (report != null) {
+    if (_disposed || !_auth.signedIn || signature != _signature ||
+        !_sources.contains(state)) return;
+    if (report != null && report.nodes.isNotEmpty) {
       await _applyNodes(
         report.nodes,
         refreshedSourceIds: <String>{state.source.id},

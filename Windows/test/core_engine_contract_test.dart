@@ -997,7 +997,7 @@ void main() {
     timeout: const Timeout(Duration(seconds: 60)),
   );
   test('direct profiles compile with the bundled core', () async {
-    const String key = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+    const String key = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
     final List<String> inputs = <String>[
       '[Interface]\nPrivateKey = $key\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = $key\nEndpoint = 192.0.2.1:51820\nAllowedIPs = 0.0.0.0/0\n',
       '[Interface]\nPrivateKey = $key\nAddress = 10.0.0.2/32\nJc = 4\nJmin = 10\nJmax = 20\nS1 = 32\nS2 = 64\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n[Peer]\nPublicKey = $key\nEndpoint = 192.0.2.1:51820\nAllowedIPs = 0.0.0.0/0\n',
@@ -1022,12 +1022,28 @@ void main() {
         final File runtime = await CoreRuntime.compile(
           executable: binary!, workDir: File(binary).parent.path,
           runDir: temp.path, linksPath: source.path, settingsPath: settings.path,
-          cancelled: () => false, useCache: false,
+          cancelled: () => false, useCache: false, clashApiPort: 0,
         );
         final Map<String, dynamic> result = jsonDecode(await runtime.readAsString());
         final List<dynamic> profiles = node.protocol == NodeProtocol.mieru
             ? result['outbounds'] as List<dynamic> : result['endpoints'] as List<dynamic>;
         expect(profiles.any((dynamic item) => item['tag'] == 'umbrella-direct-profile'), isTrue);
+        final Process running = await Process.start(binary,
+          <String>['srun', '-c', runtime.path, '-D', temp.path],
+          workingDirectory: File(binary).parent.path, runInShell: false);
+        final StringBuffer log = StringBuffer();
+        running.stdout.transform(utf8.decoder).listen(log.write);
+        running.stderr.transform(utf8.decoder).listen(log.write);
+        try {
+          final int? earlyExit = await Future.any<int?>(<Future<int?>>[
+            running.exitCode,
+            Future<int?>.delayed(const Duration(seconds: 3), () => null),
+          ]);
+          expect(earlyExit, isNull, reason: 'Direct core exited: $log');
+        } finally {
+          running.kill();
+          await running.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+        }
       } finally {
         await temp.delete(recursive: true);
       }
