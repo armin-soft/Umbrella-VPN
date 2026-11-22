@@ -188,6 +188,33 @@ class QuickConnectionPanel extends StatelessWidget {
               ],
             ),
           ),
+          if (cfg.chain.position != ChainPosition.off &&
+              cfg.chain.transport == ChainTransport.psiphon) ...<Widget>[
+            Divider(height: 1, color: colors.border),
+            Padding(
+              padding: const EdgeInsets.all(AppMetrics.space4),
+              child: AnchoredSelectField<String>(
+                key: const ValueKey<String>('quick-psiphon-country'),
+                label: 'کشور سایفون',
+                value: cfg.chain.psiphonRegion,
+                enabled: enabled && !vpn.status.busy,
+                leadingIcon: Icons.public_rounded,
+                options: <SelectOption<String>>[
+                  for (final String region in ChainSettings.regions)
+                    SelectOption<String>(value: region, label: ChainSettings.regionLabel(region)),
+                ],
+                onChanged: (String region) async {
+                  if (region == settings.settings.chain.psiphonRegion) return;
+                  try {
+                    await settings.setChain(settings.settings.chain.copyWith(psiphonRegion: region));
+                    if (vpn.status.active) vpn.scheduleLiveReload();
+                  } catch (_) {
+                    toasts.error('تغییر کشور سایفون ناموفق بود');
+                  }
+                },
+              ),
+            ),
+          ],
           Divider(height: 1, color: colors.border),
           _LanSharingRow(
             shared: cfg.allowConnectionFromLan,

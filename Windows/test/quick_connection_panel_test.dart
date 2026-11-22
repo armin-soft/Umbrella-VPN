@@ -10,6 +10,7 @@ import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
+import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _Native implements NativeBridge {
@@ -41,7 +42,11 @@ class _Window implements WindowService {
 
 class _Vpn extends ChangeNotifier implements VpnController {
   @override
-  VpnStatus get status => VpnStatus.disconnected;
+  VpnStatus current = VpnStatus.disconnected;
+  int reloads = 0;
+  VpnStatus get status => current;
+  @override
+  void scheduleLiveReload() { reloads++; }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -125,6 +130,21 @@ void main() {
     expect(find.byKey(const ValueKey<String>('quick-lan-qr-button')),
         findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    await settings.setChain(const ChainSettings(
+      position: ChainPosition.unblocker, transport: ChainTransport.psiphon,
+    ));
+    await tester.pumpAndSettle();
+    final country = find.byKey(const ValueKey<String>('quick-psiphon-country'));
+    expect(country, findsOneWidget);
+    final select = tester.widget<AnchoredSelectField<String>>(country);
+    vpn.current = VpnStatus.connected;
+    select.onChanged('DE');
+    await tester.pumpAndSettle();
+    expect(settings.settings.chain.psiphonRegion, 'DE');
+    expect(vpn.reloads, 1);
+    expect(settings.settings.chain.toCoreOptions().toString(), contains('DE'));
+    expect(settings.settings.chain.position, ChainPosition.unblocker);
 
     await tester.pumpWidget(const SizedBox());
     settings.dispose();
