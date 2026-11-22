@@ -788,8 +788,16 @@ class AuthController extends ChangeNotifier {
 
     _checkingDeviceAccess = true;
     try {
-      final ({FilterSettings? filter, SubscriptionOffers? offers}) beat =
+      final ({FilterSettings? filter, SubscriptionOffers? offers, bool? emergencyEnabled}) beat =
           await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
+      if (_session?.token == session.token && beat.emergencyEnabled != null &&
+          _session!.account.emergencyEnabled != beat.emergencyEnabled) {
+        _session = _session!.copyWith(account: _session!.account.copyWith(
+          emergencyEnabled: beat.emergencyEnabled,
+        ));
+        await _store.writeJson(StoreKeys.session, _session!.toJson());
+        notifyListeners();
+      }
       await _applyLiveServerState(filter: beat.filter, offers: beat.offers);
       final bool wantHistory = !_historySynced;
       await fetchNotifications(includeHistory: wantHistory);

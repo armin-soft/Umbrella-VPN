@@ -629,6 +629,7 @@ class Account {
     this.awgIpv6 = '',
     this.subscriptionUrl = '',
     this.accountBase = '',
+    this.emergencyEnabled = false,
   });
 
   final int panelId;
@@ -654,6 +655,7 @@ class Account {
   final String awgIpv6;
   final String subscriptionUrl;
   final String accountBase;
+  final bool emergencyEnabled;
 
   Account copyWith({
     int? panelId,
@@ -680,6 +682,7 @@ class Account {
     String? awgIpv6,
     String? subscriptionUrl,
     String? accountBase,
+    bool? emergencyEnabled,
   }) {
     return Account(
       panelId: panelId ?? this.panelId,
@@ -705,6 +708,7 @@ class Account {
       awgIpv6: awgIpv6 ?? this.awgIpv6,
       subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       accountBase: accountBase ?? this.accountBase,
+      emergencyEnabled: emergencyEnabled ?? this.emergencyEnabled,
     );
   }
 
@@ -1017,6 +1021,7 @@ class Account {
         'awg_ipv6': awgIpv6,
         'subscription_url': subscriptionUrl,
         'account_base': accountBase,
+        'emergency_enabled': emergencyEnabled,
       };
 
   factory Account.fromJson(Map<String, dynamic> json) {
@@ -1049,6 +1054,7 @@ class Account {
         json['subscription_url'] ?? json['sub_link'],
       ),
       accountBase: JsonX.text(json['account_base']),
+      emergencyEnabled: JsonX.boolean(json['emergency_enabled']),
     );
   }
 

@@ -499,7 +499,7 @@ class GatewayClient {
         .toList();
   }
 
-  Future<({FilterSettings? filter, SubscriptionOffers? offers})> heartbeat({
+  Future<({FilterSettings? filter, SubscriptionOffers? offers, bool? emergencyEnabled})> heartbeat({
     required String token,
     required String deviceId,
   }) async {
@@ -511,6 +511,8 @@ class GatewayClient {
     final Map<String, dynamic> offersMap = JsonX.asMap(json['offers']);
     return (
       filter: filterMap.isNotEmpty ? FilterSettings.fromJson(filterMap) : null,
+      emergencyEnabled: json.containsKey('emergency_enabled')
+          ? JsonX.boolean(json['emergency_enabled']) : null,
       offers:
           offersMap.isNotEmpty ? SubscriptionOffers.fromJson(offersMap) : null,
     );
