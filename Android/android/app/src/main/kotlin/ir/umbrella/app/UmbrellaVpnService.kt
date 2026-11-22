@@ -89,13 +89,13 @@ class UmbrellaVpnService : VpnService() {
     }
 
     /** Verification runs off the lifecycle worker so stop/revoke never waits for HTTP. */
-    internal fun verifyTunTraffic(callback: (Boolean) -> Unit) {
+    internal fun verifyTunTraffic(callback: (String) -> Unit) {
         Thread {
             val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val ok = runCatching {
                 UmbrellaTunVerifier.check(manager) { isCoreReady && tun.isOpen }
-            }.getOrDefault(false)
-            main.post { callback(ok && isCoreReady && tun.isOpen) }
+            }.getOrDefault("PROBE_FAILED")
+            main.post { callback(if (isCoreReady && tun.isOpen) ok else "TUN_NOT_OPEN") }
         }.apply { isDaemon = true; name = "UmbrellaTunProbe"; start() }
     }
 

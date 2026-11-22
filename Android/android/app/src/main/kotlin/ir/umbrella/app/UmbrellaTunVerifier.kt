@@ -12,20 +12,22 @@ import java.net.URL
  * No redirect, captive portal or successful TCP handshake alone is accepted as evidence.
  */
 internal object UmbrellaTunVerifier {
-    fun check(connectivity: ConnectivityManager, stillOpen: () -> Boolean): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !stillOpen()) return false
+    fun check(connectivity: ConnectivityManager, stillOpen: () -> Boolean): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "UNSUPPORTED_ANDROID"
+        if (!stillOpen()) return "TUN_NOT_OPEN"
         val network = connectivity.allNetworks.firstOrNull { network ->
             val caps = connectivity.getNetworkCapabilities(network)
             caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
                 caps.ownerUid == Process.myUid()
-        } ?: return false
+        } ?: return "VPN_NETWORK_NOT_VISIBLE"
         val endpoints = listOf(
             "https://cp.cloudflare.com/generate_204",
             "https://www.gstatic.com/generate_204",
             "https://clients3.google.com/generate_204",
         )
+        var failure = "PROBE_FAILED"
         for (endpoint in endpoints) {
-            if (!stillOpen()) return false
+            if (!stillOpen()) return "TUN_NOT_OPEN"
             var connection: HttpURLConnection? = null
             try {
                 connection = network.openConnection(URL(endpoint), Proxy.NO_PROXY) as HttpURLConnection
@@ -34,14 +36,21 @@ internal object UmbrellaTunVerifier {
                 connection.readTimeout = 4000
                 connection.setRequestProperty("Cache-Control", "no-store")
                 if (connection.responseCode == 204 && connection.inputStream.use { it.read() == -1 } && stillOpen()) {
-                    return true
+                    return "OK"
                 }
+                failure = "HTTP_UNEXPECTED"
+            } catch (_: java.net.SocketTimeoutException) {
+                failure = "TIMEOUT"
+            } catch (_: javax.net.ssl.SSLException) {
+                failure = "TLS_FAILED"
+            } catch (_: java.net.UnknownHostException) {
+                failure = "DNS_FAILED"
             } catch (_: Exception) {
                 // Try the next independent endpoint. No insecure TLS fallback.
             } finally {
                 connection?.disconnect()
             }
         }
-        return false
+        return failure
     }
 }

@@ -22,8 +22,11 @@ enum MobileSessionState { disconnected, connecting, connected, disconnecting, fa
 /// Serializes start/stop and ensures that cancellation cannot publish a stale
 /// successful connection. The native service must also close its TUN on stop.
 class MobileVpnSession {
-  MobileVpnSession(this._backend);
+  MobileVpnSession(this._backend, {this.onTrace});
   final MobileVpnBackend _backend;
+  /// Emits fixed stage names only; never sends profile content or exception text.
+  final void Function(String stage)? onTrace;
+  void _trace(String stage) => onTrace?.call(stage);
 
   MobileSessionState _state = MobileSessionState.disconnected;
   MobileSessionState get state => _state;
@@ -48,30 +51,41 @@ class MobileVpnSession {
     bool serviceStarted = false;
     var failureMessage = 'درخواست مجوز VPN ناموفق بود.';
     try {
+      _trace('permission.request');
       if (!await _backend.requestPermission()) {
+        _trace('permission.denied');
         if (generation == _generation) {
           _error = 'مجوز VPN داده نشد.';
           _state = MobileSessionState.failed;
         }
         return false;
       }
+      _trace('permission.granted');
       if (generation != _generation) return false;
       // startService can partially succeed before throwing: cleanup is required.
       serviceStarted = true;
       failureMessage = 'راه‌اندازی سرویس VPN ناموفق بود.';
+      _trace('service.start');
       await _backend.startService();
+      _trace('service.ready');
       if (generation != _generation) return false;
       failureMessage = 'آماده‌سازی هسته یا تنظیمات سرور ناموفق بود.';
+      _trace('core.configure');
       await _backend.configureAndStart();
+      _trace('core.ready');
       if (generation != _generation) return false;
       failureMessage = 'عبور ترافیک از تونل تأیید نشد؛ سرور و شبکه را بررسی کنید.';
+      _trace('tunnel.verify');
       if (!await _backend.verifyTraffic()) {
+        _trace('tunnel.verify_failed');
         throw StateError('VPN traffic verification failed');
       }
       if (generation != _generation) return false;
+      _trace('tunnel.verified');
       _state = MobileSessionState.connected;
       return true;
     } catch (error) {
+      _trace('session.failed');
       if (generation == _generation) {
         _error = error is MobileVpnFailure ? error.message : failureMessage;
         _state = MobileSessionState.failed;
@@ -80,8 +94,11 @@ class MobileVpnSession {
     } finally {
       if (serviceStarted && _state != MobileSessionState.connected) {
         try {
+          _trace('cleanup.start');
           await _backend.stopService();
+          _trace('cleanup.done');
         } catch (_) {
+          _trace('cleanup.failed');
           _cleanupFailed = true;
           if (generation == _generation) {
             _error = 'توقف سرویس VPN ناموفق بود.';

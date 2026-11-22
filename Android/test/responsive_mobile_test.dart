@@ -261,6 +261,9 @@ void main() {
           }
           if (page is ConnectPage && problem == null && problems.length == errorsBefore) {
             expect(find.descendant(of: find.byWidget(page), matching: find.byType(Scrollable)), findsNothing);
+            expect(find.text('مدت اتصال'), findsOneWidget);
+            expect(find.text('دریافتی'), findsOneWidget);
+            expect(find.text('ارسالی'), findsOneWidget);
             await tester.tap(find.byKey(const ValueKey('connect-action')));
             await tester.pump();
             await tester.pump(const Duration(milliseconds: 400));

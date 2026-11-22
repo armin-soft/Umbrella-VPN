@@ -221,6 +221,10 @@ class NativeBridge {
   Future<bool> verifyTunTraffic() async =>
       await _invoke<bool>('verifyTunTraffic') ?? false;
 
+  /// Fixed diagnostic code only; no endpoint, address or credential is returned.
+  Future<String> verifyTunTrafficDiagnostic() async =>
+      await _invoke<String>('verifyTunTrafficDiagnostic') ?? 'BRIDGE_UNAVAILABLE';
+
   /// آیا سرویس VPN هم اکنون در حال اجراست؟
   Future<bool> isServiceRunning() async =>
       await _invoke<bool>('isServiceRunning') ?? false;

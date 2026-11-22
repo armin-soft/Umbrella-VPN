@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:grpc/grpc.dart' show GrpcError;
 
 import '../platform/native.dart';
 import '../umbrella_core/client_identity.dart';
@@ -32,6 +35,7 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
     required this.configContent,
     required this.verifyTunTraffic,
     this.grpcPort = 17078,
+    this.onTrace,
   });
 
   final NativeBridge native;
@@ -39,6 +43,16 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
   final String configContent;
   final Future<bool> Function() verifyTunTraffic;
   final int grpcPort;
+  final void Function(String)? onTrace;
+  void _trace(String stage) => onTrace?.call(stage);
+  void _traceError(String stage, Object error) {
+    // Only numeric gRPC codes and fixed exception categories; raw errors can
+    // contain server addresses, subscription links or credentials.
+    final kind = error is GrpcError ? 'grpc_${error.code}' :
+        error is TimeoutException ? 'timeout' :
+        error is FormatException ? 'format' : 'other';
+    _trace('$stage.failed.$kind');
+  }
   UmbrellaCoreConnection? _connection;
   bool _nativeStartAttempted = false;
 
@@ -58,6 +72,7 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
   Future<void> startService() async {
     _validateConfiguration();
     if (_connection != null) throw StateError('Core is already initialized');
+    _trace('directories.request');
     final dirs = await native.coreDirectories();
     final base = dirs['baseDir'];
     final working = dirs['workingDir'];
@@ -66,16 +81,22 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
         base.isEmpty || working.isEmpty || temp.isEmpty) {
       throw StateError('Private core directories are unavailable');
     }
+    _trace('identity.prepare');
     final identity = await CoreClientIdentity.loadOrCreate(Directory(base));
     _nativeStartAttempted = true;
     final started = await native.startService(
       baseDir: base, workingDir: working, tempDir: temp, grpcPort: grpcPort,
     );
-    if (!started) throw StateError('VPN service setup failed');
+    if (!started) {
+      _trace('native.start.failed');
+      throw StateError('VPN service setup failed');
+    }
+    _trace('native.start.ok');
     final certificate = await native.coreServerCertificate();
     if (certificate == null || certificate.isEmpty) {
       throw StateError('VPN core server certificate unavailable');
     }
+    _trace('certificate.received');
     _connection = UmbrellaCoreConnection(
       port: grpcPort,
       credentials: CoreMtlsCredentials(
@@ -92,29 +113,41 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
     final client = _connection?.client;
     if (client == null) throw StateError('VPN core is not initialized');
     try {
+      _trace('settings.rpc');
       final response = await client.changeHiddifySettings(
         ChangeHiddifySettingsRequest(hiddifySettingsJson: settingsJson),
       ).timeout(const Duration(seconds: 15));
       if (response.messageType != MessageType.empty) {
+        _trace('settings.rejected.code_${response.messageType}');
         throw StateError('Core rejected settings');
       }
-    } catch (_) {
+      _trace('settings.ok');
+    } catch (error) {
+      _traceError('settings', error);
       throw const MobileVpnFailure('ارتباط امن با هسته یا تنظیمات VPN ناموفق بود.');
     }
     final String parsedContent;
     try {
+      _trace('profile.parse');
       final parsed = await client.parse(ParseRequest(content: configContent))
           .timeout(const Duration(seconds: 30));
+      _trace('profile.response.code_${parsed.responseCode}');
       parsedContent = validatedParsedProfile(parsed);
-    } catch (_) {
+      _trace('profile.ok');
+    } catch (error) {
+      _traceError('profile', error);
       throw const MobileVpnFailure('پردازش تنظیمات سرور ناموفق بود.');
     }
     try {
-      await CoreStartCoordinator.start(
+      _trace('core.start');
+      final state = await CoreStartCoordinator.start(
         statuses: client.coreInfoListener(),
+        onState: (state, message) => _trace('core.event_${state}_message_$message'),
         sendStart: () => client.start(StartRequest(configContent: parsedContent)),
       );
-    } catch (_) {
+      _trace('core.state_${state.coreState}.message_${state.messageType}');
+    } catch (error) {
+      _traceError('core.start', error);
       throw const MobileVpnFailure('شروع تونل در هسته ناموفق بود.');
     }
   }

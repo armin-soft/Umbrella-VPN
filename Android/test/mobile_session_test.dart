@@ -31,6 +31,17 @@ class FakeBackend implements MobileVpnBackend {
 }
 
 void main() {
+  test('diagnostic stages show where startup failed without exception details', () async {
+    final backend = FakeBackend()..failConfiguration = true;
+    final events = <String>[];
+    final session = MobileVpnSession(backend, onTrace: events.add);
+    expect(await session.connect(), isFalse);
+    expect(events, containsAllInOrder(['permission.request', 'permission.granted',
+      'service.start', 'service.ready', 'core.configure', 'session.failed',
+      'cleanup.start', 'cleanup.done']));
+    expect(events.join(' '), isNot(contains('پردازش تنظیمات سرور')));
+  });
+
   test('a session is connected only after traffic verification', () async {
     final backend = FakeBackend()..verified = false;
     final session = MobileVpnSession(backend);

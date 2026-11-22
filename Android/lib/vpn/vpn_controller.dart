@@ -1219,6 +1219,8 @@ class VpnController extends ChangeNotifier {
   /// Android never starts the Windows executable. The mobile service owns the
   /// engine and only a positive, VPN-network-bound probe can publish connected.
   Future<ConnectOutcome> _connectMobile({VpnNode? requested}) async {
+    void trace(String event) => _log.add('ANDROID_VPN $event');
+    trace('attempt.start');
     final blocked = accessGuard?.call() ?? '';
     if (blocked.isNotEmpty) {
       _setStatus(VpnStatus.failed, blocked);
@@ -1230,6 +1232,7 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, message: message);
     }
     final sdk = await _native.androidSdkInt();
+    trace('android_api_${sdk ?? 0}');
     if (sdk != null && sdk < 29) {
       const message = 'این نسخه آزمایشی برای تأیید ایمن ترافیک به اندروید ۱۰ یا بالاتر نیاز دارد.';
       _setStatus(VpnStatus.failed, message);
@@ -1246,6 +1249,7 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, message: message);
     }
     final candidates = _nodes.where((node) => !node.disabled && usable(node)).toList();
+    trace('candidates_${candidates.length}');
     if (candidates.isEmpty || (requested != null && !candidates.any((node) => node.id == requested.id))) {
       const message = 'سرور معتبر در اشتراک موجود نیست.';
       _setStatus(VpnStatus.failed, message);
@@ -1267,6 +1271,7 @@ class VpnController extends ChangeNotifier {
     if (_cancelRequested || _disposed) {
       return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     }
+    trace('prepared_links_${prepared.links.length}');
     if (prepared.links.isEmpty) {
       const message = 'هیچ سرور معتبری پیدا نشد.';
       _setStatus(VpnStatus.failed, message);
@@ -1282,22 +1287,33 @@ class VpnController extends ChangeNotifier {
     mobileSettings['enable-clash-api'] = false;
     mobileSettings['enable-mixed-port'] = false;
     final settingsJson = jsonEncode(mobileSettings);
+    String? lastProbe;
     final session = MobileVpnSession(UmbrellaMobileBackend(
       native: _native, settingsJson: settingsJson,
       configContent: '${prepared.links.join('\n')}\n',
+      onTrace: trace,
       verifyTunTraffic: () => StartupVerification.wait(
-        probe: (_) => _native.verifyTunTraffic(),
+        probe: (_) async {
+          final code = await _native.verifyTunTrafficDiagnostic();
+          const allowed = {'OK', 'UNSUPPORTED_ANDROID', 'TUN_NOT_OPEN',
+            'VPN_NETWORK_NOT_VISIBLE', 'PROBE_FAILED', 'TIMEOUT', 'TLS_FAILED',
+            'DNS_FAILED', 'HTTP_UNEXPECTED', 'SERVICE_UNAVAILABLE', 'BRIDGE_UNAVAILABLE'};
+          final safe = allowed.contains(code) ? code : 'UNKNOWN';
+          if (safe != lastProbe) { trace('probe.$safe'); lastProbe = safe; }
+          return safe == 'OK';
+        },
         cancelled: () => _cancelRequested || _disposed,
         alive: _native.isServiceRunning,
         attemptTimeout: const Duration(seconds: 25),
       ),
-    ));
+    ), onTrace: trace);
     _mobileSession = session;
     _launchedFilterSignature = _contentFilter.effectSignature;
     _setStatus(VpnStatus.connecting, 'در حال برقراری تونل...');
     final connected = await session.connect();
     if (!connected) {
       final reason = session.error.isEmpty ? 'اتصال امن برقرار نشد.' : session.error;
+      trace('attempt.failed');
       if (!_cancelRequested && !_disposed) {
         await session.disconnect();
         if (session.state == MobileSessionState.disconnected) _mobileSession = null;
@@ -1310,6 +1326,7 @@ class VpnController extends ChangeNotifier {
       if (session.state == MobileSessionState.disconnected) _mobileSession = null;
       return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     }
+    trace('attempt.connected');
     _runningBinaries.add('umbrella-core');
     _connectedAt = DateTime.now();
     _activePlanTun = true;

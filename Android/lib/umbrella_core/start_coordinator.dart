@@ -11,6 +11,7 @@ class CoreStartCoordinator {
   static Future<CoreInfoResponse> start({
     required Stream<CoreInfoResponse> statuses,
     required Future<CoreInfoResponse> Function() sendStart,
+    void Function(int state, int messageType)? onState,
     Duration timeout = const Duration(seconds: 30),
   }) async {
     final first = Completer<CoreInfoResponse?>();
@@ -18,6 +19,7 @@ class CoreStartCoordinator {
     var requestSent = false;
     var sawStarting = false;
     final subscription = statuses.listen((info) {
+      onState?.call(info.coreState, info.messageType);
       if (!first.isCompleted) {
         first.complete(info);
         return;

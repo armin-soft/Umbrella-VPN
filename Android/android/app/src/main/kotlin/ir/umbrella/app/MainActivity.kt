@@ -232,7 +232,11 @@ class MainActivity : FlutterActivity() {
                     "serverCertificate" -> result.success(service?.serverCertificate())
                     "verifyTunTraffic" -> {
                         val vpn = service
-                        if (vpn == null) result.success(false) else vpn.verifyTunTraffic { result.success(it) }
+                        if (vpn == null) result.success(false) else vpn.verifyTunTraffic { result.success(it == "OK") }
+                    }
+                    "verifyTunTrafficDiagnostic" -> {
+                        val vpn = service
+                        if (vpn == null) result.success("SERVICE_UNAVAILABLE") else vpn.verifyTunTraffic { result.success(it) }
                     }
                     "startService" -> startVpn(call.argument<Int>("grpcPort") ?: 17078, result)
                     "stopService" -> stopVpn(result)
