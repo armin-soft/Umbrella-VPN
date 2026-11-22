@@ -8,7 +8,7 @@ void main() {
       bypassIran: true, bypassDomains: <String>['example.org']);
     final json = UmbrellaCore.settingsJson(tun: true, systemProxy: false, port: 12334,
       networkSettings: const AppSettings(), contentFilter: filter);
-    final rules = (json['rules'] as List<dynamic>).cast<Map<String, dynamic>>();
+    final rules = ((json['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>).cast<Map<String, dynamic>>();
     final block = rules.indexWhere((r) => r['name'] == 'umbrella-filter-custom');
     final direct = rules.indexWhere((r) => r['name'] == 'umbrella-bypass-user');
     final iran = rules.indexWhere((r) => r['name'] == 'umbrella-bypass-iran');
@@ -26,6 +26,6 @@ void main() {
     expect(filter.sameEffectAs(FilterSettings.empty), isFalse);
     final json = UmbrellaCore.settingsJson(tun: true, systemProxy: false, port: 12334,
       networkSettings: const AppSettings(), contentFilter: filter);
-    expect((json['rules'] as List<dynamic>).any((dynamic r) => r['name'] == 'umbrella-bypass-user'), isTrue);
+    expect(((json['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>).any((dynamic r) => r['name'] == 'umbrella-bypass-user'), isTrue);
   });
 }
