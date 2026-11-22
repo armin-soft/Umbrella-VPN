@@ -1632,6 +1632,7 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.connecting, 'در انتظار پاسخ سرور...');
       bool proxyEverVerified = false;
       bool poolExhausted = false;
+      bool directRetested = false;
       int initialDelayMs = 0;
       CoreExitIpInfo? initialIpInfo;
       final Stopwatch waitClock = Stopwatch()..start();
@@ -1655,6 +1656,25 @@ class VpnController extends ChangeNotifier {
           if (snapshot.reachable) {
             if (snapshot.connectivity ==
                 CoreConnectivityState.noAvailableProxies) {
+              // A single direct profile can time out while its tunnel or DNS is
+              // warming up. Test the same endpoint once against a second URL;
+              // never silently switch to the automatic subscription.
+              if (_singleNodeSession && DirectProfile.handles(node) &&
+                  !_activeChain.enabled && !directRetested) {
+                directRetested = true;
+                _log.add('مسیر «${node.protocol.label}» پاسخ نداد؛ همان مسیر با نشانی سنجش دیگری دوباره بررسی می شود.', level: 'warning');
+                final int delay = await ClashApi.testDelay(
+                  'umbrella-direct-profile',
+                  testUrl: AppConfig.connectionTestUrls[2],
+                  timeout: const Duration(seconds: 6),
+                );
+                if (_cancelRequested || _disposed) return false;
+                if (PingService.plausible(delay)) {
+                  initialDelayMs = delay;
+                  proxyEverVerified = true;
+                  return true;
+                }
+              }
               poolExhausted = true;
               return false;
             }
