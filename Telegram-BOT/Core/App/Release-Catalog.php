@@ -9,14 +9,12 @@ require_once __DIR__ . '/../Storage/Repository.php';
 final class ReleaseCatalog {
 private const CACHE_KEY = 'App_Release_Catalog_Token';
 private const CACHE_TTL = 900;
-// Installers for every supported platform are uploaded to this public release repository.
+// Windows installers are uploaded to this public release repository.
 private const SOURCES = ['armin-soft/Umbrella-VPN-Releases'];
 private const PLATFORM_EXTENSIONS = [
 'windows' => ['.exe'],
-'android' => ['.apk'],
-'macos' => ['.dmg', '.pkg'],
 ];
-private const PLATFORMS = ['windows', 'android', 'macos'];
+private const PLATFORMS = ['windows'];
 private static ?array $Catalog = null;
 
 private function __construct() {
@@ -127,7 +125,7 @@ return $Catalog;
 
 private static function isSupportedVersionTag(string $Tag): bool {
 $Version = preg_replace('/^v/i', '', trim($Tag)) ?? trim($Tag);
-$Version = preg_replace('/-(?:windows|android|macos)$/i', '', $Version) ?? $Version;
+$Version = preg_replace('/-windows$/i', '', $Version) ?? $Version;
 return preg_match('/^\d+\.\d+\.\d+(?:[-.](?:alpha|beta|rc|pre|preview|dev|nightly|canary)(?:[.-]?\d+)?)?$/i', $Version) === 1;
 }
 
@@ -137,7 +135,7 @@ foreach (self::PLATFORM_EXTENSIONS as $Platform => $_Extensions) {
 if (self::assetsForPlatform($Assets, $Platform) !== []) $Platforms[] = $Platform;
 }
 
-if (preg_match('/-(windows|android|macos)$/i', $Tag, $Match) === 1) {
+if (preg_match('/-(windows)$/i', $Tag, $Match) === 1) {
 $Tag_Platform = strtolower($Match[1]);
 if (!in_array($Tag_Platform, $Platforms, true)) $Platforms[] = $Tag_Platform;
 }

@@ -121,25 +121,15 @@ checkReleaseCatalog(($windows['stable']['tag'] ?? '') === '1.0.0', 'plain semant
 checkReleaseCatalog(($windows['beta']['tag'] ?? '') === '1.0.1-beta.1', 'plain semantic version beta tag is selected');
 checkReleaseCatalog(count($windows['stable']['assets'] ?? []) === 1
     && str_ends_with($windows['stable']['assets'][0]['name'], '.exe'), 'Windows catalog keeps only the exe from a multi-platform release');
-checkReleaseCatalog(($android['stable']['tag'] ?? '') === '1.0.0'
-    && count($android['stable']['assets'] ?? []) === 1
-    && str_ends_with($android['stable']['assets'][0]['name'], '.apk'), 'Android catalog selects the apk from the same release');
-checkReleaseCatalog(($macos['stable']['tag'] ?? '') === '1.0.0'
-    && count($macos['stable']['assets'] ?? []) === 1
-    && str_ends_with($macos['stable']['assets'][0]['name'], '.dmg'), 'macOS catalog selects the dmg from the same release');
-checkReleaseCatalog(($android['beta']['tag'] ?? '') === '1.0.1-beta.1'
-    && str_ends_with($android['beta']['assets'][0]['name'], '.apk'), 'Android beta uses the same plain version tag pattern');
-checkReleaseCatalog(($macos['beta']['tag'] ?? '') === '1.0.1-beta.1'
-    && str_ends_with($macos['beta']['assets'][0]['name'], '.pkg'), 'macOS pkg beta uses the same plain version tag pattern');
+checkReleaseCatalog($android === ['stable' => null, 'beta' => null] && $macos === ['stable' => null, 'beta' => null], 'other platforms are unavailable');
 checkReleaseCatalog(ReleaseCatalog::forPlatform('linux') === ['stable' => null, 'beta' => null], 'unsupported platform remains empty');
 
 $User_Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/User.php');
 $Dispatcher_Source = (string)file_get_contents(dirname(__DIR__) . '/Bot/Dispatcher.php');
-checkReleaseCatalog(str_contains($User_Source, "'android' => ['.apk']")
-    && str_contains($User_Source, "'macos' => ['.dmg', '.pkg']"), 'bot download menu filters platform-specific installable files');
-checkReleaseCatalog(str_contains($User_Source, "'app_download_android'")
-    && str_contains($User_Source, "'app_download_macos'"), 'bot menu exposes Android and macOS selections');
-checkReleaseCatalog(str_contains($Dispatcher_Source, "'app_download_android'")
-    && str_contains($Dispatcher_Source, "'app_download_macos'"), 'bot routes Android and macOS download menus');
+checkReleaseCatalog(str_contains($User_Source, "'windows' => ['.exe']")
+    && !str_contains($User_Source, "'app_download_android'")
+    && !str_contains($User_Source, "'app_download_macos'"), 'only Windows downloads are offered');
+checkReleaseCatalog(str_contains($Dispatcher_Source, "'app_download_android' => [UserFlow::class, 'appDownloadMenu']")
+    && str_contains($Dispatcher_Source, "'app_download_macos' => [UserFlow::class, 'appDownloadMenu']"), 'old download buttons return to the current menu');
 
-echo "OK public multi-platform release catalog and plain version tags\n";
+echo "OK Windows release catalog and plain version tags\n";
