@@ -23,8 +23,8 @@ String validatedParsedProfile(ParseResponse response) {
 }
 
 /// Connects the mobile engine over pinned mutual TLS. The injected verifier
-/// must prove traffic crossed the Android TUN; a direct request from this app
-/// is not sufficient because the app itself is excluded from the VPN.
+/// must prove traffic crossed the Android TUN; native verification explicitly
+/// binds the request to this app's VPN network rather than the default network.
 class UmbrellaMobileBackend implements MobileVpnBackend {
   UmbrellaMobileBackend({
     required this.native,

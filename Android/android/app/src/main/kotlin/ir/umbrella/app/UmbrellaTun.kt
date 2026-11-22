@@ -95,8 +95,9 @@ internal class UmbrellaTun(private val service: VpnService) : AutoCloseable {
                     val name = excluded.next()
                     if (name != service.packageName) addApp(builder, name, allowed = false)
                 }
-                // Core control traffic and probes require a deliberately selected path.
-                addApp(builder, service.packageName, allowed = false)
+                // Keep this app in its own VPN so the traffic verifier can reach
+                // the VPN network. Core outbound sockets use protectSocket(),
+                // and core control remains on loopback with mutual TLS.
             }
         }
         val opened = builder.establish() ?: error("Android did not establish VPN tunnel")

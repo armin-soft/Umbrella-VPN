@@ -8,9 +8,8 @@ import java.net.HttpURLConnection
 import java.net.Proxy
 import java.net.URL
 
-/** Fail-closed verification bound to the VPN network, not the app's default
- * network (the app UID is excluded from its own tunnel). No redirect, captive
- * portal or successful TCP handshake alone is accepted as evidence.
+/** Fail-closed verification explicitly bound to this app's VPN network.
+ * No redirect, captive portal or successful TCP handshake alone is accepted as evidence.
  */
 internal object UmbrellaTunVerifier {
     fun check(connectivity: ConnectivityManager, stillOpen: () -> Boolean): Boolean {
