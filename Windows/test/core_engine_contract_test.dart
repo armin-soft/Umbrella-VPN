@@ -1128,4 +1128,91 @@ void main() {
     }
   }, skip: enabled ? false : 'Windows core required', timeout: const Timeout(Duration(seconds: 60)));
 
+  test('WireGuard passes TCP through a local encrypted peer with a preshared key', () async {
+    // Generated only for this test; never real subscription credentials.
+    const String serverPrivate = 'uBMApp4DiO4E0djlPqCighVNqm1jGHG5beguA2Zp6HM=';
+    const String serverPublic = 'NEj9gIE1tnOEJhncEuhgZCQkmVHaagF5eBwrZPAavDA=';
+    const String clientPrivate = 'gOLrCzFUBVd5Z1BSfJO2YbZ9615c4sBBZY/KlDCNLlo=';
+    const String clientPublic = 'kUyJrMUbMlrhirfqXBm/QghRyG/UPPiWgXByhuWcUyM=';
+    const String psk = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
+    final Directory temp = await Directory.systemTemp.createTemp('umbrella-wg-e2e-');
+    final Directory serverDir = await Directory('${temp.path}/server').create();
+    final Directory clientDir = await Directory('${temp.path}/client').create();
+    final RawDatagramSocket udp = await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final int udpPort = udp.port;
+    udp.close();
+    final ServerSocket freePort = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final int mixedPort = freePort.port;
+    await freePort.close();
+    final HttpServer origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    origin.listen((HttpRequest request) async {
+      request.response.write('local-wireguard-ok');
+      await request.response.close();
+    });
+    Process? server;
+    Process? client;
+    final StringBuffer logs = StringBuffer();
+    try {
+      final File serverConfig = File('${serverDir.path}/server.json');
+      await serverConfig.writeAsString(jsonEncode(<String, dynamic>{
+        'log': <String, dynamic>{'level': 'warn'},
+        'endpoints': <Object>[<String, dynamic>{
+          'type': 'wireguard', 'tag': 'wg-server', 'listen_port': udpPort,
+          'private_key': serverPrivate, 'address': <String>['10.67.0.1/32'],
+          'peers': <Object>[<String, dynamic>{'public_key': clientPublic,
+            'pre_shared_key': psk, 'allowed_ips': <String>['10.67.0.2/32']}],
+        }],
+        'outbounds': <Object>[<String, dynamic>{'type': 'direct', 'tag': 'direct'}],
+        'route': <String, dynamic>{'auto_detect_interface': true, 'final': 'direct'},
+      }));
+      server = await Process.start(binary!, <String>['srun', '-c', serverConfig.path, '-D', serverDir.path],
+        workingDirectory: File(binary).parent.path, runInShell: false);
+      server.stdout.transform(utf8.decoder).listen(logs.write);
+      server.stderr.transform(utf8.decoder).listen(logs.write);
+      final String input = '[Interface]\nPrivateKey = $clientPrivate\nAddress = 10.67.0.2/32\nMTU = 1380\n'
+          '[Peer]\nPublicKey = $serverPublic\nPresharedKey = $psk\nEndpoint = 127.0.0.1:$udpPort\n'
+          'AllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 1\n';
+      final VpnNode node = SubscriptionParser.parseAuto(input, 'wg-e2e').nodes.single;
+      final File profile = File('${clientDir.path}/profile.json');
+      final File settings = File('${clientDir.path}/settings.json');
+      await profile.writeAsString(DirectProfile.encode(node));
+      await settings.writeAsString(jsonEncode(UmbrellaCore.settingsJson(
+        tun: false, systemProxy: false, port: mixedPort,
+        logFile: '${clientDir.path}/core.log', networkSettings: const AppSettings(),
+      )));
+      final File runtime = await CoreRuntime.compile(
+        executable: binary, workDir: File(binary).parent.path, runDir: clientDir.path,
+        linksPath: profile.path, settingsPath: settings.path, clashApiPort: 0,
+        cancelled: () => false, useCache: false,
+      );
+      final Map<String, dynamic> config = jsonDecode(await runtime.readAsString());
+      (config['route'] as Map<String, dynamic>)['final'] = 'umbrella-direct-profile';
+      await runtime.writeAsString(jsonEncode(config));
+      client = await Process.start(binary, <String>['srun', '-c', runtime.path, '-D', clientDir.path],
+        workingDirectory: File(binary).parent.path, runInShell: false);
+      client.stdout.transform(utf8.decoder).listen(logs.write);
+      client.stderr.transform(utf8.decoder).listen(logs.write);
+      bool passed = false;
+      for (int attempt = 0; attempt < 16 && !passed; attempt++) {
+        final HttpClient http = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+        http.findProxy = (_) => 'PROXY 127.0.0.1:$mixedPort';
+        try {
+          final HttpClientRequest request = await http.getUrl(Uri.parse('http://127.0.0.1:${origin.port}/'));
+          final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 3));
+          final String body = await utf8.decodeStream(response).timeout(const Duration(seconds: 3));
+          passed = response.statusCode == 200 && body == 'local-wireguard-ok';
+        } on Exception {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        } finally { http.close(force: true); }
+      }
+      expect(passed, isTrue, reason: 'No authenticated traffic through local WireGuard peer: $logs');
+    } finally {
+      client?.kill(); server?.kill();
+      if (client != null) await client.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      if (server != null) await server.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      await origin.close(force: true);
+      await temp.delete(recursive: true);
+    }
+  }, skip: enabled ? false : 'Windows core required', timeout: const Timeout(Duration(seconds: 100)));
+
 }
