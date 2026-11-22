@@ -64,7 +64,7 @@ jobs:
 
           - Choose arm64-v8a for most modern Android phones, armeabi-v7a for older 32-bit ARM phones, or x86_64 for compatible emulators/devices.
           - The APK uses a disposable draft signing key. Future builds and the earlier debug build cannot upgrade it; uninstalling an incompatible build may remove app data. It is not suitable for production distribution.
-          - Automated layout tests cover main screens, drawer, settings sections, account/device tabs, scroll positions, notification, gateway, routing and sharing dialogs, plus login keyboard insets on selected sizes. Physical-device, accessibility and real-account testing are still required.
+          - Automated tests cover menu navigation and selected interactions, including rejecting unsupported Android connection modes and LAN sharing. Several features remain unverified; physical-device, accessibility and real-account testing are still required.
           - VPN traffic, installation, upgrades, and Android lifecycle behavior have not been verified on a physical device. Android versions below 29 currently fail closed when checking traffic.
           - Connection failures show a non-sensitive stage-specific message for diagnosis; this is not proof that the connection issue is fixed.
           - SMS code filling requires Google Play services and explicit consent to share the incoming message. Manual entry remains available.
