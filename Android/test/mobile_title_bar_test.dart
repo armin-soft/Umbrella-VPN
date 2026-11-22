@@ -24,6 +24,7 @@ void main() {
           )),
         ),
       ));
+      expect(find.text('فیلترشکن آمبرلا'), findsNothing);
       expect(find.byIcon(Icons.close_rounded), findsNothing);
       expect(find.byIcon(Icons.crop_square_rounded), findsNothing);
       expect(find.byIcon(Icons.remove_rounded), findsNothing);

@@ -1225,16 +1225,31 @@ class VpnController extends ChangeNotifier {
       return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
     if (_mobileSession != null) {
-      return const ConnectOutcome(ok: false, message: 'سرویس قبلی هنوز به طور کامل متوقف نشده است.');
+      const message = 'سرویس قبلی هنوز به طور کامل متوقف نشده است.';
+      _setStatus(VpnStatus.failed, message);
+      return const ConnectOutcome(ok: false, message: message);
+    }
+    final sdk = await _native.androidSdkInt();
+    if (sdk != null && sdk < 29) {
+      const message = 'این نسخه آزمایشی برای تأیید ایمن ترافیک به اندروید ۱۰ یا بالاتر نیاز دارد.';
+      _setStatus(VpnStatus.failed, message);
+      return const ConnectOutcome(ok: false, message: message);
+    }
+    if (_cancelRequested || _disposed) {
+      return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     }
     if (_settings.serviceMode != InboundServiceMode.vpn ||
         _settings.chain.enabled || _settings.allowConnectionFromLan ||
         _settings.appRoutes.any((rule) => rule.enabled)) {
-      return const ConnectOutcome(ok: false, message: 'این حالت اتصال هنوز در اندروید پشتیبانی نمی‌شود؛ تونل کامل را انتخاب کنید.');
+      const message = 'این حالت اتصال هنوز در اندروید پشتیبانی نمی‌شود؛ تونل کامل را انتخاب کنید و اشتراک شبکه، زنجیره و قوانین برنامه را خاموش کنید.';
+      _setStatus(VpnStatus.failed, message);
+      return const ConnectOutcome(ok: false, message: message);
     }
     final candidates = _nodes.where((node) => !node.disabled && usable(node)).toList();
     if (candidates.isEmpty || (requested != null && !candidates.any((node) => node.id == requested.id))) {
-      return const ConnectOutcome(ok: false, message: 'سرور معتبر در اشتراک موجود نیست.');
+      const message = 'سرور معتبر در اشتراک موجود نیست.';
+      _setStatus(VpnStatus.failed, message);
+      return const ConnectOutcome(ok: false, message: message);
     }
     final node = requested == null ? candidates.first : candidates.firstWhere((node) => node.id == requested.id);
     _singleNodeSession = requested != null ||
@@ -1253,7 +1268,9 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     }
     if (prepared.links.isEmpty) {
-      return const ConnectOutcome(ok: false, message: 'هیچ سرور معتبری پیدا نشد.');
+      const message = 'هیچ سرور معتبری پیدا نشد.';
+      _setStatus(VpnStatus.failed, message);
+      return const ConnectOutcome(ok: false, message: message);
     }
     final mobileSettings = UmbrellaCore.settingsJson(
       tun: true, systemProxy: false, port: _configuredMixedPort,

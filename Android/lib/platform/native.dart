@@ -182,6 +182,9 @@ class NativeBridge {
   Future<bool> relaunchElevated() => requestVpnPermission();
   Future<void> minimizeApp() async { await _invoke<bool>('minimizeApp'); }
 
+  /// Android API level, or null when the native bridge is unavailable.
+  Future<int?> androidSdkInt() => _invoke<int>('androidSdkInt');
+
   /// آیا مجوز VPN قبلاً داده شده است؟
   Future<bool> isVpnPrepared() async =>
       await _invoke<bool>('isVpnPrepared') ?? false;

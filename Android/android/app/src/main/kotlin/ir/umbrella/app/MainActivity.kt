@@ -202,6 +202,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "minimizeApp" -> result.success(moveTaskToBack(true))
                     "installApk" -> result.success(installUpdate(call.argument<String>("path")))
+                    "androidSdkInt" -> result.success(Build.VERSION.SDK_INT)
                     "isVpnPrepared" -> result.success(VpnService.prepare(this) == null)
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "coreDirectories" -> {

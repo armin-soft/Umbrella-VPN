@@ -287,34 +287,7 @@ class TitleBar extends StatelessWidget {
                 onTap: onToggleTheme!,
               ),
             ),
-          Flexible(
-            child: Padding(
-            padding: const EdgeInsetsDirectional.only(start: AppMetrics.space3, end: AppMetrics.space4),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  ClipOval(
-                    child: TickerMode(
-                      enabled: true,
-                      child: Image.asset(
-                        BrandAssets.logo,
-                        width: AppMetrics.iconLg,
-                        height: AppMetrics.iconLg,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        filterQuality: FilterQuality.medium,
-                        errorBuilder: (BuildContext context, Object error, StackTrace? stack) => Icon(Icons.shield_rounded, size: AppMetrics.iconMd, color: colors.primary),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppMetrics.space2),
-                  Flexible(child: Text(Fa.num(AppConfig.appName), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: colors.textPrimary))),
-                ],
-              ),
-            ),
-          )),
+
         ],
       ),
     );

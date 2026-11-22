@@ -180,11 +180,11 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     final AuthController auth = context.read<AuthController>();
     if (!auth.signedIn) {
-      toasts.error('ورود لازم است', 'ابتدا وارد حساب کاربری خود شوید.');
+      _showConnectionDetails('ابتدا وارد حساب کاربری خود شوید.');
       return;
     }
     if (!auth.account.canConnect) {
-      toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
+      _showConnectionDetails('${auth.account.statusLabelFa}\n${auth.account.accessReason}');
       return;
     }
     if (vpn.nodes.isEmpty) {
@@ -193,10 +193,7 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
       if (vpn.nodes.isEmpty) {
-        toasts.error(
-          'اشتراک دریافت نشد',
-          'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
-        );
+        _showConnectionDetails('اشتراک دریافت نشد. بسته فعال حساب و اتصال اینترنت را بررسی کنید.');
         return;
       }
     }
@@ -207,7 +204,7 @@ class _ConnectPageState extends State<ConnectPage> {
     if (outcome.ok) {
       toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
     } else if (!outcome.cancelled) {
-      toasts.error('اتصال برقرار نشد', outcome.message);
+      _showConnectionDetails(outcome.message);
     }
   }
 
@@ -239,291 +236,103 @@ class _ConnectPageState extends State<ConnectPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final VpnController vpn = context.watch<VpnController>();
-    final AuthController auth = context.watch<AuthController>();
-    final SettingsController settings = context.watch<SettingsController>();
-    final SubscriptionController subs = context.watch<SubscriptionController>();
-    final ToastController toasts = context.read<ToastController>();
-    final UmbrellaColors colors = context.colors;
-    final VpnStatus status = vpn.status;
-    final Color tone = VpnVisuals.color(context, status);
-    final bool connected = status == VpnStatus.connected;
-    final Account account = auth.account;
-
-    final String shownIp = _deviceIp(vpn);
-    final String flagCode = _flagForIp(vpn, connected, shownIp);
-    final String countryName = CountryNames.fa(flagCode);
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double orb = constraints.maxHeight < 650
-            ? 200
-            : (constraints.maxHeight < 780 ? 240 : 272);
-        return SingleChildScrollView(
-          padding: AppMetrics.pagePadding,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: (constraints.maxHeight - 2 * AppMetrics.space6).clamp(0.0, double.infinity),
-            ),
-            child: GlassCard(
-              radius: AppMetrics.radiusHuge,
-              padding: const EdgeInsets.fromLTRB(
-                AppMetrics.space6,
-                AppMetrics.space5,
-                AppMetrics.space6,
-                AppMetrics.space5,
-              ),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  Color.alphaBlend(
-                    tone.withValues(
-                      alpha: Theme.of(context).brightness == Brightness.light
-                          ? 0.08
-                          : 0.12,
-                    ),
-                    colors.surface,
-                  ),
-                  colors.surface,
-                  colors.backgroundAlt,
-                ],
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  // ── نوار بالا: خوش آمدگویی، تاریخ زنده و آی پی ────────
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Icon(_greetingIcon(), size: AppMetrics.iconMd, color: colors.warning),
-                          const SizedBox(width: AppMetrics.space2),
-                          Expanded(child: Text(
-                            Fa.num('سلام ${account.displayName}، ${Fa.greeting()}'),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                          )),
-                        ],
-                      ),
-                      const SizedBox(height: AppMetrics.space1),
-                      LiveDateTimeLine(style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.textSecondary)),
-                      const SizedBox(height: AppMetrics.space2),
-                      Wrap(
-                        spacing: AppMetrics.space2,
-                        runSpacing: AppMetrics.space2,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: <Widget>[
-                          if (subs.needsLogin) Pill(label: 'برای اشتراک وارد شو', icon: Icons.login_rounded, color: colors.warning),
-                          _IpChip(ip: shownIp, flagCode: flagCode, country: connected ? countryName : '', connected: connected),
-                        ],
-                      ),
-                      if (!account.canConnect)
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(top: AppMetrics.space3),
-                          child: _AccessBanner(
-                            title: account.enable
-                                ? 'اشتراک شما اجازه اتصال ندارد'
-                                : 'حساب شما مسدود شده است',
-                            message: account.accessReason,
-                          ),
-                        ),
-                      if (OccasionService.instance.active != null)
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(top: AppMetrics.space3),
-                          child: OccasionBanner(
-                            occasion: OccasionService.instance.active,
-                            enabled: settings.settings.occasionEffects,
-                          ),
-                        ),
-                    ],
-                  ),
-
-                  // ── مرکز صفحه: گنبد وضعیت، دکمه اصلی و منوی اتصال ─────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppMetrics.space4,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Semantics(
-                          button: true,
-                          label: status.busy
-                              ? 'لغو اتصال'
-                              : (status.active ? 'قطع اتصال' : 'اتصال'),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: status == VpnStatus.disconnecting
-                                ? null
-                                : (status.busy
-                                    ? () => _cancelConnection(vpn, toasts)
-                                    : () =>
-                                        _toggleConnection(vpn, subs, toasts)),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: <Widget>[
-                                StatusOrb(
-                                  image: status.image,
-                                  color: tone,
-                                  size: orb,
-                                  active: status.busy,
-                                ),
-                                if (!status.busy)
-                                  Container(
-                                    width: orb * 0.28,
-                                    height: orb * 0.28,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: (status.active
-                                              ? colors.danger
-                                              : colors.primary)
-                                          .withValues(alpha: 0.94),
-                                      boxShadow: <BoxShadow>[
-                                        BoxShadow(
-                                          color: (status.active
-                                                  ? colors.danger
-                                                  : colors.primary)
-                                              .withValues(alpha: 0.38),
-                                          blurRadius: 24,
-                                          spreadRadius: 2,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Icon(
-                                      Icons.power_settings_new_rounded,
-                                      size: orb * 0.14,
-                                      color: colors.onPrimary,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: AppMetrics.space3),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            if (connected && flagCode.isNotEmpty) ...<Widget>[
-                              FlagView(
-                                code: flagCode,
-                                width: AppMetrics.flagWidth,
-                              ),
-                              const SizedBox(width: AppMetrics.space2),
-                            ],
-                            Flexible(
-                              child: Text(
-                                Fa.num(
-                                  connected
-                                      ? 'به آمبرلا متصل شد'
-                                      : status.label,
-                                ),
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      color: tone,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppMetrics.space1),
-                        if (connected)
-                          _PingLine(pingMs: vpn.activePingMs)
-                        else
-                          Text(
-                            Fa.num(vpn.message),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: colors.textSecondary),
-                          ),
-                        const SizedBox(height: AppMetrics.space5),
-                        SizedBox(
-                          width: AppMetrics.controlMaxWidth,
-                          child: status.busy
-                              ? GradientButton(
-                                  label: status == VpnStatus.disconnecting
-                                      ? 'در حال لغو...'
-                                      : 'لغو اتصال',
-                                  icon: Icons.cancel_rounded,
-                                  height: AppMetrics.controlHeightLarge,
-                                  tone: colors.warning,
-                                  loading: status == VpnStatus.disconnecting,
-                                  onPressed: status == VpnStatus.disconnecting
-                                      ? null
-                                      : () => _cancelConnection(vpn, toasts),
-                                )
-                              : GradientButton(
-                                  label: status.active ? 'قطع اتصال' : 'اتصال',
-                                  icon: Icons.power_settings_new_rounded,
-                                  height: AppMetrics.controlHeightLarge,
-                                  tone: status.active
-                                      ? colors.danger
-                                      : colors.primary,
-                                  onPressed: () =>
-                                      _toggleConnection(vpn, subs, toasts),
-                                ),
-                        ),
-                        if (!account.canConnect)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(top: AppMetrics.space2),
-                            child: Text(
-                              Fa.num(
-                                'اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.',
-                              ),
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(color: colors.danger),
-                            ),
-                          ),
-                        const SizedBox(height: AppMetrics.space4),
-
-                        // تنظیمات جانبی فقط با درخواست کاربر باز می شوند؛
-                        // کنترل اصلی اتصال در همین صفحه بدون تغییر می ماند.
-                        SizedBox(
-                          width: AppMetrics.controlMaxWidth,
-                          child: OutlinedButton.icon(
-                            key: const ValueKey<String>(
-                              'connection-settings-button',
-                            ),
-                            onPressed: _openConnectionSettings,
-                            icon: const Icon(Icons.tune_rounded),
-                            label: const Text('تنظیمات اتصال'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // ── نوار پایین: آمار زنده اتصال ───────────────────────
-                  _ConnectionStats(vpn: vpn, connected: connected),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+  void _showConnectionDetails(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: const Text('جزئیات اتصال'),
+        content: SelectableText(Fa.num(message)),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('بستن'))],
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final vpn = context.watch<VpnController>();
+    final auth = context.watch<AuthController>();
+    final subs = context.watch<SubscriptionController>();
+    final toasts = context.read<ToastController>();
+    final colors = context.colors;
+    final status = vpn.status;
+    final tone = VpnVisuals.color(context, status);
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxHeight < 370;
+      final orb = (compact ? constraints.maxHeight * .40 : constraints.maxHeight * .27)
+          .clamp(72.0, 190.0);
+      final action = Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Semantics(
+            button: true,
+            label: status.busy ? 'لغو اتصال' : (status.active ? 'قطع اتصال' : 'اتصال'),
+            child: InkWell(
+              key: const ValueKey('connect-action'),
+              customBorder: const CircleBorder(),
+              onTap: status == VpnStatus.disconnecting ? null :
+                  (status.busy ? () => _cancelConnection(vpn, toasts) : () => _toggleConnection(vpn, subs, toasts)),
+              child: Stack(alignment: Alignment.center, children: [
+                StatusOrb(image: status.image, color: tone, size: orb, active: status.busy),
+                if (!status.busy) Container(
+                  width: orb * .36, height: orb * .36,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: status.active ? colors.danger : colors.primary),
+                  child: Icon(Icons.power_settings_new_rounded, size: orb * .19, color: colors.onPrimary),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(Fa.num(status.active ? 'به آمبرلا متصل شد' : status.label),
+              textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tone, fontWeight: FontWeight.bold)),
+          if (status == VpnStatus.failed)
+            TextButton.icon(
+              onPressed: () => _showConnectionDetails(vpn.message),
+              icon: const Icon(Icons.info_outline_rounded),
+              label: const Text('جزئیات خطا'),
+            )
+          else if (status.busy)
+            TextButton(onPressed: () => _cancelConnection(vpn, toasts), child: const Text('لغو اتصال')),
+        ],
+      );
+      final profile = GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(children: [
+          Icon(Icons.account_circle_outlined, color: colors.primary),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(auth.signedIn ? 'اشتراک من' : 'ورود به حساب', style: Theme.of(context).textTheme.titleSmall),
+            Text(auth.signedIn ? Fa.num('${subs.totalNodes} سرور در اشتراک') : 'برای اتصال ابتدا وارد شوید',
+                style: Theme.of(context).textTheme.bodySmall),
+          ])),
+        ]),
+      );
+      final controls = OutlinedButton.icon(
+        key: const ValueKey<String>('connection-settings-button'),
+        onPressed: _openConnectionSettings,
+        icon: const Icon(Icons.tune_rounded),
+        label: const Text('تنظیمات اتصال'),
+      );
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: compact
+            ? Row(children: [
+                Expanded(child: Center(child: action)),
+                const SizedBox(width: 16),
+                Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [profile, const SizedBox(height: 8), controls])),
+              ])
+            : Column(children: [
+                profile,
+                Expanded(child: Center(child: action)),
+                controls,
+                const SizedBox(height: 8),
+              ]),
+      );
+    });
+  }
+
 }
 
 /// برگه تنظیمات اتصال: ورود از پایین، گوشه های نرم و کنترل های لمسی استاندارد.

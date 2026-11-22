@@ -260,6 +260,15 @@ void main() {
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
           if (page is ConnectPage && problem == null && problems.length == errorsBefore) {
+            expect(find.descendant(of: find.byWidget(page), matching: find.byType(Scrollable)), findsNothing);
+            await tester.tap(find.byKey(const ValueKey('connect-action')));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(find.text('جزئیات اتصال'), findsOneWidget);
+            expect(find.text('ابتدا وارد حساب کاربری خود شوید.'), findsOneWidget);
+            Navigator.of(tester.element(find.text('جزئیات اتصال'))).pop();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
             // In RTL, omitting anchorPoint would select this hinge's right pane.
             final Finder settingsButton = find.byKey(
               const ValueKey<String>('connection-settings-button'),
