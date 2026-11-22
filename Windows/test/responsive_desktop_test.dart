@@ -64,7 +64,7 @@ class _TrackingVpn extends _Vpn {
   @override
   Future<void> disconnect({bool silent = false}) async { disconnections++; current = VpnStatus.disconnected; notifyListeners(); }
   @override
-  Future<ConnectOutcome> connect({VpnNode? requested, bool isAutoReconnect = false}) async {
+  Future<ConnectOutcome> connect({VpnNode? requested, bool isAutoReconnect = false, bool emergency = false}) async {
     connections++;
     return const ConnectOutcome(ok: false, message: 'test');
   }

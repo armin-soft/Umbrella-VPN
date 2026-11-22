@@ -31,6 +31,10 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
+  bool _emergencySelected = false;
+
+  bool _switchPending(VpnController vpn) => vpn.status.active && vpn.emergencySession != _emergencySelected;
+
   /// آی پی دستگاه برای نمایش در نوار بالا.
   ///
   /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
@@ -173,11 +177,13 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     if (vpn.status.active) {
+      final bool switching = _switchPending(vpn);
       await vpn.disconnect();
-      if (mounted) {
+      if (!mounted) return;
+      if (!switching) {
         toasts.info('اتصال قطع شد');
+        return;
       }
-      return;
     }
     final AuthController auth = context.read<AuthController>();
     if (!auth.signedIn) {
@@ -190,7 +196,21 @@ class _ConnectPageState extends State<ConnectPage> {
       _showConnectionDetails('${auth.account.statusLabelFa}\n${auth.account.accessReason}');
       return;
     }
-    if (vpn.nodes.isEmpty) {
+    if (_emergencySelected) {
+      if (!subs.emergencyEnabled) {
+        _showConnectionDetails('حالت اضطراری غیرفعال است.');
+        return;
+      }
+      if (subs.emergencyNodes.isEmpty && !subs.emergencyLoading) {
+        await subs.refreshEmergency();
+        if (!mounted) return;
+      }
+      if (subs.emergencyNodes.isEmpty) {
+        _showConnectionDetails(subs.emergencyLoading ? 'در حال دریافت منابع اضطراری هستیم.' : subs.emergencyError);
+        return;
+      }
+    }
+    if (!_emergencySelected && vpn.nodes.isEmpty) {
       await subs.syncPersonal();
       if (!mounted) {
         return;
@@ -201,7 +221,7 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
     }
-    final ConnectOutcome outcome = await vpn.connect();
+    final ConnectOutcome outcome = await vpn.connect(emergency: _emergencySelected);
     if (!mounted) {
       return;
     }
@@ -513,10 +533,10 @@ class _ConnectPageState extends State<ConnectPage> {
                                       : () => _cancelConnection(vpn, toasts),
                                 )
                               : GradientButton(
-                                  label: status.active ? 'قطع اتصال' : 'اتصال',
+                                  label: status.active && !_switchPending(vpn) ? 'قطع اتصال' : 'اتصال',
                                   icon: Icons.power_settings_new_rounded,
                                   height: AppMetrics.controlHeightLarge,
-                                  tone: status.active
+                                  tone: status.active && !_switchPending(vpn)
                                       ? colors.danger
                                       : colors.primary,
                                   onPressed: () =>
@@ -540,6 +560,21 @@ class _ConnectPageState extends State<ConnectPage> {
                           ),
                         const SizedBox(height: AppMetrics.space4),
 
+                        if (subs.emergencyEnabled) ...<Widget>[
+                          Wrap(alignment: WrapAlignment.center, spacing: AppMetrics.space2, children: <Widget>[
+                            ChoiceChip(label: const Text('خودکار'), selected: !_emergencySelected,
+                              onSelected: status.busy ? null : (_) => setState(() => _emergencySelected = false)),
+                            ChoiceChip(key: const ValueKey<String>('connection-profile-emergency'),
+                              label: Text(subs.emergencyLoading ? 'اضطراری · در حال دریافت' : 'اضطراری · ${Fa.num(subs.emergencyNodes.length)} مسیر'),
+                              selected: _emergencySelected,
+                              onSelected: status.busy ? null : (_) => setState(() => _emergencySelected = true)),
+                          ]),
+                          if (_emergencySelected)
+                            Text('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
+                              textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.warning)),
+                          if (_switchPending(vpn)) const Text('برای تغییر مسیر، دکمه اتصال را بزنید.'),
+                          const SizedBox(height: AppMetrics.space3),
+                        ],
                         // تنظیمات جانبی فقط با درخواست کاربر باز می شوند؛
                         // کنترل اصلی اتصال در همین صفحه بدون تغییر می ماند.
                         SizedBox(

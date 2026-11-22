@@ -268,6 +268,21 @@ class VpnController extends ChangeNotifier {
 
   List<VpnNode> _nodes = <VpnNode>[];
   List<VpnNode> get nodes => List<VpnNode>.unmodifiable(_nodes);
+  List<VpnNode> _emergencyNodes = <VpnNode>[];
+  bool _emergencySession = false;
+  bool get emergencySession => _emergencySession;
+  List<VpnNode> get emergencyNodes => List<VpnNode>.unmodifiable(_emergencyNodes);
+  List<VpnNode> get _sessionNodes => _emergencySession ? _emergencyNodes : _nodes;
+
+  /// Public nodes are never persisted or mixed into the personal auto pool.
+  void setEmergencyNodes(List<VpnNode> nodes, {required bool enabled}) {
+    _emergencyNodes = enabled ? List<VpnNode>.of(nodes) : <VpnNode>[];
+    if (!enabled && _emergencySession && (_status.active || _status.busy)) {
+      unawaited(cancel());
+    }
+    if (!_disposed) notifyListeners();
+  }
+
 
   VpnStatus _status = VpnStatus.disconnected;
   VpnStatus get status => _status;
@@ -467,7 +482,7 @@ class VpnController extends ChangeNotifier {
         await disconnect(silent: true);
         unawaited(_native.flushDns());
         if (!_disposed && !_shuttingDown) {
-          await connect(requested: requested);
+          await connect(requested: requested, emergency: _emergencySession);
           unawaited(_native.flushDns());
         }
       }());
@@ -1098,7 +1113,7 @@ class VpnController extends ChangeNotifier {
         final VpnNode? target = _singleNodeSession ? _activeNode : null;
         await disconnect(silent: true);
         if (!_disposed && !_shuttingDown) {
-          await connect(requested: target);
+          await connect(requested: target, emergency: _emergencySession);
         }
       }());
     });
@@ -1168,6 +1183,7 @@ class VpnController extends ChangeNotifier {
   Future<ConnectOutcome> connect({
     VpnNode? requested,
     bool isAutoReconnect = false,
+    bool emergency = false,
   }) async {
     // فقط یک اتصال همزمان.
     //
@@ -1187,6 +1203,7 @@ class VpnController extends ChangeNotifier {
     }
     if (!isAutoReconnect) {
       _reconnectAttempts = 0;
+      _emergencySession = emergency;
     }
     _connectInFlight = true;
     try {
@@ -1254,7 +1271,7 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
     }
-    final candidates = _nodes.where((node) => !node.disabled && usable(node)).toList();
+    final candidates = _sessionNodes.where((node) => !node.disabled && usable(node)).toList();
     trace('candidates_${candidates.length}');
     if (candidates.isEmpty || (requested != null && !candidates.any((node) => node.id == requested.id))) {
       const message = 'سرور معتبر در اشتراک موجود نیست.';
@@ -1262,8 +1279,8 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, message: message);
     }
     final node = requested == null ? candidates.first : candidates.firstWhere((node) => node.id == requested.id);
-    _singleNodeSession = requested != null ||
-        _settings.selectionMode == SelectionMode.manual || !_settings.autoFailover;
+    _singleNodeSession = requested != null || (!_emergencySession &&
+        (_settings.selectionMode == SelectionMode.manual || !_settings.autoFailover));
     _cancelRequested = false;
     _activeNode = node;
     _setStatus(VpnStatus.preparing, 'آماده سازی تونل امن...');
@@ -1406,8 +1423,8 @@ class VpnController extends ChangeNotifier {
   Future<ConnectOutcome> _connectInner({VpnNode? requested}) async {
     if (Platform.isAndroid) return _connectMobile(requested: requested);
     _cancelRequested = false;
-    _singleNodeSession = requested != null ||
-        _settings.selectionMode == SelectionMode.manual || !_settings.autoFailover;
+    _singleNodeSession = requested != null || (!_emergencySession &&
+        (_settings.selectionMode == SelectionMode.manual || !_settings.autoFailover));
     await _cancelRuntimePrewarm();
     // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
     // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
@@ -1434,14 +1451,14 @@ class VpnController extends ChangeNotifier {
             'جداسازی برنامه ها فعال است؛ حالت تونل را انتخاب کنید یا قوانین برنامه را غیرفعال کنید.',
       );
     }
-    if (_nodes.isEmpty) {
+    if (_sessionNodes.isEmpty) {
       return const ConnectOutcome(
         ok: false,
         message: 'هیچ سروری موجود نیست؛ اشتراک در حال دریافت از سرور است.',
       );
     }
     final List<VpnNode> usableNodes =
-        _nodes.where((VpnNode node) => usable(node) && !node.disabled).toList();
+        _sessionNodes.where((VpnNode node) => usable(node) && !node.disabled).toList();
     if (usableNodes.isEmpty) {
       _log.add(
         'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک برای هسته آمبرلا '
@@ -2420,7 +2437,8 @@ class VpnController extends ChangeNotifier {
     // پیش آماده شده در لحظه زدن دکمه اتصال بی درنگ و بدون کامپایل دوباره اجرا
     // شود. پین شده ها اول قرار می گیرند و بقیه به ترتیب پایدار فهرست می آیند.
     final List<VpnNode> candidates =
-        _nodes.where((VpnNode n) => !n.disabled).toList();
+        (chosen.sourceId.startsWith('emergency-') ? _emergencyNodes : _nodes)
+            .where((VpnNode n) => !n.disabled).toList();
     for (final VpnNode n in candidates) {
       if (n.favorite) {
         add(n);

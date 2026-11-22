@@ -40,6 +40,8 @@ class _ConnectPageState extends State<ConnectPage> {
 
   bool _switchPending(VpnController vpn) {
     if (!vpn.status.active) return false;
+    if (vpn.emergencySession) return _profile != 'emergency';
+    if (_profile == 'emergency') return true;
     final String? source = vpn.activeNode?.sourceId;
     return source != null && source.isNotEmpty && source != _profile;
   }
@@ -203,7 +205,21 @@ class _ConnectPageState extends State<ConnectPage> {
       toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
       return;
     }
-    if (vpn.nodes.isEmpty) {
+    if (_profile == 'emergency') {
+      if (!subs.emergencyEnabled) {
+        toasts.error('حالت اضطراری غیرفعال است');
+        return;
+      }
+      if (subs.emergencyNodes.isEmpty && !subs.emergencyLoading) {
+        await subs.refreshEmergency();
+        if (!mounted) return;
+      }
+      if (subs.emergencyNodes.isEmpty) {
+        toasts.error('مسیر اضطراری آماده نیست', subs.emergencyLoading ? 'در حال دریافت منابع اضطراری هستیم.' : subs.emergencyError);
+        return;
+      }
+    }
+    if (_profile != 'emergency' && vpn.nodes.isEmpty) {
       await subs.syncPersonal();
       if (!mounted) {
         return;
@@ -217,7 +233,7 @@ class _ConnectPageState extends State<ConnectPage> {
       }
     }
     VpnNode? requested;
-    if (_profile != 'user-sub') {
+    if (_profile != 'user-sub' && _profile != 'emergency') {
       final List<VpnNode> matches = vpn.nodes.where((VpnNode node) =>
           node.sourceId == _profile && VpnController.usable(node) && !node.disabled).toList();
       if (matches.isEmpty) {
@@ -232,7 +248,7 @@ class _ConnectPageState extends State<ConnectPage> {
       }
       requested = matches.first;
     }
-    final ConnectOutcome outcome = await vpn.connect(requested: requested);
+    final ConnectOutcome outcome = await vpn.connect(requested: requested, emergency: _profile == 'emergency');
     if (!mounted) {
       return;
     }
@@ -589,8 +605,22 @@ class _ConnectPageState extends State<ConnectPage> {
                                 selected: _profile == profile.id,
                                 onSelected: status.busy ? null : (_) => _selectProfile(profile.id),
                               ),
+                            if (subs.emergencyEnabled)
+                              ChoiceChip(
+                                key: const ValueKey<String>('connection-profile-emergency'),
+                                avatar: const Icon(Icons.warning_amber_rounded),
+                                label: Text(subs.emergencyLoading ? 'اضطراری · در حال دریافت' : 'اضطراری · ${Fa.num(subs.emergencyNodes.length)} مسیر'),
+                                selected: _profile == 'emergency', showCheckmark: false,
+                                onSelected: status.busy ? null : (_) => _selectProfile('emergency'),
+                              ),
                           ],
                         ),
+                        if (subs.emergencyEnabled && _profile == 'emergency')
+                          Padding(
+                            padding: const EdgeInsets.only(top: AppMetrics.space2),
+                            child: Text('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
+                              textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.warning)),
+                          ),
                         if (_switchPending(vpn))
                           Padding(
                             padding: const EdgeInsets.only(top: AppMetrics.space2),

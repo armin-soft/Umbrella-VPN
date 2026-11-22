@@ -9,6 +9,7 @@ import 'package:http/io_client.dart';
 import '../core/app_config.dart';
 import '../core/utils.dart';
 import '../data/parsers.dart';
+import '../data/emergency_feeds.dart';
 import '../data/subscription_endpoints.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
@@ -60,6 +61,7 @@ class SubscriptionController extends ChangeNotifier {
     _sources = <SourceState>[];
     _rebuildSources();
     _auth.addListener(_onAccountChanged);
+    scheduleMicrotask(_syncEmergencyFlag);
   }
 
   static http.Client _createClient({required bool direct}) {
@@ -86,6 +88,48 @@ class SubscriptionController extends ChangeNotifier {
   Future<void>? _syncInFlight;
   String _syncSignature = '';
   bool _disposed = false;
+  bool _emergencyEnabled = false;
+  bool _emergencyLoading = false;
+  int _emergencyGeneration = 0;
+  String _emergencyError = '';
+  bool get emergencyEnabled => _auth.signedIn && _auth.account.emergencyEnabled;
+  bool get emergencyLoading => _emergencyLoading;
+  String get emergencyError => _emergencyError;
+  List<VpnNode> get emergencyNodes => _vpn.emergencyNodes;
+
+  void _syncEmergencyFlag() {
+    if (_disposed) return;
+    final bool enabled = emergencyEnabled;
+    if (enabled == _emergencyEnabled) return;
+    _emergencyEnabled = enabled;
+    _emergencyGeneration++;
+    _emergencyError = '';
+    if (!enabled) {
+      _emergencyLoading = false;
+      _vpn.setEmergencyNodes(const <VpnNode>[], enabled: false);
+      notifyListeners();
+      return;
+    }
+    unawaited(refreshEmergency());
+  }
+
+  Future<void> refreshEmergency() async {
+    if (_disposed || !emergencyEnabled || _emergencyLoading) return;
+    final int generation = ++_emergencyGeneration;
+    _emergencyLoading = true;
+    notifyListeners();
+    final results = await Future.wait(<Future<EmergencyFeedResult>>[
+      for (int i = 0; i < EmergencyFeeds.urls.length; i++) EmergencyFeeds.fetch(_client, i),
+    ]);
+    if (_disposed || generation != _emergencyGeneration || !emergencyEnabled) return;
+    final nodes = <VpnNode>[
+      for (final result in results) ...result.nodes,
+    ].take(400).toList();
+    _emergencyLoading = false;
+    _emergencyError = nodes.isEmpty ? 'هیچ مسیر اضطراری سازگاری دریافت نشد.' : '';
+    _vpn.setEmergencyNodes(nodes, enabled: true);
+    notifyListeners();
+  }
 
   /// نشانی های اشتراک بدون ورود به حساب در دسترس نیستند (کد ۴۰۱/۴۰۳/۴۰۴).
   bool _needsLogin = false;
@@ -188,6 +232,7 @@ class SubscriptionController extends ChangeNotifier {
       return;
     }
     final bool changed = _rebuildSources();
+    _syncEmergencyFlag();
     if (!_auth.signedIn) {
       if (_vpn.nodes.isNotEmpty) {
         unawaited(_vpn.applyNodes(<VpnNode>[], measure: false));
