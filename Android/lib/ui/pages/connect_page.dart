@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
@@ -246,7 +247,22 @@ class _ConnectPageState extends State<ConnectPage> {
         scrollable: true,
         title: const Text('جزئیات اتصال'),
         content: SelectableText(Fa.num(message)),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('بستن'))],
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final lines = AppLogger.instance.lines
+                  .where((line) => line.message.startsWith('ANDROID_VPN '))
+                  .toList().reversed
+                  .map((line) => '${line.time.toIso8601String()} ${line.message}');
+              await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('گزارش اتصال کپی شد')));
+              }
+            },
+            child: const Text('کپی گزارش اتصال'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('بستن')),
+        ],
       ),
     );
   }

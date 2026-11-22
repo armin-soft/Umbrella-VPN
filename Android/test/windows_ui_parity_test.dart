@@ -13,7 +13,7 @@ void main() {
       // Android uses system navigation and an adaptive mobile shell.
       if (const {'shell/app_shell.dart', 'widgets/shell_widgets.dart', 'pages/login_page.dart',
         'widgets/common.dart', 'widgets/brand_widgets.dart', 'pages/updates_page.dart',
-        'pages/settings_page.dart', 'pages/connect_page.dart', 'pages/device_page.dart',
+        'pages/settings_page.dart', 'pages/connect_page.dart', 'pages/device_page.dart', 'pages/logs_page.dart',
         'widgets/gateway_dialog.dart', 'widgets/lan_sharing_dialog.dart',
         'widgets/advanced_network_settings.dart', 'widgets/quick_connection_panel.dart'}.contains(relative)) continue;
       final android = File('lib/ui/$relative');

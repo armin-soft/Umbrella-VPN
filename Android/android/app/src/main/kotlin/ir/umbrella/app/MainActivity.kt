@@ -95,13 +95,24 @@ class MainActivity : FlutterActivity() {
             vpn.prepareCore(pendingPort) { outcome ->
                 if (pendingStart !== waiting) return@prepareCore
                 pendingStart = null
-                outcome.fold({ waiting.success(true) }, { waiting.error("CORE_START_FAILED", it.message, null) })
+                outcome.fold({ waiting.success(true) }, { waiting.error("CORE_START_FAILED", "VPN setup failed", setupFailureKind(it)) })
             }
         }
         override fun onServiceDisconnected(name: ComponentName) {
             service = null
             failStart("VPN service disconnected")
         }
+    }
+
+    // Never send the exception message across the UI diagnostic channel: it
+    // may contain a profile or a private path. Only a coarse category is safe.
+    private fun setupFailureKind(error: Throwable): String = when (error) {
+        is SecurityException -> "SECURITY"
+        is IllegalArgumentException -> "ARGUMENT"
+        is IllegalStateException -> "STATE"
+        is java.io.IOException -> "IO"
+        is LinkageError -> "LINKAGE"
+        else -> "OTHER"
     }
 
     private fun releaseBinding() {
@@ -132,7 +143,7 @@ class MainActivity : FlutterActivity() {
                 vpn.prepareCore(port) { outcome ->
                     if (pendingStart !== result) return@prepareCore
                     pendingStart = null
-                    outcome.fold({ result.success(true) }, { result.error("CORE_START_FAILED", it.message, null) })
+                    outcome.fold({ result.success(true) }, { result.error("CORE_START_FAILED", "VPN setup failed", setupFailureKind(it)) })
                 }
             } else {
                 check(bindService(intent, connection, Context.BIND_AUTO_CREATE)) { "Cannot bind VPN service" }

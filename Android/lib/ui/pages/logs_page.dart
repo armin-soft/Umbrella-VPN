@@ -245,8 +245,9 @@ class _LogsPageState extends State<LogsPage> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
-                                Column(
+                                Flexible(child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: <Widget>[
                                     Text(
                                       Fa.num(Fa.date(line.time)),
@@ -265,7 +266,7 @@ class _LogsPageState extends State<LogsPage> {
                                       ),
                                     ),
                                   ],
-                                ),
+                                )),
                                 const SizedBox(width: AppMetrics.space3),
                                 Container(
                                   margin: const EdgeInsets.only(top: AppMetrics.space1),

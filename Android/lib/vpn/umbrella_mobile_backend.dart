@@ -88,7 +88,11 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
       baseDir: base, workingDir: working, tempDir: temp, grpcPort: grpcPort,
     );
     if (!started) {
-      _trace('native.start.failed');
+      const knownCodes = {'CORE_ACTIVE', 'CORE_NOT_READY', 'CORE_START_FAILED', 'CORE_BUSY', 'MISSING_PLUGIN'};
+      final code = knownCodes.contains(native.lastErrorCode) ? native.lastErrorCode : 'UNKNOWN';
+      const knownKinds = {'SECURITY', 'ARGUMENT', 'STATE', 'IO', 'LINKAGE', 'OTHER'};
+      final kind = knownKinds.contains(native.lastErrorKind) ? native.lastErrorKind : 'UNKNOWN';
+      _trace('native.start.failed.${code}_$kind');
       throw StateError('VPN service setup failed');
     }
     _trace('native.start.ok');

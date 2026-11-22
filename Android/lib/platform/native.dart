@@ -77,18 +77,27 @@ class NativeBridge {
   /// آخرین خطای پل بومی؛ برای گزارش ها نگه داشته می شود.
   String _lastError = '';
   String get lastError => _lastError;
+  String _lastErrorCode = '';
+  String get lastErrorCode => _lastErrorCode;
+  String _lastErrorKind = '';
+  String get lastErrorKind => _lastErrorKind;
 
   Future<T?> _invoke<T>(String method, [Map<String, dynamic>? args]) async {
     if (!_available) {
       return null;
     }
     try {
+      _lastErrorCode = '';
+      _lastErrorKind = '';
       return await _channel.invokeMethod<T>(method, args);
     } on MissingPluginException catch (error) {
+      _lastErrorCode = 'MISSING_PLUGIN';
       _available = false;
       _lastError = 'MissingPluginException: ${error.message ?? method}';
       return null;
     } on PlatformException catch (error) {
+      _lastErrorCode = error.code;
+      _lastErrorKind = error.details is String ? error.details as String : '';
       _lastError = '${error.code}: ${error.message ?? method}';
       return null;
     }
