@@ -783,8 +783,17 @@ class UmbrellaCore {
         combinedRules.add(<String, dynamic>{
           'list_order': combinedRules.length, 'enabled': true,
           'name': 'umbrella-bypass-iran', 'outbound': 'direct',
-          'domain_suffix': <String>['.ir'], 'rule_set': regionalRuleSetUrls('ir'),
+          'domain_suffix': <String>['.ir'],
         });
+        // Keep suffix, geosite and geoip independent: they are alternatives,
+        // and only name-based sets should generate DNS rules.
+        for (final String url in regionalRuleSetUrls('ir')) {
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length, 'enabled': true,
+            'name': 'umbrella-bypass-iran-set', 'outbound': 'direct',
+            'rule_set': <String>[url],
+          });
+        }
       }
 
       if (networkSettings != null) {

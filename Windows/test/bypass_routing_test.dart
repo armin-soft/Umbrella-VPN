@@ -17,7 +17,7 @@ void main() {
     expect(rules[direct]['outbound'], 'direct');
     expect(rules[direct]['domain_suffix'], contains('example.org'));
     expect(rules[iran]['domain_suffix'], contains('.ir'));
-    expect(rules[iran]['rule_set'], isNotEmpty);
+    expect(rules.where((r) => r['name'] == 'umbrella-bypass-iran-set').length, 2);
     expect(FilterSettings.fromJson(filter.toJson()).bypassDomains, ['example.org']);
     expect(FilterSettings.fromJson(filter.toJson()).bypassIran, isTrue);
   });
