@@ -609,7 +609,7 @@ void main() {
         final int blockIndex = routeRules.indexWhere((r) =>
             r['action'] == 'reject' && jsonEncode(r).contains('blocked.example.com'));
         final int bypassIndex = routeRules.indexWhere((r) =>
-            r['outbound'] == 'direct' && jsonEncode(r).contains('direct-example.org'));
+            '${r['outbound'] ?? ''}'.startsWith('direct') && jsonEncode(r).contains('direct-example.org'));
         expect(bypassIndex, greaterThan(blockIndex));
         final Map<String, dynamic> directDns = dnsRules.firstWhere((r) =>
             jsonEncode(r).contains('direct-example.org'));
