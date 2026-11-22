@@ -128,6 +128,7 @@ void main() {
     await tester.tap(find.text('سیم کارت ۲'));
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, contains('۰۹۳۵'));
+    debugDefaultTargetPlatformOverride = null;
   });
 
   for (final size in <Size>[const Size(320, 568), const Size(360, 640), const Size(412, 915), const Size(640, 360), const Size(800, 1280)]) {
