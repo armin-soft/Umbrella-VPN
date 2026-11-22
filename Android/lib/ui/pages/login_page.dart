@@ -619,8 +619,8 @@ class _LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: AppMetrics.space3),
         TextButton(
-          onPressed: auth.resetToPhoneStep,
-          child: const Text('بازگشت به شماره موبایل'),
+          onPressed: auth.busy ? null : auth.cancelPendingSignIn,
+          child: const Text('لغو درخواست ورود'),
         ),
       ],
     );

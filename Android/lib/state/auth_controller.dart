@@ -293,6 +293,7 @@ class AuthController extends ChangeNotifier {
   /// شخصی کاربر بی درنگ دریافت شوند.
   Future<void> Function()? onSubscriptionClaimed;
 
+  bool _cancellingSignIn = false;
   Timer? _pollTimer;
   Timer? _clockTimer;
   Timer? _heartbeatTimer;
@@ -586,7 +587,9 @@ class AuthController extends ChangeNotifier {
         return;
       }
       try {
-        final SignInStatus status = await _gateway.status(_challenge);
+        final String challenge = _challenge;
+        final SignInStatus status = await _gateway.status(challenge);
+        if (_challenge != challenge || _cancellingSignIn) return;
         _stage = status.stage;
         _secondsLeft = status.secondsLeft;
         if (status.stage == SignInStage.approved) {
@@ -637,6 +640,26 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<void> cancelPendingSignIn() async {
+    if (_challenge.isEmpty || _busy || _cancellingSignIn) return;
+    final String challenge = _challenge;
+    _cancellingSignIn = true;
+    _busy = true;
+    _error = '';
+    notifyListeners();
+    try {
+      await _gateway.cancelSignIn(challenge);
+      if (_challenge == challenge) resetToPhoneStep();
+    } on ApiError catch (error) {
+      _error = error.message;
+      _logError(error.message);
+    } finally {
+      _cancellingSignIn = false;
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> checkNow() async {
     if (_challenge.isEmpty) {
       return;
@@ -644,7 +667,9 @@ class AuthController extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     try {
-      final SignInStatus status = await _gateway.status(_challenge);
+      final String challenge = _challenge;
+      final SignInStatus status = await _gateway.status(challenge);
+      if (_challenge != challenge || _cancellingSignIn) return;
       _stage = status.stage;
       _secondsLeft = status.secondsLeft;
       if (status.stage == SignInStage.approved) {

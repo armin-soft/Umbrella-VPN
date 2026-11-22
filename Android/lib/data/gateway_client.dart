@@ -433,6 +433,10 @@ class GatewayClient {
     return SignInStatus.fromJson(json);
   }
 
+  Future<void> cancelSignIn(String challenge) async {
+    await _post('auth/cancel', <String, dynamic>{'challenge': challenge});
+  }
+
   Future<SessionData> session(String challenge) async {
     final Map<String, dynamic> json =
         await _get('auth/session', <String, String>{'challenge': challenge});

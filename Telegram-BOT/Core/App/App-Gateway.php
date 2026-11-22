@@ -84,6 +84,7 @@ try {
 if ($Route === 'auth/start') { self::start(self::body()); return; }
 if ($Route === 'auth/verify') { self::verify(self::body()); return; }
 if ($Route === 'auth/status') { self::status(); return; }
+if ($Route === 'auth/cancel') { self::cancelSignIn(self::body()); return; }
 if ($Route === 'auth/session') { self::session(); return; }
 if ($Route === 'auth/resend') { self::resend(self::body()); return; }
 if ($Route === 'auth/signout') { self::signOut(self::body()); return; }
@@ -386,7 +387,11 @@ self::ok([
 // so a bookkeeping problem can never turn into «cannot sign in».
 if (!AppTwoStep::enabled($Telegram_Id) && self::decide($Challenge, true, $Telegram_Id)) {
 try {
-TelegramClient::sendSystemMessage($Telegram_Id, self::signedInMessage($Row));
+TelegramClient::sendSystemMessage($Telegram_Id, self::signedInMessage($Row), TelegramClient::inlineKeyboard([
+[['text' => '📱منوی دستگاه', 'callback_data' => 'user_device_menu']],
+[['text' => '📱دستگاه های من', 'callback_data' => 'app_devices']],
+[['text' => '🔐تأیید دومرحله ای', 'callback_data' => 'app_2fa']],
+]));
 }
 
 catch (Throwable $Error) {
@@ -413,6 +418,23 @@ self::ok([
 'expires_at' => gmdate('c', (int)$Row['Expires_At']),
 'message' => 'جزئیات ورود به تلگرام شما ارسال شد.',
 ]);
+}
+
+/* The random challenge is the sign-in capability. Cancel only a pending
+ * request; the conditional update races atomically with Telegram approval. */
+private static function cancelSignIn(array $Body): void {
+$Challenge = (string)($Body['challenge'] ?? '');
+if (preg_match('/^[a-f0-9]{32}$/D', $Challenge) !== 1) self::fail(422, 'invalid_challenge', 'درخواست ورود معتبر نیست.');
+$Changed = Database::getInstance()->execute(
+'UPDATE `App_SignIn_Requests` SET `Stage` = ?, `Decided_At` = ? WHERE `Challenge` = ? AND `Stage` IN (?, ?)',
+['cancelled', time(), $Challenge, 'needs_telegram', 'awaiting_telegram']
+)->rowCount();
+if ($Changed === 0) {
+$Row = self::request($Challenge);
+if ($Row === null) self::fail(404, 'unknown_challenge', 'درخواست ورود پیدا نشد.');
+if ((string)$Row['Stage'] !== 'cancelled') self::fail(409, 'already_decided', 'این درخواست قبلاً تعیین تکلیف شده است؛ وضعیت ورود را بررسی کنید.');
+}
+self::ok(['stage' => 'cancelled']);
 }
 
 private static function status(): void {
@@ -1092,6 +1114,18 @@ return [
 ];
 }
 
+/** Notification delivery must not turn a committed purchase into an error. */
+private static function appPaymentNotice(int $TelegramId, string $Text): void {
+try {
+TelegramClient::sendMessage($TelegramId, '💳 ' . $Text, TelegramClient::inlineKeyboard([
+[['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']],
+[['text' => '💳خرید و تمدید اشتراک', 'callback_data' => 'user_subscriptions_menu']],
+]));
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][App-Payment-Notice] delivery failed: ' . $Error->getMessage());
+}
+}
+
 private static function walletStatus(): void {
 $User = self::walletUser(self::bearer());
 self::ok(self::walletPayload((int)$User['Telegram_ID']));
@@ -1114,6 +1148,7 @@ if ($Code === 'gateway_unavailable') self::fail(503, $Code, 'درگاه پردا
 error_log('[Umbrella-Bot][App-Wallet] order failed: ' . $Code);
 self::fail(502, 'gateway_request_failed', 'ساخت درخواست پرداخت ناموفق بود؛ دوباره تلاش کنید.');
 }
+self::appPaymentNotice((int)$User['Telegram_ID'], 'درخواست شارژ کیف پول از برنامه ساخته شد. پس از تأیید درگاه، نتیجه در همین ربات اعلام می شود.');
 self::ok(['status' => 'payment_required', 'credit' => $Amount,
 'gateway_amount' => (float)$Payment['Amount'], 'fee' => (float)($Payment['Fee'] ?? 0),
 'checkout_url' => Zarinpal::payLink($Payment)]);
@@ -1210,6 +1245,7 @@ try {
 $Result = $Type === 'custom'
 ? \SubscriptionFlow::purchaseCustomFromAppWallet($UserId, $Days, $GB, $Quote)
 : \SubscriptionFlow::purchaseFromAppWallet($UserId, $Month, $Quote);
+self::appPaymentNotice($UserId, 'خرید اشتراک از برنامه با موجودی کیف پول انجام و اشتراک فعال شد.');
 self::ok(['status' => 'activated', 'balance' => (int)round($Result['balance']), 'expires_at' => $Result['expires_at'], 'message' => 'اشتراک با موجودی کیف پول مشترک فعال شد.']);
 } catch (Throwable $Error) {
 $Code = $Error->getMessage();
@@ -1241,6 +1277,7 @@ error_log('[Umbrella-Bot][App-Purchase] gateway order creation failed for user '
 self::fail(502, 'gateway_request_failed', 'ساخت درخواست پرداخت انجام نشد؛ دوباره تلاش کنید.');
 }
 $FinalAmount = (float)($Payment['Amount'] ?? ($Price - $Balance));
+self::appPaymentNotice($UserId, 'درخواست پرداخت اشتراک از برنامه ساخته شد. پس از تأیید درگاه، نتیجه در همین ربات اعلام می شود.');
 self::ok([
 'status' => 'payment_required',
 'checkout_url' => \Zarinpal::payLink($Payment),
@@ -1582,10 +1619,12 @@ private static function sendConfirmation(array $Row, int $Telegram_Id, string $R
 $Challenge = (string)$Row['Challenge'];
 
 try {
-Database::getInstance()->execute(
-'UPDATE `App_SignIn_Requests` SET `Stage` = ?, `Confirmed_At` = ? WHERE `Challenge` = ?',
-['awaiting_telegram', time(), $Challenge]
-);
+// Never revive a request cancelled while this message was being prepared.
+$Changed = Database::getInstance()->execute(
+'UPDATE `App_SignIn_Requests` SET `Stage` = ?, `Confirmed_At` = ? WHERE `Challenge` = ? AND `Stage` = ?',
+['awaiting_telegram', time(), $Challenge, $Rollback_Stage === 'needs_telegram' ? 'awaiting_telegram' : $Rollback_Stage]
+)->rowCount();
+if ($Changed === 0) return false;
 }
 
 catch (Throwable $Error) {
@@ -1609,8 +1648,8 @@ error_log('[Umbrella-Bot][Gateway] confirmation message failed: ' . $Error->getM
 
 try {
 Database::getInstance()->execute(
-'UPDATE `App_SignIn_Requests` SET `Stage` = ? WHERE `Challenge` = ?',
-[$Rollback_Stage, $Challenge]
+'UPDATE `App_SignIn_Requests` SET `Stage` = ? WHERE `Challenge` = ? AND `Stage` = ?',
+[$Rollback_Stage, $Challenge, 'awaiting_telegram']
 );
 }
 
