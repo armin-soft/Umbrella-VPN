@@ -293,6 +293,8 @@ class _ConnectPageState extends State<ConnectPage> {
         // composition still scales down on short screens, without scrolling.
         final double orb = (constraints.maxWidth - 72).clamp(160.0, 260.0);
         final double cardHeight = (900 * scale).clamp(constraints.maxHeight - 16, double.infinity);
+        // Reserve height scaling without narrowing the content horizontally.
+        final double contentScale = ((constraints.maxHeight - 56) / (cardHeight - 40)).clamp(0.1, 1.0);
         return Padding(
           padding: const EdgeInsets.all(8),
           child: GlassCard(
@@ -324,7 +326,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.topCenter,
                 child: SizedBox(
-                  width: (constraints.maxWidth - 64).clamp(120.0, double.infinity),
+                  width: (constraints.maxWidth - 64).clamp(120.0, double.infinity) / contentScale,
                   height: (cardHeight - 40).clamp(1.0, double.infinity),
                   child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

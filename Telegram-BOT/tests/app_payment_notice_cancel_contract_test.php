@@ -6,7 +6,7 @@ $checks = [
     'cancel cannot overwrite approval' => str_contains($gateway, "if ((string)\$Row['Stage'] !== 'cancelled') self::fail(409, 'already_decided'"),
     'confirmation and rollback respect concurrent cancellation' => str_contains($gateway, "\$Rollback_Stage === 'needs_telegram' ? 'awaiting_telegram' : \$Rollback_Stage") && str_contains($gateway, "[\$Rollback_Stage, \$Challenge, 'awaiting_telegram']"),
     'automatic sign-in notice links to device management' => str_contains($gateway, "'callback_data' => 'user_device_menu'") && str_contains($gateway, "'callback_data' => 'app_devices'"),
-    'payment notifications occur for app topups and both purchase paths' => substr_count($gateway, 'self::appPaymentNotice(') === 3,
+    'payment notifications occur for app topups, both purchase paths and cancellation' => substr_count($gateway, 'self::appPaymentNotice(') === 4,
     'notification failure does not invalidate committed purchase' => str_contains($gateway, '[Umbrella-Bot][App-Payment-Notice] delivery failed'),
 ];
 foreach ($checks as $name => $ok) {
