@@ -410,6 +410,47 @@ void main() {
     }
   }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 60)));
 
+  test('bundled core starts with an hourly keep-top refresh on a large pool', () async {
+    final String executable = binary!;
+    final Directory temp = await Directory.systemTemp.createTemp('umbrella-keep-top-');
+    Process? process;
+    final StringBuffer logs = StringBuffer();
+    try {
+      final File links = File('${temp.path}/links.txt');
+      final File settings = File('${temp.path}/settings.json');
+      await links.writeAsString(List<String>.generate(129, (int i) =>
+        'vless://11111111-1111-4111-8111-111111111111@192.0.2.1:${10000 + i}?security=tls&sni=example.invalid#test-$i').join('\n'));
+      final options = UmbrellaCore.settingsJson(tun: false, systemProxy: false, port: 12334,
+          logFile: '${temp.path}/core.log');
+      await settings.writeAsString(jsonEncode(options));
+      final File output = await CoreRuntime.compile(
+        executable: executable, workDir: File(executable).parent.path,
+        runDir: temp.path, linksPath: links.path, settingsPath: settings.path,
+        cancelled: () => false, onStarted: (_) {}, onFinished: (_) {},
+      );
+      final config = jsonDecode(await output.readAsString()) as Map<String, dynamic>;
+      expect(config['experimental']['monitoring']['keep_top']['refresh'], '1h');
+      process = await Process.start(executable, <String>['srun', '-c', output.path, '-D', temp.path],
+          workingDirectory: File(executable).parent.path, runInShell: false);
+      process.stdout.transform(utf8.decoder).listen(logs.write);
+      process.stderr.transform(utf8.decoder).listen(logs.write);
+      bool ready = false;
+      for (var i = 0; i < 60; i++) {
+        try {
+          final socket = await Socket.connect('127.0.0.1', 12334, timeout: const Duration(milliseconds: 100));
+          socket.destroy(); ready = true; break;
+        } on SocketException { await Future<void>.delayed(const Duration(milliseconds: 100)); }
+      }
+      expect(ready, isTrue, reason: logs.toString());
+      expect(await Future.any<int?>(<Future<int?>>[process.exitCode,
+        Future<int?>.delayed(const Duration(milliseconds: 500), () => null)]), isNull, reason: logs.toString());
+    } finally {
+      process?.kill();
+      if (process != null) await process.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      await temp.delete(recursive: true);
+    }
+  }, skip: enabled ? false : 'Requires bundled Windows core', timeout: const Timeout(Duration(seconds: 90)));
+
   test('bundled srun starts lazy monitoring and resolves XHTTP split download with an IP upload', () async {
     final Directory temp = await Directory.systemTemp.createTemp('umbrella-srun-');
     final HttpServer endpoint = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
