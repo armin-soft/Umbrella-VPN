@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/models.dart';
+import '../../core/theme.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
 
@@ -58,7 +59,7 @@ class _BypassControlCardState extends State<BypassControlCard> {
       ),
       TextField(controller: _input, enabled: editable, minLines: 1, maxLines: 3,
         decoration: const InputDecoration(labelText: 'وارد کردن لینک یا دامنه', hintText: 'example.com')),
-      const SizedBox(height: 8),
+      const SizedBox(height: AppMetrics.space2),
       OutlinedButton.icon(onPressed: editable ? _add : null,
         icon: const Icon(Icons.add), label: const Text('افزودن سایت')),
       Text('فهرست مسیر مستقیم (${filter.bypassDomains.length} از ۲۰۰)'),

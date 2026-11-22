@@ -109,8 +109,12 @@ return;
 }
 $UUID = (string)$Account['uuid'];
 $settings = AppBypass::load($UUID);
-$settings['domains'] = array_slice(array_values(array_unique(array_merge(
-array_diff($settings['domains'], $parsed['remove']), $parsed['add']))), 0, AppBypass::MAX_DOMAINS);
+$next = array_values(array_unique(array_merge(array_diff($settings['domains'], $parsed['remove']), $parsed['add'])));
+if (count($next) > AppBypass::MAX_DOMAINS || $parsed['invalid'] !== []) {
+TelegramClient::sendMessage($Context->ChatId, 'دامنه نامعتبر یا تعداد بیش از ۲۰۰ است؛ هیچ تغییری ذخیره نشد.', TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
+return;
+}
+$settings['domains'] = $next;
 AppBypass::save($UUID, $settings);
 self::bypassMenu($Context);
 }

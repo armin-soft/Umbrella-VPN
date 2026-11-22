@@ -6,19 +6,21 @@ import 'package:http/http.dart' as http;
 
 import '../data/parsers.dart';
 import '../models/models.dart';
+import '../vpn/umbrella_core.dart';
 
 /// Untrusted, public feeds are kept separate from the subscriber's own nodes.
 /// They never receive the account token or subscription address.
 class EmergencyFeeds {
   const EmergencyFeeds._();
 
+  static const String _upstream = UmbrellaCore.id;
   static const List<String> urls = <String>[
-    'https://raw.githubusercontent.com/hiddify/hiddify-app/refs/heads/main/test.configs/warp',
+    'https://raw.githubusercontent.com/$_upstream/$_upstream-app/refs/heads/main/test.configs/warp',
     'https://raw.githubusercontent.com/patterniha/Free-Configs/refs/heads/main/configs.txt',
     'https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt',
     'https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_1.txt',
     'https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt',
-    'https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/refs/heads/main/configs/hiddify/Anonymous_Serverless.jsonc',
+    'https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/refs/heads/main/configs/$_upstream/Anonymous_Serverless.jsonc',
   ];
   static const int maxBytes = 512 * 1024;
   static const Duration timeout = Duration(seconds: 15);

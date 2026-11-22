@@ -277,7 +277,7 @@ class VpnController extends ChangeNotifier {
   /// Public nodes are never persisted or mixed into the personal auto pool.
   void setEmergencyNodes(List<VpnNode> nodes, {required bool enabled}) {
     _emergencyNodes = enabled ? List<VpnNode>.of(nodes) : <VpnNode>[];
-    if (!enabled && _emergencySession && (_status.active || _status.busy)) {
+    if (!enabled && _emergencySession && (_connectInFlight || _status.active || _status.busy)) {
       unawaited(cancel());
     }
     if (!_disposed) notifyListeners();
