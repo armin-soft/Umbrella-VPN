@@ -518,6 +518,8 @@ class UpdateService {
   UpdateService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
+  bool _releaseListFailed = false;
+  bool _latestReleaseFailed = false;
 
   static bool hasValidSha256(String value) =>
       RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value.trim());
@@ -584,6 +586,10 @@ class UpdateService {
         );
       }
     }
+    if (_releaseListFailed &&
+        (channel != UpdateChannel.stable || _latestReleaseFailed)) {
+      throw const SocketException('Release catalog unavailable');
+    }
     return (available: null, releases: const <UpdateInfo>[]);
   }
 
@@ -621,11 +627,13 @@ class UpdateService {
   Future<List<UpdateInfo>> _fetchGithubReleases({
     required UpdateChannel channel,
   }) async {
+    _releaseListFailed = false;
     try {
       final http.Response response = await _client
           .get(Uri.parse(AppConfig.releasesListApiUrl), headers: _headers)
           .timeout(const Duration(seconds: 14));
       if (response.statusCode >= 300) {
+        _releaseListFailed = true;
         return <UpdateInfo>[];
       }
       final Object? decoded =
@@ -647,17 +655,20 @@ class UpdateService {
       );
       return parsed;
     } on Exception {
+      _releaseListFailed = true;
       return <UpdateInfo>[];
     }
   }
 
   /// خواندن آخرین انتشار پایدار از API گیت هاب (مسیر پشتیبان کانال اصلی).
   Future<UpdateInfo?> _checkGithubRelease() async {
+    _latestReleaseFailed = false;
     try {
       final http.Response response = await _client
           .get(Uri.parse(AppConfig.releaseApiUrl), headers: _headers)
           .timeout(const Duration(seconds: 12));
       if (response.statusCode >= 300) {
+        _latestReleaseFailed = true;
         return null;
       }
       final Map<String, dynamic> json = JsonX.asMap(
@@ -689,6 +700,7 @@ class UpdateService {
         assetName: info.assetName,
       );
     } on Exception {
+      _latestReleaseFailed = true;
       return null;
     }
   }
