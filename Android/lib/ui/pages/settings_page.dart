@@ -850,6 +850,7 @@ class _SettingsPageState extends State<SettingsPage> {
     ToastController toasts,
     AppSettings cfg,
   ) {
+    final String secret = cfg.lanSharingPassword.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
