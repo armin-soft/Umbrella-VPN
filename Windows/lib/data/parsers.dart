@@ -1176,7 +1176,7 @@ class SubscriptionParser {
       'address': addresses,
       'mtu': int.tryParse(ini['interface.mtu'] ?? '') ?? 1420,
       'dns': (ini['interface.dns'] ?? '').split(',').map((String e) => e.trim()).where((String e) => e.isNotEmpty).toList(),
-      'keepalive': int.tryParse(ini['peer.persistentkeepalive'] ?? '') ?? 25,
+      'keepalive': int.tryParse(ini['peer.persistentkeepalive'] ?? '') ?? 0,
       'allowedIps': ini['peer.allowedips'] ?? '0.0.0.0/0, ::/0',
     };
 

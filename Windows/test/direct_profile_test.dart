@@ -10,6 +10,7 @@ void main() {
 PrivateKey = private-test
 Address = 10.0.0.2/32
 MTU = 1280
+DNS = 10.0.0.1, 1.1.1.1
 Jc = 4
 Jmin = 10
 Jmax = 20
@@ -32,6 +33,10 @@ PersistentKeepalive = 20
     expect(endpoint['peers'][0]['preshared_key'], 'psk-test');
     expect(endpoint['peers'][0]['persistent_keepalive_interval'], 20);
     expect(endpoint['address'], <String>['10.0.0.2/32']);
+    final settings = DirectProfile.sessionSettings(node, <String, dynamic>{'log-level': 'debug', 'log-level-until': 'later'});
+    expect(settings['remote-dns-address'], 'udp://10.0.0.1');
+    expect(settings['log-level'], 'info');
+    expect(settings.containsKey('log-level-until'), isFalse);
   });
   test('Mieru carries both transport bindings and handshake settings', () {
     final String body = jsonEncode(<String, dynamic>{

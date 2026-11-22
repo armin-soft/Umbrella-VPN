@@ -2739,14 +2739,14 @@ class VpnController extends ChangeNotifier {
     _launchedFilterSignature = _contentFilter.effectSignature;
     await File(settingsPath).writeAsString(
       jsonEncode(
-        UmbrellaCore.settingsJson(
+        DirectProfile.sessionSettings(_activeNode, UmbrellaCore.settingsJson(
           tun: plan.tun,
           systemProxy: plan.usesSystemProxy,
           port: effectivePort,
           logFile: coreLog,
           networkSettings: _settings,
           contentFilter: _contentFilter,
-        ),
+        )),
       ),
       flush: true,
     );

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import '../core/utils.dart';
 import '../models/models.dart';
@@ -12,6 +13,34 @@ class DirectProfile {
       node.protocol == NodeProtocol.wireguard ||
       node.protocol == NodeProtocol.amnezia ||
       (node.protocol == NodeProtocol.mieru && node.raw.trim().startsWith('{'));
+
+  /// Apply the profile's first IP DNS server through the VPN. The core may
+  /// use its normal tunneled fallback resolvers if that server is unavailable.
+  /// AWG logs its IPC keys at debug level, so never enable debug or trace for it.
+  static Map<String, dynamic> sessionSettings(
+      VpnNode? node, Map<String, dynamic> settings) {
+    final Map<String, dynamic> result = Map<String, dynamic>.of(settings);
+    if (node == null || (node.protocol != NodeProtocol.wireguard &&
+        node.protocol != NodeProtocol.amnezia)) return result;
+    final List<dynamic> dns = JsonX.asList(node.params['dns']);
+    for (final dynamic value in dns) {
+      final String candidate = '$value'.trim();
+      final InternetAddress? ip = InternetAddress.tryParse(candidate);
+      if (ip != null && !ip.isLoopback && !ip.isMulticast &&
+          candidate != '0.0.0.0' && candidate != '::') {
+        result['remote-dns-address'] = ip.type == InternetAddressType.IPv6
+            ? 'udp://[$candidate]' : 'udp://$candidate';
+        break;
+      }
+    }
+    if (node.protocol == NodeProtocol.amnezia &&
+        (result['log-level'] == 'debug' || result['log-level'] == 'trace')) {
+      result['log-level'] = 'info';
+      result.remove('log-level-until');
+      result.remove('log-level-after');
+    }
+    return result;
+  }
 
   static String encode(VpnNode node) {
     final Map<String, dynamic> p = node.params;
