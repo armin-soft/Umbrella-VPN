@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +11,7 @@ import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../platform/sms_consent.dart';
+import '../../platform/sim_numbers.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../widgets/brand_widgets.dart';
@@ -37,6 +39,7 @@ class _LoginPageState extends State<LoginPage> {
   final SmsConsent _smsConsent = SmsConsent();
   bool _smsArmed = false;
   String? _pendingSmsCode;
+  bool _readingSims = false;
 
   @override
   void initState() {
@@ -58,6 +61,49 @@ class _LoginPageState extends State<LoginPage> {
     _firstName.text = auth.firstName;
     _lastName.text = auth.lastName;
     _phone.addListener(_syncOperator);
+  }
+
+  Future<void> _chooseSim() async {
+    if (_readingSims) return;
+    setState(() => _readingSims = true);
+    final result = await SimNumbers().read();
+    if (!mounted) return;
+    setState(() => _readingSims = false);
+    if (context.read<AuthController>().phase != AuthPhase.phone) return;
+    if (result.status != 'ok' || result.sims.isEmpty) {
+      final message = result.status == 'denied'
+          ? 'دسترسی به شماره سیم‌کارت داده نشد. می‌توانید شماره را دستی وارد کنید.'
+          : 'شماره‌ای از سیم‌کارت دریافت نشد. می‌توانید شماره را دستی وارد کنید.';
+      await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+        title: const Text('انتخاب شماره سیم‌کارت'),
+        content: Text(message),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('متوجه شدم'))],
+      ));
+      return;
+    }
+    final selected = await showDialog<String>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('انتخاب شماره سیم‌کارت'),
+      content: SingleChildScrollView(child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('شماره موردنظر را انتخاب کنید. بعضی اپراتورها شماره را در اختیار برنامه نمی‌گذارند.'),
+          for (final sim in result.sims)
+            ListTile(
+              leading: const Icon(Icons.sim_card_outlined),
+              title: Text(Fa.num('سیم‌کارت ${sim.slot}')),
+              subtitle: Text(IranPhone.isValid(sim.number)
+                  ? IranPhone.display(sim.number)
+                  : 'شماره در دسترس نیست یا پشتیبانی نمی‌شود؛ دستی وارد کنید.'),
+              onTap: IranPhone.isValid(sim.number)
+                  ? () => Navigator.pop(dialogContext, IranPhone.normalize(sim.number)) : null,
+            ),
+        ],
+      )),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ورود دستی'))],
+    ));
+    if (!mounted || selected == null || context.read<AuthController>().phase != AuthPhase.phone) return;
+    _phone.text = IranPhone.display(selected);
   }
 
   void _syncOperator() {
@@ -286,6 +332,7 @@ class _LoginPageState extends State<LoginPage> {
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.left,
           keyboardType: TextInputType.phone,
+          autofillHints: const [AutofillHints.telephoneNumber],
           textInputAction: TextInputAction.done,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 letterSpacing: 1.6,
@@ -302,6 +349,20 @@ class _LoginPageState extends State<LoginPage> {
           ),
           onSubmitted: (_) => _submitPhone(auth),
         ),
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) ...[
+          const SizedBox(height: AppMetrics.space2),
+          Text('برای نمایش شماره‌های سیم‌کارت، اجازه دسترسی لازم است. در صورت نبود شماره می‌توانید دستی وارد کنید.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.textSecondary)),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: const ValueKey('choose-sim-number'),
+              onPressed: auth.busy || _readingSims ? null : _chooseSim,
+              icon: const Icon(Icons.sim_card_outlined),
+              label: const Text('انتخاب شماره از سیم‌کارت'),
+            ),
+          ),
+        ],
         const SizedBox(height: AppMetrics.space3),
         Row(
           children: <Widget>[

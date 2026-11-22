@@ -1,5 +1,8 @@
 package ir.umbrella.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.telephony.SubscriptionManager
 import android.app.Activity
 import android.content.Intent
 import android.content.ComponentName
@@ -29,9 +32,65 @@ class MainActivity : FlutterActivity() {
     private var pendingVpnPermission: MethodChannel.Result? = null
     private val vpnRequestCode = 4701
     private val smsRequestCode = 4702
+    private val simPermissionRequestCode = 4703
+    private var pendingSimNumbers: MethodChannel.Result? = null
     private var smsReceiver: BroadcastReceiver? = null
     private var smsChannel: MethodChannel? = null
     private val handler = Handler(Looper.getMainLooper())
+
+    // Phone numbers are sensitive: only query them after a user action and OS consent.
+    // A carrier may not store a number on a SIM, even if access is granted.
+    private fun readSimNumbers(): Map<String, Any> {
+        return try {
+            val manager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+                ?: return mapOf("status" to "unavailable", "sims" to emptyList<Any>())
+            @Suppress("DEPRECATION")
+            val sims = manager.activeSubscriptionInfoList.orEmpty().sortedBy { it.simSlotIndex }.map { info ->
+                val number = try {
+                    if (Build.VERSION.SDK_INT >= 33) manager.getPhoneNumber(info.subscriptionId)
+                    else { @Suppress("DEPRECATION") info.number }
+                } catch (_: SecurityException) { "" }.orEmpty()
+                mapOf("slot" to (info.simSlotIndex + 1).coerceAtLeast(1), "number" to number)
+            }
+            mapOf("status" to "ok", "sims" to sims)
+        } catch (_: Exception) {
+            mapOf("status" to "unavailable", "sims" to emptyList<Any>())
+        }
+    }
+
+    private fun requestSimNumbers(result: MethodChannel.Result) {
+        if (pendingSimNumbers != null) {
+            result.success(mapOf("status" to "busy", "sims" to emptyList<Any>())); return
+        }
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
+            result.success(mapOf("status" to "unavailable", "sims" to emptyList<Any>())); return
+        }
+        val permissions = mutableListOf(Manifest.permission.READ_PHONE_STATE)
+        if (Build.VERSION.SDK_INT >= 26) permissions.add(Manifest.permission.READ_PHONE_NUMBERS)
+        val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) {
+            result.success(readSimNumbers()); return
+        }
+        pendingSimNumbers = result
+        try {
+            requestPermissions(missing.toTypedArray(), simPermissionRequestCode)
+        } catch (_: Exception) {
+            pendingSimNumbers = null
+            result.success(mapOf("status" to "unavailable", "sims" to emptyList<Any>()))
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != simPermissionRequestCode) return
+        val pending = pendingSimNumbers ?: return
+        pendingSimNumbers = null
+        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            pending.success(readSimNumbers())
+        } else {
+            pending.success(mapOf("status" to "denied", "sims" to emptyList<Any>()))
+        }
+    }
 
     private fun stopSmsConsent() {
         smsReceiver?.let { runCatching { unregisterReceiver(it) } }
@@ -213,6 +272,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "minimizeApp" -> result.success(moveTaskToBack(true))
                     "installApk" -> result.success(installUpdate(call.argument<String>("path")))
+                    "readSimNumbers" -> requestSimNumbers(result)
                     "androidSdkInt" -> result.success(Build.VERSION.SDK_INT)
                     "isVpnPrepared" -> result.success(VpnService.prepare(this) == null)
                     "requestVpnPermission" -> requestVpnPermission(result)
@@ -293,6 +353,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         stopSmsConsent()
+        pendingSimNumbers?.success(mapOf("status" to "unavailable", "sims" to emptyList<Any>()))
+        pendingSimNumbers = null
         smsChannel?.setMethodCallHandler(null)
         smsChannel = null
         pendingVpnPermission?.success(false)

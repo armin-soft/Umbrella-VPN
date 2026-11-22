@@ -1,6 +1,7 @@
 import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -85,6 +86,48 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await LocalStore.instance.init();
     await TelegramChannelPrompt.markShown();
+  });
+
+  testWidgets('SIM picker requires a tap and fills only the selected number', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() { debugDefaultTargetPlatformOverride = null; });
+    const channel = MethodChannel('ir.umbrella.app/android');
+    var reads = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'readSimNumbers') {
+        reads++;
+        return {'status': 'ok', 'sims': [
+          {'slot': 1, 'number': '+989123456789'},
+          {'slot': 2, 'number': '09351234567'},
+          {'slot': 3, 'number': ''},
+        ]};
+      }
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    final native = _Native();
+    final sound = _Sound();
+    final window = WindowService(native);
+    final settings = SettingsController(native: native, sound: sound, window: window);
+    final auth = AuthController(native: native);
+    await tester.pumpWidget(MultiProvider(providers: [
+      Provider<WindowService>.value(value: window),
+      ChangeNotifierProvider<SettingsController>.value(value: settings),
+      ChangeNotifierProvider<AuthController>.value(value: auth),
+    ], child: MaterialApp(theme: AppTheme.dark(), home: const LoginPage())));
+    await tester.pumpAndSettle();
+    expect(reads, 0);
+    final button = find.byKey(const ValueKey('choose-sim-number'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(reads, 1);
+    expect(find.text('سیم‌کارت ۱'), findsOneWidget);
+    expect(find.text('سیم‌کارت ۲'), findsOneWidget);
+    expect(find.text('سیم‌کارت ۳'), findsOneWidget);
+    await tester.tap(find.text('سیم‌کارت ۲'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, contains('۰۹۳۵'));
   });
 
   for (final size in <Size>[const Size(320, 568), const Size(360, 640), const Size(412, 915), const Size(640, 360), const Size(800, 1280)]) {
