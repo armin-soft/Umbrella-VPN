@@ -102,6 +102,7 @@ class RuntimeConfig {
     // `independent_cache`، `rule_set_ip_cidr_accept_empty` و `strategy` روی
     // قوانین DNS) تا اجرای `srun` روی هیچ تنظیمی با خطای `FATAL` متوقف نشود.
     _migrateSingBox114Deprecations(config, experimental);
+    _configureDirectWireGuardResolver(config, profileTags, coreSettings);
 
     final _ResolvedTlsPadding? tlsPadding = _extractTlsPadding(coreSettings);
     final _ResolvedTlsFragment? tlsFragment = _extractTlsFragment(coreSettings);
@@ -192,6 +193,40 @@ class RuntimeConfig {
 
     // Patch route configuration (process matching, LAN bypass, destination resolve).
     _finalizeRoute(config, outbounds, coreSettings);
+  }
+
+  /// A domain-named WireGuard peer must be resolved before the tunnel can
+  /// carry the remote DNS traffic. Without an explicit resolver, the core can
+  /// route that lookup to dns-remote-group via the very endpoint being opened.
+  /// Use the existing direct DNS group only for our own direct profile. Never
+  /// override a custom resolver or bypass a configured chain/detour.
+  static void _configureDirectWireGuardResolver(
+    Map<String, dynamic> config,
+    Set<String> profileTags,
+    Map<String, dynamic>? coreSettings,
+  ) {
+    final String chain = '${coreSettings?['chain-status'] ?? 'off'}';
+    if (chain != 'off') return;
+    final dynamic dns = config['dns'];
+    final dynamic servers = dns is Map ? dns['servers'] : null;
+    if (servers is! List || !servers.any((dynamic entry) =>
+        entry is Map && entry['tag'] == 'dns-direct-group')) return;
+    final dynamic endpoints = config['endpoints'];
+    if (endpoints is! List) return;
+    for (final dynamic item in endpoints) {
+      if (item is! Map<String, dynamic> || item['type'] != 'wireguard' ||
+          item['tag'] != 'umbrella-direct-profile' ||
+          !profileTags.contains(item['tag']) ||
+          '${item['detour'] ?? ''}'.isNotEmpty ||
+          item['domain_resolver'] != null) continue;
+      final dynamic peers = item['peers'];
+      if (peers is! List || !peers.any((dynamic peer) {
+        if (peer is! Map) return false;
+        final String host = '${peer['address'] ?? ''}'.trim();
+        return host.isNotEmpty && InternetAddress.tryParse(host) == null;
+      })) continue;
+      item['domain_resolver'] = <String, dynamic>{'server': 'dns-direct-group'};
+    }
   }
 
   static void _finalizeRoute(

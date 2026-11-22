@@ -1050,4 +1050,82 @@ void main() {
     }
   }, skip: enabled ? false : 'Windows core required', timeout: const Timeout(Duration(seconds: 90)));
 
+  test('domain WireGuard peer resolves with direct DNS before tunnel is online', () async {
+    const String key = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
+    const String psk = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
+    final String input = '[Interface]\nPrivateKey = $key\nAddress = 10.0.0.2/32\nMTU = 1380\n'
+        '[Peer]\nPublicKey = $key\nPresharedKey = $psk\nEndpoint = peer.bootstrap.invalid:51820\n'
+        'AllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 1\n';
+    final VpnNode node = SubscriptionParser.parseAuto(input, 'wireguard-smoke').nodes.single;
+    final Directory temp = await Directory.systemTemp.createTemp('umbrella-wg-dns-test-');
+    final RawDatagramSocket dns = await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final Completer<void> peerLookup = Completer<void>();
+    Process? running;
+    final StringBuffer logs = StringBuffer();
+    dns.listen((RawSocketEvent event) {
+      if (event != RawSocketEvent.read) return;
+      final Datagram? packet = dns.receive();
+      if (packet == null || packet.data.length < 17) return;
+      final List<int> data = packet.data;
+      int cursor = 12;
+      final List<String> labels = <String>[];
+      while (cursor < data.length && data[cursor] != 0) {
+        final int size = data[cursor++];
+        if (size > 63 || cursor + size >= data.length) return;
+        labels.add(ascii.decode(data.sublist(cursor, cursor + size), allowInvalid: true));
+        cursor += size;
+      }
+      if (cursor + 5 > data.length) return;
+      final int questionEnd = cursor + 5;
+      final int qtype = data[cursor + 1] * 256 + data[cursor + 2];
+      if (labels.join('.').toLowerCase() == 'peer.bootstrap.invalid' && !peerLookup.isCompleted) {
+        peerLookup.complete();
+      }
+      final bool isA = qtype == 1;
+      final List<int> response = <int>[
+        data[0], data[1], 0x81, 0x80, 0, 1, 0, isA ? 1 : 0, 0, 0, 0, 0,
+        ...data.sublist(12, questionEnd),
+        if (isA) ...<int>[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 127, 0, 0, 1],
+      ];
+      dns.send(response, packet.address, packet.port);
+    });
+    try {
+      final File profile = File('${temp.path}/profile.json');
+      final File settings = File('${temp.path}/settings.json');
+      await profile.writeAsString(DirectProfile.encode(node));
+      final ServerSocket freePort = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int mixedPort = freePort.port;
+      await freePort.close();
+      final Map<String, dynamic> options = UmbrellaCore.settingsJson(
+        tun: false, systemProxy: false, port: mixedPort,
+        logFile: '${temp.path}/core.log', networkSettings: const AppSettings(),
+      );
+      options['direct-dns-address'] = 'udp://127.0.0.1:${dns.port}';
+      await settings.writeAsString(jsonEncode(options));
+      final File runtime = await CoreRuntime.compile(
+        executable: binary!, workDir: File(binary).parent.path, runDir: temp.path,
+        linksPath: profile.path, settingsPath: settings.path,
+        clashApiPort: 0, cancelled: () => false, useCache: false,
+      );
+      final Map<String, dynamic> config = jsonDecode(await runtime.readAsString());
+      final Map<String, dynamic> endpoint = (config['endpoints'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((item) => item['tag'] == 'umbrella-direct-profile');
+      expect(endpoint['domain_resolver']['server'], 'dns-direct-group');
+      expect(endpoint['peers'][0]['pre_shared_key'], psk);
+      expect(endpoint['mtu'], 1380);
+      running = await Process.start(binary, <String>['srun', '-c', runtime.path, '-D', temp.path],
+        workingDirectory: File(binary).parent.path, runInShell: false);
+      running.stdout.transform(utf8.decoder).listen(logs.write);
+      running.stderr.transform(utf8.decoder).listen(logs.write);
+      await peerLookup.future.timeout(const Duration(seconds: 20),
+        onTimeout: () => throw TestFailure('Peer DNS was not sent to direct resolver. $logs'));
+    } finally {
+      running?.kill();
+      if (running != null) await running.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      dns.close();
+      await temp.delete(recursive: true);
+    }
+  }, skip: enabled ? false : 'Windows core required', timeout: const Timeout(Duration(seconds: 60)));
+
 }

@@ -121,6 +121,30 @@ void main() {
       expect((config['outbounds'] as List<dynamic>).length, 2);
     }
   });
+  test('WireGuard peer domain uses direct DNS without changing chains or other endpoints', () {
+    Map<String, dynamic> profile({String detour = '', String chain = 'off'}) {
+      final Map<String, dynamic> config = fixture();
+      config['dns'] = <String, dynamic>{'servers': <dynamic>[
+        <String, dynamic>{'type': 'group', 'tag': 'dns-direct-group'},
+      ]};
+      config['endpoints'] = <dynamic>[
+        <String, dynamic>{'type': 'wireguard', 'tag': 'umbrella-direct-profile',
+          if (detour.isNotEmpty) 'detour': detour,
+          'peers': <dynamic>[<String, dynamic>{'address': 'peer.example.invalid'}]},
+        <String, dynamic>{'type': 'wireguard', 'tag': 'other',
+          'peers': <dynamic>[<String, dynamic>{'address': 'other.example.invalid'}]},
+      ];
+      RuntimeConfig.finalize(config, profileTags: <String>{'umbrella-direct-profile'},
+        coreSettings: <String, dynamic>{'chain-status': chain});
+      return config;
+    }
+    final Map<String, dynamic> normal = profile();
+    expect(normal['endpoints'][0]['domain_resolver'], <String, dynamic>{'server': 'dns-direct-group'});
+    expect(normal['endpoints'][1]['domain_resolver'], isNull);
+    expect(profile(detour: 'chain-hop')['endpoints'][0]['domain_resolver'], isNull);
+    expect(profile(chain: 'extra_security')['endpoints'][0]['domain_resolver'], isNull);
+  });
+
   test('srun enables only the pinned builder DNS compatibility before loading Go', () {
     final String native = File('native/umbrella_launcher.c').readAsStringSync();
     expect(native, contains('strcmp(argv[1], "srun") == 0'));

@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v4';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v5';
 
   static int _nonce = 0;
 
