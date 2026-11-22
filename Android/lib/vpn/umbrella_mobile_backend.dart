@@ -12,6 +12,8 @@ import '../umbrella_core/mtls_credentials.dart';
 import '../umbrella_core/start_coordinator.dart';
 import 'mobile_session.dart';
 import 'mobile_core_settings.dart';
+import 'mobile_monitor_logs.dart';
+export 'mobile_monitor_logs.dart' show classifyMonitorFailure;
 
 /// Parse converts subscription links into the sing-box profile expected by
 /// the core's non-raw Start. Never pass through errors or an empty profile.
@@ -24,25 +26,6 @@ String validatedParsedProfile(ParseResponse response) {
     throw const FormatException('Invalid parsed VPN profile');
   }
   return response.content;
-}
-
-/// Never export a core log line: tags, hosts and exception text can contain
-/// subscription credentials. Only classify a small, fixed set of failures.
-String? classifyMonitorFailure(String message) {
-  final lower = message.toLowerCase();
-  final marker = lower.indexOf(': failed:');
-  if (!lower.contains('monitoring result ') || marker < 0) {
-    return lower.contains('url test did not return') ? 'TIMEOUT' : null;
-  }
-  final error = lower.substring(marker + ': failed:'.length);
-  if (error.contains('certificate') || error.contains('x509')) return 'CERTIFICATE';
-  if (error.contains('tls') || error.contains('handshake')) return 'TLS';
-  if (error.contains('no such host') || error.contains('dns') || error.contains('lookup ')) return 'DNS';
-  if (error.contains('timeout') || error.contains('deadline exceeded')) return 'TIMEOUT';
-  if (error.contains('connection refused')) return 'REFUSED';
-  if (error.contains('connection reset')) return 'RESET';
-  if (error.contains('network is unreachable') || error.contains('no route to host')) return 'UNREACHABLE';
-  return 'OTHER';
 }
 
 /// Connects the mobile engine over pinned mutual TLS. The injected verifier
@@ -77,6 +60,7 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
   String? _workingDirectory;
   bool _nativeStartAttempted = false;
   StreamSubscription<CoreLogMessage>? _coreLogs;
+  MobileMonitorLogs? _monitorLogs;
   final Set<String> _loggedFailures = <String>{};
 
   @override
@@ -191,6 +175,19 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
         throw StateError('Mobile monitor or control API was not safely configured');
       }
       _trace('monitor.config_verified');
+      final settings = jsonDecode(settingsJson) as Map<String, dynamic>;
+      final logs = MobileMonitorLogs(
+        port: settings['clash-api-port'] as int,
+        secret: settings['web-secret'] as String,
+        onCategory: (category) {
+          if (_loggedFailures.add(category)) _trace('monitor.failure_$category');
+        },
+        onStatus: (status) => _trace('monitor.clash_$status'),
+      );
+      _monitorLogs = logs;
+      // The core's LogListener does not forward sing-box service logs in
+      // non-debug mode. Subscribe to the authenticated local log stream instead.
+      await logs.start();
     } catch (error) {
       _traceError('core.start', error);
       throw const MobileVpnFailure('شروع تونل در هسته ناموفق بود.');
@@ -228,6 +225,8 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
 
   @override
   Future<void> stopService() async {
+    _monitorLogs?.close();
+    _monitorLogs = null;
     final connection = _connection;
     _connection = null;
     _workingDirectory = null;
