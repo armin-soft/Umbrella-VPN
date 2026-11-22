@@ -112,6 +112,7 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
 [['📲دستگاه های برنامه', 'admin_devices']],
 [['🔐سقف دستگاه حساب', 'device_limit_menu']],
+[['🗑حذف همه دستگاه ها', 'admin_devices_delete_all_menu']],
 ]);
 self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
 }
@@ -396,12 +397,33 @@ $Buttons[] = [[
 ]];
 $Buttons[] = [Menu::button('🗑حذف دستگاه ' . $Number, 'admin_device_delete:' . (int)$Row['ID'] . ':' . $Page)];
 }
-if ($Rows !== []) $Buttons[] = [Menu::button('🗑حذف گروهی دستگاه های این صفحه', 'admin_devices_delete_page:' . $Page)];
 $Buttons = array_merge($Buttons, Menu::pages($Page, $Page_Count, 'admin_devices_page:'));
 $Buttons[] = Menu::back('منوی قبلی', 'admin_devices_menu');
 $Buttons[] = Menu::adminHome();
 self::logMenuProblems('app-devices', $Buttons);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+/** Separate destructive action; confirmation is bound to a snapshot watermark. */
+public static function deleteAllDevicesMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Db = Database::getInstance();
+$LastId = (int)$Db->scalar('SELECT COALESCE(MAX(`ID`), 0) FROM `App_Devices`', [], 0);
+$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_Devices` WHERE `ID` <= ?', [$LastId], 0);
+if ($LastId <= 0 || $Count <= 0) {
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId,
+Helper::adminGreeting($Context, 'حذف همه دستگاه ها') . 'هیچ دستگاهی ثبت نشده است.' . Helper::adminFooter(),
+TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'admin_devices_menu'), Menu::adminHome()]));
+return;
+}
+$Token = DeviceDeletion::prepareAll($Context->UserId, $Context->ChatId, $LastId);
+$Text = Helper::adminGreeting($Context, 'حذف همه دستگاه ها')
+. '⚠️ ' . Helper::toPersian((string)$Count) . " دستگاه ثبت شده حذف می شود. نشست ها و درخواست های ورود آن ها باطل می شود؛ اشتراک ها حذف نمی شوند. دستگاه هایی با شناسه بالاتر از محدوده فعلی حذف نمی شوند.\n"
+. 'این عملیات تنها پس از تأیید نهایی انجام می شود.' . Helper::adminFooter();
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
+[Menu::button('🗑تأیید حذف همه دستگاه ها', 'admin_devices_delete_confirm:' . $Token)],
+Menu::back('انصراف', 'admin_devices_delete_cancel:' . $Token), Menu::adminHome(),
+]));
 }
 
 /** Preview either one row or this page's bounded batch; never delete on first tap. */
@@ -2912,19 +2934,7 @@ $Text = self::header($Context, 'مجوز دستگاه کاربران')
 
 Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:device_limit_pick', 'Temp_UID' => $Telegram_Id]);
 
-TelegramClient::sendMessage($Context->ChatId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
-[
-['text' => '🔹۱ دستگاه', 'callback_data' => 'device_limit_set_1'],
-['text' => '🔹۲ دستگاه', 'callback_data' => 'device_limit_set_2'],
-],
-[
-['text' => '🔹۳ دستگاه', 'callback_data' => 'device_limit_set_3'],
-['text' => '🔹۵ دستگاه', 'callback_data' => 'device_limit_set_5'],
-],
-[
-['text' => '🔹۱۰ دستگاه', 'callback_data' => 'device_limit_set_10'],
-],
-], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
+TelegramClient::sendMessage($Context->ChatId, $Text . "\n🔢یک عدد از ۱ تا ۹۹ بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مجوز دستگاه', 'device_limit_menu')));
 }
 
 /** دومین گام، وقتی مدیر تعداد را تایپ می کند (به جای انتخاب از دکمه ها). */
@@ -2938,25 +2948,13 @@ self::deviceLimitMenu($Context);
 return;
 }
 
-// «لغو» و هر ورودی نامعتبر: همان صفحه با دکمه ها دوباره نمایش داده می شود.
-if (!preg_match('/^\d{1,2}$/', $Number) || (int)$Number < 1) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⚠️فقط یک عدد بین ۱ تا ۹۹ مجاز است؛ یکی از دکمه های زیر را انتخاب کنید یا عدد را دوباره بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
-[
-['text' => '🔹۱ دستگاه', 'callback_data' => 'device_limit_set_1'],
-['text' => '🔹۲ دستگاه', 'callback_data' => 'device_limit_set_2'],
-],
-[
-['text' => '🔹۳ دستگاه', 'callback_data' => 'device_limit_set_3'],
-['text' => '🔹۵ دستگاه', 'callback_data' => 'device_limit_set_5'],
-],
-[
-['text' => '🔹۱۰ دستگاه', 'callback_data' => 'device_limit_set_10'],
-],
-], Menu::adminNav('مجوز دستگاه', 'device_limit_menu'))));
+// Accept both Persian and ASCII digits; never silently clamp an invalid value.
+if (!preg_match('/^[0-9]{1,2}$/D', $Number) || (int)$Number < 1 || (int)$Number > 99) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⚠️فقط عددی بین ۱ تا ۹۹ بفرستید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مجوز دستگاه', 'device_limit_menu')));
 return;
 }
 
-self::deviceLimitSet($Context, min(99, (int)$Number));
+self::deviceLimitSet($Context, (int)$Number);
 }
 
 /** Third step: persist the choice. */
@@ -2970,7 +2968,7 @@ try { TelegramClient::answerCallbackQuery($Context->CallbackId); } catch (Throwa
 $Session = Repository::getUserSession($Context->UserId);
 $Telegram_Id = (int)($Session['Temp_UID'] ?? 0);
 
-if ($Telegram_Id <= 0) {
+if ($Telegram_Id <= 0 || ($Session['Flow'] ?? '') !== 'admin:device_limit_pick') {
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'مجوز دستگاه کاربران') . "⌛️این عملیات منقضی شده است؛ دوباره از منو شروع کنید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('مجوز دستگاه کاربران', 'device_limit_menu')));
 return;
 }

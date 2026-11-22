@@ -28,14 +28,14 @@ $Row = Database::getInstance()->fetch(
 $Max = (int)($Row['Max_Devices'] ?? 1);
 
 if ($Max < 1) $Max = 1;
-if ($Max > 10) $Max = 10;
+if ($Max > 99) $Max = 99;
 
 return $Max;
 }
 
-/** Admin action: persist the cap (clamped to 1..10). */
+/** Admin action: persist the cap (clamped to 1..99). */
 public static function setMaxDevices(int $Telegram_Id, int $Max): int {
-$Max = max(1, min(10, $Max));
+$Max = max(1, min(99, $Max));
 
 Database::getInstance()->execute(
 'INSERT INTO `App_Device_Limits` (`Telegram_ID`, `Max_Devices`) VALUES (?, ?)

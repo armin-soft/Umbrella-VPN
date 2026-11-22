@@ -375,6 +375,7 @@ match($Data) {
 'app_fdom_clear_ok' => AppFlow::filterDomainsClearConfirm($Context),
 'app_push_start' => AdminFlow::broadcastMenu($Context),
 'device_limit_menu' => AdminFlow::deviceLimitMenu($Context),
+'admin_devices_delete_all_menu' => AdminFlow::deleteAllDevicesMenu($Context),
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
 'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
 'nowruz_menu_toggle' => AdminFlow::toggleNowruzMenu($Context),

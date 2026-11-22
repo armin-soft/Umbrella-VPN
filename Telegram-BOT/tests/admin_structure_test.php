@@ -132,7 +132,7 @@ $Menus = [
 'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_content_filter', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
-'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu']],
+'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu']],
 'accountsMenu' => ['admin_accounts_menu', 'مدیریت', ['admin_users', 'حذف کاربر اول', 'منقضی اشتراک اول']],
 'serverClientsMenu' => ['عملیات کلاینت سرور', 'مدیریت', ['فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'بروز رسانی داده های کاربران اول']],
 'serverConfig' => ['پیکربندی سرور', 'مدیریت', ['وضعیت سرور', 'سرویس های سرور', 'بروز رسانی میزان استفاده اول', 'تنظیمات ربات']],
@@ -146,7 +146,7 @@ $Menus = [
 $AdminWidths = [
 'menu' => array_fill(0, 14, 1),
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
-'devicesMenu' => [1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
+'devicesMenu' => [1, 1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
 'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 1, 1],
 'supportMenu' => [1], 'ticketAdminMenu' => [1], 'subscriptionsMenu' => [1, 1, 1], 'systemMenu' => [1, 1, 1],
@@ -346,7 +346,7 @@ check(str_contains($Body, 'Menu::userHome()'), $Method . ': keeps user home');
 // Device cards: owner links, safe display, stable numbering and bounded pagination.
 AdminFlow::devicesMenu($Context);
 check(TelegramClient::$Text === "مدیریت دستگاه ها\n📌*بخش مورد نظر را انتخاب کنید:*", 'device category uses plain greeting section and separate prompt');
-check(calls() === ['admin_devices', 'device_limit_menu', 'مدیریت'], 'device limit lives only in device management');
+check(calls() === ['admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu', 'مدیریت'], 'device limit lives only in device management');
 for ($Index = 0; $Index < 7; $Index++) {
 Database::$Devices[] = [
 'ID' => $Index + 1, 'Device_ID' => str_pad((string)$Index, 64, 'a'),

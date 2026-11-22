@@ -66,6 +66,7 @@ return isset(Repository::$Settings[$Args[0]]) ? ['Value' => Repository::$Setting
 public function fetchAll(string $Sql, array $Args): array {
 self::$Queries++; self::$LastParams = $Args;
 if (str_contains($Sql, 'FROM `Users`')) return array_slice(array_values(self::$Users), $Args[1], $Args[0]);
+if (str_contains($Sql, 'WHERE `ID` <= ? FOR UPDATE')) return array_values(array_filter(self::$Devices, static fn(array $row): bool => $row['ID'] <= $Args[0]));
 if (str_contains($Sql, 'WHERE `ID` IN')) { check(str_contains($Sql, 'FOR UPDATE'), 'selected device rows locked'); return array_values(array_intersect_key(self::$Devices, array_flip($Args))); }
 if (str_contains($Sql, 'WHERE `ID` = ?')) return isset(self::$Devices[$Args[0]]) ? [self::$Devices[$Args[0]]] : [];
 if (str_contains($Sql, 'LIMIT 3 OFFSET')) return array_slice(array_values(self::$Devices), $Args[0], 3);
@@ -135,6 +136,11 @@ seed(); $Token = DeviceDeletion::prepare(99,99,[1,2,3],0); Database::$Fail = tru
 try { DeviceDeletion::confirm(99,99,$Token); check(false, 'must throw'); } catch (RuntimeException) {}
 check(count(Database::$Devices) === 7 && Database::$Sessions['same_prefix_1'] === 'active' && isset(Database::$Requests['same_prefix_1']), 'transaction failure rolls back all related deletion');
 Database::$Fail = false; check(DeviceDeletion::confirm(99,99,$Token)['count'] === 3, 'failed transaction can be retried');
+seed(); $Token = DeviceDeletion::prepareAll(99,99,7);
+Database::$Devices[8] = ['ID'=>8, 'Device_ID'=>'later'];
+$Result = DeviceDeletion::confirm(99,99,$Token);
+check($Result['count'] === 7 && array_keys(Database::$Devices) === [8], 'delete-all preserves later registrations');
+check(!DeviceDeletion::confirm(99,99,$Token)['valid'], 'delete-all cannot be replayed');
 seed(); $Token = DeviceDeletion::prepare(99,99,[1],0);
 unset(Database::$Devices[1]); Database::$Devices[8] = ['ID'=>8, 'Device_ID'=>'same_prefix_1'];
 check(DeviceDeletion::confirm(99,99,$Token)['count'] === 0 && isset(Database::$Devices[8]), 'old confirmation cannot delete re-registered device');
