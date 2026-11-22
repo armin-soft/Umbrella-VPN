@@ -1112,8 +1112,8 @@ class _StatusOrbState extends State<StatusOrb>
                 ),
               ),
               Container(
-                width: widget.size * 0.74,
-                height: widget.size * 0.74,
+                width: widget.size * 0.90,
+                height: widget.size * 0.90,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -1124,8 +1124,8 @@ class _StatusOrbState extends State<StatusOrb>
               ),
               if (widget.active)
                 SizedBox(
-                  width: widget.size * 0.82,
-                  height: widget.size * 0.82,
+                  width: widget.size * 0.96,
+                  height: widget.size * 0.96,
                   child: CircularProgressIndicator(
                     value: null,
                     strokeWidth: 2,
@@ -1139,8 +1139,8 @@ class _StatusOrbState extends State<StatusOrb>
                   enabled: true,
                   child: Image.asset(
                     widget.image,
-                    width: widget.size * 0.66,
-                    height: widget.size * 0.66,
+                    width: widget.size * 0.84,
+                    height: widget.size * 0.84,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.medium,
@@ -1151,8 +1151,8 @@ class _StatusOrbState extends State<StatusOrb>
                     ) =>
                         Image.asset(
                       BrandAssets.logo,
-                      width: widget.size * 0.66,
-                      height: widget.size * 0.66,
+                      width: widget.size * 0.84,
+                      height: widget.size * 0.84,
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
                       filterQuality: FilterQuality.medium,
@@ -1162,8 +1162,8 @@ class _StatusOrbState extends State<StatusOrb>
                         StackTrace? fallbackStack,
                       ) =>
                           Container(
-                        width: widget.size * 0.66,
-                        height: widget.size * 0.66,
+                        width: widget.size * 0.84,
+                        height: widget.size * 0.84,
                         color: colors.surfaceHigh,
                         child: Icon(
                           Icons.shield_outlined,

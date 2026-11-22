@@ -261,6 +261,15 @@ void main() {
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
           if (page is ConnectPage && problem == null && problems.length == errorsBefore) {
+            final orbRect = tester.getRect(find.byType(StatusOrb));
+            if (size.height >= 568 && textScale == 1.0) {
+              expect(orbRect.width, greaterThan(110), reason: 'Status artwork should remain prominent on phones');
+            }
+            final artwork = tester.widget<StatusOrb>(find.byType(StatusOrb));
+            final statusImage = find.descendant(of: find.byType(StatusOrb), matching: find.byType(Image)).first;
+            expect(tester.widget<Image>(statusImage).width, closeTo(artwork.size * .84, .01));
+            final badge = find.descendant(of: find.byKey(const ValueKey('connect-action')), matching: find.byIcon(Icons.power_settings_new_rounded));
+            expect(tester.getCenter(badge).dx, greaterThan(orbRect.center.dx));
             expect(find.descendant(of: find.byWidget(page), matching: find.byType(Scrollable)), findsNothing);
             expect(find.text('مدت اتصال'), findsOneWidget);
             expect(find.text('دریافتی'), findsOneWidget);

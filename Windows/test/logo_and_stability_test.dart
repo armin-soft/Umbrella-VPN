@@ -75,6 +75,8 @@ void main() {
       await tester.pump();
       final Image image = tester.widget<Image>(find.byType(Image).first);
       expect(image.gaplessPlayback, isTrue, reason: status.name);
+      expect(image.width, closeTo(240 * .84, .01), reason: status.name);
+      expect(image.height, closeTo(240 * .84, .01), reason: status.name);
       expect(find.byIcon(Icons.shield_outlined), findsNothing, reason: status.name);
     }
   });

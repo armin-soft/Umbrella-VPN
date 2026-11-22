@@ -172,6 +172,10 @@ void main() {
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
           if (page is ConnectPage && problem == null) {
+            final orb = tester.widget<StatusOrb>(find.byType(StatusOrb));
+            expect(orb.size, greaterThanOrEqualTo(240));
+            final image = find.descendant(of: find.byType(StatusOrb), matching: find.byType(Image)).first;
+            expect(tester.widget<Image>(image).width, closeTo(orb.size * .84, .01));
             // In RTL, omitting anchorPoint would select this hinge's right pane.
             final Finder settingsButton = find.byKey(
               const ValueKey<String>('connection-settings-button'),

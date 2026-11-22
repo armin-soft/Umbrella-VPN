@@ -289,8 +289,10 @@ class _ConnectPageState extends State<ConnectPage> {
         // Keep the Windows composition, including the statistics footer, in
         // a fixed viewport. Scale only when the screen cannot contain it.
         final scale = MediaQuery.textScalerOf(context).scale(1.0);
-        final double orb = constraints.maxHeight < 650 ? 155 : 200;
-        final double cardHeight = (780 * scale).clamp(constraints.maxHeight - 16, double.infinity);
+        // Use most of the card width for the status artwork. The fixed
+        // composition still scales down on short screens, without scrolling.
+        final double orb = (constraints.maxWidth - 72).clamp(160.0, 260.0);
+        final double cardHeight = (900 * scale).clamp(constraints.maxHeight - 16, double.infinity);
         return Padding(
           padding: const EdgeInsets.all(8),
           child: FittedBox(
@@ -410,9 +412,12 @@ class _ConnectPageState extends State<ConnectPage> {
                                   active: status.busy,
                                 ),
                                 if (!status.busy)
-                                  Container(
-                                    width: orb * 0.28,
-                                    height: orb * 0.28,
+                                  Positioned(
+                                    right: orb * 0.06,
+                                    bottom: orb * 0.06,
+                                    child: Container(
+                                    width: orb * 0.24,
+                                    height: orb * 0.24,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: (status.active
@@ -432,10 +437,10 @@ class _ConnectPageState extends State<ConnectPage> {
                                     ),
                                     child: Icon(
                                       Icons.power_settings_new_rounded,
-                                      size: orb * 0.14,
+                                      size: orb * 0.12,
                                       color: colors.onPrimary,
                                     ),
-                                  ),
+                                  )),
                               ],
                             ),
                           ),

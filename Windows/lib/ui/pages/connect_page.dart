@@ -258,9 +258,12 @@ class _ConnectPageState extends State<ConnectPage> {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double orb = constraints.maxHeight < 650
-            ? 200
-            : (constraints.maxHeight < 780 ? 240 : 272);
+        // Prominent artwork on desktop, bounded by the content width.
+        final double preferredOrb = constraints.maxHeight < 650
+            ? 240
+            : (constraints.maxHeight < 780 ? 290 : 330);
+        final double availableOrb = (constraints.maxWidth - 2 * AppMetrics.space6 - 2 * AppMetrics.space6).clamp(100.0, 330.0);
+        final double orb = preferredOrb.clamp(100.0, availableOrb);
         return SingleChildScrollView(
           padding: AppMetrics.pagePadding,
           child: ConstrainedBox(
@@ -412,9 +415,12 @@ class _ConnectPageState extends State<ConnectPage> {
                                   active: status.busy,
                                 ),
                                 if (!status.busy)
-                                  Container(
-                                    width: orb * 0.28,
-                                    height: orb * 0.28,
+                                  Positioned(
+                                    right: orb * 0.06,
+                                    bottom: orb * 0.06,
+                                    child: Container(
+                                    width: orb * 0.24,
+                                    height: orb * 0.24,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: (status.active
@@ -434,10 +440,10 @@ class _ConnectPageState extends State<ConnectPage> {
                                     ),
                                     child: Icon(
                                       Icons.power_settings_new_rounded,
-                                      size: orb * 0.14,
+                                      size: orb * 0.12,
                                       color: colors.onPrimary,
                                     ),
-                                  ),
+                                  )),
                               ],
                             ),
                           ),
