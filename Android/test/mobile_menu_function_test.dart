@@ -21,9 +21,12 @@ class _Sound implements SoundService {
 }
 
 void main() {
-  testWidgets('quick menu rejects unsupported modes and LAN but permits recovery', (tester) async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await LocalStore.instance.init();
+  });
+  testWidgets('quick menu rejects unsupported modes and LAN but permits recovery', (tester) async {
     final native = NativeBridge();
     final sound = _Sound();
     final settings = SettingsController(native: native, sound: sound, window: WindowService(native));
