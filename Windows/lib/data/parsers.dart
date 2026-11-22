@@ -78,7 +78,6 @@ class SubscriptionParser {
       _parseClash(trimmed, sourceId),
       _parseWireguard(trimmed, sourceId),
       _parseMieru(trimmed, sourceId),
-      _parseAmnezia(trimmed, sourceId),
     ];
     final ParseReport merged = ParseReport(sourceId: sourceId);
     for (final ParseReport attempt in attempts) {
@@ -1301,13 +1300,25 @@ class SubscriptionParser {
       Map<String, dynamic> profile = entry;
       final List<dynamic> profiles = JsonX.asList(entry['profiles']);
       if (profiles.isNotEmpty) {
-        profile = JsonX.asMap(profiles.first);
+        final String active = JsonX.text(entry['activeProfile']);
+        final List<Map<String, dynamic>> matches = profiles
+            .map(JsonX.asMap)
+            .where((Map<String, dynamic> item) =>
+                JsonX.text(item['profileName']) == active)
+            .toList();
+        if (active.isNotEmpty && matches.isEmpty) {
+          report.problems.add('پروفایل فعال میرو در فایل پیدا نشد.');
+          continue;
+        }
+        profile = matches.isNotEmpty ? matches.first : JsonX.asMap(profiles.first);
       }
+      final List<dynamic> servers = JsonX.asList(profile['servers']);
       final Map<String, dynamic> endpoint = JsonX.asMap(
-        profile['serverEndpoint'] ?? profile['end'] ?? profile['endpoint'],
+        profile['serverEndpoint'] ?? profile['end'] ?? profile['endpoint'] ??
+            (servers.isNotEmpty ? servers.first : null),
       );
       final String host = JsonX.text(
-        endpoint['ipAddress'] ?? endpoint['host'] ?? entry['host'],
+        endpoint['ipAddress'] ?? endpoint['domainName'] ?? endpoint['host'] ?? entry['host'],
       );
       final List<dynamic> bindings = JsonX.asList(
         endpoint['portBindings'] ?? profile['portBindings'],
@@ -1344,7 +1355,11 @@ class SubscriptionParser {
             'password': password,
             'transport': transport.toUpperCase(),
             'mtu': JsonX.integer(profile['mtu'], 1400),
-            'multiplexing': JsonX.text(profile['multiplexing'], 'MULTIPLEXING_OFF'),
+            'multiplexing': profile['multiplexing'] is Map
+                ? JsonX.text(JsonX.asMap(profile['multiplexing'])['level'], 'MULTIPLEXING_OFF')
+                : JsonX.text(profile['multiplexing'], 'MULTIPLEXING_OFF'),
+            'handshakeMode': JsonX.text(profile['handshakeMode']),
+            'portBindings': bindings,
           },
           raw: jsonEncode(profile),
         ),

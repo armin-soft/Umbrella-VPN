@@ -176,6 +176,52 @@ proxies:
     });
   });
 
+  group('پروفایل های مستقیم پنل', () {
+    test('تشخیص خودکار وایرگارد و آمنزیا را با هم اشتباه نمی گیرد', () {
+      const String config = "[Interface]\nPrivateKey = synthetic\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = synthetic-peer\nEndpoint = example.invalid:51820\n";
+      final ParseReport plain = SubscriptionParser.parseAuto(config, 'test');
+      expect(plain.nodes, hasLength(1));
+      expect(plain.nodes.single.protocol, NodeProtocol.wireguard);
+      final ParseReport awg = SubscriptionParser.parseAuto(
+        config.replaceFirst('[Peer]', 'Jc = 3\nH1 = 12\n[Peer]'), 'test');
+      expect(awg.nodes, hasLength(1));
+      expect(awg.nodes.single.protocol, NodeProtocol.amnezia);
+      expect(awg.nodes.single.params['jc'], '3');
+    });
+
+    test('میرو پروفایل فعال، سرور و همه portBindings را می خواند', () {
+      final String body = jsonEncode(<String, dynamic>{
+        'activeProfile': 'selected',
+        'profiles': <Object>[
+          <String, dynamic>{'profileName': 'unused'},
+          <String, dynamic>{
+            'profileName': 'selected',
+            'user': <String, String>{'name': 'test', 'password': 'synthetic'},
+            'servers': <Object>[
+              <String, dynamic>{
+                'domainName': 'example.invalid',
+                'portBindings': <Object>[
+                  <String, Object>{'port': 1234, 'protocol': 'TCP'},
+                  <String, Object>{'port': 5678, 'protocol': 'UDP'},
+                ],
+              },
+            ],
+            'multiplexing': <String, String>{'level': 'MULTIPLEXING_LOW'},
+            'handshakeMode': 'HANDSHAKE_NO_WAIT',
+          },
+        ],
+      });
+      final ParseReport report = SubscriptionParser.parseAuto(body, 'test');
+      expect(report.nodes, hasLength(1));
+      final VpnNode node = report.nodes.single;
+      expect(node.protocol, NodeProtocol.mieru);
+      expect(node.host, 'example.invalid');
+      expect(node.params['portBindings'], hasLength(2));
+      expect(node.params['multiplexing'], 'MULTIPLEXING_LOW');
+      expect(node.params['handshakeMode'], 'HANDSHAKE_NO_WAIT');
+    });
+  });
+
   group('فایل های مستقیم پنل', () {
     test('فهرست Base64 همان لینک های استاندارد را می دهد', () {
       const String line =
