@@ -71,6 +71,7 @@ void main() {
         'count': RuntimeConfig.keepTopCount,
         'batch': RuntimeConfig.keepTopBatch,
         'quick': true,
+        'refresh': '1h',
       },
     );
     expect(config['experimental']['monitoring']['workers'], 16);
@@ -99,6 +100,28 @@ void main() {
       85,
     );
     expect(regular['experimental']['monitoring']['keep_top'], isNull);
+  });
+  test('large pool keeps client endpoints lazy and refreshes parked proxies hourly', () {
+    final config = fixture();
+    final endpoints = <dynamic>[
+      for (var i = 0; i < 129; i++)
+        <String, dynamic>{'type': i.isEven ? 'wireguard' : 'awg', 'tag': 'peer-$i'},
+      <String, dynamic>{'type': 'wireguard', 'tag': 'server', 'listen_port': 1234},
+      <String, dynamic>{'type': 'warp', 'tag': 'chain-hop'},
+    ];
+    config['endpoints'] = endpoints;
+    RuntimeConfig.finalize(config, profileTags: <String>{
+      'profile', 'server', for (var i = 0; i < 129; i++) 'peer-$i',
+    });
+    expect(endpoints.where((dynamic e) => e['lazy'] == true).length, 129);
+    expect(endpoints[129]['lazy'], isNull);
+    expect(endpoints[130]['lazy'], isNull);
+    expect(config['experimental']['monitoring']['keep_top']['refresh'], '1h');
+    final small = fixture();
+    small['endpoints'] = <dynamic>[<String, dynamic>{'type': 'wireguard', 'tag': 'one'}];
+    RuntimeConfig.finalize(small, profileTags: {'profile', 'one'});
+    expect(small['endpoints'][0]['lazy'], isNull);
+    expect(small['experimental']['monitoring']['keep_top'], isNull);
   });
   test('IP upload plus domain download gets a resolving dialer, preserving wire identities', () {
     final Map<String, dynamic> config = fixture();

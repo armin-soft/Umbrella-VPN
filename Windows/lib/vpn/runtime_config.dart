@@ -3,7 +3,7 @@ import 'dart:io';
 import '../models/advanced_network.dart';
 
 /// Finalize the pinned core's `build` output for `srun`, matching official
-/// Hiddify (`hiddify-app` + `hiddify-core v5.9.11`) startup semantics AND
+/// Hiddify (`hiddify-app` + `hiddify-core v5.9.15`) startup semantics AND
 /// patching upstream `builder.go` / `outbound.go` gaps so every setting in
 /// Umbrella Windows takes real effect on the live tunnel:
 ///
@@ -29,6 +29,11 @@ class RuntimeConfig {
     'vless', 'vmess', 'trojan', 'shadowsocks', 'socks', 'http', 'hysteria',
     'hysteria2', 'tuic', 'anytls', 'shadowtls', 'ssh', 'naive', 'mieru',
     'snell', 'trusttunnel', 'sudoku',
+  };
+
+  // Client endpoints supported by upstream 5.9.15's LazyProxyTags.
+  static const Set<String> lazyEndpointTypes = <String>{
+    'wireguard', 'awg', 'openvpn-client', 'openconnect', 'masque-client', 'warp',
   };
 
   static const Set<String> _tlsTrickOutboundTypes = <String>{
@@ -179,11 +184,30 @@ class RuntimeConfig {
       extra.add(resolver);
     }
 
-    if (lazyCount > autoKeepTopThreshold) {
+    final List<Map<String, dynamic>> lazyEndpoints = <Map<String, dynamic>>[];
+    final dynamic rawEndpoints = config['endpoints'];
+    if (rawEndpoints is List) {
+      for (final dynamic item in rawEndpoints) {
+        if (item is! Map<String, dynamic>) continue;
+        final String type = '${item['type'] ?? ''}';
+        final String tag = '${item['tag'] ?? ''}';
+        if (!profileTags.contains(tag) || !lazyEndpointTypes.contains(type)) continue;
+        // Listening WireGuard/AWG/WARP endpoints serve peers and must not sleep.
+        final dynamic listenPort = item['listen_port'];
+        if (const <String>{'wireguard', 'awg', 'warp'}.contains(type) &&
+            listenPort != null && listenPort != 0) continue;
+        lazyEndpoints.add(item);
+      }
+    }
+    if (lazyCount + lazyEndpoints.length > autoKeepTopThreshold) {
+      for (final Map<String, dynamic> endpoint in lazyEndpoints) {
+        endpoint['lazy'] = true;
+      }
       monitoring['keep_top'] = <String, dynamic>{
         'count': keepTopCount,
         'batch': keepTopBatch,
         'quick': true,
+        'refresh': '1h',
       };
     } else {
       monitoring.remove('keep_top');
