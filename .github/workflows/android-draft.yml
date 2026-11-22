@@ -66,7 +66,7 @@ jobs:
           - The APK uses a disposable draft signing key. Future builds and the earlier debug build cannot upgrade it; uninstalling an incompatible build may remove app data. It is not suitable for production distribution.
           - This draft restores the Windows-style connection screen and adds copyable, stage-based Android VPN diagnostics. Actual connectivity, socket protection and routing must still be tested on Android devices and networks; Android 10 or later is required for verified connections.
           - VPN traffic, installation, upgrades, and Android lifecycle behavior have not been verified on a physical device. Android versions below 29 currently fail closed when checking traffic.
-          - Connection failures show a non-sensitive stage-specific message for diagnosis; this is not proof that the connection issue is fixed.
+          - Connection failures show a stage-specific message and a button to copy the filtered VPN diagnostic log; this is not proof that the connection issue is fixed.
           - SMS code filling requires Google Play services and explicit consent to share the incoming message. Manual entry remains available.
           - Some connection modes are not supported. Do not rely on this build to protect traffic or privacy.
           - Bundled components have upstream licensing conditions that must be reviewed before any public release.

@@ -271,11 +271,16 @@ void main() {
             expect(find.text('جزئیات اتصال'), findsOneWidget);
             expect(find.text('ابتدا وارد حساب کاربری خود شوید.'), findsOneWidget);
             AppLogger.instance.add('unrelated-private-data');
+            String? copied;
+            tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+              if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String?;
+              return null;
+            });
             await tester.tap(find.text('کپی گزارش اتصال'));
             await tester.pump();
-            final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
-            expect(clipboard?.text, contains('ANDROID_VPN blocked.login_required'));
-            expect(clipboard?.text, isNot(contains('unrelated-private-data')));
+            expect(copied, contains('ANDROID_VPN blocked.login_required'));
+            expect(copied, isNot(contains('unrelated-private-data')));
+            tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null);
             Navigator.of(tester.element(find.text('جزئیات اتصال'))).pop();
             await tester.pump();
             await tester.pump(const Duration(milliseconds: 400));
