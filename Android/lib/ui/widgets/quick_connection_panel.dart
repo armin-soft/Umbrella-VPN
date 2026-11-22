@@ -8,7 +8,6 @@ import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import 'common.dart';
-import 'lan_sharing_dialog.dart';
 
 /// تنظیمات اتصال در یک پنل کوتاه و مستقل؛ الگوی SegmentedButton و ListTile
 /// همان ساختار آشنای تنظیمات سریع Hiddify را دنبال می کند.
@@ -29,11 +28,9 @@ class QuickConnectionPanel extends StatelessWidget {
     InboundServiceMode mode,
   ) async {
     if (settings.settings.serviceMode == mode) return;
-    if (mode == InboundServiceMode.vpn && !settings.elevated) {
-      toasts.info(
-        'برای حالت تونل کامل برنامه را با دسترسی مدیر اجرا کنید',
-        'حالت سرویس',
-      );
+    if (mode != InboundServiceMode.vpn) {
+      toasts.warning('این حالت در اندروید پشتیبانی نمی‌شود', 'فقط تونل VPN در دسترس است');
+      return;
     }
     await settings.setServiceMode(mode);
     if (vpn.status.active) vpn.scheduleLiveReload();
@@ -42,8 +39,13 @@ class QuickConnectionPanel extends StatelessWidget {
   Future<void> _toggleLanSharing(
     SettingsController settings,
     VpnController vpn,
+    ToastController toasts,
     bool value,
   ) async {
+    if (value) {
+      toasts.warning('اشتراک اتصال در اندروید پشتیبانی نمی‌شود');
+      return;
+    }
     await settings.setAllowConnectionFromLan(value);
     if (vpn.status.active) vpn.scheduleLiveReload();
   }
@@ -59,7 +61,7 @@ class QuickConnectionPanel extends StatelessWidget {
         cfg.serviceMode == InboundServiceMode.vpn && !settings.elevated;
     final Color explanationTone = needsElevation ? colors.warning : colors.info;
     final String explanation = needsElevation
-        ? 'برای تونل کامل، برنامه را با دسترسی مدیر ویندوز اجرا کنید.'
+        ? 'مجوز VPN هنگام اتصال از شما درخواست می‌شود.'
         : cfg.serviceMode.description;
 
     return ConstrainedBox(
@@ -81,7 +83,7 @@ class QuickConnectionPanel extends StatelessWidget {
                   child: SectionHeader(
                     icon: Icons.tune_rounded,
                     title: 'تنظیمات اتصال',
-                    subtitle: 'حالت سرویس و اشتراک گذاری شبکه محلی',
+                    subtitle: 'در اندروید فقط تونل VPN پشتیبانی می‌شود',
                     trailing: Pill(
                       label: cfg.serviceMode.shortLabel,
                       icon: cfg.serviceMode.icon,
@@ -193,9 +195,9 @@ class QuickConnectionPanel extends StatelessWidget {
             shared: cfg.allowConnectionFromLan,
             port: cfg.lanSharingPort,
             enabled: enabled,
-            onOpenQr: () => LanSharingDialog.show(context),
+            onOpenQr: () => toasts.info('اشتراک اتصال در اندروید پشتیبانی نمی‌شود'),
             onToggle: (bool value) =>
-                _toggleLanSharing(settings, vpn, value),
+                _toggleLanSharing(settings, vpn, toasts, value),
           ),
           const SizedBox(height: AppMetrics.space2),
         ],
@@ -299,8 +301,8 @@ class _LanSharingRow extends StatelessWidget {
           subtitle: Text(
             Fa.num(
               shared
-                  ? 'فعال روی پورت $port در شبکه محلی'
-                  : 'اشتراک اینترنت با دستگاه های هم شبکه',
+                  ? 'تنظیم قدیمی فعال است؛ برای اتصال آن را خاموش کنید'
+                  : 'در اندروید پشتیبانی نمی‌شود',
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

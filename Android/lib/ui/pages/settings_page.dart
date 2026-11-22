@@ -13,7 +13,6 @@ import '../../state/settings_controller.dart';
 import '../../state/power_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
-import '../widgets/advanced_network_settings.dart';
 import '../widgets/common.dart';
 import '../widgets/content_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
@@ -456,7 +455,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _Section(
           icon: Icons.palette_rounded,
           title: 'حالت پوسته',
-          subtitle: 'انتخاب رنگ بندی تیره، روشن یا هماهنگ با ویندوز',
+          subtitle: 'انتخاب رنگ بندی تیره، روشن یا هماهنگ با سیستم',
           children: <Widget>[
             _ThemeCardSelector(
               selected: cfg.theme,
@@ -471,33 +470,9 @@ class _SettingsPageState extends State<SettingsPage> {
           spacing: AppMetrics.space5,
           left: _Section(
             icon: Icons.desktop_windows_rounded,
-            title: 'دسکتاپ و اتصال خودکار',
-            subtitle: 'شروع با ویندوز، سینی سیستم و رفتار خودکار اتصال',
+            title: 'اتصال خودکار',
+            subtitle: 'رفتار خودکار اتصال و انتخاب سرور',
             children: <Widget>[
-              ToggleRow(
-                icon: Icons.rocket_launch_rounded,
-                title: 'شروع هنگام ورود به سیستم',
-                subtitle: 'اجرای خودکار آمبرلا پس از ورود به ویندوز',
-                value: cfg.startWithWindows,
-                onChanged: settings.setStartWithWindows,
-              ),
-              const Divider(height: AppMetrics.space3),
-              ToggleRow(
-                icon: Icons.close_fullscreen_rounded,
-                title: 'بستن به سینی سیستم',
-                subtitle: 'فعال ماندن اتصال در کنار ساعت هنگام بستن پنجره',
-                value: cfg.closeToTray,
-                onChanged: settings.setCloseToTray,
-              ),
-              const Divider(height: AppMetrics.space3),
-              ToggleRow(
-                icon: Icons.speed_rounded,
-                title: 'نمایش سرعت در سینی سیستم',
-                subtitle: 'نمایش سرعت زنده دریافت و ارسال کنار ساعت',
-                value: cfg.showSpeedInTray,
-                onChanged: settings.setShowSpeedInTray,
-              ),
-              const Divider(height: AppMetrics.space3),
               ToggleRow(
                 icon: Icons.bolt_rounded,
                 title: 'اتصال خودکار در شروع برنامه',
@@ -514,14 +489,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 onChanged: (bool v) =>
                     _applyRuntime(vpn, () => settings.setAutoFailover(v)),
               ),
-              const Divider(height: AppMetrics.space3),
-              ToggleRow(
-                icon: Icons.cleaning_services_rounded,
-                title: 'آزادسازی خودکار پورت ها',
-                subtitle: 'بستن پردازش های مانده روی پورت هسته پیش از اتصال',
-                value: cfg.freeCorePorts,
-                onChanged: settings.setFreeCorePorts,
-              ),
+
             ],
           ),
           right: _Section(
@@ -586,8 +554,8 @@ class _SettingsPageState extends State<SettingsPage> {
               const Divider(height: AppMetrics.space4),
               ToggleRow(
                 icon: Icons.notifications_active_rounded,
-                title: 'اعلان های ویندوز',
-                subtitle: 'نمایش اعلان های کوتاه برای تغییر وضعیت اتصال و حساب',
+                title: 'اعلان های برنامه',
+                subtitle: 'تنظیم اعلان‌های درون برنامه',
                 value: cfg.notificationsEnabled,
                 onChanged: settings.setNotifications,
               ),
@@ -607,39 +575,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 value: cfg.occasionEffects,
                 onChanged: settings.setOccasionEffects,
               ),
-              const Divider(height: AppMetrics.space4),
-              Wrap(
-                spacing: AppMetrics.space2,
-                runSpacing: AppMetrics.space2,
-                children: <Widget>[
-                  SizedBox(
-                    height: AppMetrics.controlHeightSmall,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(
-                        Icons.settings_backup_restore_rounded,
-                        size: AppMetrics.iconSm,
-                      ),
-                      label: const Text('تعمیر شبکه ویندوز'),
-                      onPressed: () async {
-                        await vpn.restoreNetwork();
-                        toasts.success('تنظیمات شبکه ویندوز بازگردانی شد');
-                      },
-                    ),
-                  ),
-                  if (!settings.elevated)
-                    SizedBox(
-                      height: AppMetrics.controlHeightSmall,
-                      child: FilledButton.icon(
-                        icon: const Icon(
-                          Icons.admin_panel_settings_rounded,
-                          size: AppMetrics.iconSm,
-                        ),
-                        label: const Text('اجرا با دسترسی مدیر'),
-                        onPressed: settings.requestElevation,
-                      ),
-                    ),
-                ],
-              ),
+
             ],
           ),
         ),
@@ -742,31 +678,13 @@ class _SettingsPageState extends State<SettingsPage> {
         _Section(
           icon: Icons.apps_rounded,
           title: 'مسیریابی بر اساس برنامه',
-          subtitle:
-              'تعیین کنید هر فایل اجرایی ویندوز از تونل عبور کند، مستقیم وصل شود یا مسدود گردد',
+          subtitle: 'مسیریابی تفکیکی برنامه‌ها در اندروید هنوز پشتیبانی نمی‌شود. قوانین قبلی را حذف یا غیرفعال کنید.',
           trailing: SizedBox(
             height: AppMetrics.controlHeightSmall,
             child: OutlinedButton.icon(
               icon: const Icon(Icons.add_rounded, size: AppMetrics.iconSm),
               label: const Text('افزودن برنامه'),
-              onPressed: () async {
-                final AppRouteRule? created = await showDialog<AppRouteRule>(
-                  context: context,
-                  builder: (BuildContext context) => const AppRouteDialog(),
-                );
-                if (created == null || !mounted) {
-                  return;
-                }
-                final List<AppRouteRule> next = <AppRouteRule>[
-                  ...cfg.appRoutes.where(
-                    (AppRouteRule item) =>
-                        item.process.toLowerCase() !=
-                        created.process.toLowerCase(),
-                  ),
-                  created,
-                ];
-                await _applyRuntime(vpn, () => settings.setAppRoutes(next));
-              },
+              onPressed: null,
             ),
           ),
           children: cfg.appRoutes.isEmpty
@@ -784,6 +702,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     _AppRouteTile(
                       rule: cfg.appRoutes[i],
                       onToggle: (bool enabled) async {
+                        if (enabled) {
+                          toasts.warning('مسیریابی برنامه‌ها در اندروید پشتیبانی نمی‌شود');
+                          return;
+                        }
                         final List<AppRouteRule> next =
                             List<AppRouteRule>.of(cfg.appRoutes);
                         next[i] = AppRouteRule(
@@ -928,7 +850,6 @@ class _SettingsPageState extends State<SettingsPage> {
     ToastController toasts,
     AppSettings cfg,
   ) {
-    final String secret = cfg.lanSharingPassword.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -951,11 +872,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
               ],
               onChanged: (InboundServiceMode picked) async {
-                if (picked == InboundServiceMode.vpn && !settings.elevated) {
-                  toasts.info(
-                    'برای حالت تونل کامل برنامه را با دسترسی مدیر اجرا کنید',
-                    'حالت سرویس',
-                  );
+                if (picked != InboundServiceMode.vpn) {
+                  toasts.warning('این حالت در اندروید پشتیبانی نمی‌شود', 'فقط تونل VPN در دسترس است');
+                  return;
                 }
                 await _applyRuntime(
                   vpn,
@@ -1017,72 +936,11 @@ class _SettingsPageState extends State<SettingsPage> {
           leftFlex: 1,
           rightFlex: 1,
           spacing: AppMetrics.space5,
-          left: _Section(
+          left: const _Section(
             icon: Icons.computer_rounded,
-            title: 'پروکسی محلی (این دستگاه)',
-            subtitle: 'پورت ترکیبی ساکس ۵ و وب روی نشانی ۱۲۷.۰.۰.۱',
-            children: <Widget>[
-              _EditableValueRow(
-                icon: Icons.settings_ethernet_rounded,
-                title: 'پورت پروکسی محلی',
-                value: Fa.num('${cfg.mixedPort}'),
-                onTap: () => _editTextValue(
-                  title: 'پورت پروکسی محلی',
-                  label: 'بین ۱۰۲۴ تا ۶۵۵۳۵',
-                  initialValue: '${cfg.mixedPort}',
-                  numericOnly: true,
-                  validator: (String v) {
-                    final int? p = int.tryParse(v.trim());
-                    return p != null &&
-                            LanSharing.isValidPort(
-                              p,
-                              forbiddenPort: cfg.lanSharingPort,
-                            )
-                        ? null
-                        : 'پورتی بین ۱۰۲۴ تا ۶۵۵۳۵ و متفاوت از پورت اشتراک وارد کنید';
-                  },
-                  onSubmit: (String v) => _applyRuntime(
-                    vpn,
-                    () => settings.setMixedPort(int.parse(v.trim())),
-                  ),
-                ),
-              ),
-              const Divider(height: AppMetrics.space3),
-              ToggleRow(
-                icon: Icons.swap_calls_rounded,
-                title: 'باز ماندن در حالت تونل کامل',
-                subtitle: 'فعال ماندن پورت ۱۲۷.۰.۰.۱ هنگام روشن بودن تونل کامل',
-                value: cfg.localProxyInVpn,
-                onChanged: (bool v) =>
-                    _applyRuntime(vpn, () => settings.setLocalProxyInVpn(v)),
-              ),
-              const Divider(height: AppMetrics.space3),
-              ToggleRow(
-                icon: Icons.password_rounded,
-                title: 'درخواست رمز در پروکسی محلی',
-                subtitle: cfg.serviceMode == InboundServiceMode.systemProxy
-                    ? 'در حالت پروکسی سیستم غیرفعال است (ویندوز رمز پروکسی ارسال نمی کند)'
-                    : 'الزام به وارد کردن رمز پروکسی برای برنامه های محلی',
-                value: cfg.serviceMode != InboundServiceMode.systemProxy &&
-                    cfg.localProxyAuth,
-                onChanged: cfg.serviceMode == InboundServiceMode.systemProxy
-                    ? (bool _) => toasts.info(
-                          'برای رمزگذاری پروکسی محلی، حالت سرویس را روی پروکسی یا تونل کامل بگذارید',
-                          'پروکسی محلی',
-                        )
-                    : (bool v) async {
-                        if (v && secret.isEmpty) {
-                          await settings.setLanSharingPassword(
-                            LanSharing.generateSecret(),
-                          );
-                        }
-                        await _applyRuntime(
-                          vpn,
-                          () => settings.setLocalProxyAuth(v),
-                        );
-                      },
-              ),
-            ],
+            title: 'پروکسی محلی',
+            subtitle: 'پروکسی محلی در اندروید برای حفظ امنیت غیرفعال است.',
+            children: <Widget>[],
           ),
           right: _Section(
             icon: Icons.wifi_tethering_rounded,
@@ -1097,19 +955,22 @@ class _SettingsPageState extends State<SettingsPage> {
                   size: AppMetrics.iconSm,
                 ),
                 label: const Text('رمزینه تصویری'),
-                onPressed: () => LanSharingDialog.show(context),
+                onPressed: () => toasts.info('اشتراک اتصال در اندروید پشتیبانی نمی‌شود'),
               ),
             ),
             children: <Widget>[
               ToggleRow(
                 icon: Icons.share_rounded,
                 title: 'اشتراک در شبکه محلی',
-                subtitle: 'باز کردن درگاه ساکس ۵ روی شبکه وای فای و کابلی فعلی',
+                subtitle: 'در اندروید پشتیبانی نمی‌شود؛ در صورت فعال بودن آن را خاموش کنید',
                 value: cfg.allowConnectionFromLan,
-                onChanged: (bool v) => _applyRuntime(
-                  vpn,
-                  () => settings.setAllowConnectionFromLan(v),
-                ),
+                onChanged: (bool v) {
+                  if (v) {
+                    toasts.warning('اشتراک اتصال در اندروید پشتیبانی نمی‌شود');
+                    return;
+                  }
+                  _applyRuntime(vpn, () => settings.setAllowConnectionFromLan(false));
+                },
               ),
               const Divider(height: AppMetrics.space3),
               _EditableValueRow(
