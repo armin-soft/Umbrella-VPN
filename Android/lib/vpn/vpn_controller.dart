@@ -1223,10 +1223,12 @@ class VpnController extends ChangeNotifier {
     trace('attempt.start');
     final blocked = accessGuard?.call() ?? '';
     if (blocked.isNotEmpty) {
+      trace('blocked.account');
       _setStatus(VpnStatus.failed, blocked);
       return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
     if (_mobileSession != null) {
+      trace('blocked.previous_session');
       const message = 'سرویس قبلی هنوز به طور کامل متوقف نشده است.';
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
@@ -1234,6 +1236,7 @@ class VpnController extends ChangeNotifier {
     final sdk = await _native.androidSdkInt();
     trace('android_api_${sdk ?? 0}');
     if (sdk != null && sdk < 29) {
+      trace('blocked.unsupported_android');
       const message = 'این نسخه آزمایشی برای تأیید ایمن ترافیک به اندروید ۱۰ یا بالاتر نیاز دارد.';
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
@@ -1244,6 +1247,7 @@ class VpnController extends ChangeNotifier {
     if (_settings.serviceMode != InboundServiceMode.vpn ||
         _settings.chain.enabled || _settings.allowConnectionFromLan ||
         _settings.appRoutes.any((rule) => rule.enabled)) {
+      trace('blocked.unsupported_settings');
       const message = 'این حالت اتصال هنوز در اندروید پشتیبانی نمی‌شود؛ تونل کامل را انتخاب کنید و اشتراک شبکه، زنجیره و قوانین برنامه را خاموش کنید.';
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
@@ -1265,6 +1269,7 @@ class VpnController extends ChangeNotifier {
     try {
       prepared = await LinkPreparation.prepare(_linkPool(node), resolveEndpoints: false);
     } catch (_) {
+      trace('profile.prepare_failed');
       _setStatus(VpnStatus.failed, 'آماده سازی سرور ناموفق بود.');
       return const ConnectOutcome(ok: false, message: 'آماده سازی سرور ناموفق بود.');
     }

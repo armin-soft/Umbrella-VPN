@@ -1,6 +1,7 @@
 import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -269,6 +270,12 @@ void main() {
             await tester.pump(const Duration(milliseconds: 400));
             expect(find.text('جزئیات اتصال'), findsOneWidget);
             expect(find.text('ابتدا وارد حساب کاربری خود شوید.'), findsOneWidget);
+            AppLogger.instance.add('unrelated-private-data');
+            await tester.tap(find.text('کپی گزارش اتصال'));
+            await tester.pump();
+            final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+            expect(clipboard?.text, contains('ANDROID_VPN blocked.login_required'));
+            expect(clipboard?.text, isNot(contains('unrelated-private-data')));
             Navigator.of(tester.element(find.text('جزئیات اتصال'))).pop();
             await tester.pump();
             await tester.pump(const Duration(milliseconds: 400));
