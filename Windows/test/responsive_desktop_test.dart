@@ -48,6 +48,27 @@ class _Vpn extends VpnController {
   @override
   Future<void> refreshIp() async {}
 }
+class _TrackingVpn extends _Vpn {
+  _TrackingVpn(super.native, super.sound);
+  VpnStatus current = VpnStatus.disconnected;
+  int connections = 0;
+  int disconnections = 0;
+  void setConnected() { current = VpnStatus.connected; notifyListeners(); }
+  @override
+  VpnStatus get status => current;
+  @override
+  VpnNode? get activeNode => current.active ? VpnNode(
+    id: 'active', name: 'active', protocol: NodeProtocol.mieru,
+    host: 'example.invalid', port: 1234, sourceId: 'user-mieru',
+  ) : null;
+  @override
+  Future<void> disconnect() async { disconnections++; current = VpnStatus.disconnected; notifyListeners(); }
+  @override
+  Future<ConnectOutcome> connect({VpnNode? requested, bool isAutoReconnect = false}) async {
+    connections++;
+    return const ConnectOutcome(ok: false, message: 'test');
+  }
+}
 class _Updates extends UpdateController {
   _Updates(super.native);
   @override
@@ -61,6 +82,45 @@ void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await LocalStore.instance.init();
+  });
+
+  testWidgets('profile chips only select, including while connected', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1120, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final native = _Native();
+    final sound = _Sound();
+    final vpn = _TrackingVpn(native, sound);
+    final settings = SettingsController(native: native, sound: sound, window: WindowService(native));
+    final auth = AuthController(native: native);
+    final subs = SubscriptionController(vpn: vpn, auth: auth);
+    final toasts = ToastController();
+    await tester.pumpWidget(MultiProvider(providers: [
+      ChangeNotifierProvider<SettingsController>.value(value: settings),
+      ChangeNotifierProvider<VpnController>.value(value: vpn),
+      ChangeNotifierProvider<AuthController>.value(value: auth),
+      ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+      ChangeNotifierProvider<ToastController>.value(value: toasts),
+    ], child: MaterialApp(theme: AppTheme.dark(), home: const Scaffold(body: ConnectPage()))));
+    await tester.pump();
+    final wireguard = find.byKey(const ValueKey<String>('connection-profile-user-wireguard'));
+    await tester.ensureVisible(wireguard);
+    await tester.tap(wireguard);
+    await tester.pump();
+    expect(tester.widget<ChoiceChip>(wireguard).selected, isTrue);
+    expect(vpn.connections, 0);
+    expect(vpn.disconnections, 0);
+    vpn.setConnected();
+    await tester.pump();
+    final auto = find.byKey(const ValueKey<String>('connection-profile-user-sub'));
+    await tester.ensureVisible(auto);
+    await tester.tap(auto);
+    await tester.pump();
+    expect(tester.widget<ChoiceChip>(auto).selected, isTrue);
+    expect(vpn.connections, 0);
+    expect(vpn.disconnections, 0);
+    expect(find.text('برای تغییر مسیر، دکمه اتصال را بزنید.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    subs.dispose(); auth.dispose(); settings.dispose(); toasts.dispose(); vpn.dispose();
   });
 
   test('window fits the logical primary work area with and without DPI space', () {

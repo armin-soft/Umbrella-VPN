@@ -32,15 +32,16 @@ class ConnectPage extends StatefulWidget {
 class _ConnectPageState extends State<ConnectPage> {
   String _profile = 'user-sub';
 
-  Future<void> _selectProfile(String id) async {
+  void _selectProfile(String id) {
     final VpnController vpn = context.read<VpnController>();
-    final SubscriptionController subs = context.read<SubscriptionController>();
-    final ToastController toasts = context.read<ToastController>();
-    if (vpn.status.busy || (vpn.status.active && id == _profile)) return;
-    if (vpn.status.active) await vpn.disconnect();
-    if (!mounted) return;
+    if (vpn.status.busy || id == _profile) return;
     setState(() => _profile = id);
-    await _toggleConnection(vpn, subs, toasts);
+  }
+
+  bool _switchPending(VpnController vpn) {
+    if (!vpn.status.active) return false;
+    final String? source = vpn.activeNode?.sourceId;
+    return source != null && source.isNotEmpty && source != _profile;
   }
 
   /// آی پی دستگاه برای نمایش در نوار بالا.
@@ -185,11 +186,13 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     if (vpn.status.active) {
+      final bool switching = _switchPending(vpn);
       await vpn.disconnect();
-      if (mounted) {
+      if (!mounted) return;
+      if (!switching) {
         toasts.info('اتصال قطع شد');
+        return;
       }
-      return;
     }
     final AuthController auth = context.read<AuthController>();
     if (!auth.signedIn) {
@@ -425,7 +428,7 @@ class _ConnectPageState extends State<ConnectPage> {
                           button: true,
                           label: status.busy
                               ? 'لغو اتصال'
-                              : (status.active ? 'قطع اتصال' : 'اتصال'),
+                              : (status.active && !_switchPending(vpn) ? 'قطع اتصال' : 'اتصال'),
                           child: InkWell(
                             customBorder: const CircleBorder(),
                             onTap: status == VpnStatus.disconnecting
@@ -452,13 +455,13 @@ class _ConnectPageState extends State<ConnectPage> {
                                     height: orb * 0.24,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: (status.active
+                                      color: (status.active && !_switchPending(vpn)
                                               ? colors.danger
                                               : colors.primary)
                                           .withValues(alpha: 0.94),
                                       boxShadow: <BoxShadow>[
                                         BoxShadow(
-                                          color: (status.active
+                                          color: (status.active && !_switchPending(vpn)
                                                   ? colors.danger
                                                   : colors.primary)
                                               .withValues(alpha: 0.38),
@@ -540,10 +543,10 @@ class _ConnectPageState extends State<ConnectPage> {
                                       : () => _cancelConnection(vpn, toasts),
                                 )
                               : GradientButton(
-                                  label: status.active ? 'قطع اتصال' : 'اتصال',
+                                  label: status.active && !_switchPending(vpn) ? 'قطع اتصال' : 'اتصال',
                                   icon: Icons.power_settings_new_rounded,
                                   height: AppMetrics.controlHeightLarge,
-                                  tone: status.active
+                                  tone: status.active && !_switchPending(vpn)
                                       ? colors.danger
                                       : colors.primary,
                                   onPressed: () =>
@@ -588,6 +591,17 @@ class _ConnectPageState extends State<ConnectPage> {
                               ),
                           ],
                         ),
+                        if (_switchPending(vpn))
+                          Padding(
+                            padding: const EdgeInsets.only(top: AppMetrics.space2),
+                            child: Text(
+                              'برای تغییر مسیر، دکمه اتصال را بزنید.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: AppMetrics.space3),
 
                         // تنظیمات جانبی فقط با درخواست کاربر باز می شوند؛
