@@ -11,12 +11,12 @@
       "role": "همه پروتکل ها و همه قالب های اشتراک با همان موتور hiddify-core",
       "binary": "UmbrellaCli.exe",
       "cli_prefix": "umbrella",
-      "version": "5.9.11",
-      "url": "https://github.com/hiddify/hiddify-core/releases/download/v5.9.11/hiddify-lib-windows-amd64.tar.gz",
+      "version": "5.9.15",
+      "url": "https://github.com/hiddify/hiddify-core/releases/download/v5.9.15/hiddify-lib-windows-amd64.tar.gz",
       "archive": "tgz",
       "inside": "UmbrellaCore.dll",
       "required": true,
-      "sha256": "871232b29816574579c436ee110ceed95fced7181364d1ad5e62b922e32b15da"
+      "sha256": "96736e5c2cdc5c5ad74a0fc57927f5f3461c6b80cf7941527f8a2a6a763fd3e3"
     }
   ]
 }

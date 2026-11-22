@@ -679,7 +679,7 @@ void main() {
   });
 
   group('نسخه ۱.۰.۰ — هسته ۵.۹.۱۱ و یکپارچگی نسخه در همه فایل ها', () {
-    test('مانیفست هسته به 5.9.11 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 1.0.0 است', () {
+    test('مانیفست هسته به 5.9.15 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 1.0.0 است', () {
       expect(AppConfig.version, '1.0.0');
       expect(AppConfig.versionLabel, '1.0.0');
       expect(AppConfig.buildNumber, 1);
@@ -707,10 +707,10 @@ void main() {
       final List<dynamic> cores = manifest['cores'] as List<dynamic>;
       final Map<String, dynamic> core =
           cores.first as Map<String, dynamic>;
-      expect(core['version'], '5.9.11');
+      expect(core['version'], '5.9.15');
       expect(
         core['sha256'],
-        '871232b29816574579c436ee110ceed95fced7181364d1ad5e62b922e32b15da',
+        '96736e5c2cdc5c5ad74a0fc57927f5f3461c6b80cf7941527f8a2a6a763fd3e3',
       );
     });
 
@@ -1235,7 +1235,7 @@ void main() {
       expect(runnerRc, contains('VALUE "CompanyName", "Umbrella"'));
 
       final String notices = File('THIRD-PARTY-NOTICES.txt').readAsStringSync();
-      expect(notices, contains('5.9.11'));
+      expect(notices, contains('5.9.15'));
 
       final String aboutPage =
           File('lib/ui/pages/about_page.dart').readAsStringSync();
