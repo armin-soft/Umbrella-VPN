@@ -11,8 +11,9 @@ constexpr UINT_PTR kEndSessionTimerId = 0x554D4252;
 constexpr UINT kEndSessionTimeoutMs = 4500;
 }  // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project,
+                             bool start_hidden)
+    : project_(project), start_hidden_(start_hidden) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -38,10 +39,13 @@ bool FlutterWindow::OnCreate() {
           &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  // Let the engine show the window once the first frame is ready, so the app
-  // never flashes an empty white surface.
+  // Let the engine show the window once the first frame is ready unless
+  // launched hidden (--autostart / --minimized), so the app never flashes an
+  // empty surface or pops up during Windows startup.
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    if (!start_hidden_) {
+      this->Show();
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is

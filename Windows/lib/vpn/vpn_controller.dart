@@ -27,6 +27,7 @@ import 'ping.dart';
 import 'tunnel_probe.dart';
 import 'speed_test.dart';
 import 'verified_probe.dart';
+import 'windows_crash.dart';
 
 /// سرعت میانگین بر حسب بایت در ثانیه با فاصله واقعی نمونه ها.
 double trafficBytesPerSecond(int delta, Duration elapsed) {
@@ -251,6 +252,7 @@ class VpnController extends ChangeNotifier {
 
   final ValueChanged<AppSettings>? onSettingsChanged;
   final VoidCallback? onRequireElevation;
+  VoidCallback? onTunnelConnected;
 
   /// بررسی دسترسی حساب پیش از هر اتصال. اگر رشته غیرخالی برگرداند، اتصال
   /// انجام نمی شود و همان پیام به کاربر نشان داده می شود (اشتراک منقضی،
@@ -1837,6 +1839,7 @@ class VpnController extends ChangeNotifier {
         _exitIp = initialIpInfo!.ip;
       }
       _setStatus(VpnStatus.connected, 'اتصال برقرار شد.');
+      onTunnelConnected?.call();
       _balancer.markConnected(node.id);
       _startTimers(initialPingMs: initialDelayMs);
       unawaited(_sound.play('connect'));
@@ -3028,7 +3031,7 @@ class VpnController extends ChangeNotifier {
     if (exited != null) {
       if (identical(_coreProcesses[core.name], process)) _coreProcesses.remove(core.name);
       _runningPids.remove(process.pid);
-      await _reportCoreExit(core, coreLog, exited);
+      await _reportCoreExit(core, coreLog, exited, pid: process.pid);
       // جریان خروجی هم بسته می شود تا فایل گزارش نیمه باز نماند.
       await sink.flush();
       await sink.close();
@@ -3056,12 +3059,36 @@ class VpnController extends ChangeNotifier {
           // خودمان بستیم؛ هشدار «بسته شد» گمراه کننده است.
           return;
         }
+        final String full = await _readLogFull(coreLog);
+        final String goHeadline = WindowsCrash.goCrashHeadline(full);
         final String crashReason = UmbrellaCore.describeWindowsExitCode(code);
+        final String winEvent =
+            (code != 0 && (full.trim().isEmpty || crashReason.isNotEmpty))
+                ? await WindowsCrash.lookupApplicationError(process.pid)
+                : '';
+        final List<LogDetail> extraDetails = <LogDetail>[
+          if (goHeadline.isNotEmpty)
+            LogDetail(title: 'جزئیات خرابی هسته', text: goHeadline),
+          if (winEvent.isNotEmpty)
+            LogDetail(
+              title: 'رویداد خطای ویندوز (شناسه ۱۰۰۰)',
+              text: winEvent,
+            ),
+        ];
         _log.add(
           crashReason.isNotEmpty
               ? '${core.binaryName}: $crashReason'
-              : 'هسته آمبرلا بسته شد (کد خروج ${Fa.num(code)}).',
-          level: crashReason.isNotEmpty ? 'error' : 'warning',
+              : winEvent.isNotEmpty
+                  ? winEvent
+                  : goHeadline.isNotEmpty
+                      ? 'هسته آمبرلا با خطای داخلی متوقف شد (کد خروج ${Fa.num(code)}).'
+                      : 'هسته آمبرلا بسته شد (کد خروج ${Fa.num(code)}).',
+          level: (crashReason.isNotEmpty ||
+                  goHeadline.isNotEmpty ||
+                  winEvent.isNotEmpty)
+              ? 'error'
+              : 'warning',
+          details: extraDetails,
         );
       }),
     );
@@ -3380,8 +3407,9 @@ class VpnController extends ChangeNotifier {
   Future<void> _reportCoreExit(
     CoreLaunch core,
     String coreLog,
-    int code,
-  ) async {
+    int code, {
+    int pid = 0,
+  }) async {
     final String full = await _readLogFull(coreLog);
     if (_stoppingOwnCore && code == 0) {
       // بستن عمدی خودمان؛ این «خرابی» نیست و نباید در گزارش خطا بیاید.
@@ -3389,11 +3417,32 @@ class VpnController extends ChangeNotifier {
       return;
     }
     final String tail = await _readLogTail(coreLog);
+    final String ntDesc = UmbrellaCore.describeWindowsExitCode(code);
+    final String goHeadline = WindowsCrash.goCrashHeadline(full);
+    final String winEvent = (pid > 0 &&
+            (full.trim().isEmpty || ntDesc.isNotEmpty || code < 0 || code > 255))
+        ? await WindowsCrash.lookupApplicationError(pid)
+        : '';
+    final List<LogDetail> details =
+        await _coreDiagnostics(core, coreLog, code: code);
+    if (goHeadline.isNotEmpty) {
+      details.add(LogDetail(title: 'نشانه خطای هسته', text: goHeadline));
+    }
+    if (winEvent.isNotEmpty) {
+      details.add(
+        LogDetail(
+          title: 'رویداد خطای ویندوز (شناسه ۱۰۰۰)',
+          text: winEvent,
+        ),
+      );
+    }
     _log.add(
-      'هسته آمبرلا بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
-      '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+      ntDesc.isNotEmpty
+          ? '$ntDesc${tail.isEmpty ? '' : ' خروجی هسته: $tail'}'
+          : 'هسته آمبرلا بلافاصله بسته شد (کد خروج ${Fa.num(code)}).'
+              '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
       level: 'error',
-      details: await _coreDiagnostics(core, coreLog, code: code),
+      details: details,
     );
     // دلیل را به زبان کاربر هم می گوییم؛ خروجی خام بالا برای عیب یابی
     // می ماند، ولی خودش راه حل نمی دهد.

@@ -13,7 +13,8 @@
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
  public:
-  explicit FlutterWindow(const flutter::DartProject& project);
+  explicit FlutterWindow(const flutter::DartProject& project,
+                         bool start_hidden = false);
   virtual ~FlutterWindow();
 
  protected:
@@ -37,6 +38,7 @@ class FlutterWindow : public Win32Window {
   // window is hidden to tray.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       session_channel_;
+  bool start_hidden_ = false;
   bool ending_session_ = false;
 };
 

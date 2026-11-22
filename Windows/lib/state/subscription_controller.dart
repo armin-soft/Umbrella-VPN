@@ -8,12 +8,15 @@ import 'package:http/io_client.dart';
 
 import '../core/app_config.dart';
 import '../core/utils.dart';
+import '../data/download_problem.dart';
 import '../data/parsers.dart';
 import '../data/emergency_feeds.dart';
 import '../data/subscription_endpoints.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
+import '../vpn/core_fetch.dart';
+import '../vpn/cores.dart';
 import 'auth_controller.dart';
 import '../vpn/vpn_controller.dart';
 
@@ -29,6 +32,8 @@ class SourceState {
   /// متن خام پاسخ. برای کلش مهم است: همان پیکربندی کامل پنل که mihomo اجرا
   /// می کند و پدینگ و هدرها و ALPN گره ها در آن هست.
   String body = '';
+
+  SubscriptionMetadata? metadata;
 
   /// کد پاسخ آخرین دریافت؛ صفر یعنی درخواستی فرستاده نشده است.
   int lastStatus = 0;
@@ -51,9 +56,11 @@ class SubscriptionController extends ChangeNotifier {
     required AuthController auth,
     http.Client? client,
     bool? enableNativeTransport,
+    CoreProvisioner? provisioner,
   })  : _vpn = vpn,
         _auth = auth,
         _injectedClient = client != null,
+        _provisioner = provisioner,
         _enableNativeTransport =
             enableNativeTransport ?? (client == null && Platform.isWindows),
         _client = client ?? _createClient(direct: true),
@@ -63,6 +70,8 @@ class SubscriptionController extends ChangeNotifier {
     _auth.addListener(_onAccountChanged);
     scheduleMicrotask(_syncEmergencyFlag);
   }
+
+  final CoreProvisioner? _provisioner;
 
   static http.Client _createClient({required bool direct}) {
     final HttpClient inner = HttpClient()
@@ -708,26 +717,59 @@ class SubscriptionController extends ChangeNotifier {
         'User-Agent': userAgent ?? 'Umbrella-Windows/${AppConfig.version}',
       };
 
-  Future<({http.Response? response, bool tlsFailed, bool timedOut})>
-      _downloadWithTransports(Uri uri, {String? userAgent}) async {
+  Future<
+      ({
+        http.Response? response,
+        bool tlsFailed,
+        bool timedOut,
+        DownloadProblem? problem,
+      })> _downloadWithTransports(Uri uri, {String? userAgent}) async {
     final Map<String, String> headers = _subHeaders(userAgent: userAgent);
     if (_injectedClient) {
       try {
         final http.Response r = await _client
             .get(uri, headers: headers)
             .timeout(const Duration(seconds: 15));
-        return (response: r, tlsFailed: false, timedOut: false);
+        return (
+          response: r,
+          tlsFailed: false,
+          timedOut: false,
+          problem: null,
+        );
       } on TimeoutException {
-        return (response: null, tlsFailed: false, timedOut: true);
+        return (
+          response: null,
+          tlsFailed: false,
+          timedOut: true,
+          problem: DownloadProblem.fromStatusOrSignal(timedOut: true),
+        );
       } on TlsException {
-        return (response: null, tlsFailed: true, timedOut: false);
+        return (
+          response: null,
+          tlsFailed: true,
+          timedOut: false,
+          problem: DownloadProblem.fromStatusOrSignal(tlsFailed: true),
+        );
+      } on SocketException catch (error) {
+        return (
+          response: null,
+          tlsFailed: false,
+          timedOut: false,
+          problem: DownloadProblem.fromSocketException(error),
+        );
       } on Object {
-        return (response: null, tlsFailed: false, timedOut: false);
+        return (
+          response: null,
+          tlsFailed: false,
+          timedOut: false,
+          problem: DownloadProblem.fromStatusOrSignal(),
+        );
       }
     }
 
     bool sawTls = false;
     bool sawTimeout = false;
+    DownloadProblem? detectedProblem;
     int attempts = 0;
     http.Response? fallbackError;
 
@@ -758,16 +800,30 @@ class SubscriptionController extends ChangeNotifier {
           } else if (native.winError == 12002) {
             sawTimeout = true;
           }
+          detectedProblem ??=
+              DownloadProblem.fromWinHttpError(native.winError);
           continue;
         }
         final http.Response resp =
             http.Response.bytes(native.bodyBytes, native.statusCode);
         if (resp.statusCode >= 200 && resp.statusCode < 300) {
-          return (response: resp, tlsFailed: false, timedOut: false);
+          return (
+            response: resp,
+            tlsFailed: false,
+            timedOut: false,
+            problem: null,
+          );
         }
         fallbackError ??= resp;
         if (resp.statusCode == 401 || resp.statusCode == 404) {
-          return (response: resp, tlsFailed: false, timedOut: false);
+          return (
+            response: resp,
+            tlsFailed: false,
+            timedOut: false,
+            problem: DownloadProblem.fromStatusOrSignal(
+              statusCode: resp.statusCode,
+            ),
+          );
         }
       }
     }
@@ -787,25 +843,101 @@ class SubscriptionController extends ChangeNotifier {
             .get(uri, headers: headers)
             .timeout(const Duration(seconds: 14));
         if (resp.statusCode >= 200 && resp.statusCode < 300) {
-          return (response: resp, tlsFailed: false, timedOut: false);
+          return (
+            response: resp,
+            tlsFailed: false,
+            timedOut: false,
+            problem: null,
+          );
         }
         fallbackError ??= resp;
         if (resp.statusCode == 401 || resp.statusCode == 404) {
-          return (response: resp, tlsFailed: false, timedOut: false);
+          return (
+            response: resp,
+            tlsFailed: false,
+            timedOut: false,
+            problem: DownloadProblem.fromStatusOrSignal(
+              statusCode: resp.statusCode,
+            ),
+          );
         }
       } on TimeoutException {
         sawTimeout = true;
+        detectedProblem ??= DownloadProblem.fromStatusOrSignal(timedOut: true);
       } on TlsException {
         sawTls = true;
+        detectedProblem ??= DownloadProblem.fromStatusOrSignal(tlsFailed: true);
+      } on SocketException catch (error) {
+        detectedProblem ??= DownloadProblem.fromSocketException(error);
       } on Object {
         // مسیر بعدی بررسی می شود.
       }
     }
 
+    // ۳. مسیر پشتیبان هسته با uTLS کروم و گواهی ریشه Mozilla برای شبکه هایی که
+    // Schannel/WinHTTP یا TLS پیش فرض را مسدود می کنند.
+    if (fallbackError == null && Platform.isWindows && _provisioner != null) {
+      final String? engineExe =
+          await _provisioner!.locateBinary(UmbrellaCore.engineBinary);
+      if (engineExe != null) {
+        attempts++;
+        final String umbrellaDir =
+            '${_provisioner!.bundledDir}${Platform.pathSeparator}umbrella';
+        final String workDir = await Directory(umbrellaDir).exists()
+            ? umbrellaDir
+            : File(engineExe).parent.path;
+        final CoreFetchResult? coreRes = await CoreFetchClient.fetchUrl(
+          executable: engineExe,
+          workDir: workDir,
+          dataDir: _provisioner!.dataDir,
+          uri: uri,
+          userAgent: headers['User-Agent'] ?? '',
+          timeout: const Duration(seconds: 15),
+          onProcessStarted: (int pid) =>
+              unawaited(NativeBridge().attachCoreJob(pid)),
+        );
+        if (coreRes != null) {
+          if (coreRes.hasHttpResponse &&
+              coreRes.statusCode >= 200 &&
+              coreRes.statusCode < 300) {
+            return (
+              response: http.Response.bytes(
+                coreRes.bodyBytes,
+                coreRes.statusCode,
+                headers: coreRes.headers,
+              ),
+              tlsFailed: false,
+              timedOut: false,
+              problem: null,
+            );
+          }
+          if (coreRes.statusCode > 0) {
+            fallbackError ??= http.Response.bytes(
+              coreRes.bodyBytes,
+              coreRes.statusCode,
+              headers: coreRes.headers,
+            );
+          } else if (coreRes.fetchError > 0) {
+            detectedProblem = DownloadProblem.fromCoreError(
+              coreRes.fetchError,
+              statusCode: coreRes.statusCode > 0 ? coreRes.statusCode : null,
+            );
+          }
+        }
+      }
+    }
+
+    final bool effectiveTls = sawTls && attempts > 0 && !sawTimeout;
     return (
       response: fallbackError,
-      tlsFailed: sawTls && attempts > 0 && !sawTimeout,
+      tlsFailed: effectiveTls,
       timedOut: sawTimeout,
+      problem: detectedProblem ??
+          DownloadProblem.fromStatusOrSignal(
+            statusCode: fallbackError?.statusCode ?? 0,
+            tlsFailed: effectiveTls,
+            timedOut: sawTimeout,
+          ),
     );
   }
 
@@ -836,16 +968,21 @@ class SubscriptionController extends ChangeNotifier {
         return null;
       }
 
-      final ({http.Response? response, bool tlsFailed, bool timedOut}) result =
-          await _downloadWithTransports(uri);
+      final ({
+        http.Response? response,
+        bool tlsFailed,
+        bool timedOut,
+        DownloadProblem? problem,
+      }) result = await _downloadWithTransports(uri);
       final http.Response? response = result.response;
 
       if (response == null) {
-        final String message = result.tlsFailed
-            ? 'خطای گواهی امنیتی در دریافت اشتراک؛ ساعت و تاریخ ویندوز را بررسی کنید.'
-            : result.timedOut
-                ? 'پاسخ سرور اشتراک دیر رسید؛ اتصال اینترنت یا محدودیت شبکه را بررسی کنید.'
-                : 'دسترسی به سرور اشتراک برقرار نشد؛ اتصال اینترنت یا محدودیت شبکه را بررسی کنید.';
+        final DownloadProblem problem = result.problem ??
+            DownloadProblem.fromStatusOrSignal(
+              tlsFailed: result.tlsFailed,
+              timedOut: result.timedOut,
+            );
+        final String message = problem.messageFa;
         state
           ..lastStatus = 0
           ..loading = false
@@ -861,8 +998,9 @@ class SubscriptionController extends ChangeNotifier {
 
       state.lastStatus = response.statusCode;
       if (response.statusCode >= 300) {
-        final String message =
-            'دریافت اشتراک ناموفق بود (کد ${Fa.num(response.statusCode)}).';
+        final DownloadProblem problem =
+            DownloadProblem.fromStatusOrSignal(statusCode: response.statusCode);
+        final String message = problem.messageFa;
         state
           ..error = message
           ..loading = false;
@@ -876,17 +1014,25 @@ class SubscriptionController extends ChangeNotifier {
       }
 
       String body = utf8.decode(response.bodyBytes, allowMalformed: true);
+      Map<String, String> responseHeaders = response.headers;
       if (SubscriptionParser.looksLikeHtml(body)) {
-        final ({http.Response? response, bool tlsFailed, bool timedOut}) alt =
+        final ({
+          http.Response? response,
+          bool tlsFailed,
+          bool timedOut,
+          DownloadProblem? problem,
+        }) alt =
             await _downloadWithTransports(uri, userAgent: 'SingBox/1.10.0');
         if (alt.response != null &&
             alt.response!.statusCode >= 200 &&
             alt.response!.statusCode < 300) {
           body = utf8.decode(alt.response!.bodyBytes, allowMalformed: true);
+          responseHeaders = alt.response!.headers;
         }
       }
 
       state.body = body;
+      state.metadata = SubscriptionHeaders.parse(responseHeaders, body);
       final ParseReport report =
           state.source.format == SubscriptionFormat.xray
               ? SubscriptionParser.parseAuto(body, state.source.id)

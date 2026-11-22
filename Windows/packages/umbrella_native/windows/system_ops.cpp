@@ -1150,14 +1150,34 @@ bool SystemOps::SetAutostart(bool enabled, const std::string& app_name) {
     return DeleteRegistryValue(HKEY_CURRENT_USER, kRunKey, name);
   }
   std::string exe = ExecutablePath();
-  std::wstring value = ToWide(Quote(exe) + " --minimized");
+  if (exe.empty()) return false;
+  std::wstring value = ToWide(Quote(exe) + " --autostart --minimized");
   return WriteRegistryString(HKEY_CURRENT_USER, kRunKey, name, value);
 }
 
 bool SystemOps::AutostartEnabled(const std::string& app_name) {
   std::wstring value;
   return ReadRegistryString(HKEY_CURRENT_USER, kRunKey, ToWide(app_name),
-                            &value);
+                            &value) &&
+         !value.empty();
+}
+
+int64_t SystemOps::ProcessCpuTimeMicros() {
+  FILETIME create_time = {};
+  FILETIME exit_time = {};
+  FILETIME kernel_time = {};
+  FILETIME user_time = {};
+  if (GetProcessTimes(GetCurrentProcess(), &create_time, &exit_time,
+                      &kernel_time, &user_time) == 0) {
+    return -1;
+  }
+  ULARGE_INTEGER k = {};
+  k.LowPart = kernel_time.dwLowDateTime;
+  k.HighPart = kernel_time.dwHighDateTime;
+  ULARGE_INTEGER u = {};
+  u.LowPart = user_time.dwLowDateTime;
+  u.HighPart = user_time.dwHighDateTime;
+  return static_cast<int64_t>((k.QuadPart + u.QuadPart) / 10ULL);
 }
 
 }  // namespace umbrella

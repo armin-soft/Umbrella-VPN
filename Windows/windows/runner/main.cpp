@@ -41,9 +41,24 @@ void FocusExistingWindow() {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t* command_line, _In_ int show_command) {
+  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
+  bool has_autostart = false;
+  bool has_minimized = false;
+  for (const std::string& arg : command_line_arguments) {
+    if (arg == "--autostart") {
+      has_autostart = true;
+    } else if (arg == "--minimized") {
+      has_minimized = true;
+    }
+  }
+
   HANDLE mutex = CreateMutexW(nullptr, TRUE, kMutexName);
   if (mutex != nullptr && GetLastError() == ERROR_ALREADY_EXISTS) {
-    FocusExistingWindow();
+    // Silent autostart retries must never steal focus from an already-running
+    // session. Only explicit user launches bring the running window forward.
+    if (!has_autostart) {
+      FocusExistingWindow();
+    }
     CloseHandle(mutex);
     return EXIT_SUCCESS;
   }
@@ -67,10 +82,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
 
-  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project);
+  FlutterWindow window(project, has_autostart || has_minimized);
   Win32Window::Point origin(0, 0);
   Win32Window::Size size(1280, 820);
   // Persian title, same as the window title the app sets after start-up.

@@ -79,9 +79,14 @@ class WindowService with WindowListener {
   bool _initialized = false;
   bool _quitting = false;
   bool _hiddenToTray = false;
+  bool _minimized = false;
+  bool _focused = true;
+  VoidCallback? onVisibilityChanged;
 
   /// آیا پنجره هم اکنون در سینی سیستم پنهان است (مثلا با اجرای خودکار خاموش).
   bool get isHiddenToTray => _hiddenToTray;
+  bool get isFocused => _focused;
+  bool get isVisible => !_hiddenToTray && !_minimized;
 
   /// پیش از بستن کامل برنامه (دکمه بستن، خروج از سینی، نصب به روز رسانی یا
   /// خاموشی ویندوز) صدا زده می شود تا هسته و CLI کامل و بی درنگ متوقف شوند.
@@ -114,6 +119,7 @@ class WindowService with WindowListener {
   Future<void> init({
     Size? size,
     Brightness initialBrightness = Brightness.dark,
+    bool startHidden = false,
   }) async {
     if (_initialized) {
       return;
@@ -145,8 +151,17 @@ class WindowService with WindowListener {
         await windowManager.setBrightness(initialBrightness);
       } catch (_) {}
       await windowManager.center();
-      await windowManager.show();
-      await windowManager.focus();
+      if (startHidden) {
+        _hiddenToTray = true;
+        _focused = false;
+        await windowManager.hide();
+      } else {
+        _hiddenToTray = false;
+        _focused = true;
+        await windowManager.show();
+        await windowManager.focus();
+      }
+      onVisibilityChanged?.call();
     });
     windowManager.addListener(this);
     _initialized = true;
@@ -180,13 +195,50 @@ class WindowService with WindowListener {
 
   Future<void> hide() async {
     _hiddenToTray = true;
+    _focused = false;
+    onVisibilityChanged?.call();
     await windowManager.hide();
   }
 
   Future<void> show() async {
     _hiddenToTray = false;
+    _minimized = false;
+    _focused = true;
+    onVisibilityChanged?.call();
+    if (await windowManager.isMinimized()) {
+      await windowManager.restore();
+    }
     await windowManager.show();
     await windowManager.focus();
+  }
+
+  @override
+  void onWindowFocus() {
+    _focused = true;
+    _hiddenToTray = false;
+    _minimized = false;
+    onVisibilityChanged?.call();
+  }
+
+  @override
+  void onWindowBlur() {
+    _focused = false;
+    onVisibilityChanged?.call();
+  }
+
+  @override
+  void onWindowMinimize() {
+    _focused = false;
+    _minimized = true;
+    onVisibilityChanged?.call();
+  }
+
+  @override
+  void onWindowRestore() {
+    _hiddenToTray = false;
+    _minimized = false;
+    _focused = true;
+    onVisibilityChanged?.call();
   }
 
   Future<void> quit() async {
@@ -244,6 +296,8 @@ class WindowService with WindowListener {
     }
     if (closeToTray) {
       _hiddenToTray = true;
+      _focused = false;
+      onVisibilityChanged?.call();
       await windowManager.hide();
       if (notificationsEnabled) {
         unawaited(
@@ -1326,7 +1380,14 @@ class AppLogger extends ChangeNotifier {
   static final AppLogger instance = AppLogger._();
 
   final List<LogLine> _lines = <LogLine>[];
+  final List<String> _previousCrashes = <String>[];
   List<LogLine> get lines => List<LogLine>.unmodifiable(_lines.reversed.toList());
+
+  void attachPreviousCrashes(List<String> reports) {
+    _previousCrashes
+      ..clear()
+      ..addAll(reports.map((String item) => redact(item).trim()).where((String item) => item.isNotEmpty));
+  }
 
   static final RegExp _proxyUriPattern = RegExp(
     r'\b(?:vless|vmess|trojan|ssr?|hysteria2?|hy2|tuic|wireguard|wg|warp|socks5?|anytls|ssh|mieru)://[^\s\)\]>"\x27،؛]+',
@@ -1569,6 +1630,13 @@ class AppLogger extends ChangeNotifier {
         for (final String row in text.split('\n')) {
           buffer.writeln('    $row');
         }
+      }
+    }
+    if (_previousCrashes.isNotEmpty) {
+      buffer.writeln('── گزارش خطای نشست قبلی ──');
+      for (final String crash in _previousCrashes) {
+        buffer.writeln(crash);
+        buffer.writeln('---');
       }
     }
     return buffer.toString();

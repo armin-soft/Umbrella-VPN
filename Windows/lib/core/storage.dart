@@ -14,6 +14,8 @@ class LocalStore {
   Directory? _directory;
   bool _ready = false;
 
+  bool get isReady => _ready;
+
   Future<void> init() async {
     if (_ready) {
       return;
@@ -174,6 +176,9 @@ class StoreKeys {
 
   /// پنجره Umbrella CLI هنگام اتصال باز شود.
   static const String showCli = 'cli.show';
+
+  /// مهلت بازگشت خودکار سطح گزارش به حالت پیش فرض (`warn`).
+  static const String debugLogUntil = 'logs.debugUntil';
 
   /// فایل قدیمی پروفایل کلش که در نسخه های پیشین ذخیره می شد و هنگام راه اندازی
   /// پاک سازی می شود تا هیچ اثری از منابع اضافه باقی نماند.

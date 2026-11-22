@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +9,9 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../platform/services.dart';
 import '../../platform/encrypted_report.dart';
+import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
+import '../../vpn/vpn_controller.dart';
 import '../widgets/common.dart';
 
 /// گزارش دقیق برنامه: هر خطا، هشدار و رویداد با تاریخ شمسی و ساعت تهران.
@@ -196,6 +200,7 @@ class _LogsPageState extends State<LogsPage> {
                       selected: _level == item.$1,
                       onSelected: (_) => setState(() => _level = item.$1),
                     ),
+                  const _DiagnosticSessionChip(),
                 ],
               );
             },
@@ -512,6 +517,89 @@ class _DetailPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// کلید حالت عیب یابی ۱۰ دقیقه ای با شمارش معکوس زنده و بازگشت خودکار.
+class _DiagnosticSessionChip extends StatefulWidget {
+  const _DiagnosticSessionChip();
+
+  @override
+  State<_DiagnosticSessionChip> createState() => _DiagnosticSessionChipState();
+}
+
+class _DiagnosticSessionChipState extends State<_DiagnosticSessionChip> {
+  Timer? _tick;
+
+  SettingsController? _maybeSettings(BuildContext context) {
+    try {
+      return Provider.of<SettingsController>(context);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  VpnController? _maybeVpn(BuildContext context) {
+    try {
+      return context.read<VpnController>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  void _syncTicker(bool active) {
+    if (active && _tick == null) {
+      _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!active && _tick != null) {
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsController? settings = _maybeSettings(context);
+    if (settings == null) {
+      return const SizedBox.shrink();
+    }
+    final UmbrellaColors colors = context.colors;
+    final bool active = settings.diagnosticActive;
+    _syncTicker(active);
+    final Duration remaining = settings.diagnosticRemaining;
+    final String label = active
+        ? 'عیب یابی فعال · ${Fa.duration(remaining)}'
+        : 'عیب یابی ۱۰ دقیقه ای';
+    return ActionChip(
+      key: const ValueKey<String>('logs-diagnostic-session-chip'),
+      avatar: Icon(
+        active ? Icons.bug_report_rounded : Icons.troubleshoot_rounded,
+        size: AppMetrics.iconSm,
+        color: active ? colors.primary : colors.textSecondary,
+      ),
+      label: Text(Fa.num(label)),
+      backgroundColor: active ? colors.primarySoft : null,
+      side: BorderSide(color: active ? colors.primary : colors.border),
+      onPressed: () async {
+        playUiClick(context);
+        final VpnController? vpn = _maybeVpn(context);
+        if (active) {
+          await settings.stopDiagnosticSession();
+          AppLogger.instance.add('حالت عیب یابی متوقف شد و سطح گزارش به حالت عادی بازگشت.');
+        } else {
+          await settings.startDiagnosticSession();
+          AppLogger.instance.add('حالت گزارش عیب یابی برای ۱۰ دقیقه فعال شد.');
+        }
+        vpn?.scheduleLiveReload();
+      },
     );
   }
 }

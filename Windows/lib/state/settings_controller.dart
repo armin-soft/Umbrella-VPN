@@ -28,6 +28,19 @@ class SettingsController extends ChangeNotifier {
   Timer? _debugRevertTimer;
   DateTime? _debugLogExpiresAt;
 
+  /// مهلت باقی مانده سطح گزارش عیب یابی (`debug` / `trace`) به صورت خودکار پس از ۱۰ دقیقه منقضی می شود.
+  DateTime? get debugLogExpiresAt => _debugLogExpiresAt;
+
+  bool get diagnosticActive =>
+      _debugLogExpiresAt != null && _debugLogExpiresAt!.isAfter(DateTime.now());
+
+  Duration get diagnosticRemaining {
+    final DateTime? expires = _debugLogExpiresAt;
+    if (expires == null) return Duration.zero;
+    final Duration left = expires.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+
   /// فراخوانی خودکار هنگام پایان مهلت ۱۰ دقیقه ای سطح گزارش `debug` تا اتصال
   /// فعال بدون دخالت کاربر به سطح سبک `warn` بازگردد.
   VoidCallback? onDebugLogExpired;
@@ -83,7 +96,7 @@ class SettingsController extends ChangeNotifier {
         _native.setAutostart(true, appName: AppConfig.autostartName),
       );
     }
-    _syncDebugRevertTimer(_settings.logLevel);
+    await _restoreOrExpireDebugSession();
     notifyListeners();
   }
 
@@ -444,23 +457,102 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(lastNodeId: nodeId), applyNative: false);
   }
 
+  Future<void> startDiagnosticSession({String level = 'debug'}) async {
+    final String normalized = CoreLogLevel.normalize(level);
+    final String target =
+        (normalized == 'debug' || normalized == 'trace') ? normalized : 'debug';
+    final DateTime expires = DateTime.now().add(const Duration(minutes: 10));
+    await _writeDebugUntil(expires);
+    await update(
+      _settings.copyWith(logLevel: target),
+      applyNative: false,
+    );
+    _scheduleDebugRevertAt(expires);
+    notifyListeners();
+  }
+
+  Future<void> stopDiagnosticSession() async {
+    _debugRevertTimer?.cancel();
+    _debugRevertTimer = null;
+    _debugLogExpiresAt = null;
+    await _writeDebugUntil(null);
+    await update(
+      _settings.copyWith(logLevel: CoreLogLevel.defaultLevel),
+      applyNative: false,
+    );
+  }
+
+  Future<void> _restoreOrExpireDebugSession() async {
+    final String normalized = CoreLogLevel.normalize(_settings.logLevel);
+    if (normalized != 'debug' && normalized != 'trace') {
+      _debugLogExpiresAt = null;
+      await _writeDebugUntil(null);
+      return;
+    }
+    final DateTime? savedUntil = _readDebugUntil();
+    final DateTime now = DateTime.now();
+    if (savedUntil == null || !savedUntil.isAfter(now)) {
+      _debugLogExpiresAt = null;
+      await _writeDebugUntil(null);
+      _settings = _settings.copyWith(logLevel: CoreLogLevel.defaultLevel);
+      if (LocalStore.instance.isReady) {
+        await LocalStore.instance.writeJson(
+          StoreKeys.settings,
+          _settings.toJson(),
+        );
+      }
+      return;
+    }
+    _scheduleDebugRevertAt(savedUntil);
+  }
+
+  DateTime? _readDebugUntil() {
+    if (!LocalStore.instance.isReady) {
+      return _debugLogExpiresAt;
+    }
+    final String? raw = LocalStore.instance.read(StoreKeys.debugLogUntil);
+    if (raw == null || raw.trim().isEmpty) return null;
+    return DateTime.tryParse(raw.trim())?.toLocal();
+  }
+
+  Future<void> _writeDebugUntil(DateTime? expires) async {
+    if (!LocalStore.instance.isReady) return;
+    await LocalStore.instance.write(
+      StoreKeys.debugLogUntil,
+      expires?.toUtc().toIso8601String(),
+    );
+  }
+
   void _syncDebugRevertTimer(String rawLevel) {
     _debugRevertTimer?.cancel();
     _debugRevertTimer = null;
     final String normalized = CoreLogLevel.normalize(rawLevel);
     if (normalized != 'debug' && normalized != 'trace') {
       _debugLogExpiresAt = null;
+      unawaited(_writeDebugUntil(null));
       return;
     }
     final DateTime expires =
         DateTime.now().add(const Duration(minutes: 10));
+    unawaited(_writeDebugUntil(expires));
+    _scheduleDebugRevertAt(expires);
+  }
+
+  void _scheduleDebugRevertAt(DateTime expires) {
+    _debugRevertTimer?.cancel();
+    final Duration delay = expires.difference(DateTime.now());
+    if (delay <= Duration.zero) {
+      _debugLogExpiresAt = null;
+      return;
+    }
     _debugLogExpiresAt = expires;
-    _debugRevertTimer = Timer(const Duration(minutes: 10), () {
+    _debugRevertTimer = Timer(delay, () {
       if (_debugLogExpiresAt != expires) return;
       _debugLogExpiresAt = null;
       final String current = CoreLogLevel.normalize(_settings.logLevel);
       if (current == 'debug' || current == 'trace') {
         unawaited(() async {
+          await _writeDebugUntil(null);
           await update(
             _settings.copyWith(logLevel: CoreLogLevel.defaultLevel),
             applyNative: false,

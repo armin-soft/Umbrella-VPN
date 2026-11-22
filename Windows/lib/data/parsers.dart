@@ -89,6 +89,11 @@ class SubscriptionParser {
       }
     }
     if (merged.nodes.isEmpty) {
+      if (SubscriptionHeaders.looksLikeOpenVpn(trimmed)) {
+        merged.problems
+            .add('پیکربندی اوپن وی پی ان در این نسخه پشتیبانی نمی شود.');
+        return merged;
+      }
       for (final ParseReport attempt in attempts) {
         for (final String problem in attempt.problems) {
           if (!merged.problems.contains(problem)) {
@@ -176,8 +181,14 @@ class SubscriptionParser {
       }
       report.nodes.add(node);
     }
-    if (report.nodes.isEmpty && report.problems.isEmpty) {
-      report.problems.add('هیچ سروری در این اشتراک پیدا نشد.');
+    if (report.nodes.isEmpty) {
+      if (SubscriptionHeaders.looksLikeOpenVpn(body)) {
+        report.problems.add('پیکربندی اوپن وی پی ان در این نسخه پشتیبانی نمی شود.');
+        return report;
+      }
+      if (report.problems.isEmpty) {
+        report.problems.add('هیچ سروری در این اشتراک پیدا نشد.');
+      }
     }
     return report;
   }
@@ -227,6 +238,8 @@ class SubscriptionParser {
           : '$scheme://$withoutFragment#$fragment';
 
       switch (scheme) {
+        case 'ovpn':
+          return null;
         case 'vless':
         case 'svless':
         case 'trojan':
@@ -1418,4 +1431,170 @@ class B64 {
   }
 
   static String encode(String value) => base64Encode(utf8.encode(value));
+}
+
+/// فراداده اشتراک خوانده شده از سرآیندهای HTTP یا خطوط توضیحات ابتدایی.
+class SubscriptionMetadata {
+  const SubscriptionMetadata({
+    this.title = '',
+    this.uploadBytes,
+    this.downloadBytes,
+    this.totalBytes,
+    this.expireAt,
+  });
+
+  final String title;
+  final int? uploadBytes;
+  final int? downloadBytes;
+  final int? totalBytes;
+  final DateTime? expireAt;
+}
+
+/// استخراج عنوان و اطلاعات مصرف اشتراک با تحمل خطاهای رایج پنل ها
+/// (Base64 بدون padding، RFC 5987 در Content-Disposition و جداکننده های تکراری).
+class SubscriptionHeaders {
+  const SubscriptionHeaders._();
+
+  static final RegExp _ovpnRemote =
+      RegExp(r'^\s*remote\s+\S+', multiLine: true);
+
+  static bool looksLikeOpenVpn(String raw) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) return false;
+    final String lower = trimmed.toLowerCase();
+    if (lower.startsWith('ovpn://')) return true;
+    return _ovpnRemote.hasMatch(trimmed) &&
+        (lower.contains('<ca>') ||
+            lower.contains('<cert>') ||
+            lower.contains('dev ') ||
+            lower.contains('proto '));
+  }
+
+  static String decodeProfileTitle(String? raw) {
+    final String clean = (raw ?? '').trim();
+    if (clean.isEmpty) return '';
+    if (clean.toLowerCase().startsWith('base64:')) {
+      final String encoded = clean.substring(7).trim();
+      final String? decoded = B64.tryDecode(encoded);
+      if (decoded != null && decoded.trim().isNotEmpty) {
+        return decoded.trim();
+      }
+    }
+    return clean;
+  }
+
+  static String parseContentDispositionTitle(String? header) {
+    final String clean = (header ?? '').trim();
+    if (clean.isEmpty) return '';
+    final RegExpMatch? extMatch = RegExp(
+      r'''filename\*\s*=\s*(?:utf-8|UTF-8)?''([^;]+)''',
+    ).firstMatch(clean);
+    if (extMatch != null) {
+      final String value = extMatch.group(1)!.trim().replaceAll('"', '');
+      try {
+        final String decoded = Uri.decodeComponent(value).trim();
+        if (decoded.isNotEmpty) return decoded;
+      } on ArgumentError {
+        if (value.isNotEmpty) return value;
+      }
+    }
+    final RegExpMatch? basicMatch = RegExp(
+      r'''filename\s*=\s*(?:"([^"]+)"|([^;]+))''',
+      caseSensitive: false,
+    ).firstMatch(clean);
+    if (basicMatch != null) {
+      final String value =
+          (basicMatch.group(1) ?? basicMatch.group(2) ?? '').trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  static SubscriptionMetadata parse(
+    Map<String, String> headers, [
+    String body = '',
+  ]) {
+    final Map<String, String> lower = <String, String>{
+      for (final MapEntry<String, String> entry in headers.entries)
+        entry.key.toLowerCase().trim(): entry.value.trim(),
+    };
+    String bodyTitle = '';
+    String bodyUserInfo = '';
+    if (body.isNotEmpty) {
+      for (final String rawLine in const LineSplitter().convert(body)) {
+        final String line = rawLine.trim();
+        if (line.isEmpty) continue;
+        if (!line.startsWith('#') && !line.startsWith('//')) break;
+        final String stripped =
+            line.replaceFirst(RegExp(r'^(?:#+|//)\s*'), '').trim();
+        final int colon = stripped.indexOf(':');
+        if (colon <= 0) continue;
+        final String key = stripped.substring(0, colon).trim().toLowerCase();
+        final String val = stripped.substring(colon + 1).trim();
+        if (key == 'profile-title' && bodyTitle.isEmpty) {
+          bodyTitle = val;
+        } else if (key == 'subscription-userinfo' && bodyUserInfo.isEmpty) {
+          bodyUserInfo = val;
+        }
+      }
+    }
+
+    String title = decodeProfileTitle(lower['profile-title']);
+    if (title.isEmpty) {
+      title = decodeProfileTitle(bodyTitle);
+    }
+    if (title.isEmpty) {
+      title = parseContentDispositionTitle(lower['content-disposition']);
+    }
+
+    final String userInfoRaw =
+        (lower['subscription-userinfo'] ?? '').isNotEmpty
+            ? lower['subscription-userinfo']!
+            : bodyUserInfo;
+
+    int? upload;
+    int? download;
+    int? total;
+    DateTime? expire;
+    if (userInfoRaw.isNotEmpty) {
+      for (final String token in userInfoRaw.split(';')) {
+        final String pair = token.trim();
+        if (pair.isEmpty) continue;
+        final int eq = pair.indexOf('=');
+        if (eq <= 0) continue;
+        final String key = pair.substring(0, eq).trim().toLowerCase();
+        final String rawVal = pair.substring(eq + 1).trim();
+        final num? numeric = num.tryParse(rawVal);
+        if (numeric == null || !numeric.isFinite || numeric < 0) continue;
+        final int value = numeric.round();
+        switch (key) {
+          case 'upload':
+            upload = value;
+            break;
+          case 'download':
+            download = value;
+            break;
+          case 'total':
+            total = value > 0 ? value : null;
+            break;
+          case 'expire':
+            if (value > 0 && value < 32503680000) {
+              expire = DateTime.fromMillisecondsSinceEpoch(
+                value * 1000,
+                isUtc: true,
+              );
+            }
+            break;
+        }
+      }
+    }
+
+    return SubscriptionMetadata(
+      title: title,
+      uploadBytes: upload,
+      downloadBytes: download,
+      totalBytes: total,
+      expireAt: expire,
+    );
+  }
 }

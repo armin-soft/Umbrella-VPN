@@ -28,13 +28,26 @@ class NativeHttpResponse {
 
 /// وضعیت سبک برق ویندوز؛ مقدار نامشخص هرگز به معنی باتری فرض نمی شود.
 class BatteryPowerState {
-  const BatteryPowerState({required this.hasBattery, required this.onBattery,
-    required this.energySaver, this.isLaptop, this.powerKnown = true});
+  const BatteryPowerState({
+    required this.hasBattery,
+    required this.onBattery,
+    required this.energySaver,
+    this.isLaptop,
+    this.powerKnown = true,
+    this.batteryPercent = -1,
+  });
   final bool hasBattery;
   final bool onBattery;
   final bool energySaver;
   final bool? isLaptop;
   final bool powerKnown;
+  final int batteryPercent;
+  bool get isCriticallyLowBattery =>
+      powerKnown &&
+      hasBattery &&
+      onBattery &&
+      batteryPercent >= 0 &&
+      batteryPercent < 5;
   bool get shouldOptimize => isLaptop == true && powerKnown && hasBattery &&
       (onBattery || energySaver);
 }
@@ -286,7 +299,22 @@ class NativeBridge {
         hasBattery: known && raw['hasBattery'] == true,
         onBattery: known && raw['onBattery'] == true,
         energySaver: known && raw['energySaver'] == true,
+        batteryPercent: raw['batteryPercent'] is int
+            ? raw['batteryPercent'] as int
+            : -1,
       );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// زمان پردازنده مصرف شده توسط فرایند برنامه بر حسب میکروثانیه.
+  Future<int?> processCpuTimeMicros() async {
+    try {
+      final int? us = await _channel.invokeMethod<int>('processCpuTimeUs');
+      return us != null && us >= 0 ? us : null;
     } on MissingPluginException {
       return null;
     } on PlatformException {
@@ -703,7 +731,7 @@ class NativeBridge {
       '/t',
       'REG_SZ',
       '/d',
-      '"$exe" --minimized',
+      '"$exe" --autostart --minimized',
       '/f',
     ]);
   }

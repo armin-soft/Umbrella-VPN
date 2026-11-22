@@ -117,6 +117,7 @@ class SystemOps {
 
   bool SetAutostart(bool enabled, const std::string& app_name);
   bool AutostartEnabled(const std::string& app_name);
+  int64_t ProcessCpuTimeMicros();
 
   std::string ExecutablePath();
 

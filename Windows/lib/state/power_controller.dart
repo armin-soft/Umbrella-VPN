@@ -14,11 +14,14 @@ class PowerController extends ChangeNotifier {
   final Duration pollInterval;
   bool _enabled;
   bool _active = false;
+  bool _criticallyLow = false;
   bool? _isLaptop;
   bool _reading = false;
   bool _disposed = false;
   Timer? _timer;
   bool get active => _active;
+  bool get criticallyLow => _criticallyLow;
+  bool get lowOrSaving => _active || _criticallyLow;
   bool? get isLaptop => _isLaptop;
 
   void start() {
@@ -30,7 +33,7 @@ class PowerController extends ChangeNotifier {
   void setEnabled(bool enabled) {
     if (_disposed || _enabled == enabled) return;
     _enabled = enabled;
-    if (!enabled) _update(active: false);
+    if (!enabled) _update(active: false, criticallyLow: _criticallyLow);
     // Continue detecting hardware even if the user has disabled optimization.
     unawaited(refresh());
   }
@@ -41,22 +44,34 @@ class PowerController extends ChangeNotifier {
     try {
       final state = await _readStatus();
       if (!_disposed) {
-        _update(laptop: state?.isLaptop,
-            active: _enabled && (state?.shouldOptimize ?? false));
+        _update(
+          laptop: state?.isLaptop,
+          active: _enabled && (state?.shouldOptimize ?? false),
+          criticallyLow: state?.isCriticallyLowBattery ?? false,
+        );
       }
     } catch (_) {
-      if (!_disposed) _update(active: false);
+      if (!_disposed) _update(active: false, criticallyLow: false);
     } finally {
       _reading = false;
     }
   }
 
-  void _update({bool? laptop, required bool active}) {
+  void _update({
+    bool? laptop,
+    required bool active,
+    required bool criticallyLow,
+  }) {
     if (_disposed) return;
     final bool? nextLaptop = laptop ?? _isLaptop;
-    if (_active == active && _isLaptop == nextLaptop) return;
+    if (_active == active &&
+        _isLaptop == nextLaptop &&
+        _criticallyLow == criticallyLow) {
+      return;
+    }
     _active = active;
     _isLaptop = nextLaptop;
+    _criticallyLow = criticallyLow;
     notifyListeners();
   }
 

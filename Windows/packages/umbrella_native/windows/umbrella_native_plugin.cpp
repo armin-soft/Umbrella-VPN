@@ -279,8 +279,17 @@ void UmbrellaNativePlugin::HandleMethodCall(
       map[flutter::EncodableValue("hasBattery")] = flutter::EncodableValue(has_battery);
       map[flutter::EncodableValue("onBattery")] = flutter::EncodableValue(success && power.ACLineStatus == 0);
       map[flutter::EncodableValue("energySaver")] = flutter::EncodableValue(success && power.SystemStatusFlag == 1);
+      map[flutter::EncodableValue("batteryPercent")] = flutter::EncodableValue(
+          success && power.BatteryLifePercent <= 100
+              ? static_cast<int>(power.BatteryLifePercent)
+              : -1);
       return flutter::EncodableValue(map);
     });
+    return;
+  }
+  if (method == "processCpuTimeUs") {
+    result->Success(flutter::EncodableValue(
+        static_cast<int64_t>(ops_.ProcessCpuTimeMicros())));
     return;
   }
   if (method == "deviceInfo") {

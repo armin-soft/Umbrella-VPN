@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../platform/services.dart';
+import '../../state/motion_controller.dart';
 
 /// Optional in isolated tests; audio failures must not block the action.
 void playUiClick(BuildContext context) {
@@ -1091,7 +1092,36 @@ class _StatusOrbState extends State<StatusOrb>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2600),
-  )..repeat(reverse: true);
+  );
+
+  void _syncAnimation() {
+    final bool disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final MotionController? motion = MotionController.maybeWatch(context);
+    final bool animate = !disableAnimations &&
+        (widget.active || (motion?.shouldAnimateAmbient ?? true));
+    if (animate) {
+      if (!_controller.isAnimating) {
+        _controller.repeat(reverse: true);
+      }
+    } else if (_controller.isAnimating || _controller.value != 0) {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant StatusOrb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) {
+      _syncAnimation();
+    }
+  }
 
   @override
   void dispose() {
