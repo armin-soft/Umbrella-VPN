@@ -22,8 +22,7 @@ void main() {
     ).toJson());
     final AuthController auth = AuthController(
       native: NativeBridge(), store: store,
-      gateway: GatewayClient(baseUrl: 'https://gateway.example.test',
-        enableNativeTransport: false, client: client),
+      gateway: GatewayClient(baseUrl: 'https://gateway.example.test', client: client),
     );
     await auth.restore();
     return auth;
