@@ -283,6 +283,19 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _cancelWalletPayment(AuthController auth, ToastController toasts) async {
+    if (auth.walletPendingId.isEmpty) {
+      final bool refreshed = await auth.refreshWallet();
+      if (!mounted) return;
+      if (!refreshed || !auth.walletPaymentPending || auth.walletPendingId.isEmpty) {
+        toasts.error('لغو سفارش انجام نشد', !refreshed && auth.error.isNotEmpty
+            ? auth.error
+            : !auth.walletPaymentPending
+                ? 'سفارش فعالی وجود ندارد؛ وضعیت کیف پول را بررسی کنید.'
+                : 'شناسه امن سفارش از سرور دریافت نشد؛ سرویس پرداخت سرور باید به روز شود.');
+        return;
+      }
+    }
+    final String expectedPendingId = auth.walletPendingId;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -295,7 +308,7 @@ class _AccountPageState extends State<AccountPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    final ok = await auth.cancelWalletPayment();
+    final ok = await auth.cancelWalletPayment(expectedPendingId: expectedPendingId);
     if (!mounted) return;
     if (ok) {
       toasts.success('سفارش لغو شد؛ پرداخت دیرهنگام به کیف پول افزوده می شود.');

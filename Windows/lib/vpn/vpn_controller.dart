@@ -1295,8 +1295,9 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
     }
+    final String profileLabel = requested == null ? 'خودکار' : requested.protocol.label;
     _log.add(
-      'درخواست اتصال: ${Fa.num(_nodes.length)} سرور در اشتراک، '
+      'درخواست اتصال: نوع «$profileLabel»، ${Fa.num(requested == null ? fitting.length : 1)} مسیر برای این انتخاب، '
       'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',
     );
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
@@ -1717,12 +1718,15 @@ class VpnController extends ChangeNotifier {
         final String coreLog = _coreLogPath(plan);
         final String tail = await _readLogTail(coreLog);
         _log.add(
-          poolExhausted
-              ? 'همه سرورهای اشتراک بررسی شدند و در شبکه فعلی هیچ سرور '
-                  'در دسترسی پاسخ نداد.'
+          _singleNodeSession
+              ? 'مسیر انتخاب شده «${node.protocol.label}» در مهلت سنجش پاسخ نداد. '
+                  'این خطا به تنهایی علت مشکل یا وضعیت سایر مسیرها را مشخص نمی کند.'
                   '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}'
-              : 'هسته بالا آمد ولی در مهلت تعیین شده هیچ سروری پاسخ نداد.'
-                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+              : poolExhausted
+                  ? 'هسته برای مسیرهای حالت خودکار پاسخی دریافت نکرد.'
+                      '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}'
+                  : 'هسته بالا آمد ولی در مهلت تعیین شده پاسخی دریافت نشد.'
+                      '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
           level: 'error',
           details: await _coreDiagnostics(
             plan.cores.first,
@@ -1854,10 +1858,11 @@ class VpnController extends ChangeNotifier {
     }
 
     _preferredCore.remove(node.id);
-    _setStatus(VpnStatus.failed, 'هیچ هسته ای نتوانست اتصال را برقرار کند.');
-    return const _AttemptResult(
-      message: 'هیچ هسته ای نتوانست تونل را بالا بیاورد؛ گزارش ها را ببینید.',
-    );
+    final String failure = _singleNodeSession
+        ? 'اتصال «${node.protocol.label}» تأیید نشد؛ گزارش ها را ببینید.'
+        : 'اتصال خودکار تأیید نشد؛ گزارش ها را ببینید.';
+    _setStatus(VpnStatus.failed, failure);
+    return _AttemptResult(message: failure);
   }
 
   Future<void> _terminateForeignCores() async {

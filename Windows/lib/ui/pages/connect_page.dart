@@ -36,7 +36,7 @@ class _ConnectPageState extends State<ConnectPage> {
     final VpnController vpn = context.read<VpnController>();
     final SubscriptionController subs = context.read<SubscriptionController>();
     final ToastController toasts = context.read<ToastController>();
-    if (vpn.status.busy) return;
+    if (vpn.status.busy || (vpn.status.active && id == _profile)) return;
     if (vpn.status.active) await vpn.disconnect();
     if (!mounted) return;
     setState(() => _profile = id);
@@ -572,17 +572,19 @@ class _ConnectPageState extends State<ConnectPage> {
                           spacing: AppMetrics.space2,
                           runSpacing: AppMetrics.space2,
                           children: <Widget>[
-                            for (final MapEntry<String, String> profile in <String, String>{
-                              'user-sub': 'خودکار',
-                              'user-wireguard': 'وایرگارد',
-                              'user-amnezia': 'آمنزیا',
-                              'user-mieru': 'میرو',
-                            }.entries)
+                            for (final ({String id, String title, IconData icon}) profile in <({String id, String title, IconData icon})>[
+                              (id: 'user-sub', title: 'خودکار', icon: Icons.auto_awesome_rounded),
+                              (id: 'user-wireguard', title: 'وایرگارد', icon: Icons.vpn_key_rounded),
+                              (id: 'user-amnezia', title: 'آمنزیا', icon: Icons.shield_rounded),
+                              (id: 'user-mieru', title: 'میرو', icon: Icons.hub_rounded),
+                            ])
                               ChoiceChip(
-                                key: ValueKey<String>('connection-profile-${profile.key}'),
-                                label: Text(profile.value),
-                                selected: _profile == profile.key,
-                                onSelected: status.busy ? null : (_) => _selectProfile(profile.key),
+                                key: ValueKey<String>('connection-profile-${profile.id}'),
+                                avatar: Icon(profile.icon, size: AppMetrics.iconSm),
+                                label: Text(profile.title),
+                                showCheckmark: false,
+                                selected: _profile == profile.id,
+                                onSelected: status.busy ? null : (_) => _selectProfile(profile.id),
                               ),
                           ],
                         ),

@@ -200,6 +200,7 @@ class AuthController extends ChangeNotifier {
   double _walletPendingAmount = 0;
   double get walletPendingAmount => _walletPendingAmount;
   String _walletPendingId = '';
+  String get walletPendingId => _walletPendingId;
   String _walletCheckoutUrl = '';
   String get walletCheckoutUrl => _walletCheckoutUrl;
 
@@ -248,16 +249,35 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> cancelWalletPayment() async {
+  Future<bool> cancelWalletPayment({String? expectedPendingId}) async {
     final session = _session;
-    if (session == null || _walletBusy || _walletPendingId.isEmpty) return false;
+    if (session == null || _walletBusy) return false;
+    if (_walletPendingId.isEmpty) {
+      _error = 'شناسه امن سفارش دریافت نشد؛ وضعیت کیف پول را تازه کنید. اگر مشکل ادامه داشت، سرویس پرداخت سرور نیاز به به روزرسانی دارد.';
+      notifyListeners();
+      return false;
+    }
+    if (expectedPendingId != null && expectedPendingId != _walletPendingId) {
+      _error = 'سفارش تغییر کرده است؛ وضعیت جدید را بررسی و دوباره تأیید کنید.';
+      notifyListeners();
+      return false;
+    }
+    final String pendingId = _walletPendingId;
     _walletBusy = true;
     _error = '';
     notifyListeners();
     try {
-      final result = await _gateway.cancelWalletPayment(session.token, _walletPendingId);
+      final result = await _gateway.cancelWalletPayment(session.token, pendingId);
       if (_session?.token != session.token) return false;
+      if (result['payment_pending'] is! bool) {
+        _error = 'پاسخ لغو از سرور قابل تأیید نیست؛ کیف پول را تازه کنید و در صورت نیاز با پشتیبانی تماس بگیرید.';
+        return false;
+      }
       _applyWallet(result);
+      if (_walletPaymentPending) {
+        _error = 'سفارش هنوز در انتظار است یا سفارش دیگری جایگزین شده؛ وضعیت کیف پول را بررسی کنید.';
+        return false;
+      }
       return true;
     } on ApiError catch (error) {
       if (_session?.token != session.token) return false;
@@ -266,6 +286,8 @@ class AuthController extends ChangeNotifier {
       } else if (error.needsLogin) {
         await signOut(callServer: false);
         _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+      } else if (error.status == 404 || error.code == 'route_not_found') {
+        _error = 'سرویس لغو سفارش روی سرور در دسترس نیست؛ به روزرسانی سرور پرداخت لازم است.';
       } else {
         _error = error.message;
       }
