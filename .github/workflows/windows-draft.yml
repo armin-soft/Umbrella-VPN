@@ -92,11 +92,37 @@ jobs:
             fi
             echo "$out"
           done
+  cancelled-payment-mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-password
+          MYSQL_DATABASE: umbrella_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -ptest-password"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: umbrella_test
+      DB_USER: root
+      DB_PASSWORD: test-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring, curl, openssl
+          coverage: none
+      - run: php Telegram-BOT/tests/cancelled_payment_mysql_integration.php
   installer:
-    needs: telegram-bot
+    needs: [telegram-bot, cancelled-payment-mysql]
     # A manually requested installer artifact can be built even when the
     # separate bot suite is failing. Published/draft releases still require it.
-    if: ${{ always() && (needs.telegram-bot.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact')) }}
+    if: ${{ always() && ((needs.telegram-bot.result == 'success' && needs.cancelled-payment-mysql.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact')) }}
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:

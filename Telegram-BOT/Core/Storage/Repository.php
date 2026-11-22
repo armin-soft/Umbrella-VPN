@@ -950,6 +950,56 @@ Database::getInstance()->execute(
 );
 }
 
+/** Archive and clear one known-credit order atomically. A late payment is
+ * credited to the shared wallet, never used to activate a cancelled plan. */
+public static function archivePendingPayment(int $User_ID, string $ExpectedHash): bool {
+return Database::getInstance()->transaction(static function ($Db) use ($User_ID, $ExpectedHash): bool {
+$Row = $Db->fetch('SELECT * FROM `User_Sessions` WHERE `Telegram_ID` = ? FOR UPDATE', [$User_ID]);
+$Pending = (string)($Row['Pending_Payment'] ?? '');
+if ($Pending === '') return false;
+if (!hash_equals(hash('sha256', $Pending), $ExpectedHash)) throw new RuntimeException('payment_changed');
+$Parts = array_pad(explode('|', $Pending, 3), 3, '');
+$Amount = (float)$Parts[1];
+$Credit = (float)($Row['Pending_Topup'] ?? 0);
+// Legacy plan orders do not preserve the fee/credit amount. Never guess it.
+if (!Zarinpal::validAuthority($Parts[2]) || !is_finite($Amount) || $Amount <= 0 || !is_finite($Credit) || $Credit <= 0 || $Credit > $Amount) {
+throw new RuntimeException('payment_cannot_cancel_safely');
+}
+$Db->execute('INSERT INTO `App_Cancelled_Payments` (`Authority`,`Telegram_ID`,`Pending_Payment`,`Pending_Topup`,`Pending_Plan`,`Pending_Custom_Plan`,`Amount`,`Credit`) VALUES (?,?,?,?,?,?,?,?)',
+[$Parts[2], $User_ID, $Pending, (string)$Row['Pending_Topup'], $Row['Pending_Plan'] ?? null, $Row['Pending_Custom_Plan'] ?? null, $Amount, $Credit]);
+if (!self::claimPendingPayment($User_ID, $Pending)) throw new RuntimeException('payment_changed');
+return true;
+});
+}
+
+public static function cancelledPayment(int $User_ID, string $Authority): ?array {
+return Database::getInstance()->fetch('SELECT * FROM `App_Cancelled_Payments` WHERE `Telegram_ID` = ? AND `Authority` = ? LIMIT 1', [$User_ID, $Authority]);
+}
+
+public static function cancelledPaymentsForRecovery(int $Limit = 15): array {
+return Database::getInstance()->fetchAll("SELECT * FROM `App_Cancelled_Payments` WHERE `Status` = 'pending' AND (`Checked_At` IS NULL OR `Checked_At` < NOW() - INTERVAL 6 HOUR) ORDER BY `Checked_At` ASC, `Created_At` ASC LIMIT " . max(1, $Limit));
+}
+
+public static function touchCancelledPayment(int $User_ID, string $Authority): void {
+Database::getInstance()->execute("UPDATE `App_Cancelled_Payments` SET `Checked_At` = NOW() WHERE `Telegram_ID` = ? AND `Authority` = ? AND `Status` = 'pending'", [$User_ID, $Authority]);
+}
+
+/** Claim receipt and credit together; retries and concurrent callbacks cannot double-credit. */
+public static function settleCancelledPayment(int $User_ID, string $Authority, string $Reference): bool {
+if (!preg_match('/^[1-9][0-9]*$/D', $Reference)) throw new InvalidArgumentException('Invalid receipt');
+return Database::getInstance()->transaction(static function ($Db) use ($User_ID, $Authority, $Reference): bool {
+$Row = $Db->fetch('SELECT * FROM `App_Cancelled_Payments` WHERE `Telegram_ID` = ? AND `Authority` = ? FOR UPDATE', [$User_ID, $Authority]);
+if ($Row === null || $Row['Status'] !== 'pending') return false;
+$Amount = (float)$Row['Amount']; $Credit = (float)$Row['Credit'];
+if ($Credit <= 0 || $Credit > $Amount) throw new RuntimeException('Invalid archived credit');
+if ($Db->fetch('SELECT `Balance` FROM `Users` WHERE `Telegram_ID` = ? FOR UPDATE', [$User_ID]) === null) throw new RuntimeException('Gateway user missing');
+self::recordGatewayPayment($User_ID, $Amount, $Reference);
+self::addMoney($User_ID, $Credit, 'واریز پرداخت دیرهنگام سفارش لغوشده به کیف پول', 'gateway');
+$Db->execute("UPDATE `App_Cancelled_Payments` SET `Status` = 'settled', `Settled_At` = NOW() WHERE `Telegram_ID` = ? AND `Authority` = ?", [$User_ID, $Authority]);
+return true;
+});
+}
+
 /** Commit receipt, wallet credit and claim together; database failures keep the order retryable. */
 public static function settleGatewayFunds(int $User_ID, array $Snapshot, float $Amount, string $Reference, float $Credit): bool {
 $Pending = (string)($Snapshot['Pending_Payment'] ?? '');

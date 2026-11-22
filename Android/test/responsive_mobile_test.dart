@@ -261,6 +261,9 @@ void main() {
             problems.add('${page.runtimeType} at $size / $textScale: $problem\n$stack');
           }
           if (page is ConnectPage && problem == null && problems.length == errorsBefore) {
+            final card = tester.getRect(find.byKey(const ValueKey('connect-full-width-card')));
+            final pageWidth = tester.getSize(find.byWidget(page)).width;
+            expect(card.width, closeTo(pageWidth - 16, 1), reason: 'Connection card fills the available width');
             final orbRect = tester.getRect(find.byType(StatusOrb));
             if (size.height >= 568 && textScale == 1.0) {
               expect(orbRect.width, greaterThan(110), reason: 'Status artwork should remain prominent on phones');

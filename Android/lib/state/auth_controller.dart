@@ -199,6 +199,7 @@ class AuthController extends ChangeNotifier {
   double get walletPendingCredit => _walletPendingCredit;
   double _walletPendingAmount = 0;
   double get walletPendingAmount => _walletPendingAmount;
+  String _walletPendingId = '';
   String _walletCheckoutUrl = '';
   String get walletCheckoutUrl => _walletCheckoutUrl;
 
@@ -209,6 +210,7 @@ class AuthController extends ChangeNotifier {
     _walletMinTopup = JsonX.integer(value['min_topup']);
     _walletMaxTopup = JsonX.integer(value['max_topup']);
     _walletPaymentPending = JsonX.boolean(value['payment_pending']);
+    _walletPendingId = JsonX.text(value['pending_id']);
     _walletTopupPending = JsonX.boolean(value['pending_wallet_topup']);
     _walletPendingCredit = JsonX.number(value['pending_credit']);
     _walletPendingAmount = JsonX.number(value['pending_amount']);
@@ -246,6 +248,34 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> cancelWalletPayment() async {
+    final session = _session;
+    if (session == null || _walletBusy || _walletPendingId.isEmpty) return false;
+    _walletBusy = true;
+    _error = '';
+    notifyListeners();
+    try {
+      final result = await _gateway.cancelWalletPayment(session.token, _walletPendingId);
+      if (_session?.token != session.token) return false;
+      _applyWallet(result);
+      return true;
+    } on ApiError catch (error) {
+      if (_session?.token != session.token) return false;
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else if (error.needsLogin) {
+        await signOut(callServer: false);
+        _error = 'نشست منقضی شد؛ دوباره وارد شوید.';
+      } else {
+        _error = error.message;
+      }
+      return false;
+    } finally {
+      _walletBusy = false;
+      notifyListeners();
+    }
+  }
+
   Future<Map<String, dynamic>?> startWalletTopup(int amount) async {
     final session = _session;
     if (session == null || _walletBusy) return null;
@@ -257,6 +287,7 @@ class AuthController extends ChangeNotifier {
       if (_session?.token != session.token) return null;
       // Pending state is retained even if opening the external browser fails.
       _walletPaymentPending = true;
+      _walletPendingId = JsonX.text(result['pending_id']);
       _walletTopupPending = true;
       _walletPendingCredit = JsonX.number(result['credit']);
       _walletPendingAmount = JsonX.number(result['gateway_amount']);
@@ -1508,6 +1539,7 @@ class AuthController extends ChangeNotifier {
     _walletMinTopup = 0;
     _walletMaxTopup = 0;
     _walletPaymentPending = false;
+    _walletPendingId = '';
     _walletTopupPending = false;
     _walletPendingCredit = 0;
     _walletPendingAmount = 0;

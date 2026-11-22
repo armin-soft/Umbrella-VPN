@@ -282,6 +282,28 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  Future<void> _cancelWalletPayment(AuthController auth, ToastController toasts) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('لغو سفارش پرداخت؟'),
+        content: const Text('لینک درگاه ممکن است همچنان قابل پرداخت باشد. اگر پرداخت دیرتر تأیید شود، مبلغ بدون کارمزد به کیف پول شما اضافه می شود و اشتراک لغوشده فعال نمی شود. اگر وجه کسر شده، دوباره پرداخت نکنید.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('بازگشت')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('لغو سفارش')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await auth.cancelWalletPayment();
+    if (!mounted) return;
+    if (ok) {
+      toasts.success('سفارش لغو شد؛ پرداخت دیرهنگام به کیف پول افزوده می شود.');
+    } else {
+      toasts.error('لغو سفارش انجام نشد', auth.error.isEmpty ? 'ابتدا وضعیت کیف پول را تازه سازی کنید.' : auth.error);
+    }
+  }
+
   Future<void> _openWalletCheckout(String link, ToastController toasts) async {
     final Uri? uri = Uri.tryParse(link);
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
@@ -990,6 +1012,7 @@ class _AccountPageState extends State<AccountPage> {
               onTopup: () => _topupWallet(auth, toasts),
               onRefresh: () => _refreshWallet(auth, toasts),
               onVerify: () => _refreshWallet(auth, toasts, verify: true),
+              onCancel: () => _cancelWalletPayment(auth, toasts),
               onContinue: () =>
                   _openWalletCheckout(auth.walletCheckoutUrl, toasts),
             ),
@@ -1661,6 +1684,7 @@ class _WalletCard extends StatelessWidget {
     required this.onTopup,
     required this.onRefresh,
     required this.onVerify,
+    required this.onCancel,
     required this.onContinue,
   });
 
@@ -1668,6 +1692,7 @@ class _WalletCard extends StatelessWidget {
   final VoidCallback onTopup;
   final VoidCallback onRefresh;
   final VoidCallback onVerify;
+  final VoidCallback onCancel;
   final VoidCallback onContinue;
 
   @override
@@ -1821,11 +1846,17 @@ class _WalletCard extends StatelessWidget {
                   icon: const Icon(Icons.open_in_new_rounded),
                   label: const Text('ادامه پرداخت'),
                 ),
-              if (auth.walletTopupPending)
+              if (auth.walletPaymentPending)
                 OutlinedButton.icon(
                   onPressed: auth.walletBusy ? null : onVerify,
                   icon: const Icon(Icons.verified_rounded),
                   label: const Text('بررسی پرداخت'),
+                ),
+              if (auth.walletPaymentPending)
+                OutlinedButton.icon(
+                  onPressed: auth.walletBusy ? null : onCancel,
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('لغو سفارش پرداخت'),
                 ),
               OutlinedButton.icon(
                 onPressed: auth.walletBusy ? null : onRefresh,

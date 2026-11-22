@@ -398,6 +398,11 @@ if (!class_exists('SubscriptionFlow')) {
 require_once __DIR__ . '/Subscription.php';
 }
 
+foreach (Repository::cancelledPaymentsForRecovery(15) as $Archived) {
+try { SubscriptionFlow::recoverCancelledPayment((int)$Archived['Telegram_ID'], (string)$Archived['Authority']); }
+catch (Throwable $Error) { error_log('[Umbrella-Bot][Cancelled-Payment-Recovery] ' . $Error->getMessage()); }
+}
+
 foreach (Repository::sessionsAwaitingPayment(15) as $Row) {
 $User_ID = (int)($Row['Telegram_ID'] ?? 0);
 

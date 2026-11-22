@@ -295,13 +295,8 @@ class _ConnectPageState extends State<ConnectPage> {
         final double cardHeight = (900 * scale).clamp(constraints.maxHeight - 16, double.infinity);
         return Padding(
           padding: const EdgeInsets.all(8),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.topCenter,
-            child: SizedBox(
-              width: (constraints.maxWidth - 16).clamp  (200.0, 800.0),
-              height: cardHeight,
-            child: GlassCard(
+          child: GlassCard(
+              key: const ValueKey<String>('connect-full-width-card'),
               radius: AppMetrics.radiusHuge,
               padding: const EdgeInsets.fromLTRB(
                 AppMetrics.space6,
@@ -325,7 +320,13 @@ class _ConnectPageState extends State<ConnectPage> {
                   colors.backgroundAlt,
                 ],
               ),
-              child: Column(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: (constraints.maxWidth - 64).clamp(120.0, double.infinity),
+                  height: (cardHeight - 40).clamp(1.0, double.infinity),
+                  child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[

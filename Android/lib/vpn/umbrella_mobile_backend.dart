@@ -160,10 +160,12 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
   Future<bool> verifyTraffic() async {
     final client = _connection?.client;
     StreamSubscription<CoreInfoResponse>? subscription;
+    int? latestState;
     if (client != null) {
       int? lastState;
       int? lastMessage;
       subscription = client.coreInfoListener().listen((info) {
+        latestState = info.coreState;
         if (lastState != info.coreState || lastMessage != info.messageType) {
           lastState = info.coreState;
           lastMessage = info.messageType;
@@ -172,7 +174,12 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
       }, onError: (Object error) { _traceError('verify.core_listener', error); });
     }
     try {
-      return await verifyTunTraffic();
+      final verified = await verifyTunTraffic();
+      if (!verified && latestState == CoreStates.noAvailableProxies) {
+        _trace('verify.no_available_proxies');
+        throw const MobileVpnFailure('هسته هیچ مسیر قابل استفاده‌ای در آزمون اولیه پیدا نکرد؛ سرور، شبکه و دسترسی به نشانی آزمون را بررسی کنید.');
+      }
+      return verified;
     } finally {
       await subscription?.cancel();
     }

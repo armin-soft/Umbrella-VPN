@@ -39,6 +39,7 @@ if (self::$FailSettlement) throw new RuntimeException('simulated database failur
 if (self::$Session !== $Snapshot || !self::claimPendingPayment($Id, $Snapshot['Pending_Payment'])) return false;
 self::recordGatewayPayment(); self::addMoney($Id, $Credit); return true;
 }
+public static function cancelledPayment(int $Id, string $Authority): ?array { return null; }
 public static function getUserSession(int $Id): array { return self::$Session; }
 public static function getUser(int $Id): array { return ['Chat_ID' => 1, 'First_Name' => 'test', 'Balance' => self::$Balance]; }
 public static function getSetting(string $Key, mixed $Default = ''): mixed { return $Default; }

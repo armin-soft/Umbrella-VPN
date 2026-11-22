@@ -1336,6 +1336,29 @@ Menu::userHome(),
 ]));
 }
 
+/** The provider cannot invalidate an already opened checkout. Keep the old
+ * authority and credit any verified late payment to the wallet instead. */
+public static function cancelAppPayment(int $User_ID, string $ExpectedHash): bool {
+$Lock = 'subscription_purchase_' . $User_ID;
+if (!Repository::tryCronLock($Lock, 180)) throw new RuntimeException('purchase_busy');
+try { return Repository::archivePendingPayment($User_ID, $ExpectedHash); }
+finally { Repository::releaseCronLock($Lock); }
+}
+
+public static function recoverCancelledPayment(int $User_ID, string $Authority): bool {
+if ($User_ID <= 0 || !Zarinpal::validAuthority($Authority)) return false;
+$Row = Repository::cancelledPayment($User_ID, $Authority);
+if ($Row === null || $Row['Status'] !== 'pending' || !Zarinpal::isConfigured()) return false;
+Repository::touchCancelledPayment($User_ID, $Authority);
+$Verify = Zarinpal::verify((float)$Row['Amount'], $Authority);
+if (empty($Verify['Ok'])) return false;
+if (!Repository::settleCancelledPayment($User_ID, $Authority, (string)($Verify['RefId'] ?? ''))) return false;
+try {
+TelegramClient::sendSystemMessage($User_ID, '💳 پرداخت دیرهنگام سفارش لغوشده تأیید شد و مبلغ بدون کارمزد به کیف پول مشترک شما اضافه شد. اشتراک لغوشده خودکار فعال نمی شود.');
+} catch (Throwable $Error) { error_log('[Umbrella-Bot][Cancelled-Payment-Notice] ' . $Error->getMessage()); }
+return true;
+}
+
 /**
  * تسویه خودکار سفارش درگاه برای کاربری که از ربات برنگشته است.
  * اگر پرداخت هنوز انجام نشده باشد هیچ پیامی برای کاربر نمی فرستد.
@@ -1857,7 +1880,10 @@ if ($User_ID <= 0 || !Zarinpal::validAuthority($Authority) || !in_array(strtoupp
 $Pending = (string)(Repository::getUserSession($User_ID)['Pending_Payment'] ?? '');
 $Parts = array_pad(explode('|', $Pending, 3), 3, '');
 // Ignore replayed/foreign callbacks; never verify a different current order.
-if ($Pending === '' || !hash_equals($Parts[2], $Authority)) return;
+if ($Pending === '' || !hash_equals($Parts[2], $Authority)) {
+if (strtoupper($Status) === 'OK') self::recoverCancelledPayment($User_ID, $Authority);
+return;
+}
 $User = Repository::getUser($User_ID);
 $Chat_ID = (int)($User['Chat_ID'] ?? $User_ID);
 $First_Name = (string)(($User['First_Name'] ?? '') ?: 'کاربر');
@@ -1886,7 +1912,10 @@ return;
 }
 
 $Context = new Context([], $User_ID, $Chat_ID, $First_Name, false, null, null, null, null);
-self::settleGatewayPayment($Context, $Pending);
+if (!self::settleGatewayPayment($Context, $Pending)) {
+// Cancellation may have archived the order while verification was in flight.
+self::recoverCancelledPayment($User_ID, $Authority);
+}
 }
 
 private static function activateSubscription(Context $Context, array $Data, string $Name, int $Gb, int $Days): void {

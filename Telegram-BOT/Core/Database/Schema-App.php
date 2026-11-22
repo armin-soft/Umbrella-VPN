@@ -38,6 +38,23 @@ if (!(int)$Exists) $Database->connection()->exec('ALTER TABLE `App_Notifications
 
 private static function statements(): array {
 return [
+'App_Cancelled_Payments' => "CREATE TABLE IF NOT EXISTS `App_Cancelled_Payments` (
+`Authority` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+`Telegram_ID` BIGINT NOT NULL,
+`Pending_Payment` VARCHAR(255) NOT NULL,
+`Pending_Topup` VARCHAR(100) NOT NULL,
+`Pending_Plan` TEXT NULL,
+`Pending_Custom_Plan` TEXT NULL,
+`Amount` DECIMAL(18,2) NOT NULL,
+`Credit` DECIMAL(18,2) NOT NULL,
+`Status` VARCHAR(16) NOT NULL DEFAULT 'pending',
+`Created_At` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+`Checked_At` TIMESTAMP NULL,
+`Settled_At` TIMESTAMP NULL,
+PRIMARY KEY (`Authority`),
+KEY `IDX_Cancelled_Recovery` (`Status`, `Checked_At`),
+KEY `IDX_Cancelled_User` (`Telegram_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
  'App_Bot_Link_Requests' => "CREATE TABLE IF NOT EXISTS `App_Bot_Link_Requests` (
 `Token_Hash` CHAR(64) NOT NULL,
 `Session_Hash` CHAR(64) NOT NULL,

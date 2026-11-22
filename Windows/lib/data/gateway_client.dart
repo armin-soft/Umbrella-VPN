@@ -625,6 +625,9 @@ class GatewayClient {
   Future<Map<String, dynamic>> startWalletTopup({required String token, required int amount}) =>
       _post('wallet/topup', <String, dynamic>{'token': token, 'amount': amount});
 
+  Future<Map<String, dynamic>> cancelWalletPayment(String token, String pendingId) =>
+      _post('wallet/cancel', <String, dynamic>{'token': token, 'pending_id': pendingId});
+
   Future<Map<String, dynamic>> verifyWalletTopup(String token) =>
       _post('wallet/verify', <String, dynamic>{'token': token});
 

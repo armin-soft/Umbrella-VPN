@@ -102,6 +102,7 @@ if ($Route === 'subscription/purchase') { self::purchaseSubscription(self::body(
 if ($Route === 'wallet/status') { self::walletStatus(); return; }
 if ($Route === 'wallet/topup') { self::walletTopup(self::body()); return; }
 if ($Route === 'wallet/verify') { self::walletVerify(self::body()); return; }
+if ($Route === 'wallet/cancel') { self::walletCancel(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
@@ -1107,6 +1108,7 @@ return [
 'min_topup' => SubscriptionFlow::appWalletTerms()['min_topup'],
 'max_topup' => SubscriptionFlow::appWalletTerms()['max_topup'],
 'payment_pending' => $Pending !== '',
+'pending_id' => $Pending !== '' ? hash('sha256', $Pending) : '',
 'pending_wallet_topup' => $PureTopup,
 'pending_credit' => $PureTopup ? (float)$Session['Pending_Topup'] : 0,
 'pending_amount' => $PureTopup ? (float)$Parts[1] : 0,
@@ -1149,16 +1151,33 @@ error_log('[Umbrella-Bot][App-Wallet] order failed: ' . $Code);
 self::fail(502, 'gateway_request_failed', 'ساخت درخواست پرداخت ناموفق بود؛ دوباره تلاش کنید.');
 }
 self::appPaymentNotice((int)$User['Telegram_ID'], 'درخواست شارژ کیف پول از برنامه ساخته شد. پس از تأیید درگاه، نتیجه در همین ربات اعلام می شود.');
-self::ok(['status' => 'payment_required', 'credit' => $Amount,
+self::ok(['status' => 'payment_required', 'pending_id' => self::walletPayload((int)$User['Telegram_ID'])['pending_id'], 'credit' => $Amount,
 'gateway_amount' => (float)$Payment['Amount'], 'fee' => (float)($Payment['Fee'] ?? 0),
 'checkout_url' => Zarinpal::payLink($Payment)]);
+}
+
+private static function walletCancel(array $Body): void {
+$User = self::walletUser((string)($Body['token'] ?? self::bearer()));
+$UserId = (int)$User['Telegram_ID'];
+$Expected = (string)($Body['pending_id'] ?? '');
+if (preg_match('/^[a-f0-9]{64}$/D', $Expected) !== 1) self::fail(422, 'invalid_payment', 'ابتدا وضعیت پرداخت را تازه سازی کنید.');
+try { $Archived = SubscriptionFlow::cancelAppPayment($UserId, $Expected); }
+catch (Throwable $Error) {
+$Code = $Error->getMessage();
+if ($Code === 'payment_cannot_cancel_safely') self::fail(409, $Code, 'این سفارش قدیمی اطلاعات کافی برای لغو امن ندارد؛ از پشتیبانی پیگیری کنید.');
+if ($Code === 'purchase_busy' || $Code === 'payment_changed') self::fail(409, $Code, 'وضعیت سفارش تغییر کرده است؛ کیف پول را تازه سازی کنید.');
+error_log('[Umbrella-Bot][Payment-Cancel] ' . $Code);
+self::fail(503, 'cancel_failed', 'لغو ایمن انجام نشد؛ دوباره تلاش کنید.');
+}
+if ($Archived) self::appPaymentNotice($UserId, 'سفارش پرداخت در برنامه لغو شد. درگاه ممکن است همچنان باز باشد؛ پرداخت دیرهنگام پس از تأیید به کیف پول اضافه می شود.');
+self::ok(self::walletPayload($UserId));
 }
 
 private static function walletVerify(array $Body): void {
 $User = self::walletUser((string)($Body['token'] ?? self::bearer()));
 $UserId = (int)$User['Telegram_ID'];
 $Before = self::walletPayload($UserId);
-if (!empty($Before['pending_wallet_topup'])) SubscriptionFlow::recoverPendingPayment($UserId);
+if (!empty($Before['payment_pending'])) SubscriptionFlow::recoverPendingPayment($UserId);
 self::ok(self::walletPayload($UserId));
 }
 
