@@ -9,7 +9,18 @@ Map<String, dynamic> mobileCoreSettings(Map<String, dynamic> base) {
   final random = Random.secure();
   final secret = base64UrlEncode(List<int>.generate(32, (_) => random.nextInt(256)))
       .replaceAll('=', '');
-  return Map<String, dynamic>.of(base)
+  final settings = Map<String, dynamic>.of(base);
+  // Upstream uses Apple as its first connectivity target. A monitor cycle
+  // waits for every proxy before trying the next URL; keep the other targets
+  // as fallbacks, but do not make gstatic a bottleneck for a large pool.
+  const apple = 'http://captive.apple.com/hotspot-detect.html';
+  final urls = settings['connection-test-urls'];
+  if (urls is List && urls.contains(apple)) {
+    final ordered = <dynamic>[apple, ...urls.where((url) => url != apple)];
+    settings['connection-test-urls'] = ordered;
+    settings['connection-test-url'] = apple;
+  }
+  return settings
     ..['enable-clash-api'] = true
     ..['web-secret'] = secret
     ..['enable-mixed-port'] = false

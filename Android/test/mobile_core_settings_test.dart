@@ -27,6 +27,18 @@ void main() {
     expect(base['enable-clash-api'], isFalse);
   });
 
+  test('Android tries the upstream Apple endpoint first without losing fallbacks', () {
+    const apple = 'http://captive.apple.com/hotspot-detect.html';
+    final base = <String, dynamic>{
+      'connection-test-url': 'http://first/',
+      'connection-test-urls': <String>['http://first/', apple, 'http://third/'],
+    };
+    final mobile = mobileCoreSettings(base);
+    expect(mobile['connection-test-url'], apple);
+    expect(mobile['connection-test-urls'], [apple, 'http://first/', 'http://third/']);
+    expect(base['connection-test-urls'], ['http://first/', apple, 'http://third/']);
+  });
+
   test('runtime monitor must use the configured URLs and a private listener', () {
     final settings = mobileCoreSettings(<String, dynamic>{
       'clash-api-port': 16756,

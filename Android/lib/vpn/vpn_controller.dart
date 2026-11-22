@@ -1278,6 +1278,7 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     }
     trace('prepared_links_${prepared.links.length}');
+    trace('verify.budget_seconds_${StartupVerification.mobileBudget(prepared.links.length).inSeconds}');
     if (prepared.links.isEmpty) {
       const message = 'هیچ سرور معتبری پیدا نشد.';
       _setStatus(VpnStatus.failed, message);
@@ -1311,6 +1312,7 @@ class VpnController extends ChangeNotifier {
             },
             cancelled: () => _cancelRequested || _disposed,
             alive: _native.isServiceRunning,
+            budget: StartupVerification.mobileBudget(prepared.links.length),
             attemptTimeout: const Duration(seconds: 30),
           );
         } finally {

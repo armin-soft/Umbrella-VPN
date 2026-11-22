@@ -4,6 +4,13 @@ import 'dart:async';
 /// the entire subscription. Retry on the SAME core, with a bounded deadline.
 class StartupVerification {
   const StartupVerification._();
+
+  /// The pinned monitor tests its URLs in stages, waiting for all nodes in a
+  /// stage before moving to the next URL. Large pools need a bounded extra
+  /// window so a slow first stage cannot consume the entire verification time.
+  static Duration mobileBudget(int linkCount) => Duration(
+    seconds: 120 + linkCount.clamp(0, 120),
+  );
   static Future<bool> wait({
     required Future<bool> Function(Duration timeout) probe,
     required bool Function() cancelled,

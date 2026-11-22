@@ -4,6 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/vpn/startup_verification.dart';
 
 void main() {
+  test('mobile timeout accounts for large subscriptions and is bounded', () {
+    expect(StartupVerification.mobileBudget(1), const Duration(seconds: 121));
+    expect(StartupVerification.mobileBudget(84), const Duration(seconds: 204));
+    expect(StartupVerification.mobileBudget(10000), const Duration(minutes: 4));
+    expect(StartupVerification.mobileBudget(-1), const Duration(minutes: 2));
+  });
+
   test('does not start overlapping native probes after a timeout', () async {
     final pending = Completer<bool>();
     var calls = 0;
