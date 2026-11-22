@@ -64,7 +64,7 @@ class _LogsPageState extends State<LogsPage> {
             title: 'گزارش ها',
             eyebrow: 'گزارش و عیب یابی',
             premium: true,
-            subtitle: 'همه رویدادها، خطاها و هشدارها با تاریخ و ساعت؛ برای پیگیری مشکل اتصال.',
+            subtitle: 'گزارش اتصال، حساب، پرداخت، تنظیمات و به روز رسانی با تاریخ و ساعت.',
             icon: Icons.receipt_long_rounded,
             actions: <Widget>[
               IconAction(
@@ -209,7 +209,7 @@ class _LogsPageState extends State<LogsPage> {
                           ? 'هنوز گزارشی ثبت نشده است'
                           : 'در این سطح گزارشی نیست',
                       message: all.isEmpty
-                          ? 'از لحظه اجرا، هر رویداد اتصال و خطا اینجا ثبت می شود.'
+                          ? 'از زمان اجرای برنامه، گزارش های اتصال و خطاهای ثبت شده سایر بخش ها اینجا نمایش داده می شوند.'
                           : 'یکی از سطح های دیگر را انتخاب کنید.',
                       ),
                     );

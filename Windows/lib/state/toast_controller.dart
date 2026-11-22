@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../platform/services.dart';
+
 enum ToastKind { info, success, warning, error }
 
 class ToastMessage {
@@ -37,6 +39,22 @@ class ToastController extends ChangeNotifier {
     IconData? icon,
     Duration duration = const Duration(seconds: 4),
   }) {
+    if (kind == ToastKind.error || kind == ToastKind.warning) {
+      // The message may contain server responses, user input or payment data.
+      // Classify the visible action without recording its arbitrary content.
+      final String area = title.contains('پرداخت') || title.contains('کیف پول') || title.contains('خرید') || title.contains('سفارش')
+          ? 'پرداخت و کیف پول'
+          : title.contains('تنظیم') || title.contains('محتوا') || title.contains('مسیر مستقیم')
+              ? 'تنظیمات'
+              : title.contains('اشتراک') || title.contains('پروفایل')
+                  ? 'اشتراک'
+                  : title.contains('ورود') || title.contains('حساب') || title.contains('دستگاه')
+                      ? 'حساب و دستگاه'
+                      : title.contains('اتصال') || title.contains('سرور')
+                          ? 'اتصال' : 'عملیات برنامه';
+      AppLogger.instance.add('اعلان ${kind == ToastKind.error ? 'خطا' : 'هشدار'} در بخش $area',
+          level: kind == ToastKind.error ? 'error' : 'warning');
+    }
     final ToastMessage toast = ToastMessage(
       id: _nextId++,
       title: title,

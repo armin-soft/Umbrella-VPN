@@ -72,6 +72,7 @@ class UpdateController extends ChangeNotifier {
   String get phase => _phase;
 
   String _error = '';
+  bool _checkFailureLogged = false;
   String get error => _error;
 
   bool _installing = false;
@@ -125,6 +126,7 @@ class UpdateController extends ChangeNotifier {
       final ({UpdateInfo? available, List<UpdateInfo> releases}) catalog =
           await _service.fetchCatalog(channel: _channel);
       _checking = false;
+      _checkFailureLogged = false;
       _lastCheckedAt = DateTime.now();
       _releases = List<UpdateInfo>.unmodifiable(catalog.releases);
       final UpdateInfo? info = catalog.available;
@@ -149,6 +151,10 @@ class UpdateController extends ChangeNotifier {
     } catch (_) {
       _checking = false;
       _phase = '';
+      if (!_checkFailureLogged) {
+        _log.add('بررسی به روز رسانی ناموفق بود؛ ارتباط با مخزن انتشار را بررسی کنید.', level: 'warning');
+        _checkFailureLogged = true;
+      }
       if (!silent) {
         _error = 'ارتباط با مخزن انتشار برقرار نشد؛ کمی بعد دوباره تلاش کنید.';
       }

@@ -9,6 +9,7 @@ import '../core/app_config.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
+import '../platform/services.dart';
 
 /// مسیرهای انتقال درخواست به درگاه آمبرلا برای سازگاری با تمام سامانه های
 /// ویندوز ۱۰ و ۱۱ شصت و چهار بیتی و شرایط شبکه مختلف.
@@ -312,7 +313,61 @@ class GatewayClient {
     );
   }
 
-  Future<Map<String, dynamic>> _post(
+  // Only operation and a bounded error category are recorded: never request
+  // payloads, server messages, challenge codes, tokens, or account details.
+  final Map<String, DateTime> _diagnosticTimes = <String, DateTime>{};
+
+  void _recordGatewayFailure(String route, Object error) {
+    final String area = switch (route.split('/').first) {
+      'auth' => 'ورود و دستگاه',
+      'account' => 'حساب',
+      'wallet' => 'کیف پول و پرداخت',
+      'subscription' => 'اشتراک',
+      'filter' => 'کنترل محتوا',
+      'bypass' => 'مسیر مستقیم',
+      _ => 'درگاه برنامه',
+    };
+    final String kind = error is ApiError
+        ? (error.isNetwork ? 'ارتباط شبکه' :
+           error.needsLogin ? 'نشست یا مجوز' :
+           error.code == 'bad_response' ? 'پاسخ نامعتبر سرور' : 'پاسخ خطای سرور')
+        : 'خطای پیش بینی نشده';
+    // Routes are code constants, but restrict them to known identifiers so no
+    // accidental query string or future caller data can enter the log.
+    final String operation = RegExp(r'^[a-z_]+/[a-z_-]+$').hasMatch(route)
+        ? route : 'unknown';
+    final String key = '$operation|$kind';
+    final DateTime now = DateTime.now();
+    final DateTime? last = _diagnosticTimes[key];
+    if (last != null && now.difference(last) < const Duration(minutes: 5)) return;
+    if (_diagnosticTimes.length >= 64) _diagnosticTimes.clear();
+    _diagnosticTimes[key] = now;
+    final int? status = error is ApiError ? error.status : null;
+    AppLogger.instance.add(
+      'بخش $area: $kind ($operation${status != null && status >= 100 && status <= 599 ? '، HTTP $status' : ''})',
+      level: 'error',
+    );
+  }
+
+  Future<Map<String, dynamic>> _post(String route, Map<String, dynamic> body) async {
+    try {
+      return await _postImpl(route, body);
+    } catch (error) {
+      _recordGatewayFailure(route, error);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _get(String route, [Map<String, String>? query]) async {
+    try {
+      return await _getImpl(route, query);
+    } catch (error) {
+      _recordGatewayFailure(route, error);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _postImpl(
     String route,
     Map<String, dynamic> body,
   ) async {
@@ -358,7 +413,7 @@ class GatewayClient {
     }
   }
 
-  Future<Map<String, dynamic>> _get(
+  Future<Map<String, dynamic>> _getImpl(
     String route, [
     Map<String, String>? query,
   ]) async {
