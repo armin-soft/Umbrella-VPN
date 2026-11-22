@@ -1125,10 +1125,18 @@ class AuthController extends ChangeNotifier {
       final Map<String, dynamic> result = days != null && gb != null
           ? await _gateway.purchaseCustomSubscription(token: session.token, days: days, gb: gb, quotedPrice: quotedPrice)
           : await _gateway.purchaseSubscription(token: session.token, month: month, quotedPrice: quotedPrice);
+      if (_session?.token != session.token) return null;
       final String status = JsonX.text(result['status']);
       String message = JsonX.text(result['message']);
       final String checkoutUrl = JsonX.text(result['checkout_url']);
       if (status == 'payment_required') {
+        // Show the pending order immediately, then fetch its server-issued
+        // cancellation token. Never manufacture a token from checkout data.
+        _walletPaymentPending = true;
+        _walletPendingId = '';
+        _walletTopupPending = false;
+        _walletCheckoutUrl = '';
+        unawaited(refreshWallet(silent: true));
         final int gatewayAmount = JsonX.integer(result['gateway_amount']);
         final int fee = JsonX.integer(result['fee']);
         message = 'قابل پرداخت از درگاه ${Fa.num(gatewayAmount)} تومان'
