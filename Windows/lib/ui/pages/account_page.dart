@@ -753,6 +753,7 @@ class _AccountPageState extends State<AccountPage> {
                   radius: AppMetrics.radiusXl,
                   child: TabBar(
                     key: const ValueKey<String>('account-section-tabs'),
+                    onTap: (_) => playUiClick(context),
                     isScrollable: scrollable,
                     tabAlignment: scrollable ? TabAlignment.start : null,
                     dividerColor: Colors.transparent,

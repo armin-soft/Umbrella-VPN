@@ -26,6 +26,8 @@ class ToastMessage {
 
 /// اعلان های شناور بالای وسط صفحه: رنگ، آیکون و متن مناسب هر پیام.
 class ToastController extends ChangeNotifier {
+  ToastController({this.sound});
+  final SoundService? sound;
   final List<ToastMessage> _items = <ToastMessage>[];
   final Map<int, Timer> _timers = <int, Timer>{};
   int _nextId = 1;
@@ -54,6 +56,11 @@ class ToastController extends ChangeNotifier {
                           ? 'اتصال' : 'عملیات برنامه';
       AppLogger.instance.add('اعلان ${kind == ToastKind.error ? 'خطا' : 'هشدار'} در بخش $area',
           level: kind == ToastKind.error ? 'error' : 'warning');
+    }
+    final SoundService? audio = sound;
+    if (audio != null && audio.enabled && kind != ToastKind.info) {
+      unawaited(audio.play(kind == ToastKind.error ? 'error' : 'notify')
+          .catchError((Object _) {}));
     }
     final ToastMessage toast = ToastMessage(
       id: _nextId++,

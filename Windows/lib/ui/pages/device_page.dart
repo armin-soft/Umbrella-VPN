@@ -583,6 +583,7 @@ class _DevicePageState extends State<DevicePage> {
                   radius: AppMetrics.radiusXl,
                   child: TabBar(
                     key: const ValueKey<String>('device-section-tabs'),
+                    onTap: (_) => playUiClick(context),
                     isScrollable: scrollable,
                     tabAlignment: scrollable ? TabAlignment.start : null,
                     dividerColor: Colors.transparent,

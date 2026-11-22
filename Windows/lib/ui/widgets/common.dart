@@ -1,9 +1,23 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
+import '../../platform/services.dart';
+
+/// Optional in isolated tests; audio failures must not block the action.
+void playUiClick(BuildContext context) {
+  final SoundService? sound = context.read<SoundService?>();
+  if (sound != null && sound.enabled) {
+    unawaited(sound.play('click').catchError((Object _) {}));
+  }
+}
+
+VoidCallback? _withClick(BuildContext context, VoidCallback? action) =>
+    action == null ? null : () { playUiClick(context); action(); };
 
 /// کارت شیشه ای پایه همه بخش ها.
 class GlassCard extends StatelessWidget {
@@ -66,7 +80,7 @@ class GlassCard extends StatelessWidget {
     }
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(onTap: onTap, child: content),
+      child: GestureDetector(onTap: _withClick(context, onTap), child: content),
     );
   }
 }
@@ -167,7 +181,7 @@ class GradientButton extends StatelessWidget {
     final Widget button = MouseRegion(
       cursor: active ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
-        onTap: active ? onPressed : null,
+        onTap: active ? _withClick(context, onPressed) : null,
         child: expand ? SizedBox(width: double.infinity, child: child) : child,
       ),
     );
@@ -931,7 +945,7 @@ class InfoRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-        onTap: onTap,
+        onTap: _withClick(context, onTap),
         child: row,
       ),
     );
@@ -1349,7 +1363,7 @@ class ToggleRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-        onTap: () => onChanged(!value),
+        onTap: () { playUiClick(context); onChanged(!value); },
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppMetrics.space2,
@@ -1394,7 +1408,7 @@ class ToggleRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppMetrics.space3),
-              Switch.adaptive(value: value, onChanged: onChanged),
+              Switch.adaptive(value: value, onChanged: (next) { playUiClick(context); onChanged(next); }),
             ],
           ),
         ),
@@ -1554,6 +1568,7 @@ class _AnchoredSelectFieldState<T> extends State<AnchoredSelectField<T>> {
                         onTap: !widget.enabled
                             ? null
                             : () {
+                                playUiClick(context);
                                 if (controller.isOpen) {
                                   controller.close();
                                 } else {
@@ -1659,7 +1674,7 @@ class _SelectMenuItem<T> extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-          onTap: option.enabled ? onSelect : null,
+          onTap: option.enabled ? _withClick(context, onSelect) : null,
           child: Opacity(
             opacity: option.enabled ? 1 : 0.45,
             child: Padding(
@@ -1812,7 +1827,7 @@ class IconAction extends StatelessWidget {
     final Widget button = Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: _withClick(context, onTap),
         mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         child: Container(

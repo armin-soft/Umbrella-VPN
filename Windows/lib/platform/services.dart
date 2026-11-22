@@ -21,25 +21,47 @@ import 'native.dart';
 /// پخش صداهای کوتاه برنامه (اتصال، قطع، خطا و اعلان).
 class SoundService {
   SoundService() {
-    _player.setReleaseMode(ReleaseMode.stop);
+    unawaited(_player.setReleaseMode(ReleaseMode.stop).catchError((Object _) {}));
+    unawaited(_clickPlayer.setReleaseMode(ReleaseMode.stop).catchError((Object _) {}));
   }
 
   final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _clickPlayer = AudioPlayer();
   bool enabled = true;
+  bool _failureReported = false;
+  DateTime? _lastClick;
+  String _lastEvent = '';
+  DateTime? _lastEventAt;
 
   Future<void> play(String name) async {
-    if (!enabled) {
-      return;
+    if (!enabled || !const <String>{'click', 'connect', 'disconnect', 'error', 'notify'}.contains(name)) return;
+    final DateTime now = DateTime.now();
+    if (name == 'click') {
+      if (_lastClick != null && now.difference(_lastClick!) < const Duration(milliseconds: 100)) return;
+      _lastClick = now;
+    } else {
+      if (_lastEvent == name && _lastEventAt != null &&
+          now.difference(_lastEventAt!) < const Duration(milliseconds: 600)) return;
+      _lastEvent = name;
+      _lastEventAt = now;
     }
     try {
-      await _player.stop();
-      await _player.play(AssetSource('sounds/$name.wav'), volume: 0.65);
-    } on Exception {
-      // صدا اختیاری است؛ نبود کارت صدا نباید اتصال را متوقف کند.
+      // Clicks have their own player and never cut off connection/alert sounds.
+      final AudioPlayer player = name == 'click' ? _clickPlayer : _player;
+      await player.stop();
+      if (!enabled) return;
+      await player.play(AssetSource('sounds/$name.wav'), volume: name == 'click' ? 0.35 : 0.65);
+      _failureReported = false;
+    } catch (_) {
+      if (!_failureReported) {
+        _failureReported = true;
+        AppLogger.instance.add('پخش صدای برنامه ناموفق بود؛ خروجی صدا و تنظیمات ویندوز را بررسی کنید.', level: 'warning');
+      }
     }
   }
 
   Future<void> dispose() async {
+    await _clickPlayer.dispose();
     await _player.dispose();
   }
 }

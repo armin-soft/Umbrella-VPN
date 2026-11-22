@@ -295,6 +295,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   destinations: _destinations,
                   index: _index,
                   onSelect: (int value) {
+                    playUiClick(context);
                     setState(() {
                       if (value == 3) {
                         _settingsNavVersion++;
@@ -304,6 +305,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   },
                   status: vpnStatus,
                   onStatusTap: () {
+                    playUiClick(context);
                     if (_index != 0) {
                       setState(() => _index = 0);
                     }

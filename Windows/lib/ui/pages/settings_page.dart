@@ -320,8 +320,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       categories[i],
                       cfg,
                     ),
-                    onTap: () =>
-                        setState(() => _section = categories[i]),
+                    onTap: () {
+                      playUiClick(context);
+                      setState(() => _section = categories[i]);
+                    },
                   ),
                 ],
               ],
@@ -596,7 +598,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ToggleRow(
                 icon: Icons.volume_up_rounded,
                 title: 'صداهای برنامه',
-                subtitle: 'پخش افکت صوتی ملایم هنگام وصل و قطع شدن',
+                subtitle: 'پخش صدا برای منوها، کنترل ها، اعلان ها و وضعیت اتصال',
                 value: cfg.soundEnabled,
                 onChanged: settings.setSound,
               ),
@@ -1653,7 +1655,7 @@ class _ThemeCardSelector extends StatelessWidget {
               title: items[i].$2,
               subtitle: items[i].$3,
               selected: selected == items[i].$1,
-              onTap: () => onChanged(items[i].$1),
+              onTap: () { playUiClick(context); onChanged(items[i].$1); },
             ),
           ),
         ],

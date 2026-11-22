@@ -110,7 +110,7 @@ Future<void> main(List<String> arguments) async {
   } else {
     AppLogger.instance.add('هسته آمبرلا آماده است: $corePath');
   }
-  final ToastController toasts = ToastController();
+  final ToastController toasts = ToastController(sound: sound);
 
   final VpnController vpn = VpnController(
     native: native,
