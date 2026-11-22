@@ -10,6 +10,7 @@ import 'app.dart';
 import 'core/app_config.dart';
 import 'core/persian.dart';
 import 'core/storage.dart';
+import 'core/utils.dart';
 import 'models/models.dart';
 import 'platform/app_crash_store.dart';
 import 'platform/native.dart';

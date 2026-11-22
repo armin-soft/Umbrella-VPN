@@ -17,6 +17,7 @@ import '../platform/native.dart';
 import '../platform/services.dart';
 import '../vpn/core_fetch.dart';
 import '../vpn/cores.dart';
+import '../vpn/umbrella_core.dart';
 import 'auth_controller.dart';
 import '../vpn/vpn_controller.dart';
 
@@ -755,7 +756,7 @@ class SubscriptionController extends ChangeNotifier {
           response: null,
           tlsFailed: false,
           timedOut: false,
-          problem: DownloadProblem.fromSocketException(error),
+          problem: DownloadProblem.fromStatusOrSignal(error: error),
         );
       } on Object {
         return (
@@ -801,7 +802,7 @@ class SubscriptionController extends ChangeNotifier {
             sawTimeout = true;
           }
           detectedProblem ??=
-              DownloadProblem.fromWinHttpError(native.winError);
+              DownloadProblem.fromStatusOrSignal(winError: native.winError);
           continue;
         }
         final http.Response resp =
@@ -868,7 +869,7 @@ class SubscriptionController extends ChangeNotifier {
         sawTls = true;
         detectedProblem ??= DownloadProblem.fromStatusOrSignal(tlsFailed: true);
       } on SocketException catch (error) {
-        detectedProblem ??= DownloadProblem.fromSocketException(error);
+        detectedProblem ??= DownloadProblem.fromStatusOrSignal(error: error);
       } on Object {
         // مسیر بعدی بررسی می شود.
       }
@@ -876,20 +877,21 @@ class SubscriptionController extends ChangeNotifier {
 
     // ۳. مسیر پشتیبان هسته با uTLS کروم و گواهی ریشه Mozilla برای شبکه هایی که
     // Schannel/WinHTTP یا TLS پیش فرض را مسدود می کنند.
-    if (fallbackError == null && Platform.isWindows && _provisioner != null) {
+    final CoreProvisioner? provisioner = _provisioner;
+    if (fallbackError == null && Platform.isWindows && provisioner != null) {
       final String? engineExe =
-          await _provisioner!.locateBinary(UmbrellaCore.engineBinary);
+          await provisioner.locateBinary(UmbrellaCore.engineBinary);
       if (engineExe != null) {
         attempts++;
         final String umbrellaDir =
-            '${_provisioner!.bundledDir}${Platform.pathSeparator}umbrella';
+            '${provisioner.bundledDir}${Platform.pathSeparator}umbrella';
         final String workDir = await Directory(umbrellaDir).exists()
             ? umbrellaDir
             : File(engineExe).parent.path;
         final CoreFetchResult? coreRes = await CoreFetchClient.fetchUrl(
           executable: engineExe,
           workDir: workDir,
-          dataDir: _provisioner!.dataDir,
+          dataDir: provisioner.dataDir,
           uri: uri,
           userAgent: headers['User-Agent'] ?? '',
           timeout: const Duration(seconds: 15),

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Size;
 
 import 'package:flutter/services.dart';
 

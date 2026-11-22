@@ -326,14 +326,26 @@ class CoreFetchClient {
 
             if (type == 0x04 && (flags & 0x01) == 0) {
               // Server SETTINGS -> ACK.
-              try {
-                socket?.add(_buildFrame(type: 0x04, flags: 0x01, streamId: 0, payload: Uint8List(0)));
-              } on Object {}
+              _trySend(
+                socket,
+                _buildFrame(
+                  type: 0x04,
+                  flags: 0x01,
+                  streamId: 0,
+                  payload: Uint8List(0),
+                ),
+              );
             } else if (type == 0x06 && (flags & 0x01) == 0) {
               // Server PING -> PONG.
-              try {
-                socket?.add(_buildFrame(type: 0x06, flags: 0x01, streamId: 0, payload: payload));
-              } on Object {}
+              _trySend(
+                socket,
+                _buildFrame(
+                  type: 0x06,
+                  flags: 0x01,
+                  streamId: 0,
+                  payload: payload,
+                ),
+              );
             } else if (streamId == 1) {
               if (type == 0x00) {
                 responseData.add(payload);
@@ -343,10 +355,14 @@ class CoreFetchClient {
                   win[1] = (length >> 16) & 0xFF;
                   win[2] = (length >> 8) & 0xFF;
                   win[3] = length & 0xFF;
-                  try {
-                    socket?.add(_buildFrame(type: 0x08, flags: 0, streamId: 0, payload: win));
-                    socket?.add(_buildFrame(type: 0x08, flags: 0, streamId: 1, payload: win));
-                  } on Object {}
+                  _trySend(
+                    socket,
+                    _buildFrame(type: 0x08, flags: 0, streamId: 0, payload: win),
+                  );
+                  _trySend(
+                    socket,
+                    _buildFrame(type: 0x08, flags: 0, streamId: 1, payload: win),
+                  );
                 }
               } else if (type == 0x03 || type == 0x07) {
                 // RST_STREAM or GOAWAY
@@ -399,6 +415,15 @@ class CoreFetchClient {
       return null;
     } finally {
       socket?.destroy();
+    }
+  }
+
+  static void _trySend(Socket? socket, Uint8List frame) {
+    if (socket == null) return;
+    try {
+      socket.add(frame);
+    } on Object catch (_) {
+      return;
     }
   }
 
