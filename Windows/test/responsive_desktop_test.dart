@@ -59,10 +59,10 @@ class _TrackingVpn extends _Vpn {
   @override
   VpnNode? get activeNode => current.active ? VpnNode(
     id: 'active', name: 'active', protocol: NodeProtocol.mieru,
-    host: 'example.invalid', port: 1234, sourceId: 'user-mieru',
+    host: 'example.invalid', port: 1234, sourceId: 'user-mieru', params: const <String, dynamic>{},
   ) : null;
   @override
-  Future<void> disconnect() async { disconnections++; current = VpnStatus.disconnected; notifyListeners(); }
+  Future<void> disconnect({bool silent = false}) async { disconnections++; current = VpnStatus.disconnected; notifyListeners(); }
   @override
   Future<ConnectOutcome> connect({VpnNode? requested, bool isAutoReconnect = false}) async {
     connections++;
