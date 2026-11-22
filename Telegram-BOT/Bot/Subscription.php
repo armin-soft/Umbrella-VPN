@@ -707,10 +707,7 @@ $Items = [
 
 $Text = "⚡️<b>مشخصات اتصال شما به شرح زیر است</b>\n";
 
-if (BotConfig::showEmergency()) {
-$Emergency = BotConfig::emergencyUrl();
-$Text .= "<blockquote>🚱<b>اضطراری موقت:</b>\n<code>{$Emergency}</code></blockquote>\n";
-}
+$Text .= "\n🚱<b>اضطراری:</b> " . (BotConfig::showEmergency() ? '🟢روشن' : '🔴خاموش') . "\n";
 
 foreach ($Items as [$Label, $Url]) {
 $Text .= "\n{$Label}\n<code>{$Url}</code>\n";

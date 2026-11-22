@@ -736,12 +736,9 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '⚙️تنظیمات 
 $Show = BotConfig::showEmergency();
 $Nowruz_Configured = BotConfig::isNowruzMenuConfigured();
 $Nowruz_Show = BotConfig::isNowruzMenuEnabled();
-$Url = BotConfig::emergencyUrl();
-$Url_Source = BotConfig::source(BotConfig::KEY_EMERGENCY_URL) === 'panel' ? '📝از پنل' : '🌱از فایل تنظیمات';
 $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 . Menu::section('🚱', 'کانفیگ اضطراری', [
-'وضعیت نمایش: *' . ($Show ? '🟢روشن' : '🔴خاموش') . '* (' . $Url_Source . ')',
-'آدرس: <code>' . $Url . '</code>',
+'وضعیت: *' . ($Show ? '🟢روشن' : '🔴خاموش') . '*',
 ])
 . Menu::section('🌷', 'اشتراک نوروزی', [
 'تنظیم دستی: *' . ($Nowruz_Configured ? '🟢روشن' : '🔴خاموش') . '*',
@@ -749,12 +746,11 @@ $Text = Helper::adminGreeting($Context, 'تنظیمات ربات')
 'بازه نمایش: *۱ تا ۱۳ فروردین (تقویم شمسی)*',
 ])
 . ($Show
-? "ℹ️خط «اضطراری موقت» در پیام کانفیگ کاربران نمایش داده می شود.\n"
-: "ℹ️خط «اضطراری موقت» در پیام کانفیگ کاربران نمایش داده نمی شود.\n")
+? "ℹ️حالت اضطراری برای برنامه فعال است.\n"
+: "ℹ️حالت اضطراری برای برنامه غیرفعال است.\n")
 . '📌*تنظیم مورد نظر را انتخاب کنید:*' . Helper::adminFooter();
 $Markup = array_merge(Menu::rows([
 [['🚱روشن / خاموش کانفیگ اضطراری', 'emergency_toggle']],
-[['🔗آدرس کانفیگ اضطراری', 'emergency_url_start']],
 [['🌷روشن / خاموش اشتراک نوروزی', 'nowruz_menu_toggle']],
 ]), [Menu::back('منوی قبلی', 'پیکربندی سرور'), Menu::adminHome()]);
 self::logMenuProblems('settings', $Markup);
@@ -795,37 +791,10 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, $Next ? '✅کانفی
 self::configMenu($Context);
 }
 
-public static function emergencyUrlStart(Context $Context): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-self::startInput(
-$Context,
-'admin:emergency_url',
-"🔗آدرس کامل کانفیگ اضطراری را بفرستید (یک آدرس وب).\n"
-. "🚱آدرس فعلی: <code>" . BotConfig::emergencyUrl() . "</code>\n\n"
-. "👌برای پاک کردن آن و برگشت به مقدار پیش فرض، کلمه «حذف» را بفرستید.\n\n"
-);
-}
-
-private static function emergencyUrlSave(Context $Context, string $Text): void {
+/** Retire an input flow already open in an older bot message. */
+private static function retireEmergencyUrlInput(Context $Context): void {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
-$Value = trim($Text);
-
-if (in_array(mb_strtolower($Value), ['حذف', 'پاک', 'delete', 'clear', '-'], true)) {
-BotConfig::setEmergencyUrl('');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری پاک شد؛ مقدار پیش فرض (تنظیمات سرور یا آدرس داخلی) دوباره استفاده می شود." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات')));
-return;
-}
-
-if (!preg_match('#^https?://[^\s<>]+$#i', $Value)) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "⚠️آدرس نامعتبر است.\n➖➖➖➖➖➖➖➖➖\n🔗آدرس باید کامل باشد و با `https://` شروع شود.\n👌مثال: `https://example.com/emergency.txt`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(array_merge([
-Common::backTo('🔗تلاش دوباره', 'emergency_url_start'),
-], Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات'))));
-return;
-}
-
-BotConfig::setEmergencyUrl($Value);
-Repository::logAdminAction($Context->UserId, 'emergency_config_url', null, 'url=' . $Value, '');
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅آدرس کانفیگ اضطراری ثبت شد:\n<code>{$Value}</code>" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('تنظیمات ربات', 'تنظیمات ربات')));
+self::configMenu($Context);
 }
 
 /** Subscription prices and the limits of the custom plan. */
@@ -2032,7 +2001,8 @@ $Flow === 'admin:app_push_text' => self::appPushText($Context, $Text),
 $Flow === 'admin:expire_uid' => self::manualExpire($Context, trim($Text)),
 $Flow === 'admin:version_number' => self::versionNumber($Context, trim($Text)),
 $Flow === 'admin:version_changes' => self::versionChanges($Context, $Text),
-$Flow === 'admin:emergency_url' => self::emergencyUrlSave($Context, $Text),
+// Old conversations are safely retired without saving a URL.
+$Flow === 'admin:emergency_url' => self::retireEmergencyUrlInput($Context),
 str_starts_with($Flow, 'admin:cfg:') => self::cfgSave($Context, substr($Flow, strlen('admin:cfg:')), $Text),
 $Flow === 'admin:ticket_reply_text' => self::ticketAdminReplySend($Context, trim($Text)),
 default => self::unknownAdminInput($Context),

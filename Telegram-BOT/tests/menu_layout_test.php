@@ -311,7 +311,6 @@ Menu::rows([
 'settings' => array_merge(
 Menu::rows([
 [['🚱روشن / خاموش کانفیگ اضطراری', 'emergency_toggle']],
-[['🔗آدرس کانفیگ اضطراری', 'emergency_url_start']],
 ]),
 [Menu::adminHome()]
 ),

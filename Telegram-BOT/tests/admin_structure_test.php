@@ -70,7 +70,8 @@ return array_slice(self::$Devices, $Params[1], $Params[0]);
 final class BotConfig {
 public const KEY_EMERGENCY_URL = 'Emergency_Url';
 public static function getPlanPrice(int|string $Key): float { return 1000; }
-public static function showEmergency(): bool { return false; }
+public static function showEmergency(): bool { return (Repository::$Settings['Emergency_Show'] ?? '0') === '1'; }
+public static function setShowEmergency(bool $Show): void { Repository::$Settings['Emergency_Show'] = $Show ? '1' : '0'; }
 public static function emergencyUrl(): string { return 'https://example.invalid/emg'; }
 public static function source(string $Key): string { return 'env'; }
 public static function isNowruzMenuConfigured(): bool { return (Repository::$Settings['Nowruz_Menu_Enabled'] ?? '0') === '1'; }
@@ -490,6 +491,14 @@ UserFlow::subscriptionsMenu($UserContext);
 check(!in_array('اشتراک نوروزی اول', calls(), true), 'claimed Nowruz plan hides Nowruz button even while menu enabled');
 AdminFlow::toggleNowruzMenu($Context);
 check(Repository::getSetting('Nowruz_Menu_Enabled') === '0', 'admin toggle turns Nowruz menu off');
+check(in_array('emergency_toggle', calls(), true), 'emergency has a switch');
+check(!in_array('emergency_url_start', calls(), true), 'emergency URL editor removed');
+check(!str_contains(TelegramClient::$Text, 'https://example.invalid/emg'), 'emergency URL not shown');
+AdminFlow::toggleEmergencyConfig($Context);
+check(BotConfig::showEmergency(), 'emergency switch enables flag');
+AdminFlow::toggleEmergencyConfig($Context);
+check(!BotConfig::showEmergency(), 'emergency switch disables flag');
+
 check(in_array('nowruz_menu_toggle', calls(), true), 'configMenu exposes Nowruz toggle button');
 AdminFlow::toggleNowruzMenu($Context);
 check(Repository::getSetting('Nowruz_Menu_Enabled') === '1', 'admin toggle turns Nowruz menu back on');

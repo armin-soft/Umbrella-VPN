@@ -378,7 +378,7 @@ match($Data) {
 'تنظیمات ربات' => AdminFlow::configMenu($Context),
 'emergency_toggle' => AdminFlow::toggleEmergencyConfig($Context),
 'nowruz_menu_toggle' => AdminFlow::toggleNowruzMenu($Context),
-'emergency_url_start' => AdminFlow::emergencyUrlStart($Context),
+'emergency_url_start' => AdminFlow::configMenu($Context), // old inline keyboards
 'cfg_pricing' => AdminFlow::pricingMenu($Context),
 'cfg_links' => AdminFlow::linksMenu($Context),
 'notify_all_start' => AdminFlow::broadcastMenu($Context),

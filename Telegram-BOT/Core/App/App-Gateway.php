@@ -534,6 +534,7 @@ $Profile['account_base'] = PanelClient::accountBase($Account);
 // The client never asks the user for a subscription address: the personal
 // subscription link comes from here, both at sign-in and on every refresh.
 $Profile['subscription_url'] = self::subscriptionUrl($Account, $Profile['account_base'], $UUID);
+$Profile['emergency_enabled'] = BotConfig::showEmergency();
 
 self::ok([
 'uuid' => $UUID,
@@ -791,6 +792,7 @@ $Profile['telegram_id'] = (string)$LinkedTg;
 $Base = PanelClient::accountBase($Account);
 $Profile['account_base'] = $Base;
 $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
+$Profile['emergency_enabled'] = BotConfig::showEmergency();
 
 self::ok([
 'account' => $Profile,
@@ -833,6 +835,7 @@ Database::getInstance()->execute(
 
 $Payload = [
 'seen_at' => gmdate('c'),
+'emergency_enabled' => BotConfig::showEmergency(),
 'channel_url' => BotConfig::getChannelUrl(),
 ];
 if ($UUID !== '' && $UUID !== '_') {
