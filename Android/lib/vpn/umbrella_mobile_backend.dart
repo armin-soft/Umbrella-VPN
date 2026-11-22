@@ -233,7 +233,12 @@ class UmbrellaMobileBackend implements MobileVpnBackend {
     _workingDirectory = null;
     final logs = _coreLogs;
     _coreLogs = null;
-    await logs?.cancel();
+    try {
+      await logs?.cancel();
+    } catch (error) {
+      // A failed diagnostic stream must never prevent VPN teardown.
+      _traceError('monitor.cancel', error);
+    }
     // Native close stops the engine before releasing the TUN; still close the
     // client channel if native teardown fails.
     try {
