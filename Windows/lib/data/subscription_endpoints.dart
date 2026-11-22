@@ -12,15 +12,16 @@ class SubscriptionEndpoints {
   /// تنها مسیر اشتراک مجاز روی پنل.
   static const String subPath = 'sub/';
 
-  static const List<String> paths = <String>[subPath];
+  static const List<String> paths = <String>[subPath, 'wireguard/', 'amnezia/', 'mieru/'];
 
   static const List<SubscriptionFormat> formats = <SubscriptionFormat>[
-    SubscriptionFormat.xray,
+    SubscriptionFormat.xray, SubscriptionFormat.wireguard,
+    SubscriptionFormat.amnezia, SubscriptionFormat.mieru,
   ];
 
-  static const List<String> titles = <String>['اشتراک خودکار'];
+  static const List<String> titles = <String>['اشتراک خودکار', 'وایرگارد', 'آمنزیا', 'میرو'];
 
-  static const List<String> icons = <String>['auto'];
+  static const List<String> icons = <String>['auto', 'wireguard', 'amnezia', 'mieru'];
 
   static final RegExp _uuidPattern = RegExp(
     r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
@@ -151,18 +152,20 @@ class SubscriptionEndpoints {
       ];
     }
     return <SubscriptionSource>[
-      SubscriptionSource(
-        id: 'user-sub',
-        title: titles.first,
-        url: '$base$resolvedUuid/$subPath',
-        format: SubscriptionFormat.xray,
-        icon: icons.first,
-        personal: true,
-      ),
+      for (int i = 0; i < paths.length; i++)
+        SubscriptionSource(
+          id: i == 0 ? 'user-sub' : 'user-${icons[i]}',
+          title: titles[i],
+          url: '$base$resolvedUuid/${paths[i]}',
+          format: formats[i],
+          icon: icons[i],
+          personal: true,
+        ),
     ];
   }
 
   /// آیا منبع اشتراک `/sub/` کاربر آماده است.
   static bool isComplete(List<SubscriptionSource> sources) =>
-      sources.length == 1 && sources.first.url.endsWith('/$subPath');
+      sources.length == paths.length &&
+      sources.asMap().entries.every((entry) => entry.value.url.endsWith('/${paths[entry.key]}'));
 }

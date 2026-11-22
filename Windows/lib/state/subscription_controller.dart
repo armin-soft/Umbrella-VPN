@@ -197,6 +197,9 @@ class SubscriptionController extends ChangeNotifier {
       return;
     }
     if (changed) {
+      if (_vpn.nodes.isNotEmpty) {
+        unawaited(_vpn.applyNodes(<VpnNode>[], measure: false));
+      }
       notifyListeners();
     }
     if (!hasPersonal || personalLoading) {
@@ -276,6 +279,7 @@ class SubscriptionController extends ChangeNotifier {
       }
     }
     List<SourceState> personal = personalSources;
+    String syncSignature = _signature;
     if (personal.isEmpty) {
       _log.add(
         'برای این حساب هنوز نشانی اشتراک اختصاصی ثبت نشده است.',
@@ -291,20 +295,22 @@ class SubscriptionController extends ChangeNotifier {
 
     // اگر دسترسی مستقیم به دامنه پنل اشتراک محدود بود یا پاسخی نرسید، اشتراک
     // اختصاصی همین کاربر از درگاه امن حساب (armin-soft.ir) خوانده می شود.
-    if (fetched.isEmpty && _auth.signedIn && !_disposed) {
+    if (!batch.settledSourceIds.contains(personal.first.source.id) && _auth.signedIn && !_disposed && _signature == syncSignature) {
       final SourceState primary = personal.first;
       final List<VpnNode> viaGateway = await _tryFetchViaGateway(primary);
       if (viaGateway.isNotEmpty) {
-        fetched = viaGateway;
+        fetched = <VpnNode>[...fetched, ...viaGateway];
+        batch.settledSourceIds.add(primary.source.id);
       }
     }
 
     // اگر هنوز دریافت نشد و پروفایل حساب تازه نشده بود، یک بار نشانی اشتراک را
     // از درگاه به روز کن و در صورت تغییر نشانی دوباره امتحان کن.
-    if (fetched.isEmpty && !refreshedAccount && _auth.signedIn && !_disposed) {
+    if (fetched.isEmpty && !refreshedAccount && _auth.signedIn && !_disposed && _signature == syncSignature) {
       final String previousUrl = personal.first.source.url;
       await _auth.refreshAccount(silent: true);
       _rebuildSources();
+      syncSignature = _signature;
       personal = personalSources;
       if (personal.isNotEmpty && personal.first.source.url != previousUrl) {
         _personalFetchedFor =
@@ -316,6 +322,8 @@ class SubscriptionController extends ChangeNotifier {
         }
       }
     }
+
+    if (_disposed || !_auth.signedIn || _signature != syncSignature) return;
 
     if (fetched.isEmpty) {
       _needsLogin = personal.every((SourceState item) => item.unauthorized);
@@ -354,8 +362,7 @@ class SubscriptionController extends ChangeNotifier {
     _needsLogin = false;
     final int uniqueCount = await _applyNodes(
       fetched,
-      refreshedSourceIds:
-          personal.map((SourceState item) => item.source.id).toSet(),
+      refreshedSourceIds: batch.settledSourceIds,
     );
     if (!_disposed) {
       notifyListeners();
@@ -466,8 +473,7 @@ class SubscriptionController extends ChangeNotifier {
         final SourceState state = items[index];
         final ParseReport? report = await _fetch(state, logErrors: logErrors);
         reports[index] = report;
-        if (report != null ||
-            (state.lastStatus >= 200 && state.lastStatus < 500)) {
+        if (report != null && report.nodes.isNotEmpty) {
           settled.add(state.source.id);
         }
         done++;
@@ -823,7 +829,9 @@ class SubscriptionController extends ChangeNotifier {
 
       state.body = body;
       final ParseReport report =
-          SubscriptionParser.parseAuto(body, state.source.id);
+          state.source.format == SubscriptionFormat.xray
+              ? SubscriptionParser.parseAuto(body, state.source.id)
+              : SubscriptionParser.parse(body, state.source);
       state
         ..loading = false
         ..loaded = report.nodes.isNotEmpty

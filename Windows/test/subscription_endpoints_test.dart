@@ -17,13 +17,17 @@ void main() {
       accountBase: base,
       uuid: uuid,
     );
-    expect(sources, hasLength(1));
-    expect(sources.single.id, 'user-sub');
-    expect(sources.single.title, 'اشتراک خودکار');
-    expect(sources.single.url, '$base$uuid/sub/');
-    expect(sources.single.format, SubscriptionFormat.xray);
-    expect(sources.single.personal, isTrue);
+    expect(sources, hasLength(4));
+    expect(sources.first.id, 'user-sub');
+    expect(sources.first.title, 'اشتراک خودکار');
+    expect(sources.first.url, '$base$uuid/sub/');
+    expect(sources.first.format, SubscriptionFormat.xray);
+    expect(sources.first.personal, isTrue);
     expect(SubscriptionEndpoints.isComplete(sources), isTrue);
+    expect(sources.map((source) => source.url), <String>[
+      '$base$uuid/sub/', '$base$uuid/wireguard/',
+      '$base$uuid/amnezia/', '$base$uuid/mieru/',
+    ]);
   });
 
   test('اگر سرور نشانی قدیمی all.txt یا کلش بفرستد باز هم فقط به `/sub/` تبدیل می شود', () {
@@ -40,9 +44,9 @@ void main() {
         accountBase: '',
         uuid: uuid,
       );
-      expect(sources, hasLength(1), reason: legacy);
-      expect(sources.single.url, '$base$uuid/sub/', reason: legacy);
-      expect(sources.single.personal, isTrue, reason: legacy);
+      expect(sources, hasLength(4), reason: legacy);
+      expect(sources.first.url, '$base$uuid/sub/', reason: legacy);
+      expect(sources.first.personal, isTrue, reason: legacy);
     }
   });
 
@@ -52,10 +56,10 @@ void main() {
       accountBase: '',
       uuid: '',
     );
-    expect(sources, hasLength(1));
-    expect(sources.single.id, 'user-sub');
-    expect(sources.single.url, '$base$uuid/sub/');
-    expect(sources.single.personal, isTrue);
+    expect(sources, hasLength(4));
+    expect(sources.first.id, 'user-sub');
+    expect(sources.first.url, '$base$uuid/sub/');
+    expect(sources.first.personal, isTrue);
   });
 
   test('مسیر راز پنل را از accountBase جایگزین می کند وقتی در نشانی جا افتاده است', () {
@@ -64,8 +68,8 @@ void main() {
       accountBase: base,
       uuid: uuid,
     );
-    expect(sources, hasLength(1));
-    expect(sources.single.url, '$base$uuid/sub/');
+    expect(sources, hasLength(4));
+    expect(sources.first.url, '$base$uuid/sub/');
   });
 
   test('نشانی پیش فرض برنامه را به کار می برد اگر سرور مسیر راز پنل را ندهد', () {
@@ -75,8 +79,8 @@ void main() {
       accountBase: '',
       uuid: otherUuid,
     );
-    expect(sources, hasLength(1));
-    expect(sources.single.url, '$base$otherUuid/sub/');
+    expect(sources, hasLength(4));
+    expect(sources.first.url, '$base$otherUuid/sub/');
   });
 
   test('شناسه تکرارشده سرور قدیمی (host/<uuid>/<uuid>/sub/) به مسیر راز درست اصلاح می شود', () {
@@ -87,9 +91,9 @@ void main() {
       accountBase: 'https://user.umbrella-server.ir/$otherUuid/',
       uuid: otherUuid,
     );
-    expect(built, hasLength(1));
-    expect(built.single.personal, isTrue);
-    expect(built.single.url, '$base$otherUuid/sub/');
+    expect(built, hasLength(4));
+    expect(built.first.personal, isTrue);
+    expect(built.first.url, '$base$otherUuid/sub/');
   });
 
   test('بدون حساب کاربر هیچ منبع اشتراک عمومی یا رایگانی ساخته نمی شود', () {

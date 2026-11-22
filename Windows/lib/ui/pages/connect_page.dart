@@ -30,6 +30,19 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
+  String _profile = 'user-sub';
+
+  Future<void> _selectProfile(String id) async {
+    final VpnController vpn = context.read<VpnController>();
+    final SubscriptionController subs = context.read<SubscriptionController>();
+    final ToastController toasts = context.read<ToastController>();
+    if (vpn.status.busy) return;
+    if (vpn.status.active) await vpn.disconnect();
+    if (!mounted) return;
+    setState(() => _profile = id);
+    await _toggleConnection(vpn, subs, toasts);
+  }
+
   /// آی پی دستگاه برای نمایش در نوار بالا.
   ///
   /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
@@ -200,7 +213,23 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
     }
-    final ConnectOutcome outcome = await vpn.connect();
+    VpnNode? requested;
+    if (_profile != 'user-sub') {
+      final List<VpnNode> matches = vpn.nodes.where((VpnNode node) =>
+          node.sourceId == _profile && VpnController.usable(node) && !node.disabled).toList();
+      if (matches.isEmpty) {
+        await subs.syncPersonal();
+        if (!mounted) return;
+        matches.addAll(vpn.nodes.where((VpnNode node) =>
+            node.sourceId == _profile && VpnController.usable(node) && !node.disabled));
+      }
+      if (matches.isEmpty) {
+        toasts.error('پروفایل دریافت نشد', 'اشتراک انتخابی در دسترس نیست یا پیکربندی معتبر ندارد.');
+        return;
+      }
+      requested = matches.first;
+    }
+    final ConnectOutcome outcome = await vpn.connect(requested: requested);
     if (!mounted) {
       return;
     }
@@ -537,6 +566,27 @@ class _ConnectPageState extends State<ConnectPage> {
                             ),
                           ),
                         const SizedBox(height: AppMetrics.space4),
+
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: AppMetrics.space2,
+                          runSpacing: AppMetrics.space2,
+                          children: <Widget>[
+                            for (final MapEntry<String, String> profile in <String, String>{
+                              'user-sub': 'خودکار',
+                              'user-wireguard': 'وایرگارد',
+                              'user-amnezia': 'آمنزیا',
+                              'user-mieru': 'میرو',
+                            }.entries)
+                              ChoiceChip(
+                                key: ValueKey<String>('connection-profile-${profile.key}'),
+                                label: Text(profile.value),
+                                selected: _profile == profile.key,
+                                onSelected: status.busy ? null : (_) => _selectProfile(profile.key),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppMetrics.space3),
 
                         // تنظیمات جانبی فقط با درخواست کاربر باز می شوند؛
                         // کنترل اصلی اتصال در همین صفحه بدون تغییر می ماند.

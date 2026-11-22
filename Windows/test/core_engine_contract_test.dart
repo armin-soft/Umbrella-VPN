@@ -9,6 +9,7 @@ import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/link_preparation.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
+import 'package:umbrella_vpn/vpn/direct_profile.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
@@ -995,4 +996,42 @@ void main() {
     skip: enabled ? false : 'Set UMBRELLA_CORE_SMOKE after bundling the Windows DLLs',
     timeout: const Timeout(Duration(seconds: 60)),
   );
+  test('direct profiles compile with the bundled core', () async {
+    const String key = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+    final List<String> inputs = <String>[
+      '[Interface]\nPrivateKey = $key\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = $key\nEndpoint = 192.0.2.1:51820\nAllowedIPs = 0.0.0.0/0\n',
+      '[Interface]\nPrivateKey = $key\nAddress = 10.0.0.2/32\nJc = 4\nJmin = 10\nJmax = 20\nS1 = 32\nS2 = 64\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n[Peer]\nPublicKey = $key\nEndpoint = 192.0.2.1:51820\nAllowedIPs = 0.0.0.0/0\n',
+      jsonEncode(<String, dynamic>{'activeProfile': 'a', 'profiles': <Object>[
+        <String, dynamic>{'profileName': 'a', 'user': <String, String>{'name': 'test', 'password': 'synthetic'},
+          'servers': <Object>[<String, dynamic>{'ipAddress': '192.0.2.1', 'portBindings': <Object>[
+            <String, dynamic>{'port': 1234, 'protocol': 'TCP'},
+            <String, dynamic>{'port': 5678, 'protocol': 'UDP'}]}],
+          'multiplexing': <String, String>{'level': 'MULTIPLEXING_LOW'}, 'handshakeMode': 'HANDSHAKE_NO_WAIT'}]}),
+    ];
+    for (final String input in inputs) {
+      final VpnNode node = SubscriptionParser.parseAuto(input, 'smoke').nodes.single;
+      final Directory temp = await Directory.systemTemp.createTemp('umbrella-direct-test-');
+      try {
+        final File source = File('${temp.path}/profile.json');
+        final File settings = File('${temp.path}/settings.json');
+        await source.writeAsString(DirectProfile.encode(node));
+        await settings.writeAsString(jsonEncode(UmbrellaCore.settingsJson(
+          tun: false, systemProxy: false, port: 12334, logFile: '${temp.path}/core.log',
+          networkSettings: const AppSettings(),
+        )));
+        final File runtime = await CoreRuntime.compile(
+          executable: binary!, workDir: File(binary).parent.path,
+          runDir: temp.path, linksPath: source.path, settingsPath: settings.path,
+          cancelled: () => false, useCache: false,
+        );
+        final Map<String, dynamic> result = jsonDecode(await runtime.readAsString());
+        final List<dynamic> profiles = node.protocol == NodeProtocol.mieru
+            ? result['outbounds'] as List<dynamic> : result['endpoints'] as List<dynamic>;
+        expect(profiles.any((dynamic item) => item['tag'] == 'umbrella-direct-profile'), isTrue);
+      } finally {
+        await temp.delete(recursive: true);
+      }
+    }
+  }, skip: enabled ? false : 'Windows core required', timeout: const Timeout(Duration(seconds: 90)));
+
 }

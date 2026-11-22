@@ -237,10 +237,10 @@ void main() {
       // ۱. تلاش اول در قطعی شبکه: هیچ منبع عمومی یا رایگانی بارگذاری نمی شود.
       await subs.syncPersonal();
       expect(h.vpn.nodes, isEmpty);
-      expect(subs.sources, hasLength(1));
-      expect(subs.sources.single.personal, isTrue);
+      expect(subs.sources, hasLength(4));
+      expect(subs.sources.first.personal, isTrue);
       expect(
-        subs.sources.single.source.url,
+        subs.sources.first.source.url,
         '${AppConfig.subscriptionBaseUrl}$userUuid/sub/',
       );
 
@@ -309,9 +309,9 @@ void main() {
         subs.syncPersonal(),
         subs.syncPersonal(),
       ]);
-      expect(nativeCalls, hasLength(2));
-      expect(nativeCalls[0]['useProxy'], isFalse);
-      expect(nativeCalls[1]['useProxy'], isTrue);
+      expect(nativeCalls, hasLength(8));
+      expect(nativeCalls.where((call) => call['useProxy'] == true), hasLength(4));
+      expect(nativeCalls.where((call) => call['useProxy'] == false), hasLength(4));
       expect(h.vpn.nodes, hasLength(2));
     } finally {
       await h.dispose(subs);

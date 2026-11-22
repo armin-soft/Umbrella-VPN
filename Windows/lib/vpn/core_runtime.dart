@@ -238,11 +238,15 @@ class CoreRuntime {
     try {
       if (!await parsed.exists()) return null;
       final Object? decoded = jsonDecode(await parsed.readAsString());
-      if (decoded is! Map<String, dynamic> || decoded['outbounds'] is! List) {
+      if (decoded is! Map<String, dynamic> ||
+          (decoded['outbounds'] is! List && decoded['endpoints'] is! List)) {
         return null;
       }
       return <String>{
-        for (final dynamic outbound in decoded['outbounds'] as List<dynamic>)
+        for (final dynamic outbound in <dynamic>[
+          if (decoded['outbounds'] is List) ...decoded['outbounds'] as List,
+          if (decoded['endpoints'] is List) ...decoded['endpoints'] as List,
+        ])
           if (outbound is Map && outbound['tag'] is String)
             outbound['tag'] as String,
       };

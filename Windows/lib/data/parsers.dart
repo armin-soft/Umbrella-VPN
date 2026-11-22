@@ -1196,6 +1196,8 @@ class SubscriptionParser {
       'i1',
       'i2',
       'i3',
+      'i4',
+      'i5',
     ];
     bool isAmnezia = false;
     for (final String key in obfuscation) {

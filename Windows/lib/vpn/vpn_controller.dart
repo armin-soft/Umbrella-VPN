@@ -1,3 +1,4 @@
+import 'direct_profile.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -1281,7 +1282,14 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    final List<VpnNode> fitting = usableNodes.where(_fitsPreference).toList();
+    final List<VpnNode> fitting = usableNodes
+        .where((VpnNode node) => _fitsPreference(node) &&
+            (requested != null || !DirectProfile.handles(node)))
+        .toList();
+    if (requested != null &&
+        !usableNodes.any((VpnNode node) => node.id == requested.id)) {
+      return const ConnectOutcome(ok: false, message: 'پروفایل انتخابی معتبر نیست.');
+    }
     if (fitting.isEmpty) {
       const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
       _setStatus(VpnStatus.failed, message);
@@ -2156,6 +2164,7 @@ class VpnController extends ChangeNotifier {
   /// لینک سرور برای دادن به هسته (برای سنجش پینگ و پنجره CLI هم استفاده
   /// می شود).
   static String linkFor(VpnNode node) {
+    if (DirectProfile.handles(node)) return DirectProfile.encode(node);
     final String raw = node.raw.trim();
     if (raw.contains('://')) {
       final String normalized =
@@ -2223,7 +2232,7 @@ class VpnController extends ChangeNotifier {
 
     // An explicit selection (or disabled failover) must not launch a monitor
     // over the entire subscription or silently select a different server.
-    if (_singleNodeSession) {
+    if (_singleNodeSession || DirectProfile.handles(chosen)) {
       add(chosen);
       return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
     }
@@ -2233,7 +2242,7 @@ class VpnController extends ChangeNotifier {
     // پیش آماده شده در لحظه زدن دکمه اتصال بی درنگ و بدون کامپایل دوباره اجرا
     // شود. پین شده ها اول قرار می گیرند و بقیه به ترتیب پایدار فهرست می آیند.
     final List<VpnNode> candidates =
-        _nodes.where((VpnNode n) => !n.disabled).toList();
+        _nodes.where((VpnNode n) => !n.disabled && !DirectProfile.handles(n)).toList();
     for (final VpnNode n in candidates) {
       if (n.favorite) {
         add(n);
@@ -2322,7 +2331,7 @@ class VpnController extends ChangeNotifier {
     try {
       if (shouldAbort()) return;
       final List<VpnNode> usableNodes = _nodes
-          .where((VpnNode node) => usable(node) && !node.disabled)
+          .where((VpnNode node) => usable(node) && !node.disabled && !DirectProfile.handles(node))
           .toList();
       if (usableNodes.isEmpty) return;
       final String binary = CliSession.wanted(_settings)
