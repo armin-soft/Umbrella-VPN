@@ -14,6 +14,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
+import java.security.cert.CertificateException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
@@ -76,6 +79,18 @@ internal object UmbrellaTunVerifier {
             }
         } catch (_: SocketTimeoutException) {
             "TIMEOUT"
+        } catch (_: SSLPeerUnverifiedException) {
+            "CERTIFICATE_FAILED"
+        } catch (error: SSLHandshakeException) {
+            // Exception messages can contain private addresses; expose only a
+            // fixed diagnostic category, not the provider's raw message.
+            var cause: Throwable? = error
+            var certificateFailure = false
+            repeat(8) {
+                if (cause is CertificateException) certificateFailure = true
+                cause = cause?.cause
+            }
+            if (certificateFailure) "CERTIFICATE_FAILED" else "TLS_HANDSHAKE_FAILED"
         } catch (_: SSLException) {
             "TLS_FAILED"
         } catch (_: Exception) {

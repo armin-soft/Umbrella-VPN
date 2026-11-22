@@ -29,6 +29,11 @@ class UmbrellaCoreClient extends $grpc.Client {
     (HEmpty value) => value.writeToBuffer(),
     (List<int> value) => CoreInfoResponse.fromBuffer(value),
   );
+  static final _$logListener = $grpc.ClientMethod<CoreLogRequest, CoreLogMessage>(
+    '/hcore.Core/LogListener',
+    (CoreLogRequest value) => value.writeToBuffer(),
+    (List<int> value) => CoreLogMessage.fromBuffer(value),
+  );
   static final _$start = $grpc.ClientMethod<StartRequest, CoreInfoResponse>(
     '/hcore.Core/Start',
     (StartRequest value) => value.writeToBuffer(),
@@ -72,6 +77,9 @@ class UmbrellaCoreClient extends $grpc.Client {
     $grpc.CallOptions? options,
   }) => $createStreamingCall(_$coreInfoListener, Stream.value(HEmpty.create()),
       options: options);
+
+  $grpc.ResponseStream<CoreLogMessage> logListener() =>
+      $createStreamingCall(_$logListener, Stream.value(CoreLogRequest()));
 
   Future<CoreInfoResponse> start(
     StartRequest request, {

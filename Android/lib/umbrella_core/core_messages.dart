@@ -106,6 +106,47 @@ class HResponse extends $pb.GeneratedMessage {
 
 // ── hcore ──────────────────────────────────────────────────────────────────
 
+/// Only the log request level and response message are needed. Unknown fields
+/// (including timestamp) are ignored by protobuf.
+class CoreLogRequest extends $pb.GeneratedMessage {
+  @override
+  CoreLogRequest clone() => create()..mergeFromMessage(this);
+  CoreLogRequest._() : super();
+  factory CoreLogRequest({int level = 3}) => create()..level = level;
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('LogRequest',
+      package: const $pb.PackageName('hcore'), createEmptyInstance: create)
+    ..a<int>(1, 'level', $pb.PbFieldType.O3)
+    ..hasRequiredFields = false;
+  $pb.BuilderInfo get info_ => _i;
+  static CoreLogRequest create() => CoreLogRequest._();
+  CoreLogRequest createEmptyInstance() => create();
+  static $pb.PbList<CoreLogRequest> createRepeated() => $pb.PbList<CoreLogRequest>();
+  static CoreLogRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CoreLogRequest>(create);
+  static CoreLogRequest? _defaultInstance;
+  int get level => $_getIZ(0);
+  set level(int v) => $_setSignedInt32(0, v);
+}
+
+class CoreLogMessage extends $pb.GeneratedMessage {
+  @override
+  CoreLogMessage clone() => create()..mergeFromMessage(this);
+  CoreLogMessage._() : super();
+  factory CoreLogMessage.fromBuffer(List<int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo('LogMessage',
+      package: const $pb.PackageName('hcore'), createEmptyInstance: create)
+    ..a<int>(1, 'level', $pb.PbFieldType.O3)
+    ..a<int>(2, 'type', $pb.PbFieldType.O3)
+    ..aOS(3, 'message')
+    ..hasRequiredFields = false;
+  $pb.BuilderInfo get info_ => _i;
+  static CoreLogMessage create() => CoreLogMessage._();
+  CoreLogMessage createEmptyInstance() => create();
+  static $pb.PbList<CoreLogMessage> createRepeated() => $pb.PbList<CoreLogMessage>();
+  static CoreLogMessage getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CoreLogMessage>(create);
+  static CoreLogMessage? _defaultInstance;
+  String get message => $_getSZ(2);
+}
+
 /// hcore.CoreInfoResponse — وضعیت هسته (CoreStates) و نوع پیام.
 ///
 /// CoreStates: STOPPED=0, STARTING=1, STARTED=2, STOPPING=3,

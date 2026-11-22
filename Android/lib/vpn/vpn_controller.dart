@@ -26,6 +26,7 @@ import 'tunnel_probe.dart';
 import 'speed_test.dart';
 import 'verified_probe.dart';
 import 'mobile_session.dart';
+import 'mobile_core_settings.dart';
 import 'umbrella_mobile_backend.dart';
 
 enum VpnStatus {
@@ -1282,15 +1283,12 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
     }
-    final mobileSettings = UmbrellaCore.settingsJson(
+    final mobileSettings = mobileCoreSettings(UmbrellaCore.settingsJson(
       tun: true, systemProxy: false, port: _configuredMixedPort,
       networkSettings: _settings.copyWith(localProxyInVpn: false, localProxyAuth: false),
       contentFilter: _contentFilter,
-    );
-    // Loopback is shared between Android apps. The desktop API has a fixed
-    // secret, so do not expose it (or a mixed inbound) on mobile.
-    mobileSettings['enable-clash-api'] = false;
-    mobileSettings['enable-mixed-port'] = false;
+    ));
+    trace('monitor.multi_endpoint.enabled');
     final settingsJson = jsonEncode(mobileSettings);
     String? lastProbe;
     final session = MobileVpnSession(UmbrellaMobileBackend(
@@ -1305,6 +1303,7 @@ class VpnController extends ChangeNotifier {
               final code = await _native.verifyTunTrafficDiagnostic();
               const allowed = {'OK', 'UNSUPPORTED_ANDROID', 'TUN_NOT_OPEN',
                 'VPN_NETWORK_NOT_VISIBLE', 'PROBE_FAILED', 'TIMEOUT', 'TLS_FAILED',
+                'CERTIFICATE_FAILED', 'TLS_HANDSHAKE_FAILED',
                 'DNS_FAILED', 'CONNECT_FAILED', 'HTTP_UNEXPECTED', 'SERVICE_UNAVAILABLE', 'BRIDGE_UNAVAILABLE'};
               final safe = allowed.contains(code) ? code : 'UNKNOWN';
               if (observing && safe != lastProbe) { trace('probe.$safe'); lastProbe = safe; }
