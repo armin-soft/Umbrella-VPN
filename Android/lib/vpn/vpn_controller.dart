@@ -27,6 +27,7 @@ import 'speed_test.dart';
 import 'verified_probe.dart';
 import 'mobile_session.dart';
 import 'mobile_core_settings.dart';
+import 'mobile_failover.dart';
 import 'umbrella_mobile_backend.dart';
 
 enum VpnStatus {
@@ -1291,6 +1292,7 @@ class VpnController extends ChangeNotifier {
     ));
     trace('monitor.multi_endpoint.enabled');
     final settingsJson = jsonEncode(mobileSettings);
+    final mobileSessionStarted = DateTime.now().toUtc();
     String? lastProbe;
     final session = MobileVpnSession(UmbrellaMobileBackend(
       native: _native, settingsJson: settingsJson,
@@ -1346,16 +1348,54 @@ class VpnController extends ChangeNotifier {
     _activeLocalProxyOpen = false;
     _tunnelVerified = true;
     _setStatus(VpnStatus.connected, 'اتصال امن برقرار است');
+    _sessionStartUtc = mobileSessionStarted;
+    final mobileSecret = mobileSettings['web-secret'] as String;
+    final mobilePort = mobileSettings['clash-api-port'] as int;
+    final mobileTestUrl = mobileSettings['connection-test-url'] as String;
+    final health = MobileFailover(
+      snapshot: () => ClashApi.status(port: mobilePort, secret: mobileSecret,
+          since: mobileSessionStarted, timeout: const Duration(milliseconds: 1200)),
+      testDelay: (tag) => ClashApi.testDelay(tag, port: mobilePort,
+          secret: mobileSecret, testUrl: mobileTestUrl,
+          timeout: const Duration(seconds: 3)),
+      verifyTun: () async => await _native.verifyTunTrafficDiagnostic() == 'OK',
+    );
+    bool isCurrent() => !_disposed && !_cancelRequested &&
+        _status == VpnStatus.connected && identical(_mobileSession, session);
     _healthTimer?.cancel();
-    _healthTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (_healthInFlight || _disposed || _status != VpnStatus.connected) return;
+    _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+      if (_healthInFlight || !isCurrent()) return;
       _healthInFlight = true;
       try {
-        if (!await _native.isServiceRunning() && !_disposed && _status == VpnStatus.connected) {
+        if (!await _native.isServiceRunning()) {
+          if (!isCurrent()) return;
           _tunnelVerified = false;
           await disconnect(silent: true);
           if (!_disposed) _setStatus(VpnStatus.failed, 'سرویس VPN متوقف شد.');
+          return;
         }
+        if (!isCurrent()) return;
+        final result = await health.check(
+          allowFailover: !_singleNodeSession && _settings.autoFailover,
+          previouslyVerified: _tunnelVerified,
+          isCurrent: isCurrent,
+        );
+        if (result.stale || !isCurrent()) return;
+        if (result.nudged) trace('health.retest_requested');
+        var changed = false;
+        if (result.ping > 0 && PingService.plausible(result.ping) && result.ping != _livePing) {
+          _livePing = result.ping;
+          changed = true;
+        }
+        if (result.verified != null && result.verified != _tunnelVerified) {
+          _tunnelVerified = result.verified!;
+          trace(result.verified! ? 'health.tun_verified' : 'health.tun_unverified');
+          changed = true;
+        }
+        if (changed) _notify();
+      } catch (_) {
+        // An unavailable control channel does not prove the VPN is down.
+        if (isCurrent()) trace('health.check_failed');
       } finally {
         _healthInFlight = false;
       }
