@@ -27,7 +27,7 @@ internal class UmbrellaLocalResolver(private val monitor: UmbrellaNetworkMonitor
 
     @RequiresApi(Build.VERSION_CODES.Q)
     override fun exchange(ctx: ExchangeContext, message: ByteArray) = untilCancelled(ctx) {
-        val defaultNetwork = monitor.requireNetwork()
+        val defaultNetwork = monitor.awaitNetwork()
         query { signal, continuation ->
             DnsResolver.getInstance().rawQuery(
                 defaultNetwork,
@@ -41,7 +41,7 @@ internal class UmbrellaLocalResolver(private val monitor: UmbrellaNetworkMonitor
     }
 
     override fun lookup(ctx: ExchangeContext, network: String, domain: String) = untilCancelled(ctx) {
-        val defaultNetwork = monitor.requireNetwork()
+        val defaultNetwork = monitor.awaitNetwork()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             val answer =
                 try {

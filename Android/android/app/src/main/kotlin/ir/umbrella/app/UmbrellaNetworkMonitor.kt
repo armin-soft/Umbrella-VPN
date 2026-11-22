@@ -10,6 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import com.hiddify.core.libbox.InterfaceUpdateListener
 import java.net.NetworkInterface
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** Reports the underlying default interface to the mobile engine.
  *
@@ -23,6 +27,7 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
     private var listener: InterfaceUpdateListener? = null
     private var registered = false
     private var current: Network? = null
+    private val networkWaiters = mutableSetOf<CancellableContinuation<Network>>()
     private val request = NetworkRequest.Builder()
         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
@@ -65,6 +70,12 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
             listener?.updateDefaultInterface("", -1, false, false)
             return
         }
+        // Local DNS can be requested while Android is still delivering its
+        // first network callback. Wake those requests as soon as the physical
+        // network is usable, rather than failing them during startup.
+        val waiting = networkWaiters.toList()
+        networkWaiters.clear()
+        waiting.forEach { if (it.isActive) it.resume(network) }
         val name = connectivity.getLinkProperties(network)?.interfaceName ?: return
         val index = try { NetworkInterface.getByName(name)?.index ?: return } catch (_: Exception) { return }
         listener?.updateDefaultInterface(
@@ -73,15 +84,23 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
         )
     }
 
-    /** DNS must use the underlying network, never the VPN itself. */
-    fun requireNetwork(): Network = synchronized(lock) {
-        check(registered) { "Network monitor is not active" }
-        val network = checkNotNull(current) { "No underlying network available" }
-        val caps = connectivity.getNetworkCapabilities(network)
-        check(caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true) {
-            "Underlying network is unavailable"
+    /** Wait for Android's physical-network callback, cancellably, as upstream does.
+     * The core's DNS context bounds this wait; never fall back to the VPN. */
+    suspend fun awaitNetwork(): Network = suspendCancellableCoroutine { continuation ->
+        synchronized(lock) {
+            if (!registered) {
+                continuation.resumeWithException(IllegalStateException("Network monitor is not active"))
+            } else {
+                val network = current
+                val caps = network?.let { connectivity.getNetworkCapabilities(it) }
+                if (network != null && caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true) {
+                    continuation.resume(network)
+                } else {
+                    networkWaiters.add(continuation)
+                    continuation.invokeOnCancellation { synchronized(lock) { networkWaiters.remove(continuation) } }
+                }
+            }
         }
-        network
     }
 
     /** Registration fails closed if Android denies the required network request. */
@@ -112,6 +131,9 @@ internal class UmbrellaNetworkMonitor(private val connectivity: ConnectivityMana
             registered = false
             current = null
             listener = null
+            val waiting = networkWaiters.toList()
+            networkWaiters.clear()
+            waiting.forEach { if (it.isActive) it.resumeWithException(IllegalStateException("Network monitor closed")) }
             connectivity.unregisterNetworkCallback(callback)
         }
     }
