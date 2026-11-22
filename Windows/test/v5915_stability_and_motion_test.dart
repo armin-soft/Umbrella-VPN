@@ -243,7 +243,9 @@ void main() {
       expect(motion.shouldAnimateAmbient, isTrue);
 
       await motion.checkConnectCpuBudget();
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      for (int i = 0; i < 25 && !motion.cpuThrottled; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
       expect(motion.cpuThrottled, isTrue);
       expect(motion.shouldAnimateAmbient, isFalse);
       motion.dispose();
@@ -256,11 +258,11 @@ void main() {
       await tester.pumpWidget(
         ChangeNotifierProvider<MotionController>.value(
           value: motion,
-          child: MediaQuery(
-            data: const MediaQueryData(disableAnimations: true),
-            child: MaterialApp(
-              theme: AppTheme.dark(),
-              home: const Scaffold(
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const MediaQuery(
+              data: MediaQueryData(disableAnimations: true),
+              child: Scaffold(
                 body: Center(
                   child: StatusOrb(
                     image: BrandAssets.connected,
@@ -277,6 +279,7 @@ void main() {
       await tester.pump();
       final Image img = tester.widget<Image>(find.byType(Image).first);
       expect(img.gaplessPlayback, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
       motion.dispose();
     });
   });
@@ -335,7 +338,10 @@ void main() {
     testWidgets('دکمه عیب یابی ۱۰ دقیقه ای در LogsPage کار می کند و خطای لایه ای ندارد',
         (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1200, 820));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+      addTearDown(() async {
+        AppLogger.instance.clear();
+        await tester.binding.setSurfaceSize(null);
+      });
 
       final SettingsController settings = SettingsController(
         native: _StubNative(),
@@ -362,13 +368,24 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byKey(const ValueKey<String>('logs-diagnostic-session-chip')), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey<String>('logs-diagnostic-session-chip')));
+      final Finder chip =
+          find.byKey(const ValueKey<String>('logs-diagnostic-session-chip'));
+      expect(chip, findsOneWidget);
+
+      await tester.tap(chip);
+      await tester.pump();
       await tester.pump();
       expect(settings.diagnosticActive, isTrue);
       expect(vpn.reloads, 1);
 
-      await settings.stopDiagnosticSession();
+      await tester.tap(chip);
+      await tester.pump();
+      await tester.pump();
+      expect(settings.diagnosticActive, isFalse);
+      expect(vpn.reloads, 2);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
       settings.dispose();
       vpn.dispose();
     });
@@ -378,12 +395,12 @@ void main() {
     test('خواندن عنوان Base64 بدون padding، RFC 5987 و اطلاعات مصرف مقاوم', () {
       final SubscriptionMetadata meta = SubscriptionHeaders.parse(
         <String, String>{
-          'profile-title': 'base64:2KLYqNix2YTYpw', // «آمبرلا» بدون '='
+          'profile-title': 'base64:2KLZhdio2LHZhNinIQ', // «آمبرلا!» بدون '='
           'subscription-userinfo':
               'upload=1024;; download=2048.4; total=0; expire=1900000000',
         },
       );
-      expect(meta.title, 'آمبرلا');
+      expect(meta.title, 'آمبرلا!');
       expect(meta.uploadBytes, 1024);
       expect(meta.downloadBytes, 2048);
       expect(meta.totalBytes, isNull);
