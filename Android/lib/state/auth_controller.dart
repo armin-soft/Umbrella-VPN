@@ -1096,6 +1096,41 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> saveBypass(FilterSettings settings) async {
+    final SessionData? session = _session;
+    if (session == null || _savingFilter) {
+      return false;
+    }
+    _savingFilter = true;
+    _error = '';
+    notifyListeners();
+    try {
+      final FilterSettings previous = session.filter;
+      final FilterSettings saved =
+          await _gateway.saveBypass(session.token, settings);
+      if (_session?.token != session.token) return false;
+      final SessionData nextSession = _session!.copyWith(filter: saved);
+      _session = nextSession;
+      await _store.writeJson(StoreKeys.session, nextSession.toJson());
+      await _store.writeJson(StoreKeys.filter, saved.toJson());
+      if (!previous.sameEffectAs(saved)) {
+        onFilterChanged?.call(saved);
+      }
+      return true;
+    } on ApiError catch (error) {
+      if (error.code == 'device_revoked') {
+        await _handleDeviceRevoked(error.message);
+      } else {
+        _error = error.message;
+        _logError(error.message);
+      }
+      return false;
+    } finally {
+      _savingFilter = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> loadSubscriptionPlans({bool silent = true}) async {
     final SessionData? session = _session;
     if (session == null || _loadingSubscriptionPlans) return false;

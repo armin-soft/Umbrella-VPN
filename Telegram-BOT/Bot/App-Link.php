@@ -5,6 +5,7 @@ require_once __DIR__ . '/Context.php';
 require_once __DIR__ . '/../Core/App/System-Notifications.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/App/App-Filter.php';
+require_once __DIR__ . '/../Core/App/App-Bypass.php';
 require_once __DIR__ . '/../Core/App/App-Two-Step.php';
 require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Panel.php';
@@ -55,6 +56,63 @@ $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 . $Summary
 . \Helper::userFooter();
 self::reply($Context, $Text, TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()]));
+}
+
+/** Direct-routing preferences shared with signed-in apps. */
+public static function bypassMenu(Context $Context): void {
+$Account = self::accountOrPrompt($Context);
+if ($Account === null) return;
+$Session = Repository::getUserSession($Context->UserId);
+if (($Session['Flow'] ?? '') === 'app:bypass_domains') Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Step' => 0]);
+$Settings = AppBypass::load((string)$Account['uuid']);
+$Text = \Helper::userGreeting($Context, 'عبور مستقیم سایت ها')
+. '⚠️ سایت های این فهرست از اینترنت عادی و خارج از فیلترشکن باز می شوند؛ نشانی واقعی شما برای آن ها قابل مشاهده است.' . "\n"
+. 'سایت های ایرانی: ' . ($Settings['iran'] ? '🟢روشن' : '🔴خاموش') . "\n"
+. 'تعداد دامنه: ' . count($Settings['domains']) . ' از ' . AppBypass::MAX_DOMAINS . "\n";
+foreach (array_slice($Settings['domains'], 0, 20) as $Domain) $Text .= '• ' . self::safeDomainLabel($Domain) . "\n";
+if (count($Settings['domains']) > 20) $Text .= '… بقیه در برنامه قابل مشاهده اند.' . "\n";
+$Text .= 'کنترل محتوای فعال بر مسیر مستقیم اولویت دارد.' . \Helper::userFooter();
+self::reply($Context, $Text, TelegramClient::inlineKeyboard([
+[['text' => '🌐وارد کردن یا حذف لینک', 'callback_data' => 'app_bypass_add']],
+[['text' => $Settings['iran'] ? '🇮🇷سایت های ایرانی: روشن' : '🇮🇷سایت های ایرانی: خاموش', 'callback_data' => 'app_bypass_iran']],
+Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome(),
+]));
+}
+
+public static function bypassIran(Context $Context): void {
+$Account = self::accountOrPrompt($Context);
+if ($Account === null) return;
+$UUID = (string)$Account['uuid'];
+$settings = AppBypass::load($UUID);
+$settings['iran'] = !$settings['iran'];
+AppBypass::save($UUID, $settings);
+if ($Context->CallbackId !== null) TelegramClient::answerCallbackQuery($Context->CallbackId, 'ذخیره شد');
+self::bypassMenu($Context);
+}
+
+public static function bypassDomainsStart(Context $Context): void {
+if (self::accountOrPrompt($Context) === null) return;
+Repository::updateUserSession($Context->UserId, ['Flow' => 'app:bypass_domains', 'Step' => 1]);
+self::reply($Context, \Helper::userGreeting($Context, 'وارد کردن لینک')
+. "دامنه یا نشانی سایت را بفرستید. برای حذف، پیش از دامنه - بگذارید؛ هر دامنه و زیر دامنه هایش خارج از VPN باز می شود.\nمثال: example.com یا -example.com"
+. \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
+}
+
+public static function bypassDomainsInput(Context $Context, string $Text): void {
+$Account = self::accountOrPrompt($Context);
+if ($Account === null) return;
+if (in_array(trim($Text), ['/cancel', 'انصراف', 'بازگشت'], true)) { self::bypassMenu($Context); return; }
+$parsed = AppFilter::parseDomainsInput($Text);
+if ($parsed['add'] === [] && $parsed['remove'] === []) {
+TelegramClient::sendMessage($Context->ChatId, 'دامنه معتبر پیدا نشد؛ دوباره بفرستید.', TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
+return;
+}
+$UUID = (string)$Account['uuid'];
+$settings = AppBypass::load($UUID);
+$settings['domains'] = array_slice(array_values(array_unique(array_merge(
+array_diff($settings['domains'], $parsed['remove']), $parsed['add']))), 0, AppBypass::MAX_DOMAINS);
+AppBypass::save($UUID, $settings);
+self::bypassMenu($Context);
 }
 
 /** The filter menu: categories, custom-domain manager, and master switch. */

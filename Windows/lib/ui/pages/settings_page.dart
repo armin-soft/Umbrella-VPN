@@ -16,6 +16,7 @@ import '../../vpn/vpn_controller.dart';
 import '../widgets/advanced_network_settings.dart';
 import '../widgets/common.dart';
 import '../widgets/content_control.dart';
+import '../widgets/bypass_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
 
 /// دسته های تنظیمات برنامه؛ بهینه سازی باتری فقط روی لپ تاپ در دسترس است.
@@ -815,6 +816,13 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle:
               'فیلتر دسته بندی شده دامنه ها، هماهنگ خودکار با حساب کاربری شما',
           children: <Widget>[ContentControlCard()],
+        ),
+        const SizedBox(height: AppMetrics.space5),
+        const _Section(
+          icon: Icons.alt_route_rounded,
+          title: 'عبور مستقیم سایت ها',
+          subtitle: 'سایت های انتخاب شده خارج از VPN، همگام با ربات تلگرام',
+          children: <Widget>[BypassControlCard()],
         ),
       ],
     );

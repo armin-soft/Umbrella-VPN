@@ -15,6 +15,7 @@ import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
+import '../widgets/emergency_list.dart';
 import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 import '../widgets/quick_connection_panel.dart';
@@ -572,6 +573,9 @@ class _ConnectPageState extends State<ConnectPage> {
                           if (_emergencySelected)
                             Text('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
                               textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.warning)),
+                          if (_emergencySelected)
+                            TextButton.icon(onPressed: () => showEmergencyList(context, subs.emergencyNodes, subs.emergencyUnavailableSources),
+                              icon: const Icon(Icons.list_alt), label: const Text('فهرست مسیرهای اضطراری')),
                           if (_switchPending(vpn)) const Text('برای تغییر مسیر، دکمه اتصال را بزنید.'),
                           const SizedBox(height: AppMetrics.space3),
                         ],

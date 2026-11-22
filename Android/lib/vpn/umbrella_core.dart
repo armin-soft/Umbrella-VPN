@@ -769,6 +769,23 @@ class UmbrellaCore {
         startOrder: 0,
       );
       combinedRules.addAll(filterRules);
+      // Content blocks precede user direct routes, so bypass cannot defeat an
+      // administrator policy. The core also emits matching direct DNS rules.
+      if (contentFilter != null && contentFilter.bypassDomains.isNotEmpty) {
+        combinedRules.add(<String, dynamic>{
+          'list_order': combinedRules.length, 'enabled': true,
+          'name': 'umbrella-bypass-user', 'outbound': 'direct',
+          'domain': contentFilter.bypassDomains,
+          'domain_suffix': contentFilter.bypassDomains,
+        });
+      }
+      if (contentFilter?.bypassIran ?? false) {
+        combinedRules.add(<String, dynamic>{
+          'list_order': combinedRules.length, 'enabled': true,
+          'name': 'umbrella-bypass-iran', 'outbound': 'direct',
+          'domain_suffix': <String>['.ir'], 'rule_set': regionalRuleSetUrls('ir'),
+        });
+      }
 
       if (networkSettings != null) {
         for (final AppRouteRule route in networkSettings.appRoutes) {

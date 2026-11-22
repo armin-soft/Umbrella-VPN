@@ -19,6 +19,7 @@ require_once __DIR__ . '/../../Bot/Context.php';
 require_once __DIR__ . '/../../Bot/Subscription.php';
 require_once __DIR__ . '/../Payment/ZarinPal.php';
 require_once __DIR__ . '/App-Filter.php';
+require_once __DIR__ . '/App-Bypass.php';
 require_once __DIR__ . '/System-Notifications.php';
 require_once dirname(__DIR__, 2) . '/Config/Environment.php';
 
@@ -94,6 +95,7 @@ if ($Route === 'account/bot-link') { self::botMembershipLink(self::body()); retu
 if ($Route === 'account/bot-link-status') { self::botMembershipStatus(); return; }
 if ($Route === 'filter/save') { self::saveFilter(self::body()); return; }
 if ($Route === 'filter/get') { self::getFilter(self::body()); return; }
+if ($Route === 'bypass/save') { self::saveBypass(self::body()); return; }
 if ($Route === 'subscription/offers') { self::subscriptionOffers(); return; }
 if ($Route === 'subscription/claim') { self::claimSubscription(self::body()); return; }
 if ($Route === 'subscription/fetch') { self::fetchSubscription(self::body()); return; }
@@ -542,7 +544,7 @@ self::ok([
 'device_id' => (string)$Row['Device_ID'],
 'sign_in_at' => gmdate('c'),
 'account' => $Profile,
-'filter' => AppFilter::loadEffective($UUID),
+'filter' => self::filterPayload($UUID),
 'offers' => self::offersPayload($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account),
 ]);
 }
@@ -796,7 +798,7 @@ $Profile['emergency_enabled'] = BotConfig::showEmergency();
 
 self::ok([
 'account' => $Profile,
-'filter' => AppFilter::loadEffective($UUID),
+'filter' => self::filterPayload($UUID),
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 'channel_url' => BotConfig::getChannelUrl(),
 'checked_at' => gmdate('c'),
@@ -844,7 +846,7 @@ $DeviceId,
 $UUID,
 (int)($Session['Telegram_ID'] ?? 0)
 );
-$Payload['filter'] = AppFilter::loadEffective($UUID);
+$Payload['filter'] = self::filterPayload($UUID);
 $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
 }
 self::ok($Payload);
@@ -992,7 +994,9 @@ if (!is_array($Settings)) {
 self::fail(422, 'invalid_settings', 'تنظیمات ارسال نشد.');
 }
 
-self::ok(['settings' => AppFilter::saveFromApp((string)$Session['User_UUID'], $Settings)]);
+$UUID = (string)$Session['User_UUID'];
+AppFilter::saveFromApp($UUID, $Settings);
+self::ok(['settings' => self::filterPayload($UUID)]);
 }
 
 private static function getFilter(array $Body): void {
@@ -1002,7 +1006,23 @@ if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
 
-self::ok(['settings' => AppFilter::loadEffective((string)$Session['User_UUID'])]);
+self::ok(['settings' => self::filterPayload((string)$Session['User_UUID'])]);
+}
+
+private static function filterPayload(string $UUID): array {
+$filter = AppFilter::loadEffective($UUID);
+$filter['bypass'] = AppBypass::load($UUID);
+return $filter;
+}
+
+private static function saveBypass(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+$settings = $Body['settings'] ?? null;
+if (!is_array($settings)) self::fail(422, 'invalid_settings', 'تنظیمات ارسال نشد.');
+$UUID = (string)$Session['User_UUID'];
+AppBypass::save($UUID, $settings);
+self::ok(['settings' => self::filterPayload($UUID)]);
 }
 
 /** Looks up the linked bot `Users` row by Telegram ID or panel UUID. */
@@ -1458,7 +1478,7 @@ self::ok([
 ? 'اشتراک رایگان (۱ گیگابایت، ۱ روز) فعال شد.'
 : 'اشتراک نوروزی (۵ گیگابایت، ۱۳ روز) فعال شد.',
 'account' => $Profile,
-'filter' => AppFilter::loadEffective($UUID),
+'filter' => self::filterPayload($UUID),
 'offers' => self::offersPayload($UUID, $Uid, $Fresh),
 ]);
 } finally {

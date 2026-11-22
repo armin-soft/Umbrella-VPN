@@ -1312,7 +1312,7 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, message);
       return const ConnectOutcome(ok: false, message: message);
     }
-    final String profileLabel = requested == null ? 'خودکار' : requested.protocol.label;
+    final String profileLabel = _emergencySession ? 'اضطراری' : (requested == null ? 'خودکار' : requested.protocol.label);
     _log.add(
       'درخواست اتصال: نوع «$profileLabel»، ${Fa.num(requested == null ? fitting.length : 1)} مسیر برای این انتخاب، '
       'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',

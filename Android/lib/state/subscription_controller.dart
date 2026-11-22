@@ -91,9 +91,11 @@ class SubscriptionController extends ChangeNotifier {
   bool _emergencyLoading = false;
   int _emergencyGeneration = 0;
   String _emergencyError = '';
+  int _emergencyUnavailableSources = 0;
   bool get emergencyEnabled => _auth.signedIn && _auth.account.emergencyEnabled;
   bool get emergencyLoading => _emergencyLoading;
   String get emergencyError => _emergencyError;
+  int get emergencyUnavailableSources => _emergencyUnavailableSources;
   List<VpnNode> get emergencyNodes => _vpn.emergencyNodes;
 
   void _syncEmergencyFlag() {
@@ -103,6 +105,7 @@ class SubscriptionController extends ChangeNotifier {
     _emergencyEnabled = enabled;
     _emergencyGeneration++;
     _emergencyError = '';
+    _emergencyUnavailableSources = 0;
     if (!enabled) {
       _emergencyLoading = false;
       _vpn.setEmergencyNodes(const <VpnNode>[], enabled: false);
@@ -125,6 +128,7 @@ class SubscriptionController extends ChangeNotifier {
       for (final result in results) ...result.nodes,
     ].take(400).toList();
     _emergencyLoading = false;
+    _emergencyUnavailableSources = results.where((result) => result.error.isNotEmpty).length;
     _emergencyError = nodes.isEmpty ? 'هیچ مسیر اضطراری سازگاری دریافت نشد.' : '';
     _vpn.setEmergencyNodes(nodes, enabled: true);
     notifyListeners();

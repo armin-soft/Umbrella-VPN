@@ -113,7 +113,7 @@ void main() {
     final int start = controller.indexOf('Future<ConnectOutcome> _connectInner');
     final String connect = controller.substring(start, controller.indexOf('final List<VpnNode> fitting', start));
     expect(connect.indexOf('accessGuard?.call()'), lessThan(connect.indexOf('_settings.chain')));
-    expect(connect, contains('if (_nodes.isEmpty)'));
+    expect(connect, contains('if (_sessionNodes.isEmpty)'));
     expect(controller, contains('networkSettings: _settings'));
     expect(controller, contains('(!_settings.tunMode || !_device.elevated)'));
     expect(controller, contains('if (_healthInFlight || _status != VpnStatus.connected) return;'));

@@ -525,6 +525,14 @@ class GatewayClient {
     return FilterSettings.fromJson(JsonX.asMap(json['settings']));
   }
 
+  Future<FilterSettings> saveBypass(String token, FilterSettings settings) async {
+    final Map<String, dynamic> json = await _post('bypass/save', <String, dynamic>{
+      'token': token,
+      'settings': <String, dynamic>{'iran': settings.bypassIran, 'domains': settings.bypassDomains},
+    });
+    return FilterSettings.fromJson(JsonX.asMap(json['settings']));
+  }
+
   Future<FilterSettings> saveFilter(String token, FilterSettings settings) async {
     final Map<String, dynamic> json = await _post('filter/save', <String, dynamic>{
       'token': token,

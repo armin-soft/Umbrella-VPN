@@ -1064,6 +1064,8 @@ class Account {
 class FilterSettings {
   const FilterSettings({
     this.enabled = false,
+    this.bypassIran = false,
+    this.bypassDomains = const <String>[],
     this.categories = const <String>[],
     this.customDomains = const <String>[],
     this.updatedBy = 'app',
@@ -1078,6 +1080,8 @@ class FilterSettings {
 
   /// Effective policy returned by the gateway, including administrator rules.
   final bool enabled;
+  final bool bypassIran;
+  final List<String> bypassDomains;
   final List<String> categories;
   final List<String> customDomains;
   final String updatedBy;
@@ -1350,12 +1354,10 @@ class FilterSettings {
       };
 
   String get effectSignature {
-    if (!enabled) {
-      return 'off';
-    }
-    final List<String> cats = activeBotCategories.toList()..sort();
-    final List<String> doms = normalizedCustomDomains.toList()..sort();
-    return 'on|${cats.join(',')}|${doms.join(',')}';
+    final List<String> cats = enabled ? (activeBotCategories.toList()..sort()) : <String>[];
+    final List<String> doms = enabled ? (normalizedCustomDomains.toList()..sort()) : <String>[];
+    final List<String> bypass = bypassDomains.toList()..sort();
+    return '${enabled ? 'on' : 'off'}|${cats.join(',')}|${doms.join(',')}|direct:$bypassIran|${bypass.join(',')}';
   }
 
   bool sameEffectAs(FilterSettings other) =>
@@ -1394,6 +1396,8 @@ class FilterSettings {
 
   FilterSettings copyWith({
     bool? enabled,
+    bool? bypassIran,
+    List<String>? bypassDomains,
     List<String>? categories,
     List<String>? customDomains,
     String? updatedBy,
@@ -1410,6 +1414,8 @@ class FilterSettings {
         categoryLabels.keys.where(rawCategories.contains).toList();
     return FilterSettings(
       enabled: enabled ?? this.enabled,
+      bypassIran: bypassIran ?? this.bypassIran,
+      bypassDomains: bypassDomains ?? this.bypassDomains,
       categories: cleanCategories,
       customDomains: customDomains ?? this.customDomains,
       updatedBy: updatedBy ?? this.updatedBy,
@@ -1425,6 +1431,7 @@ class FilterSettings {
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'enabled': enabled,
+        'bypass': <String, dynamic>{'iran': bypassIran, 'domains': bypassDomains},
         'categories': activeBotCategories,
         'custom_domains': normalizedCustomDomains,
         if (updatedBy.isNotEmpty) 'updated_by': updatedBy,
@@ -1464,11 +1471,14 @@ class FilterSettings {
       return domains;
     }
 
+    final Map<String, dynamic> bypass = JsonX.asMap(json['bypass']);
     final Map<String, dynamic> global = JsonX.asMap(json['global']);
     final Map<String, dynamic> personal = JsonX.asMap(json['personal']);
     final bool hasPersonal = json['personal'] is Map;
     return FilterSettings(
       enabled: JsonX.boolean(json['enabled']),
+      bypassIran: JsonX.boolean(bypass['iran']),
+      bypassDomains: parseDomains(bypass['domains']),
       categories: parseCategories(json['categories']),
       customDomains: parseDomains(json['custom_domains']),
       updatedBy: JsonX.text(json['updated_by'], 'app'),

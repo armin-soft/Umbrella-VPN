@@ -153,6 +153,14 @@ KEY `IDX_App_Notifications_Device` (`Device_ID`)
 PRIMARY KEY (`Telegram_ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
+'App_Bypass_Settings' => "CREATE TABLE IF NOT EXISTS `App_Bypass_Settings` (
+`User_UUID` VARCHAR(64) NOT NULL,
+`Iran` TINYINT(1) NOT NULL DEFAULT 0,
+`Domains` TEXT NULL,
+`Updated_At` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+PRIMARY KEY (`User_UUID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
 'App_Filter_Settings' => "CREATE TABLE IF NOT EXISTS `App_Filter_Settings` (
 `User_UUID` VARCHAR(64) NOT NULL,
 `Enabled` TINYINT(1) NOT NULL DEFAULT 0,

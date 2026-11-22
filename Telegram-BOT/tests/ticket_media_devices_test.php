@@ -148,7 +148,7 @@ check(Repository::$Sessions[1]['Flow'] === null, 'old photo callback clears uplo
 check(Repository::$Settings === $SavedSettings && !array_filter(TelegramClient::$Calls, fn($Call) => $Call[0] === 'sendPhoto'), 'old callback does not save/display photo');
 $Last = end(TelegramClient::$Calls);
 $Actions = array_column(array_merge(...$Last[1]['reply_markup']['inline_keyboard']), 'callback_data');
-check($Actions === ['app_filter', 'app_2fa', 'app_devices', 'منوی خدمات ربات'], 'old callback returns to remaining device menu');
+check($Actions === ['app_filter', 'app_bypass', 'app_2fa', 'app_devices', 'منوی خدمات ربات'], 'old callback returns to remaining device menu');
 }
 Repository::$Sessions[1] = ['Flow' => 'app:device_photo:my-device:2'];
 TelegramClient::$Calls = []; $SavedSettings = Repository::$Settings;

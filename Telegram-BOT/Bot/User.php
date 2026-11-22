@@ -553,6 +553,7 @@ self::categoryMenu($Context, 'حساب کاربری', $Rows);
 public static function deviceMenu(Context $Context): void {
 self::categoryMenu($Context, 'دستگاه من', Menu::rows([
 [['🛡کنترل محتوا', 'app_filter']],
+[['🌐عبور مستقیم سایت ها', 'app_bypass']],
 [['🔐تأیید دومرحله ای', 'app_2fa']],
 [['📱دستگاه های من', 'app_devices']],
 ]));

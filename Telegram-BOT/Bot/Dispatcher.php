@@ -369,6 +369,9 @@ match($Data) {
 'app_notifications' => UserFlow::accountMenu($Context),
 'nightly_report_on' => UserFlow::setNightlyReport($Context, true),
 'nightly_report_off' => UserFlow::setNightlyReport($Context, false),
+'app_bypass' => AppFlow::bypassMenu($Context),
+'app_bypass_add' => AppFlow::bypassDomainsStart($Context),
+'app_bypass_iran' => AppFlow::bypassIran($Context),
 'app_filter_domains' => AppFlow::filterDomainsMenu($Context),
 'app_fdom_add' => AppFlow::filterDomainsStart($Context),
 'app_fdom_clear' => AppFlow::filterDomainsClearAsk($Context),
@@ -810,6 +813,7 @@ Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 UserFlow::deviceMenu($Context);
 return;
 }
+if ($Flow === 'app:bypass_domains') { AppFlow::bypassDomainsInput($Context, $Text); return; }
 if ($Flow === 'app:filter_domains') { AppFlow::filterDomainsInput($Context, $Text); return; }
 if ($Flow === 'custom_plan_days' || $Flow === 'custom_plan_gb') { SubscriptionFlow::handleCustomPlanInput($Context, $Text); return; }
 if ($Flow === 'wallet_topup_amount') { SubscriptionFlow::handleWalletTopupInput($Context, $Text); return; }

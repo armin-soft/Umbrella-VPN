@@ -242,14 +242,14 @@ $UserMenus = [
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
 'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل']],
-'deviceMenu' => ['user_device_menu', ['app_filter', 'app_2fa', 'app_devices']],
+'deviceMenu' => ['user_device_menu', ['app_filter', 'app_bypass', 'app_2fa', 'app_devices']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
 $UserWidths = [
 'serviceMenu' => [1, 1, 1, 1, 1, 1, 1, 1],
 'subscriptionsMenu' => [2, 1, 1], 'walletMenu' => [1, 1, 1],
-'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1], 'statsMenu' => [2, 1], 'supportMenu' => [1, 1, 1],
+'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);

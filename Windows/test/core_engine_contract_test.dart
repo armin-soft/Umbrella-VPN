@@ -557,6 +557,8 @@ void main() {
             enabled: true,
             categories: <String>['adult', 'gambling', 'ads', 'dating'],
             customDomains: <String>['blocked.example.com'],
+            bypassDomains: <String>['direct-example.org'],
+            bypassIran: true,
             updatedBy: 'telegram',
           ),
         );
@@ -604,6 +606,15 @@ void main() {
           jsonEncode(dnsRules),
           contains('blocked.example.com'),
         );
+        final int blockIndex = routeRules.indexWhere((r) =>
+            r['action'] == 'reject' && jsonEncode(r).contains('blocked.example.com'));
+        final int bypassIndex = routeRules.indexWhere((r) =>
+            r['outbound'] == 'direct' && jsonEncode(r).contains('direct-example.org'));
+        expect(bypassIndex, greaterThan(blockIndex));
+        final Map<String, dynamic> directDns = dnsRules.firstWhere((r) =>
+            jsonEncode(r).contains('direct-example.org'));
+        expect(directDns['server'], 'dns-direct-group');
+
       } finally {
         await temp.delete(recursive: true);
       }
