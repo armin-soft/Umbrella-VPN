@@ -41,9 +41,9 @@ class _Window implements WindowService {
 }
 
 class _Vpn extends ChangeNotifier implements VpnController {
-  @override
   VpnStatus current = VpnStatus.disconnected;
   int reloads = 0;
+  @override
   VpnStatus get status => current;
   @override
   void scheduleLiveReload() { reloads++; }
