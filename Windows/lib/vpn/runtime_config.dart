@@ -36,6 +36,12 @@ class RuntimeConfig {
     'wireguard', 'awg', 'openvpn-client', 'openconnect', 'masque-client', 'warp',
   };
 
+  static bool _isChainHop(String tag) {
+    final String display = tag.split('§').first.trim();
+    return display.startsWith('🔒 Extra Security') ||
+        display.startsWith('🔓 Unblocker');
+  }
+
   static const Set<String> _tlsTrickOutboundTypes = <String>{
     'vless', 'vmess', 'trojan',
   };
@@ -128,7 +134,7 @@ class RuntimeConfig {
         outbound['ttl'] = '${clampedSticky}m';
       }
 
-      if (profileTags.contains(tag) && lazyTypes.contains(type)) {
+      if (profileTags.contains(tag) && !_isChainHop(tag) && lazyTypes.contains(type)) {
         outbound['lazy'] = true;
         lazyCount++;
       }
@@ -191,7 +197,7 @@ class RuntimeConfig {
         if (item is! Map<String, dynamic>) continue;
         final String type = '${item['type'] ?? ''}';
         final String tag = '${item['tag'] ?? ''}';
-        if (!profileTags.contains(tag) || !lazyEndpointTypes.contains(type)) continue;
+        if (!profileTags.contains(tag) || _isChainHop(tag) || !lazyEndpointTypes.contains(type)) continue;
         // Listening WireGuard/AWG/WARP endpoints serve peers and must not sleep.
         final dynamic listenPort = item['listen_port'];
         if (const <String>{'wireguard', 'awg', 'warp'}.contains(type) &&

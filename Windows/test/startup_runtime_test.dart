@@ -107,11 +107,11 @@ void main() {
       for (var i = 0; i < 129; i++)
         <String, dynamic>{'type': i.isEven ? 'wireguard' : 'awg', 'tag': 'peer-$i'},
       <String, dynamic>{'type': 'wireguard', 'tag': 'server', 'listen_port': 1234},
-      <String, dynamic>{'type': 'warp', 'tag': 'chain-hop'},
+      <String, dynamic>{'type': 'warp', 'tag': '🔓 Unblocker · WARP §hide§'},
     ];
     config['endpoints'] = endpoints;
     RuntimeConfig.finalize(config, profileTags: <String>{
-      'profile', 'server', for (var i = 0; i < 129; i++) 'peer-$i',
+      'profile', 'server', '🔓 Unblocker · WARP §hide§', for (var i = 0; i < 129; i++) 'peer-$i',
     });
     expect(endpoints.where((dynamic e) => e['lazy'] == true).length, 129);
     expect(endpoints[129]['lazy'], isNull);
