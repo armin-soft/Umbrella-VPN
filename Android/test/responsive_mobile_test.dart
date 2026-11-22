@@ -122,10 +122,10 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(reads, 1);
-    expect(find.text('سیم‌کارت ۱'), findsOneWidget);
-    expect(find.text('سیم‌کارت ۲'), findsOneWidget);
-    expect(find.text('سیم‌کارت ۳'), findsOneWidget);
-    await tester.tap(find.text('سیم‌کارت ۲'));
+    expect(find.text('سیم کارت ۱'), findsOneWidget);
+    expect(find.text('سیم کارت ۲'), findsOneWidget);
+    expect(find.text('سیم کارت ۳'), findsOneWidget);
+    await tester.tap(find.text('سیم کارت ۲'));
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, contains('۰۹۳۵'));
   });
