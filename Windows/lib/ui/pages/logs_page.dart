@@ -6,6 +6,7 @@ import '../../core/app_config.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../platform/services.dart';
+import '../../platform/encrypted_report.dart';
 import '../../state/toast_controller.dart';
 import '../widgets/common.dart';
 
@@ -20,6 +21,7 @@ class LogsPage extends StatefulWidget {
 class _LogsPageState extends State<LogsPage> {
   /// فیلتر سطح گزارش؛ خالی یعنی همه.
   String _level = '';
+  bool _exporting = false;
 
   /// شماره خطوطی که جزئیاتشان باز است.
   ///
@@ -51,6 +53,23 @@ class _LogsPageState extends State<LogsPage> {
 
   /// متن کامل یک خط با همه جزئیاتش، برای کپی جداگانه.
   static String _detailText(LogLine line) => AppLogger.lineDetailText(line);
+
+  Future<void> _exportEncrypted(ToastController toasts) async {
+    if (_exporting) return;
+    final String? password = await showDialog<String>(
+      context: context, builder: (_) => const _ReportPasswordDialog(),
+    );
+    if (password == null || !mounted) return;
+    setState(() => _exporting = true);
+    try {
+      final String path = await EncryptedReport.save(AppLogger.instance.exportText(), password);
+      toasts.success('گزارش رمزگذاری شده ذخیره شد', path);
+    } catch (_) {
+      toasts.error('ذخیره گزارش رمزگذاری شده ناموفق بود', 'فضای ذخیره و رمز را بررسی کنید.');
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +106,13 @@ class _LogsPageState extends State<LogsPage> {
                   final String path = await AppLogger.instance.saveToFile();
                   toasts.success('فایل گزارش ذخیره شد', path);
                 },
+              ),
+              const SizedBox(width: AppMetrics.space3),
+              IconAction(
+                icon: Icons.lock_outline_rounded,
+                tooltip: _exporting ? 'در حال رمزگذاری' : 'ذخیره گزارش رمزگذاری شده',
+                size: AppMetrics.iconButton,
+                onTap: () => _exportEncrypted(toasts),
               ),
               const SizedBox(width: AppMetrics.space3),
               // باز کردن همه خطاها با یک کلیک؛ برای وقتی که کاربر می خواهد
@@ -488,4 +514,53 @@ class _DetailPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A password is never persisted, copied, displayed in reports or sent.
+class _ReportPasswordDialog extends StatefulWidget {
+  const _ReportPasswordDialog();
+  @override
+  State<_ReportPasswordDialog> createState() => _ReportPasswordDialogState();
+}
+
+class _ReportPasswordDialogState extends State<_ReportPasswordDialog> {
+  final _form = GlobalKey<FormState>();
+  final _password = TextEditingController();
+  final _confirmation = TextEditingController();
+  @override
+  void dispose() {
+    _password.dispose();
+    _confirmation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('گزارش رمزگذاری شده'),
+    content: SizedBox(
+      width: AppMetrics.dialogMaxWidth,
+      child: SingleChildScrollView(child: Form(key: _form, child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Text('فقط گزارش فعلی برنامه ذخیره می شود؛ فایل های خام هسته و پروفایل ها ضمیمه نمی شوند. فایل خودکار ارسال نمی شود. رمز را جداگانه و امن به پشتیبانی بدهید؛ بدون آن بازیابی ممکن نیست.'),
+          const SizedBox(height: AppMetrics.space4),
+          TextFormField(controller: _password, obscureText: true, autocorrect: false,
+            enableSuggestions: false, maxLength: 128,
+            decoration: const InputDecoration(labelText: 'رمز گزارش (حداقل ۱۲ نویسه)'),
+            validator: (value) => (value ?? '').runes.length < 12 ? 'رمز باید حداقل ۱۲ نویسه باشد.' : null),
+          TextFormField(controller: _confirmation, obscureText: true, autocorrect: false,
+            enableSuggestions: false, maxLength: 128,
+            decoration: const InputDecoration(labelText: 'تکرار رمز'),
+            validator: (value) => value != _password.text ? 'رمزها یکسان نیستند.' : null),
+        ],
+      ))),
+    ),
+    actions: <Widget>[
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+      FilledButton(onPressed: () {
+        if (_form.currentState?.validate() ?? false) Navigator.pop(context, _password.text);
+      }, child: const Text('رمزگذاری و ذخیره')),
+    ],
+  );
 }
