@@ -55,8 +55,9 @@ void main() {
     expect(toasts.items.last.title, contains('پشتیبانی'));
 
     // A legacy unsupported configuration can still be turned off by the user.
-    await settings.setAllowConnectionFromLan(true);
+    settings.setAllowConnectionFromLan(true);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     tester.widget<Switch>(switchFinder).onChanged!(false);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));

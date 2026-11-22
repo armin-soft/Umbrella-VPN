@@ -295,6 +295,7 @@ void main() {
                 'Connection settings sheet at $size / $textScale: $sheetProblem',
               );
             }
+            await tester.ensureVisible(find.byKey(const ValueKey<String>('quick-settings-close')));
             await tester.tap(
               find.byKey(const ValueKey<String>('quick-settings-close')),
             );
