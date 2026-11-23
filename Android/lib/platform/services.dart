@@ -413,7 +413,9 @@ class UpdateService {
           .get(Uri.parse(url), headers: _headers)
           .timeout(const Duration(seconds: 12));
       if (res.statusCode >= 300) return null;
-      final Map<String, dynamic> map = JsonX.asMap(jsonDecode(res.body));
+      final Map<String, dynamic> map = JsonX.asMap(
+        jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true)),
+      );
       return _accept(map);
     } on Exception {
       return null;
@@ -430,7 +432,9 @@ class UpdateService {
       if (res.statusCode >= 300) {
         return const <UpdateInfo>[];
       }
-      final List<dynamic> list = JsonX.asList(jsonDecode(res.body));
+      final List<dynamic> list = JsonX.asList(
+        jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true)),
+      );
       final List<UpdateInfo> items = <UpdateInfo>[];
       for (final Object? entry in list) {
         final Map<String, dynamic> map = JsonX.asMap(entry);

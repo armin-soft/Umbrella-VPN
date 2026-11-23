@@ -102,37 +102,42 @@ void main() {
 
       final MockClient client = MockClient((http.Request req) async {
         if (req.url.toString() == AppConfig.releasesListApiUrl) {
-          return http.Response(
-            jsonEncode(<Map<String, dynamic>>[
-              <String, dynamic>{
-                'tag_name': '9.9.9',
-                'prerelease': false,
-                'draft': false,
-                'published_at': '2026-11-22T12:00:00Z',
-                'body': 'نسخه تازه اندروید',
-                'assets': <Map<String, dynamic>>[
-                  <String, dynamic>{
-                    'name': 'UmbrellaVPN-9.9.9-armeabi-v7a.apk',
-                    'browser_download_url':
-                        'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-armeabi-v7a.apk',
-                    'size': 20000000,
-                  },
-                  <String, dynamic>{
-                    'name': 'UmbrellaVPN-9.9.9-arm64-v8a.apk',
-                    'browser_download_url':
-                        'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-arm64-v8a.apk',
-                    'size': 22000000,
-                  },
-                  <String, dynamic>{
-                    'name': 'UmbrellaVPN-9.9.9-universal.apk',
-                    'browser_download_url':
-                        'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-universal.apk',
-                    'size': 40000000,
-                  },
-                ],
-              },
-            ]),
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<Map<String, dynamic>>[
+                <String, dynamic>{
+                  'tag_name': '9.9.9',
+                  'prerelease': false,
+                  'draft': false,
+                  'published_at': '2026-11-22T12:00:00Z',
+                  'body': 'نسخه تازه اندروید',
+                  'assets': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-9.9.9-armeabi-v7a.apk',
+                      'browser_download_url':
+                          'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-armeabi-v7a.apk',
+                      'size': 20000000,
+                    },
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-9.9.9-arm64-v8a.apk',
+                      'browser_download_url':
+                          'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-arm64-v8a.apk',
+                      'size': 22000000,
+                    },
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-9.9.9-universal.apk',
+                      'browser_download_url':
+                          'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-universal.apk',
+                      'size': 40000000,
+                    },
+                  ],
+                },
+              ]),
+            ),
             200,
+            headers: <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
           );
         }
         if (req.url.path.endsWith('/SHA256SUMS.txt')) {
