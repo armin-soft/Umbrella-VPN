@@ -218,48 +218,55 @@ class TitleBar extends StatelessWidget {
           height: landscapePhone ? 44 : 52,
           child: Row(
             children: <Widget>[
-              Padding(
-                padding: EdgeInsetsDirectional.only(
-                  start: tightWidth ? AppMetrics.space3 : AppMetrics.space4,
-                  end: AppMetrics.space1,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    ClipOval(
-                      child: Image.asset(
-                        BrandAssets.logo,
-                        width: AppMetrics.iconLg,
-                        height: AppMetrics.iconLg,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        filterQuality: FilterQuality.medium,
-                        errorBuilder: (
-                          BuildContext context,
-                          Object error,
-                          StackTrace? stack,
-                        ) =>
-                            Icon(
-                          Icons.shield_rounded,
-                          size: AppMetrics.iconMd,
-                          color: colors.primary,
+              Flexible(
+                flex: 4,
+                child: Padding(
+                  padding: EdgeInsetsDirectional.only(
+                    start: tightWidth ? AppMetrics.space3 : AppMetrics.space4,
+                    end: AppMetrics.space1,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      ClipOval(
+                        child: Image.asset(
+                          BrandAssets.logo,
+                          width: AppMetrics.iconLg,
+                          height: AppMetrics.iconLg,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (
+                            BuildContext context,
+                            Object error,
+                            StackTrace? stack,
+                          ) =>
+                              Icon(
+                            Icons.shield_rounded,
+                            size: AppMetrics.iconMd,
+                            color: colors.primary,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: AppMetrics.space2),
-                    Text(
-                      Fa.num(AppConfig.appName),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
-                    ),
-                  ],
+                      const SizedBox(width: AppMetrics.space2),
+                      Flexible(
+                        child: Text(
+                          Fa.num(AppConfig.appName),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: colors.textPrimary,
+                                  ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               Expanded(
+                flex: 3,
                 child: Center(
                   child: current == null
                       ? const SizedBox.shrink()
