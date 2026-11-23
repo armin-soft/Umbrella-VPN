@@ -1,0 +1,438 @@
+syntax = "proto3";
+import "v2/hcommon/common.proto";
+import "google/protobuf/timestamp.proto";
+
+package hcore;
+option go_package = "github.com/hiddify/hiddify-core/v2/hcore";
+option java_package = "com.hiddify.core.api.v2.hcore";
+
+
+// The lifecycle is owned by the core: STOPPED -> STARTING -> WAITING -> STARTED, and STOPPING
+// from any running state. A start is accepted only from STOPPED. While the core runs, its
+// monitoring moves it between WAITING, STARTED and NO_AVAILABLE_PROXIES.
+enum CoreStates {
+  STOPPED = 0;
+  // the background core is starting up completely
+  STARTING = 1;
+  // the core is up and at least one proxy has a positive ping; a lost ping moves it back to
+  // WAITING
+  STARTED = 2;
+  // a stop was requested: reported at once, and every queued start is dropped
+  STOPPING = 3;
+  // the running core is applying a new config (HotReload); traffic keeps flowing
+  HOT_RELOADING = 4;
+  // the core is up and no proxy has a ping yet (not tested, or the ping was lost); a positive
+  // ping moves it to STARTED
+  WAITING = 5;
+  // the core is up and every proxy was tested and timed out; not an error, a positive ping
+  // moves it to STARTED
+  NO_AVAILABLE_PROXIES = 6;
+}
+
+enum MessageType {
+  EMPTY=0;
+  EMPTY_CONFIGURATION = 1;
+  START_COMMAND_SERVER = 2;
+  CREATE_SERVICE = 3;
+  START_SERVICE = 4;
+  UNEXPECTED_ERROR = 5;
+  ALREADY_STARTED = 6;
+  ALREADY_STOPPED = 7;
+  INSTANCE_NOT_FOUND = 8;
+  INSTANCE_NOT_STOPPED = 9;
+  INSTANCE_NOT_STARTED = 10;
+  ERROR_BUILDING_CONFIG = 11;
+  ERROR_PARSING_CONFIG = 12;
+  ERROR_READING_CONFIG = 13;
+  ERROR_EXTENSION = 14;
+  // HotReload could not apply the config (e.g. the TUN inbound changed); the running core is
+  // unchanged, restart it to apply the config
+  HOT_RELOAD_FAILED = 15;
+}
+
+message CoreInfoResponse {
+  CoreStates core_state = 1;
+  MessageType message_type = 2;
+  string message = 3;
+}
+
+message StartRequest {
+  string config_path = 1;
+  string config_content = 2;  // Optional if configPath is not provided.
+  bool disable_memory_limit = 3;
+  bool delay_start = 4;
+  bool enable_old_command_server = 5;
+  bool enable_raw_config = 6;
+  string config_name = 7; 
+}
+
+
+enum SetupMode {
+    OLD = 0;
+    GRPC_NORMAL = 1;
+    GRPC_BACKGROUND = 2;
+    GRPC_NORMAL_INSECURE = 3;
+    GRPC_BACKGROUND_INSECURE = 4;
+}
+
+message CloseRequest {
+  SetupMode mode = 1;
+}
+// Define the message equivalent of SetupParameters
+message SetupRequest {
+    string base_path = 1;
+    string working_dir = 2;
+    string temp_dir = 3;
+    int64 flutter_status_port = 4;
+    string listen = 5;
+    string secret = 6;
+    bool debug = 7;
+    SetupMode mode = 8;
+    bool fix_android_stack = 9;
+}
+
+message SystemInfo {
+  int64 memory = 1;
+  int32 goroutines = 2;
+  int32 connections_in = 3;
+  int32 connections_out = 4;
+  bool traffic_available = 5;
+  int64 uplink = 6;
+  int64 downlink = 7;
+  int64 uplink_total = 8;
+  int64 downlink_total = 9;
+  string current_outbound = 10;
+  string current_profile = 11;
+}
+
+// Connection state of an outbound or endpoint (mirrors adapter.Status).
+enum Status {
+  READY = 0;
+  CONNECTING = 1;
+  RECONNECTING = 2;
+  SEARCHING = 3;
+  FAILED = 4;
+  REGISTERING = 5;
+}
+
+message OutboundInfo {
+  string tag = 1;
+  string type = 2;
+  google.protobuf.Timestamp url_test_time = 3;
+  int32 url_test_delay = 4;
+  optional IpInfo ipinfo = 5;
+  bool is_selected = 6;
+  bool is_group = 7;
+  optional string group_selected_tag=13;
+  optional string group_selected_tag_display=14;
+  bool is_secure = 8; // something encrypts its traffic and checks the server: its own encryption, verified or pinned TLS, or REALITY; a group is secure
+  bool is_visible = 9;
+  uint32 port = 10;
+  string host = 11;
+  string tag_display = 12;
+  int64 upload = 15;
+  int64 download = 16;
+  string detour = 17;
+  Status status = 18; // ready / connecting / registering / … (outbound or endpoint)
+  int64 upload_speed = 19; // bytes a second the last upload test reached; 0 untested, -1 failed
+  bool upload_testing = 20; // an upload test runs through it now
+  int64 download_speed = 21; // bytes a second the last download test reached; 0 untested, -1 failed
+  bool download_testing = 22; // a download test runs through it now
+  bool upload_speed_cached = 23; // upload_speed is from an earlier run, kept until a new test
+  bool download_speed_cached = 24; // download_speed is from an earlier run, kept until a new test
+  string error = 25; // why it failed: the error of its last URL test, or why it is not ready (WARP, MASQUE); empty when it works or does not say
+  int32 sort_delay = 26; // what to sort by: url_test_delay, or the delay cached from the previous run, which is not shown; 0 untested
+  bool resting = 27; // keep top left it at rest: not loaded, not tested and not used, until it is selected, tested by its tag or pinned
+  string insecure_reason = 28; // why is_secure is false: plaintext, no_cipher, weak_cipher or tls_insecure (sing-box C.Insecure*); empty for a secure proxy or a group
+  bool deep_search_available = 29; // its search for a way through (WARP endpoint, Psiphon CDN edge) found nothing in its time; StartDeepSearch searches on, for hours maybe
+}
+
+message IpInfo {
+    string ip = 1 [json_name = "ip"];                        // The IP address.
+    string country_code = 2 [json_name = "country_code"];    // The country code.
+    string region = 3 [json_name = "region"];                // The region (optional).
+    string city = 4 [json_name = "city"];                    // The city (optional).
+    int32 asn = 5 [json_name = "asn"];                       // The Autonomous System Number (optional).
+    string org = 6 [json_name = "org"];                      // The organization (optional).
+    double latitude = 7 [json_name = "latitude"];            // The latitude (optional).
+    double longitude = 8 [json_name = "longitude"];          // The longitude (optional).
+    string postal_code = 9 [json_name = "postal_code"];      // The postal code (optional).
+    bool from_cache = 10 [json_name = "from_cache"];         // Of a previous run, not looked up in this one yet; it may have changed.
+}
+message OutboundGroup {
+  string tag = 1;
+  string type = 2;
+  string selected=3;
+  bool selectable=4;
+  bool Is_expand=5;
+  repeated OutboundInfo items = 6;
+  bool keep_top_picking = 7; // keep top still goes through the proxies: which of them stay in use is not settled
+}
+message OutboundGroupList{
+  repeated OutboundGroup items = 1;
+  optional OutboundInfo chain_hop = 2; // main list only: the extra security / unblocker hop the traffic goes through now
+}
+
+message WarpAccount {
+  string account_id = 1;
+  string access_token = 2;
+}
+
+message WarpWireguardConfig {
+  string private_key = 1 [json_name = "private-key"];
+  string local_address_ipv4 = 2 [json_name = "local-address-ipv4"];
+  string local_address_ipv6 = 3 [json_name = "local-address-ipv6"];
+  string peer_public_key = 4 [json_name = "peer-public-key"];
+  string client_id=5 [json_name = "client-id"];
+}
+
+message WarpGenerationResponse {
+  WarpAccount account = 1;
+  string log = 2;
+  WarpWireguardConfig config = 3;
+}
+
+message SystemProxyStatus {
+  bool available = 1;
+  bool enabled = 2;
+}
+
+message ParseRequest {
+  string content = 1; 
+  string config_path = 2; 
+  string temp_path = 3; 
+  bool debug = 4;
+}
+
+message ParseResponse {
+  hcommon.ResponseCode response_code = 1;
+  string content = 2;  
+  string message = 3;
+}
+
+message ChangeHiddifySettingsRequest {
+  string hiddify_settings_json = 1;
+}
+
+message GenerateConfigRequest {
+  string path = 1;
+  string temp_path = 2;
+  bool debug = 3;
+}
+
+message GenerateConfigResponse {
+  string config_content = 1;
+}
+
+
+
+message SelectOutboundRequest {
+  string group_tag = 1;
+  string outbound_tag = 2;
+}
+
+message DeepSearchRequest {
+  string tag = 1; // the proxy whose deep_search_available is set
+}
+
+message UrlTestRequest {
+  string tag = 1;
+  repeated string tags = 2; // instead of tag: these proxies, a few at a time, also the ones keep top left at rest
+}
+
+message SpeedTestRequest {
+  string tag = 1; // a proxy, or a group: each of its proxies; none: the proxy the selection uses
+  int64 size = 2; // bytes to move through each; 1 MB when 0, at most 50 MB
+}
+
+message GenerateWarpConfigRequest {
+  string license_key = 1;
+  string account_id = 2;
+  string access_token = 3;
+}
+
+message SetSystemProxyEnabledRequest {
+  bool is_enabled = 1;
+  // Where the system proxy points (host:port), when enabling: the local proxy of a core that runs
+  // as root and cannot set the user's system proxy itself.
+  string address = 2;
+  bool support_socks = 3;
+}
+
+enum LogLevel {
+  TRACE = 0; 
+  DEBUG = 1;
+  INFO = 2;
+  WARNING = 3;
+  ERROR = 4;
+  FATAL = 5;
+}
+enum LogType {
+  CORE = 0;
+  SERVICE = 1;
+  CONFIG = 2;
+}
+message LogMessage {
+  LogLevel level = 1;
+  LogType type = 2;
+  string message = 3;
+  google.protobuf.Timestamp time = 4;
+}
+
+message LogRequest {
+  LogLevel level = 1;
+}
+
+message StopRequest{
+}
+
+message CrashReport {
+  string name = 1;        // the report directory or file name
+  string crashed_at = 2;  // RFC 3339
+  string source = 3;      // crash_reports, oom_reports, or the live file name
+  bool is_crash = 4;      // the content is a crash (panic, fatal error, signal), not other stderr output
+}
+
+message CrashReportList {
+  repeated CrashReport reports = 1;
+}
+
+message ExportDiagnosticsRequest {
+  string destination_path = 1;         // where to write the zip; empty is a file in the temp directory
+  map<string, bytes> extra_files = 2;  // more files for the zip's sensitive part, by name (the app's logs, another core's dump)
+  bool inline = 3;                     // also return the zip's bytes
+  // leave the sensitive part (config, logs, crashes, extra files) in the clear: for the user to
+  // look at, or for a zip that goes inside another core's report, which encrypts it
+  bool unencrypted = 4;
+  // more files for the zip that are not sensitive, kept readable outside the encrypted part (the
+  // app's own exceptions with their stack traces)
+  map<string, bytes> generic_files = 5;
+}
+
+message ExportDiagnosticsResponse {
+  string path = 1;
+  bytes content = 2;
+  // the sensitive part is sensitive.encrypted.age, encrypted to the build's diagnostics key; false
+  // when it was asked unencrypted or the build has no key
+  bool encrypted = 3;
+}
+
+message LANIPResponse {
+  string ip = 1;
+}
+
+message IsAdminResponse {
+  // True when the core process runs as Administrator (Windows) or root (Unix).
+  bool is_admin = 1;
+}
+
+// --- admin_bgservice (Windows/Linux elevated background core) ---
+
+enum AdminPreference {
+  ADMIN_PREFERENCE_UNSET = 0;
+  ADMIN_PREFERENCE_PREFER_ADMIN = 1;
+  ADMIN_PREFERENCE_PREFER_NO_ADMIN = 2;
+}
+
+enum AdminBgServiceDecision {
+  ADMIN_BG_SERVICE_NO = 0;
+  ADMIN_BG_SERVICE_ALREADY_CONNECTED = 1;
+  ADMIN_BG_SERVICE_NEEDS_ADMIN = 2;
+  ADMIN_BG_SERVICE_OPTIONAL_PROXY_NEED_ADMIN = 3;
+}
+
+enum EnsureAdminBgServiceProgress {
+  ENSURE_ADMIN_BG_WAITING_FOR_ELEVATION = 0;
+  ENSURE_ADMIN_BG_SERVICE_STARTING = 1;
+  ENSURE_ADMIN_BG_SERVICE_CONNECTED = 2;
+  ENSURE_ADMIN_BG_FAILED_PERMISSION_DENIED = 3;
+  ENSURE_ADMIN_BG_FAILED_OTHER = 4;
+}
+
+message AdminNeededProxy {
+  string tag = 1;
+  string summary = 2;
+  string detail = 3;
+}
+
+message NeedAdminBgServiceRequest {
+  // proxy | system-proxy | vpn
+  string service_mode = 1;
+  string hiddify_settings_json = 2;
+  AdminPreference admin_preference = 3;
+  // True after an in-process start failed with a privilege error.
+  bool privilege_error_remembered = 4;
+}
+
+message NeedAdminBgServiceResponse {
+  AdminBgServiceDecision decision = 1;
+  repeated AdminNeededProxy admin_needed_proxies = 2;
+}
+
+message EnsureAdminBgServiceRequest {
+  string config_content = 1;
+  string config_name = 2;
+  string settings_json = 3;
+  map<string, bytes> resources = 4;
+  bool disable_memory_limit = 5;
+  int32 owner_pid = 6;
+  // Absolute path to this app's HiddifyCli / HiddifyCli.exe (used for elevate install).
+  string cli_path = 7;
+  string owner_user = 8;
+  // Runs the engine without its TUN: a proxy mode whose profile needs administrator rights.
+  bool proxy_only = 9;
+}
+
+message EnsureAdminBgServiceEvent {
+  EnsureAdminBgServiceProgress progress = 1;
+  string message = 2;
+  uint32 service_port = 3;
+}
+
+message FetchUrlRequest {
+  // http or https
+  string url = 1;
+  // Sent as is: servers pick the format of a subscription by it.
+  string user_agent = 2;
+  // For the whole download, redirects included; 0 for the default (30 s).
+  int32 timeout_ms = 3;
+}
+
+message HttpHeader {
+  // lower case
+  string name = 1;
+  string value = 2;
+}
+
+// Why a download got no answer from the server, for the app to tell the user what to try.
+enum FetchUrlError {
+  FETCH_URL_ERROR_NONE = 0;
+  // no answer in time: the server is down, or the network drops its packets
+  FETCH_URL_ERROR_TIMEOUT = 1;
+  // the server's name was not found
+  FETCH_URL_ERROR_DNS = 2;
+  // nothing listens at the server's address and port
+  FETCH_URL_ERROR_REFUSED = 3;
+  // the connection was cut while it was set up, often by a filter
+  FETCH_URL_ERROR_RESET = 4;
+  // the device has no route to the server: it is offline
+  FETCH_URL_ERROR_UNREACHABLE = 5;
+  // the TLS handshake failed
+  FETCH_URL_ERROR_TLS = 6;
+  // the server's certificate is not valid for it
+  FETCH_URL_ERROR_CERTIFICATE = 7;
+  FETCH_URL_ERROR_OTHER = 8;
+  // the body is over the 16 MiB limit
+  FETCH_URL_ERROR_TOO_LARGE = 9;
+}
+
+message FetchUrlResponse {
+  // 0 when there is an error
+  int32 status_code = 1;
+  // One entry per value: a header sent twice comes twice.
+  repeated HttpHeader headers = 2;
+  bytes body = 3;
+  FetchUrlError error = 4;
+  // the error in technical words, without the URL (it carries the user's token)
+  string error_detail = 5;
+}

@@ -1,0 +1,71 @@
+syntax = "proto3";
+import "v2/hcommon/common.proto";
+package hcore;
+
+option go_package = "github.com/hiddify/hiddify-core/v2/hcore";
+option java_package = "com.hiddify.core.api.v2.hcore";
+import "v2/hcore/hcore.proto";
+
+service Core {
+  rpc Start (StartRequest) returns (CoreInfoResponse);
+  rpc CoreInfoListener (hcommon.Empty) returns (stream CoreInfoResponse);
+  rpc OutboundsInfo (hcommon.Empty) returns (stream OutboundGroupList);
+  rpc MainOutboundsInfo (hcommon.Empty) returns (stream OutboundGroupList);
+  rpc GetSystemInfo (hcommon.Empty) returns (SystemInfo);
+  rpc GetSystemInfoStream (hcommon.Empty) returns (stream SystemInfo);
+  rpc Setup (SetupRequest) returns (hcommon.Response);
+  rpc Parse (ParseRequest) returns (ParseResponse);
+  rpc ChangeHiddifySettings (ChangeHiddifySettingsRequest) returns (CoreInfoResponse);
+  //rpc GenerateConfig (GenerateConfigRequest) returns (GenerateConfigResponse);
+  rpc StartService (StartRequest) returns (CoreInfoResponse);
+  rpc Stop (hcommon.Empty) returns (CoreInfoResponse);
+  rpc Restart (StartRequest) returns (CoreInfoResponse);
+  // Apply the config to the running core without restarting it: outbounds, endpoints, inbounds
+  // (not TUN), DNS servers/rules/final and route rules/rule sets/final may change. Anything else,
+  // or a changed TUN inbound, returns HOT_RELOAD_FAILED and leaves the core running unchanged.
+  // When the core is stopped, it is started like Start.
+  rpc HotReload (StartRequest) returns (CoreInfoResponse);
+  rpc SelectOutbound (SelectOutboundRequest) returns (hcommon.Response);
+  rpc UrlTest (UrlTestRequest) returns (hcommon.Response);
+  rpc UrlTestActive (hcommon.Empty) returns (hcommon.Response);
+  // Measure the upload or download speed through a proxy, or each proxy of a group, at
+  // speed.cloudflare.com; the results come with the outbounds info (upload_speed, download_speed).
+  rpc UploadTest (SpeedTestRequest) returns (hcommon.Response);
+  rpc DownloadTest (SpeedTestRequest) returns (hcommon.Response);
+  // Forgets every speed test result, of this run and the earlier ones kept.
+  rpc ClearSpeedTests (hcommon.Empty) returns (hcommon.Response);
+  rpc GenerateWarpConfig (GenerateWarpConfigRequest) returns (WarpGenerationResponse);
+  rpc GetSystemProxyStatus (hcommon.Empty) returns (SystemProxyStatus);
+  rpc SetSystemProxyEnabled (SetSystemProxyEnabledRequest) returns (hcommon.Response);
+  rpc LogListener (LogRequest) returns (stream LogMessage); 
+  rpc Close (CloseRequest) returns (hcommon.Empty);
+  rpc GetLANIP (hcommon.Empty) returns (LANIPResponse);
+  // Whether this core process already has administrator/root rights (same token as the app).
+  rpc IsAdmin (hcommon.Empty) returns (IsAdminResponse);
+  // Windows/Linux: whether elevated admin_bgservice is required for this connect.
+  rpc NeedAdminBgService (NeedAdminBgServiceRequest) returns (NeedAdminBgServiceResponse);
+  // Windows/Linux: install/start admin_bgservice if needed and start the bg core until STARTED.
+  rpc EnsureAdminBgService (EnsureAdminBgServiceRequest) returns (stream EnsureAdminBgServiceEvent);
+  // The crash reports in this core's working directory: the archived ones (crash_reports,
+  // oom_reports) and the live stderr files that hold a crash, newest last.
+  rpc ListCrashReports (hcommon.Empty) returns (CrashReportList);
+  // A zip of this core's diagnostics: the crash, OOM and power reports, the stderr and core log
+  // files, the previous run's goroutines (a snapshot the core writes every minute while connected,
+  // kept aside at the next start), the running config with servers and secrets removed, and the
+  // files the request adds. Text is scrubbed of addresses, links and secrets. Returns the zip's
+  // path, and its bytes when the request asks for them (a core in another process, whose files the
+  // app cannot read).
+  rpc ExportDiagnostics (ExportDiagnosticsRequest) returns (ExportDiagnosticsResponse);
+  // Downloads a URL directly (not through the core's outbounds), with the TLS handshake of Chrome,
+  // so a server or a middlebox that drops other TLS clients still answers. The app tries it
+  // before its own download of a subscription. A failed download is a response with its error set,
+  // not a gRPC error.
+  rpc FetchUrl (FetchUrlRequest) returns (FetchUrlResponse);
+  // Starts a deep search on a proxy whose search for a way through gave up after its time
+  // (OutboundInfo.deep_search_available: WARP's endpoint scanner, Psiphon as the unblocker): no
+  // time limit and more workers, for hours maybe, at the cost of battery and CPU. The app asks the
+  // user first.
+  rpc StartDeepSearch (DeepSearchRequest) returns (hcommon.Response);
+}
+
+

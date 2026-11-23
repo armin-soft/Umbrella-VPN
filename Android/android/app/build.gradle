@@ -1,0 +1,125 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.squareup.wire" version "5.3.1"
+}
+
+wire {
+    kotlin {
+        android = true
+    }
+    protoPath {
+        srcDir 'src/main/protos'
+    }
+    sourcePath {
+        srcDir 'src/main/protos/'
+        include '**'
+    }
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+boolean hasKeyStore = false
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    hasKeyStore = true
+}
+
+def dartDefines = (project.findProperty('dart-defines') ?: '').toString().split(',')
+        .findAll { it }
+        .collect { new String(it.decodeBase64(), 'UTF-8') }
+def isGooglePlay = dartDefines.contains('release=google-play')
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0.0'
+
+android {
+    namespace 'ir.umbrella.vpn'
+    compileSdkVersion 36
+    ndkVersion "28.2.13676358"
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "ir.umbrella.vpn"
+        minSdkVersion 23
+        targetSdkVersion 36
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+        manifestPlaceholders += [
+            installPackagesPermission: isGooglePlay
+                ? 'android.permission.INTERNET'
+                : 'android.permission.REQUEST_INSTALL_PACKAGES'
+        ]
+    }
+
+    if (hasKeyStore) {
+        signingConfigs {
+            release {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasKeyStore) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
+        }
+    }
+
+    buildFeatures {
+        viewBinding true
+        aidl true
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'androidx.core:core-ktx:1.16.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity-ktx:1.10.1'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.8.7'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+    implementation 'com.squareup.wire:wire-grpc-client:5.3.1'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}

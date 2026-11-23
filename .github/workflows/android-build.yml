@@ -1,0 +1,269 @@
+name: Android APK build
+on:
+  push:
+    branches: ['arena/**', Default]
+    paths: ['Android/**', '.github/workflows/android-build.yml']
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release mode (draft, artifact, beta, release, or both beta+release)'
+        required: false
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - artifact
+          - beta
+          - release
+          - both
+      beta_number:
+        description: 'Beta sequence number when channel is beta (e.g. 1)'
+        required: false
+        default: '1'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: Android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.5'
+          channel: stable
+          cache: true
+      - name: Install Dart/Flutter dependencies
+        run: flutter pub get
+      - name: Analyze Android Flutter app
+        run: flutter analyze --no-fatal-infos
+      - name: Run Android unit and widget tests
+        run: flutter test --reporter expanded
+
+  build-apk:
+    needs: [analyze-and-test]
+    if: ${{ always() && (needs.analyze-and-test.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: Android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 36, Build-Tools, and NDK 28.2
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.5'
+          channel: stable
+          cache: true
+      - name: Prepare Gradle wrapper and dependencies
+        run: |
+          if [ ! -f android/gradlew ] || [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            scaffold="$RUNNER_TEMP/umbrella_android_scaffold"
+            rm -rf "$scaffold"
+            flutter create --platforms=android --project-name umbrella_vpn "$scaffold"
+            mkdir -p android/gradle/wrapper
+            cp "$scaffold/android/gradlew" android/gradlew
+            cp "$scaffold/android/gradlew.bat" android/gradlew.bat
+            cp "$scaffold/android/gradle/wrapper/gradle-wrapper.jar" android/gradle/wrapper/gradle-wrapper.jar
+            chmod +x android/gradlew
+          fi
+          flutter pub get
+      - name: Download and verify pinned hiddify-core.aar
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, subprocess, tarfile, urllib.request
+
+          manifest = json.load(open('assets/cores/manifest.json'))
+          core = next(c for c in manifest['cores'] if c['id'] == 'hiddify')
+          url = core['url']
+          expected_sha = core['sha256'].lower()
+          archive_path = os.path.join(os.environ['RUNNER_TEMP'], 'hiddify-lib-android.tar.gz')
+
+          print(f'Downloading {url} ...')
+          req = urllib.request.Request(url, headers={'User-Agent': 'Umbrella-CI'})
+          with urllib.request.urlopen(req, timeout=120) as resp, open(archive_path, 'wb') as out:
+              shutil.copyfileobj(resp, out)
+
+          actual_sha = hashlib.sha256(open(archive_path, 'rb').read()).hexdigest().lower()
+          if actual_sha != expected_sha:
+              raise SystemExit(f'SHA-256 mismatch: expected {expected_sha}, got {actual_sha}')
+
+          extract_dir = os.path.join(os.environ['RUNNER_TEMP'], 'hiddify-core-android')
+          shutil.rmtree(extract_dir, ignore_errors=True)
+          os.makedirs(extract_dir, exist_ok=True)
+          with tarfile.open(archive_path, 'r:gz') as tf:
+              tf.extractall(extract_dir)
+
+          aars = []
+          for root, _, files in os.walk(extract_dir):
+              for f in files:
+                  if f.endswith('.aar'):
+                      aars.append(os.path.join(root, f))
+          if len(aars) != 1:
+              raise SystemExit(f'Expected 1 .aar in archive, found {aars}')
+
+          libs_dir = os.path.join('android', 'app', 'libs')
+          os.makedirs(libs_dir, exist_ok=True)
+          dest = os.path.join(libs_dir, core['binary'])
+          shutil.copy2(aars[0], dest)
+          print(f'Verified {dest} ({os.path.getsize(dest)} bytes)')
+          PY
+      - name: Configure optional release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/umbrella-release.jks
+            cat > android/key.properties <<EOF
+          storeFile=umbrella-release.jks
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+            echo 'Release signing configured from secrets.'
+          else
+            echo 'No release keystore secrets configured; using Gradle debug signing fallback.'
+          fi
+      - name: Build universal and split-ABI release APKs
+        run: |
+          set -euo pipefail
+          version=$(sed -n "s/.*static const String version = '\([^']*\)'.*/\1/p" lib/core/app_config.dart | head -n1)
+          if [ -z "$version" ]; then
+            echo "Missing AppConfig.version"
+            exit 1
+          fi
+          rm -rf dist && mkdir -p dist
+
+          flutter build apk --release --target-platform android-arm,android-arm64,android-x64
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/UmbrellaVPN-${version}-universal.apk"
+
+          flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            src="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            if [ ! -f "$src" ]; then
+              echo "Missing split APK: $src"
+              exit 1
+            fi
+            cp "$src" "dist/UmbrellaVPN-${version}-${abi}.apk"
+          done
+
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - name: Upload APK build artifacts
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: UmbrellaVPN-Android-APKs
+          path: Android/dist/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publish Android APKs to shared release or draft
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.channel == 'artifact') && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[skip-draft]')) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          RELEASES_REPO: 'armin-soft/Umbrella-VPN-Releases'
+          CHANNEL: ${{ inputs.channel || 'draft' }}
+          BETA_NUM: ${{ inputs.beta_number || '1' }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n "s/.*static const String version = '\([^']*\)'.*/\1/p" lib/core/app_config.dart | head -n1)
+          if [ -z "$version" ]; then
+            echo "Missing AppConfig.version"
+            exit 1
+          fi
+          shopt -s nullglob
+          apks=(dist/*.apk)
+          if [ ${#apks[@]} -eq 0 ]; then
+            echo "No APK files found in dist/"
+            exit 1
+          fi
+          arm64_sha=$(grep "arm64-v8a.apk" dist/SHA256SUMS.txt | awk '{print $1}')
+          univ_sha=$(grep "universal.apk" dist/SHA256SUMS.txt | awk '{print $1}')
+          notes=$(cat <<EOF
+          📱 نسخه اندروید فیلترشکن آمبرلا ($version) با موتور بومی hiddify-core 5.9.15
+
+          - تونل کامل VpnService بدون نیاز به روت و حالت پروکسی محلی
+          - انتخاب هوشمند سرور و تفکیک برنامه ها (Split Tunneling)
+          - کاشی سریع تنظیمات اندروید، اجرای خودکار هنگام روشن شدن و اشتراک شبکه محلی
+          - به روز رسانی درون برنامه ای با تایید SHA-256
+
+          🔒SHA-256 (Android arm64-v8a): ${arm64_sha}
+          🔒SHA-256 (Android universal): ${univ_sha}
+          EOF
+          )
+
+          if [[ "$CHANNEL" == "beta" || "$CHANNEL" == "release" || "$CHANNEL" == "both" ]]; then
+            if [ -z "$RELEASES_TOKEN" ]; then
+              echo "::error::RELEASES_TOKEN secret is not configured."
+              exit 1
+            fi
+            export GH_TOKEN="$RELEASES_TOKEN"
+            beta_clean=$(echo "$BETA_NUM" | tr -cd '0-9')
+            [ -z "$beta_clean" ] && beta_clean='1'
+            modes=("$CHANNEL")
+            [ "$CHANNEL" == "both" ] && modes=('beta' 'release')
+            for mode in "${modes[@]}"; do
+              tag="$version"
+              title="Umbrella VPN $version"
+              if [ "$mode" == "beta" ]; then
+                tag="$version-beta.$beta_clean"
+                title="Umbrella VPN $version Beta $beta_clean"
+              fi
+              if gh release view "$tag" --repo "$RELEASES_REPO" --json tagName >/dev/null 2>&1; then
+                gh release upload "$tag" dist/*.apk dist/SHA256SUMS.txt --clobber --repo "$RELEASES_REPO"
+              elif [ "$mode" == "beta" ]; then
+                gh release create "$tag" dist/*.apk dist/SHA256SUMS.txt --repo "$RELEASES_REPO" --target main --prerelease --title "$title" --notes "$notes"
+              else
+                gh release create "$tag" dist/*.apk dist/SHA256SUMS.txt --repo "$RELEASES_REPO" --target main --latest --title "$title" --notes "$notes"
+              fi
+            done
+            exit 0
+          fi
+
+          tag="v${version}-android"
+          if existing=$(gh release view "$tag" --repo "$SOURCE_REPO" --json isDraft 2>/dev/null); then
+            is_draft=$(echo "$existing" | python3 -c "import json,sys; print(str(json.load(sys.stdin)['isDraft']).lower())")
+            if [ "$is_draft" != "true" ]; then
+              tag="v${version}-draft-android"
+            fi
+          fi
+          if existing=$(gh release view "$tag" --repo "$SOURCE_REPO" --json isDraft 2>/dev/null); then
+            is_draft=$(echo "$existing" | python3 -c "import json,sys; print(str(json.load(sys.stdin)['isDraft']).lower())")
+            if [ "$is_draft" != "true" ]; then
+              echo "Refusing to replace published release $tag"
+              exit 1
+            fi
+            gh release edit "$tag" --repo "$SOURCE_REPO" --target "$COMMIT" --draft --notes "$notes"
+            gh release upload "$tag" dist/*.apk dist/SHA256SUMS.txt --clobber --repo "$SOURCE_REPO"
+          else
+            gh release create "$tag" dist/*.apk dist/SHA256SUMS.txt --repo "$SOURCE_REPO" --target "$COMMIT" --draft --title "Umbrella VPN $version - Android" --notes "$notes"
+          fi
+          gh release view "$tag" --repo "$SOURCE_REPO" --json url,isDraft,assets
