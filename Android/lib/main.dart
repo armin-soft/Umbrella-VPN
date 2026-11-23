@@ -131,7 +131,7 @@ Future<void> main(List<String> arguments) async {
     }
 
     AppLogger.instance.add(
-      '${AppConfig.appName} اندروید ${Fa.num(AppConfig.version)} راه اندازی شد',
+      '${AppConfig.appName} ${Fa.num(AppConfig.version)} راه اندازی شد',
     );
 
     final Map<String, dynamic> platformInfo = await native.getPlatformInfo();
@@ -154,14 +154,14 @@ Future<void> main(List<String> arguments) async {
       onSettingsChanged: (AppSettings next) => settings.update(next),
       onRequireElevation: () {
         toasts.warning(
-          'مجوز اتصال VPN لازم است',
-          'برای ایجاد تونل امن، درخواست مجوز VPN اندروید را تایید کنید.',
+          'مجوز اتصال لازم است',
+          'برای ایجاد تونل امن، درخواست مجوز اتصال سیستم را تایید کنید.',
         );
       },
       onRequireCores: () {
         toasts.warning(
-          'هسته اتصال در دسترس نیست',
-          'لطفاً برنامه را دوباره نصب کنید.',
+          'هسته پیدا نشد',
+          'نسخه نصب هسته ها را همراه ندارد؛ برنامه را با نسخه رسمی دوباره نصب کنید.',
         );
       },
       accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,

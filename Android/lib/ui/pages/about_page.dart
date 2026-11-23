@@ -19,7 +19,7 @@ class AboutPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return SingleChildScrollView(
-      padding: AppMetrics.pagePadding,
+      padding: AppMetrics.responsivePagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -81,7 +81,7 @@ class _DeveloperCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -141,7 +141,7 @@ class _AccessCheckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -165,7 +165,7 @@ class _AccessCheckCard extends StatelessWidget {
               const InfoRow(
                 icon: Icons.android_rounded,
                 label: 'سیستم عامل هدف',
-                value: 'اندروید ۶٫۰ به بالا (ARM64 / ARMv7)',
+                value: 'اندروید ۶٫۰ به بالا (۶۴ و ۳۲ بیت)',
               ),
               const Divider(height: AppMetrics.space2),
               const InfoRow(

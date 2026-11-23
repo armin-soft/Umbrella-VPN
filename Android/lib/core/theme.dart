@@ -201,6 +201,48 @@ class AppMetrics {
   /// حاشیه داخلی کارت ها.
   static const EdgeInsets cardPadding = EdgeInsets.all(space5);
 
+  /// تشخیص ابعاد گوشی در مقایسه با تبلت برای چیدمان و فاصله گذاری.
+  static bool isCompactWidth(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < breakpointPhone;
+
+  static bool isTablet(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= breakpointPhone;
+
+  static bool isLandscapePhone(BuildContext context) {
+    final Size size = MediaQuery.sizeOf(context);
+    return size.width > size.height && size.height < 520;
+  }
+
+  /// حاشیه صفحه متناسب با گوشی پرتره، گوشی افقی و تبلت.
+  static EdgeInsets responsivePagePadding(BuildContext context) {
+    final Size size = MediaQuery.sizeOf(context);
+    final double h = size.width < 420
+        ? space3
+        : (size.width < breakpointPhone
+            ? space4
+            : (size.width < breakpointNav ? space5 : space6));
+    final double v = size.height < 520
+        ? space2
+        : (size.height < 700 || size.width < 420 ? space3 : h);
+    return EdgeInsets.symmetric(horizontal: h, vertical: v);
+  }
+
+  /// حاشیه افقی و پایین برای صفحاتی که در بالا نوار تب دارند.
+  static EdgeInsets responsiveBodyPadding(BuildContext context) {
+    final EdgeInsets base = responsivePagePadding(context);
+    return EdgeInsets.only(
+      left: base.left,
+      right: base.right,
+      bottom: base.bottom,
+    );
+  }
+
+  /// حاشیه داخلی کارت متناسب با پهنای گوشی یا تبلت.
+  static EdgeInsets responsiveCardPadding(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width;
+    return EdgeInsets.all(width < 420 ? space4 : space5);
+  }
+
   /// ── گردی گوشه ها ─────────────────────────────────────────────────
   static const double radiusXs = 6;
   static const double radiusSm = 8;
@@ -273,13 +315,14 @@ class AppMetrics {
   static const double navWidthWide = 236;
 
   /// مرزهای نوار کناری، بر حسب **عرض پنجره**.
-  static const double breakpointNav = 1200;
-  static const double breakpointNavWide = 1440;
+  static const double breakpointPhone = 600;
+  static const double breakpointNav = 840;
+  static const double breakpointNavWide = 1120;
 
   /// ── مرزهای ریسپانسیو (عرض محتوا) ──────────────────────────────────
-  static const double breakpointCompact = 560;
-  static const double breakpointGrid = 720;
-  static const double breakpointColumns = 820;
+  static const double breakpointCompact = 520;
+  static const double breakpointGrid = 640;
+  static const double breakpointColumns = 720;
 
   /// حداکثر پهنای محتوا تا در پنجره های بسیار پهن خط متن بی اندازه بلند
   /// نشود و چیدمان منو ها در وسط بماند.
@@ -388,13 +431,10 @@ class AppTheme {
       useMaterial3: true,
       brightness: brightness,
       fontFamily: fontFamily,
-      // فونت وزیرمتن نمادهای یونیکد (مثل نشانگرها و علامت های ریاضی) را
-      // ندارد؛ بدون فونت جانشین، ویندوز آن ها را مربع یا خط تیره نشان می
-      // داد. Segoe UI Symbol همیشه روی ویندوز هست.
       fontFamilyFallback: const <String>[
-        'Segoe UI',
-        'Segoe UI Symbol',
-        'Tahoma',
+        'Roboto',
+        'Noto Sans Arabic',
+        'sans-serif',
       ],
       colorScheme: scheme.copyWith(
         primaryContainer: palette.primarySoft,

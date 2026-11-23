@@ -11,23 +11,23 @@ enum InboundServiceMode { proxy, systemProxy, vpn }
 extension InboundServiceModeX on InboundServiceMode {
   String get shortLabel => switch (this) {
         InboundServiceMode.proxy => 'پروکسی',
-        InboundServiceMode.systemProxy => 'پروکسی محلی',
+        InboundServiceMode.systemProxy => 'پروکسی سیستم',
         InboundServiceMode.vpn => 'تونل کامل',
       };
 
   String get fullLabel => switch (this) {
         InboundServiceMode.proxy => 'فقط سرویس پروکسی',
-        InboundServiceMode.systemProxy => 'سرویس پروکسی محلی اندروید',
-        InboundServiceMode.vpn => 'تونل کامل VPN اندروید',
+        InboundServiceMode.systemProxy => 'تنظیم پروکسی محلی',
+        InboundServiceMode.vpn => 'تونل کامل',
       };
 
   String get description => switch (this) {
         InboundServiceMode.proxy =>
-          'فقط پورت محلی ساکس ۵ و وب باز می شود و تونل VPN ساخته نمی شود',
+          'فقط پورت محلی ساکس ۵ و وب باز می شود و تنظیمات سیستم تغییر نمی کند',
         InboundServiceMode.systemProxy =>
-          'سرویس پروکسی محلی بدون ساخت تونل VPN فعال می شود',
+          'پروکسی محلی روی پورت هسته تنظیم می شود (بدون نیاز به کارت شبکه تونل)',
         InboundServiceMode.vpn =>
-          'عبور ترافیک گوشی از تونل امن VpnService اندروید با امکان فیلتر برنامه ها',
+          'عبور تمام برنامه ها و بازی ها از کارت شبکه امن مجازی',
       };
 
   IconData get icon => switch (this) {
@@ -1043,13 +1043,13 @@ class AppRouteRule {
 
   String? get validationError {
     if (process.contains(RegExp(r'[\r\n\x00]'))) {
-      return 'شناسه بسته برنامه نباید نویسه کنترلی داشته باشد';
+      return 'نام برنامه نباید نویسه کنترلی داشته باشد';
     }
     final String value = process.trim();
     if (value.isEmpty ||
         value.length > 180 ||
         !RegExp(r'^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$').hasMatch(value)) {
-      return 'شناسه بسته معتبر اندروید را وارد کنید (مثلاً org.telegram.messenger)';
+      return 'نام بسته معتبر برنامه را وارد کنید';
     }
     if (value.toLowerCase().startsWith('ir.umbrella.')) {
       return 'برای بسته خود آمبرلا قانون جدا نسازید';

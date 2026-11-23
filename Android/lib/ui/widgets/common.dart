@@ -376,6 +376,9 @@ class PageHeader extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool narrow = constraints.maxWidth <
             math.max(AppMetrics.breakpointCompact, 620 * textScale);
+        final bool phone = constraints.maxWidth < AppMetrics.breakpointCompact;
+        final double markBox =
+            phone ? AppMetrics.iconBoxLg : AppMetrics.iconBoxHero;
         final Widget text = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -397,26 +400,33 @@ class PageHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppMetrics.space2),
-                Text(
-                  Fa.num(eyebrow),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.35,
-                      ),
+                Flexible(
+                  child: Text(
+                    Fa.num(eyebrow),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.35,
+                        ),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: AppMetrics.space1),
             Text(
               Fa.num(title),
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w900,
-                    height: 1.15,
-                  ),
+              style: (phone
+                      ? Theme.of(context).textTheme.titleLarge
+                      : Theme.of(context).textTheme.headlineSmall)
+                  ?.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w900,
+                height: 1.2,
+              ),
             ),
             if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
               const SizedBox(height: AppMetrics.space1),
@@ -426,7 +436,7 @@ class PageHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textSecondary,
-                      height: 1.65,
+                      height: 1.55,
                     ),
               ),
             ],
@@ -435,11 +445,13 @@ class PageHeader extends StatelessWidget {
         final Widget mark = icon == null
             ? const SizedBox.shrink()
             : Container(
-                width: AppMetrics.iconBoxHero,
-                height: AppMetrics.iconBoxHero,
+                width: markBox,
+                height: markBox,
                 decoration: BoxDecoration(
                   gradient: context.brandGradient,
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+                  borderRadius: BorderRadius.circular(
+                    phone ? AppMetrics.radiusMd : AppMetrics.radiusLg,
+                  ),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.22),
                   ),
@@ -453,7 +465,7 @@ class PageHeader extends StatelessWidget {
                 ),
                 child: Icon(
                   icon,
-                  size: AppMetrics.iconXl,
+                  size: phone ? AppMetrics.iconLg : AppMetrics.iconXl,
                   color: colors.onPrimary,
                 ),
               );
@@ -461,15 +473,15 @@ class PageHeader extends StatelessWidget {
           children: <Widget>[
             if (icon != null) ...<Widget>[
               mark,
-              const SizedBox(width: AppMetrics.space4),
+              SizedBox(width: phone ? AppMetrics.space3 : AppMetrics.space4),
             ],
             Expanded(child: text),
           ],
         );
         if (actions.isEmpty) {
           return ConstrainedBox(
-            constraints: const BoxConstraints(
-              minHeight: AppMetrics.iconBoxHero,
+            constraints: BoxConstraints(
+              minHeight: markBox,
             ),
             child: heading,
           );
@@ -489,8 +501,8 @@ class PageHeader extends StatelessWidget {
           );
         }
         return ConstrainedBox(
-          constraints: const BoxConstraints(
-            minHeight: AppMetrics.iconBoxHero,
+          constraints: BoxConstraints(
+            minHeight: markBox,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -504,6 +516,7 @@ class PageHeader extends StatelessWidget {
       },
     );
 
+    final bool compactPhone = AppMetrics.isCompactWidth(context);
     return GlassCard(
       padding: EdgeInsets.zero,
       radius: AppMetrics.radiusXl,
@@ -523,8 +536,8 @@ class PageHeader extends StatelessWidget {
         children: <Widget>[
           PositionedDirectional(
             start: 0,
-            top: AppMetrics.space4,
-            bottom: AppMetrics.space4,
+            top: AppMetrics.space3,
+            bottom: AppMetrics.space3,
             child: Container(
               width: AppMetrics.space1,
               decoration: BoxDecoration(
@@ -534,7 +547,9 @@ class PageHeader extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(AppMetrics.space4),
+            padding: EdgeInsets.all(
+              compactPhone ? AppMetrics.space3 : AppMetrics.space4,
+            ),
             child: content,
           ),
         ],
@@ -581,7 +596,7 @@ class SectionHeader extends StatelessWidget {
             children: <Widget>[
               Text(
                 Fa.num(title),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: colors.textPrimary,

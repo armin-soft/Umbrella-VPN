@@ -55,7 +55,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'پروکسی برنامه محور (Split Tunneling)',
+                      'مسیریابی برنامه های دستگاه',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -66,7 +66,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
                     const SizedBox(height: AppMetrics.space1),
                     Text(
                       perAppMode == 'off'
-                          ? 'تمام برنامه های گوشی از تونل VPN عبور می کنند'
+                          ? 'تمام برنامه های دستگاه از تونل عبور می کنند'
                           : perAppMode == 'include'
                               ? Fa.num(
                                   'فقط ${activePackages.length} برنامه انتخابی از تونل عبور می کنند',
@@ -92,14 +92,23 @@ class AdvancedNetworkSettings extends StatelessWidget {
           SegmentedButton<String>(
             showSelectedIcon: false,
             segments: const <ButtonSegment<String>>[
-              ButtonSegment<String>(value: 'off', label: Text('همه')),
+              ButtonSegment<String>(
+                value: 'off',
+                label: FittedBox(fit: BoxFit.scaleDown, child: Text('همه')),
+              ),
               ButtonSegment<String>(
                 value: 'include',
-                label: Text('فقط انتخابی ها'),
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('فقط انتخابی ها'),
+                ),
               ),
               ButtonSegment<String>(
                 value: 'exclude',
-                label: Text('همه به جز'),
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('همه به جز'),
+                ),
               ),
             ],
             selected: <String>{perAppMode},
@@ -119,7 +128,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
                 icon: const Icon(Icons.apps_rounded, size: AppMetrics.iconSm),
                 label: Text(
                   Fa.num(
-                    'انتخاب برنامه های گوشی (${activePackages.length})',
+                    'انتخاب برنامه ها (${activePackages.length})',
                   ),
                 ),
                 onPressed: () =>
@@ -134,14 +143,14 @@ class AdvancedNetworkSettings extends StatelessWidget {
     final Widget routesCard = _FeatureCard(
       icon: Icons.rule_rounded,
       accent: hasRules ? colors.info : colors.primary,
-      title: 'قوانین مسیریابی بسته ها',
+      title: 'مسیریابی برنامه ها',
       badge: hasRules
           ? Fa.num('${settings.appRoutes.length} قانون')
-          : 'قانون دستی تعریف نشده',
+          : 'همه از تونل',
       badgeActive: hasRules,
       subtitle:
-          'تعیین مسیر مستقیم، تونل یا مسدود برای نام بسته های اندروید (مانند org.telegram.messenger)',
-      actionLabel: 'افزودن قانون',
+          'تعیین مسیر مستقیم، تونل یا مسدود برای هر برنامه در حالت تونل',
+      actionLabel: 'افزودن برنامه',
       actionIcon: Icons.add_rounded,
       onAction: settings.appRoutes.length >= 64
           ? null
@@ -430,8 +439,8 @@ class _InstalledAppsSheetState extends State<_InstalledAppsSheet> {
                   Expanded(
                     child: Text(
                       widget.mode == 'include'
-                          ? 'فقط برنامه های انتخابی از VPN عبور کنند'
-                          : 'برنامه های مستثنی شده از VPN',
+                          ? 'فقط برنامه های انتخابی از تونل عبور کنند'
+                          : 'برنامه های مستثنی شده از تونل',
                       style: Theme.of(context)
                           .textTheme
                           .titleMedium
@@ -451,7 +460,7 @@ class _InstalledAppsSheetState extends State<_InstalledAppsSheet> {
                 onChanged: (String v) => setState(() => _query = v),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search_rounded),
-                  hintText: 'جست و جوی نام برنامه یا شناسه بسته...',
+                  hintText: 'جست و جوی نام برنامه یا نام بسته...',
                 ),
               ),
               const SizedBox(height: AppMetrics.space2),
@@ -653,7 +662,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('قانون برنامه اندروید'),
+        title: const Text('قانون برنامه'),
         content: SizedBox(
           width: AppMetrics.dialogMaxWidth,
           child: Column(
@@ -664,7 +673,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
                 controller: process,
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(
-                  labelText: 'شناسه بسته اندروید (Package ID)',
+                  labelText: 'نام بسته برنامه',
                   hintText: 'org.telegram.messenger',
                   errorText: error,
                 ),
@@ -689,7 +698,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
               ),
               const SizedBox(height: AppMetrics.space3),
               Text(
-                'برای مسیریابی ساده تر می توانید از گزینه «پروکسی برنامه محور» در بالا فهرست برنامه های نصب شده گوشی را انتخاب کنید.',
+                'نام بسته برنامه برای تطبیق دقیق به کار می رود؛ برای مسیریابی ساده تر می توانید از گزینه «مسیریابی برنامه های دستگاه» در بالا استفاده کنید.',
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ],

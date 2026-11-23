@@ -60,7 +60,7 @@ extension SettingsCategoryX on SettingsCategory {
       case SettingsCategory.general:
         return 'پوسته برنامه، شروع خودکار، اتصال خودکار و گزارش ها';
       case SettingsCategory.battery:
-        return 'کاهش مصرف پس زمینه و معافیت بهینه سازی باتری اندروید';
+        return 'کاهش مصرف پس زمینه هنگام استفاده از باتری';
       case SettingsCategory.routing:
         return 'منطقه مسیریابی، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
       case SettingsCategory.dns:
@@ -75,15 +75,15 @@ extension SettingsCategoryX on SettingsCategory {
   String get detailSubtitle {
     switch (this) {
       case SettingsCategory.general:
-        return 'پوسته برنامه، اجرای خودکار پس از روشن شدن گوشی، انتخاب خودکار سرور، اعلان ها و گزارش ها';
+        return 'پوسته برنامه، اجرای خودکار، انتخاب خودکار سرور، اعلان ها و گزارش ها';
       case SettingsCategory.battery:
-        return 'مدیریت مصرف برنامه و معافیت از محدودیت پس زمینه اندروید';
+        return 'مدیریت مصرف برنامه هنگام کار با باتری دستگاه';
       case SettingsCategory.routing:
-        return 'منطقه مسیریابی، قوانین توکار، آی پی نسخه ۶، کنترل محتوا و پروکسی برنامه محور';
+        return 'منطقه مسیریابی، قوانین توکار، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
       case SettingsCategory.dns:
         return 'سرورهای دی ان اس اصلی و مستقیم، شیوه انتخاب نشانی و دی ان اس مجازی';
       case SettingsCategory.inbound:
-        return 'حالت سرویس، تنظیمات تونل VPN، پروکسی محلی و اشتراک اتصال در شبکه محلی';
+        return 'حالت سرویس، تنظیمات کارت شبکه تونل، پروکسی محلی و اشتراک اتصال در شبکه محلی';
       case SettingsCategory.tlsTricks:
         return 'تکه تکه سازی بسته ها، درهم سازی حروف نام سرور و لایه گذاری برای عبور از محدودیت ها';
     }
@@ -226,7 +226,7 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Focus(
           autofocus: true,
           child: Padding(
-            padding: AppMetrics.pagePadding,
+            padding: AppMetrics.responsivePagePadding(context),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -277,7 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
     const List<SettingsCategory> categories = SettingsCategory.navigationItems;
     return SingleChildScrollView(
       key: const PageStorageKey<String>('settings-root-scroll'),
-      padding: AppMetrics.pagePadding,
+      padding: AppMetrics.responsivePagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -436,7 +436,7 @@ class _SettingsPageState extends State<SettingsPage> {
           children: <Widget>[
             OutlinedButton.icon(
               icon: const Icon(Icons.battery_alert_rounded, size: AppMetrics.iconSm),
-              label: const Text('معافیت برنامه از بهینه سازی باتری اندروید'),
+              label: const Text('لغو محدودیت باتری'),
               onPressed: () => context
                   .read<NativeBridge>()
                   .requestIgnoreBatteryOptimization(),
@@ -464,7 +464,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _Section(
           icon: Icons.palette_rounded,
           title: 'حالت پوسته',
-          subtitle: 'انتخاب رنگ بندی تیره، روشن یا هماهنگ با سیستم عامل',
+          subtitle: 'انتخاب رنگ بندی تیره، روشن یا هماهنگ با سیستم',
           children: <Widget>[
             _ThemeCardSelector(
               selected: cfg.theme,
@@ -479,13 +479,13 @@ class _SettingsPageState extends State<SettingsPage> {
           spacing: AppMetrics.space5,
           left: _Section(
             icon: Icons.smartphone_rounded,
-            title: 'اتصال خودکار و شروع با گوشی',
-            subtitle: 'اجرای خودکار پس از روشن شدن دستگاه و پایش مسیر',
+            title: 'دستگاه و اتصال خودکار',
+            subtitle: 'شروع با دستگاه و رفتار خودکار اتصال',
             children: <Widget>[
               ToggleRow(
                 icon: Icons.rocket_launch_rounded,
-                title: 'شروع پس از روشن شدن گوشی',
-                subtitle: 'اجرای خودکار سرویس آمبرلا هنگام بالا آمدن اندروید',
+                title: 'شروع هنگام ورود به سیستم',
+                subtitle: 'اجرای خودکار آمبرلا پس از روشن شدن دستگاه',
                 value: cfg.startOnBoot,
                 onChanged: settings.setStartOnBoot,
               ),
@@ -510,8 +510,8 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           right: _Section(
             icon: Icons.tune_rounded,
-            title: 'انتخاب سرور، اعلان ها و سیستم',
-            subtitle: 'پروکسی پیش فرض، اعلان ها، سطح گزارش و تنظیمات VPN گوشی',
+            title: 'انتخاب سرور، اعلان ها و عیب یابی',
+            subtitle: 'پروکسی پیش فرض، پیام های سیستم، سطح گزارش و تعمیر شبکه',
             children: <Widget>[
               AnchoredSelectField<SelectionMode>(
                 label: 'پروکسی پیش فرض',
@@ -570,8 +570,8 @@ class _SettingsPageState extends State<SettingsPage> {
               const Divider(height: AppMetrics.space4),
               ToggleRow(
                 icon: Icons.notifications_active_rounded,
-                title: 'اعلان های وضعیت اتصال',
-                subtitle: 'نمایش وضعیت سرویس، حساب و سرعت در اعلان اندروید',
+                title: 'اعلان های سیستم',
+                subtitle: 'نمایش اعلان های کوتاه برای تغییر وضعیت اتصال و حساب',
                 value: cfg.notificationsEnabled,
                 onChanged: settings.setNotifications,
               ),
@@ -579,7 +579,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ToggleRow(
                 icon: Icons.volume_up_rounded,
                 title: 'صداهای برنامه',
-                subtitle: 'پخش صدا برای منوها، کنترل ها و وضعیت اتصال',
+                subtitle: 'پخش صدا برای منوها، کنترل ها، اعلان ها و وضعیت اتصال',
                 value: cfg.soundEnabled,
                 onChanged: settings.setSound,
               ),
@@ -603,10 +603,10 @@ class _SettingsPageState extends State<SettingsPage> {
                         Icons.settings_backup_restore_rounded,
                         size: AppMetrics.iconSm,
                       ),
-                      label: const Text('بازنشانی سرویس شبکه'),
+                      label: const Text('تعمیر شبکه دستگاه'),
                       onPressed: () async {
                         await vpn.restoreNetwork();
-                        toasts.success('سرویس شبکه به حالت عادی بازگشت');
+                        toasts.success('تنظیمات شبکه دستگاه بازگردانی شد');
                       },
                     ),
                   ),
@@ -617,7 +617,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         Icons.vpn_lock_rounded,
                         size: AppMetrics.iconSm,
                       ),
-                      label: const Text('تنظیمات Always-On VPN'),
+                      label: const Text('تنظیمات اتصال همیشگی'),
                       onPressed: () =>
                           context.read<NativeBridge>().openVpnSystemSettings(),
                     ),
@@ -738,9 +738,9 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: AppMetrics.space5),
         const _Section(
           icon: Icons.apps_rounded,
-          title: 'تفکیک برنامه ها و مسیریابی بسته ها',
+          title: 'مسیریابی بر اساس برنامه',
           subtitle:
-              'انتخاب برنامه هایی که از VPN عبور کنند یا مستقیم بمانند (Split Tunneling)',
+              'تعیین کنید هر برنامه از تونل عبور کند، مستقیم وصل شود یا مسدود گردد',
           children: <Widget>[AdvancedNetworkSettings()],
         ),
         const SizedBox(height: AppMetrics.space5),
@@ -755,7 +755,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const _Section(
           icon: Icons.alt_route_rounded,
           title: 'عبور مستقیم سایت ها',
-          subtitle: 'سایت های انتخاب شده خارج از VPN، همگام با ربات تلگرام',
+          subtitle: 'سایت های انتخاب شده خارج از تونل، همگام با ربات تلگرام',
           children: <Widget>[BypassControlCard()],
         ),
       ],
@@ -888,14 +888,14 @@ class _SettingsPageState extends State<SettingsPage> {
               options: const <SelectOption<InboundServiceMode>>[
                 SelectOption<InboundServiceMode>(
                   value: InboundServiceMode.vpn,
-                  label: 'تونل کامل VPN (پیشنهادی)',
-                  subtitle: 'عبور ترافیک کل گوشی یا برنامه های انتخابی از تونل امن',
+                  label: 'تونل کامل',
+                  subtitle: 'عبور تمام برنامه ها و بازی ها از کارت شبکه امن مجازی',
                   icon: Icons.vpn_lock_rounded,
                 ),
                 SelectOption<InboundServiceMode>(
                   value: InboundServiceMode.proxy,
-                  label: 'فقط سرویس پروکسی محلی',
-                  subtitle: 'ایجاد پروکسی محلی SOCKS5/HTTP بدون فعال سازی VPN',
+                  label: 'فقط سرویس پروکسی',
+                  subtitle: 'ایجاد پروکسی محلی ساکس ۵ و وب بدون فعال سازی تونل',
                   icon: Icons.hub_rounded,
                 ),
               ],
@@ -1324,6 +1324,8 @@ class _EditableValueRow extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -1331,13 +1333,21 @@ class _EditableValueRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppMetrics.space2),
-            Text(
-              Fa.num(value),
-              textDirection: ltrValue ? TextDirection.ltr : null,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: valueColor ?? colors.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
+            Flexible(
+              flex: 0,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Text(
+                  Fa.num(value),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textDirection: ltrValue ? TextDirection.ltr : null,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: valueColor ?? colors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
             ),
             const SizedBox(width: AppMetrics.space2),
             Icon(
@@ -1477,7 +1487,7 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassCard(
       radius: AppMetrics.radiusXl,
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1510,23 +1520,57 @@ class _ThemeCardSelector extends StatelessWidget {
         <(ThemePreference, String, String)>[
       (ThemePreference.dark, 'تیره', 'کنتراست بالا و مناسب شب'),
       (ThemePreference.light, 'روشن', 'خوانا در محیط های پرنور'),
-      (ThemePreference.system, 'هماهنگ با سیستم', 'تغییر خودکار با اندروید'),
+      (ThemePreference.system, 'هماهنگ با سیستم', 'تغییر خودکار با سیستم'),
     ];
-    return Row(
-      children: <Widget>[
-        for (int i = 0; i < items.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: AppMetrics.space3),
-          Expanded(
-            child: _ThemeOptionCard(
-              preference: items[i].$1,
-              title: items[i].$2,
-              subtitle: items[i].$3,
-              selected: selected == items[i].$1,
-              onTap: () { playUiClick(context); onChanged(items[i].$1); },
-            ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double scale = MediaQuery.textScalerOf(context)
+            .scale(1)
+            .clamp(1.0, 2.0)
+            .toDouble();
+        if (constraints.maxWidth / scale < 460) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(height: AppMetrics.space2),
+                _ThemeOptionCard(
+                  preference: items[i].$1,
+                  title: items[i].$2,
+                  subtitle: items[i].$3,
+                  selected: selected == items[i].$1,
+                  onTap: () {
+                    playUiClick(context);
+                    onChanged(items[i].$1);
+                  },
+                ),
+              ],
+            ],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < items.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: AppMetrics.space3),
+                Expanded(
+                  child: _ThemeOptionCard(
+                    preference: items[i].$1,
+                    title: items[i].$2,
+                    subtitle: items[i].$3,
+                    selected: selected == items[i].$1,
+                    onTap: () {
+                      playUiClick(context);
+                      onChanged(items[i].$1);
+                    },
+                  ),
+                ),
+              ],
+            ],
           ),
-        ],
-      ],
+        );
+      },
     );
   }
 }

@@ -175,6 +175,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final UmbrellaColors colors = context.colors;
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -182,7 +185,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       builder: (BuildContext sheetContext) {
         return SafeArea(
           top: false,
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(
               AppMetrics.space4,
               AppMetrics.space4,
@@ -207,7 +210,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 _MoreTile(
                   icon: Icons.smartphone_rounded,
                   title: 'دستگاه من',
-                  subtitle: 'مشخصات گوشی، باتری و مجوزهای اندروید',
+                  subtitle:
+                      'مشخصات سخت افزار، حافظه، سیستم عامل، شبکه و شناسه این دستگاه',
                   selected: _index == 1,
                   onTap: () {
                     Navigator.of(sheetContext).pop();
@@ -229,8 +233,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 ),
                 _MoreTile(
                   icon: Icons.info_rounded,
-                  title: 'درباره آمبرلا',
-                  subtitle: 'معرفی نسخه و مشخصات فنی برنامه',
+                  title: 'درباره',
+                  subtitle:
+                      'مشخصات نسخه، راه های ارتباط با پشتیبانی و بررسی دسترسی',
                   selected: _index == 5,
                   onTap: () {
                     Navigator.of(sheetContext).pop();
@@ -239,8 +244,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 ),
                 _MoreTile(
                   icon: Icons.power_settings_new_rounded,
-                  title: 'توقف و خروج',
-                  subtitle: 'قطع کامل تونل و بستن برنامه',
+                  title: 'خروج',
+                  subtitle: 'قطع اتصال و بستن کامل برنامه',
                   danger: true,
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
@@ -329,7 +334,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final SettingsController settings = context.read<SettingsController>();
     final UmbrellaColors colors = context.colors;
-    final bool compact = MediaQuery.sizeOf(context).width < 760;
+    final Size viewport = MediaQuery.sizeOf(context);
+    final bool landscapePhone = AppMetrics.isLandscapePhone(context);
+    final bool compact = viewport.width < AppMetrics.breakpointPhone && !landscapePhone;
 
     final Widget pageStack = Center(
       child: ConstrainedBox(
@@ -424,64 +431,68 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   color: colors.backgroundAlt,
                   border: Border(top: BorderSide(color: colors.border)),
                 ),
-                child: NavigationBar(
-                  selectedIndex: _mobileNavIndex(),
-                  backgroundColor: colors.backgroundAlt,
-                  indicatorColor: colors.primary.withValues(alpha: 0.16),
-                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-                  onDestinationSelected: (int navIdx) {
-                    switch (navIdx) {
-                      case 0:
-                        _selectTab(0);
-                        break;
-                      case 1:
-                        _selectTab(2);
-                        break;
-                      case 2:
-                        _selectTab(3);
-                        break;
-                      case 3:
-                        _selectTab(4);
-                        break;
-                      case 4:
-                        playUiClick(context);
-                        _openMoreSheet(hasUpdate);
-                        break;
-                    }
-                  },
-                  destinations: <NavigationDestination>[
-                    const NavigationDestination(
-                      icon: Icon(Icons.shield_outlined),
-                      selectedIcon: Icon(Icons.shield_rounded),
-                      label: 'اتصال',
-                    ),
-                    const NavigationDestination(
-                      icon: Icon(Icons.person_outline_rounded),
-                      selectedIcon: Icon(Icons.person_rounded),
-                      label: 'حساب',
-                    ),
-                    const NavigationDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings_rounded),
-                      label: 'تنظیمات',
-                    ),
-                    const NavigationDestination(
-                      icon: Icon(Icons.receipt_long_outlined),
-                      selectedIcon: Icon(Icons.receipt_long_rounded),
-                      label: 'گزارش ها',
-                    ),
-                    NavigationDestination(
-                      icon: Badge(
-                        isLabelVisible: hasUpdate,
-                        child: const Icon(Icons.menu_rounded),
+                child: SafeArea(
+                  top: false,
+                  child: NavigationBar(
+                    height: 64,
+                    selectedIndex: _mobileNavIndex(),
+                    backgroundColor: colors.backgroundAlt,
+                    indicatorColor: colors.primary.withValues(alpha: 0.16),
+                    labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                    onDestinationSelected: (int navIdx) {
+                      switch (navIdx) {
+                        case 0:
+                          _selectTab(0);
+                          break;
+                        case 1:
+                          _selectTab(2);
+                          break;
+                        case 2:
+                          _selectTab(3);
+                          break;
+                        case 3:
+                          _selectTab(4);
+                          break;
+                        case 4:
+                          playUiClick(context);
+                          _openMoreSheet(hasUpdate);
+                          break;
+                      }
+                    },
+                    destinations: <NavigationDestination>[
+                      const NavigationDestination(
+                        icon: Icon(Icons.shield_outlined),
+                        selectedIcon: Icon(Icons.shield_rounded),
+                        label: 'اتصال',
                       ),
-                      selectedIcon: Badge(
-                        isLabelVisible: hasUpdate,
-                        child: const Icon(Icons.menu_open_rounded),
+                      const NavigationDestination(
+                        icon: Icon(Icons.person_outline_rounded),
+                        selectedIcon: Icon(Icons.person_rounded),
+                        label: 'حساب من',
                       ),
-                      label: 'بیشتر',
-                    ),
-                  ],
+                      const NavigationDestination(
+                        icon: Icon(Icons.settings_outlined),
+                        selectedIcon: Icon(Icons.settings_rounded),
+                        label: 'تنظیمات',
+                      ),
+                      const NavigationDestination(
+                        icon: Icon(Icons.receipt_long_outlined),
+                        selectedIcon: Icon(Icons.receipt_long_rounded),
+                        label: 'گزارش ها',
+                      ),
+                      NavigationDestination(
+                        icon: Badge(
+                          isLabelVisible: hasUpdate,
+                          child: const Icon(Icons.menu_rounded),
+                        ),
+                        selectedIcon: Badge(
+                          isLabelVisible: hasUpdate,
+                          child: const Icon(Icons.menu_open_rounded),
+                        ),
+                        label: 'بیشتر',
+                      ),
+                    ],
+                  ),
                 ),
               )
             : null,
@@ -633,17 +644,17 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     return Dialog(
-      insetPadding: const EdgeInsets.all(AppMetrics.space7),
+      insetPadding: AppMetrics.responsivePagePadding(context),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(
+        constraints: BoxConstraints(
           maxWidth: AppMetrics.dialogMaxWidth,
-          maxHeight: AppMetrics.dialogMaxHeight,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppMetrics.space5,
-            AppMetrics.space5,
-            AppMetrics.space5,
+          padding: EdgeInsets.fromLTRB(
+            AppMetrics.isCompactWidth(context) ? AppMetrics.space4 : AppMetrics.space5,
+            AppMetrics.space4,
+            AppMetrics.isCompactWidth(context) ? AppMetrics.space4 : AppMetrics.space5,
             AppMetrics.space4,
           ),
           child: ListenableBuilder(
@@ -716,24 +727,32 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   const SizedBox(height: AppMetrics.space3),
 
                   // ── فیلترها ─────────────────────────────────────────
-                  Row(
+                  Wrap(
+                    spacing: AppMetrics.space2,
+                    runSpacing: AppMetrics.space2,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
-                      _FilterChip(
-                        icon: Icons.inbox_rounded,
-                        label: 'همه',
-                        count: all.length,
-                        selected: !_unreadOnly,
-                        onTap: () => setState(() => _unreadOnly = false),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          _FilterChip(
+                            icon: Icons.inbox_rounded,
+                            label: 'همه',
+                            count: all.length,
+                            selected: !_unreadOnly,
+                            onTap: () => setState(() => _unreadOnly = false),
+                          ),
+                          const SizedBox(width: AppMetrics.space2),
+                          _FilterChip(
+                            icon: Icons.mark_email_unread_rounded,
+                            label: 'خوانده نشده',
+                            count: unread,
+                            selected: _unreadOnly,
+                            onTap: () => setState(() => _unreadOnly = true),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppMetrics.space2),
-                      _FilterChip(
-                        icon: Icons.mark_email_unread_rounded,
-                        label: 'خوانده نشده',
-                        count: unread,
-                        selected: _unreadOnly,
-                        onTap: () => setState(() => _unreadOnly = true),
-                      ),
-                      const Spacer(),
                       if (unread > 0)
                         TextButton.icon(
                           onPressed: widget.auth.markNotificationsRead,

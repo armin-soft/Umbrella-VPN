@@ -20,21 +20,24 @@ class ToastOverlay extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         final List<ToastMessage> items = controller.items;
         return Positioned(
-          top: AppMetrics.space4,
-          left: 0,
-          right: 0,
-          child: IgnorePointer(
-            ignoring: items.isEmpty,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                for (final ToastMessage item in items)
-                  _ToastCard(
-                    key: ValueKey<int>(item.id),
-                    message: item,
-                    onClose: () => controller.dismiss(item.id),
-                  ),
-              ],
+          top: AppMetrics.space3,
+          left: AppMetrics.space3,
+          right: AppMetrics.space3,
+          child: SafeArea(
+            bottom: false,
+            child: IgnorePointer(
+              ignoring: items.isEmpty,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final ToastMessage item in items)
+                    _ToastCard(
+                      key: ValueKey<int>(item.id),
+                      message: item,
+                      onClose: () => controller.dismiss(item.id),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -200,6 +203,9 @@ class TitleBar extends StatelessWidget {
     final VpnStatus? current = status;
     final Color tone =
         current == null ? colors.primary : VpnVisuals.color(context, current);
+    final Size viewport = MediaQuery.sizeOf(context);
+    final bool tightWidth = viewport.width < 380;
+    final bool landscapePhone = AppMetrics.isLandscapePhone(context);
 
     return Container(
       decoration: BoxDecoration(
@@ -209,13 +215,13 @@ class TitleBar extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: SizedBox(
-          height: 52,
+          height: landscapePhone ? 44 : 52,
           child: Row(
             children: <Widget>[
               Padding(
-                padding: const EdgeInsetsDirectional.only(
-                  start: AppMetrics.space4,
-                  end: AppMetrics.space2,
+                padding: EdgeInsetsDirectional.only(
+                  start: tightWidth ? AppMetrics.space3 : AppMetrics.space4,
+                  end: AppMetrics.space1,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -257,51 +263,58 @@ class TitleBar extends StatelessWidget {
                 child: Center(
                   child: current == null
                       ? const SizedBox.shrink()
-                      : Container(
+                      : Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppMetrics.space3,
-                            vertical: AppMetrics.space1,
+                            horizontal: AppMetrics.space1,
                           ),
-                          decoration: BoxDecoration(
-                            color: tone.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: tone.withValues(alpha: 0.3),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: tightWidth
+                                  ? AppMetrics.space2
+                                  : AppMetrics.space3,
+                              vertical: AppMetrics.space1,
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Container(
-                                width: AppMetrics.space2,
-                                height: AppMetrics.space2,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: tone,
-                                  boxShadow: <BoxShadow>[
-                                    BoxShadow(
-                                      color: tone.withValues(alpha: 0.5),
-                                      blurRadius: 6,
-                                    ),
-                                  ],
-                                ),
+                            decoration: BoxDecoration(
+                              color: tone.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: tone.withValues(alpha: 0.3),
                               ),
-                              const SizedBox(width: AppMetrics.space2),
-                              Flexible(
-                                child: Text(
-                                  Fa.num(current.label),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                        color: tone,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Container(
+                                  width: AppMetrics.space2,
+                                  height: AppMetrics.space2,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: tone,
+                                    boxShadow: <BoxShadow>[
+                                      BoxShadow(
+                                        color: tone.withValues(alpha: 0.5),
+                                        blurRadius: 6,
                                       ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: AppMetrics.space2),
+                                Flexible(
+                                  child: Text(
+                                    Fa.num(current.label),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          color: tone,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                 ),
@@ -320,9 +333,9 @@ class TitleBar extends StatelessWidget {
                 ),
               if (onToggleTheme != null)
                 Padding(
-                  padding: const EdgeInsetsDirectional.only(
+                  padding: EdgeInsetsDirectional.only(
                     start: AppMetrics.space1,
-                    end: AppMetrics.space3,
+                    end: tightWidth ? AppMetrics.space2 : AppMetrics.space3,
                   ),
                   child: _HeaderIconButton(
                     icon: darkTheme
@@ -475,12 +488,9 @@ class SideNav extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // ریسپانسیو: در پنجره باریک نوار کناری جمع و جور می شود و متن منوها در
-        // Tooltip می آید؛ در پنجره متوسط و پهن نام هر منو خوانا و مرتب می نشیند.
-        final double windowWidth = constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : MediaQuery.sizeOf(context).width;
-        final double width = windowWidth < AppMetrics.breakpointNav
+        final double windowWidth = MediaQuery.sizeOf(context).width;
+        final bool landscapePhone = AppMetrics.isLandscapePhone(context);
+        final double width = (landscapePhone || windowWidth < AppMetrics.breakpointNav)
             ? AppMetrics.navWidthCompact
             : (windowWidth < AppMetrics.breakpointNavWide
                 ? AppMetrics.navWidthMedium

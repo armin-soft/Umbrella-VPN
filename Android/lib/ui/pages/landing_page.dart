@@ -41,8 +41,8 @@ class _LandingPageState extends State<LandingPage>
   }
 
   static const List<(IconData, String, String)> _features = <(IconData, String, String)>[
-    (Icons.lock_rounded, 'تونل سراسری VPN اندروید', 'اتصال ایمن کل گوشی یا فقط برنامه های انتخابی با سرعت پایدار.'),
-    (Icons.hub_rounded, 'هسته اتصال آمبرلا', 'موتور بومی سریع و بهینه برای شبکه های موبایل و Wi-Fi.'),
+    (Icons.lock_rounded, 'حالت تونل امن', 'امکان استفاده از تونل یا پروکسی بر اساس تنظیمات اتصال.'),
+    (Icons.hub_rounded, 'هسته اتصال آمبرلا', 'اتصال با هسته همراه برنامه و تنظیمات شبکه قابل انتخاب.'),
     (Icons.speed_rounded, 'انتخاب خودکار سرور', 'پایدارترین سرور با کمترین پینگ، خودکار انتخاب می شود.'),
     (Icons.security_rounded, 'پایش اتصال', 'وضعیت تونل و مسیر اتصال به صورت دوره ای بررسی می شود.'),
     (Icons.palette_rounded, 'رابط فارسی و راست چین', 'تم تاریک و روشن، ارقام فارسی و طراحی نسل جدید.'),
@@ -122,7 +122,7 @@ class _LandingPageState extends State<LandingPage>
                           const SizedBox(height: AppMetrics.space5),
                           Text(
                             Fa.num(
-                              'فیلترشکن آمبرلا با هسته بومی نسل جدید، تونل کامل VPN و انتخاب هوشمند سرور، اتصال پایدار و امن می سازد.',
+                              'فیلترشکن آمبرلا با هسته های نسل جدید، تونل کامل و انتخاب هوشمند سرور، اتصال پایدار و امن می سازد.',
                             ),
                             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                   color: colors.textSecondary,
@@ -152,7 +152,7 @@ class _LandingPageState extends State<LandingPage>
                           ),
                           const SizedBox(height: AppMetrics.space6),
                           Text(
-                            Fa.num('اندروید ۶٫۰ به بالا | تونل کامل بدون نیاز به روت'),
+                            Fa.num('اندروید ۶٫۰ به بالا | تونل کامل بدون نیاز به ریشه یابی'),
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                   color: colors.textSecondary,
                                 ),
@@ -225,7 +225,7 @@ class _LandingPageState extends State<LandingPage>
 
   Widget _compactLanding(BuildContext context, UmbrellaColors colors) {
     return SingleChildScrollView(
-      padding: AppMetrics.pagePadding,
+      padding: AppMetrics.responsivePagePadding(context),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
@@ -237,7 +237,7 @@ class _LandingPageState extends State<LandingPage>
               Text(Fa.num('اینترنت آزاد، با اتصالی که دوام می آورد.'),
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: AppMetrics.space4),
-              Text(Fa.num('اتصال امن اندروید، انتخاب سرور و مدیریت حساب در آمبرلا.'),
+              Text(Fa.num('اتصال اندروید، انتخاب سرور و مدیریت حساب در آمبرلا.'),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.textSecondary)),
               const SizedBox(height: AppMetrics.space5),
               GradientButton(label: 'شروع', icon: Icons.arrow_back_rounded, onPressed: widget.onStart),
@@ -246,7 +246,7 @@ class _LandingPageState extends State<LandingPage>
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppMetrics.space3),
                   child: GlassCard(
-                    padding: AppMetrics.cardPadding,
+                    padding: AppMetrics.responsiveCardPadding(context),
                     radius: AppMetrics.radiusLg,
                     child: Row(children: <Widget>[
                       IconSquare(icon: item.$1, color: colors.primary, size: AppMetrics.iconBoxLg),

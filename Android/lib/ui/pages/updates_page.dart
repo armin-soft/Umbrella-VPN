@@ -89,7 +89,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
         available?.changelogItems ?? const <String>[];
 
     return SingleChildScrollView(
-      padding: AppMetrics.pagePadding,
+      padding: AppMetrics.responsivePagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -116,7 +116,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
 
           // ── انتخاب کانال انتشار (اصلی / بتا) ────────────────────────────
           GlassCard(
-            padding: AppMetrics.cardPadding,
+            padding: AppMetrics.responsiveCardPadding(context),
             radius: AppMetrics.radiusXl,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -211,7 +211,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
           if (hasUpdate) ...<Widget>[
             const SizedBox(height: AppMetrics.space4),
             GlassCard(
-              padding: AppMetrics.cardPadding,
+              padding: AppMetrics.responsiveCardPadding(context),
               radius: AppMetrics.radiusXl,
               borderColor: (available.preRelease ? colors.info : colors.primary)
                   .withValues(alpha: 0.35),
@@ -223,9 +223,9 @@ class _UpdatesPageState extends State<UpdatesPage> {
                     title: Fa.num('دانلود و نصب نسخه ${available.version}'),
                     subtitle: available.publishedAt != null
                         ? Fa.num(
-                            'انتشار در ${Fa.tehranDate(available.publishedAt)}  •  دریافت APK و نصب درون برنامه ای',
+                            'انتشار در ${Fa.tehranDate(available.publishedAt)}  •  دریافت و نصب درون برنامه ای',
                           )
-                        : 'دانلود مستقیم، بررسی اصالت فایل و باز کردن نصب کننده اندروید',
+                        : 'دانلود مستقیم، بررسی اصالت فایل و نصب خودکار در برنامه',
                     trailing: Pill(
                       label: available.preRelease ? 'نسخه بتا' : 'انتشار اصلی',
                       color:
@@ -324,8 +324,8 @@ class _UpdatesPageState extends State<UpdatesPage> {
                                   }
                                   if (ok) {
                                     toasts.success(
-                                      'نصب کننده اندروید باز شد',
-                                      'درخواست نصب نسخه جدید برای سیستم ارسال شد.',
+                                      'نصب نسخه جدید آغاز شد',
+                                      'بسته به روز رسانی برای نصب در سیستم آماده و باز شد.',
                                     );
                                   } else if (updates.error.isNotEmpty) {
                                     toasts.error(
@@ -371,7 +371,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
 
           // ── تاریخچه انتشارها ───────────────────────────────────────────
           GlassCard(
-            padding: AppMetrics.cardPadding,
+            padding: AppMetrics.responsiveCardPadding(context),
             radius: AppMetrics.radiusXl,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

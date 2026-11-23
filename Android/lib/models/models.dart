@@ -2052,7 +2052,7 @@ extension CorePreferenceX on CorePreference {
       case CorePreference.auto:
         return 'اول تونل کامل، اگر نشد پروکسی محلی';
       case CorePreference.tun:
-        return 'تمام ترافیک دستگاه از تونل امن رد می شود';
+        return 'تمام ترافیک دستگاه از کارت شبکه مجازی هسته رد می شود';
       case CorePreference.systemProxy:
         return 'پروکسی محلی روی پورت هسته تنظیم می شود';
     }
@@ -2974,7 +2974,7 @@ class DeviceProfile {
   String get osLabelFa {
     final String title = osTitleFa;
     if (osBuild > 0) {
-      return '$title • سطح API ${Fa.num(osBuild)}';
+      return '$title • ساخت ${Fa.num(osBuild)}';
     }
     return title;
   }

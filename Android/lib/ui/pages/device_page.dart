@@ -28,8 +28,8 @@ extension _DeviceSectionX on _DeviceSection {
   String get detail => switch (this) {
         _DeviceSection.overview => 'شاخص های وضعیت دستگاه',
         _DeviceSection.hardware => 'پردازنده، حافظه و سیستم عامل',
-        _DeviceSection.network => 'شبکه موبایل، وای فای و نشانی فعال',
-        _DeviceSection.identity => 'شناسه دستگاه و مجوزهای اندروید',
+        _DeviceSection.network => 'کارت شبکه و نشانی های فعال',
+        _DeviceSection.identity => 'شناسه دستگاه و مجوز اجرایی',
       };
 
   IconData get icon => switch (this) {
@@ -205,7 +205,7 @@ class _DevicePageState extends State<DevicePage> {
       if (device.screenWidth > 0 && device.screenHeight > 0)
         'وضوح نمایشگر اصلی: ${device.screenLabelFa}',
       'بهینه سازی باتری: ${device.batteryOptimized ? 'محدود شده (پیشنهاد به معافیت)' : 'معاف شده (پایدار)'}',
-      'مجوز نصب APK: ${device.canRequestInstallPackages ? 'فعال' : 'نیاز به تایید'}',
+      'مجوز نصب برنامه: ${device.canRequestInstallPackages ? 'فعال' : 'نیاز به تایید'}',
       'مجوز اعلان ها: ${device.notificationGranted ? 'صادر شده' : 'غیرفعال'}',
       if (liveUptime > Duration.zero)
         'مدت روشن بودن دستگاه: ${Fa.spanFa(liveUptime)}',
@@ -269,7 +269,7 @@ class _DevicePageState extends State<DevicePage> {
         label: 'سیستم عامل',
         value: device.osTitleFa,
         caption: build > 0
-            ? 'API ${Fa.num(build)} • ${device.archLabelFa}'
+            ? 'ساخت ${Fa.num(build)} • ${device.archLabelFa}'
             : device.archLabelFa,
       ),
       _DeviceMetricTile(
@@ -345,7 +345,7 @@ class _DevicePageState extends State<DevicePage> {
     );
     final Widget networkCard = GlassCard(
       key: const ValueKey<String>('device-network-card'),
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -353,7 +353,7 @@ class _DevicePageState extends State<DevicePage> {
           SectionHeader(
             icon: Icons.lan_rounded,
             title: 'شبکه و رابط ارتباطی دستگاه',
-            subtitle: 'وضعیت اتصال Wi-Fi / دیتای موبایل و نشانی های فعال',
+            subtitle: 'وضعیت کارت شبکه فیزیکی و نشانی های فعال سیستم',
             trailing: Pill(
               label: hasLocalIp ? 'متصل' : 'نامشخص',
               color: hasLocalIp ? colors.success : colors.warning,
@@ -429,15 +429,15 @@ class _DevicePageState extends State<DevicePage> {
     );
     final Widget identityCard = GlassCard(
       key: const ValueKey<String>('device-identity-card'),
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           SectionHeader(
             icon: Icons.phonelink_lock_rounded,
-            title: 'هویت و مجوزهای اندروید',
-            subtitle: 'مشخصات دستگاه، محدودیت باتری، Always-On VPN و دسترسی های سیستم',
+            title: 'هویت و امنیت این دستگاه',
+            subtitle: 'شناسه دستگاه، محدودیت باتری و سطح دسترسی برنامه',
             trailing: Pill(
               label: device.batteryOptimized ? 'نیاز به تنظیم باتری' : 'پیکربندی بهینه',
               color: device.batteryOptimized ? colors.warning : colors.success,
@@ -447,7 +447,7 @@ class _DevicePageState extends State<DevicePage> {
           const Divider(height: AppMetrics.space5),
           InfoRow(
             icon: Icons.smartphone_rounded,
-            label: 'نام دستگاه اندروید',
+            label: 'نام دستگاه',
             value: device.hostname.trim().isEmpty
                 ? 'شناسایی نشده'
                 : device.hostname.trim(),
@@ -465,7 +465,7 @@ class _DevicePageState extends State<DevicePage> {
           const Divider(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.phone_android_rounded,
-            label: 'سازنده و مدل گوشی',
+            label: 'سازنده و مدل دستگاه',
             value: device.username.trim().isEmpty
                 ? 'شناسایی نشده'
                 : device.username.trim(),
@@ -492,7 +492,7 @@ class _DevicePageState extends State<DevicePage> {
           const Divider(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.install_mobile_rounded,
-            label: 'مجوز نصب نسخه جدید (APK)',
+            label: 'مجوز نصب نسخه جدید',
             value: device.canRequestInstallPackages ? 'فعال' : 'نیاز به تایید در تنظیمات',
             valueColor: device.canRequestInstallPackages
                 ? colors.success
@@ -525,7 +525,7 @@ class _DevicePageState extends State<DevicePage> {
                 ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.vpn_lock_rounded, size: AppMetrics.iconSm),
-                label: const Text('تنظیمات Always-On VPN'),
+                label: const Text('تنظیمات اتصال همیشگی'),
                 onPressed: () =>
                     context.read<NativeBridge>().openVpnSystemSettings(),
               ),
@@ -534,7 +534,7 @@ class _DevicePageState extends State<DevicePage> {
                   Icons.copy_all_rounded,
                   size: AppMetrics.iconSm,
                 ),
-                label: const Text('کپی مشخصات فنی'),
+                label: const Text('کپی مشخصات فنی این دستگاه'),
                 onPressed: () => _copy(
                   'مشخصات فنی دستگاه',
                   _buildDeviceReport(device, cores, liveUptime, bootAt),
@@ -546,13 +546,16 @@ class _DevicePageState extends State<DevicePage> {
       ),
     );
 
+    final EdgeInsets pagePad = AppMetrics.responsivePagePadding(context);
+    final EdgeInsets bodyPad = AppMetrics.responsiveBodyPadding(context);
+
     return DefaultTabController(
       length: _DeviceSection.values.length,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
-            padding: AppMetrics.pagePadding,
+            padding: pagePad,
             child: PageHeader(
               title: 'دستگاه من',
               eyebrow: 'وضعیت و مشخصات دستگاه',
@@ -575,9 +578,9 @@ class _DevicePageState extends State<DevicePage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(
-              left: AppMetrics.space6,
-              right: AppMetrics.space6,
+            padding: EdgeInsets.only(
+              left: pagePad.left,
+              right: pagePad.right,
               bottom: AppMetrics.space3,
             ),
             child: LayoutBuilder(
@@ -586,8 +589,7 @@ class _DevicePageState extends State<DevicePage> {
                     .scale(1)
                     .clamp(1.0, 2.0)
                     .toDouble();
-                final bool scrollable = constraints.maxWidth / scale <
-                    AppMetrics.breakpointCompact;
+                final bool scrollable = constraints.maxWidth / scale < 420;
                 return GlassCard(
                   key: const ValueKey<String>('device-section-tab-card'),
                   padding: const EdgeInsets.symmetric(
@@ -647,11 +649,7 @@ class _DevicePageState extends State<DevicePage> {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(
-                left: AppMetrics.space6,
-                right: AppMetrics.space6,
-                bottom: AppMetrics.space6,
-              ),
+              padding: bodyPad,
               child: TabBarView(
                 children: <Widget>[
                   SingleChildScrollView(
@@ -686,7 +684,7 @@ class _DevicePageState extends State<DevicePage> {
                             ),
                           );
                         }
-                        if (width >= AppMetrics.breakpointCompact) {
+                        if (width >= 320) {
                           return Column(
                             children: <Widget>[
                               IntrinsicHeight(
@@ -875,7 +873,7 @@ class _MemoryAndStorageCard extends StatelessWidget {
             : (ramPct >= 70 ? 'متعادل' : 'سبک و بهینه'));
 
     return GlassCard(
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -998,7 +996,7 @@ class _MemoryAndStorageCard extends StatelessWidget {
           const SizedBox(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.storage_rounded,
-            label: 'ظرفیت کل درایو سیستم',
+            label: 'ظرفیت کل حافظه داخلی',
             value: hasDisk
                 ? '${Fa.decimal(device.diskTotalGb, fraction: 1)} گیگابایت'
                 : 'شناسایی نشده',
@@ -1037,7 +1035,7 @@ class _ProcessorAndSystemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: AppMetrics.cardPadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1045,7 +1043,7 @@ class _ProcessorAndSystemCard extends StatelessWidget {
           SectionHeader(
             icon: Icons.developer_board_rounded,
             title: 'سخت افزار، نمایشگر و سیستم عامل',
-            subtitle: 'اجزای پردازشی، نسخه اندروید و معماری دستگاه',
+            subtitle: 'اجزای پردازشی، نسخه سیستم عامل و معماری دستگاه',
             trailing: Pill(
               label: device.archLabelFa,
               color: colors.primary,
@@ -1055,14 +1053,14 @@ class _ProcessorAndSystemCard extends StatelessWidget {
           const Divider(height: AppMetrics.space5),
           InfoRow(
             icon: Icons.android_rounded,
-            label: 'سیستم عامل و سطح API',
+            label: 'سیستم عامل و شماره ساخت',
             value: device.osLabelFa,
             tooltip: true,
           ),
           const Divider(height: AppMetrics.space2),
           InfoRow(
             icon: Icons.layers_rounded,
-            label: 'معماری پردازنده (ABI)',
+            label: 'معماری پردازنده',
             value: device.archLabelFa,
           ),
           const Divider(height: AppMetrics.space2),

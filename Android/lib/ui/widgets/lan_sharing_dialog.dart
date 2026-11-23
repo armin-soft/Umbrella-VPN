@@ -191,16 +191,17 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
           colors: colors,
         ),
         const SizedBox(height: AppMetrics.space3),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppMetrics.space1,
+          runSpacing: AppMetrics.space1,
           children: <Widget>[
             Icon(
               Icons.lan_rounded,
               size: AppMetrics.iconXs,
               color: colors.textSecondary,
             ),
-            const SizedBox(width: AppMetrics.space1),
             Text(
               Fa.num('پروکسی ساکس ۵ · فقط همان شبکه'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -209,8 +210,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                   ),
               textAlign: TextAlign.center,
             ),
-            if (_lanIps.length > 1) ...<Widget>[
-              const SizedBox(width: AppMetrics.space2),
+            if (_lanIps.length > 1)
               InkWell(
                 borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
                 onTap: () => setState(
@@ -242,7 +242,6 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                   ),
                 ),
               ),
-            ],
           ],
         ),
         const SizedBox(height: AppMetrics.space4),
@@ -344,6 +343,10 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
     );
 
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space4,
+        vertical: AppMetrics.space6,
+      ),
       backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppMetrics.radiusXxl),

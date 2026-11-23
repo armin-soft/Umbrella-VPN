@@ -103,21 +103,24 @@ class _LoginPageState extends State<LoginPage> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     if (constraints.maxWidth < AppMetrics.breakpointColumns * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0)) {
-                      return SingleChildScrollView(
-                        padding: AppMetrics.pagePadding,
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                const BrandMark(size: AppMetrics.logoMd),
-                                const SizedBox(height: AppMetrics.space5),
-                                Text(Fa.num('ورود امن با شماره موبایل'),
-                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
-                                const SizedBox(height: AppMetrics.space4),
-                                _loginCard(context, auth),
-                              ],
+                      return SafeArea(
+                        top: false,
+                        child: SingleChildScrollView(
+                          padding: AppMetrics.responsivePagePadding(context),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: <Widget>[
+                                  const BrandMark(size: AppMetrics.logoMd),
+                                  const SizedBox(height: AppMetrics.space4),
+                                  Text(Fa.num('ورود امن با شماره موبایل'),
+                                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: AppMetrics.space4),
+                                  _loginCard(context, auth),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -176,7 +179,7 @@ class _LoginPageState extends State<LoginPage> {
                             const SizedBox(height: AppMetrics.space6),
                             Text(
                               Fa.num(
-                                'نسخه ${AppConfig.versionLabel} | اندروید',
+                                'نسخه ${AppConfig.versionLabel} | اندروید ۶٫۰ به بالا',
                               ),
                               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                     color: colors.textSecondary,
@@ -211,9 +214,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _loginCard(BuildContext context, AuthController auth) {
+    final bool compact = AppMetrics.isCompactWidth(context);
     return GlassCard(
-      padding: const EdgeInsets.all(AppMetrics.space7),
-      radius: AppMetrics.radiusHuge,
+      padding: EdgeInsets.all(compact ? AppMetrics.space5 : AppMetrics.space7),
+      radius: compact ? AppMetrics.radiusXl : AppMetrics.radiusHuge,
       elevated: true,
       child: AnimatedSize(
         duration: const Duration(milliseconds: 280),

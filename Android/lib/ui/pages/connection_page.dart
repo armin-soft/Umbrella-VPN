@@ -32,7 +32,7 @@ class ConnectionPage extends StatelessWidget {
     final bool connected = status == VpnStatus.connected;
 
     return SingleChildScrollView(
-      padding: AppMetrics.pagePadding,
+      padding: AppMetrics.responsivePagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -218,7 +218,7 @@ class _StatusHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: AppMetrics.pagePadding,
+      padding: AppMetrics.responsiveCardPadding(context),
       radius: AppMetrics.radiusXl,
       gradient: LinearGradient(
         begin: Alignment.topRight,
@@ -426,11 +426,11 @@ class _AppCard extends StatelessWidget {
             value: Fa.num(auth.account.planLabel),
           ),
           const Divider(height: AppMetrics.space4),
-          InfoRow(
+          const InfoRow(
             stacked: false,
             icon: Icons.android_rounded,
             label: 'سیستم',
-            value: 'اندروید (سرویس VPN بومی)',
+            value: 'اندروید ۶٫۰ به بالا (۶۴ و ۳۲ بیت)',
           ),
         ],
       ),

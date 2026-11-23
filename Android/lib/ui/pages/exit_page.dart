@@ -53,11 +53,11 @@ class _ExitPageState extends State<ExitPage> {
 
     return Center(
       child: SingleChildScrollView(
-        padding: AppMetrics.pagePadding,
+        padding: AppMetrics.responsivePagePadding(context),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
           child: GlassCard(
-            padding: AppMetrics.pagePadding,
+            padding: AppMetrics.responsivePagePadding(context),
             radius: AppMetrics.radiusXl,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -83,9 +83,8 @@ class _ExitPageState extends State<ExitPage> {
                 Text(
                   Fa.num(
                     connected
-                        ? 'سرویس VPN قطع می شود و برنامه بسته خواهد شد. برای '
-                            'ادامه اتصال در پس زمینه، بدون بستن سرویس از دکمه '
-                            'بازگشت گوشی استفاده کنید.'
+                        ? 'اتصال قطع می شود و تنظیمات شبکه به حالت عادی '
+                            'برمی گردد، بعد برنامه بسته می شود.'
                         : 'برنامه بسته می شود.',
                   ),
                   textAlign: TextAlign.center,

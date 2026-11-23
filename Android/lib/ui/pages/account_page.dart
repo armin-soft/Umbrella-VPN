@@ -714,13 +714,16 @@ class _AccountPageState extends State<AccountPage> {
       ),
     ];
 
+    final EdgeInsets pagePad = AppMetrics.responsivePagePadding(context);
+    final EdgeInsets bodyPad = AppMetrics.responsiveBodyPadding(context);
+
     return DefaultTabController(
       length: _AccountSection.values.length,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
-            padding: AppMetrics.pagePadding,
+            padding: pagePad,
             child: const PageHeader(
               title: 'حساب من',
               eyebrow: 'حساب و سرویس',
@@ -731,9 +734,9 @@ class _AccountPageState extends State<AccountPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(
-              left: AppMetrics.space6,
-              right: AppMetrics.space6,
+            padding: EdgeInsets.only(
+              left: pagePad.left,
+              right: pagePad.right,
               bottom: AppMetrics.space3,
             ),
             child: LayoutBuilder(
@@ -742,8 +745,7 @@ class _AccountPageState extends State<AccountPage> {
                     .scale(1)
                     .clamp(1.0, 2.0)
                     .toDouble();
-                final bool scrollable = constraints.maxWidth / scale <
-                    AppMetrics.breakpointCompact;
+                final bool scrollable = constraints.maxWidth / scale < 420;
                 return GlassCard(
                   key: const ValueKey<String>('account-section-tab-card'),
                   padding: const EdgeInsets.symmetric(
@@ -816,11 +818,7 @@ class _AccountPageState extends State<AccountPage> {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(
-                left: AppMetrics.space6,
-                right: AppMetrics.space6,
-                bottom: AppMetrics.space6,
-              ),
+              padding: bodyPad,
               child: TabBarView(
                 children: <Widget>[
                   _buildSummaryTab(
@@ -893,7 +891,7 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 );
               }
-              if (width >= AppMetrics.breakpointCompact) {
+              if (width >= 320) {
                 return Column(
                   children: <Widget>[
                     IntrinsicHeight(

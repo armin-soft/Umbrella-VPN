@@ -15,7 +15,7 @@ class SpeedTestCard extends StatelessWidget {
     final VpnController vpn = context.watch<VpnController>();
     final SpeedTestResult? result = vpn.speedResult;
     final bool connected = vpn.status == VpnStatus.connected;
-    return GlassCard(padding: AppMetrics.cardPadding, child: Column(
+    return GlassCard(padding: AppMetrics.responsiveCardPadding(context), child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Text('سنجش مسیر اتصال', style: Theme.of(context).textTheme.titleMedium),
@@ -40,7 +40,7 @@ class SpeedTestCard extends StatelessWidget {
           if (vpn.speedTesting) OutlinedButton(onPressed: vpn.cancelSpeedTest, child: const Text('لغو آزمایش')),
         ]),
         const Divider(height: AppMetrics.space6),
-        const Text('نشت دی ان اس: نتیجه ای ثبت نشده است. تایید اتصال امن و آزمایش سرعت، نبود نشت دی ان اس یا پوشش همه برنامه ها را ثابت نمی کنند. آزمایش مرورگر را در حالت تونل کامل VPN انجام دهید؛ مرورگر نباید از VPN مستثنی شده باشد. حالت فقط پروکسی، ترافیک سایر برنامه های گوشی را پوشش نمی دهد.'),
+        const Text('نشت دی ان اس: نتیجه ای ثبت نشده است. تایید اتصال امن و آزمایش سرعت، نبود نشت دی ان اس یا پوشش همه برنامه ها را ثابت نمی کنند. آزمایش مرورگر را در حالت تونل انجام دهید؛ مرورگر نباید قانون «مستقیم» داشته باشد. حالت پروکسی همه دی ان اس سیستم را پوشش نمی دهد.'),
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton.icon(
           icon: const Icon(Icons.open_in_new_rounded), label: const Text('آزمون مستقل دی ان اس در مرورگر'),
           onPressed: !connected ? null : () async {

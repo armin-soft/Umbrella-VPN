@@ -20,13 +20,19 @@ import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/power_controller.dart';
 import 'package:umbrella_vpn/state/settings_controller.dart';
+import 'package:umbrella_vpn/state/subscription_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
+import 'package:umbrella_vpn/state/update_controller.dart';
 import 'package:umbrella_vpn/ui/pages/device_page.dart';
 import 'package:umbrella_vpn/ui/pages/exit_page.dart';
 import 'package:umbrella_vpn/ui/pages/landing_page.dart';
 import 'package:umbrella_vpn/ui/pages/login_page.dart';
+import 'package:umbrella_vpn/ui/pages/logs_page.dart';
+import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
+import 'package:umbrella_vpn/ui/shell/app_shell.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
+import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
@@ -126,6 +132,15 @@ class _FakeWindow implements WindowService {
   bool hideCalled = false;
 
   @override
+  bool get isVisible => true;
+
+  @override
+  bool get isHiddenToTray => false;
+
+  @override
+  void setLifecycleVisible(bool visible) {}
+
+  @override
   Future<void> hide() async {
     hideCalled = true;
   }
@@ -167,6 +182,30 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   DeviceProfile get device => currentDevice;
 
   @override
+  GeoInfo get geo => const GeoInfo();
+
+  @override
+  VpnNode? get activeNode => null;
+
+  @override
+  int get activePingMs => 0;
+
+  @override
+  String get message => 'آماده برای اتصال';
+
+  @override
+  bool get measuring => false;
+
+  @override
+  List<VpnNode> get nodes => const <VpnNode>[];
+
+  @override
+  bool get emergencySession => false;
+
+  @override
+  TunnelStats get stats => const TunnelStats();
+
+  @override
   String get realIp => '';
 
   @override
@@ -179,6 +218,9 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
 
   @override
   Future<void> refreshIp() async {}
+
+  @override
+  Future<void> refreshPings({bool all = true, bool tunnelProbe = true}) async {}
 
   @override
   Future<void> shutdownForExit() async {
@@ -447,7 +489,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(native.batteryIgnoreCalls, 1);
 
-      final Finder vpnSettingsAction = find.text('تنظیمات Always-On VPN');
+      final Finder vpnSettingsAction = find.text('تنظیمات اتصال همیشگی');
       expect(vpnSettingsAction, findsOneWidget);
       await tester.ensureVisible(vpnSettingsAction);
       await tester.tap(vpnSettingsAction);
@@ -564,7 +606,7 @@ void main() {
       await tester.ensureVisible(routingMenu);
       await tester.tap(routingMenu);
       await tester.pumpAndSettle();
-      expect(find.text('پروکسی برنامه محور (Split Tunneling)'), findsOneWidget);
+      expect(find.text('مسیریابی برنامه های دستگاه'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey<String>('settings-back-button')));
       await tester.pumpAndSettle();
@@ -574,7 +616,7 @@ void main() {
       await tester.ensureVisible(inboundMenu);
       await tester.tap(inboundMenu);
       await tester.pumpAndSettle();
-      expect(find.text('تونل کامل VPN (پیشنهادی)'), findsOneWidget);
+      expect(find.text('تونل کامل'), findsWidgets);
 
       await tester.pumpWidget(const SizedBox());
       settings.dispose();
@@ -731,6 +773,264 @@ void main() {
       auth.dispose();
       settings.dispose();
     });
+
+    testWidgets(
+      'ConnectPage renders cleanly on portrait phone, landscape phone, and tablet without overflow',
+      (WidgetTester tester) async {
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final _FakeNative native = _FakeNative();
+        final _FakeVpn vpn = _FakeVpn();
+        final SettingsController settings = SettingsController(
+          native: native,
+          sound: _FakeSound(),
+          window: _FakeWindow(),
+        );
+        final AuthController auth = AuthController(
+          native: native,
+          sound: _FakeSound(),
+          tray: TrayService(native),
+        );
+        final MockClient emptyClient = MockClient(
+          (http.Request _) async => http.Response('[]', 200),
+        );
+        final SubscriptionController subs = SubscriptionController(
+          vpn: vpn,
+          auth: auth,
+          client: emptyClient,
+          enableNativeTransport: false,
+        );
+        final ToastController toasts = ToastController();
+
+        Future<void> pumpViewport(Size size) async {
+          await tester.binding.setSurfaceSize(size);
+          await tester.pumpWidget(
+            MultiProvider(
+              providers: [
+                Provider<NativeBridge>.value(value: native),
+                ChangeNotifierProvider<SettingsController>.value(value: settings),
+                ChangeNotifierProvider<AuthController>.value(value: auth),
+                ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+                ChangeNotifierProvider<VpnController>.value(value: vpn),
+                ChangeNotifierProvider<ToastController>.value(value: toasts),
+              ],
+              child: MaterialApp(
+                theme: AppTheme.dark(),
+                home: const Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Scaffold(body: ConnectPage()),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+          expect(find.text('اتصال'), findsWidgets);
+          expect(find.text('تنظیمات اتصال'), findsOneWidget);
+        }
+
+        await pumpViewport(const Size(360, 640));
+        await pumpViewport(const Size(844, 390));
+        await pumpViewport(const Size(1024, 768));
+
+        await tester.pumpWidget(const SizedBox());
+        subs.dispose();
+        auth.dispose();
+        settings.dispose();
+      },
+    );
+
+    testWidgets(
+      'AppShell adapts navigation between NavigationBar and SideNav across viewports without overflow',
+      (WidgetTester tester) async {
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await LocalStore.instance.write(StoreKeys.telegramJoined, '1');
+
+        final _FakeNative native = _FakeNative();
+        final _FakeWindow window = _FakeWindow();
+        final _FakeVpn vpn = _FakeVpn();
+        final SettingsController settings = SettingsController(
+          native: native,
+          sound: _FakeSound(),
+          window: window,
+        );
+        final AuthController auth = AuthController(
+          native: native,
+          sound: _FakeSound(),
+          tray: TrayService(native),
+        );
+        final MockClient emptyClient = MockClient(
+          (http.Request _) async => http.Response('[]', 200),
+        );
+        final SubscriptionController subs = SubscriptionController(
+          vpn: vpn,
+          auth: auth,
+          client: emptyClient,
+          enableNativeTransport: false,
+        );
+        final UpdateController updates = UpdateController(
+          native,
+          service: UpdateService(client: emptyClient, preferredAbi: 'arm64-v8a'),
+        );
+        final ToastController toasts = ToastController();
+
+        Widget buildShell() {
+          return MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: native),
+              Provider<WindowService>.value(value: window),
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<UpdateController>.value(value: updates),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: Directionality(
+                textDirection: TextDirection.rtl,
+                child: AppShell(windowService: window),
+              ),
+            ),
+          );
+        }
+
+        await tester.binding.setSurfaceSize(const Size(360, 640));
+        await tester.pumpWidget(buildShell());
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(NavigationBar), findsOneWidget);
+        expect(find.byType(SideNav), findsNothing);
+
+        await tester.tap(find.text('بیشتر'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(tester.takeException(), isNull);
+        expect(find.text('درباره'), findsOneWidget);
+        expect(find.text('خروج'), findsOneWidget);
+        Navigator.of(tester.element(find.text('درباره'))).pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+
+        await tester.binding.setSurfaceSize(const Size(844, 390));
+        await tester.pumpWidget(buildShell());
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(NavigationBar), findsNothing);
+        expect(find.byType(SideNav), findsOneWidget);
+
+        await tester.binding.setSurfaceSize(const Size(1024, 768));
+        await tester.pumpWidget(buildShell());
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(NavigationBar), findsNothing);
+        expect(find.byType(SideNav), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+        subs.dispose();
+        updates.dispose();
+        auth.dispose();
+        settings.dispose();
+      },
+    );
+
+    testWidgets(
+      'SettingsPage, DevicePage, and LogsPage fit narrow 360x640 portrait phones without overflow',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(360, 640));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final _FakeNative native = _FakeNative();
+        final _FakeVpn vpn = _FakeVpn();
+        final SettingsController settings = SettingsController(
+          native: native,
+          sound: _FakeSound(),
+          window: _FakeWindow(),
+        );
+        final AuthController auth = AuthController(
+          native: native,
+          sound: _FakeSound(),
+          tray: TrayService(native),
+        );
+        final PowerController power = PowerController(
+          readStatus: () async => const BatteryPowerState(
+            hasBattery: true,
+            onBattery: false,
+            energySaver: false,
+            ignoringBatteryOptimizations: true,
+          ),
+        );
+        final ToastController toasts = ToastController();
+        await power.refresh();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: native),
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<PowerController>.value(value: power),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(body: SettingsPage()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: native),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(body: DevicePage()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(body: LogsPage()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(const SizedBox());
+        power.dispose();
+        auth.dispose();
+        settings.dispose();
+      },
+    );
 
     test('CoreRuntime.compile returns parsed.json for Android and fails closed', () async {
       final Directory tempDir = await Directory.systemTemp.createTemp('umbrella_compile_');
