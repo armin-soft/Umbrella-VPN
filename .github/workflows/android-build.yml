@@ -53,8 +53,10 @@ jobs:
             echo "$out"
             python3 - <<'PY' "$out"
           import sys
-          msg = sys.argv[1][-3800:].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
-          print(f'::error title=flutter-analyze::{msg}')
+          txt = sys.argv[1]
+          for i in range(0, len(txt), 3500):
+              chunk = txt[i:i+3500].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::error title=flutter-analyze::{chunk}')
           PY
             exit 1
           }
@@ -67,9 +69,10 @@ jobs:
             python3 - <<'PY' "$out"
           import sys
           lines = [l for l in sys.argv[1].splitlines() if '[E]' in l or 'EXCEPTION' in l or 'Expected:' in l or 'Actual:' in l or 'Error:' in l or 'failed' in l.lower()]
-          snippet = '\n'.join(lines) if lines else sys.argv[1][-3800:]
-          msg = snippet[-3800:].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
-          print(f'::error title=flutter-test::{msg}')
+          snippet = '\n'.join(lines) if lines else sys.argv[1][-7000:]
+          for i in range(0, min(len(snippet), 14000), 3500):
+              chunk = snippet[i:i+3500].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::error title=flutter-test::{chunk}')
           PY
             exit 1
           }

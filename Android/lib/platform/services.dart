@@ -193,7 +193,7 @@ class TrayService {
   Future<void> destroy() async {}
 }
 
-/// دریافت نشانی IP خروجی از سرویس های معتبر.
+/// بررسی آی پی و موقعیت دستگاه (کشور و شهر) پیش از اتصال.
 class IpService {
   IpService({http.Client? client})
       : _injectedClient = client != null,
@@ -201,6 +201,10 @@ class IpService {
 
   final bool _injectedClient;
   final http.Client _client;
+  GeoInfo _cache = GeoInfo.empty;
+  DateTime _cachedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  GeoInfo get last => _cache;
 
   static http.Client _createClient({required bool direct}) {
     final HttpClient inner = HttpClient()
@@ -211,77 +215,143 @@ class IpService {
     return IOClient(inner);
   }
 
-  Future<String?> fetch({int? proxyPort}) async {
-    final List<String> targets = <String>[
-      AppConfig.ipCheckPrimary,
-      AppConfig.ipCheckCloudflare,
-      AppConfig.ipCheckFallback,
-    ];
-    for (final String url in targets) {
-      final String? ip = await _fetchUrl(url, proxyPort: proxyPort);
-      if (ip != null && ip.isNotEmpty) {
-        return ip;
-      }
+  /// خواندن آی پی و موقعیت؛ اگر تونل فعال است، درخواست از همان پروکسی محلی
+  /// می رود تا آی پی واقعی به جای آی پی خروجی گزارش نشود.
+  Future<GeoInfo> fetch({
+    bool force = false,
+    String proxy = '',
+    String proxyUser = '',
+    String proxyPassword = '',
+  }) async {
+    if (!force &&
+        proxy.isEmpty &&
+        _cache.ip.isNotEmpty &&
+        DateTime.now().difference(_cachedAt) < const Duration(minutes: 3)) {
+      return _cache;
     }
-    return null;
+    final List<String> endpoints = <String>[
+      'https://ipwho.is/',
+      'https://api.ip.sb/geoip',
+      'https://ipinfo.io/json',
+      'https://api.myip.com',
+      'https://api.ipify.org?format=json',
+    ];
+    http.Client? temporary;
+    http.Client client = _client;
+    if (proxy.isNotEmpty) {
+      final HttpClient inner = HttpClient();
+      inner.findProxy = (Uri _) => 'PROXY $proxy';
+      inner.connectionTimeout = const Duration(seconds: 5);
+      if (proxyUser.isNotEmpty && proxyPassword.isNotEmpty) {
+        final HttpClientBasicCredentials creds =
+            HttpClientBasicCredentials(proxyUser, proxyPassword);
+        final int sep = proxy.lastIndexOf(':');
+        if (sep > 0) {
+          final String pHost = proxy.substring(0, sep);
+          final int? pPort = int.tryParse(proxy.substring(sep + 1));
+          if (pPort != null && pPort > 0) {
+            inner.addProxyCredentials(pHost, pPort, '', creds);
+          }
+        }
+        inner.authenticateProxy =
+            (String host, int port, String scheme, String? realm) async {
+          inner.addProxyCredentials(host, port, realm ?? '', creds);
+          return true;
+        };
+      }
+      temporary = IOClient(inner);
+      client = temporary;
+    }
+    try {
+      for (final String endpoint in endpoints) {
+        try {
+          final http.Response response = await client
+              .get(
+                Uri.parse(endpoint),
+                headers: <String, String>{
+                  'Accept': 'application/json',
+                  'User-Agent': 'Umbrella-Android/${AppConfig.version}',
+                },
+              )
+              .timeout(const Duration(seconds: 5));
+          if (response.statusCode >= 300) {
+            continue;
+          }
+          final Map<String, dynamic> json = JsonX.asMap(
+            jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
+          );
+          if (json['success'] == false || json['status'] == 'fail') {
+            continue;
+          }
+          final Map<String, dynamic> connection = JsonX.asMap(json['connection']);
+          final Object? rawTz = json['timezone'];
+          final String timezone = rawTz is Map
+              ? JsonX.text(rawTz['id'])
+              : JsonX.text(rawTz ?? json['timezone_id']);
+          final GeoInfo geo = GeoInfo.fromJson(<String, dynamic>{
+            'ip': json['ip'] ??
+                json['query'] ??
+                json['ip_addr'] ??
+                json['ip_address'],
+            'city': json['city'],
+            'country': json['country'] ?? json['country_name'],
+            'countryCode': json['country_code'] ??
+                json['countryCode'] ??
+                json['cc'],
+            'region': json['region'] ?? json['regionName'] ?? json['region_name'],
+            'isp': json['isp'] ??
+                json['org'] ??
+                connection['isp'] ??
+                JsonX.asMap(json['asn'])['org'],
+            'timezone': timezone,
+            'latitude': json['latitude'] ?? json['lat'],
+            'longitude': json['longitude'] ?? json['lon'],
+          });
+          if (geo.ip.isNotEmpty) {
+            if (proxy.isEmpty) {
+              _cache = geo;
+              _cachedAt = DateTime.now();
+            }
+            return geo;
+          }
+        } on Exception {
+          continue;
+        }
+      }
+    } finally {
+      temporary?.close();
+    }
+    if (proxy.isNotEmpty || force) {
+      return GeoInfo.empty;
+    }
+    return _cache;
   }
 
-  Future<String?> _fetchUrl(String url, {int? proxyPort}) async {
-    if (!_injectedClient && proxyPort != null && proxyPort > 0) {
-      final NativeHttpResponse? proxied =
-          await NativeBridge.performHttpRequest(
-        method: 'GET',
-        url: url,
-        timeoutMs: 8000,
-        proxyHost: '127.0.0.1',
-        proxyPort: proxyPort,
-      );
-      if (proxied != null && proxied.ok && proxied.statusCode == 200) {
-        final String parsed =
-            _extractIp(utf8.decode(proxied.bodyBytes, allowMalformed: true));
-        if (parsed.isNotEmpty) return parsed;
-      }
+  Future<String> fetchIp({bool force = false}) async {
+    final GeoInfo geo = await fetch(force: force);
+    if (geo.ip.isNotEmpty) {
+      return geo.ip;
     }
     try {
       final http.Response response = await _client
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 8));
-      if (response.statusCode == 200) {
-        final String parsed = _extractIp(response.body);
-        if (parsed.isNotEmpty) return parsed;
-      }
+          .get(Uri.parse(AppConfig.ipCheckPrimary))
+          .timeout(const Duration(seconds: 6));
+      final Map<String, dynamic> json = JsonX.asMap(
+        jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)),
+      );
+      return JsonX.text(json['ip']);
     } on Exception {
-      // نشانی بعدی بررسی می شود.
+      return '';
     }
-    return null;
   }
 
-  static String _extractIp(String body) {
-    final String trimmed = body.trim();
-    if (trimmed.startsWith('{')) {
-      try {
-        final Map<String, dynamic> map = JsonX.asMap(jsonDecode(trimmed));
-        final String ip = JsonX.text(map['ip']);
-        if (InternetAddress.tryParse(ip) != null) return ip;
-      } on Exception {
-        return '';
-      }
-    }
-    for (final String line in trimmed.split('\n')) {
-      if (line.startsWith('ip=')) {
-        final String ip = line.substring(3).trim();
-        if (InternetAddress.tryParse(ip) != null) return ip;
-      }
-    }
-    if (InternetAddress.tryParse(trimmed) != null) return trimmed;
-    return '';
-  }
-
-  void dispose() {
+  void close() {
     if (!_injectedClient) {
       _client.close();
     }
   }
+
+  void dispose() => close();
 }
 
 /// سرویس بررسی، دانلود و نصب به روز رسانی فایل APK اندروید.
@@ -877,28 +947,6 @@ class OccasionService {
         b -
         1524;
   }
-}
-
-/// جزئیات فنی یک خط گزارش.
-class LogDetail {
-  const LogDetail({this.title = '', required this.text});
-
-  final String title;
-  final String text;
-}
-
-class LogLine {
-  LogLine(
-    this.message, {
-    this.level = 'info',
-    this.details = const <LogDetail>[],
-  }) : time = DateTime.now();
-
-  final DateTime time;
-  final String message;
-  final String level;
-  final List<LogDetail> details;
-  int repeat = 1;
 }
 
 /// گزارش های برنامه برای صفحه «گزارش ها».

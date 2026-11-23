@@ -519,5 +519,11 @@ class NativeBridge {
 
   Future<int?> processCpuTimeMicros(int pid) async => null;
 
+  /// Android VpnService resets interface DNS automatically on restart/stop.
+  Future<bool> flushDns() async => true;
+
+  /// No global OS proxy settings exist to reset on Android.
+  Future<bool> restoreNetworkDefaults() async => true;
+
   Future<bool> shutdownCores() async => stopCore();
 }

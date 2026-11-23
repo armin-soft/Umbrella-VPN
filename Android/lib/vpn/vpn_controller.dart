@@ -2803,7 +2803,6 @@ class VpnController extends ChangeNotifier {
   Future<List<LogDetail>> _coreDiagnostics(
     CoreLaunch core,
     String coreLog, {
-    int? code,
     LaunchPlan? plan,
   }) async {
     final String full = (await _readLogFull(coreLog)).trim();

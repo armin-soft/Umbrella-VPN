@@ -163,12 +163,6 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   String get exitIp => '';
 
   @override
-  void updateDevice(DeviceProfile next) {
-    currentDevice = next;
-    notifyListeners();
-  }
-
-  @override
   void scheduleLiveReload() {
     reloads++;
   }
