@@ -362,12 +362,16 @@ class _LogsPageState extends State<LogsPage> {
                                     children: <Widget>[
                                       badge,
                                       const SizedBox(width: AppMetrics.space2),
-                                      Text(
-                                        '${Fa.num(Fa.date(line.time))} • ${Fa.clock(line.time)}',
-                                        style: TextStyle(
-                                          fontFamily: AppTheme.fontFamily,
-                                          fontSize: AppMetrics.fontCaption,
-                                          color: colors.textSecondary,
+                                      Flexible(
+                                        child: Text(
+                                          '${Fa.num(Fa.date(line.time))} • ${Fa.clock(line.time)}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontFamily: AppTheme.fontFamily,
+                                            fontSize: AppMetrics.fontCaption,
+                                            color: colors.textSecondary,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -588,27 +592,44 @@ class _DiagnosticSessionChipState extends State<_DiagnosticSessionChip> {
     final String label = active
         ? 'عیب یابی فعال · ${Fa.duration(remaining)}'
         : 'عیب یابی ۱۰ دقیقه ای';
-    return ActionChip(
-      key: const ValueKey<String>('logs-diagnostic-session-chip'),
-      avatar: Icon(
-        active ? Icons.bug_report_rounded : Icons.troubleshoot_rounded,
-        size: AppMetrics.iconSm,
-        color: active ? colors.primary : colors.textSecondary,
-      ),
-      label: Text(Fa.num(label)),
-      backgroundColor: active ? colors.primarySoft : null,
-      side: BorderSide(color: active ? colors.primary : colors.border),
-      onPressed: () async {
-        playUiClick(context);
-        final VpnController? vpn = _maybeVpn(context);
-        if (active) {
-          await settings.stopDiagnosticSession();
-          AppLogger.instance.add('حالت عیب یابی متوقف شد و سطح گزارش به حالت عادی بازگشت.');
-        } else {
-          await settings.startDiagnosticSession();
-          AppLogger.instance.add('حالت گزارش عیب یابی برای ۱۰ دقیقه فعال شد.');
-        }
-        vpn?.scheduleLiveReload();
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxLabelWidth =
+            (constraints.maxWidth - 76).clamp(100.0, 320.0);
+        return ActionChip(
+          key: const ValueKey<String>('logs-diagnostic-session-chip'),
+          avatar: Icon(
+            active ? Icons.bug_report_rounded : Icons.troubleshoot_rounded,
+            size: AppMetrics.iconSm,
+            color: active ? colors.primary : colors.textSecondary,
+          ),
+          label: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxLabelWidth),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                Fa.num(label),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          backgroundColor: active ? colors.primarySoft : null,
+          side: BorderSide(color: active ? colors.primary : colors.border),
+          onPressed: () async {
+            playUiClick(context);
+            final VpnController? vpn = _maybeVpn(context);
+            if (active) {
+              await settings.stopDiagnosticSession();
+              AppLogger.instance.add('حالت عیب یابی متوقف شد و سطح گزارش به حالت عادی بازگشت.');
+            } else {
+              await settings.startDiagnosticSession();
+              AppLogger.instance.add('حالت گزارش عیب یابی برای ۱۰ دقیقه فعال شد.');
+            }
+            vpn?.scheduleLiveReload();
+          },
+        );
       },
     );
   }

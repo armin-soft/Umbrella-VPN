@@ -639,7 +639,11 @@ class SideNav extends StatelessWidget {
                         ),
                       )
                     else
-                      Row(
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: AppMetrics.space2,
+                        runSpacing: AppMetrics.space1,
                         children: <Widget>[
                           Text(
                             Fa.num(AppConfig.versionLabel),
@@ -648,7 +652,6 @@ class SideNav extends StatelessWidget {
                                 .labelSmall
                                 ?.copyWith(color: colors.textSecondary),
                           ),
-                          const Spacer(),
                           if (updateAvailable)
                             Pill(
                               label: 'به روز رسانی',

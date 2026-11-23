@@ -583,32 +583,43 @@ class _VersionRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Text(
-                Fa.num('نسخه $version'),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppMetrics.space2,
+              runSpacing: AppMetrics.space1,
+              children: <Widget>[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      Fa.num('نسخه $version'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Pill(
-                label: preRelease ? 'بتا' : 'پایدار',
-                color: preRelease ? colors.info : colors.success,
-                dense: true,
-              ),
-              if (current) ...<Widget>[
-                const SizedBox(width: AppMetrics.space2),
-                Pill(label: 'نصب شده', color: colors.primary, dense: true),
+                    const SizedBox(width: AppMetrics.space2),
+                    Pill(
+                      label: preRelease ? 'بتا' : 'پایدار',
+                      color: preRelease ? colors.info : colors.success,
+                      dense: true,
+                    ),
+                    if (current) ...<Widget>[
+                      const SizedBox(width: AppMetrics.space2),
+                      Pill(label: 'نصب شده', color: colors.primary, dense: true),
+                    ],
+                  ],
+                ),
+                Text(
+                  Fa.num(date),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
               ],
-              const Spacer(),
-              Text(
-                Fa.num(date),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: AppMetrics.space2),
           Text(

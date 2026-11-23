@@ -23,6 +23,8 @@ import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/subscription_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/state/update_controller.dart';
+import 'package:umbrella_vpn/ui/pages/about_page.dart';
+import 'package:umbrella_vpn/ui/pages/account_page.dart';
 import 'package:umbrella_vpn/ui/pages/device_page.dart';
 import 'package:umbrella_vpn/ui/pages/exit_page.dart';
 import 'package:umbrella_vpn/ui/pages/landing_page.dart';
@@ -30,6 +32,7 @@ import 'package:umbrella_vpn/ui/pages/login_page.dart';
 import 'package:umbrella_vpn/ui/pages/logs_page.dart';
 import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
+import 'package:umbrella_vpn/ui/pages/updates_page.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
@@ -940,10 +943,11 @@ void main() {
     );
 
     testWidgets(
-      'SettingsPage, DevicePage, and LogsPage fit narrow 360x640 portrait phones without overflow',
+      'SettingsPage, DevicePage, LogsPage, AccountPage, AboutPage, and UpdatesPage fit narrow 360x640 portrait phones without overflow',
       (WidgetTester tester) async {
         await tester.binding.setSurfaceSize(const Size(360, 640));
         addTearDown(() => tester.binding.setSurfaceSize(null));
+        addTearDown(AppLogger.instance.clear);
 
         final _FakeNative native = _FakeNative();
         final _FakeVpn vpn = _FakeVpn();
@@ -956,6 +960,19 @@ void main() {
           native: native,
           sound: _FakeSound(),
           tray: TrayService(native),
+        );
+        final MockClient emptyClient = MockClient(
+          (http.Request _) async => http.Response('[]', 200),
+        );
+        final SubscriptionController subs = SubscriptionController(
+          vpn: vpn,
+          auth: auth,
+          client: emptyClient,
+          enableNativeTransport: false,
+        );
+        final UpdateController updates = UpdateController(
+          native,
+          service: UpdateService(client: emptyClient, preferredAbi: 'arm64-v8a'),
         );
         final PowerController power = PowerController(
           readStatus: () async => const BatteryPowerState(
@@ -1009,6 +1026,7 @@ void main() {
         await tester.pump();
         expect(tester.takeException(), isNull);
 
+        AppLogger.instance.add('نمونه خط گزارش برای بررسی ریسپانسیو گوشی باریک');
         await tester.pumpWidget(
           MultiProvider(
             providers: [
@@ -1028,7 +1046,60 @@ void main() {
         await tester.pump();
         expect(tester.takeException(), isNull);
 
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(body: AccountPage()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: AboutPage()),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<UpdateController>.value(value: updates),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(body: UpdatesPage()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(tester.takeException(), isNull);
+
         await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+        subs.dispose();
+        updates.dispose();
         power.dispose();
         auth.dispose();
         settings.dispose();

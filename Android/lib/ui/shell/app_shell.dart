@@ -433,7 +433,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 ),
                 child: SafeArea(
                   top: false,
-                  child: NavigationBar(
+                  child: NavigationBarTheme(
+                    data: NavigationBarThemeData(
+                      labelTextStyle: WidgetStateProperty.resolveWith<TextStyle?>(
+                        (Set<WidgetState> states) {
+                          final bool selected =
+                              states.contains(WidgetState.selected);
+                          return Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                fontSize: AppMetrics.isCompactWidth(context)
+                                    ? 10.5
+                                    : 11.5,
+                                fontWeight: selected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                        },
+                      ),
+                    ),
+                    child: NavigationBar(
                     height: 64,
                     selectedIndex: _mobileNavIndex(),
                     backgroundColor: colors.backgroundAlt,
@@ -493,6 +514,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       ),
                     ],
                   ),
+                ),
                 ),
               )
             : null,
