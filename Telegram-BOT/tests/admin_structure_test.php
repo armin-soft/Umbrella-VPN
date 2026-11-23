@@ -82,6 +82,21 @@ public static function hasClaimedNowruz(int $UserId = 0, string $Uuid = '', ?str
 return (Repository::$Settings['Nowruz_Claimed_' . $UserId] ?? '0') === '1';
 }
 }
+final class AppFilter {
+public const MAX_CUSTOM_DOMAINS = 200;
+public const DOMAINS_PER_PAGE = 8;
+public const BOT_CATEGORIES = [
+'adult' => 'محتوای بزرگسال',
+'gambling' => 'شرط بندی',
+'ads' => 'تبلیغات',
+'dating' => 'دوست یابی',
+];
+public static function loadGlobal(): array {
+return ['enabled' => false, 'categories' => ['adult'], 'custom_domains' => ['example.com']];
+}
+public static function summary(array $Settings): string { return 'خلاصه'; }
+public static function domainToken(string $Domain): string { return substr(sha1($Domain), 0, 12); }
+}
 final class Helper {
 public static function formatCurrency(float $Value): string { return (string)$Value; }
 public static function remainingDuration(int $Stamp): string { return (string)$Stamp; }
@@ -504,5 +519,14 @@ AdminFlow::toggleNowruzMenu($Context);
 check(Repository::getSetting('Nowruz_Menu_Enabled') === '1', 'admin toggle turns Nowruz menu back on');
 Repository::$Settings['Nowruz_Menu_Enabled'] = '0';
 Repository::$Settings['Nowruz_Claimed_1'] = '0';
+
+AdminFlow::globalContentFilterMenu($Context);
+$Filter_Calls = calls();
+check(count(array_keys($Filter_Calls, 'مدیریت', true)) === 1, 'global content filter has a single admin home button');
+check(end($Filter_Calls) === 'مدیریت', 'global content filter ends with admin home');
+AdminFlow::globalContentFilterDomainsMenu($Context);
+$Domain_Calls = calls();
+check(count(array_keys($Domain_Calls, 'admin_content_filter', true)) === 1 && count(array_keys($Domain_Calls, 'مدیریت', true)) === 1, 'global content filter domains has unique parent and admin home buttons');
+
 ServerClient::$Response = null;
 echo "OK menu structure tests ({$Passed} assertions)\n";

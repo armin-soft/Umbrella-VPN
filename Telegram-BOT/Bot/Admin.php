@@ -152,8 +152,7 @@ $Rows[] = [[
 'text' => !empty($Settings['enabled']) ? '🔴خاموش کردن کنترل محتوا برای همه' : '🟢روشن کردن کنترل محتوا برای همه',
 'callback_data' => 'admin_gfilter_toggle:enabled',
 ]];
-$Rows[] = Menu::back('منوی قبلی', 'مدیریت');
-$Rows[] = Menu::adminHome();
+$Rows = array_merge($Rows, Menu::adminNav('منوی قبلی', 'مدیریت'));
 $Text = Helper::adminGreeting($Context, 'کنترل محتوا')
 . AppFilter::summary($Settings)
 . "\n➖➖➖➖➖➖➖➖➖\n"
@@ -224,8 +223,7 @@ $Rows[] = [[
 }
 if ($Page_Count > 1) $Rows = array_merge($Rows, Menu::pages($Page, $Page_Count, 'admin_gfilter_page:'));
 if ($Total > 0) $Rows[] = [[ 'text' => '🧹حذف همه دامنه ها', 'callback_data' => 'admin_gfilter_clear' ]];
-$Rows[] = Menu::back('کنترل محتوا', 'admin_content_filter');
-$Rows[] = Menu::adminHome();
+$Rows = array_merge($Rows, Menu::adminNav('کنترل محتوا', 'admin_content_filter'));
 self::logMenuProblems('global_content_filter_domains', $Rows);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
