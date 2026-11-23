@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/app_config.dart';
-import 'core/persian.dart';
 import 'core/storage.dart';
 import 'core/utils.dart';
 import 'models/models.dart';

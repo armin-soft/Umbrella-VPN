@@ -844,7 +844,10 @@ void main() {
       'AppShell adapts navigation between NavigationBar and SideNav across viewports without overflow',
       (WidgetTester tester) async {
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        await LocalStore.instance.write(StoreKeys.telegramJoined, '1');
+        await LocalStore.instance.write(
+          StoreKeys.telegramChannelPromptAt,
+          DateTime.now().toUtc().millisecondsSinceEpoch.toString(),
+        );
 
         final _FakeNative native = _FakeNative();
         final _FakeWindow window = _FakeWindow();
