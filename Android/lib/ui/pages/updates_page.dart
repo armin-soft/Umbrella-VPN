@@ -591,8 +591,10 @@ class _VersionRow extends StatelessWidget {
               spacing: AppMetrics.space2,
               runSpacing: AppMetrics.space1,
               children: <Widget>[
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space1,
                   children: <Widget>[
                     Text(
                       Fa.num('نسخه $version'),
@@ -600,16 +602,13 @@ class _VersionRow extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                           ),
                     ),
-                    const SizedBox(width: AppMetrics.space2),
                     Pill(
                       label: preRelease ? 'بتا' : 'پایدار',
                       color: preRelease ? colors.info : colors.success,
                       dense: true,
                     ),
-                    if (current) ...<Widget>[
-                      const SizedBox(width: AppMetrics.space2),
+                    if (current)
                       Pill(label: 'نصب شده', color: colors.primary, dense: true),
-                    ],
                   ],
                 ),
                 Text(

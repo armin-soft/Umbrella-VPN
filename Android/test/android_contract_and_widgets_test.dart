@@ -902,9 +902,19 @@ void main() {
           );
         }
 
-        await tester.binding.setSurfaceSize(const Size(360, 640));
-        await tester.pumpWidget(buildShell());
-        await tester.pump();
+        final List<String> shellErrors360 = <String>[];
+        final void Function(FlutterErrorDetails)? prevHandler = FlutterError.onError;
+        FlutterError.onError = (FlutterErrorDetails details) {
+          shellErrors360.add(details.toString());
+        };
+        try {
+          await tester.binding.setSurfaceSize(const Size(360, 640));
+          await tester.pumpWidget(buildShell());
+          await tester.pump();
+        } finally {
+          FlutterError.onError = prevHandler;
+        }
+        expect(shellErrors360, isEmpty, reason: shellErrors360.join('\n---\n'));
         expect(tester.takeException(), isNull);
         expect(find.byType(NavigationBar), findsOneWidget);
         expect(find.byType(SideNav), findsNothing);
@@ -1077,23 +1087,33 @@ void main() {
         await tester.pump();
         expect(tester.takeException(), isNull);
 
-        await tester.pumpWidget(
-          MultiProvider(
-            providers: [
-              ChangeNotifierProvider<UpdateController>.value(value: updates),
-              ChangeNotifierProvider<ToastController>.value(value: toasts),
-            ],
-            child: MaterialApp(
-              theme: AppTheme.dark(),
-              home: const Directionality(
-                textDirection: TextDirection.rtl,
-                child: Scaffold(body: UpdatesPage()),
+        final List<String> updatesErrors = <String>[];
+        final void Function(FlutterErrorDetails)? prevUpdatesHandler = FlutterError.onError;
+        FlutterError.onError = (FlutterErrorDetails details) {
+          updatesErrors.add(details.toString());
+        };
+        try {
+          await tester.pumpWidget(
+            MultiProvider(
+              providers: [
+                ChangeNotifierProvider<UpdateController>.value(value: updates),
+                ChangeNotifierProvider<ToastController>.value(value: toasts),
+              ],
+              child: MaterialApp(
+                theme: AppTheme.dark(),
+                home: const Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Scaffold(body: UpdatesPage()),
+                ),
               ),
             ),
-          ),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 50));
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+        } finally {
+          FlutterError.onError = prevUpdatesHandler;
+        }
+        expect(updatesErrors, isEmpty, reason: updatesErrors.join('\n---\n'));
         expect(tester.takeException(), isNull);
 
         await tester.pumpWidget(const SizedBox());
