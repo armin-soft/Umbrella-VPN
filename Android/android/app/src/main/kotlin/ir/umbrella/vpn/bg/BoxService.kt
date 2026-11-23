@@ -156,7 +156,7 @@ class BoxService(
         try {
             lastStartError = null
             withContext(Dispatchers.Main) {
-                notification.show(Settings.activeProfileName, R.string.status_starting)
+                notification.showStarting()
             }
 
             DefaultNetworkMonitor.start()
@@ -233,7 +233,7 @@ class BoxService(
             withContext(Dispatchers.Main) {
                 coroutineContext.ensureActive()
                 status.value = Status.Started
-                notification.show(Settings.activeProfileName, R.string.status_started)
+                notification.showConnected()
             }
             notification.startPolling()
             null
@@ -340,7 +340,7 @@ class BoxService(
             return Service.START_NOT_STICKY
         }
         try {
-            notification.show(Settings.activeProfileName, R.string.status_starting)
+            notification.showStarting()
         } catch (e: Exception) {
             Log.e(TAG, "cannot go to foreground", e)
         }

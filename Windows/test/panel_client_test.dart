@@ -26,7 +26,7 @@ void main() {
       expect(auth, isNot(contains('PanelUserApi')));
       expect(File('lib/data/panel_client.dart').existsSync(), isFalse);
 
-      // تنها مسیر اطلاعات زندهٔ حساب باید از درگاه احراز هویت‌شدهٔ سرور باشد.
+      // تنها مسیر اطلاعات زنده حساب باید از درگاه احراز هویت شده سرور باشد.
       expect(gateway, contains("_get('account/refresh'"));
       expect(auth, contains('_gateway.refresh(session.token)'));
     });

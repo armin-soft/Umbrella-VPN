@@ -1715,10 +1715,12 @@ class AppNotification {
   String get balloonBody => summarizeBody(body, title: title, maxChars: 105);
 
   static String summarizeTitle(String rawTitle, [String rawBody = '']) {
-    String clean = rawTitle
-        .replaceAll('\u200c', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    String clean = Fa.num(
+      rawTitle
+          .replaceAll('\u200c', ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim(),
+    );
     if (clean.contains('گزارش شبانه')) {
       return 'گزارش شبانه';
     }
@@ -1740,7 +1742,7 @@ class AppNotification {
     if (clean.length > 48) {
       clean = '${clean.substring(0, 47).trimRight()}…';
     }
-    return clean;
+    return Fa.num(clean);
   }
 
   static String summarizeBody(
@@ -1800,7 +1802,9 @@ class AppNotification {
     }
 
     if (!normalized.contains('\n') && normalized.length <= maxChars) {
-      return _stripUrls(normalized.replaceAll(RegExp(r'\s{2,}'), ' ').trim());
+      return Fa.num(
+        _stripUrls(normalized.replaceAll(RegExp(r'\s{2,}'), ' ').trim()),
+      );
     }
 
     final List<String> kept = <String>[];
@@ -1844,7 +1848,7 @@ class AppNotification {
       .trim();
 
   static String _clip(String text, int maxChars) {
-    final String clean = text.trim();
+    final String clean = Fa.num(text.trim());
     if (clean.length <= maxChars) {
       return clean;
     }

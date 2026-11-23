@@ -327,11 +327,9 @@ class _LanSharingRow extends StatelessWidget {
             Fa.num('اشتراک گذاری اتصال'),
           ),
           subtitle: Text(
-            Fa.num(
-              shared
-                  ? 'فعال روی پورت $port در شبکه محلی'
-                  : 'اشتراک اینترنت با دستگاه های هم شبکه',
-            ),
+            shared
+                ? 'فعال روی پورت ${Fa.num(port)} در شبکه محلی'
+                : 'اشتراک اینترنت با دستگاه های هم شبکه',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: shared ? colors.primary : colors.textSecondary,
                 ),

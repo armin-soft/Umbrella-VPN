@@ -72,7 +72,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
         if (!hasPermission) error("missing vpn permission")
 
         val builder = Builder()
-            .setSession("Umbrella VPN")
+            .setSession("فیلترشکن آمبرلا")
             .setMtu(options.mtu)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

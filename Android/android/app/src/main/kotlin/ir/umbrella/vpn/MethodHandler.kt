@@ -25,6 +25,7 @@ import com.hiddify.core.api.v2.hcore.ParseRequest
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import ir.umbrella.vpn.bg.BoxService
+import ir.umbrella.vpn.bg.ServiceNotification
 import ir.umbrella.vpn.constant.PerAppProxyMode
 import ir.umbrella.vpn.constant.ServiceMode
 import ir.umbrella.vpn.constant.Status
@@ -110,6 +111,28 @@ class MethodHandler(
             }
             "stopSmsUserConsent" -> result.answerNow(call.method) {
                 activity.stopSmsUserConsent()
+                true
+            }
+            "setNotificationsEnabled" -> result.answerNow(call.method) {
+                Settings.notificationsEnabled = call.argument<Boolean>("enabled") ?: true
+                true
+            }
+            "updateConnectedNotification" -> result.answerNow(call.method) {
+                val title = call.argument<String>("title") ?: ""
+                val body = call.argument<String>("body") ?: ""
+                val alert = call.argument<Boolean>("alert") ?: false
+                ServiceNotification.updateConnectedNotification(title, body, alert)
+                true
+            }
+            "showTrayBalloon" -> result.answerNow(call.method) {
+                val title = call.argument<String>("title") ?: ""
+                val body = call.argument<String>("body") ?: ""
+                val warning = call.argument<Boolean>("warning") ?: false
+                if (!warning && title == activity.getString(R.string.status_connected_title)) {
+                    ServiceNotification.updateConnectedNotification(title, body, alert = true)
+                } else {
+                    ServiceNotification.showStandaloneBalloon(activity, title, body, warning)
+                }
                 true
             }
             else -> result.notImplemented()
@@ -230,7 +253,7 @@ class MethodHandler(
     private suspend fun handleStartCore(call: MethodCall): Map<String, Any> {
         val configPath = call.argument<String>("configPath") ?: error("missing configPath")
         val settingsJson = call.argument<String>("settingsJson") ?: ""
-        val profileName = call.argument<String>("profileName") ?: "آمبرلا"
+        val profileName = call.argument<String>("profileName") ?: "فیلترشکن آمبرلا"
         val mode = call.argument<String>("serviceMode") ?: ServiceMode.VPN
         val normalizedMode = if (mode == ServiceMode.PROXY) ServiceMode.PROXY else ServiceMode.VPN
 
@@ -255,6 +278,8 @@ class MethodHandler(
         }
 
         val modeChanged = Settings.serviceMode != normalizedMode
+        ServiceNotification.resetSessionState()
+        ServiceNotification.cancelStandaloneBalloon()
         BoxService.lastStartError = null
         Settings.serviceMode = normalizedMode
         Settings.activeConfigPath = configPath

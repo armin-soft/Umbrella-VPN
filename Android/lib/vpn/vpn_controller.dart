@@ -423,7 +423,7 @@ class VpnController extends ChangeNotifier {
       level: 'warning',
     );
     await _failAndCleanup(
-      message.isNotEmpty ? message : 'سرویس VPN توسط سیستم متوقف شد.',
+      message.isNotEmpty ? message : 'سرویس وی پی ان توسط سیستم متوقف شد.',
     );
   }
 
@@ -435,6 +435,16 @@ class VpnController extends ChangeNotifier {
   /// پینگ زنده سرور متصل، روی همان اتصال باز سنجیده می شود.
   int _livePing = 0;
   int get livePing => _livePing;
+  int _lastNotifiedPingMs = 0;
+
+  void _syncConnectedNotificationPing() {
+    if (_status != VpnStatus.connected) return;
+    final int live = activePingMs;
+    if (live > 0 && live != _lastNotifiedPingMs) {
+      _lastNotifiedPingMs = live;
+      unawaited(_tray.syncConnectedNotification(body: 'پینگ ${Fa.ms(live)}'));
+    }
+  }
 
   /// سرعت اندازه گیری شده روی سرور متصل (بایت بر ثانیه) و زمان سنجش.
   double _liveSpeed = 0;
@@ -1045,6 +1055,10 @@ class VpnController extends ChangeNotifier {
     if (runtimeChanged) {
       _scheduleRuntimePrewarm();
     }
+    if (previous.notificationsEnabled != settings.notificationsEnabled) {
+      _tray.notificationsEnabled = settings.notificationsEnabled;
+      unawaited(_native.setNotificationsEnabled(settings.notificationsEnabled));
+    }
     final bool traySpeedChanged =
         previous.showSpeedInTray != settings.showSpeedInTray;
     if (traySpeedChanged && _status == VpnStatus.connected) {
@@ -1324,7 +1338,7 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(
           ok: false,
           message:
-              'قواعد برنامه فعال است؛ حالت سرویس را روی تونل کامل VPN بگذارید یا قواعد را غیرفعال کنید.');
+              'قواعد برنامه فعال است؛ حالت سرویس را روی تونل کامل وی پی ان بگذارید یا قواعد را غیرفعال کنید.');
     }
     if (_sessionNodes.isEmpty) {
       return const ConnectOutcome(
@@ -1898,14 +1912,14 @@ class VpnController extends ChangeNotifier {
           '${_geo.flagEmojiFreeLabel.isEmpty ? '' : ' | ${_geo.flagEmojiFreeLabel}'}',
         );
       }
+      final int shownPing = activePingMs;
+      _lastNotifiedPingMs = shownPing > 0 ? shownPing : 0;
+      final String connectedBody =
+          shownPing > 0 ? 'پینگ ${Fa.ms(shownPing)}' : 'اتصال امن برقرار است';
       if (_settings.notificationsEnabled) {
-        final int shownPing = activePingMs;
-        unawaited(
-          _tray.balloon(
-            'به آمبرلا متصل شد',
-            shownPing > 0 ? 'پینگ ${Fa.ms(shownPing)}' : 'اتصال امن برقرار است',
-          ),
-        );
+        unawaited(_tray.balloon('به آمبرلا متصل شد', connectedBody));
+      } else {
+        unawaited(_tray.syncConnectedNotification(body: connectedBody));
       }
 
       // خواندن غیرمسدودکننده آی پی و موقعیت خروجی در پس زمینه (ابتدا از ipinfo
@@ -2752,7 +2766,7 @@ class VpnController extends ChangeNotifier {
     final Map<String, dynamic> started = await _native.startCore(
       configPath: compiledConfig.path,
       settingsJson: settingsPayload,
-      profileName: _activeNode?.name ?? AppConfig.appName,
+      profileName: AppConfig.appName,
       serviceMode: mode,
     );
     final bool ok = JsonX.boolean(started['ok']);
@@ -2761,7 +2775,7 @@ class VpnController extends ChangeNotifier {
     if (!ok) {
       if (errorCode == 'vpn_permission_denied') {
         _log.add(
-          'دسترسی ساخت تونل VPN در اندروید توسط کاربر تایید نشد.',
+          'دسترسی ساخت تونل وی پی ان در اندروید توسط کاربر تایید نشد.',
           level: 'warning',
         );
         onRequireElevation?.call();
@@ -2777,7 +2791,7 @@ class VpnController extends ChangeNotifier {
       return false;
     }
     _androidServiceRunning = true;
-    _log.add('سرویس هسته آمبرلا در حالت ${plan.tun ? 'VPN' : 'پروکسی'} اجرا شد.');
+    _log.add('سرویس هسته آمبرلا در حالت ${plan.tun ? 'تونل کامل' : 'پروکسی'} اجرا شد.');
     return true;
   }
 
@@ -2858,7 +2872,7 @@ class VpnController extends ChangeNotifier {
         LogDetail(
           title: 'تنظیمات جلسه',
           text:
-              'حالت اتصال: ${plan.tun ? 'تونل VPN اندروید' : 'پروکسی محلی'}${plan.proxyPort > 0 ? '\nپورت محلی: ${Fa.num(plan.proxyPort)}' : ''}',
+              'حالت اتصال: ${plan.tun ? 'تونل وی پی ان اندروید' : 'پروکسی محلی'}${plan.proxyPort > 0 ? '\nپورت محلی: ${Fa.num(plan.proxyPort)}' : ''}',
         ),
     ];
   }
@@ -2965,8 +2979,8 @@ class VpnController extends ChangeNotifier {
           'سرور بعدی امتحان می شود.';
     }
     if (text.contains('permission') || text.contains('access is denied')) {
-      return 'سیستم اجازه اجرای سرویس VPN یا دسترسی به فایل ها را نداد؛ '
-          'تایید اتصال VPN در اندروید را بررسی کنید.';
+      return 'سیستم اجازه اجرای سرویس وی پی ان یا دسترسی به فایل ها را نداد؛ '
+          'تایید اتصال وی پی ان در اندروید را بررسی کنید.';
     }
     return '';
   }
@@ -3406,6 +3420,7 @@ class VpnController extends ChangeNotifier {
       _livePing = delay;
       changed = true;
     }
+    _syncConnectedNotificationPing();
     // وقتی خود هسته روی گره سریع تر سوییچ کرد، آی پی خروجی جدیدش بدون درخواست
     // اضافه در رابط کاربری هم به روز می شود.
     final CoreExitIpInfo? coreIp = snapshot.exitIpInfo;
@@ -3450,6 +3465,7 @@ class VpnController extends ChangeNotifier {
     final int ms = await link.fetch(TunnelProbe.probeUrl);
     if (ms > 0) {
       _livePing = ms;
+      _syncConnectedNotificationPing();
       _notify();
     }
   }
@@ -3466,6 +3482,7 @@ class VpnController extends ChangeNotifier {
     );
     if (ms > 0) {
       _livePing = ms;
+      _syncConnectedNotificationPing();
       _notify();
     }
   }
@@ -3749,6 +3766,7 @@ class VpnController extends ChangeNotifier {
     _stats = TunnelStats.empty;
     _tunnelVerified = false;
     _exitIp = '';
+    _lastNotifiedPingMs = 0;
     _sameIpWarnedEpoch = -1;
     _setStatus(VpnStatus.disconnected, 'اتصال قطع شد.');
     if (!silent) {
@@ -3862,6 +3880,7 @@ class VpnController extends ChangeNotifier {
     _connectedAt = null;
     _activeCoreLogPath = '';
     _tunnelVerified = false;
+    _lastNotifiedPingMs = 0;
     _stats = TunnelStats.empty;
     _setStatus(VpnStatus.failed, reason);
     await _sound.play('error');

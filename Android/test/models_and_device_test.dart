@@ -14,7 +14,7 @@ void main() {
       final DeviceProfile profile = DeviceProfile.fromNative(<String, dynamic>{
         'hostname': 'Pixel 8',
         'username': 'Google Pixel 8',
-        'os': 'اندروید 15 (API 35)',
+        'os': 'اندروید ۱۵ (سطح ۳۵)',
         'osDisplayVersion': '15',
         'osBuild': 35,
         'arch': 'arm64-v8a',

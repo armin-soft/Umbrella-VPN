@@ -242,7 +242,9 @@ class _AccountPageState extends State<AccountPage> {
                   decoration: const InputDecoration(labelText: 'مدت (روز)'),
                   onChanged: (_) => update(() {})),
                 const SizedBox(height: AppMetrics.space3),
-                Text('حجم مجاز: ${Fa.num(terms.minGb)} تا ${Fa.num(terms.maxGb)} گیگابایت'),
+                Text(
+                  'حجم مجاز: ${Fa.num(terms.minGb).replaceAll('.', '٫')} تا ${Fa.num(terms.maxGb).replaceAll('.', '٫')} گیگابایت',
+                ),
                 TextField(controller: gb, keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'حجم (گیگابایت)'),
                   onChanged: (_) => update(() {})),

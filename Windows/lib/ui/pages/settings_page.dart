@@ -826,7 +826,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const _Section(
           icon: Icons.alt_route_rounded,
           title: 'عبور مستقیم سایت ها',
-          subtitle: 'سایت های انتخاب شده خارج از VPN، همگام با ربات تلگرام',
+          subtitle: 'سایت های انتخاب شده خارج از وی پی ان، همگام با ربات تلگرام',
           children: <Widget>[BypassControlCard()],
         ),
       ],

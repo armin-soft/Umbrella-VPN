@@ -99,7 +99,7 @@ class _FakeNative implements NativeBridge {
   Future<DeviceProfile> deviceInfo() async => DeviceProfile(
         hostname: 'Umbrella Phone',
         username: 'Pixel 8',
-        os: 'اندروید ۱۵ (API 35)',
+        os: 'اندروید ۱۵ (سطح ۳۵)',
         osDisplayVersion: '15',
         osBuild: 35,
         arch: 'arm64-v8a',
@@ -862,6 +862,22 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(find.text('اتصال'), findsWidgets);
           expect(find.text('تنظیمات اتصال'), findsOneWidget);
+          expect(find.textContaining('اشخاص ثالث'), findsNothing);
+          expect(find.textContaining('سلب مسئولیت'), findsNothing);
+
+          final Finder subChipFinder =
+              find.byKey(const ValueKey<String>('connection-profile-user-sub'));
+          expect(subChipFinder, findsOneWidget);
+          final ChoiceChip subChip = tester.widget<ChoiceChip>(subChipFinder);
+          expect(subChip.padding, isNull);
+          expect(subChip.visualDensity, isNull);
+          expect(subChip.materialTapTargetSize, isNull);
+          if (size == const Size(1024, 768)) {
+            expect(
+              tester.getSize(subChipFinder).height,
+              greaterThanOrEqualTo(36.0),
+            );
+          }
         }
 
         await pumpViewport(const Size(360, 640));
@@ -1752,6 +1768,141 @@ void main() {
       ).readAsStringSync();
       expect(manifestSrc, isNot(contains('android.permission.READ_SMS')));
       expect(manifestSrc, isNot(contains('android.permission.RECEIVE_SMS')));
+    });
+
+    test('Android connected notification matches Windows logo/copy and Persian formatting', () async {
+      final String root = Directory.current.path;
+
+      // ۱. وجود تصاویر لوگوی نوتیفیکیشن استخراج شده از آیکون های ویندوز
+      for (final String name in <String>[
+        'ic_notif_connected.png',
+        'ic_notif_connecting.png',
+        'ic_notif_failed.png',
+        'ic_notif_umbrella.png',
+      ]) {
+        final File icon = File(
+          '$root/android/app/src/main/res/drawable-nodpi/$name',
+        );
+        expect(icon.existsSync(), isTrue, reason: '$name باید در drawable-nodpi موجود باشد');
+        expect(icon.lengthSync(), greaterThan(1000));
+      }
+
+      // ۲. بررسی ساختار نوتیفیکیشن بومی اندروید (هماهنگ با بالون ویندوز و بدون افشای سرور یا سرعت انگلیسی)
+      final String notifKt = File(
+        '$root/android/app/src/main/kotlin/ir/umbrella/vpn/bg/ServiceNotification.kt',
+      ).readAsStringSync();
+      expect(notifKt, contains('ic_notif_connected'));
+      expect(notifKt, contains('ic_notif_connecting'));
+      expect(notifKt, contains('ic_notif_failed'));
+      expect(notifKt, contains('updateConnectedNotification'));
+      expect(notifKt, contains('showStandaloneBalloon'));
+      expect(notifKt, contains('sanitizePersian'));
+      expect(notifKt, contains('IMPORTANCE_HIGH'));
+      expect(notifKt, isNot(contains('current_profile')));
+      expect(notifKt, isNot(contains('current_outbound')));
+      expect(notifKt, isNot(contains('KB/s')));
+
+      final String stringsXml = File(
+        '$root/android/app/src/main/res/values/strings.xml',
+      ).readAsStringSync();
+      expect(stringsXml, contains('<string name="status_connected_title">به آمبرلا متصل شد</string>'));
+      expect(stringsXml, contains('<string name="status_started">اتصال امن برقرار است</string>'));
+      expect(stringsXml, isNot(contains('\u200c')));
+      expect(stringsXml, isNot(contains('VPN')));
+
+      final String vpnServiceKt = File(
+        '$root/android/app/src/main/kotlin/ir/umbrella/vpn/bg/VPNService.kt',
+      ).readAsStringSync();
+      expect(vpnServiceKt, contains('.setSession("فیلترشکن آمبرلا")'));
+
+      final String vpnDart = File(
+        '$root/lib/vpn/vpn_controller.dart',
+      ).readAsStringSync();
+      expect(vpnDart, contains('profileName: AppConfig.appName'));
+      expect(vpnDart, isNot(contains('profileName: _activeNode?.name')));
+      expect(vpnDart, contains('_syncConnectedNotificationPing'));
+
+      // ۳. بررسی ارسال صحیح بالون و آپدیت زنده پینگ به کانال بومی
+      const MethodChannel channel = MethodChannel('ir.umbrella.app/native');
+      final List<MethodCall> calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      final TrayService tray = TrayService(NativeBridge());
+      await tray.init();
+      await tray.balloon('به آمبرلا متصل شد', 'پینگ 145 میلی ثانیه');
+      await tray.syncConnectedNotification(body: 'پینگ 98 میلی ثانیه');
+
+      tray.notificationsEnabled = false;
+      await tray.balloon('تغییر مسیر اتصال', 'مسیر جایگزین فعال شد');
+
+      final MethodCall balloonCall = calls.firstWhere(
+        (MethodCall c) => c.method == 'showTrayBalloon',
+      );
+      final Map<Object?, Object?> balloonArgs =
+          balloonCall.arguments as Map<Object?, Object?>;
+      expect(balloonArgs['title'], 'به آمبرلا متصل شد');
+      expect(balloonArgs['body'], 'پینگ ۱۴۵ میلی ثانیه');
+      expect(balloonArgs['warning'], isFalse);
+
+      final MethodCall updateCall = calls.firstWhere(
+        (MethodCall c) => c.method == 'updateConnectedNotification',
+      );
+      final Map<Object?, Object?> updateArgs =
+          updateCall.arguments as Map<Object?, Object?>;
+      expect(updateArgs['title'], 'به آمبرلا متصل شد');
+      expect(updateArgs['body'], 'پینگ ۹۸ میلی ثانیه');
+      expect(updateArgs['alert'], isFalse);
+
+      expect(
+        calls.where((MethodCall c) => c.method == 'showTrayBalloon').length,
+        1,
+      );
+
+      // ۴. نبود نیم فاصله و نبود سلب مسئولیت اشخاص ثالث در رابط کاربری و مدل ها
+      final String connectDart = File(
+        '$root/lib/ui/pages/connect_page.dart',
+      ).readAsStringSync();
+      final String emergencyDart = File(
+        '$root/lib/ui/widgets/emergency_list.dart',
+      ).readAsStringSync();
+      expect(connectDart, isNot(contains('اشخاص ثالث')));
+      expect(connectDart, isNot(contains('سلب مسئولیت')));
+      expect(connectDart, isNot(contains('denseChips')));
+      expect(connectDart, isNot(contains('MaterialTapTargetSize.shrinkWrap')));
+      expect(emergencyDart, isNot(contains('اشخاص ثالث')));
+
+      for (final Directory dir in <Directory>[
+        Directory('$root/lib/ui'),
+        Directory('$root/lib/vpn'),
+        Directory('$root/lib/state'),
+      ]) {
+        for (final File f in dir.listSync(recursive: true).whereType<File>()) {
+          if (!f.path.endsWith('.dart')) continue;
+          final String text = f.readAsStringSync();
+          expect(
+            text.contains('\u200c'),
+            isFalse,
+            reason: '${f.path} نباید نیم فاصله داشته باشد',
+          );
+        }
+      }
+
+      expect(
+        AppNotification.summarizeTitle('گزارش شبانه 1405/09/01'),
+        'گزارش شبانه',
+      );
+      expect(
+        AppNotification.summarizeBody('حجم مصرفی شما 12.5 گیگابایت است'),
+        contains('۱۲.۵'),
+      );
     });
   });
 }

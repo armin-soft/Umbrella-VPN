@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/persian.dart';
 import '../../models/models.dart';
 import '../../core/theme.dart';
 import '../../state/auth_controller.dart';
@@ -51,7 +52,7 @@ class _BypassControlCardState extends State<BypassControlCard> {
     final filter = auth.filter;
     final bool editable = auth.signedIn && !auth.savingFilter;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-      const Text('سایت های این فهرست خارج از VPN باز می شوند و نشانی واقعی شما برای آن ها قابل مشاهده است. قوانین مسدودسازی اولویت دارند.'),
+      const Text('سایت های این فهرست خارج از وی پی ان باز می شوند و نشانی واقعی شما برای آن ها قابل مشاهده است. قوانین مسدودسازی اولویت دارند.'),
       SwitchListTile(
         title: const Text('سایت های ایرانی'),
         subtitle: const Text('دامنه های ایرانی و مجموعه مسیرهای ایران را مستقیم باز کن'),
@@ -65,7 +66,7 @@ class _BypassControlCardState extends State<BypassControlCard> {
       const SizedBox(height: AppMetrics.space2),
       OutlinedButton.icon(onPressed: editable ? withUiClick(context, _add) : null,
         icon: const Icon(Icons.add), label: const Text('افزودن سایت')),
-      Text('فهرست مسیر مستقیم (${filter.bypassDomains.length} از ۲۰۰)'),
+      Text(Fa.num('فهرست مسیر مستقیم (${filter.bypassDomains.length} از ۲۰۰)')),
       if (filter.bypassDomains.isEmpty) const Text('هنوز سایتی اضافه نشده است.'),
       for (final domain in filter.bypassDomains)
         ListTile(dense: true, title: Text(domain),

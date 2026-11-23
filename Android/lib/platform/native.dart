@@ -208,6 +208,46 @@ class NativeBridge {
     await _invoke<bool>('stopSmsUserConsent');
   }
 
+  /// هماهنگ سازی وضعیت فعال بودن اعلان های سیستم در سرویس بومی اندروید.
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    await _invoke<bool>(
+      'setNotificationsEnabled',
+      <String, dynamic>{'enabled': enabled},
+    );
+  }
+
+  /// به روزرسانی اعلان وضعیت متصل در نوار اعلان بالای گوشی و تبلت.
+  Future<void> updateConnectedNotification({
+    required String title,
+    required String body,
+    bool alert = false,
+  }) async {
+    await _invoke<bool>(
+      'updateConnectedNotification',
+      <String, dynamic>{
+        'title': title,
+        'body': body,
+        'alert': alert,
+      },
+    );
+  }
+
+  /// نمایش اعلان متصل، تغییر مسیر یا خطا با الگوی یکسان با ویندوز.
+  Future<void> showTrayBalloon({
+    required String title,
+    required String body,
+    bool warning = false,
+  }) async {
+    await _invoke<bool>(
+      'showTrayBalloon',
+      <String, dynamic>{
+        'title': title,
+        'body': body,
+        'warning': warning,
+      },
+    );
+  }
+
   /// جریان کدهای تایید پیامکی استخراج شده در سمت اندروید.
   Stream<String> smsCodeEvents() {
     return serviceEvents()
@@ -541,7 +581,7 @@ class NativeBridge {
       hostname: deviceName,
       username: '$manufacturer $model'.trim(),
       os: osVersion.isNotEmpty
-          ? 'اندروید $osVersion (API $sdkInt)'
+          ? 'اندروید ${Fa.num(osVersion)} (سطح ${Fa.num(sdkInt)})'
           : Platform.operatingSystemVersion,
       osDisplayVersion: osVersion,
       osBuild: sdkInt,

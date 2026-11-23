@@ -91,9 +91,15 @@ void main() {
     expect(connect, contains("ValueKey<String>('connection-profile-emergency')"));
     expect(connect, contains('Icons.emergency_rounded'));
     expect(connect, contains("const Text('اضطراری')"));
+    expect(connect, isNot(contains('اشخاص ثالث')));
+    expect(connect, isNot(contains('سلب مسئولیت')));
     expect(
       connect,
-      contains('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند'),
+      isNot(contains('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند')),
+    );
+    expect(
+      File('lib/ui/widgets/emergency_list.dart').readAsStringSync(),
+      isNot(contains('اشخاص ثالث')),
     );
     expect(connect, isNot(contains('emergency_list.dart')));
     expect(connect, isNot(contains('showEmergencyList')));

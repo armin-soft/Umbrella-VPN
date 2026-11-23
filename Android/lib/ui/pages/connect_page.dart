@@ -582,7 +582,6 @@ class _ConnectPageState extends State<ConnectPage> {
           Widget buildControls({
             required double buttonHeight,
             required double secondaryHeight,
-            required bool denseChips,
             required double gapAfterPrimary,
             required double gapAfterChips,
           }) {
@@ -632,8 +631,8 @@ class _ConnectPageState extends State<ConnectPage> {
                 SizedBox(height: gapAfterPrimary),
                 Wrap(
                   alignment: WrapAlignment.center,
-                  spacing: denseChips ? AppMetrics.space1 + 2 : AppMetrics.space2,
-                  runSpacing: denseChips ? AppMetrics.space1 : AppMetrics.space2,
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space2,
                   children: <Widget>[
                     for (final ({String id, String title, IconData icon}) profile
                         in <({String id, String title, IconData icon})>[
@@ -662,28 +661,8 @@ class _ConnectPageState extends State<ConnectPage> {
                         key: ValueKey<String>(
                           'connection-profile-${profile.id}',
                         ),
-                        avatar: Icon(
-                          profile.icon,
-                          size: denseChips
-                              ? AppMetrics.iconXs
-                              : AppMetrics.iconSm,
-                        ),
+                        avatar: Icon(profile.icon, size: AppMetrics.iconSm),
                         label: Text(profile.title),
-                        labelPadding: denseChips
-                            ? const EdgeInsets.symmetric(horizontal: 4)
-                            : null,
-                        padding: denseChips
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              )
-                            : null,
-                        visualDensity: denseChips
-                            ? const VisualDensity(horizontal: -2, vertical: -2)
-                            : VisualDensity.standard,
-                        materialTapTargetSize: denseChips
-                            ? MaterialTapTargetSize.shrinkWrap
-                            : MaterialTapTargetSize.padded,
                         showCheckmark: false,
                         selected: _profile == profile.id,
                         onSelected: status.busy
@@ -695,28 +674,11 @@ class _ConnectPageState extends State<ConnectPage> {
                         key: const ValueKey<String>(
                           'connection-profile-emergency',
                         ),
-                        avatar: Icon(
+                        avatar: const Icon(
                           Icons.emergency_rounded,
-                          size: denseChips
-                              ? AppMetrics.iconXs
-                              : AppMetrics.iconSm,
+                          size: AppMetrics.iconSm,
                         ),
                         label: const Text('اضطراری'),
-                        labelPadding: denseChips
-                            ? const EdgeInsets.symmetric(horizontal: 4)
-                            : null,
-                        padding: denseChips
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              )
-                            : null,
-                        visualDensity: denseChips
-                            ? const VisualDensity(horizontal: -2, vertical: -2)
-                            : VisualDensity.standard,
-                        materialTapTargetSize: denseChips
-                            ? MaterialTapTargetSize.shrinkWrap
-                            : MaterialTapTargetSize.padded,
                         selected: _profile == 'emergency',
                         showCheckmark: false,
                         onSelected: status.busy
@@ -725,18 +687,6 @@ class _ConnectPageState extends State<ConnectPage> {
                       ),
                   ],
                 ),
-                if (subs.emergencyEnabled && _profile == 'emergency')
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppMetrics.space1),
-                    child: Text(
-                      'مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.warning),
-                    ),
-                  ),
                 if (_switchPending(vpn))
                   Padding(
                     padding: const EdgeInsets.only(top: AppMetrics.space1),
@@ -759,7 +709,6 @@ class _ConnectPageState extends State<ConnectPage> {
                     ),
                     style: OutlinedButton.styleFrom(
                       minimumSize: Size(0, secondaryHeight),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     onPressed: withUiClick(context, _openConnectionSettings),
                     icon: const Icon(Icons.tune_rounded, size: AppMetrics.iconSm),
@@ -835,8 +784,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                         .clamp(220.0, AppMetrics.controlMaxWidth),
                                     child: buildControls(
                                       buttonHeight: AppMetrics.controlHeightSmall,
-                                      secondaryHeight: 38,
-                                      denseChips: true,
+                                      secondaryHeight: AppMetrics.controlHeightSmall,
                                       gapAfterPrimary: AppMetrics.space2,
                                       gapAfterChips: AppMetrics.space2,
                                     ),
@@ -850,43 +798,39 @@ class _ConnectPageState extends State<ConnectPage> {
 
                       final bool desktopSized =
                           cH >= 480 && cW >= 540;
-                      final double buttonHeight = desktopSized
-                          ? AppMetrics.controlHeightLarge
-                          : (cH < 340 ? 44 : 48);
-                      final double secondaryHeight =
-                          desktopSized ? AppMetrics.controlHeightSmall : 38;
-                      final bool denseChips = !desktopSized;
+                      final double buttonHeight = cH < 340
+                          ? AppMetrics.controlHeight
+                          : AppMetrics.controlHeightLarge;
+                      const double secondaryHeight =
+                          AppMetrics.controlHeightSmall;
                       final double gapStatus =
                           desktopSized ? AppMetrics.space3 : AppMetrics.space2;
                       final double gapButton =
                           desktopSized ? AppMetrics.space5 : AppMetrics.space3;
                       final double gapPrimary =
-                          desktopSized ? AppMetrics.space4 : AppMetrics.space2;
+                          desktopSized ? AppMetrics.space4 : AppMetrics.space3;
                       final double gapChips =
                           desktopSized ? AppMetrics.space3 : AppMetrics.space2;
 
                       // برآورد ارتفاع متن ها و دکمه ها تا فضای باقیمانده دقیقاً
                       // به گنبد وضعیت برسد و هیچ اسکرولی ایجاد نشود.
-                      final bool chipsTwoRows = cW < 400 ||
-                          (subs.emergencyEnabled && cW < 480);
+                      final bool chipsTwoRows = cW < 440 ||
+                          (subs.emergencyEnabled && cW < 520);
                       final double reserved =
                           (desktopSized ? 74 : 58) +
                           buttonHeight +
-                          (chipsTwoRows ? (denseChips ? 72 : 84) : (denseChips ? 36 : 42)) +
+                          (chipsTwoRows ? 104 : 48) +
                           secondaryHeight +
                           gapStatus +
                           gapButton +
                           gapPrimary +
                           gapChips +
                           (!account.canConnect ? 24 : 0) +
-                          ((subs.emergencyEnabled && _profile == 'emergency')
-                              ? 36
-                              : 0) +
                           (_switchPending(vpn) ? 24 : 0) +
                           16;
                       final double maxOrb = desktopSized
                           ? (cH < 560 ? 250 : (cH < 640 ? 290 : 330))
-                          : 230;
+                          : 220;
                       final double orb = (cH - reserved)
                           .clamp(84.0, maxOrb)
                           .clamp(84.0, (cW - 16).clamp(84.0, 330.0));
@@ -913,7 +857,6 @@ class _ConnectPageState extends State<ConnectPage> {
                                   buildControls(
                                     buttonHeight: buttonHeight,
                                     secondaryHeight: secondaryHeight,
-                                    denseChips: denseChips,
                                     gapAfterPrimary: gapPrimary,
                                     gapAfterChips: gapChips,
                                   ),

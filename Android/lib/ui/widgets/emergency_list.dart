@@ -9,9 +9,10 @@ void showEmergencyList(BuildContext context, List<VpnNode> nodes, int unavailabl
   showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
     title: const Text('فهرست مسیرهای اضطراری'),
     content: SizedBox(width: AppMetrics.dialogMaxWidth, height: MediaQuery.sizeOf(dialogContext).height * 0.55, child: Column(children: <Widget>[
-      Text('مسیرهای عمومی اشخاص ثالث؛ حریم خصوصی و دسترس پذیری تضمین نمی شود. '
-        '${unavailable > 0 ? 'برخی منابع دریافت نشدند یا قالب آن ها پشتیبانی نمی شود.' : ''}'),
-      const SizedBox(height: AppMetrics.space3),
+      if (unavailable > 0) ...<Widget>[
+        const Text('برخی منابع دریافت نشدند یا قالب آن ها پشتیبانی نمی شود.'),
+        const SizedBox(height: AppMetrics.space3),
+      ],
       Expanded(child: nodes.isEmpty ? const Center(child: Text('مسیر سازگاری دریافت نشده است.'))
         : ListView.builder(itemCount: nodes.length, itemBuilder: (itemContext, index) {
           final node = nodes[index];

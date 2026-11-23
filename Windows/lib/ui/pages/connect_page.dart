@@ -622,12 +622,6 @@ class _ConnectPageState extends State<ConnectPage> {
                               ),
                           ],
                         ),
-                        if (subs.emergencyEnabled && _profile == 'emergency')
-                          Padding(
-                            padding: const EdgeInsets.only(top: AppMetrics.space2),
-                            child: Text('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
-                              textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.warning)),
-                          ),
                         if (_switchPending(vpn))
                           Padding(
                             padding: const EdgeInsets.only(top: AppMetrics.space2),

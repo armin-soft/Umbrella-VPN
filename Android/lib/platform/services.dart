@@ -203,7 +203,6 @@ class WindowService {
 class TrayService {
   TrayService(this._native);
 
-  // ignore: unused_field
   final NativeBridge _native;
   bool notificationsEnabled = true;
   bool showSpeedInTray = true;
@@ -212,19 +211,42 @@ class TrayService {
   Future<void> Function()? onOpen;
   Future<void> Function()? onQuit;
 
-  Future<void> init() async {}
+  Future<void> init() async {
+    await _native.setNotificationsEnabled(notificationsEnabled);
+  }
 
   Future<void> update({
     required String state,
     required String tooltip,
     required bool connected,
-  }) async {}
+  }) async {
+    // اعلان نوار بالای اندروید دقیقاً هم تراز ویندوز است: عنوان «به آمبرلا متصل شد»
+    // و متن پینگ یا وضعیت امن، بنابراین با برچسب سرعت بازنویسی نمی شود.
+  }
+
+  Future<void> syncConnectedNotification({required String body}) async {
+    final String cleanBody = Fa.num(body);
+    await _native.updateConnectedNotification(
+      title: 'به آمبرلا متصل شد',
+      body: cleanBody,
+      alert: false,
+    );
+  }
 
   Future<void> balloon(String title, String body, {bool warning = false}) async {
+    final String cleanTitle = Fa.num(AppNotification.summarizeTitle(title, body));
+    final String cleanBody = Fa.num(
+      AppNotification.summarizeBody(body, title: title, maxChars: 105),
+    );
     if (!notificationsEnabled) return;
     AppLogger.instance.add(
-      body.isEmpty ? title : '$title: $body',
+      cleanBody.isEmpty ? cleanTitle : '$cleanTitle: $cleanBody',
       level: warning ? 'warning' : 'info',
+    );
+    await _native.showTrayBalloon(
+      title: cleanTitle,
+      body: cleanBody,
+      warning: warning,
     );
   }
 

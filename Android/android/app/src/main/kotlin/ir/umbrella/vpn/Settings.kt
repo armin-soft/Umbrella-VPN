@@ -44,8 +44,12 @@ object Settings {
         set(value) = prefs.edit().putString("active_settings_json", value).apply()
 
     var activeProfileName: String
-        get() = prefs.getString("active_profile_name", "آمبرلا") ?: "آمبرلا"
+        get() = prefs.getString("active_profile_name", "فیلترشکن آمبرلا") ?: "فیلترشکن آمبرلا"
         set(value) = prefs.edit().putString("active_profile_name", value).apply()
+
+    var notificationsEnabled: Boolean
+        get() = prefs.getBoolean("notifications_enabled", true)
+        set(value) = prefs.edit().putBoolean("notifications_enabled", value).apply()
 
     var serviceMode: String
         get() = prefs.getString("service_mode", ServiceMode.VPN) ?: ServiceMode.VPN

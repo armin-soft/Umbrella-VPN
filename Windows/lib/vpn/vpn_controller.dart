@@ -2984,7 +2984,7 @@ class VpnController extends ChangeNotifier {
       }
       final FileStat stat = await file.stat();
       final double mb = stat.size / (1024 * 1024);
-      return 'هست (${mb.toStringAsFixed(1)} مگابایت، آخرین تغییر: '
+      return 'هست (${Fa.num(mb.toStringAsFixed(1)).replaceAll('.', '٫')} مگابایت، آخرین تغییر: '
           '${Fa.dateTime(stat.modified)})';
     } on FileSystemException catch (error) {
       return 'وضعیت فایل خوانده نشد: ${error.message}';

@@ -101,7 +101,10 @@ Future<void> main(List<String> arguments) async {
     motion.pulseAmbient();
 
     final IpService ipService = IpService();
-    final TrayService tray = TrayService(native);
+    final TrayService tray = TrayService(native)
+      ..notificationsEnabled = settings.settings.notificationsEnabled
+      ..showSpeedInTray = settings.settings.showSpeedInTray;
+    await tray.init();
     final AuthController auth = AuthController(
       native: native,
       sound: sound,
@@ -187,6 +190,9 @@ Future<void> main(List<String> arguments) async {
     settings.addListener(() {
       vpn.updateSettings(settings.settings);
       power.setEnabled(settings.settings.batteryOptimization);
+      tray
+        ..notificationsEnabled = settings.settings.notificationsEnabled
+        ..showSpeedInTray = settings.settings.showSpeedInTray;
       auth
         ..soundEnabled = settings.settings.soundEnabled
         ..notificationsEnabled = settings.settings.notificationsEnabled;

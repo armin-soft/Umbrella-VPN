@@ -91,6 +91,9 @@ class SettingsController extends ChangeNotifier {
     if (Platform.isAndroid && _settings.startOnBoot) {
       unawaited(_native.setAutostart(true));
     }
+    if (Platform.isAndroid) {
+      unawaited(_native.setNotificationsEnabled(_settings.notificationsEnabled));
+    }
     await _restoreOrExpireDebugSession();
     notifyListeners();
   }
@@ -133,6 +136,9 @@ class SettingsController extends ChangeNotifier {
     }
     if (previous.startOnBoot != next.startOnBoot) {
       await _native.setAutostart(next.startOnBoot);
+    }
+    if (previous.notificationsEnabled != next.notificationsEnabled) {
+      await _native.setNotificationsEnabled(next.notificationsEnabled);
     }
     if (previous.perAppProxyMode != next.perAppProxyMode ||
         !_sameStrings(previous.perAppIncludePackages, next.perAppIncludePackages) ||

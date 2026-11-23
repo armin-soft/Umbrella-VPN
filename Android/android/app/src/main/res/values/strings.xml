@@ -3,9 +3,11 @@
     <string name="app_name">فیلترشکن آمبرلا</string>
     <string name="quick_toggle">اتصال سریع آمبرلا</string>
     <string name="service_channel_name">سرویس اتصال آمبرلا</string>
+    <string name="alerts_channel_name">اعلان های آمبرلا</string>
     <string name="status_starting">در حال راه اندازی هسته و ساخت تونل...</string>
-    <string name="status_started">اتصال امن آمبرلا برقرار است</string>
-    <string name="mode_vpn">تونل کامل VPN</string>
+    <string name="status_connected_title">به آمبرلا متصل شد</string>
+    <string name="status_started">اتصال امن برقرار است</string>
+    <string name="mode_vpn">تونل کامل وی پی ان</string>
     <string name="mode_proxy">سرویس پروکسی</string>
     <string name="stop">قطع اتصال</string>
 </resources>

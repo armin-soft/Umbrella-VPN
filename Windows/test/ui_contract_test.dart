@@ -1499,5 +1499,28 @@ void main() {
       expect(shell.contains('ExitPage('), isFalse);
       expect(nav.contains('exitIndex'), isFalse);
     });
+
+    test('۱۹. سلب مسئولیت اشخاص ثالث حذف شده و عبارات و اعداد فارسی بدون نیم فاصله اند', () {
+      final String connect = read('lib/ui/pages/connect_page.dart');
+      final String emergency = read('lib/ui/widgets/emergency_list.dart');
+      expect(connect.contains('اشخاص ثالث'), isFalse);
+      expect(connect.contains('سلب مسئولیت'), isFalse);
+      expect(emergency.contains('اشخاص ثالث'), isFalse);
+      expect(read('lib/ui/widgets/bypass_control.dart').contains('وی پی ان'), isTrue);
+      expect(read('lib/ui/pages/settings_page.dart').contains('وی پی ان'), isTrue);
+
+      for (final String dirName in <String>['lib/ui', 'lib/vpn', 'lib/state']) {
+        for (final FileSystemEntity ent
+            in Directory('$root/$dirName').listSync(recursive: true)) {
+          if (ent is! File || !ent.path.endsWith('.dart')) continue;
+          final String text = ent.readAsStringSync();
+          expect(
+            text.contains('\u200c'),
+            isFalse,
+            reason: '${ent.path} نباید نیم فاصله داشته باشد',
+          );
+        }
+      }
+    });
   });
 }
