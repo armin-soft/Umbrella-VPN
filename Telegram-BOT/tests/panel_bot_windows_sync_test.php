@@ -159,7 +159,7 @@ assertSync(($Synced['Expiration_Date'] ?? '') === 'J:2026-12-20', 'computes expi
 assertSync((float)($Synced['Total_Usage_GB'] ?? 0) === 60.0 && (float)($Synced['Remaining_Usage_GB'] ?? 0) === 47.5, 'syncs quota and remaining GB');
 assertSync(($Synced['WireGuard_PSK'] ?? '') === 'wg-psk' && ($Synced['ED_25519_Public_Key'] ?? '') === 'ed-pub', 'syncs all connection keys');
 assertSync(($Synced['Client_Status'] ?? '') === '✅فعال' && (int)($Synced['Server_Is_Active'] ?? 0) === 1 && (int)($Synced['Server_Enable'] ?? 0) === 1, 'marks active/enabled client active');
-assertSync(($Synced['Deactivation_Message'] ?? 'set') === null && ($Synced['Channel_Client_Disabled_At'] ?? 'set') === null, 'clears stale deactivation markers on reactivation');
+assertSync(array_key_exists('Deactivation_Message', $Synced) && $Synced['Deactivation_Message'] === null && array_key_exists('Channel_Client_Disabled_At', $Synced) && $Synced['Channel_Client_Disabled_At'] === null, 'clears stale deactivation markers on reactivation');
 assertSync((int)($Synced['Free_Plan_Claimed'] ?? 0) === 1, 'propagates App_Free_Claimed marker to bot user');
 assertSync(count(ServerClient::$UpdateCalls) === 1 && (ServerClient::$UpdateCalls[0][1]['telegram_id'] ?? 0) === 101, 'pushes missing telegram_id back to panel');
 
@@ -228,7 +228,7 @@ AppAccountRevocation::$Revoked = [];
 ServerClient::$GetResponse = ['StatusCode' => 404, 'Json' => null];
 $Deleted = Common::syncSubscriptionFromServer(Repository::$Users[404]);
 assertSync(AppAccountRevocation::$Revoked === ['uuid-deleted'], '404 triggers app revocation for deleted UUID');
-assertSync(($Deleted['Client_ID'] ?? 'x') === null && ($Deleted['WireGuard_PSK'] ?? 'x') === null, '404 wipes Client_ID and keys');
+assertSync(array_key_exists('Client_ID', $Deleted) && $Deleted['Client_ID'] === null && array_key_exists('WireGuard_PSK', $Deleted) && $Deleted['WireGuard_PSK'] === null, '404 wipes Client_ID and keys');
 assertSync(($Deleted['Client_Status'] ?? '') === '🚫حذف شده' && (int)($Deleted['Server_Is_Active'] ?? 1) === 0, '404 marks user deleted and inactive');
 
 // 5. Static contracts across PHP sync files.
