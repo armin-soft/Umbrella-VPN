@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -385,7 +386,7 @@ class NativeBridge {
           'method': method,
           'url': url,
           'headers': headers,
-          if (body.isNotEmpty) 'bodyBytes': Uint8List.fromList(body.codeUnits),
+          if (body.isNotEmpty) 'bodyBytes': Uint8List.fromList(utf8.encode(body)),
           'timeoutMs': timeoutMs,
           if (proxyHost != null && proxyHost.isNotEmpty) 'proxyHost': proxyHost,
           if (proxyPort > 0) 'proxyPort': proxyPort,

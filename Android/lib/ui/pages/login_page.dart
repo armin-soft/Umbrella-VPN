@@ -271,9 +271,9 @@ class _LoginPageState extends State<LoginPage> {
                 fontWeight: FontWeight.w700,
               ),
           inputFormatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹+ ]')),
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩+\- ]')),
             const PersianDigitsFormatter(),
-            LengthLimitingTextInputFormatter(14),
+            LengthLimitingTextInputFormatter(18),
           ],
           decoration: const InputDecoration(
             hintText: '۰۹۱۲۳۴۵۶۷۸۹',
@@ -471,7 +471,7 @@ class _LoginPageState extends State<LoginPage> {
           textAlign: TextAlign.center,
           keyboardType: TextInputType.number,
           inputFormatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹]')),
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]')),
             const PersianDigitsFormatter(),
             LengthLimitingTextInputFormatter(6),
           ],

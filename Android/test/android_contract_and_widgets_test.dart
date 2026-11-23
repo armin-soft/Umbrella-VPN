@@ -2,11 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
+import 'package:umbrella_vpn/core/ui_formatters.dart';
+import 'package:umbrella_vpn/data/gateway_client.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/native.dart';
 import 'package:umbrella_vpn/platform/services.dart';
@@ -17,6 +22,7 @@ import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/ui/pages/device_page.dart';
 import 'package:umbrella_vpn/ui/pages/exit_page.dart';
 import 'package:umbrella_vpn/ui/pages/landing_page.dart';
+import 'package:umbrella_vpn/ui/pages/login_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
@@ -242,6 +248,119 @@ void main() {
         RegExp(r'^[0-9a-f]{64}$').hasMatch(core['sha256'] as String),
         isTrue,
       );
+    });
+
+    test('NativeBridge.performHttpRequest sends UTF-8 JSON bodies without truncating Persian chars',
+        () async {
+      const MethodChannel channel = MethodChannel('ir.umbrella.app/native');
+      Uint8List? capturedBodyBytes;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        if (call.method == 'httpRequest') {
+          final Map<Object?, Object?> args =
+              call.arguments as Map<Object?, Object?>;
+          capturedBodyBytes = args['bodyBytes'] as Uint8List?;
+          return <String, Object?>{
+            'statusCode': 200,
+            'headers': <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+            'bodyBytes': Uint8List.fromList(utf8.encode('{"ok":true}')),
+          };
+        }
+        return null;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      final String requestBody = jsonEncode(<String, dynamic>{
+        'phone': '09123456789',
+        'device_id': '0123456789abcdef0123456789abcdef',
+        'device_name': 'دستگاه اندروید',
+        'platform': 'اندروید ۱۵ • سطح API ۳۵ • آرم ۶۴ بیتی',
+        'first_name': 'آرمین',
+      });
+
+      final NativeHttpResponse? resp = await NativeBridge.performHttpRequest(
+        method: 'POST',
+        url: 'https://example.test/index.php?AppApi=auth/start',
+        headers: const <String, String>{
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: requestBody,
+      );
+
+      expect(resp, isNotNull);
+      expect(resp!.ok, isTrue);
+      expect(capturedBodyBytes, isNotNull);
+      expect(capturedBodyBytes, equals(Uint8List.fromList(utf8.encode(requestBody))));
+
+      final Map<String, dynamic> decoded =
+          jsonDecode(utf8.decode(capturedBodyBytes!)) as Map<String, dynamic>;
+      expect(decoded['phone'], '09123456789');
+      expect(decoded['platform'], 'اندروید ۱۵ • سطح API ۳۵ • آرم ۶۴ بیتی');
+      expect(decoded['first_name'], 'آرمین');
+    });
+
+    test('GatewayClient.start over Android native transport delivers valid UTF-8 JSON with phone',
+        () async {
+      const MethodChannel channel = MethodChannel('ir.umbrella.app/native');
+      Map<String, dynamic>? receivedJson;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        if (call.method == 'httpRequest') {
+          final Map<Object?, Object?> args =
+              call.arguments as Map<Object?, Object?>;
+          final Uint8List bytes = args['bodyBytes'] as Uint8List;
+          receivedJson =
+              jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+          return <String, Object?>{
+            'statusCode': 200,
+            'headers': <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+            'bodyBytes': Uint8List.fromList(utf8.encode(jsonEncode(<String, dynamic>{
+              'ok': true,
+              'challenge': '0123456789abcdef0123456789abcdef',
+              'stage': 'code_sent',
+              'account_exists': true,
+              'resend_after': 60,
+            }))),
+          };
+        }
+        return null;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      final GatewayClient client = GatewayClient(
+        baseUrl: 'https://example.test/index.php?AppApi=',
+        enableNativeTransport: true,
+      );
+      addTearDown(client.close);
+
+      const DeviceProfile profile = DeviceProfile(
+        hostname: 'گوشی کاربر',
+        osDisplayVersion: '15',
+        osBuild: 35,
+        arch: 'arm64-v8a',
+      );
+      final SignInStart res = await client.start(
+        phone: '09123456789',
+        deviceId: 'device-1234567890abcdef',
+        deviceName: profile.deviceName,
+        platform: profile.platformLabel,
+      );
+
+      expect(res.stage, SignInStage.codeSent);
+      expect(receivedJson, isNotNull);
+      expect(receivedJson!['phone'], '09123456789');
+      expect(receivedJson!['device_name'], 'گوشی کاربر');
+      expect(receivedJson!['platform'], profile.platformLabel);
     });
   });
 
@@ -499,6 +618,113 @@ void main() {
       expect(find.text('پروکسی سیستم'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
+      settings.dispose();
+    });
+
+    test('PersianDigitsFormatter preserves cursor when editing in the middle', () {
+      const PersianDigitsFormatter formatter = PersianDigitsFormatter();
+      const TextEditingValue oldVal = TextEditingValue(
+        text: '۰۹۱۲۳۴۵۶۷۸',
+        selection: TextSelection.collapsed(offset: 4),
+      );
+      const TextEditingValue newVal = TextEditingValue(
+        text: '۰۹۱۲0۳۴۵۶۷۸',
+        selection: TextSelection.collapsed(offset: 5),
+      );
+      final TextEditingValue result = formatter.formatEditUpdate(oldVal, newVal);
+      expect(result.text, '۰۹۱۲۰۳۴۵۶۷۸');
+      expect(result.selection, const TextSelection.collapsed(offset: 5));
+    });
+
+    testWidgets('LoginPage accepts +98, Arabic-Indic, and Persian mobile numbers cleanly',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(412, 915));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await LocalStore.instance.remove(StoreKeys.lastPhone);
+
+      final List<Map<String, dynamic>> sentStarts = <Map<String, dynamic>>[];
+      final MockClient mockClient = MockClient((http.Request request) async {
+        final Map<String, dynamic> payload =
+            jsonDecode(request.body) as Map<String, dynamic>;
+        sentStarts.add(payload);
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'ok': true,
+            'stage': 'needs_profile',
+            'account_exists': false,
+          })),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final _FakeNative native = _FakeNative();
+      final SettingsController settings = SettingsController(
+        native: native,
+        sound: _FakeSound(),
+        window: _FakeWindow(),
+      );
+      final GatewayClient gateway = GatewayClient(
+        baseUrl: 'https://example.test/index.php?AppApi=',
+        client: mockClient,
+        enableNativeTransport: false,
+      );
+      final AuthController auth = AuthController(
+        native: native,
+        gateway: gateway,
+        sound: _FakeSound(),
+        tray: TrayService(native),
+      );
+      await auth.restore();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: LoginPage(),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final Finder phoneField = find.byType(TextField).first;
+
+      // Arabic-Indic digits from mobile keyboards must convert cleanly.
+      await tester.enterText(phoneField, '٠٩٣٥١٢٣٤٥٦٧');
+      await tester.pump();
+      expect(find.text('۰۹۳۵۱۲۳۴۵۶۷'), findsOneWidget);
+      expect(find.text('ایرانسل'), findsOneWidget);
+
+      // +98 formatted mobile numbers from Android clipboard/autofill (>14 chars) must not truncate.
+      await tester.enterText(phoneField, '+98 912 345 6789');
+      await tester.pump();
+      expect(find.text('+۹۸ ۹۱۲ ۳۴۵ ۶۷۸۹'), findsOneWidget);
+      expect(find.text('همراه اول'), findsOneWidget);
+
+      final Finder submitBtn = find.text('دریافت کد تایید');
+      await tester.ensureVisible(submitBtn);
+      await tester.tap(submitBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(sentStarts, hasLength(1));
+      expect(sentStarts.first['phone'], '09123456789');
+      expect(sentStarts.first['platform'], contains('اندروید'));
+      expect(sentStarts.first['platform'], contains('آرم'));
+      expect(auth.error, isEmpty);
+      expect(auth.phase, AuthPhase.profile);
+
+      await tester.pumpWidget(const SizedBox());
+      auth.dispose();
       settings.dispose();
     });
   });

@@ -53,6 +53,7 @@ class MethodHandler(
     private val activity: MainActivity,
 ) : MethodChannel.MethodCallHandler {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val baseHttpClient = OkHttpClient()
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
@@ -447,7 +448,7 @@ class MethodHandler(
         val proxyPort = call.argument<Int>("proxyPort") ?: 0
         val followRedirects = call.argument<Boolean>("followRedirects") ?: true
 
-        val builder = OkHttpClient.Builder()
+        val builder = baseHttpClient.newBuilder()
             .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)
@@ -473,20 +474,20 @@ class MethodHandler(
             .method(method, reqBody)
             .build()
 
-        val resp = builder.build().newCall(req).execute()
-        val respHeaders = linkedMapOf<String, String>()
-        for (i in 0 until resp.headers.size) {
-            val name = resp.headers.name(i).lowercase()
-            val value = resp.headers.value(i)
-            respHeaders[name] = respHeaders[name]?.let { "$it, $value" } ?: value
-        }
-        val respBytes = resp.body?.bytes() ?: ByteArray(0)
-        resp.close()
+        return builder.build().newCall(req).execute().use { resp ->
+            val respHeaders = linkedMapOf<String, String>()
+            for (i in 0 until resp.headers.size) {
+                val name = resp.headers.name(i).lowercase()
+                val value = resp.headers.value(i)
+                respHeaders[name] = respHeaders[name]?.let { "$it, $value" } ?: value
+            }
+            val respBytes = resp.body?.bytes() ?: ByteArray(0)
 
-        return mapOf(
-            "statusCode" to resp.code,
-            "headers" to respHeaders,
-            "bodyBytes" to respBytes,
-        )
+            mapOf(
+                "statusCode" to resp.code,
+                "headers" to respHeaders,
+                "bodyBytes" to respBytes,
+            )
+        }
     }
 }
