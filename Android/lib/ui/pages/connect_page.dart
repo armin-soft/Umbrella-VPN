@@ -569,6 +569,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontSize: dense ? 21 : 26,
+                            height: 1.25,
                             fontWeight: FontWeight.w900,
                             color: tone,
                           ),
@@ -645,7 +646,7 @@ class _ConnectPageState extends State<ConnectPage> {
               Wrap(
                 alignment: WrapAlignment.center,
                 spacing: AppMetrics.space2,
-                runSpacing: AppMetrics.space1 + 2,
+                runSpacing: 2,
                 children: <Widget>[
                   for (final ({String id, String title, IconData icon}) profile
                       in <({String id, String title, IconData icon})>[
@@ -865,20 +866,20 @@ class _ConnectPageState extends State<ConnectPage> {
                       final bool chipsTwoRows = cW < 450 ||
                           (subs.emergencyEnabled && cW < 540);
                       final double reserved =
-                          (desktopSized ? 72 : 66) +
+                          (desktopSized ? 72 : 68) +
                           buttonHeight +
-                          (chipsTwoRows ? 88 : 42) +
+                          (chipsTwoRows ? 98 : 48) +
                           secondaryHeight +
                           gapStatus +
                           gapButton +
                           gapPrimary +
                           gapChips +
-                          (!account.canConnect ? 24 : 0) +
-                          (_switchPending(vpn) ? 24 : 0) +
+                          (!account.canConnect ? 28 : 0) +
+                          (_switchPending(vpn) ? 28 : 0) +
                           6;
                       final double maxOrb = desktopSized
                           ? (cH < 560 ? 250 : (cH < 640 ? 290 : 330))
-                          : 230;
+                          : 220;
                       final double orb = (cH - reserved)
                           .clamp(124.0, maxOrb)
                           .clamp(124.0, (cW - 12).clamp(124.0, 330.0));

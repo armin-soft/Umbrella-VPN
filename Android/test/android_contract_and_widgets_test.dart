@@ -898,9 +898,9 @@ void main() {
           );
           if (size.width <= size.height) {
             final double minOrbSize =
-                size == const Size(360, 640) ? 124.0 : 175.0;
+                size == const Size(360, 640) ? 124.0 : 200.0;
             final double minRenderedOrb =
-                size == const Size(360, 640) ? 105.0 : 175.0;
+                size == const Size(360, 640) ? 105.0 : 200.0;
             final StatusOrb orbWidget = tester.widget<StatusOrb>(
               find.byType(StatusOrb),
             );
@@ -911,7 +911,7 @@ void main() {
             );
             expect(
               tester.getSize(subChipFinder).height,
-              greaterThanOrEqualTo(size == const Size(360, 640) ? 32.0 : 36.0),
+              greaterThanOrEqualTo(size == const Size(360, 640) ? 32.0 : 40.0),
             );
           }
         }
