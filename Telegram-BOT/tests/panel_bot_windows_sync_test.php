@@ -243,8 +243,8 @@ $AutoRenew = (string)file_get_contents($Root . '/Core/Subscription/Auto-Renew.ph
 $AppBotLink = (string)file_get_contents($Root . '/Core/App/App-Bot-Link.php');
 
 assertSync(!str_contains($Gateway, "\u{200C}") && !str_contains($Panel, "\u{200C}") && !str_contains($Server, "\u{200C}"), 'no ZWNJ in gateway/panel/server files');
-assertSync(str_contains($Panel, 'self::extractRecord($Response[\'Json\']'), 'PanelClient::update unwraps enveloped panel payloads');
-assertSync(str_contains($Gateway, "'bot_linked' => \$LinkedTg > 0") && str_contains($Gateway, 'self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg)'), 'heartbeat returns live account and bot_linked status');
+assertSync(str_contains($Panel, 'return self::extractRecord($Json);'), 'PanelClient::update unwraps enveloped panel payloads');
+assertSync(str_contains($Gateway, "\$Payload['bot_linked'] = \$LinkedTg > 0") && str_contains($Gateway, 'self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg)'), 'heartbeat returns live account and bot_linked status');
 assertSync(str_contains($Gateway, 'syncLinkedBotUserFromPanel'), 'AppGateway links and syncs bot/panel/device records');
 assertSync(str_contains($Profile, "touchUserTime(\$Context->UserId, 'Profile_Updated_At')") && str_contains($Profile, 'UPDATE `App_Sessions` SET `Telegram_ID`'), 'Profile flow updates timestamp and backfills device/session Telegram IDs');
 assertSync(str_contains($Admin, '$Server_Active_Effective = $Server_Is_Active && $Server_Enable;'), 'Admin updatePair treats enable=false as inactive');
