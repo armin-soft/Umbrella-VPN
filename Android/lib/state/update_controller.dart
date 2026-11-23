@@ -270,7 +270,7 @@ class UpdateController extends ChangeNotifier {
         silentRelaunch: true,
       );
       if (!ok) {
-        final Uri? fallbackUri = Uri.tryParse(info.downloadUrl);
+        final Uri? fallbackUri = Uri.tryParse(info.url);
         bool openedBrowser = false;
         if (fallbackUri != null) {
           try {

@@ -119,6 +119,7 @@ check(Database::$Queued[0][1][0] === 'device-uuid-only', 'notification binds to 
 $FailureReason = new ReflectionMethod(AdminFlow::class, 'appDeliveryFailureReason');
 check(str_contains((string)$FailureReason->invoke(null, 99, 99), 'مدیریت'), 'admin target gets clear management exclusion reason');
 check(str_contains((string)$FailureReason->invoke(null, 2, 99), 'اشتراک فعالی هم ندارد'), 'user without devices or active subscription gets clear reason');
+Database::$Users = []; Database::$Queued = []; Database::$Devices = [];
 $Context = new Context();
 Database::$Devices = [['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1, 'Device_Name' => 'phone', 'Platform' => 'Android']];
 AppFlow::devices($Context);
