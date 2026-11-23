@@ -520,7 +520,7 @@ class _DevicePageState extends State<DevicePage> {
                         .read<NativeBridge>()
                         .requestIgnoreBatteryOptimization();
                     await Future<void>.delayed(const Duration(milliseconds: 500));
-                    if (mounted) unawaited(_refresh());
+                    if (mounted) unawaited(_refreshDevice());
                   },
                 ),
               OutlinedButton.icon(

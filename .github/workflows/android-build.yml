@@ -47,9 +47,33 @@ jobs:
       - name: Install Dart/Flutter dependencies
         run: flutter pub get
       - name: Analyze Android Flutter app
-        run: flutter analyze --no-fatal-infos
+        run: |
+          set -o pipefail
+          out=$(flutter analyze --no-fatal-infos 2>&1) || {
+            echo "$out"
+            python3 - <<'PY' "$out"
+          import sys
+          msg = sys.argv[1][-3800:].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print(f'::error title=flutter-analyze::{msg}')
+          PY
+            exit 1
+          }
+          echo "$out"
       - name: Run Android unit and widget tests
-        run: flutter test --reporter expanded
+        run: |
+          set -o pipefail
+          out=$(flutter test --reporter expanded 2>&1) || {
+            echo "$out"
+            python3 - <<'PY' "$out"
+          import sys
+          lines = [l for l in sys.argv[1].splitlines() if '[E]' in l or 'EXCEPTION' in l or 'Expected:' in l or 'Actual:' in l or 'Error:' in l or 'failed' in l.lower()]
+          snippet = '\n'.join(lines) if lines else sys.argv[1][-3800:]
+          msg = snippet[-3800:].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print(f'::error title=flutter-test::{msg}')
+          PY
+            exit 1
+          }
+          echo "$out"
 
   build-apk:
     needs: [analyze-and-test]
@@ -159,10 +183,30 @@ jobs:
           fi
           rm -rf dist && mkdir -p dist
 
-          flutter build apk --release --target-platform android-arm,android-arm64,android-x64
+          flutter build apk --release --target-platform android-arm,android-arm64,android-x64 >"$RUNNER_TEMP/build-univ.log" 2>&1 || {
+            cat "$RUNNER_TEMP/build-univ.log"
+            python3 - "$RUNNER_TEMP/build-univ.log" <<'PY'
+          import sys
+          txt = open(sys.argv[1], errors='replace').read()[-3800:]
+          msg = txt.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print(f'::error title=build-universal-apk::{msg}')
+          PY
+            exit 1
+          }
+          cat "$RUNNER_TEMP/build-univ.log"
           cp build/app/outputs/flutter-apk/app-release.apk "dist/UmbrellaVPN-${version}-universal.apk"
 
-          flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64
+          flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64 >"$RUNNER_TEMP/build-split.log" 2>&1 || {
+            cat "$RUNNER_TEMP/build-split.log"
+            python3 - "$RUNNER_TEMP/build-split.log" <<'PY'
+          import sys
+          txt = open(sys.argv[1], errors='replace').read()[-3800:]
+          msg = txt.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print(f'::error title=build-split-apk::{msg}')
+          PY
+            exit 1
+          }
+          cat "$RUNNER_TEMP/build-split.log"
           for abi in arm64-v8a armeabi-v7a x86_64; do
             src="build/app/outputs/flutter-apk/app-${abi}-release.apk"
             if [ ! -f "$src" ]; then

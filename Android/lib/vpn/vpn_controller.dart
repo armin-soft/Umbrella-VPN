@@ -2010,10 +2010,6 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  /// پوشه هسته: همه فایل های هسته کنار هم می مانند، پس پوشه کار هسته
-  /// همان پوشه خود فایل اجرایی است.
-  String _umbrellaDir(String exe) => _dirOf(exe);
-
   /// دی ان اس سنجش پینگ: سریع و بی وابستگی به شبکه کاربر.
   ///
   /// در سنجش پینگ، هسته فقط پیکربندی را می سازد و یک پروکسی محلی باز می کند؛
@@ -2750,11 +2746,6 @@ class VpnController extends ChangeNotifier {
         JsonX.boolean(st['starting']) ||
         s == 'started' ||
         s == 'starting';
-  }
-
-  String _dirOf(String path) {
-    final int index = path.lastIndexOf(Platform.pathSeparator);
-    return index <= 0 ? path : path.substring(0, index);
   }
 
   /// مسیر فایل گزارش هسته برای یک نقشه اجرا.

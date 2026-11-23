@@ -10,6 +10,7 @@ import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/native.dart';
 import 'package:umbrella_vpn/platform/services.dart';
+import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/power_controller.dart';
 import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
@@ -276,7 +277,7 @@ void main() {
       );
       await tester.pump();
 
-      final Finder startBtn = find.text('شروع استفاده');
+      final Finder startBtn = find.text('شروع');
       expect(startBtn, findsOneWidget);
       await tester.ensureVisible(startBtn);
       await tester.tap(startBtn);
@@ -314,15 +315,22 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      final Finder identityTab =
+          find.byKey(const ValueKey<String>('device-tab-identity'));
+      expect(identityTab, findsOneWidget);
+      await tester.tap(identityTab);
+      await tester.pumpAndSettle();
+
       expect(find.textContaining('بهینه سازی باتری'), findsWidgets);
       final Finder batteryAction = find.text('لغو محدودیت باتری');
       expect(batteryAction, findsOneWidget);
       await tester.ensureVisible(batteryAction);
       await tester.tap(batteryAction);
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
       expect(native.batteryIgnoreCalls, 1);
 
-      final Finder vpnSettingsAction = find.text('تنظیمات VPN سیستم');
+      final Finder vpnSettingsAction = find.text('تنظیمات Always-On VPN');
       expect(vpnSettingsAction, findsOneWidget);
       await tester.ensureVisible(vpnSettingsAction);
       await tester.tap(vpnSettingsAction);
@@ -392,6 +400,11 @@ void main() {
         sound: _FakeSound(),
         window: _FakeWindow(),
       );
+      final AuthController auth = AuthController(
+        native: native,
+        sound: _FakeSound(),
+        tray: TrayService(native),
+      );
       final PowerController power = PowerController(
         readStatus: () async => const BatteryPowerState(
           hasBattery: true,
@@ -409,6 +422,7 @@ void main() {
           providers: [
             Provider<NativeBridge>.value(value: native),
             ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
             ChangeNotifierProvider<PowerController>.value(value: power),
             ChangeNotifierProvider<VpnController>.value(value: vpn),
             ChangeNotifierProvider<ToastController>.value(value: toasts),
@@ -447,6 +461,7 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
       settings.dispose();
+      auth.dispose();
       power.dispose();
     });
 

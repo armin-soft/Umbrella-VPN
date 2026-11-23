@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../core/app_config.dart';
 import '../core/storage.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
