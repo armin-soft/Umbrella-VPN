@@ -76,6 +76,23 @@ class _FakeNative implements NativeBridge {
   Future<void> stopSmsUserConsent() async {}
 
   @override
+  Future<void> setNotificationsEnabled(bool enabled) async {}
+
+  @override
+  Future<void> updateConnectedNotification({
+    required String title,
+    required String body,
+    bool alert = false,
+  }) async {}
+
+  @override
+  Future<void> showTrayBalloon({
+    required String title,
+    required String body,
+    bool warning = false,
+  }) async {}
+
+  @override
   Stream<String> smsCodeEvents() => const Stream<String>.empty();
 
   @override

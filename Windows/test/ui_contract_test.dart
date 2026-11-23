@@ -1511,7 +1511,7 @@ void main() {
 
       for (final String dirName in <String>['lib/ui', 'lib/vpn', 'lib/state']) {
         for (final FileSystemEntity ent
-            in Directory('$root/$dirName').listSync(recursive: true)) {
+            in Directory(dirName).listSync(recursive: true)) {
           if (ent is! File || !ent.path.endsWith('.dart')) continue;
           final String text = ent.readAsStringSync();
           expect(
