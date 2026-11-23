@@ -780,7 +780,15 @@ void main() {
     testWidgets(
       'ConnectPage renders cleanly on portrait phone, landscape phone, and tablet without overflow',
       (WidgetTester tester) async {
-        addTearDown(() => tester.binding.setSurfaceSize(null));
+        void setViewport(Size size) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+        }
+
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
         final _FakeNative native = _FakeNative();
         final _FakeVpn vpn = _FakeVpn();
@@ -806,27 +814,35 @@ void main() {
         final ToastController toasts = ToastController();
 
         Future<void> pumpViewport(Size size) async {
-          await tester.binding.setSurfaceSize(size);
-          await tester.pumpWidget(
-            MultiProvider(
-              providers: [
-                Provider<NativeBridge>.value(value: native),
-                ChangeNotifierProvider<SettingsController>.value(value: settings),
-                ChangeNotifierProvider<AuthController>.value(value: auth),
-                ChangeNotifierProvider<SubscriptionController>.value(value: subs),
-                ChangeNotifierProvider<VpnController>.value(value: vpn),
-                ChangeNotifierProvider<ToastController>.value(value: toasts),
-              ],
-              child: MaterialApp(
-                theme: AppTheme.dark(),
-                home: const Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Scaffold(body: ConnectPage()),
+          setViewport(size);
+          final List<String> errors = <String>[];
+          final void Function(FlutterErrorDetails)? prev = FlutterError.onError;
+          FlutterError.onError = (FlutterErrorDetails d) => errors.add(d.toString());
+          try {
+            await tester.pumpWidget(
+              MultiProvider(
+                providers: [
+                  Provider<NativeBridge>.value(value: native),
+                  ChangeNotifierProvider<SettingsController>.value(value: settings),
+                  ChangeNotifierProvider<AuthController>.value(value: auth),
+                  ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+                  ChangeNotifierProvider<VpnController>.value(value: vpn),
+                  ChangeNotifierProvider<ToastController>.value(value: toasts),
+                ],
+                child: MaterialApp(
+                  theme: AppTheme.dark(),
+                  home: const Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: Scaffold(body: ConnectPage()),
+                  ),
                 ),
               ),
-            ),
-          );
-          await tester.pump();
+            );
+            await tester.pump();
+          } finally {
+            FlutterError.onError = prev;
+          }
+          expect(errors, isEmpty, reason: 'ConnectPage $size:\n${errors.join('\n---\n')}');
           expect(tester.takeException(), isNull);
           expect(find.text('اتصال'), findsWidgets);
           expect(find.text('تنظیمات اتصال'), findsOneWidget);
@@ -846,7 +862,15 @@ void main() {
     testWidgets(
       'AppShell adapts navigation between NavigationBar and SideNav across viewports without overflow',
       (WidgetTester tester) async {
-        addTearDown(() => tester.binding.setSurfaceSize(null));
+        void setViewport(Size size) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+        }
+
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
         await LocalStore.instance.write(
           StoreKeys.telegramChannelPromptAt,
           DateTime.now().toUtc().millisecondsSinceEpoch.toString(),
@@ -908,7 +932,7 @@ void main() {
           shellErrors360.add(details.toString());
         };
         try {
-          await tester.binding.setSurfaceSize(const Size(360, 640));
+          setViewport(const Size(360, 640));
           await tester.pumpWidget(buildShell());
           await tester.pump();
         } finally {
@@ -939,14 +963,14 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
 
-        await tester.binding.setSurfaceSize(const Size(844, 390));
+        setViewport(const Size(844, 390));
         await tester.pumpWidget(buildShell());
         await tester.pump();
         expect(tester.takeException(), isNull);
         expect(find.byType(NavigationBar), findsNothing);
         expect(find.byType(SideNav), findsOneWidget);
 
-        await tester.binding.setSurfaceSize(const Size(1024, 768));
+        setViewport(const Size(1024, 768));
         await tester.pumpWidget(buildShell());
         await tester.pump();
         expect(tester.takeException(), isNull);
@@ -965,8 +989,12 @@ void main() {
     testWidgets(
       'SettingsPage, DevicePage, LogsPage, AccountPage, AboutPage, and UpdatesPage fit narrow 360x640 portrait phones without overflow',
       (WidgetTester tester) async {
-        await tester.binding.setSurfaceSize(const Size(360, 640));
-        addTearDown(() => tester.binding.setSurfaceSize(null));
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
         addTearDown(AppLogger.instance.clear);
 
         final _FakeNative native = _FakeNative();
