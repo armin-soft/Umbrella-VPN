@@ -916,7 +916,17 @@ void main() {
         }
         expect(shellErrors360, isEmpty, reason: shellErrors360.join('\n---\n'));
         expect(tester.takeException(), isNull);
-        expect(find.byType(NavigationBar), findsOneWidget);
+        final BuildContext shellCtx360 = tester.element(find.byType(AppShell));
+        expect(
+          find.byType(NavigationBar),
+          findsOneWidget,
+          reason:
+              'size=${MediaQuery.sizeOf(shellCtx360)} '
+              'viewSize=${tester.view.physicalSize}/${tester.view.devicePixelRatio} '
+              'sideNav=${find.byType(SideNav).evaluate().length} '
+              'navTheme=${find.byType(NavigationBarTheme).evaluate().length} '
+              'navDest=${find.byType(NavigationDestination).evaluate().length}',
+        );
         expect(find.byType(SideNav), findsNothing);
 
         await tester.tap(find.text('بیشتر'));
