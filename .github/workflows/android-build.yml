@@ -103,11 +103,50 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
-      - uses: android-actions/setup-android@v3
+          cache-dependency-path: 'Android/android/**/*.gradle*'
       - name: Install Android SDK 36, Build-Tools, and NDK 28.2
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          mkdir -p "$SDK_ROOT"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_ROOT/cmdline-tools/bin/sdkmanager" \
+            "$(command -v sdkmanager || true)"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Downloading Android cmdline-tools..."
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o "$RUNNER_TEMP/cmdline-tools.zip"
+            unzip -q "$RUNNER_TEMP/cmdline-tools.zip" -d "$RUNNER_TEMP/cmdline-extract"
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv "$RUNNER_TEMP/cmdline-extract/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          {
+            yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
+            "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+          } >"$RUNNER_TEMP/sdkmanager.log" 2>&1 || {
+            cat "$RUNNER_TEMP/sdkmanager.log"
+            python3 - "$RUNNER_TEMP/sdkmanager.log" <<'PY'
+          import sys
+          txt = open(sys.argv[1], errors='replace').read()[-7000:]
+          for i in range(0, len(txt), 3500):
+              chunk = txt[i:i+3500].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::error title=android-sdk::{chunk}')
+          PY
+            exit 1
+          }
+          tail -n 20 "$RUNNER_TEMP/sdkmanager.log"
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.38.5'
@@ -115,6 +154,7 @@ jobs:
           cache: true
       - name: Prepare Gradle wrapper and dependencies
         run: |
+          set -euo pipefail
           if [ ! -f android/gradlew ] || [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
             scaffold="$RUNNER_TEMP/umbrella_android_scaffold"
             rm -rf "$scaffold"
@@ -128,7 +168,7 @@ jobs:
           flutter pub get
       - name: Download and verify pinned hiddify-core.aar
         run: |
-          python3 - <<'PY'
+          python3 - <<'PY' || { echo '::error title=hiddify-core::Failed to download or verify hiddify-core.aar'; exit 1; }
           import hashlib, json, os, shutil, subprocess, tarfile, urllib.request
 
           manifest = json.load(open('assets/cores/manifest.json'))
