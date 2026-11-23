@@ -306,10 +306,11 @@ TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
 
 public static function appDownloadMenu(Context $Context): void {
 $Text = Common::greet($Context, 'نرم افزار/اپلیکیشن')
-. "📦فایل نصبی ویندوز در انتشار رسمی نسخه قرار می گیرد.\n"
-. "برای مشاهده نسخه ویندوز و پیوند دانلود، گزینه زیر را انتخاب کنید." . Helper::userFooter();
+. "📦فایل های نصبی ویندوز و اندروید در انتشار رسمی نسخه قرار می گیرند.\n"
+. "برای مشاهده نسخه های هر سیستم عامل و پیوند دانلود، گزینه زیر را انتخاب کنید." . Helper::userFooter();
 $Rows = Menu::rows([
 [['🪟ویندوز', 'app_download_windows']],
+[['🤖اندروید', 'app_download_android']],
 ]);
 $Rows[] = Menu::userHome();
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
@@ -319,9 +320,13 @@ public static function appDownloadWindows(Context $Context): void {
 self::appDownloadPlatform($Context, 'windows');
 }
 
+public static function appDownloadAndroid(Context $Context): void {
+self::appDownloadPlatform($Context, 'android');
+}
+
 public static function appDownloadPlatform(Context $Context, string $Platform): void {
 $Platform = strtolower(trim($Platform));
-$Platform_Names = ['windows' => 'ویندوز'];
+$Platform_Names = ['windows' => 'ویندوز', 'android' => 'اندروید'];
 if (!isset($Platform_Names[$Platform])) { self::appDownloadMenu($Context); return; }
 
 $Catalog = ReleaseCatalog::forPlatform($Platform);
@@ -357,6 +362,9 @@ $Size_Label = $Size > 0 ? ' — ' . Helper::formatBytes($Size) : '';
 $Text .= '• ' . (string)$Asset['name'] . $Size_Label . "\n";
 $Rows[] = [['text' => self::downloadButtonLabel($Platform, $Channel, (string)$Asset['name']), 'url' => (string)$Asset['url']]];
 }
+if ($Platform === 'android' && count($Assets) > 1) {
+$Text .= "💡برای بیشتر گوشی ها، نسخه universal یا arm64-v8a مناسب است.\n";
+}
 }
 
 if ((string)($Release['url'] ?? '') !== '') {
@@ -389,6 +397,7 @@ return Helper::gregorianToJalali($Date->format('Y-m-d')) . ' — ' . Helper::for
 private static function downloadableReleaseAssets(array $Release, string $Platform): array {
 $Extensions = [
 'windows' => ['.exe'],
+'android' => ['.apk'],
 ];
 $Assets = array_values(array_filter($Release['assets'] ?? [], static function (array $Asset) use ($Extensions, $Platform): bool {
 $Name = strtolower((string)($Asset['name'] ?? ''));
@@ -404,7 +413,7 @@ return $Assets;
 }
 
 private static function downloadButtonLabel(string $Platform, string $Channel, string $Asset_Name): string {
-$Platform_Names = ['windows' => 'ویندوز'];
+$Platform_Names = ['windows' => 'ویندوز', 'android' => 'اندروید'];
 $Platform_Label = $Platform_Names[$Platform] ?? 'نرم افزار';
 $Channel_Label = $Channel === 'beta' ? 'بتا' : 'رسمی';
 $Asset_Label = pathinfo($Asset_Name, PATHINFO_FILENAME);
