@@ -9,10 +9,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/core/ui_formatters.dart';
+import 'package:umbrella_vpn/core/utils.dart';
 import 'package:umbrella_vpn/data/gateway_client.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/native.dart';
@@ -801,7 +801,7 @@ void main() {
 
     test('VpnController resets stale core log and reports early native stop alert', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      await LocalStore.init();
+      await LocalStore.instance.init();
 
       final Directory tempDir = await Directory.systemTemp.createTemp('umbrella_vpn_ctrl_');
       addTearDown(() async {
@@ -813,7 +813,7 @@ void main() {
 
       final String runDirPath = '${tempDir.path}${Platform.pathSeparator}run';
       await Directory(runDirPath).create(recursive: true);
-      final File staleLog = File('$runDirPath${Platform.pathSeparator}${AppConfig.coreLogTunFile}');
+      final File staleLog = File('$runDirPath${Platform.pathSeparator}umbrella-tun-core.log');
       await staleLog.writeAsString(
         'FATAL endpoint/awg[umbrella-direct-profile]: stale wireguard error\n',
         flush: true,
@@ -887,7 +887,7 @@ void main() {
       expect(await staleLog.readAsString(), isEmpty);
 
       final String allLogs =
-          AppLogger.instance.entries.map((LogEntry e) => e.message).join('\n');
+          AppLogger.instance.lines.map((LogLine e) => e.message).join('\n');
       expect(allLogs, contains('پیش از آماده شدن تونل متوقف شد'));
       expect(allLogs, contains('invalid inbound'));
       expect(allLogs, isNot(contains('آماده نشد')));
@@ -971,7 +971,7 @@ class _TestCoreNative extends _FakeNative {
 
   @override
   Future<({bool ok, String content, String message})> parseConfig({
-    required String content,
+    String content = '',
     String configPath = '',
     String tempPath = '',
     bool debug = false,
@@ -981,8 +981,8 @@ class _TestCoreNative extends _FakeNative {
   @override
   Future<Map<String, dynamic>> startCore({
     required String configPath,
-    String settingsJson = '',
-    String profileName = 'آمبرلا',
+    required String settingsJson,
+    required String profileName,
     String serviceMode = 'vpn',
   }) async {
     startedConfigPaths.add(configPath);
@@ -1017,18 +1017,15 @@ class _TestCoreNative extends _FakeNative {
   Future<bool> flushDns() async => true;
 
   @override
-  Future<int> killForeignCores() async => 0;
-
-  @override
-  Future<bool> setupDirectories({
-    required String baseDir,
-    required String workingDir,
-    required String tempDir,
+  Future<Map<String, dynamic>> setupDirectories({
+    String? baseDir,
+    String? workingDir,
+    String? tempDir,
+    int? grpcServicePort,
+    int? grpcUtilityPort,
+    bool? debug,
   }) async =>
-      true;
-
-  @override
-  Future<bool> disableSystemProxy() async => true;
+      <String, dynamic>{'ok': true};
 }
 
 class _TestProvisioner extends CoreProvisioner {
@@ -1049,7 +1046,7 @@ class _TestProvisioner extends CoreProvisioner {
   Future<List<CoreInfo>> missingRequired() async => const <CoreInfo>[];
 
   @override
-  Future<String?> provision(CoreInfo core) async => 'android://${core.binary}';
+  Future<bool> provision(CoreInfo core) async => true;
 }
 
 class _FakeIpService extends IpService {
