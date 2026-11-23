@@ -282,10 +282,13 @@ class _LoginPageState extends State<LoginPage> {
           onSubmitted: (_) => _submitPhone(auth),
         ),
         const SizedBox(height: AppMetrics.space3),
-        Row(
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppMetrics.space2,
+          runSpacing: AppMetrics.space1,
           children: <Widget>[
             OperatorBadge(operator: _operator),
-            const Spacer(),
             if (_operator != MobileOperator.unknown)
               Text(
                 Fa.num('اپراتور تشخیص داده شد'),
@@ -309,14 +312,16 @@ class _LoginPageState extends State<LoginPage> {
                 Expanded(
                   child: Row(
                     children: <Widget>[
-                      Text(
-                        'نشانی فعلی درگاه:',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelSmall
-                            ?.copyWith(color: colors.textSecondary),
+                      Flexible(
+                        child: Text(
+                          'نشانی فعلی درگاه:',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: colors.textSecondary),
+                        ),
                       ),
                       const SizedBox(width: AppMetrics.space1),
                       Expanded(
@@ -565,11 +570,13 @@ class _LoginPageState extends State<LoginPage> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: AppMetrics.space3),
-              Text(
-                Fa.num('در انتظار تایید شما در تلگرام...'),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary,
-                    ),
+              Expanded(
+                child: Text(
+                  Fa.num('در انتظار تایید شما در تلگرام...'),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
               ),
             ],
           ),
