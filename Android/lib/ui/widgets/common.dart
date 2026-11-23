@@ -911,7 +911,7 @@ class InfoRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.only(top: AppMetrics.space1),
             child: Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
           ),
           const SizedBox(width: AppMetrics.space3),

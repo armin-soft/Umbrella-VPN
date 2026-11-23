@@ -1475,8 +1475,6 @@ void main() {
           tray: TrayService(smsNative),
         );
         addTearDown(() async {
-          auth.dispose();
-          settings.dispose();
           await smsNative.closeSms();
         });
         await auth.restore();

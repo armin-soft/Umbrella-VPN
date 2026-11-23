@@ -341,10 +341,10 @@ class _ConnectPageState extends State<ConnectPage> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Icon(
-                      _greetingIcon(),
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: AppMetrics.space1),
+                                        child: Icon(
+                                          _greetingIcon(),
                       size: compactCard
                           ? AppMetrics.iconSm
                           : AppMetrics.iconMd,
