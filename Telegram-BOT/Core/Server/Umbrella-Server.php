@@ -10,11 +10,24 @@ private function __construct() {
 }
 
 public static function headers(): array {
-return self::JSON_HEADERS + ['Hiddify-API-Key' => Environment::getUmbrellaApiKey()];
+$Api_Key = Environment::getUmbrellaApiKey();
+return self::JSON_HEADERS + [
+'Hiddify-API-Key' => $Api_Key,
+'Watashi-API-Key' => $Api_Key,
+];
 }
 
 public static function postHeaders(): array {
-return self::JSON_HEADERS + ['Content-Type' => 'application/json; charset=utf-8', 'Hiddify-API-Key' => Environment::getUmbrellaApiKey()];
+$Api_Key = Environment::getUmbrellaApiKey();
+return self::JSON_HEADERS + [
+'Content-Type' => 'application/json; charset=utf-8',
+'Hiddify-API-Key' => $Api_Key,
+'Watashi-API-Key' => $Api_Key,
+];
+}
+
+private static function usersEndpoint(): string {
+return rtrim(Environment::getUmbrellaBaseUrl(), '/') . '/';
 }
 
 public static function createUser(string $Name, int|string $Usage_Limit_GB, int $Package_Days, string $Comment, int $Telegram_ID): array {
@@ -37,20 +50,20 @@ $Payload = [
 'last_reset_time' => null,
 ];
 
-$Response = HttpClient::post(Environment::getUmbrellaBaseUrl(), $Payload, self::postHeaders());
+$Response = HttpClient::post(self::usersEndpoint(), $Payload, self::postHeaders());
 return $Response;
 }
 
 public static function getUser(string $Client_ID): array {
-return HttpClient::get(Environment::getUmbrellaBaseUrl() . $Client_ID . '/', self::headers());
+return HttpClient::get(self::usersEndpoint() . rawurlencode(trim($Client_ID)) . '/', self::headers());
 }
 
 public static function updateUser(string $Client_ID, array $Payload): array {
-return HttpClient::patch(Environment::getUmbrellaBaseUrl() . $Client_ID . '/', $Payload, self::postHeaders());
+return HttpClient::patch(self::usersEndpoint() . rawurlencode(trim($Client_ID)) . '/', $Payload, self::postHeaders());
 }
 
 public static function deleteUser(string $Client_ID): array {
-return HttpClient::delete(Environment::getUmbrellaBaseUrl() . $Client_ID . '/', self::headers());
+return HttpClient::delete(self::usersEndpoint() . rawurlencode(trim($Client_ID)) . '/', self::headers());
 }
 
 public static function serverStatus(): array {

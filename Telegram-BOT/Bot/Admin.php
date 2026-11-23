@@ -3229,12 +3229,483 @@ if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بارگذاری...', false);
 }
 
-Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:update_uid']);
-$Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران') . '👌فرمت ورودی (تک یا گروهی — بدون محدودیت):' . "\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه تک:\n`۶۲۴۸۷۴۲۷۰۵`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\nنمونه گروهی:\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n`شناسه کاربر`\n`شناسه کلاینت`\n\n⚠️نکته: هر شناسه کاربر با نزدیک ترین شناسه کلاینت جفت می شود. ترتیب مهم نیست و تعداد جفت ها محدودیتی ندارد.\n📱به جای شناسه کاربر می توانید شماره موبایل کاربر را نیز وارد کنید." . Helper::adminFooter();
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+$Text = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران')
+. "🧾*انتخاب روش بروزرسانی داده های کاربران:*\n➖➖➖➖➖➖➖➖➖\n"
+. "🔄*بروزرسانی خودکار همه کاربران:*\n"
+. "├─دریافت مستقیم تمام کاربران از سرور آمبرلا (`API`)\n"
+. "├─پاکسازی کامل داده های قبلی کاربران در دیتابیس\n"
+. "└─ثبت خودکار آیدی عددی، شناسه کلاینت (`UUID`) و تمام اطلاعات\n\n"
+. "👤*بروزرسانی تکی (ورود دستی):*\n"
+. "└─ثبت یا بروزرسانی یک کاربر با وارد کردن آیدی عددی (یا شماره) و `UUID`"
+. Helper::adminFooter();
 
-TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
-Menu::back('منوی قبلی', 'عملیات کلاینت سرور'), Menu::adminHome(),
-]));
+$Rows = array_merge(
+Menu::rows([
+[['🔄بروزرسانی خودکار همه کاربران', 'admin_users_auto_sync']],
+[['👤بروزرسانی تکی (ورود دستی)', 'admin_users_single_sync']],
+]),
+[
+Menu::back('منوی قبلی', 'عملیات کلاینت سرور'),
+Menu::adminHome(),
+]
+);
+
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function askSingleUserData(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '👤در حال آماده سازی ورود تکی...', false);
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:update_uid']);
+$Text = Helper::adminGreeting($Context, 'بروزرسانی تکی داده کاربر')
+. "👌لطفا آیدی عددی (یا شماره موبایل) و شناسه کلاینت (`UUID`) *یک کاربر* را وارد کنید:\n\n"
+. "`شناسه کاربر یا شماره موبایل`\n"
+. "`شناسه کلاینت`\n\n"
+. "نمونه:\n"
+. "`۶۲۴۸۷۴۲۷۰۵`\n"
+. "`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n\n"
+. "⚠️توجه: این بخش فقط برای ثبت یا بروزرسانی *تکی* است؛ برای بروزرسانی گروهی همه کاربران از دکمه «🔄بروزرسانی خودکار همه کاربران» استفاده کنید."
+. Helper::adminFooter();
+
+TelegramClient::editOrSendMessage(
+$Context->ChatId,
+$Context->MessageId,
+$Text,
+TelegramClient::inlineKeyboard(Menu::adminNav('منوی قبلی', 'بروز رسانی داده های کاربران اول'))
+);
+}
+
+public static function autoUpdateAllUsers(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال دریافت کامل کاربران از سرور...', false);
+}
+
+$Loading_Text = self::header($Context, 'بروز رسانی داده های کاربران')
+. "🔄*در حال اجرای دستور دریافت کل کاربران از سرور و بازسازی دیتابیس...*\n➖➖➖➖➖➖➖➖➖\n"
+. "⏳لطفا چند لحظه صبر کنید."
+. Helper::adminFooter();
+
+if ($Context->MessageId !== null) {
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Loading_Text, TelegramClient::inlineKeyboard([Menu::adminHome()]));
+} else {
+TelegramClient::sendMessage($Context->ChatId, $Loading_Text);
+}
+
+$Response = ServerClient::listUsers(3, 30);
+$Status = (int)($Response['StatusCode'] ?? 0);
+$Rows = self::unwrapServerUserRows($Response['Json'] ?? null);
+
+$Retry_Nav = [
+[Menu::button('🔁تلاش مجدد خودکار', 'admin_users_auto_sync'), Menu::button('👤بروزرسانی تکی', 'admin_users_single_sync')],
+Menu::back('منوی قبلی', 'عملیات کلاینت سرور'),
+Menu::adminHome(),
+];
+
+if ($Rows === null || $Status < 200 || $Status >= 300) {
+$Error_Detail = trim((string)($Response['Body'] ?? ''));
+if ($Error_Detail === '') $Error_Detail = trim((string)($Response['Error'] ?? 'خطا در ارتباط با سرور'));
+$Admin_Label = method_exists($Context, 'profileName') ? (string)$Context->profileName() : '';
+self::notifyAdminServerError('بروزرسانی خودکار کل کاربران', $Context->UserId, $Admin_Label, $Status, $Error_Detail);
+$Error_Text = self::header($Context, 'بروز رسانی داده های کاربران')
+. "❌*خطا: دریافت فهرست کاربران از سرور ناموفق بود؛ دیتابیس بدون تغییر حفظ شد.*\n➖➖➖➖➖➖➖➖➖\n"
+. "📡کد وضعیت: `" . Helper::toPersian((string)$Status) . "`\n"
+. "⚠️پاسخ سرور: " . mb_substr($Error_Detail, 0, 250)
+. Helper::adminFooter();
+TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard($Retry_Nav));
+return;
+}
+
+if ($Rows === []) {
+$Empty_Text = self::header($Context, 'بروز رسانی داده های کاربران')
+. "⚠️*فهرست دریافتی از سرور خالی بود؛ برای جلوگیری از پاک شدن اطلاعات، تغییری در دیتابیس اعمال نشد.*"
+. Helper::adminFooter();
+TelegramClient::sendMessage($Context->ChatId, $Empty_Text, TelegramClient::inlineKeyboard($Retry_Nav));
+return;
+}
+
+$Prepared_Users = [];
+$Row_Meta = [];
+$Missing_Tg_Rows = [];
+$Duplicate_Tg_Rows = [];
+$Invalid_Rows = 0;
+
+foreach ($Rows as $Row) {
+if (!is_array($Row)) {
+$Invalid_Rows++;
+continue;
+}
+$Uuid = trim((string)($Row['uuid'] ?? ''));
+if ($Uuid === '' || $Uuid === '_') {
+$Invalid_Rows++;
+continue;
+}
+
+$Telegram_ID = (int)($Row['telegram_id'] ?? 0);
+$Raw_Name = trim((string)($Row['name'] ?? ''));
+$Comment = trim((string)($Row['comment'] ?? ''));
+$Row_Id = (int)($Row['id'] ?? 0);
+
+if ($Telegram_ID <= 0) {
+$Missing_Tg_Rows[] = [
+'name' => $Raw_Name !== '' ? $Raw_Name : 'بدون نام',
+'comment' => $Comment,
+'uuid' => $Uuid,
+];
+continue;
+}
+
+$Built = self::buildBulkUserRow($Row, $Telegram_ID, $Uuid);
+$Is_Active = ((int)$Built['Server_Is_Active'] === 1 && (int)$Built['Server_Enable'] === 1);
+$Start_Raw = substr(trim((string)($Row['start_date'] ?? '')), 0, 10);
+
+if (isset($Prepared_Users[$Telegram_ID])) {
+$Prev_Meta = $Row_Meta[$Telegram_ID];
+$Prev_Wins = ($Prev_Meta['active'] && !$Is_Active)
+|| ($Prev_Meta['active'] === $Is_Active && ($Prev_Meta['start'] > $Start_Raw || ($Prev_Meta['start'] === $Start_Raw && $Prev_Meta['id'] >= $Row_Id)));
+
+if ($Prev_Wins) {
+$Duplicate_Tg_Rows[] = ['telegram_id' => $Telegram_ID, 'name' => (string)$Built['Full_Name'], 'uuid' => $Uuid];
+continue;
+}
+
+$Duplicate_Tg_Rows[] = ['telegram_id' => $Telegram_ID, 'name' => (string)$Prepared_Users[$Telegram_ID]['Full_Name'], 'uuid' => (string)$Prepared_Users[$Telegram_ID]['Client_ID']];
+}
+
+$Prepared_Users[$Telegram_ID] = $Built;
+$Row_Meta[$Telegram_ID] = ['active' => $Is_Active, 'start' => $Start_Raw, 'id' => $Row_Id];
+}
+
+$User_Tables = [
+'Ticket_Messages',
+'Tickets',
+'Ratings',
+'Subscription_Logs',
+'Transactions',
+'SMS_Logs',
+'Notifications',
+'Scheduled_Jobs',
+'Payment_Queue',
+'Usage_Snapshots',
+'App_Bot_Link_Requests',
+'App_SignIn_Requests',
+'App_Notifications',
+'App_Sessions',
+'App_Devices',
+'App_Device_Limits',
+'App_Bypass_Settings',
+'App_Filter_Settings',
+'App_Cancelled_Payments',
+'Users',
+];
+
+$Db = Database::getInstance();
+$Existing_Lookup = [];
+
+try {
+if (method_exists($Db, 'fetchAll')) {
+$Table_Rows = $Db->fetchAll('SELECT TABLE_NAME AS t FROM information_schema.tables WHERE table_schema = DATABASE()', []);
+foreach ($Table_Rows as $T_Row) {
+$T_Name = (string)($T_Row['t'] ?? $T_Row['TABLE_NAME'] ?? '');
+if ($T_Name !== '') $Existing_Lookup[strtolower($T_Name)] = true;
+}
+}
+} catch (Throwable) {
+$Existing_Lookup = [];
+}
+
+$Tables_To_Wipe = $Existing_Lookup !== []
+? array_values(array_filter($User_Tables, static fn(string $T): bool => isset($Existing_Lookup[strtolower($T)])))
+: $User_Tables;
+
+$Has_Sessions_Table = $Existing_Lookup === [] || isset($Existing_Lookup['user_sessions']);
+$Has_Settings_Table = $Existing_Lookup === [] || isset($Existing_Lookup['settings']);
+$Wiped_Tables_Count = 0;
+
+$Apply_Replace = static function (Database $Tx) use ($Tables_To_Wipe, $Has_Sessions_Table, $Has_Settings_Table, $Prepared_Users, $Context, &$Wiped_Tables_Count): void {
+foreach ($Tables_To_Wipe as $Table_Name) {
+$Tx->execute('DELETE FROM `' . $Table_Name . '`');
+$Wiped_Tables_Count++;
+}
+
+if ($Has_Sessions_Table) {
+$Tx->execute('DELETE FROM `User_Sessions` WHERE `Telegram_ID` <> ?', [$Context->UserId]);
+$Tx->execute(
+'UPDATE `User_Sessions` SET `Flow` = NULL, `Temp_UID` = NULL, `Temp_Ticket_ID` = NULL, `Pending_Plan` = NULL, `Pending_Payment` = NULL, `Pending_Custom_Plan` = NULL, `Pending_Topup` = NULL, `Broadcast_Mode` = NULL WHERE `Telegram_ID` = ?',
+[$Context->UserId]
+);
+$Wiped_Tables_Count++;
+}
+
+if ($Has_Settings_Table) {
+$Tx->execute(
+"DELETE FROM `Settings` WHERE `Key` LIKE 'App\\_Free\\_Claimed\\_%' OR `Key` LIKE 'app\\_otp\\_cooldown\\_%' OR `Key` LIKE 'DailyNotice\\_%' OR `Key` LIKE 'Nowruz\\_Claimed\\_%'"
+);
+}
+
+foreach ($Prepared_Users as $User_Row) {
+$Tx->insert('Users', $User_Row);
+}
+};
+
+try {
+if (method_exists($Db, 'transaction')) {
+$Db->transaction($Apply_Replace);
+} else {
+$Apply_Replace($Db);
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Bulk-User-Replace] ' . $Error->getMessage());
+$Db_Err_Text = self::header($Context, 'بروز رسانی داده های کاربران')
+. "❌*خطا در جایگزینی دیتابیس؛ تغییرات بازگردانی (Rollback) شد و داده های قبلی حفظ ماندند.*\n➖➖➖➖➖➖➖➖➖\n"
+. "⚠️جزئیات: " . mb_substr($Error->getMessage(), 0, 220)
+. Helper::adminFooter();
+TelegramClient::sendMessage($Context->ChatId, $Db_Err_Text, TelegramClient::inlineKeyboard($Retry_Nav));
+return;
+}
+
+try {
+$Now_Hour = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H');
+Repository::setSetting('Last_Usage_Sync', $Now_Hour);
+if (method_exists('Repository', 'updateUsageSnapshotValues')) {
+Repository::updateUsageSnapshotValues();
+}
+if (method_exists('Repository', 'logAdminAction')) {
+Repository::logAdminAction(
+$Context->UserId,
+'admin_bulk_user_replace',
+null,
+'server_rows=' . count($Rows) . ',inserted=' . count($Prepared_Users) . ',missing_tg=' . count($Missing_Tg_Rows)
+);
+}
+} catch (Throwable) {}
+
+$Active_Count = 0;
+$Inactive_Count = 0;
+$Total_Used_GB = 0.0;
+
+foreach ($Prepared_Users as $U_Row) {
+if ((int)$U_Row['Server_Is_Active'] === 1 && (int)$U_Row['Server_Enable'] === 1) {
+$Active_Count++;
+} else {
+$Inactive_Count++;
+}
+$Total_Used_GB += (float)$U_Row['Used_Usage_GB'];
+}
+
+$Total_Usage_Label = method_exists('Helper', 'formatGB')
+? Helper::formatGB($Total_Used_GB)
+: Helper::toPersian(number_format($Total_Used_GB, 2)) . ' گیگابایت';
+
+$Summary = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران')
+. "✅*تمام داده های کاربران دیتابیس حذف و با خروجی زنده سرور جایگزین شد.*\n➖➖➖➖➖➖➖➖➖\n"
+. "📡تعداد کل دریافتی از سرور: *" . Helper::toPersian((string)count($Rows)) . "*\n"
+. "👤کاربران ثبت شده در دیتابیس: *" . Helper::toPersian((string)count($Prepared_Users)) . "*\n"
+. "🟢فعال: *" . Helper::toPersian((string)$Active_Count) . "* | 🔴غیرفعال: *" . Helper::toPersian((string)$Inactive_Count) . "*\n"
+. "📊مجموع مصرف ثبت شده: *" . $Total_Usage_Label . "*\n"
+. "🧹تعداد جداول بازسازی شده: *" . Helper::toPersian((string)$Wiped_Tables_Count) . "*\n";
+
+if ($Invalid_Rows > 0) {
+$Summary .= "⚠️رکورد نامعتبر (فاقد UUID): *" . Helper::toPersian((string)$Invalid_Rows) . "*\n";
+}
+
+if ($Prepared_Users !== []) {
+$Summary .= "\n📋*نمونه کاربران ثبت شده:*\n";
+$Shown = 0;
+foreach ($Prepared_Users as $Uid => $U_Row) {
+$Status_Icon = ((int)$U_Row['Server_Is_Active'] === 1 && (int)$U_Row['Server_Enable'] === 1) ? '🟢' : '🔴';
+$Line = $Status_Icon . $U_Row['Full_Name'] . ' — 🆔`' . Helper::toPersian((string)$Uid) . "`\n└─🔑`" . $U_Row['Client_ID'] . "`\n";
+if (mb_strlen($Summary . $Line) > 2600 || $Shown >= 10) {
+$Remaining_Count = count($Prepared_Users) - $Shown;
+if ($Remaining_Count > 0) {
+$Summary .= "… و *" . Helper::toPersian((string)$Remaining_Count) . "* کاربر دیگر در دیتابیس ثبت شدند.\n";
+}
+break;
+}
+$Summary .= $Line;
+$Shown++;
+}
+}
+
+$Action_Nav = [
+[Menu::button('🔄بروزرسانی مجدد همه', 'admin_users_auto_sync'), Menu::button('👤بروزرسانی تکی', 'admin_users_single_sync')],
+Menu::back('منوی قبلی', 'عملیات کلاینت سرور'),
+Menu::adminHome(),
+];
+
+if ($Missing_Tg_Rows === [] && $Duplicate_Tg_Rows === []) {
+TelegramClient::sendMessage($Context->ChatId, mb_substr($Summary, 0, 3200) . Helper::adminFooter(), TelegramClient::inlineKeyboard($Action_Nav));
+return;
+}
+
+TelegramClient::sendMessage($Context->ChatId, mb_substr($Summary, 0, 3200) . Helper::adminFooter(), TelegramClient::inlineKeyboard($Action_Nav));
+
+if ($Missing_Tg_Rows !== []) {
+$Missing_Header = self::header($Context, 'کاربران فاقد آیدی عددی')
+. "⚠️*تعداد " . Helper::toPersian((string)count($Missing_Tg_Rows)) . " کاربر روی سرور بدون آیدی عددی (`telegram_id: null`) هستند و در دیتابیس ثبت نشدند:*\n"
+. "👌برای ثبت هر کدام، از دکمه «👤بروزرسانی تکی» آیدی عددی و `UUID` را وارد کنید.\n➖➖➖➖➖➖➖➖➖\n";
+$Chunk = $Missing_Header;
+
+foreach ($Missing_Tg_Rows as $Index => $Missing) {
+$Phone_Note = $Missing['comment'] !== '' ? ' | 📱`' . Helper::toPersian($Missing['comment']) . '`' : '';
+$Entry = Helper::toPersian((string)($Index + 1)) . '. 👤*' . $Missing['name'] . '*' . $Phone_Note . "\n└─🔑`" . $Missing['uuid'] . "`\n";
+if (mb_strlen($Chunk . $Entry) > 2800) {
+TelegramClient::sendMessage($Context->ChatId, $Chunk . Helper::adminFooter(), TelegramClient::inlineKeyboard($Action_Nav));
+$Chunk = $Missing_Header;
+}
+$Chunk .= $Entry;
+}
+
+if ($Chunk !== $Missing_Header) {
+TelegramClient::sendMessage($Context->ChatId, $Chunk . Helper::adminFooter(), TelegramClient::inlineKeyboard($Action_Nav));
+}
+}
+
+if ($Duplicate_Tg_Rows !== []) {
+$Dup_Text = self::header($Context, 'تضاد آیدی عددی در سرور')
+. "⚠️*رکوردهای با `telegram_id` تکراری در پاسخ سرور (نسخه فعال/جدیدتر نگه داشته شد):*\n➖➖➖➖➖➖➖➖➖\n";
+foreach (array_slice($Duplicate_Tg_Rows, 0, 15) as $Dup) {
+$Dup_Text .= '• ' . $Dup['name'] . ' (`' . Helper::toPersian((string)$Dup['telegram_id']) . '`) — `' . $Dup['uuid'] . "`\n";
+}
+TelegramClient::sendMessage($Context->ChatId, mb_substr($Dup_Text, 0, 3200) . Helper::adminFooter(), TelegramClient::inlineKeyboard($Action_Nav));
+}
+}
+
+private static function unwrapServerUserRows(mixed $Json): ?array {
+if (!is_array($Json)) return null;
+foreach (['items', 'users', 'data', 'results', 'records'] as $Key) {
+if (isset($Json[$Key]) && is_array($Json[$Key])) {
+return $Json[$Key];
+}
+}
+return array_is_list($Json) ? $Json : null;
+}
+
+private static function buildBulkUserRow(array $Row, int $Telegram_ID, string $Uuid): array {
+$Raw_Name = trim((string)($Row['name'] ?? ''));
+if (method_exists('Helper', 'stripZwnj')) {
+$Raw_Name = trim((string)(preg_replace('/\s+/u', ' ', Helper::stripZwnj($Raw_Name)) ?? $Raw_Name));
+}
+$Is_Placeholder = $Raw_Name === '' || $Raw_Name === '_' || $Raw_Name === 'کاربر' || $Raw_Name === 'کاربر آمبرلا' || preg_match('/^user-[0-9]+$/', $Raw_Name) === 1;
+$Display_Name = mb_substr($Is_Placeholder ? 'کاربر' : $Raw_Name, 0, 190);
+
+$Comment = trim((string)($Row['comment'] ?? ''));
+$Phone = null;
+$Operator = null;
+if (method_exists('Helper', 'normalizePhone') && method_exists('Helper', 'validatePhone')) {
+$Candidate_Phone = Helper::normalizePhone(trim((string)($Row['phone'] ?? '')));
+if ($Candidate_Phone === '' || !Helper::validatePhone($Candidate_Phone)) {
+$Candidate_Phone = Helper::normalizePhone($Comment);
+}
+if ($Candidate_Phone !== '' && Helper::validatePhone($Candidate_Phone)) {
+$Phone = $Candidate_Phone;
+if (method_exists('Helper', 'detectOperator')) {
+$Operator = Helper::detectOperator($Candidate_Phone);
+}
+}
+}
+
+$Package_Days = max(0, (int)($Row['package_days'] ?? 0));
+$Subscription_Label = null;
+if ($Package_Days > 0) {
+$Subscription_Label = (method_exists('Helper', 'durationLabel') && !in_array($Package_Days, [1, 7, 30, 31, 60, 90, 180, 360, 365, 730], true))
+? Helper::durationLabel($Package_Days)
+: self::packageLabel($Package_Days);
+}
+
+$Date_Fields = (class_exists('Common') && method_exists('Common', 'subscriptionFieldsFromServer'))
+? Common::subscriptionFieldsFromServer($Row)
+: [];
+$Start_Raw = substr(trim((string)($Row['start_date'] ?? '')), 0, 10);
+$Start_Date_Persian = (string)($Date_Fields['Package_Start_Date'] ?? '');
+$End_Date_Persian = (string)($Date_Fields['Expiration_Date'] ?? '');
+$End_Timestamp = (int)($Date_Fields['Expiration_Time_Stamp'] ?? 0);
+
+if ($Start_Date_Persian === '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $Start_Raw) === 1) {
+try {
+$Start_Date_Persian = Helper::gregorianToJalali($Start_Raw);
+} catch (Throwable) { $Start_Date_Persian = ''; }
+}
+if ($End_Timestamp <= 0 && $Package_Days > 0 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $Start_Raw) === 1) {
+try {
+$Stamp = strtotime($Start_Raw . ' +' . $Package_Days . ' days');
+if ($Stamp !== false && $Stamp > 0) {
+$End_Timestamp = $Stamp;
+$End_Gregorian = (new DateTimeImmutable('@' . $End_Timestamp))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d');
+$End_Date_Persian = Helper::gregorianToJalali($End_Gregorian);
+}
+} catch (Throwable) {}
+}
+
+$Usage_Limit = round(max(0.0, (float)($Row['usage_limit_GB'] ?? 0)), 2);
+$Used_Usage = round(max(0.0, (float)($Row['current_usage_GB'] ?? 0)), 2);
+$Remaining_Usage = round(max(0.0, $Usage_Limit - $Used_Usage), 2);
+$Percent_Usage = $Usage_Limit > 0 ? round(min(100.0, ($Used_Usage / $Usage_Limit) * 100), 2) : 0.0;
+
+$Server_Is_Active = !empty($Row['is_active']) ? 1 : 0;
+$Server_Enable = (!array_key_exists('enable', $Row) || !empty($Row['enable'])) ? 1 : 0;
+$Last_Online = trim((string)($Row['last_online'] ?? ''));
+if ($Last_Online === '' || $Last_Online === '0001-01-01 00:00:00') {
+$Last_Online = null;
+} else {
+$Last_Online = mb_substr($Last_Online, 0, 50);
+}
+
+$Now_Tehran = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s');
+$Registered_At = $Now_Tehran;
+if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $Start_Raw, $D_Match) === 1) {
+$Year = (int)$D_Match[1];
+if ($Year >= 1971 && $Year <= 2037) {
+$Registered_At = $Start_Raw . ' 00:00:00';
+}
+}
+
+$NonEmptyOrNull = static function (mixed $Value): ?string {
+$S = trim((string)$Value);
+return $S !== '' ? $S : null;
+};
+
+return [
+'Telegram_ID' => $Telegram_ID,
+'Chat_ID' => $Telegram_ID,
+'First_Name' => $Display_Name,
+'Full_Name' => $Display_Name,
+'Phone' => $Phone,
+'Operator' => $Operator,
+'Client_ID' => $Uuid,
+'Client_Status' => ($Server_Is_Active === 1 && $Server_Enable === 1) ? '✅فعال' : '🚫غیر فعال',
+'Subscription' => $Subscription_Label,
+'Free_Plan_Claimed' => 0,
+'Is_Blocked' => 0,
+'Balance' => 0,
+'Package_Duration' => $Package_Days > 0 ? (string)$Package_Days : null,
+'Package_Start_Date' => $Start_Date_Persian !== '' ? $Start_Date_Persian : null,
+'Expiration_Date' => $End_Date_Persian !== '' ? $End_Date_Persian : null,
+'Expiration_Time_Stamp' => $End_Timestamp > 0 ? $End_Timestamp : null,
+'Total_Usage_GB' => $Usage_Limit,
+'Used_Usage_GB' => $Used_Usage,
+'Remaining_Usage_GB' => $Remaining_Usage,
+'Percent_Usage' => $Percent_Usage,
+'ED_25519_Private_Key' => $NonEmptyOrNull($Row['ed25519_private_key'] ?? ''),
+'ED_25519_Public_Key' => $NonEmptyOrNull($Row['ed25519_public_key'] ?? ''),
+'WireGuard_Private_Key' => $NonEmptyOrNull($Row['wg_pk'] ?? ''),
+'WireGuard_Public_Key' => $NonEmptyOrNull($Row['wg_pub'] ?? ''),
+'WireGuard_PSK' => $NonEmptyOrNull($Row['wg_psk'] ?? ''),
+'Last_Online' => $Last_Online,
+'Server_Comment' => $Comment,
+'Server_Enable' => $Server_Enable,
+'Server_Is_Active' => $Server_Is_Active,
+'Deactivation_Message' => null,
+'Channel_Client_Disabled_At' => null,
+'Registered_At' => $Registered_At,
+'Profile_Updated_At' => $Now_Tehran,
+];
 }
 
 private static function refreshUserData(Context $Context, string $Identifier): void {
@@ -3243,37 +3714,41 @@ $Raw = (string)preg_replace('/\r\n?/', "\n", trim($Identifier));
 $Raw = Helper::toEnglish($Raw);
 $Lines = array_values(array_filter(array_map('trim', explode("\n", $Raw)), static fn($L) => $L !== ''));
 $Uuid_Regex = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
-$Pending_Num = null;
-$Pending_Uuid = null;
-$Pairs = [];
+$Uuids = [];
+$Refs = [];
 
 foreach ($Lines as $Line) {
 if ((bool)preg_match($Uuid_Regex, $Line)) {
-if ($Pending_Num !== null) {
-$Pairs[] = [$Pending_Num, strtolower($Line)];
-$Pending_Num = null;
-}
-
-else {
-$Pending_Uuid = strtolower($Line);
-}
-
-continue;
-}
-
-if ($Pending_Uuid !== null) {
-$Pairs[] = [$Line, $Pending_Uuid];
-$Pending_Uuid = null;
-}
-
-else {
-$Pending_Num = $Line;
+$Uuids[] = strtolower($Line);
+} else {
+$Refs[] = $Line;
 }
 }
 
-if ($Pairs === []) {
-$Error_Text = self::header($Context) . " *❌خطا: فرمت وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️لطفا شناسه کاربر و شناسه کلاینت را (تک یا گروهی) وارد کنید:\n\n`شناسه کاربر`\n`شناسه کلاینت`\n\nنمونه گروهی:\n`۶۲۴۸۷۴۲۷۰۵`\n`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`\n`۱۲۳۴۵۶۷۸۹`\n`0d2585be-89a1-4a42-9d5e-2c9a4fcb51aa`" . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard(Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')));
+$Single_Error_Nav = [
+[Menu::button('👤بروزرسانی تکی مجدد', 'admin_users_single_sync'), Menu::button('🔄بروزرسانی خودکار همه', 'admin_users_auto_sync')],
+Menu::back('منوی قبلی', 'عملیات کلاینت سرور'),
+Menu::adminHome(),
+];
+
+if (count($Uuids) > 1 || count($Refs) > 1) {
+$Bulk_Disabled_Text = self::header($Context, 'بروزرسانی تکی داده کاربر')
+. "❌*خطا: ورود گروهی غیرفعال شده است.*\n➖➖➖➖➖➖➖➖➖\n"
+. "⚠️در این بخش فقط مشخصات *یک کاربر* (یک آیدی/شماره + یک شناسه `UUID`) قابل ثبت است.\n"
+. "👌برای بروزرسانی همه کاربران، روی دکمه «🔄بروزرسانی خودکار همه» بزنید."
+. Helper::adminFooter();
+TelegramClient::sendMessage($Context->ChatId, $Bulk_Disabled_Text, TelegramClient::inlineKeyboard($Single_Error_Nav));
+return;
+}
+
+if (count($Uuids) !== 1 || count($Refs) !== 1) {
+$Error_Text = self::header($Context, 'بروزرسانی تکی داده کاربر')
+. "❌*خطا: فرمت وارد شده صحیح نمی باشد.*\n➖➖➖➖➖➖➖➖➖\n"
+. "⚠️لطفا آیدی عددی (یا شماره موبایل) و شناسه کلاینت (`UUID`) یک کاربر را در دو خط وارد کنید:\n\n"
+. "`۶۲۴۸۷۴۲۷۰۵`\n"
+. "`970f3fa0-3714-4d9a-a95d-8c4ddd696bfd`"
+. Helper::adminFooter();
+TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard($Single_Error_Nav));
 return;
 }
 
@@ -3281,39 +3756,25 @@ if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال دریافت اطلاعات از سرور...', false);
 }
 
-$Loading_Text = self::header($Context) . " *🔄در حال دریافت اطلاعات از سرور آمبرلا (" . Helper::toPersian((string)count($Pairs)) . " کاربر)...\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:این عملیات ممکن است کمی طول بکشد." . Helper::adminFooter();
-
-if ($Context->MessageId !== null) {
-TelegramClient::editMessageText($Context->ChatId, $Context->MessageId, $Loading_Text, TelegramClient::inlineKeyboard([
-Menu::adminHome(),
-]));
-}
-
-else {
-TelegramClient::sendMessage($Context->ChatId, $Loading_Text);
-}
-
-$Results = [];
-
-foreach ($Pairs as $Pair) {
-$Results[] = self::processUpdatePair($Context, (string)$Pair[0], (string)$Pair[1]);
-}
-
-if (count($Pairs) > 1) {
-$Summary_Text = Helper::adminGreeting($Context, 'بروز رسانی گروهی کاربران') . "📦نتایج بروز رسانی گروهی (" . Helper::toPersian((string)count($Pairs)) . " کاربر):\n➖➖➖➖➖➖➖➖➖\n" . implode("\n", $Results) . "\n➖➖➖➖➖➖➖➖➖\n✅عملیات گروهی پایان یافت." . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, mb_substr($Summary_Text, 0, 4000), TelegramClient::inlineKeyboard(array_merge(
-[[['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']]],
-Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')
-)));
-}
+self::processUpdatePair($Context, (string)$Refs[0], (string)$Uuids[0]);
 }
 
 private static function processUpdatePair(Context $Context, string $Provided_User_Ref, string $Provided_Uuid): string {
 $Provided_User_Ref = trim($Provided_User_Ref);
 $Resolved_User = Repository::findUserByIdentifier($Provided_User_Ref);
+$Normalized_Ref_Phone = (method_exists('Helper', 'normalizePhone') && method_exists('Helper', 'validatePhone'))
+? Helper::normalizePhone($Provided_User_Ref)
+: '';
+$Is_Ref_Phone = $Normalized_Ref_Phone !== '' && Helper::validatePhone($Normalized_Ref_Phone);
 $Provided_User_Id = $Resolved_User !== null
 ? (int)($Resolved_User['Telegram_ID'] ?? 0)
-: (int)preg_replace('/[^0-9]/', '', $Provided_User_Ref);
+: ($Is_Ref_Phone ? 0 : (int)preg_replace('/[^0-9]/', '', $Provided_User_Ref));
+
+$Single_Action_Nav = [
+[Menu::button('👤بروزرسانی تکی مجدد', 'admin_users_single_sync'), Menu::button('🔄بروزرسانی خودکار همه', 'admin_users_auto_sync')],
+Menu::back('منوی قبلی', 'بروز رسانی داده های کاربران اول'),
+Menu::adminHome(),
+];
 
 if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال دریافت اطلاعات از سرور...', false);
@@ -3340,7 +3801,7 @@ $Data = $Response['Json'] ?? null;
 if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300 || !isset($Data['uuid'])) {
 self::notifyAdminServerError('بروزرسانی داده های کاربر', $Target_Telegram_ID, self::targetDisplayName($Target_Telegram_ID, $Local_User ?? []), $Response['StatusCode'] ?? 0, (string)($Response['Body'] ?? ''));
 $Error_Text = self::header($Context) . " *❌خطا: دریافت داده های سرور ناموفق بود.\n➖➖➖➖➖➖➖➖➖\n⚠️پاسخ سرور: " . mb_substr((string)($Response['Body'] ?? ''), 0, 200) . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard(Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')));
+TelegramClient::sendMessage($Context->ChatId, $Error_Text, TelegramClient::inlineKeyboard($Single_Action_Nav));
 return "❌خطا در دریافت از سرور — `{$Client_ID}`";
 }
 
@@ -3387,8 +3848,14 @@ $Target_Telegram_ID = $Server_Telegram_ID;
 $Local_User = Repository::getUser($Server_Telegram_ID);
 }
 
-if ($Target_Telegram_ID > 0 && $Server_Telegram_ID > 0 && $Target_Telegram_ID !== $Server_Telegram_ID) {
-$Server_Has_Different = true;
+if ($Target_Telegram_ID <= 0) {
+$No_Tg_Text = self::header($Context, 'بروزرسانی تکی داده کاربر')
+. "❌*خطا: آیدی عددی تلگرام برای این کاربر مشخص نشد.*\n➖➖➖➖➖➖➖➖➖\n"
+. "⚠️کاربر با شماره/شناسه وارد شده هنوز در دیتابیس ثبت نشده و روی سرور هم مقدار `telegram_id` خالی است.\n"
+. "👌لطفا *آیدی عددی تلگرام* کاربر را همراه با شناسه کلاینت (`{$Server_UUID}`) وارد کنید."
+. Helper::adminFooter();
+TelegramClient::sendMessage($Context->ChatId, $No_Tg_Text, TelegramClient::inlineKeyboard($Single_Action_Nav));
+return "❌فاقد آیدی عددی — `{$Server_UUID}`";
 }
 
 $Remaining = max(0, $Server_Usage_Limit - $Server_Used);
@@ -3422,7 +3889,9 @@ $Remaining_Time_Label = $End_Timestamp > 0
 ? Helper::remainingDuration($End_Timestamp)
 : Helper::remainingDuration((int)($Local_User['Expiration_Time_Stamp'] ?? 0));
 
-$Duration_Label = self::packageLabel($Server_Package_Days);
+$Duration_Label = (method_exists('Helper', 'durationLabel') && $Server_Package_Days > 0 && !in_array($Server_Package_Days, [1, 7, 30, 31, 60, 90, 180, 360, 365, 730], true))
+? Helper::durationLabel($Server_Package_Days)
+: self::packageLabel($Server_Package_Days);
 $Duration_Breakdown = self::packageBreakdown($Server_Package_Days);
 $Last_Online_Label = 'نامشخص';
 
@@ -3439,6 +3908,9 @@ catch (Throwable) { $Last_Online_Label = $Server_Last_Online; }
 }
 
 $Clean_Server_Name = trim($Server_Name);
+if (method_exists('Helper', 'stripZwnj')) {
+$Clean_Server_Name = trim((string)(preg_replace('/\s+/u', ' ', Helper::stripZwnj($Clean_Server_Name)) ?? $Clean_Server_Name));
+}
 $Server_Name_Is_Placeholder = $Clean_Server_Name === '' || $Clean_Server_Name === '_' || $Clean_Server_Name === 'کاربر' || $Clean_Server_Name === 'کاربر آمبرلا' || preg_match('/^user-[0-9]+$/', $Clean_Server_Name) === 1;
 $Local_Full_Name = trim((string)($Local_User['Full_Name'] ?? ''));
 $Display_Name = (!$Server_Name_Is_Placeholder) ? $Clean_Server_Name : ($Local_Full_Name !== '' ? $Local_Full_Name : 'کاربر');
@@ -3477,6 +3949,7 @@ $Update_Payload = [
 'Server_Is_Active' => $Server_Is_Active ? 1 : 0,
 'Full_Name' => $Display_Name,
 'Operator' => $Operator,
+'Profile_Updated_At' => (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s'),
 ];
 
 if ($Phone !== '') {
@@ -3484,6 +3957,16 @@ $Update_Payload['Phone'] = $Phone;
 }
 
 if ($Target_Telegram_ID > 0) {
+try {
+$Db = Database::getInstance();
+if (method_exists($Db, 'execute')) {
+$Db->execute(
+'UPDATE `Users` SET `Client_ID` = NULL WHERE `Client_ID` = ? AND `Telegram_ID` <> ?',
+[$Server_UUID, $Target_Telegram_ID]
+);
+}
+} catch (Throwable) {}
+
 if (is_array($Local_User) && !empty($Local_User)) {
 Repository::updateUser($Target_Telegram_ID, $Update_Payload);
 }
@@ -3494,9 +3977,10 @@ $Insert_Payload = array_merge($Update_Payload, [
 'Chat_ID' => $Target_Telegram_ID,
 'First_Name' => $Display_Name,
 'Full_Name' => $Display_Name,
-'Is_Blocked' => '0',
+'Is_Blocked' => 0,
 'Balance' => 0,
-'Free_Plan_Claimed' => '0',
+'Free_Plan_Claimed' => 0,
+'Registered_At' => (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s'),
 ]);
 Database::getInstance()->insert('Users', $Insert_Payload);
 }
@@ -3586,10 +4070,7 @@ $Detail_Text = Helper::adminGreeting($Context, 'بروز رسانی داده ه�
 // The 4096-character limit would cut the footer off mid-way, so the body is
 // trimmed first and the standard footer is added after it.
 $Detail_Text = mb_substr($Detail_Text, 0, 3800) . Helper::adminFooter();
-TelegramClient::sendMessage($Context->ChatId, $Detail_Text, TelegramClient::inlineKeyboard(array_merge(
-[[['text' => '🔄بروز رسانی مجدد', 'callback_data' => 'بروز رسانی داده های کاربران اول']]],
-Menu::adminNav('بروزرسانی داده کاربران', 'بروز رسانی داده های کاربران اول')
-)));
+TelegramClient::sendMessage($Context->ChatId, $Detail_Text, TelegramClient::inlineKeyboard($Single_Action_Nav));
 
 if ($Target_Telegram_ID > 0) {
 TelegramClient::sendSystemMessage($Target_Telegram_ID, Common::greet(new Context([], $Target_Telegram_ID, $Target_Telegram_ID, $Display_Name, false, null, null, null, null), 'بروز رسانی اشتراک') . "🔄لحظاتی پیش اطلاعات اشتراک شما توسط مدیریت بروزرسانی گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Common::backTo('👤پروفایل کاربری', 'پروفایل کاربری'), Menu::userHome()]));

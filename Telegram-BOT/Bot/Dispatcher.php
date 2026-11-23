@@ -314,6 +314,8 @@ match($Data) {
 'حذف کاربر اول' => AdminFlow::startInput($Context, 'admin:delete_uid', '👌شناسه عددی یا شماره موبایل کاربر مورد نظر را وارد کنید.'),
 'تایید حذف کاربر' => AdminFlow::deleteUserConfirm($Context),
 'بروز رسانی داده های کاربران اول' => AdminFlow::askUpdateUserData($Context),
+'admin_users_auto_sync' => AdminFlow::autoUpdateAllUsers($Context),
+'admin_users_single_sync' => AdminFlow::askSingleUserData($Context),
 'ارسال پیامک همگانی اول' => AdminFlow::broadcastMenu($Context),
 'پیام همگانی' => AdminFlow::broadcastMenu($Context),
 'اطلاع رسانی همگانی اول' => AdminFlow::broadcastMenu($Context),
