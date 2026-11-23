@@ -273,6 +273,7 @@ void main() {
 
   test('heartbeat 403 device_revoked clears session and triggers onSessionRevoked', () async {
     String revokedMessage = '';
+    bool revoked = false;
 
     final Account initial = Account(
       uuid: uuid,
@@ -287,14 +288,34 @@ void main() {
 
     final MockClient client = MockClient((http.Request request) async {
       if (request.url.path.endsWith('/auth/device')) {
-        return _jsonResponse(
-          <String, dynamic>{
-            'ok': false,
-            'error': 'device_revoked',
-            'message': 'این دستگاه از پنل یا ربات حذف شده است.',
+        if (revoked) {
+          return _jsonResponse(
+            <String, dynamic>{
+              'ok': false,
+              'error': 'device_revoked',
+              'message': 'این دستگاه از پنل یا ربات حذف شده است.',
+            },
+            status: 403,
+          );
+        }
+        return _jsonResponse(<String, dynamic>{
+          'ok': true,
+          'emergency_enabled': false,
+          'bot_linked': false,
+          'account': <String, dynamic>{
+            'uuid': uuid,
+            'name': 'کاربر',
+            'phone': '09120000000',
+            'usage_limit_GB': 30,
+            'package_days': 30,
+            'expire_date':
+                DateTime.now().toUtc().add(const Duration(days: 20)).toIso8601String(),
+            'enable': true,
+            'is_active': true,
           },
-          status: 403,
-        );
+          'filter': <String, dynamic>{},
+          'offers': <String, dynamic>{},
+        });
       }
       if (request.url.path.endsWith('/account/refresh')) {
         return _jsonResponse(<String, dynamic>{
@@ -327,6 +348,7 @@ void main() {
       revokedMessage = reason;
     };
 
+    revoked = true;
     await auth.autoSync(includeAccount: false);
 
     expect(revokedMessage, contains('حذف'));
