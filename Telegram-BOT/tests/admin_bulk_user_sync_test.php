@@ -84,7 +84,7 @@ final class AppAccountRevocation {
 final class Database {
     private static ?self $Inst = null;
     public static array $Tables = [];
-    public static array $DeletedTables = [];
+    public static array $DeletesExecuted = [];
     public static bool $FailNextInsert = false;
     public static bool $RolledBack = false;
     private static array $Snapshot = [];
@@ -96,44 +96,50 @@ final class Database {
     public static function resetMock(): void {
         self::$Tables = [
             'Users' => [
-                ['Telegram_ID' => 999999, 'Client_ID' => 'stale-uuid', 'Full_Name' => 'کاربر قدیمی', 'Balance' => 50000],
+                [
+                    'Telegram_ID' => 999999,
+                    'Chat_ID' => 999999,
+                    'Client_ID' => 'other-uuid',
+                    'Full_Name' => 'کاربر قدیمی',
+                    'First_Name' => 'کاربر قدیمی',
+                    'Balance' => 50000,
+                    'Is_Blocked' => 0,
+                    'Free_Plan_Claimed' => 0,
+                ],
+                [
+                    'Telegram_ID' => 592526230,
+                    'Chat_ID' => 592526230,
+                    'Client_ID' => '9b9d9f5d-9841-45bf-a6b9-0479de273c11',
+                    'Full_Name' => 'آرمین قدیمی',
+                    'First_Name' => 'آرمین',
+                    'Phone' => '09358983854',
+                    'Balance' => 250000,
+                    'Is_Blocked' => 0,
+                    'Free_Plan_Claimed' => 1,
+                    'Registered_At' => '2025-01-01 00:00:00',
+                    'Used_Usage_GB' => 10.0,
+                ],
             ],
             'Transactions' => [
-                ['ID' => 1, 'User_ID' => 999999, 'Amount' => 50000],
+                ['ID' => 1, 'User_ID' => 592526230, 'Amount' => 250000],
             ],
             'Tickets' => [['ID' => 1, 'User_ID' => 999999]],
-            'Ticket_Messages' => [['ID' => 1, 'Ticket_ID' => 1]],
-            'Subscription_Logs' => [['ID' => 1, 'User_ID' => 999999]],
-            'Usage_Snapshots' => [['Snapshot_Date' => '2026-11-22', 'User_ID' => 999999]],
-            'SMS_Logs' => [['ID' => 1, 'User_ID' => 999999]],
-            'Notifications' => [['ID' => 1, 'User_ID' => 999999]],
-            'Scheduled_Jobs' => [['ID' => 1, 'User_ID' => 999999]],
-            'Payment_Queue' => [['ID' => 1, 'User_ID' => 999999]],
-            'Ratings' => [['ID' => 1, 'User_ID' => 999999]],
-            'App_Devices' => [['Device_ID' => 'dev-1', 'User_UUID' => 'stale-uuid', 'Telegram_ID' => 999999]],
-            'App_Sessions' => [['Token_Hash' => 'tok-1', 'User_UUID' => 'stale-uuid', 'Telegram_ID' => 999999]],
-            'App_SignIn_Requests' => [['Challenge' => 'c1']],
-            'App_Bot_Link_Requests' => [['Token_Hash' => 'l1']],
-            'App_Notifications' => [['ID' => 1]],
-            'App_Device_Limits' => [['Telegram_ID' => 999999]],
-            'App_Bypass_Settings' => [['User_UUID' => 'stale-uuid']],
-            'App_Filter_Settings' => [['User_UUID' => 'stale-uuid']],
-            'App_Cancelled_Payments' => [['Authority' => 'a1']],
+            'App_Devices' => [
+                ['Device_ID' => 'dev-1', 'User_UUID' => '9b9d9f5d-9841-45bf-a6b9-0479de273c11', 'Telegram_ID' => 0],
+            ],
+            'App_Sessions' => [
+                ['Token_Hash' => 'tok-1', 'User_UUID' => '9b9d9f5d-9841-45bf-a6b9-0479de273c11', 'Telegram_ID' => null],
+            ],
             'User_Sessions' => [
-                ['Telegram_ID' => 592526230, 'Flow' => 'stale:flow'],
+                ['Telegram_ID' => 592526230, 'Flow' => 'admin:test'],
                 ['Telegram_ID' => 888888, 'Flow' => 'user:ticket'],
             ],
             'Settings' => [
                 ['Key' => 'Robot_Status', 'Value' => '🟢روشن'],
-                ['Key' => 'Plan_Price_1', 'Value' => '150000'],
                 ['Key' => 'App_Gateway_Secret', 'Value' => 'keep-secret'],
-                ['Key' => 'App_Free_Claimed_stale-uuid', 'Value' => '1'],
-                ['Key' => 'app_otp_cooldown_abc', 'Value' => '12345'],
-                ['Key' => 'DailyNotice_999', 'Value' => '1'],
-                ['Key' => 'Nowruz_Claimed_2026_u_999', 'Value' => '1'],
             ],
         ];
-        self::$DeletedTables = [];
+        self::$DeletesExecuted = [];
         self::$FailNextInsert = false;
         self::$RolledBack = false;
     }
@@ -172,40 +178,8 @@ final class Database {
     }
 
     public function execute(string $Sql, array $Params = []): object {
-        if (preg_match('/^DELETE FROM `([^`]+)`$/i', trim($Sql), $M) === 1) {
-            $Table = $M[1];
-            self::$Tables[$Table] = [];
-            self::$DeletedTables[] = $Table;
-            return new stdClass();
-        }
-        if (str_starts_with($Sql, 'DELETE FROM `User_Sessions` WHERE `Telegram_ID` <> ?')) {
-            $Keep = (int)($Params[0] ?? 0);
-            self::$Tables['User_Sessions'] = array_values(array_filter(
-                self::$Tables['User_Sessions'] ?? [],
-                static fn(array $R): bool => (int)($R['Telegram_ID'] ?? 0) === $Keep
-            ));
-            return new stdClass();
-        }
-        if (str_starts_with($Sql, 'UPDATE `User_Sessions` SET')) {
-            $Keep = (int)end($Params);
-            foreach (self::$Tables['User_Sessions'] as &$Row) {
-                if ((int)($Row['Telegram_ID'] ?? 0) === $Keep) {
-                    $Row['Flow'] = null;
-                }
-            }
-            return new stdClass();
-        }
-        if (str_starts_with($Sql, 'DELETE FROM `Settings` WHERE')) {
-            self::$Tables['Settings'] = array_values(array_filter(
-                self::$Tables['Settings'] ?? [],
-                static function (array $Row): bool {
-                    $K = (string)($Row['Key'] ?? '');
-                    return !str_starts_with($K, 'App_Free_Claimed_')
-                        && !str_starts_with($K, 'app_otp_cooldown_')
-                        && !str_starts_with($K, 'DailyNotice_')
-                        && !str_starts_with($K, 'Nowruz_Claimed_');
-                }
-            ));
+        if (stripos(ltrim($Sql), 'DELETE') === 0) {
+            self::$DeletesExecuted[] = $Sql;
             return new stdClass();
         }
         if (str_starts_with($Sql, 'UPDATE `Users` SET `Client_ID` = NULL')) {
@@ -214,6 +188,26 @@ final class Database {
             foreach (self::$Tables['Users'] as &$Row) {
                 if ((string)($Row['Client_ID'] ?? '') === $Cid && (int)($Row['Telegram_ID'] ?? 0) !== $Keep) {
                     $Row['Client_ID'] = null;
+                }
+            }
+            return new stdClass();
+        }
+        if (str_starts_with($Sql, 'UPDATE `App_Devices` SET `Telegram_ID` = ?')) {
+            $Tid = (int)($Params[0] ?? 0);
+            $Uuid = (string)($Params[1] ?? '');
+            foreach (self::$Tables['App_Devices'] as &$Row) {
+                if ((string)($Row['User_UUID'] ?? '') === $Uuid && (int)($Row['Telegram_ID'] ?? 0) === 0) {
+                    $Row['Telegram_ID'] = $Tid;
+                }
+            }
+            return new stdClass();
+        }
+        if (str_starts_with($Sql, 'UPDATE `App_Sessions` SET `Telegram_ID` = ?')) {
+            $Tid = (int)($Params[0] ?? 0);
+            $Uuid = (string)($Params[1] ?? '');
+            foreach (self::$Tables['App_Sessions'] as &$Row) {
+                if ((string)($Row['User_UUID'] ?? '') === $Uuid && (int)($Row['Telegram_ID'] ?? 0) === 0) {
+                    $Row['Telegram_ID'] = $Tid;
                 }
             }
         }
@@ -265,7 +259,16 @@ final class Repository {
         return null;
     }
 
-    public static function findUserByPhone(string $Phone, int $Exclude = 0): array { return []; }
+    public static function findUserByPhone(string $Phone, int $Exclude = 0): array {
+        $Norm = Helper::normalizePhone($Phone);
+        foreach (Database::$Tables['Users'] ?? [] as $Row) {
+            if ((int)($Row['Telegram_ID'] ?? 0) !== $Exclude && $Norm !== '' && Helper::normalizePhone((string)($Row['Phone'] ?? '')) === $Norm) {
+                return $Row;
+            }
+        }
+        return [];
+    }
+
     public static function getUserByClientId(string $Uuid): array { return []; }
     public static function updateUserSession(int $Id, array $Values): void { self::$Session = array_replace(self::$Session, $Values); }
     public static function getUserSession(int $Id): array { return self::$Session; }
@@ -339,18 +342,18 @@ ok(Menu::problems(TelegramClient::$LastMarkup['inline_keyboard'] ?? []) === [], 
 // 2. Non-admin cannot execute bulk sync.
 ServerClient::$ListCalls = 0;
 AdminFlow::autoUpdateAllUsers($Guest);
-ok(ServerClient::$ListCalls === 0 && count(Database::$Tables['Users']) === 1, 'non-admin rejected before API or DB touch');
+ok(ServerClient::$ListCalls === 0 && count(Database::$Tables['Users']) === 2, 'non-admin rejected before API or DB touch');
 
-// 3. Panel API failure or empty list must NOT wipe DB.
+// 3. Panel API failure or empty list preserves DB untouched.
 ServerClient::$ListResponse = ['StatusCode' => 502, 'Json' => null, 'Body' => 'Bad Gateway'];
 AdminFlow::autoUpdateAllUsers($Admin);
-ok(Database::$Tables['Users'][0]['Telegram_ID'] === 999999 && count(Database::$Tables['Transactions']) === 1, 'HTTP 502 preserves existing DB untouched');
+ok(count(Database::$Tables['Users']) === 2 && count(Database::$Tables['Transactions']) === 1, 'HTTP 502 preserves existing DB untouched');
 
 ServerClient::$ListResponse = ['StatusCode' => 200, 'Json' => []];
 AdminFlow::autoUpdateAllUsers($Admin);
-ok(Database::$Tables['Users'][0]['Telegram_ID'] === 999999 && count(Database::$Tables['Transactions']) === 1, 'empty API response preserves existing DB untouched');
+ok(count(Database::$Tables['Users']) === 2 && count(Database::$Tables['Transactions']) === 1, 'empty API response preserves existing DB untouched');
 
-// 4. Full wipe & replace using real panel output format (active, inactive enable=false, 367d, and telegram_id=null).
+// 4. Non-destructive bulk update & add with real panel output format.
 $Sample_Payload = [
     [
         'id' => 2,
@@ -415,30 +418,33 @@ $Sample_Payload = [
     ],
 ];
 
-// 4a. Transaction rollback preserves old DB when an insert fails mid-way.
+// 4a. Transaction rollback preserves DB when insert fails mid-sync.
 ServerClient::$ListResponse = ['StatusCode' => 200, 'Json' => $Sample_Payload];
 Database::$FailNextInsert = true;
 AdminFlow::autoUpdateAllUsers($Admin);
-ok(Database::$RolledBack === true && Database::$Tables['Users'][0]['Telegram_ID'] === 999999, 'mid-sync failure rolls back entire database atomically');
+ok(Database::$RolledBack === true && count(Database::$Tables['Users']) === 2 && (float)Repository::getUser(592526230)['Used_Usage_GB'] === 10.0, 'mid-sync failure rolls back atomically');
 Database::$FailNextInsert = false;
 
-// 4b. Clean full replace succeeds.
+// 4b. Non-destructive upsert succeeds: zero deletes, old users/tables kept, existing updated, new added.
 TelegramClient::$Messages = [];
 AdminFlow::autoUpdateAllUsers($Admin);
-ok(count(Database::$Tables['Users']) === 3, 'Users replaced cleanly with the 3 users having valid telegram_id');
-ok(Database::$Tables['Transactions'] === [] && Database::$Tables['Tickets'] === [] && Database::$Tables['App_Devices'] === [] && Database::$Tables['App_Sessions'] === [] && Database::$Tables['Usage_Snapshots'] === [], 'all user-related tables wiped cleanly');
-ok(count(Database::$Tables['User_Sessions']) === 1 && Database::$Tables['User_Sessions'][0]['Telegram_ID'] === 592526230 && Database::$Tables['User_Sessions'][0]['Flow'] === null, 'non-admin sessions deleted and current admin session reset');
+ok(Database::$DeletesExecuted === [], 'zero DELETE queries executed during autoUpdateAllUsers');
+ok(count(Database::$Tables['Users']) === 4, 'existing non-panel user 999999 preserved, existing 592526230 updated, and 2 new users added');
+ok(count(Database::$Tables['Transactions']) === 1 && count(Database::$Tables['Tickets']) === 1 && count(Database::$Tables['User_Sessions']) === 2, 'transactions, tickets, and user sessions completely preserved');
 
-$SettingKeys = array_column(Database::$Tables['Settings'], 'Key');
-ok(in_array('Robot_Status', $SettingKeys, true) && in_array('App_Gateway_Secret', $SettingKeys, true), 'bot Settings preserved');
-ok(!in_array('App_Free_Claimed_stale-uuid', $SettingKeys, true) && !in_array('app_otp_cooldown_abc', $SettingKeys, true) && !in_array('DailyNotice_999', $SettingKeys, true) && !in_array('Nowruz_Claimed_2026_u_999', $SettingKeys, true), 'per-user transient Settings cleared');
+$ExistingOld = Repository::getUser(999999);
+ok((int)($ExistingOld['Balance'] ?? 0) === 50000 && ($ExistingOld['Full_Name'] ?? '') === 'کاربر قدیمی', 'pre-existing user not on server retains balance and data');
 
 $Armin = Repository::getUser(592526230);
-ok(($Armin['Client_ID'] ?? '') === '9b9d9f5d-9841-45bf-a6b9-0479de273c11' && ($Armin['WireGuard_PSK'] ?? '') === 'WG-PSK-1' && ($Armin['Phone'] ?? '') === '09358983854', 'active user fields and keys imported');
+ok(($Armin['Full_Name'] ?? '') === 'آرمین اسکندری' && ($Armin['WireGuard_PSK'] ?? '') === 'WG-PSK-1' && (float)($Armin['Used_Usage_GB'] ?? 0) === 436.64, 'existing user server fields updated');
+ok((int)($Armin['Balance'] ?? 0) === 250000 && (int)($Armin['Free_Plan_Claimed'] ?? 0) === 1 && ($Armin['Registered_At'] ?? '') === '2025-01-01 00:00:00', 'existing user wallet balance, free-plan flag, and registered timestamp preserved');
+
+ok((int)(Database::$Tables['App_Devices'][0]['Telegram_ID'] ?? 0) === 592526230 && (int)(Database::$Tables['App_Sessions'][0]['Telegram_ID'] ?? 0) === 592526230, 'app devices and sessions Telegram_ID backfilled without deleting rows');
+
 $Alireza = Repository::getUser(1215191646);
-ok(($Alireza['Subscription'] ?? '') === '۱ سال و ۲ روز', 'non-standard 367-day duration labeled accurately');
+ok(($Alireza['Subscription'] ?? '') === '۱ سال و ۲ روز', 'new user added with accurate 367-day duration label');
 $Reyhaneh = Repository::getUser(5788643519);
-ok((int)($Reyhaneh['Server_Enable'] ?? 1) === 0 && (int)($Reyhaneh['Server_Is_Active'] ?? 1) === 0 && ($Reyhaneh['Client_Status'] ?? '') === '🚫غیر فعال', 'disabled user stored inactive');
+ok((int)($Reyhaneh['Server_Enable'] ?? 1) === 0 && (int)($Reyhaneh['Server_Is_Active'] ?? 1) === 0 && ($Reyhaneh['Client_Status'] ?? '') === '🚫غیر فعال', 'disabled new user stored inactive');
 
 $AllTexts = implode("\n", array_column(TelegramClient::$Messages, 'text'));
 ok(str_contains($AllTexts, 'c72f32c4-cc61-4ed9-b879-3e3eb567e818') && str_contains($AllTexts, 'مراد اسکندری'), 'missing telegram_id user reported with UUID for later single-user entry');
@@ -447,13 +453,13 @@ ok(str_contains($AllTexts, 'c72f32c4-cc61-4ed9-b879-3e3eb567e818') && str_contai
 TelegramClient::$Messages = [];
 AdminFlow::handleInput($Admin, 'admin:update_uid', "592526230\n9b9d9f5d-9841-45bf-a6b9-0479de273c11\n1215191646\n5a855841-5027-42c9-84cb-881e9d728618");
 $LastMsg = end(TelegramClient::$Messages)['text'] ?? '';
-ok(str_contains($LastMsg, 'ورود گروهی غیرفعال شده است') && count(Database::$Tables['Users']) === 3, 'single-user manual mode rejects bulk input');
+ok(str_contains($LastMsg, 'ورود گروهی غیرفعال شده است') && count(Database::$Tables['Users']) === 4, 'single-user manual mode rejects bulk input');
 
 // Phone-only input for an unlinked user must not turn phone number into Telegram_ID.
 TelegramClient::$Messages = [];
 ServerClient::$GetResponse = ['StatusCode' => 200, 'Json' => $Sample_Payload[3]];
 AdminFlow::handleInput($Admin, 'admin:update_uid', "09128916456\nc72f32c4-cc61-4ed9-b879-3e3eb567e818");
-ok(count(Database::$Tables['Users']) === 3 && Repository::getUser(9128916456) === [], 'unlinked phone does not create bogus numeric Telegram_ID');
+ok(count(Database::$Tables['Users']) === 4 && Repository::getUser(9128916456) === [], 'unlinked phone does not create bogus numeric Telegram_ID');
 
 // Entering numeric Telegram_ID + UUID for مراد اسکندری registers user and pushes telegram_id to panel.
 ServerClient::$UpdateCalls = [];
@@ -462,10 +468,20 @@ $Morad = Repository::getUser(777888999);
 ok(($Morad['Client_ID'] ?? '') === 'c72f32c4-cc61-4ed9-b879-3e3eb567e818' && ($Morad['Full_Name'] ?? '') === 'مراد اسکندری', 'single-user manual mode adds user with numeric Telegram_ID');
 ok(count(ServerClient::$UpdateCalls) === 1 && (int)(ServerClient::$UpdateCalls[0]['payload']['telegram_id'] ?? 0) === 777888999, 'single-user manual mode pushes telegram_id back to panel');
 
-// 6. Static header & routing checks.
+// Subsequent bulk sync recognizes linked Client_ID even while panel response still has telegram_id: null.
+TelegramClient::$Messages = [];
+AdminFlow::autoUpdateAllUsers($Admin);
+$AllTexts2 = implode("\n", array_column(TelegramClient::$Messages, 'text'));
+ok(!str_contains($AllTexts2, 'کاربران فاقد آیدی عددی'), 'already-linked Client_ID updates cleanly without missing-ID warning');
+
+// 6. Static header, non-destructive guarantee, & routing checks.
 $ServerPhp = (string)file_get_contents(dirname(__DIR__) . '/Core/Server/Umbrella-Server.php');
 $AdminPhp = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
 $DispatchPhp = (string)file_get_contents(dirname(__DIR__) . '/Bot/Dispatcher.php');
+$BulkStart = strpos($AdminPhp, 'public static function autoUpdateAllUsers(');
+$BulkEnd = strpos($AdminPhp, 'private static function unwrapServerUserRows(', (int)$BulkStart);
+$BulkBody = $BulkStart !== false && $BulkEnd !== false ? substr($AdminPhp, $BulkStart, $BulkEnd - $BulkStart) : '';
+ok($BulkBody !== '' && !str_contains(strtoupper($BulkBody), 'DELETE FROM'), 'autoUpdateAllUsers contains zero DELETE FROM statements');
 ok(str_contains($ServerPhp, "'Watashi-API-Key'") && str_contains($ServerPhp, "'Hiddify-API-Key'"), 'ServerClient sends Watashi-API-Key and Hiddify-API-Key');
 ok(!str_contains($ServerPhp, "\u{200C}") && !str_contains($AdminPhp, "\u{200C}"), 'no ZWNJ in Umbrella-Server.php or Admin.php');
 ok(str_contains($DispatchPhp, "'admin_users_auto_sync'") && str_contains($DispatchPhp, "'admin_users_single_sync'"), 'Dispatcher routes both auto and single user sync callbacks');

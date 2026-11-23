@@ -3234,8 +3234,8 @@ $Text = Helper::adminGreeting($Context, 'بروز رسانی داده های ک�
 . "🧾*انتخاب روش بروزرسانی داده های کاربران:*\n➖➖➖➖➖➖➖➖➖\n"
 . "🔄*بروزرسانی خودکار همه کاربران:*\n"
 . "├─دریافت مستقیم تمام کاربران از سرور آمبرلا (`API`)\n"
-. "├─پاکسازی کامل داده های قبلی کاربران در دیتابیس\n"
-. "└─ثبت خودکار آیدی عددی، شناسه کلاینت (`UUID`) و تمام اطلاعات\n\n"
+. "├─بروزرسانی اطلاعات کاربران فعلی و افزودن کاربران جدید\n"
+. "└─بدون حذف داده ها، تراکنش ها، دستگاه ها و سوابق دیتابیس\n\n"
 . "👤*بروزرسانی تکی (ورود دستی):*\n"
 . "└─ثبت یا بروزرسانی یک کاربر با وارد کردن آیدی عددی (یا شماره) و `UUID`"
 . Helper::adminFooter();
@@ -3288,7 +3288,7 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال در�
 }
 
 $Loading_Text = self::header($Context, 'بروز رسانی داده های کاربران')
-. "🔄*در حال اجرای دستور دریافت کل کاربران از سرور و بازسازی دیتابیس...*\n➖➖➖➖➖➖➖➖➖\n"
+. "🔄*در حال دریافت فهرست کاربران از سرور و همگام سازی با دیتابیس...*\n➖➖➖➖➖➖➖➖➖\n"
 . "⏳لطفا چند لحظه صبر کنید."
 . Helper::adminFooter();
 
@@ -3324,11 +3324,29 @@ return;
 
 if ($Rows === []) {
 $Empty_Text = self::header($Context, 'بروز رسانی داده های کاربران')
-. "⚠️*فهرست دریافتی از سرور خالی بود؛ برای جلوگیری از پاک شدن اطلاعات، تغییری در دیتابیس اعمال نشد.*"
+. "⚠️*فهرست دریافتی از سرور خالی بود؛ تغییری در دیتابیس اعمال نشد.*"
 . Helper::adminFooter();
 TelegramClient::sendMessage($Context->ChatId, $Empty_Text, TelegramClient::inlineKeyboard($Retry_Nav));
 return;
 }
+
+$Db = Database::getInstance();
+$Existing_Lookup = [];
+
+try {
+if (method_exists($Db, 'fetchAll')) {
+$Table_Rows = $Db->fetchAll('SELECT TABLE_NAME AS t FROM information_schema.tables WHERE table_schema = DATABASE()', []);
+foreach ($Table_Rows as $T_Row) {
+$T_Name = (string)($T_Row['t'] ?? $T_Row['TABLE_NAME'] ?? '');
+if ($T_Name !== '') $Existing_Lookup[strtolower($T_Name)] = true;
+}
+}
+} catch (Throwable) {
+$Existing_Lookup = [];
+}
+
+$Has_Devices_Table = $Existing_Lookup === [] || isset($Existing_Lookup['app_devices']);
+$Has_Sessions_Table = $Existing_Lookup === [] || isset($Existing_Lookup['app_sessions']);
 
 $Prepared_Users = [];
 $Row_Meta = [];
@@ -3351,6 +3369,15 @@ $Telegram_ID = (int)($Row['telegram_id'] ?? 0);
 $Raw_Name = trim((string)($Row['name'] ?? ''));
 $Comment = trim((string)($Row['comment'] ?? ''));
 $Row_Id = (int)($Row['id'] ?? 0);
+
+if ($Telegram_ID <= 0 && method_exists($Db, 'fetchOne')) {
+try {
+$Linked_Row = $Db->fetchOne('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$Uuid]);
+if (is_array($Linked_Row) && (int)($Linked_Row['Telegram_ID'] ?? 0) > 0) {
+$Telegram_ID = (int)$Linked_Row['Telegram_ID'];
+}
+} catch (Throwable) {}
+}
 
 if ($Telegram_ID <= 0) {
 $Missing_Tg_Rows[] = [
@@ -3382,88 +3409,104 @@ $Prepared_Users[$Telegram_ID] = $Built;
 $Row_Meta[$Telegram_ID] = ['active' => $Is_Active, 'start' => $Start_Raw, 'id' => $Row_Id];
 }
 
-$User_Tables = [
-'Ticket_Messages',
-'Tickets',
-'Ratings',
-'Subscription_Logs',
-'Transactions',
-'SMS_Logs',
-'Notifications',
-'Scheduled_Jobs',
-'Payment_Queue',
-'Usage_Snapshots',
-'App_Bot_Link_Requests',
-'App_SignIn_Requests',
-'App_Notifications',
-'App_Sessions',
-'App_Devices',
-'App_Device_Limits',
-'App_Bypass_Settings',
-'App_Filter_Settings',
-'App_Cancelled_Payments',
-'Users',
-];
+$Updated_Count = 0;
+$Inserted_Count = 0;
 
-$Db = Database::getInstance();
-$Existing_Lookup = [];
+$Apply_Upsert = static function (Database $Tx) use ($Prepared_Users, $Has_Devices_Table, $Has_Sessions_Table, &$Updated_Count, &$Inserted_Count): void {
+foreach ($Prepared_Users as $Telegram_ID => $User_Row) {
+$Uuid = (string)$User_Row['Client_ID'];
 
-try {
-if (method_exists($Db, 'fetchAll')) {
-$Table_Rows = $Db->fetchAll('SELECT TABLE_NAME AS t FROM information_schema.tables WHERE table_schema = DATABASE()', []);
-foreach ($Table_Rows as $T_Row) {
-$T_Name = (string)($T_Row['t'] ?? $T_Row['TABLE_NAME'] ?? '');
-if ($T_Name !== '') $Existing_Lookup[strtolower($T_Name)] = true;
-}
-}
-} catch (Throwable) {
-$Existing_Lookup = [];
-}
-
-$Tables_To_Wipe = $Existing_Lookup !== []
-? array_values(array_filter($User_Tables, static fn(string $T): bool => isset($Existing_Lookup[strtolower($T)])))
-: $User_Tables;
-
-$Has_Sessions_Table = $Existing_Lookup === [] || isset($Existing_Lookup['user_sessions']);
-$Has_Settings_Table = $Existing_Lookup === [] || isset($Existing_Lookup['settings']);
-$Wiped_Tables_Count = 0;
-
-$Apply_Replace = static function (Database $Tx) use ($Tables_To_Wipe, $Has_Sessions_Table, $Has_Settings_Table, $Prepared_Users, $Context, &$Wiped_Tables_Count): void {
-foreach ($Tables_To_Wipe as $Table_Name) {
-$Tx->execute('DELETE FROM `' . $Table_Name . '`');
-$Wiped_Tables_Count++;
-}
-
-if ($Has_Sessions_Table) {
-$Tx->execute('DELETE FROM `User_Sessions` WHERE `Telegram_ID` <> ?', [$Context->UserId]);
+if (method_exists($Tx, 'execute')) {
 $Tx->execute(
-'UPDATE `User_Sessions` SET `Flow` = NULL, `Temp_UID` = NULL, `Temp_Ticket_ID` = NULL, `Pending_Plan` = NULL, `Pending_Payment` = NULL, `Pending_Custom_Plan` = NULL, `Pending_Topup` = NULL, `Broadcast_Mode` = NULL WHERE `Telegram_ID` = ?',
-[$Context->UserId]
-);
-$Wiped_Tables_Count++;
-}
-
-if ($Has_Settings_Table) {
-$Tx->execute(
-"DELETE FROM `Settings` WHERE `Key` LIKE 'App\\_Free\\_Claimed\\_%' OR `Key` LIKE 'app\\_otp\\_cooldown\\_%' OR `Key` LIKE 'DailyNotice\\_%' OR `Key` LIKE 'Nowruz\\_Claimed\\_%'"
+'UPDATE `Users` SET `Client_ID` = NULL WHERE `Client_ID` = ? AND `Telegram_ID` <> ?',
+[$Uuid, $Telegram_ID]
 );
 }
 
-foreach ($Prepared_Users as $User_Row) {
+$Existing_User = Repository::getUser((int)$Telegram_ID);
+$App_Free_Claimed = method_exists('Repository', 'getSetting')
+&& trim((string)Repository::getSetting('App_Free_Claimed_' . $Uuid, '')) === '1';
+
+if (!empty($Existing_User) && is_array($Existing_User)) {
+$Update_Fields = $User_Row;
+unset(
+$Update_Fields['Telegram_ID'],
+$Update_Fields['Chat_ID'],
+$Update_Fields['Balance'],
+$Update_Fields['Is_Blocked'],
+$Update_Fields['Free_Plan_Claimed'],
+$Update_Fields['Registered_At']
+);
+
+$Local_Name = trim((string)($Existing_User['Full_Name'] ?? ''));
+$Server_Is_Placeholder = trim((string)$User_Row['Full_Name']) === 'کاربر';
+if ($Server_Is_Placeholder && $Local_Name !== '') {
+$Update_Fields['Full_Name'] = $Local_Name;
+$Update_Fields['First_Name'] = trim((string)($Existing_User['First_Name'] ?? '')) !== ''
+? (string)$Existing_User['First_Name']
+: $Local_Name;
+}
+
+$Is_Active = ((int)$User_Row['Server_Is_Active'] === 1 && (int)$User_Row['Server_Enable'] === 1);
+if (!$Is_Active) {
+$Update_Fields['Deactivation_Message'] = $Existing_User['Deactivation_Message'] ?? null;
+if ((int)($Existing_User['Channel_Client_Disabled_At'] ?? 0) > 0) {
+$Update_Fields['Client_Status'] = '🚫قطع به دلیل عدم عضویت';
+$Update_Fields['Channel_Client_Disabled_At'] = $Existing_User['Channel_Client_Disabled_At'];
+}
+}
+
+$New_Phone = trim((string)($User_Row['Phone'] ?? ''));
+if ($New_Phone === '') {
+unset($Update_Fields['Phone'], $Update_Fields['Operator']);
+} elseif (method_exists('Repository', 'findUserByPhone')) {
+$Phone_Conflict = Repository::findUserByPhone($New_Phone, (int)$Telegram_ID);
+if (!empty($Phone_Conflict)) {
+unset($Update_Fields['Phone'], $Update_Fields['Operator']);
+}
+}
+
+if ($App_Free_Claimed) {
+$Update_Fields['Free_Plan_Claimed'] = 1;
+}
+
+Repository::updateUser((int)$Telegram_ID, $Update_Fields);
+$Updated_Count++;
+} else {
+if ($App_Free_Claimed) {
+$User_Row['Free_Plan_Claimed'] = 1;
+}
 $Tx->insert('Users', $User_Row);
+$Inserted_Count++;
+}
+
+if (method_exists($Tx, 'execute')) {
+if ($Has_Devices_Table) {
+$Tx->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Telegram_ID, $Uuid]
+);
+}
+if ($Has_Sessions_Table) {
+$Tx->execute(
+'UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Telegram_ID, $Uuid]
+);
+}
+}
 }
 };
 
 try {
 if (method_exists($Db, 'transaction')) {
-$Db->transaction($Apply_Replace);
+$Db->transaction($Apply_Upsert);
 } else {
-$Apply_Replace($Db);
+$Apply_Upsert($Db);
 }
 } catch (Throwable $Error) {
-error_log('[Umbrella-Bot][Bulk-User-Replace] ' . $Error->getMessage());
+error_log('[Umbrella-Bot][Bulk-User-Sync] ' . $Error->getMessage());
 $Db_Err_Text = self::header($Context, 'بروز رسانی داده های کاربران')
-. "❌*خطا در جایگزینی دیتابیس؛ تغییرات بازگردانی (Rollback) شد و داده های قبلی حفظ ماندند.*\n➖➖➖➖➖➖➖➖➖\n"
+. "❌*خطا در همگام سازی دیتابیس؛ تغییرات بازگردانی (Rollback) شد و داده های قبلی حفظ ماندند.*\n➖➖➖➖➖➖➖➖➖\n"
 . "⚠️جزئیات: " . mb_substr($Error->getMessage(), 0, 220)
 . Helper::adminFooter();
 TelegramClient::sendMessage($Context->ChatId, $Db_Err_Text, TelegramClient::inlineKeyboard($Retry_Nav));
@@ -3479,9 +3522,9 @@ Repository::updateUsageSnapshotValues();
 if (method_exists('Repository', 'logAdminAction')) {
 Repository::logAdminAction(
 $Context->UserId,
-'admin_bulk_user_replace',
+'admin_bulk_user_sync',
 null,
-'server_rows=' . count($Rows) . ',inserted=' . count($Prepared_Users) . ',missing_tg=' . count($Missing_Tg_Rows)
+'server_rows=' . count($Rows) . ',updated=' . $Updated_Count . ',inserted=' . $Inserted_Count . ',missing_tg=' . count($Missing_Tg_Rows)
 );
 }
 } catch (Throwable) {}
@@ -3504,19 +3547,19 @@ $Total_Usage_Label = method_exists('Helper', 'formatGB')
 : Helper::toPersian(number_format($Total_Used_GB, 2)) . ' گیگابایت';
 
 $Summary = Helper::adminGreeting($Context, 'بروز رسانی داده های کاربران')
-. "✅*تمام داده های کاربران دیتابیس حذف و با خروجی زنده سرور جایگزین شد.*\n➖➖➖➖➖➖➖➖➖\n"
+. "✅*داده های کاربران بدون حذف دیتابیس بروزرسانی و اضافه شد.*\n➖➖➖➖➖➖➖➖➖\n"
 . "📡تعداد کل دریافتی از سرور: *" . Helper::toPersian((string)count($Rows)) . "*\n"
-. "👤کاربران ثبت شده در دیتابیس: *" . Helper::toPersian((string)count($Prepared_Users)) . "*\n"
+. "🔄بروزرسانی کاربران فعلی: *" . Helper::toPersian((string)$Updated_Count) . "*\n"
+. "➕افزودن کاربران جدید: *" . Helper::toPersian((string)$Inserted_Count) . "*\n"
 . "🟢فعال: *" . Helper::toPersian((string)$Active_Count) . "* | 🔴غیرفعال: *" . Helper::toPersian((string)$Inactive_Count) . "*\n"
-. "📊مجموع مصرف ثبت شده: *" . $Total_Usage_Label . "*\n"
-. "🧹تعداد جداول بازسازی شده: *" . Helper::toPersian((string)$Wiped_Tables_Count) . "*\n";
+. "📊مجموع مصرف ثبت شده: *" . $Total_Usage_Label . "*\n";
 
 if ($Invalid_Rows > 0) {
 $Summary .= "⚠️رکورد نامعتبر (فاقد UUID): *" . Helper::toPersian((string)$Invalid_Rows) . "*\n";
 }
 
 if ($Prepared_Users !== []) {
-$Summary .= "\n📋*نمونه کاربران ثبت شده:*\n";
+$Summary .= "\n📋*نمونه کاربران همگام شده:*\n";
 $Shown = 0;
 foreach ($Prepared_Users as $Uid => $U_Row) {
 $Status_Icon = ((int)$U_Row['Server_Is_Active'] === 1 && (int)$U_Row['Server_Enable'] === 1) ? '🟢' : '🔴';
@@ -3524,7 +3567,7 @@ $Line = $Status_Icon . $U_Row['Full_Name'] . ' — 🆔`' . Helper::toPersian((s
 if (mb_strlen($Summary . $Line) > 2600 || $Shown >= 10) {
 $Remaining_Count = count($Prepared_Users) - $Shown;
 if ($Remaining_Count > 0) {
-$Summary .= "… و *" . Helper::toPersian((string)$Remaining_Count) . "* کاربر دیگر در دیتابیس ثبت شدند.\n";
+$Summary .= "… و *" . Helper::toPersian((string)$Remaining_Count) . "* کاربر دیگر همگام سازی شدند.\n";
 }
 break;
 }
