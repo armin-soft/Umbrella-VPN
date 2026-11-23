@@ -46,25 +46,36 @@ class SoundService {
     final DateTime now = DateTime.now();
     final AudioPlayer player;
     if (name == 'click') {
-      if (_lastClick != null && now.difference(_lastClick!) < const Duration(milliseconds: 40)) return;
+      if (_lastClick != null &&
+          now.difference(_lastClick!) < const Duration(milliseconds: 40)) {
+        return;
+      }
       _lastClick = now;
       player = _clickPlayer;
     } else if (name == 'connect' || name == 'disconnect') {
-      if (_lastStateEvent == name && _lastStateEventAt != null &&
-          now.difference(_lastStateEventAt!) < const Duration(milliseconds: 500)) return;
+      if (_lastStateEvent == name &&
+          _lastStateEventAt != null &&
+          now.difference(_lastStateEventAt!) < const Duration(milliseconds: 500)) {
+        return;
+      }
       _lastStateEvent = name;
       _lastStateEventAt = now;
       player = _statePlayer;
     } else {
-      if (_lastAlertEvent == name && _lastAlertEventAt != null &&
-          now.difference(_lastAlertEventAt!) < const Duration(milliseconds: 500)) return;
+      if (_lastAlertEvent == name &&
+          _lastAlertEventAt != null &&
+          now.difference(_lastAlertEventAt!) < const Duration(milliseconds: 500)) {
+        return;
+      }
       _lastAlertEvent = name;
       _lastAlertEventAt = now;
       player = _alertPlayer;
     }
     try {
       await player.stop();
-      if (!enabled) return;
+      if (!enabled) {
+        return;
+      }
       await player.play(AssetSource('sounds/$name.wav'), volume: name == 'click' ? 0.55 : 0.85);
       _failureReported = false;
     } catch (_) {

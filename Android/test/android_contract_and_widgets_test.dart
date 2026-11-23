@@ -1421,10 +1421,10 @@ void main() {
 
         final List<Map<String, dynamic>> verifyPayloads = <Map<String, dynamic>>[];
         final MockClient mockClient = MockClient((http.Request request) async {
-          final String url = request.url.toString();
+          final String route = request.url.queryParameters['AppApi'] ?? request.url.path;
           final Map<String, dynamic> payload =
               jsonDecode(request.body) as Map<String, dynamic>;
-          if (url.contains('auth/verify')) {
+          if (route.contains('auth/verify')) {
             verifyPayloads.add(payload);
             return http.Response.bytes(
               utf8.encode(jsonEncode(<String, dynamic>{

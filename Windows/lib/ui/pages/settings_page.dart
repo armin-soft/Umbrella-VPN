@@ -772,7 +772,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   created,
                 ];
                 await _applyRuntime(vpn, () => settings.setAppRoutes(next));
-              },
+              }),
             ),
           ),
           children: cfg.appRoutes.isEmpty
