@@ -380,6 +380,7 @@ class VpnController extends ChangeNotifier {
   DateTime? get connectedAt => _connectedAt;
 
   int _proxyPort = 0;
+  int get proxyPort => _proxyPort;
   bool _androidServiceRunning = false;
   StreamSubscription<AndroidServiceEvent>? _serviceEventSub;
 
@@ -419,7 +420,7 @@ class VpnController extends ChangeNotifier {
   }
 
   /// اگر آخرین ساخت پیکربندی به خاطر نبود فایل هسته شکست خورده باشد.
-  bool _lastPlanNeedsCore = false;
+  final bool _lastPlanNeedsCore = false;
   /// کیل سوییچ در این نسخه وجود ندارد؛ همیشه خاموش است.
   bool get killSwitchOn => false;
 

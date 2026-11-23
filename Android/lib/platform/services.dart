@@ -677,22 +677,23 @@ class UpdateService {
       }
       final int total = streamed.contentLength ?? info.sizeBytes;
       int received = 0;
-      sink = partFile.openWrite();
+      final IOSink activeSink = partFile.openWrite();
+      sink = activeSink;
       await for (final List<int> chunk in streamed.stream) {
         if (isCancelled != null && isCancelled()) {
-          await sink.close();
+          await activeSink.close();
           sink = null;
           if (await partFile.exists()) await partFile.delete();
           return null;
         }
-        sink.add(chunk);
+        activeSink.add(chunk);
         received += chunk.length;
         final double progress =
             total > 0 ? (received / total).clamp(0.0, 0.99) : 0.0;
         onProgress(progress, received, total);
       }
-      await sink.flush();
-      await sink.close();
+      await activeSink.flush();
+      await activeSink.close();
       sink = null;
 
       onProgress(1.0, received, received);

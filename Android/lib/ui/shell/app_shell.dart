@@ -198,7 +198,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: colors.borderStrong,
+                      color: colors.border,
                       borderRadius: BorderRadius.circular(99),
                     ),
                   ),
