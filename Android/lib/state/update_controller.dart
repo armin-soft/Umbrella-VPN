@@ -270,6 +270,26 @@ class UpdateController extends ChangeNotifier {
         silentRelaunch: true,
       );
       if (!ok) {
+        final Uri? fallbackUri = Uri.tryParse(info.downloadUrl);
+        bool openedBrowser = false;
+        if (fallbackUri != null) {
+          try {
+            openedBrowser = await launchUrl(
+              fallbackUri,
+              mode: LaunchMode.externalApplication,
+            );
+          } on Exception {
+            openedBrowser = false;
+          }
+        }
+        if (openedBrowser) {
+          _phase = 'فایل نسخه جدید برای نصب ایمن در مرورگر سیستم باز شد.';
+          _log.add(Fa.num('لینک نصب نسخه ${info.version} به مرورگر سیستم سپرده شد.'));
+          _installing = false;
+          _downloading = false;
+          notifyListeners();
+          return true;
+        }
         _installing = false;
         _downloading = false;
         _phase = '';

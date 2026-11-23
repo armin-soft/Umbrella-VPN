@@ -17,14 +17,17 @@ $Count = (int)$Database->scalar(
 if ($Count === 0) {
 self::install();
 self::migrate();
+try { AppSchema::ensureInstalled(); } catch (Throwable) {}
 return;
 }
 
 self::migrate();
+try { AppSchema::ensureInstalled(); } catch (Throwable) {}
 }
 
 catch (Throwable) {
 try { self::install(); } catch (Throwable) {}
+try { AppSchema::ensureInstalled(); } catch (Throwable) {}
 }
 }
 

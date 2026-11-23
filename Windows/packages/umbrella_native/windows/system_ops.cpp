@@ -8,7 +8,6 @@
 #include <wininet.h>
 #include <ws2tcpip.h>
 #include <icmpapi.h>
-#include <winternl.h>
 
 #include <algorithm>
 #include <cctype>
@@ -79,6 +78,25 @@ bool ReadRegistryString(HKEY root, const std::wstring& path,
     return false;
   }
   *out = buffer;
+  return true;
+}
+
+bool ReadRegistryDword(HKEY root, const std::wstring& path,
+                       const std::wstring& name, DWORD* out) {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(root, path.c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS) {
+    return false;
+  }
+  DWORD value = 0;
+  DWORD size = sizeof(value);
+  DWORD type = 0;
+  LSTATUS status = RegQueryValueExW(key, name.c_str(), nullptr, &type,
+                                    reinterpret_cast<LPBYTE>(&value), &size);
+  RegCloseKey(key);
+  if (status != ERROR_SUCCESS || type != REG_DWORD) {
+    return false;
+  }
+  *out = value;
   return true;
 }
 
@@ -364,23 +382,25 @@ DeviceInfo SystemOps::CollectDeviceInfo() {
   DWORD user_size = 256;
   if (GetUserNameW(user, &user_size)) info.username = ToUtf8(user);
 
-  OSVERSIONINFOEXW version = {0};
-  version.dwOSVersionInfoSize = sizeof(version);
-  typedef LONG(WINAPI * RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
-  HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-  if (ntdll != nullptr) {
-    auto rtl_get_version =
-        reinterpret_cast<RtlGetVersionPtr>(GetProcAddress(ntdll, "RtlGetVersion"));
-    if (rtl_get_version != nullptr &&
-        rtl_get_version(reinterpret_cast<PRTL_OSVERSIONINFOW>(&version)) == 0) {
-      info.os_build = static_cast<int>(version.dwBuildNumber);
+  DWORD major_ver = 0;
+  std::wstring build_str;
+  const bool has_major = ReadRegistryDword(
+      HKEY_LOCAL_MACHINE,
+      L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+      L"CurrentMajorVersionNumber", &major_ver);
+  const bool has_build = ReadRegistryString(
+      HKEY_LOCAL_MACHINE,
+      L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+      L"CurrentBuildNumber", &build_str);
+  if (has_build && !build_str.empty()) {
+    const int build_num = static_cast<int>(wcstol(build_str.c_str(), nullptr, 10));
+    if (build_num > 0) {
+      info.os_build = build_num;
+      const int raw_major = has_major ? static_cast<int>(major_ver) : 10;
       const int display_major =
-          (version.dwMajorVersion == 10 && version.dwBuildNumber >= 22000)
-              ? 11
-              : static_cast<int>(version.dwMajorVersion);
+          (raw_major == 10 && build_num >= 22000) ? 11 : raw_major;
       std::ostringstream os;
-      os << "Windows " << display_major
-         << " (build " << version.dwBuildNumber << ")";
+      os << "Windows " << display_major << " (build " << build_num << ")";
       info.os = os.str();
     }
   }

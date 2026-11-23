@@ -27,11 +27,11 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "Umbrella"
+            VALUE "CompanyName", "Armin Soft"
             VALUE "FileDescription", UMBRELLA_FILE_DESCRIPTION
             VALUE "FileVersion", UMBRELLA_FILE_VERSION_TEXT
             VALUE "InternalName", UMBRELLA_INTERNAL_NAME
-            VALUE "LegalCopyright", "Umbrella"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Armin Soft"
             VALUE "OriginalFilename", UMBRELLA_INTERNAL_NAME
             VALUE "ProductName", "فیلترشکن آمبرلا"
             VALUE "ProductVersion", UMBRELLA_FILE_VERSION_TEXT

@@ -492,11 +492,9 @@ class _DevicePageState extends State<DevicePage> {
           const Divider(height: AppMetrics.space3),
           InfoRow(
             icon: Icons.install_mobile_rounded,
-            label: 'مجوز نصب نسخه جدید',
-            value: device.canRequestInstallPackages ? 'فعال' : 'نیاز به تایید در تنظیمات',
-            valueColor: device.canRequestInstallPackages
-                ? colors.success
-                : colors.warning,
+            label: 'نصب نسخه جدید',
+            value: device.canRequestInstallPackages ? 'مستقیم داخل برنامه' : 'از طریق مرورگر سیستم',
+            valueColor: colors.success,
           ),
           const Divider(height: AppMetrics.space3),
           InfoRow(

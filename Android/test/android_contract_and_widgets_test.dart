@@ -304,6 +304,8 @@ void main() {
     test('AndroidManifest.xml and core manifest expose required capabilities', () {
       final String manifest =
           File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, isNot(contains('android.permission.REQUEST_INSTALL_PACKAGES')));
+      expect(manifest, isNot(contains('installPackagesPermission')));
       expect(manifest, contains('android.permission.BIND_VPN_SERVICE'));
       expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
       expect(manifest, contains('android.permission.RECEIVE_BOOT_COMPLETED'));

@@ -235,17 +235,56 @@ jobs:
             throw 'Bundled core contract tests failed'
           }
       - name: Compile installer
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
           $iscc = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
           if (!(Test-Path $iscc)) {
             choco install innosetup --yes --no-progress
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
           }
-          & $iscc installer/umbrella.iss 2>&1 | Tee-Object -Variable installerLog
-          if ($LASTEXITCODE -ne 0) {
-            $detail = ($installerLog | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
-            Write-Output "::error::$detail"
-            throw 'Installer compilation failed'
+          $certThumb = ''
+          $pfxPath = ''
+          try {
+            if ($env:WINDOWS_CERT_PFX_BASE64) {
+              $signtoolExe = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | Select-Object -First 1
+              if (!$signtoolExe) { throw 'signtool.exe not found in Windows Kits' }
+              $env:PATH = "$($signtoolExe.DirectoryName);$env:PATH"
+              $pfxPath = Join-Path $env:RUNNER_TEMP 'umbrella-sign.pfx'
+              [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+              $secPass = ConvertTo-SecureString $env:WINDOWS_CERT_PASSWORD -AsPlainText -Force
+              $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $secPass
+              $certThumb = $cert.Thumbprint
+              $releaseDir = 'build/windows/x64/runner/Release'
+              $targets = @(
+                "$releaseDir/UmbrellaVPN.exe",
+                "$releaseDir/UmbrellaCli.exe",
+                "$releaseDir/UmbrellaAdmin.exe",
+                "$releaseDir/UmbrellaCoreEngine.exe",
+                "$releaseDir/umbrella_native_plugin.dll",
+                "$releaseDir/flutter_windows.dll",
+                "$releaseDir/cores/umbrella/UmbrellaCore.dll"
+              ) | Where-Object { Test-Path $_ }
+              foreach ($bin in $targets) {
+                & signtool.exe sign /sha1 $certThumb /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $bin
+                if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $bin" }
+              }
+            }
+            if ($certThumb) {
+              & $iscc "/Ssigntool=signtool.exe sign /sha1 $certThumb /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `$f" /DSignTool=1 installer/umbrella.iss 2>&1 | Tee-Object -Variable installerLog
+            } else {
+              & $iscc installer/umbrella.iss 2>&1 | Tee-Object -Variable installerLog
+            }
+            if ($LASTEXITCODE -ne 0) {
+              $detail = ($installerLog | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+              Write-Output "::error::$detail"
+              throw 'Installer compilation failed'
+            }
+          } finally {
+            if ($pfxPath -and (Test-Path $pfxPath)) { Remove-Item -Force $pfxPath }
+            if ($certThumb) { Remove-Item "Cert:\CurrentUser\My\$certThumb" -ErrorAction SilentlyContinue }
           }
           $files = @(Get-ChildItem installer/output -Filter '*.exe')
           if ($files.Count -ne 1) { throw 'Expected exactly one installer' }

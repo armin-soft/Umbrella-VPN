@@ -139,8 +139,29 @@ class MethodHandler(
         }
     }
 
+    private fun hasInstallPackagesManifestPermission(): Boolean {
+        return runCatching {
+            val pkgInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                activity.packageManager.getPackageInfo(
+                    activity.packageName,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                activity.packageManager.getPackageInfo(
+                    activity.packageName,
+                    PackageManager.GET_PERMISSIONS,
+                )
+            }
+            pkgInfo.requestedPermissions?.contains(Manifest.permission.REQUEST_INSTALL_PACKAGES) == true
+        }.getOrDefault(false)
+    }
+
     private fun buildPlatformInfo(): Map<String, Any> {
-        val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val hasPerm = hasInstallPackagesManifestPermission()
+        val canInstall = if (!hasPerm) {
+            false
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             activity.packageManager.canRequestPackageInstalls()
         } else {
             true
@@ -480,6 +501,9 @@ class MethodHandler(
         val file = File(path)
         if (!file.exists()) {
             return mapOf("ok" to false, "reason" to "file_not_found")
+        }
+        if (!hasInstallPackagesManifestPermission()) {
+            return mapOf("ok" to false, "reason" to "browser_install_preferred")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()

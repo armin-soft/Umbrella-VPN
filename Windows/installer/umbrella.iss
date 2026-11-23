@@ -34,13 +34,19 @@ SetupIconFile=..\windows\runner\resources\app_icon.ico
 WizardImageAlphaFormat=defined
 WizardImageFile=wizard-image.bmp,wizard-image-200.bmp
 WizardSmallImageFile=wizard-small.bmp,wizard-small-150.bmp,wizard-small-200.bmp,wizard-small-250.bmp
-Compression=lzma2/ultra64
-SolidCompression=yes
+Compression=lzma2/fast
+SolidCompression=no
 WizardStyle=modern
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
+AppMutex=Global\UmbrellaVPN.Desktop.SingleInstance
 CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
+#ifdef SignTool
+SignTool=signtool
+SignedUninstaller=yes
+#endif
 ; Windows 10 (build 10240) is the oldest supported release, 11 is included.
 MinVersion=10.0
 ; All 64-bit Windows 10 and Windows 11 editions (x64 and x64-capable 64-bit).
@@ -109,7 +115,7 @@ Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent runascurrentuser; Che
 
 [UninstallRun]
 ; Only the rules this client created are removed, the rest of the firewall stays untouched.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ""Get-NetFirewallRule -DisplayName 'Umbrella-*' | Remove-NetFirewallRule -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveUmbrellaFirewallRules"
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -Command ""Get-NetFirewallRule -DisplayName 'Umbrella-*' | Remove-NetFirewallRule -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveUmbrellaFirewallRules"
 
 [Code]
 function ShouldRelaunchAfterUpdate(): Boolean;
@@ -117,34 +123,29 @@ begin
   Result := ExpandConstant('{param:RelaunchAfterUpdate|0}') = '1';
 end;
 
-// برنامه در حال اجرا با فایل های نصب قفل می کند؛ قبل از کپی، هر نسخه در حال
-// اجرا و هسته های بازمانده بسته می شوند تا کاربر مجبور به تسک منیجر نشود.
-procedure KillRunning();
+// قبل از کپی یا حذف، پنجره اصلی برنامه را به صورت استاندارد می بندد و
+// بقیه فایل های قفل شده از طریق Restart Manager ویندوز آزاد می شوند.
+procedure RequestGracefulClose();
 var
-  ResultCode: Integer;
+  Wnd: HWND;
+  Attempts: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaVPN.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM umbrella_vpn.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  // هسته (پنجره CLI) و موتور گرافیکی هم بسته می شوند تا فایل در حال استفاده
-  // نماند. هسته قدیمی نسخه های قبلی هم پاک می شود.
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaCli.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaCoreEngine.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM UmbrellaAdmin.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCli.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HiddifyCore.exe /T',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(600);
+  Wnd := FindWindowByClassName('FLUTTER_RUNNER_WIN32_WINDOW');
+  if Wnd <> 0 then
+  begin
+    PostMessage(Wnd, $0010, 0, 0);
+    for Attempts := 1 to 10 do
+    begin
+      Sleep(150);
+      if FindWindowByClassName('FLUTTER_RUNNER_WIN32_WINDOW') = 0 then
+        Break;
+    end;
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  KillRunning();
+  RequestGracefulClose();
   Result := '';
 end;
 
@@ -193,7 +194,7 @@ begin
     'Remove-Item -LiteralPath ([Environment]::GetFolderPath(''ApplicationData'') '
       + '+ ''\Umbrella'') -Recurse -Force -ErrorAction SilentlyContinue';
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-       '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass '
+       '-NoProfile -NonInteractive '
        + '-Command "' + Command + '"',
        '', SW_HIDE, ewNoWait, ResultCode);
 end;
@@ -226,7 +227,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
-    KillRunning();
+    RequestGracefulClose();
     ClearLoopbackProxy();
     RemoveInstallFolder();
   end;

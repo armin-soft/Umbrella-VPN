@@ -41,6 +41,7 @@ return array_values(array_filter($Matches, fn($D) => $D['Is_Trusted'] === 1 && (
 if (str_contains($Q, 'LIMIT ? OFFSET ?')) return count($P) >= 4 ? array_slice(self::$Devices, $P[3], $P[2]) : array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? 0);
 if (str_contains($Q, 'FROM `App_Devices` AS `D`')) return array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? count(self::$Devices));
 if (str_contains($Q, 'FROM `App_Devices` WHERE `Is_Trusted` = 1')) return array_values(array_filter(self::$Devices, fn($D) => $D['Is_Trusted'] === 1));
+if (str_contains($Q, 'WHERE `User_UUID` = ?')) return array_values(array_filter(self::$Devices, fn($D) => ($D['User_UUID'] ?? '') === $P[0] && $D['Is_Trusted'] === 1));
 return array_values(array_filter(self::$Devices, fn($D) => $D['Telegram_ID'] === $P[0] && $D['Is_Trusted'] === 1));
 }
 public function execute(string $Q, array $P): void {
@@ -109,6 +110,15 @@ check(AdminFlow::queueAppPush(0, 'broadcast', 99) === 1, 'app broadcast still re
 check(Database::$Queued[0][1][0] === 'device-one', 'app broadcast excludes admin devices by Telegram ID and UUID');
 Database::$Users = []; Database::$Queued = []; Database::$Devices = [];
 check(AdminFlow::queueAppPush(1, 'private', 99) === 0 && Database::$Queued === [], 'no private-message broadcast fallback');
+Database::$Users[2] = ['Telegram_ID' => 2, 'Client_ID' => '_'];
+check(AdminFlow::queueAppPush(2, 'cleared user', 99) === 0 && Database::$Queued === [], 'cleared user with underscore Client_ID does not queue invalid row');
+Database::$Users[3] = ['Telegram_ID' => 3, 'Client_ID' => 'uuid-only-owner'];
+Database::$Devices = [['Device_ID' => 'device-uuid-only', 'User_UUID' => 'uuid-only-owner', 'Telegram_ID' => null, 'Is_Trusted' => 1]];
+check(AdminFlow::queueAppPush(3, 'hello uuid device', 99) === 1, 'targeted app push resolves device matched by User_UUID when Telegram_ID is null');
+check(Database::$Queued[0][1][0] === 'device-uuid-only', 'notification binds to matched Device_ID');
+$FailureReason = new ReflectionMethod(AdminFlow::class, 'appDeliveryFailureReason');
+check(str_contains((string)$FailureReason->invoke(null, 99, 99), 'مدیریت'), 'admin target gets clear management exclusion reason');
+check(str_contains((string)$FailureReason->invoke(null, 2, 99), 'اشتراک فعالی هم ندارد'), 'user without devices or active subscription gets clear reason');
 $Context = new Context();
 Database::$Devices = [['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1, 'Device_Name' => 'phone', 'Platform' => 'Android']];
 AppFlow::devices($Context);

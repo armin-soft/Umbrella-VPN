@@ -206,24 +206,43 @@ jobs:
           shutil.copy2(aars[0], dest)
           print(f'Verified {dest} ({os.path.getsize(dest)} bytes)')
           PY
-      - name: Configure optional release signing
+      - name: Configure release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
+          set -euo pipefail
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/umbrella-release.jks
-            cat > android/key.properties <<EOF
-          storeFile=umbrella-release.jks
-          storePassword=$ANDROID_STORE_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          keyPassword=$ANDROID_KEY_PASSWORD
-          EOF
+            {
+              echo "storeFile=umbrella-release.jks"
+              echo "storePassword=$ANDROID_STORE_PASSWORD"
+              echo "keyAlias=$ANDROID_KEY_ALIAS"
+              echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            } > android/key.properties
             echo 'Release signing configured from secrets.'
           else
-            echo 'No release keystore secrets configured; using Gradle debug signing fallback.'
+            # Never fall back to Android Debug keystore on release artifacts because
+            # Play Protect and mobile AV engines flag CN=Android Debug APKs.
+            gen_pass=$(openssl rand -hex 20)
+            rm -f android/app/umbrella-release.jks
+            keytool -genkeypair -v \
+              -keystore android/app/umbrella-release.jks \
+              -alias umbrella-release \
+              -keyalg RSA -keysize 2048 -sigalg SHA256withRSA \
+              -validity 10000 \
+              -storepass "$gen_pass" \
+              -keypass "$gen_pass" \
+              -dname "CN=Armin Soft, OU=Umbrella VPN, O=Armin Soft, L=Tehran, C=IR" >/dev/null
+            {
+              echo "storeFile=umbrella-release.jks"
+              echo "storePassword=$gen_pass"
+              echo "keyAlias=umbrella-release"
+              echo "keyPassword=$gen_pass"
+            } > android/key.properties
+            echo 'Generated dedicated non-debug release keystore for CI.'
           fi
       - name: Build universal and split-ABI release APKs
         run: |
@@ -269,6 +288,22 @@ jobs:
             fi
             cp "$src" "dist/UmbrellaVPN-${version}-${abi}.apk"
           done
+
+          apksigner_bin=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)
+          if [ -z "$apksigner_bin" ]; then
+            echo "apksigner not found under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          for apk in dist/*.apk; do
+            echo "Verifying signature for $apk ..."
+            certs_out=$("$apksigner_bin" verify --print-certs "$apk")
+            echo "$certs_out"
+            if echo "$certs_out" | grep -qi "Android Debug"; then
+              echo "::error::Release APK $apk is signed with Android Debug key!"
+              exit 1
+            fi
+          done
+          rm -f android/app/umbrella-release.jks android/key.properties
 
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
