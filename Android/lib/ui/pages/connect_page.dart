@@ -307,451 +307,445 @@ class _ConnectPageState extends State<ConnectPage> {
     final bool hasAccessBanner = !account.canConnect;
     final bool hasOccasionBanner = OccasionService.instance.active != null;
 
-    return Padding(
-      padding: AppMetrics.responsivePagePadding(context),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints outer) {
-          final bool compactCard =
-              outer.maxWidth < 480 || outer.maxHeight < 640;
-          final EdgeInsets cardPad = compactCard
-              ? const EdgeInsets.fromLTRB(
-                  AppMetrics.space4,
-                  AppMetrics.space3,
-                  AppMetrics.space4,
-                  AppMetrics.space3,
-                )
-              : const EdgeInsets.fromLTRB(
-                  AppMetrics.space6,
-                  AppMetrics.space5,
-                  AppMetrics.space6,
-                  AppMetrics.space5,
-                );
-          final double innerWidth =
-              (outer.maxWidth - cardPad.horizontal).clamp(200.0, 2000.0);
-          final double innerHeight =
-              (outer.maxHeight - cardPad.vertical).clamp(200.0, 2000.0);
-          final bool landscapeSplit =
-              innerWidth >= 480 && innerHeight < 470;
-          final bool tightPhone = innerWidth < 380;
+    final EdgeInsets pagePad = AppMetrics.responsivePagePadding(context);
 
-          final Widget greetingBlock = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints outer) {
+        final bool compactCard =
+            outer.maxWidth < 480 || outer.maxHeight < 640;
+        final EdgeInsets cardPad = compactCard
+            ? const EdgeInsets.fromLTRB(
+                AppMetrics.space4,
+                AppMetrics.space4,
+                AppMetrics.space4,
+                AppMetrics.space4,
+              )
+            : const EdgeInsets.fromLTRB(
+                AppMetrics.space6,
+                AppMetrics.space5,
+                AppMetrics.space6,
+                AppMetrics.space5,
+              );
+        final double innerWidth =
+            (outer.maxWidth - pagePad.horizontal - cardPad.horizontal)
+                .clamp(200.0, 2000.0);
+        final double innerHeight =
+            (outer.maxHeight - pagePad.vertical - cardPad.vertical)
+                .clamp(200.0, 2000.0);
+        final bool landscapeSplit =
+            innerWidth >= 480 && innerHeight < 470;
+        final bool tightPhone = innerWidth < 380;
+
+        final Widget greetingBlock = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(top: AppMetrics.space1),
+                  child: Icon(
+                    _greetingIcon(),
+                    size: AppMetrics.iconMd,
+                    color: colors.warning,
+                  ),
+                ),
+                const SizedBox(width: AppMetrics.space2),
+                Expanded(
+                  child: Text(
+                    Fa.num(
+                      'سلام ${account.displayName}، '
+                      '${Fa.greeting()}',
+                    ),
+                    softWrap: true,
+                    style: (landscapeSplit
+                            ? Theme.of(context).textTheme.titleSmall
+                            : Theme.of(context).textTheme.titleMedium)
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            if (!landscapeSplit) ...<Widget>[
+              const SizedBox(height: AppMetrics.space1),
+              LiveDateTimeLine(
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ],
+          ],
+        );
+
+        final Widget ipBadge = _IpChip(
+          ip: shownIp,
+          flagCode: flagCode,
+          country: connected ? countryName : '',
+          connected: connected,
+          dense: landscapeSplit,
+        );
+
+        final bool stackedHeader = tightPhone && !landscapeSplit;
+
+        final Widget header = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (stackedHeader) ...<Widget>[
+              greetingBlock,
+              const SizedBox(height: AppMetrics.space2),
+              Wrap(
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space1,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  ipBadge,
+                  if (subs.needsLogin)
+                    Pill(
+                      label: 'برای اشتراک وارد شو',
+                      icon: Icons.login_rounded,
+                      color: colors.warning,
+                    ),
+                ],
+              ),
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Expanded(child: greetingBlock),
+                  if (subs.needsLogin && innerWidth >= 420) ...<Widget>[
+                    const SizedBox(width: AppMetrics.space2),
+                    Pill(
+                      label: 'برای اشتراک وارد شو',
+                      icon: Icons.login_rounded,
+                      color: colors.warning,
+                      dense: landscapeSplit,
+                    ),
+                  ],
+                  const SizedBox(width: AppMetrics.space2),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: innerWidth * 0.45,
+                    ),
+                    child: ipBadge,
+                  ),
+                ],
+              ),
+            if (hasAccessBanner)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: landscapeSplit ? AppMetrics.space2 : AppMetrics.space3,
+                ),
+                child: _AccessBanner(
+                  title: account.enable
+                      ? 'اشتراک شما اجازه اتصال ندارد'
+                      : 'حساب شما مسدود شده است',
+                  message: account.accessReason,
+                  dense: landscapeSplit,
+                ),
+              ),
+            if (hasOccasionBanner && !landscapeSplit)
+              Padding(
+                padding: const EdgeInsets.only(top: AppMetrics.space3),
+                child: OccasionBanner(
+                  occasion: OccasionService.instance.active,
+                  enabled: settings.settings.occasionEffects,
+                ),
+              ),
+          ],
+        );
+
+        Widget buildOrbWidget(double orbSize) {
+          return Semantics(
+            button: true,
+            label: status.busy
+                ? 'لغو اتصال'
+                : (status.active && !_switchPending(vpn)
+                    ? 'قطع اتصال'
+                    : 'اتصال'),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: status == VpnStatus.disconnecting
+                  ? null
+                  : withUiClick(
+                      context,
+                      status.busy
+                          ? () => _cancelConnection(vpn, toasts)
+                          : () => _toggleConnection(vpn, subs, toasts),
+                    ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  StatusOrb(
+                    image: status.image,
+                    color: tone,
+                    size: orbSize,
+                    active: status.busy,
+                  ),
+                  if (!status.busy)
+                    Positioned(
+                      right: orbSize * 0.06,
+                      bottom: orbSize * 0.06,
+                      child: Container(
+                        width: orbSize * 0.24,
+                        height: orbSize * 0.24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: (status.active && !_switchPending(vpn)
+                                  ? colors.danger
+                                  : colors.primary)
+                              .withValues(alpha: 0.94),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: (status.active && !_switchPending(vpn)
+                                      ? colors.danger
+                                      : colors.primary)
+                                  .withValues(alpha: 0.38),
+                              blurRadius: 24,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.power_settings_new_rounded,
+                          size: orbSize * 0.12,
+                          color: colors.onPrimary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        Widget buildStatusTexts({required bool dense}) {
+          return Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: AppMetrics.space1),
-                                        child: Icon(
-                                          _greetingIcon(),
-                      size: compactCard
-                          ? AppMetrics.iconSm
-                          : AppMetrics.iconMd,
-                      color: colors.warning,
+                  if (connected && flagCode.isNotEmpty) ...<Widget>[
+                    FlagView(
+                      code: flagCode,
+                      width: dense
+                          ? AppMetrics.flagWidthSmall
+                          : AppMetrics.flagWidth,
                     ),
-                  ),
-                  const SizedBox(width: AppMetrics.space2),
-                  Expanded(
+                    const SizedBox(width: AppMetrics.space2),
+                  ],
+                  Flexible(
                     child: Text(
                       Fa.num(
-                        'سلام ${account.displayName}، '
-                        '${Fa.greeting()}',
+                        connected ? 'به آمبرلا متصل شد' : status.label,
                       ),
-                      softWrap: true,
-                      style: (compactCard
-                              ? Theme.of(context).textTheme.titleSmall
-                              : Theme.of(context).textTheme.titleMedium)
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      textAlign: TextAlign.center,
+                      style: (dense
+                              ? Theme.of(context).textTheme.titleLarge
+                              : Theme.of(context).textTheme.headlineSmall)
+                          ?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: tone,
+                      ),
                     ),
                   ),
                 ],
               ),
-              if (!landscapeSplit) ...<Widget>[
-                SizedBox(
-                  height: compactCard
-                      ? AppMetrics.space1 / 2
-                      : AppMetrics.space1,
+              SizedBox(height: dense ? AppMetrics.space1 : AppMetrics.space2),
+              if (connected)
+                _PingLine(pingMs: vpn.activePingMs)
+              else
+                Text(
+                  Fa.num(vpn.message),
+                  textAlign: TextAlign.center,
+                  style: (dense
+                          ? Theme.of(context).textTheme.bodySmall
+                          : Theme.of(context).textTheme.bodyMedium)
+                      ?.copyWith(color: colors.textSecondary),
                 ),
-                LiveDateTimeLine(
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                        fontSize:
-                            tightPhone ? AppMetrics.fontCaption : null,
-                      ),
-                ),
-              ],
             ],
           );
+        }
 
-          final Widget ipBadge = _IpChip(
-            ip: shownIp,
-            flagCode: flagCode,
-            country: connected ? countryName : '',
-            connected: connected,
-            dense: compactCard,
-          );
-
-          final bool stackedHeader = tightPhone && !landscapeSplit;
-
-          final Widget header = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        Widget buildControls({
+          required double buttonHeight,
+          required double secondaryHeight,
+          required double gapAfterPrimary,
+          required double gapAfterChips,
+        }) {
+          return Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (stackedHeader) ...<Widget>[
-                greetingBlock,
-                const SizedBox(height: AppMetrics.space2),
-                Wrap(
-                  spacing: AppMetrics.space2,
-                  runSpacing: AppMetrics.space1,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    ipBadge,
-                    if (subs.needsLogin)
-                      Pill(
-                        label: 'برای اشتراک وارد شو',
-                        icon: Icons.login_rounded,
-                        color: colors.warning,
-                        dense: true,
+              SizedBox(
+                width: AppMetrics.controlMaxWidth,
+                child: status.busy
+                    ? GradientButton(
+                        label: status == VpnStatus.disconnecting
+                            ? 'در حال لغو...'
+                            : 'لغو اتصال',
+                        icon: Icons.cancel_rounded,
+                        height: buttonHeight,
+                        tone: colors.warning,
+                        loading: status == VpnStatus.disconnecting,
+                        onPressed: status == VpnStatus.disconnecting
+                            ? null
+                            : () => _cancelConnection(vpn, toasts),
+                      )
+                    : GradientButton(
+                        label: status.active && !_switchPending(vpn)
+                            ? 'قطع اتصال'
+                            : 'اتصال',
+                        icon: Icons.power_settings_new_rounded,
+                        height: buttonHeight,
+                        tone: status.active && !_switchPending(vpn)
+                            ? colors.danger
+                            : colors.primary,
+                        onPressed: () =>
+                            _toggleConnection(vpn, subs, toasts),
                       ),
-                  ],
-                ),
-              ] else
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: <Widget>[
-                    Expanded(child: greetingBlock),
-                    if (subs.needsLogin && innerWidth >= 420) ...<Widget>[
-                      const SizedBox(width: AppMetrics.space2),
-                      Pill(
-                        label: 'برای اشتراک وارد شو',
-                        icon: Icons.login_rounded,
-                        color: colors.warning,
-                        dense: compactCard,
-                      ),
-                    ],
-                    const SizedBox(width: AppMetrics.space2),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: innerWidth * 0.45,
-                      ),
-                      child: ipBadge,
-                    ),
-                  ],
-                ),
-              if (hasAccessBanner)
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: compactCard ? AppMetrics.space2 : AppMetrics.space3,
-                  ),
-                  child: _AccessBanner(
-                    title: account.enable
-                        ? 'اشتراک شما اجازه اتصال ندارد'
-                        : 'حساب شما مسدود شده است',
-                    message: account.accessReason,
-                    dense: compactCard,
-                  ),
-                ),
-              if (hasOccasionBanner && !landscapeSplit)
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: compactCard ? AppMetrics.space2 : AppMetrics.space3,
-                  ),
-                  child: OccasionBanner(
-                    occasion: OccasionService.instance.active,
-                    enabled: settings.settings.occasionEffects,
-                  ),
-                ),
-            ],
-          );
-
-          Widget buildOrbWidget(double orbSize) {
-            return Semantics(
-              button: true,
-              label: status.busy
-                  ? 'لغو اتصال'
-                  : (status.active && !_switchPending(vpn)
-                      ? 'قطع اتصال'
-                      : 'اتصال'),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: status == VpnStatus.disconnecting
-                    ? null
-                    : withUiClick(
-                        context,
-                        status.busy
-                            ? () => _cancelConnection(vpn, toasts)
-                            : () => _toggleConnection(vpn, subs, toasts),
-                      ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: <Widget>[
-                    StatusOrb(
-                      image: status.image,
-                      color: tone,
-                      size: orbSize,
-                      active: status.busy,
-                    ),
-                    if (!status.busy)
-                      Positioned(
-                        right: orbSize * 0.06,
-                        bottom: orbSize * 0.06,
-                        child: Container(
-                          width: orbSize * 0.24,
-                          height: orbSize * 0.24,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: (status.active && !_switchPending(vpn)
-                                    ? colors.danger
-                                    : colors.primary)
-                                .withValues(alpha: 0.94),
-                            boxShadow: <BoxShadow>[
-                              BoxShadow(
-                                color: (status.active && !_switchPending(vpn)
-                                        ? colors.danger
-                                        : colors.primary)
-                                    .withValues(alpha: 0.38),
-                                blurRadius: 24,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.power_settings_new_rounded,
-                            size: orbSize * 0.12,
-                            color: colors.onPrimary,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
               ),
-            );
-          }
-
-          Widget buildStatusTexts({required bool dense}) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    if (connected && flagCode.isNotEmpty) ...<Widget>[
-                      FlagView(
-                        code: flagCode,
-                        width: dense
-                            ? AppMetrics.flagWidthSmall
-                            : AppMetrics.flagWidth,
-                      ),
-                      const SizedBox(width: AppMetrics.space2),
-                    ],
-                    Flexible(
-                      child: Text(
-                        Fa.num(
-                          connected ? 'به آمبرلا متصل شد' : status.label,
-                        ),
-                        textAlign: TextAlign.center,
-                        style: (dense
-                                ? Theme.of(context).textTheme.titleLarge
-                                : Theme.of(context).textTheme.headlineSmall)
-                            ?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: tone,
-                        ),
-                      ),
-                    ),
-                  ],
+              if (!account.canConnect)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppMetrics.space2),
+                  child: Text(
+                    Fa.num('اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: colors.danger),
+                  ),
                 ),
-                SizedBox(height: dense ? 2 : AppMetrics.space1),
-                if (connected)
-                  _PingLine(pingMs: vpn.activePingMs)
-                else
-                  Text(
-                    Fa.num(vpn.message),
+              SizedBox(height: gapAfterPrimary),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
+                children: <Widget>[
+                  for (final ({String id, String title, IconData icon}) profile
+                      in <({String id, String title, IconData icon})>[
+                    (
+                      id: 'user-sub',
+                      title: 'خودکار',
+                      icon: Icons.auto_awesome_rounded,
+                    ),
+                    (
+                      id: 'user-wireguard',
+                      title: 'وایرگارد',
+                      icon: Icons.vpn_key_rounded,
+                    ),
+                    (
+                      id: 'user-amnezia',
+                      title: 'آمنزیا',
+                      icon: Icons.shield_rounded,
+                    ),
+                    (
+                      id: 'user-mieru',
+                      title: 'میرو',
+                      icon: Icons.hub_rounded,
+                    ),
+                  ])
+                    ChoiceChip(
+                      key: ValueKey<String>(
+                        'connection-profile-${profile.id}',
+                      ),
+                      avatar: Icon(profile.icon, size: AppMetrics.iconSm),
+                      label: Text(profile.title),
+                      showCheckmark: false,
+                      selected: _profile == profile.id,
+                      onSelected: status.busy
+                          ? null
+                          : (_) => _selectProfile(profile.id),
+                    ),
+                  if (subs.emergencyEnabled)
+                    ChoiceChip(
+                      key: const ValueKey<String>(
+                        'connection-profile-emergency',
+                      ),
+                      avatar: const Icon(
+                        Icons.emergency_rounded,
+                        size: AppMetrics.iconSm,
+                      ),
+                      label: const Text('اضطراری'),
+                      selected: _profile == 'emergency',
+                      showCheckmark: false,
+                      onSelected: status.busy
+                          ? null
+                          : (_) => _selectProfile('emergency'),
+                    ),
+                ],
+              ),
+              if (_switchPending(vpn))
+                Padding(
+                  padding: const EdgeInsets.only(top: AppMetrics.space2),
+                  child: Text(
+                    'برای تغییر مسیر، دکمه اتصال را بزنید.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
                         ?.copyWith(color: colors.textSecondary),
                   ),
-              ],
-            );
-          }
+                ),
+              SizedBox(height: gapAfterChips),
+              SizedBox(
+                width: AppMetrics.controlMaxWidth,
+                height: secondaryHeight,
+                child: OutlinedButton.icon(
+                  key: const ValueKey<String>(
+                    'connection-settings-button',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: Size(0, secondaryHeight),
+                  ),
+                  onPressed: withUiClick(context, _openConnectionSettings),
+                  icon: const Icon(Icons.tune_rounded, size: AppMetrics.iconSm),
+                  label: const Text('تنظیمات اتصال'),
+                ),
+              ),
+            ],
+          );
+        }
 
-          Widget buildControls({
-            required double buttonHeight,
-            required double secondaryHeight,
-            required double gapAfterPrimary,
-            required double gapAfterChips,
-          }) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                SizedBox(
-                  width: AppMetrics.controlMaxWidth,
-                  child: status.busy
-                      ? GradientButton(
-                          label: status == VpnStatus.disconnecting
-                              ? 'در حال لغو...'
-                              : 'لغو اتصال',
-                          icon: Icons.cancel_rounded,
-                          height: buttonHeight,
-                          tone: colors.warning,
-                          loading: status == VpnStatus.disconnecting,
-                          onPressed: status == VpnStatus.disconnecting
-                              ? null
-                              : () => _cancelConnection(vpn, toasts),
-                        )
-                      : GradientButton(
-                          label: status.active && !_switchPending(vpn)
-                              ? 'قطع اتصال'
-                              : 'اتصال',
-                          icon: Icons.power_settings_new_rounded,
-                          height: buttonHeight,
-                          tone: status.active && !_switchPending(vpn)
-                              ? colors.danger
-                              : colors.primary,
-                          onPressed: () =>
-                              _toggleConnection(vpn, subs, toasts),
-                        ),
-                ),
-                if (!account.canConnect)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppMetrics.space1),
-                    child: Text(
-                      Fa.num('اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.'),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.danger),
-                    ),
-                  ),
-                SizedBox(height: gapAfterPrimary),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: AppMetrics.space2,
-                  runSpacing: AppMetrics.space2,
-                  children: <Widget>[
-                    for (final ({String id, String title, IconData icon}) profile
-                        in <({String id, String title, IconData icon})>[
-                      (
-                        id: 'user-sub',
-                        title: 'خودکار',
-                        icon: Icons.auto_awesome_rounded,
-                      ),
-                      (
-                        id: 'user-wireguard',
-                        title: 'وایرگارد',
-                        icon: Icons.vpn_key_rounded,
-                      ),
-                      (
-                        id: 'user-amnezia',
-                        title: 'آمنزیا',
-                        icon: Icons.shield_rounded,
-                      ),
-                      (
-                        id: 'user-mieru',
-                        title: 'میرو',
-                        icon: Icons.hub_rounded,
-                      ),
-                    ])
-                      ChoiceChip(
-                        key: ValueKey<String>(
-                          'connection-profile-${profile.id}',
-                        ),
-                        avatar: Icon(profile.icon, size: AppMetrics.iconSm),
-                        label: Text(profile.title),
-                        showCheckmark: false,
-                        selected: _profile == profile.id,
-                        onSelected: status.busy
-                            ? null
-                            : (_) => _selectProfile(profile.id),
-                      ),
-                    if (subs.emergencyEnabled)
-                      ChoiceChip(
-                        key: const ValueKey<String>(
-                          'connection-profile-emergency',
-                        ),
-                        avatar: const Icon(
-                          Icons.emergency_rounded,
-                          size: AppMetrics.iconSm,
-                        ),
-                        label: const Text('اضطراری'),
-                        selected: _profile == 'emergency',
-                        showCheckmark: false,
-                        onSelected: status.busy
-                            ? null
-                            : (_) => _selectProfile('emergency'),
-                      ),
-                  ],
-                ),
-                if (_switchPending(vpn))
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppMetrics.space1),
-                    child: Text(
-                      'برای تغییر مسیر، دکمه اتصال را بزنید.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                  ),
-                SizedBox(height: gapAfterChips),
-                SizedBox(
-                  width: AppMetrics.controlMaxWidth,
-                  height: secondaryHeight,
-                  child: OutlinedButton.icon(
-                    key: const ValueKey<String>(
-                      'connection-settings-button',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: Size(0, secondaryHeight),
-                    ),
-                    onPressed: withUiClick(context, _openConnectionSettings),
-                    icon: const Icon(Icons.tune_rounded, size: AppMetrics.iconSm),
-                    label: const Text('تنظیمات اتصال'),
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return GlassCard(
-            radius: compactCard ? AppMetrics.radiusXl : AppMetrics.radiusHuge,
-            padding: cardPad,
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Color.alphaBlend(
-                  tone.withValues(
-                    alpha: Theme.of(context).brightness == Brightness.light
-                        ? 0.08
-                        : 0.12,
-                  ),
-                  colors.surface,
-                ),
-                colors.surface,
-                colors.backgroundAlt,
-              ],
+        final LinearGradient cardGradient = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Color.alphaBlend(
+              tone.withValues(
+                alpha: Theme.of(context).brightness == Brightness.light
+                    ? 0.08
+                    : 0.12,
+              ),
+              colors.surface,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                header,
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints centerBox) {
-                      final double cW = centerBox.maxWidth;
-                      final double cH = centerBox.maxHeight;
+            colors.surface,
+            colors.backgroundAlt,
+          ],
+        );
 
-                      if (landscapeSplit) {
+        if (landscapeSplit) {
+          return Padding(
+            padding: pagePad,
+            child: GlassCard(
+              radius: AppMetrics.radiusXl,
+              padding: cardPad,
+              gradient: cardGradient,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  header,
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints centerBox) {
+                        final double cW = centerBox.maxWidth;
+                        final double cH = centerBox.maxHeight;
                         final double sideOrb = (cH - 58)
-                            .clamp(76.0, 175.0)
-                            .clamp(76.0, cW * 0.36);
+                            .clamp(108.0, 190.0)
+                            .clamp(108.0, cW * 0.36);
                         return Row(
                           children: <Widget>[
                             Expanded(
@@ -766,7 +760,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                       const SizedBox(height: AppMetrics.space2),
                                       SizedBox(
                                         width: cW * 0.42,
-                                        child: buildStatusTexts(dense: true),
+                                        child: buildStatusTexts(dense: false),
                                       ),
                                     ],
                                   ),
@@ -794,94 +788,78 @@ class _ConnectPageState extends State<ConnectPage> {
                             ),
                           ],
                         );
-                      }
-
-                      final bool desktopSized =
-                          cH >= 480 && cW >= 540;
-                      final double buttonHeight = cH < 340
-                          ? AppMetrics.controlHeight
-                          : AppMetrics.controlHeightLarge;
-                      const double secondaryHeight =
-                          AppMetrics.controlHeightSmall;
-                      final double gapStatus =
-                          desktopSized ? AppMetrics.space3 : AppMetrics.space2;
-                      final double gapButton =
-                          desktopSized ? AppMetrics.space5 : AppMetrics.space3;
-                      final double gapPrimary =
-                          desktopSized ? AppMetrics.space4 : AppMetrics.space3;
-                      final double gapChips =
-                          desktopSized ? AppMetrics.space3 : AppMetrics.space2;
-
-                      // برآورد ارتفاع متن ها و دکمه ها تا فضای باقیمانده دقیقاً
-                      // به گنبد وضعیت برسد و هیچ اسکرولی ایجاد نشود.
-                      final bool chipsTwoRows = cW < 440 ||
-                          (subs.emergencyEnabled && cW < 520);
-                      final double reserved =
-                          (desktopSized ? 74 : 58) +
-                          buttonHeight +
-                          (chipsTwoRows ? 104 : 48) +
-                          secondaryHeight +
-                          gapStatus +
-                          gapButton +
-                          gapPrimary +
-                          gapChips +
-                          (!account.canConnect ? 24 : 0) +
-                          (_switchPending(vpn) ? 24 : 0) +
-                          16;
-                      final double maxOrb = desktopSized
-                          ? (cH < 560 ? 250 : (cH < 640 ? 290 : 330))
-                          : 220;
-                      final double orb = (cH - reserved)
-                          .clamp(84.0, maxOrb)
-                          .clamp(84.0, (cW - 16).clamp(84.0, 330.0));
-
-                      return Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.center,
-                          child: SizedBox(
-                            width: cW,
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                vertical: desktopSized
-                                    ? AppMetrics.space3
-                                    : AppMetrics.space1,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  buildOrbWidget(orb),
-                                  SizedBox(height: gapStatus),
-                                  buildStatusTexts(dense: !desktopSized),
-                                  SizedBox(height: gapButton),
-                                  buildControls(
-                                    buttonHeight: buttonHeight,
-                                    secondaryHeight: secondaryHeight,
-                                    gapAfterPrimary: gapPrimary,
-                                    gapAfterChips: gapChips,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                      },
+                    ),
                   ),
-                ),
-                SizedBox(
-                  height: compactCard ? AppMetrics.space2 : AppMetrics.space3,
-                ),
-                _ConnectionStats(
-                  vpn: vpn,
-                  connected: connected,
-                  dense: compactCard || landscapeSplit,
-                ),
-              ],
+                  const SizedBox(height: AppMetrics.space2),
+                  _ConnectionStats(
+                    vpn: vpn,
+                    connected: connected,
+                    dense: true,
+                  ),
+                ],
+              ),
             ),
           );
-        },
-      ),
+        }
+
+        final double preferredOrb = outer.maxWidth >= 540
+            ? (outer.maxHeight < 650
+                ? 240.0
+                : (outer.maxHeight < 780 ? 290.0 : 330.0))
+            : (outer.maxWidth * 0.48).clamp(176.0, 230.0);
+        final double maxOrbWidth =
+            (outer.maxWidth - pagePad.horizontal - cardPad.horizontal)
+                .clamp(160.0, 330.0);
+        final double orb = preferredOrb.clamp(160.0, maxOrbWidth);
+
+        return SingleChildScrollView(
+          padding: pagePad,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: (outer.maxHeight - pagePad.vertical)
+                  .clamp(0.0, double.infinity),
+            ),
+            child: GlassCard(
+              radius: compactCard ? AppMetrics.radiusXl : AppMetrics.radiusHuge,
+              padding: cardPad,
+              gradient: cardGradient,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  header,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppMetrics.space4,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        buildOrbWidget(orb),
+                        const SizedBox(height: AppMetrics.space3),
+                        buildStatusTexts(dense: false),
+                        const SizedBox(height: AppMetrics.space4),
+                        buildControls(
+                          buttonHeight: AppMetrics.controlHeightLarge,
+                          secondaryHeight: AppMetrics.controlHeight,
+                          gapAfterPrimary: AppMetrics.space4,
+                          gapAfterChips: AppMetrics.space3,
+                        ),
+                      ],
+                    ),
+                  ),
+                  _ConnectionStats(
+                    vpn: vpn,
+                    connected: connected,
+                    dense: false,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1081,7 +1059,7 @@ class _PingLine extends StatelessWidget {
         const SizedBox(width: AppMetrics.space2),
         Text(
           Fa.num(known ? 'پینگ ${Fa.ms(pingMs)}' : 'پینگ در حال اندازه گیری'),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: tone,
                 fontWeight: FontWeight.w800,
               ),

@@ -889,7 +889,11 @@ void main() {
           expect(subChip.padding, isNull);
           expect(subChip.visualDensity, isNull);
           expect(subChip.materialTapTargetSize, isNull);
-          if (size == const Size(1024, 768)) {
+          if (size.width <= size.height) {
+            final StatusOrb orbWidget = tester.widget<StatusOrb>(
+              find.byType(StatusOrb),
+            );
+            expect(orbWidget.size, greaterThanOrEqualTo(170.0));
             expect(
               tester.getSize(subChipFinder).height,
               greaterThanOrEqualTo(36.0),
@@ -898,6 +902,7 @@ void main() {
         }
 
         await pumpViewport(const Size(360, 640));
+        await pumpViewport(const Size(390, 844));
         await pumpViewport(const Size(844, 390));
         await pumpViewport(const Size(1024, 768));
 
