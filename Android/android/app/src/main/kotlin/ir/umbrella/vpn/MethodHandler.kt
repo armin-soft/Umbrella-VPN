@@ -209,6 +209,17 @@ class MethodHandler(
         )
     }
 
+    private suspend fun awaitServiceStopped(maxWaitMs: Long = 10_000L): Boolean {
+        val steps = (maxWaitMs / 50L).toInt().coerceAtLeast(1)
+        for (i in 0 until steps) {
+            if ((BoxService.status.value ?: Status.Stopped) == Status.Stopped) {
+                return true
+            }
+            delay(50)
+        }
+        return (BoxService.status.value ?: Status.Stopped) == Status.Stopped
+    }
+
     private suspend fun handleStartCore(call: MethodCall): Map<String, Any> {
         val configPath = call.argument<String>("configPath") ?: error("missing configPath")
         val settingsJson = call.argument<String>("settingsJson") ?: ""
@@ -226,18 +237,52 @@ class MethodHandler(
         }
 
         val currentStatus = BoxService.status.value ?: Status.Stopped
-        if (currentStatus == Status.Started || currentStatus == Status.Starting) {
-            handleStopCore()
+        if (currentStatus != Status.Stopped) {
+            if (!handleStopCore()) {
+                return mapOf(
+                    "ok" to false,
+                    "error" to "stop_timeout",
+                    "message" to "توقف اتصال قبلی بیش از اندازه طول کشید؛ دوباره تلاش کنید.",
+                )
+            }
         }
 
+        val modeChanged = Settings.serviceMode != normalizedMode
+        BoxService.lastStartError = null
         Settings.serviceMode = normalizedMode
         Settings.activeConfigPath = configPath
         Settings.activeSettingsJson = settingsJson
         Settings.activeProfileName = profileName
 
         withContext(Dispatchers.Main) {
-            activity.reconnectServiceObserver()
             BoxService.start(activity, startCore = true)
+        }
+
+        var entered = false
+        for (i in 0 until 120) {
+            val statusNow = BoxService.status.value ?: Status.Stopped
+            if (statusNow != Status.Stopped) {
+                entered = true
+                break
+            }
+            if (BoxService.lastStartError != null) {
+                break
+            }
+            delay(25)
+        }
+
+        if (!entered) {
+            val detail = BoxService.lastStartError?.takeIf { it.isNotBlank() }
+                ?: "سرویس هسته اندروید آماده اجرا نشد."
+            return mapOf(
+                "ok" to false,
+                "error" to if (BoxService.lastStartError != null) "start_failed" else "service_start_timeout",
+                "message" to detail,
+            )
+        }
+
+        withContext(Dispatchers.Main) {
+            activity.reconnectServiceObserver(force = modeChanged)
         }
 
         return mapOf(
@@ -251,29 +296,36 @@ class MethodHandler(
         val current = BoxService.status.value ?: Status.Stopped
         if (current == Status.Stopped) return true
 
-        withContext(Dispatchers.Main) {
-            BoxService.stop(activity)
-        }
-        for (i in 0 until 40) {
-            if ((BoxService.status.value ?: Status.Stopped) == Status.Stopped) {
-                return true
+        if (current != Status.Stopping) {
+            withContext(Dispatchers.Main) {
+                BoxService.stop(activity)
             }
-            delay(100)
         }
-        return (BoxService.status.value ?: Status.Stopped) == Status.Stopped
+        return awaitServiceStopped(10_000L)
     }
 
     private fun buildCoreStatus(): Map<String, Any> {
         val status = BoxService.status.value ?: Status.Stopped
-        return mapOf(
-            "status" to status.name,
-            "active" to (status == Status.Started),
-            "starting" to (status == Status.Starting),
-            "stopping" to (status == Status.Stopping),
-            "serviceMode" to Settings.serviceMode,
-            "grpcServicePort" to Settings.grpcServicePort,
-            "grpcUtilityPort" to Settings.grpcUtilityPort,
-        )
+        val err = BoxService.lastStartError
+        return buildMap {
+            put("status", status.name)
+            put("active", status == Status.Started)
+            put("starting", status == Status.Starting)
+            put("stopping", status == Status.Stopping)
+            put("serviceMode", Settings.serviceMode)
+            put("grpcServicePort", Settings.grpcServicePort)
+            put("grpcUtilityPort", Settings.grpcUtilityPort)
+            if (!err.isNullOrBlank()) {
+                put("lastError", err)
+            }
+        }
+    }
+
+    private suspend fun ensureUtilityPortReady(): Int {
+        if ((BoxService.status.value ?: Status.Stopped) == Status.Stopping) {
+            awaitServiceStopped(5_000L)
+        }
+        return BoxService.ensureUtilityCore()
     }
 
     private suspend fun handleParseConfig(call: MethodCall): Map<String, Any> {
@@ -282,7 +334,7 @@ class MethodHandler(
         val tempPath = call.argument<String>("tempPath") ?: Settings.tempDir
         val debug = call.argument<Boolean>("debug") ?: Settings.debugMode
 
-        val port = BoxService.ensureUtilityCore()
+        val port = ensureUtilityPortReady()
         val client = GrpcClientProvider.coreGrpcClient(port, callTimeoutSeconds = 30L)
             .create(CoreClient::class)
         val resp = client.Parse().execute(
@@ -306,7 +358,7 @@ class MethodHandler(
         val userAgent = call.argument<String>("userAgent") ?: ""
         val timeoutMs = call.argument<Int>("timeoutMs") ?: 15000
 
-        val port = BoxService.ensureUtilityCore()
+        val port = ensureUtilityPortReady()
         val timeoutSeconds = ((timeoutMs / 1000L) + 10L).coerceAtLeast(20L)
         val client = GrpcClientProvider.coreGrpcClient(port, callTimeoutSeconds = timeoutSeconds)
             .create(CoreClient::class)

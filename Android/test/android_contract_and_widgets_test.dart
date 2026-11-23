@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/core/ui_formatters.dart';
@@ -25,6 +27,8 @@ import 'package:umbrella_vpn/ui/pages/landing_page.dart';
 import 'package:umbrella_vpn/ui/pages/login_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
+import 'package:umbrella_vpn/vpn/core_runtime.dart';
+import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -727,5 +731,336 @@ void main() {
       auth.dispose();
       settings.dispose();
     });
+
+    test('CoreRuntime.compile returns parsed.json for Android and fails closed', () async {
+      final Directory tempDir = await Directory.systemTemp.createTemp('umbrella_compile_');
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final File linksFile = File('${tempDir.path}${Platform.pathSeparator}prepared-links.txt');
+      final List<String> autoLinks = List<String>.generate(
+        84,
+        (int i) =>
+            'vless://11111111-1111-1111-1111-1111111111${i.toString().padLeft(2, '0')}@example.com:${443 + i}#Auto$i',
+      );
+      await linksFile.writeAsString('${autoLinks.join('\n')}\n', flush: true);
+      final File settingsFile = File('${tempDir.path}${Platform.pathSeparator}settings.json');
+      await settingsFile.writeAsString('{}', flush: true);
+
+      final _TestCoreNative okNative = _TestCoreNative(
+        parseResult: (
+          ok: true,
+          content: '{"outbounds":[{"type":"vless","tag":"Auto0"}]}',
+          message: '',
+        ),
+      );
+      final File compiled = await CoreRuntime.compile(
+        runDir: tempDir.path,
+        linksPath: linksFile.path,
+        settingsPath: settingsFile.path,
+        native: okNative,
+        cancelled: () => false,
+        forceAndroidPlatform: true,
+      );
+      expect(compiled.path, endsWith('${Platform.pathSeparator}parsed.json'));
+      expect(await compiled.readAsString(), contains('"outbounds"'));
+
+      final _TestCoreNative failNative = _TestCoreNative(
+        parseResult: (ok: false, content: '', message: ''),
+      );
+      await expectLater(
+        () => CoreRuntime.compile(
+          runDir: tempDir.path,
+          linksPath: linksFile.path,
+          settingsPath: settingsFile.path,
+          native: failNative,
+          cancelled: () => false,
+          forceAndroidPlatform: true,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      final _TestCoreNative emptyNative = _TestCoreNative(
+        parseResult: (ok: true, content: '', message: ''),
+      );
+      await expectLater(
+        () => CoreRuntime.compile(
+          runDir: tempDir.path,
+          linksPath: linksFile.path,
+          settingsPath: settingsFile.path,
+          native: emptyNative,
+          cancelled: () => false,
+          forceAndroidPlatform: true,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('VpnController resets stale core log and reports early native stop alert', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.init();
+
+      final Directory tempDir = await Directory.systemTemp.createTemp('umbrella_vpn_ctrl_');
+      addTearDown(() async {
+        AppLogger.instance.clear();
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final String runDirPath = '${tempDir.path}${Platform.pathSeparator}run';
+      await Directory(runDirPath).create(recursive: true);
+      final File staleLog = File('$runDirPath${Platform.pathSeparator}${AppConfig.coreLogTunFile}');
+      await staleLog.writeAsString(
+        'FATAL endpoint/awg[umbrella-direct-profile]: stale wireguard error\n',
+        flush: true,
+      );
+
+      final _TestCoreNative native = _TestCoreNative(
+        parseResult: (
+          ok: true,
+          content: '{"outbounds":[{"type":"vless","tag":"Node1"}]}',
+          message: '',
+        ),
+      );
+      final _TestProvisioner provisioner = _TestProvisioner(tempDir.path);
+      await provisioner.init(native);
+      final VpnController controller = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: _FakeSound(),
+        tray: TrayService(native),
+        provisioner: provisioner,
+        settings: const AppSettings(
+          corePreference: CorePreference.tun,
+          selectionMode: SelectionMode.auto,
+          autoFailover: true,
+        ),
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await native.closeEvents();
+      });
+
+      const VpnNode vlessNode = VpnNode(
+        id: 'n1',
+        name: 'Auto Node 1',
+        protocol: NodeProtocol.vless,
+        host: '1.1.1.1',
+        port: 443,
+        sourceId: 'sub1',
+        raw: 'vless://11111111-1111-1111-1111-111111111111@1.1.1.1:443#Auto1',
+        params: <String, dynamic>{'uuid': '11111111-1111-1111-1111-111111111111'},
+      );
+      await controller.applyNodes(<VpnNode>[vlessNode], measure: false);
+
+      native.onStartEmit = () {
+        native.coreStatus = <String, dynamic>{
+          'status': 'Stopped',
+          'active': false,
+          'starting': false,
+          'stopping': false,
+          'lastError': 'start service failed: invalid inbound',
+        };
+        native.emitServiceEvent(
+          const AndroidServiceEvent(
+            type: 'alert',
+            status: '',
+            message: 'start service failed: invalid inbound',
+          ),
+        );
+        native.emitServiceEvent(
+          const AndroidServiceEvent(
+            type: 'status',
+            status: 'Stopped',
+            message: 'start service failed: invalid inbound',
+          ),
+        );
+      };
+
+      final ConnectOutcome outcome = await controller.connect();
+      expect(outcome.ok, isFalse);
+      expect(native.startedConfigPaths, hasLength(1));
+      expect(await staleLog.readAsString(), isEmpty);
+
+      final String allLogs =
+          AppLogger.instance.entries.map((LogEntry e) => e.message).join('\n');
+      expect(allLogs, contains('پیش از آماده شدن تونل متوقف شد'));
+      expect(allLogs, contains('invalid inbound'));
+      expect(allLogs, isNot(contains('آماده نشد')));
+      expect(allLogs, isNot(contains('umbrella-direct-profile')));
+    });
+
+    test('Android native VPN lifecycle contracts prevent Start() race and stale iterators', () {
+      final String vpnControllerSrc = File(
+        '${Directory.current.path}/lib/vpn/vpn_controller.dart',
+      ).readAsStringSync();
+      expect(vpnControllerSrc, contains('configPath: compiledConfig.path'));
+      expect(vpnControllerSrc, isNot(contains('configPath: sessionLinks.path')));
+
+      final String boxService = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/BoxService.kt',
+      ).readAsStringSync();
+      expect(boxService, contains('client.StartService().execute('));
+      expect(boxService, isNot(contains('client.Start().execute(')));
+      expect(boxService, contains('if (status.value != Status.Started) return'));
+      expect(boxService, contains('var activePlatformInterface'));
+      expect(boxService, contains('var lastStartError'));
+      expect(boxService, contains('mobileLock'));
+
+      final String methodHandler = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+      ).readAsStringSync();
+      expect(methodHandler, contains('awaitServiceStopped('));
+      expect(methodHandler, contains('ensureUtilityPortReady()'));
+      expect(methodHandler, contains('activity.reconnectServiceObserver('));
+      expect(
+        methodHandler.indexOf('BoxService.start(') <
+            methodHandler.indexOf('activity.reconnectServiceObserver('),
+        isTrue,
+      );
+
+      final String vpnService = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/VPNService.kt',
+      ).readAsStringSync();
+      expect(vpnService, contains('var hasInet4 = false'));
+      expect(vpnService, contains('var hasInet6 = false'));
+      expect(vpnService, contains('else if (hasInet4)'));
+      expect(vpnService, contains('else if (hasInet6)'));
+
+      final String grpcClientProvider = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/utils/GrpcClientProvider.kt',
+      ).readAsStringSync();
+      expect(grpcClientProvider, contains('.callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)'));
+    });
   });
+}
+
+class _TestCoreNative extends _FakeNative {
+  _TestCoreNative({required this.parseResult});
+
+  final ({bool ok, String content, String message}) parseResult;
+  final StreamController<AndroidServiceEvent> _events =
+      StreamController<AndroidServiceEvent>.broadcast();
+  final List<String> startedConfigPaths = <String>[];
+  Map<String, dynamic> coreStatus = <String, dynamic>{
+    'status': 'Stopped',
+    'active': false,
+    'starting': false,
+    'stopping': false,
+  };
+  VoidCallback? onStartEmit;
+
+  void emitServiceEvent(AndroidServiceEvent event) {
+    if (!_events.isClosed) {
+      _events.add(event);
+    }
+  }
+
+  Future<void> closeEvents() async {
+    if (!_events.isClosed) {
+      await _events.close();
+    }
+  }
+
+  @override
+  Stream<AndroidServiceEvent> serviceEvents() => _events.stream;
+
+  @override
+  Future<({bool ok, String content, String message})> parseConfig({
+    required String content,
+    String configPath = '',
+    String tempPath = '',
+    bool debug = false,
+  }) async =>
+      parseResult;
+
+  @override
+  Future<Map<String, dynamic>> startCore({
+    required String configPath,
+    String settingsJson = '',
+    String profileName = 'آمبرلا',
+    String serviceMode = 'vpn',
+  }) async {
+    startedConfigPaths.add(configPath);
+    coreStatus = <String, dynamic>{
+      'status': 'Starting',
+      'active': false,
+      'starting': true,
+      'stopping': false,
+    };
+    scheduleMicrotask(() => onStartEmit?.call());
+    return <String, dynamic>{'ok': true, 'serviceMode': serviceMode};
+  }
+
+  @override
+  Future<bool> stopCore() async {
+    coreStatus = <String, dynamic>{
+      'status': 'Stopped',
+      'active': false,
+      'starting': false,
+      'stopping': false,
+    };
+    return true;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getCoreStatus() async => coreStatus;
+
+  @override
+  Future<int> tcpPing(String host, int port, {int timeoutMs = 1500}) async => -1;
+
+  @override
+  Future<bool> flushDns() async => true;
+
+  @override
+  Future<int> killForeignCores() async => 0;
+
+  @override
+  Future<bool> setupDirectories({
+    required String baseDir,
+    required String workingDir,
+    required String tempDir,
+  }) async =>
+      true;
+
+  @override
+  Future<bool> disableSystemProxy() async => true;
+}
+
+class _TestProvisioner extends CoreProvisioner {
+  _TestProvisioner(this._root);
+
+  final String _root;
+
+  @override
+  String get dataDir => _root;
+
+  @override
+  Future<void> init([NativeBridge? native]) async {}
+
+  @override
+  Future<String?> locateBinary(String binary) async => 'android://$binary';
+
+  @override
+  Future<List<CoreInfo>> missingRequired() async => const <CoreInfo>[];
+
+  @override
+  Future<String?> provision(CoreInfo core) async => 'android://${core.binary}';
+}
+
+class _FakeIpService extends IpService {
+  _FakeIpService();
+
+  @override
+  Future<GeoInfo> fetch({
+    bool force = false,
+    String proxy = '',
+    String proxyUser = '',
+    String proxyPassword = '',
+  }) async =>
+      GeoInfo.empty;
 }

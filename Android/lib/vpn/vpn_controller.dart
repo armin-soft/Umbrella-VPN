@@ -382,17 +382,25 @@ class VpnController extends ChangeNotifier {
   int _proxyPort = 0;
   int get proxyPort => _proxyPort;
   bool _androidServiceRunning = false;
+  String _lastServiceAlert = '';
   StreamSubscription<AndroidServiceEvent>? _serviceEventSub;
 
   void _ensureServiceEventSubscription() {
     if (_serviceEventSub != null || !_native.available) return;
     _serviceEventSub = _native.serviceEvents().listen(
       (AndroidServiceEvent event) {
+        if (event.type == 'alert' && event.message.isNotEmpty) {
+          _lastServiceAlert = event.message;
+          return;
+        }
         final String status = event.status.toLowerCase();
         final String message = event.message;
         if (status == 'started' || status == 'starting') {
           _androidServiceRunning = true;
         } else if (status == 'stopped') {
+          if (message.isNotEmpty) {
+            _lastServiceAlert = message;
+          }
           final bool wasRunning = _androidServiceRunning;
           _androidServiceRunning = false;
           if (!_stoppingOwnCore &&
@@ -1629,23 +1637,35 @@ class VpnController extends ChangeNotifier {
         continue;
       }
 
-      final bool ready = await _waitForTunnel(plan);
-      if (_cancelRequested) {
+      final _TunnelWaitOutcome waitOutcome = await _waitForTunnel(plan);
+      if (_cancelRequested || waitOutcome == _TunnelWaitOutcome.cancelled) {
         await _stopCores();
         await _disableProxy();
         return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
       }
-      if (!ready) {
+      if (waitOutcome != _TunnelWaitOutcome.ready) {
         final String coreLog = _coreLogPath(plan);
         final String tail = await _readLogTail(coreLog);
+        final String alertText = _lastServiceAlert.trim().isNotEmpty
+            ? displayOwnCoreOutput(
+                _lastServiceAlert.trim(),
+                engineId: UmbrellaCore.id,
+              )
+            : '';
+        final String summaryTail = alertText.isNotEmpty ? alertText : tail;
+        final String errorMessage =
+            waitOutcome == _TunnelWaitOutcome.stoppedEarly
+                ? 'سرویس هسته آمبرلا پیش از آماده شدن تونل متوقف شد.'
+                    '${summaryTail.isEmpty ? '' : ' علت: $summaryTail'}'
+                : plan.tun
+                    ? 'کارت شبکه تونل در ${Fa.num(_tunnelTimeout.inSeconds)} ثانیه '
+                        'آماده نشد.'
+                        '${summaryTail.isEmpty ? '' : ' خروجی هسته: $summaryTail'}'
+                    : 'پورت محلی هسته (${Fa.num(plan.readinessPort)}) در '
+                        '${Fa.num(_tunnelTimeout.inSeconds)} ثانیه باز نشد.'
+                        '${summaryTail.isEmpty ? '' : ' خروجی هسته: $summaryTail'}';
         _log.add(
-          plan.tun
-              ? 'کارت شبکه تونل در ${Fa.num(_tunnelTimeout.inSeconds)} ثانیه '
-                  'آماده نشد.'
-                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}'
-              : 'پورت محلی هسته (${Fa.num(plan.readinessPort)}) در '
-                  '${Fa.num(_tunnelTimeout.inSeconds)} ثانیه باز نشد.'
-                  '${tail.isEmpty ? '' : ' خروجی هسته: $tail'}',
+          errorMessage,
           level: 'error',
           details: await _coreDiagnostics(
             plan.cores.first,
@@ -1654,11 +1674,15 @@ class VpnController extends ChangeNotifier {
           ),
         );
         final String full = await _readLogFull(coreLog);
-        final String why = _explainCoreExit(full);
+        final String combinedOutput =
+            alertText.isNotEmpty && !full.contains(alertText)
+                ? '$alertText\n$full'
+                : full;
+        final String why = _explainCoreExit(combinedOutput);
         if (why.isNotEmpty) {
           _log.add(why, level: 'error');
         }
-        final bool unusable = _linkUnusable(full);
+        final bool unusable = _linkUnusable(combinedOutput);
         await _stopCores();
         await _disableProxy();
         if (unusable) {
@@ -2618,9 +2642,21 @@ class VpnController extends ChangeNotifier {
   /// برچسب عمومی سرور برای گزارش ها بدون افشای نام، پروتکل یا نشانی سرور.
   static String _nodeLabel(VpnNode node) => 'مسیر انتخابی آمبرلا';
 
+  Future<void> _resetCoreLogFile(String path) async {
+    try {
+      final File file = File(path);
+      if (await file.exists()) {
+        await file.writeAsString('', flush: true);
+      }
+    } on FileSystemException {
+      // Ignore stale log cleanup failure; core will still append or recreate it.
+    }
+  }
+
   Future<bool> _launch(LaunchPlan plan) async {
     if (_cancelRequested || _disposed) return false;
     _lastLaunchUnusable = false;
+    _lastServiceAlert = '';
     _ensureServiceEventSubscription();
     if (_androidServiceRunning) {
       await _stopCores();
@@ -2629,6 +2665,7 @@ class VpnController extends ChangeNotifier {
     final Directory runDir = Directory(plan.runDir);
     await runDir.create(recursive: true);
     final String coreLog = _coreLogPath(plan);
+    await _resetCoreLogFile(coreLog);
 
     final String settingsPath =
         '${plan.runDir}${Platform.pathSeparator}${AppConfig.coreSettingsFile}';
@@ -2682,8 +2719,9 @@ class VpnController extends ChangeNotifier {
       flush: true,
     );
 
+    final File compiledConfig;
     try {
-      await CoreRuntime.compile(
+      compiledConfig = await CoreRuntime.compile(
         runDir: plan.runDir,
         linksPath: sessionLinks.path,
         settingsPath: settingsPath,
@@ -2712,7 +2750,7 @@ class VpnController extends ChangeNotifier {
 
     final String mode = plan.tun ? 'vpn' : 'proxy';
     final Map<String, dynamic> started = await _native.startCore(
-      configPath: sessionLinks.path,
+      configPath: compiledConfig.path,
       settingsJson: settingsPayload,
       profileName: _activeNode?.name ?? AppConfig.appName,
       serviceMode: mode,
@@ -2728,8 +2766,10 @@ class VpnController extends ChangeNotifier {
         );
         onRequireElevation?.call();
       } else {
-        final String detail = errorMsg.isNotEmpty
-            ? errorMsg
+        final String rawDetail =
+            errorMsg.isNotEmpty ? errorMsg : _lastServiceAlert;
+        final String detail = rawDetail.isNotEmpty
+            ? displayOwnCoreOutput(rawDetail, engineId: UmbrellaCore.id)
             : 'سرویس هسته اندروید آماده نشد${errorCode.isEmpty ? '' : ' ($errorCode)'}.';
         _lastLaunchUnusable = _linkUnusable(detail);
         _log.add(detail, level: 'error');
@@ -2982,36 +3022,46 @@ class VpnController extends ChangeNotifier {
     _proxyPort = 0;
   }
 
-  static const Duration _tunnelTimeout = Duration(seconds: 25);
+  static const Duration _tunnelTimeout = Duration(seconds: 35);
   static const Duration _connectBudget = Duration(minutes: 5);
 
-  Future<bool> _waitForTunnel(LaunchPlan plan) async {
+  Future<_TunnelWaitOutcome> _waitForTunnel(LaunchPlan plan) async {
     final DateTime deadline = DateTime.now().add(_tunnelTimeout);
     while (DateTime.now().isBefore(deadline)) {
       if (_disposed || _cancelRequested) {
-        return false;
+        return _TunnelWaitOutcome.cancelled;
       }
       final Map<String, dynamic> st = await _native.getCoreStatus();
+      final String lastErr = JsonX.text(st['lastError']);
+      if (lastErr.isNotEmpty) {
+        _lastServiceAlert = lastErr;
+      }
       final bool alive = _androidServiceRunning || _statusMapAlive(st);
       if (!alive) {
-        return false;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final Map<String, dynamic> recheck = await _native.getCoreStatus();
+        final String recheckErr = JsonX.text(recheck['lastError']);
+        if (recheckErr.isNotEmpty) {
+          _lastServiceAlert = recheckErr;
+        }
+        return _TunnelWaitOutcome.stoppedEarly;
       }
       if (plan.readinessPort > 0) {
         final int probe = await _native.tcpPing('127.0.0.1', plan.readinessPort);
         if (probe >= 0) {
-          return true;
+          return _TunnelWaitOutcome.ready;
         }
       } else {
         final CoreProxySnapshot snap = await ClashApi.status(
           timeout: const Duration(milliseconds: 500),
         );
         if (snap.reachable) {
-          return true;
+          return _TunnelWaitOutcome.ready;
         }
       }
       await Future<void>.delayed(const Duration(milliseconds: 80));
     }
-    return false;
+    return _TunnelWaitOutcome.timedOut;
   }
 
   /// جابه جایی بدون قطع اتصال داخل خود هسته در حال اجرا.
@@ -3888,6 +3938,13 @@ class VpnController extends ChangeNotifier {
     unawaited(_stopCores());
     super.dispose();
   }
+}
+
+enum _TunnelWaitOutcome {
+  ready,
+  cancelled,
+  stoppedEarly,
+  timedOut,
 }
 
 /// نگاشت وضعیت اتصال به رنگ ها و تصاویر، برای مصرف در رابط کاربری.

@@ -15,6 +15,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
 import com.hiddify.core.api.v2.hcore.ChangeHiddifySettingsRequest
 import com.hiddify.core.api.v2.hcore.CoreClient
+import com.hiddify.core.api.v2.hcore.CoreStates
+import com.hiddify.core.api.v2.hcore.MessageType
 import com.hiddify.core.api.v2.hcore.StartRequest
 import com.hiddify.core.libbox.Notification
 import com.hiddify.core.libbox.PlatformInterface
@@ -54,6 +56,15 @@ class BoxService(
         val status = MutableLiveData(Status.Stopped)
 
         @Volatile
+        var activePlatformInterface: PlatformInterface? = null
+            private set
+
+        @Volatile
+        var lastStartError: String? = null
+
+        private val mobileLock = Any()
+
+        @Volatile
         private var activeUtilityMode = false
 
         @Volatile
@@ -61,37 +72,41 @@ class BoxService(
 
         private object IdlePlatformInterface : PlatformInterfaceWrapper
 
-        @Synchronized
         fun ensureUtilityCore(): Int {
-            if (status.value == Status.Started || status.value == Status.Starting) {
-                return Settings.grpcServicePort
-            }
-            if (!utilitySetupDone) {
-                val options = SetupOptions().apply {
-                    basePath = Settings.baseDir
-                    workingDir = Settings.workingDir
-                    tempDir = Settings.tempDir
-                    listen = "127.0.0.1:${Settings.grpcUtilityPort}"
-                    secret = ""
-                    debug = Settings.debugMode
-                    mode = Settings.UTILITY_GRPC_MODE
-                    fixAndroidStack = Bugs.fixAndroidStack
-                    DeviceMemory.applyTo(this)
+            synchronized(mobileLock) {
+                when (status.value ?: Status.Stopped) {
+                    Status.Started, Status.Starting -> return Settings.grpcServicePort
+                    Status.Stopping -> error("VPN service is stopping")
+                    Status.Stopped -> {}
                 }
-                Mobile.setup(options, IdlePlatformInterface)
-                utilitySetupDone = true
-                activeUtilityMode = true
+                if (!utilitySetupDone) {
+                    val options = SetupOptions().apply {
+                        basePath = Settings.baseDir
+                        workingDir = Settings.workingDir
+                        tempDir = Settings.tempDir
+                        listen = "127.0.0.1:${Settings.grpcUtilityPort}"
+                        secret = ""
+                        debug = Settings.debugMode
+                        mode = Settings.UTILITY_GRPC_MODE
+                        fixAndroidStack = Bugs.fixAndroidStack
+                        DeviceMemory.applyTo(this)
+                    }
+                    Mobile.setup(options, IdlePlatformInterface)
+                    utilitySetupDone = true
+                    activeUtilityMode = true
+                }
+                return Settings.grpcUtilityPort
             }
-            return Settings.grpcUtilityPort
         }
 
-        @Synchronized
         fun shutdownUtilityCore() {
-            if (!utilitySetupDone && !activeUtilityMode) return
-            runCatching { Mobile.close(Settings.UTILITY_GRPC_MODE) }
-                .onFailure { Log.w(TAG, "shutdownUtilityCore close(3)", it) }
-            utilitySetupDone = false
-            activeUtilityMode = false
+            synchronized(mobileLock) {
+                if (!utilitySetupDone && !activeUtilityMode) return
+                runCatching { Mobile.close(Settings.UTILITY_GRPC_MODE) }
+                    .onFailure { Log.w(TAG, "shutdownUtilityCore close(3)", it) }
+                utilitySetupDone = false
+                activeUtilityMode = false
+            }
         }
 
         fun start(context: Context, startCore: Boolean = true) {
@@ -139,7 +154,7 @@ class BoxService(
 
     private suspend fun startService(startCore: Boolean): StartFailure? = coroutineScope {
         try {
-            shutdownUtilityCore()
+            lastStartError = null
             withContext(Dispatchers.Main) {
                 notification.show(Settings.activeProfileName, R.string.status_starting)
             }
@@ -148,19 +163,23 @@ class BoxService(
             coroutineContext.ensureActive()
 
             try {
-                val options = SetupOptions().apply {
-                    basePath = Settings.baseDir
-                    workingDir = Settings.workingDir
-                    tempDir = Settings.tempDir
-                    listen = "127.0.0.1:${Settings.grpcServicePort}"
-                    secret = ""
-                    debug = Settings.debugMode
-                    mode = Settings.SERVICE_GRPC_MODE
-                    fixAndroidStack = Bugs.fixAndroidStack
-                    DeviceMemory.applyTo(this)
+                synchronized(mobileLock) {
+                    shutdownUtilityCore()
+                    activePlatformInterface = platformInterface
+                    val options = SetupOptions().apply {
+                        basePath = Settings.baseDir
+                        workingDir = Settings.workingDir
+                        tempDir = Settings.tempDir
+                        listen = "127.0.0.1:${Settings.grpcServicePort}"
+                        secret = ""
+                        debug = Settings.debugMode
+                        mode = Settings.SERVICE_GRPC_MODE
+                        fixAndroidStack = Bugs.fixAndroidStack
+                        DeviceMemory.applyTo(this)
+                    }
+                    Mobile.setup(options, platformInterface)
+                    Mobile.setCoreStoppedListener(coreStoppedListener)
                 }
-                Mobile.setup(options, platformInterface)
-                Mobile.setCoreStoppedListener(coreStoppedListener)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Mobile.setup failed", e)
@@ -173,21 +192,38 @@ class BoxService(
                 val settingsJson = Settings.activeSettingsJson
                 val configPath = Settings.activeConfigPath
                 if (configPath.isNotBlank()) {
-                    val client = GrpcClientProvider.coreGrpcClient(Settings.grpcServicePort)
-                        .create(CoreClient::class)
+                    val client = GrpcClientProvider.coreGrpcClient(
+                        port = Settings.grpcServicePort,
+                        callTimeoutSeconds = 45L,
+                    ).create(CoreClient::class)
                     if (settingsJson.isNotBlank()) {
-                        client.ChangeHiddifySettings().execute(
+                        val settingsResp = client.ChangeHiddifySettings().execute(
                             ChangeHiddifySettingsRequest(hiddify_settings_json = settingsJson),
                         )
+                        if (settingsResp.message_type != MessageType.EMPTY &&
+                            settingsResp.message.isNotBlank()
+                        ) {
+                            return@coroutineScope StartFailure(
+                                Alert.StartService,
+                                settingsResp.message,
+                            )
+                        }
                     }
                     coroutineContext.ensureActive()
-                    client.Start().execute(
+                    val startResp = client.StartService().execute(
                         StartRequest(
                             config_path = configPath,
                             config_name = Settings.activeProfileName,
                             enable_raw_config = false,
                         ),
                     )
+                    if (startResp.core_state == CoreStates.STOPPED ||
+                        (startResp.message_type != MessageType.EMPTY &&
+                            startResp.message_type != MessageType.ALREADY_STARTED)
+                    ) {
+                        val reason = startResp.message.ifBlank { startResp.message_type.name }
+                        return@coroutineScope StartFailure(Alert.StartService, reason)
+                    }
                 } else {
                     Mobile.start("", "")
                 }
@@ -230,7 +266,9 @@ class BoxService(
 
     @OptIn(DelicateCoroutinesApi::class)
     private fun coreStopped(message: String?) {
-        if (status.value != Status.Started && status.value != Status.Starting) return
+        // An in-flight startService() handles its own failure and teardown via StartService().
+        // Only tear down asynchronously when the core drops after startup has already succeeded.
+        if (status.value != Status.Started) return
         Log.w(TAG, "Core stopped unexpectedly: $message")
         status.value = Status.Stopping
         notification.close()
@@ -246,14 +284,22 @@ class BoxService(
         notification.close()
         val runningStart = startJob
         GlobalScope.launch(Dispatchers.IO) {
+            // Interrupt an in-progress StartService() call inside Go before joining startJob.
+            runCatching { Mobile.stop() }
             runningStart?.cancelAndJoin()
             teardown(null)
         }
     }
 
     private suspend fun teardown(failure: StartFailure?) = withContext(NonCancellable) {
+        if (failure != null) {
+            lastStartError = failure.message ?: failure.alert.name
+        }
         Settings.startedByUser = false
         withContext(Dispatchers.Main) {
+            if (status.value == Status.Starting || status.value == Status.Started) {
+                status.value = Status.Stopping
+            }
             if (receiverRegistered) {
                 runCatching { service.unregisterReceiver(receiver) }
                 receiverRegistered = false
@@ -264,10 +310,15 @@ class BoxService(
             runCatching { it.close() }
             fileDescriptor = null
         }
-        Mobile.setCoreStoppedListener(null)
-        for (mode in linkedSetOf(Settings.SERVICE_GRPC_MODE, 2L, 4L)) {
-            runCatching { Mobile.close(mode) }
-                .onFailure { Log.w(TAG, "closing core mode $mode", it) }
+        synchronized(mobileLock) {
+            if (activePlatformInterface === platformInterface) {
+                activePlatformInterface = null
+            }
+            Mobile.setCoreStoppedListener(null)
+            for (mode in linkedSetOf(Settings.SERVICE_GRPC_MODE, 2L, 4L)) {
+                runCatching { Mobile.close(mode) }
+                    .onFailure { Log.w(TAG, "closing core mode $mode", it) }
+            }
         }
         DefaultNetworkMonitor.stop()
         withContext(Dispatchers.Main) {
@@ -312,6 +363,7 @@ class BoxService(
             return Service.START_NOT_STICKY
         }
 
+        lastStartError = null
         status.value = Status.Starting
         if (!receiverRegistered) {
             ContextCompat.registerReceiver(

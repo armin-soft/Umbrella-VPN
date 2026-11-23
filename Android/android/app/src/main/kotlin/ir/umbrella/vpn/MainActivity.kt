@@ -55,8 +55,10 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         super.onDestroy()
     }
 
-    fun reconnectServiceObserver() {
-        serviceConnection.reconnect()
+    fun reconnectServiceObserver(force: Boolean = true) {
+        if (force || !serviceConnection.isConnected) {
+            serviceConnection.reconnect()
+        }
     }
 
     suspend fun ensureNotificationPermissionOnly(): Boolean {

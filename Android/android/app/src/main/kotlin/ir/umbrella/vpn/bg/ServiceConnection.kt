@@ -29,6 +29,9 @@ class ServiceConnection(
     private val serviceCallback = ServiceCallback(callback)
     private var service: IService? = null
 
+    val isConnected: Boolean
+        get() = service != null && service?.asBinder()?.isBinderAlive == true
+
     val status: Status
         get() = service?.let {
             runCatching { Status.entries[it.status] }.getOrNull()

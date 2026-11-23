@@ -79,14 +79,18 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
             builder.setMetered(false)
         }
 
+        var hasInet4 = false
         val inet4Address = options.inet4Address
         while (inet4Address.hasNext()) {
+            hasInet4 = true
             val address = inet4Address.next()
             builder.addAddress(address.address(), address.prefix())
         }
 
+        var hasInet6 = false
         val inet6Address = options.inet6Address
         while (inet6Address.hasNext()) {
+            hasInet6 = true
             val address = inet6Address.next()
             builder.addAddress(address.address(), address.prefix())
         }
@@ -103,7 +107,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                     while (inet4RouteAddress.hasNext()) {
                         builder.addRoute(inet4RouteAddress.next().toIpPrefix())
                     }
-                } else if (options.inet4Address.hasNext()) {
+                } else if (hasInet4) {
                     builder.addRoute("0.0.0.0", 0)
                 }
 
@@ -112,7 +116,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                     while (inet6RouteAddress.hasNext()) {
                         builder.addRoute(inet6RouteAddress.next().toIpPrefix())
                     }
-                } else if (options.inet6Address.hasNext()) {
+                } else if (hasInet6) {
                     builder.addRoute("::", 0)
                 }
 
@@ -195,6 +199,10 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
             systemProxyEnabled = false
         }
 
+        service.fileDescriptor?.let {
+            runCatching { it.close() }
+            service.fileDescriptor = null
+        }
         val pfd = builder.establish() ?: error("application has no permission to establish VPN")
         service.fileDescriptor = pfd
         return pfd.fd
