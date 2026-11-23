@@ -889,11 +889,23 @@ void main() {
           expect(subChip.padding, isNull);
           expect(subChip.visualDensity, isNull);
           expect(subChip.materialTapTargetSize, isNull);
+          expect(
+            find.descendant(
+              of: find.byType(ConnectPage),
+              matching: find.byType(SingleChildScrollView),
+            ),
+            findsNothing,
+          );
           if (size.width <= size.height) {
+            final double minOrb = size == const Size(360, 640) ? 132.0 : 170.0;
             final StatusOrb orbWidget = tester.widget<StatusOrb>(
               find.byType(StatusOrb),
             );
-            expect(orbWidget.size, greaterThanOrEqualTo(170.0));
+            expect(orbWidget.size, greaterThanOrEqualTo(minOrb));
+            expect(
+              tester.getSize(find.byType(StatusOrb)).height,
+              greaterThanOrEqualTo(minOrb),
+            );
             expect(
               tester.getSize(subChipFinder).height,
               greaterThanOrEqualTo(36.0),

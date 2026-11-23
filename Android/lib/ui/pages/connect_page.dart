@@ -307,25 +307,35 @@ class _ConnectPageState extends State<ConnectPage> {
     final bool hasAccessBanner = !account.canConnect;
     final bool hasOccasionBanner = OccasionService.instance.active != null;
 
-    final EdgeInsets pagePad = AppMetrics.responsivePagePadding(context);
-
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints outer) {
+        final bool phoneSized = outer.maxWidth < 520;
+        final EdgeInsets pagePad = phoneSized
+            ? const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3,
+                vertical: AppMetrics.space2,
+              )
+            : AppMetrics.responsivePagePadding(context);
         final bool compactCard =
             outer.maxWidth < 480 || outer.maxHeight < 640;
-        final EdgeInsets cardPad = compactCard
-            ? const EdgeInsets.fromLTRB(
-                AppMetrics.space4,
-                AppMetrics.space4,
-                AppMetrics.space4,
-                AppMetrics.space4,
+        final EdgeInsets cardPad = phoneSized
+            ? const EdgeInsets.symmetric(
+                horizontal: AppMetrics.space3 + 2,
+                vertical: AppMetrics.space2 + 2,
               )
-            : const EdgeInsets.fromLTRB(
-                AppMetrics.space6,
-                AppMetrics.space5,
-                AppMetrics.space6,
-                AppMetrics.space5,
-              );
+            : (compactCard
+                ? const EdgeInsets.fromLTRB(
+                    AppMetrics.space4,
+                    AppMetrics.space3,
+                    AppMetrics.space4,
+                    AppMetrics.space3,
+                  )
+                : const EdgeInsets.fromLTRB(
+                    AppMetrics.space6,
+                    AppMetrics.space5,
+                    AppMetrics.space6,
+                    AppMetrics.space5,
+                  ));
         final double innerWidth =
             (outer.maxWidth - pagePad.horizontal - cardPad.horizontal)
                 .clamp(200.0, 2000.0);
@@ -334,7 +344,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 .clamp(200.0, 2000.0);
         final bool landscapeSplit =
             innerWidth >= 480 && innerHeight < 470;
-        final bool tightPhone = innerWidth < 380;
+        final bool veryNarrow = innerWidth < 290;
 
         final Widget greetingBlock = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,10 +354,10 @@ class _ConnectPageState extends State<ConnectPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.only(top: AppMetrics.space1),
+                  padding: const EdgeInsets.only(top: AppMetrics.space1 / 2),
                   child: Icon(
                     _greetingIcon(),
-                    size: AppMetrics.iconMd,
+                    size: phoneSized ? AppMetrics.iconSm : AppMetrics.iconMd,
                     color: colors.warning,
                   ),
                 ),
@@ -359,7 +369,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       '${Fa.greeting()}',
                     ),
                     softWrap: true,
-                    style: (landscapeSplit
+                    style: (phoneSized || landscapeSplit
                             ? Theme.of(context).textTheme.titleSmall
                             : Theme.of(context).textTheme.titleMedium)
                         ?.copyWith(fontWeight: FontWeight.w900),
@@ -368,10 +378,11 @@ class _ConnectPageState extends State<ConnectPage> {
               ],
             ),
             if (!landscapeSplit) ...<Widget>[
-              const SizedBox(height: AppMetrics.space1),
+              const SizedBox(height: AppMetrics.space1 / 2),
               LiveDateTimeLine(
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textSecondary,
+                      fontSize: phoneSized ? AppMetrics.fontCaption : null,
                     ),
               ),
             ],
@@ -383,16 +394,14 @@ class _ConnectPageState extends State<ConnectPage> {
           flagCode: flagCode,
           country: connected ? countryName : '',
           connected: connected,
-          dense: landscapeSplit,
+          dense: phoneSized || landscapeSplit,
         );
-
-        final bool stackedHeader = tightPhone && !landscapeSplit;
 
         final Widget header = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            if (stackedHeader) ...<Widget>[
+            if (veryNarrow && !landscapeSplit) ...<Widget>[
               greetingBlock,
               const SizedBox(height: AppMetrics.space2),
               Wrap(
@@ -406,10 +415,11 @@ class _ConnectPageState extends State<ConnectPage> {
                       label: 'برای اشتراک وارد شو',
                       icon: Icons.login_rounded,
                       color: colors.warning,
+                      dense: true,
                     ),
                 ],
               ),
-            ] else
+            ] else ...<Widget>[
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
@@ -426,28 +436,42 @@ class _ConnectPageState extends State<ConnectPage> {
                   const SizedBox(width: AppMetrics.space2),
                   ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: innerWidth * 0.45,
+                      maxWidth: innerWidth * 0.44,
                     ),
                     child: ipBadge,
                   ),
                 ],
               ),
+              if (subs.needsLogin && innerWidth < 420 && !landscapeSplit)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppMetrics.space1),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Pill(
+                      label: 'برای اشتراک وارد شو',
+                      icon: Icons.login_rounded,
+                      color: colors.warning,
+                      dense: true,
+                    ),
+                  ),
+                ),
+            ],
             if (hasAccessBanner)
               Padding(
                 padding: EdgeInsets.only(
-                  top: landscapeSplit ? AppMetrics.space2 : AppMetrics.space3,
+                  top: landscapeSplit ? AppMetrics.space1 : AppMetrics.space2,
                 ),
                 child: _AccessBanner(
                   title: account.enable
                       ? 'اشتراک شما اجازه اتصال ندارد'
                       : 'حساب شما مسدود شده است',
                   message: account.accessReason,
-                  dense: landscapeSplit,
+                  dense: phoneSized || landscapeSplit,
                 ),
               ),
             if (hasOccasionBanner && !landscapeSplit)
               Padding(
-                padding: const EdgeInsets.only(top: AppMetrics.space3),
+                padding: const EdgeInsets.only(top: AppMetrics.space2),
                 child: OccasionBanner(
                   occasion: OccasionService.instance.active,
                   enabled: settings.settings.occasionEffects,
@@ -543,18 +567,16 @@ class _ConnectPageState extends State<ConnectPage> {
                         connected ? 'به آمبرلا متصل شد' : status.label,
                       ),
                       textAlign: TextAlign.center,
-                      style: (dense
-                              ? Theme.of(context).textTheme.titleLarge
-                              : Theme.of(context).textTheme.headlineSmall)
-                          ?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: tone,
-                      ),
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontSize: dense ? 21 : 26,
+                            fontWeight: FontWeight.w900,
+                            color: tone,
+                          ),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: dense ? AppMetrics.space1 : AppMetrics.space2),
+              SizedBox(height: dense ? AppMetrics.space1 / 2 : AppMetrics.space1),
               if (connected)
                 _PingLine(pingMs: vpn.activePingMs)
               else
@@ -623,7 +645,7 @@ class _ConnectPageState extends State<ConnectPage> {
               Wrap(
                 alignment: WrapAlignment.center,
                 spacing: AppMetrics.space2,
-                runSpacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space1 + 2,
                 children: <Widget>[
                   for (final ({String id, String title, IconData icon}) profile
                       in <({String id, String title, IconData icon})>[
@@ -803,59 +825,101 @@ class _ConnectPageState extends State<ConnectPage> {
           );
         }
 
-        final double preferredOrb = outer.maxWidth >= 540
-            ? (outer.maxHeight < 650
-                ? 240.0
-                : (outer.maxHeight < 780 ? 290.0 : 330.0))
-            : (outer.maxWidth * 0.48).clamp(176.0, 230.0);
-        final double maxOrbWidth =
-            (outer.maxWidth - pagePad.horizontal - cardPad.horizontal)
-                .clamp(160.0, 330.0);
-        final double orb = preferredOrb.clamp(160.0, maxOrbWidth);
-
-        return SingleChildScrollView(
+        return Padding(
           padding: pagePad,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: (outer.maxHeight - pagePad.vertical)
-                  .clamp(0.0, double.infinity),
-            ),
-            child: GlassCard(
-              radius: compactCard ? AppMetrics.radiusXl : AppMetrics.radiusHuge,
-              padding: cardPad,
-              gradient: cardGradient,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  header,
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppMetrics.space4,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        buildOrbWidget(orb),
-                        const SizedBox(height: AppMetrics.space3),
-                        buildStatusTexts(dense: false),
-                        const SizedBox(height: AppMetrics.space4),
-                        buildControls(
-                          buttonHeight: AppMetrics.controlHeightLarge,
-                          secondaryHeight: AppMetrics.controlHeight,
-                          gapAfterPrimary: AppMetrics.space4,
-                          gapAfterChips: AppMetrics.space3,
+          child: GlassCard(
+            radius: compactCard ? AppMetrics.radiusXl : AppMetrics.radiusHuge,
+            padding: cardPad,
+            gradient: cardGradient,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                header,
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints centerBox) {
+                      final double cW = centerBox.maxWidth;
+                      final double cH = centerBox.maxHeight;
+                      final bool desktopSized =
+                          cH >= 480 && cW >= 540;
+                      final double buttonHeight = desktopSized
+                          ? AppMetrics.controlHeightLarge
+                          : (cH >= 400
+                              ? AppMetrics.controlHeight
+                              : AppMetrics.controlHeightSmall);
+                      const double secondaryHeight =
+                          AppMetrics.controlHeightSmall;
+                      final double gapStatus = desktopSized
+                          ? AppMetrics.space3
+                          : AppMetrics.space2 + 2;
+                      final double gapButton = desktopSized
+                          ? AppMetrics.space5
+                          : AppMetrics.space3;
+                      final double gapPrimary = desktopSized
+                          ? AppMetrics.space4
+                          : AppMetrics.space2 + 2;
+                      final double gapChips = desktopSized
+                          ? AppMetrics.space3
+                          : AppMetrics.space2;
+
+                      final bool chipsTwoRows = cW < 450 ||
+                          (subs.emergencyEnabled && cW < 540);
+                      final double reserved =
+                          (desktopSized ? 72 : 66) +
+                          buttonHeight +
+                          (chipsTwoRows ? 88 : 42) +
+                          secondaryHeight +
+                          gapStatus +
+                          gapButton +
+                          gapPrimary +
+                          gapChips +
+                          (!account.canConnect ? 24 : 0) +
+                          (_switchPending(vpn) ? 24 : 0) +
+                          6;
+                      final double maxOrb = desktopSized
+                          ? (cH < 560 ? 250 : (cH < 640 ? 290 : 330))
+                          : 230;
+                      final double orb = (cH - reserved)
+                          .clamp(124.0, maxOrb)
+                          .clamp(124.0, (cW - 12).clamp(124.0, 330.0));
+
+                      return Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                            width: cW,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                buildOrbWidget(orb),
+                                SizedBox(height: gapStatus),
+                                buildStatusTexts(dense: false),
+                                SizedBox(height: gapButton),
+                                buildControls(
+                                  buttonHeight: buttonHeight,
+                                  secondaryHeight: secondaryHeight,
+                                  gapAfterPrimary: gapPrimary,
+                                  gapAfterChips: gapChips,
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                  _ConnectionStats(
-                    vpn: vpn,
-                    connected: connected,
-                    dense: false,
-                  ),
-                ],
-              ),
+                ),
+                SizedBox(
+                  height: phoneSized ? AppMetrics.space2 : AppMetrics.space3,
+                ),
+                _ConnectionStats(
+                  vpn: vpn,
+                  connected: connected,
+                  compact: phoneSized,
+                  dense: false,
+                ),
+              ],
             ),
           ),
         );
@@ -896,11 +960,13 @@ class _ConnectionStats extends StatelessWidget {
   const _ConnectionStats({
     required this.vpn,
     required this.connected,
+    this.compact = false,
     this.dense = false,
   });
 
   final VpnController vpn;
   final bool connected;
+  final bool compact;
   final bool dense;
 
   @override
@@ -942,7 +1008,7 @@ class _ConnectionStats extends StatelessWidget {
             : (constraints.maxWidth - gap * 3) / 4;
         return Wrap(
           spacing: gap,
-          runSpacing: AppMetrics.space2,
+          runSpacing: compact || dense ? AppMetrics.space1 + 2 : AppMetrics.space2,
           children: values
               .map(
                 ((String, String, IconData, Color) value) => SizedBox(
@@ -952,6 +1018,7 @@ class _ConnectionStats extends StatelessWidget {
                     value: value.$2,
                     icon: value.$3,
                     accent: value.$4,
+                    compact: compact,
                     dense: dense,
                   ),
                 ),
@@ -969,6 +1036,7 @@ class _ConnectionStatTile extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.accent,
+    this.compact = false,
     this.dense = false,
   });
 
@@ -976,6 +1044,7 @@ class _ConnectionStatTile extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color accent;
+  final bool compact;
   final bool dense;
 
   @override
@@ -983,8 +1052,12 @@ class _ConnectionStatTile extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: dense ? AppMetrics.space2 + 2 : AppMetrics.space3,
-        vertical: dense ? AppMetrics.space2 : AppMetrics.space3,
+        horizontal: dense
+            ? AppMetrics.space2 + 2
+            : (compact ? AppMetrics.space2 + 2 : AppMetrics.space3),
+        vertical: dense
+            ? AppMetrics.space2
+            : (compact ? AppMetrics.space1 + 3 : AppMetrics.space3),
       ),
       decoration: BoxDecoration(
         color: colors.surfaceHigh.withValues(alpha: 0.78),
@@ -998,10 +1071,10 @@ class _ConnectionStatTile extends StatelessWidget {
           IconSquare(
             icon: icon,
             color: accent,
-            size: dense ? 28 : AppMetrics.iconBoxMd,
+            size: dense ? 28 : (compact ? AppMetrics.iconBoxSm : AppMetrics.iconBoxMd),
             radius: dense ? AppMetrics.radiusSm : AppMetrics.radiusMd,
           ),
-          SizedBox(width: dense ? AppMetrics.space2 : AppMetrics.space3),
+          SizedBox(width: dense || compact ? AppMetrics.space2 : AppMetrics.space3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1014,7 +1087,7 @@ class _ConnectionStatTile extends StatelessWidget {
                         fontSize: dense ? AppMetrics.fontMicro : null,
                       ),
                 ),
-                SizedBox(height: dense ? 1 : AppMetrics.space1),
+                SizedBox(height: dense || compact ? 1 : AppMetrics.space1),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: AlignmentDirectional.centerStart,
