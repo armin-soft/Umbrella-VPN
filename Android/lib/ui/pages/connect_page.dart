@@ -35,6 +35,7 @@ class _ConnectPageState extends State<ConnectPage> {
   void _selectProfile(String id) {
     final VpnController vpn = context.read<VpnController>();
     if (vpn.status.busy || id == _profile) return;
+    playUiClick(context);
     setState(() => _profile = id);
   }
 
@@ -333,93 +334,111 @@ class _ConnectPageState extends State<ConnectPage> {
               innerWidth >= 480 && innerHeight < 470;
           final bool tightPhone = innerWidth < 380;
 
-          final Widget header = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          final Widget greetingBlock = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Row(
-                          children: <Widget>[
-                            Icon(
-                              _greetingIcon(),
-                              size: compactCard
-                                  ? AppMetrics.iconSm
-                                  : AppMetrics.iconMd,
-                              color: colors.warning,
-                            ),
-                            const SizedBox(width: AppMetrics.space2),
-                            Flexible(
-                              child: Text(
-                                Fa.num(
-                                  'سلام ${account.displayName}، '
-                                  '${Fa.greeting()}',
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: (compactCard
-                                        ? Theme.of(context)
-                                            .textTheme
-                                            .titleSmall
-                                        : Theme.of(context)
-                                            .textTheme
-                                            .titleMedium)
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (!landscapeSplit) ...<Widget>[
-                          SizedBox(
-                            height: compactCard
-                                ? AppMetrics.space1 / 2
-                                : AppMetrics.space1,
-                          ),
-                          LiveDateTimeLine(
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  color: colors.textSecondary,
-                                  fontSize: tightPhone
-                                      ? AppMetrics.fontCaption
-                                      : null,
-                                ),
-                          ),
-                        ],
-                      ],
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      _greetingIcon(),
+                      size: compactCard
+                          ? AppMetrics.iconSm
+                          : AppMetrics.iconMd,
+                      color: colors.warning,
                     ),
                   ),
-                  if (subs.needsLogin && innerWidth >= 420) ...<Widget>[
-                    const SizedBox(width: AppMetrics.space2),
-                    Pill(
-                      label: 'برای اشتراک وارد شو',
-                      icon: Icons.login_rounded,
-                      color: colors.warning,
-                      dense: compactCard,
-                    ),
-                  ],
                   const SizedBox(width: AppMetrics.space2),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: innerWidth * (tightPhone ? 0.50 : 0.45),
-                    ),
-                    child: _IpChip(
-                      ip: shownIp,
-                      flagCode: flagCode,
-                      country: connected ? countryName : '',
-                      connected: connected,
-                      dense: compactCard,
+                  Expanded(
+                    child: Text(
+                      Fa.num(
+                        'سلام ${account.displayName}، '
+                        '${Fa.greeting()}',
+                      ),
+                      softWrap: true,
+                      style: (compactCard
+                              ? Theme.of(context).textTheme.titleSmall
+                              : Theme.of(context).textTheme.titleMedium)
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                   ),
                 ],
               ),
+              if (!landscapeSplit) ...<Widget>[
+                SizedBox(
+                  height: compactCard
+                      ? AppMetrics.space1 / 2
+                      : AppMetrics.space1,
+                ),
+                LiveDateTimeLine(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                        fontSize:
+                            tightPhone ? AppMetrics.fontCaption : null,
+                      ),
+                ),
+              ],
+            ],
+          );
+
+          final Widget ipBadge = _IpChip(
+            ip: shownIp,
+            flagCode: flagCode,
+            country: connected ? countryName : '',
+            connected: connected,
+            dense: compactCard,
+          );
+
+          final bool stackedHeader = tightPhone && !landscapeSplit;
+
+          final Widget header = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (stackedHeader) ...<Widget>[
+                greetingBlock,
+                const SizedBox(height: AppMetrics.space2),
+                Wrap(
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space1,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    ipBadge,
+                    if (subs.needsLogin)
+                      Pill(
+                        label: 'برای اشتراک وارد شو',
+                        icon: Icons.login_rounded,
+                        color: colors.warning,
+                        dense: true,
+                      ),
+                  ],
+                ),
+              ] else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Expanded(child: greetingBlock),
+                    if (subs.needsLogin && innerWidth >= 420) ...<Widget>[
+                      const SizedBox(width: AppMetrics.space2),
+                      Pill(
+                        label: 'برای اشتراک وارد شو',
+                        icon: Icons.login_rounded,
+                        color: colors.warning,
+                        dense: compactCard,
+                      ),
+                    ],
+                    const SizedBox(width: AppMetrics.space2),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: innerWidth * 0.45,
+                      ),
+                      child: ipBadge,
+                    ),
+                  ],
+                ),
               if (hasAccessBanner)
                 Padding(
                   padding: EdgeInsets.only(
@@ -458,9 +477,12 @@ class _ConnectPageState extends State<ConnectPage> {
                 customBorder: const CircleBorder(),
                 onTap: status == VpnStatus.disconnecting
                     ? null
-                    : (status.busy
-                        ? () => _cancelConnection(vpn, toasts)
-                        : () => _toggleConnection(vpn, subs, toasts)),
+                    : withUiClick(
+                        context,
+                        status.busy
+                            ? () => _cancelConnection(vpn, toasts)
+                            : () => _toggleConnection(vpn, subs, toasts),
+                      ),
                 child: Stack(
                   alignment: Alignment.center,
                   children: <Widget>[
@@ -530,8 +552,6 @@ class _ConnectPageState extends State<ConnectPage> {
                           connected ? 'به آمبرلا متصل شد' : status.label,
                         ),
                         textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: (dense
                                 ? Theme.of(context).textTheme.titleLarge
                                 : Theme.of(context).textTheme.headlineSmall)
@@ -550,8 +570,6 @@ class _ConnectPageState extends State<ConnectPage> {
                   Text(
                     Fa.num(vpn.message),
                     textAlign: TextAlign.center,
-                    maxLines: dense ? 1 : 2,
-                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -605,8 +623,6 @@ class _ConnectPageState extends State<ConnectPage> {
                     child: Text(
                       Fa.num('اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.'),
                       textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
@@ -715,8 +731,6 @@ class _ConnectPageState extends State<ConnectPage> {
                     child: Text(
                       'مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
                       textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
@@ -729,8 +743,6 @@ class _ConnectPageState extends State<ConnectPage> {
                     child: Text(
                       'برای تغییر مسیر، دکمه اتصال را بزنید.',
                       textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
@@ -749,7 +761,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       minimumSize: Size(0, secondaryHeight),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    onPressed: _openConnectionSettings,
+                    onPressed: withUiClick(context, _openConnectionSettings),
                     icon: const Icon(Icons.tune_rounded, size: AppMetrics.iconSm),
                     label: const Text('تنظیمات اتصال'),
                   ),
@@ -1076,22 +1088,23 @@ class _ConnectionStatTile extends StatelessWidget {
               children: <Widget>[
                 Text(
                   Fa.num(label),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colors.textSecondary,
                         fontSize: dense ? AppMetrics.fontMicro : null,
                       ),
                 ),
                 SizedBox(height: dense ? 1 : AppMetrics.space1),
-                Text(
-                  Fa.num(value),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: (dense
-                          ? Theme.of(context).textTheme.labelMedium
-                          : Theme.of(context).textTheme.titleSmall)
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    Fa.num(value),
+                    maxLines: 1,
+                    style: (dense
+                            ? Theme.of(context).textTheme.labelMedium
+                            : Theme.of(context).textTheme.titleSmall)
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
                 ),
               ],
             ),
@@ -1175,8 +1188,6 @@ class _AccessBanner extends StatelessWidget {
               children: <Widget>[
                 Text(
                   Fa.num(title),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w900,
                         color: colors.danger,
@@ -1184,8 +1195,6 @@ class _AccessBanner extends StatelessWidget {
                 ),
                 Text(
                   Fa.num(message),
-                  maxLines: dense ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
@@ -1255,8 +1264,6 @@ class _IpChip extends StatelessWidget {
               children: <Widget>[
                 Text(
                   Fa.num(caption),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         fontSize: dense ? AppMetrics.fontMicro : null,
                         color:
@@ -1266,15 +1273,18 @@ class _IpChip extends StatelessWidget {
                       ),
                 ),
                 SizedBox(height: dense ? 1 : AppMetrics.space1),
-                Text(
-                  ip,
-                  textDirection: TextDirection.ltr,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: (dense
-                          ? Theme.of(context).textTheme.labelMedium
-                          : Theme.of(context).textTheme.titleSmall)
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    ip,
+                    textDirection: TextDirection.ltr,
+                    maxLines: 1,
+                    style: (dense
+                            ? Theme.of(context).textTheme.labelMedium
+                            : Theme.of(context).textTheme.titleSmall)
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
                 ),
               ],
             ),

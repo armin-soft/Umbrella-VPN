@@ -35,6 +35,7 @@ class _ConnectPageState extends State<ConnectPage> {
   void _selectProfile(String id) {
     final VpnController vpn = context.read<VpnController>();
     if (vpn.status.busy || id == _profile) return;
+    playUiClick(context);
     setState(() => _profile = id);
   }
 
@@ -352,27 +353,31 @@ class _ConnectPageState extends State<ConnectPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
-                                    Icon(
-                                      _greetingIcon(),
-                                      size: AppMetrics.iconMd,
-                                      color: colors.warning,
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Icon(
+                                        _greetingIcon(),
+                                        size: AppMetrics.iconMd,
+                                        color: colors.warning,
+                                      ),
                                     ),
                                     const SizedBox(width: AppMetrics.space2),
-                                    Flexible(
+                                    Expanded(
                                       child: Text(
                                         Fa.num(
                                           'سلام ${account.displayName}، '
                                           '${Fa.greeting()}',
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                        softWrap: true,
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleMedium
@@ -394,13 +399,15 @@ class _ConnectPageState extends State<ConnectPage> {
                             ),
                           ),
                           if (subs.needsLogin) ...<Widget>[
+                            const SizedBox(width: AppMetrics.space2),
                             Pill(
                               label: 'برای اشتراک وارد شو',
                               icon: Icons.login_rounded,
                               color: colors.warning,
                             ),
                             const SizedBox(width: AppMetrics.space2),
-                          ],
+                          ] else
+                            const SizedBox(width: AppMetrics.space2),
                           _IpChip(
                             ip: shownIp,
                             flagCode: flagCode,
@@ -449,10 +456,13 @@ class _ConnectPageState extends State<ConnectPage> {
                             customBorder: const CircleBorder(),
                             onTap: status == VpnStatus.disconnecting
                                 ? null
-                                : (status.busy
-                                    ? () => _cancelConnection(vpn, toasts)
-                                    : () =>
-                                        _toggleConnection(vpn, subs, toasts)),
+                                : withUiClick(
+                                    context,
+                                    status.busy
+                                        ? () => _cancelConnection(vpn, toasts)
+                                        : () =>
+                                            _toggleConnection(vpn, subs, toasts),
+                                  ),
                             child: Stack(
                               alignment: Alignment.center,
                               children: <Widget>[
@@ -515,8 +525,6 @@ class _ConnectPageState extends State<ConnectPage> {
                                       : status.label,
                                 ),
                                 textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context)
                                     .textTheme
                                     .headlineSmall
@@ -535,8 +543,6 @@ class _ConnectPageState extends State<ConnectPage> {
                           Text(
                             Fa.num(vpn.message),
                             textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
@@ -643,7 +649,7 @@ class _ConnectPageState extends State<ConnectPage> {
                             key: const ValueKey<String>(
                               'connection-settings-button',
                             ),
-                            onPressed: _openConnectionSettings,
+                            onPressed: withUiClick(context, _openConnectionSettings),
                             icon: const Icon(Icons.tune_rounded),
                             label: const Text('تنظیمات اتصال'),
                           ),
@@ -799,22 +805,23 @@ class _ConnectionStatTile extends StatelessWidget {
               children: <Widget>[
                 Text(
                   Fa.num(label),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
                       ?.copyWith(color: colors.textSecondary),
                 ),
                 const SizedBox(height: AppMetrics.space1),
-                Text(
-                  Fa.num(value),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    Fa.num(value),
+                    maxLines: 1,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
                 ),
               ],
             ),
@@ -899,8 +906,6 @@ class _AccessBanner extends StatelessWidget {
                 ),
                 Text(
                   Fa.num(message),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
@@ -962,8 +967,6 @@ class _IpChip extends StatelessWidget {
             children: <Widget>[
               Text(
                 Fa.num(caption),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color:
                           connected ? colors.success : colors.textSecondary,
@@ -972,15 +975,18 @@ class _IpChip extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: AppMetrics.space1),
-              Text(
-                ip,
-                textDirection: TextDirection.ltr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w800),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  ip,
+                  textDirection: TextDirection.ltr,
+                  maxLines: 1,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),

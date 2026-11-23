@@ -213,9 +213,12 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
             if (_lanIps.length > 1)
               InkWell(
                 borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-                onTap: () => setState(
-                  () => _selectedIpIndex =
-                      (_selectedIpIndex + 1) % _lanIps.length,
+                onTap: withUiClick(
+                  context,
+                  () => setState(
+                    () => _selectedIpIndex =
+                        (_selectedIpIndex + 1) % _lanIps.length,
+                  ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -377,8 +380,6 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                   Expanded(
                     child: Text(
                       Fa.num('اشتراک گذاری اتصال'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w800,
@@ -427,10 +428,10 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                               BorderRadius.circular(AppMetrics.radiusPill),
                         ),
                       ),
-                      onPressed: () async {
+                      onPressed: withUiClick(context, () async {
                         await settings.setAllowConnectionFromLan(true);
                         vpn.scheduleLiveReload();
-                      },
+                      }),
                       icon: const Icon(
                         Icons.power_settings_new_rounded,
                         size: AppMetrics.iconMd,
@@ -451,7 +452,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     ),
                   const Spacer(),
                   TextButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: withUiClick(context, () => Navigator.of(context).pop()),
                     icon: Icon(
                       Icons.check_rounded,
                       size: AppMetrics.iconSm,
@@ -495,7 +496,9 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
             borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
             child: InkWell(
               borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-              onTap: canCopyHost ? () => _copyValue('host', hostValue) : null,
+              onTap: canCopyHost
+                  ? withUiClick(context, () => _copyValue('host', hostValue))
+                  : null,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppMetrics.space3,
@@ -523,8 +526,6 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                         Expanded(
                           child: Text(
                             hostCopied ? 'کپی شد' : hostLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
                                 .labelSmall
@@ -539,15 +540,18 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                       ],
                     ),
                     const SizedBox(height: AppMetrics.space1),
-                    Text(
-                      hostValue,
-                      textDirection: TextDirection.ltr,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                          ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        hostValue,
+                        textDirection: TextDirection.ltr,
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
                     ),
                   ],
                 ),
@@ -563,7 +567,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
             borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
             child: InkWell(
               borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-              onTap: () => _copyValue('port', '$portValue'),
+              onTap: withUiClick(context, () => _copyValue('port', '$portValue')),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppMetrics.space3,
@@ -594,8 +598,6 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                               Expanded(
                                 child: Text(
                                   portCopied ? 'کپی شد' : 'پورت',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context)
                                       .textTheme
                                       .labelSmall
@@ -610,18 +612,21 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                             ],
                           ),
                           const SizedBox(height: AppMetrics.space1),
-                          Text(
-                            Fa.num('$portValue'),
-                            textDirection: TextDirection.ltr,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(
-                                  color: colors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              Fa.num('$portValue'),
+                              textDirection: TextDirection.ltr,
+                              maxLines: 1,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    color: colors.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
                           ),
                         ],
                       ),
@@ -629,7 +634,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     InkWell(
                       borderRadius:
                           BorderRadius.circular(AppMetrics.radiusPill),
-                      onTap: onEditPort,
+                      onTap: withUiClick(context, onEditPort),
                       child: Padding(
                         padding: const EdgeInsets.all(AppMetrics.space1),
                         child: Icon(
@@ -680,7 +685,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
             ),
             InkWell(
               borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
-              onTap: onSetQuickPassword,
+              onTap: withUiClick(context, onSetQuickPassword),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppMetrics.space2,
@@ -707,7 +712,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-        onTap: () => _copyValue('secret', secret),
+        onTap: withUiClick(context, () => _copyValue('secret', secret)),
         child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppMetrics.space3,
@@ -738,8 +743,6 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                         Expanded(
                           child: Text(
                             secretCopied ? 'کپی شد' : 'رمز عبور',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
                                 .labelSmall
@@ -757,8 +760,6 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
                     Text(
                       _showPassword ? Fa.num(secret) : masked,
                       textDirection: TextDirection.ltr,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -769,7 +770,10 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
               ),
               InkWell(
                 borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-                onTap: () => setState(() => _showPassword = !_showPassword),
+                onTap: withUiClick(
+                  context,
+                  () => setState(() => _showPassword = !_showPassword),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(AppMetrics.space1),
                   child: Icon(
@@ -784,7 +788,7 @@ class _LanSharingDialogState extends State<LanSharingDialog> {
               const SizedBox(width: AppMetrics.space1),
               InkWell(
                 borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-                onTap: onEditPassword,
+                onTap: withUiClick(context, onEditPassword),
                 child: Padding(
                   padding: const EdgeInsets.all(AppMetrics.space1),
                   child: Icon(
@@ -957,7 +961,7 @@ class _DialogModeSwitch extends StatelessWidget {
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
-        onTap: onTap,
+        onTap: withUiClick(context, onTap),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),
           decoration: BoxDecoration(
@@ -974,14 +978,17 @@ class _DialogModeSwitch extends StatelessWidget {
               Icon(icon, size: AppMetrics.iconXs, color: fg),
               const SizedBox(width: AppMetrics.space1),
               Flexible(
-                child: Text(
-                  Fa.num(label),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: fg,
-                        fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                      ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    Fa.num(label),
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: fg,
+                          fontWeight:
+                              active ? FontWeight.w800 : FontWeight.w600,
+                        ),
+                  ),
                 ),
               ),
             ],
@@ -1023,10 +1030,10 @@ class _CopyLinkMenuButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           child: InkWell(
             borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-            onTap: () {
+            onTap: withUiClick(context, () {
               controller.close();
               onSelect(value);
-            },
+            }),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppMetrics.space3,
@@ -1107,13 +1114,13 @@ class _CopyLinkMenuButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
           child: InkWell(
             borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-            onTap: () {
+            onTap: withUiClick(context, () {
               if (menuController.isOpen) {
                 menuController.close();
               } else {
                 menuController.open();
               }
-            },
+            }),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppMetrics.space3,
@@ -1222,11 +1229,11 @@ class _PortEditorDialogState extends State<_PortEditorDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: withUiClick(context, () => Navigator.of(context).pop()),
           child: const Text('انصراف'),
         ),
         FilledButton(
-          onPressed: _submit,
+          onPressed: withUiClick(context, _submit),
           child: const Text('ذخیره'),
         ),
       ],
@@ -1296,18 +1303,18 @@ class _PasswordEditorDialogState extends State<_PasswordEditorDialog> {
             spacing: AppMetrics.space2,
             children: <Widget>[
               TextButton.icon(
-                onPressed: () {
+                onPressed: withUiClick(context, () {
                   setState(() {
                     _ctrl.text = Fa.num(LanSharing.generateSecret());
                     _error = null;
                   });
-                },
+                }),
                 icon: const Icon(Icons.casino_rounded, size: AppMetrics.iconSm),
                 label: const Text('ساخت رمز تازه'),
               ),
               if (_ctrl.text.isNotEmpty)
                 TextButton.icon(
-                  onPressed: () => Navigator.of(context).pop(''),
+                  onPressed: withUiClick(context, () => Navigator.of(context).pop('')),
                   icon: Icon(
                     Icons.no_encryption_gmailerrorred_rounded,
                     size: AppMetrics.iconSm,
@@ -1324,11 +1331,11 @@ class _PasswordEditorDialogState extends State<_PasswordEditorDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: withUiClick(context, () => Navigator.of(context).pop()),
           child: const Text('انصراف'),
         ),
         FilledButton(
-          onPressed: _submit,
+          onPressed: withUiClick(context, _submit),
           child: const Text('ذخیره'),
         ),
       ],

@@ -258,7 +258,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: withUiClick(context, () => Navigator.of(dialogContext).pop(false)),
               child: const Text('انصراف'),
             ),
             FilledButton(
@@ -266,7 +266,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
                 backgroundColor: colors.danger,
                 foregroundColor: colors.onPrimary,
               ),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: withUiClick(context, () => Navigator.of(dialogContext).pop(true)),
               child: const Text('حذف همه'),
             ),
           ],
@@ -374,7 +374,10 @@ class _ContentControlCardState extends State<ContentControlCard> {
                   value: active,
                   onChanged: !canEdit || filter.globalEnabled
                       ? null
-                      : (bool value) => _onToggleMaster(auth, toasts, value),
+                      : withUiClickValue(
+                          context,
+                          (bool value) => _onToggleMaster(auth, toasts, value),
+                        ),
                 ),
               ],
             ),
@@ -492,8 +495,6 @@ class _ContentControlCardState extends State<ContentControlCard> {
                         'هر دامنه به همراه تمام زیردامنه های آن مسدود و با ربات تلگرام همگام می شود '
                         '(${customDomains.length} از ${FilterSettings.maxCustomDomains})',
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: colors.textSecondary,
                           ),
@@ -509,11 +510,14 @@ class _ContentControlCardState extends State<ContentControlCard> {
                     key: const ValueKey<String>('content-filter-clear-domains'),
                     onPressed: !canEdit
                         ? null
-                        : () => _onClearAllDomains(
+                        : withUiClick(
+                            context,
+                            () => _onClearAllDomains(
                               auth,
                               toasts,
                               editableCustomDomains.length,
                             ),
+                          ),
                     icon: Icon(
                       Icons.delete_sweep_rounded,
                       size: AppMetrics.iconSm,
@@ -572,8 +576,9 @@ class _ContentControlCardState extends State<ContentControlCard> {
                 height: AppMetrics.controlHeight,
                 child: FilledButton.icon(
                   key: const ValueKey<String>('content-filter-add-domain'),
-                  onPressed:
-                      !canEdit ? null : () => _onAddDomains(auth, toasts),
+                  onPressed: !canEdit
+                      ? null
+                      : withUiClick(context, () => _onAddDomains(auth, toasts)),
                   icon: const Icon(Icons.add_rounded, size: AppMetrics.iconSm),
                   label: const Text('افزودن'),
                 ),
@@ -605,10 +610,13 @@ class _ContentControlCardState extends State<ContentControlCard> {
                             Icons.close_rounded,
                             size: AppMetrics.iconSm,
                           ),
-                          onPressed: () => setState(() {
-                            _searchController.clear();
-                            _searchQuery = '';
-                          }),
+                          onPressed: withUiClick(
+                            context,
+                            () => setState(() {
+                              _searchController.clear();
+                              _searchQuery = '';
+                            }),
+                          ),
                         ),
                 ),
               ),
@@ -660,8 +668,10 @@ class _ContentControlCardState extends State<ContentControlCard> {
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _showAllDomains = !_showAllDomains),
+                  onPressed: withUiClick(
+                    context,
+                    () => setState(() => _showAllDomains = !_showAllDomains),
+                  ),
                   icon: Icon(
                     _showAllDomains
                         ? Icons.expand_less_rounded
@@ -752,14 +762,11 @@ class _CustomDomainChip extends StatelessWidget {
         children: <Widget>[
           Icon(Icons.public_off_rounded, size: AppMetrics.iconXs, color: accent),
           const SizedBox(width: AppMetrics.space2),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240),
+          Flexible(
             child: Directionality(
               textDirection: TextDirection.ltr,
               child: Text(
                 domain,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: colors.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -787,7 +794,7 @@ class _CustomDomainChip extends StatelessWidget {
               child: InkWell(
                 key: ValueKey<String>('delete-domain-$domain'),
                 customBorder: const CircleBorder(),
-                onTap: enabled ? onDelete : null,
+                onTap: enabled ? withUiClick(context, onDelete) : null,
                 child: Padding(
                   padding: const EdgeInsets.all(AppMetrics.space1),
                   child: Icon(
@@ -836,7 +843,7 @@ class _CategoryTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-          onTap: busy ? null : onTap,
+          onTap: busy ? null : withUiClick(context, onTap),
           child: Container(
             padding: const EdgeInsets.symmetric(
               horizontal: AppMetrics.space4,
@@ -864,8 +871,6 @@ class _CategoryTile extends StatelessWidget {
                     children: <Widget>[
                       Text(
                         Fa.num(label),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: colors.textPrimary,
                               fontWeight: FontWeight.w700,
@@ -874,8 +879,6 @@ class _CategoryTile extends StatelessWidget {
                       const SizedBox(height: AppMetrics.space1),
                       Text(
                         hint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: colors.textSecondary,
                             ),

@@ -105,6 +105,13 @@ class MethodHandler(
             "httpRequest" -> scope.launch {
                 result.answer(call.method) { handleHttpRequest(call) }
             }
+            "startSmsUserConsent" -> scope.launch {
+                result.answer(call.method) { activity.startSmsUserConsent() }
+            }
+            "stopSmsUserConsent" -> result.answerNow(call.method) {
+                activity.stopSmsUserConsent()
+                true
+            }
             else -> result.notImplemented()
         }
     }

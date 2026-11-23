@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import '../../core/theme.dart';
 import '../../core/ui_formatters.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
+import '../../platform/native.dart';
 import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../widgets/brand_widgets.dart';
@@ -32,11 +35,22 @@ class _LoginPageState extends State<LoginPage> {
   final FocusNode _codeFocus = FocusNode();
   MobileOperator _operator = MobileOperator.unknown;
   bool _autoSubmittingCode = false;
+  AuthController? _auth;
+  NativeBridge? _native;
+  StreamSubscription<String>? _smsSub;
+  bool _smsListening = false;
+  String _smsHint = '';
 
   @override
   void initState() {
     super.initState();
     final AuthController auth = context.read<AuthController>();
+    _auth = auth;
+    try {
+      _native = Provider.of<NativeBridge>(context, listen: false);
+    } on ProviderNotFoundException {
+      _native = context.read<NativeBridge?>();
+    }
     if (auth.phone.isNotEmpty) {
       _phone.text = IranPhone.display(auth.phone);
       _operator = IranPhone.operator(auth.phone);
@@ -44,6 +58,84 @@ class _LoginPageState extends State<LoginPage> {
     _firstName.text = auth.firstName;
     _lastName.text = auth.lastName;
     _phone.addListener(_syncOperator);
+    auth.addListener(_onAuthChanged);
+    _smsSub = _native?.smsCodeEvents().listen(_applyDetectedOtp);
+    if (auth.phase == AuthPhase.code) {
+      unawaited(_startSmsConsent());
+    }
+  }
+
+  void _onAuthChanged() {
+    final AuthController? auth = _auth;
+    if (auth == null || !mounted) return;
+    if (auth.phase == AuthPhase.code) {
+      if (!_smsListening) {
+        _autoSubmittingCode = false;
+        unawaited(_startSmsConsent());
+      }
+    } else if (_smsListening) {
+      _autoSubmittingCode = false;
+      unawaited(_stopSmsConsent());
+    }
+  }
+
+  Future<void> _startSmsConsent() async {
+    final NativeBridge? native = _native;
+    if (native == null) return;
+    _smsListening = true;
+    final bool started = await native.startSmsUserConsent();
+    if (!mounted) return;
+    setState(() {
+      _smsHint = started
+          ? 'پس از دریافت پیامک، تاییدیه خواندن خودکار کد نمایش داده می شود.'
+          : '';
+    });
+  }
+
+  Future<void> _stopSmsConsent() async {
+    _smsListening = false;
+    final NativeBridge? native = _native;
+    if (native != null) {
+      await native.stopSmsUserConsent();
+    }
+  }
+
+  Future<void> _applyDetectedOtp(String rawCode) async {
+    if (!mounted) return;
+    final AuthController auth = context.read<AuthController>();
+    if (auth.phase != AuthPhase.code) return;
+    final String extracted = NativeBridge.extractSmsVerificationCode(rawCode);
+    if (extracted.isEmpty) return;
+    final String formatted = Fa.num(
+      extracted.length > 6 ? extracted.substring(0, 6) : extracted,
+    );
+    _code.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    setState(() {
+      _smsHint = 'کد تایید پیامکی به صورت خودکار وارد شد.';
+    });
+    await _onCodeChanged(formatted, auth);
+  }
+
+  Future<void> _pasteOtpFromClipboard(AuthController auth) async {
+    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    final String raw = data?.text ?? '';
+    final String code = NativeBridge.extractSmsVerificationCode(raw);
+    if (code.isNotEmpty) {
+      await _applyDetectedOtp(code);
+      return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Fa.num('کد تاییدی در حافظه کلیپ برد پیدا نشد.'),
+          ),
+        ),
+      );
+    }
   }
 
   void _syncOperator() {
@@ -55,6 +147,11 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
+    _auth?.removeListener(_onAuthChanged);
+    _smsSub?.cancel();
+    if (_smsListening) {
+      unawaited(_native?.stopSmsUserConsent() ?? Future<void>.value());
+    }
     _phone.dispose();
     _firstName.dispose();
     _lastName.dispose();
@@ -269,6 +366,7 @@ class _LoginPageState extends State<LoginPage> {
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.left,
           keyboardType: TextInputType.phone,
+          autofillHints: const <String>[AutofillHints.telephoneNumberNational],
           textInputAction: TextInputAction.done,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 letterSpacing: 1.6,
@@ -314,39 +412,33 @@ class _LoginPageState extends State<LoginPage> {
                 Icon(Icons.dns_rounded, size: AppMetrics.iconXs, color: colors.textSecondary),
                 const SizedBox(width: AppMetrics.space2),
                 Expanded(
-                  child: Row(
+                  child: Wrap(
+                    spacing: AppMetrics.space1,
+                    runSpacing: AppMetrics.space1,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
-                      Flexible(
+                      Text(
+                        'نشانی فعلی درگاه:',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: colors.textSecondary),
+                      ),
+                      Directionality(
+                        textDirection: TextDirection.ltr,
                         child: Text(
-                          'نشانی فعلی درگاه:',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          auth.gatewayHost,
                           style: Theme.of(context)
                               .textTheme
                               .labelSmall
                               ?.copyWith(color: colors.textSecondary),
                         ),
                       ),
-                      const SizedBox(width: AppMetrics.space1),
-                      Expanded(
-                        child: Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: Text(
-                            auth.gatewayHost,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: colors.textSecondary),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
                 TextButton(
-                  onPressed: () => showGatewayDialog(context),
+                  onPressed: withUiClick(context, () => showGatewayDialog(context)),
                   child: Text(Fa.num('تغییر نشانی')),
                 ),
               ],
@@ -473,27 +565,47 @@ class _LoginPageState extends State<LoginPage> {
               ),
         ),
         const SizedBox(height: AppMetrics.space5),
-        TextField(
-          controller: _code,
-          focusNode: _codeFocus,
-          autofocus: true,
-          textAlign: TextAlign.center,
-          keyboardType: TextInputType.number,
-          inputFormatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]')),
-            const PersianDigitsFormatter(),
-            LengthLimitingTextInputFormatter(6),
-          ],
-          style: const TextStyle(
-            fontSize: AppMetrics.fontDisplay,
-            letterSpacing: 16,
-            fontWeight: FontWeight.w900,
-            fontFamily: AppTheme.fontFamily,
+        AutofillGroup(
+          child: TextField(
+            controller: _code,
+            focusNode: _codeFocus,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            keyboardType: TextInputType.number,
+            autofillHints: const <String>[AutofillHints.oneTimeCode],
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]')),
+              const PersianDigitsFormatter(),
+              LengthLimitingTextInputFormatter(6),
+            ],
+            style: const TextStyle(
+              fontSize: AppMetrics.fontDisplay,
+              letterSpacing: 16,
+              fontWeight: FontWeight.w900,
+              fontFamily: AppTheme.fontFamily,
+            ),
+            decoration: const InputDecoration(hintText: 'ــــــ'),
+            onChanged: (String value) => _onCodeChanged(value, auth),
+            onSubmitted: (String value) => auth.verifyCode(value),
           ),
-          decoration: const InputDecoration(hintText: 'ــــــ'),
-          onChanged: (String value) => _onCodeChanged(value, auth),
-          onSubmitted: (String value) => auth.verifyCode(value),
         ),
+        if (_smsHint.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppMetrics.space2),
+          Row(
+            children: <Widget>[
+              Icon(Icons.sms_rounded, size: AppMetrics.iconXs, color: colors.info),
+              const SizedBox(width: AppMetrics.space2),
+              Expanded(
+                child: Text(
+                  Fa.num(_smsHint),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.info,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: AppMetrics.space4),
         Wrap(
           spacing: AppMetrics.space2,
@@ -509,12 +621,24 @@ class _LoginPageState extends State<LoginPage> {
                   ),
             ),
             TextButton(
-              onPressed: auth.resendIn > 0 ? null : auth.resendCode,
+              onPressed: auth.resendIn > 0
+                  ? null
+                  : withUiClick(context, () {
+                      unawaited(_startSmsConsent());
+                      auth.resendCode();
+                    }),
               child: Text(
                 auth.resendIn > 0
                     ? Fa.num('ارسال دوباره تا ${Fa.num(auth.resendIn)} ثانیه')
                     : 'ارسال دوباره کد',
               ),
+            ),
+            TextButton.icon(
+              onPressed: auth.busy
+                  ? null
+                  : withUiClick(context, () => _pasteOtpFromClipboard(auth)),
+              icon: const Icon(Icons.content_paste_rounded, size: AppMetrics.iconXs),
+              label: const Text('جای گذاری کد'),
             ),
           ],
         ),
@@ -596,13 +720,13 @@ class _LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: AppMetrics.space3),
         OutlinedButton.icon(
-          onPressed: auth.busy ? null : auth.checkNow,
+          onPressed: auth.busy ? null : withUiClick(context, auth.checkNow),
           icon: const Icon(Icons.refresh_rounded, size: AppMetrics.iconSm),
           label: const Text('بررسی دوباره وضعیت'),
         ),
         const SizedBox(height: AppMetrics.space3),
         TextButton(
-          onPressed: auth.busy ? null : auth.cancelPendingSignIn,
+          onPressed: auth.busy ? null : withUiClick(context, auth.cancelPendingSignIn),
           child: const Text('لغو درخواست ورود'),
         ),
       ],

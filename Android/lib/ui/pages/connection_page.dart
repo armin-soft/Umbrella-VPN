@@ -260,15 +260,17 @@ class _StatusHero extends StatelessWidget {
                     FlagView(code: flagCode, width: AppMetrics.flagWidthSmall),
                     if (countryName.isNotEmpty) ...<Widget>[
                       const SizedBox(width: AppMetrics.space2),
-                      Text(
-                        Fa.num(countryName),
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: colors.textPrimary,
-                            ),
+                      Flexible(
+                        child: Text(
+                          Fa.num(countryName),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colors.textPrimary,
+                              ),
+                        ),
                       ),
                     ],
                   ],

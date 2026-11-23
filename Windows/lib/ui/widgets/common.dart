@@ -20,6 +20,22 @@ void playUiClick(BuildContext context) {
 VoidCallback? _withClick(BuildContext context, VoidCallback? action) =>
     action == null ? null : () { playUiClick(context); action(); };
 
+/// تزریق صدای کلیک استاندارد به رویدادهای بدون مقدار (مانند دکمه و کارت).
+VoidCallback? withUiClick(BuildContext context, VoidCallback? action) =>
+    _withClick(context, action);
+
+/// تزریق صدای کلیک استاندارد به رویدادهای دارای مقدار (مانند سوئیچ و چیپ).
+ValueChanged<T>? withUiClickValue<T>(
+  BuildContext context,
+  ValueChanged<T>? action,
+) =>
+    action == null
+        ? null
+        : (T value) {
+            playUiClick(context);
+            action(value);
+          };
+
 /// کارت شیشه ای پایه همه بخش ها.
 class GlassCard extends StatelessWidget {
   const GlassCard({
@@ -161,18 +177,19 @@ class GradientButton extends StatelessWidget {
             ),
           if (loading || icon != null) const SizedBox(width: AppMetrics.space3),
           Flexible(
-            child: Text(
-            Fa.num(label),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  // دکمه کم رنگ (tone) رنگ روشن دارد؛ متن سفید روی آن
-                  // خوانده نمی شود.
-                  color: !active
-                      ? colors.textSecondary
-                      : foreground,
-                  fontWeight: FontWeight.w800,
-                ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                Fa.num(label),
+                maxLines: 1,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      // دکمه کم رنگ (tone) رنگ روشن دارد؛ متن سفید روی آن
+                      // خوانده نمی شود.
+                      color: !active ? colors.textSecondary : foreground,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
             ),
           ),
         ],
@@ -292,8 +309,6 @@ class PageHeader extends StatelessWidget {
             children: <Widget>[
               Text(
                 Fa.num(title),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),
@@ -410,20 +425,16 @@ class PageHeader extends StatelessWidget {
             const SizedBox(height: AppMetrics.space1),
             Text(
               Fa.num(title),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: colors.textPrimary,
                     fontWeight: FontWeight.w900,
-                    height: 1.15,
+                    height: 1.2,
                   ),
             ),
             if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
               const SizedBox(height: AppMetrics.space1),
               Text(
                 Fa.num(subtitle!),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textSecondary,
                       height: 1.65,
@@ -581,8 +592,6 @@ class SectionHeader extends StatelessWidget {
             children: <Widget>[
               Text(
                 Fa.num(title),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: colors.textPrimary,
                       fontWeight: FontWeight.w800,
@@ -592,8 +601,6 @@ class SectionHeader extends StatelessWidget {
                 const SizedBox(height: AppMetrics.space1),
                 Text(
                   Fa.num(subtitle!),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colors.textSecondary,
                         height: 1.5,
@@ -715,8 +722,6 @@ class StatTile extends StatelessWidget {
                         color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -744,8 +749,6 @@ class StatTile extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: colors.textSecondary,
                   ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ],
         ],
@@ -821,12 +824,11 @@ class InfoRow extends StatelessWidget {
       textAlign: ltr
           ? TextAlign.left
           : (stacked ? TextAlign.start : TextAlign.end),
-      maxLines: stacked ? 2 : 1,
-      overflow: TextOverflow.ellipsis,
+      softWrap: true,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: valueColor ?? colors.textPrimary,
             fontWeight: FontWeight.w700,
-            height: stacked ? 1.5 : null,
+            height: 1.5,
           ),
     );
     if ((tooltip || stacked) && display.isNotEmpty) {
@@ -858,8 +860,6 @@ class InfoRow extends StatelessWidget {
                     Expanded(
                       child: Text(
                         Fa.num(label),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: colors.textSecondary,
                               fontWeight: FontWeight.w600,
@@ -895,14 +895,16 @@ class InfoRow extends StatelessWidget {
       );
     } else {
       rowContent = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: AppMetrics.iconSm, color: colors.textSecondary),
+          ),
           const SizedBox(width: AppMetrics.space3),
           Flexible(
             child: Text(
               Fa.num(label),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                     fontWeight: FontWeight.w500,
@@ -1415,8 +1417,6 @@ class ToggleRow extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       Fa.num(title),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -1426,8 +1426,6 @@ class ToggleRow extends StatelessWidget {
                       const SizedBox(height: AppMetrics.space1),
                       Text(
                         Fa.num(subtitle!),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: colors.textSecondary,
                               height: 1.55,
@@ -1517,8 +1515,6 @@ class _AnchoredSelectFieldState<T> extends State<AnchoredSelectField<T>> {
           ),
           child: Text(
             Fa.num(widget.label),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: colors.textSecondary,
                   fontWeight: FontWeight.w600,
@@ -1632,17 +1628,23 @@ class _AnchoredSelectFieldState<T> extends State<AnchoredSelectField<T>> {
                                 const SizedBox(width: AppMetrics.space2),
                               ],
                               Expanded(
-                                child: Text(
-                                  Fa.num(active.label),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: colors.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                      Fa.num(active.label),
+                                      maxLines: 1,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: colors.textPrimary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: AppMetrics.space2),
@@ -1729,8 +1731,6 @@ class _SelectMenuItem<T> extends StatelessWidget {
                       children: <Widget>[
                         Text(
                           Fa.num(option.label),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style:
                               Theme.of(context).textTheme.titleSmall?.copyWith(
                                     color: colors.textPrimary,
@@ -1743,8 +1743,6 @@ class _SelectMenuItem<T> extends StatelessWidget {
                           const SizedBox(height: AppMetrics.space1),
                           Text(
                             Fa.num(option.subtitle),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
                                 .labelSmall

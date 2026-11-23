@@ -340,7 +340,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                         SizedBox(
                           height: AppMetrics.controlHeightSmall,
                           child: OutlinedButton.icon(
-                            onPressed: updates.cancelDownload,
+                            onPressed: withUiClick(context, updates.cancelDownload),
                             icon: const Icon(
                               Icons.close_rounded,
                               size: AppMetrics.iconSm,
@@ -352,7 +352,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                         SizedBox(
                           height: AppMetrics.controlHeightSmall,
                           child: OutlinedButton.icon(
-                            onPressed: updates.skipCurrent,
+                            onPressed: withUiClick(context, updates.skipCurrent),
                             icon: const Icon(
                               Icons.skip_next_rounded,
                               size: AppMetrics.iconSm,
@@ -478,7 +478,7 @@ class _ChannelOptionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
-          onTap: disabled ? null : onTap,
+          onTap: disabled ? null : withUiClick(context, onTap),
           child: Container(
             padding: const EdgeInsets.all(AppMetrics.space4),
             decoration: BoxDecoration(
@@ -505,8 +505,6 @@ class _ChannelOptionCard extends StatelessWidget {
                           Flexible(
                             child: Text(
                               Fa.num('کانال ${channel.label}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall

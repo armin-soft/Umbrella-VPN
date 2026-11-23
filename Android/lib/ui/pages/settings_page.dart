@@ -239,7 +239,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   actions: <Widget>[
                     OutlinedButton.icon(
                       key: const ValueKey<String>('settings-back-button'),
-                      onPressed: () => setState(() => _section = null),
+                      onPressed: withUiClick(
+                        context,
+                        () => setState(() => _section = null),
+                      ),
                       icon: const Icon(Icons.arrow_back_rounded, size: AppMetrics.iconSm),
                       label: const Text('بازگشت به تنظیمات'),
                     ),
@@ -437,9 +440,12 @@ class _SettingsPageState extends State<SettingsPage> {
             OutlinedButton.icon(
               icon: const Icon(Icons.battery_alert_rounded, size: AppMetrics.iconSm),
               label: const Text('لغو محدودیت باتری'),
-              onPressed: () => context
-                  .read<NativeBridge>()
-                  .requestIgnoreBatteryOptimization(),
+              onPressed: withUiClick(
+                context,
+                () => context
+                    .read<NativeBridge>()
+                    .requestIgnoreBatteryOptimization(),
+              ),
             ),
           ],
         ),
@@ -604,10 +610,10 @@ class _SettingsPageState extends State<SettingsPage> {
                         size: AppMetrics.iconSm,
                       ),
                       label: const Text('تعمیر شبکه دستگاه'),
-                      onPressed: () async {
+                      onPressed: withUiClick(context, () async {
                         await vpn.restoreNetwork();
                         toasts.success('تنظیمات شبکه دستگاه بازگردانی شد');
-                      },
+                      }),
                     ),
                   ),
                   SizedBox(
@@ -618,8 +624,12 @@ class _SettingsPageState extends State<SettingsPage> {
                         size: AppMetrics.iconSm,
                       ),
                       label: const Text('تنظیمات اتصال همیشگی'),
-                      onPressed: () =>
-                          context.read<NativeBridge>().openVpnSystemSettings(),
+                      onPressed: withUiClick(
+                        context,
+                        () => context
+                            .read<NativeBridge>()
+                            .openVpnSystemSettings(),
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -630,9 +640,12 @@ class _SettingsPageState extends State<SettingsPage> {
                         size: AppMetrics.iconSm,
                       ),
                       label: const Text('لغو محدودیت باتری'),
-                      onPressed: () => context
-                          .read<NativeBridge>()
-                          .requestIgnoreBatteryOptimization(),
+                      onPressed: withUiClick(
+                        context,
+                        () => context
+                            .read<NativeBridge>()
+                            .requestIgnoreBatteryOptimization(),
+                      ),
                     ),
                   ),
                 ],
@@ -1032,7 +1045,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   size: AppMetrics.iconSm,
                 ),
                 label: const Text('رمزینه تصویری'),
-                onPressed: () => LanSharingDialog.show(context),
+                onPressed: withUiClick(
+                  context,
+                  () => LanSharingDialog.show(context),
+                ),
               ),
             ),
             children: <Widget>[
@@ -1259,8 +1275,6 @@ class _CategoryNavTile extends StatelessWidget {
                   const SizedBox(height: AppMetrics.space1),
                   Text(
                     Fa.num(subtitle),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -1311,7 +1325,7 @@ class _EditableValueRow extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return InkWell(
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-      onTap: onTap,
+      onTap: withUiClick(context, onTap),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppMetrics.space2,
@@ -1324,8 +1338,6 @@ class _EditableValueRow extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -1335,18 +1347,13 @@ class _EditableValueRow extends StatelessWidget {
             const SizedBox(width: AppMetrics.space2),
             Flexible(
               flex: 0,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 160),
-                child: Text(
-                  Fa.num(value),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textDirection: ltrValue ? TextDirection.ltr : null,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: valueColor ?? colors.textSecondary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
+              child: Text(
+                Fa.num(value),
+                textDirection: ltrValue ? TextDirection.ltr : null,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: valueColor ?? colors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
             ),
             const SizedBox(width: AppMetrics.space2),
@@ -1427,8 +1434,6 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
           Expanded(
             child: Text(
               Fa.num(widget.title),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -1456,11 +1461,11 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: withUiClick(context, () => Navigator.of(context).pop()),
           child: const Text('انصراف'),
         ),
         FilledButton(
-          onPressed: _submit,
+          onPressed: withUiClick(context, _submit),
           child: const Text('ذخیره'),
         ),
       ],
@@ -1635,8 +1640,6 @@ class _ThemeOptionCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -1655,8 +1658,6 @@ class _ThemeOptionCard extends StatelessWidget {
               const SizedBox(height: AppMetrics.space1),
               Text(
                 subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: colors.textSecondary,
                     ),

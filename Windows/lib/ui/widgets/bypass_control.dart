@@ -5,6 +5,7 @@ import '../../models/models.dart';
 import '../../core/theme.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
+import 'common.dart';
 
 /// Domains routed directly, synchronized with the account's Telegram settings.
 class BypassControlCard extends StatefulWidget {
@@ -55,20 +56,22 @@ class _BypassControlCardState extends State<BypassControlCard> {
         title: const Text('سایت های ایرانی'),
         subtitle: const Text('دامنه های ایرانی و مجموعه مسیرهای ایران را مستقیم باز کن'),
         value: filter.bypassIran,
-        onChanged: editable ? (value) => _save(filter.copyWith(bypassIran: value)) : null,
+        onChanged: editable
+            ? withUiClickValue(context, (value) => _save(filter.copyWith(bypassIran: value)))
+            : null,
       ),
       TextField(controller: _input, enabled: editable, minLines: 1, maxLines: 3,
         decoration: const InputDecoration(labelText: 'وارد کردن لینک یا دامنه', hintText: 'example.com')),
       const SizedBox(height: AppMetrics.space2),
-      OutlinedButton.icon(onPressed: editable ? _add : null,
+      OutlinedButton.icon(onPressed: editable ? withUiClick(context, _add) : null,
         icon: const Icon(Icons.add), label: const Text('افزودن سایت')),
       Text('فهرست مسیر مستقیم (${filter.bypassDomains.length} از ۲۰۰)'),
       if (filter.bypassDomains.isEmpty) const Text('هنوز سایتی اضافه نشده است.'),
       for (final domain in filter.bypassDomains)
         ListTile(dense: true, title: Text(domain),
           trailing: IconButton(tooltip: 'حذف سایت', icon: const Icon(Icons.delete_outline),
-            onPressed: editable ? () => _save(filter.copyWith(
-              bypassDomains: filter.bypassDomains.where((value) => value != domain).toList())) : null)),
+            onPressed: editable ? withUiClick(context, () => _save(filter.copyWith(
+              bypassDomains: filter.bypassDomains.where((value) => value != domain).toList()))) : null)),
     ]);
   }
 }

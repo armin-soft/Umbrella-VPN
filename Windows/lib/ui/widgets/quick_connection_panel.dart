@@ -94,7 +94,7 @@ class QuickConnectionPanel extends StatelessWidget {
                   IconButton(
                     key: const ValueKey<String>('quick-settings-close'),
                     tooltip: Fa.num('بستن تنظیمات اتصال'),
-                    onPressed: onClose,
+                    onPressed: withUiClick(context, onClose),
                     icon: const Icon(Icons.close_rounded),
                   ),
               ],
@@ -260,18 +260,23 @@ class _ServiceModeSegmentedBar extends StatelessWidget {
             icon: Icon(mode.icon, size: AppMetrics.iconXs),
             label: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),
-              child: Text(
-                Fa.num(mode.shortLabel),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  Fa.num(mode.shortLabel),
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ),
       ],
       selected: <InboundServiceMode>{selected},
       onSelectionChanged: enabled
-          ? (Set<InboundServiceMode> value) => onSelected(value.first)
+          ? (Set<InboundServiceMode> value) {
+              playUiClick(context);
+              onSelected(value.first);
+            }
           : null,
     );
   }
@@ -320,8 +325,6 @@ class _LanSharingRow extends StatelessWidget {
           ),
           title: Text(
             Fa.num('اشتراک گذاری اتصال'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
             Fa.num(
@@ -329,13 +332,11 @@ class _LanSharingRow extends StatelessWidget {
                   ? 'فعال روی پورت $port در شبکه محلی'
                   : 'اشتراک اینترنت با دستگاه های هم شبکه',
             ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: shared ? colors.primary : colors.textSecondary,
                 ),
           ),
-          onTap: onOpenQr,
+          onTap: withUiClick(context, onOpenQr),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -355,7 +356,7 @@ class _LanSharingRow extends StatelessWidget {
                 child: IconButton(
                   key: const ValueKey<String>('quick-lan-qr-button'),
                   tooltip: Fa.num('رمزینه تصویری اشتراک گذاری'),
-                  onPressed: onOpenQr,
+                  onPressed: withUiClick(context, onOpenQr),
                   icon: Icon(
                     Icons.qr_code_2_rounded,
                     color: shared ? colors.primary : colors.textSecondary,
@@ -372,7 +373,7 @@ class _LanSharingRow extends StatelessWidget {
               Switch.adaptive(
                 key: const ValueKey<String>('quick-lan-switch'),
                 value: shared,
-                onChanged: enabled ? onToggle : null,
+                onChanged: enabled ? withUiClickValue(context, onToggle) : null,
               ),
             ],
           ),

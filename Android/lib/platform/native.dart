@@ -64,6 +64,7 @@ class AndroidServiceEvent {
     this.status = '',
     this.alert = '',
     this.message = '',
+    this.code = '',
     this.messages = const <String>[],
   });
 
@@ -71,6 +72,7 @@ class AndroidServiceEvent {
   final String status;
   final String alert;
   final String message;
+  final String code;
   final List<String> messages;
 
   factory AndroidServiceEvent.fromMap(Map<Object?, Object?> raw) {
@@ -86,6 +88,7 @@ class AndroidServiceEvent {
       status: JsonX.text(raw['status']),
       alert: JsonX.text(raw['alert']),
       message: JsonX.text(raw['message']),
+      code: JsonX.text(raw['code']),
       messages: msgList,
     );
   }
@@ -170,6 +173,51 @@ class NativeBridge {
         .map((Object? event) =>
             AndroidServiceEvent.fromMap(event! as Map<Object?, Object?>));
     return _serviceEvents!;
+  }
+
+  /// استخراج کد تایید پیامکی (پشتیبانی از ارقام فارسی، عربی و لاتین).
+  static String extractSmsVerificationCode(String message) {
+    if (message.trim().isEmpty) return '';
+    final StringBuffer normalized = StringBuffer();
+    for (final int unit in message.runes) {
+      if (unit >= 0x06F0 && unit <= 0x06F9) {
+        normalized.writeCharCode(0x0030 + (unit - 0x06F0));
+      } else if (unit >= 0x0660 && unit <= 0x0669) {
+        normalized.writeCharCode(0x0030 + (unit - 0x0660));
+      } else {
+        normalized.writeCharCode(unit);
+      }
+    }
+    final String ascii = normalized.toString();
+    final RegExpMatch? sixDigit = RegExp(r'(?<!\d)\d{6}(?!\d)').firstMatch(ascii);
+    if (sixDigit != null) {
+      return sixDigit.group(0) ?? '';
+    }
+    final RegExpMatch? fallback = RegExp(r'(?<!\d)\d{4,8}(?!\d)').firstMatch(ascii);
+    return fallback?.group(0) ?? '';
+  }
+
+  /// آغاز گوش دادن امن به پیامک تایید از طریق Google SMS User Consent API.
+  Future<bool> startSmsUserConsent() async {
+    final bool? started = await _invoke<bool>('startSmsUserConsent');
+    return started ?? false;
+  }
+
+  /// توقف گوش دادن به پیامک تایید.
+  Future<void> stopSmsUserConsent() async {
+    await _invoke<bool>('stopSmsUserConsent');
+  }
+
+  /// جریان کدهای تایید پیامکی استخراج شده در سمت اندروید.
+  Stream<String> smsCodeEvents() {
+    return serviceEvents()
+        .where((AndroidServiceEvent event) => event.type == 'smsCode')
+        .map((AndroidServiceEvent event) {
+          final String direct = extractSmsVerificationCode(event.code);
+          if (direct.isNotEmpty) return direct;
+          return extractSmsVerificationCode(event.message);
+        })
+        .where((String code) => code.isNotEmpty);
   }
 
   Future<Map<String, dynamic>> getPlatformInfo() async {

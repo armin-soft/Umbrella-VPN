@@ -127,10 +127,10 @@ class _ExitPageState extends State<ExitPage> {
                   TextButton.icon(
                     onPressed: _busy
                         ? null
-                        : () {
+                        : withUiClick(context, () {
                             (widget.onCancelTap ?? ExitPage.onCancel)?.call();
                             window?.hide();
-                          },
+                          }),
                     icon: const Icon(
                       Icons.layers_rounded,
                       size: AppMetrics.iconSm,

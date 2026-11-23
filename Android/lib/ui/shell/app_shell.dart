@@ -415,6 +415,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                           onStatusTap: () {
                             if (_index != 0) {
                               _selectTab(0);
+                            } else {
+                              playUiClick(context);
                             }
                           },
                           updateAvailable: hasUpdate,
@@ -449,7 +451,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                                 fontWeight: selected
                                     ? FontWeight.w800
                                     : FontWeight.w600,
-                                overflow: TextOverflow.ellipsis,
                               );
                         },
                       ),
@@ -549,7 +550,7 @@ class _MoreTile extends StatelessWidget {
         ? colors.danger
         : (selected ? colors.primary : colors.textPrimary);
     return ListTile(
-      onTap: onTap,
+      onTap: withUiClick(context, onTap),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
       ),
@@ -777,7 +778,10 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                       ),
                       if (unread > 0)
                         TextButton.icon(
-                          onPressed: widget.auth.markNotificationsRead,
+                          onPressed: withUiClick(
+                            context,
+                            widget.auth.markNotificationsRead,
+                          ),
                           icon: const Icon(
                             Icons.done_all_rounded,
                             size: AppMetrics.iconSm,
@@ -854,9 +858,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                               Expanded(
                                                 child: Text(
                                                   Fa.num(item.compactTitle),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
                                                   style: Theme.of(context)
                                                       .textTheme
                                                       .titleSmall
@@ -895,8 +896,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                             ),
                                             Text(
                                               Fa.num(item.compactBody),
-                                              maxLines: expanded ? 4 : 2,
-                                              overflow: TextOverflow.ellipsis,
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .bodySmall
@@ -938,7 +937,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   ),
                   const SizedBox(height: AppMetrics.space3),
                   OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: withUiClick(context, () => Navigator.of(context).pop()),
                     icon: const Icon(
                       Icons.check_rounded,
                       size: AppMetrics.iconSm,
@@ -977,7 +976,7 @@ class _FilterChip extends StatelessWidget {
     final Color fg = selected ? colors.primary : colors.textSecondary;
     return InkWell(
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-      onTap: onTap,
+      onTap: withUiClick(context, onTap),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppMetrics.space3,

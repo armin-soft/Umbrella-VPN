@@ -562,7 +562,10 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                       const Spacer(),
                       if (unread > 0)
                         TextButton.icon(
-                          onPressed: widget.auth.markNotificationsRead,
+                          onPressed: withUiClick(
+                            context,
+                            widget.auth.markNotificationsRead,
+                          ),
                           icon: const Icon(
                             Icons.done_all_rounded,
                             size: AppMetrics.iconSm,
@@ -639,9 +642,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                               Expanded(
                                                 child: Text(
                                                   Fa.num(item.compactTitle),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
                                                   style: Theme.of(context)
                                                       .textTheme
                                                       .titleSmall
@@ -680,8 +680,6 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                                             ),
                                             Text(
                                               Fa.num(item.compactBody),
-                                              maxLines: expanded ? 4 : 2,
-                                              overflow: TextOverflow.ellipsis,
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .bodySmall
@@ -723,7 +721,7 @@ class _NotificationsDialogState extends State<_NotificationsDialog> {
                   ),
                   const SizedBox(height: AppMetrics.space3),
                   OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: withUiClick(context, () => Navigator.of(context).pop()),
                     icon: const Icon(
                       Icons.check_rounded,
                       size: AppMetrics.iconSm,
@@ -762,7 +760,7 @@ class _FilterChip extends StatelessWidget {
     final Color fg = selected ? colors.primary : colors.textSecondary;
     return InkWell(
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-      onTap: onTap,
+      onTap: withUiClick(context, onTap),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppMetrics.space3,

@@ -522,9 +522,12 @@ class _DevicePageState extends State<DevicePage> {
                 size: AppMetrics.iconSm,
               ),
               label: const Text('کپی مشخصات فنی این دستگاه'),
-              onPressed: () => _copy(
-                'مشخصات فنی دستگاه',
-                _buildDeviceReport(device, cores, liveUptime, bootAt),
+              onPressed: withUiClick(
+                context,
+                () => _copy(
+                  'مشخصات فنی دستگاه',
+                  _buildDeviceReport(device, cores, liveUptime, bootAt),
+                ),
               ),
             ),
           ),
@@ -794,8 +797,6 @@ class _DeviceMetricTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -807,8 +808,6 @@ class _DeviceMetricTile extends StatelessWidget {
           const SizedBox(height: AppMetrics.space3),
           Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: colors.textPrimary,
                   fontWeight: FontWeight.w900,
@@ -817,8 +816,6 @@ class _DeviceMetricTile extends StatelessWidget {
           const SizedBox(height: AppMetrics.space1),
           Text(
             caption,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: colors.textSecondary,
                 ),
@@ -914,8 +911,6 @@ class _MemoryAndStorageCard extends StatelessWidget {
                       hasRam
                           ? '${Fa.decimal(device.ramUsedGb, fraction: 1)} از ${Fa.decimal(device.ramTotalGb, fraction: 1)} گیگابایت'
                           : 'حافظه اصلی سیستم',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w900,
@@ -926,8 +921,6 @@ class _MemoryAndStorageCard extends StatelessWidget {
                       hasRam
                           ? 'حافظه رم آزاد: ${Fa.decimal(device.ramFreeGb, fraction: 1)} گیگابایت'
                           : 'اطلاعات حافظه پس از بررسی بومی نمایش داده می شود',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             color: colors.textSecondary,
                           ),
@@ -954,8 +947,6 @@ class _MemoryAndStorageCard extends StatelessWidget {
               Flexible(
                 child: Text(
                   'فضای درایو سیستم ویندوز',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: colors.textPrimary,
                         fontWeight: FontWeight.w700,

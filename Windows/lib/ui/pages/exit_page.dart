@@ -146,10 +146,10 @@ class _ExitPageState extends State<ExitPage> {
                 TextButton.icon(
                   onPressed: _busy
                       ? null
-                      : () {
+                      : withUiClick(context, () {
                           context.read<WindowService>().onWindowClose();
                           toasts.info('برنامه در سینی سیستم ماند');
-                        },
+                        }),
                   icon: const Icon(Icons.minimize_rounded, size: AppMetrics.iconSm),
                   label: Text(Fa.num('فقط کوچک کن به سینی')),
                 ),

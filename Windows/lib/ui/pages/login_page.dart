@@ -313,37 +313,33 @@ class _LoginPageState extends State<LoginPage> {
                 Icon(Icons.dns_rounded, size: AppMetrics.iconXs, color: colors.textSecondary),
                 const SizedBox(width: AppMetrics.space2),
                 Expanded(
-                  child: Row(
+                  child: Wrap(
+                    spacing: AppMetrics.space1,
+                    runSpacing: AppMetrics.space1,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       Text(
                         'نشانی فعلی درگاه:',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context)
                             .textTheme
                             .labelSmall
                             ?.copyWith(color: colors.textSecondary),
                       ),
-                      const SizedBox(width: AppMetrics.space1),
-                      Expanded(
-                        child: Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: Text(
-                            auth.gatewayHost,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: colors.textSecondary),
-                          ),
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          auth.gatewayHost,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: colors.textSecondary),
                         ),
                       ),
                     ],
                   ),
                 ),
                 TextButton(
-                  onPressed: () => showGatewayDialog(context),
+                  onPressed: withUiClick(context, () => showGatewayDialog(context)),
                   child: Text(Fa.num('تغییر نشانی')),
                 ),
               ],
@@ -506,7 +502,9 @@ class _LoginPageState extends State<LoginPage> {
                   ),
             ),
             TextButton(
-              onPressed: auth.resendIn > 0 ? null : auth.resendCode,
+              onPressed: auth.resendIn > 0
+                  ? null
+                  : withUiClick(context, auth.resendCode),
               child: Text(
                 auth.resendIn > 0
                     ? Fa.num('ارسال دوباره تا ${Fa.num(auth.resendIn)} ثانیه')
@@ -591,13 +589,13 @@ class _LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: AppMetrics.space3),
         OutlinedButton.icon(
-          onPressed: auth.busy ? null : auth.checkNow,
+          onPressed: auth.busy ? null : withUiClick(context, auth.checkNow),
           icon: const Icon(Icons.refresh_rounded, size: AppMetrics.iconSm),
           label: const Text('بررسی دوباره وضعیت'),
         ),
         const SizedBox(height: AppMetrics.space3),
         TextButton(
-          onPressed: auth.busy ? null : auth.cancelPendingSignIn,
+          onPressed: auth.busy ? null : withUiClick(context, auth.cancelPendingSignIn),
           child: const Text('لغو درخواست ورود'),
         ),
       ],

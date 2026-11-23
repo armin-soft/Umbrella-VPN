@@ -19,18 +19,44 @@ import 'native.dart';
 /// پخش صداهای کوتاه برنامه (اتصال، قطع، خطا و اعلان).
 class SoundService {
   SoundService() {
-    unawaited(_player.setReleaseMode(ReleaseMode.stop).catchError((Object _) {}));
-    unawaited(
-        _clickPlayer.setReleaseMode(ReleaseMode.stop).catchError((Object _) {}));
+    for (final AudioPlayer player in <AudioPlayer>[
+      _clickPlayer,
+      _statePlayer,
+      _alertPlayer,
+    ]) {
+      unawaited(player.setReleaseMode(ReleaseMode.stop).catchError((Object _) {}));
+    }
+    if (!kIsWeb && Platform.isAndroid) {
+      unawaited(
+        _clickPlayer.setPlayerMode(PlayerMode.lowLatency).catchError((Object _) {}),
+      );
+      final AudioContext sfxContext = AudioContext(
+        android: const AudioContextAndroid(
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.assistanceSonification,
+          audioFocus: AndroidAudioFocus.none,
+        ),
+      );
+      for (final AudioPlayer player in <AudioPlayer>[
+        _clickPlayer,
+        _statePlayer,
+        _alertPlayer,
+      ]) {
+        unawaited(player.setAudioContext(sfxContext).catchError((Object _) {}));
+      }
+    }
   }
 
-  final AudioPlayer _player = AudioPlayer();
   final AudioPlayer _clickPlayer = AudioPlayer();
+  final AudioPlayer _statePlayer = AudioPlayer();
+  final AudioPlayer _alertPlayer = AudioPlayer();
   bool enabled = true;
   bool _failureReported = false;
   DateTime? _lastClick;
-  String _lastEvent = '';
-  DateTime? _lastEventAt;
+  String _lastStateEvent = '';
+  DateTime? _lastStateEventAt;
+  String _lastAlertEvent = '';
+  DateTime? _lastAlertEventAt;
 
   Future<void> play(String name) async {
     if (!enabled ||
@@ -39,28 +65,39 @@ class SoundService {
       return;
     }
     final DateTime now = DateTime.now();
+    final AudioPlayer player;
     if (name == 'click') {
       if (_lastClick != null &&
-          now.difference(_lastClick!) < const Duration(milliseconds: 100)) {
+          now.difference(_lastClick!) < const Duration(milliseconds: 40)) {
         return;
       }
       _lastClick = now;
-    } else {
-      if (_lastEvent == name &&
-          _lastEventAt != null &&
-          now.difference(_lastEventAt!) < const Duration(milliseconds: 600)) {
+      player = _clickPlayer;
+    } else if (name == 'connect' || name == 'disconnect') {
+      if (_lastStateEvent == name &&
+          _lastStateEventAt != null &&
+          now.difference(_lastStateEventAt!) < const Duration(milliseconds: 500)) {
         return;
       }
-      _lastEvent = name;
-      _lastEventAt = now;
+      _lastStateEvent = name;
+      _lastStateEventAt = now;
+      player = _statePlayer;
+    } else {
+      if (_lastAlertEvent == name &&
+          _lastAlertEventAt != null &&
+          now.difference(_lastAlertEventAt!) < const Duration(milliseconds: 500)) {
+        return;
+      }
+      _lastAlertEvent = name;
+      _lastAlertEventAt = now;
+      player = _alertPlayer;
     }
     try {
-      final AudioPlayer player = name == 'click' ? _clickPlayer : _player;
       await player.stop();
       if (!enabled) return;
       await player.play(
         AssetSource('sounds/$name.wav'),
-        volume: name == 'click' ? 0.35 : 0.65,
+        volume: name == 'click' ? 0.55 : 0.85,
       );
       _failureReported = false;
     } catch (_) {
@@ -76,7 +113,8 @@ class SoundService {
 
   Future<void> dispose() async {
     await _clickPlayer.dispose();
-    await _player.dispose();
+    await _statePlayer.dispose();
+    await _alertPlayer.dispose();
   }
 }
 

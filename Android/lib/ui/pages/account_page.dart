@@ -160,11 +160,17 @@ class _AccountPageState extends State<AccountPage> {
             ),
             actions: <Widget>[
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed: withUiClick(
+                  dialogContext,
+                  () => Navigator.pop(dialogContext, false),
+                ),
                 child: const Text('انصراف'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
+                onPressed: withUiClick(
+                  dialogContext,
+                  () => Navigator.pop(dialogContext, true),
+                ),
                 child: const Text('ادامه'),
               ),
             ],
@@ -247,9 +253,25 @@ class _AccountPageState extends State<AccountPage> {
               ],
             )),
             actions: <Widget>[
-              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('انصراف')),
-              FilledButton(onPressed: valid ? () => Navigator.pop(dialogContext,
-                  <num>[dayValue, gbValue]) : null, child: const Text('ادامه')),
+              TextButton(
+                onPressed: withUiClick(
+                  dialogContext,
+                  () => Navigator.pop(dialogContext),
+                ),
+                child: const Text('انصراف'),
+              ),
+              FilledButton(
+                onPressed: valid
+                    ? withUiClick(
+                        dialogContext,
+                        () => Navigator.pop(
+                          dialogContext,
+                          <num>[dayValue, gbValue],
+                        ),
+                      )
+                    : null,
+                child: const Text('ادامه'),
+              ),
             ],
           );
         },
@@ -301,9 +323,21 @@ class _AccountPageState extends State<AccountPage> {
       builder: (context) => AlertDialog(
         title: const Text('لغو سفارش پرداخت؟'),
         content: const Text('لینک درگاه ممکن است همچنان قابل پرداخت باشد. اگر پرداخت دیرتر تأیید شود، مبلغ بدون کارمزد به کیف پول شما اضافه می شود و اشتراک لغوشده فعال نمی شود. اگر وجه کسر شده، دوباره پرداخت نکنید.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('بازگشت')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('لغو سفارش')),
+        actions: <Widget>[
+          TextButton(
+            onPressed: withUiClick(
+              context,
+              () => Navigator.pop(context, false),
+            ),
+            child: const Text('بازگشت'),
+          ),
+          FilledButton(
+            onPressed: withUiClick(
+              context,
+              () => Navigator.pop(context, true),
+            ),
+            child: const Text('لغو سفارش'),
+          ),
         ],
       ),
     );
@@ -397,6 +431,7 @@ class _AccountPageState extends State<AccountPage> {
                             selected: value == preset,
                             showCheckmark: false,
                             onSelected: (_) {
+                              playUiClick(context);
                               final String next = '$preset';
                               controller.value = TextEditingValue(
                                 text: next,
@@ -444,12 +479,18 @@ class _AccountPageState extends State<AccountPage> {
             ),
             actions: <Widget>[
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+                onPressed: withUiClick(
+                  dialogContext,
+                  () => Navigator.pop(dialogContext),
+                ),
                 child: const Text('انصراف'),
               ),
               FilledButton.icon(
                 onPressed: valid
-                    ? () => Navigator.pop(dialogContext, value)
+                    ? withUiClick(
+                        dialogContext,
+                        () => Navigator.pop(dialogContext, value),
+                      )
                     : null,
                 icon: const Icon(Icons.lock_outline_rounded),
                 label: const Text('ثبت درخواست امن'),
@@ -507,11 +548,17 @@ class _AccountPageState extends State<AccountPage> {
               ),
               actions: <Widget>[
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: withUiClick(
+                    dialogContext,
+                    () => Navigator.pop(dialogContext, false),
+                  ),
                   child: const Text('بعداً'),
                 ),
                 FilledButton.icon(
-                  onPressed: () => Navigator.pop(dialogContext, true),
+                  onPressed: withUiClick(
+                    dialogContext,
+                    () => Navigator.pop(dialogContext, true),
+                  ),
                   icon: const Icon(Icons.lock_outline_rounded),
                   label: const Text('رفتن به درگاه امن'),
                 ),
@@ -1284,8 +1331,6 @@ class _AccountMetricTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -1297,8 +1342,6 @@ class _AccountMetricTile extends StatelessWidget {
           const SizedBox(height: AppMetrics.space3),
           Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: colors.textPrimary,
                   fontWeight: FontWeight.w900,
@@ -1307,8 +1350,6 @@ class _AccountMetricTile extends StatelessWidget {
           const SizedBox(height: AppMetrics.space1),
           Text(
             caption,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: colors.textSecondary,
                 ),
@@ -1385,8 +1426,6 @@ class _UsageCard extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       '${Fa.decimal(used, fraction: 2)} گیگابایت',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w900,
                             color: colors.textPrimary,
@@ -1397,8 +1436,6 @@ class _UsageCard extends StatelessWidget {
                       unlimited
                           ? 'بسته بدون محدودیت حجم'
                           : 'مصرف شده از مجموع ${Fa.grouped(limit)} گیگابایت',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)
                           .textTheme
                           .labelMedium
@@ -1408,8 +1445,6 @@ class _UsageCard extends StatelessWidget {
                       const SizedBox(height: AppMetrics.space1),
                       Text(
                         'باقی مانده: ${Fa.gb(remaining)} (${Fa.decimal(account.remainingPercent, fraction: 1)} درصد)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: tone,
                               fontWeight: FontWeight.w700,
@@ -1523,8 +1558,6 @@ class _DaysCard extends StatelessWidget {
                           : (expired
                               ? 'اعتبار زمانی پایان یافته'
                               : Fa.spanFa(remaining)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                             color: colors.textPrimary,
@@ -1535,8 +1568,6 @@ class _DaysCard extends StatelessWidget {
                       start == null
                           ? 'تاریخ شروع پس از نخستین اتصال ثبت می شود'
                           : 'سپری شده از شروع: ${Fa.spanFa(elapsed, includeMinutes: false)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)
                           .textTheme
                           .labelMedium
@@ -1546,8 +1577,6 @@ class _DaysCard extends StatelessWidget {
                       const SizedBox(height: AppMetrics.space1),
                       Text(
                         '${Fa.decimal(remPct, fraction: 1)} درصد از دوره سرویس باقی مانده',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: tone,
                               fontWeight: FontWeight.w700,
@@ -1772,17 +1801,20 @@ class _WalletCard extends StatelessWidget {
                             ),
                       ),
                       const SizedBox(height: AppMetrics.space1),
-                      Text(
-                        auth.walletLoaded
-                            ? _walletMoney(auth.walletExactBalance)
-                            : '— — —',
-                        key: const ValueKey<String>('account-wallet-balance'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                            ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          auth.walletLoaded
+                              ? _walletMoney(auth.walletExactBalance)
+                              : '— — —',
+                          key: const ValueKey<String>('account-wallet-balance'),
+                          maxLines: 1,
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
                       ),
                       const SizedBox(height: AppMetrics.space1),
                       Text(
@@ -1854,24 +1886,32 @@ class _WalletCard extends StatelessWidget {
               if (auth.walletTopupPending &&
                   auth.walletCheckoutUrl.isNotEmpty)
                 OutlinedButton.icon(
-                  onPressed: auth.walletBusy ? null : onContinue,
+                  onPressed: auth.walletBusy
+                      ? null
+                      : withUiClick(context, onContinue),
                   icon: const Icon(Icons.open_in_new_rounded),
                   label: const Text('ادامه پرداخت'),
                 ),
               if (auth.walletPaymentPending)
                 OutlinedButton.icon(
-                  onPressed: auth.walletBusy ? null : onVerify,
+                  onPressed: auth.walletBusy
+                      ? null
+                      : withUiClick(context, onVerify),
                   icon: const Icon(Icons.verified_rounded),
                   label: const Text('بررسی پرداخت'),
                 ),
               if (auth.walletPaymentPending)
                 OutlinedButton.icon(
-                  onPressed: auth.walletBusy ? null : onCancel,
+                  onPressed: auth.walletBusy
+                      ? null
+                      : withUiClick(context, onCancel),
                   icon: const Icon(Icons.cancel_outlined),
                   label: const Text('لغو سفارش پرداخت'),
                 ),
               OutlinedButton.icon(
-                onPressed: auth.walletBusy ? null : onRefresh,
+                onPressed: auth.walletBusy
+                    ? null
+                    : withUiClick(context, onRefresh),
                 icon: auth.walletBusy
                     ? const SizedBox.square(
                         dimension: AppMetrics.iconSm,
@@ -2056,7 +2096,9 @@ class _PaidPlansCard extends StatelessWidget {
               ),
               IconButton(
                 tooltip: 'تازه سازی تعرفه، کیف پول و وضعیت اشتراک',
-                onPressed: loading || busy ? null : onRefresh,
+                onPressed: loading || busy
+                    ? null
+                    : withUiClick(context, onRefresh),
                 icon: loading
                     ? const SizedBox.square(
                         dimension: 18,
@@ -2156,7 +2198,7 @@ class _PaidPlansCard extends StatelessWidget {
                   OutlinedButton(
                     onPressed: busy || !canPurchase
                         ? null
-                        : () => onPurchase(plans[i]),
+                        : withUiClick(context, () => onPurchase(plans[i])),
                     child: Text(busy ? '...' : 'انتخاب'),
                   ),
                 ],
@@ -2165,7 +2207,9 @@ class _PaidPlansCard extends StatelessWidget {
           if (custom?.available == true) ...<Widget>[
             const Divider(height: AppMetrics.space3),
             OutlinedButton.icon(
-              onPressed: busy || loading || !canPurchase ? null : onCustom,
+              onPressed: busy || loading || !canPurchase
+                  ? null
+                  : withUiClick(context, onCustom),
               icon: const Icon(Icons.tune_rounded),
               label: const Text('اشتراک دلخواه: انتخاب مدت و حجم'),
             ),

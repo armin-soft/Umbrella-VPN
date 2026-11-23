@@ -8,6 +8,7 @@ import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/storage.dart';
 import '../../core/theme.dart';
+import 'common.dart';
 
 /// مدیریت زمان بندی و نمایش گفت و گوی دعوت به کانال رسمی تلگرام آمبرلا.
 ///
@@ -273,6 +274,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
   }
 
   void _handleJoin() {
+    playUiClick(context);
     final Future<bool> Function() launcher =
         widget.onJoinLaunch ?? TelegramChannelPrompt.openChannel;
     Navigator.of(context).pop(true);
@@ -280,6 +282,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
   }
 
   void _handleLater() {
+    playUiClick(context);
     Navigator.of(context).pop(false);
   }
 
@@ -527,16 +530,17 @@ class _TelegramHeader extends StatelessWidget {
                                 color: colors.onPrimary.withValues(alpha: 0.36),
                               ),
                             ),
-                            child: Text(
-                              channelHandle,
-                              textDirection: TextDirection.ltr,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.fade,
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: colors.onPrimary,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.3,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                channelHandle,
+                                textDirection: TextDirection.ltr,
+                                maxLines: 1,
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: colors.onPrimary,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
+                                ),
                               ),
                             ),
                           ),

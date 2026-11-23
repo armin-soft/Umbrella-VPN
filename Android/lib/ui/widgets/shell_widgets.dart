@@ -100,7 +100,7 @@ class _ToastCard extends StatelessWidget {
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
-                onTap: onClose,
+                onTap: withUiClick(context, onClose),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppMetrics.space4,
@@ -147,8 +147,6 @@ class _ToastCard extends StatelessWidget {
                                     .textTheme
                                     .labelSmall
                                     ?.copyWith(color: colors.textSecondary),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ],
@@ -250,15 +248,18 @@ class TitleBar extends StatelessWidget {
                       ),
                       const SizedBox(width: AppMetrics.space2),
                       Flexible(
-                        child: Text(
-                          Fa.num(AppConfig.appName),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: colors.textPrimary,
-                                  ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            Fa.num(AppConfig.appName),
+                            maxLines: 1,
+                            style:
+                                Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: colors.textPrimary,
+                                    ),
+                          ),
                         ),
                       ),
                     ],
@@ -307,17 +308,20 @@ class TitleBar extends StatelessWidget {
                                 ),
                                 const SizedBox(width: AppMetrics.space2),
                                 Flexible(
-                                  child: Text(
-                                    Fa.num(current.label),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                          color: tone,
-                                        ),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                      Fa.num(current.label),
+                                      maxLines: 1,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            color: tone,
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -393,7 +397,7 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: widget.onTap,
+          onTap: withUiClick(context, widget.onTap),
           onHover: (bool value) {
             if (_hover != value) {
               setState(() => _hover = value);
@@ -574,8 +578,6 @@ class SideNav extends StatelessWidget {
                                 children: <Widget>[
                                   Text(
                                     Fa.num('اتصال'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelSmall
@@ -583,8 +585,6 @@ class SideNav extends StatelessWidget {
                                   ),
                                   Text(
                                     Fa.num(status.label),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelMedium
@@ -611,7 +611,7 @@ class SideNav extends StatelessWidget {
                           message: Fa.num(status.label),
                           child: InkWell(
                             customBorder: const CircleBorder(),
-                            onTap: onStatusTap,
+                            onTap: withUiClick(context, onStatusTap),
                             child: Padding(
                               padding: const EdgeInsets.all(AppMetrics.space2),
                               child: Container(
@@ -713,7 +713,7 @@ class _NavItemState extends State<_NavItem> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: widget.onTap,
+          onTap: withUiClick(context, widget.onTap),
           onHover: (value) => setState(() => _hover = value),
           mouseCursor: SystemMouseCursors.click,
           borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
@@ -776,8 +776,6 @@ class _NavItemState extends State<_NavItem> {
                 Expanded(
                   child: Text(
                     Fa.num(widget.destination.label),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           color: widget.selected
                               ? colors.textPrimary

@@ -58,6 +58,17 @@ class EventHandler : EventChannel.StreamHandler, ServiceConnection.Callback {
         )
     }
 
+    fun onSmsCodeReceived(code: String, message: String) {
+        if (code.isBlank()) return
+        emit(
+            mapOf(
+                "type" to "smsCode",
+                "code" to code,
+                "message" to message,
+            ),
+        )
+    }
+
     private fun emit(payload: Map<String, Any>) {
         mainHandler.post {
             sink?.success(payload)

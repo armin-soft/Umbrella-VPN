@@ -515,19 +515,21 @@ class _DevicePageState extends State<DevicePage> {
                 FilledButton.icon(
                   icon: const Icon(Icons.battery_saver_rounded, size: AppMetrics.iconSm),
                   label: const Text('لغو محدودیت باتری'),
-                  onPressed: () async {
+                  onPressed: withUiClick(context, () async {
                     await context
                         .read<NativeBridge>()
                         .requestIgnoreBatteryOptimization();
                     await Future<void>.delayed(const Duration(milliseconds: 500));
                     if (mounted) unawaited(_refreshDevice());
-                  },
+                  }),
                 ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.vpn_lock_rounded, size: AppMetrics.iconSm),
                 label: const Text('تنظیمات اتصال همیشگی'),
-                onPressed: () =>
-                    context.read<NativeBridge>().openVpnSystemSettings(),
+                onPressed: withUiClick(
+                  context,
+                  () => context.read<NativeBridge>().openVpnSystemSettings(),
+                ),
               ),
               OutlinedButton.icon(
                 icon: const Icon(
@@ -535,9 +537,12 @@ class _DevicePageState extends State<DevicePage> {
                   size: AppMetrics.iconSm,
                 ),
                 label: const Text('کپی مشخصات فنی این دستگاه'),
-                onPressed: () => _copy(
-                  'مشخصات فنی دستگاه',
-                  _buildDeviceReport(device, cores, liveUptime, bootAt),
+                onPressed: withUiClick(
+                  context,
+                  () => _copy(
+                    'مشخصات فنی دستگاه',
+                    _buildDeviceReport(device, cores, liveUptime, bootAt),
+                  ),
                 ),
               ),
             ],
@@ -806,8 +811,6 @@ class _DeviceMetricTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -819,8 +822,6 @@ class _DeviceMetricTile extends StatelessWidget {
           const SizedBox(height: AppMetrics.space3),
           Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: colors.textPrimary,
                   fontWeight: FontWeight.w900,
@@ -829,8 +830,6 @@ class _DeviceMetricTile extends StatelessWidget {
           const SizedBox(height: AppMetrics.space1),
           Text(
             caption,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: colors.textSecondary,
                 ),
@@ -926,8 +925,6 @@ class _MemoryAndStorageCard extends StatelessWidget {
                       hasRam
                           ? '${Fa.decimal(device.ramUsedGb, fraction: 1)} از ${Fa.decimal(device.ramTotalGb, fraction: 1)} گیگابایت'
                           : 'حافظه اصلی سیستم',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w900,
@@ -938,8 +935,6 @@ class _MemoryAndStorageCard extends StatelessWidget {
                       hasRam
                           ? 'حافظه رم آزاد: ${Fa.decimal(device.ramFreeGb, fraction: 1)} گیگابایت'
                           : 'اطلاعات حافظه پس از بررسی بومی نمایش داده می شود',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             color: colors.textSecondary,
                           ),
@@ -966,8 +961,6 @@ class _MemoryAndStorageCard extends StatelessWidget {
               Flexible(
                 child: Text(
                   'فضای ذخیره سازی دستگاه',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: colors.textPrimary,
                         fontWeight: FontWeight.w700,

@@ -172,11 +172,17 @@ class _LiveLineState extends State<_LiveLine> {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      Fa.num(Fa.fullDateTime(_now)),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: widget.style,
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(
+          Fa.num(Fa.fullDateTime(_now)),
+          maxLines: 1,
+          style: widget.style,
+        ),
+      ),
     );
   }
 }

@@ -191,7 +191,10 @@ class _LogsPageState extends State<LogsPage> {
                         ),
                       ),
                       selected: _level == item.$1,
-                      onSelected: (_) => setState(() => _level = item.$1),
+                      onSelected: (_) {
+                        playUiClick(context);
+                        setState(() => _level = item.$1);
+                      },
                     ),
                   const _DiagnosticSessionChip(),
                 ],
@@ -301,7 +304,7 @@ class _LogsPageState extends State<LogsPage> {
                               padding:
                                   const EdgeInsets.only(top: AppMetrics.space1),
                               child: TextButton.icon(
-                                onPressed: () => _toggle(key),
+                                onPressed: withUiClick(context, () => _toggle(key)),
                                 icon: Icon(
                                   open
                                       ? Icons.unfold_less_rounded
@@ -362,11 +365,9 @@ class _LogsPageState extends State<LogsPage> {
                                     children: <Widget>[
                                       badge,
                                       const SizedBox(width: AppMetrics.space2),
-                                      Flexible(
+                                      Expanded(
                                         child: Text(
                                           '${Fa.num(Fa.date(line.time))} • ${Fa.clock(line.time)}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontFamily: AppTheme.fontFamily,
                                             fontSize: AppMetrics.fontCaption,
@@ -479,7 +480,7 @@ class _DetailPanel extends StatelessWidget {
                 ),
               ),
               TextButton.icon(
-                onPressed: () => onCopy(),
+                onPressed: withUiClick(context, () => onCopy()),
                 icon: const Icon(Icons.copy_all_rounded, size: AppMetrics.iconSm),
                 label: Text(
                   Fa.num('کپی جزئیات'),
@@ -611,7 +612,6 @@ class _DiagnosticSessionChipState extends State<_DiagnosticSessionChip> {
               child: Text(
                 Fa.num(label),
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -676,10 +676,16 @@ class _ReportPasswordDialogState extends State<_ReportPasswordDialog> {
       ))),
     ),
     actions: <Widget>[
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
-      FilledButton(onPressed: () {
-        if (_form.currentState?.validate() ?? false) Navigator.pop(context, _password.text);
-      }, child: const Text('رمزگذاری و ذخیره')),
+      TextButton(
+        onPressed: withUiClick(context, () => Navigator.pop(context)),
+        child: const Text('انصراف'),
+      ),
+      FilledButton(
+        onPressed: withUiClick(context, () {
+          if (_form.currentState?.validate() ?? false) Navigator.pop(context, _password.text);
+        }),
+        child: const Text('رمزگذاری و ذخیره'),
+      ),
     ],
   );
 }

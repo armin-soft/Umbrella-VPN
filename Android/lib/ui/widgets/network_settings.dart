@@ -268,8 +268,6 @@ class _MtuField extends StatelessWidget {
       children: <Widget>[
         Text(
             'اندازه بسته تونل',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: colors.textSecondary,
                 fontWeight: FontWeight.w600,
@@ -337,8 +335,6 @@ class _GroupCaption extends StatelessWidget {
           flex: 4,
           child: Text(
             title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: colors.textPrimary,
                   fontWeight: FontWeight.w700,

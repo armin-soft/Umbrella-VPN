@@ -5,6 +5,7 @@ import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
+import 'common.dart';
 
 /// گفت و گوی تغییر نشانی درگاه برنامه.
 ///
@@ -38,11 +39,14 @@ Future<void> showGatewayDialog(BuildContext context) async {
         ),
         actions: <Widget>[
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+            onPressed: withUiClick(context, () => Navigator.of(dialogContext).pop()),
             child: Text(Fa.num('انصراف')),
           ),
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            onPressed: withUiClick(
+              context,
+              () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            ),
             child: Text(Fa.num('ذخیره و بررسی')),
           ),
         ],

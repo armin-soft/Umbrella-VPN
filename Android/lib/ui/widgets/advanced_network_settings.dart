@@ -56,8 +56,6 @@ class AdvancedNetworkSettings extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       'مسیریابی برنامه های دستگاه',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -74,8 +72,6 @@ class AdvancedNetworkSettings extends StatelessWidget {
                               : Fa.num(
                                   'همه برنامه ها به جز ${activePackages.length} برنامه مستثنی شده از تونل عبور می کنند',
                                 ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: perAppMode != 'off'
                                 ? colors.info
@@ -113,6 +109,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
             ],
             selected: <String>{perAppMode},
             onSelectionChanged: (Set<String> selected) async {
+              playUiClick(context);
               final String next = selected.first;
               await controller.setPerAppProxy(mode: next);
               if (!context.mounted) return;
@@ -131,8 +128,10 @@ class AdvancedNetworkSettings extends StatelessWidget {
                     'انتخاب برنامه ها (${activePackages.length})',
                   ),
                 ),
-                onPressed: () =>
-                    _openInstalledAppsPicker(context, controller, perAppMode),
+                onPressed: withUiClick(
+                  context,
+                  () => _openInstalledAppsPicker(context, controller, perAppMode),
+                ),
               ),
             ),
           ],
@@ -192,14 +191,15 @@ class AdvancedNetworkSettings extends StatelessWidget {
                         color: colors.textSecondary,
                       ),
                       const SizedBox(width: AppMetrics.space2),
-                      Text(
-                        settings.appRoutes[i].process,
-                        textDirection: TextDirection.ltr,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: colors.textPrimary,
-                              fontWeight: FontWeight.w700,
-                            ),
+                      Flexible(
+                        child: Text(
+                          settings.appRoutes[i].process,
+                          textDirection: TextDirection.ltr,
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: colors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
                       ),
                       const SizedBox(width: AppMetrics.space2),
                       Container(
@@ -228,19 +228,22 @@ class AdvancedNetworkSettings extends StatelessWidget {
                     children: <Widget>[
                       Switch.adaptive(
                         value: settings.appRoutes[i].enabled,
-                        onChanged: (bool enabled) => _saveRules(
+                        onChanged: withUiClickValue(
                           context,
-                          controller,
-                          <AppRouteRule>[
-                            for (int j = 0; j < settings.appRoutes.length; j++)
-                              j == i
-                                  ? AppRouteRule(
-                                      process: settings.appRoutes[j].process,
-                                      action: settings.appRoutes[j].action,
-                                      enabled: enabled,
-                                    )
-                                  : settings.appRoutes[j],
-                          ],
+                          (bool enabled) => _saveRules(
+                            context,
+                            controller,
+                            <AppRouteRule>[
+                              for (int j = 0; j < settings.appRoutes.length; j++)
+                                j == i
+                                    ? AppRouteRule(
+                                        process: settings.appRoutes[j].process,
+                                        action: settings.appRoutes[j].action,
+                                        enabled: enabled,
+                                      )
+                                    : settings.appRoutes[j],
+                            ],
+                          ),
                         ),
                       ),
                       IconButton(
@@ -249,8 +252,10 @@ class AdvancedNetworkSettings extends StatelessWidget {
                           Icons.edit_outlined,
                           size: AppMetrics.iconSm,
                         ),
-                        onPressed: () =>
-                            _editRule(context, controller, index: i),
+                        onPressed: withUiClick(
+                          context,
+                          () => _editRule(context, controller, index: i),
+                        ),
                       ),
                       IconButton(
                         tooltip: 'اولویت بالاتر',
@@ -260,13 +265,13 @@ class AdvancedNetworkSettings extends StatelessWidget {
                         ),
                         onPressed: i == 0
                             ? null
-                            : () {
+                            : withUiClick(context, () {
                                 final List<AppRouteRule> rules =
                                     List<AppRouteRule>.of(settings.appRoutes);
                                 final AppRouteRule rule = rules.removeAt(i);
                                 rules.insert(i - 1, rule);
                                 _saveRules(context, controller, rules);
-                              },
+                              }),
                       ),
                       IconButton(
                         tooltip: 'حذف قانون',
@@ -274,11 +279,14 @@ class AdvancedNetworkSettings extends StatelessWidget {
                           Icons.delete_outline_rounded,
                           size: AppMetrics.iconSm,
                         ),
-                        onPressed: () => _saveRules(
+                        onPressed: withUiClick(
                           context,
-                          controller,
-                          List<AppRouteRule>.of(settings.appRoutes)
-                            ..removeAt(i),
+                          () => _saveRules(
+                            context,
+                            controller,
+                            List<AppRouteRule>.of(settings.appRoutes)
+                              ..removeAt(i),
+                          ),
                         ),
                       ),
                     ],
@@ -448,8 +456,10 @@ class _InstalledAppsSheetState extends State<_InstalledAppsSheet> {
                     ),
                   ),
                   FilledButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(_selected.toList()),
+                    onPressed: withUiClick(
+                      context,
+                      () => Navigator.of(context).pop(_selected.toList()),
+                    ),
                     child: Text(Fa.num('ذخیره (${_selected.length})')),
                   ),
                 ],
@@ -472,13 +482,18 @@ class _InstalledAppsSheetState extends State<_InstalledAppsSheet> {
                       contentPadding: EdgeInsets.zero,
                       title: const Text('نمایش برنامه های سیستمی'),
                       value: _showSystem,
-                      onChanged: (bool? v) =>
-                          setState(() => _showSystem = v ?? false),
+                      onChanged: withUiClickValue(
+                        context,
+                        (bool? v) => setState(() => _showSystem = v ?? false),
+                      ),
                     ),
                   ),
                   if (_selected.isNotEmpty)
                     TextButton(
-                      onPressed: () => setState(() => _selected.clear()),
+                      onPressed: withUiClick(
+                        context,
+                        () => setState(() => _selected.clear()),
+                      ),
                       child: const Text('پاک کردن همه'),
                     ),
                 ],
@@ -499,7 +514,7 @@ class _InstalledAppsSheetState extends State<_InstalledAppsSheet> {
                                   _selected.contains(app.packageName);
                               return CheckboxListTile(
                                 value: checked,
-                                onChanged: (bool? v) {
+                                onChanged: withUiClickValue(context, (bool? v) {
                                   setState(() {
                                     if (v ?? false) {
                                       _selected.add(app.packageName);
@@ -507,17 +522,11 @@ class _InstalledAppsSheetState extends State<_InstalledAppsSheet> {
                                       _selected.remove(app.packageName);
                                     }
                                   });
-                                },
-                                title: Text(
-                                  app.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                }),
+                                title: Text(app.name),
                                 subtitle: Text(
                                   app.packageName,
                                   textDirection: TextDirection.ltr,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context)
                                       .textTheme
                                       .labelSmall
@@ -588,8 +597,6 @@ class _FeatureCard extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -598,8 +605,6 @@ class _FeatureCard extends StatelessWidget {
                     const SizedBox(height: AppMetrics.space1),
                     Text(
                       badge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: badgeActive ? accent : colors.textSecondary,
                             fontWeight: FontWeight.w700,
@@ -613,8 +618,6 @@ class _FeatureCard extends StatelessWidget {
           const SizedBox(height: AppMetrics.space3),
           Text(
             subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: colors.textSecondary,
                   height: 1.6,
@@ -626,7 +629,7 @@ class _FeatureCard extends StatelessWidget {
             child: OutlinedButton.icon(
               icon: Icon(actionIcon, size: AppMetrics.iconSm),
               label: Text(actionLabel),
-              onPressed: onAction,
+              onPressed: withUiClick(context, onAction),
             ),
           ),
         ],
@@ -685,6 +688,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
                 dropdownColor: context.colors.surface,
                 borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
                 decoration: const InputDecoration(labelText: 'عملکرد مسیر'),
+                onTap: () => playUiClick(context),
                 items: <DropdownMenuItem<AppRouteAction>>[
                   for (final AppRouteAction value in AppRouteAction.values)
                     DropdownMenuItem<AppRouteAction>(
@@ -693,6 +697,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
                     ),
                 ],
                 onChanged: (AppRouteAction? value) {
+                  playUiClick(context);
                   if (value != null) setState(() => action = value);
                 },
               ),
@@ -706,12 +711,12 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
         ),
         actions: <Widget>[
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: withUiClick(context, () => Navigator.of(context).pop()),
             child: const Text('انصراف'),
           ),
           FilledButton(
             child: const Text('ذخیره قانون'),
-            onPressed: () {
+            onPressed: withUiClick(context, () {
               final AppRouteRule rule = AppRouteRule(
                 process: process.text.trim(),
                 action: action,
@@ -722,7 +727,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
                 return;
               }
               Navigator.of(context).pop(rule);
-            },
+            }),
           ),
         ],
       );

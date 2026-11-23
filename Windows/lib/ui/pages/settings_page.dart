@@ -245,7 +245,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   actions: <Widget>[
                     OutlinedButton.icon(
                       key: const ValueKey<String>('settings-back-button'),
-                      onPressed: () => setState(() => _section = null),
+                      onPressed: withUiClick(
+                        context,
+                        () => setState(() => _section = null),
+                      ),
                       icon: const Icon(Icons.arrow_back_rounded, size: AppMetrics.iconSm),
                       label: const Text('بازگشت به تنظیمات'),
                     ),
@@ -623,10 +626,10 @@ class _SettingsPageState extends State<SettingsPage> {
                         size: AppMetrics.iconSm,
                       ),
                       label: const Text('تعمیر شبکه ویندوز'),
-                      onPressed: () async {
+                      onPressed: withUiClick(context, () async {
                         await vpn.restoreNetwork();
                         toasts.success('تنظیمات شبکه ویندوز بازگردانی شد');
-                      },
+                      }),
                     ),
                   ),
                   if (!settings.elevated)
@@ -638,7 +641,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           size: AppMetrics.iconSm,
                         ),
                         label: const Text('اجرا با دسترسی مدیر'),
-                        onPressed: settings.requestElevation,
+                        onPressed: withUiClick(context, settings.requestElevation),
                       ),
                     ),
                 ],
@@ -752,7 +755,7 @@ class _SettingsPageState extends State<SettingsPage> {
             child: OutlinedButton.icon(
               icon: const Icon(Icons.add_rounded, size: AppMetrics.iconSm),
               label: const Text('افزودن برنامه'),
-              onPressed: () async {
+              onPressed: withUiClick(context, () async {
                 final AppRouteRule? created = await showDialog<AppRouteRule>(
                   context: context,
                   builder: (BuildContext context) => const AppRouteDialog(),
@@ -1107,7 +1110,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   size: AppMetrics.iconSm,
                 ),
                 label: const Text('رمزینه تصویری'),
-                onPressed: () => LanSharingDialog.show(context),
+                onPressed: withUiClick(
+                  context,
+                  () => LanSharingDialog.show(context),
+                ),
               ),
             ),
             children: <Widget>[
@@ -1334,8 +1340,6 @@ class _CategoryNavTile extends StatelessWidget {
                   const SizedBox(height: AppMetrics.space1),
                   Text(
                     Fa.num(subtitle),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -1386,7 +1390,7 @@ class _EditableValueRow extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return InkWell(
       borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-      onTap: onTap,
+      onTap: withUiClick(context, onTap),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppMetrics.space2,
@@ -1443,7 +1447,10 @@ class _AppRouteTile extends StatelessWidget {
     final UmbrellaColors colors = context.colors;
     return Row(
       children: <Widget>[
-        Switch.adaptive(value: rule.enabled, onChanged: onToggle),
+        Switch.adaptive(
+          value: rule.enabled,
+          onChanged: withUiClickValue(context, onToggle),
+        ),
         const SizedBox(width: AppMetrics.space2),
         Icon(
           rule.isPath ? Icons.folder_rounded : Icons.apps_rounded,
@@ -1473,7 +1480,7 @@ class _AppRouteTile extends StatelessWidget {
         ),
         IconButton(
           tooltip: 'حذف قانون',
-          onPressed: onDelete,
+          onPressed: withUiClick(context, onDelete),
           icon: Icon(
             Icons.delete_outline_rounded,
             size: AppMetrics.iconMd,
@@ -1550,8 +1557,6 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
           Expanded(
             child: Text(
               Fa.num(widget.title),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -1579,11 +1584,11 @@ class _ValueInputDialogState extends State<_ValueInputDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: withUiClick(context, () => Navigator.of(context).pop()),
           child: const Text('انصراف'),
         ),
         FilledButton(
-          onPressed: _submit,
+          onPressed: withUiClick(context, _submit),
           child: const Text('ذخیره'),
         ),
       ],
@@ -1724,8 +1729,6 @@ class _ThemeOptionCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -1744,8 +1747,6 @@ class _ThemeOptionCard extends StatelessWidget {
               const SizedBox(height: AppMetrics.space1),
               Text(
                 subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: colors.textSecondary,
                     ),

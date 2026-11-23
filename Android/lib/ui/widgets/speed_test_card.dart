@@ -36,17 +36,17 @@ class SpeedTestCard extends StatelessWidget {
         const SizedBox(height: AppMetrics.space3),
         Wrap(spacing: AppMetrics.space3, runSpacing: AppMetrics.space2, children: <Widget>[
           FilledButton.icon(icon: const Icon(Icons.speed_rounded), label: const Text('شروع آزمایش با مصرف حدود ۶ مگابایت'),
-            onPressed: connected && !vpn.speedTesting ? vpn.measureSpeed : null),
-          if (vpn.speedTesting) OutlinedButton(onPressed: vpn.cancelSpeedTest, child: const Text('لغو آزمایش')),
+            onPressed: connected && !vpn.speedTesting ? withUiClick(context, vpn.measureSpeed) : null),
+          if (vpn.speedTesting) OutlinedButton(onPressed: withUiClick(context, vpn.cancelSpeedTest), child: const Text('لغو آزمایش')),
         ]),
         const Divider(height: AppMetrics.space6),
         const Text('نشت دی ان اس: نتیجه ای ثبت نشده است. تایید اتصال امن و آزمایش سرعت، نبود نشت دی ان اس یا پوشش همه برنامه ها را ثابت نمی کنند. آزمایش مرورگر را در حالت تونل انجام دهید؛ مرورگر نباید قانون «مستقیم» داشته باشد. حالت پروکسی همه دی ان اس سیستم را پوشش نمی دهد.'),
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton.icon(
           icon: const Icon(Icons.open_in_new_rounded), label: const Text('آزمون مستقل دی ان اس در مرورگر'),
-          onPressed: !connected ? null : () async {
+          onPressed: !connected ? null : withUiClick(context, () async {
             final bool opened = await launchUrl(Uri.parse('https://www.dnsleaktest.com/'), mode: LaunchMode.externalApplication);
             if (!opened && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مرورگر باز نشد؛ صفحه آزمون نشت دی ان اس را دستی باز کنید.')));
-          },
+          }),
         )),
         const Text('این دکمه سرویس بیرونی را باز می کند و نشانی آی پی و دی ان اس اتصال شما در اختیار آن سرویس قرار می گیرد. آمبرلا نتیجه آن صفحه را خودکار تایید نمی کند.'),
       ],

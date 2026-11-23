@@ -34,6 +34,7 @@ import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
+import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
@@ -67,6 +68,15 @@ class _FakeNative implements NativeBridge {
 
   @override
   Future<bool> setAutostart(bool enabled) async => true;
+
+  @override
+  Future<bool> startSmsUserConsent() async => false;
+
+  @override
+  Future<void> stopSmsUserConsent() async {}
+
+  @override
+  Stream<String> smsCodeEvents() => const Stream<String>.empty();
 
   @override
   Future<bool> setPerAppProxy({
@@ -118,8 +128,14 @@ class _FakeSound implements SoundService {
   @override
   bool enabled = true;
 
+  final List<String> played = <String>[];
+
   @override
-  Future<void> play(String name) async {}
+  Future<void> play(String name) async {
+    if (enabled) {
+      played.add(name);
+    }
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -1368,7 +1384,430 @@ void main() {
       ).readAsStringSync();
       expect(grpcClientProvider, contains('.callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)'));
     });
+
+    test('NativeBridge.extractSmsVerificationCode parses Persian, Arabic-Indic, and Latin OTPs', () {
+      expect(
+        NativeBridge.extractSmsVerificationCode('کد تایید شما در آمبرلا: ۴۸۲۹۱۰'),
+        '482910',
+      );
+      expect(
+        NativeBridge.extractSmsVerificationCode('رمز یکبار مصرف شما ٤٨٢٩١٠ می باشد'),
+        '482910',
+      );
+      expect(
+        NativeBridge.extractSmsVerificationCode('Umbrella OTP in 1405: 903158'),
+        '903158',
+      );
+      expect(
+        NativeBridge.extractSmsVerificationCode('Code: 73915'),
+        '73915',
+      );
+      expect(
+        NativeBridge.extractSmsVerificationCode('پیامک اطلاع رسانی بدون کد'),
+        isEmpty,
+      );
+    });
+
+    testWidgets(
+      'LoginPage reads SMS User Consent OTP automatically, normalizes Persian digits, and cleans up listener',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(412, 915);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        await LocalStore.instance.remove(StoreKeys.lastPhone);
+
+        final List<Map<String, dynamic>> verifyPayloads = <Map<String, dynamic>>[];
+        final MockClient mockClient = MockClient((http.Request request) async {
+          final String url = request.url.toString();
+          final Map<String, dynamic> payload =
+              jsonDecode(request.body) as Map<String, dynamic>;
+          if (url.contains('auth/verify')) {
+            verifyPayloads.add(payload);
+            return http.Response.bytes(
+              utf8.encode(jsonEncode(<String, dynamic>{
+                'ok': true,
+                'verified': true,
+                'challenge': 'ch-sms-1',
+                'stage': 'awaiting_telegram',
+                'bot': 'https://t.me/UmbrellaVpnBot',
+                'message': 'در انتظار تایید در تلگرام',
+              })),
+              200,
+              headers: const <String, String>{
+                'content-type': 'application/json; charset=utf-8',
+              },
+            );
+          }
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'ok': true,
+              'challenge': 'ch-sms-1',
+              'stage': 'code_sent',
+              'account_exists': true,
+              'resend_after': 120,
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        });
+
+        final _SmsTestNative smsNative = _SmsTestNative();
+        final _FakeSound sound = _FakeSound();
+        final SettingsController settings = SettingsController(
+          native: smsNative,
+          sound: sound,
+          window: _FakeWindow(),
+        );
+        final GatewayClient gateway = GatewayClient(
+          baseUrl: 'https://example.test/index.php?AppApi=',
+          client: mockClient,
+          enableNativeTransport: false,
+        );
+        final AuthController auth = AuthController(
+          native: smsNative,
+          gateway: gateway,
+          sound: sound,
+          tray: TrayService(smsNative),
+        );
+        addTearDown(() async {
+          auth.dispose();
+          settings.dispose();
+          await smsNative.closeSms();
+        });
+        await auth.restore();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: smsNative),
+              Provider<SoundService>.value(value: sound),
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: LoginPage(),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        await tester.enterText(find.byType(TextField).first, '09123456789');
+        await tester.pump();
+        final Finder submitBtn = find.text('دریافت کد تایید');
+        await tester.ensureVisible(submitBtn);
+        await tester.tap(submitBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(auth.phase, AuthPhase.code);
+        expect(smsNative.smsStartCalls, 1);
+        expect(find.textContaining('خواندن خودکار کد'), findsOneWidget);
+        expect(find.text('جای گذاری کد'), findsOneWidget);
+        expect(sound.played, contains('click'));
+
+        smsNative.emitSmsMessage('کد ورود شما به آمبرلا: ۴۸۲۹۱۰');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(verifyPayloads, hasLength(1));
+        expect(verifyPayloads.first['challenge'], 'ch-sms-1');
+        expect(verifyPayloads.first['code'], '482910');
+        expect(auth.phase, AuthPhase.telegram);
+        expect(smsNative.smsStopCalls, greaterThanOrEqualTo(1));
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+        auth.dispose();
+        settings.dispose();
+        await smsNative.closeSms();
+      },
+    );
+
+    testWidgets(
+      'Android UI controls and navigation emit click sounds and avoid silent text clipping',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        await LocalStore.instance.write(
+          StoreKeys.telegramChannelPromptAt,
+          DateTime.now().toUtc().millisecondsSinceEpoch.toString(),
+        );
+
+        final _FakeSound sound = _FakeSound();
+        int clicks = 0;
+        String selectVal = 'one';
+
+        await tester.pumpWidget(
+          Provider<SoundService>.value(
+            value: sound,
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(
+                  body: SingleChildScrollView(
+                    child: Column(
+                      children: <Widget>[
+                        GradientButton(
+                          label: 'دکمه اصلی',
+                          onPressed: () => clicks++,
+                        ),
+                        IconAction(
+                          icon: Icons.refresh_rounded,
+                          tooltip: 'تازه سازی',
+                          onTap: () => clicks++,
+                        ),
+                        ToggleRow(
+                          icon: Icons.volume_up_rounded,
+                          title: 'صدای برنامه',
+                          value: true,
+                          onChanged: (_) => clicks++,
+                        ),
+                        GlassCard(
+                          onTap: () => clicks++,
+                          child: const Text('کارت شیشه ای'),
+                        ),
+                        SelectionCard(
+                          icon: Icons.bolt_rounded,
+                          title: 'حالت انتخاب',
+                          description: 'توضیح کوتاه',
+                          selected: false,
+                          onTap: () => clicks++,
+                        ),
+                        InfoRow(
+                          icon: Icons.info_outline_rounded,
+                          label: 'وضعیت',
+                          value: 'جزئیات کامل',
+                          onTap: () => clicks++,
+                        ),
+                        AnchoredSelectField<String>(
+                          label: 'انتخابگر',
+                          value: selectVal,
+                          options: const <SelectOption<String>>[
+                            SelectOption<String>(value: 'one', label: 'مورد اول'),
+                            SelectOption<String>(value: 'two', label: 'مورد دوم'),
+                          ],
+                          onChanged: (String next) {
+                            selectVal = next;
+                            clicks++;
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        for (final Finder target in <Finder>[
+          find.text('دکمه اصلی'),
+          find.byIcon(Icons.refresh_rounded),
+          find.text('صدای برنامه'),
+          find.text('کارت شیشه ای'),
+          find.text('حالت انتخاب'),
+          find.text('جزئیات کامل'),
+          find.text('مورد اول'),
+        ]) {
+          await tester.ensureVisible(target);
+          await tester.tap(target);
+        }
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('مورد دوم').last);
+        await tester.pumpAndSettle();
+
+        expect(clicks, 7);
+        expect(selectVal, 'two');
+        expect(sound.played, everyElement('click'));
+        expect(sound.played.length, greaterThanOrEqualTo(7));
+
+        sound.enabled = false;
+        final int mutedCount = sound.played.length;
+        await tester.ensureVisible(find.text('دکمه اصلی'));
+        await tester.tap(find.text('دکمه اصلی'));
+        expect(clicks, 8);
+        expect(sound.played.length, mutedCount);
+
+        // Verify AppShell bottom NavigationBar tab changes also play click sound.
+        sound.enabled = true;
+        sound.played.clear();
+        final _FakeNative native = _FakeNative();
+        final _FakeWindow window = _FakeWindow();
+        final _FakeVpn vpn = _FakeVpn();
+        final SettingsController settings = SettingsController(
+          native: native,
+          sound: sound,
+          window: window,
+        );
+        final AuthController auth = AuthController(
+          native: native,
+          sound: sound,
+          tray: TrayService(native),
+        );
+        final MockClient emptyClient = MockClient(
+          (http.Request _) async => http.Response('[]', 200),
+        );
+        final SubscriptionController subs = SubscriptionController(
+          vpn: vpn,
+          auth: auth,
+          client: emptyClient,
+          enableNativeTransport: false,
+        );
+        final UpdateController updates = UpdateController(
+          native,
+          service: UpdateService(client: emptyClient, preferredAbi: 'arm64-v8a'),
+        );
+        final ToastController toasts = ToastController();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: native),
+              Provider<WindowService>.value(value: window),
+              Provider<SoundService>.value(value: sound),
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<UpdateController>.value(value: updates),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: Directionality(
+                textDirection: TextDirection.rtl,
+                child: AppShell(windowService: window),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.text('گزارش ها'));
+        await tester.pump();
+        expect(sound.played, contains('click'));
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+        subs.dispose();
+        updates.dispose();
+        auth.dispose();
+        settings.dispose();
+      },
+    );
+
+    test('Android UI omits TextOverflow truncation and enforces SMS Consent & SoundService contracts', () {
+      final List<File> uiFiles = Directory('${Directory.current.path}/lib/ui')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.dart'))
+          .toList();
+      expect(uiFiles, isNotEmpty);
+      for (final File file in uiFiles) {
+        final String src = file.readAsStringSync();
+        expect(
+          src.contains('TextOverflow'),
+          isFalse,
+          reason: '${file.path} should wrap or scale text instead of clipping with TextOverflow',
+        );
+        expect(
+          RegExp(r'\boverflow\s*:').hasMatch(src),
+          isFalse,
+          reason: '${file.path} should not clip text using overflow:',
+        );
+      }
+
+      final String servicesSrc = File(
+        '${Directory.current.path}/lib/platform/services.dart',
+      ).readAsStringSync();
+      expect(servicesSrc, contains('_clickPlayer'));
+      expect(servicesSrc, contains('PlayerMode.lowLatency'));
+      expect(servicesSrc, contains('AndroidAudioFocus.none'));
+      expect(servicesSrc, contains('Duration(milliseconds: 40)'));
+
+      final String gradleSrc = File(
+        '${Directory.current.path}/android/app/build.gradle',
+      ).readAsStringSync();
+      expect(gradleSrc, contains('play-services-auth-api-phone'));
+
+      final String mainActivitySrc = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/MainActivity.kt',
+      ).readAsStringSync();
+      expect(mainActivitySrc, contains('startSmsUserConsent'));
+      expect(mainActivitySrc, contains('REQ_SMS_USER_CONSENT'));
+      expect(mainActivitySrc, contains('SmsRetriever.SEND_PERMISSION'));
+
+      final String manifestSrc = File(
+        '${Directory.current.path}/android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+      expect(manifestSrc, isNot(contains('android.permission.READ_SMS')));
+      expect(manifestSrc, isNot(contains('android.permission.RECEIVE_SMS')));
+    });
   });
+}
+
+class _SmsTestNative extends _FakeNative {
+  final StreamController<AndroidServiceEvent> _smsEvents =
+      StreamController<AndroidServiceEvent>.broadcast();
+  int smsStartCalls = 0;
+  int smsStopCalls = 0;
+
+  void emitSmsMessage(String rawMessage) {
+    if (!_smsEvents.isClosed) {
+      final String code = NativeBridge.extractSmsVerificationCode(rawMessage);
+      _smsEvents.add(
+        AndroidServiceEvent(
+          type: 'smsCode',
+          code: code,
+          message: rawMessage,
+        ),
+      );
+    }
+  }
+
+  Future<void> closeSms() async {
+    if (!_smsEvents.isClosed) {
+      await _smsEvents.close();
+    }
+  }
+
+  @override
+  Future<bool> startSmsUserConsent() async {
+    smsStartCalls++;
+    return true;
+  }
+
+  @override
+  Future<void> stopSmsUserConsent() async {
+    smsStopCalls++;
+  }
+
+  @override
+  Stream<AndroidServiceEvent> serviceEvents() => _smsEvents.stream;
+
+  @override
+  Stream<String> smsCodeEvents() {
+    return serviceEvents()
+        .where((AndroidServiceEvent event) => event.type == 'smsCode')
+        .map((AndroidServiceEvent event) {
+          final String direct = NativeBridge.extractSmsVerificationCode(event.code);
+          if (direct.isNotEmpty) return direct;
+          return NativeBridge.extractSmsVerificationCode(event.message);
+        })
+        .where((String code) => code.isNotEmpty);
+  }
 }
 
 class _TestCoreNative extends _FakeNative {
