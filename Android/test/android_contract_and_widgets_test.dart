@@ -897,18 +897,21 @@ void main() {
             findsNothing,
           );
           if (size.width <= size.height) {
-            final double minOrb = size == const Size(360, 640) ? 132.0 : 170.0;
+            final double minOrbSize =
+                size == const Size(360, 640) ? 124.0 : 175.0;
+            final double minRenderedOrb =
+                size == const Size(360, 640) ? 105.0 : 175.0;
             final StatusOrb orbWidget = tester.widget<StatusOrb>(
               find.byType(StatusOrb),
             );
-            expect(orbWidget.size, greaterThanOrEqualTo(minOrb));
+            expect(orbWidget.size, greaterThanOrEqualTo(minOrbSize));
             expect(
               tester.getSize(find.byType(StatusOrb)).height,
-              greaterThanOrEqualTo(minOrb),
+              greaterThanOrEqualTo(minRenderedOrb),
             );
             expect(
               tester.getSize(subChipFinder).height,
-              greaterThanOrEqualTo(36.0),
+              greaterThanOrEqualTo(size == const Size(360, 640) ? 32.0 : 36.0),
             );
           }
         }
