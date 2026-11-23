@@ -1061,6 +1061,12 @@ if ($Client_ID !== '' && $Client_ID !== '_') {
 $Panel_Response = ServerClient::getUser($Client_ID);
 $Panel_Status = (int)($Panel_Response['StatusCode'] ?? 0);
 $Panel_Row = $Panel_Response['Json'] ?? null;
+if ($Panel_Status === 404) {
+if (class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+Common::syncSubscriptionFromServer($Row);
+}
+return;
+}
 // If the panel cannot be reached, never expire a client from a stale local date.
 if ($Panel_Status < 200 || $Panel_Status >= 300 || !is_array($Panel_Row)) return;
 $Panel_UUID = trim((string)($Panel_Row['uuid'] ?? ''));
@@ -1095,7 +1101,12 @@ AdminFlow::notifyAdminServerError('منقضی اشتراک (خودکار)', $Use
 }
 
 if ($Server_Disabled) {
-Repository::updateUser($User_ID, ['Client_Status' => '🚫غیر فعال', 'Channel_Client_Disabled_At' => null]);
+Repository::updateUser($User_ID, [
+'Client_Status' => '🚫غیر فعال',
+'Server_Is_Active' => 0,
+'Server_Enable' => 0,
+'Channel_Client_Disabled_At' => null,
+]);
 Repository::addSubscriptionLog($User_ID, 'expire', $Subscription, null, null, 'انقضای خودکار اشتراک (زمان بند خودکار)', 'scheduler');
 }
 
@@ -1186,8 +1197,20 @@ catch (Throwable) {
 
 public static function refreshUsagesNow(): int {
 $Response = ServerClient::listUsers();
-$Rows = $Response['Json'] ?? null;
+$Json = $Response['Json'] ?? null;
 $Status = (int)($Response['StatusCode'] ?? 0);
+$Rows = null;
+if (is_array($Json)) {
+foreach (['items', 'users', 'data', 'results', 'records'] as $Key) {
+if (isset($Json[$Key]) && is_array($Json[$Key])) {
+$Rows = $Json[$Key];
+break;
+}
+}
+if ($Rows === null && array_is_list($Json)) {
+$Rows = $Json;
+}
+}
 
 if (!is_array($Rows) || $Status >= 300) {
 $Body = trim((string)($Response['Body'] ?? ''));
@@ -1204,11 +1227,14 @@ Repository::rotateUsageSnapshots();
 catch (Throwable) {}
 
 $Synced = 0;
+$Seen_Uuids = [];
+$Has_Full_Sync = class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer');
 
 foreach ($Rows as $Row) {
 if (!is_array($Row)) continue;
 $Telegram_ID = (int)($Row['telegram_id'] ?? 0);
 $Uuid = trim((string)($Row['uuid'] ?? ''));
+if ($Uuid !== '') $Seen_Uuids[$Uuid] = true;
 $Used_GB = (float)($Row['current_usage_GB'] ?? 0);
 $Limit = (float)($Row['usage_limit_GB'] ?? 0);
 $Last_Online = (string)($Row['last_online'] ?? '');
@@ -1217,11 +1243,32 @@ $Enable = !empty($Row['enable']);
 $User = [];
 
 if ($Telegram_ID > 0) $User = Repository::getUser($Telegram_ID);
-if (empty($User) && $Uuid !== '') $User = Repository::getUserByClientId($Uuid);
+if (empty($User) && $Uuid !== '' && method_exists('Repository', 'getUserByClientId')) {
+$User = Repository::getUserByClientId($Uuid);
+}
+if (empty($User) && $Uuid !== '' && class_exists('Helper') && method_exists('Helper', 'normalizePhone') && method_exists('Repository', 'findUserByPhone')) {
+$Phone_Candidate = Helper::normalizePhone(trim((string)($Row['phone'] ?? '')) ?: trim((string)($Row['comment'] ?? '')));
+if ($Phone_Candidate !== '' && (!method_exists('Helper', 'validatePhone') || Helper::validatePhone($Phone_Candidate))) {
+$By_Phone = Repository::findUserByPhone($Phone_Candidate, 0);
+$Existing_Cid = trim((string)($By_Phone['Client_ID'] ?? ''));
+if (!empty($By_Phone) && ($Existing_Cid === '' || $Existing_Cid === '_' || $Existing_Cid === $Uuid)) {
+$User = $By_Phone;
+}
+}
+}
 if (empty($User)) continue;
 
 $User_ID = (int)($User['Telegram_ID'] ?? 0);
 if ($User_ID <= 0) continue;
+
+if ($Has_Full_Sync) {
+if ($Uuid !== '' && (trim((string)($User['Client_ID'] ?? '')) === '' || trim((string)($User['Client_ID'] ?? '')) === '_')) {
+$User['Client_ID'] = $Uuid;
+}
+Common::syncSubscriptionFromServer($User, $Row);
+$Synced++;
+continue;
+}
 
 if ($Limit <= 0) $Limit = (float)($User['Total_Usage_GB'] ?? 0);
 $Remaining = max(0.0, $Limit - $Used_GB);
@@ -1234,7 +1281,9 @@ $Fields = [
 'Server_Is_Active' => $Is_Active ? 1 : 0,
 'Server_Enable' => $Enable ? 1 : 0,
 ];
+if (class_exists('Common') && method_exists('Common', 'subscriptionFieldsFromServer')) {
 $Fields = array_merge($Fields, Common::subscriptionFieldsFromServer($Row));
+}
 
 if ($Limit > 0) $Fields['Total_Usage_GB'] = $Limit;
 
@@ -1245,6 +1294,16 @@ if ($Last_Online > $Current) $Fields['Last_Online'] = $Last_Online;
 
 Repository::updateUser($User_ID, $Fields);
 $Synced++;
+}
+
+if ($Has_Full_Sync && $Seen_Uuids !== [] && method_exists('Repository', 'allUserIds')) {
+foreach (Repository::allUserIds() as $Candidate_Uid) {
+$Candidate = Repository::getUser((int)$Candidate_Uid);
+$Cid = trim((string)($Candidate['Client_ID'] ?? ''));
+if ($Cid !== '' && $Cid !== '_' && !isset($Seen_Uuids[$Cid])) {
+try { Common::syncSubscriptionFromServer($Candidate); } catch (Throwable) {}
+}
+}
 }
 
 Repository::setSetting('Last_Usage_Sync', (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H'));

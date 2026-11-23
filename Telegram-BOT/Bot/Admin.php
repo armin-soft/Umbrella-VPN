@@ -2363,8 +2363,13 @@ return;
 }
 
 if ($Activate) {
-Repository::updateUser($Target, ['Client_Status' => '✅فعال']);
-Repository::updateUser($Target, ['Deactivation_Message' => null, 'Channel_Client_Disabled_At' => null]);
+Repository::updateUser($Target, [
+'Client_Status' => '✅فعال',
+'Server_Is_Active' => 1,
+'Server_Enable' => 1,
+'Deactivation_Message' => null,
+'Channel_Client_Disabled_At' => null,
+]);
 $Name = self::targetDisplayName($Target, $User);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅کلاینت کاربر {$Name} در سرور فعال گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('فعالسازی کلاینت', 'فعالسازی کلاینت اول')));
 
@@ -2410,9 +2415,14 @@ return;
 }
 }
 
-Repository::updateUser($Target, ['Client_Status' => '🚫غیر فعال']);
+Repository::updateUser($Target, [
+'Client_Status' => '🚫غیر فعال',
+'Server_Is_Active' => 0,
+'Server_Enable' => 0,
+'Deactivation_Message' => $Message,
+'Channel_Client_Disabled_At' => null,
+]);
 Repository::addSubscriptionLog($Target, 'deactivate', null, null, null, $Message, 'admin', $Context->UserId);
-Repository::updateUser($Target, ['Deactivation_Message' => $Message, 'Channel_Client_Disabled_At' => null]);
 $User = Repository::getUser($Target);
 $Name = self::targetDisplayName($Target, $User);
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *🚫کلاینت کاربر {$Name} در سرور غیرفعال گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('غیرفعالسازی کلاینت', 'غیر فعالسازی کلاینت اول')));
@@ -2471,11 +2481,14 @@ return;
 $Name = self::targetDisplayName($Target, $User);
 Repository::updateUser($Target, [
 'Full_Name' => null, 'Operator' => null, 'Phone' => null, 'Client_ID' => '_',
+'Client_Status' => null, 'Server_Is_Active' => 0, 'Server_Enable' => 0,
+'Deactivation_Message' => null, 'Channel_Client_Disabled_At' => null,
+'Last_Online' => null, 'Server_Comment' => null, 'Profile_Updated_At' => null,
 'Package_Duration' => null, 'Package_Start_Date' => null, 'Total_Usage_GB' => null,
 'Used_Usage_GB' => null, 'Remaining_Usage_GB' => null, 'Percent_Usage' => null,
 'Subscription' => null, 'Expiration_Date' => null, 'Expiration_Time_Stamp' => null,
 'ED_25519_Private_Key' => null, 'ED_25519_Public_Key' => null,
-'WireGuard_Private_Key' => null, 'WireGuard_Public_Key' => null,
+'WireGuard_Private_Key' => null, 'WireGuard_Public_Key' => null, 'WireGuard_PSK' => null,
 ]);
 
 TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅اطلاعات ربات برای کاربر {$Name} پاک شد.\n➖➖➖➖➖➖➖➖➖\n⚠️توجه: کاربر می تواند دوباره اشتراک جدید خریداری کند*" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('حذف کاربر', 'حذف کاربر اول')));
@@ -2513,11 +2526,14 @@ error_log('[Umbrella-Bot][App-Account-Revocation] failed after deleting panel us
 
 Repository::updateUser($Target, [
 'Full_Name' => null, 'Operator' => null, 'Phone' => null, 'Client_ID' => null,
+'Client_Status' => '🚫حذف شده', 'Server_Is_Active' => 0, 'Server_Enable' => 0,
+'Deactivation_Message' => null, 'Channel_Client_Disabled_At' => null,
+'Last_Online' => null, 'Server_Comment' => null, 'Profile_Updated_At' => null,
 'Package_Duration' => null, 'Package_Start_Date' => null, 'Total_Usage_GB' => null,
 'Used_Usage_GB' => null, 'Remaining_Usage_GB' => null, 'Percent_Usage' => null,
 'Subscription' => null, 'Expiration_Date' => null, 'Expiration_Time_Stamp' => null,
 'ED_25519_Private_Key' => null, 'ED_25519_Public_Key' => null,
-'WireGuard_Private_Key' => null, 'WireGuard_Public_Key' => null,
+'WireGuard_Private_Key' => null, 'WireGuard_Public_Key' => null, 'WireGuard_PSK' => null,
 ]);
 
 $Name = self::targetDisplayName($Target, $User);
@@ -3119,8 +3135,11 @@ return;
 }
 }
 
-Repository::updateUser($Target, ['Client_Status' => '🚫غیر فعال']);
 Repository::updateUser($Target, [
+'Client_Status' => '🚫غیر فعال',
+'Server_Is_Active' => 0,
+'Server_Enable' => 0,
+'Channel_Client_Disabled_At' => null,
 'Package_Duration' => null, 'Package_Start_Date' => null, 'Total_Usage_GB' => null,
 'Used_Usage_GB' => null, 'Remaining_Usage_GB' => null, 'Percent_Usage' => null,
 'Subscription' => null, 'Expiration_Date' => null, 'Expiration_Time_Stamp' => null,
@@ -3374,22 +3393,24 @@ $Server_Has_Different = true;
 
 $Remaining = max(0, $Server_Usage_Limit - $Server_Used);
 $Percent = $Server_Usage_Limit > 0 ? round(($Server_Used / $Server_Usage_Limit) * 100, 1) : 0;
-$Start_Date_Persian = '';
+$Date_Fields = (class_exists('Common') && method_exists('Common', 'subscriptionFieldsFromServer'))
+? Common::subscriptionFieldsFromServer($Data)
+: [];
+$Start_Date_Persian = (string)($Date_Fields['Package_Start_Date'] ?? '');
+$End_Date_Persian = (string)($Date_Fields['Expiration_Date'] ?? '');
+$End_Timestamp = (int)($Date_Fields['Expiration_Time_Stamp'] ?? 0);
 
-if ($Server_Start_Date !== '') {
+if ($Start_Date_Persian === '' && $Server_Start_Date !== '') {
 try {
-$Start_Date_Persian = Helper::gregorianToJalali($Server_Start_Date);
+$Start_Date_Persian = Helper::gregorianToJalali(substr($Server_Start_Date, 0, 10));
 }
 
 catch (Throwable) { $Start_Date_Persian = ''; }
 }
 
-$End_Date_Persian = '';
-$End_Timestamp = 0;
-
-if ($Server_Start_Date !== '' && $Server_Package_Days > 0) {
+if ($End_Timestamp <= 0 && $Server_Start_Date !== '' && $Server_Package_Days > 0) {
 try {
-$End_Timestamp = strtotime($Server_Start_Date . ' +' . $Server_Package_Days . ' days');
+$End_Timestamp = strtotime(substr($Server_Start_Date, 0, 10) . ' +' . $Server_Package_Days . ' days');
 $End_Date = (new DateTimeImmutable('@' . $End_Timestamp))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d');
 $End_Date_Persian = Helper::gregorianToJalali($End_Date);
 }
@@ -3417,7 +3438,10 @@ if ($Lo_Stamp !== false && (time() - $Lo_Stamp) <= 300) { $Last_Online_Label = '
 catch (Throwable) { $Last_Online_Label = $Server_Last_Online; }
 }
 
-$Display_Name = $Server_Name !== '' ? $Server_Name : (string)($Local_User['Full_Name'] ?? 'کاربر');
+$Clean_Server_Name = trim($Server_Name);
+$Server_Name_Is_Placeholder = $Clean_Server_Name === '' || $Clean_Server_Name === '_' || $Clean_Server_Name === 'کاربر' || $Clean_Server_Name === 'کاربر آمبرلا' || preg_match('/^user-[0-9]+$/', $Clean_Server_Name) === 1;
+$Local_Full_Name = trim((string)($Local_User['Full_Name'] ?? ''));
+$Display_Name = (!$Server_Name_Is_Placeholder) ? $Clean_Server_Name : ($Local_Full_Name !== '' ? $Local_Full_Name : 'کاربر');
 $Phone = (string)($Local_User['Phone'] ?? '');
 
 if ($Phone === '' && $Server_Comment !== '') {
@@ -3427,10 +3451,12 @@ $Phone = $Server_Comment;
 $Operator = Helper::detectOperator($Phone);
 
 $Operator_Label = $Operator !== '' ? $Operator : 'نا مشخص';
+$Server_Active_Effective = $Server_Is_Active && $Server_Enable;
 $Update_Payload = [
 'Client_ID' => $Server_UUID,
 'Channel_Client_Disabled_At' => null,
-'Client_Status' => $Server_Is_Active ? '✅فعال' : '🚫غیر فعال',
+'Client_Status' => $Server_Active_Effective ? '✅فعال' : '🚫غیر فعال',
+'Deactivation_Message' => $Server_Active_Effective ? null : ($Local_User['Deactivation_Message'] ?? null),
 'Subscription' => $Duration_Label,
 'Package_Duration' => $Server_Package_Days,
 'Package_Start_Date' => $Start_Date_Persian,
@@ -3475,12 +3501,38 @@ $Insert_Payload = array_merge($Update_Payload, [
 Database::getInstance()->insert('Users', $Insert_Payload);
 }
 
+$Server_Push = [];
 if ($Target_Telegram_ID > 0 && $Server_Telegram_ID !== $Target_Telegram_ID) {
-$Link_Response = ServerClient::updateUser($Server_UUID, ['telegram_id' => $Target_Telegram_ID]);
+$Server_Push['telegram_id'] = $Target_Telegram_ID;
+}
+if ($Server_Name_Is_Placeholder && $Local_Full_Name !== '') {
+$Server_Push['name'] = $Local_Full_Name;
+}
+if ($Server_Comment === '' && $Phone !== '') {
+$Server_Push['comment'] = $Phone;
+}
+if ($Server_Push !== []) {
+$Link_Response = ServerClient::updateUser($Server_UUID, $Server_Push);
 
 if (($Link_Response['StatusCode'] ?? 0) >= 300) {
 self::notifyAdminServerError('لینک کاربر به تلگرام', $Target_Telegram_ID, $Display_Name, $Link_Response['StatusCode'] ?? 0, (string)($Link_Response['Body'] ?? ''));
 }
+}
+
+if ($Target_Telegram_ID > 0 && $Server_UUID !== '' && class_exists('Database')) {
+try {
+$Db = Database::getInstance();
+if (method_exists($Db, 'execute')) {
+$Db->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Target_Telegram_ID, $Server_UUID]
+);
+$Db->execute(
+'UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Target_Telegram_ID, $Server_UUID]
+);
+}
+} catch (Throwable) {}
 }
 
 try {

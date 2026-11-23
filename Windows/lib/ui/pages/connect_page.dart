@@ -14,7 +14,6 @@ import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
-import '../widgets/emergency_list.dart';
 import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 import '../widgets/quick_connection_panel.dart';
@@ -609,9 +608,10 @@ class _ConnectPageState extends State<ConnectPage> {
                             if (subs.emergencyEnabled)
                               ChoiceChip(
                                 key: const ValueKey<String>('connection-profile-emergency'),
-                                avatar: const Icon(Icons.warning_amber_rounded),
-                                label: Text(subs.emergencyLoading ? 'اضطراری · در حال دریافت' : 'اضطراری · ${Fa.num(subs.emergencyNodes.length)} مسیر'),
-                                selected: _profile == 'emergency', showCheckmark: false,
+                                avatar: const Icon(Icons.emergency_rounded, size: AppMetrics.iconSm),
+                                label: const Text('اضطراری'),
+                                selected: _profile == 'emergency',
+                                showCheckmark: false,
                                 onSelected: status.busy ? null : (_) => _selectProfile('emergency'),
                               ),
                           ],
@@ -622,9 +622,6 @@ class _ConnectPageState extends State<ConnectPage> {
                             child: Text('مسیرهای عمومی اضطراری متعلق به اشخاص ثالث هستند؛ حریم خصوصی و پایداری آن ها تضمین نمی شود.',
                               textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.warning)),
                           ),
-                        if (subs.emergencyEnabled && _profile == 'emergency')
-                          TextButton.icon(onPressed: () => showEmergencyList(context, subs.emergencyNodes, subs.emergencyUnavailableSources),
-                            icon: const Icon(Icons.list_alt), label: const Text('فهرست مسیرهای اضطراری')),
                         if (_switchPending(vpn))
                           Padding(
                             padding: const EdgeInsets.only(top: AppMetrics.space2),

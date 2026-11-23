@@ -5,6 +5,8 @@ require_once __DIR__ . '/Context.php';
 require_once __DIR__ . '/Common.php';
 require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
+require_once __DIR__ . '/../Core/Server/Umbrella-Panel.php';
+require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Core/Support/Helper.php';
 require_once __DIR__ . '/../Core/Storage/Repository.php';
 
@@ -16,6 +18,9 @@ private function __construct() {
 
 public static function begin(Context $Context): void {
 $User = Repository::getUser($Context->UserId);
+if (class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try { $User = Common::syncSubscriptionFromServer($User); } catch (Throwable) {}
+}
 $Profile_Updated_At = (string)($User['Profile_Updated_At'] ?? '');
 $Has_Full_Name = trim((string)($User['Full_Name'] ?? '')) !== '';
 $Has_Phone = trim((string)($User['Phone'] ?? '')) !== '';
@@ -76,11 +81,24 @@ $Old_Has_Phone = $Old_Phone !== '';
 $Old_Has_Client = $Old_Client_ID !== '' && $Old_Client_ID !== '_';
 Repository::updateUser($Context->UserId, ['Full_Name' => $Full_Name]);
 
-if ($Old_Has_Client && $Old_Has_Phone) {
-self::pushProfileToServer($Old_Client_ID, $Full_Name, $Old_Phone);
+if (!$Old_Has_Client && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try {
+$Synced = Common::syncSubscriptionFromServer(Repository::getUser($Context->UserId));
+$Old_Client_ID = trim((string)($Synced['Client_ID'] ?? $Old_Client_ID));
+$Old_Has_Client = $Old_Client_ID !== '' && $Old_Client_ID !== '_';
+if ($Old_Phone === '') {
+$Old_Phone = trim((string)($Synced['Phone'] ?? ''));
+$Old_Has_Phone = $Old_Phone !== '';
+}
+} catch (Throwable) {}
+}
+
+if ($Old_Has_Client) {
+self::pushProfileToServer($Old_Client_ID, $Full_Name, $Old_Phone, $Context->UserId);
 }
 
 if ($Old_Has_Phone) {
+Repository::touchUserTime($Context->UserId, 'Profile_Updated_At');
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش نام با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
@@ -128,24 +146,50 @@ Repository::updateUser($Context->UserId, ['Phone' => $Phone, 'Operator' => $Oper
 Repository::touchUserTime($Context->UserId, 'Profile_Updated_At');
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 
+if (!$Has_Client && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try {
+$Synced = Common::syncSubscriptionFromServer(Repository::getUser($Context->UserId));
+$Client_ID = trim((string)($Synced['Client_ID'] ?? ''));
+$Has_Client = $Client_ID !== '' && $Client_ID !== '_';
+} catch (Throwable) {}
+}
+
 if ($Has_Client) {
-self::pushProfileToServer($Client_ID, $Full_Name, $Phone);
+self::pushProfileToServer($Client_ID, $Full_Name, $Phone, $Context->UserId);
 }
 
 TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره ثبت شد؛ اپراتور پایه بر اساس پیش شماره: {$Operator}.\nℹ️در شماره ترابردشده، اپراتور فعلی ممکن است متفاوت باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
 }
 
-private static function pushProfileToServer(string $Client_ID, string $Full_Name, string $Phone): void {
+private static function pushProfileToServer(string $Client_ID, string $Full_Name, string $Phone, int $Telegram_Id = 0): void {
 if ($Client_ID === '' || $Client_ID === '_') return;
-if ($Full_Name === '' || $Phone === '') return;
-$Response = ServerClient::updateUser($Client_ID, [
-'name' => $Full_Name,
-'comment' => $Phone,
-]);
+$Payload = [];
+if ($Full_Name !== '') $Payload['name'] = $Full_Name;
+if ($Phone !== '') $Payload['comment'] = $Phone;
+if ($Telegram_Id > 0) $Payload['telegram_id'] = $Telegram_Id;
+if ($Payload === []) return;
+
+$Response = ServerClient::updateUser($Client_ID, $Payload);
 
 if (($Response['StatusCode'] ?? 0) >= 300) {
 error_log('[Umbrella-Bot][Profile-Sync] Client_ID=' . $Client_ID . ' Status=' . ($Response['StatusCode'] ?? 0) . ' Body=' . mb_substr((string)($Response['Body'] ?? ''), 0, 200));
+}
+
+if ($Telegram_Id > 0 && class_exists('Database')) {
+try {
+$Db = Database::getInstance();
+if (method_exists($Db, 'execute')) {
+$Db->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Telegram_Id, $Client_ID]
+);
+$Db->execute(
+'UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Telegram_Id, $Client_ID]
+);
+}
+} catch (Throwable) {}
 }
 }
 }

@@ -573,17 +573,41 @@ $WG_PSK = (string)($User['WireGuard_PSK'] ?? '');
 $Server_Comment = (string)($User['Server_Comment'] ?? '');
 try { $Response = ServerClient::getUser($Client_ID); }
 catch (Throwable) { $Response = ['StatusCode' => 503]; }
+$Status_Code = (int)($Response['StatusCode'] ?? 0);
 $Data = $Response['Json'] ?? null;
-if (!is_array($Data) || ($Response['StatusCode'] ?? 0) >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره شده نمایش داده می شود.\n";
 
-if (is_array($Data) && ($Response['StatusCode'] ?? 0) < 300) {
+if ($Status_Code === 404 && method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$User = Common::syncSubscriptionFromServer($User);
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+if ($Client_ID === '' || $Client_ID === '_') {
+$Send($Greeting . Helper::noticeBlock(
+'⚠️اشتراک شما روی سرور یافت نشد.',
+'ℹ️ممکن است اشتراک شما توسط مدیریت حذف شده باشد.',
+'👇برای تهیه اشتراک جدید از منوی مدیریت اشتراک اقدام کنید.'
+) . Helper::userFooter(), TelegramClient::inlineKeyboard([
+[['text' => '💎مدیریت اشتراک', 'callback_data' => 'user_subscriptions_menu']],
+Menu::back('منوی قبلی', 'user_subscriptions_menu'), Menu::userHome()
+]));
+return;
+}
+try { $Response = ServerClient::getUser($Client_ID); }
+catch (Throwable) { $Response = ['StatusCode' => 503]; }
+$Status_Code = (int)($Response['StatusCode'] ?? 0);
+$Data = $Response['Json'] ?? null;
+}
+
+if (!is_array($Data) || $Status_Code >= 300) $Greeting .= "⚠️سرور در دسترس نیست؛ اطلاعات ذخیره شده نمایش داده می شود.\n";
+
+if (is_array($Data) && $Status_Code >= 200 && $Status_Code < 300) {
+if (method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$User = Common::syncSubscriptionFromServer($User, $Data);
+} else {
 $Usage_Limit = (float)($Data['usage_limit_GB'] ?? 0);
 $Used_GB = (float)($Data['current_usage_GB'] ?? 0);
 $Remaining_GB = max(0, $Usage_Limit - $Used_GB);
 $Percent_Val = $Usage_Limit > 0 ? round(($Used_GB / $Usage_Limit) * 100, 1) : 0;
 $Total_Usage_GB = $Usage_Limit;
 $Used_Usage_GB = $Used_GB;
-$Remaining_GB = $Remaining_GB;
 $Last_Online = (string)($Data['last_online'] ?? $Last_Online);
 $ED_Private = (string)($Data['ed25519_private_key'] ?? $ED_Private);
 $ED_Public = (string)($Data['ed25519_public_key'] ?? $ED_Public);
@@ -591,6 +615,8 @@ $WG_Private = (string)($Data['wg_pk'] ?? $WG_Private);
 $WG_Public = (string)($Data['wg_pub'] ?? $WG_Public);
 $WG_PSK = (string)($Data['wg_psk'] ?? $WG_PSK);
 $Server_Comment = (string)($Data['comment'] ?? $Server_Comment);
+$Server_Active = (bool)($Data['is_active'] ?? true);
+$Server_Enabled = (bool)($Data['enable'] ?? true);
 $Updates = [
 'Total_Usage_GB' => $Total_Usage_GB,
 'Used_Usage_GB' => $Used_Usage_GB,
@@ -603,17 +629,40 @@ $Updates = [
 'WireGuard_Public_Key' => $WG_Public,
 'WireGuard_PSK' => $WG_PSK,
 'Server_Comment' => $Server_Comment,
+'Server_Is_Active' => $Server_Active ? 1 : 0,
+'Server_Enable' => $Server_Enabled ? 1 : 0,
 ];
-
-$Server_Active = (bool)($Data['is_active'] ?? true);
-$Server_Enabled = (bool)($Data['enable'] ?? true);
-
 if (!$Server_Active || !$Server_Enabled) {
 $Client_Status = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0 ? '🚫قطع به دلیل عدم عضویت' : '🚫غیر فعال';
 $Updates['Client_Status'] = $Client_Status;
+} else {
+$Client_Status = '✅فعال';
+$Updates['Client_Status'] = $Client_Status;
+$Updates['Deactivation_Message'] = null;
+$Updates['Channel_Client_Disabled_At'] = null;
+}
+Repository::updateUser($Context->UserId, $Updates);
+$User = array_merge($User, $Updates);
 }
 
-Repository::updateUser($Context->UserId, $Updates);
+$Subscription = (string)($User['Subscription'] ?? $Subscription);
+$Client_Status = (string)($User['Client_Status'] ?? $Client_Status);
+$Total_Usage_GB = (float)($User['Total_Usage_GB'] ?? $Total_Usage_GB);
+$Used_Usage_GB = (float)($User['Used_Usage_GB'] ?? $Used_Usage_GB);
+$Remaining_GB = (float)($User['Remaining_Usage_GB'] ?? $Remaining_GB);
+$Percent_Val = (float)($User['Percent_Usage'] ?? $Percent_Val);
+$Package_Start = (string)($User['Package_Start_Date'] ?? $Package_Start);
+$Package_Duration = (string)($User['Package_Duration'] ?? $Package_Duration);
+$Package_Days = (int)Helper::toEnglish(preg_replace('/[^0-9۰-۹]/u', '', $Package_Duration));
+$Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? $Expiration_Time_Stamp);
+$Expiration = $Expiration_Time_Stamp > 0 ? Helper::formatExpirationShort($Expiration_Time_Stamp) : (string)($User['Expiration_Date'] ?? $Expiration);
+$Last_Online = (string)($User['Last_Online'] ?? $Last_Online);
+$ED_Private = (string)($User['ED_25519_Private_Key'] ?? $ED_Private);
+$ED_Public = (string)($User['ED_25519_Public_Key'] ?? $ED_Public);
+$WG_Private = (string)($User['WireGuard_Private_Key'] ?? $WG_Private);
+$WG_Public = (string)($User['WireGuard_Public_Key'] ?? $WG_Public);
+$WG_PSK = (string)($User['WireGuard_PSK'] ?? $WG_PSK);
+$Server_Comment = (string)($User['Server_Comment'] ?? $Server_Comment);
 }
 
 if (str_contains($Client_Status, 'غیر') || (int)($User['Server_Is_Active'] ?? 1) === 0 || (int)($User['Server_Enable'] ?? 1) === 0) {
@@ -745,6 +794,9 @@ self::purchase($Context, 'nowruz');
 
 private static function hasActiveSubscriptionNow(Context $Context): bool {
 $User = Repository::getUser($Context->UserId);
+if (class_exists('Common') && method_exists(Common::class, 'syncSubscriptionFromServer')) {
+try { $User = Common::syncSubscriptionFromServer($User); } catch (Throwable) {}
+}
 $Subscription = trim((string)($User['Subscription'] ?? ''));
 $Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
 
@@ -998,6 +1050,12 @@ return '';
 
 private static function hasAlreadyFree(Context $Context): bool {
 $User = Repository::getUser($Context->UserId);
+if (class_exists('Common') && method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$Current_Client = trim((string)($User['Client_ID'] ?? ''));
+if ($Current_Client === '' || $Current_Client === '_' || (int)($User['Free_Plan_Claimed'] ?? 0) !== 1) {
+try { $User = Common::syncSubscriptionFromServer($User); } catch (Throwable) {}
+}
+}
 $Client_ID = trim((string)($User['Client_ID'] ?? ''));
 $Free_Claimed = (int)($User['Free_Plan_Claimed'] ?? 0) === 1;
 $App_Free_Claimed = $Client_ID !== '' && $Client_ID !== '_'
@@ -1197,6 +1255,10 @@ return;
 
 if ($Context->IsCallback) {
 TelegramClient::deleteMessage($Context->ChatId, $Context->MessageId);
+}
+
+if (class_exists('Common') && method_exists(Common::class, 'syncSubscriptionFromServer')) {
+try { $User = Common::syncSubscriptionFromServer($User); } catch (Throwable) {}
 }
 
 $Client_ID = (string)($User['Client_ID'] ?? '');
@@ -1939,19 +2001,25 @@ Repository::updateUser($User_ID, [
 'Used_Usage_GB'   => 0.0,
 'Remaining_Usage_GB'  => (float)$Gb,
 'Percent_Usage'  => 0.0,
-'Client_Status'  => 'فعال',
+'Client_Status'  => '✅فعال',
+'Server_Is_Active' => 1,
+'Server_Enable' => 1,
+'Deactivation_Message' => null,
 'Channel_Client_Disabled_At' => null,
+'Server_Comment' => $Phone !== '' ? $Phone : (string)($Data['comment'] ?? ''),
 'ED_25519_Private_Key' => (string)($Data['ed25519_private_key'] ?? '-'),
 'ED_25519_Public_Key'  => (string)($Data['ed25519_public_key'] ?? '-'),
 'WireGuard_Private_Key'   => (string)($Data['wg_pk'] ?? '-'),
 'WireGuard_Public_Key'=> (string)($Data['wg_pub'] ?? '-'),
+'WireGuard_PSK' => (string)($Data['wg_psk'] ?? '-'),
 ]);
 
-if ($Full_Name !== '' && $Phone !== '') {
-ServerClient::updateUser((string)($Data['uuid'] ?? ''), [
-'name' => $Full_Name,
-'comment' => $Phone,
-]);
+$Profile_Push = [];
+if ($Full_Name !== '') $Profile_Push['name'] = $Full_Name;
+if ($Phone !== '') $Profile_Push['comment'] = $Phone;
+if ((int)($Data['telegram_id'] ?? 0) !== $User_ID) $Profile_Push['telegram_id'] = $User_ID;
+if ($Profile_Push !== [] && !empty($Data['uuid'])) {
+ServerClient::updateUser((string)$Data['uuid'], $Profile_Push);
 }
 
 $Greeting = Common::greet($Context, 'فعالسازی اشتراک');
@@ -2001,7 +2069,10 @@ $Payload = [
 'is_active' => true,
 'enable' => true,
 'last_reset_time' => $Today,
+'telegram_id' => $User_ID,
 ];
+if ($Full_Name !== '') $Payload['name'] = $Full_Name;
+if ($Phone !== '') $Payload['comment'] = $Phone;
 
 $Response = ServerClient::updateUser($Client_ID, $Payload);
 $Data = $Response['Json'] ?? null;
@@ -2039,12 +2110,31 @@ $User_Fields = [
 'Used_Usage_GB'   => 0.0,
 'Remaining_Usage_GB'  => $Usage_Limit,
 'Percent_Usage'  => 0.0,
-'Client_Status'  => 'فعال',
+'Client_Status'  => '✅فعال',
+'Server_Is_Active' => 1,
+'Server_Enable' => 1,
 'Channel_Client_Disabled_At' => null,
 'Deactivation_Message'   => null,
 ];
+if ($Phone !== '' || isset($Data['comment'])) {
+$User_Fields['Server_Comment'] = $Phone !== '' ? $Phone : trim((string)($Data['comment'] ?? ''));
+}
+foreach ([
+'ed25519_private_key' => 'ED_25519_Private_Key',
+'ed25519_public_key' => 'ED_25519_Public_Key',
+'wg_pk' => 'WireGuard_Private_Key',
+'wg_pub' => 'WireGuard_Public_Key',
+'wg_psk' => 'WireGuard_PSK',
+] as $Api_Key => $Db_Key) {
+if (isset($Data[$Api_Key]) && trim((string)$Data[$Api_Key]) !== '') {
+$User_Fields[$Db_Key] = trim((string)$Data[$Api_Key]);
+}
+}
 if ($Type === 'free') {
 $User_Fields['Free_Plan_Claimed'] = 1;
+if (method_exists(Repository::class, 'setSetting')) {
+Repository::setSetting('App_Free_Claimed_' . $Resolved_Uuid, '1');
+}
 }
 Repository::updateUser($User_ID, $User_Fields);
 if ($Type === 'nowruz') {

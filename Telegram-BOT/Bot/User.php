@@ -424,7 +424,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 }
 
 /** Menu eligibility uses the current subscription, not merely a leftover UUID. */
-private static function subscriptionMenuState(int $UserId): array {
+private static function subscriptionMenuState(int $UserId, bool $Discover_Missing = false): array {
 $User = Repository::getUser($UserId) ?? [];
 $Live = null;
 $Client = trim((string)($User['Client_ID'] ?? ''));
@@ -434,8 +434,30 @@ $Response = ServerClient::getUser($Client);
 $Code = (int)($Response['StatusCode'] ?? 0);
 $Data = $Response['Json'] ?? null;
 if ($Code >= 200 && $Code < 300 && is_array($Data)
-&& (!isset($Data['uuid']) || (string)$Data['uuid'] === $Client)) $Live = $Data;
+&& (!isset($Data['uuid']) || (string)$Data['uuid'] === $Client)) {
+$Live = $Data;
+} elseif ($Code === 404 && method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$User = Common::syncSubscriptionFromServer($User);
+$New_Client = trim((string)($User['Client_ID'] ?? ''));
+if ($New_Client !== '' && $New_Client !== '_' && $New_Client !== $Client) {
+$Retry = ServerClient::getUser($New_Client);
+if ((int)($Retry['StatusCode'] ?? 0) >= 200 && (int)($Retry['StatusCode'] ?? 0) < 300 && is_array($Retry['Json'] ?? null)) {
+$Live = $Retry['Json'];
+}
+}
+}
 } catch (Throwable $Error) { error_log('[Umbrella-Bot][Menu-Subscription] ' . $Error->getMessage()); }
+} elseif ($Discover_Missing && method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$User = Common::syncSubscriptionFromServer($User);
+$Found_Client = trim((string)($User['Client_ID'] ?? ''));
+if ($Found_Client !== '' && $Found_Client !== '_') {
+try {
+$Retry = ServerClient::getUser($Found_Client);
+if ((int)($Retry['StatusCode'] ?? 0) >= 200 && (int)($Retry['StatusCode'] ?? 0) < 300 && is_array($Retry['Json'] ?? null)) {
+$Live = $Retry['Json'];
+}
+} catch (Throwable) {}
+}
 }
 if ($Live !== null) $User = Common::syncSubscriptionFromServer($User, $Live);
 return [$User, $Live];
@@ -484,7 +506,7 @@ return $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
 
 public static function subscriptionsMenu(Context $Context): void {
 if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
-[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
 $Rows = Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
 ]);
@@ -522,7 +544,7 @@ $Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری']],
 [['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
 ]);
-[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
 if (self::nightlyMenuVisible($User, $Live)) {
 $On = Repository::nightlyReportEnabled($Context->UserId);
 $Rows[] = [Menu::button($On ? '🔔گزارش شبانه: روشن — خاموش کردن' : '🔕گزارش شبانه: خاموش — روشن کردن', $On ? 'nightly_report_off' : 'nightly_report_on')];
@@ -540,7 +562,7 @@ self::categoryMenu($Context, 'دستگاه من', Menu::rows([
 }
 
 public static function setNightlyReport(Context $Context, bool $Enabled): void {
-[$User, $Live] = self::subscriptionMenuState($Context->UserId);
+[$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
 if (self::nightlyMenuVisible($User, $Live)) Repository::setNightlyReportEnabled($Context->UserId, $Enabled);
 self::accountMenu($Context);
 }
@@ -570,8 +592,14 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄پروفایل ک
 }
 
 $Greeting = Common::greet($Context, 'پروفایل کاربری');
-$User = Common::liveUser(Repository::getUser($Context->UserId));
-$User = Common::syncSubscriptionFromServer($User);
+$User = Repository::getUser($Context->UserId);
+$Synced = method_exists(Common::class, 'syncSubscriptionFromServer')
+? Common::syncSubscriptionFromServer($User)
+: $User;
+$Client_After_Sync = trim((string)($Synced['Client_ID'] ?? ''));
+$User = ($Synced === $User && ($Client_After_Sync === '' || $Client_After_Sync === '_') && method_exists(Common::class, 'liveUser'))
+? Common::liveUser($User)
+: $Synced;
 $Auto_Renew_Plan_On = trim((string)($User['Auto_Renew_Plan'] ?? '')) !== '';
 $Phone = $User['Phone'] ?? null;
 $FullName = $User['Full_Name'] ?? null;
@@ -594,7 +622,11 @@ $Operator = Helper::detectOperator((string)$Phone);
 
 $Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 $Package_Start_Date = (string)($User['Package_Start_Date'] ?? '');
-$Package_Duration = (int)($User['Package_Duration'] ?? 0);
+$Package_Duration_Raw = (string)($User['Package_Duration'] ?? '');
+$Package_Duration_Norm = method_exists(Helper::class, 'toEnglish')
+? Helper::toEnglish($Package_Duration_Raw)
+: strtr($Package_Duration_Raw, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']);
+$Package_Duration = (int)preg_replace('/[^0-9]/', '', $Package_Duration_Norm);
 $Total_Usage = (string)($User['Total_Usage_GB'] ?? '');
 $Used_Usage = (string)($User['Used_Usage_GB'] ?? '');
 $Remaining_Usage = (string)($User['Remaining_Usage_GB'] ?? '');
@@ -1404,8 +1436,15 @@ if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بارگذاری گزارش مصرف...', false);
 }
 
-$User = Common::liveUser(Repository::getUser($Context->UserId));
-$Client_ID = (string)($User['Client_ID'] ?? '');
+$User = Repository::getUser($Context->UserId);
+if (method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$User = Common::syncSubscriptionFromServer($User);
+}
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+if (($Client_ID === '' || $Client_ID === '_') && method_exists(Common::class, 'liveUser')) {
+$User = Common::liveUser($User);
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+}
 
 if ($Client_ID === '' || $Client_ID === '_') {
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Common::greet($Context, 'گزارش مصرف') . "❌شما اشتراک فعالی ندارید.\n➖➖➖➖➖➖➖➖➖\n⚠️از بخش مدیریت اشتراک برای خرید اشتراک اقدام کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
@@ -1414,13 +1453,11 @@ Menu::back('منوی قبلی', 'user_stats_menu'), Menu::userHome(),
 return;
 }
 
-$Response = ServerClient::getUser($Client_ID);
-$Json = $Response['Json'] ?? [];
-$Used_GB = (float)($Json['current_usage_GB'] ?? $User['Used_Usage_GB'] ?? 0);
-$Total_GB = (float)($Json['usage_limit_GB'] ?? $User['Total_Usage_GB'] ?? 0);
+$Used_GB = (float)($User['Used_Usage_GB'] ?? 0);
+$Total_GB = (float)($User['Total_Usage_GB'] ?? 0);
 $Remaining = max(0, $Total_GB - $Used_GB);
 $Percent = $Total_GB > 0 ? round(($Used_GB / $Total_GB) * 100, 1) : 0;
-$Last_Online = (string)($Json['last_online'] ?? '');
+$Last_Online = (string)($User['Last_Online'] ?? '');
 $Bar = Helper::usageBar($Percent, 14);
 $Status_Icon = Helper::rankStatusIcon($Percent);
 $Status_Label = Helper::rankStatusLabel($Percent);

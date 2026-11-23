@@ -788,17 +788,21 @@ class AuthController extends ChangeNotifier {
 
     _checkingDeviceAccess = true;
     try {
-      final ({FilterSettings? filter, SubscriptionOffers? offers, bool? emergencyEnabled}) beat =
+      final ({
+        Account? account,
+        FilterSettings? filter,
+        SubscriptionOffers? offers,
+        bool? emergencyEnabled,
+        bool? botLinked,
+      }) beat =
           await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
-      if (_session?.token == session.token && beat.emergencyEnabled != null &&
-          _session!.account.emergencyEnabled != beat.emergencyEnabled) {
-        _session = _session!.copyWith(account: _session!.account.copyWith(
-          emergencyEnabled: beat.emergencyEnabled,
-        ));
-        await _store.writeJson(StoreKeys.session, _session!.toJson());
-        notifyListeners();
-      }
-      await _applyLiveServerState(filter: beat.filter, offers: beat.offers);
+      await _applyLiveServerState(
+        account: beat.account,
+        filter: beat.filter,
+        offers: beat.offers,
+        emergencyEnabled: beat.emergencyEnabled,
+        botLinked: beat.botLinked,
+      );
       final bool wantHistory = !_historySynced;
       await fetchNotifications(includeHistory: wantHistory);
     } on ApiError catch (error) {
@@ -900,6 +904,68 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  static Account _mergeAccount(
+    Account prev,
+    Account next, {
+    bool? emergencyEnabledOverride,
+  }) {
+    return next.copyWith(
+      panelId: next.panelId > 0 ? next.panelId : prev.panelId,
+      lastResetTime: next.lastResetTime ?? prev.lastResetTime,
+      wgIpv4: next.wgIpv4.isNotEmpty ? next.wgIpv4 : prev.wgIpv4,
+      wgIpv6: next.wgIpv6.isNotEmpty ? next.wgIpv6 : prev.wgIpv6,
+      awgIpv4: next.awgIpv4.isNotEmpty ? next.awgIpv4 : prev.awgIpv4,
+      awgIpv6: next.awgIpv6.isNotEmpty ? next.awgIpv6 : prev.awgIpv6,
+      subscriptionUrl: next.subscriptionUrl.isNotEmpty
+          ? next.subscriptionUrl
+          : prev.subscriptionUrl,
+      accountBase: next.accountBase.isNotEmpty
+          ? next.accountBase
+          : prev.accountBase,
+      emergencyEnabled: emergencyEnabledOverride ?? next.emergencyEnabled,
+    );
+  }
+
+  static bool _sameAccount(Account a, Account b) {
+    return a.panelId == b.panelId &&
+        a.uuid == b.uuid &&
+        a.name == b.name &&
+        a.phone == b.phone &&
+        a.telegramId == b.telegramId &&
+        a.comment == b.comment &&
+        a.enable == b.enable &&
+        a.isActive == b.isActive &&
+        a.usageLimitGb == b.usageLimitGb &&
+        a.currentUsageGb == b.currentUsageGb &&
+        a.packageDays == b.packageDays &&
+        a.startDate == b.startDate &&
+        a.expiryDate == b.expiryDate &&
+        a.lastResetTime == b.lastResetTime &&
+        a.lastOnline == b.lastOnline &&
+        a.mode == b.mode &&
+        a.lang == b.lang &&
+        a.wgIpv4 == b.wgIpv4 &&
+        a.wgIpv6 == b.wgIpv6 &&
+        a.awgIpv4 == b.awgIpv4 &&
+        a.awgIpv6 == b.awgIpv6 &&
+        a.subscriptionUrl == b.subscriptionUrl &&
+        a.accountBase == b.accountBase &&
+        a.emergencyEnabled == b.emergencyEnabled;
+  }
+
+  static bool _subscriptionNeedsResync(Account prev, Account next) {
+    if (!prev.canConnect && next.canConnect) {
+      return true;
+    }
+    if (next.subscriptionUrl.isNotEmpty &&
+        next.subscriptionUrl != prev.subscriptionUrl) {
+      return true;
+    }
+    return next.packageDays != prev.packageDays ||
+        next.usageLimitGb != prev.usageLimitGb ||
+        next.effectiveExpiryDate != prev.effectiveExpiryDate;
+  }
+
   /// دریافت اعداد زندهٔ حساب فقط از درگاه احراز هویت شده سرور؛ هیچ درخواست
   /// مستقیمی از برنامه به پنل مدیریتی ارسال نمی شود.
   Future<bool> refreshAccount({bool silent = false}) async {
@@ -913,16 +979,10 @@ class AuthController extends ChangeNotifier {
         return false;
       }
       final Account prev = session.account;
-      final Account next = fresh.account;
-      final Account preserved = next.copyWith(
-        panelId: next.panelId > 0 ? next.panelId : prev.panelId,
-        lastResetTime: next.lastResetTime ?? prev.lastResetTime,
-        wgIpv4: next.wgIpv4.isNotEmpty ? next.wgIpv4 : prev.wgIpv4,
-        wgIpv6: next.wgIpv6.isNotEmpty ? next.wgIpv6 : prev.wgIpv6,
-        awgIpv4: next.awgIpv4.isNotEmpty ? next.awgIpv4 : prev.awgIpv4,
-        awgIpv6: next.awgIpv6.isNotEmpty ? next.awgIpv6 : prev.awgIpv6,
-      );
+      final Account preserved = _mergeAccount(prev, fresh.account);
       final FilterSettings previousFilter = session.filter;
+      final bool needsSubResync =
+          preserved.canConnect && _subscriptionNeedsResync(prev, preserved);
       _session = session.copyWith(
         account: preserved,
         filter: fresh.filter,
@@ -934,8 +994,11 @@ class AuthController extends ChangeNotifier {
       if (!previousFilter.sameEffectAs(fresh.filter)) {
         onFilterChanged?.call(fresh.filter);
       }
-      if (!preserved.canConnect) {
+      if ((prev.canConnect || !silent) && !preserved.canConnect) {
         onAccessRevoked?.call(preserved.accessReason);
+      }
+      if (needsSubResync && onSubscriptionClaimed != null) {
+        unawaited(onSubscriptionClaimed!());
       }
       notifyListeners();
       return true;
@@ -951,16 +1014,40 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// اعمال خودکار تغییرات دریافتی از ربات تلگرام (کنترل محتوا و وضعیت منوی
-  /// اشتراک رایگان / نوروزی) بدون نیاز به بستن یا ورود مجدد.
+  /// اعمال خودکار تغییرات دریافتی از ربات تلگرام و پنل سرور (وضعیت حساب،
+  /// مصرف، کنترل محتوا و وضعیت منوی اشتراک رایگان / نوروزی) بدون بستن یا
+  /// ورود مجدد.
   Future<void> _applyLiveServerState({
+    Account? account,
     FilterSettings? filter,
     SubscriptionOffers? offers,
+    bool? emergencyEnabled,
+    bool? botLinked,
   }) async {
     final SessionData? current = _session;
     if (current == null) {
       return;
     }
+
+    Account nextAccount = current.account;
+    if (account != null) {
+      nextAccount = _mergeAccount(
+        current.account,
+        account,
+        emergencyEnabledOverride: emergencyEnabled,
+      );
+    } else if (emergencyEnabled != null &&
+        current.account.emergencyEnabled != emergencyEnabled) {
+      nextAccount = current.account.copyWith(
+        emergencyEnabled: emergencyEnabled,
+      );
+    }
+    final bool accountChanged = !_sameAccount(current.account, nextAccount);
+    final bool accessLost =
+        current.account.canConnect && !nextAccount.canConnect;
+    final bool needsSubResync = nextAccount.canConnect &&
+        _subscriptionNeedsResync(current.account, nextAccount);
+
     FilterSettings nextFilter = current.filter;
     bool filterChanged = false;
     bool filterEffectChanged = false;
@@ -977,16 +1064,41 @@ class AuthController extends ChangeNotifier {
       offersChanged = true;
     }
 
-    if (!filterChanged && !offersChanged) {
+    bool botLinkedChanged = false;
+    if (botLinked != null && _botLinked != botLinked) {
+      _botLinked = botLinked;
+      botLinkedChanged = true;
+    }
+
+    if (!accountChanged &&
+        !filterChanged &&
+        !offersChanged &&
+        !botLinkedChanged) {
       return;
     }
-    _session = current.copyWith(filter: nextFilter, offers: nextOffers);
-    await _store.writeJson(StoreKeys.session, _session!.toJson());
-    if (filterChanged) {
-      await _store.writeJson(StoreKeys.filter, nextFilter.toJson());
+
+    if (accountChanged || filterChanged || offersChanged) {
+      _session = current.copyWith(
+        account: nextAccount,
+        filter: nextFilter,
+        offers: nextOffers,
+      );
+      if (accountChanged) {
+        await _syncNotificationOwner(_session!.ownerKey);
+      }
+      await _store.writeJson(StoreKeys.session, _session!.toJson());
+      if (filterChanged) {
+        await _store.writeJson(StoreKeys.filter, nextFilter.toJson());
+      }
     }
     if (filterEffectChanged) {
       onFilterChanged?.call(nextFilter);
+    }
+    if (accessLost) {
+      onAccessRevoked?.call(nextAccount.accessReason);
+    }
+    if (needsSubResync && onSubscriptionClaimed != null) {
+      unawaited(onSubscriptionClaimed!());
     }
     notifyListeners();
   }

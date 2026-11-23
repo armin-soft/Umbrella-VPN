@@ -118,7 +118,7 @@ $Payload = [
 $Response = ServerClient::updateUser($Client_ID, $Payload);
 
 if ((int)($Response['StatusCode'] ?? 0) >= 200 && (int)($Response['StatusCode'] ?? 0) < 300) {
-Repository::updateUser($User_ID, [
+$Renew_Fields = [
 'Expiration_Time_Stamp' => $New_Expire->getTimestamp(),
 'Expiration_Date' => Helper::formatExpiration($New_Expire->getTimestamp()),
 'Package_Duration' => Helper::durationLabel($Days),
@@ -128,9 +128,27 @@ Repository::updateUser($User_ID, [
 'Used_Usage_GB' => 0.0,
 'Remaining_Usage_GB' => (float)self::PLAN_GB,
 'Percent_Usage' => 0.0,
-'Client_Status' => 'فعال',
+'Client_Status' => '✅فعال',
+'Server_Is_Active' => 1,
+'Server_Enable' => 1,
+'Deactivation_Message' => null,
 'Channel_Client_Disabled_At' => null,
-]);
+];
+$Json = $Response['Json'] ?? null;
+if (is_array($Json)) {
+foreach ([
+'ed25519_private_key' => 'ED_25519_Private_Key',
+'ed25519_public_key' => 'ED_25519_Public_Key',
+'wg_pk' => 'WireGuard_Private_Key',
+'wg_pub' => 'WireGuard_Public_Key',
+'wg_psk' => 'WireGuard_PSK',
+] as $Api_Key => $Db_Key) {
+if (isset($Json[$Api_Key]) && trim((string)$Json[$Api_Key]) !== '') {
+$Renew_Fields[$Db_Key] = trim((string)$Json[$Api_Key]);
+}
+}
+}
+Repository::updateUser($User_ID, $Renew_Fields);
 
 $User_Now = Repository::getUser($User_ID);
 $Full_Name = (string)($User_Now['Full_Name'] ?? '');

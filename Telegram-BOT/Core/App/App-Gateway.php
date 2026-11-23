@@ -531,12 +531,8 @@ Database::getInstance()->execute(
 );
 }
 
-$Profile = AppFilter::accountPayload($Account);
-$Profile['account_base'] = PanelClient::accountBase($Account);
-// The client never asks the user for a subscription address: the personal
-// subscription link comes from here, both at sign-in and on every refresh.
-$Profile['subscription_url'] = self::subscriptionUrl($Account, $Profile['account_base'], $UUID);
-$Profile['emergency_enabled'] = BotConfig::showEmergency();
+$LinkedTg = self::syncLinkedBotUserFromPanel($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account);
+$Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg);
 
 self::ok([
 'uuid' => $UUID,
@@ -545,7 +541,7 @@ self::ok([
 'sign_in_at' => gmdate('c'),
 'account' => $Profile,
 'filter' => self::filterPayload($UUID),
-'offers' => self::offersPayload($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account),
+'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 ]);
 }
 
@@ -787,14 +783,8 @@ $LinkedTg = self::autoLinkTelegramOwner(
 $UUID,
 (int)($Session['Telegram_ID'] ?? 0)
 );
-$Profile = AppFilter::accountPayload($Account);
-if (trim((string)($Profile['telegram_id'] ?? '')) === '' && $LinkedTg > 0) {
-$Profile['telegram_id'] = (string)$LinkedTg;
-}
-$Base = PanelClient::accountBase($Account);
-$Profile['account_base'] = $Base;
-$Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
-$Profile['emergency_enabled'] = BotConfig::showEmergency();
+$LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $Account);
+$Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg);
 
 self::ok([
 'account' => $Profile,
@@ -846,6 +836,9 @@ $DeviceId,
 $UUID,
 (int)($Session['Telegram_ID'] ?? 0)
 );
+$LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $PanelAccount);
+$Payload['account'] = self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg);
+$Payload['bot_linked'] = $LinkedTg > 0 && (int)($PanelAccount['telegram_id'] ?? 0) === $LinkedTg;
 $Payload['filter'] = self::filterPayload($UUID);
 $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
 }
@@ -1042,23 +1035,133 @@ if ($ByUuid !== null) return $ByUuid;
 return null;
 }
 
+private static function accountPayloadWithExtras(array $Account, string $UUID, int $LinkedTg = 0): array {
+$Profile = AppFilter::accountPayload($Account);
+if (trim((string)($Profile['telegram_id'] ?? '')) === '' && $LinkedTg > 0) {
+$Profile['telegram_id'] = (string)$LinkedTg;
+}
+$BotUser = self::resolveBotUser($UUID, $LinkedTg);
+if ($BotUser !== null) {
+$RawName = trim((string)($Profile['name'] ?? ''));
+$BotName = trim((string)($BotUser['Full_Name'] ?? ''));
+if ($BotName !== '' && ($RawName === '' || $RawName === '_' || $RawName === 'کاربر' || $RawName === 'کاربر آمبرلا' || preg_match('/^user-[0-9]+$/', $RawName) === 1)) {
+$Profile['name'] = $BotName;
+}
+if (trim((string)($Profile['phone'] ?? '')) === '' && trim((string)($BotUser['Phone'] ?? '')) !== '') {
+$Profile['phone'] = trim((string)$BotUser['Phone']);
+}
+}
+$Base = PanelClient::accountBase($Account);
+$Profile['account_base'] = $Base;
+$Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);
+$Profile['emergency_enabled'] = BotConfig::showEmergency();
+return $Profile;
+}
+
+private static function syncLinkedBotUserFromPanel(string $UUID, int $LinkedTg, ?array &$Account): int {
+if ($UUID === '' || $UUID === '_' || !is_array($Account) || $Account === []) {
+return $LinkedTg;
+}
+$BotUser = self::resolveBotUser($UUID, $LinkedTg);
+if ($BotUser === null) {
+$CandidatePhone = \Helper::normalizePhone(trim((string)($Account['phone'] ?? '')) ?: trim((string)($Account['comment'] ?? '')));
+if ($CandidatePhone !== '' && \Helper::validatePhone($CandidatePhone)) {
+$ByPhone = Repository::findUserByPhone($CandidatePhone, 0);
+$ExistingClient = trim((string)($ByPhone['Client_ID'] ?? ''));
+if (!empty($ByPhone) && ($ExistingClient === '' || $ExistingClient === '_' || $ExistingClient === $UUID)) {
+$BotUser = $ByPhone;
+$FoundUid = (int)($ByPhone['Telegram_ID'] ?? 0);
+if ($FoundUid > 0) {
+try {
+Database::getInstance()->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$FoundUid, $UUID]
+);
+Database::getInstance()->execute(
+'UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$FoundUid, $UUID]
+);
+} catch (Throwable) {}
+}
+}
+}
+}
+
+if ($BotUser === null) {
+return $LinkedTg;
+}
+
+$Uid = (int)($BotUser['Telegram_ID'] ?? 0);
+if ($Uid > 0 && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try { Common::syncSubscriptionFromServer($BotUser, $Account); } catch (Throwable) {}
+}
+
+if ($Uid > 0 && (int)($Account['telegram_id'] ?? 0) === 0 && trim((string)($BotUser['Client_ID'] ?? '')) === $UUID) {
+try {
+$Updated = PanelClient::update($UUID, ['telegram_id' => $Uid]);
+if (is_array($Updated) && (int)($Updated['telegram_id'] ?? 0) === $Uid) {
+$Account['telegram_id'] = $Uid;
+}
+} catch (Throwable) {}
+}
+
+return $Uid > 0 ? $Uid : $LinkedTg;
+}
+
 /** True when the user already holds an active, non-expired subscription. */
 private static function userHasActivePlan(?array $User, ?array $PanelAccount): bool {
+if (is_array($PanelAccount) && $PanelAccount !== []) {
+$Profile = AppFilter::accountPayload($PanelAccount);
+$Active = !empty($Profile['is_active']) && !empty($Profile['enable']);
+$Limit = (float)($Profile['usage_limit_GB'] ?? 0);
+$Used = (float)($Profile['current_usage_GB'] ?? 0);
+$HasQuota = $Limit <= 0 || $Used < $Limit;
+
+$Expired = false;
+$HasTerm = false;
+$ExpiryRaw = trim((string)($Profile['expiry_date'] ?? ''));
+$StartRaw = trim((string)($Profile['start_date'] ?? ''));
+$Days = (int)($Profile['package_days'] ?? 0);
+
+if ($ExpiryRaw !== '') {
+$ExpTs = strtotime($ExpiryRaw);
+if ($ExpTs !== false) {
+$HasTerm = true;
+$Expired = $ExpTs <= time();
+}
+} elseif ($StartRaw !== '' && $Days > 0) {
+$StartDate = substr($StartRaw, 0, 10);
+try {
+$Zone = new DateTimeZone('Asia/Tehran');
+$Start = DateTimeImmutable::createFromFormat('!Y-m-d', $StartDate, $Zone);
+if ($Start instanceof DateTimeImmutable) {
+$End = $Start->modify('+' . $Days . ' days');
+if ($End instanceof DateTimeImmutable) {
+$HasTerm = true;
+$Expired = $End->getTimestamp() <= time();
+}
+}
+} catch (Throwable) {}
+} elseif ($Days > 0) {
+$HasTerm = true;
+}
+
+if ($Active && $HasTerm && !$Expired && $HasQuota) {
+return true;
+}
+if ($HasTerm && ($Expired || !$HasQuota)) {
+return false;
+}
+if (!$Active && $HasTerm && !$Expired && $HasQuota && $User !== null && trim((string)($User['Subscription'] ?? '')) !== '') {
+return true;
+}
+return false;
+}
+
 if ($User !== null) {
 $Sub = trim((string)($User['Subscription'] ?? ''));
 $Exp = (int)($User['Expiration_Time_Stamp'] ?? 0);
 if ($Sub !== '' && ($Exp <= 0 || $Exp > time())) {
-return true;
-}
-}
-
-if (is_array($PanelAccount) && $PanelAccount !== []) {
-$Profile = AppFilter::accountPayload($PanelAccount);
-$Active = !empty($Profile['is_active']) && !empty($Profile['enabled']);
-$Limit = (float)($Profile['usage_limit_gb'] ?? 0);
-$Used = (float)($Profile['used_gb'] ?? 0);
-$RemainingDays = (int)($Profile['remaining_days'] ?? 0);
-if ($Active && $Limit > 0 && $Used < $Limit && $RemainingDays > 0) {
 return true;
 }
 }
@@ -1106,7 +1209,13 @@ $Session = self::sessionRow($Token);
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 if ($UUID === '' || $UUID === '_') self::fail(409, 'account_not_linked', 'برای استفاده از کیف پول، ابتدا حساب را از بخش عضویت به ربات متصل کنید.');
-$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+$SessionTg = (int)($Session['Telegram_ID'] ?? 0);
+$User = self::resolveBotUser($UUID, $SessionTg);
+if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+$PanelAccount = PanelClient::get($UUID);
+self::syncLinkedBotUserFromPanel($UUID, $SessionTg, $PanelAccount);
+$User = self::resolveBotUser($UUID, $SessionTg);
+}
 if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID || (int)($User['Telegram_ID'] ?? 0) <= 0) {
 self::fail(409, 'account_not_linked', 'برای استفاده از کیف پول، ابتدا حساب را از بخش عضویت به ربات متصل کنید.');
 }
@@ -1210,7 +1319,13 @@ $Session = self::sessionRow(self::bearer());
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 if ($UUID === '' || $UUID === '_') self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
-$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+$SessionTg = (int)($Session['Telegram_ID'] ?? 0);
+$User = self::resolveBotUser($UUID, $SessionTg);
+if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+$PanelAccount = PanelClient::get($UUID);
+self::syncLinkedBotUserFromPanel($UUID, $SessionTg, $PanelAccount);
+$User = self::resolveBotUser($UUID, $SessionTg);
+}
 if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
 self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
 }
@@ -1232,7 +1347,13 @@ $Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 if ($UUID === '' || $UUID === '_') self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
-$User = self::resolveBotUser($UUID, (int)($Session['Telegram_ID'] ?? 0));
+$SessionTg = (int)($Session['Telegram_ID'] ?? 0);
+$User = self::resolveBotUser($UUID, $SessionTg);
+if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
+$PanelAccount = PanelClient::get($UUID);
+self::syncLinkedBotUserFromPanel($UUID, $SessionTg, $PanelAccount);
+$User = self::resolveBotUser($UUID, $SessionTg);
+}
 if ($User === null || (string)($User['Client_ID'] ?? '') !== $UUID) {
 self::fail(409, 'account_not_linked', 'حساب تلگرام و اشتراک این کاربر همگام نیست؛ ابتدا از ربات تلگرام وارد شوید.');
 }
@@ -1435,6 +1556,7 @@ BotConfig::markNowruzClaimed($Uid, $UUID);
 }
 
 $UsageLimit = (float)max($Gb, (float)($Updated['usage_limit_GB'] ?? $Gb));
+$Fresh = PanelClient::get($UUID) ?? $Updated;
 
 if ($Uid > 0 && $User !== null) {
 $Fields = [
@@ -1448,10 +1570,26 @@ $Fields = [
 'Used_Usage_GB' => 0.0,
 'Remaining_Usage_GB' => $UsageLimit,
 'Percent_Usage' => 0.0,
-'Client_Status' => 'فعال',
+'Client_Status' => '✅فعال',
+'Server_Is_Active' => 1,
+'Server_Enable' => 1,
 'Channel_Client_Disabled_At' => null,
 'Deactivation_Message' => null,
 ];
+if (isset($Fresh['comment'])) {
+$Fields['Server_Comment'] = trim((string)$Fresh['comment']);
+}
+foreach ([
+'ed25519_private_key' => 'ED_25519_Private_Key',
+'ed25519_public_key' => 'ED_25519_Public_Key',
+'wg_pk' => 'WireGuard_Private_Key',
+'wg_pub' => 'WireGuard_Public_Key',
+'wg_psk' => 'WireGuard_PSK',
+] as $ApiKey => $DbKey) {
+if (isset($Fresh[$ApiKey]) && trim((string)$Fresh[$ApiKey]) !== '') {
+$Fields[$DbKey] = trim((string)$Fresh[$ApiKey]);
+}
+}
 if ($Type === 'free') {
 $Fields['Free_Plan_Claimed'] = 1;
 }
@@ -1467,11 +1605,7 @@ $Type === 'free' ? 'اشتراک رایگان فعال شد' : 'اشتراک ن�
 );
 }
 
-$Fresh = PanelClient::get($UUID) ?? $Updated;
-$Profile = AppFilter::accountPayload($Fresh);
-$Base = PanelClient::accountBase($Fresh);
-$Profile['account_base'] = $Base;
-$Profile['subscription_url'] = self::subscriptionUrl($Fresh, $Base, $UUID);
+$Profile = self::accountPayloadWithExtras($Fresh, $UUID, $Uid);
 
 self::ok([
 'message' => $Type === 'free'
@@ -1717,6 +1851,11 @@ private static function resolveAccount(string $Phone, string $Full_Name, int $Te
 [$Account] = self::findCustomerAccount($Phone);
 
 if (is_array($Account) && $Account !== []) {
+$Existing_UUID = trim((string)($Account['uuid'] ?? ''));
+if ($Existing_UUID !== '' && $Telegram_Id > 0) {
+self::syncBotUserClientId($Telegram_Id, $Existing_UUID);
+self::syncLinkedBotUserFromPanel($Existing_UUID, $Telegram_Id, $Account);
+}
 return $Account;
 }
 
@@ -1760,6 +1899,7 @@ if ((int)($Created['telegram_id'] ?? 0) !== $Telegram_Id) {
 try { PanelClient::update($New_UUID, ['telegram_id' => $Telegram_Id]); }
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] telegram_id link after create failed for ' . $Phone . ': ' . $Error->getMessage()); }
 }
+self::syncLinkedBotUserFromPanel($New_UUID, $Telegram_Id, $Created);
 }
 
 Repository::addNotification(null, 'app_signup', 'حساب جدید ساخته شد', $Phone . ' - ' . $Full_Name);

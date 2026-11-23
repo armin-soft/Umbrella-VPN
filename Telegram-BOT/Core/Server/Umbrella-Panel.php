@@ -203,10 +203,7 @@ $Response = HttpClient::patch(self::usersUrl() . rawurlencode($UUID) . '/', $Pay
 $Json = $Response['Json'] ?? null;
 
 if (!is_array($Json)) return null;
-if (isset($Json['uuid'])) return $Json;
-if (isset($Json['data']) && is_array($Json['data'])) return $Json['data'];
-
-return null;
+return self::extractRecord($Json);
 }
 
 /**

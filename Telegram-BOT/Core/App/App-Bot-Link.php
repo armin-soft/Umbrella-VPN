@@ -67,7 +67,8 @@ if (!Repository::tryCronLock($UuidLock, 120)) { $UuidLock = ''; throw new Runtim
 if (!Repository::tryCronLock($UserLock, 120)) { $UserLock = ''; throw new RuntimeException('busy'); }
 $PhoneLock = 'app_link_phone_' . md5((string)$Hint['Phone']);
 if (!Repository::tryCronLock($PhoneLock, 120)) { $PhoneLock = ''; throw new RuntimeException('busy'); }
-$Db->transaction(static function ($Db) use ($Context, $Token): void {
+$Linked_Panel = null;
+$Db->transaction(static function ($Db) use ($Context, $Token, &$Linked_Panel): void {
 $Row = $Db->fetch('SELECT * FROM `App_Bot_Link_Requests` WHERE `Token_Hash` = ? FOR UPDATE', [hash('sha256', $Token)]);
 if (!$Row || $Row['Used_At'] !== null || (int)$Row['Expires_At'] < time() || (int)$Row['Telegram_ID'] !== $Context->UserId) throw new RuntimeException('expired');
 $UUID = (string)$Row['User_UUID']; $Phone = (string)$Row['Phone']; $Id = $Context->UserId;
@@ -91,6 +92,7 @@ if (!PanelClient::update($UUID, ['telegram_id' => $Id])) throw new RuntimeExcept
 $Panel = PanelClient::get($UUID);
 if ((int)($Panel['telegram_id'] ?? 0) !== $Id) throw new RuntimeException('panel_unavailable');
 }
+$Linked_Panel = $Panel;
 $SignIn = $Db->fetch("SELECT `Full_Name` FROM `App_SignIn_Requests` WHERE `User_UUID` = ? AND `Device_ID` = ? AND `Phone` = ? AND `Stage` = 'approved' ORDER BY `ID` DESC LIMIT 1", [$UUID, $Row['Device_ID'], $Phone]);
 $Name = trim((string)($SignIn['Full_Name'] ?? ''));
 $Db->execute('UPDATE `Users` SET `Client_ID` = ?, `Phone` = CASE WHEN `Phone` IS NULL OR `Phone` = ? THEN ? ELSE `Phone` END, `Full_Name` = CASE WHEN `Full_Name` IS NULL OR `Full_Name` = ? THEN ? ELSE `Full_Name` END WHERE `Telegram_ID` = ?', [$UUID, '', $Phone, '', $Name, $Id]);
@@ -98,6 +100,14 @@ $Db->execute('UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? A
 $Db->execute('UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)', [$Id, $UUID, $Id]);
 $Db->execute('UPDATE `App_Bot_Link_Requests` SET `Used_At` = ? WHERE `Token_Hash` = ?', [time(), hash('sha256', $Token)]);
 });
+if (is_array($Linked_Panel) && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer') && method_exists('Repository', 'getUser')) {
+try {
+$Fresh_User = Repository::getUser($Context->UserId);
+if ($Fresh_User !== []) {
+Common::syncSubscriptionFromServer($Fresh_User, $Linked_Panel);
+}
+} catch (Throwable) {}
+}
 TelegramClient::sendMessage($Context->ChatId, '✅حساب برنامه و ربات متصل شد. اطلاعات در پنل و برنامه همگام می شود.');
 } catch (Throwable $Error) {
 error_log('[Umbrella-Bot][App-Bot-Link] ' . $Error->getMessage());

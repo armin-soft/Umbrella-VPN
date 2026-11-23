@@ -605,7 +605,14 @@ class GatewayClient {
         .toList();
   }
 
-  Future<({FilterSettings? filter, SubscriptionOffers? offers, bool? emergencyEnabled})> heartbeat({
+  Future<
+      ({
+        Account? account,
+        FilterSettings? filter,
+        SubscriptionOffers? offers,
+        bool? emergencyEnabled,
+        bool? botLinked,
+      })> heartbeat({
     required String token,
     required String deviceId,
   }) async {
@@ -613,14 +620,18 @@ class GatewayClient {
       'token': token,
       'device_id': deviceId,
     });
+    final Map<String, dynamic> accountMap = JsonX.asMap(json['account']);
     final Map<String, dynamic> filterMap = JsonX.asMap(json['filter']);
     final Map<String, dynamic> offersMap = JsonX.asMap(json['offers']);
     return (
+      account: accountMap.isNotEmpty ? Account.fromJson(accountMap) : null,
       filter: filterMap.isNotEmpty ? FilterSettings.fromJson(filterMap) : null,
       emergencyEnabled: json.containsKey('emergency_enabled')
           ? JsonX.boolean(json['emergency_enabled']) : null,
       offers:
           offersMap.isNotEmpty ? SubscriptionOffers.fromJson(offersMap) : null,
+      botLinked: json.containsKey('bot_linked')
+          ? JsonX.boolean(json['bot_linked']) : null,
     );
   }
 
