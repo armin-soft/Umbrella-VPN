@@ -92,7 +92,10 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
         }
 
         if (options.autoRoute) {
-            builder.addDnsServer(options.dnsServerAddress.value)
+            val dnsServerAddress = options.dnsServerAddress
+            while (dnsServerAddress.hasNext()) {
+                builder.addDnsServer(dnsServerAddress.next())
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val inet4RouteAddress = options.inet4RouteAddress
@@ -154,7 +157,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                         runCatching { builder.addDisallowedApplication(it) }
                             .onFailure { err -> Log.w(TAG, "addDisallowedApplication $it", err) }
                     }
-                    addIncludePackage(builder, packageName)
+                    excludeSelfPackage(builder)
                 }
             } else {
                 val includePackage = options.includePackage
@@ -170,7 +173,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                     while (excludePackage.hasNext()) {
                         runCatching { builder.addDisallowedApplication(excludePackage.next()) }
                     }
-                    addIncludePackage(builder, packageName)
+                    excludeSelfPackage(builder)
                 }
             }
         }
@@ -197,7 +200,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
         return pfd.fd
     }
 
-    private fun addIncludePackage(builder: Builder, packageName: String) {
+    private fun excludeSelfPackage(builder: Builder) {
         try {
             builder.addDisallowedApplication(packageName)
         } catch (_: NameNotFoundException) {

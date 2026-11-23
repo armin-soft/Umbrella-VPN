@@ -320,7 +320,7 @@ class MethodHandler(
         val headersMap = linkedMapOf<String, String>()
         for (h in resp.headers) {
             val k = h.name.lowercase()
-            headersMap[k] = headersMap[k]?.let { "$it, ${h.value}" } ?: h.value
+            headersMap[k] = headersMap[k]?.let { "$it, ${h.value_}" } ?: h.value_
         }
         return mapOf(
             "ok" to (resp.error == FetchUrlError.FETCH_URL_ERROR_NONE && resp.status_code > 0),
