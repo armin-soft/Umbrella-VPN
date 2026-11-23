@@ -23,18 +23,11 @@ jobs:
           rm -rf release-assets
           mkdir -p release-assets
 
-          # 1. Windows x64 installer built from the latest commit on this branch
-          if gh run download 45229361587 --repo "$SOURCE_REPO" --name UmbrellaVPN-Setup-1.0.0-x64 --dir release-assets; then
-            found_exe=$(find release-assets -type f -name 'UmbrellaVPN-Setup-1.0.0-x64.exe' | head -n1 || true)
-            if [ -n "$found_exe" ] && [ "$found_exe" != "release-assets/UmbrellaVPN-Setup-1.0.0-x64.exe" ]; then
-              mv -f "$found_exe" release-assets/UmbrellaVPN-Setup-1.0.0-x64.exe
-            fi
-          else
-            gh release download v1.0.0-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.0-x64.exe' --dir release-assets --clobber
-          fi
+          # 1. Latest Windows x64 installer from the v1.0.0-windows draft release
+          gh release download v1.0.0-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.0-x64.exe' --dir release-assets --clobber
           test -s release-assets/UmbrellaVPN-Setup-1.0.0-x64.exe
 
-          # 2. Android APKs built from commit 3a99f76 (verified green CI build)
+          # 2. Latest signed Android APKs from the v1.0.0-android draft release
           gh release download v1.0.0-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
           rm -f release-assets/SHA256SUMS.txt
