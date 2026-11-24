@@ -39,8 +39,12 @@ SolidCompression=no
 WizardStyle=modern
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
-AppMutex=Global\UmbrellaVPN.Desktop.SingleInstance
-CloseApplications=yes
+; Do not set AppMutex here: Inno checks AppMutex before PrepareToInstall and
+; shows a blocking "please close all instances" dialog (or aborts silent updates
+; with exit code 5). Instead we gracefully shut down and clean up all running
+; Umbrella VPN and core processes automatically in InitializeSetup/PrepareToInstall
+; and InitializeUninstall, backed up by Restart Manager force-close.
+CloseApplications=force
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
 #ifdef SignTool
@@ -118,35 +122,12 @@ Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent runascurrentuser; Che
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -Command ""Get-NetFirewallRule -DisplayName 'Umbrella-*' | Remove-NetFirewallRule -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveUmbrellaFirewallRules"
 
 [Code]
+const
+  UmbrellaAppMutex = 'Global\UmbrellaVPN.Desktop.SingleInstance';
+
 function ShouldRelaunchAfterUpdate(): Boolean;
 begin
   Result := ExpandConstant('{param:RelaunchAfterUpdate|0}') = '1';
-end;
-
-// قبل از کپی یا حذف، پنجره اصلی برنامه را به صورت استاندارد می بندد و
-// بقیه فایل های قفل شده از طریق Restart Manager ویندوز آزاد می شوند.
-procedure RequestGracefulClose();
-var
-  Wnd: HWND;
-  Attempts: Integer;
-begin
-  Wnd := FindWindowByClassName('FLUTTER_RUNNER_WIN32_WINDOW');
-  if Wnd <> 0 then
-  begin
-    PostMessage(Wnd, $0010, 0, 0);
-    for Attempts := 1 to 10 do
-    begin
-      Sleep(150);
-      if FindWindowByClassName('FLUTTER_RUNNER_WIN32_WINDOW') = 0 then
-        Break;
-    end;
-  end;
-end;
-
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  RequestGracefulClose();
-  Result := '';
 end;
 
 // علامت نقل قول تکی برای PowerShell: در رشته نقل قول شده، علامت نقل قول تکی
@@ -163,6 +144,136 @@ begin
       Result := Result + '''';
   end;
   Result := Result + '''';
+end;
+
+// اگر برنامه هنگام اتصال پراکسی سیستمی لوکال ثبت کرده بود، در زمان نصب یا حذف
+// آن را خاموش می کنیم تا مرورگر کاربر بدون اینترنت نماند.
+procedure ClearLoopbackProxy();
+var
+  ProxyServer: String;
+begin
+  if RegQueryStringValue(
+       HKCU,
+       'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+       'ProxyServer',
+       ProxyServer) then
+  begin
+    if (Pos('127.0.0.1:', ProxyServer) > 0) or
+       (Pos('localhost:', Lowercase(ProxyServer)) > 0) then
+    begin
+      RegWriteDWordValue(
+        HKCU,
+        'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        'ProxyEnable',
+        0);
+    end;
+  end;
+end;
+
+function FindUmbrellaWindow(): HWND;
+var
+  TitleFa: String;
+begin
+  TitleFa := #$0641#$06CC#$0644#$062A#$0631#$0634#$06A9#$0646 + ' ' +
+             #$0622#$0645#$0628#$0631#$0644#$0627;
+  Result := FindWindowByWindowName(TitleFa);
+  if Result = 0 then
+    Result := FindWindowByWindowName('Umbrella VPN');
+end;
+
+// پیش از نصب، ارتقا یا حذف، برنامه قبلی و تمام فرایندهای زیرمجموعه و هسته آن
+// را به صورت خودکار و بی صدا می بندد تا بدون نمایش خطای در حال اجرا بودن ادامه یابد.
+procedure CloseAllUmbrellaProcesses(const AppDir: String);
+var
+  Wnd: HWND;
+  Attempts, ResultCode: Integer;
+  HadActiveApp: Boolean;
+  KillScript: String;
+begin
+  HadActiveApp := CheckForMutexes(UmbrellaAppMutex);
+  Wnd := FindUmbrellaWindow();
+  if Wnd <> 0 then
+  begin
+    HadActiveApp := True;
+    // WM_QUERYENDSESSION + WM_ENDSESSION باعث می شود برنامه حتی وقتی به سینی
+    // سیستم پنهان شده است (WM_CLOSE فقط مخفی می کند)، اتصال و هسته و پروکسی
+    // را تمیز جمع کرده و کاملا خارج شود.
+    PostMessage(Wnd, $0011, 0, 0);
+    PostMessage(Wnd, $0016, 1, 0);
+    for Attempts := 1 to 24 do
+    begin
+      Sleep(150);
+      if (FindUmbrellaWindow() = 0) and
+         (not CheckForMutexes(UmbrellaAppMutex)) then
+        Break;
+    end;
+  end;
+
+  // هر فرایند باقی مانده از برنامه یا هسته ها (درخت فرایند کامل) را
+  // می بندیم تا هیچ قفلی روی فایل های اجرایی و کتابخانه ها نماند.
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /T /IM UmbrellaVPN.exe /IM UmbrellaCli.exe ' +
+    '/IM UmbrellaCoreEngine.exe /IM UmbrellaAdmin.exe /IM sing-box.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if ResultCode = 0 then
+    HadActiveApp := True;
+
+  if (AppDir <> '') and DirExists(AppDir) then
+  begin
+    KillScript :=
+      '$d=' + PsQuote(AddBackslash(AppDir)) + '; ' +
+      '$me=$PID; ' +
+      '$parentPid=(Get-CimInstance Win32_Process -Filter (''ProcessId='' + $me) -ErrorAction SilentlyContinue).ParentProcessId; ' +
+      '$procs=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ' +
+      'Where-Object { $_.ProcessId -ne $me -and $_.ProcessId -ne $parentPid -and ' +
+      '$_.Name -notlike ''unins*'' -and $_.Name -notlike ''UmbrellaVPN-Setup*'' -and ' +
+      '$_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) }; ' +
+      'foreach ($p in $procs) { ' +
+      'Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; ' +
+      'Wait-Process -Id $p.ProcessId -Timeout 5 -ErrorAction SilentlyContinue ' +
+      '}; ';
+    if HadActiveApp then
+      KillScript := KillScript +
+        'Get-NetFirewallRule -DisplayName ''Umbrella-*'' -ErrorAction SilentlyContinue | ' +
+        'Remove-NetFirewallRule -ErrorAction SilentlyContinue';
+    Exec(
+      ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -NonInteractive -Command "' + KillScript + '"',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
+  for Attempts := 1 to 20 do
+  begin
+    if not CheckForMutexes(UmbrellaAppMutex) then
+      Break;
+    Sleep(100);
+  end;
+
+  if HadActiveApp then
+    Sleep(200);
+
+  ClearLoopbackProxy();
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  CloseAllUmbrellaProcesses('');
+  Result := True;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  if (CurPageID = wpReady) and
+     ((FindUmbrellaWindow() <> 0) or CheckForMutexes(UmbrellaAppMutex)) then
+    CloseAllUmbrellaProcesses(ExpandConstant('{app}'));
+  Result := True;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  CloseAllUmbrellaProcesses(ExpandConstant('{app}'));
+  Result := '';
 end;
 
 // پوشه نصب را کاملا پاک می کند.
@@ -199,36 +310,17 @@ begin
        '', SW_HIDE, ewNoWait, ResultCode);
 end;
 
-// اگر برنامه هنگام اتصال پراکسی سیستمی لوکال ثبت کرده بود، در زمان حذف
-// آن را خاموش می کنیم تا مرورگر کاربر بدون اینترنت نماند.
-procedure ClearLoopbackProxy();
-var
-  ProxyServer: String;
+function InitializeUninstall(): Boolean;
 begin
-  if RegQueryStringValue(
-       HKCU,
-       'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
-       'ProxyServer',
-       ProxyServer) then
-  begin
-    if (Pos('127.0.0.1:', ProxyServer) > 0) or
-       (Pos('localhost:', Lowercase(ProxyServer)) > 0) then
-    begin
-      RegWriteDWordValue(
-        HKCU,
-        'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
-        'ProxyEnable',
-        0);
-    end;
-  end;
+  CloseAllUmbrellaProcesses('');
+  Result := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
-    RequestGracefulClose();
-    ClearLoopbackProxy();
+    CloseAllUmbrellaProcesses(ExpandConstant('{app}'));
     RemoveInstallFolder();
   end;
 end;

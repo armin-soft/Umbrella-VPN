@@ -266,5 +266,25 @@ void main() {
       expect(ops, isNot(contains('netsh winhttp reset proxy')));
       expect(plugin, contains('ShutdownOwnedCores(/*skip_if_clean=*/true)'));
     });
+
+    test('نصب کننده ویندوز به جای خطای در حال اجرا بودن، تمام فرایندهای قبلی را خودکار می بندد', () {
+      final String iss = File('installer/umbrella.iss').readAsStringSync();
+      // AppMutex باعث نمایش پنجره خطای "Setup has detected that Umbrella VPN is currently running" می شد.
+      expect(iss, isNot(contains('AppMutex=')));
+      expect(iss, contains('CloseApplications=force'));
+      expect(iss, contains('CloseAllUmbrellaProcesses'));
+      expect(iss, contains('InitializeSetup()'));
+      expect(iss, contains('NextButtonClick('));
+      expect(iss, contains('PrepareToInstall('));
+      expect(iss, contains('InitializeUninstall()'));
+      expect(iss, contains('PostMessage(Wnd, \$0011, 0, 0)'));
+      expect(iss, contains('PostMessage(Wnd, \$0016, 1, 0)'));
+      expect(iss, contains('UmbrellaVPN.exe'));
+      expect(iss, contains('UmbrellaCli.exe'));
+      expect(iss, contains('UmbrellaCoreEngine.exe'));
+      expect(iss, contains('UmbrellaAdmin.exe'));
+      expect(iss, contains('sing-box.exe'));
+      expect(iss, contains('ClearLoopbackProxy()'));
+    });
   });
 }
