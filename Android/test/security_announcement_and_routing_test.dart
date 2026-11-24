@@ -1003,10 +1003,41 @@ void main() {
             : '';
         expect(head, contains(' 200 OK'));
         expect(uiHtml, contains('dir="rtl"'));
-        expect(uiHtml, contains('Umbrella VPN'));
+        expect(uiHtml, contains('فیلترشکن آمبرلا'));
+        expect(uiHtml, isNot(contains('Umbrella VPN')));
+        expect(uiHtml, contains('@font-face'));
+        expect(uiHtml, contains('Vazirmatn-Regular.ttf'));
         expect(uiHtml, contains('#E11D2E'));
         expect(uiHtml, contains('سپر کنترل محتوای آمبرلا فعال است'));
         expect(uiHtml, contains('pornhub.com'));
+
+        final String timedHtml = ContentBlockServer.renderBlockedPageHtml(
+          details: const BlockedHostDetails(
+            domain: 'pornhub.com',
+            category: 'adult',
+            categoryLabel: 'محتوای بزرگسالان و غیراخلاقی',
+            reason: 'تست',
+            isSecurityThreat: false,
+          ),
+          assetBaseUrl: 'http://127.0.0.1:${server.uiPort}',
+          timestamp: DateTime(2026, 1, 1, 16, 59, 19),
+        );
+        expect(timedHtml, contains('۱۶:۵۹:۱۹'));
+        expect(timedHtml, isNot(contains('16:59:19')));
+
+        final Socket fontSock =
+            await Socket.connect(InternetAddress.loopbackIPv4, server.uiPort);
+        fontSock.write(
+          'GET /assets/fonts/Vazirmatn-Regular.ttf HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n',
+        );
+        await fontSock.flush();
+        final List<int> fontReply = await fontSock.fold<List<int>>(
+          <int>[],
+          (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+        );
+        final String fontHead = latin1.decode(fontReply.take(200).toList());
+        expect(fontHead, contains(' 200 OK'));
+        expect(fontReply.length, greaterThan(50000));
 
         final Socket httpsTunnel =
             await Socket.connect(InternetAddress.loopbackIPv4, server.proxyPort);

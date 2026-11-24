@@ -119,7 +119,7 @@ self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیر�
 }
 
 /** رصد کاربران: فهرست کاربران حاضر در نرم افزار/اپلیکیشن به ترتیب آخرین فعالیت. */
-public static function userMonitorList(Context $Context, int $Page = 0): void {
+public static function userMonitorList(Context $Context, int $Page = 0, string $Notice = ''): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
@@ -216,6 +216,7 @@ $Page = max(0, min($Page, $PageCount - 1));
 $Slice = array_slice($GroupList, $Page * $PageSize, $PageSize);
 
 $Text = Helper::adminGreeting($Context, 'رصد کاربران')
+. ($Notice !== '' ? $Notice . "\n➖➖➖➖➖➖➖➖➖\n" : '')
 . Menu::section('👁', 'پایش لحظه ای کاربران در اپلیکیشن آمبرلا', [
 '👥تعداد کاربران ثبت شده: ' . Helper::toPersian((string)$Total) . ' کاربر',
 '📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$PageCount),
@@ -252,6 +253,7 @@ $Buttons = array_merge(
 $Buttons,
 Menu::pages($Page, $PageCount, 'admin_user_monitor_page:'),
 [
+[Menu::button('🗑پاک کردن کل تاریخچه رصد', 'admin_monitor_clrall:' . $Page)],
 [Menu::button('🔄بروزرسانی فهرست', 'admin_user_monitor_page:' . $Page)],
 Menu::back('منوی قبلی', 'admin_devices_menu'),
 Menu::adminHome(),
@@ -261,16 +263,8 @@ self::logMenuProblems('user-monitor-list', $Buttons);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
 }
 
-/** جزئیات رصد یک کاربر: دستگاه ها + سایت ها + نرم افزارها + صفحات برنامه. */
-public static function userMonitorView(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all', int $InnerPage = 0): void {
-if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
-self::ensureAppSchemaReady();
-
-$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
-$ListPage = max(0, $ListPage);
-$InnerPage = max(0, $InnerPage);
+private static function resolveMonitorTarget(string $TargetKey): array {
 $Db = Database::getInstance();
-
 $OwnerTgId = 0;
 $SeedDeviceId = 0;
 if (str_starts_with($TargetKey, 't:')) {
@@ -319,14 +313,6 @@ $DeviceRows = $Conds !== []
 ? $Db->fetchAll('SELECT * FROM `App_Devices` WHERE (' . implode(' OR ', $Conds) . ') ORDER BY `Last_Seen_At` DESC, `ID` DESC', $Params)
 : [];
 
-if ($DeviceRows === [] && $UserRow === []) {
-if ($Context->CallbackId !== null) {
-TelegramClient::answerCallbackQuery($Context->CallbackId, 'اطلاعاتی برای این کاربر پیدا نشد.', true);
-}
-self::userMonitorList($Context, $ListPage);
-return;
-}
-
 $DeviceIds = array_values(array_unique(array_filter(array_map(
 static fn(array $D): string => trim((string)($D['Device_ID'] ?? '')),
 $DeviceRows
@@ -350,6 +336,46 @@ $ActParams[] = $OwnerTgId;
 if ($UserUuid !== '' && $UserUuid !== '_') {
 $ActConds[] = '`User_UUID` = ?';
 $ActParams[] = $UserUuid;
+}
+
+return [
+'owner_tg_id' => $OwnerTgId,
+'seed_device_id' => $SeedDeviceId,
+'user_row' => $UserRow,
+'device_rows' => $DeviceRows,
+'device_ids' => $DeviceIds,
+'display_name' => $DisplayName,
+'display_phone' => $DisplayPhone,
+'act_conds' => $ActConds,
+'act_params' => $ActParams,
+];
+}
+
+/** جزئیات رصد یک کاربر: دستگاه ها + سایت ها + نرم افزارها + صفحات برنامه. */
+public static function userMonitorView(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all', int $InnerPage = 0, string $Notice = ''): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+
+$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$ListPage = max(0, $ListPage);
+$InnerPage = max(0, $InnerPage);
+$Db = Database::getInstance();
+
+$Target = self::resolveMonitorTarget($TargetKey);
+$OwnerTgId = (int)$Target['owner_tg_id'];
+$UserRow = (array)$Target['user_row'];
+$DeviceRows = (array)$Target['device_rows'];
+$DisplayName = (string)$Target['display_name'];
+$DisplayPhone = (string)$Target['display_phone'];
+$ActConds = (array)$Target['act_conds'];
+$ActParams = (array)$Target['act_params'];
+
+if ($DeviceRows === [] && $UserRow === []) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'اطلاعاتی برای این کاربر پیدا نشد.', true);
+}
+self::userMonitorList($Context, $ListPage);
+return;
 }
 
 $AllActivities = [];
@@ -389,6 +415,7 @@ $TitleLink = $OwnerTgId > 0
 : self::listText($DisplayName);
 
 $Text = Helper::adminGreeting($Context, 'رصد فعالیت کاربر')
+. ($Notice !== '' ? $Notice . "\n➖➖➖➖➖➖➖➖➖\n" : '')
 . '👤کاربر: ' . $TitleLink . "\n"
 . ($OwnerTgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$OwnerTgId) . "</code>\n" : '')
 . ($DisplayPhone !== '' ? '📞شماره موبایل: <code>' . self::listText(Helper::toPersian($DisplayPhone)) . "</code>\n" : '')
@@ -417,7 +444,7 @@ default => '👁 همه فعالیت های رصد شده',
 $Text .= "\n➖➖➖➖➖➖➖➖➖\n<b>{$CatLabel}</b> (صفحه " . Helper::toPersian((string)($InnerPage + 1)) . ' از ' . Helper::toPersian((string)$InnerPages) . "):\n\n";
 
 if ($Visible === []) {
-$Text .= "📭هنوز موردی در این بخش ثبت نشده است.\n<i>(هنگام اتصال VPN و استفاده کاربر از سایت ها و برنامه ها، اطلاعات خودکار ثبت می شود.)</i>\n";
+$Text .= "📭هنوز موردی در این بخش ثبت نشده است.\n<i>(هنگام اتصال فیلترشکن آمبرلا و استفاده کاربر از سایت ها و برنامه ها، اطلاعات خودکار ثبت می شود.)</i>\n";
 }
 
 foreach ($Visible as $Item) {
@@ -458,12 +485,163 @@ $Buttons = array_merge(
 $FilterButtons,
 Menu::pages($InnerPage, $InnerPages, 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':'),
 [
+[Menu::button('🗑پاک کردن تاریخچه رصد کاربر', 'admin_monitor_clr:' . $TargetKey . ':' . $ListPage . ':' . $Category)],
 [Menu::button('🔄بروزرسانی رصد', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':' . $InnerPage)],
 ],
 Menu::adminNav('فهرست رصد', 'admin_user_monitor_page:' . $ListPage)
 );
+self::logMenuProblems('user-monitor-view', $Buttons);
 
 TelegramClient::sendReadableMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+public static function userMonitorClearAllAsk(Context $Context, int $ListPage = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+$ListPage = max(0, $ListPage);
+$Db = Database::getInstance();
+$Count = 0;
+try {
+$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity`', [], 0);
+} catch (Throwable) {}
+
+if ($Count <= 0) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '📭تاریخچه رصدی برای پاک کردن وجود ندارد.', true);
+}
+self::userMonitorList($Context, $ListPage);
+return;
+}
+
+$Text = Helper::adminGreeting($Context, 'پاک کردن تاریخچه رصد')
+. '⚠️آیا از پاک کردن کل تاریخچه رصد کاربران (' . Helper::toPersian((string)$Count) . " مورد ثبت شده) مطمئن هستید؟\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "ℹ️دستگاه های مجاز کاربران حفظ می شوند و فقط سوابق سایت ها، برنامه ها و بخش های رصد شده پاک می شوند."
+. Helper::adminFooter();
+$Rows = [
+[Menu::button('✅تأیید پاک کردن کل تاریخچه', 'admin_monitor_clrall_ok:' . $ListPage)],
+Menu::back('انصراف', 'admin_user_monitor_page:' . $ListPage),
+Menu::adminHome(),
+];
+self::logMenuProblems('user-monitor-clear-all', $Rows);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function userMonitorClearAllConfirm(Context $Context, int $ListPage = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+$ListPage = max(0, $ListPage);
+$Db = Database::getInstance();
+$Count = 0;
+try {
+$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity`', [], 0);
+$Db->execute('DELETE FROM `App_User_Activity`', []);
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][MonitorClearAll] ' . $Error->getMessage());
+}
+try {
+Repository::logAdminAction($Context->UserId, 'monitor_clear_all', null, 'deleted=' . $Count);
+} catch (Throwable) {}
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '✅کل تاریخچه رصد کاربران پاک شد.', false);
+}
+self::userMonitorList($Context, 0, '🧹کل تاریخچه رصد کاربران (' . Helper::toPersian((string)$Count) . ' مورد) پاک شد.');
+}
+
+public static function userMonitorClearUserAsk(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all'): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$ListPage = max(0, $ListPage);
+$Target = self::resolveMonitorTarget($TargetKey);
+$ActConds = (array)$Target['act_conds'];
+$ActParams = (array)$Target['act_params'];
+if (((array)$Target['device_rows'] === [] && (array)$Target['user_row'] === []) || $ActConds === []) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'اطلاعاتی برای این کاربر پیدا نشد.', true);
+}
+self::userMonitorList($Context, $ListPage);
+return;
+}
+
+$Db = Database::getInstance();
+$Count = 0;
+try {
+$Count = (int)$Db->scalar(
+'SELECT COUNT(*) FROM `App_User_Activity` WHERE (' . implode(' OR ', $ActConds) . ')',
+$ActParams,
+0
+);
+} catch (Throwable) {}
+
+if ($Count <= 0) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '📭تاریخچه رصدی برای این کاربر ثبت نشده است.', true);
+}
+self::userMonitorView($Context, $TargetKey, $ListPage, $Category, 0);
+return;
+}
+
+$DisplayName = self::listText((string)$Target['display_name']);
+$Text = Helper::adminGreeting($Context, 'پاک کردن تاریخچه رصد کاربر')
+. '⚠️آیا از پاک کردن تاریخچه رصد کاربر <b>' . $DisplayName . '</b> (' . Helper::toPersian((string)$Count) . " مورد ثبت شده) مطمئن هستید؟\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "ℹ️دستگاه های این کاربر حذف نمی شوند و فقط تاریخچه رصد فعالیت ها پاک می شود."
+. Helper::adminFooter();
+$Rows = [
+[Menu::button('✅تأیید پاک کردن تاریخچه کاربر', 'admin_monitor_clrok:' . $TargetKey . ':' . $ListPage . ':' . $Category)],
+Menu::back('انصراف', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':0'),
+Menu::adminHome(),
+];
+self::logMenuProblems('user-monitor-clear-user', $Rows);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function userMonitorClearUserConfirm(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all'): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$ListPage = max(0, $ListPage);
+$Target = self::resolveMonitorTarget($TargetKey);
+$ActConds = (array)$Target['act_conds'];
+$ActParams = (array)$Target['act_params'];
+if (((array)$Target['device_rows'] === [] && (array)$Target['user_row'] === []) || $ActConds === []) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'اطلاعاتی برای این کاربر پیدا نشد.', true);
+}
+self::userMonitorList($Context, $ListPage);
+return;
+}
+
+$Db = Database::getInstance();
+$Count = 0;
+try {
+$Where = '(' . implode(' OR ', $ActConds) . ')';
+$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity` WHERE ' . $Where, $ActParams, 0);
+$Db->execute('DELETE FROM `App_User_Activity` WHERE ' . $Where, $ActParams);
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][MonitorClearUser] ' . $Error->getMessage());
+}
+try {
+$OwnerTgId = (int)$Target['owner_tg_id'];
+Repository::logAdminAction(
+$Context->UserId,
+'monitor_clear_user',
+$OwnerTgId > 0 ? $OwnerTgId : null,
+'target=' . $TargetKey . '|deleted=' . $Count
+);
+} catch (Throwable) {}
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '✅تاریخچه رصد کاربر پاک شد.', false);
+}
+self::userMonitorView(
+$Context,
+$TargetKey,
+$ListPage,
+$Category,
+0,
+'🧹تاریخچه رصد این کاربر (' . Helper::toPersian((string)$Count) . ' مورد) پاک شد.'
+);
 }
 
 private static function monitorTimestamp(mixed $Raw): int {

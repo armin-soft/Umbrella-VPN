@@ -48,6 +48,7 @@ final class Repository {
 public static array $Settings = [];
 public static array $Users = [];
 public static array $Session = [];
+public static array $Logs = [];
 public static function getSetting(string $K, string $Default = ''): string { return (string)(self::$Settings[$K] ?? $Default); }
 public static function setSetting(string $K, string $V): void { self::$Settings[$K] = $V; }
 public static function getUser(int $Id): array { return self::$Users[$Id] ?? []; }
@@ -59,7 +60,9 @@ return null;
 }
 public static function getUserSession(int $Id): array { return self::$Session; }
 public static function updateUserSession(int $Id, array $F): void { self::$Session = array_replace(self::$Session, $F); }
-public static function logAdminAction(int $Admin, string $Action, ?int $Target = null, ?string $Meta = null): void {}
+public static function logAdminAction(int $Admin, string $Action, ?int $Target = null, ?string $Meta = null): void {
+self::$Logs[] = [$Admin, $Action, $Target, $Meta];
+}
 }
 
 final class Database {
@@ -67,8 +70,22 @@ public static array $Devices = [];
 public static array $Activities = [];
 public static array $Sessions = [];
 public static function getInstance(): self { return new self(); }
+private static function matchesActivity(array $Row, array $Params): bool {
+foreach ($Params as $Param) {
+if ($Param === ($Row['Device_ID'] ?? '') || $Param === (int)($Row['Telegram_ID'] ?? -1) || $Param === ($Row['User_UUID'] ?? '')) {
+return true;
+}
+}
+return false;
+}
 public function scalar(string $Q, array $P = [], mixed $Default = 0): mixed {
-if (str_contains($Q, 'COUNT(*)') && str_contains($Q, 'App_User_Activity')) return count(self::$Activities);
+if (str_contains($Q, 'COUNT(*)') && str_contains($Q, 'App_User_Activity')) {
+if (str_contains($Q, 'WHERE (')) {
+$Matches = array_filter(self::$Activities, static fn(array $A): bool => self::matchesActivity($A, $P));
+return count($Matches);
+}
+return count(self::$Activities);
+}
 return $Default;
 }
 public function fetch(string $Q, array $P = []): ?array {
@@ -131,6 +148,17 @@ return false;
 return [];
 }
 public function execute(string $Q, array $P = []): void {
+if (str_contains($Q, 'DELETE FROM `App_User_Activity`')) {
+if (str_contains($Q, 'WHERE (')) {
+self::$Activities = array_values(array_filter(
+self::$Activities,
+static fn(array $A): bool => !self::matchesActivity($A, $P)
+));
+} else {
+self::$Activities = [];
+}
+return;
+}
 if (str_contains($Q, 'INSERT INTO `App_User_Activity`')) {
 [$Dev, $Uuid, $Tg, $Cat, $Target, $Hits, $Down, $Up, $Now] = $P;
 foreach (self::$Activities as &$Row) {
@@ -154,12 +182,13 @@ self::$Activities[] = [
 final class TelegramClient {
 public static string $LastText = '';
 public static array $LastMarkup = [];
+public static string $LastAlert = '';
 public static array $ReadableSent = [];
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function sendMessage(int $ChatId, string $Text, array $Markup = []): array { self::$LastText = $Text; self::$LastMarkup = $Markup; return ['ok' => true]; }
 public static function editOrSendMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): void { self::$LastText = $Text; self::$LastMarkup = $Markup; }
 public static function editMessageText(int $ChatId, int $MessageId, string $Text, array $Markup = []): array { self::$LastText = $Text; self::$LastMarkup = $Markup; return ['ok' => true]; }
-public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
+public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void { self::$LastAlert = $Text; }
 public static function sendReadableMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): bool {
 self::$LastText = $Text;
 self::$LastMarkup = $Markup;
@@ -293,5 +322,49 @@ check(str_contains(TelegramClient::$LastText, 'Laptop &lt;Win&gt;'), 'userMonito
 $AdminCtx->CallbackData = 'admin_monitor_view:d:8:0:app:0';
 $Route->invoke(null, $AdminCtx);
 check(str_contains(TelegramClient::$LastText, 'com.android.chrome') && !str_contains(TelegramClient::$LastText, 'github.com'), 'category filter isolates apps from sites accurately');
+$ViewCallbacks = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
+check(in_array('admin_monitor_clr:d:8:0:app', $ViewCallbacks, true), 'user monitor view exposes clear-user-history button');
+check(in_array('admin_monitor_clrall:0', $MonitorCallbacks, true), 'user monitor list exposes clear-all-history button');
+
+// 6. Clearing single-user and all-user monitoring history via confirmation flow
+$AdminCtx->CallbackData = 'admin_monitor_clr:t:101:0:all';
+$Route->invoke(null, $AdminCtx);
+$ConfirmUserCallbacks = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
+check(in_array('admin_monitor_clrok:t:101:0:all', $ConfirmUserCallbacks, true), 'user clear prompt requires confirmation before deleting');
+check(count(Database::$Activities) === 4, 'user clear prompt does not delete rows before confirmation');
+
+$GuestCtx = new Context(false);
+$GuestCtx->CallbackData = 'admin_monitor_clrok:t:101:0:all';
+$Route->invoke(null, $GuestCtx);
+$GuestCtx->CallbackData = 'admin_monitor_clrall_ok:0';
+$Route->invoke(null, $GuestCtx);
+check(count(Database::$Activities) === 4, 'non-admin cannot clear monitoring history');
+
+$AdminCtx->CallbackData = 'admin_monitor_clrok:t:101:0:all';
+$Route->invoke(null, $AdminCtx);
+check(count(Database::$Activities) === 1 && Database::$Activities[0]['Target'] === 'com.android.chrome', 'confirming per-user clear deletes only that user activities');
+check(count(Database::$Devices) === 2, 'per-user monitor clear preserves trusted devices');
+check(str_contains(TelegramClient::$LastText, 'تاریخچه رصد'), 'per-user monitor clear returns to user view with notice');
+
+$AdminCtx->CallbackData = 'admin_monitor_clrall:0';
+$Route->invoke(null, $AdminCtx);
+$ConfirmAllCallbacks = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
+check(in_array('admin_monitor_clrall_ok:0', $ConfirmAllCallbacks, true), 'clear-all prompt requires confirmation');
+check(count(Database::$Activities) === 1, 'clear-all prompt does not delete remaining history before confirmation');
+
+$AdminCtx->CallbackData = 'admin_monitor_clrall_ok:0';
+$Route->invoke(null, $AdminCtx);
+check(Database::$Activities === [] && count(Database::$Devices) === 2, 'confirming clear-all empties App_User_Activity while keeping App_Devices intact');
+check(str_contains(TelegramClient::$LastText, 'کل تاریخچه رصد کاربران'), 'clear-all returns to userMonitorList with confirmation notice');
+
+TelegramClient::$LastAlert = '';
+$AdminCtx->CallbackData = 'admin_monitor_clrall:0';
+$Route->invoke(null, $AdminCtx);
+check(str_contains(TelegramClient::$LastAlert, 'وجود ندارد'), 'clear-all warns when history is already empty');
+
+// 7. No forbidden English VPN wording in monitored admin/app notices
+$AdminSrc = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
+$AppLinkSrc = (string)file_get_contents(dirname(__DIR__) . '/Bot/App-Link.php');
+check(!str_contains($AdminSrc, 'اتصال VPN') && !str_contains($AppLinkSrc, 'خارج از VPN') && !str_contains($GatewayCode, 'اتصال VPN'), 'Persian VPN notices avoid raw English VPN wording');
 
 echo "OK monitor and support tests ({$Checks} assertions)\n";

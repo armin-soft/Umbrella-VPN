@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 import '../core/malicious_link_guard.dart';
+import '../core/persian.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import 'umbrella_core.dart';
@@ -44,16 +45,44 @@ class InterceptedBlockEvent {
 /// سرور محلی صفحه مسدودی و سپر کنترل محتوای آمبرلا.
 ///
 /// دو نقش هم زمان دارد:
-/// ۱. سرویس وب لوکال (`uiPort`) برای سرو صفحه UI/UX پیشرفته و مدرن آمبرلا و لوگوهای
+/// ۱. سرویس وب لوکال (`uiPort`) برای سرو صفحه هشدار آمبرلا، قلم وزیرمتن و لوگوهای
 ///    برند به مرورگر کاربر؛
 /// ۲. خروجی پروکسی محلی (`proxyPort`) که هسته `sing-box` ترافیک کنترل محتوا و
 ///    لینک های تروجانی را به آن هدایت می کند تا به جای خطای پیش فرض مرورگر،
-///    صفحه اختصاصی آمبرلا نمایش داده شود و درخواست HTTPS در همان لحظه صفر متوقف شود.
+///    صفحه هشدار آمبرلا نمایش داده شود و درخواست HTTPS در همان لحظه صفر متوقف شود.
 class ContentBlockServer {
   ContentBlockServer({
     this.filterProvider,
     this.onIntercepted,
   });
+
+  static const Map<int, ({String route, String asset})> _fontVariants =
+      <int, ({String route, String asset})>{
+    400: (
+      route: '/assets/fonts/Vazirmatn-Regular.ttf',
+      asset: 'assets/fonts/Vazirmatn-Regular.ttf',
+    ),
+    500: (
+      route: '/assets/fonts/Vazirmatn-Medium.ttf',
+      asset: 'assets/fonts/Vazirmatn-Medium.ttf',
+    ),
+    600: (
+      route: '/assets/fonts/Vazirmatn-SemiBold.ttf',
+      asset: 'assets/fonts/Vazirmatn-SemiBold.ttf',
+    ),
+    700: (
+      route: '/assets/fonts/Vazirmatn-Bold.ttf',
+      asset: 'assets/fonts/Vazirmatn-Bold.ttf',
+    ),
+    800: (
+      route: '/assets/fonts/Vazirmatn-ExtraBold.ttf',
+      asset: 'assets/fonts/Vazirmatn-ExtraBold.ttf',
+    ),
+    900: (
+      route: '/assets/fonts/Vazirmatn-Black.ttf',
+      asset: 'assets/fonts/Vazirmatn-Black.ttf',
+    ),
+  };
 
   final FilterSettings? Function()? filterProvider;
   final void Function(InterceptedBlockEvent event)? onIntercepted;
@@ -66,6 +95,7 @@ class ContentBlockServer {
   Uint8List? _logoPng;
   Uint8List? _shieldPng;
   Uint8List? _alertPng;
+  final Map<int, Uint8List> _fontBytes = <int, Uint8List>{};
 
   int get uiPort => _uiServer?.port ?? 0;
   int get proxyPort => _proxyServer?.port ?? 0;
@@ -130,21 +160,36 @@ class ContentBlockServer {
   }
 
   Future<void> _loadBrandAssets() async {
-    if (_logoPng != null && _shieldPng != null && _alertPng != null) {
-      return;
-    }
     Future<Uint8List?> readAsset(String path) async {
       try {
         final ByteData data = await rootBundle.load(path);
-        return data.buffer.asUint8List();
-      } catch (_) {
-        return null;
-      }
+        if (data.lengthInBytes > 0) {
+          return data.buffer.asUint8List();
+        }
+      } catch (_) {}
+      try {
+        final File diskFile = File(path);
+        if (await diskFile.exists()) {
+          final Uint8List bytes = await diskFile.readAsBytes();
+          if (bytes.isNotEmpty) {
+            return bytes;
+          }
+        }
+      } catch (_) {}
+      return null;
     }
 
     _logoPng ??= await readAsset(BrandAssets.logo);
     _shieldPng ??= await readAsset(BrandAssets.securityShield);
     _alertPng ??= await readAsset(BrandAssets.securityAlert);
+    for (final MapEntry<int, ({String route, String asset})> entry
+        in _fontVariants.entries) {
+      if (_fontBytes.containsKey(entry.key)) continue;
+      final Uint8List? loaded = await readAsset(entry.value.asset);
+      if (loaded != null && loaded.isNotEmpty) {
+        _fontBytes[entry.key] = loaded;
+      }
+    }
   }
 
   /// ساخت نشانی کامل صفحه مسدودی مرورگر روی سرور لوکال.
@@ -263,7 +308,7 @@ class ContentBlockServer {
           category: 'content_control',
           categoryLabel: 'سپر کنترل محتوای آمبرلا',
           reason:
-              'سپر کنترل محتوای Umbrella VPN فعال است و دسترسی به این صفحه طبق قوانین فعال مسدود شد.',
+              'سپر کنترل محتوای فیلترشکن آمبرلا فعال است و دسترسی به این صفحه طبق قوانین فعال مسدود شد.',
           isSecurityThreat: false,
         ),
     };
@@ -297,7 +342,15 @@ class ContentBlockServer {
     final HttpResponse res = request.response;
     res.headers.set('Access-Control-Allow-Origin', '*');
     res.headers.set('Access-Control-Allow-Private-Network', 'true');
+    res.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.headers.set('Access-Control-Allow-Headers', '*');
     res.headers.set('X-Content-Type-Options', 'nosniff');
+
+    if (request.method.toUpperCase() == 'OPTIONS') {
+      res.statusCode = HttpStatus.noContent;
+      await res.close();
+      return;
+    }
 
     final String path = request.uri.path;
     if (path == '/health') {
@@ -306,6 +359,26 @@ class ContentBlockServer {
       res.write('{"ok":true,"uiPort":$uiPort,"proxyPort":$proxyPort}');
       await res.close();
       return;
+    }
+
+    for (final MapEntry<int, ({String route, String asset})> entry
+        in _fontVariants.entries) {
+      if (path == entry.value.route) {
+        final Uint8List? bytes = _fontBytes[entry.key];
+        if (bytes != null && bytes.isNotEmpty) {
+          res.statusCode = HttpStatus.ok;
+          res.headers.contentType = ContentType('font', 'ttf');
+          res.headers.set(HttpHeaders.cacheControlHeader, 'public, max-age=86400');
+          if (request.method.toUpperCase() != 'HEAD') {
+            res.add(bytes);
+          }
+          await res.close();
+          return;
+        }
+        res.statusCode = HttpStatus.notFound;
+        await res.close();
+        return;
+      }
     }
 
     if (path == '/assets/logo.png') {
@@ -537,6 +610,9 @@ class ContentBlockServer {
     final String html = renderBlockedPageHtml(
       details: details,
       assetBaseUrl: assetBase,
+      inlineFonts: _fontBytes.isNotEmpty ? _fontBytes : null,
+      inlineLogoBytes: _logoPng,
+      inlineBadgeBytes: details.isSecurityThreat ? _alertPng : _shieldPng,
     );
     final List<int> bodyBytes = utf8.encode(html);
     final String headers =
@@ -611,11 +687,14 @@ class ContentBlockServer {
     return (host: sanitizeHost(clean), port: defaultPort);
   }
 
-  /// رندر صفحه HTML5/CSS3 پیشرفته آمبرلا با لوگو و پالت رنگ رسمی [UmbrellaColors].
+  /// رندر صفحه HTML5/CSS3 آمبرلا با قلم وزیرمتن، لوگو و پالت رنگ رسمی [UmbrellaColors].
   static String renderBlockedPageHtml({
     required BlockedHostDetails details,
     String assetBaseUrl = '',
     DateTime? timestamp,
+    Map<int, Uint8List>? inlineFonts,
+    Uint8List? inlineLogoBytes,
+    Uint8List? inlineBadgeBytes,
   }) {
     const HtmlEscape esc = HtmlEscape(HtmlEscapeMode.element);
     const HtmlEscape escAttr = HtmlEscape(HtmlEscapeMode.attribute);
@@ -649,20 +728,66 @@ class ContentBlockServer {
         ? 'دسترسی به لینک مخرب به صورت خودکار مسدود شد'
         : 'دسترسی به این صفحه توسط کنترل محتوای آمبرلا مسدود شد';
     final String subline = alert
-        ? 'سیستم حفاظت خودکار Umbrella VPN پیش از باز شدن این نشانی، الگوی تروجانی یا فیشینگ را شناسایی و اتصال را در هسته قطع کرد.'
-        : 'سپر کنترل محتوای Umbrella VPN فعال است و بر اساس قوانین تنظیم شده، اجازه بارگذاری این نشانی را نداد.';
+        ? 'سیستم حفاظت خودکار فیلترشکن آمبرلا پیش از باز شدن این نشانی، الگوی تروجانی یا فیشینگ را شناسایی و اتصال را در هسته قطع کرد.'
+        : 'سپر کنترل محتوای فیلترشکن آمبرلا فعال است و بر اساس قوانین تنظیم شده، اجازه بارگذاری این نشانی را نداد.';
 
     final DateTime now = (timestamp ?? DateTime.now()).toLocal();
     final String hh = now.hour.toString().padLeft(2, '0');
     final String mm = now.minute.toString().padLeft(2, '0');
     final String ss = now.second.toString().padLeft(2, '0');
-    final String timeFormatted = '$hh:$mm:$ss';
+    final String timeFormatted = Fa.num('$hh:$mm:$ss');
 
-    final String logoImg = assetBaseUrl.isNotEmpty
-        ? '<img class="brand-logo" src="${escAttr.convert('$assetBaseUrl/assets/logo.png')}" alt="Umbrella VPN" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">'
+    final StringBuffer fontFaceCss = StringBuffer();
+    if (inlineFonts != null && inlineFonts.isNotEmpty) {
+      for (final int weight in _fontVariants.keys) {
+        final Uint8List? bytes = inlineFonts[weight];
+        if (bytes == null || bytes.isEmpty) continue;
+        final String b64 = base64Encode(bytes);
+        fontFaceCss.writeln('''
+    @font-face {
+      font-family: "Vazirmatn";
+      src: url("data:font/ttf;base64,$b64") format("truetype");
+      font-weight: $weight;
+      font-style: normal;
+      font-display: swap;
+    }''');
+      }
+    } else if (assetBaseUrl.isNotEmpty) {
+      for (final MapEntry<int, ({String route, String asset})> entry
+          in _fontVariants.entries) {
+        final String fontUrl =
+            escAttr.convert('$assetBaseUrl${entry.value.route}');
+        fontFaceCss.writeln('''
+    @font-face {
+      font-family: "Vazirmatn";
+      src: url("$fontUrl") format("truetype");
+      font-weight: ${entry.key};
+      font-style: normal;
+      font-display: swap;
+    }''');
+      }
+    }
+
+    final String logoSrc =
+        (inlineLogoBytes != null && inlineLogoBytes.isNotEmpty)
+            ? 'data:image/png;base64,${base64Encode(inlineLogoBytes)}'
+            : (assetBaseUrl.isNotEmpty
+                ? escAttr.convert('$assetBaseUrl/assets/logo.png')
+                : '');
+    final String shieldSrc =
+        (inlineBadgeBytes != null && inlineBadgeBytes.isNotEmpty)
+            ? 'data:image/png;base64,${base64Encode(inlineBadgeBytes)}'
+            : (assetBaseUrl.isNotEmpty
+                ? escAttr.convert(
+                    '$assetBaseUrl/assets/${alert ? 'alert.png' : 'shield.png'}',
+                  )
+                : '');
+
+    final String logoImg = logoSrc.isNotEmpty
+        ? '<img class="brand-logo" src="$logoSrc" alt="فیلترشکن آمبرلا" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">'
         : '';
-    final String shieldImg = assetBaseUrl.isNotEmpty
-        ? '<img class="hero-shield" src="${escAttr.convert('$assetBaseUrl/assets/${alert ? 'alert.png' : 'shield.png'}')}" alt="Umbrella Shield" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">'
+    final String shieldImg = shieldSrc.isNotEmpty
+        ? '<img class="hero-shield" src="$shieldSrc" alt="${alert ? 'هشدار امنیتی آمبرلا' : 'سپر امنیتی آمبرلا'}" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">'
         : '';
 
     final String fallbackLogoSvg = _fallbackBrandSvg(isAlert: false, isLogo: true);
@@ -674,9 +799,9 @@ class ContentBlockServer {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="$bg">
-  <title>Umbrella VPN — ${esc.convert(badgeText)}</title>
+  <title>فیلترشکن آمبرلا — ${esc.convert(badgeText)}</title>
   <style>
-    :root {
+${fontFaceCss.toString()}    :root {
       --bg: $bg;
       --bg-alt: $bgAlt;
       --surface: $surface;
@@ -697,7 +822,7 @@ class ContentBlockServer {
       min-height: 100%;
       background-color: var(--bg);
       color: var(--text-primary);
-      font-family: "Vazirmatn", "IRANSans", "Segoe UI", Tahoma, system-ui, -apple-system, sans-serif;
+      font-family: "Vazirmatn", Tahoma, system-ui, -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
     body {
@@ -771,7 +896,7 @@ class ContentBlockServer {
     .brand-fallback {
       width: 100%;
       height: 100%;
-      display: ${assetBaseUrl.isNotEmpty ? 'none' : 'flex'};
+      display: ${logoSrc.isNotEmpty ? 'none' : 'flex'};
       align-items: center;
       justify-content: center;
       padding: 7px;
@@ -843,7 +968,7 @@ class ContentBlockServer {
     .hero-fallback {
       width: 100%;
       height: 100%;
-      display: ${assetBaseUrl.isNotEmpty ? 'none' : 'flex'};
+      display: ${shieldSrc.isNotEmpty ? 'none' : 'flex'};
       align-items: center;
       justify-content: center;
       padding: 16px;
@@ -972,7 +1097,7 @@ class ContentBlockServer {
           <div class="brand-fallback">$fallbackLogoSvg</div>
         </div>
         <div>
-          <div class="brand-title">Umbrella VPN</div>
+          <div class="brand-title">فیلترشکن آمبرلا</div>
           <div class="brand-sub">لایه هوشمند حفاظت و کنترل محتوا</div>
         </div>
       </div>
@@ -1019,7 +1144,7 @@ class ContentBlockServer {
     </div>
 
     <footer class="footer-note">
-      در صورت نیاز می توانید قوانین دسته بندی ها و دامنه های سفارشی را از بخش «کنترل محتوا» داخل برنامه Umbrella VPN یا ربات تلگرام مدیریت کنید.
+      در صورت نیاز می توانید قوانین دسته بندی ها و دامنه های سفارشی را از بخش «کنترل محتوا» داخل برنامه فیلترشکن آمبرلا یا ربات تلگرام مدیریت کنید.
     </footer>
   </main>
 

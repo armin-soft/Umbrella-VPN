@@ -218,11 +218,12 @@ $Start = strpos($Source, 'public static function serviceMenu(');
 $End = strpos($Source, 'private static function categoryMenu(', $Start);
 $Body = substr($Source, $Start, $End - $Start);
 $this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
-$this->check_main_rows($Body, 'Menu_Rows', [
-'user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu',
+$this->check(str_contains($Body, 'hasActiveMenuSubscription($User)'), 'service menu checks active subscription status');
+$this->check(str_contains($Body, "['💎مدیریت اشتراک', 'user_subscriptions_menu']"), 'subscription menu row is defined for non-active users');
+$this->check_main_rows($Body, 'Raw_Rows', [
+'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu',
 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
-]);
-$this->check(str_contains($Body, "['💎مدیریت اشتراک', 'user_subscriptions_menu']"), 'subscription purchase menu is always present in main menu');
+], '/\$Raw_Rows = array_merge\(\$Raw_Rows, (\[.*?\])\);/s');
 }
 
 private function test_admin_menu_is_vertical(): void {
@@ -238,8 +239,9 @@ $this->check_main_rows($Body, 'Markup', [
 $this->check(str_contains($Body, 'array_unshift($Markup, [Menu::button($Robot_On'), 'robot toggle is the first row');
 }
 
-private function check_main_rows(string $Body, string $Variable, array $Expected): void {
-if (!preg_match('/\$' . $Variable . ' = Menu::rows\((\[.*?\])\);/s', $Body, $Match)) {
+private function check_main_rows(string $Body, string $Variable, array $Expected, ?string $Pattern = null): void {
+$Regex = $Pattern ?? ('/\$' . $Variable . ' = Menu::rows\((\[.*?\])\);/s');
+if (!preg_match($Regex, $Body, $Match)) {
 $this->check(false, 'production main menu rows must exist');
 return;
 }

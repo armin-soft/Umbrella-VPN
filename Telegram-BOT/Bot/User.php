@@ -275,9 +275,14 @@ Common::robotOff($Context, 'منوی خدمات ربات');
 return;
 }
 
+$User = Repository::getUser($Context->UserId) ?? [];
+$Has_Active_Sub = self::hasActiveMenuSubscription($User);
 $Text = Common::greet($Context, 'منوی خدمات ربات') . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
-$Menu_Rows = Menu::rows([
-[['💎مدیریت اشتراک', 'user_subscriptions_menu']],
+$Raw_Rows = [];
+if (!$Has_Active_Sub) {
+$Raw_Rows[] = [['💎مدیریت اشتراک', 'user_subscriptions_menu']];
+}
+$Raw_Rows = array_merge($Raw_Rows, [
 [['👤حساب کاربری', 'user_account_menu']],
 [['📱دستگاه من', 'user_device_menu']],
 [['💰کیف پول و مالی', 'user_wallet_menu']],
@@ -286,6 +291,7 @@ $Menu_Rows = Menu::rows([
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]);
+$Menu_Rows = Menu::rows($Raw_Rows);
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -506,9 +512,46 @@ $Expires_At = (int)($User['Expiration_Time_Stamp'] ?? 0);
 return $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
 }
 
+/** کاربرانی که اشتراک فعال دارند، نیازی به منوی خرید و مدیریت اشتراک ندارند. */
+private static function hasActiveMenuSubscription(array $User): bool {
+if (!self::hasMenuSubscription($User) || !self::ownsCurrentSubscription($User)) {
+return false;
+}
+$Status = trim((string)($User['Client_Status'] ?? ''));
+if (in_array($Status, ['غیرفعال', '❌غیرفعال', '🚫غیرفعال', 'منقضی', 'پایان یافته', 'تمام شده'], true)) {
+return false;
+}
+if (isset($User['Server_Enable']) && (int)$User['Server_Enable'] === 0) {
+return false;
+}
+if (isset($User['Server_Is_Active']) && (int)$User['Server_Is_Active'] === 0) {
+return false;
+}
+$Total_GB = (float)($User['Total_Usage_GB'] ?? 0);
+$Used_GB = (float)($User['Used_Usage_GB'] ?? 0);
+if ($Total_GB > 0 && $Total_GB < 9999 && $Used_GB >= $Total_GB) {
+return false;
+}
+return true;
+}
+
 public static function subscriptionsMenu(Context $Context): void {
 if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
 [$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
+if (self::hasActiveMenuSubscription($User)) {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Text = Common::greet($Context, 'مدیریت اشتراک')
+. "✅شما هم اکنون اشتراک فعال دارید و منوی مدیریت اشتراک برای شما غیرفعال است.\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "ℹ️برای مشاهده زمان باقیمانده و حجم مصرف شده، وارد بخش *👤پروفایل کاربری* شوید."
+. Helper::userFooter();
+$Rows = [
+[Menu::button('👤مشاهده پروفایل کاربری', 'پروفایل کاربری')],
+Menu::userHome(),
+];
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+return;
+}
 $Rows = Menu::rows([
 [['💎اشتراک های آماده', 'اشتراک آماده'], ['🛠اشتراک دلخواه', 'اشتراک دلخواه']],
 ]);
@@ -597,8 +640,6 @@ $Greeting = Common::greet($Context, 'پروفایل کاربری');
 $User = Repository::getUser($Context->UserId);
 $Phone = $User['Phone'] ?? null;
 $FullName = $User['Full_Name'] ?? null;
-$Balance = Repository::getBalance($Context->UserId);
-$Balance_Formatted = Helper::formatCurrency($Balance);
 
 if (!is_string($Phone) || $Phone === '') {
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "⛔️بدلیل عدم ثبت پروفایل کاربری مجاز به ورود به این بخش نیستید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
@@ -609,6 +650,19 @@ Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()
 return;
 }
 
+if (method_exists(Common::class, 'syncSubscriptionFromServer')) {
+$User = Common::syncSubscriptionFromServer($User);
+}
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+if (($Client_ID === '' || $Client_ID === '_') && method_exists(Common::class, 'liveUser')) {
+$User = Common::liveUser($User);
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+}
+if (!empty($User['Phone'])) $Phone = (string)$User['Phone'];
+if (!empty($User['Full_Name'])) $FullName = (string)$User['Full_Name'];
+
+$Balance = Repository::getBalance($Context->UserId);
+$Balance_Formatted = Helper::formatCurrency($Balance);
 $Operator = Helper::detectOperator((string)$Phone);
 $Profile_Updated_At = (string)($User['Profile_Updated_At'] ?? '');
 $Created_At = (string)($User['Created_At'] ?? '');
@@ -636,12 +690,80 @@ $Created_At_Label = Helper::gregorianToJalali($Ca_Date);
 catch (Throwable) { $Created_At_Label = $Created_At; }
 }
 
+$Sub_Name = trim((string)($User['Subscription'] ?? ''));
+$Has_Client_ID = $Client_ID !== '' && $Client_ID !== '_';
+$Has_Subscription = $Has_Client_ID || $Sub_Name !== '';
+
+if (!$Has_Subscription) {
+$Sub_Text = "\n➖➖➖➖➖➖➖➖➖\n💎*اطلاعات اشتراک:*\n"
+. "└─📡وضعیت اشتراک: *❌اشتراک فعالی ندارید*";
+} else {
+$Used_GB = max(0.0, (float)($User['Used_Usage_GB'] ?? 0));
+$Total_GB = max(0.0, (float)($User['Total_Usage_GB'] ?? 0));
+$Exp_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
+$Raw_Status = trim((string)($User['Client_Status'] ?? ''));
+
+$Is_Unlimited = $Total_GB <= 0.0 || $Total_GB >= 9999.0;
+$Remaining_GB = $Is_Unlimited ? 0.0 : max(0.0, $Total_GB - $Used_GB);
+$Is_Exhausted = !$Is_Unlimited && $Total_GB > 0.0 && $Used_GB >= $Total_GB;
+$Is_Expired = $Exp_Stamp > 0 && $Exp_Stamp <= time();
+$Is_Inactive = in_array($Raw_Status, ['غیرفعال', '❌غیرفعال', '🚫غیرفعال'], true)
+|| (isset($User['Server_Enable']) && (int)$User['Server_Enable'] === 0)
+|| (isset($User['Server_Is_Active']) && (int)$User['Server_Is_Active'] === 0);
+
+if ($Is_Expired) {
+$Sub_Status_Label = '⏰منقضی شده';
+} elseif ($Is_Exhausted) {
+$Sub_Status_Label = '⚠️اتمام حجم';
+} elseif ($Is_Inactive) {
+$Sub_Status_Label = '🚫غیرفعال';
+} else {
+$Sub_Status_Label = '🟢فعال';
+}
+
+$Fmt_GB = static fn(float $Gb): string => method_exists(Helper::class, 'formatGB')
+? Helper::formatGB($Gb)
+: Helper::toPersian((string)round($Gb, 2)) . ' گیگابایت';
+$Remaining_Time = method_exists(Helper::class, 'remainingDuration')
+? Helper::remainingDuration($Exp_Stamp)
+: ($Exp_Stamp > 0 ? Helper::toPersian((string)$Exp_Stamp) : 'نامشخص');
+$Exp_Date_Label = $Exp_Stamp > 0 ? Helper::formatExpirationShort($Exp_Stamp) : 'نامشخص';
+
+$Used_Label = $Fmt_GB($Used_GB);
+$Total_Label = $Is_Unlimited ? 'نامحدود' : $Fmt_GB($Total_GB);
+$Remaining_GB_Label = $Is_Unlimited ? 'نامحدود' : $Fmt_GB($Remaining_GB);
+$Sub_Title = $Sub_Name !== '' ? $Sub_Name : 'فعال';
+
+$Sub_Text = "\n➖➖➖➖➖➖➖➖➖\n💎*اطلاعات اشتراک:*\n"
+. "├─🪪نوع اشتراک: *{$Sub_Title}*\n"
+. "├─📡وضعیت اشتراک: *{$Sub_Status_Label}*\n"
+. "├─⏳زمان باقیمانده: *{$Remaining_Time}*\n"
+. "├─📅تاریخ انقضا: *{$Exp_Date_Label}*\n"
+. "├─📦حجم کل: *{$Total_Label}*\n"
+. "├─📥حجم مصرف شده: *{$Used_Label}*\n";
+
+if (!$Is_Unlimited && $Total_GB > 0.0) {
+$Percent = min(100.0, max(0.0, round(($Used_GB / $Total_GB) * 100.0, 1)));
+$Percent_Str = method_exists(Helper::class, 'formatPercent')
+? Helper::formatPercent($Percent)
+: Helper::toPersian((string)$Percent);
+$Bar = method_exists(Helper::class, 'usageBar')
+? Helper::usageBar($Percent, 12)
+: '';
+$Sub_Text .= "├─📤حجم باقیمانده: *{$Remaining_GB_Label}*\n"
+. "└─📊درصد مصرف: *{$Percent_Str}٪*" . ($Bar !== '' ? "\n`{$Bar}`" : '');
+} else {
+$Sub_Text .= "└─📤حجم باقیمانده: *{$Remaining_GB_Label}*";
+}
+}
+
 $Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((string)$FullName, $Context->UserId) . "*\n"
 . "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*اپراتور پایه: {$Operator}*)\n"
 . "💳اعتبار حساب: *{$Balance_Formatted}*\n"
 . "🆔شناسه تلگرام: `" . Helper::toPersian((string)$Context->UserId) . "`\n"
 . "📅تاریخ عضویت: *{$Created_At_Label}*\n"
-. "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*";
+. "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*"
+. $Sub_Text;
 
 $Profile_Buttons = [Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()];
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "🔰اطلاعات پروفایل شما به شرح زیر است:\n\n" . $Profile_Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Profile_Buttons));

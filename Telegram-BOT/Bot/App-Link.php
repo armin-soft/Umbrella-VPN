@@ -94,7 +94,7 @@ public static function bypassDomainsStart(Context $Context): void {
 if (self::accountOrPrompt($Context) === null) return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'app:bypass_domains', 'Step' => 1]);
 self::reply($Context, \Helper::userGreeting($Context, 'وارد کردن لینک')
-. "دامنه یا نشانی سایت را بفرستید. برای حذف، پیش از دامنه - بگذارید؛ هر دامنه و زیر دامنه هایش خارج از VPN باز می شود.\nمثال: example.com یا -example.com"
+. "دامنه یا نشانی سایت را بفرستید. برای حذف، پیش از دامنه - بگذارید؛ هر دامنه و زیر دامنه هایش خارج از فیلترشکن باز می شود.\nمثال: example.com یا -example.com"
 . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
 }
 

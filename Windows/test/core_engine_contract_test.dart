@@ -1294,7 +1294,8 @@ void main() {
                 );
             final String body = await utf8.decodeStream(res);
             expect(res.statusCode, HttpStatus.forbidden, reason: '${testCase.host} | $logs');
-            expect(body, contains('Umbrella VPN'));
+            expect(body, contains('فیلترشکن آمبرلا'));
+            expect(body, isNot(contains('Umbrella VPN')));
             expect(body, contains('#E11D2E'));
             expect(body, contains(testCase.host));
             expect(body, contains(testCase.expectedText));

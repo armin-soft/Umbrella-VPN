@@ -976,7 +976,7 @@ class _BrowserBlockPageBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'صفحه اختصاصی مسدودی در مرورگر',
+                      'صفحه مسدودسازی در مرورگر',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w700,
@@ -985,8 +985,8 @@ class _BrowserBlockPageBanner extends StatelessWidget {
                     const SizedBox(height: AppMetrics.space1),
                     Text(
                       active
-                          ? 'هنگام مسدود شدن یک صفحه، اعلان مدرن آمبرلا به جای خطای پیش فرض مرورگر نمایش داده می شود.'
-                          : 'با فعال کردن کنترل محتوا، سایت های مسدودشده با صفحه گرافیکی آمبرلا در مرورگر اعلام می شوند.',
+                          ? 'هنگام مسدود شدن یک صفحه، هشدار آمبرلا به جای خطای پیش فرض مرورگر نمایش داده می شود.'
+                          : 'با فعال کردن کنترل محتوا، سایت های مسدودشده با صفحه هشدار آمبرلا در مرورگر اعلام می شوند.',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: colors.textSecondary,
                           ),

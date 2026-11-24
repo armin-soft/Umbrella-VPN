@@ -940,24 +940,43 @@ void main() {
         final String uiHtml = uiRes.body;
         expect(uiRes.statusCode, HttpStatus.ok);
         expect(uiHtml, contains('dir="rtl"'));
-        expect(uiHtml, contains('Umbrella VPN'));
+        expect(uiHtml, contains('فیلترشکن آمبرلا'));
+        expect(uiHtml, isNot(contains('Umbrella VPN')));
+        expect(uiHtml, contains('@font-face'));
+        expect(uiHtml, contains('Vazirmatn-Regular.ttf'));
         expect(uiHtml, contains('#E11D2E'));
         expect(uiHtml, contains('#07080B'));
         expect(uiHtml, contains('سپر کنترل محتوای آمبرلا فعال است'));
         expect(uiHtml, isNot(contains('<script>alert(1)</script>')));
         expect(uiHtml, contains('&lt;script&gt;'));
 
+        final String timedHtml = ContentBlockServer.renderBlockedPageHtml(
+          details: const BlockedHostDetails(
+            domain: 'pornhub.com',
+            category: 'adult',
+            categoryLabel: 'محتوای بزرگسالان و غیراخلاقی',
+            reason: 'تست',
+            isSecurityThreat: false,
+          ),
+          assetBaseUrl: 'http://127.0.0.1:${server.uiPort}',
+          timestamp: DateTime(2026, 1, 1, 16, 59, 19),
+        );
+        expect(timedHtml, contains('۱۶:۵۹:۱۹'));
+        expect(timedHtml, isNot(contains('16:59:19')));
+
         for (final String assetPath in const <String>[
           '/assets/logo.png',
           '/assets/shield.png',
           '/assets/alert.png',
+          '/assets/fonts/Vazirmatn-Regular.ttf',
+          '/assets/fonts/Vazirmatn-Bold.ttf',
         ]) {
           final ({int statusCode, String body, List<int> rawBytes}) assetRes =
               await rawHttpGet(
             Uri.parse('http://127.0.0.1:${server.uiPort}$assetPath'),
           );
-          expect(assetRes.statusCode, HttpStatus.ok);
-          expect(assetRes.rawBytes, isNotEmpty);
+          expect(assetRes.statusCode, HttpStatus.ok, reason: assetPath);
+          expect(assetRes.rawBytes, isNotEmpty, reason: assetPath);
         }
 
         final Socket httpTunnel =
@@ -977,7 +996,9 @@ void main() {
         );
         expect(httpTunnelResp, contains('200 Connection Established'));
         expect(httpTunnelResp, contains('403 Forbidden'));
-        expect(httpTunnelResp, contains('Umbrella VPN'));
+        expect(httpTunnelResp, contains('فیلترشکن آمبرلا'));
+        expect(httpTunnelResp, contains('data:font/ttf;base64,'));
+        expect(httpTunnelResp, isNot(contains('Umbrella VPN')));
         expect(httpTunnelResp, contains('pornhub.com'));
         expect(
           events.any((InterceptedBlockEvent e) =>

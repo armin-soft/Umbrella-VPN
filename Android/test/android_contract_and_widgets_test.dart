@@ -2176,6 +2176,8 @@ void main() {
       expect(tester.takeException(), isNull);
 
       expect(find.byKey(const ValueKey<String>('content-control-browser-banner')), findsOneWidget);
+      expect(find.text('صفحه مسدودسازی در مرورگر'), findsOneWidget);
+      expect(find.textContaining('صفحه اختصاصی'), findsNothing);
       final Finder previewBtn = find.byKey(const ValueKey<String>('content-control-preview-button'));
       expect(previewBtn, findsOneWidget);
 

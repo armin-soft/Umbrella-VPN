@@ -517,7 +517,7 @@ $Account = PanelClient::get($UUID);
 if ($Account === null || $Account === []) {
 if (PanelClient::lastGetStatus() === 404) {
 AppAccountRevocation::revoke($UUID);
-self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال فیلترشکن قطع و نشست برنامه بسته می شود.');
 }
 error_log('[Umbrella-Bot][Gateway] session profile unavailable for uuid=' . $UUID . ' status=' . PanelClient::lastGetStatus());
 // Unknown panel state is never an active account. Do not issue or reuse a
@@ -778,7 +778,7 @@ $Account = PanelClient::get($UUID);
 if ($Account === null || $Account === []) {
 if (PanelClient::lastGetStatus() === 404) {
 AppAccountRevocation::revoke($UUID);
-self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال فیلترشکن قطع و نشست برنامه بسته می شود.');
 }
 self::fail(502, 'panel_unavailable', 'دریافت اطلاعات حساب ناموفق بود.');
 }
@@ -820,7 +820,7 @@ if ($UUID !== '' && $UUID !== '_') {
 $PanelAccount = PanelClient::get($UUID);
 if (($PanelAccount === null || $PanelAccount === []) && PanelClient::lastGetStatus() === 404) {
 AppAccountRevocation::revoke($UUID);
-self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال VPN قطع و نشست برنامه بسته می شود.');
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال فیلترشکن قطع و نشست برنامه بسته می شود.');
 }
 if ($PanelAccount === null || $PanelAccount === []) {
 self::fail(502, 'panel_unavailable', 'بررسی حساب پنل ناموفق بود؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.');
@@ -2824,7 +2824,7 @@ if ($Row === null) return null;
 // ابتدا اعتماد دستگاه بررسی می شود تا کد مشخص device_revoked به کلاینت برسد،
 // حتی اگر نشست همان لحظه در جدول نشست ها هم باطل شده باشد.
 if ((int)($Row['Device_Trusted'] ?? 0) !== 1) {
-self::fail(403, 'device_revoked', 'مجوز این دستگاه لغو شده یا حساب پنلی حذف شده است. اتصال VPN قطع و از حساب خارج می شوید؛ برای استفاده دوباره وارد شوید.');
+self::fail(403, 'device_revoked', 'مجوز این دستگاه لغو شده یا حساب پنلی حذف شده است. اتصال فیلترشکن قطع و از حساب خارج می شوید؛ برای استفاده دوباره وارد شوید.');
 }
 
 if (($Row['Revoked_At'] ?? null) !== null) return null;

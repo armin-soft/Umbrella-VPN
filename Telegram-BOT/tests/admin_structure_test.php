@@ -322,26 +322,31 @@ $Route->invoke(null, $UserContext);
 check(calls() === array_merge($UserMenus['accountMenu'][1], ['منوی خدمات ربات']), 'legacy security callback redirects to account');
 $Now = time();
 foreach ([
-'active' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400], true],
-'no subscription' => [[], false],
-'expired' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now - 1], false],
-'expiry boundary' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now], false],
-'unknown expiry' => [['Subscription' => '۱ ماهه'], true],
-'blank subscription' => [['Subscription' => '  ', 'Expiration_Time_Stamp' => $Now + 86400], false],
-'paused client' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400, 'Server_Enable' => 0], true],
-] as $Label => [$User, $HasSubscription]) {
+'active' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400], true, true],
+'no subscription' => [[], false, false],
+'expired' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now - 1], false, false],
+'expiry boundary' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now], false, false],
+'unknown expiry' => [['Subscription' => '۱ ماهه'], true, true],
+'blank subscription' => [['Subscription' => '  ', 'Expiration_Time_Stamp' => $Now + 86400], false, false],
+'paused client' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400, 'Server_Enable' => 0], true, false],
+] as $Label => [$User, $HasSubscription, $ActiveForMenu]) {
 Repository::$User = $User + ['Client_ID' => 'test'];
 $RenewVisible = trim((string)($User['Subscription'] ?? '')) !== '' && (int)($User['Expiration_Time_Stamp'] ?? 0) > 0 && (int)$User['Expiration_Time_Stamp'] <= time() + 3 * 86400;
 foreach ([true, false] as $Callback) {
 $UserContext->IsCallback = $Callback;
 Repository::$Session = ['Flow' => 'custom_plan_days', 'Pending_Payment' => 'preserved'];
 UserFlow::subscriptionsMenu($UserContext);
+if ($ActiveForMenu) {
+check(calls() === ['پروفایل کاربری', 'منوی خدمات ربات'], $Label . ': active subscription directs to profile');
+check(array_map('count', TelegramClient::$Last['inline_keyboard']) === [1, 1], $Label . ': active subscription row grouping');
+} else {
 $Expected = $HasSubscription ? ['اشتراک آماده', 'اشتراک دلخواه'] : $UserMenus['subscriptionsMenu'][1];
 if ($RenewVisible) $Expected[] = 'منوی تمدید خودکار';
 $Expected[] = 'منوی خدمات ربات';
 check(calls() === $Expected, $Label . ': correct subscription actions');
 $Expected_Widths = array_merge([2], $HasSubscription ? [] : [1], $RenewVisible ? [1] : [], [1]);
 check(array_map('count', TelegramClient::$Last['inline_keyboard']) === $Expected_Widths, $Label . ': subscription row grouping');
+}
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'preserved'], $Label . ': navigation preserves payment');
 }
 }
