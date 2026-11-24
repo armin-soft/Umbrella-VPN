@@ -80,7 +80,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final AuthController? auth = context.read<AuthController?>();
+    final AuthController? auth = context.maybeRead<AuthController>();
     if (!identical(_boundAuth, auth)) {
       if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
         _boundAuth?.onAnnouncementUpdated = null;
@@ -132,7 +132,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     _telegramPromptOpen = true;
     try {
-      final AuthController? auth = context.read<AuthController?>();
+      final AuthController? auth = context.maybeRead<AuthController>();
       if (auth != null) {
         await TelegramChannelPrompt.showAnnouncementIfDue(
           context,
@@ -186,12 +186,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       _triggerAutoSync();
-      final AuthController? auth = context.read<AuthController?>();
+      final AuthController? auth = context.maybeRead<AuthController>();
       if (auth != null) {
         unawaited(auth.syncAnnouncement());
       }
       final SecurityScannerController? security =
-          context.read<SecurityScannerController?>();
+          context.maybeRead<SecurityScannerController>();
       if (security != null) {
         unawaited(security.scanNow(silent: true));
       }

@@ -76,7 +76,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
-    final AuthController? auth = context.read<AuthController?>();
+    final AuthController? auth = context.maybeRead<AuthController>();
     if (auth != null) {
       auth.onAnnouncementUpdated = (AppAnnouncement _) {
         if (mounted) {
@@ -133,7 +133,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     _telegramPromptOpen = true;
     try {
-      final AuthController? auth = context.read<AuthController?>();
+      final AuthController? auth = context.maybeRead<AuthController>();
       if (auth != null) {
         await TelegramChannelPrompt.showAnnouncementIfDue(
           context,

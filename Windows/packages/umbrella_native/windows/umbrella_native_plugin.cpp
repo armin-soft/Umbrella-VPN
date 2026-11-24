@@ -636,7 +636,7 @@ void UmbrellaNativePlugin::HandleMethodCall(
       out[flutter::EncodableValue("scannedFiles")] =
           flutter::EncodableValue(report.scanned_files);
       out[flutter::EncodableValue("scannedAtMs")] =
-          flutter::EncodableValue(report.scanned_at_ms);
+          flutter::EncodableValue(static_cast<int64_t>(report.scanned_at_ms));
       out[flutter::EncodableValue("threats")] =
           flutter::EncodableValue(std::move(threats));
       return flutter::EncodableValue(std::move(out));

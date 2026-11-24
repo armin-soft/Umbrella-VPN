@@ -300,7 +300,7 @@ class _ConnectPageState extends State<ConnectPage> {
     final SettingsController settings = context.watch<SettingsController>();
     final SubscriptionController subs = context.watch<SubscriptionController>();
     final SecurityScannerController? security =
-        context.watch<SecurityScannerController?>();
+        context.maybeWatch<SecurityScannerController>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
     final VpnStatus status = vpn.status;

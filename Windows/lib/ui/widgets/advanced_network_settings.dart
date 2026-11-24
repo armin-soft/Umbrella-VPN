@@ -339,7 +339,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
 
   Future<void> _pickInstalledApp() async {
     playUiClick(context);
-    final NativeBridge native = context.read<NativeBridge?>() ?? NativeBridge();
+    final NativeBridge native = context.maybeRead<NativeBridge>() ?? NativeBridge();
     final InstalledAppInfo? chosen = await showDialog<InstalledAppInfo>(
       context: context,
       builder: (_) => _InstalledAppsPickerDialog(native: native),
@@ -356,7 +356,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
     playUiClick(context);
     setState(() => _pickingFile = true);
     try {
-      final NativeBridge native = context.read<NativeBridge?>() ?? NativeBridge();
+      final NativeBridge native = context.maybeRead<NativeBridge>() ?? NativeBridge();
       final String? picked = await native.pickExecutableFile();
       if (picked != null && picked.isNotEmpty && mounted) {
         setState(() {

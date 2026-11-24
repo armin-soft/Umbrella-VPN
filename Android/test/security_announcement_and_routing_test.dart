@@ -126,7 +126,7 @@ class _SignedAuth extends AuthController {
   SessionData? get session => const SessionData(
         token: 'tok-and-sec-1',
         uuid: '22222222-2222-4222-8222-222222222222',
-        deviceId: 'dev-and-and-1',
+        deviceId: 'dev-and-sec-1',
         account: Account.empty,
         filter: FilterSettings.empty,
       );
@@ -458,7 +458,7 @@ void main() {
       final GatewayClient gw = GatewayClient(
         enableNativeTransport: false,
         client: MockClient((http.Request _) async => http.Response.bytes(
-              utf8.encode('{"ok":true}'),
+              utf8.encode(jsonEncode(<String, dynamic>{'ok': true})),
               200,
               headers: const <String, String>{'content-type': 'application/json'},
             )),

@@ -665,7 +665,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
 
   Future<void> _pickInstalledApp() async {
     playUiClick(context);
-    final NativeBridge? native = context.read<NativeBridge?>();
+    final NativeBridge? native = context.maybeRead<NativeBridge>();
     if (native == null) return;
     final InstalledAppInfo? picked = await showDialog<InstalledAppInfo>(
       context: context,
@@ -739,7 +739,6 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
             child: const Text('انصراف'),
           ),
           FilledButton(
-            child: const Text('ذخیره قانون'),
             onPressed: withUiClick(context, () {
               final AppRouteRule rule = AppRouteRule(
                 process: process.text.trim(),
@@ -752,6 +751,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
               }
               Navigator.of(context).pop(rule);
             }),
+            child: const Text('ذخیره قانون'),
           ),
         ],
       );

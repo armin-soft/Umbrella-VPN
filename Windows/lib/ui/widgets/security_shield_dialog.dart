@@ -17,7 +17,7 @@ class SecurityStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final SecurityScannerController? security =
-        context.watch<SecurityScannerController?>();
+        context.maybeWatch<SecurityScannerController>();
     if (security == null) {
       return const SizedBox.shrink();
     }
@@ -111,8 +111,8 @@ class SecurityShieldDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final SecurityScannerController? security =
-        context.watch<SecurityScannerController?>();
-    final ToastController? toasts = context.read<ToastController?>();
+        context.maybeWatch<SecurityScannerController>();
+    final ToastController? toasts = context.maybeRead<ToastController>();
     final UmbrellaColors c = context.colors;
     final bool danger = security?.hasThreats ?? false;
     final Color accent = danger ? c.danger : c.success;

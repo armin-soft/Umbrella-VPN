@@ -1668,7 +1668,7 @@ $Text = self::header($Context, 'زمان بندی اعلان برنامه')
 
 $Markup = array_merge(
 Menu::rows([
-[['1️⃣فقط یک بار', 'admin_ann_interval:0'], ['🕛هر ۱۲ ساعت', 'admin_ann_interval:12']],
+[['🔔فقط یک بار', 'admin_ann_interval:0'], ['🕛هر ۱۲ ساعت', 'admin_ann_interval:12']],
 [['📅هر ۲۴ ساعت', 'admin_ann_interval:24'], ['📆هر ۳ روز', 'admin_ann_interval:72']],
 [['🗓هر هفته (۷ روز)', 'admin_ann_interval:168'], ['🗓هر ۳۰ روز', 'admin_ann_interval:720']],
 [['⌨️بازه تکرار دلخواه', 'admin_ann_edit:interval'], ['🕒تنظیم زمان شروع', 'admin_ann_edit:starts_at']],

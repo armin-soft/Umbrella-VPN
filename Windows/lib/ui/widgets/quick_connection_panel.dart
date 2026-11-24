@@ -54,7 +54,7 @@ class QuickConnectionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final SettingsController settings = context.watch<SettingsController>();
-    final AuthController? auth = context.watch<AuthController?>();
+    final AuthController? auth = context.maybeWatch<AuthController>();
     final VpnController vpn = context.read<VpnController>();
     final ToastController toasts = context.read<ToastController>();
     final AppSettings cfg = settings.settings;

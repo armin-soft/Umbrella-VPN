@@ -2,6 +2,7 @@
 
 #include <bcrypt.h>
 #include <commdlg.h>
+#include <knownfolders.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -16,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <cwchar>
 #include <cwctype>
 #include <fstream>
 #include <map>
@@ -59,7 +61,7 @@ std::wstring ToWide(const std::string& value) {
 
 std::string ToLowerAscii(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(),
-                 [](unsigned char c) { return static_cast<char>(::tolower(c)); });
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value;
 }
 
@@ -388,7 +390,7 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
   for (DWORD i = 0; i < read_bytes; ++i) {
     unsigned char ch = buf[i];
     if (ch >= 32 && ch <= 126) {
-      ascii_view.push_back(static_cast<char>(::tolower(ch)));
+      ascii_view.push_back(static_cast<char>(std::tolower(ch)));
     } else if (!ascii_view.empty() && ascii_view.back() != ' ') {
       ascii_view.push_back(' ');
     }
@@ -932,6 +934,9 @@ std::vector<InstalledAppEntry> SecurityScanner::CollectInstalledApps() {
 }
 
 std::string SecurityScanner::PickExecutableFile() {
+  HRESULT com_hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool com_init = SUCCEEDED(com_hr);
+
   wchar_t file_buf[MAX_PATH * 2] = {0};
   OPENFILENAMEW ofn = {};
   ofn.lStructSize = sizeof(ofn);
@@ -942,10 +947,12 @@ std::string SecurityScanner::PickExecutableFile() {
       L"Executable Files (*.exe)\0*.exe\0All Files (*.*)\0*.*\0";
   ofn.nFilterIndex = 1;
   ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
+  std::string result;
   if (GetOpenFileNameW(&ofn)) {
-    return ToUtf8(file_buf);
+    result = ToUtf8(file_buf);
   }
-  return std::string();
+  if (com_init) CoUninitialize();
+  return result;
 }
 
 SecurityScanReport SecurityScanner::ScanDeviceSecurity() {

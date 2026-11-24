@@ -9,6 +9,25 @@ import '../../core/theme.dart';
 import '../../platform/services.dart';
 import '../../state/motion_controller.dart';
 
+/// ابزار خواندن/گوش دادن ایمن به Providerهای اختیاری بدون از دست رفتن انطباق نوع غیر-nullable.
+extension OptionalProviderContext on BuildContext {
+  T? maybeRead<T extends Object>() {
+    try {
+      return Provider.of<T>(this, listen: false);
+    } on ProviderNotFoundException {
+      return read<T?>();
+    }
+  }
+
+  T? maybeWatch<T extends Object>() {
+    try {
+      return Provider.of<T>(this, listen: true);
+    } on ProviderNotFoundException {
+      return watch<T?>();
+    }
+  }
+}
+
 /// Optional in isolated tests; audio failures must not block the action.
 void playUiClick(BuildContext context) {
   final SoundService? sound = context.read<SoundService?>();

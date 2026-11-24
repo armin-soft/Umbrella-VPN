@@ -419,7 +419,7 @@ void main() {
       final _FakeNative native = _FakeNative();
       final GatewayClient gw = GatewayClient(
         client: MockClient((http.Request _) async => http.Response.bytes(
-              utf8.encode('{"ok":true}'),
+              utf8.encode(jsonEncode(<String, dynamic>{'ok': true})),
               200,
               headers: const <String, String>{'content-type': 'application/json'},
             )),
