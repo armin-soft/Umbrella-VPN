@@ -159,7 +159,9 @@ jobs:
           }
           flutter test --reporter expanded 2>&1 | Tee-Object -Variable tests
           if ($LASTEXITCODE -ne 0) {
-            $detail = ($tests | Where-Object { "$_" -notmatch '^\d\d:\d\d ' -or "$_" -match '\[E\]|failed' } | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
+            $errLines = $tests | Where-Object { "$_" -match '\[E\]|EXCEPTION|Expected:|Actual:|Some tests failed|Failed assertion|^\s+#\d+' }
+            if (-not $errLines) { $errLines = $tests | Select-Object -Last 80 }
+            $detail = ($errLines | Select-Object -Last 80 | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
             Write-Output "::error::$detail"
             throw 'Tests failed'
           }
