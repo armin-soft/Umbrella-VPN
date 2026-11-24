@@ -1111,12 +1111,43 @@ void main() {
         expect(vpn.contentBlockUiPort, greaterThan(0));
 
         // درخواست favicon نباید HTML صفحه مسدودی را دوباره رندر کند و font-display باید block باشد.
-        final http.Response favRes = await http.get(
+        Future<({int statusCode, String head, String body})> rawLoopbackGet(
+          Uri uri,
+        ) async {
+          final Socket sock =
+              await Socket.connect(InternetAddress.loopbackIPv4, uri.port);
+          final String pq = uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+          sock.write('GET $pq HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n');
+          await sock.flush();
+          final List<int> bytes = await sock.fold<List<int>>(
+            <int>[],
+            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+          );
+          final String raw = latin1.decode(bytes);
+          final int split = raw.indexOf('\r\n\r\n');
+          final String head = split >= 0 ? raw.substring(0, split) : raw;
+          final int code = int.tryParse(
+                RegExp(r'HTTP/1\.[01]\s+(\d+)').firstMatch(head)?.group(1) ??
+                    '',
+              ) ??
+              0;
+          final List<int> bodyBytes =
+              split >= 0 ? bytes.sublist(split + 4) : const <int>[];
+          return (
+            statusCode: code,
+            head: head.toLowerCase(),
+            body: utf8.decode(bodyBytes, allowMalformed: true),
+          );
+        }
+
+        final ({int statusCode, String head, String body}) favRes =
+            await rawLoopbackGet(
           Uri.parse('http://127.0.0.1:${vpn.contentBlockUiPort}/favicon.ico'),
         );
         expect(favRes.statusCode, 200);
-        expect(favRes.headers['content-type'], isNot(contains('text/html')));
-        final http.Response pageRes = await http.get(launchedUri!);
+        expect(favRes.head, isNot(contains('text/html')));
+        final ({int statusCode, String head, String body}) pageRes =
+            await rawLoopbackGet(launchedUri!);
         expect(pageRes.statusCode, 200);
         expect(pageRes.body, contains('font-display: block;'));
 
