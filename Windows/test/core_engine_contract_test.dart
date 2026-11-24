@@ -1278,10 +1278,20 @@ void main() {
             ..connectionTimeout = const Duration(seconds: 4)
             ..findProxy = (_) => 'PROXY 127.0.0.1:$mixedPort';
           try {
-            final HttpClientRequest req =
-                await client.getUrl(Uri.parse('http://${testCase.host}/'));
-            final HttpClientResponse res =
-                await req.close().timeout(const Duration(seconds: 4));
+            final HttpClientRequest req = await client
+                .getUrl(Uri.parse('http://${testCase.host}/'))
+                .timeout(
+                  const Duration(seconds: 4),
+                  onTimeout: () => throw TestFailure(
+                    'Phase 1 getUrl timeout for ${testCase.host} | logs: $logs',
+                  ),
+                );
+            final HttpClientResponse res = await req.close().timeout(
+                  const Duration(seconds: 4),
+                  onTimeout: () => throw TestFailure(
+                    'Phase 1 response timeout for ${testCase.host} | rules: ${jsonDecode(await compiledFile.readAsString())['route']['rules']} | logs: $logs',
+                  ),
+                );
             final String body = await utf8.decodeStream(res);
             expect(res.statusCode, HttpStatus.forbidden, reason: '${testCase.host} | $logs');
             expect(body, contains('Umbrella VPN'));
@@ -1296,20 +1306,41 @@ void main() {
         // 2) HTTPS CONNECT to blocked gambling domain stops immediately and notifies ContentBlockServer.
         final Socket proxySock =
             await Socket.connect(InternetAddress.loopbackIPv4, mixedPort);
-        proxySock.write(
-          'CONNECT 1xbet.com:443 HTTP/1.1\r\nHost: 1xbet.com:443\r\n\r\n',
-        );
-        await proxySock.flush();
-        final String connectResp = utf8.decode(
-          await proxySock
-              .fold<List<int>>(
-                <int>[],
-                (List<int> acc, List<int> chunk) => acc..addAll(chunk),
-              )
-              .timeout(const Duration(seconds: 4)),
-        );
-        expect(connectResp, isNot(contains('200 Connection Established')));
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        try {
+          proxySock.write(
+            'CONNECT 1xbet.com:443 HTTP/1.1\r\nHost: 1xbet.com:443\r\n\r\n',
+          );
+          await proxySock.flush();
+
+          // sing-box mixed inbound waits for the first tunneled byte (e.g. TLS
+          // ClientHello) before dialing/routing the outbound when CONNECT is used.
+          final StreamIterator<List<int>> sockIt =
+              StreamIterator<List<int>>(proxySock);
+          final bool gotConnectReply = await sockIt
+              .moveNext()
+              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+          if (gotConnectReply) {
+            final String initialReply =
+                utf8.decode(sockIt.current, allowMalformed: true);
+            if (initialReply.contains('200')) {
+              try {
+                // Minimal TLS-like ClientHello trigger bytes.
+                proxySock.add(const <int>[
+                  0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00,
+                ]);
+                await proxySock.flush();
+              } catch (_) {}
+              // Wait for immediate tunnel termination from umbrella-block-page 403.
+              while (await sockIt
+                  .moveNext()
+                  .timeout(const Duration(seconds: 3), onTimeout: () => false)) {}
+            }
+          }
+          await sockIt.cancel();
+        } finally {
+          proxySock.destroy();
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 120));
         expect(
           intercepted.any(
             (InterceptedBlockEvent e) =>
@@ -1318,7 +1349,7 @@ void main() {
                 e.needsBrowserLaunch,
           ),
           isTrue,
-          reason: logs.toString(),
+          reason: 'Expected intercepted 1xbet.com event; logs: $logs',
         );
 
         // 3) Ad-only domains stay quietly rejected without opening browser tabs.

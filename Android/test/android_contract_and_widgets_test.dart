@@ -152,6 +152,20 @@ class _FakeNative implements NativeBridge {
       true;
 
   @override
+  Future<bool> stopCore() async => true;
+
+  @override
+  Future<bool> shutdownCores() async => true;
+
+  @override
+  Future<Map<String, dynamic>> getCoreStatus() async =>
+      const <String, dynamic>{};
+
+  @override
+  Stream<AndroidServiceEvent> serviceEvents() =>
+      const Stream<AndroidServiceEvent>.empty();
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

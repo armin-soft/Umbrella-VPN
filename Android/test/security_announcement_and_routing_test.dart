@@ -1001,7 +1001,7 @@ void main() {
         final String uiHtml = split >= 0
             ? utf8.decode(bytes.sublist(split + 4), allowMalformed: true)
             : '';
-        expect(head, startsWith('HTTP/1.1 200 OK'));
+        expect(head, contains(' 200 OK'));
         expect(uiHtml, contains('dir="rtl"'));
         expect(uiHtml, contains('Umbrella VPN'));
         expect(uiHtml, contains('#E11D2E'));

@@ -420,18 +420,23 @@ class RuntimeConfig {
     final Object? rawRoute = config['route'];
     if (rawRoute is Map<String, dynamic> && rawRoute['rules'] is List) {
       final List<dynamic> routeRules = rawRoute['rules'] as List<dynamic>;
+      final List<dynamic> rewrittenRules = <dynamic>[];
       for (final dynamic item in routeRules) {
-        if (item is! Map<String, dynamic>) continue;
+        if (item is! Map<String, dynamic>) {
+          rewrittenRules.add(item);
+          continue;
+        }
         final bool isBlockRule =
             item['action'] == 'reject' || item['outbound'] == 'block';
-        if (!isBlockRule) continue;
-        if (_isPrimaryContentBlockRule(item)) {
-          item.remove('method');
-          item.remove('no_drop');
-          item['action'] = 'route';
-          item['outbound'] = blockPageOutboundTag;
+        if (isBlockRule && _isPrimaryContentBlockRule(item)) {
+          rewrittenRules.addAll(_expandOrBlockRule(item));
+        } else {
+          rewrittenRules.add(item);
         }
       }
+      routeRules
+        ..clear()
+        ..addAll(rewrittenRules);
 
       final bool hasTrojanRule = routeRules.any((dynamic item) {
         if (item is! Map) return false;
@@ -440,13 +445,19 @@ class RuntimeConfig {
       });
       if (!hasTrojanRule) {
         final int insertAt = _trojanBlockInsertIndex(routeRules);
-        routeRules.insert(insertAt, <String, dynamic>{
-          'domain_suffix':
-              MaliciousLinkGuard.knownMaliciousDomains.toList(growable: false),
-          'domain_keyword': MaliciousLinkGuard.phishingPhrases,
-          'action': 'route',
-          'outbound': blockPageOutboundTag,
-        });
+        routeRules.insertAll(insertAt, <Map<String, dynamic>>[
+          <String, dynamic>{
+            'domain_suffix':
+                MaliciousLinkGuard.knownMaliciousDomains.toList(growable: false),
+            'action': 'route',
+            'outbound': blockPageOutboundTag,
+          },
+          <String, dynamic>{
+            'domain_keyword': MaliciousLinkGuard.phishingPhrases,
+            'action': 'route',
+            'outbound': blockPageOutboundTag,
+          },
+        ]);
       }
     }
 
@@ -465,6 +476,56 @@ class RuntimeConfig {
         return _isPrimaryContentBlockRule(item);
       });
     }
+  }
+
+  static List<Map<String, dynamic>> _expandOrBlockRule(
+    Map<String, dynamic> source,
+  ) {
+    const List<String> matchKeys = <String>[
+      'domain_suffix',
+      'domain',
+      'domain_keyword',
+      'rule_set',
+    ];
+    final List<String> presentKeys = matchKeys
+        .where((String k) => _nonEmptyRuleField(source[k]))
+        .toList();
+    if (presentKeys.contains('domain_suffix') &&
+        presentKeys.contains('domain')) {
+      presentKeys.remove('domain');
+    }
+    if (presentKeys.length <= 1) {
+      final Map<String, dynamic> single = Map<String, dynamic>.from(source)
+        ..remove('method')
+        ..remove('no_drop')
+        ..['action'] = 'route'
+        ..['outbound'] = blockPageOutboundTag;
+      if (!presentKeys.contains('domain') &&
+          _nonEmptyRuleField(source['domain']) &&
+          _nonEmptyRuleField(source['domain_suffix'])) {
+        single.remove('domain');
+      }
+      return <Map<String, dynamic>>[single];
+    }
+
+    final Map<String, dynamic> base = Map<String, dynamic>.from(source)
+      ..remove('method')
+      ..remove('no_drop')
+      ..remove('domain')
+      ..remove('domain_suffix')
+      ..remove('domain_keyword')
+      ..remove('rule_set')
+      ..['action'] = 'route'
+      ..['outbound'] = blockPageOutboundTag;
+
+    return presentKeys
+        .map(
+          (String key) => <String, dynamic>{
+            ...base,
+            key: source[key],
+          },
+        )
+        .toList(growable: false);
   }
 
   static int _trojanBlockInsertIndex(List<dynamic> rules) {
