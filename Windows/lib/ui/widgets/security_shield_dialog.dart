@@ -208,7 +208,7 @@ class SecurityShieldDialog extends StatelessWidget {
                         Text(
                           danger
                               ? 'برای امنیت اتصال، اجرای هم زمان بدافزارها و فیلترشکن های ناسازگار مسدود است.'
-                              : 'دستگاه در برابر بدافزارها (JumpJump) و فیلترشکن های ناسازگار (مانند Hiddify و Psiphon) ایمن است.',
+                              : 'دستگاه در برابر بدافزارها (JumpJump) و فیلترشکن های ناسازگار ایمن است.',
                           style: TextStyle(
                             fontSize: AppMetrics.fontSmall,
                             color: c.textSecondary,
