@@ -136,7 +136,7 @@ void main() {
         'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'},
       },
     };
-    RuntimeConfig.finalize(config);
+    RuntimeConfig.finalize(config, profileTags: const <String>{});
     expect((config['route'] as Map<String, dynamic>)['find_process'], isTrue);
   });
 

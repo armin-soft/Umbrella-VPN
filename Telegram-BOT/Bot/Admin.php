@@ -459,10 +459,8 @@ $FilterButtons,
 Menu::pages($InnerPage, $InnerPages, 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':'),
 [
 [Menu::button('🔄بروزرسانی رصد', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':' . $InnerPage)],
-Menu::back('بازگشت به فهرست رصد', 'admin_user_monitor_page:' . $ListPage),
-Menu::back('مدیریت دستگاه ها', 'admin_devices_menu'),
-Menu::adminHome(),
-]
+],
+Menu::adminNav('فهرست رصد', 'admin_user_monitor_page:' . $ListPage)
 );
 
 TelegramClient::sendReadableMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));

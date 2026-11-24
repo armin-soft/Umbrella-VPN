@@ -2001,7 +2001,7 @@ void main() {
         'outbounds': <Map<String, dynamic>>[<String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'}],
         'experimental': <String, dynamic>{'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'}},
       };
-      RuntimeConfig.finalize(cfg);
+      RuntimeConfig.finalize(cfg, profileTags: const <String>{});
       expect((cfg['route'] as Map<String, dynamic>)['find_process'], isTrue);
 
       final String pfWrapper = File('${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/PlatformInterfaceWrapper.kt').readAsStringSync();

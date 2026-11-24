@@ -57,7 +57,7 @@ class LogsPage extends StatefulWidget {
     final Map<String, dynamic> vpnState = <String, dynamic>{
       if (vpn != null) 'status': vpn.status.label,
       if (vpn != null)
-        'mode': vpn.settings.tun ? 'تونل کامل (TUN)' : 'پروکسی محلی',
+        'mode': vpn.settings.tunMode ? 'تونل کامل (TUN)' : 'پروکسی محلی',
       if (vpn?.activeNode != null)
         'server': AppLogger.redact(vpn!.activeNode!.name),
       if (vpn != null && vpn.message.trim().isNotEmpty)
