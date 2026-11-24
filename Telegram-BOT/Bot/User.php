@@ -513,7 +513,7 @@ return $Subscription !== '' && ($Expires_At <= 0 || $Expires_At > time());
 }
 
 /** کاربرانی که اشتراک فعال دارند، نیازی به منوی خرید و مدیریت اشتراک ندارند. */
-private static function hasActiveMenuSubscription(array $User): bool {
+public static function hasActiveMenuSubscription(array $User, ?array $Live = null): bool {
 if (!self::hasMenuSubscription($User) || !self::ownsCurrentSubscription($User)) {
 return false;
 }
@@ -527,6 +527,26 @@ return false;
 if (isset($User['Server_Is_Active']) && (int)$User['Server_Is_Active'] === 0) {
 return false;
 }
+$Client_ID = trim((string)($User['Client_ID'] ?? ''));
+if ($Live !== null && $Live !== []) {
+$Live_UUID = trim((string)($Live['uuid'] ?? ''));
+if ($Live_UUID !== '' && $Client_ID !== '' && $Live_UUID !== $Client_ID) {
+return false;
+}
+if (array_key_exists('enable', $Live) && (int)$Live['enable'] === 0) {
+return false;
+}
+if (array_key_exists('is_active', $Live) && (int)$Live['is_active'] === 0) {
+return false;
+}
+if (array_key_exists('usage_limit_GB', $Live)) {
+$Live_Limit = (float)$Live['usage_limit_GB'];
+if ($Live_Limit > 0 && $Live_Limit < 9999 && isset($Live['current_usage_GB']) && (float)$Live['current_usage_GB'] >= $Live_Limit) {
+return false;
+}
+return true;
+}
+}
 $Total_GB = (float)($User['Total_Usage_GB'] ?? 0);
 $Used_GB = (float)($User['Used_Usage_GB'] ?? 0);
 if ($Total_GB > 0 && $Total_GB < 9999 && $Used_GB >= $Total_GB) {
@@ -538,7 +558,7 @@ return true;
 public static function subscriptionsMenu(Context $Context): void {
 if (!Common::isRobotOn()) { self::serviceMenu($Context); return; }
 [$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
-if (self::hasActiveMenuSubscription($User)) {
+if (self::hasActiveMenuSubscription($User, $Live)) {
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 $Text = Common::greet($Context, 'مدیریت اشتراک')
 . "✅شما هم اکنون اشتراک فعال دارید و منوی مدیریت اشتراک برای شما غیرفعال است.\n"

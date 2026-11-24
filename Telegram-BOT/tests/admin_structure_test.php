@@ -471,16 +471,31 @@ $Cases = [
 'near expiry with unavailable live data' => [array_replace($Base, ['Expiration_Time_Stamp' => time() + 86400]), null, false, true],
 'wrong UUID' => [$Base, array_replace($Live, ['uuid' => 'someone-else']), false, false],
 ];
+$AutoRenewPolicy = new ReflectionMethod(UserFlow::class, 'autoRenewMenuVisible');
 foreach ($Cases as $Name => [$Account, $LiveRow, $Nightly, $Renew]) {
 Repository::$User = $Account;
 ServerClient::$Response = ['StatusCode' => $LiveRow === null ? 503 : 200, 'Json' => $LiveRow];
+$ExpectedActive = UserFlow::hasActiveMenuSubscription($Account, $LiveRow);
 foreach ([true, false] as $Callback) {
 $UserContext->IsCallback = $Callback;
 UserFlow::accountMenu($UserContext);
 check(in_array('nightly_report_off', calls(), true) === $Nightly, $Name . ': nightly control visibility');
 UserFlow::subscriptionsMenu($UserContext);
+if ($ExpectedActive) {
+check(calls() === ['پروفایل کاربری', 'منوی خدمات ربات'], $Name . ': active subscription blocks subscription menu');
+check((bool)$AutoRenewPolicy->invoke(null, $Account, $LiveRow) === $Renew, $Name . ': auto-renew policy eligibility preserved');
+} else {
 check(in_array('منوی تمدید خودکار', calls(), true) === $Renew, $Name . ': auto-renew visibility');
 }
+}
+}
+Repository::$User = $Base;
+ServerClient::$Response = ['StatusCode' => 200, 'Json' => $Live];
+foreach (['اشتراک آماده', 'اشتراک دلخواه', 'خرید اشتراک 1'] as $ProtectedCall) {
+$UserContext->IsCallback = true;
+$UserContext->CallbackData = $ProtectedCall;
+$Route->invoke(null, $UserContext);
+check(calls() === ['پروفایل کاربری', 'منوی خدمات ربات'], $ProtectedCall . ': active subscriber blocked at dispatcher level');
 }
 $UserContext->IsCallback = true;
 Repository::$User = [];

@@ -295,6 +295,16 @@ self::answerAppChallenge($Context, $Data);
 return;
 }
 
+if (in_array($Data, ['اشتراک رایگان اول', 'اشتراک نوروزی اول', 'اشتراک آماده', 'اشتراک دلخواه', 'ساخت اشتراک دلخواه', 'حجم اشتراک دلخواه', 'تایید اشتراک دلخواه'], true)
+|| str_starts_with($Data, 'خرید اشتراک ')
+|| str_starts_with($Data, 'حجم اشتراک دلخواه|')) {
+$Current_User = Repository::getUser($Context->UserId) ?? [];
+if (UserFlow::hasActiveMenuSubscription($Current_User)) {
+UserFlow::subscriptionsMenu($Context);
+return;
+}
+}
+
 if (isset(self::ROUTES[$Data])) {
 call_user_func(self::ROUTES[$Data], $Context);
 return;
