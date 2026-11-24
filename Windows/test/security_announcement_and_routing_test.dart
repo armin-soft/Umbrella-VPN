@@ -708,7 +708,7 @@ void main() {
       expect(native.remediatedKeys, <String>['file:polyglot:img1']);
       expect(sec.neutralizedEvents, hasLength(1));
       expect(notified, hasLength(1));
-      expect(notified.single.action, 'auto_deleted');
+      expect(notified.single.action, 'deleted');
 
       final List<(String, Map<String, dynamic>)> alerts = sent
           .where((e) => e.$1.contains('app/security-alert'))
@@ -807,9 +807,15 @@ void main() {
       );
       await tester.pump();
 
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('security-link-input')),
+      );
       await tester.enterText(
         find.byKey(const ValueKey<String>('security-link-input')),
         'https://grabify.link/payload.exe',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('security-check-link-button')),
       );
       await tester.tap(find.byKey(const ValueKey<String>('security-check-link-button')));
       await tester.pump();

@@ -308,164 +308,168 @@ class _SecurityShieldDialogState extends State<SecurityShieldDialog> {
               ],
               const SizedBox(height: AppMetrics.space3),
               Expanded(
-                child: ListView(
-                  children: <Widget>[
-                    Container(
-                      padding: const EdgeInsets.all(AppMetrics.space3),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceHigh,
-                        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                        border: Border.all(color: colors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          Text(
-                            'بررسی امنیتی لینک پیش از باز کردن',
-                            style: TextStyle(
-                              fontSize: AppMetrics.fontSmall,
-                              fontWeight: FontWeight.w700,
-                              color: colors.textPrimary,
-                            ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (danger) ...<Widget>[
+                        for (final SecurityThreat item in report.threats) ...<Widget>[
+                          _ThreatCard(
+                            item: item,
+                            security: security,
+                            toasts: toasts,
                           ),
                           const SizedBox(height: AppMetrics.space2),
-                          TextField(
-                            key: const ValueKey<String>('security-link-input'),
-                            controller: _linkController,
-                            textDirection: TextDirection.ltr,
-                            decoration: const InputDecoration(
-                              hintText: 'https://example.com/...',
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: AppMetrics.space3,
-                                vertical: AppMetrics.space2,
-                              ),
-                            ),
-                            onSubmitted: (_) =>
-                                unawaited(_checkLink(security, toasts)),
-                          ),
-                          const SizedBox(height: AppMetrics.space2),
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: FilledButton.icon(
-                              key: const ValueKey<String>(
-                                'security-check-link-button',
-                              ),
-                              icon: const Icon(
-                                Icons.link_rounded,
-                                size: AppMetrics.iconSm,
-                              ),
-                              label: const Text('بررسی لینک'),
-                              onPressed: security == null
-                                  ? null
-                                  : () => _checkLink(security, toasts),
-                            ),
-                          ),
                         ],
-                      ),
-                    ),
-                    if (!report.storageAccessGranted && security != null) ...<Widget>[
-                      const SizedBox(height: AppMetrics.space2),
+                      ],
                       Container(
                         padding: const EdgeInsets.all(AppMetrics.space3),
                         decoration: BoxDecoration(
-                          color: colors.primarySoft,
+                          color: colors.surfaceHigh,
                           borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                          border: Border.all(
-                            color: colors.primary.withValues(alpha: 0.35),
-                          ),
+                          border: Border.all(color: colors.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
                             Text(
-                              'برای اسکن و حذف خودکار تصاویر و فایل های دانلودی عمومی اندروید، مجوز دسترسی فایل لازم است.',
+                              'بررسی امنیتی لینک پیش از باز کردن',
                               style: TextStyle(
-                                fontSize: AppMetrics.fontCaption,
-                                color: colors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: AppMetrics.space2),
-                            Align(
-                              alignment: AlignmentDirectional.centerEnd,
-                              child: OutlinedButton.icon(
-                                key: const ValueKey<String>(
-                                  'security-storage-access-button',
-                                ),
-                                icon: const Icon(
-                                  Icons.folder_shared_rounded,
-                                  size: AppMetrics.iconSm,
-                                ),
-                                label: const Text('فعال سازی اسکن دانلود و تصاویر'),
-                                onPressed: () =>
-                                    unawaited(security.requestStorageScanAccess()),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: AppMetrics.space3),
-                    if (!danger)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppMetrics.space2,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            const SecurityShieldLogo(
-                              danger: false,
-                              size: AppMetrics.logoLg,
-                            ),
-                            const SizedBox(height: AppMetrics.space2),
-                            Text(
-                              'هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppMetrics.fontBody,
+                                fontSize: AppMetrics.fontSmall,
                                 fontWeight: FontWeight.w700,
                                 color: colors.textPrimary,
                               ),
                             ),
                             const SizedBox(height: AppMetrics.space2),
-                            Text(
-                              'پایش لحظه ای برنامه های نصب شده، لینک های تروجانی و فایل های دانلودی به طور خودکار در پس زمینه فعال است.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppMetrics.fontSmall,
-                                color: colors.textSecondary,
+                            TextField(
+                              key: const ValueKey<String>('security-link-input'),
+                              controller: _linkController,
+                              textDirection: TextDirection.ltr,
+                              decoration: const InputDecoration(
+                                hintText: 'https://example.com/...',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: AppMetrics.space3,
+                                  vertical: AppMetrics.space2,
+                                ),
+                              ),
+                              onSubmitted: (_) =>
+                                  unawaited(_checkLink(security, toasts)),
+                            ),
+                            const SizedBox(height: AppMetrics.space2),
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: FilledButton.icon(
+                                key: const ValueKey<String>(
+                                  'security-check-link-button',
+                                ),
+                                icon: const Icon(
+                                  Icons.link_rounded,
+                                  size: AppMetrics.iconSm,
+                                ),
+                                label: const Text('بررسی لینک'),
+                                onPressed: security == null
+                                    ? null
+                                    : () => _checkLink(security, toasts),
                               ),
                             ),
                           ],
                         ),
-                      )
-                    else
-                      for (final SecurityThreat item in report.threats) ...<Widget>[
-                        _ThreatCard(
-                          item: item,
-                          security: security,
-                          toasts: toasts,
-                        ),
-                        const SizedBox(height: AppMetrics.space2),
-                      ],
-                    if (neutralized.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppMetrics.space2),
-                      Text(
-                        'موارد حذف یا مسدودشده اخیر (ارسال شده به تلگرام)',
-                        style: TextStyle(
-                          fontSize: AppMetrics.fontSmall,
-                          fontWeight: FontWeight.w700,
-                          color: colors.textPrimary,
-                        ),
                       ),
-                      const SizedBox(height: AppMetrics.space2),
-                      for (final NeutralizedSecurityEvent ev in neutralized.take(6)) ...<Widget>[
-                        _NeutralizedCard(event: ev),
+                      if (!report.storageAccessGranted && security != null) ...<Widget>[
                         const SizedBox(height: AppMetrics.space2),
+                        Container(
+                          padding: const EdgeInsets.all(AppMetrics.space3),
+                          decoration: BoxDecoration(
+                            color: colors.primarySoft,
+                            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                            border: Border.all(
+                              color: colors.primary.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Text(
+                                'برای اسکن و حذف خودکار تصاویر و فایل های دانلودی عمومی اندروید، مجوز دسترسی فایل لازم است.',
+                                style: TextStyle(
+                                  fontSize: AppMetrics.fontCaption,
+                                  color: colors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: AppMetrics.space2),
+                              Align(
+                                alignment: AlignmentDirectional.centerEnd,
+                                child: OutlinedButton.icon(
+                                  key: const ValueKey<String>(
+                                    'security-storage-access-button',
+                                  ),
+                                  icon: const Icon(
+                                    Icons.folder_shared_rounded,
+                                    size: AppMetrics.iconSm,
+                                  ),
+                                  label: const Text('فعال سازی اسکن دانلود و تصاویر'),
+                                  onPressed: () =>
+                                      unawaited(security.requestStorageScanAccess()),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: AppMetrics.space3),
+                      if (!danger)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppMetrics.space2,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const SecurityShieldLogo(
+                                danger: false,
+                                size: AppMetrics.logoLg,
+                              ),
+                              const SizedBox(height: AppMetrics.space2),
+                              Text(
+                                'هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppMetrics.fontBody,
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: AppMetrics.space2),
+                              Text(
+                                'پایش لحظه ای برنامه های نصب شده، لینک های تروجانی و فایل های دانلودی به طور خودکار در پس زمینه فعال است.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppMetrics.fontSmall,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (neutralized.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: AppMetrics.space2),
+                        Text(
+                          'موارد حذف یا مسدودشده اخیر (ارسال شده به تلگرام)',
+                          style: TextStyle(
+                            fontSize: AppMetrics.fontSmall,
+                            fontWeight: FontWeight.w700,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: AppMetrics.space2),
+                        for (final NeutralizedSecurityEvent ev in neutralized.take(6)) ...<Widget>[
+                          _NeutralizedCard(event: ev),
+                          const SizedBox(height: AppMetrics.space2),
+                        ],
                       ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: AppMetrics.space3),
