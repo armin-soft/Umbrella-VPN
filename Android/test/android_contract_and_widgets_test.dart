@@ -2111,7 +2111,7 @@ void main() {
       toasts.dispose();
     });
 
-    testWidgets('بنر صفحه مسدودی مرورگر در ContentControlCard روی موبایل ۳۲۰x۷۰۰ سرریز ندارد و دکمه پیش نمایش کار می کند', (WidgetTester tester) async {
+    testWidgets('بخش پیش نمایش صفحه مسدودی مرورگر در ContentControlCard موبایل نمایش داده نمی شود', (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(320, 700));
       addTearDown(() async => await tester.binding.setSurfaceSize(null));
       SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -2139,15 +2139,6 @@ void main() {
       vpn.updateContentFilter(
         const FilterSettings(enabled: true, categories: <String>['adult']),
       );
-      String? launchedUrl;
-      vpn.onLaunchBlockedPage = (
-        Uri uri, {
-        required String title,
-        required String body,
-      }) async {
-        launchedUrl = uri.toString();
-        return true;
-      };
 
       await tester.pumpWidget(
         MultiProvider(
@@ -2175,18 +2166,11 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
 
-      expect(find.byKey(const ValueKey<String>('content-control-browser-banner')), findsOneWidget);
-      expect(find.text('صفحه مسدودسازی در مرورگر'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('content-control-browser-banner')), findsNothing);
+      expect(find.byKey(const ValueKey<String>('content-control-preview-button')), findsNothing);
+      expect(find.text('صفحه مسدودسازی در مرورگر'), findsNothing);
+      expect(find.text('پیش نمایش صفحه'), findsNothing);
       expect(find.textContaining('صفحه اختصاصی'), findsNothing);
-      final Finder previewBtn = find.byKey(const ValueKey<String>('content-control-preview-button'));
-      expect(previewBtn, findsOneWidget);
-
-      await tester.ensureVisible(previewBtn);
-      await tester.tap(previewBtn);
-      await tester.pumpAndSettle();
-      expect(launchedUrl, isNotNull);
-      expect(launchedUrl!, contains('domain=content-control.umbrella.vpn'));
-      expect(launchedUrl!, contains('category=adult'));
 
       vpn.dispose();
       auth.dispose();

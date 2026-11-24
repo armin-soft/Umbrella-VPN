@@ -781,7 +781,7 @@ void main() {
     });
 
     testWidgets(
-      'بنر صفحه مسدودی مرورگر روی عرض دسکتاپ ۹۰۰ و عرض باریک ۳۲۰ بدون سرریز رندر شده و پیش نمایش را باز می کند',
+      'بخش پیش نمایش صفحه مسدودی مرورگر در ContentControlCard نمایش داده نمی شود',
       (WidgetTester tester) async {
         final NativeBridge native = NativeBridge();
         final _FakeAuthController auth = _FakeAuthController(
@@ -800,15 +800,6 @@ void main() {
           settings: const AppSettings(),
         );
         vpn.updateContentFilter(auth.filter);
-        Uri? launchedUri;
-        vpn.onLaunchBlockedPage = (
-          Uri uri, {
-          required String title,
-          required String body,
-        }) async {
-          launchedUri = uri;
-          return true;
-        };
 
         for (final Size surface in const <Size>[
           Size(900, 900),
@@ -839,24 +830,16 @@ void main() {
           expect(tester.takeException(), isNull, reason: 'Surface $surface');
           expect(
             find.byKey(const ValueKey<String>('content-control-browser-banner')),
-            findsOneWidget,
+            findsNothing,
           );
-          expect(find.text('صفحه مسدودسازی در مرورگر'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey<String>('content-control-preview-button')),
+            findsNothing,
+          );
+          expect(find.text('صفحه مسدودسازی در مرورگر'), findsNothing);
+          expect(find.text('پیش نمایش صفحه'), findsNothing);
           expect(find.textContaining('صفحه اختصاصی'), findsNothing);
         }
-
-        final Finder previewBtn =
-            find.byKey(const ValueKey<String>('content-control-preview-button'));
-        expect(previewBtn, findsOneWidget);
-        await tester.ensureVisible(previewBtn);
-        await tester.tap(previewBtn);
-        await tester.pumpAndSettle();
-
-        expect(launchedUri, isNotNull);
-        expect(launchedUri!.host, '127.0.0.1');
-        expect(launchedUri!.path, '/blocked');
-        expect(launchedUri!.queryParameters['domain'], 'content-control.umbrella.vpn');
-        expect(launchedUri!.queryParameters['category'], 'adult');
 
         await tester.binding.setSurfaceSize(null);
         await tester.pumpWidget(const SizedBox.shrink());

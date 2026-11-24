@@ -3799,12 +3799,110 @@ class VpnController extends ChangeNotifier {
   ContentBlockServer? _blockServer;
   WebSocket? _coreLogsSocket;
   StreamSubscription<dynamic>? _coreLogsSub;
+  bool _blockLaunchInFlight = false;
   DateTime? _lastAnyBlockLaunch;
   final Map<String, DateTime> _recentBlockLaunches = <String, DateTime>{};
+  final Map<String, DateTime> _recentDirect403Hosts = <String, DateTime>{};
+  final Map<String, DateTime> _recentMaliciousAlertHosts = <String, DateTime>{};
   final Map<String, String> _recentLogConnHosts = <String, String>{};
+
+  static const Duration _blockHostCooldown = Duration(seconds: 45);
+  static const Duration _blockBurstCooldown = Duration(seconds: 12);
+  static const Duration _directHttp403Cooldown = Duration(seconds: 20);
 
   int get contentBlockUiPort => _blockServer?.uiPort ?? 0;
   int get contentBlockProxyPort => _blockServer?.proxyPort ?? 0;
+
+  static String _throttleHostKey(String host) {
+    final String clean = ContentBlockServer.sanitizeHost(host);
+    if (clean.isEmpty ||
+        clean.contains(':') ||
+        RegExp(r'^\d+(?:\.\d+)+$').hasMatch(clean)) {
+      return clean;
+    }
+    final List<String> parts = clean
+        .split('.')
+        .where((String p) => p.isNotEmpty)
+        .toList(growable: false);
+    if (parts.length <= 2) {
+      return clean;
+    }
+    const Set<String> multiPartTlds = <String>{
+      'co.uk',
+      'org.uk',
+      'ac.uk',
+      'gov.uk',
+      'co.ir',
+      'ac.ir',
+      'org.ir',
+      'net.ir',
+      'gov.ir',
+      'com.tr',
+      'com.au',
+      'com.br',
+      'co.jp',
+      'co.kr',
+    };
+    final String tail2 = '${parts[parts.length - 2]}.${parts.last}';
+    if (multiPartTlds.contains(tail2) && parts.length >= 3) {
+      return '${parts[parts.length - 3]}.$tail2';
+    }
+    return tail2;
+  }
+
+  bool _isDirect403Recent(String host) {
+    final String key = _throttleHostKey(host);
+    if (key.isEmpty) return false;
+    final DateTime? at = _recentDirect403Hosts[key];
+    return at != null && DateTime.now().difference(at) < _directHttp403Cooldown;
+  }
+
+  void _recordDirect403(String host) {
+    final String key = _throttleHostKey(host);
+    if (key.isEmpty) return;
+    _recentDirect403Hosts[key] = DateTime.now();
+    if (_recentDirect403Hosts.length > 64) {
+      _recentDirect403Hosts.remove(_recentDirect403Hosts.keys.first);
+    }
+  }
+
+  void _notifyBlockedMaliciousHost(String host, String category) {
+    final String key = _throttleHostKey(host);
+    if (key.isEmpty) return;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _recentMaliciousAlertHosts[key];
+    if (last != null && now.difference(last) < _blockHostCooldown) {
+      return;
+    }
+    _recentMaliciousAlertHosts[key] = now;
+    if (_recentMaliciousAlertHosts.length > 64) {
+      _recentMaliciousAlertHosts.remove(_recentMaliciousAlertHosts.keys.first);
+    }
+    unawaited(
+      onBlockedMaliciousHost?.call(host, category) ?? Future<void>.value(),
+    );
+  }
+
+  void _clearBlockThrottleState() {
+    _blockLaunchInFlight = false;
+    _lastAnyBlockLaunch = null;
+    _recentBlockLaunches.clear();
+    _recentDirect403Hosts.clear();
+    _recentMaliciousAlertHosts.clear();
+  }
+
+  @visibleForTesting
+  void debugHandleInterceptedBlock(InterceptedBlockEvent event) {
+    _handleInterceptedBlockEvent(event);
+  }
+
+  @visibleForTesting
+  void debugProcessCoreLogLine(String rawLine) {
+    final CoreLogEntry? entry = ClashApi.parseCoreLogLine(rawLine);
+    if (entry != null) {
+      _processCoreLogEntry(entry);
+    }
+  }
 
   Future<ContentBlockServer?> ensureBlockServerStarted() async {
     if (_disposed || _shuttingDown) return null;
@@ -3854,12 +3952,13 @@ class VpnController extends ChangeNotifier {
     if (details.domain.isEmpty) return;
 
     if (details.isSecurityThreat) {
-      unawaited(
-        onBlockedMaliciousHost?.call(details.domain, details.category) ??
-            Future<void>.value(),
-      );
+      _notifyBlockedMaliciousHost(details.domain, details.category);
     }
-    if (!event.needsBrowserLaunch || details.category == 'ads') {
+    if (!event.needsBrowserLaunch) {
+      _recordDirect403(details.domain);
+      return;
+    }
+    if (details.category == 'ads') {
       return;
     }
     unawaited(
@@ -3874,53 +3973,61 @@ class VpnController extends ChangeNotifier {
     String host, {
     String? categoryHint,
   }) async {
-    if (_disposed || _shuttingDown) return;
+    if (_disposed || _shuttingDown || _blockLaunchInFlight) return;
     final String clean = ContentBlockServer.sanitizeHost(host);
     if (clean.isEmpty || clean == '127.0.0.1' || clean == 'localhost') {
       return;
     }
+    final String rootKey = _throttleHostKey(clean);
+    if (_isDirect403Recent(clean)) {
+      return;
+    }
     final DateTime now = DateTime.now();
-    final DateTime? lastForHost = _recentBlockLaunches[clean];
-    if (lastForHost != null &&
-        now.difference(lastForHost) < const Duration(seconds: 4)) {
+    final DateTime? lastForHost = _recentBlockLaunches[rootKey];
+    if (lastForHost != null && now.difference(lastForHost) < _blockHostCooldown) {
       return;
     }
     if (_lastAnyBlockLaunch != null &&
-        now.difference(_lastAnyBlockLaunch!) < const Duration(seconds: 2)) {
+        now.difference(_lastAnyBlockLaunch!) < _blockBurstCooldown) {
       return;
     }
-    _recentBlockLaunches[clean] = now;
+    _blockLaunchInFlight = true;
+    _recentBlockLaunches[rootKey] = now;
     _lastAnyBlockLaunch = now;
     if (_recentBlockLaunches.length > 64) {
       _recentBlockLaunches.remove(_recentBlockLaunches.keys.first);
     }
 
-    final ContentBlockServer? server = await ensureBlockServerStarted();
-    if (server == null || !server.isRunning || _disposed || _shuttingDown) {
-      return;
+    try {
+      final ContentBlockServer? server = await ensureBlockServerStarted();
+      if (server == null || !server.isRunning || _disposed || _shuttingDown) {
+        return;
+      }
+      final BlockedHostDetails details = ContentBlockServer.classifyBlockedHost(
+        clean,
+        filter: _contentFilter,
+        categoryHint: categoryHint,
+      );
+      if (details.category == 'ads') {
+        return;
+      }
+      final Uri uri = server.buildBlockedPageUri(
+        clean,
+        categoryHint: details.category,
+        filter: _contentFilter,
+      );
+      final String title = details.isSecurityThreat
+          ? 'لینک مخرب توسط سپر امنیتی آمبرلا مسدود شد'
+          : 'سپر کنترل محتوای آمبرلا فعال است';
+      final String body = '${details.domain} (${details.categoryLabel})';
+      _log.add(
+        'صفحه مسدودی آمبرلا برای $clean (${details.categoryLabel}) آماده نمایش شد.',
+        level: details.isSecurityThreat ? 'warning' : 'info',
+      );
+      await _launchBlockedPageUri(uri, title: title, body: body);
+    } finally {
+      _blockLaunchInFlight = false;
     }
-    final BlockedHostDetails details = ContentBlockServer.classifyBlockedHost(
-      clean,
-      filter: _contentFilter,
-      categoryHint: categoryHint,
-    );
-    if (details.category == 'ads') {
-      return;
-    }
-    final Uri uri = server.buildBlockedPageUri(
-      clean,
-      categoryHint: details.category,
-      filter: _contentFilter,
-    );
-    final String title = details.isSecurityThreat
-        ? 'لینک مخرب توسط سپر امنیتی آمبرلا مسدود شد'
-        : 'سپر کنترل محتوای آمبرلا فعال است';
-    final String body = '${details.domain} (${details.categoryLabel})';
-    _log.add(
-      'صفحه مسدودی آمبرلا برای $clean (${details.categoryLabel}) آماده نمایش شد.',
-      level: details.isSecurityThreat ? 'warning' : 'info',
-    );
-    await _launchBlockedPageUri(uri, title: title, body: body);
   }
 
   Future<bool> _launchBlockedPageUri(
@@ -3997,21 +4104,25 @@ class VpnController extends ChangeNotifier {
     }
 
     String host = entry.host;
+    int port = entry.port;
     if (host.isEmpty && entry.connectionTag.isNotEmpty) {
       final String? stored = _recentLogConnHosts[entry.connectionTag];
       if (stored != null) {
-        host = stored.split('|').first;
+        final List<String> parts = stored.split('|');
+        host = parts.first;
+        if (parts.length > 1) {
+          port = int.tryParse(parts[1]) ?? 0;
+        }
       }
     }
     if (host.isEmpty) return;
 
     final MaliciousLinkMatch? malicious = MaliciousLinkGuard.inspectHost(host);
     if (malicious != null) {
-      unawaited(
-        onBlockedMaliciousHost?.call(host, 'malicious_link') ??
-            Future<void>.value(),
-      );
-      unawaited(_openBlockedBrowserPage(host, categoryHint: 'malicious_link'));
+      _notifyBlockedMaliciousHost(host, 'malicious_link');
+      if (entry.isBlockedEvent && port != 80 && !_isDirect403Recent(host)) {
+        unawaited(_openBlockedBrowserPage(host, categoryHint: 'malicious_link'));
+      }
       return;
     }
 
@@ -4022,6 +4133,9 @@ class VpnController extends ChangeNotifier {
     if (matchedCategory == 'ads') return;
     if (matchedCategory == null && !_contentFilter.hasActiveRules) return;
 
+    if ((port == 80 && !entry.isDnsRejection) || _isDirect403Recent(host)) {
+      return;
+    }
     unawaited(_openBlockedBrowserPage(host, categoryHint: matchedCategory));
   }
 
@@ -4031,6 +4145,7 @@ class VpnController extends ChangeNotifier {
     _coreLogsSub = null;
     _coreLogsSocket = null;
     _recentLogConnHosts.clear();
+    _clearBlockThrottleState();
     if (sub != null) {
       try {
         await sub.cancel();

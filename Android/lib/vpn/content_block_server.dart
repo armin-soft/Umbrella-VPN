@@ -381,7 +381,7 @@ class ContentBlockServer {
       }
     }
 
-    if (path == '/assets/logo.png') {
+    if (path == '/assets/logo.png' || path == '/favicon.ico') {
       await _writeImageOrSvgFallback(res, _logoPng, isAlert: false, isLogo: true);
       return;
     }
@@ -746,7 +746,7 @@ class ContentBlockServer {
       src: url("data:font/ttf;base64,$b64") format("truetype");
       font-weight: $weight;
       font-style: normal;
-      font-display: swap;
+      font-display: block;
     }''');
       }
     } else if (assetBaseUrl.isNotEmpty) {
@@ -760,7 +760,7 @@ class ContentBlockServer {
       src: url("$fontUrl") format("truetype");
       font-weight: ${entry.key};
       font-style: normal;
-      font-display: swap;
+      font-display: block;
     }''');
       }
     }

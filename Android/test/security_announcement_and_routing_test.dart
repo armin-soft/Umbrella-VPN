@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -1108,6 +1109,164 @@ void main() {
         expect(launchedUri!.host, '127.0.0.1');
         expect(launchedUri!.path, '/blocked');
         expect(vpn.contentBlockUiPort, greaterThan(0));
+
+        // درخواست favicon نباید HTML صفحه مسدودی را دوباره رندر کند و font-display باید block باشد.
+        final http.Response favRes = await http.get(
+          Uri.parse('http://127.0.0.1:${vpn.contentBlockUiPort}/favicon.ico'),
+        );
+        expect(favRes.statusCode, 200);
+        expect(favRes.headers['content-type'], isNot(contains('text/html')));
+        final http.Response pageRes = await http.get(launchedUri!);
+        expect(pageRes.statusCode, 200);
+        expect(pageRes.body, contains('font-display: block;'));
+
+        vpn.dispose();
+        await Future<void>.delayed(Duration.zero);
+      },
+    );
+
+    test(
+      'VpnController فقط یک بار صفحه مسدودی را برای زیردامنه ها و لاگ های تکراری باز می کند',
+      () async {
+        final _FakeNative native = _FakeNative();
+        final VpnController vpn = VpnController(
+          native: native,
+          ipService: _FakeIpService(),
+          sound: _FakeSound(),
+          tray: TrayService(native),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        vpn.updateContentFilter(
+          const FilterSettings(
+            enabled: true,
+            categories: <String>['adult', 'gambling'],
+          ),
+        );
+        final List<Uri> launches = <Uri>[];
+        final Completer<void> launchedOnce = Completer<void>();
+        vpn.onLaunchBlockedPage = (
+          Uri uri, {
+          required String title,
+          required String body,
+        }) async {
+          await Future<void>.delayed(const Duration(milliseconds: 25));
+          launches.add(uri);
+          if (!launchedOnce.isCompleted) {
+            launchedOnce.complete();
+          }
+          return true;
+        };
+
+        vpn.debugHandleInterceptedBlock(
+          const InterceptedBlockEvent(
+            details: BlockedHostDetails(
+              domain: 'www.pornhub.com',
+              category: 'adult',
+              categoryLabel: 'محتوای غیراخلاقی و بزرگسالان',
+              reason: 'مسدودسازی محتوا',
+              isSecurityThreat: false,
+            ),
+            needsBrowserLaunch: true,
+            port: 443,
+          ),
+        );
+        vpn.debugHandleInterceptedBlock(
+          const InterceptedBlockEvent(
+            details: BlockedHostDetails(
+              domain: 'cdn.pornhub.com',
+              category: 'adult',
+              categoryLabel: 'محتوای غیراخلاقی و بزرگسالان',
+              reason: 'مسدودسازی محتوا',
+              isSecurityThreat: false,
+            ),
+            needsBrowserLaunch: true,
+            port: 443,
+          ),
+        );
+        vpn.debugHandleInterceptedBlock(
+          const InterceptedBlockEvent(
+            details: BlockedHostDetails(
+              domain: '1xbet.com',
+              category: 'gambling',
+              categoryLabel: 'شرط بندی و قمار',
+              reason: 'مسدودسازی محتوا',
+              isSecurityThreat: false,
+            ),
+            needsBrowserLaunch: true,
+            port: 443,
+          ),
+        );
+        vpn.debugProcessCoreLogLine(
+          jsonEncode(<String, String>{
+            'type': 'info',
+            'payload': '[7741 0ms] inbound/tun[tun-in]: connection to pornhub.com:443',
+          }),
+        );
+        vpn.debugProcessCoreLogLine(
+          jsonEncode(<String, String>{
+            'type': 'info',
+            'payload': '[7741 1ms] router: match[1] rule[umbrella-filter-adult] -> reject',
+          }),
+        );
+        vpn.debugProcessCoreLogLine(
+          jsonEncode(<String, String>{
+            'type': 'debug',
+            'payload': '[99 0ms] dns: rejected A pornhub.com.',
+          }),
+        );
+
+        await launchedOnce.future.timeout(const Duration(seconds: 5));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(launches, hasLength(1));
+        expect(launches.single.queryParameters['domain'], 'www.pornhub.com');
+
+        final List<Uri> direct403Launches = <Uri>[];
+        final VpnController vpnHttp = VpnController(
+          native: native,
+          ipService: _FakeIpService(),
+          sound: _FakeSound(),
+          tray: TrayService(native),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        vpnHttp.updateContentFilter(
+          const FilterSettings(
+            enabled: true,
+            categories: <String>['adult'],
+          ),
+        );
+        vpnHttp.onLaunchBlockedPage = (
+          Uri uri, {
+          required String title,
+          required String body,
+        }) async {
+          direct403Launches.add(uri);
+          return true;
+        };
+        vpnHttp.debugHandleInterceptedBlock(
+          const InterceptedBlockEvent(
+            details: BlockedHostDetails(
+              domain: 'xvideos.com',
+              category: 'adult',
+              categoryLabel: 'محتوای غیراخلاقی و بزرگسالان',
+              reason: 'مسدودسازی محتوا',
+              isSecurityThreat: false,
+            ),
+            needsBrowserLaunch: false,
+            port: 80,
+          ),
+        );
+        vpnHttp.debugProcessCoreLogLine(
+          jsonEncode(<String, String>{
+            'type': 'debug',
+            'payload': '[55 0ms] dns: rejected A www.xvideos.com.',
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(direct403Launches, isEmpty);
+
+        vpnHttp.dispose();
         vpn.dispose();
         await Future<void>.delayed(Duration.zero);
       },
