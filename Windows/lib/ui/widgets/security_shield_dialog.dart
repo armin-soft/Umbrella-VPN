@@ -326,16 +326,9 @@ class _SecurityShieldDialogState extends State<SecurityShieldDialog> {
                             ),
                           ),
                           const SizedBox(height: AppMetrics.space2),
-                          Wrap(
-                            spacing: AppMetrics.space2,
-                            runSpacing: AppMetrics.space2,
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                          Row(
                             children: <Widget>[
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  minWidth: AppMetrics.buttonMaxWidth,
-                                  maxWidth: AppMetrics.controlMaxWidth,
-                                ),
+                              Expanded(
                                 child: TextField(
                                   key: const ValueKey<String>(
                                     'security-link-input',
@@ -354,6 +347,7 @@ class _SecurityShieldDialogState extends State<SecurityShieldDialog> {
                                       unawaited(_checkLink(security, toasts)),
                                 ),
                               ),
+                              const SizedBox(width: AppMetrics.space2),
                               FilledButton.icon(
                                 key: const ValueKey<String>(
                                   'security-check-link-button',

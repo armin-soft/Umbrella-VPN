@@ -633,23 +633,23 @@ void main() {
 
     test('MaliciousLinkGuard لینک های تروجانی، هموگراف و پسوند دوگانه را شناسایی می کند', () {
       expect(
-        MaliciousLinkGuard.inspect('https://grabify.link/track123'),
+        MaliciousLinkGuard.inspectUrl('https://grabify.link/track123'),
         isNotNull,
       );
       expect(
-        MaliciousLinkGuard.inspect('https://xn--tlegrm-9va.com/login'),
+        MaliciousLinkGuard.inspectUrl('https://xn--telegram-9va.com/login'),
         isNotNull,
       );
       expect(
-        MaliciousLinkGuard.inspect('https://cdn.evil.test/photo.png.exe'),
+        MaliciousLinkGuard.inspectUrl('https://cdn.evil.test/photo.png.exe'),
         isNotNull,
       );
       expect(
-        MaliciousLinkGuard.inspect('javascript:alert(1)'),
+        MaliciousLinkGuard.inspectUrl('javascript:alert(1)'),
         isNotNull,
       );
       expect(
-        MaliciousLinkGuard.inspect('https://armin-soft.ir/app'),
+        MaliciousLinkGuard.inspectUrl('https://armin-soft.ir/app'),
         isNull,
       );
     });
@@ -701,7 +701,6 @@ void main() {
       final SecurityScannerController sec = SecurityScannerController(
         native: native,
         auth: auth,
-        watchDirectories: false,
       )..onThreatNeutralized = notified.add;
 
       final SecurityScanResult res = await sec.scanNow(silent: false);
@@ -750,7 +749,6 @@ void main() {
       final SecurityScannerController sec = SecurityScannerController(
         native: native,
         auth: auth,
-        watchDirectories: false,
       );
 
       await sec.inspectLiveConnections(
@@ -790,7 +788,6 @@ void main() {
         );
       final SecurityScannerController sec = SecurityScannerController(
         native: native,
-        watchDirectories: false,
       );
       await sec.scanNow(silent: true);
 

@@ -99,7 +99,7 @@ class MaliciousLinkGuard {
   ];
 
   static const List<String> _dangerExeExts = <String>[
-    '.exe', '.scr', '.pif', '.com', '.bat', '.cmd', '.vbs', '.vbe', '.js',
+    '.apk', '.exe', '.scr', '.pif', '.com', '.bat', '.cmd', '.vbs', '.vbe', '.js',
     '.jse', '.wsf', '.wsh', '.ps1', '.hta', '.msi',
   ];
 
