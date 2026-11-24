@@ -3034,11 +3034,12 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅نس�
 }
 
 private static function versionChanges(Context $Context, string $Changes): void {
+$Changes = trim($Changes);
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 Repository::setSetting('Robot_Changes', $Changes);
 $Version = BotConfig::robotVersion();
 
-TelegramClient::sendMessage($Context->ChatId, self::header($Context) . " *✅ربات با موفقیت به نسخه `" . Helper::toPersian($Version) . "` بروزرسانی گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context) . "✅ربات با موفقیت به نسخه `" . Helper::toPersian($Version) . "` بروزرسانی گردید." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('بروز رسانی', 'بروز رسانی')));
 
 $Channell_ID = (string)BotConfig::getTelegramChannelId();
 
@@ -3046,25 +3047,38 @@ if ($Channell_ID === '') return;
 $Channell_ID_Int = (int)$Channell_ID;
 
 if ($Channell_ID_Int === 0) return;
-$Message = Helper::adminGreetingNamed((string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()), 'بروز رسانی نسخه') . "✅سلام کاربران گرامی ربات با موفقیت بروز رسانی گردید.\n" . "" . "\n➖➖➖➖➖➖➖➖➖\n🔰اطلاعات بروز رسانی جدید بدین شرح است:\n\n🔄نسخه جدید ربات: " . Helper::toPersian($Version) . "\n\n" . $Changes . "*";
+$Message = "✅سلام کاربران گرامی ربات با موفقیت بروز رسانی گردید.\n"
+. Helper::SEPARATOR . "\n"
+. Helper::dateTimeBlock() . "\n"
+. Helper::SEPARATOR . "\n"
+. "🔰اطلاعات بروز رسانی جدید بدین شرح است:\n\n"
+. "🔄نسخه جدید ربات: " . Helper::toPersian($Version)
+. ($Changes !== '' ? "\n\n" . $Changes : '');
 
 $Markup = TelegramClient::inlineKeyboard([
 [['text' => '🤖ورود به ربات (فیلترشکن آمبرلا)', 'url' => BotIdentity::link()]],
 [['text' => '🧑‍💻پشتیبانی از ما (آرمین سافت)', 'url' => BotConfig::getSupportUrl() ?: 'https://t.me/ARMIN_SOFT']],
 ]);
 
+$Sent_Photo = false;
+
 if (mb_strlen($Message) <= 1000) {
 $Logo = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'Logo.png';
-$Photo = $Logo;
-TelegramClient::sendPhoto($Channell_ID_Int, $Photo, $Message, $Markup);
+
+if (is_file($Logo)) {
+$Photo_Result = TelegramClient::sendPhoto($Channell_ID_Int, $Logo, $Message, $Markup);
+$Sent_Photo = is_array($Photo_Result) && (($Photo_Result['ok'] ?? false) === true);
+}
 }
 
-elseif (mb_strlen($Message) <= 4000) {
+if ($Sent_Photo) return;
+
+if (mb_strlen($Message) <= 4000) {
 TelegramClient::sendMessage($Channell_ID_Int, $Message, $Markup);
+return;
 }
 
-else {
-$Chunks = preg_split('/(.{4000})/us', $Message, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+$Chunks = preg_split('/(.{4000})/us', $Message, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) ?: [$Message];
 
 foreach ($Chunks as $Index => $Chunk) {
 if ($Index === 0) {
@@ -3073,7 +3087,6 @@ TelegramClient::sendMessage($Channell_ID_Int, $Chunk, $Markup);
 
 else {
 TelegramClient::sendMessage($Channell_ID_Int, $Chunk);
-}
 }
 }
 }

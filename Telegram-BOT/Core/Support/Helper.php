@@ -872,6 +872,17 @@ return true;
 
 
 
+/** بلوک تاریخ و زمان با پس گرد محلی در صورت در دسترس نبودن سرویس بیرونی. */
+public static function dateTimeBlock(?int $Time_Stamp = null): string {
+try {
+return static::currentDateTimeLabel($Time_Stamp);
+}
+
+catch (Throwable) {
+return static::localDateTimeLabel();
+}
+}
+
 public static function greetingFrame(string $Type, string $Name, string $Section, ?int $User_ID = null): string {
 $Name = static::stripZwnj($Name);
 $Name = trim($Name) !== '' ? trim($Name) : $Type;
@@ -886,13 +897,7 @@ $Section = static::digitsToPersian($Section);
 
 // حتی اگر سرویس تاریخ و زمان و حافظه پنهان هر دو در دسترس نباشند، هدر با
 // تاریخ محلی پر می شود؛ متن خطای تاریخ و زمان دیگر در هیچ پیامی نمی آید.
-try {
-$Date_Time_Block = static::currentDateTimeLabel();
-}
-
-catch (Throwable) {
-$Date_Time_Block = static::localDateTimeLabel();
-}
+$Date_Time_Block = static::dateTimeBlock();
 
 return "🌹" . $Type . " گرامی " . $Name . " به بخش " . $Section . " خوش آمدید.\n"
 . self::SEPARATOR . "\n"
