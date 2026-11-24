@@ -156,22 +156,28 @@ void main() {
           jsonDecode(req.body) as Map<String, dynamic>;
       requests.add((route, decoded));
       if (route.endsWith('app/support-report')) {
-        return http.Response(
-          jsonEncode(<String, dynamic>{
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
             'ok': true,
             'sent': true,
             'message': 'گزارش برای پشتیبانی ارسال شد',
-          }),
+          })),
           200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
         );
       }
-      return http.Response(
-        jsonEncode(<String, dynamic>{
+      return http.Response.bytes(
+        utf8.encode(jsonEncode(<String, dynamic>{
           'ok': true,
           'seen_at': '2026-11-22T00:00:00Z',
           'activity_stored': 2,
-        }),
+        })),
         200,
+        headers: const <String, String>{
+          'content-type': 'application/json; charset=utf-8',
+        },
       );
     });
     final GatewayClient gateway = GatewayClient(client: mockHttp);
@@ -242,12 +248,25 @@ void main() {
       final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
       if (route.endsWith('app/support-report')) {
         capturedSupport = jsonDecode(req.body) as Map<String, dynamic>;
-        return http.Response(
-          jsonEncode(<String, dynamic>{'ok': true, 'sent': true, 'message': 'تحویل داده شد'}),
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'ok': true,
+            'sent': true,
+            'message': 'تحویل داده شد',
+          })),
           200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
         );
       }
-      return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
+      return http.Response.bytes(
+        utf8.encode(jsonEncode(<String, dynamic>{'ok': true})),
+        200,
+        headers: const <String, String>{
+          'content-type': 'application/json; charset=utf-8',
+        },
+      );
     });
 
     final GatewayClient gateway = GatewayClient(client: mockHttp);

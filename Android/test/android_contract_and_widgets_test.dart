@@ -2024,9 +2024,17 @@ void main() {
         final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
         if (route.endsWith('app/support-report')) {
           sentBody = jsonDecode(req.body) as Map<String, dynamic>;
-          return http.Response(jsonEncode(<String, dynamic>{'ok': true, 'sent': true, 'message': 'ارسال شد'}), 200);
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{'ok': true, 'sent': true, 'message': 'ارسال شد'})),
+            200,
+            headers: const <String, String>{'content-type': 'application/json; charset=utf-8'},
+          );
         }
-        return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{'ok': true})),
+          200,
+          headers: const <String, String>{'content-type': 'application/json; charset=utf-8'},
+        );
       });
       final GatewayClient gateway = GatewayClient(client: mockHttp);
       final _FakeNative native = _FakeNative();
