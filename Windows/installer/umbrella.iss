@@ -174,8 +174,10 @@ function FindUmbrellaWindow(): HWND;
 var
   TitleFa: String;
 begin
-  TitleFa := #$0641#$06CC#$0644#$062A#$0631#$0634#$06A9#$0646 + ' ' +
-             #$0622#$0645#$0628#$0631#$0644#$0627;
+  TitleFa := Chr($0641) + Chr($06CC) + Chr($0644) + Chr($062A) +
+             Chr($0631) + Chr($0634) + Chr($06A9) + Chr($0646) + ' ' +
+             Chr($0622) + Chr($0645) + Chr($0628) + Chr($0631) +
+             Chr($0644) + Chr($0627);
   Result := FindWindowByWindowName(TitleFa);
   if Result = 0 then
     Result := FindWindowByWindowName('Umbrella VPN');
