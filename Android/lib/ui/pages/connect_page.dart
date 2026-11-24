@@ -1215,10 +1215,9 @@ class _SecurityBlockBanner extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          Icon(
-            Icons.gpp_bad_rounded,
-            size: dense ? AppMetrics.iconSm : AppMetrics.iconMd,
-            color: colors.danger,
+          SecurityShieldLogo(
+            danger: true,
+            size: dense ? AppMetrics.iconLg : AppMetrics.iconBoxSm,
           ),
           const SizedBox(width: AppMetrics.space2),
           Expanded(

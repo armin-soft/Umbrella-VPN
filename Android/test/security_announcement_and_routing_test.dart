@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -587,6 +589,94 @@ void main() {
       await tester.tap(find.text('ذخیره قانون'));
       await tester.pumpAndSettle();
       expect(saved?.process, 'com.instagram.android');
+    });
+  });
+
+  group('شناسایی Hiddify و لوگوی سپر امنیتی آمبرلا در اندروید', () {
+    test('اسکنر کاتلین Hiddify را شناسایی می کند اما پکیج های آمبرلا را استثنا می کند', () {
+      final String kt = File(
+        'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
+      ).readAsStringSync();
+      expect(kt.contains('vpn:hiddify'), isTrue);
+      expect(kt.contains('hiddify'), isTrue);
+      expect(kt.contains('ir.umbrella.'), isTrue);
+
+      expect(BrandAssets.all.contains(BrandAssets.securityShield), isTrue);
+      expect(BrandAssets.all.contains(BrandAssets.securityAlert), isTrue);
+
+      final String connectSrc = File('lib/ui/pages/connect_page.dart').readAsStringSync();
+      expect(connectSrc.contains('SecurityShieldLogo'), isTrue);
+    });
+
+    test('تشخیص Hiddify پیش از اتصال اتصال را مسدود و حذف را ثبت می کند', () async {
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: false,
+          scannedApps: 35,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'vpn:hiddify',
+              name: 'Hiddify (فیلترشکن ناسازگار)',
+              category: 'conflicting_vpn',
+              severity: 'high',
+              target: 'app.hiddify.com (Hiddify)',
+              detail: 'اپلیکیشن Hiddify روی دستگاه نصب است.',
+              packageName: 'app.hiddify.com',
+              remediationKind: 'uninstall',
+              active: true,
+            ),
+          ],
+        );
+
+      final SecurityScannerController sec = SecurityScannerController(native: native);
+      final SecurityScanResult before = await sec.ensureCleanBeforeConnect();
+      expect(before.hasThreats, isTrue);
+      expect(sec.threats.single.key, 'vpn:hiddify');
+
+      final SecurityScanResult after = await sec.remediateAll();
+      expect(after.clean, isTrue);
+      expect(native.remediatedKeys, <String>['vpn:hiddify']);
+      sec.dispose();
+    });
+
+    testWidgets('لوگوهای سپر امنیتی آمبرلا دیکد می شوند و در SecurityShieldLogo استفاده می شوند', (WidgetTester tester) async {
+      await tester.runAsync(() async {
+        for (final String asset in <String>[
+          BrandAssets.securityShield,
+          BrandAssets.securityAlert,
+        ]) {
+          final ByteData bytes = await rootBundle.load(asset);
+          expect(bytes.lengthInBytes, greaterThan(1024), reason: asset);
+          final ui.Codec codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
+          final ui.FrameInfo frame = await codec.getNextFrame();
+          expect(frame.image.width, greaterThanOrEqualTo(256), reason: asset);
+          expect(frame.image.height, greaterThanOrEqualTo(256), reason: asset);
+          frame.image.dispose();
+          codec.dispose();
+        }
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          home: const Scaffold(
+            body: Column(
+              children: <Widget>[
+                SecurityShieldLogo(danger: false, size: AppMetrics.logoLg),
+                SecurityShieldLogo(danger: true, size: AppMetrics.iconBoxLg),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final List<Image> images = tester.widgetList<Image>(find.byType(Image)).toList();
+      expect(images, hasLength(2));
+      expect((images[0].image as AssetImage).assetName, BrandAssets.securityShield);
+      expect((images[1].image as AssetImage).assetName, BrandAssets.securityAlert);
+      expect(images[0].gaplessPlayback, isTrue);
+      expect(images[1].gaplessPlayback, isTrue);
     });
   });
 }

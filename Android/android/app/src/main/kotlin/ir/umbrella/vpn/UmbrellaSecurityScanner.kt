@@ -32,10 +32,22 @@ object UmbrellaSecurityScanner {
         label: String,
         selfPkg: String,
     ): SignatureMatch? {
-        if (packageName == selfPkg || packageName.startsWith("ir.umbrella.")) {
+        if (packageName == selfPkg ||
+            packageName.startsWith("ir.umbrella.") ||
+            label.lowercase().contains("umbrella")
+        ) {
             return null
         }
         val combined = "${packageName.lowercase()} ${label.lowercase()}"
+        if (combined.contains("hiddify")) {
+            return SignatureMatch(
+                key = "vpn:hiddify",
+                name = "Hiddify (فیلترشکن ناسازگار)",
+                category = "conflicting_vpn",
+                severity = "high",
+                detail = "اپلیکیشن Hiddify روی دستگاه نصب است؛ پیش از اتصال به آمبرلا باید آن را حذف کنید.",
+            )
+        }
         if (combined.contains("jumpjump") ||
             combined.contains("jump-jump") ||
             combined.contains("jump jump")
@@ -195,7 +207,7 @@ object UmbrellaSecurityScanner {
             for (file in children.take(120)) {
                 if (!file.isFile) continue
                 val fname = file.name.lowercase()
-                if (!fname.endsWith(".apk")) continue
+                if (!fname.endsWith(".apk") || fname.contains("umbrella")) continue
                 scannedFiles++
                 val hit = matchKnownPackageOrLabel(fname, fname, selfPkg) ?: continue
                 val apkKey = "${hit.key}:apk:${fname.hashCode()}"

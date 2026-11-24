@@ -786,6 +786,8 @@ class BrandAssets {
   static const String noInternet = 'assets/images/No-Internet.png';
   static const String turbo = 'assets/images/Turbo-Speed.png';
   static const String weakSignal = 'assets/images/Weak-Signal.png';
+  static const String securityShield = 'assets/images/Security-Shield.png';
+  static const String securityAlert = 'assets/images/Security-Alert.png';
 
   static const List<String> all = <String>[
     connected,
@@ -800,5 +802,7 @@ class BrandAssets {
     noInternet,
     turbo,
     weakSignal,
+    securityShield,
+    securityAlert,
   ];
 }

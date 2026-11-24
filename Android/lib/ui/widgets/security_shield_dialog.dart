@@ -9,6 +9,53 @@ import '../../state/security_controller.dart';
 import '../../state/toast_controller.dart';
 import 'common.dart';
 
+/// لوگوی رسمی سپر امنیتی آمبرلا (هم سبک با سایر لوگوهای برند).
+class SecurityShieldLogo extends StatelessWidget {
+  const SecurityShieldLogo({
+    super.key,
+    required this.danger,
+    required this.size,
+  });
+
+  final bool danger;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return ClipOval(
+      child: TickerMode(
+        enabled: true,
+        child: Image.asset(
+          danger ? BrandAssets.securityAlert : BrandAssets.securityShield,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (
+            BuildContext context,
+            Object error,
+            StackTrace? stack,
+          ) =>
+              Container(
+            width: size,
+            height: size,
+            color: danger
+                ? colors.danger.withValues(alpha: 0.14)
+                : colors.success.withValues(alpha: 0.14),
+            child: Icon(
+              danger ? Icons.gpp_bad_rounded : Icons.verified_user_rounded,
+              size: size * 0.6,
+              color: danger ? colors.danger : colors.success,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// نشان همیشه فعال وضعیت سپر امنیتی آمبرلا در نوار بالای صفحات اتصال و تنظیمات.
 class SecurityStatusBadge extends StatelessWidget {
   const SecurityStatusBadge({super.key, this.dense = false});
@@ -68,12 +115,9 @@ class SecurityStatusBadge extends StatelessWidget {
                     ),
                   )
                 else
-                  Icon(
-                    danger
-                        ? Icons.gpp_bad_rounded
-                        : Icons.verified_user_rounded,
-                    size: dense ? AppMetrics.iconXs : AppMetrics.iconSm,
-                    color: fg,
+                  SecurityShieldLogo(
+                    danger: danger,
+                    size: dense ? AppMetrics.iconSm : AppMetrics.iconMd,
                   ),
                 SizedBox(width: dense ? AppMetrics.space1 : AppMetrics.space2),
                 Flexible(
@@ -127,7 +171,6 @@ class SecurityShieldDialog extends StatelessWidget {
     final ToastController? toasts = context.maybeRead<ToastController>();
     final UmbrellaColors colors = context.colors;
     final bool danger = security?.hasThreats ?? false;
-    final Color accent = danger ? colors.danger : colors.success;
     final SecurityScanResult report =
         security?.lastResult ?? const SecurityScanResult();
 
@@ -156,22 +199,9 @@ class SecurityShieldDialog extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Container(
-                    width: AppMetrics.iconBoxLg,
-                    height: AppMetrics.iconBoxLg,
-                    decoration: BoxDecoration(
-                      color: danger
-                          ? colors.danger.withValues(alpha: 0.14)
-                          : colors.success.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                    ),
-                    child: Icon(
-                      danger
-                          ? Icons.gpp_bad_rounded
-                          : Icons.verified_user_rounded,
-                      color: accent,
-                      size: AppMetrics.iconLg,
-                    ),
+                  SecurityShieldLogo(
+                    danger: danger,
+                    size: AppMetrics.iconBoxLg,
                   ),
                   const SizedBox(width: AppMetrics.space3),
                   Expanded(
@@ -190,7 +220,7 @@ class SecurityShieldDialog extends StatelessWidget {
                         Text(
                           danger
                               ? 'برای امنیت اتصال، اجرای هم زمان بدافزارها و فیلترشکن های ناسازگار مسدود است.'
-                              : 'دستگاه در برابر بدافزارها، JumpJump و فیلترشکن های ناسازگار (مانند Psiphon) ایمن است.',
+                              : 'دستگاه در برابر بدافزارها (JumpJump) و فیلترشکن های ناسازگار (مانند Hiddify و Psiphon) ایمن است.',
                           style: TextStyle(
                             fontSize: AppMetrics.fontSmall,
                             color: colors.textSecondary,
@@ -252,10 +282,9 @@ class SecurityShieldDialog extends StatelessWidget {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
-                              Icon(
-                                Icons.shield_rounded,
-                                size: AppMetrics.iconBoxXl,
-                                color: colors.success,
+                              const SecurityShieldLogo(
+                                danger: false,
+                                size: AppMetrics.logoLg,
                               ),
                               const SizedBox(height: AppMetrics.space2),
                               Text(

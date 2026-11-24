@@ -969,7 +969,7 @@ class _SecurityBlockBanner extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          Icon(Icons.gpp_bad_rounded, color: colors.danger, size: 22),
+          const SecurityShieldLogo(danger: true, size: AppMetrics.iconBoxSm),
           const SizedBox(width: AppMetrics.space3),
           Expanded(
             child: Column(

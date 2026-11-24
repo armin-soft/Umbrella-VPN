@@ -100,16 +100,32 @@ bool FileExistsW(const std::wstring& path) {
          (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
+std::string CurrentProcessDirLower() {
+  wchar_t exe_path[MAX_PATH * 2] = {0};
+  DWORD len = GetModuleFileNameW(nullptr, exe_path, MAX_PATH * 2);
+  if (len == 0) return std::string();
+  std::string utf8 = ToLowerAscii(ToUtf8(std::wstring(exe_path, len)));
+  size_t slash = utf8.find_last_of("\\/");
+  if (slash == std::string::npos) return std::string();
+  return utf8.substr(0, slash + 1);
+}
+
 bool IsUmbrellaSafeBinary(const std::string& path_or_name) {
+  const std::string lower = ToLowerAscii(path_or_name);
   const std::string base = BaseNameLower(path_or_name);
   if (base == "umbrellavpn.exe" || base == "umbrellacli.exe" ||
       base == "umbrellacoreengine.exe" || base == "umbrellaadmin.exe" ||
-      base == "unins000.exe") {
+      base == "umbrellacore.dll" || base == "unins000.exe") {
     return ContainsCi(path_or_name, "umbrella") ||
            base.rfind("umbrella", 0) == 0;
   }
+  const std::string self_dir = CurrentProcessDirLower();
+  if (!self_dir.empty() && lower.find(self_dir) != std::string::npos) {
+    return true;
+  }
   return ContainsCi(path_or_name, "\\umbrella\\") ||
          ContainsCi(path_or_name, "\\umbrellavpn\\") ||
+         ContainsCi(path_or_name, "\\umbrella vpn\\") ||
          ContainsCi(path_or_name, "armin-soft");
 }
 
@@ -443,8 +459,22 @@ struct SignatureHit {
 
 SignatureHit MatchKnownThreatText(const std::string& text) {
   const std::string lower = ToLowerAscii(text);
-  if (lower.empty() || IsUmbrellaSafeBinary(lower)) {
+  if (lower.empty() || IsUmbrellaSafeBinary(lower) ||
+      lower.find("umbrella") != std::string::npos) {
     return SignatureHit{};
+  }
+  if (lower.find("hiddify") != std::string::npos ||
+      lower.find("hiddifynext") != std::string::npos ||
+      lower.find("hiddify-next") != std::string::npos ||
+      lower.find("hiddify desktop") != std::string::npos) {
+    return SignatureHit{
+        true,
+        "vpn:hiddify",
+        "Hiddify / Hiddify Next (فیلترشکن ناسازگار)",
+        "conflicting_vpn",
+        "high",
+        "نرم افزار Hiddify روی سیستم یافت شد؛ پیش از اتصال به آمبرلا باید آن را حذف کنید.",
+    };
   }
   if (lower.find("jumpjump") != std::string::npos ||
       lower.find("jump-jump") != std::string::npos ||

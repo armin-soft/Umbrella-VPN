@@ -543,6 +543,76 @@ void main() {
       expect(saved?.process, r'C:\Games\Launcher.exe');
     });
   });
+
+  group('شناسایی Hiddify و لوگوی سپر امنیتی آمبرلا', () {
+    test('اسکنر ویندوز Hiddify را شناسایی می کند اما فایل های آمبرلا را استثنا می کند', () {
+      final String cpp = File('packages/umbrella_native/windows/security_scanner.cpp').readAsStringSync();
+      expect(cpp.contains('vpn:hiddify'), isTrue);
+      expect(cpp.contains('hiddify'), isTrue);
+      expect(cpp.contains('CurrentProcessDirLower'), isTrue);
+      expect(cpp.contains('IsUmbrellaSafeBinary'), isTrue);
+
+      expect(BrandAssets.all.contains(BrandAssets.securityShield), isTrue);
+      expect(BrandAssets.all.contains(BrandAssets.securityAlert), isTrue);
+
+      final String connectSrc = File('lib/ui/pages/connect_page.dart').readAsStringSync();
+      expect(connectSrc.contains('SecurityShieldLogo'), isTrue);
+    });
+
+    test('تشخیص Hiddify پیش از اتصال اتصال را متوقف و پاکسازی می کند', () async {
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: false,
+          scannedProcesses: 22,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'vpn:hiddify',
+              name: 'Hiddify / Hiddify Next (فیلترشکن ناسازگار)',
+              category: 'conflicting_vpn',
+              severity: 'high',
+              target: r'C:\Program Files\Hiddify\Hiddify.exe',
+              detail: 'نرم افزار Hiddify روی سیستم یافت شد.',
+              processName: 'Hiddify.exe',
+              active: true,
+            ),
+          ],
+        );
+
+      final SecurityScannerController sec = SecurityScannerController(native: native);
+      final SecurityScanResult before = await sec.ensureCleanBeforeConnect();
+      expect(before.hasThreats, isTrue);
+      expect(sec.threats.single.key, 'vpn:hiddify');
+
+      final SecurityScanResult after = await sec.remediateAll();
+      expect(after.clean, isTrue);
+      expect(native.remediatedKeys, <String>['vpn:hiddify']);
+      sec.dispose();
+    });
+
+    testWidgets('SecurityShieldLogo در وضعیت ایمن و هشدار از تصاویر برند استفاده می کند', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          home: const Scaffold(
+            body: Column(
+              children: <Widget>[
+                SecurityShieldLogo(danger: false, size: AppMetrics.logoLg),
+                SecurityShieldLogo(danger: true, size: AppMetrics.iconBoxLg),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final List<Image> images = tester.widgetList<Image>(find.byType(Image)).toList();
+      expect(images, hasLength(2));
+      expect((images[0].image as AssetImage).assetName, BrandAssets.securityShield);
+      expect((images[1].image as AssetImage).assetName, BrandAssets.securityAlert);
+      expect(images[0].gaplessPlayback, isTrue);
+      expect(images[1].gaplessPlayback, isTrue);
+    });
+  });
 }
 
 extension<T> on T {
