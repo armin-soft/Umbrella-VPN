@@ -70,6 +70,45 @@ class _FakeNative implements NativeBridge {
   Future<bool> requestStorageScanAccess() async => true;
 
   @override
+  Future<bool> stopCore() async => true;
+
+  @override
+  Future<bool> shutdownCores() async => true;
+
+  @override
+  Future<Map<String, dynamic>> getCoreStatus() async =>
+      const <String, dynamic>{};
+
+  @override
+  Stream<AndroidServiceEvent> serviceEvents() =>
+      const Stream<AndroidServiceEvent>.empty();
+
+  @override
+  Future<bool> openExternalUrl(
+    String url, {
+    String title = '',
+    String body = '',
+  }) async =>
+      true;
+
+  @override
+  Future<void> setNotificationsEnabled(bool enabled) async {}
+
+  @override
+  Future<void> updateConnectedNotification({
+    required String title,
+    required String body,
+    bool alert = false,
+  }) async {}
+
+  @override
+  Future<void> showTrayBalloon({
+    required String title,
+    required String body,
+    bool warning = false,
+  }) async {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -945,14 +984,24 @@ void main() {
         await server.start();
         addTearDown(() async => server.stop());
 
-        final HttpClient client = HttpClient()..findProxy = (_) => 'DIRECT';
-        addTearDown(() => client.close(force: true));
-        final HttpClientRequest uiReq = await client.getUrl(
-          server.buildBlockedPageUri('pornhub.com'),
+        final Uri uiUri = server.buildBlockedPageUri('pornhub.com');
+        final Socket s =
+            await Socket.connect(InternetAddress.loopbackIPv4, uiUri.port);
+        s.write(
+          'GET ${uiUri.path}?${uiUri.query} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n',
         );
-        final HttpClientResponse uiRes = await uiReq.close();
-        final String uiHtml = await utf8.decodeStream(uiRes);
-        expect(uiRes.statusCode, HttpStatus.ok);
+        await s.flush();
+        final List<int> bytes = await s.fold<List<int>>(
+          <int>[],
+          (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+        );
+        final String raw = latin1.decode(bytes);
+        final int split = raw.indexOf('\r\n\r\n');
+        final String head = split >= 0 ? raw.substring(0, split) : raw;
+        final String uiHtml = split >= 0
+            ? utf8.decode(bytes.sublist(split + 4), allowMalformed: true)
+            : '';
+        expect(head, startsWith('HTTP/1.1 200 OK'));
         expect(uiHtml, contains('dir="rtl"'));
         expect(uiHtml, contains('Umbrella VPN'));
         expect(uiHtml, contains('#E11D2E'));
@@ -997,11 +1046,12 @@ void main() {
     test(
       'VpnController.openBlockedPreviewPage launches local Umbrella browser block URL on Android',
       () async {
+        final _FakeNative native = _FakeNative();
         final VpnController vpn = VpnController(
-          native: _FakeNative(),
+          native: native,
           ipService: IpService(),
-          sound: SoundService(),
-          tray: TrayService(_FakeNative()),
+          sound: _FakeSound(),
+          tray: TrayService(native),
           provisioner: CoreProvisioner(),
           settings: const AppSettings(),
         );
@@ -1028,6 +1078,7 @@ void main() {
         expect(launchedUri!.path, '/blocked');
         expect(vpn.contentBlockUiPort, greaterThan(0));
         vpn.dispose();
+        await Future<void>.delayed(Duration.zero);
       },
     );
 

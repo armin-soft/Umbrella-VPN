@@ -700,7 +700,7 @@ void main() {
             .readAsStringSync(),
         contains('UmbrellaVPN/1.0.0'),
       );
-      expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v6');
+      expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v7');
       final Map<String, dynamic> manifest =
           jsonDecode(File('assets/cores/manifest.json').readAsStringSync())
               as Map<String, dynamic>;

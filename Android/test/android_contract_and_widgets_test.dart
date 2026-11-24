@@ -2169,7 +2169,8 @@ void main() {
       await tester.tap(previewBtn);
       await tester.pumpAndSettle();
       expect(launchedUrl, isNotNull);
-      expect(launchedUrl!, contains('domain=pornhub.com'));
+      expect(launchedUrl!, contains('domain=content-control.umbrella.vpn'));
+      expect(launchedUrl!, contains('category=adult'));
 
       vpn.dispose();
       auth.dispose();

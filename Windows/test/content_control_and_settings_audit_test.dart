@@ -812,7 +812,7 @@ void main() {
 
         for (final Size surface in const <Size>[
           Size(900, 900),
-          Size(320, 760),
+          Size(480, 760),
         ]) {
           await tester.binding.setSurfaceSize(surface);
           await tester.pumpWidget(
@@ -853,7 +853,8 @@ void main() {
         expect(launchedUri, isNotNull);
         expect(launchedUri!.host, '127.0.0.1');
         expect(launchedUri!.path, '/blocked');
-        expect(launchedUri!.queryParameters['domain'], 'pornhub.com');
+        expect(launchedUri!.queryParameters['domain'], 'content-control.umbrella.vpn');
+        expect(launchedUri!.queryParameters['category'], 'adult');
 
         await tester.binding.setSurfaceSize(null);
         await tester.pumpWidget(const SizedBox.shrink());

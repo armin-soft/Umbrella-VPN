@@ -68,6 +68,49 @@ class _FakeNative implements NativeBridge {
   }
 
   @override
+  Future<int> shutdownCores({bool skipIfClean = false}) async => 0;
+
+  @override
+  Future<bool> killPid(int pid) async => true;
+
+  @override
+  Future<int> killByName(String name) async => 0;
+
+  @override
+  Future<bool> disableSystemProxy() async => true;
+
+  @override
+  Future<bool> restoreNetworkDefaults() async => true;
+
+  @override
+  Future<bool> trayInit() async => true;
+
+  @override
+  Future<bool> trayIcon(String path) async => true;
+
+  @override
+  Future<bool> trayTooltip(String text) async => true;
+
+  @override
+  Future<bool> trayMenu({
+    required String connectLabel,
+    required String disconnectLabel,
+    required bool connected,
+  }) async =>
+      true;
+
+  @override
+  Future<bool> trayBalloon({
+    required String title,
+    required String body,
+    bool warning = false,
+  }) async =>
+      true;
+
+  @override
+  Future<bool> trayDestroy() async => true;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -859,13 +902,42 @@ void main() {
         expect(server.uiPort, greaterThan(0));
         expect(server.proxyPort, greaterThan(0));
 
-        final HttpClient client = HttpClient()..findProxy = (_) => 'DIRECT';
-        addTearDown(() => client.close(force: true));
-        final HttpClientRequest uiReq = await client.getUrl(
+        Future<({int statusCode, String body, List<int> rawBytes})> rawHttpGet(
+          Uri uri,
+        ) async {
+          final Socket s =
+              await Socket.connect(InternetAddress.loopbackIPv4, uri.port);
+          final String pathAndQuery = uri.hasQuery
+              ? '${uri.path}?${uri.query}'
+              : uri.path;
+          s.write('GET $pathAndQuery HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n');
+          await s.flush();
+          final List<int> bytes = await s.fold<List<int>>(
+            <int>[],
+            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+          );
+          final String raw = latin1.decode(bytes);
+          final int split = raw.indexOf('\r\n\r\n');
+          final String head = split >= 0 ? raw.substring(0, split) : raw;
+          final int code = int.tryParse(
+                RegExp(r'HTTP/1\.[01]\s+(\d+)').firstMatch(head)?.group(1) ??
+                    '',
+              ) ??
+              0;
+          final List<int> bodyBytes =
+              split >= 0 ? bytes.sublist(split + 4) : const <int>[];
+          return (
+            statusCode: code,
+            body: utf8.decode(bodyBytes, allowMalformed: true),
+            rawBytes: bodyBytes,
+          );
+        }
+
+        final ({int statusCode, String body, List<int> rawBytes}) uiRes =
+            await rawHttpGet(
           server.buildBlockedPageUri('<script>alert(1)</script>.pornhub.com'),
         );
-        final HttpClientResponse uiRes = await uiReq.close();
-        final String uiHtml = await utf8.decodeStream(uiRes);
+        final String uiHtml = uiRes.body;
         expect(uiRes.statusCode, HttpStatus.ok);
         expect(uiHtml, contains('dir="rtl"'));
         expect(uiHtml, contains('Umbrella VPN'));
@@ -880,12 +952,12 @@ void main() {
           '/assets/shield.png',
           '/assets/alert.png',
         ]) {
-          final HttpClientRequest assetReq = await client.getUrl(
+          final ({int statusCode, String body, List<int> rawBytes}) assetRes =
+              await rawHttpGet(
             Uri.parse('http://127.0.0.1:${server.uiPort}$assetPath'),
           );
-          final HttpClientResponse assetRes = await assetReq.close();
-          await assetRes.drain<void>();
           expect(assetRes.statusCode, HttpStatus.ok);
+          expect(assetRes.rawBytes, isNotEmpty);
         }
 
         final Socket httpTunnel =
@@ -1111,11 +1183,12 @@ void main() {
     test(
       'VpnController.openBlockedPreviewPage launches local Umbrella browser block URL cleanly',
       () async {
+        final _FakeNative native = _FakeNative();
         final VpnController vpn = VpnController(
-          native: _FakeNative(),
+          native: native,
           ipService: IpService(),
-          sound: SoundService(),
-          tray: TrayService(_FakeNative()),
+          sound: _FakeSound(),
+          tray: TrayService(native),
           provisioner: CoreProvisioner(),
           settings: const AppSettings(),
         );
@@ -1145,6 +1218,7 @@ void main() {
         expect(launchedTitle, contains('سپر کنترل محتوای آمبرلا'));
         expect(vpn.contentBlockUiPort, greaterThan(0));
         vpn.dispose();
+        await Future<void>.delayed(Duration.zero);
       },
     );
   });
