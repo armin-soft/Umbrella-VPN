@@ -43,6 +43,7 @@ private const ROUTES = [
 'تایید اشتراک دلخواه' => [SubscriptionFlow::class, 'confirmCustomPlanCallback'],
 'مدیریت' => [AdminFlow::class, 'menu'],
 'admin_devices_menu' => [AdminFlow::class, 'devicesMenu'],
+'admin_user_monitor' => [AdminFlow::class, 'userMonitorList'],
 'admin_content_filter' => [AdminFlow::class, 'globalContentFilterMenu'],
 'admin_gfilter_domains' => [AdminFlow::class, 'globalContentFilterDomainsMenu'],
 'admin_gfilter_add' => [AdminFlow::class, 'globalContentFilterDomainsStart'],
@@ -555,6 +556,12 @@ AdminFlow::accountUsers($Context, (int)$Match[1]); return;
 }
 if (preg_match('/^admin_user_view:([1-9][0-9]*):([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::accountUserView($Context, (int)$Match[1], (int)$Match[2]); return;
+}
+if (preg_match('/^admin_user_monitor_page:([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::userMonitorList($Context, (int)$Match[1]); return;
+}
+if (preg_match('/^admin_monitor_view:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen):([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], (int)$Match[4]); return;
 }
 
 if (str_starts_with($Data, 'admin_devices_page:')) {

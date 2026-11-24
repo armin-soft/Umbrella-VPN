@@ -372,3 +372,21 @@ CREATE TABLE IF NOT EXISTS `App_Bot_Link_Requests` (
 `Expires_At` INT UNSIGNED NOT NULL, `Used_At` INT UNSIGNED NULL,
 PRIMARY KEY (`Token_Hash`), KEY `IDX_App_Bot_Link_Expiry` (`Expires_At`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_User_Activity` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Device_ID` VARCHAR(64) NOT NULL,
+`User_UUID` VARCHAR(64) NULL,
+`Telegram_ID` BIGINT NULL,
+`Category` VARCHAR(20) NOT NULL,
+`Target` VARCHAR(190) NOT NULL,
+`Hits` INT UNSIGNED NOT NULL DEFAULT 1,
+`Bytes_Down` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+`Bytes_Up` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+`Last_Seen_At` INT UNSIGNED NOT NULL,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_Activity_Dev_Cat_Target` (`Device_ID`, `Category`, `Target`),
+KEY `IDX_Activity_User` (`Telegram_ID`, `Last_Seen_At`),
+KEY `IDX_Activity_UUID` (`User_UUID`, `Last_Seen_At`),
+KEY `IDX_Activity_Seen` (`Last_Seen_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

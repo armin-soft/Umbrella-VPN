@@ -615,11 +615,22 @@ class GatewayClient {
       })> heartbeat({
     required String token,
     required String deviceId,
+    List<Map<String, dynamic>> activity = const <Map<String, dynamic>>[],
+    String currentScreen = '',
+    String deviceName = '',
+    String platform = '',
+    String appVersion = '',
   }) async {
-    final Map<String, dynamic> json = await _post('auth/device', <String, dynamic>{
+    final Map<String, dynamic> body = <String, dynamic>{
       'token': token,
       'device_id': deviceId,
-    });
+      if (deviceName.isNotEmpty) 'device_name': deviceName,
+      if (platform.isNotEmpty) 'platform': platform,
+      if (appVersion.isNotEmpty) 'app_version': appVersion,
+      if (currentScreen.isNotEmpty) 'current_screen': currentScreen,
+      if (activity.isNotEmpty) 'activity': activity,
+    };
+    final Map<String, dynamic> json = await _post('auth/device', body);
     final Map<String, dynamic> accountMap = JsonX.asMap(json['account']);
     final Map<String, dynamic> filterMap = JsonX.asMap(json['filter']);
     final Map<String, dynamic> offersMap = JsonX.asMap(json['offers']);
@@ -632,6 +643,36 @@ class GatewayClient {
           offersMap.isNotEmpty ? SubscriptionOffers.fromJson(offersMap) : null,
       botLinked: json.containsKey('bot_linked')
           ? JsonX.boolean(json['bot_linked']) : null,
+    );
+  }
+
+  Future<String> sendSupportReport({
+    String token = '',
+    required String deviceId,
+    String phone = '',
+    String note = '',
+    required String platform,
+    required String appVersion,
+    required Map<String, dynamic> device,
+    required Map<String, dynamic> vpnState,
+    required List<Map<String, dynamic>> errors,
+    required String recentLogs,
+  }) async {
+    final Map<String, dynamic> json = await _post('app/support-report', <String, dynamic>{
+      if (token.isNotEmpty) 'token': token,
+      'device_id': deviceId,
+      if (phone.isNotEmpty) 'phone': phone,
+      if (note.isNotEmpty) 'note': note,
+      'platform': platform,
+      'app_version': appVersion,
+      'device': device,
+      'vpn_state': vpnState,
+      'errors': errors,
+      'recent_logs': recentLogs,
+    });
+    return JsonX.text(
+      json['message'],
+      'مشخصات دستگاه و گزارش خطاها بلافاصله برای پشتیبانی ارسال شد.',
     );
   }
 

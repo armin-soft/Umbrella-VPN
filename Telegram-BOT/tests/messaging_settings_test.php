@@ -41,8 +41,10 @@ return array_values(array_filter($Matches, fn($D) => $D['Is_Trusted'] === 1 && (
 if (str_contains($Q, 'LIMIT ? OFFSET ?')) return count($P) >= 4 ? array_slice(self::$Devices, $P[3], $P[2]) : array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? 0);
 if (str_contains($Q, 'FROM `App_Devices` AS `D`')) return array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? count(self::$Devices));
 if (str_contains($Q, 'FROM `App_Devices` WHERE `Is_Trusted` = 1')) return array_values(array_filter(self::$Devices, fn($D) => $D['Is_Trusted'] === 1));
+if (str_contains($Q, 'WHERE `Phone` IN')) return array_values(array_filter(self::$Devices, fn($D) => in_array((string)($D['Phone'] ?? ''), $P, true) && $D['Is_Trusted'] === 1));
+if (str_contains($Q, 'WHERE `Device_ID` = ?')) return array_values(array_filter(self::$Devices, fn($D) => ($D['Device_ID'] ?? '') === $P[0] && $D['Is_Trusted'] === 1));
 if (str_contains($Q, 'WHERE `User_UUID` = ?')) return array_values(array_filter(self::$Devices, fn($D) => ($D['User_UUID'] ?? '') === $P[0] && $D['Is_Trusted'] === 1));
-return array_values(array_filter(self::$Devices, fn($D) => $D['Telegram_ID'] === $P[0] && $D['Is_Trusted'] === 1));
+return array_values(array_filter(self::$Devices, fn($D) => ($D['Telegram_ID'] ?? null) === $P[0] && $D['Is_Trusted'] === 1));
 }
 public function execute(string $Q, array $P): void {
 if (str_contains($Q, 'INSERT INTO `Settings`')) { if (self::$FailWrite && $P[0] === 'Telegram_Channel_ID') throw new RuntimeException('write failure'); self::$Settings[$P[0]] = $P[1]; }
@@ -140,4 +142,33 @@ check(Database::$Devices[0]['Is_Trusted'] === 0 && in_array('admin-device', Data
 check(Database::$Queued === [], 'admin device permission revocation does not enqueue a direct app notification');
 $Scheduler = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');
 check(str_contains($Scheduler, 'if (!Repository::nightlyReportEnabled($User_ID)) continue;'), 'nightly scheduler observes persisted preference');
+
+// Manual targeted app sends allow admin test accounts (tagged as Level=manual)
+// and resolve phone-only or app-only users even without Users.Client_ID or Telegram_ID.
+Database::$Users = [
+99 => ['Telegram_ID' => 99, 'Chat_ID' => 99, 'Full_Name' => 'مدیر', 'Phone' => '09123456789', 'Client_ID' => 'admin-owner'],
+4 => ['Telegram_ID' => 4, 'Chat_ID' => 4, 'Full_Name' => 'کاربر موبایلی', 'Phone' => '09127776655', 'Client_ID' => '_'],
+];
+Database::$Devices = [
+['ID' => 10, 'Device_ID' => 'admin-device-manual', 'User_UUID' => 'admin-owner', 'Telegram_ID' => 99, 'Phone' => '09123456789', 'Is_Trusted' => 1],
+['ID' => 11, 'Device_ID' => 'phone-matched-device', 'User_UUID' => 'app-phone-uuid', 'Telegram_ID' => null, 'Phone' => '09127776655', 'Is_Trusted' => 1],
+['ID' => 12, 'Device_ID' => 'app-only-no-tg', 'User_UUID' => 'only-app-uuid', 'Telegram_ID' => 0, 'Phone' => '09129998877', 'Is_Trusted' => 1],
+];
+Database::$Queued = [];
+$AdminManual = $Send->invoke(null, Database::$Users[99], 'تست دستی مدیر', 'app', 99);
+check($AdminManual === ['app' => true], 'manual app send succeeds for admin test account');
+check(count(Database::$Queued) === 1 && Database::$Queued[0][1][0] === 'admin-device-manual' && Database::$Queued[0][1][3] === 'manual', 'admin manual app message queued with Level=manual');
+
+Database::$Queued = [];
+$PhoneFallback = $Send->invoke(null, Database::$Users[4], 'تست تطبیق شماره', 'app', 99);
+check($PhoneFallback === ['app' => true], 'manual app send matches device via phone when Client_ID is cleared and Telegram_ID is null');
+check(count(Database::$Queued) === 1 && Database::$Queued[0][1][0] === 'phone-matched-device', 'phone-fallback device receives queued app notification');
+
+Database::$Queued = [];
+$AppOnlyUser = ['Telegram_ID' => 0, 'Chat_ID' => 0, 'Full_Name' => 'کاربر فقط اپ', 'Phone' => '09129998877', 'Client_ID' => 'only-app-uuid', 'Device_ID' => 'app-only-no-tg'];
+$AppOnlyResult = $Send->invoke(null, $AppOnlyUser, 'پیام بدون تلگرام', 'app', 99);
+check($AppOnlyResult === ['app' => true], 'app-only user without Telegram_ID receives targeted app push');
+check(Database::$Queued[0][1][0] === 'app-only-no-tg', 'app-only notification targets exact Device_ID');
+Database::$Queued = [];
+
 echo "OK messaging/settings tests ({$N} assertions)\n";

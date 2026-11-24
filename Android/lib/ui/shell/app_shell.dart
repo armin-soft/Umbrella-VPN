@@ -11,6 +11,7 @@ import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/update_controller.dart';
+import '../../vpn/clash_api.dart';
 import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';
 import '../pages/account_page.dart';
@@ -62,6 +63,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ActivityMonitorBuffer.instance.recordScreen(_destinations[_index].label);
     _appVisible = AppShell.isLifecycleVisible(
       WidgetsBinding.instance.lifecycleState,
     );
@@ -169,6 +171,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       }
       _index = value;
     });
+    if (value >= 0 && value < _destinations.length) {
+      ActivityMonitorBuffer.instance.recordScreen(_destinations[value].label);
+    }
   }
 
   void _openMoreSheet(bool hasUpdate) {

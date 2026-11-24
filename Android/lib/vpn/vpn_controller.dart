@@ -3552,6 +3552,25 @@ class VpnController extends ChangeNotifier {
   }
 
   bool _statsInFlight = false;
+  DateTime? _lastActivitySample;
+
+  Future<void> _sampleActivityIfDue({bool force = false}) async {
+    final DateTime now = DateTime.now();
+    if (!force &&
+        _lastActivitySample != null &&
+        now.difference(_lastActivitySample!) < const Duration(seconds: 6)) {
+      return;
+    }
+    _lastActivitySample = now;
+    try {
+      final List<CoreActivitySample> samples = await ClashApi.activeConnections(
+        timeout: Duration(milliseconds: force ? 300 : 650),
+      );
+      if (samples.isNotEmpty) {
+        ActivityMonitorBuffer.instance.recordConnections(samples);
+      }
+    } catch (_) {}
+  }
 
   Future<void> _tickStats() async {
     if (!_status.active || _statsInFlight) {
@@ -3605,6 +3624,7 @@ class VpnController extends ChangeNotifier {
           );
         }
       }
+      await _sampleActivityIfDue();
       _notify();
     } finally {
       _statsInFlight = false;
@@ -3752,6 +3772,7 @@ class VpnController extends ChangeNotifier {
       return;
     }
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
+    await _sampleActivityIfDue(force: true);
     // سنجشی که بعد از قطع اتصال شروع شود، هسته ای بالا می آورد و پورت ها را
     // می گیرد؛ همان چیزی که اتصال بعدی را رد می کرد.
     await _stopProbes();

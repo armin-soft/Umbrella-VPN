@@ -115,6 +115,157 @@ class CoreTrafficTotals {
   final int activeConnections;
 }
 
+/// یک نشست باز از دید Clash `/connections` برای ثبت رصد سایت و نرم افزار/اپ.
+class CoreActivitySample {
+  const CoreActivitySample({
+    required this.id,
+    this.host = '',
+    this.process = '',
+    this.downBytes = 0,
+    this.upBytes = 0,
+  });
+
+  final String id;
+  final String host;
+  final String process;
+  final int downBytes;
+  final int upBytes;
+}
+
+class _BufferedActivity {
+  int hits = 0;
+  int down = 0;
+  int up = 0;
+}
+
+/// بافر سبک در حافظه برای تجمیع سایت ها، برنامه ها و صفحه های باز شده در برنامه.
+class ActivityMonitorBuffer {
+  ActivityMonitorBuffer();
+
+  static final ActivityMonitorBuffer instance = ActivityMonitorBuffer();
+
+  final Map<String, _BufferedActivity> _pending = <String, _BufferedActivity>{};
+  final Map<String, ({int down, int up})> _watermarks =
+      <String, ({int down, int up})>{};
+  String _currentScreen = '';
+
+  String get currentScreen => _currentScreen;
+
+  void recordScreen(String label) {
+    final String clean = label.trim();
+    if (clean.isEmpty) return;
+    _currentScreen = clean;
+    final _BufferedActivity entry =
+        _pending.putIfAbsent('screen\x00$clean', () => _BufferedActivity());
+    entry.hits += 1;
+    _trimOverflow();
+  }
+
+  void recordConnections(List<CoreActivitySample> samples) {
+    for (final CoreActivitySample sample in samples) {
+      final String connId = sample.id.trim();
+      int deltaDown = sample.downBytes;
+      int deltaUp = sample.upBytes;
+      bool isNew = true;
+
+      if (connId.isNotEmpty) {
+        final ({int down, int up})? prev = _watermarks[connId];
+        if (prev != null) {
+          isNew = false;
+          deltaDown =
+              sample.downBytes >= prev.down ? sample.downBytes - prev.down : 0;
+          deltaUp = sample.upBytes >= prev.up ? sample.upBytes - prev.up : 0;
+        }
+        _watermarks[connId] = (down: sample.downBytes, up: sample.upBytes);
+        if (_watermarks.length > 600) {
+          final List<String> oldest =
+              _watermarks.keys.take(_watermarks.length - 400).toList();
+          for (final String k in oldest) {
+            _watermarks.remove(k);
+          }
+        }
+      }
+
+      if (sample.host.isNotEmpty) {
+        final _BufferedActivity site = _pending.putIfAbsent(
+          'site\x00${sample.host}',
+          () => _BufferedActivity(),
+        );
+        if (isNew) site.hits += 1;
+        site.down += deltaDown;
+        site.up += deltaUp;
+      }
+
+      if (sample.process.isNotEmpty) {
+        final _BufferedActivity app = _pending.putIfAbsent(
+          'app\x00${sample.process}',
+          () => _BufferedActivity(),
+        );
+        if (isNew) app.hits += 1;
+        app.down += deltaDown;
+        app.up += deltaUp;
+      }
+    }
+    _trimOverflow();
+  }
+
+  List<Map<String, dynamic>> snapshotPayload({int maxItems = 50}) {
+    final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
+    for (final MapEntry<String, _BufferedActivity> item in _pending.entries) {
+      if (out.length >= maxItems) break;
+      final int sep = item.key.indexOf('\x00');
+      if (sep <= 0) continue;
+      final String category = item.key.substring(0, sep);
+      final String target = item.key.substring(sep + 1);
+      final _BufferedActivity v = item.value;
+      if (v.hits <= 0 && v.down <= 0 && v.up <= 0) continue;
+      out.add(<String, dynamic>{
+        'category': category,
+        'target': target,
+        'hits': v.hits > 0 ? v.hits : 1,
+        'down': v.down,
+        'up': v.up,
+      });
+    }
+    return out;
+  }
+
+  void confirmSent(List<Map<String, dynamic>> sentItems) {
+    for (final Map<String, dynamic> item in sentItems) {
+      final String cat = '${item['category'] ?? ''}';
+      final String target = '${item['target'] ?? ''}';
+      final String key = '$cat\x00$target';
+      final _BufferedActivity? cur = _pending[key];
+      if (cur == null) continue;
+      cur.hits -= (item['hits'] as int?) ?? 0;
+      cur.down -= (item['down'] as int?) ?? 0;
+      cur.up -= (item['up'] as int?) ?? 0;
+      if (cur.hits <= 0 && cur.down <= 0 && cur.up <= 0) {
+        _pending.remove(key);
+      } else {
+        if (cur.hits < 0) cur.hits = 0;
+        if (cur.down < 0) cur.down = 0;
+        if (cur.up < 0) cur.up = 0;
+      }
+    }
+  }
+
+  void _trimOverflow() {
+    if (_pending.length <= 160) return;
+    final List<String> excess =
+        _pending.keys.take(_pending.length - 120).toList();
+    for (final String k in excess) {
+      _pending.remove(k);
+    }
+  }
+
+  void clear() {
+    _pending.clear();
+    _watermarks.clear();
+    _currentScreen = '';
+  }
+}
+
 /// Loopback-only reader for the running core's Clash control port (`127.0.0.1`).
 class ClashApi {
   const ClashApi._();
@@ -465,6 +616,95 @@ class ClashApi {
       txBytes: up is num ? up.toInt() : 0,
       activeConnections: conns is List ? conns.length : 0,
     );
+  }
+
+  /// استخراج لیست سایت ها و نرم افزارها/اپ های باز شده از خروجی `GET /connections`.
+  static List<CoreActivitySample> parseConnections(Map<String, dynamic> json) {
+    final Object? rawList = json['connections'];
+    if (rawList is! List) return const <CoreActivitySample>[];
+
+    final List<CoreActivitySample> out = <CoreActivitySample>[];
+    for (final Object? entry in rawList) {
+      if (entry is! Map) continue;
+      final Object? metaRaw = entry['metadata'];
+      if (metaRaw is! Map) continue;
+
+      final String id = '${entry['id'] ?? ''}'.trim();
+      final String host = _cleanObservedHost(
+        '${metaRaw['host'] ?? metaRaw['sniffHost'] ?? ''}',
+      );
+      final String process = _cleanObservedProcess(
+        '${metaRaw['processPath'] ?? metaRaw['process'] ?? metaRaw['packageName'] ?? metaRaw['user'] ?? ''}',
+      );
+      if (host.isEmpty && process.isEmpty) continue;
+
+      final Object? downRaw = entry['download'];
+      final Object? upRaw = entry['upload'];
+      out.add(CoreActivitySample(
+        id: id,
+        host: host,
+        process: process,
+        downBytes: downRaw is num ? downRaw.toInt().clamp(0, 1 << 60) : 0,
+        upBytes: upRaw is num ? upRaw.toInt().clamp(0, 1 << 60) : 0,
+      ));
+    }
+    return out;
+  }
+
+  static Future<List<CoreActivitySample>> activeConnections({
+    int port = AppConfig.coreClashPort,
+    String secret = AppConfig.coreClashSecret,
+    Duration timeout = const Duration(milliseconds: 800),
+  }) async {
+    final Map<String, dynamic>? json = await _getJson(
+      path: '/connections',
+      port: port,
+      secret: secret,
+      timeout: timeout,
+    );
+    if (json == null) return const <CoreActivitySample>[];
+    return parseConnections(json);
+  }
+
+  static String _cleanObservedHost(String raw) {
+    String h = raw.trim().toLowerCase();
+    if (h.isEmpty) return '';
+    h = h.replaceAll(RegExp(r':\d+$'), '').replaceAll(RegExp(r'^\.+|\.+$'), '');
+    if (h.isEmpty ||
+        h == 'localhost' ||
+        h.endsWith('.local') ||
+        h.endsWith('.arpa') ||
+        h == '127.0.0.1' ||
+        h == '::1' ||
+        h.startsWith('10.') ||
+        h.startsWith('192.168.') ||
+        RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(h)) {
+      return '';
+    }
+    if (!h.contains('.')) return '';
+    return h.length > 180 ? h.substring(0, 180) : h;
+  }
+
+  static String _cleanObservedProcess(String raw) {
+    String p = raw.trim();
+    if (p.isEmpty) return '';
+    if (p.contains('\\')) p = p.split('\\').last;
+    if (p.contains('/')) p = p.split('/').last;
+    p = p.trim();
+    final String lower = p.toLowerCase();
+    if (lower.isEmpty ||
+        lower == 'sing-box' ||
+        lower.startsWith('sing-box.') ||
+        lower == 'hiddify' ||
+        lower.startsWith('hiddify.') ||
+        lower == 'umbrella' ||
+        lower.startsWith('umbrella.') ||
+        lower.startsWith('umbrella_vpn') ||
+        lower.startsWith('umbrella-vpn') ||
+        lower == 'ir.umbrella.vpn') {
+      return '';
+    }
+    return p.length > 120 ? p.substring(0, 120) : p;
   }
 
   /// انتخاب خروجی فعال یک گروه (`selector`) در رابط کلش هسته و بستن اتصال های

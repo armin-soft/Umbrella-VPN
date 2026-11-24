@@ -106,6 +106,8 @@ if ($Route === 'wallet/topup') { self::walletTopup(self::body()); return; }
 if ($Route === 'wallet/verify') { self::walletVerify(self::body()); return; }
 if ($Route === 'wallet/cancel') { self::walletCancel(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
+if ($Route === 'app/activity') { self::recordActivityRoute(self::body()); return; }
+if ($Route === 'app/support-report') { self::supportReport(self::body()); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
 
@@ -820,9 +822,18 @@ if ($PanelAccount === null || $PanelAccount === []) {
 self::fail(502, 'panel_unavailable', 'بررسی حساب پنل ناموفق بود؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.');
 }
 }
+$DeviceName = trim((string)($Body['device_name'] ?? ''));
+$Platform = trim((string)($Body['platform'] ?? ''));
+$AppVersion = trim((string)($Body['app_version'] ?? ''));
+$ClientIp = self::clientIp();
 Database::getInstance()->execute(
-'UPDATE `App_Devices` SET `Last_Seen_At` = ? WHERE `Device_ID` = ?',
-[time(), $DeviceId]
+'UPDATE `App_Devices` SET `Last_Seen_At` = ?,
+`Device_Name` = COALESCE(NULLIF(?, \'\'), `Device_Name`),
+`Platform` = COALESCE(NULLIF(?, \'\'), `Platform`),
+`App_Version` = COALESCE(NULLIF(?, \'\'), `App_Version`),
+`Last_IP` = COALESCE(NULLIF(?, \'\'), `Last_IP`)
+WHERE `Device_ID` = ?',
+[time(), substr($DeviceName, 0, 120), substr($Platform, 0, 60), substr($AppVersion, 0, 32), substr($ClientIp, 0, 64), $DeviceId]
 );
 
 $Payload = [
@@ -830,17 +841,21 @@ $Payload = [
 'emergency_enabled' => BotConfig::showEmergency(),
 'channel_url' => BotConfig::getChannelUrl(),
 ];
+$LinkedTg = (int)($Session['Telegram_ID'] ?? 0);
 if ($UUID !== '' && $UUID !== '_') {
 $LinkedTg = self::autoLinkTelegramOwner(
 $DeviceId,
 $UUID,
-(int)($Session['Telegram_ID'] ?? 0)
+$LinkedTg
 );
 $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $PanelAccount);
 $Payload['account'] = self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg);
 $Payload['bot_linked'] = $LinkedTg > 0 && (int)($PanelAccount['telegram_id'] ?? 0) === $LinkedTg;
 $Payload['filter'] = self::filterPayload($UUID);
 $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
+}
+if (isset($Body['activity']) || isset($Body['current_screen'])) {
+$Payload['activity_stored'] = self::storeActivity($DeviceId, $UUID, $LinkedTg, $Body);
 }
 self::ok($Payload);
 }
@@ -915,13 +930,13 @@ $Session = self::sessionRow(self::bearer());
 if ($Session === null) {
 self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 }
-if (self::isAdministratorSession($Session)) {
-self::ok(['items' => []]);
-return;
-}
+// Automated system notices and broadcasts stay suppressed on administrator
+// devices, while direct manual admin sends (`Level = manual`) still deliver.
+$AdminOnlyManual = self::isAdministratorSession($Session);
+$LevelCondition = $AdminOnlyManual ? " AND `Level` = 'manual'" : '';
 
 $IncludeHistory = ((string)($_GET['history'] ?? '')) === '1';
-$Scope = '((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))';
+$Scope = '((`Device_ID` = ? AND (`User_UUID` IS NULL OR `User_UUID` = ?)) OR (`Device_ID` IS NULL AND `User_UUID` = ?))' . $LevelCondition;
 $Sql = $IncludeHistory
 ? 'SELECT `ID`, `Title`, `Body`, `Level`, `Sent_At`, `Delivered_At` FROM `App_Notifications`
 WHERE ' . $Scope . '
@@ -1690,11 +1705,378 @@ $Last_Status >= 400 && $Last_Status < 500 ? $Last_Status : 502,
 );
 }
 
+private static function recordActivityRoute(array $Body): void {
+$Session = self::sessionRow((string)($Body['token'] ?? self::bearer()));
+
+if ($Session === null) {
+self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
+}
+
+$DeviceId = (string)$Session['Device_ID'];
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$LinkedTg = self::autoLinkTelegramOwner($DeviceId, $UUID, (int)($Session['Telegram_ID'] ?? 0));
+$Stored = self::storeActivity($DeviceId, $UUID, $LinkedTg, $Body);
+self::ok(['stored' => $Stored]);
+}
+
+private static function storeActivity(string $DeviceId, string $UUID, int $TelegramId, array $Body): int {
+$DeviceId = trim($DeviceId);
+if ($DeviceId === '') return 0;
+
+$Items = is_array($Body['activity'] ?? null) ? $Body['activity'] : [];
+$Screen = trim((string)($Body['current_screen'] ?? ''));
+if ($Screen !== '') {
+$Items[] = ['category' => 'screen', 'target' => $Screen, 'hits' => 1, 'down' => 0, 'up' => 0];
+}
+
+if ($Items === []) return 0;
+
+$Now = time();
+$Count = 0;
+$Db = Database::getInstance();
+
+foreach (array_slice($Items, 0, 60) as $Raw) {
+if (!is_array($Raw)) continue;
+$Category = strtolower(trim((string)($Raw['category'] ?? '')));
+if (!in_array($Category, ['site', 'app', 'screen'], true)) continue;
+
+$Target = self::normalizeActivityTarget($Category, (string)($Raw['target'] ?? ''));
+if ($Target === '') continue;
+
+$Hits = max(1, min(10000, (int)($Raw['hits'] ?? 1)));
+$Down = max(0, (int)($Raw['down'] ?? 0));
+$Up = max(0, (int)($Raw['up'] ?? 0));
+
+try {
+$Db->execute(
+'INSERT INTO `App_User_Activity` (`Device_ID`, `User_UUID`, `Telegram_ID`, `Category`, `Target`, `Hits`, `Bytes_Down`, `Bytes_Up`, `Last_Seen_At`)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+`User_UUID` = COALESCE(NULLIF(VALUES(`User_UUID`), \'\'), `User_UUID`),
+`Telegram_ID` = COALESCE(NULLIF(VALUES(`Telegram_ID`), 0), `Telegram_ID`),
+`Hits` = LEAST(4294967295, `Hits` + VALUES(`Hits`)),
+`Bytes_Down` = `Bytes_Down` + VALUES(`Bytes_Down`),
+`Bytes_Up` = `Bytes_Up` + VALUES(`Bytes_Up`),
+`Last_Seen_At` = VALUES(`Last_Seen_At`)',
+[$DeviceId, $UUID !== '' && $UUID !== '_' ? $UUID : null, $TelegramId > 0 ? $TelegramId : null, $Category, $Target, $Hits, $Down, $Up, $Now]
+);
+$Count++;
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Activity] ' . $Error->getMessage());
+}
+}
+
+if ($Count > 0) {
+try {
+$Total = (int)($Db->scalar('SELECT COUNT(*) FROM `App_User_Activity` WHERE `Device_ID` = ?', [$DeviceId]) ?? 0);
+if ($Total > 300) {
+$Excess = $Total - 250;
+$Db->execute('DELETE FROM `App_User_Activity` WHERE `Device_ID` = ? ORDER BY `Last_Seen_At` ASC LIMIT ' . $Excess, [$DeviceId]);
+}
+} catch (Throwable) {}
+}
+
+return $Count;
+}
+
+private static function normalizeActivityTarget(string $Category, string $RawTarget): string {
+$Clean = trim((string)preg_replace('/[\x00-\x1F\x7F]+/u', '', $RawTarget));
+if ($Clean === '') return '';
+
+if ($Category === 'site') {
+$Host = strtolower($Clean);
+if (str_contains($Host, '://')) {
+$Parsed = parse_url($Host, PHP_URL_HOST);
+$Host = is_string($Parsed) ? strtolower($Parsed) : $Host;
+}
+$Host = preg_replace('/:\d+$/', '', $Host) ?? $Host;
+$Host = trim($Host, " \t\n\r\0\x0B.");
+if ($Host === '' || $Host === 'localhost' || str_ends_with($Host, '.local') || str_ends_with($Host, '.arpa')) {
+return '';
+}
+if (filter_var($Host, FILTER_VALIDATE_IP) !== false) {
+if (filter_var($Host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+return '';
+}
+} elseif (!str_contains($Host, '.') || !preg_match('/^[a-z0-9][a-z0-9._-]{1,175}$/', $Host)) {
+return '';
+}
+return substr($Host, 0, 180);
+}
+
+if ($Category === 'app') {
+$Normalized = str_replace('\\', '/', $Clean);
+if (str_contains($Normalized, '/')) {
+$Normalized = basename($Normalized);
+}
+$Lower = strtolower(trim($Normalized));
+foreach (['sing-box', 'hiddify', 'umbrella_vpn', 'umbrella-vpn', 'umbrella.exe', 'ir.umbrella.vpn', 'clash'] as $Ignored) {
+if ($Lower === $Ignored || str_starts_with($Lower, $Ignored . '.')) {
+return '';
+}
+}
+return function_exists('mb_substr') ? mb_substr(trim($Normalized), 0, 120, 'UTF-8') : substr(trim($Normalized), 0, 120);
+}
+
+$Screen = trim(Helper::stripZwnj(Helper::repairMojibake($Clean)));
+return function_exists('mb_substr') ? mb_substr($Screen, 0, 80, 'UTF-8') : substr($Screen, 0, 80);
+}
+
+private static function supportReport(array $Body): void {
+$Token = trim((string)($Body['token'] ?? self::bearer()));
+$DeviceId = trim((string)($Body['device_id'] ?? ''));
+$Phone = trim((string)($Body['phone'] ?? ''));
+$Note = trim((string)($Body['note'] ?? ''));
+$Platform = trim((string)($Body['platform'] ?? ''));
+$AppVersion = trim((string)($Body['app_version'] ?? ''));
+$Device = is_array($Body['device'] ?? null) ? $Body['device'] : [];
+$VpnState = $Body['vpn_state'] ?? [];
+$Errors = is_array($Body['errors'] ?? null) ? $Body['errors'] : [];
+$RecentLogs = $Body['recent_logs'] ?? '';
+if (is_array($RecentLogs)) {
+$RecentLogs = implode("\n", array_map(static fn($Line): string => (string)$Line, $RecentLogs));
+}
+$RecentLogsText = trim((string)$RecentLogs);
+
+if ($Note === '' && $Errors === [] && $RecentLogsText === '' && $Device === []) {
+self::fail(422, 'empty_report', 'اطلاعات گزارش پشتیبانی خالی است.');
+}
+
+$Sender = self::resolveSupportSender($Token, $DeviceId, $Phone);
+$EffectiveDeviceId = $DeviceId !== '' ? $DeviceId : (string)($Sender['device_id'] ?? '');
+$RateKey = 'app_support_cd_' . md5(($EffectiveDeviceId !== '' ? $EffectiveDeviceId : 'ip') . '|' . self::clientIp());
+$LastSent = (int)Repository::getSetting($RateKey, '0');
+$Now = time();
+if ($LastSent > 0 && ($Now - $LastSent) < 20) {
+$Wait = 20 - ($Now - $LastSent);
+self::fail(429, 'rate_limited', 'گزارش پشتیبانی شما لحظاتی پیش ارسال شد؛ ' . $Wait . ' ثانیه دیگر می توانید دوباره ارسال کنید.');
+}
+
+$Admins = self::administratorTelegramIds();
+if ($Admins === []) {
+self::fail(503, 'admin_unavailable', 'حساب مدیریت در ربات تلگرام تنظیم نشده است.');
+}
+
+$UserRow = $Sender['user'] ?? null;
+$DeviceRow = $Sender['device_row'] ?? null;
+$TgId = (int)($Sender['telegram_id'] ?? 0);
+$Uuid = trim((string)($Sender['user_uuid'] ?? ''));
+$UserName = trim((string)($UserRow['Full_Name'] ?? ($UserRow['First_Name'] ?? '')));
+$UserPhone = trim((string)($UserRow['Phone'] ?? ($DeviceRow['Phone'] ?? $Phone)));
+$SubPlan = trim((string)($UserRow['Subscription'] ?? ''));
+$SubStatus = trim((string)($UserRow['Client_Status'] ?? ''));
+
+$DeviceName = trim((string)($Device['device_name'] ?? ($Device['hostname'] ?? ($DeviceRow['Device_Name'] ?? ''))));
+$OsText = trim((string)($Device['os'] ?? ($Platform !== '' ? $Platform : ($DeviceRow['Platform'] ?? ''))));
+$CpuText = trim((string)($Device['cpu'] ?? ''));
+$CpuCores = (int)($Device['cpu_cores'] ?? 0);
+$RamTotal = (int)($Device['ram_total_mb'] ?? 0);
+$RamUsed = (int)($Device['ram_used_mb'] ?? 0);
+$DiskFree = (int)($Device['disk_free_mb'] ?? 0);
+$DiskTotal = (int)($Device['disk_total_mb'] ?? 0);
+$LocalIp = trim((string)($Device['local_ip'] ?? ''));
+$Adapter = trim((string)($Device['adapter'] ?? ''));
+$Elevated = !empty($Device['elevated']);
+$ClientIp = self::clientIp();
+$SentDate = Helper::formatPersianDate($Now, true);
+
+$Lines = [];
+$Lines[] = '🆘 <b>گزارش فوری پشتیبانی از برنامه آمبرلا</b>';
+$Lines[] = '🕒 زمان ثبت: <b>' . self::supportEsc($SentDate) . '</b>';
+$Lines[] = '';
+
+$Lines[] = '👤 <b>مشخصات کاربر:</b>';
+if ($UserName !== '') {
+$Lines[] = '• نام: ' . ($TgId > 0 ? '<a href="tg://user?id=' . $TgId . '">' . self::supportEsc($UserName) . '</a>' : '<b>' . self::supportEsc($UserName) . '</b>');
+} else {
+$Lines[] = '• نام: <i>کاربر مهمان / پیش از ورود</i>';
+}
+if ($UserPhone !== '') $Lines[] = '• موبایل: <code>' . self::supportEsc($UserPhone) . '</code>';
+if ($TgId > 0) $Lines[] = '• آیدی تلگرام: <code>' . $TgId . '</code>';
+if ($Uuid !== '' && $Uuid !== '_') $Lines[] = '• شناسه سرویس: <code>' . self::supportEsc($Uuid) . '</code>';
+if ($SubPlan !== '' || $SubStatus !== '') {
+$Lines[] = '• وضعیت اشتراک: ' . self::supportEsc(trim($SubPlan . ' (' . $SubStatus . ')', ' ()'));
+}
+
+$Lines[] = '';
+$Lines[] = '💻 <b>مشخصات دقیق دستگاه:</b>';
+if ($DeviceName !== '') $Lines[] = '• نام دستگاه: <b>' . self::supportEsc($DeviceName) . '</b>';
+if ($OsText !== '') $Lines[] = '• سیستم عامل: ' . self::supportEsc($OsText);
+if ($AppVersion !== '') $Lines[] = '• نسخه آمبرلا: <code>' . self::supportEsc($AppVersion) . '</code>';
+if ($EffectiveDeviceId !== '') $Lines[] = '• شناسه دستگاه: <code>' . self::supportEsc(substr($EffectiveDeviceId, 0, 24)) . '</code>';
+if ($CpuText !== '') $Lines[] = '• پردازنده: ' . self::supportEsc($CpuText . ($CpuCores > 0 ? " ({$CpuCores} هسته)" : ''));
+if ($RamTotal > 0) $Lines[] = '• حافظه رم: ' . $RamUsed . ' / ' . $RamTotal . ' MB';
+if ($DiskTotal > 0) $Lines[] = '• فضای دیسک: ' . $DiskFree . ' MB آزاد از ' . $DiskTotal . ' MB';
+if ($LocalIp !== '') $Lines[] = '• آی پی محلی: <code>' . self::supportEsc($LocalIp) . '</code>';
+if ($ClientIp !== '') $Lines[] = '• آی پی ارسال کننده: <code>' . self::supportEsc($ClientIp) . '</code>';
+if ($Adapter !== '') $Lines[] = '• رابط شبکه: ' . self::supportEsc($Adapter);
+if (isset($Device['elevated'])) $Lines[] = '• سطح دسترسی: ' . ($Elevated ? 'مدیر سیستم / روت' : 'کاربر عادی');
+
+if (is_array($VpnState) && $VpnState !== []) {
+$VpnSummary = [];
+if (!empty($VpnState['status'])) $VpnSummary[] = 'وضعیت: ' . (string)$VpnState['status'];
+if (!empty($VpnState['mode'])) $VpnSummary[] = 'حالت: ' . (string)$VpnState['mode'];
+if (!empty($VpnState['server'])) $VpnSummary[] = 'سرور: ' . (string)$VpnState['server'];
+if (!empty($VpnState['error'])) $VpnSummary[] = 'خطای اتصال: ' . (string)$VpnState['error'];
+if ($VpnSummary !== []) {
+$Lines[] = '';
+$Lines[] = '🔌 <b>وضعیت اتصال سرویس:</b>';
+foreach ($VpnSummary as $SummaryItem) {
+$Lines[] = '• ' . self::supportEsc($SummaryItem);
+}
+}
+} elseif (is_string($VpnState) && trim($VpnState) !== '') {
+$Lines[] = '';
+$Lines[] = '🔌 <b>وضعیت اتصال:</b> ' . self::supportEsc(trim($VpnState));
+}
+
+if ($Note !== '') {
+$CleanNote = function_exists('mb_substr') ? mb_substr($Note, 0, 1000, 'UTF-8') : substr($Note, 0, 1000);
+$Lines[] = '';
+$Lines[] = '📝 <b>توضیح کاربر:</b>';
+$Lines[] = '<blockquote>' . self::supportEsc($CleanNote) . '</blockquote>';
+}
+
+if ($Errors !== []) {
+$Lines[] = '';
+$Lines[] = '❌ <b>خطاها و هشدارهای ثبت شده (' . count($Errors) . '):</b>';
+$SlicedErrors = array_slice($Errors, -25);
+$ErrorBlock = [];
+foreach ($SlicedErrors as $Err) {
+$ErrStr = is_array($Err)
+? trim(((string)($Err['time'] ?? '')) . ' [' . strtoupper((string)($Err['level'] ?? 'ERROR')) . '] ' . ((string)($Err['message'] ?? '')))
+: trim((string)$Err);
+if ($ErrStr !== '') $ErrorBlock[] = $ErrStr;
+}
+if ($ErrorBlock !== []) {
+$JoinedErrors = implode("\n", $ErrorBlock);
+if (function_exists('mb_strlen') && mb_strlen($JoinedErrors, 'UTF-8') > 2500) {
+$JoinedErrors = '...' . "\n" . mb_substr($JoinedErrors, -2500, null, 'UTF-8');
+}
+$Lines[] = '<pre>' . self::supportEsc($JoinedErrors) . '</pre>';
+}
+}
+
+if ($RecentLogsText !== '') {
+if (function_exists('mb_strlen') && mb_strlen($RecentLogsText, 'UTF-8') > 2600) {
+$RecentLogsText = '...' . "\n" . mb_substr($RecentLogsText, -2600, null, 'UTF-8');
+}
+$Lines[] = '';
+$Lines[] = '📋 <b>آخرین گزارش های برنامه:</b>';
+$Lines[] = '<pre>' . self::supportEsc($RecentLogsText) . '</pre>';
+}
+
+$KeyboardRows = [];
+$DeviceRowId = (int)($DeviceRow['ID'] ?? 0);
+if ($TgId > 0) {
+$KeyboardRows[] = [
+['text' => '👁رصد این کاربر', 'callback_data' => 'admin_monitor_view:t:' . $TgId . ':0:all:0'],
+['text' => '👤مشاهده کاربر', 'callback_data' => 'admin_user_view:' . $TgId . ':0'],
+];
+} elseif ($DeviceRowId > 0) {
+$KeyboardRows[] = [
+['text' => '👁رصد این دستگاه', 'callback_data' => 'admin_monitor_view:d:' . $DeviceRowId . ':0:all:0'],
+];
+}
+$KeyboardRows[] = [['text' => '🏠مدیریت', 'callback_data' => 'admin_home']];
+
+$Message = implode("\n", $Lines);
+$Delivered = false;
+foreach ($Admins as $AdminId) {
+if ($AdminId <= 0) continue;
+try {
+if (TelegramClient::sendReadableMessage($AdminId, null, $Message, ['inline_keyboard' => $KeyboardRows])) {
+$Delivered = true;
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][SupportReport] send failed: ' . $Error->getMessage());
+}
+}
+
+if (!$Delivered) {
+self::fail(502, 'telegram_failed', 'ارسال گزارش به ربات تلگرام ناموفق بود؛ کمی بعد دوباره تلاش کنید.');
+}
+
+Repository::setSetting($RateKey, (string)$Now);
+self::ok([
+'sent' => true,
+'message' => 'مشخصات دستگاه و گزارش خطاها بلافاصله برای پشتیبانی ارسال شد.',
+]);
+}
+
+private static function resolveSupportSender(string $Token, string $DeviceId, string $Phone): array {
+$Db = Database::getInstance();
+$SessionRow = null;
+$DeviceRow = null;
+$UserRow = null;
+$TelegramId = 0;
+$Uuid = '';
+
+if ($Token !== '') {
+try {
+$SessionRow = $Db->fetch(
+'SELECT `User_UUID`, `Device_ID`, `Telegram_ID` FROM `App_Sessions` WHERE `Token_Hash` = ? LIMIT 1',
+[hash('sha256', $Token)]
+);
+} catch (Throwable) {}
+if (is_array($SessionRow)) {
+$DeviceId = trim((string)($SessionRow['Device_ID'] ?? $DeviceId));
+$Uuid = trim((string)($SessionRow['User_UUID'] ?? ''));
+$TelegramId = (int)($SessionRow['Telegram_ID'] ?? 0);
+}
+}
+
+if ($DeviceId !== '') {
+try {
+$DeviceRow = $Db->fetch(
+'SELECT * FROM `App_Devices` WHERE `Device_ID` = ? LIMIT 1',
+[$DeviceId]
+);
+} catch (Throwable) {}
+if (is_array($DeviceRow)) {
+if ($Uuid === '' || $Uuid === '_') $Uuid = trim((string)($DeviceRow['User_UUID'] ?? ''));
+if ($TelegramId <= 0) $TelegramId = (int)($DeviceRow['Telegram_ID'] ?? 0);
+if ($Phone === '') $Phone = trim((string)($DeviceRow['Phone'] ?? ''));
+}
+}
+
+if ($TelegramId > 0) {
+$UserRow = Repository::getUser($TelegramId);
+}
+if (($UserRow === null || $UserRow === []) && $Uuid !== '' && $Uuid !== '_') {
+$UserRow = self::resolveBotUser($Uuid, 0);
+if (is_array($UserRow) && !empty($UserRow['Telegram_ID'])) {
+$TelegramId = (int)$UserRow['Telegram_ID'];
+}
+}
+if (($UserRow === null || $UserRow === []) && $Phone !== '') {
+$FoundByPhone = Repository::findUserByIdentifier($Phone);
+if (is_array($FoundByPhone) && $FoundByPhone !== []) {
+$UserRow = $FoundByPhone;
+$TelegramId = (int)($FoundByPhone['Telegram_ID'] ?? $TelegramId);
+if ($Uuid === '' || $Uuid === '_') $Uuid = trim((string)($FoundByPhone['Client_ID'] ?? ''));
+}
+}
+
+return [
+'device_id' => $DeviceId,
+'user_uuid' => $Uuid,
+'telegram_id' => $TelegramId,
+'device_row' => $DeviceRow,
+'user' => $UserRow,
+];
+}
+
+private static function supportEsc(string $Text): string {
+$Clean = Helper::stripZwnj(Helper::repairMojibake($Text));
+return htmlspecialchars($Clean, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
 private static function ping(): void {
 self::ok([
 'time' => gmdate('c'),
 'version' => '4',
-'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase'],
+'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase', 'activity_monitor', 'support_report'],
 ]);
 }
 

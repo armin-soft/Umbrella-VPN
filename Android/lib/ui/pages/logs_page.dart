@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,8 +8,12 @@ import 'package:provider/provider.dart';
 import '../../core/app_config.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
+import '../../data/gateway_client.dart';
+import '../../models/models.dart';
+import '../../platform/native.dart';
 import '../../platform/services.dart';
 import '../../platform/encrypted_report.dart';
+import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
@@ -18,6 +23,75 @@ import '../widgets/common.dart';
 class LogsPage extends StatefulWidget {
   const LogsPage({super.key});
 
+  static ({
+    Map<String, dynamic> device,
+    Map<String, dynamic> vpnState,
+    List<Map<String, dynamic>> errors,
+    String recentLogs,
+  }) buildSupportPayload({
+    required DeviceProfile profile,
+    VpnController? vpn,
+    List<LogLine>? logLines,
+    String? fullExportText,
+  }) {
+    final String osLine = <String>[
+      profile.os.trim(),
+      profile.osDisplayVersion.trim(),
+      profile.osEdition.trim(),
+    ].where((String s) => s.isNotEmpty).join(' ');
+
+    final Map<String, dynamic> deviceMap = <String, dynamic>{
+      'device_name': profile.deviceName,
+      'os': osLine,
+      'cpu': profile.cpu,
+      'cpu_cores': profile.cpuCores,
+      'ram_total_mb': profile.ramTotalMb,
+      'ram_used_mb': profile.ramUsedMb,
+      'disk_free_mb': profile.diskFreeMb,
+      'disk_total_mb': profile.diskTotalMb,
+      'local_ip': profile.localIp,
+      'adapter': profile.adapterName,
+      'elevated': profile.elevated,
+    };
+
+    final Map<String, dynamic> vpnState = <String, dynamic>{
+      if (vpn != null) 'status': vpn.status.label,
+      if (vpn != null)
+        'mode': vpn.settings.tun ? 'تونل کامل (TUN)' : 'پروکسی محلی',
+      if (vpn?.activeNode != null)
+        'server': AppLogger.redact(vpn!.activeNode!.name),
+      if (vpn != null && vpn.message.trim().isNotEmpty)
+        'error': AppLogger.redact(vpn.message.trim()),
+    };
+
+    final List<LogLine> sourceLines = logLines ?? AppLogger.instance.lines;
+    final List<Map<String, dynamic>> errors = sourceLines
+        .where(
+          (LogLine line) => line.level == 'error' || line.level == 'warning',
+        )
+        .take(25)
+        .map((LogLine line) {
+      return <String, dynamic>{
+        'time': '${Fa.date(line.time)} ${Fa.clock(line.time)}',
+        'level': line.level,
+        'message': AppLogger.lineDetailText(line),
+      };
+    }).toList();
+
+    final String rawLogs = fullExportText ?? AppLogger.instance.exportText();
+    final String redacted = AppLogger.redact(rawLogs).trim();
+    final String recentLogs = redacted.length > 2600
+        ? redacted.substring(redacted.length - 2600)
+        : redacted;
+
+    return (
+      device: deviceMap,
+      vpnState: vpnState,
+      errors: errors,
+      recentLogs: recentLogs,
+    );
+  }
+
   @override
   State<LogsPage> createState() => _LogsPageState();
 }
@@ -26,6 +100,7 @@ class _LogsPageState extends State<LogsPage> {
   /// فیلتر سطح گزارش؛ خالی یعنی همه.
   String _level = '';
   bool _exporting = false;
+  bool _sendingSupport = false;
 
   /// شماره خطوطی که جزئیاتشان باز است.
   ///
@@ -57,6 +132,89 @@ class _LogsPageState extends State<LogsPage> {
 
   /// متن کامل یک خط با همه جزئیاتش، برای کپی جداگانه.
   static String _detailText(LogLine line) => AppLogger.lineDetailText(line);
+
+  AuthController? _maybeAuth(BuildContext context) {
+    try {
+      return Provider.of<AuthController>(context, listen: false);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  NativeBridge? _maybeNative(BuildContext context) {
+    try {
+      return Provider.of<NativeBridge>(context, listen: false);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  VpnController? _maybeVpn(BuildContext context) {
+    try {
+      return Provider.of<VpnController>(context, listen: false);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  Future<void> _sendToSupport(ToastController toasts) async {
+    if (_sendingSupport) return;
+    final String? note = await showDialog<String>(
+      context: context,
+      builder: (_) => const _SupportReportDialog(),
+    );
+    if (note == null || !mounted) return;
+
+    final AuthController? auth = _maybeAuth(context);
+    final NativeBridge? native = _maybeNative(context);
+    final VpnController? vpn = _maybeVpn(context);
+
+    setState(() => _sendingSupport = true);
+    GatewayClient? tempGateway;
+    try {
+      DeviceProfile profile = auth?.device ?? vpn?.device ?? DeviceProfile.empty;
+      if (native != null) {
+        try {
+          final DeviceProfile live = await native.deviceInfo();
+          if (live.hostname.isNotEmpty || live.os.isNotEmpty) {
+            profile = live;
+          }
+        } catch (_) {}
+      }
+
+      final payload = LogsPage.buildSupportPayload(
+        profile: profile,
+        vpn: vpn,
+      );
+      final String deviceId = auth != null && auth.deviceId.isNotEmpty
+          ? auth.deviceId
+          : (profile.machineId.isNotEmpty ? profile.machineId : profile.deviceName);
+      final GatewayClient client = auth?.gateway ?? (tempGateway = GatewayClient());
+      final String message = await client.sendSupportReport(
+        token: auth?.session?.token ?? '',
+        deviceId: deviceId,
+        phone: auth?.phone ?? '',
+        note: note.trim(),
+        platform: defaultTargetPlatform == TargetPlatform.android ? 'Android' : 'Windows',
+        appVersion: AppConfig.version,
+        device: payload.device,
+        vpnState: payload.vpnState,
+        errors: payload.errors,
+        recentLogs: payload.recentLogs,
+      );
+      toasts.success('گزارش به پشتیبانی ارسال شد', message);
+    } on ApiError catch (error) {
+      toasts.error('ارسال گزارش ناموفق بود', error.message);
+    } catch (_) {
+      toasts.error(
+        'ارسال گزارش ناموفق بود',
+        'اتصال اینترنت را بررسی کنید و کمی بعد دوباره تلاش کنید.',
+      );
+    } finally {
+      tempGateway?.close();
+      if (mounted) setState(() => _sendingSupport = false);
+    }
+  }
 
   Future<void> _exportEncrypted(ToastController toasts) async {
     if (_exporting) return;
@@ -90,6 +248,12 @@ class _LogsPageState extends State<LogsPage> {
             subtitle: 'گزارش اتصال، حساب، پرداخت، تنظیمات و به روز رسانی با تاریخ و ساعت.',
             icon: Icons.receipt_long_rounded,
             actions: <Widget>[
+              IconAction(
+                icon: Icons.support_agent_rounded,
+                tooltip: _sendingSupport ? 'در حال ارسال به پشتیبانی...' : 'ارسال به پشتیبانی',
+                size: AppMetrics.iconButton,
+                onTap: () => _sendToSupport(toasts),
+              ),
               IconAction(
                 icon: Icons.copy_all_rounded,
                 tooltip: 'کپی همه',
@@ -197,6 +361,43 @@ class _LogsPageState extends State<LogsPage> {
                       },
                     ),
                   const _DiagnosticSessionChip(),
+                  LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      final double maxLabelWidth =
+                          (constraints.maxWidth - 76).clamp(100.0, 280.0);
+                      return ActionChip(
+                        key: const ValueKey<String>('logs-send-support-button'),
+                        avatar: Icon(
+                          Icons.support_agent_rounded,
+                          size: AppMetrics.iconSm,
+                          color: colors.primary,
+                        ),
+                        label: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              Fa.num(
+                                _sendingSupport
+                                    ? 'در حال ارسال...'
+                                    : 'ارسال به پشتیبانی',
+                              ),
+                              maxLines: 1,
+                            ),
+                          ),
+                        ),
+                        backgroundColor: colors.primarySoft,
+                        side: BorderSide(color: colors.primary),
+                        onPressed: _sendingSupport
+                            ? null
+                            : () {
+                                playUiClick(context);
+                                unawaited(_sendToSupport(toasts));
+                              },
+                      );
+                    },
+                  ),
                 ],
               );
             },
@@ -688,4 +889,77 @@ class _ReportPasswordDialogState extends State<_ReportPasswordDialog> {
       ),
     ],
   );
+}
+
+class _SupportReportDialog extends StatefulWidget {
+  const _SupportReportDialog();
+
+  @override
+  State<_SupportReportDialog> createState() => _SupportReportDialogState();
+}
+
+class _SupportReportDialogState extends State<_SupportReportDialog> {
+  final TextEditingController _note = TextEditingController();
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return AlertDialog(
+      title: Row(
+        children: <Widget>[
+          Icon(Icons.support_agent_rounded, color: colors.primary),
+          const SizedBox(width: AppMetrics.space2),
+          const Expanded(child: Text('ارسال به پشتیبانی')),
+        ],
+      ),
+      content: SizedBox(
+        width: AppMetrics.dialogMaxWidth,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                'مشخصات دقیق دستگاه، وضعیت اتصال و خطاهای ثبت شده مستقیماً در ربات تلگرام برای مدیریت ارسال می شود.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.textSecondary,
+                      height: 1.6,
+                    ),
+              ),
+              const SizedBox(height: AppMetrics.space4),
+              TextField(
+                key: const ValueKey<String>('support-report-note-field'),
+                controller: _note,
+                maxLines: 3,
+                maxLength: 500,
+                textInputAction: TextInputAction.newline,
+                decoration: const InputDecoration(
+                  labelText: 'توضیح کوتاه مشکل (اختیاری)',
+                  hintText: 'اگر نکته ای هست بنویسید یا خالی رها کنید...',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: withUiClick(context, () => Navigator.pop(context)),
+          child: const Text('انصراف'),
+        ),
+        FilledButton.icon(
+          key: const ValueKey<String>('support-report-confirm-button'),
+          onPressed: withUiClick(context, () => Navigator.pop(context, _note.text)),
+          icon: const Icon(Icons.send_rounded, size: 18),
+          label: const Text('ارسال فوری به پشتیبانی'),
+        ),
+      ],
+    );
+  }
 }

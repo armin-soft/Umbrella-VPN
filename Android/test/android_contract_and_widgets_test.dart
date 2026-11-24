@@ -37,8 +37,10 @@ import 'package:umbrella_vpn/ui/shell/app_shell.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
+import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
+import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -1948,6 +1950,124 @@ void main() {
         AppNotification.summarizeBody('حجم مصرفی شما 12.5 گیگابایت است'),
         contains('۱۲.۵'),
       );
+    });
+
+    test('رصد فعالیت اندروید، ارسال گزارش پشتیبانی و عدم سرریز صفحه گزارش ها در عرض ۳۶۰', () async {
+      AppLogger.instance.clear();
+      ActivityMonitorBuffer.instance.clear();
+      addTearDown(() {
+        AppLogger.instance.clear();
+        ActivityMonitorBuffer.instance.clear();
+      });
+
+      final List<CoreActivitySample> samples = ClashApi.parseConnections(<String, dynamic>{
+        'connections': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'andr-1',
+            'download': 4096,
+            'upload': 512,
+            'metadata': <String, dynamic>{
+              'host': 'instagram.com',
+              'processPath': 'com.instagram.android',
+            },
+          },
+          <String, dynamic>{
+            'id': 'andr-2',
+            'download': 1024,
+            'upload': 256,
+            'metadata': <String, dynamic>{
+              'sniffHost': 'localhost',
+              'processPath': 'ir.umbrella.vpn',
+            },
+          },
+        ],
+      });
+      expect(samples.length, 1);
+      expect(samples.first.host, 'instagram.com');
+      expect(samples.first.process, 'com.instagram.android');
+
+      final ActivityMonitorBuffer buf = ActivityMonitorBuffer();
+      buf.recordScreen('اتصال');
+      buf.recordConnections(samples);
+      final List<Map<String, dynamic>> snapshot = buf.snapshotPayload();
+      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'app' && e['target'] == 'com.instagram.android'), isTrue);
+      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'site' && e['target'] == 'instagram.com'), isTrue);
+      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'screen' && e['target'] == 'اتصال'), isTrue);
+      buf.confirmSent(snapshot);
+      expect(buf.snapshotPayload(), isEmpty);
+
+      final Map<String, dynamic> cfg = <String, dynamic>{
+        'route': <String, dynamic>{'find_process': false, 'rules': <Map<String, dynamic>>[]},
+        'outbounds': <Map<String, dynamic>>[<String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'}],
+        'experimental': <String, dynamic>{'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'}},
+      };
+      RuntimeConfig.finalize(cfg);
+      expect((cfg['route'] as Map<String, dynamic>)['find_process'], isTrue);
+
+      final String pfWrapper = File('${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/PlatformInterfaceWrapper.kt').readAsStringSync();
+      expect(pfWrapper, contains('findConnectionOwner'));
+    });
+
+    testWidgets('ارسال به پشتیبانی در صفحه گزارش ها بدون سرریز روی موبایل ۳۶۰x۶۴۰ کار می کند', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() async => await tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+      AppLogger.instance.clear();
+      AppLogger.instance.add('خطای نمونه موبایل', level: 'error');
+
+      Map<String, dynamic>? sentBody;
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        if (req.url.path.endsWith('app/support-report')) {
+          sentBody = jsonDecode(req.body) as Map<String, dynamic>;
+          return http.Response(jsonEncode(<String, dynamic>{'ok': true, 'sent': true, 'message': 'ارسال شد'}), 200);
+        }
+        return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
+      });
+      final GatewayClient gateway = GatewayClient(client: mockHttp);
+      final _FakeNative native = _FakeNative();
+      final AuthController auth = AuthController(native: native, gateway: gateway, store: LocalStore.instance);
+      final ToastController toasts = ToastController();
+      addTearDown(() {
+        auth.dispose();
+        gateway.close();
+        toasts.dispose();
+        AppLogger.instance.clear();
+      });
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<NativeBridge>.value(value: native),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: LogsPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      final Finder btn = find.byKey(const ValueKey<String>('logs-send-support-button'));
+      expect(btn, findsOneWidget);
+      await tester.tap(btn);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).last, 'تست سریع موبایل');
+      await tester.tap(find.byKey(const ValueKey<String>('support-report-confirm-button')));
+      await tester.pumpAndSettle();
+
+      expect(sentBody, isNotNull);
+      expect(sentBody!['note'], 'تست سریع موبایل');
+      expect((sentBody!['errors'] as List<dynamic>).length, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
     });
   });
 }

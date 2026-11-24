@@ -10,6 +10,7 @@ import '../data/gateway_client.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
 import '../platform/services.dart';
+import '../vpn/clash_api.dart';
 
 enum AuthPhase { phone, profile, code, telegram, done }
 
@@ -100,6 +101,8 @@ class AuthController extends ChangeNotifier {
 
   String _deviceId = '';
   String get deviceId => _deviceId;
+
+  GatewayClient get gateway => _gateway;
 
   DeviceProfile _device = DeviceProfile.empty;
   DeviceProfile get device => _device;
@@ -788,14 +791,28 @@ class AuthController extends ChangeNotifier {
 
     _checkingDeviceAccess = true;
     try {
+      final List<Map<String, dynamic>> pendingActivity =
+          ActivityMonitorBuffer.instance.snapshotPayload();
       final ({
         Account? account,
         FilterSettings? filter,
         SubscriptionOffers? offers,
         bool? emergencyEnabled,
         bool? botLinked,
-      }) beat =
-          await _gateway.heartbeat(token: session.token, deviceId: _deviceId);
+      }) beat = await _gateway.heartbeat(
+        token: session.token,
+        deviceId: _deviceId,
+        activity: pendingActivity,
+        currentScreen: ActivityMonitorBuffer.instance.currentScreen,
+        deviceName: _device.hostname,
+        platform: defaultTargetPlatform == TargetPlatform.android
+            ? 'Android'
+            : 'Windows',
+        appVersion: AppConfig.version,
+      );
+      if (pendingActivity.isNotEmpty) {
+        ActivityMonitorBuffer.instance.confirmSent(pendingActivity);
+      }
       await _applyLiveServerState(
         account: beat.account,
         filter: beat.filter,

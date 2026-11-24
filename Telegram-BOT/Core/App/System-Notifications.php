@@ -88,6 +88,9 @@ $CleanTitle = Helper::digitsToPersian($CleanTitle);
 $NormalizedBody = Helper::digitsToPersian($NormalizedBody);
 }
 $FinalLevel = trim($Level) !== '' ? trim($Level) : 'info';
+if ($FinalLevel === 'manual') {
+$FinalLevel = 'info';
+}
 
 if (str_contains($CleanTitle, 'گزارش شبانه') || str_contains($NormalizedBody, 'گزارش شبانه مصرف')) {
 return [

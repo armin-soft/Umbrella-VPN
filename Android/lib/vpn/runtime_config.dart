@@ -273,7 +273,8 @@ class RuntimeConfig {
       return;
     }
 
-    // 1. Enable socket-to-process lookup whenever any rule matches a process.
+    // 1. Enable socket-to-process lookup whenever any rule matches a process or
+    //    when Clash API is active so opened applications/sites can be observed.
     final bool needsFindProcess = rawRules.any((dynamic item) {
       if (item is! Map) return false;
       return _nonEmptyRuleField(item['process_name']) ||
@@ -281,7 +282,9 @@ class RuntimeConfig {
           _nonEmptyRuleField(item['process_path_regex']) ||
           _nonEmptyRuleField(item['package_name']);
     });
-    if (needsFindProcess) {
+    final bool hasClashApi = config['experimental'] is Map &&
+        (config['experimental'] as Map<dynamic, dynamic>)['clash_api'] is Map;
+    if (needsFindProcess || hasClashApi) {
       rawRoute['find_process'] = true;
     }
 

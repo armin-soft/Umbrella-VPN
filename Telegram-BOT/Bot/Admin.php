@@ -110,11 +110,372 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function devicesMenu(Context $Context): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
+[['👁رصد کاربران', 'admin_user_monitor']],
 [['📲دستگاه های برنامه', 'admin_devices']],
 [['🔐سقف دستگاه حساب', 'device_limit_menu']],
 [['🗑حذف همه دستگاه ها', 'admin_devices_delete_all_menu']],
 ]);
 self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
+}
+
+/** رصد کاربران: فهرست کاربران حاضر در نرم افزار/اپلیکیشن به ترتیب آخرین فعالیت. */
+public static function userMonitorList(Context $Context, int $Page = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+
+$Db = Database::getInstance();
+$Devices = [];
+try {
+$Devices = $Db->fetchAll(
+'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`User_UUID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
+. '`U`.`Full_Name` AS `Owner_Name`, `U`.`Phone` AS `Owner_Phone`, `U`.`Telegram_ID` AS `Matched_Tg_ID` '
+. 'FROM `App_Devices` AS `D` '
+. 'LEFT JOIN `Users` AS `U` ON `U`.`ID` = ('
+. 'SELECT MIN(`O`.`ID`) FROM `Users` AS `O` WHERE '
+. '(`D`.`Telegram_ID` > 0 AND `O`.`Telegram_ID` = `D`.`Telegram_ID`) OR '
+. '(`D`.`User_UUID` IS NOT NULL AND `D`.`User_UUID` != \'\' AND `O`.`Client_ID` = `D`.`User_UUID`) OR '
+. '(COALESCE(`D`.`Telegram_ID`, 0) <= 0 AND `D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `O`.`Phone` = `D`.`Phone`)'
+. ') '
+. 'ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC',
+[]
+);
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][MonitorList] devices: ' . $Error->getMessage());
+}
+
+$ActivityStats = [];
+try {
+$StatRows = $Db->fetchAll(
+'SELECT `Device_ID`, `Category`, COUNT(*) AS `Cnt`, COALESCE(MAX(`Last_Seen_At`), 0) AS `Last_At` '
+. 'FROM `App_User_Activity` GROUP BY `Device_ID`, `Category`',
+[]
+);
+foreach ($StatRows as $Stat) {
+$DevId = (string)($Stat['Device_ID'] ?? '');
+if ($DevId === '') continue;
+if (!isset($ActivityStats[$DevId])) {
+$ActivityStats[$DevId] = ['site' => 0, 'app' => 0, 'screen' => 0, 'last' => 0];
+}
+$Cat = (string)($Stat['Category'] ?? '');
+if (isset($ActivityStats[$DevId][$Cat])) {
+$ActivityStats[$DevId][$Cat] += (int)($Stat['Cnt'] ?? 0);
+}
+$ActivityStats[$DevId]['last'] = max($ActivityStats[$DevId]['last'], (int)($Stat['Last_At'] ?? 0));
+}
+} catch (Throwable) {}
+
+$Groups = [];
+foreach ($Devices as $Dev) {
+$TgId = (int)($Dev['Telegram_ID'] ?? 0);
+if ($TgId <= 0) $TgId = (int)($Dev['Matched_Tg_ID'] ?? 0);
+$Uuid = trim((string)($Dev['User_UUID'] ?? ''));
+$Phone = trim((string)($Dev['Owner_Phone'] ?? ($Dev['Phone'] ?? '')));
+if ($TgId > 0) {
+$GroupKey = 't:' . $TgId;
+} elseif ($Uuid !== '' && $Uuid !== '_') {
+$GroupKey = 'u:' . $Uuid;
+} elseif ($Phone !== '') {
+$GroupKey = 'p:' . $Phone;
+} else {
+$GroupKey = 'd:' . (int)($Dev['ID'] ?? 0);
+}
+
+if (!isset($Groups[$GroupKey])) {
+$Groups[$GroupKey] = [
+'selector' => $TgId > 0 ? ('t:' . $TgId) : ('d:' . (int)($Dev['ID'] ?? 0)),
+'tg_id' => $TgId,
+'name' => trim((string)($Dev['Owner_Name'] ?? '')) ?: trim((string)($Dev['Device_Name'] ?? '')) ?: 'کاربر برنامه',
+'phone' => $Phone,
+'devices' => 0,
+'trusted' => 0,
+'sites' => 0,
+'apps' => 0,
+'screens' => 0,
+'last_seen' => 0,
+];
+}
+$Groups[$GroupKey]['devices']++;
+if ((int)($Dev['Is_Trusted'] ?? 0) === 1) $Groups[$GroupKey]['trusted']++;
+$DevId = (string)($Dev['Device_ID'] ?? '');
+$LastDev = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
+$Stat = $ActivityStats[$DevId] ?? ['site' => 0, 'app' => 0, 'screen' => 0, 'last' => 0];
+$Groups[$GroupKey]['sites'] += (int)$Stat['site'];
+$Groups[$GroupKey]['apps'] += (int)$Stat['app'];
+$Groups[$GroupKey]['screens'] += (int)$Stat['screen'];
+$Groups[$GroupKey]['last_seen'] = max($Groups[$GroupKey]['last_seen'], $LastDev, (int)$Stat['last']);
+}
+
+$GroupList = array_values($Groups);
+usort($GroupList, static fn(array $A, array $B): int => $B['last_seen'] <=> $A['last_seen']);
+
+$PageSize = 5;
+$Total = count($GroupList);
+$PageCount = max(1, (int)ceil($Total / $PageSize));
+$Page = max(0, min($Page, $PageCount - 1));
+$Slice = array_slice($GroupList, $Page * $PageSize, $PageSize);
+
+$Text = Helper::adminGreeting($Context, 'رصد کاربران')
+. Menu::section('👁', 'پایش لحظه ای کاربران در اپلیکیشن آمبرلا', [
+'👥تعداد کاربران ثبت شده: ' . Helper::toPersian((string)$Total) . ' کاربر',
+'📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$PageCount),
+'ℹ️روی نام هر کاربر کلیک کنید تا دستگاه ها، سایت ها و برنامه های باز شده او را ببینید.',
+]);
+
+$Buttons = [];
+if ($Slice === []) {
+$Text .= "\n📭هنوز کاربری در اپلیکیشن ثبت یا فعال نشده است.\n";
+}
+
+foreach ($Slice as $Index => $Group) {
+$Num = Helper::toPersian((string)($Page * $PageSize + $Index + 1));
+$NameSafe = self::listText((string)$Group['name']);
+$TgId = (int)$Group['tg_id'];
+$NameLink = $TgId > 0 ? '<a href="tg://user?id=' . $TgId . '">' . $NameSafe . '</a>' : $NameSafe;
+$LastText = $Group['last_seen'] > 0
+? Helper::formatDateTimeText((string)$Group['last_seen'])
+: 'ثبت نشده';
+
+$Text .= "\n{$Num}. 👤 " . $NameLink . "\n"
+. ($TgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$TgId) . "</code>\n" : '')
+. ($Group['phone'] !== '' ? '📞شماره: <code>' . self::listText(Helper::toPersian((string)$Group['phone'])) . "</code>\n" : '')
+. '📱دستگاه ها: ' . Helper::toPersian((string)$Group['trusted']) . ' مجاز از ' . Helper::toPersian((string)$Group['devices']) . "\n"
+. '📊رصد ثبت شده: 🌐 ' . Helper::toPersian((string)$Group['sites']) . ' سایت | 💻 ' . Helper::toPersian((string)$Group['apps']) . ' برنامه | 📱 ' . Helper::toPersian((string)$Group['screens']) . " بخش\n"
+. '🕓آخرین فعالیت: ' . self::listText($LastText) . "\n➖➖➖➖➖➖➖➖➖\n";
+
+$BtnTitle = $Num . '. 👁 ' . mb_substr((string)$Group['name'], 0, 26)
+. ' (' . Helper::toPersian((string)$Group['sites']) . '🌐 ' . Helper::toPersian((string)$Group['apps']) . '💻)';
+$Buttons[] = [Menu::button($BtnTitle, 'admin_monitor_view:' . $Group['selector'] . ':' . $Page . ':all:0')];
+}
+
+$Buttons = array_merge(
+$Buttons,
+Menu::pages($Page, $PageCount, 'admin_user_monitor_page:'),
+[
+[Menu::button('🔄بروزرسانی فهرست', 'admin_user_monitor_page:' . $Page)],
+Menu::back('منوی قبلی', 'admin_devices_menu'),
+Menu::adminHome(),
+]
+);
+self::logMenuProblems('user-monitor-list', $Buttons);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+/** جزئیات رصد یک کاربر: دستگاه ها + سایت ها + نرم افزارها + صفحات برنامه. */
+public static function userMonitorView(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all', int $InnerPage = 0): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+self::ensureAppSchemaReady();
+
+$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$ListPage = max(0, $ListPage);
+$InnerPage = max(0, $InnerPage);
+$Db = Database::getInstance();
+
+$OwnerTgId = 0;
+$SeedDeviceId = 0;
+if (str_starts_with($TargetKey, 't:')) {
+$OwnerTgId = (int)substr($TargetKey, 2);
+} elseif (str_starts_with($TargetKey, 'd:')) {
+$SeedDeviceId = (int)substr($TargetKey, 2);
+}
+
+$UserRow = $OwnerTgId > 0 ? Repository::getUser($OwnerTgId) : [];
+$UserUuid = trim((string)($UserRow['Client_ID'] ?? ''));
+$UserPhone = trim((string)($UserRow['Phone'] ?? ''));
+
+if ($SeedDeviceId > 0) {
+$Seed = $Db->fetch('SELECT * FROM `App_Devices` WHERE `ID` = ? LIMIT 1', [$SeedDeviceId]);
+if (is_array($Seed)) {
+$OwnerTgId = (int)($Seed['Telegram_ID'] ?? 0);
+if ($UserUuid === '' || $UserUuid === '_') $UserUuid = trim((string)($Seed['User_UUID'] ?? ''));
+if ($UserPhone === '') $UserPhone = trim((string)($Seed['Phone'] ?? ''));
+if ($OwnerTgId > 0 && $UserRow === []) $UserRow = Repository::getUser($OwnerTgId);
+}
+}
+
+$Conds = [];
+$Params = [];
+if ($OwnerTgId > 0) {
+$Conds[] = '`Telegram_ID` = ?';
+$Params[] = $OwnerTgId;
+}
+if ($UserUuid !== '' && $UserUuid !== '_') {
+$Conds[] = '`User_UUID` = ?';
+$Params[] = $UserUuid;
+}
+if ($UserPhone !== '') {
+$Variants = self::phoneCandidates($UserPhone);
+if ($Variants !== []) {
+$Conds[] = '`Phone` IN (' . implode(',', array_fill(0, count($Variants), '?')) . ')';
+$Params = array_merge($Params, $Variants);
+}
+}
+if ($SeedDeviceId > 0) {
+$Conds[] = '`ID` = ?';
+$Params[] = $SeedDeviceId;
+}
+
+$DeviceRows = $Conds !== []
+? $Db->fetchAll('SELECT * FROM `App_Devices` WHERE (' . implode(' OR ', $Conds) . ') ORDER BY `Last_Seen_At` DESC, `ID` DESC', $Params)
+: [];
+
+if ($DeviceRows === [] && $UserRow === []) {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'اطلاعاتی برای این کاربر پیدا نشد.', true);
+}
+self::userMonitorList($Context, $ListPage);
+return;
+}
+
+$DeviceIds = array_values(array_unique(array_filter(array_map(
+static fn(array $D): string => trim((string)($D['Device_ID'] ?? '')),
+$DeviceRows
+))));
+
+$DisplayName = trim((string)($UserRow['Full_Name'] ?? ''))
+?: trim((string)($DeviceRows[0]['Device_Name'] ?? ''))
+?: 'کاربر برنامه';
+$DisplayPhone = $UserPhone !== '' ? $UserPhone : trim((string)($DeviceRows[0]['Phone'] ?? ''));
+
+$ActConds = [];
+$ActParams = [];
+if ($DeviceIds !== []) {
+$ActConds[] = '`Device_ID` IN (' . implode(',', array_fill(0, count($DeviceIds), '?')) . ')';
+$ActParams = array_merge($ActParams, $DeviceIds);
+}
+if ($OwnerTgId > 0) {
+$ActConds[] = '`Telegram_ID` = ?';
+$ActParams[] = $OwnerTgId;
+}
+if ($UserUuid !== '' && $UserUuid !== '_') {
+$ActConds[] = '`User_UUID` = ?';
+$ActParams[] = $UserUuid;
+}
+
+$AllActivities = [];
+if ($ActConds !== []) {
+try {
+$AllActivities = $Db->fetchAll(
+'SELECT `Device_ID`, `Category`, `Target`, `Hits`, `Bytes_Down`, `Bytes_Up`, `Last_Seen_At` '
+. 'FROM `App_User_Activity` WHERE (' . implode(' OR ', $ActConds) . ') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
+$ActParams
+);
+} catch (Throwable) {}
+}
+
+$Counts = ['site' => 0, 'app' => 0, 'screen' => 0];
+foreach ($AllActivities as $Act) {
+$Cat = (string)($Act['Category'] ?? '');
+if (isset($Counts[$Cat])) $Counts[$Cat]++;
+}
+
+$Filtered = $Category === 'all'
+? $AllActivities
+: array_values(array_filter($AllActivities, static fn(array $A): bool => ($A['Category'] ?? '') === $Category));
+
+$PerPage = 10;
+$TotalFiltered = count($Filtered);
+$InnerPages = max(1, (int)ceil($TotalFiltered / $PerPage));
+$InnerPage = max(0, min($InnerPage, $InnerPages - 1));
+$Visible = array_slice($Filtered, $InnerPage * $PerPage, $PerPage);
+
+$DeviceMap = [];
+foreach ($DeviceRows as $D) {
+$DeviceMap[(string)$D['Device_ID']] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
+}
+
+$TitleLink = $OwnerTgId > 0
+? '<a href="tg://user?id=' . $OwnerTgId . '">' . self::listText($DisplayName) . '</a>'
+: self::listText($DisplayName);
+
+$Text = Helper::adminGreeting($Context, 'رصد فعالیت کاربر')
+. '👤کاربر: ' . $TitleLink . "\n"
+. ($OwnerTgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$OwnerTgId) . "</code>\n" : '')
+. ($DisplayPhone !== '' ? '📞شماره موبایل: <code>' . self::listText(Helper::toPersian($DisplayPhone)) . "</code>\n" : '')
+. '📊آمار کل رصد: 🌐 ' . Helper::toPersian((string)$Counts['site']) . ' سایت | 💻 ' . Helper::toPersian((string)$Counts['app']) . ' نرم افزار/اپ | 📱 ' . Helper::toPersian((string)$Counts['screen']) . " صفحه برنامه\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. '📱<b>دستگاه های کاربر (' . Helper::toPersian((string)count($DeviceRows)) . "):</b>\n";
+
+foreach (array_slice($DeviceRows, 0, 5) as $Idx => $Dev) {
+$Plat = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform((string)($Dev['Platform'] ?? '')) : (string)($Dev['Platform'] ?? '');
+$LastDevTs = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
+$LastDev = $LastDevTs > 0 ? Helper::formatDateTimeText((string)$LastDevTs) : 'ثبت نشده';
+$TrustIcon = (int)($Dev['Is_Trusted'] ?? 0) === 1 ? '✅' : '⛔️';
+$Text .= Helper::toPersian((string)($Idx + 1)) . '. ' . $TrustIcon . ' '
+. self::listText((string)($Dev['Device_Name'] ?? 'دستگاه'))
+. ($Plat !== '' ? ' (' . self::listText($Plat) . ')' : '')
+. (!empty($Dev['App_Version']) ? ' | نسخه ' . self::listText(Helper::toPersian((string)$Dev['App_Version'])) : '')
+. "\n   🌐 آی پی: <code>" . self::listText(Helper::toPersian((string)($Dev['Last_IP'] ?? ''))) . '</code> | 🕓 ' . self::listText($LastDev) . "\n";
+}
+
+$CatLabel = match ($Category) {
+'site' => '🌐 سایت های باز شده',
+'app' => '💻 نرم افزارها و اپلیکیشن ها',
+'screen' => '📱 بخش های باز شده در برنامه',
+default => '👁 همه فعالیت های رصد شده',
+};
+$Text .= "\n➖➖➖➖➖➖➖➖➖\n<b>{$CatLabel}</b> (صفحه " . Helper::toPersian((string)($InnerPage + 1)) . ' از ' . Helper::toPersian((string)$InnerPages) . "):\n\n";
+
+if ($Visible === []) {
+$Text .= "📭هنوز موردی در این بخش ثبت نشده است.\n<i>(هنگام اتصال VPN و استفاده کاربر از سایت ها و برنامه ها، اطلاعات خودکار ثبت می شود.)</i>\n";
+}
+
+foreach ($Visible as $Item) {
+$Cat = (string)($Item['Category'] ?? '');
+$Icon = match ($Cat) { 'site' => '🌐', 'app' => '💻', default => '📱' };
+$TargetLabel = self::listText((string)($Item['Target'] ?? ''));
+$Hits = (int)($Item['Hits'] ?? 1);
+$Bytes = (int)($Item['Bytes_Down'] ?? 0) + (int)($Item['Bytes_Up'] ?? 0);
+$DevName = $DeviceMap[(string)($Item['Device_ID'] ?? '')] ?? '';
+$WhenTs = (int)($Item['Last_Seen_At'] ?? 0);
+$WhenText = $WhenTs > 0 ? Helper::formatDateTimeText((string)$WhenTs) : '';
+
+$Line = "{$Icon} <code>{$TargetLabel}</code> — " . Helper::toPersian((string)$Hits) . ' بار';
+if ($Bytes > 0) {
+$Line .= ' | ' . Helper::formatBytes($Bytes);
+}
+if ($DevName !== '' && count($DeviceRows) > 1) {
+$Line .= ' | ' . self::listText($DevName);
+}
+if ($WhenText !== '') {
+$Line .= "\n   🕒 " . self::listText($WhenText);
+}
+$Text .= $Line . "\n";
+}
+
+$FilterButtons = [
+[
+Menu::button(($Category === 'all' ? '✅' : '') . '👁همه (' . Helper::toPersian((string)array_sum($Counts)) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':all:0'),
+Menu::button(($Category === 'site' ? '✅' : '') . '🌐سایت ها (' . Helper::toPersian((string)$Counts['site']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':site:0'),
+],
+[
+Menu::button(($Category === 'app' ? '✅' : '') . '💻نرم افزار/اپ (' . Helper::toPersian((string)$Counts['app']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':app:0'),
+Menu::button(($Category === 'screen' ? '✅' : '') . '📱صفحات (' . Helper::toPersian((string)$Counts['screen']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':screen:0'),
+],
+];
+
+$Buttons = array_merge(
+$FilterButtons,
+Menu::pages($InnerPage, $InnerPages, 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':'),
+[
+[Menu::button('🔄بروزرسانی رصد', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':' . $InnerPage)],
+Menu::back('بازگشت به فهرست رصد', 'admin_user_monitor_page:' . $ListPage),
+Menu::back('مدیریت دستگاه ها', 'admin_devices_menu'),
+Menu::adminHome(),
+]
+);
+
+TelegramClient::sendReadableMessage($Context->ChatId, $Context->MessageId, $Text . Helper::adminFooter(), TelegramClient::inlineKeyboard($Buttons));
+}
+
+private static function monitorTimestamp(mixed $Raw): int {
+if (is_int($Raw) || (is_string($Raw) && ctype_digit(trim($Raw)))) {
+return (int)$Raw;
+}
+$Str = trim((string)$Raw);
+if ($Str === '' || $Str === '0000-00-00 00:00:00') return 0;
+$Parsed = strtotime($Str);
+return $Parsed === false ? 0 : $Parsed;
 }
 
 public static function accountsMenu(Context $Context): void {
@@ -2107,6 +2468,24 @@ return null;
 }
 }
 
+private static function phoneCandidates(string $Phone): array {
+$Phone = trim($Phone);
+if ($Phone === '') return [];
+$Normalized = Helper::normalizePhone($Phone);
+$Candidates = [$Phone];
+if ($Normalized !== '') {
+$Candidates[] = $Normalized;
+if (str_starts_with($Normalized, '09') && strlen($Normalized) === 11) {
+$WithoutZero = substr($Normalized, 1);
+$Candidates[] = $WithoutZero;
+$Candidates[] = '98' . $WithoutZero;
+$Candidates[] = '+98' . $WithoutZero;
+$Candidates[] = '0098' . $WithoutZero;
+}
+}
+return array_values(array_unique(array_filter(array_map('trim', $Candidates), static fn(string $V): bool => $V !== '')));
+}
+
 private static function findUserInAppDevices(string $Identifier): ?array {
 $Identifier = trim($Identifier);
 if ($Identifier === '') return null;
@@ -2117,25 +2496,46 @@ $Row = null;
 if (ctype_digit($English) && !str_starts_with($English, '09')) {
 $Tid = (int)$English;
 if ($Tid > 0) {
-$Row = $Database->fetch('SELECT `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1 ORDER BY `ID` DESC LIMIT 1', [$Tid]);
+$Row = $Database->fetch('SELECT `ID`, `Device_ID`, `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1 ORDER BY `ID` DESC LIMIT 1', [$Tid]);
+if (!is_array($Row)) {
+$Row = $Database->fetch('SELECT `ID`, `Device_ID`, `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `Telegram_ID` = ? ORDER BY `ID` DESC LIMIT 1', [$Tid]);
+}
 }
 } else {
-$Phone = Helper::normalizePhone($English);
-if (Helper::validatePhone($Phone)) {
-$Row = $Database->fetch('SELECT `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `Phone` = ? AND `Is_Trusted` = 1 ORDER BY `ID` DESC LIMIT 1', [$Phone]);
+$Variants = self::phoneCandidates($English);
+if ($Variants !== []) {
+$Marks = implode(',', array_fill(0, count($Variants), '?'));
+$Row = $Database->fetch("SELECT `ID`, `Device_ID`, `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `Phone` IN ({$Marks}) AND `Is_Trusted` = 1 ORDER BY `ID` DESC LIMIT 1", $Variants);
+if (!is_array($Row)) {
+$Row = $Database->fetch("SELECT `ID`, `Device_ID`, `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `Phone` IN ({$Marks}) ORDER BY `ID` DESC LIMIT 1", $Variants);
+}
+}
+if (!is_array($Row)) {
+$Row = $Database->fetch('SELECT `ID`, `Device_ID`, `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `User_UUID` = ? OR `Device_ID` = ? ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1', [$English, $English]);
 }
 }
 if (!is_array($Row)) return null;
 $Tid = (int)($Row['Telegram_ID'] ?? 0);
-if ($Tid <= 0) return null;
+if ($Tid > 0) {
 $Existing = Repository::getUser($Tid);
-if ($Existing !== []) return $Existing;
+if ($Existing !== []) {
+if (empty($Existing['Client_ID']) || $Existing['Client_ID'] === '_') {
+$Existing['Client_ID'] = (string)($Row['User_UUID'] ?? '');
+}
+if (empty($Existing['Phone']) && !empty($Row['Phone'])) {
+$Existing['Phone'] = (string)$Row['Phone'];
+}
+return $Existing;
+}
+}
 return [
 'Telegram_ID' => $Tid,
 'Chat_ID' => $Tid,
-'Full_Name' => (string)($Row['Device_Name'] ?? 'کاربر برنامه'),
+'Full_Name' => trim((string)($Row['Device_Name'] ?? '')) ?: 'کاربر برنامه',
 'Phone' => (string)($Row['Phone'] ?? ''),
 'Client_ID' => (string)($Row['User_UUID'] ?? ''),
+'Device_ID' => (string)($Row['Device_ID'] ?? ''),
+'App_Device_Row_ID' => (int)($Row['ID'] ?? 0),
 ];
 } catch (Throwable) {
 return null;
@@ -2608,11 +3008,6 @@ if ($User === null) {
 return;
 }
 
-$Target = (int)($User['Telegram_ID'] ?? 0);
-if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "❌خطا: شناسه تلگرام معتبر برای این کاربر ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
-return;
-}
 $Session = Repository::getUserSession($Context->UserId);
 $Mode = (string)($Session['Broadcast_Mode'] ?? 'both');
 
@@ -2620,11 +3015,35 @@ if (!in_array($Mode, ['telegram', 'sms', 'app', 'all', 'both'], true)) {
 $Mode = 'both';
 }
 
+$Target = (int)($User['Telegram_ID'] ?? 0);
+$DeviceRowId = (int)($User['App_Device_Row_ID'] ?? 0);
+$HasPhone = Helper::validatePhone((string)($User['Phone'] ?? ''));
+$HasAppTarget = $DeviceRowId > 0
+|| (trim((string)($User['Client_ID'] ?? '')) !== '' && trim((string)($User['Client_ID'] ?? '')) !== '_')
+|| $HasPhone;
+
+if ($Target <= 0) {
+if ($Mode === 'telegram' || !$HasAppTarget) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "❌خطا: شناسه تلگرام معتبر برای این کاربر ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
+return;
+}
+if ($DeviceRowId <= 0) {
+$FoundDev = self::findUserInAppDevices((string)($User['Phone'] ?? ($User['Client_ID'] ?? '')));
+$DeviceRowId = (int)($FoundDev['App_Device_Row_ID'] ?? 0);
+}
+if ($DeviceRowId <= 0) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "❌خطا: شناسه یا دستگاه معتبری برای این کاربر یافت نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
+return;
+}
+$Target = -$DeviceRowId;
+}
+
 $Mode_Label = self::deliveryModeLabel($Mode);
 
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target, 'Flow' => 'admin:notify_text', 'Broadcast_Mode' => $Mode]);
-$Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "👌متن اطلاع رسانی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . Helper::toPersian((string)$Target) . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
+$Name = $Target > 0 ? self::targetDisplayName($Target, $User) : trim((string)($User['Full_Name'] ?? 'کاربر برنامه'));
+$TargetTag = $Target > 0 ? Helper::toPersian((string)$Target) : Helper::toPersian((string)($User['Phone'] ?? 'کاربر برنامه'));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به کاربر') . "👌متن اطلاع رسانی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . $TargetTag . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اطلاع رسانی', 'اطلاع رسانی اول')));
 }
 
 private static function notifyUser(Context $Context, string $Message): void {
@@ -2663,7 +3082,14 @@ return match ($Mode) { 'telegram' => 'تلگرام', 'sms' => 'پیامک', 'app
 private static function deliverMessage(array $User, string $Message, string $Mode, int $AdminId): array {
 $Result = [];
 $UserId = (int)($User['Telegram_ID'] ?? 0);
-if ($UserId <= 0) return $Result;
+$Phone = (string)($User['Phone'] ?? '');
+$ClientId = trim((string)($User['Client_ID'] ?? ''));
+$DeviceId = trim((string)($User['Device_ID'] ?? ''));
+$HasTarget = $UserId > 0
+|| Helper::validatePhone($Phone)
+|| ($ClientId !== '' && $ClientId !== '_')
+|| $DeviceId !== '';
+if (!$HasTarget) return $Result;
 foreach (['telegram', 'sms', 'app'] as $Channel) {
 $Selected = $Mode === $Channel || $Mode === 'all' || ($Mode === 'both' && $Channel !== 'app');
 if (!$Selected) continue;
@@ -2672,10 +3098,10 @@ try {
 if ($Channel === 'telegram' && (int)($User['Chat_ID'] ?? 0) > 0) {
 $Response = TelegramClient::sendMessage((int)$User['Chat_ID'], Helper::frame('کاربر', (string)($User['Full_Name'] ?? 'کاربر'), 'اطلاع رسانی', $UserId) . "\n📨" . $Message . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
 $Ok = ($Response['ok'] ?? false) === true;
-} elseif ($Channel === 'sms' && Helper::validatePhone((string)($User['Phone'] ?? ''))) {
-$Ok = IppanelClient::send($UserId, (string)$User['Phone'], $Message) === true;
+} elseif ($Channel === 'sms' && Helper::validatePhone($Phone)) {
+$Ok = IppanelClient::send($UserId > 0 ? $UserId : max(0, (int)($User['App_Device_Row_ID'] ?? 0)), $Phone, $Message) === true;
 } elseif ($Channel === 'app') {
-$Ok = self::queueAppPush($UserId, $Message, $AdminId) > 0;
+$Ok = self::queueAppPush($UserId, $Message, $AdminId, true, $User) > 0;
 }
 } catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Delivery-' . $Channel . '] user=' . $UserId . ' ' . $Error->getMessage());
@@ -2695,9 +3121,14 @@ TelegramClient::sendMessage($Context->ChatId, self::header($Context) . '⚠️م
 return;
 }
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
-$User = $Target > 0 ? Repository::getUser($Target) : [];
-if ($User === [] && $Target > 0) {
+$User = [];
+if ($Target > 0) {
+$User = Repository::getUser($Target);
+if ($User === []) {
 $User = self::findUserInAppDevices((string)$Target) ?? [];
+}
+} elseif ($Target < 0) {
+$User = self::appDeviceUserByRowId(-$Target) ?? [];
 }
 $Results = self::deliverMessage($User, $Message, $Mode, $Context->UserId);
 $Summary = $Results === [] ? '❌کاربر در سیستم یافت نشد یا روش ارسال معتبر نیست.' : '📋نتیجه ارسال:';
@@ -2705,7 +3136,7 @@ foreach ($Results as $Channel => $Ok) {
 if ($Ok) {
 $Summary .= "\n✅" . self::deliveryModeLabel($Channel) . ': ' . ($Channel === 'app' ? 'در صف دریافت برنامه ثبت شد' : 'ارسال موفق');
 } elseif ($Channel === 'app') {
-$Summary .= "\n❌" . self::deliveryModeLabel($Channel) . ': ' . self::appDeliveryFailureReason((int)($User['Telegram_ID'] ?? $Target), $Context->UserId);
+$Summary .= "\n❌" . self::deliveryModeLabel($Channel) . ': ' . self::appDeliveryFailureReason((int)($User['Telegram_ID'] ?? max(0, $Target)), $Context->UserId, $User);
 } else {
 $Summary .= "\n❌" . self::deliveryModeLabel($Channel) . ': ارسال نشد؛ مشخصات مخاطب و تنظیمات سرویس را بررسی کنید';
 }
@@ -2713,25 +3144,64 @@ $Summary .= "\n❌" . self::deliveryModeLabel($Channel) . ': ارسال نشد؛
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'نتیجه ارسال') . $Summary . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('روش ارسال', $Parent)));
 }
 
-private static function appDeliveryFailureReason(int $Target_Telegram_ID, int $Admin_ID): string {
-if ($Target_Telegram_ID <= 0) {
+private static function appDeviceUserByRowId(int $RowId): ?array {
+if ($RowId <= 0) return null;
+try {
+$Row = \Database::getInstance()->fetch(
+'SELECT `ID`, `Device_ID`, `Telegram_ID`, `User_UUID`, `Phone`, `Device_Name` FROM `App_Devices` WHERE `ID` = ? LIMIT 1',
+[$RowId]
+);
+if (!is_array($Row)) return null;
+$Tid = (int)($Row['Telegram_ID'] ?? 0);
+return [
+'Telegram_ID' => $Tid,
+'Chat_ID' => $Tid,
+'Full_Name' => trim((string)($Row['Device_Name'] ?? '')) ?: 'کاربر برنامه',
+'Phone' => (string)($Row['Phone'] ?? ''),
+'Client_ID' => (string)($Row['User_UUID'] ?? ''),
+'Device_ID' => (string)($Row['Device_ID'] ?? ''),
+'App_Device_Row_ID' => (int)($Row['ID'] ?? $RowId),
+];
+} catch (Throwable) {
+return null;
+}
+}
+
+private static function appDeliveryFailureReason(int $Target_Telegram_ID, int $Admin_ID, ?array $User_Context = null, bool $Allow_Admin = false): string {
+$User = $Target_Telegram_ID > 0 ? Repository::getUser($Target_Telegram_ID) : ($User_Context ?? []);
+if ($User === [] && is_array($User_Context)) $User = $User_Context;
+
+$Client_ID = trim((string)($User['Client_ID'] ?? ($User_Context['Client_ID'] ?? '')));
+$Phone = trim((string)($User['Phone'] ?? ($User_Context['Phone'] ?? '')));
+$Device_ID = trim((string)($User['Device_ID'] ?? ($User_Context['Device_ID'] ?? '')));
+
+if ($Target_Telegram_ID <= 0 && $Client_ID === '' && $Phone === '' && $Device_ID === '') {
 return 'شناسه کاربر نامعتبر است';
 }
+if (!$Allow_Admin && $Target_Telegram_ID > 0) {
 $Admin_Ids = self::administratorTelegramIds($Admin_ID);
 if (in_array($Target_Telegram_ID, $Admin_Ids, true)) {
 return 'برای حساب مدیریت ارسال نمی شود (حساب مدیر اعلان برنامه دریافت نمی کند؛ برای آزمایش شناسه یک کاربر عادی را وارد کنید)';
 }
 $Admin_Uuids = self::administratorClientUuids($Admin_Ids);
-$User = Repository::getUser($Target_Telegram_ID);
-$Client_ID = trim((string)($User['Client_ID'] ?? ''));
 if ($Client_ID !== '' && in_array($Client_ID, $Admin_Uuids, true)) {
 return 'شناسه سرویس این کاربر متعلق به حساب مدیریت است';
 }
+}
 try {
 $Database = \Database::getInstance();
-$Count = count($Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1', [$Target_Telegram_ID]));
+$Count = $Target_Telegram_ID > 0
+? count($Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1', [$Target_Telegram_ID]))
+: 0;
 if ($Count === 0 && $Client_ID !== '' && $Client_ID !== '_') {
 $Count = count($Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `User_UUID` = ? AND `Is_Trusted` = 1', [$Client_ID]));
+}
+if ($Count === 0 && $Phone !== '') {
+$Variants = self::phoneCandidates($Phone);
+if ($Variants !== []) {
+$Marks = implode(',', array_fill(0, count($Variants), '?'));
+$Count = count($Database->fetchAll("SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Phone` IN ({$Marks}) AND `Is_Trusted` = 1", $Variants));
+}
 }
 if ($Count === 0 && ($Client_ID === '' || $Client_ID === '_')) {
 return 'کاربر هنوز با نرم افزار وارد نشده و اشتراک فعالی هم ندارد';
@@ -2778,15 +3248,33 @@ return;
 }
 
 $User = Repository::findUserByIdentifier($Input);
+if ($User === null) {
+$User = self::findUserInAppDevices($Input);
+}
 
 if ($User === null) {
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه') . "❌ کاربری با این شناسه پیدا نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 return;
 }
 
-Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_text', 'Temp_UID' => (int)$User['Telegram_ID']]);
+$TargetUid = (int)($User['Telegram_ID'] ?? 0);
+if ($TargetUid <= 0) {
+$DevRowId = (int)($User['App_Device_Row_ID'] ?? 0);
+if ($DevRowId <= 0) {
+$DevMatch = self::findUserInAppDevices((string)($User['Phone'] ?? ($User['Client_ID'] ?? $Input)));
+$DevRowId = (int)($DevMatch['App_Device_Row_ID'] ?? 0);
+}
+if ($DevRowId <= 0) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه') . "❌ دستگاه فعالی برای این کاربر ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
+return;
+}
+$TargetUid = -$DevRowId;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => 'admin:app_push_text', 'Temp_UID' => $TargetUid]);
+$Label = $TargetUid > 0 ? Helper::toPersian((string)$TargetUid) : Helper::toPersian((string)($User['Phone'] ?? 'دستگاه کاربر'));
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
-. '📝 حالا متن پیام را بفرستید؛ برای دستگاه های کاربر ' . Helper::toPersian((string)$User['Telegram_ID']) . ' ارسال می شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
+. '📝 حالا متن پیام را بفرستید؛ برای دستگاه های کاربر ' . $Label . ' ارسال می شود.' . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 }
 
 /** Third step: stores (and queues) the message. */
@@ -2799,12 +3287,21 @@ if ($Text === '') return;
 
 $Session = Repository::getUserSession($Context->UserId);
 $Target = (int)($Session['Temp_UID'] ?? 0);
-$Count = self::queueAppPush($Target, $Text, (int)$Context->UserId);
+if ($Target < 0) {
+$User = self::appDeviceUserByRowId(-$Target) ?? [];
+$Count = self::queueAppPush((int)($User['Telegram_ID'] ?? 0), $Text, (int)$Context->UserId, true, $User);
+} elseif ($Target > 0) {
+$User = Repository::getUser($Target);
+if ($User === []) $User = self::findUserInAppDevices((string)$Target) ?? [];
+$Count = self::queueAppPush($Target, $Text, (int)$Context->UserId, true, $User);
+} else {
+$Count = self::queueAppPush(0, $Text, (int)$Context->UserId);
+}
 
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null]);
 $Notice = $Count > 0
 ? '✅ پیام ثبت شد و تا ' . Helper::toPersian((string)$Count) . ' دستگاه تحویل داده می شود.'
-: '❌ پیامی ثبت نشد: ' . ($Target > 0 ? self::appDeliveryFailureReason($Target, (int)$Context->UserId) : 'هیچ دستگاه فعالی برای دریافت پیام در سیستم ثبت نشده است.');
+: '❌ پیامی ثبت نشد: ' . ($Target !== 0 ? self::appDeliveryFailureReason(max(0, $Target), (int)$Context->UserId, $Target < 0 ? ($User ?? null) : null, true) : 'هیچ دستگاه فعالی برای دریافت پیام در سیستم ثبت نشده است.');
 TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'اطلاع رسانی به برنامه')
 . $Notice . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('اعلان برنامه', 'app_push_start')));
 }
@@ -2857,7 +3354,7 @@ return ($Telegram_Id > 0 && in_array($Telegram_Id, $Admin_Ids, true))
 || ($Uuid !== '' && in_array($Uuid, $Admin_Uuids, true));
 }
 
-public static function queueAppPush(int $Target_Telegram_ID, string $Text, int $Admin_ID): int {
+public static function queueAppPush(int $Target_Telegram_ID, string $Text, int $Admin_ID, bool $Allow_Admin_Target = false, ?array $User_Context = null): int {
 self::ensureAppSchemaReady();
 $Database = \Database::getInstance();
 $Title = mb_substr($Text, 0, 60);
@@ -2865,37 +3362,84 @@ $Body = $Text;
 $Admin_Ids = self::administratorTelegramIds($Admin_ID);
 $Admin_Uuids = self::administratorClientUuids($Admin_Ids);
 
+if ($Target_Telegram_ID > 0 || $User_Context !== null) {
+if (!$Allow_Admin_Target && $Target_Telegram_ID > 0 && in_array($Target_Telegram_ID, $Admin_Ids, true)) return 0;
+
+$User_Row = $Target_Telegram_ID > 0 ? ($Database->fetch('SELECT `Client_ID`, `Phone` FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$Target_Telegram_ID]) ?? []) : [];
+$Client_ID = trim((string)($User_Row['Client_ID'] ?? ($User_Context['Client_ID'] ?? '')));
+$Phone = trim((string)($User_Row['Phone'] ?? ($User_Context['Phone'] ?? '')));
+$Explicit_Device = trim((string)($User_Context['Device_ID'] ?? ''));
+
+$Rows = [];
 if ($Target_Telegram_ID > 0) {
-if (in_array($Target_Telegram_ID, $Admin_Ids, true)) return 0;
 $Rows = $Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `Is_Trusted` = 1', [$Target_Telegram_ID]);
+if (!$Allow_Admin_Target) {
 $Rows = array_values(array_filter($Rows, static fn(array $Row): bool => !self::isAdministratorDevice($Row, $Admin_Ids, $Admin_Uuids)));
+}
+}
 
-if ($Rows === []) {
-// Check devices bound via panel UUID (when Telegram_ID on App_Devices was not yet backfilled),
-// and otherwise park a deferred notification against their valid panel UUID.
-$Client_Row = $Database->fetch('SELECT `Client_ID` FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$Target_Telegram_ID]);
-$Client_ID = trim((string)($Client_Row['Client_ID'] ?? ''));
-
-if ($Client_ID !== '' && $Client_ID !== '_' && !in_array($Client_ID, $Admin_Uuids, true)) {
+if ($Rows === [] && $Client_ID !== '' && $Client_ID !== '_' && ($Allow_Admin_Target || !in_array($Client_ID, $Admin_Uuids, true))) {
 $Rows = $Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `User_UUID` = ? AND `Is_Trusted` = 1', [$Client_ID]);
+if (!$Allow_Admin_Target) {
 $Rows = array_values(array_filter($Rows, static fn(array $Row): bool => !self::isAdministratorDevice($Row, $Admin_Ids, $Admin_Uuids)));
+}
+}
+
+if ($Rows === [] && $Phone !== '') {
+$Variants = self::phoneCandidates($Phone);
+if ($Variants !== []) {
+$Marks = implode(',', array_fill(0, count($Variants), '?'));
+$Rows = $Database->fetchAll("SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Phone` IN ({$Marks}) AND `Is_Trusted` = 1", $Variants);
+if (!$Allow_Admin_Target) {
+$Rows = array_values(array_filter($Rows, static fn(array $Row): bool => !self::isAdministratorDevice($Row, $Admin_Ids, $Admin_Uuids)));
+}
+if ($Rows !== [] && $Target_Telegram_ID > 0) {
+foreach ($Rows as $Matched_Row) {
+if ((int)($Matched_Row['Telegram_ID'] ?? 0) <= 0 && !empty($Matched_Row['Device_ID'])) {
+try {
+$Database->execute('UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `Device_ID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)', [$Target_Telegram_ID, (string)$Matched_Row['Device_ID']]);
+} catch (Throwable) {}
+}
+if (($Client_ID === '' || $Client_ID === '_') && !empty($Matched_Row['User_UUID'])) {
+$Client_ID = trim((string)$Matched_Row['User_UUID']);
+}
+}
+}
+}
+}
+
+if ($Rows === [] && $Explicit_Device !== '') {
+$Rows = $Database->fetchAll('SELECT `Device_ID`, `Telegram_ID`, `User_UUID` FROM `App_Devices` WHERE `Device_ID` = ? AND `Is_Trusted` = 1', [$Explicit_Device]);
+if (!$Allow_Admin_Target) {
+$Rows = array_values(array_filter($Rows, static fn(array $Row): bool => !self::isAdministratorDevice($Row, $Admin_Ids, $Admin_Uuids)));
+}
+}
+
+$Is_Admin_Target = ($Target_Telegram_ID > 0 && in_array($Target_Telegram_ID, $Admin_Ids, true))
+|| ($Client_ID !== '' && in_array($Client_ID, $Admin_Uuids, true));
+foreach ($Rows as $Check_Row) {
+if (self::isAdministratorDevice($Check_Row, $Admin_Ids, $Admin_Uuids)) {
+$Is_Admin_Target = true;
+break;
+}
+}
+$Level = ($Allow_Admin_Target && $Is_Admin_Target) ? 'manual' : 'info';
 
 if ($Rows === []) {
-$Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (?, NULL, ?, ?, ?)', [$Client_ID, $Title, $Body, 'info']);
-try { Repository::logAdminAction($Admin_ID, 'app_push_user_deferred', $Target_Telegram_ID, null); } catch (Throwable) {}
+if ($Client_ID !== '' && $Client_ID !== '_' && ($Allow_Admin_Target || !in_array($Client_ID, $Admin_Uuids, true))) {
+$Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (?, NULL, ?, ?, ?)', [$Client_ID, $Title, $Body, $Level]);
+try { Repository::logAdminAction($Admin_ID, 'app_push_user_deferred', $Target_Telegram_ID > 0 ? $Target_Telegram_ID : null, null); } catch (Throwable) {}
 return 1;
 }
-} else {
 // هیچ مقصدی برای این کاربر وجود ندارد؛ پیام خصوصی نباید همگانی شود.
 return 0;
 }
-}
 
 foreach ($Rows as $Row) {
-$Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (NULL, ?, ?, ?, ?)', [(string)$Row['Device_ID'], $Title, $Body, 'info']);
+$Database->execute('INSERT INTO `App_Notifications` (`User_UUID`, `Device_ID`, `Title`, `Body`, `Level`) VALUES (NULL, ?, ?, ?, ?)', [(string)$Row['Device_ID'], $Title, $Body, $Level]);
 }
 
-try { Repository::logAdminAction($Admin_ID, 'app_push_user', $Target_Telegram_ID, mb_substr($Text, 0, 120)); } catch (Throwable) {}
+try { Repository::logAdminAction($Admin_ID, 'app_push_user', $Target_Telegram_ID > 0 ? $Target_Telegram_ID : null, mb_substr($Text, 0, 120)); } catch (Throwable) {}
 return count($Rows);
 }
 
@@ -3162,11 +3706,6 @@ if ($User === null) {
 return;
 }
 
-$Target = (int)($User['Telegram_ID'] ?? 0);
-if ($Target <= 0) {
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "❌خطا: شناسه تلگرام معتبر برای این کاربر ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
-return;
-}
 $Session = Repository::getUserSession($Context->UserId);
 $Mode = (string)($Session['Broadcast_Mode'] ?? 'sms');
 
@@ -3174,11 +3713,35 @@ if (!in_array($Mode, ['telegram', 'sms', 'app', 'all', 'both'], true)) {
 $Mode = 'sms';
 }
 
+$Target = (int)($User['Telegram_ID'] ?? 0);
+$DeviceRowId = (int)($User['App_Device_Row_ID'] ?? 0);
+$HasPhone = Helper::validatePhone((string)($User['Phone'] ?? ''));
+$HasAppTarget = $DeviceRowId > 0
+|| (trim((string)($User['Client_ID'] ?? '')) !== '' && trim((string)($User['Client_ID'] ?? '')) !== '_')
+|| $HasPhone;
+
+if ($Target <= 0) {
+if ($Mode === 'telegram' || !$HasAppTarget) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "❌خطا: شناسه تلگرام معتبر برای این کاربر ثبت نشده است." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
+return;
+}
+if ($DeviceRowId <= 0) {
+$FoundDev = self::findUserInAppDevices((string)($User['Phone'] ?? ($User['Client_ID'] ?? '')));
+$DeviceRowId = (int)($FoundDev['App_Device_Row_ID'] ?? 0);
+}
+if ($DeviceRowId <= 0) {
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "❌خطا: شناسه یا دستگاه معتبری برای این کاربر یافت نشد." . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
+return;
+}
+$Target = -$DeviceRowId;
+}
+
 $Mode_Label = self::deliveryModeLabel($Mode);
 
 Repository::updateUserSession($Context->UserId, ['Temp_UID' => $Target, 'Flow' => 'admin:sms_single_text', 'Broadcast_Mode' => $Mode]);
-$Name = self::targetDisplayName($Target, $User);
-TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "👌متن پیامک تکی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . Helper::toPersian((string)$Target) . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
+$Name = $Target > 0 ? self::targetDisplayName($Target, $User) : trim((string)($User['Full_Name'] ?? 'کاربر برنامه'));
+$TargetTag = $Target > 0 ? Helper::toPersian((string)$Target) : Helper::toPersian((string)($User['Phone'] ?? 'کاربر برنامه'));
+TelegramClient::sendMessage($Context->ChatId, self::header($Context, 'ارسال پیامک تکی') . "👌متن پیامک تکی ({$Mode_Label}) برای کاربر {$Name} را وارد کنید.\n🎯شناسه: `" . $TargetTag . "`" . Helper::adminFooter(), TelegramClient::inlineKeyboard(Menu::adminNav('پیامک تکی', 'ارسال پیامک تکی اول')));
 }
 
 private static function singleSmsModeRetry(Context $Context): void {

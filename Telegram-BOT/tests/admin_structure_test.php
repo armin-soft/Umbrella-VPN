@@ -61,9 +61,14 @@ public function scalar(string $Query, array $Params = [], int $Default = 0): int
 if (str_contains($Query, 'Tickets')) return str_contains($Query, "'answered'") || str_contains($Query, "'closed'") ? 0 : count(Repository::$Tickets);
 return str_contains($Query, 'App_Devices') ? count(self::$Devices) : 0;
 }
-public function fetchAll(string $Query, array $Params): array {
+public function fetch(string $Query, array $Params = []): ?array {
+return null;
+}
+public function fetchAll(string $Query, array $Params = []): array {
 self::$LastQuery = $Query;
 self::$LastParams = $Params;
+if (str_contains($Query, 'App_User_Activity')) return [];
+if (count($Params) < 2) return self::$Devices;
 return array_slice(self::$Devices, $Params[1], $Params[0]);
 }
 }
@@ -107,6 +112,9 @@ public static function adminGreeting(Context $Context, string $Section): string 
 public static function adminFooter(): string { return ''; }
 public static function userFooter(): string { return ''; }
 public static function toPersian(string $Value): string { return $Value; }
+public static function normalizePhone(string $Value): string { return $Value; }
+public static function formatDateTimeText(string $Value): string { return $Value; }
+public static function formatBytes(int $Bytes): string { return $Bytes . ' B'; }
 }
 final class TelegramClient {
 public static array $Last = [];
@@ -115,6 +123,7 @@ public static function inlineKeyboard(array $Rows): array { return ['inline_keyb
 public static function sendMessage(int $ChatId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
 public static function editOrSendMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
 public static function editMessageText(int $ChatId, int $MessageId, string $Text, array $Markup = []): void { self::$Last = $Markup; self::$Text = $Text; }
+public static function sendReadableMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): bool { self::$Last = $Markup; self::$Text = $Text; return true; }
 public static function sendChatAction(int $ChatId): void {}
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
 }
@@ -147,7 +156,7 @@ $Menus = [
 'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_content_filter', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
-'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu']],
+'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_user_monitor', 'admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu']],
 'accountsMenu' => ['admin_accounts_menu', 'مدیریت', ['admin_users', 'حذف کاربر اول', 'منقضی اشتراک اول']],
 'serverClientsMenu' => ['عملیات کلاینت سرور', 'مدیریت', ['فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'بروز رسانی داده های کاربران اول']],
 'serverConfig' => ['پیکربندی سرور', 'مدیریت', ['وضعیت سرور', 'سرویس های سرور', 'بروز رسانی میزان استفاده اول', 'تنظیمات ربات']],
@@ -161,7 +170,7 @@ $Menus = [
 $AdminWidths = [
 'menu' => array_fill(0, 14, 1),
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
-'devicesMenu' => [1, 1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
+'devicesMenu' => [1, 1, 1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
 'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 1, 1],
 'supportMenu' => [1], 'ticketAdminMenu' => [1], 'subscriptionsMenu' => [1, 1, 1], 'systemMenu' => [1, 1, 1],
@@ -362,7 +371,7 @@ check(str_contains($Body, 'Menu::userHome()'), $Method . ': keeps user home');
 // Device cards: owner links, safe display, stable numbering and bounded pagination.
 AdminFlow::devicesMenu($Context);
 check(TelegramClient::$Text === "مدیریت دستگاه ها\n📌*بخش مورد نظر را انتخاب کنید:*", 'device category uses plain greeting section and separate prompt');
-check(calls() === ['admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu', 'مدیریت'], 'device limit lives only in device management');
+check(calls() === ['admin_user_monitor', 'admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu', 'مدیریت'], 'device limit and user monitor live in device management');
 for ($Index = 0; $Index < 7; $Index++) {
 Database::$Devices[] = [
 'ID' => $Index + 1, 'Device_ID' => str_pad((string)$Index, 64, 'a'),
@@ -528,6 +537,10 @@ check(end($Filter_Calls) === 'مدیریت', 'global content filter ends with ad
 AdminFlow::globalContentFilterDomainsMenu($Context);
 $Domain_Calls = calls();
 check(count(array_keys($Domain_Calls, 'admin_content_filter', true)) === 1 && count(array_keys($Domain_Calls, 'مدیریت', true)) === 1, 'global content filter domains has unique parent and admin home buttons');
+
+AdminFlow::userMonitorList($Context, 0);
+$Monitor_Calls = calls();
+check(in_array('admin_devices_menu', $Monitor_Calls, true) && in_array('مدیریت', $Monitor_Calls, true), 'user monitor list has device management parent and admin home');
 
 ServerClient::$Response = null;
 echo "OK menu structure tests ({$Passed} assertions)\n";
