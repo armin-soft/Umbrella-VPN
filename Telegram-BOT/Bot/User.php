@@ -662,15 +662,6 @@ $Days_Remaining = $Diff > 0 ? (int)ceil($Diff / 86400) : 0;
 }
 
 $Client_Raw = trim((string)($User['Client_ID'] ?? ''));
-$ED_Private = htmlspecialchars(trim((string)($User['ED_25519_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$ED_Public = htmlspecialchars(trim((string)($User['ED_25519_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$WG_Private = htmlspecialchars(trim((string)($User['WireGuard_Private_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$WG_Public = htmlspecialchars(trim((string)($User['WireGuard_Public_Key'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$WG_PSK = htmlspecialchars(trim((string)($User['WireGuard_PSK'] ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$Has_Keys = false;
-foreach ([$ED_Private, $ED_Public, $WG_Private, $WG_Public, $WG_PSK] as $Key) {
-if ($Key !== '' && $Key !== '-') { $Has_Keys = true; break; }
-}
 $Has_Subscription = (trim((string)($User['Subscription'] ?? '')) !== '')
 || ($Has_Expiry && $Days_Remaining > 0)
 || ($Client_Raw !== '' && $Client_Raw !== '_');
@@ -723,15 +714,7 @@ $Subscription_Text = is_string($Subscription) && $Subscription !== ''
 . "├─📥حجم مصرف شده: *" . ($Used_Usage !== '' ? Helper::formatGB((float)$Used_Usage) : 'نامشخص') . "*\n"
 . "├─📤حجم باقی مانده: *" . ($Remaining_Usage !== '' ? Helper::formatGB((float)$Remaining_Usage) : 'نامشخص') . "*\n"
 . "├─📈درصد مصرف: *" . ($Percent_Usage !== '' && $Percent_Usage !== null ? Helper::formatPercent((float)$Percent_Usage) . '٪' : 'نامشخص') . "*\n"
-. "├─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*\n"
-. ($Has_Keys
-? "\n🔑*کلیدهای اتصال شما:*\n\n"
-. "🔸<b>کلید خصوصی ادی۲۵۵۱۹</b>\n<pre>{$ED_Private}</pre>\n"
-. "🔹<b>کلید عمومی ادی۲۵۵۱۹</b>\n<pre>{$ED_Public}</pre>\n"
-. "🔸<b>کلید خصوصی وایرگارد</b>\n<pre>{$WG_Private}</pre>\n"
-. "🔹<b>کلید عمومی وایرگارد</b>\n<pre>{$WG_Public}</pre>\n"
-. "🔸<b>کلید از پیش اشتراکی وایرگارد</b>\n<pre>{$WG_PSK}</pre>"
-: '')
+. "└─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*"
 : '└─❌اشتراک فعالی ندارید.';
 
 $Auto_Renew_Plan = trim((string)($User['Auto_Renew_Plan'] ?? ''));

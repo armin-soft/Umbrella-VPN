@@ -106,8 +106,8 @@ Repository::$User = $user;
 UserFlow::profile($context);
 check(TelegramClient::$Text !== '', 'profile rendered without PHP warnings');
 check(!str_contains(TelegramClient::$Text, 'شناسه کلاینت') && !str_contains(TelegramClient::$Text, 'client-123'), 'client UUID is not exposed in profile');
-if (isset($user['ED_25519_Private_Key'])) check(str_contains(TelegramClient::$Text, 'key-123+/='), 'stored key displayed');
-else check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما'), 'no key section for missing keys');
+check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما'), 'connection keys heading removed from profile');
+check(!str_contains(TelegramClient::$Text, 'key-123+/='), 'raw connection keys are omitted from profile');
 if (($user['Client_ID'] ?? '') === '_') check(!str_contains(TelegramClient::$Text, '🆔شناسه کلاینت:'), 'missing client ID is not shown in profile');
 }
 Repository::$User = [
@@ -119,5 +119,5 @@ UserFlow::profile($context);
 check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما'), 'server placeholder dashes are not reported as keys');
 Repository::$User = ['Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => 'client-123', 'WireGuard_Private_Key' => 'private-<key>&'];
 UserFlow::profile($context);
-check(str_contains(TelegramClient::$Text, 'private-&lt;key&gt;&amp;'), 'connection key is safe inside Telegram HTML');
+check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما') && !str_contains(TelegramClient::$Text, 'private-&lt;key&gt;&amp;'), 'WireGuard keys are omitted from profile');
 echo "OK subscription menu and profile\n";
