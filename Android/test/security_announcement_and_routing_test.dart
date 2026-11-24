@@ -27,6 +27,7 @@ import 'package:umbrella_vpn/ui/widgets/security_shield_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/content_block_server.dart';
+import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 

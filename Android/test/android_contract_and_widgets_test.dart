@@ -144,8 +144,8 @@ class _FakeNative implements NativeBridge {
   Future<bool> requestStorageScanAccess() async => true;
 
   @override
-  Future<bool> openExternalUrl({
-    required String url,
+  Future<bool> openExternalUrl(
+    String url, {
     String title = '',
     String body = '',
   }) async =>
