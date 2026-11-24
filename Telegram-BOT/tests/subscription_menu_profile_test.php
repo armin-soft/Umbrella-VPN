@@ -65,14 +65,14 @@ function buttons(): array { return array_column(array_merge(...TelegramClient::$
 $context = new Context();
 $now = time();
 foreach ([
-'no plan' => [[], true],
-'no local plan with client ID' => [['Client_ID' => 'client'], true],
-'blank plan' => [['Subscription' => '  '], true],
-'active plan' => [['Client_ID' => 'client', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => $now + 86400], false],
-'unknown expiry' => [['Client_ID' => 'client', 'Subscription' => 'monthly'], false],
-'paused plan' => [['Client_ID' => 'client', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => $now + 86400, 'Client_Status' => 'غیرفعال'], false],
-'expired plan' => [['Client_ID' => 'client', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => $now - 1], true],
-] as $label => [$user, $visible]) {
+'no plan' => [],
+'no local plan with client ID' => ['Client_ID' => 'client'],
+'blank plan' => ['Subscription' => '  '],
+'active plan' => ['Client_ID' => 'client', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => $now + 86400],
+'unknown expiry' => ['Client_ID' => 'client', 'Subscription' => 'monthly'],
+'paused plan' => ['Client_ID' => 'client', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => $now + 86400, 'Client_Status' => 'غیرفعال'],
+'expired plan' => ['Client_ID' => 'client', 'Subscription' => 'monthly', 'Expiration_Time_Stamp' => $now - 1],
+] as $label => $user) {
 foreach ([true, false] as $callback) {
 foreach ([true, false] as $offline) {
 $context->IsCallback = $callback;
@@ -81,15 +81,9 @@ Repository::$User = $user;
 ServerClient::$Calls = 0;
 Repository::$Session = ['Flow' => 'custom_plan', 'Pending_Payment' => 'keep'];
 UserFlow::serviceMenu($context);
-$Expected = $visible
-? ['user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']
-: ['user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'];
-check(buttons() === $Expected, $label . ': subscription menu visibility and other actions');
-$localExpiry = (int)($user['Expiration_Time_Stamp'] ?? 0);
-$hasLocalPlan = trim((string)($user['Subscription'] ?? '')) !== '' && ($localExpiry <= 0 || $localExpiry > $now);
-$clientId = trim((string)($user['Client_ID'] ?? ''));
-$expectedLookups = !$hasLocalPlan && $clientId !== '' && $clientId !== '_' ? 1 : 0;
-check(ServerClient::$Calls === $expectedLookups, $label . ': active local plan avoids panel lookup');
+$Expected = ['user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'];
+check(buttons() === $Expected, $label . ': subscription purchase menu is always available');
+check(ServerClient::$Calls === 0, $label . ': service menu performs no extra panel lookup');
 check(Menu::problems(TelegramClient::$Rows) === [], $label . ': valid keyboard');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'keep'], $label . ': payment preserved');
 }
@@ -97,27 +91,29 @@ check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'keep'], $l
 }
 ServerClient::$Offline = false;
 foreach ([
-['Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => 'client-123'],
-['Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => '_'],
-['Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => 'client-123', 'ED_25519_Private_Key' => 'key-123+/='],
-['Phone' => '09123456789', 'Subscription' => null],
+['Phone' => '09123456789', 'Full_Name' => 'Test User', 'Subscription' => 'monthly', 'Client_ID' => 'client-123'],
+['Phone' => '09123456789', 'Full_Name' => 'Test User', 'Subscription' => 'monthly', 'Client_ID' => '_'],
+['Phone' => '09123456789', 'Full_Name' => 'Test User', 'Subscription' => 'monthly', 'Client_ID' => 'client-123', 'ED_25519_Private_Key' => 'key-123+/='],
+['Phone' => '09123456789', 'Full_Name' => 'Test User', 'Subscription' => null],
 ] as $user) {
 Repository::$User = $user;
 UserFlow::profile($context);
 check(TelegramClient::$Text !== '', 'profile rendered without PHP warnings');
+check(str_contains(TelegramClient::$Text, 'نام و نام خانوادگی') && str_contains(TelegramClient::$Text, 'شماره موبایل'), 'profile keeps account fields');
 check(!str_contains(TelegramClient::$Text, 'شناسه کلاینت') && !str_contains(TelegramClient::$Text, 'client-123'), 'client UUID is not exposed in profile');
 check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما'), 'connection keys heading removed from profile');
 check(!str_contains(TelegramClient::$Text, 'key-123+/='), 'raw connection keys are omitted from profile');
+check(!str_contains(TelegramClient::$Text, 'نوع اشتراک') && !str_contains(TelegramClient::$Text, 'اشتراک فعالی ندارید') && !str_contains(TelegramClient::$Text, '💎*اشتراک:*'), 'my subscription summary block is completely removed from profile');
 if (($user['Client_ID'] ?? '') === '_') check(!str_contains(TelegramClient::$Text, '🆔شناسه کلاینت:'), 'missing client ID is not shown in profile');
 }
 Repository::$User = [
-'Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => 'client-123',
+'Phone' => '09123456789', 'Full_Name' => 'Test User', 'Subscription' => 'monthly', 'Client_ID' => 'client-123',
 'ED_25519_Private_Key' => '-', 'ED_25519_Public_Key' => '-',
 'WireGuard_Private_Key' => '-', 'WireGuard_Public_Key' => '-', 'WireGuard_PSK' => '-',
 ];
 UserFlow::profile($context);
-check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما'), 'server placeholder dashes are not reported as keys');
-Repository::$User = ['Phone' => '09123456789', 'Subscription' => 'monthly', 'Client_ID' => 'client-123', 'WireGuard_Private_Key' => 'private-<key>&'];
+check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما') && !str_contains(TelegramClient::$Text, '💎*اشتراک:*'), 'server placeholder dashes and subscription summary are absent from profile');
+Repository::$User = ['Phone' => '09123456789', 'Full_Name' => 'Test User', 'Subscription' => 'monthly', 'Client_ID' => 'client-123', 'WireGuard_Private_Key' => 'private-<key>&'];
 UserFlow::profile($context);
-check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما') && !str_contains(TelegramClient::$Text, 'private-&lt;key&gt;&amp;'), 'WireGuard keys are omitted from profile');
+check(!str_contains(TelegramClient::$Text, 'کلیدهای اتصال شما') && !str_contains(TelegramClient::$Text, 'private-&lt;key&gt;&amp;') && !str_contains(TelegramClient::$Text, '💎*اشتراک:*'), 'WireGuard keys and subscription summary are omitted from profile');
 echo "OK subscription menu and profile\n";

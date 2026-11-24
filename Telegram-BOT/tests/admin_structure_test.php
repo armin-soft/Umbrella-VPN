@@ -341,7 +341,8 @@ $UserContext->IsCallback = true;
 $SubscriptionSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
 $DispatcherSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Dispatcher.php');
 check(!str_contains($SubscriptionSource, 'public static function mySubscription(')
-&& str_contains($DispatcherSource, "'اشتراک من' => [UserFlow::class, 'profile']"), 'subscription display uses the profile flow');
+&& !str_contains($SubscriptionSource, 'public static function mySubscriptionActive(')
+&& str_contains($DispatcherSource, "'اشتراک من' => [UserFlow::class, 'subscriptionsMenu']"), 'my-subscription view is removed and legacy callback opens subscription purchase menu');
 check(str_contains($SubscriptionSource, 'پروفایل کاربری') && str_contains($SubscriptionSource, "'اشتراک آماده'"), 'renewal flow keeps profile action and purchase flow');
 $UserLeafParents = [
 'User.php' => ['profile' => 'user_account_menu', 'autoRenewMenu' => 'user_subscriptions_menu', 'transactionHistory' => 'user_wallet_menu', 'subscriptionHistory' => 'user_stats_menu', 'usageAnalytics' => 'user_stats_menu', 'ticketNewStart' => 'منوی پشتیبانی', 'ticketUserList' => 'منوی پشتیبانی'],

@@ -174,7 +174,7 @@ $Failures[] = 'Dispatcher: required route is missing: «' . $Call . '»';
 // Old callback messages stay usable, and opening auto-renew must not toggle it.
 $Expected_Routes = [
 "'منوی پشتیبانی' => [UserFlow::class, 'supportMenu']",
-"'اشتراک من' => [UserFlow::class, 'profile']",
+"'اشتراک من' => [UserFlow::class, 'subscriptionsMenu']",
 "'منوی تمدید خودکار' => UserFlow::autoRenewMenu(\$Context)",
 "'toggle_auto_renew' => UserFlow::toggleAutoRenew(\$Context)",
 "'اشتراک دلخواه' => [SubscriptionFlow::class, 'customPlansMenu']",

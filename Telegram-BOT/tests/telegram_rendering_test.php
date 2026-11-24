@@ -2,7 +2,11 @@
 declare(strict_types=1);
 // The real formatter/client with a fake HTTP boundary: no Telegram credentials.
 require_once dirname(__DIR__) . '/Bot/Menu.php';
-final class Environment { public static function getBotToken(): string { return 'offline'; } public static function getSubscriptionLinkBase(): string { return 'https://sub.test'; } }
+final class Environment {
+public static function getBotToken(): string { return 'offline'; }
+public static function getSubscriptionLinkBase(): string { return 'https://sub.test'; }
+public static function get(string $Key, mixed $Default = null): mixed { return $Key === 'PLAN_PRICE_1' ? 100000 : $Default; }
+}
 final class HttpClient {
 public static array $Calls = [];
 public static array $Replies = [];
@@ -55,7 +59,7 @@ TelegramClient::sendReadableMessage(1, null, '<a href="https://example.test/123"
 check(str_contains(end(HttpClient::$Calls)[1]['text'], 'https://example.test/123'), 'fallback preserves hyperlink URL');
 HttpClient::$Replies = ['throw', ['ok' => false]];
 check(!TelegramClient::sendReadableMessage(1, null, 'fail', $Markup), 'network/Telegram failure reported to caller');
-// Render the actual subscription flow, including the formerly nullable Send path.
+// Render the actual subscription purchase flow without the removed my-subscription screen.
 final class Context {
 public int $UserId = 1, $ChatId = 1; public ?int $MessageId = 10;
 public bool $IsCallback = true; public ?string $CallbackId = 'callback';
@@ -67,31 +71,38 @@ public static function isRobotOn(): bool { return true; }
 public static function backTo(string $Title, string $Data): array { return [Menu::button($Title, $Data)]; }
 }
 final class Repository {
-public static array $User = ['Phone' => '09123456789', 'Subscription' => 'standard', 'Client_ID' => 'client-123', 'Package_Duration' => '30', 'ED_25519_Private_Key' => 'private-123+/=', 'WireGuard_Private_Key' => 'wire-456+/='];
+public static array $User = ['Phone' => '09123456789', 'Subscription' => 'standard', 'Client_ID' => 'client-123'];
+public static array $Session = [];
 public static function getUser(int $Id): array { return self::$User; }
 public static function updateUser(int $Id, array $Data): void { self::$User = array_merge(self::$User, $Data); }
+public static function updateUserSession(int $Id, array $Data): void { self::$Session = array_merge(self::$Session, $Data); }
 public static function getSetting(string $K, mixed $Default = null): mixed { return $Default; }
 public static function getBalance(int $Id): float { return 0; }
 }
 final class ServerClient { public static function getUser(string $Id): array { throw new RuntimeException('server offline'); } }
 final class BotConfig {
+public static array $Prices = [1 => 100000, 3 => 250000];
 public static function getSupportUrl(): string { return 'https://t.me/support'; }
 public static function showEmergency(): bool { return false; }
+public static function getPlanPrice(int|string $Months): int { return (int)(self::$Prices[(int)$Months] ?? 0); }
+public static function getCustomDayRate(): int { return 3500; }
+public static function getCustomMinDays(): int { return 7; }
+public static function getCustomMaxDays(): int { return 365; }
+public static function getCustomMinGB(): int { return 10; }
+public static function getCustomMaxGB(): int { return 500; }
 }
 $Source = file_get_contents(dirname(__DIR__) . '/Bot/Subscription.php');
 eval(preg_replace('/\?>\s*$/', '', substr($Source, strpos($Source, 'final class SubscriptionFlow {'))));
+check(!method_exists(SubscriptionFlow::class, 'mySubscriptionActive'), 'mySubscriptionActive method is removed');
 HttpClient::$Calls = []; HttpClient::$Replies = [];
-SubscriptionFlow::mySubscriptionActive(new Context());
-$Rendered = implode("\n", array_map(fn($C) => $C[1]['text'] ?? '', HttpClient::$Calls));
-check(str_contains($Rendered, 'private-123+/=') && str_contains($Rendered, 'wire-456+/='), 'actual subscription preserves all keys');
-check(str_contains($Rendered, 'https://sub.test/client-123/sub/'), 'actual subscription includes usable URL');
-check(str_contains($Rendered, 'اطلاعات ذخیره شده'), 'server failure explicitly labelled cached, not fresh');
-Repository::$User['Client_Status'] = 'غیر فعال'; HttpClient::$Calls = [];
-SubscriptionFlow::mySubscriptionActive(new Context());
-check(str_contains(end(HttpClient::$Calls)[1]['text'], 'غیرفعال'), 'inactive direct caller has a non-null renderer');
-foreach ([['Phone' => ''], ['Subscription' => null], ['Client_ID' => '_']] as $Change) {
-Repository::$User = array_merge(['Phone' => '09123456789', 'Subscription' => 'standard', 'Client_ID' => 'client-123'], $Change);
-HttpClient::$Calls = []; SubscriptionFlow::mySubscriptionActive(new Context());
-check(count(array_filter(HttpClient::$Calls, fn($C) => isset($C[1]['text']) && $C[1]['text'] !== '')) > 0, 'missing profile, no plan and inconsistent client all render');
-}
+SubscriptionFlow::readyPlansMenu(new Context());
+$ReadyText = end(HttpClient::$Calls)[1]['text'] ?? '';
+$ReadyCallbacks = array_column(array_merge(...(end(HttpClient::$Calls)[1]['reply_markup']['inline_keyboard'] ?? [])), 'callback_data');
+check(str_contains($ReadyText, 'اشتراک های آماده') && in_array('خرید اشتراک 1', $ReadyCallbacks, true), 'ready plans menu renders purchase plans');
+BotConfig::$Prices = []; HttpClient::$Calls = []; HttpClient::$Replies = [];
+SubscriptionFlow::readyPlansMenu(new Context());
+check(str_contains(end(HttpClient::$Calls)[1]['text'] ?? '', 'هیچ اشتراکی'), 'empty ready plans menu renders fallback notice');
+HttpClient::$Calls = []; HttpClient::$Replies = ['throw', ['ok' => true]];
+SubscriptionFlow::customPlansMenu(new Context());
+check(count(HttpClient::$Calls) === 2 && str_contains(end(HttpClient::$Calls)[1]['text'] ?? '', 'اشتراک دلخواه') && (Repository::$Session['Flow'] ?? '') === 'custom_plan_days', 'custom plan flow falls back to sendMessage and sets purchase step 1');
 echo "OK Telegram rendering ({$N} assertions)\n";

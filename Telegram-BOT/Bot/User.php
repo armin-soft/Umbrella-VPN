@@ -276,12 +276,8 @@ return;
 }
 
 $Text = Common::greet($Context, 'منوی خدمات ربات') . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
-$User = Repository::getUser($Context->UserId) ?? [];
-$Client_ID = trim((string)($User['Client_ID'] ?? ''));
-if (!self::ownsCurrentSubscription($User) && $Client_ID !== '' && $Client_ID !== '_') {
-[$User] = self::subscriptionMenuState($Context->UserId);
-}
 $Menu_Rows = Menu::rows([
+[['💎مدیریت اشتراک', 'user_subscriptions_menu']],
 [['👤حساب کاربری', 'user_account_menu']],
 [['📱دستگاه من', 'user_device_menu']],
 [['💰کیف پول و مالی', 'user_wallet_menu']],
@@ -290,9 +286,6 @@ $Menu_Rows = Menu::rows([
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]);
-if (!self::ownsCurrentSubscription($User)) {
-array_unshift($Menu_Rows, [Menu::button('💎مدیریت اشتراک', 'user_subscriptions_menu')]);
-}
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 
 if ($Context->IsCallback && $Context->MessageId !== null) {
@@ -602,14 +595,6 @@ TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄پروفایل ک
 
 $Greeting = Common::greet($Context, 'پروفایل کاربری');
 $User = Repository::getUser($Context->UserId);
-$Synced = method_exists(Common::class, 'syncSubscriptionFromServer')
-? Common::syncSubscriptionFromServer($User)
-: $User;
-$Client_After_Sync = trim((string)($Synced['Client_ID'] ?? ''));
-$User = ($Synced === $User && ($Client_After_Sync === '' || $Client_After_Sync === '_') && method_exists(Common::class, 'liveUser'))
-? Common::liveUser($User)
-: $Synced;
-$Auto_Renew_Plan_On = trim((string)($User['Auto_Renew_Plan'] ?? '')) !== '';
 $Phone = $User['Phone'] ?? null;
 $FullName = $User['Full_Name'] ?? null;
 $Balance = Repository::getBalance($Context->UserId);
@@ -624,61 +609,9 @@ Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()
 return;
 }
 
-$Subscription = $User['Subscription'] ?? null;
-$Client_Status = (string)($User['Client_Status'] ?? 'نامشخص');
-$Last_Online = (string)($User['Last_Online'] ?? '');
 $Operator = Helper::detectOperator((string)$Phone);
-
-$Expiration_Time_Stamp = (int)($User['Expiration_Time_Stamp'] ?? 0);
-$Package_Start_Date = (string)($User['Package_Start_Date'] ?? '');
-$Package_Duration_Raw = (string)($User['Package_Duration'] ?? '');
-$Package_Duration_Norm = method_exists(Helper::class, 'toEnglish')
-? Helper::toEnglish($Package_Duration_Raw)
-: strtr($Package_Duration_Raw, ['۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']);
-$Package_Duration = (int)preg_replace('/[^0-9]/', '', $Package_Duration_Norm);
-$Total_Usage = (string)($User['Total_Usage_GB'] ?? '');
-$Used_Usage = (string)($User['Used_Usage_GB'] ?? '');
-$Remaining_Usage = (string)($User['Remaining_Usage_GB'] ?? '');
-$Percent_Usage = (string)($User['Percent_Usage'] ?? '');
-$Free_Plan_Claimed = (int)($User['Free_Plan_Claimed'] ?? 0);
 $Profile_Updated_At = (string)($User['Profile_Updated_At'] ?? '');
 $Created_At = (string)($User['Created_At'] ?? '');
-$Expiration_Date = 'نامشخص';
-
-if ($Expiration_Time_Stamp > 0) {
-$Expiration_Date = Helper::formatExpirationShort($Expiration_Time_Stamp);
-}
-
-elseif (isset($User['Expiration_Date']) && $User['Expiration_Date'] !== '' && $User['Expiration_Date'] !== null) {
-$Expiration_Date = (string)$User['Expiration_Date'];
-}
-
-$Has_Expiry = $Expiration_Time_Stamp > 0;
-$Days_Remaining = 0;
-
-if ($Has_Expiry) {
-$Diff = $Expiration_Time_Stamp - time();
-$Days_Remaining = $Diff > 0 ? (int)ceil($Diff / 86400) : 0;
-}
-
-$Client_Raw = trim((string)($User['Client_ID'] ?? ''));
-$Has_Subscription = (trim((string)($User['Subscription'] ?? '')) !== '')
-|| ($Has_Expiry && $Days_Remaining > 0)
-|| ($Client_Raw !== '' && $Client_Raw !== '_');
-$Auto_Renew_Visible = $Has_Subscription;
-$Last_Online_Label = 'نامشخص';
-
-if ($Last_Online !== '' && $Last_Online !== '0001-01-01 00:00:00') {
-try {
-$Lo_Date = substr($Last_Online, 0, 10);
-$Lo_Time = substr($Last_Online, 11, 8);
-$Last_Online_Label = Helper::gregorianToJalali($Lo_Date) . ' - ' . Helper::formatTime($Lo_Time);
-$Lo_Stamp = \Helper::parseServerTimeSafe($Last_Online);
-if ($Lo_Stamp !== false && (time() - $Lo_Stamp) <= 300) { $Last_Online_Label = '🟢آنلاین'; }
-}
-
-catch (Throwable) { $Last_Online_Label = $Last_Online; }
-}
 
 $Profile_Updated_Label = 'ثبت نشده';
 
@@ -703,56 +636,12 @@ $Created_At_Label = Helper::gregorianToJalali($Ca_Date);
 catch (Throwable) { $Created_At_Label = $Created_At; }
 }
 
-$Subscription_Text = is_string($Subscription) && $Subscription !== ''
-? "├─🪪نوع اشتراک: *{$Subscription}*\n"
-. "├─🚦وضعیت کلاینت: *" . Helper::translateStatus($Client_Status) . "*\n"
-. "├─📡آخرین اتصال: *{$Last_Online_Label}*\n"
-. "├─📅تاریخ شروع: *" . ($Package_Start_Date !== '' ? $Package_Start_Date : 'نامشخص') . "*\n"
-. "├─⏳ تاریخ انقضا: *{$Expiration_Date}*\n"
-. "├─📦مدت بسته: *" . ($Package_Duration > 0 ? Helper::toPersian((string)$Package_Duration) . " روز" : 'نامشخص') . "*\n"
-. "├─📊حجم کل: *" . ($Total_Usage !== '' ? Helper::formatGB((float)$Total_Usage) : 'نامشخص') . "*\n"
-. "├─📥حجم مصرف شده: *" . ($Used_Usage !== '' ? Helper::formatGB((float)$Used_Usage) : 'نامشخص') . "*\n"
-. "├─📤حجم باقی مانده: *" . ($Remaining_Usage !== '' ? Helper::formatGB((float)$Remaining_Usage) : 'نامشخص') . "*\n"
-. "├─📈درصد مصرف: *" . ($Percent_Usage !== '' && $Percent_Usage !== null ? Helper::formatPercent((float)$Percent_Usage) . '٪' : 'نامشخص') . "*\n"
-. "└─🎁اشتراک رایگان: *" . ($Free_Plan_Claimed === 1 ? '✅استفاده شده' : '❌استفاده نشده') . "*"
-: '└─❌اشتراک فعالی ندارید.';
-
-$Auto_Renew_Plan = trim((string)($User['Auto_Renew_Plan'] ?? ''));
-$Ar_Price = 0;
-$Ar_Balance = Repository::getBalance($Context->UserId);
-$Ar_Has_Balance = true;
-
-if ($Auto_Renew_Plan !== '') {
-$Ar_Plan_Name = AutoRenew::planName($Auto_Renew_Plan);
-
-if ($Ar_Plan_Name === '') $Ar_Plan_Name = 'پلن فعلی';
-$Ar_Price = BotConfig::getPlanPrice($Auto_Renew_Plan);
-$Ar_Has_Balance = ($Ar_Price <= 0) || ($Ar_Balance >= $Ar_Price);
-$Ar_Balance_Label = Helper::formatCurrency($Ar_Balance);
-$Ar_Price_Label = Helper::formatCurrency($Ar_Price);
-$Ar_Suffix = ($Ar_Price > 0 && $Ar_Has_Balance)
-? "\n├─💳موجودی کیف پول: *{$Ar_Balance_Label}* از *{$Ar_Price_Label}* (✅کافی)"
-: "\n├─💳موجودی کیف پول: *{$Ar_Balance_Label}* از *{$Ar_Price_Label}* (⚠️ناکافی)";
-$Auto_Renew_Label = $Ar_Has_Balance
-? '*🟢فعال (' . $Ar_Plan_Name . ')*' . $Ar_Suffix
-: '*🟠فعال (' . $Ar_Plan_Name . ') — در انتظار شارژ*' . $Ar_Suffix
-. "\n└─⚠️به دلیل کمبود موجودی، تمدید خودکار انجام نمی شود.";
-}
-
-else {
-$Auto_Renew_Label = '*🔴غیرفعال*';
-}
-
 $Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((string)$FullName, $Context->UserId) . "*\n"
 . "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*اپراتور پایه: {$Operator}*)\n"
 . "💳اعتبار حساب: *{$Balance_Formatted}*\n"
 . "🆔شناسه تلگرام: `" . Helper::toPersian((string)$Context->UserId) . "`\n"
-. ($Auto_Renew_Visible ? "🔄تمدید خودکار: {$Auto_Renew_Label}\n" : '')
 . "📅تاریخ عضویت: *{$Created_At_Label}*\n"
-. "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*\n"
-. "➖➖➖➖➖➖➖➖➖\n"
-. "💎*اشتراک:*\n"
-. "{$Subscription_Text}";
+. "🕰آخرین بروزرسانی پروفایل: *{$Profile_Updated_Label}*";
 
 $Profile_Buttons = [Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()];
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Greeting . "🔰اطلاعات پروفایل شما به شرح زیر است:\n\n" . $Profile_Text . Helper::userFooter(), TelegramClient::inlineKeyboard($Profile_Buttons));

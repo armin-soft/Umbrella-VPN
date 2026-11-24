@@ -32,7 +32,8 @@ private const ROUTES = [
 'گزارش مصرف' => [UserFlow::class, 'usageAnalytics'],
 'ویرایش و ثبت پروفایل' => [ProfileFlow::class, 'begin'],
 'ویرایش پروفایل' => [ProfileFlow::class, 'begin'],
-'اشتراک من' => [UserFlow::class, 'profile'],
+// سازگاری با پیام های قدیمی؛ بخش «اشتراک من» حذف شده است.
+'اشتراک من' => [UserFlow::class, 'subscriptionsMenu'],
 'اشتراک رایگان اول' => [SubscriptionFlow::class, 'freePlan'],
 'اشتراک نوروزی اول' => [SubscriptionFlow::class, 'nowruzPlan'],
 'اشتراک آماده' => [SubscriptionFlow::class, 'readyPlansMenu'],
@@ -842,7 +843,7 @@ $Typed_Routes = [
 'امنیت' => fn() => UserFlow::accountMenu($Context),
 'سوابق و آمار' => fn() => UserFlow::statsMenu($Context),
 'نرم افزار/اپلیکیشن' => fn() => UserFlow::appDownloadMenu($Context),
-'اشتراک من' => fn() => UserFlow::profile($Context),
+'اشتراک من' => fn() => UserFlow::subscriptionsMenu($Context),
 'منوی خدمات کاربری' => fn() => UserFlow::serviceMenu($Context),
 'منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
 'بازگشت به منوی اصلی' => fn() => UserFlow::serviceMenu($Context),
