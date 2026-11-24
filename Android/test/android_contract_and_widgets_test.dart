@@ -35,6 +35,7 @@ import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
+import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
@@ -141,6 +142,14 @@ class _FakeNative implements NativeBridge {
 
   @override
   Future<bool> requestStorageScanAccess() async => true;
+
+  @override
+  Future<bool> openExternalUrl({
+    required String url,
+    String title = '',
+    String body = '',
+  }) async =>
+      true;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -2086,6 +2095,88 @@ void main() {
       auth.dispose();
       gateway.close();
       toasts.dispose();
+    });
+
+    testWidgets('بنر صفحه مسدودی مرورگر در ContentControlCard روی موبایل ۳۲۰x۷۰۰ سرریز ندارد و دکمه پیش نمایش کار می کند', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 700));
+      addTearDown(() async => await tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+
+      final _FakeNative native = _FakeNative();
+      final GatewayClient gateway = GatewayClient(
+        client: MockClient((http.Request _) async => http.Response('{"ok":true}', 200)),
+      );
+      final AuthController auth = AuthController(
+        native: native,
+        gateway: gateway,
+        store: LocalStore.instance,
+      );
+      final ToastController toasts = ToastController();
+      final _FakeSound sound = _FakeSound();
+      final VpnController vpn = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: sound,
+        tray: TrayService(native),
+        provisioner: CoreProvisioner(),
+        settings: const AppSettings(),
+      );
+      vpn.updateContentFilter(
+        const FilterSettings(enabled: true, categories: <String>['adult']),
+      );
+      String? launchedUrl;
+      vpn.onLaunchBlockedPage = (
+        Uri uri, {
+        required String title,
+        required String body,
+      }) async {
+        launchedUrl = uri.toString();
+        return true;
+      };
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<NativeBridge>.value(value: native),
+            Provider<SoundService>.value(value: sound),
+            Provider<WindowService>.value(value: _FakeWindow()),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ChangeNotifierProvider<VpnController>.value(value: vpn),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(
+                body: SingleChildScrollView(
+                  child: ContentControlCard(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      expect(find.byKey(const ValueKey<String>('content-control-browser-banner')), findsOneWidget);
+      final Finder previewBtn = find.byKey(const ValueKey<String>('content-control-preview-button'));
+      expect(previewBtn, findsOneWidget);
+
+      await tester.ensureVisible(previewBtn);
+      await tester.tap(previewBtn);
+      await tester.pumpAndSettle();
+      expect(launchedUrl, isNotNull);
+      expect(launchedUrl!, contains('domain=pornhub.com'));
+
+      vpn.dispose();
+      auth.dispose();
+      gateway.close();
+      toasts.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
     });
   });
 }

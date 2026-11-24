@@ -4,9 +4,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
 import '../core/core_display.dart';
+import '../core/malicious_link_guard.dart';
 import '../core/storage.dart';
 import '../core/theme.dart';
 import '../core/utils.dart';
@@ -16,6 +18,7 @@ import '../platform/native.dart';
 import '../platform/services.dart';
 import 'balancer.dart';
 import 'clash_api.dart';
+import 'content_block_server.dart';
 import 'core_runtime.dart';
 import 'startup_verification.dart';
 import 'cli_session.dart';
@@ -260,6 +263,10 @@ class VpnController extends ChangeNotifier {
   VoidCallback? onTunnelConnected;
   Future<void> Function(List<CoreActivitySample> samples)?
       onNetworkConnectionsObserved;
+  Future<void> Function(String host, String category)?
+      onBlockedMaliciousHost;
+  Future<bool> Function(Uri uri, {required String title, required String body})?
+      onLaunchBlockedPage;
 
   /// بررسی دسترسی حساب پیش از هر اتصال. اگر رشته غیرخالی برگرداند، اتصال
   /// انجام نمی شود و همان پیام به کاربر نشان داده می شود (اشتراک منقضی،
@@ -2472,6 +2479,7 @@ class VpnController extends ChangeNotifier {
         linksPath: prewarmLinks.path,
         settingsPath: prewarmSettings.path,
         stickyMinutes: _settings.stickyMinutes,
+        blockPagePort: _blockServer?.proxyPort,
         cancelled: shouldAbort,
       );
     } catch (_) {
@@ -2836,12 +2844,16 @@ class VpnController extends ChangeNotifier {
     // با `-d` هسته همه تنظیمات را از فایل می خواند و پرچم های تونل و پورت را
     // نادیده می گیرد؛ پس فایل کامل نوشته می شود (UmbrellaCore.settingsJson) و
     // فقط مسیر فایل به آرگومان ها اضافه می شود.
+    final ContentBlockServer? blockServer = await ensureBlockServerStarted();
     final File runtime;
     try {
       runtime = await CoreRuntime.compile(
         executable: core.exe, workDir: core.workDir, runDir: plan.runDir,
         linksPath: sessionLinks.path, settingsPath: settingsPath,
         stickyMinutes: _settings.stickyMinutes,
+        blockPagePort: (blockServer != null && blockServer.proxyPort > 0)
+            ? blockServer.proxyPort
+            : null,
         cancelled: () => _cancelRequested || _disposed || preparationEpoch != _connectionEpoch,
         onStarted: _preparingProcesses.add,
         onFinished: _preparingProcesses.remove,
@@ -4075,6 +4087,7 @@ class VpnController extends ChangeNotifier {
 
   void _startTimers({int initialPingMs = 0}) {
     _startLiveMeasurement(initialPingMs: initialPingMs);
+    _startCoreBlockLogMonitor();
     _statsClock
       ..reset()
       ..start();
@@ -4511,6 +4524,260 @@ class VpnController extends ChangeNotifier {
     return outcome;
   }
 
+  ContentBlockServer? _blockServer;
+  WebSocket? _coreLogsSocket;
+  StreamSubscription<dynamic>? _coreLogsSub;
+  DateTime? _lastAnyBlockLaunch;
+  final Map<String, DateTime> _recentBlockLaunches = <String, DateTime>{};
+  final Map<String, String> _recentLogConnHosts = <String, String>{};
+
+  int get contentBlockUiPort => _blockServer?.uiPort ?? 0;
+  int get contentBlockProxyPort => _blockServer?.proxyPort ?? 0;
+
+  Future<ContentBlockServer?> ensureBlockServerStarted() async {
+    if (_disposed || _shuttingDown) return null;
+    final ContentBlockServer? existing = _blockServer;
+    if (existing != null && existing.isRunning) {
+      return existing;
+    }
+    final ContentBlockServer server = existing ??
+        ContentBlockServer(
+          filterProvider: () => _contentFilter,
+          onIntercepted: _handleInterceptedBlockEvent,
+        );
+    _blockServer = server;
+    try {
+      await server.start();
+      return server;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// بازکردن پیش نمایش زنده صفحه مسدودی مرورگر از بخش کنترل محتوا.
+  Future<bool> openBlockedPreviewPage({
+    String sampleDomain = 'content-control.umbrella.vpn',
+  }) async {
+    final ContentBlockServer? server = await ensureBlockServerStarted();
+    if (server == null || !server.isRunning) {
+      return false;
+    }
+    final String firstCategory = _contentFilter.activeBotCategories
+        .firstWhere((String c) => c != 'ads', orElse: () => 'content_control');
+    final Uri uri = server.buildBlockedPageUri(
+      sampleDomain,
+      categoryHint: firstCategory,
+      filter: _contentFilter,
+    );
+    return _launchBlockedPageUri(
+      uri,
+      title: 'سپر کنترل محتوای آمبرلا فعال است',
+      body: 'پیش نمایش صفحه مسدودی مرورگر آمبرلا',
+    );
+  }
+
+  void _handleInterceptedBlockEvent(InterceptedBlockEvent event) {
+    if (_disposed || _shuttingDown) return;
+    final BlockedHostDetails details = event.details;
+    if (details.domain.isEmpty) return;
+
+    if (details.isSecurityThreat) {
+      unawaited(
+        onBlockedMaliciousHost?.call(details.domain, details.category) ??
+            Future<void>.value(),
+      );
+    }
+
+    // روی HTTP (پورت 80)، خود تب مرورگر پاسخ 403 با صفحه کامل آمبرلا را
+    // دریافت کرده است و نیازی به باز کردن تب جدید نیست.
+    if (!event.needsBrowserLaunch || details.category == 'ads') {
+      return;
+    }
+
+    unawaited(
+      _openBlockedBrowserPage(
+        details.domain,
+        categoryHint: details.category,
+      ),
+    );
+  }
+
+  Future<void> _openBlockedBrowserPage(
+    String host, {
+    String? categoryHint,
+  }) async {
+    if (_disposed || _shuttingDown) return;
+    final String clean = ContentBlockServer.sanitizeHost(host);
+    if (clean.isEmpty || clean == '127.0.0.1' || clean == 'localhost') {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    final DateTime? lastForHost = _recentBlockLaunches[clean];
+    if (lastForHost != null &&
+        now.difference(lastForHost) < const Duration(seconds: 4)) {
+      return;
+    }
+    if (_lastAnyBlockLaunch != null &&
+        now.difference(_lastAnyBlockLaunch!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _recentBlockLaunches[clean] = now;
+    _lastAnyBlockLaunch = now;
+    if (_recentBlockLaunches.length > 64) {
+      _recentBlockLaunches.remove(_recentBlockLaunches.keys.first);
+    }
+
+    final ContentBlockServer? server = await ensureBlockServerStarted();
+    if (server == null || !server.isRunning || _disposed || _shuttingDown) {
+      return;
+    }
+    final BlockedHostDetails details = ContentBlockServer.classifyBlockedHost(
+      clean,
+      filter: _contentFilter,
+      categoryHint: categoryHint,
+    );
+    if (details.category == 'ads') {
+      return;
+    }
+    final Uri uri = server.buildBlockedPageUri(
+      clean,
+      categoryHint: details.category,
+      filter: _contentFilter,
+    );
+    final String title = details.isSecurityThreat
+        ? 'لینک مخرب توسط سپر امنیتی آمبرلا مسدود شد'
+        : 'سپر کنترل محتوای آمبرلا فعال است';
+    final String body = '${details.domain} (${details.categoryLabel})';
+    _log.add(
+      'صفحه مسدودی آمبرلا برای $clean (${details.categoryLabel}) در مرورگر باز شد.',
+      level: details.isSecurityThreat ? 'warning' : 'info',
+    );
+    await _launchBlockedPageUri(uri, title: title, body: body);
+  }
+
+  Future<bool> _launchBlockedPageUri(
+    Uri uri, {
+    required String title,
+    required String body,
+  }) async {
+    if (onLaunchBlockedPage != null) {
+      try {
+        return await onLaunchBlockedPage!(uri, title: title, body: body);
+      } catch (_) {
+        return false;
+      }
+    }
+    try {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _startCoreBlockLogMonitor() {
+    unawaited(_stopCoreBlockLogMonitor());
+    final int epoch = _connectionEpoch;
+    final String logLevel = _contentFilter.hasActiveRules ? 'debug' : 'info';
+    unawaited(() async {
+      await ensureBlockServerStarted();
+      final WebSocket? socket = await ClashApi.openLogsStream(
+        level: logLevel,
+        timeout: const Duration(seconds: 2),
+      );
+      if (socket == null) return;
+      if (_disposed ||
+          _shuttingDown ||
+          epoch != _connectionEpoch ||
+          _status != VpnStatus.connected) {
+        try {
+          await socket.close();
+        } catch (_) {}
+        return;
+      }
+      _coreLogsSocket = socket;
+      _coreLogsSub = socket.listen(
+        (dynamic raw) {
+          if (_disposed || _shuttingDown || epoch != _connectionEpoch) return;
+          if (raw is! String) return;
+          final CoreLogEntry? entry = ClashApi.parseCoreLogLine(raw);
+          if (entry == null) return;
+          _processCoreLogEntry(entry);
+        },
+        onError: (_) {},
+        onDone: () {
+          _coreLogsSocket = null;
+          _coreLogsSub = null;
+        },
+        cancelOnError: true,
+      );
+    }());
+  }
+
+  void _processCoreLogEntry(CoreLogEntry entry) {
+    if (entry.host.isNotEmpty && entry.connectionTag.isNotEmpty) {
+      _recentLogConnHosts[entry.connectionTag] =
+          '${entry.host}|${entry.port}';
+      if (_recentLogConnHosts.length > 128) {
+        _recentLogConnHosts.remove(_recentLogConnHosts.keys.first);
+      }
+    }
+
+    String host = entry.host;
+    int port = entry.port;
+    if (host.isEmpty && entry.connectionTag.isNotEmpty) {
+      final String? stored = _recentLogConnHosts[entry.connectionTag];
+      if (stored != null) {
+        final List<String> parts = stored.split('|');
+        host = parts.first;
+        if (parts.length > 1) {
+          port = int.tryParse(parts[1]) ?? 0;
+        }
+      }
+    }
+    if (host.isEmpty) return;
+
+    final MaliciousLinkMatch? malicious = MaliciousLinkGuard.inspectHost(host);
+    if (malicious != null) {
+      unawaited(
+        onBlockedMaliciousHost?.call(host, 'malicious_link') ??
+            Future<void>.value(),
+      );
+      if (port != 80) {
+        unawaited(_openBlockedBrowserPage(host, categoryHint: 'malicious_link'));
+      }
+      return;
+    }
+
+    if (!entry.isBlockedEvent) return;
+    final String? matchedCategory =
+        UmbrellaCore.matchesContentFilterCategory(_contentFilter, host) ??
+            (entry.matchedRuleHint.isNotEmpty ? entry.matchedRuleHint : null);
+    if (matchedCategory == 'ads') return;
+    if (matchedCategory == null && !_contentFilter.hasActiveRules) return;
+
+    // برای پورت 80 HTTP در ویندوز پاسخ HTML مستقیم در همان تب فرستاده شده است.
+    if (port == 80 && !entry.isDnsRejection) return;
+    unawaited(_openBlockedBrowserPage(host, categoryHint: matchedCategory));
+  }
+
+  Future<void> _stopCoreBlockLogMonitor() async {
+    final StreamSubscription<dynamic>? sub = _coreLogsSub;
+    final WebSocket? socket = _coreLogsSocket;
+    _coreLogsSub = null;
+    _coreLogsSocket = null;
+    _recentLogConnHosts.clear();
+    if (sub != null) {
+      try {
+        await sub.cancel();
+      } catch (_) {}
+    }
+    if (socket != null) {
+      try {
+        await socket.close();
+      } catch (_) {}
+    }
+  }
+
   bool get _hasTrackedCoreProcesses =>
       _runningPids.isNotEmpty ||
       _runningBinaries.isNotEmpty ||
@@ -4531,6 +4798,7 @@ class VpnController extends ChangeNotifier {
     // سنجشی که بعد از قطع اتصال شروع شود، هسته ای بالا می آورد و پورت ها را
     // می گیرد؛ همان چیزی که اتصال بعدی را رد می کرد.
     await _stopProbes();
+    await _stopCoreBlockLogMonitor();
     await _stopCores();
     await _disableProxy();
     _statsTimer?.cancel();
@@ -4580,6 +4848,8 @@ class VpnController extends ChangeNotifier {
     _ipTimer?.cancel();
     _pingTimer?.cancel();
     _stopLiveMeasurement();
+    await _stopCoreBlockLogMonitor();
+    await _blockServer?.stop();
     cancelSpeedTest();
 
     // آیکون سینی در همان ابتدا برداشته می شود تا روی نوار وظیفه باقی نماند.
@@ -4779,6 +5049,7 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _failAndCleanup(String reason) async {
+    await _stopCoreBlockLogMonitor();
     await _stopCores();
     await _disableProxy();
     _statsTimer?.cancel();
@@ -4859,6 +5130,8 @@ class VpnController extends ChangeNotifier {
     _healthTimer?.cancel();
     _ipTimer?.cancel();
     _pingTimer?.cancel();
+    unawaited(_stopCoreBlockLogMonitor());
+    unawaited(_blockServer?.stop());
     unawaited(_stopCores());
     unawaited(_native.shutdownCores());
     super.dispose();

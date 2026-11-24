@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import '../core/malicious_link_guard.dart';
 import '../models/advanced_network.dart';
+import 'umbrella_core.dart';
 
 /// Finalize the pinned core's `build` output for `srun`, matching official
 /// Hiddify (`hiddify-app` + `hiddify-core v5.9.15`) startup semantics AND
@@ -61,6 +63,7 @@ class RuntimeConfig {
   };
 
   static const String directOutboundTag = 'direct §hide§';
+  static const String blockPageOutboundTag = 'umbrella-block-page';
 
   /// Profiles up to this size behave identically to Hiddify's default
   /// `keep-top = -1` (immediate full-pool `cycleOrder` without batch gating).
@@ -75,6 +78,7 @@ class RuntimeConfig {
     int? clashApiPort,
     Map<String, dynamic>? coreSettings,
     int stickyMinutes = 15,
+    int? blockPagePort,
   }) {
     if (config['outbounds'] is! List ||
         config['experimental'] is! Map ||
@@ -223,6 +227,11 @@ class RuntimeConfig {
 
     // Patch route configuration (process matching, LAN bypass, destination resolve).
     _finalizeRoute(config, outbounds, coreSettings);
+    _configureContentBlockRouting(
+      config,
+      outbounds,
+      blockPagePort: blockPagePort,
+    );
   }
 
   /// A domain-named WireGuard peer must be resolved before the tunnel can
@@ -374,7 +383,9 @@ class RuntimeConfig {
         index++;
         continue;
       }
-      if (action == 'reject' &&
+      if ((action == 'reject' ||
+              ((action == 'route' || action.isEmpty) &&
+                  item['outbound'] == blockPageOutboundTag)) &&
           !_nonEmptyRuleField(item['ip_cidr']) &&
           item['ip_is_private'] != true &&
           !_containsString(item['protocol'], 'quic')) {
@@ -384,6 +395,175 @@ class RuntimeConfig {
       break;
     }
     return index;
+  }
+
+  static void _configureContentBlockRouting(
+    Map<String, dynamic> config,
+    List<dynamic> outbounds, {
+    int? blockPagePort,
+  }) {
+    if (blockPagePort == null || blockPagePort <= 0 || blockPagePort > 65535) {
+      return;
+    }
+    final bool hasBlockPageOutbound = outbounds.any(
+      (dynamic item) => item is Map && item['tag'] == blockPageOutboundTag,
+    );
+    if (!hasBlockPageOutbound) {
+      outbounds.add(<String, dynamic>{
+        'type': 'http',
+        'tag': blockPageOutboundTag,
+        'server': '127.0.0.1',
+        'server_port': blockPagePort,
+      });
+    }
+
+    final Object? rawRoute = config['route'];
+    if (rawRoute is Map<String, dynamic> && rawRoute['rules'] is List) {
+      final List<dynamic> routeRules = rawRoute['rules'] as List<dynamic>;
+      for (final dynamic item in routeRules) {
+        if (item is! Map<String, dynamic>) continue;
+        final bool isBlockRule =
+            item['action'] == 'reject' || item['outbound'] == 'block';
+        if (!isBlockRule) continue;
+        if (_isPrimaryContentBlockRule(item)) {
+          item.remove('method');
+          item.remove('no_drop');
+          item['action'] = 'route';
+          item['outbound'] = blockPageOutboundTag;
+        }
+      }
+
+      final bool hasTrojanRule = routeRules.any((dynamic item) {
+        if (item is! Map) return false;
+        if (item['outbound'] != blockPageOutboundTag) return false;
+        return _containsString(item['domain_suffix'], 'grabify.link');
+      });
+      if (!hasTrojanRule) {
+        final int insertAt = _trojanBlockInsertIndex(routeRules);
+        routeRules.insert(insertAt, <String, dynamic>{
+          'domain_suffix':
+              MaliciousLinkGuard.knownMaliciousDomains.toList(growable: false),
+          'domain_keyword': MaliciousLinkGuard.phishingPhrases,
+          'action': 'route',
+          'outbound': blockPageOutboundTag,
+        });
+      }
+    }
+
+    // در حالت TUN، قوانین DNS مربوط به دسته های صفحه دار (غیر از تبلیغات) را
+    // اجازه می دهیم به لایه route برسند تا مرورگر به جای خطای DNS به صفحه
+    // مدرن آمبرلا هدایت شود. قوانین تبلیغات (ads) همچنان در DNS مسدود می مانند.
+    final Object? rawDns = config['dns'];
+    if (rawDns is Map<String, dynamic> && rawDns['rules'] is List) {
+      final List<dynamic> dnsRules = rawDns['rules'] as List<dynamic>;
+      dnsRules.removeWhere((dynamic item) {
+        if (item is! Map<String, dynamic>) return false;
+        final bool isRejectDns = item['action'] == 'reject' ||
+            item['server'] == 'dns-block' ||
+            item['outbound'] == 'block';
+        if (!isRejectDns) return false;
+        return _isPrimaryContentBlockRule(item);
+      });
+    }
+  }
+
+  static int _trojanBlockInsertIndex(List<dynamic> rules) {
+    int index = 0;
+    while (index < rules.length) {
+      final dynamic item = rules[index];
+      if (item is! Map) break;
+      final String action = '${item['action'] ?? ''}';
+      if (action == 'sniff' ||
+          action == 'hijack-dns' ||
+          _containsString(item['protocol'], 'dns') ||
+          item['port'] == 53 ||
+          _containsInt(item['port'], 53)) {
+        index++;
+        continue;
+      }
+      break;
+    }
+    return index;
+  }
+
+  static bool _isPrimaryContentBlockRule(Map<dynamic, dynamic> rule) {
+    if (_nonEmptyRuleField(rule['process_name']) ||
+        _nonEmptyRuleField(rule['process_path']) ||
+        _nonEmptyRuleField(rule['process_path_regex']) ||
+        _nonEmptyRuleField(rule['package_name']) ||
+        _nonEmptyRuleField(rule['ip_cidr']) ||
+        rule['ip_is_private'] == true ||
+        _containsString(rule['protocol'], 'quic')) {
+      return false;
+    }
+
+    final List<String> ruleSets = _stringValues(rule['rule_set']);
+    if (ruleSets.isNotEmpty) {
+      final bool hasPrimaryRuleSet = ruleSets.any((String rs) {
+        final String lower = rs.toLowerCase();
+        return lower.contains('porn') ||
+            lower.contains('adult') ||
+            lower.contains('gambling') ||
+            lower.contains('betting') ||
+            lower.contains('dating');
+      });
+      if (hasPrimaryRuleSet) {
+        return true;
+      }
+      final bool hasAdsRuleSet = ruleSets.any((String rs) {
+        final String lower = rs.toLowerCase();
+        return lower.contains('ads') || lower.contains('adblock');
+      });
+      if (hasAdsRuleSet) {
+        return false;
+      }
+    }
+
+    final List<String> domains = <String>[
+      ..._stringValues(rule['domain']),
+      ..._stringValues(rule['domain_suffix']),
+      ..._stringValues(rule['domain_keyword']),
+    ];
+    if (domains.isEmpty) {
+      return false;
+    }
+
+    for (final String d in domains) {
+      if (MaliciousLinkGuard.inspectHost(d) != null ||
+          UmbrellaCore.isPrimaryBlockSiteHost(d)) {
+        return true;
+      }
+    }
+
+    // دامنه های سفارشی کاربر (`custom`) نه پسوندهای صرفاً تبلیغاتی دارند و نه rule_set تبلیغاتی.
+    const Set<String> knownAdMarkers = <String>{
+      'doubleclick.net',
+      'googlesyndication.com',
+      'googleadservices.com',
+      'google-analytics.com',
+      'adservice.google.com',
+      'adnxs.com',
+      'taboola.com',
+      'outbrain.com',
+      'criteo.com',
+    };
+    final bool looksLikeAdRule = domains.any(
+      (String d) => knownAdMarkers.contains(d.trim().toLowerCase()),
+    );
+    return !looksLikeAdRule;
+  }
+
+  static List<String> _stringValues(Object? value) {
+    if (value is String && value.trim().isNotEmpty) {
+      return <String>[value.trim()];
+    }
+    if (value is List) {
+      return value
+          .map((Object? item) => '${item ?? ''}'.trim())
+          .where((String s) => s.isNotEmpty)
+          .toList(growable: false);
+    }
+    return const <String>[];
   }
 
   static String? _findDirectOutboundTag(List<dynamic> outbounds) {

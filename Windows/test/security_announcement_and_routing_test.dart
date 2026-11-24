@@ -24,6 +24,9 @@ import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/security_shield_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
+import 'package:umbrella_vpn/vpn/content_block_server.dart';
+import 'package:umbrella_vpn/vpn/runtime_config.dart';
+import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -775,7 +778,9 @@ void main() {
       gw.close();
     });
 
-    testWidgets('SecurityShieldDialog در ویندوز لینک تروجانی را بررسی و بدون سرریز رندر می شود', (WidgetTester tester) async {
+    testWidgets(
+      'SecurityShieldDialog در ویندوز بدون بخش بررسی دستی لینک و بدون سرریز رندر می شود',
+      (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(800, 600));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -807,24 +812,341 @@ void main() {
       );
       await tester.pump();
 
-      await tester.ensureVisible(
+      expect(
         find.byKey(const ValueKey<String>('security-link-input')),
+        findsNothing,
       );
-      await tester.enterText(
-        find.byKey(const ValueKey<String>('security-link-input')),
-        'https://grabify.link/payload.exe',
-      );
-      await tester.ensureVisible(
+      expect(
         find.byKey(const ValueKey<String>('security-check-link-button')),
+        findsNothing,
       );
-      await tester.tap(find.byKey(const ValueKey<String>('security-check-link-button')));
+      expect(find.text('بررسی امنیتی لینک پیش از باز کردن'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('security-auto-link-protection-card')),
+        findsOneWidget,
+      );
+
+      final MaliciousLinkMatch? hit = await sec.handleObservedMaliciousHost(
+        'grabify.link',
+        process: 'chrome.exe',
+      );
+      expect(hit, isNotNull);
       await tester.pump();
 
       expect(sec.neutralizedEvents, hasLength(1));
+      expect(sec.neutralizedEvents.single.action, 'blocked_connection');
       expect(find.textContaining('مسدودسازی اتصال'), findsOneWidget);
       expect(tester.takeException(), isNull);
       sec.dispose();
     });
+
+    test(
+      'ContentBlockServer serves modern Umbrella browser UI and handles HTTP/HTTPS proxy blocks',
+      () async {
+        final List<InterceptedBlockEvent> events = <InterceptedBlockEvent>[];
+        final ContentBlockServer server = ContentBlockServer(
+          filterProvider: () => const FilterSettings(
+            enabled: true,
+            categories: <String>['adult', 'gambling', 'ads'],
+            customDomains: <String>['blocked.example.test'],
+          ),
+          onIntercepted: events.add,
+        );
+        await server.start();
+        addTearDown(() async => server.stop());
+
+        expect(server.isRunning, isTrue);
+        expect(server.uiPort, greaterThan(0));
+        expect(server.proxyPort, greaterThan(0));
+
+        final HttpClient client = HttpClient()..findProxy = (_) => 'DIRECT';
+        addTearDown(() => client.close(force: true));
+        final HttpClientRequest uiReq = await client.getUrl(
+          server.buildBlockedPageUri('<script>alert(1)</script>.pornhub.com'),
+        );
+        final HttpClientResponse uiRes = await uiReq.close();
+        final String uiHtml = await utf8.decodeStream(uiRes);
+        expect(uiRes.statusCode, HttpStatus.ok);
+        expect(uiHtml, contains('dir="rtl"'));
+        expect(uiHtml, contains('Umbrella VPN'));
+        expect(uiHtml, contains('#E11D2E'));
+        expect(uiHtml, contains('#07080B'));
+        expect(uiHtml, contains('سپر کنترل محتوای آمبرلا فعال است'));
+        expect(uiHtml, isNot(contains('<script>alert(1)</script>')));
+        expect(uiHtml, contains('&lt;script&gt;'));
+
+        for (final String assetPath in const <String>[
+          '/assets/logo.png',
+          '/assets/shield.png',
+          '/assets/alert.png',
+        ]) {
+          final HttpClientRequest assetReq = await client.getUrl(
+            Uri.parse('http://127.0.0.1:${server.uiPort}$assetPath'),
+          );
+          final HttpClientResponse assetRes = await assetReq.close();
+          await assetRes.drain<void>();
+          expect(assetRes.statusCode, HttpStatus.ok);
+        }
+
+        final Socket httpTunnel =
+            await Socket.connect(InternetAddress.loopbackIPv4, server.proxyPort);
+        httpTunnel.write(
+          'CONNECT pornhub.com:80 HTTP/1.1\r\nHost: pornhub.com:80\r\n\r\n',
+        );
+        await httpTunnel.flush();
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        httpTunnel.write('GET / HTTP/1.1\r\nHost: pornhub.com\r\n\r\n');
+        await httpTunnel.flush();
+        final String httpTunnelResp = utf8.decode(
+          await httpTunnel.fold<List<int>>(
+            <int>[],
+            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+          ),
+        );
+        expect(httpTunnelResp, contains('200 Connection Established'));
+        expect(httpTunnelResp, contains('403 Forbidden'));
+        expect(httpTunnelResp, contains('Umbrella VPN'));
+        expect(httpTunnelResp, contains('pornhub.com'));
+        expect(
+          events.any((InterceptedBlockEvent e) =>
+              e.details.domain == 'pornhub.com' &&
+              e.details.category == 'adult' &&
+              !e.needsBrowserLaunch),
+          isTrue,
+        );
+
+        final Socket httpsTunnel =
+            await Socket.connect(InternetAddress.loopbackIPv4, server.proxyPort);
+        httpsTunnel.write(
+          'CONNECT 1xbet.com:443 HTTP/1.1\r\nHost: 1xbet.com:443\r\n\r\n',
+        );
+        await httpsTunnel.flush();
+        final String httpsResp = utf8.decode(
+          await httpsTunnel.fold<List<int>>(
+            <int>[],
+            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+          ),
+        );
+        expect(httpsResp, startsWith('HTTP/1.1 403 Forbidden'));
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        expect(
+          events.any((InterceptedBlockEvent e) =>
+              e.details.domain == '1xbet.com' &&
+              e.details.category == 'gambling' &&
+              e.needsBrowserLaunch),
+          isTrue,
+        );
+
+        final Socket trojanReq =
+            await Socket.connect(InternetAddress.loopbackIPv4, server.proxyPort);
+        trojanReq.write(
+          'GET http://grabify.link/evil HTTP/1.1\r\nHost: grabify.link\r\n\r\n',
+        );
+        await trojanReq.flush();
+        final String trojanResp = utf8.decode(
+          await trojanReq.fold<List<int>>(
+            <int>[],
+            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+          ),
+        );
+        expect(trojanResp, contains('403 Forbidden'));
+        expect(trojanResp, contains('سپر امنیتی آمبرلا: تهدید مخرب مسدود شد'));
+      },
+    );
+
+    test(
+      'RuntimeConfig.finalize routes primary content control & trojan links to umbrella-block-page',
+      () {
+        final Map<String, dynamic> runtime = <String, dynamic>{
+          'outbounds': <dynamic>[
+            <String, dynamic>{'type': 'direct', 'tag': RuntimeConfig.directOutboundTag},
+            <String, dynamic>{'type': 'selector', 'tag': 'select'},
+          ],
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{},
+            'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'},
+          },
+          'dns': <String, dynamic>{
+            'rules': <dynamic>[
+              <String, dynamic>{
+                'domain_suffix': <String>['pornhub.com'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'rule_set': <String>['geosite-category-ads-all'],
+                'action': 'reject',
+              },
+            ],
+          },
+          'route': <String, dynamic>{
+            'rules': <dynamic>[
+              <String, dynamic>{'action': 'sniff'},
+              <String, dynamic>{
+                'domain_suffix': <String>['pornhub.com'],
+                'rule_set': <String>['geosite-category-porn'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'domain_suffix': <String>['blocked-custom.example'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'domain_suffix': <String>['doubleclick.net'],
+                'rule_set': <String>['geosite-category-ads-all'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'process_name': <String>['blocked-app.exe'],
+                'action': 'reject',
+              },
+            ],
+          },
+        };
+
+        RuntimeConfig.finalize(
+          runtime,
+          profileTags: const <String>{},
+          coreSettings: const <String, dynamic>{
+            'bypass-lan': true,
+            'resolve-destination': true,
+          },
+          blockPagePort: 45123,
+        );
+
+        final List<dynamic> outbounds = runtime['outbounds'] as List<dynamic>;
+        expect(
+          outbounds.any((dynamic o) =>
+              o is Map &&
+              o['tag'] == RuntimeConfig.blockPageOutboundTag &&
+              o['type'] == 'http' &&
+              o['server_port'] == 45123),
+          isTrue,
+        );
+
+        final List<Map<String, dynamic>> routeRules =
+            ((runtime['route'] as Map<String, dynamic>)['rules'] as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        final Map<String, dynamic> pornRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['domain_suffix']}'.contains('pornhub.com'),
+        );
+        expect(pornRule['action'], 'route');
+        expect(pornRule['outbound'], RuntimeConfig.blockPageOutboundTag);
+
+        final Map<String, dynamic> customRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['domain_suffix']}'.contains('blocked-custom.example'),
+        );
+        expect(customRule['outbound'], RuntimeConfig.blockPageOutboundTag);
+
+        final Map<String, dynamic> adsRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['domain_suffix']}'.contains('doubleclick.net'),
+        );
+        expect(adsRule['action'], 'reject');
+
+        final Map<String, dynamic> appRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['process_name']}'.contains('blocked-app.exe'),
+        );
+        expect(appRule['action'], 'reject');
+
+        final int trojanIdx = routeRules.indexWhere(
+          (Map<String, dynamic> r) =>
+              r['outbound'] == RuntimeConfig.blockPageOutboundTag &&
+              '${r['domain_suffix']}'.contains('grabify.link'),
+        );
+        final int resolveIdx = routeRules.indexWhere(
+          (Map<String, dynamic> r) => r['action'] == 'resolve',
+        );
+        expect(trojanIdx, greaterThan(0));
+        expect(resolveIdx, greaterThan(trojanIdx));
+
+        final List<dynamic> dnsRules =
+            (runtime['dns'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+        expect(dnsRules.any((dynamic r) => '$r'.contains('pornhub.com')), isFalse);
+        expect(
+          dnsRules.any((dynamic r) => '$r'.contains('geosite-category-ads-all')),
+          isTrue,
+        );
+      },
+    );
+
+    test('ClashApi.parseCoreLogLine extracts blocked hosts and DNS rejections', () {
+      final CoreLogEntry? conn = ClashApi.parseCoreLogLine(
+        jsonEncode(<String, String>{
+          'type': 'info',
+          'payload': '[7741 0ms] inbound/tun[tun-in]: connection to pornhub.com:443',
+        }),
+      );
+      expect(conn, isNotNull);
+      expect(conn!.connectionTag, '7741');
+      expect(conn.host, 'pornhub.com');
+      expect(conn.port, 443);
+      expect(conn.isBlockedEvent, isFalse);
+
+      final CoreLogEntry? rej = ClashApi.parseCoreLogLine(
+        jsonEncode(<String, String>{
+          'type': 'info',
+          'payload': '[7741 1ms] router: match[1] rule[umbrella-filter-adult] -> reject',
+        }),
+      );
+      expect(rej, isNotNull);
+      expect(rej!.connectionTag, '7741');
+      expect(rej.isBlockedEvent, isTrue);
+      expect(rej.matchedRuleHint, 'adult');
+
+      final CoreLogEntry? dns = ClashApi.parseCoreLogLine(
+        jsonEncode(<String, String>{
+          'type': 'debug',
+          'payload': '[99 0ms] dns: rejected A xvideos.com.',
+        }),
+      );
+      expect(dns, isNotNull);
+      expect(dns!.isDnsRejection, isTrue);
+      expect(dns.isBlockedEvent, isTrue);
+      expect(dns.host, 'xvideos.com');
+    });
+
+    test(
+      'VpnController.openBlockedPreviewPage launches local Umbrella browser block URL cleanly',
+      () async {
+        final VpnController vpn = VpnController(
+          native: _FakeNative(),
+          ipService: IpService(),
+          sound: SoundService(),
+          tray: TrayService(_FakeNative()),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        vpn.updateContentFilter(
+          const FilterSettings(
+            enabled: true,
+            categories: <String>['adult'],
+          ),
+        );
+        Uri? launchedUri;
+        String launchedTitle = '';
+        vpn.onLaunchBlockedPage = (
+          Uri uri, {
+          required String title,
+          required String body,
+        }) async {
+          launchedUri = uri;
+          launchedTitle = title;
+          return true;
+        };
+
+        final bool ok = await vpn.openBlockedPreviewPage();
+        expect(ok, isTrue);
+        expect(launchedUri, isNotNull);
+        expect(launchedUri!.host, '127.0.0.1');
+        expect(launchedUri!.path, '/blocked');
+        expect(launchedTitle, contains('سپر کنترل محتوای آمبرلا'));
+        expect(vpn.contentBlockUiPort, greaterThan(0));
+        vpn.dispose();
+      },
+    );
   });
 }
 

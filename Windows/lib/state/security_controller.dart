@@ -321,30 +321,37 @@ class SecurityScannerController extends ChangeNotifier {
     return blockedCount;
   }
 
-  /// بررسی امنیتی دستی یا کلیپ بوردی یک لینک پیش از باز شدن.
-  Future<MaliciousLinkMatch?> inspectAndBlockUrl(String rawUrl) async {
-    final MaliciousLinkMatch? hit = MaliciousLinkGuard.inspectUrl(rawUrl);
+  /// ثبت خودکار مسدودسازی یک دامنه تروجانی/فیشینگ که در لحظه توسط هسته یا
+  /// سرور صفحه مسدودی آمبرلا رهگیری و متوقف شده است.
+  Future<MaliciousLinkMatch?> handleObservedMaliciousHost(
+    String rawHost, {
+    String process = '',
+  }) async {
+    final MaliciousLinkMatch? hit = MaliciousLinkGuard.inspectHost(rawHost);
     if (hit == null) {
-      _lastMessage = 'بررسی لینک کامل شد؛ مورد تروجانی یا مشکوکی یافت نشد.';
-      notifyListeners();
       return null;
     }
 
     final DateTime now = DateTime.now();
+    final DateTime? last = _recentBlockedLinks[hit.key];
+    if (last != null && now.difference(last) < const Duration(seconds: 90)) {
+      return hit;
+    }
     _recentBlockedLinks[hit.key] = now;
+    final String procNote = process.isNotEmpty ? ' (برنامه: $process)' : '';
     final NeutralizedSecurityEvent event = NeutralizedSecurityEvent(
       key: hit.key,
       name: hit.title,
       category: 'malicious_link',
       severity: hit.severity,
       target: hit.target,
-      detail: hit.detail,
+      detail: '${hit.detail}$procNote',
       action: 'blocked_connection',
       timestampMs: now.millisecondsSinceEpoch,
     );
-    _lastMessage = '${hit.title}: ${hit.detail}';
+    _lastMessage = 'ارتباط با لینک یا دامنه تروجانی ${hit.host} مسدود شد.';
     AppLogger.instance.add(
-      'لینک تروجانی مسدود شد: ${hit.target}',
+      'سپر امنیتی لینک تروجانی را به صورت خودکار مسدود کرد: ${hit.host}$procNote',
       level: 'warning',
     );
     _recordNeutralizedEvent(event, queueTelegram: true);

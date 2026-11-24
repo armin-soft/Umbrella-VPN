@@ -154,6 +154,13 @@ class MethodHandler(
                 val pkg = call.argument<String>("packageName") ?: ""
                 UmbrellaSecurityScanner.isPackageInstalled(activity, pkg)
             }
+            "openExternalUrl" -> result.answerNow(call.method) {
+                handleOpenExternalUrl(
+                    url = call.argument<String>("url") ?: "",
+                    title = call.argument<String>("title") ?: "",
+                    body = call.argument<String>("body") ?: "",
+                )
+            }
             else -> result.notImplemented()
         }
     }
@@ -616,5 +623,27 @@ class MethodHandler(
                 "bodyBytes" to respBytes,
             )
         }
+    }
+
+    private fun handleOpenExternalUrl(url: String, title: String, body: String): Boolean {
+        val trimmed = url.trim()
+        val parsed = runCatching { Uri.parse(trimmed) }.getOrNull() ?: return false
+        val scheme = (parsed.scheme ?: "").lowercase()
+        if (scheme != "http" && scheme != "https") {
+            return false
+        }
+        val launched = runCatching {
+            val viewIntent = Intent(Intent.ACTION_VIEW, parsed).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(viewIntent)
+            true
+        }.getOrDefault(false)
+        if (title.isNotBlank()) {
+            runCatching {
+                ServiceNotification.showBlockedUrlBalloon(activity, trimmed, title, body)
+            }
+        }
+        return launched
     }
 }

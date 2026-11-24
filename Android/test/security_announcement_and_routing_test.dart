@@ -26,6 +26,8 @@ import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/security_shield_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
+import 'package:umbrella_vpn/vpn/content_block_server.dart';
+import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -864,7 +866,9 @@ void main() {
       gw.close();
     });
 
-    testWidgets('SecurityShieldDialog لینک تروجانی را بررسی و در عرض ۳۶۰ موبایل بدون سرریز رندر می شود', (WidgetTester tester) async {
+    testWidgets(
+      'SecurityShieldDialog بدون بررسی دستی لینک و در عرض ۳۶۰ موبایل بدون سرریز رندر می شود',
+      (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 740));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -897,23 +901,133 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const ValueKey<String>('security-storage-access-button')), findsOneWidget);
-      await tester.ensureVisible(
+      expect(
         find.byKey(const ValueKey<String>('security-link-input')),
+        findsNothing,
       );
-      await tester.enterText(
-        find.byKey(const ValueKey<String>('security-link-input')),
-        'https://grabify.link/evil.apk',
-      );
-      await tester.ensureVisible(
+      expect(
         find.byKey(const ValueKey<String>('security-check-link-button')),
+        findsNothing,
       );
-      await tester.tap(find.byKey(const ValueKey<String>('security-check-link-button')));
+      expect(find.text('بررسی امنیتی لینک پیش از باز کردن'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('security-auto-link-protection-card')),
+        findsOneWidget,
+      );
+
+      final MaliciousLinkMatch? hit = await sec.handleObservedMaliciousHost(
+        'grabify.link',
+        process: 'com.android.chrome',
+      );
+      expect(hit, isNotNull);
       await tester.pump();
 
       expect(sec.neutralizedEvents, hasLength(1));
+      expect(sec.neutralizedEvents.single.action, 'blocked_connection');
       expect(find.textContaining('مسدودسازی اتصال'), findsOneWidget);
       expect(tester.takeException(), isNull);
       sec.dispose();
     });
+
+    test(
+      'ContentBlockServer renders Umbrella UI page and ClashApi parses Android DNS/route blocks',
+      () async {
+        final List<InterceptedBlockEvent> events = <InterceptedBlockEvent>[];
+        final ContentBlockServer server = ContentBlockServer(
+          filterProvider: () => const FilterSettings(
+            enabled: true,
+            categories: <String>['adult', 'gambling', 'ads'],
+            customDomains: <String>['blocked.example.test'],
+          ),
+          onIntercepted: events.add,
+        );
+        await server.start();
+        addTearDown(() async => server.stop());
+
+        final HttpClient client = HttpClient()..findProxy = (_) => 'DIRECT';
+        addTearDown(() => client.close(force: true));
+        final HttpClientRequest uiReq = await client.getUrl(
+          server.buildBlockedPageUri('pornhub.com'),
+        );
+        final HttpClientResponse uiRes = await uiReq.close();
+        final String uiHtml = await utf8.decodeStream(uiRes);
+        expect(uiRes.statusCode, HttpStatus.ok);
+        expect(uiHtml, contains('dir="rtl"'));
+        expect(uiHtml, contains('Umbrella VPN'));
+        expect(uiHtml, contains('#E11D2E'));
+        expect(uiHtml, contains('سپر کنترل محتوای آمبرلا فعال است'));
+        expect(uiHtml, contains('pornhub.com'));
+
+        final Socket httpsTunnel =
+            await Socket.connect(InternetAddress.loopbackIPv4, server.proxyPort);
+        httpsTunnel.write(
+          'CONNECT 1xbet.com:443 HTTP/1.1\r\nHost: 1xbet.com:443\r\n\r\n',
+        );
+        await httpsTunnel.flush();
+        final String httpsResp = utf8.decode(
+          await httpsTunnel.fold<List<int>>(
+            <int>[],
+            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+          ),
+        );
+        expect(httpsResp, startsWith('HTTP/1.1 403 Forbidden'));
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        expect(
+          events.any((InterceptedBlockEvent e) =>
+              e.details.domain == '1xbet.com' &&
+              e.details.category == 'gambling' &&
+              e.needsBrowserLaunch),
+          isTrue,
+        );
+
+        final CoreLogEntry? dns = ClashApi.parseCoreLogLine(
+          jsonEncode(<String, String>{
+            'type': 'debug',
+            'payload': '[12 0ms] dns: rejected A xvideos.com.',
+          }),
+        );
+        expect(dns, isNotNull);
+        expect(dns!.isDnsRejection, isTrue);
+        expect(dns.isBlockedEvent, isTrue);
+        expect(dns.host, 'xvideos.com');
+      },
+    );
+
+    test(
+      'VpnController.openBlockedPreviewPage launches local Umbrella browser block URL on Android',
+      () async {
+        final VpnController vpn = VpnController(
+          native: _FakeNative(),
+          ipService: IpService(),
+          sound: SoundService(),
+          tray: TrayService(_FakeNative()),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        vpn.updateContentFilter(
+          const FilterSettings(
+            enabled: true,
+            categories: <String>['gambling'],
+          ),
+        );
+        Uri? launchedUri;
+        vpn.onLaunchBlockedPage = (
+          Uri uri, {
+          required String title,
+          required String body,
+        }) async {
+          launchedUri = uri;
+          return true;
+        };
+
+        final bool ok = await vpn.openBlockedPreviewPage();
+        expect(ok, isTrue);
+        expect(launchedUri, isNotNull);
+        expect(launchedUri!.host, '127.0.0.1');
+        expect(launchedUri!.path, '/blocked');
+        expect(vpn.contentBlockUiPort, greaterThan(0));
+        vpn.dispose();
+      },
+    );
   });
 }

@@ -140,6 +140,44 @@ class ServiceNotification(
             UmbrellaApplication.notification.notify(BALLOON_NOTIFICATION_ID, builder.build())
         }
 
+        fun showBlockedUrlBalloon(
+            context: Context,
+            url: String,
+            title: String,
+            body: String,
+        ) {
+            ensureAlertChannel(context)
+            val cleanTitle = sanitizePersian(title).ifEmpty { "سپر کنترل محتوای آمبرلا" }
+            val cleanBody = sanitizePersian(body).ifEmpty { "دسترسی به این صفحه مسدود شد." }
+            val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val openPending = PendingIntent.getActivity(
+                context,
+                3,
+                browserIntent,
+                pendingFlags,
+            )
+            val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.ic_notif_failed)
+            val builder = NotificationCompat.Builder(context, BALLOON_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_umbrella)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(cleanTitle)
+                .setContentText(cleanBody)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody))
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(false)
+                .setSilent(true)
+                .setTimeoutAfter(12000L)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(openPending)
+            if (largeIcon != null) {
+                builder.setLargeIcon(largeIcon)
+            }
+            UmbrellaApplication.notification.notify(BALLOON_NOTIFICATION_ID, builder.build())
+        }
+
         fun cancelStandaloneBalloon() {
             runCatching {
                 UmbrellaApplication.notification.cancel(BALLOON_NOTIFICATION_ID)

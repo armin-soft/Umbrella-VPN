@@ -75,6 +75,9 @@ class MaliciousLinkGuard {
     'trojan-test.umbrella.invalid',
   };
 
+  /// دامنه های شناخته شده تروجان، فیشینگ و تله آی پی برای مسدودسازی خودکار در هسته.
+  static Set<String> get knownMaliciousDomains => _knownMaliciousDomains;
+
   static const Set<String> _highRiskTlds = <String>{
     'tk', 'ml', 'ga', 'cf', 'gq', 'top', 'click', 'loan', 'zip', 'mov', 'icu',
     'work', 'buzz', 'rest',
@@ -97,6 +100,9 @@ class MaliciousLinkGuard {
     'umbrella-crack',
     'trojan-loader',
   ];
+
+  /// عبارات دامنه فیشینگ و تروجانی برای مسدودسازی خودکار در هسته.
+  static List<String> get phishingPhrases => _phishingPrefixes;
 
   static const List<String> _dangerExeExts = <String>[
     '.exe', '.scr', '.pif', '.com', '.bat', '.cmd', '.vbs', '.vbe', '.js',

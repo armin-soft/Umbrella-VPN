@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:umbrella_vpn/data/parsers.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
+import 'package:umbrella_vpn/vpn/content_block_server.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/link_preparation.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
@@ -1180,5 +1181,183 @@ void main() {
     }
   }, skip: enabled ? false : 'Windows core required', timeout: const Timeout(Duration(seconds: 60)));
 
+  test(
+    'live core routes primary content control and trojan domains to ContentBlockServer browser page',
+    () async {
+      final String executable = binary!;
+      final Directory temp =
+          await Directory.systemTemp.createTemp('umbrella-block-page-live-');
+      final List<InterceptedBlockEvent> intercepted = <InterceptedBlockEvent>[];
+      const FilterSettings filter = FilterSettings(
+        enabled: true,
+        categories: <String>['adult', 'gambling', 'ads', 'dating'],
+        customDomains: <String>['my-blocked-site.test'],
+      );
+      final ContentBlockServer blockServer = ContentBlockServer(
+        filterProvider: () => filter,
+        onIntercepted: intercepted.add,
+      );
+      await blockServer.start();
+      Process? running;
+      final StringBuffer logs = StringBuffer();
+      try {
+        final File links = File('${temp.path}/links.txt');
+        final File settings = File('${temp.path}/settings.json');
+        await links.writeAsString(
+          'vless://00000000-0000-4000-8000-000000000001@192.0.2.1:443?security=tls&sni=example.invalid&type=ws&path=%2Fws#offline-node\n',
+        );
+        final ServerSocket mixedProbe =
+            await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        final int mixedPort = mixedProbe.port;
+        await mixedProbe.close();
 
+        final ServerSocket clashProbe =
+            await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        final int clashPort = clashProbe.port;
+        await clashProbe.close();
+
+        final Map<String, dynamic> options = UmbrellaCore.settingsJson(
+          tun: false,
+          systemProxy: false,
+          port: mixedPort,
+          logFile: '${temp.path}/core.log',
+          networkSettings: const AppSettings(
+            mixedPort: 12334,
+            resolveDestination: true,
+          ),
+          contentFilter: filter,
+        );
+        options['mixed-port'] = mixedPort;
+        options['clash-api-port'] = clashPort;
+        await settings.writeAsString(jsonEncode(options));
+
+        final File compiledFile = await CoreRuntime.compile(
+          executable: executable,
+          workDir: File(executable).parent.path,
+          runDir: temp.path,
+          linksPath: links.path,
+          settingsPath: settings.path,
+          clashApiPort: clashPort,
+          blockPagePort: blockServer.proxyPort,
+          useCache: false,
+          cancelled: () => false,
+        );
+
+        running = await Process.start(
+          executable,
+          <String>['srun', '-c', compiledFile.path, '-D', temp.path],
+          workingDirectory: File(executable).parent.path,
+          runInShell: false,
+        );
+        running.stdout.transform(utf8.decoder).listen(logs.write);
+        running.stderr.transform(utf8.decoder).listen(logs.write);
+
+        final String apiSecret = '${options['web-secret']}';
+        bool ready = false;
+        for (int i = 0; i < 30; i++) {
+          final CoreProxySnapshot snap = await ClashApi.status(
+            port: clashPort,
+            secret: apiSecret,
+          );
+          if (snap.reachable) {
+            ready = true;
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+        }
+        expect(ready, isTrue, reason: logs.toString());
+
+        // 1) HTTP requests to adult, custom, and trojan domains receive 403 HTML block page!
+        for (final ({String host, String expectedText}) testCase
+            in const <({String host, String expectedText})>[
+          (host: 'pornhub.com', expectedText: 'سپر کنترل محتوای آمبرلا فعال است'),
+          (host: 'my-blocked-site.test', expectedText: 'فهرست مسدودی سفارشی'),
+          (host: 'grabify.link', expectedText: 'سپر امنیتی آمبرلا: تهدید مخرب مسدود شد'),
+        ]) {
+          final HttpClient client = HttpClient()
+            ..connectionTimeout = const Duration(seconds: 4)
+            ..findProxy = (_) => 'PROXY 127.0.0.1:$mixedPort';
+          try {
+            final HttpClientRequest req =
+                await client.getUrl(Uri.parse('http://${testCase.host}/'));
+            final HttpClientResponse res =
+                await req.close().timeout(const Duration(seconds: 4));
+            final String body = await utf8.decodeStream(res);
+            expect(res.statusCode, HttpStatus.forbidden, reason: '${testCase.host} | $logs');
+            expect(body, contains('Umbrella VPN'));
+            expect(body, contains('#E11D2E'));
+            expect(body, contains(testCase.host));
+            expect(body, contains(testCase.expectedText));
+          } finally {
+            client.close(force: true);
+          }
+        }
+
+        // 2) HTTPS CONNECT to blocked gambling domain stops immediately and notifies ContentBlockServer.
+        final Socket proxySock =
+            await Socket.connect(InternetAddress.loopbackIPv4, mixedPort);
+        proxySock.write(
+          'CONNECT 1xbet.com:443 HTTP/1.1\r\nHost: 1xbet.com:443\r\n\r\n',
+        );
+        await proxySock.flush();
+        final String connectResp = utf8.decode(
+          await proxySock
+              .fold<List<int>>(
+                <int>[],
+                (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+              )
+              .timeout(const Duration(seconds: 4)),
+        );
+        expect(connectResp, isNot(contains('200 Connection Established')));
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(
+          intercepted.any(
+            (InterceptedBlockEvent e) =>
+                e.details.domain == '1xbet.com' &&
+                e.details.category == 'gambling' &&
+                e.needsBrowserLaunch,
+          ),
+          isTrue,
+          reason: logs.toString(),
+        );
+
+        // 3) Ad-only domains stay quietly rejected without opening browser tabs.
+        final HttpClient adClient = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 3)
+          ..findProxy = (_) => 'PROXY 127.0.0.1:$mixedPort';
+        try {
+          bool blockedAd = false;
+          try {
+            final HttpClientRequest adReq =
+                await adClient.getUrl(Uri.parse('http://doubleclick.net/'));
+            final HttpClientResponse adRes =
+                await adReq.close().timeout(const Duration(seconds: 3));
+            await adRes.drain<void>();
+            blockedAd = adRes.statusCode >= 400;
+          } catch (_) {
+            blockedAd = true;
+          }
+          expect(blockedAd, isTrue);
+          expect(
+            intercepted.any(
+              (InterceptedBlockEvent e) => e.details.domain == 'doubleclick.net',
+            ),
+            isFalse,
+          );
+        } finally {
+          adClient.close(force: true);
+        }
+      } finally {
+        running?.kill();
+        if (running != null) {
+          await running.exitCode
+              .timeout(const Duration(seconds: 5), onTimeout: () => -1);
+        }
+        await blockServer.stop();
+        await temp.delete(recursive: true);
+      }
+    },
+    skip: enabled ? false : 'Set UMBRELLA_CORE_SMOKE after bundling the Windows DLLs',
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
 }

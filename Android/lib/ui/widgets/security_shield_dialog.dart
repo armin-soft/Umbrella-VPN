@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/malicious_link_guard.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -83,7 +82,7 @@ class SecurityStatusBadge extends StatelessWidget {
     return Tooltip(
       message: danger
           ? 'تهدید یا فیلترشکن ناسازگار شناسایی شد؛ برای حذف ضربه بزنید'
-          : 'سپر امنیتی آمبرلا همیشه فعال است؛ برای اسکن و بررسی لینک ضربه بزنید',
+          : 'سپر امنیتی آمبرلا همیشه فعال است؛ لینک های مخرب خودکار مسدود می شوند',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -146,8 +145,8 @@ class SecurityStatusBadge extends StatelessWidget {
   }
 }
 
-/// پنجره مدیریت سپر امنیتی همیشه فعال اندروید، بررسی لینک و حذف فایل ها/اپ های مخرب.
-class SecurityShieldDialog extends StatefulWidget {
+/// پنجره مدیریت سپر امنیتی همیشه فعال اندروید، حفاظت خودکار از لینک ها و حذف فایل ها/اپ های مخرب.
+class SecurityShieldDialog extends StatelessWidget {
   const SecurityShieldDialog({super.key});
 
   static bool _isOpen = false;
@@ -162,35 +161,6 @@ class SecurityShieldDialog extends StatefulWidget {
       );
     } finally {
       _isOpen = false;
-    }
-  }
-
-  @override
-  State<SecurityShieldDialog> createState() => _SecurityShieldDialogState();
-}
-
-class _SecurityShieldDialogState extends State<SecurityShieldDialog> {
-  final TextEditingController _linkController = TextEditingController();
-
-  @override
-  void dispose() {
-    _linkController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _checkLink(
-    SecurityScannerController? security,
-    ToastController? toasts,
-  ) async {
-    final String raw = _linkController.text.trim();
-    if (raw.isEmpty || security == null) return;
-    final MaliciousLinkMatch? hit = await security.inspectAndBlockUrl(raw);
-    if (!mounted) return;
-    if (hit == null) {
-      toasts?.success('لینک سالم است', 'الگوی تروجانی یا فیشینگ در این نشانی یافت نشد.');
-    } else {
-      toasts?.error('لینک تروجانی مسدود شد', hit.detail);
-      _linkController.clear();
     }
   }
 
@@ -323,54 +293,47 @@ class _SecurityShieldDialogState extends State<SecurityShieldDialog> {
                         ],
                       ],
                       Container(
+                        key: const ValueKey<String>(
+                          'security-auto-link-protection-card',
+                        ),
                         padding: const EdgeInsets.all(AppMetrics.space3),
                         decoration: BoxDecoration(
                           color: colors.surfaceHigh,
                           borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                          border: Border.all(color: colors.border),
+                          border: Border.all(
+                            color: colors.success.withValues(alpha: 0.35),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text(
-                              'بررسی امنیتی لینک پیش از باز کردن',
-                              style: TextStyle(
-                                fontSize: AppMetrics.fontSmall,
-                                fontWeight: FontWeight.w700,
-                                color: colors.textPrimary,
-                              ),
+                            Icon(
+                              Icons.shield_rounded,
+                              size: AppMetrics.iconMd,
+                              color: colors.success,
                             ),
-                            const SizedBox(height: AppMetrics.space2),
-                            TextField(
-                              key: const ValueKey<String>('security-link-input'),
-                              controller: _linkController,
-                              textDirection: TextDirection.ltr,
-                              decoration: const InputDecoration(
-                                hintText: 'https://example.com/...',
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: AppMetrics.space3,
-                                  vertical: AppMetrics.space2,
-                                ),
-                              ),
-                              onSubmitted: (_) =>
-                                  unawaited(_checkLink(security, toasts)),
-                            ),
-                            const SizedBox(height: AppMetrics.space2),
-                            Align(
-                              alignment: AlignmentDirectional.centerEnd,
-                              child: FilledButton.icon(
-                                key: const ValueKey<String>(
-                                  'security-check-link-button',
-                                ),
-                                icon: const Icon(
-                                  Icons.link_rounded,
-                                  size: AppMetrics.iconSm,
-                                ),
-                                label: const Text('بررسی لینک'),
-                                onPressed: security == null
-                                    ? null
-                                    : () => _checkLink(security, toasts),
+                            const SizedBox(width: AppMetrics.space2),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    'حفاظت خودکار از لینک ها و وب گردی فعال است',
+                                    style: TextStyle(
+                                      fontSize: AppMetrics.fontSmall,
+                                      fontWeight: FontWeight.w700,
+                                      color: colors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppMetrics.space1),
+                                  Text(
+                                    'هرگونه لینک تروجانی، فیشینگ یا دانلود مشکوک بدون نیاز به بررسی دستی، در لحظه مسدود و در تلگرام گزارش می شود.',
+                                    style: TextStyle(
+                                      fontSize: AppMetrics.fontCaption,
+                                      color: colors.textSecondary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

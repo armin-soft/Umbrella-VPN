@@ -271,31 +271,58 @@ class UmbrellaCore {
   }
 
   /// بررسی قطعی و آفلاین اینکه آیا یک نام میزبان توسط قوانین کنترل محتوا مسدود می شود.
-  static bool matchesContentFilter(FilterSettings? filter, String rawHost) {
+  static bool matchesContentFilter(FilterSettings? filter, String rawHost) =>
+      matchesContentFilterCategory(filter, rawHost) != null;
+
+  /// تعیین کلید دقیق دسته کنترل محتوا (`custom`, `adult`, `gambling`, `dating`, `ads`)
+  /// که نام میزبان را مسدود کرده است (یا `null` در صورت مجاز بودن).
+  static String? matchesContentFilterCategory(
+    FilterSettings? filter,
+    String rawHost,
+  ) {
     if (filter == null || !filter.hasActiveRules) {
-      return false;
+      return null;
     }
     final String? host = FilterSettings.normalizeDomainSuffix(rawHost);
     final String probe = (host ?? rawHost.trim().toLowerCase())
         .replaceFirst(RegExp(r'\.+$'), '');
     if (probe.isEmpty) {
-      return false;
+      return null;
     }
     bool matchesSuffix(String suffix) =>
         probe == suffix || probe.endsWith('.$suffix');
 
     for (final String custom in filter.normalizedCustomDomains) {
       if (matchesSuffix(custom)) {
-        return true;
+        return 'custom';
       }
     }
     for (final String category in filter.activeBotCategories) {
       final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
       if (spec == null) continue;
       if (spec.suffixes.any(matchesSuffix)) {
-        return true;
+        return category;
       }
       if (spec.keywords.any(probe.contains)) {
+        return category;
+      }
+    }
+    return null;
+  }
+
+  /// کلیدواژه ها و پسوندهای اختصاصی دسته های کنترل محتوای نیازمند صفحه مسدودی
+  /// (همه دسته های غیر از تبلیغات).
+  static bool isPrimaryBlockSiteHost(String rawHost) {
+    final String? host = FilterSettings.normalizeDomainSuffix(rawHost);
+    final String probe = (host ?? rawHost.trim().toLowerCase())
+        .replaceFirst(RegExp(r'\.+$'), '');
+    if (probe.isEmpty) return false;
+    bool matchesSuffix(String suffix) =>
+        probe == suffix || probe.endsWith('.$suffix');
+    for (final String category in const <String>['adult', 'gambling', 'dating']) {
+      final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
+      if (spec == null) continue;
+      if (spec.suffixes.any(matchesSuffix) || spec.keywords.any(probe.contains)) {
         return true;
       }
     }

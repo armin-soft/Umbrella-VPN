@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
+import '../../vpn/vpn_controller.dart';
 import '../shell/app_shell.dart';
 import 'common.dart';
 
@@ -689,6 +690,22 @@ class _ContentControlCardState extends State<ContentControlCard> {
               ),
             ],
           ],
+          const SizedBox(height: AppMetrics.space4),
+          _BrowserBlockPageBanner(
+            active: active,
+            colors: colors,
+            onPreview: () async {
+              final VpnController? vpn = context.maybeRead<VpnController>();
+              if (vpn == null) return;
+              final bool ok = await vpn.openBlockedPreviewPage();
+              if (!ok && mounted) {
+                toasts.warning(
+                  'بازکردن پیش نمایش ناموفق بود',
+                  'صفحه مسدودی آمبرلا هنگام فعال بودن فیلترینگ در مرورگر نمایش داده می شود.',
+                );
+              }
+            },
+          ),
         ],
       ),
     );
@@ -911,6 +928,104 @@ class _CategoryTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BrowserBlockPageBanner extends StatelessWidget {
+  const _BrowserBlockPageBanner({
+    required this.active,
+    required this.colors,
+    required this.onPreview,
+  });
+
+  final bool active;
+  final UmbrellaColors colors;
+  final Future<void> Function() onPreview;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color tone = active ? colors.primary : colors.textSecondary;
+    return Container(
+      key: const ValueKey<String>('content-control-browser-banner'),
+      padding: const EdgeInsets.all(AppMetrics.space3),
+      decoration: BoxDecoration(
+        color: active
+            ? colors.primary.withValues(alpha: 0.08)
+            : colors.surfaceHigh.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        border: Border.all(
+          color: active ? colors.primary.withValues(alpha: 0.35) : colors.border,
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool wide = constraints.maxWidth >= AppMetrics.breakpointCompact;
+          final Widget infoRow = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(
+                Icons.web_asset_off_rounded,
+                size: AppMetrics.iconMd,
+                color: tone,
+              ),
+              const SizedBox(width: AppMetrics.space2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'صفحه اختصاصی مسدودی در مرورگر',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: AppMetrics.space1),
+                    Text(
+                      active
+                          ? 'هنگام مسدود شدن یک صفحه، اعلان مدرن آمبرلا به جای خطای پیش فرض مرورگر نمایش داده می شود.'
+                          : 'با فعال کردن کنترل محتوا، سایت های مسدودشده با صفحه گرافیکی آمبرلا در مرورگر اعلام می شوند.',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final Widget previewBtn = OutlinedButton.icon(
+            key: const ValueKey<String>('content-control-preview-button'),
+            icon: const Icon(
+              Icons.open_in_browser_rounded,
+              size: AppMetrics.iconSm,
+            ),
+            label: const Text('پیش نمایش صفحه'),
+            onPressed: withUiClick(context, () => unawaited(onPreview())),
+          );
+          if (wide) {
+            return Row(
+              children: <Widget>[
+                Expanded(child: infoRow),
+                const SizedBox(width: AppMetrics.space3),
+                previewBtn,
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              infoRow,
+              const SizedBox(height: AppMetrics.space2),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: previewBtn,
+              ),
+            ],
+          );
+        },
       ),
     );
   }

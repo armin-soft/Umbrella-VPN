@@ -660,4 +660,21 @@ class NativeBridge {
     final bool? ok = await _invoke<bool>('requestStorageScanAccess');
     return ok ?? false;
   }
+
+  Future<bool> openExternalUrl(
+    String url, {
+    String title = '',
+    String body = '',
+  }) async {
+    if (url.trim().isEmpty) return false;
+    final bool? ok = await _invoke<bool>(
+      'openExternalUrl',
+      <String, dynamic>{
+        'url': url.trim(),
+        'title': title,
+        'body': body,
+      },
+    );
+    return ok ?? false;
+  }
 }

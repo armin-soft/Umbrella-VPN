@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v6';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v7';
 
   static int _nonce = 0;
 
@@ -30,6 +30,7 @@ class CoreRuntime {
     void Function(Process)? onStarted,
     void Function(Process)? onFinished,
     int? clashApiPort,
+    int? blockPagePort,
     int stickyMinutes = 15,
     bool useCache = true,
   }) async {
@@ -53,7 +54,7 @@ class CoreRuntime {
     ]);
     final String runtimeKey = _sha256(<List<int>>[
       utf8.encode(
-        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|sticky=$stickyMinutes|',
+        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|block=${blockPagePort ?? 'none'}|sticky=$stickyMinutes|',
       ),
       _canonicalSettingsBytes(settingsBytes),
     ]);
@@ -62,7 +63,11 @@ class CoreRuntime {
     // launch `srun` immediately without spawning `parse` or `build`.
     if (useCache &&
         await _stampMatches(runtimeStampFile, runtimeKey) &&
-        await _validRuntimeFile(runtimeFile, clashApiPort: clashApiPort)) {
+        await _validRuntimeFile(
+          runtimeFile,
+          clashApiPort: clashApiPort,
+          blockPagePort: blockPagePort,
+        )) {
       if (cancelled()) throw const FormatException('Core preparation cancelled');
       return runtimeFile;
     }
@@ -158,6 +163,7 @@ class CoreRuntime {
         clashApiPort: clashApiPort,
         coreSettings: decodedSettings,
         stickyMinutes: stickyMinutes,
+        blockPagePort: blockPagePort,
       );
       if (cancelled()) {
         throw const FormatException('Core preparation cancelled');
@@ -258,6 +264,7 @@ class CoreRuntime {
   static Future<bool> _validRuntimeFile(
     File runtime, {
     required int? clashApiPort,
+    int? blockPagePort,
   }) async {
     try {
       if (!await runtime.exists()) return false;
@@ -271,6 +278,15 @@ class CoreRuntime {
       if (experimental['monitoring'] is! Map) return false;
       if (clashApiPort != null && clashApiPort <= 0) {
         return !experimental.containsKey('clash_api');
+      }
+      if (blockPagePort != null && blockPagePort > 0) {
+        final bool hasBlockOutbound = outbounds.any(
+          (dynamic o) =>
+              o is Map &&
+              o['tag'] == RuntimeConfig.blockPageOutboundTag &&
+              o['server_port'] == blockPagePort,
+        );
+        if (!hasBlockOutbound) return false;
       }
       return true;
     } on Object {

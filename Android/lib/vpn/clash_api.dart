@@ -4,6 +4,29 @@ import 'dart:io';
 
 import '../core/app_config.dart';
 
+/// یک رکورد پارس شده از استریم زنده `/logs` هسته از طریق Clash API.
+class CoreLogEntry {
+  const CoreLogEntry({
+    required this.level,
+    required this.payload,
+    this.connectionTag = '',
+    this.host = '',
+    this.port = 0,
+    this.isBlockedEvent = false,
+    this.isDnsRejection = false,
+    this.matchedRuleHint = '',
+  });
+
+  final String level;
+  final String payload;
+  final String connectionTag;
+  final String host;
+  final int port;
+  final bool isBlockedEvent;
+  final bool isDnsRejection;
+  final String matchedRuleHint;
+}
+
 /// Core connectivity states mirroring `hiddify-core v5.9.1`
 /// (`v2/hcore/connectivity.go` + `hiddify-app` `ConnectionRepositoryImpl`):
 ///
@@ -782,6 +805,121 @@ class ClashApi {
       return false;
     } finally {
       client.close(force: true);
+    }
+  }
+
+  /// پارس خط JSON استریم `/logs` هسته (`sing-box` / `hiddify-core`) برای تشخیص
+  /// لحظه ای اتصالات خروجی، مسدودسازی کنترل محتوا یا رد شدن DNS.
+  static CoreLogEntry? parseCoreLogLine(String rawLine) {
+    final String trimmed = rawLine.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(trimmed);
+      if (decoded is! Map) return null;
+      final String level = '${decoded['type'] ?? ''}'.trim().toLowerCase();
+      final String payload = '${decoded['payload'] ?? ''}'.trim();
+      if (payload.isEmpty) return null;
+
+      String connectionTag = '';
+      final RegExpMatch? tagMatch =
+          RegExp(r'^\[(\d+)\s+[^\]]+\]').firstMatch(payload);
+      if (tagMatch != null) {
+        connectionTag = tagMatch.group(1) ?? '';
+      }
+
+      String host = '';
+      int port = 0;
+      final RegExpMatch? connMatch = RegExp(
+        r'connection to (?:https?://)?(\[[^\]]+\]|[a-zA-Z0-9._-]+)(?::(\d+))?',
+        caseSensitive: false,
+      ).firstMatch(payload);
+      if (connMatch != null) {
+        host = _cleanObservedHost(connMatch.group(1) ?? '');
+        port = int.tryParse(connMatch.group(2) ?? '') ?? 0;
+      }
+
+      bool isDnsRejection = false;
+      final String lower = payload.toLowerCase();
+      if (lower.contains('dns:') &&
+          (lower.contains('rejected') || lower.contains('refused'))) {
+        isDnsRejection = true;
+        if (host.isEmpty) {
+          final RegExpMatch? dnsHostMatch = RegExp(
+            r'\b([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)\.?(?:\s|$)',
+          ).firstMatch(payload.split('dns:').last);
+          if (dnsHostMatch != null) {
+            host = _cleanObservedHost(dnsHostMatch.group(1) ?? '');
+          }
+        }
+      }
+
+      String matchedRuleHint = '';
+      if (lower.contains('umbrella-filter-adult') ||
+          lower.contains('category-porn')) {
+        matchedRuleHint = 'adult';
+      } else if (lower.contains('umbrella-filter-gambling') ||
+          lower.contains('category-betting')) {
+        matchedRuleHint = 'gambling';
+      } else if (lower.contains('umbrella-filter-dating')) {
+        matchedRuleHint = 'dating';
+      } else if (lower.contains('umbrella-filter-custom')) {
+        matchedRuleHint = 'custom';
+      } else if (lower.contains('umbrella-filter-ads') ||
+          lower.contains('category-ads')) {
+        matchedRuleHint = 'ads';
+      }
+
+      final bool isBlockedEvent = isDnsRejection ||
+          lower.contains('umbrella-block-page') ||
+          lower.contains('-> reject') ||
+          lower.contains('rejected:') ||
+          lower.contains('outbound/block');
+
+      return CoreLogEntry(
+        level: level,
+        payload: payload,
+        connectionTag: connectionTag,
+        host: host,
+        port: port,
+        isBlockedEvent: isBlockedEvent,
+        isDnsRejection: isDnsRejection,
+        matchedRuleHint: matchedRuleHint,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// اتصال WebSocket به استریم `/logs` رابط کلش برای واکنش فوری به اتصالات
+  /// تروجانی و کنترل محتوا روی لوکال بدون نوشتن لاگ روی دیسک.
+  static Future<WebSocket?> openLogsStream({
+    int port = AppConfig.coreClashPort,
+    String secret = AppConfig.coreClashSecret,
+    String level = 'info',
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    if (port <= 0 || port > 65535) return null;
+    final HttpClient client = HttpClient()..connectionTimeout = timeout;
+    client.findProxy = (Uri _) => 'DIRECT';
+    try {
+      final Uri uri = Uri(
+        scheme: 'ws',
+        host: '127.0.0.1',
+        port: port,
+        path: '/logs',
+        queryParameters: <String, String>{'level': level},
+      );
+      final Map<String, dynamic> headers = <String, dynamic>{
+        if (secret.isNotEmpty) 'Authorization': 'Bearer $secret',
+      };
+      return await WebSocket.connect(
+        uri.toString(),
+        headers: headers.isEmpty ? null : headers,
+        customClient: client,
+      ).timeout(timeout);
+    } on Exception {
+      client.close(force: true);
+      return null;
     }
   }
 

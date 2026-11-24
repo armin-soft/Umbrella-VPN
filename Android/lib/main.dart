@@ -222,6 +222,8 @@ Future<void> main(List<String> arguments) async {
           samples,
           closeConnection: ClashApi.closeConnection,
         );
+    vpn.onBlockedMaliciousHost = (String host, String category) =>
+        security.handleObservedMaliciousHost(host);
     vpn.onTunnelConnected = () {
       motion.pulseAmbient();
       unawaited(motion.checkConnectCpuBudget());

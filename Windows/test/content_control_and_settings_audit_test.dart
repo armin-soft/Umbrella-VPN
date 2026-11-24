@@ -14,10 +14,12 @@ import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/ui/widgets/content_control.dart';
+import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/speed_test.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/verified_probe.dart';
+import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _SilentSound implements SoundService {
   @override
@@ -777,6 +779,89 @@ void main() {
       await tester.pump();
       toasts.dispose();
     });
+
+    testWidgets(
+      'بنر صفحه مسدودی مرورگر روی عرض دسکتاپ ۹۰۰ و عرض باریک ۳۲۰ بدون سرریز رندر شده و پیش نمایش را باز می کند',
+      (WidgetTester tester) async {
+        final NativeBridge native = NativeBridge();
+        final _FakeAuthController auth = _FakeAuthController(
+          initialFilter: const FilterSettings(
+            enabled: true,
+            categories: <String>['adult'],
+          ),
+        );
+        final ToastController toasts = ToastController();
+        final VpnController vpn = VpnController(
+          native: native,
+          ipService: IpService(),
+          sound: _SilentSound(),
+          tray: TrayService(native),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        vpn.updateContentFilter(auth.filter);
+        Uri? launchedUri;
+        vpn.onLaunchBlockedPage = (
+          Uri uri, {
+          required String title,
+          required String body,
+        }) async {
+          launchedUri = uri;
+          return true;
+        };
+
+        for (final Size surface in const <Size>[
+          Size(900, 900),
+          Size(320, 760),
+        ]) {
+          await tester.binding.setSurfaceSize(surface);
+          await tester.pumpWidget(
+            MultiProvider(
+              providers: [
+                ChangeNotifierProvider<AuthController>.value(value: auth),
+                ChangeNotifierProvider<ToastController>.value(value: toasts),
+                ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ],
+              child: MaterialApp(
+                theme: AppTheme.dark(),
+                home: const Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Scaffold(
+                    body: SingleChildScrollView(
+                      child: ContentControlCard(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          expect(tester.takeException(), isNull, reason: 'Surface $surface');
+          expect(
+            find.byKey(const ValueKey<String>('content-control-browser-banner')),
+            findsOneWidget,
+          );
+        }
+
+        final Finder previewBtn =
+            find.byKey(const ValueKey<String>('content-control-preview-button'));
+        expect(previewBtn, findsOneWidget);
+        await tester.ensureVisible(previewBtn);
+        await tester.tap(previewBtn);
+        await tester.pumpAndSettle();
+
+        expect(launchedUri, isNotNull);
+        expect(launchedUri!.host, '127.0.0.1');
+        expect(launchedUri!.path, '/blocked');
+        expect(launchedUri!.queryParameters['domain'], 'pornhub.com');
+
+        await tester.binding.setSurfaceSize(null);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        vpn.dispose();
+        toasts.dispose();
+      },
+    );
   });
 
   test('هیچ کاراکتر نیم فاصله (ZWNJ) در کدهای برنامه ویندوز وجود ندارد', () {
