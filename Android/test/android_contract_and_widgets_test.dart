@@ -1999,7 +1999,10 @@ void main() {
       final Map<String, dynamic> cfg = <String, dynamic>{
         'route': <String, dynamic>{'find_process': false, 'rules': <Map<String, dynamic>>[]},
         'outbounds': <Map<String, dynamic>>[<String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'}],
-        'experimental': <String, dynamic>{'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'}},
+        'experimental': <String, dynamic>{
+          'monitoring': <String, dynamic>{},
+          'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'},
+        },
       };
       RuntimeConfig.finalize(cfg, profileTags: const <String>{});
       expect((cfg['route'] as Map<String, dynamic>)['find_process'], isTrue);
@@ -2018,7 +2021,8 @@ void main() {
 
       Map<String, dynamic>? sentBody;
       final MockClient mockHttp = MockClient((http.Request req) async {
-        if (req.url.path.endsWith('app/support-report')) {
+        final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
+        if (route.endsWith('app/support-report')) {
           sentBody = jsonDecode(req.body) as Map<String, dynamic>;
           return http.Response(jsonEncode(<String, dynamic>{'ok': true, 'sent': true, 'message': 'ارسال شد'}), 200);
         }
@@ -2056,11 +2060,14 @@ void main() {
 
       final Finder btn = find.byKey(const ValueKey<String>('logs-send-support-button'));
       expect(btn, findsOneWidget);
+      await tester.ensureVisible(btn);
       await tester.tap(btn);
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField).last, 'تست سریع موبایل');
-      await tester.tap(find.byKey(const ValueKey<String>('support-report-confirm-button')));
+      await tester.enterText(find.byKey(const ValueKey<String>('support-report-note-field')), 'تست سریع موبایل');
+      final Finder confirmBtn = find.byKey(const ValueKey<String>('support-report-confirm-button'));
+      await tester.ensureVisible(confirmBtn);
+      await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
 
       expect(sentBody, isNotNull);

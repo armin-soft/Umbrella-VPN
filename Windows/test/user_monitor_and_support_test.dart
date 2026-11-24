@@ -133,6 +133,7 @@ void main() {
         <String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'},
       ],
       'experimental': <String, dynamic>{
+        'monitoring': <String, dynamic>{},
         'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'},
       },
     };
@@ -143,10 +144,11 @@ void main() {
   test('GatewayClient.heartbeat و sendSupportReport داده های رصد و پشتیبانی را دقیق می فرستند', () async {
     final List<(String, Map<String, dynamic>)> requests = <(String, Map<String, dynamic>)>[];
     final MockClient mockHttp = MockClient((http.Request req) async {
+      final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
       final Map<String, dynamic> decoded =
           jsonDecode(req.body) as Map<String, dynamic>;
-      requests.add((req.url.path, decoded));
-      if (req.url.path.endsWith('app/support-report')) {
+      requests.add((route, decoded));
+      if (route.endsWith('app/support-report')) {
         return http.Response(
           jsonEncode(<String, dynamic>{
             'ok': true,
@@ -233,7 +235,8 @@ void main() {
 
     Map<String, dynamic>? capturedSupport;
     final MockClient mockHttp = MockClient((http.Request req) async {
-      if (req.url.path.endsWith('app/support-report')) {
+      final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
+      if (route.endsWith('app/support-report')) {
         capturedSupport = jsonDecode(req.body) as Map<String, dynamic>;
         return http.Response(
           jsonEncode(<String, dynamic>{'ok': true, 'sent': true, 'message': 'تحویل داده شد'}),
