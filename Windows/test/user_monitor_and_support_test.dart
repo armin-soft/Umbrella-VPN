@@ -285,16 +285,14 @@ void main() {
     expect(sendChip, findsOneWidget);
     await tester.ensureVisible(sendChip);
     await tester.tap(sendChip);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     final Finder confirmBtn =
         find.byKey(const ValueKey<String>('support-report-confirm-button'));
     expect(confirmBtn, findsOneWidget);
     await tester.ensureVisible(confirmBtn);
     await tester.tap(confirmBtn);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     expect(capturedSupport, isNotNull);
     expect((capturedSupport!['device'] as Map<String, dynamic>)['device_name'], 'Ali-Laptop');
