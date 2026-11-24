@@ -42,6 +42,13 @@ class _TestNative implements NativeBridge {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await LocalStore.instance.init();
+  });
+
   setUp(() {
     AppLogger.instance.clear();
     ActivityMonitorBuffer.instance.clear();
@@ -230,9 +237,6 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 820));
     addTearDown(() async => await tester.binding.setSurfaceSize(null));
 
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await LocalStore.instance.init();
-
     Map<String, dynamic>? capturedSupport;
     final MockClient mockHttp = MockClient((http.Request req) async {
       final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
@@ -279,14 +283,18 @@ void main() {
     final Finder sendChip =
         find.byKey(const ValueKey<String>('logs-send-support-button'));
     expect(sendChip, findsOneWidget);
+    await tester.ensureVisible(sendChip);
     await tester.tap(sendChip);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     final Finder confirmBtn =
         find.byKey(const ValueKey<String>('support-report-confirm-button'));
     expect(confirmBtn, findsOneWidget);
+    await tester.ensureVisible(confirmBtn);
     await tester.tap(confirmBtn);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(capturedSupport, isNotNull);
     expect((capturedSupport!['device'] as Map<String, dynamic>)['device_name'], 'Ali-Laptop');

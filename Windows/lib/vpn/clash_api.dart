@@ -695,10 +695,9 @@ class ClashApi {
     if (lower.isEmpty ||
         lower == 'sing-box' ||
         lower.startsWith('sing-box.') ||
-        lower == 'hiddify' ||
-        lower.startsWith('hiddify.') ||
         lower == 'umbrella' ||
         lower.startsWith('umbrella.') ||
+        lower.startsWith('umbrellacore') ||
         lower.startsWith('umbrella_vpn') ||
         lower.startsWith('umbrella-vpn') ||
         lower == 'ir.umbrella.vpn') {
