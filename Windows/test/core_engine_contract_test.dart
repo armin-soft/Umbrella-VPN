@@ -1289,7 +1289,7 @@ void main() {
             final HttpClientResponse res = await req.close().timeout(
                   const Duration(seconds: 4),
                   onTimeout: () => throw TestFailure(
-                    'Phase 1 response timeout for ${testCase.host} | rules: ${jsonDecode(await compiledFile.readAsString())['route']['rules']} | logs: $logs',
+                    'Phase 1 response timeout for ${testCase.host} | rules: ${jsonDecode(compiledFile.readAsStringSync())['route']['rules']} | logs: $logs',
                   ),
                 );
             final String body = await utf8.decodeStream(res);
