@@ -361,13 +361,14 @@ void main() {
           ],
         );
       final SecurityScannerController sec = SecurityScannerController(native: native);
+      final ToastController toasts = ToastController();
       await sec.scanNow();
 
       await tester.pumpWidget(
         MultiProvider(
           providers: [
             ChangeNotifierProvider<SecurityScannerController>.value(value: sec),
-            ChangeNotifierProvider<ToastController>.value(value: ToastController()),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
           ],
           child: MaterialApp(
             theme: AppTheme.dark(),
@@ -395,7 +396,10 @@ void main() {
       expect(find.text('هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد'), findsOneWidget);
       expect(sec.isClean, isTrue);
 
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
       sec.dispose();
+      toasts.dispose();
     });
   });
 

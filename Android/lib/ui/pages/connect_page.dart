@@ -1205,8 +1205,8 @@ class _SecurityBlockBanner extends StatelessWidget {
     return Container(
       key: const ValueKey<String>('connect-security-banner'),
       padding: EdgeInsets.symmetric(
-        horizontal: dense ? AppMetrics.space2 + 2 : AppMetrics.space3,
-        vertical: dense ? AppMetrics.space1 + 2 : AppMetrics.space2,
+        horizontal: dense ? AppMetrics.space2 : AppMetrics.space3,
+        vertical: dense ? AppMetrics.space1 : AppMetrics.space2,
       ),
       decoration: BoxDecoration(
         color: colors.danger.withValues(alpha: 0.12),
@@ -1228,8 +1228,6 @@ class _SecurityBlockBanner extends StatelessWidget {
               children: <Widget>[
                 Text(
                   'سپر امنیتی اتصال را مسدود کرده است',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         fontSize: dense ? AppMetrics.fontCaption : null,
                         fontWeight: FontWeight.w800,
@@ -1238,8 +1236,6 @@ class _SecurityBlockBanner extends StatelessWidget {
                 ),
                 Text(
                   'برنامه ناسازگار یا مخرب شناسایی شد: $names$extra',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
@@ -1254,12 +1250,15 @@ class _SecurityBlockBanner extends StatelessWidget {
               backgroundColor: colors.danger,
               foregroundColor: colors.onPrimary,
               padding: EdgeInsets.symmetric(
-                horizontal: dense ? 8 : 12,
-                vertical: dense ? 4 : 8,
+                horizontal: dense ? AppMetrics.space2 : AppMetrics.space3,
+                vertical: dense ? AppMetrics.space1 : AppMetrics.space2,
               ),
               visualDensity: VisualDensity.compact,
             ),
-            icon: const Icon(Icons.cleaning_services_rounded, size: 15),
+            icon: const Icon(
+              Icons.cleaning_services_rounded,
+              size: AppMetrics.iconSm,
+            ),
             label: const Text('حذف و رفع مسدودی'),
             onPressed: onOpenShield,
           ),

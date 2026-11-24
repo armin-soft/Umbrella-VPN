@@ -524,8 +524,8 @@ class _InstalledAppsPickerDialogState
     return AlertDialog(
       title: const Text('انتخاب برنامه نصب شده یا در حال اجرا'),
       content: SizedBox(
-        width: 520,
-        height: 440,
+        width: AppMetrics.dialogMaxWidth,
+        height: AppMetrics.controlMaxWidth,
         child: Column(
           children: <Widget>[
             TextField(
@@ -582,8 +582,6 @@ class _InstalledAppsPickerDialogState
                               ),
                               title: Text(
                                 app.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -595,10 +593,8 @@ class _InstalledAppsPickerDialogState
                                       (app.publisher.isNotEmpty
                                           ? ' · ${app.publisher}'
                                           : ''),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: AppMetrics.fontSmall,
                                     color: c.textSecondary,
                                   ),
                                 ),
@@ -606,17 +602,19 @@ class _InstalledAppsPickerDialogState
                               trailing: app.running
                                   ? Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
+                                        horizontal: AppMetrics.space2,
+                                        vertical: AppMetrics.space1,
                                       ),
                                       decoration: BoxDecoration(
                                         color: c.success.withValues(alpha: 0.14),
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(
+                                          AppMetrics.radiusSm,
+                                        ),
                                       ),
                                       child: Text(
                                         'در حال اجرا',
                                         style: TextStyle(
-                                          fontSize: 10.5,
+                                          fontSize: AppMetrics.fontMicro,
                                           fontWeight: FontWeight.w700,
                                           color: c.success,
                                         ),

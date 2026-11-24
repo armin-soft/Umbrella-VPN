@@ -38,16 +38,19 @@ class SecurityStatusBadge extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           key: const ValueKey<String>('security-status-badge'),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
           onTap: () {
             playUiClick(context);
             unawaited(SecurityShieldDialog.show(context));
           },
           child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppMetrics.space3,
+              vertical: AppMetrics.space1,
+            ),
             decoration: BoxDecoration(
               color: bg,
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(AppMetrics.radiusPill),
               border: Border.all(color: fg.withValues(alpha: 0.42)),
             ),
             child: Row(
@@ -55,8 +58,8 @@ class SecurityStatusBadge extends StatelessWidget {
               children: <Widget>[
                 if (scanning || security.remediating)
                   SizedBox(
-                    width: 13,
-                    height: 13,
+                    width: AppMetrics.iconXs,
+                    height: AppMetrics.iconXs,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.8,
                       color: fg,
@@ -67,16 +70,18 @@ class SecurityStatusBadge extends StatelessWidget {
                     danger
                         ? Icons.gpp_bad_rounded
                         : Icons.verified_user_rounded,
-                    size: 15,
+                    size: AppMetrics.iconSm,
                     color: fg,
                   ),
-                const SizedBox(width: 6),
-                Text(
-                  security.shortBadgeLabel,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: fg,
+                const SizedBox(width: AppMetrics.space2),
+                Flexible(
+                  child: Text(
+                    security.shortBadgeLabel,
+                    style: TextStyle(
+                      fontSize: AppMetrics.fontSmall,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
                   ),
                 ),
               ],
@@ -121,13 +126,18 @@ class SecurityShieldDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: c.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: danger ? c.danger.withValues(alpha: 0.45) : c.border),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
+        side: BorderSide(
+          color: danger ? c.danger.withValues(alpha: 0.45) : c.border,
+        ),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 620),
+        constraints: const BoxConstraints(
+          maxWidth: AppMetrics.dialogMaxWidth,
+          maxHeight: AppMetrics.dialogMaxHeight,
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: AppMetrics.cardPadding,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -135,23 +145,23 @@ class SecurityShieldDialog extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: AppMetrics.iconBoxLg,
+                    height: AppMetrics.iconBoxLg,
                     decoration: BoxDecoration(
                       color: danger
                           ? c.danger.withValues(alpha: 0.14)
                           : c.success.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(AppMetrics.radiusButton),
                     ),
                     child: Icon(
                       danger
                           ? Icons.gpp_bad_rounded
                           : Icons.verified_user_rounded,
                       color: accent,
-                      size: 24,
+                      size: AppMetrics.iconLg,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppMetrics.space3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,18 +169,18 @@ class SecurityShieldDialog extends StatelessWidget {
                         Text(
                           'سپر امنیتی همیشه فعال آمبرلا',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: AppMetrics.fontEmphasis,
                             fontWeight: FontWeight.w800,
                             color: c.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: AppMetrics.space1),
                         Text(
                           danger
                               ? 'برای امنیت اتصال، اجرای هم زمان بدافزارها و فیلترشکن های ناسازگار مسدود است.'
                               : 'دستگاه در برابر بدافزارها، JumpJump و فیلترشکن های ناسازگار (مانند Psiphon) ایمن است.',
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppMetrics.fontSmall,
                             color: c.textSecondary,
                           ),
                         ),
@@ -184,83 +194,98 @@ class SecurityShieldDialog extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: AppMetrics.space3),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
                 children: <Widget>[
                   _StatChip(
                     icon: Icons.memory_rounded,
-                    label: 'پردازش های اسکن شده: ${Fa.num(report.scannedProcesses)}',
+                    label:
+                        'پردازش های اسکن شده: ${Fa.num(report.scannedProcesses)}',
                   ),
                   _StatChip(
                     icon: Icons.apps_rounded,
-                    label: 'برنامه های بررسی شده: ${Fa.num(report.scannedApps)}',
+                    label:
+                        'برنامه های بررسی شده: ${Fa.num(report.scannedApps)}',
                   ),
                   _StatChip(
                     icon: Icons.folder_open_rounded,
-                    label: 'فایل های بررسی شده: ${Fa.num(report.scannedFiles)}',
+                    label:
+                        'فایل های بررسی شده: ${Fa.num(report.scannedFiles)}',
                   ),
                 ],
               ),
               if (security != null && security.lastMessage.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 10),
+                const SizedBox(height: AppMetrics.space3),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppMetrics.space3,
+                    vertical: AppMetrics.space2,
+                  ),
                   decoration: BoxDecoration(
                     color: c.surfaceHigh,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
                     border: Border.all(color: c.border),
                   ),
                   child: Text(
                     Fa.num(security.lastMessage),
-                    style: TextStyle(fontSize: 12, color: c.textPrimary),
+                    style: TextStyle(
+                      fontSize: AppMetrics.fontSmall,
+                      color: c.textPrimary,
+                    ),
                   ),
                 ),
               ],
-              const SizedBox(height: 14),
+              const SizedBox(height: AppMetrics.space3),
               Expanded(
                 child: !danger
                     ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Icon(
-                              Icons.shield_rounded,
-                              size: 52,
-                              color: c.success,
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد',
-                              style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w700,
-                                color: c.textPrimary,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                Icons.shield_rounded,
+                                size: AppMetrics.iconBoxXl,
+                                color: c.success,
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'پایش لحظه ای پردازش ها، استارتاپ و پوشه های سیستم به طور خودکار در پس زمینه فعال است.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: c.textSecondary,
+                              const SizedBox(height: AppMetrics.space3),
+                              Text(
+                                'هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppMetrics.fontButton,
+                                  fontWeight: FontWeight.w700,
+                                  color: c.textPrimary,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: AppMetrics.space2),
+                              Text(
+                                'پایش لحظه ای پردازش ها، استارتاپ و پوشه های سیستم به طور خودکار در پس زمینه فعال است.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppMetrics.fontSmall,
+                                  color: c.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       )
                     : ListView.separated(
                         itemCount: report.threats.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: AppMetrics.space2),
                         itemBuilder: (BuildContext ctx, int index) {
                           final SecurityThreat item = report.threats[index];
                           return Container(
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(AppMetrics.space3),
                             decoration: BoxDecoration(
                               color: c.danger.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(
+                                AppMetrics.radiusButton,
+                              ),
                               border: Border.all(
                                 color: c.danger.withValues(alpha: 0.42),
                               ),
@@ -274,33 +299,36 @@ class SecurityShieldDialog extends StatelessWidget {
                                       item.isConflictingVpn
                                           ? Icons.vpn_lock_rounded
                                           : Icons.bug_report_rounded,
-                                      size: 18,
+                                      size: AppMetrics.iconMd,
                                       color: c.danger,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: AppMetrics.space2),
                                     Expanded(
                                       child: Text(
                                         item.name,
                                         style: TextStyle(
-                                          fontSize: 13.5,
+                                          fontSize: AppMetrics.fontBody,
                                           fontWeight: FontWeight.w800,
                                           color: c.textPrimary,
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(width: AppMetrics.space2),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
+                                        horizontal: AppMetrics.space2,
+                                        vertical: AppMetrics.space1,
                                       ),
                                       decoration: BoxDecoration(
                                         color: c.danger.withValues(alpha: 0.16),
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(
+                                          AppMetrics.radiusSm,
+                                        ),
                                       ),
                                       child: Text(
                                         item.categoryLabelFa,
                                         style: TextStyle(
-                                          fontSize: 11,
+                                          fontSize: AppMetrics.fontCaption,
                                           fontWeight: FontWeight.w700,
                                           color: c.danger,
                                         ),
@@ -308,75 +336,71 @@ class SecurityShieldDialog extends StatelessWidget {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: AppMetrics.space2),
                                 Text(
                                   item.detail,
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: AppMetrics.fontSmall,
                                     color: c.textSecondary,
                                   ),
                                 ),
                                 if (item.target.isNotEmpty) ...<Widget>[
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: AppMetrics.space2),
                                   Directionality(
                                     textDirection: TextDirection.ltr,
                                     child: Text(
                                       item.target,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: AppMetrics.fontCaption,
                                         fontFamily: 'monospace',
                                         color: c.textSecondary,
                                       ),
                                     ),
                                   ),
                                 ],
-                                const SizedBox(height: 10),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: <Widget>[
-                                    FilledButton.icon(
-                                      key: ValueKey<String>(
-                                        'security-remediate-${item.key}',
-                                      ),
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: c.danger,
-                                        foregroundColor: c.onPrimary,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.delete_forever_rounded,
-                                        size: 17,
-                                      ),
-                                      label: Text(
-                                        item.uninstallCmd.isNotEmpty
-                                            ? 'توقف و حذف برنامه'
-                                            : 'توقف و حذف فوری',
-                                      ),
-                                      onPressed: security == null ||
-                                              security.remediating
-                                          ? null
-                                          : () async {
-                                              final RemediationResult res =
-                                                  await security.remediateThreat(
-                                                item,
-                                              );
-                                              if (toasts != null) {
-                                                if (res.ok) {
-                                                  toasts.success(
-                                                    'تهدید برطرف شد',
-                                                    res.message,
-                                                  );
-                                                } else {
-                                                  toasts.warning(
-                                                    'پاکسازی نیاز به تکمیل دارد',
-                                                    res.message,
-                                                  );
-                                                }
-                                              }
-                                            },
+                                const SizedBox(height: AppMetrics.space3),
+                                Align(
+                                  alignment: AlignmentDirectional.centerEnd,
+                                  child: FilledButton.icon(
+                                    key: ValueKey<String>(
+                                      'security-remediate-${item.key}',
                                     ),
-                                  ],
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: c.danger,
+                                      foregroundColor: c.onPrimary,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.delete_forever_rounded,
+                                      size: AppMetrics.iconSm,
+                                    ),
+                                    label: Text(
+                                      item.uninstallCmd.isNotEmpty
+                                          ? 'توقف و حذف برنامه'
+                                          : 'توقف و حذف فوری',
+                                    ),
+                                    onPressed:
+                                        security == null || security.remediating
+                                            ? null
+                                            : () async {
+                                                final RemediationResult res =
+                                                    await security.remediateThreat(
+                                                  item,
+                                                );
+                                                if (toasts != null) {
+                                                  if (res.ok) {
+                                                    toasts.success(
+                                                      'تهدید برطرف شد',
+                                                      res.message,
+                                                    );
+                                                  } else {
+                                                    toasts.warning(
+                                                      'پاکسازی نیاز به تکمیل دارد',
+                                                      res.message,
+                                                    );
+                                                  }
+                                                }
+                                              },
+                                  ),
                                 ),
                               ],
                             ),
@@ -384,12 +408,16 @@ class SecurityShieldDialog extends StatelessWidget {
                         },
                       ),
               ),
-              const SizedBox(height: 14),
-              Row(
+              const SizedBox(height: AppMetrics.space3),
+              Wrap(
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
                   OutlinedButton.icon(
                     key: const ValueKey<String>('security-rescan-button'),
-                    icon: const Icon(Icons.radar_rounded, size: 17),
+                    icon: const Icon(Icons.radar_rounded, size: AppMetrics.iconSm),
                     label: Text(
                       security?.scanning ?? false
                           ? 'در حال اسکن...'
@@ -399,15 +427,17 @@ class SecurityShieldDialog extends StatelessWidget {
                         ? null
                         : () => security.scanNow(silent: false),
                   ),
-                  const Spacer(),
-                  if (danger && security != null) ...<Widget>[
+                  if (danger && security != null)
                     FilledButton.icon(
                       key: const ValueKey<String>('security-remediate-all-button'),
                       style: FilledButton.styleFrom(
                         backgroundColor: c.danger,
                         foregroundColor: c.onPrimary,
                       ),
-                      icon: const Icon(Icons.cleaning_services_rounded, size: 17),
+                      icon: const Icon(
+                        Icons.cleaning_services_rounded,
+                        size: AppMetrics.iconSm,
+                      ),
                       label: const Text('پاکسازی همه موارد'),
                       onPressed: security.remediating
                           ? null
@@ -429,8 +459,6 @@ class SecurityShieldDialog extends StatelessWidget {
                               }
                             },
                     ),
-                    const SizedBox(width: 8),
-                  ],
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('بستن'),
@@ -455,20 +483,28 @@ class _StatChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors c = context.colors;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space1,
+      ),
       decoration: BoxDecoration(
         color: c.surfaceHigh,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
         border: Border.all(color: c.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 14, color: c.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(fontSize: 11.5, color: c.textSecondary),
+          Icon(icon, size: AppMetrics.iconXs, color: c.textSecondary),
+          const SizedBox(width: AppMetrics.space2),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: AppMetrics.fontSmall,
+                color: c.textSecondary,
+              ),
+            ),
           ),
         ],
       ),

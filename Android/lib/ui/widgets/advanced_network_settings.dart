@@ -823,7 +823,7 @@ class _InstalledAppsPickerDialogState
       title: const Text('انتخاب برنامه نصب شده روی دستگاه'),
       content: SizedBox(
         width: AppMetrics.dialogMaxWidth,
-        height: 440,
+        height: AppMetrics.controlMaxWidth,
         child: Column(
           children: <Widget>[
             TextField(
@@ -887,8 +887,6 @@ class _InstalledAppsPickerDialogState
                               ),
                               title: Text(
                                 app.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -897,10 +895,8 @@ class _InstalledAppsPickerDialogState
                                 textDirection: TextDirection.ltr,
                                 child: Text(
                                   app.packageName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: AppMetrics.fontSmall,
                                     color: colors.textSecondary,
                                   ),
                                 ),
