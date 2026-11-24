@@ -254,11 +254,7 @@ void main() {
       store: LocalStore.instance,
     );
     final ToastController toasts = ToastController();
-    addTearDown(() {
-      auth.dispose();
-      gateway.close();
-      toasts.dispose();
-    });
+    addTearDown(AppLogger.instance.clear);
 
     AppLogger.instance.add('نمونه خطای تست پشتیبانی', level: 'error');
 
@@ -297,7 +293,11 @@ void main() {
     expect((capturedSupport!['errors'] as List<dynamic>).length, 1);
     expect(toasts.items.isNotEmpty, isTrue);
 
+    toasts.clear();
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 10));
+    auth.dispose();
+    gateway.close();
+    toasts.dispose();
   });
 }

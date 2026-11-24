@@ -2032,12 +2032,7 @@ void main() {
       final _FakeNative native = _FakeNative();
       final AuthController auth = AuthController(native: native, gateway: gateway, store: LocalStore.instance);
       final ToastController toasts = ToastController();
-      addTearDown(() {
-        auth.dispose();
-        gateway.close();
-        toasts.dispose();
-        AppLogger.instance.clear();
-      });
+      addTearDown(AppLogger.instance.clear);
 
       await tester.pumpWidget(
         MultiProvider(
@@ -2073,8 +2068,13 @@ void main() {
       expect(sentBody, isNotNull);
       expect(sentBody!['note'], 'تست سریع موبایل');
       expect((sentBody!['errors'] as List<dynamic>).length, 1);
+
+      toasts.clear();
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 10));
+      auth.dispose();
+      gateway.close();
+      toasts.dispose();
     });
   });
 }
