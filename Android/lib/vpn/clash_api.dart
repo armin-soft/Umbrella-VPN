@@ -748,6 +748,43 @@ class ClashApi {
     }
   }
 
+  /// بستن یک اتصال خاص در هسته (برای قطع فوری لینک یا دامنه تروجانی).
+  static Future<bool> closeConnection(
+    String id, {
+    int port = AppConfig.coreClashPort,
+    String secret = AppConfig.coreClashSecret,
+    Duration timeout = const Duration(milliseconds: 800),
+  }) async {
+    final String cleanId = id.trim();
+    if (cleanId.isEmpty || port <= 0 || port > 65535) {
+      return false;
+    }
+    final HttpClient client = HttpClient()..connectionTimeout = timeout;
+    client.findProxy = (Uri _) => 'DIRECT';
+    try {
+      final Uri uri = Uri.parse(
+        'http://127.0.0.1:$port/connections/${Uri.encodeComponent(cleanId)}',
+      );
+      final HttpClientRequest request =
+          await client.deleteUrl(uri).timeout(timeout);
+      request.followRedirects = false;
+      if (secret.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $secret');
+      }
+      final HttpClientResponse response =
+          await request.close().timeout(timeout);
+      await response.drain<void>().timeout(
+            const Duration(milliseconds: 300),
+            onTimeout: () {},
+          );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } on Exception {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// بستن تمام اتصال های باز در هسته تا قوانین تازه کنترل محتوا یا مسیریابی روی
   /// نشست های از قبل باز هم بی درنگ اعمال شوند.
   static Future<bool> closeAllConnections({

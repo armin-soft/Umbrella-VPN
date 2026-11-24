@@ -2127,6 +2127,7 @@ $RawDeviceId = trim((string)($Body['device_id'] ?? ''));
 $DeviceName = trim((string)($Body['device_name'] ?? ''));
 $Platform = trim((string)($Body['platform'] ?? ''));
 $RawThreats = is_array($Body['threats'] ?? null) ? $Body['threats'] : [];
+$RawNeutralized = is_array($Body['neutralized'] ?? null) ? $Body['neutralized'] : [];
 $RawResolved = is_array($Body['resolved_keys'] ?? null) ? $Body['resolved_keys'] : [];
 
 $Db = Database::getInstance();
@@ -2152,6 +2153,7 @@ return [
 'stored' => 0,
 'notified' => false,
 'new_threats' => 0,
+'neutralized_count' => 0,
 'reason' => 'unlinked_device',
 ];
 }
@@ -2179,7 +2181,16 @@ $Platform = trim((string)($DeviceRow['Platform'] ?? ''));
 }
 
 $Now = time();
-$Cooldown = 86400; // 24 hours per threat key per device to prevent spam
+$Cooldown = 86400; // 24 hours per active threat key per device to prevent spam
+$NeutralizedCooldown = 300; // 5 minutes for auto-deleted/blocked download or link alerts
+$AllowedCategories = [
+'malware',
+'conflicting_vpn',
+'adware',
+'suspicious',
+'malicious_download',
+'malicious_link',
+];
 
 $ResolvedKeys = [];
 foreach ($RawResolved as $RK) {
@@ -2209,7 +2220,7 @@ continue;
 }
 $SeenKeys[$Key] = true;
 $Category = strtolower(trim((string)($Item['category'] ?? 'malware')));
-if (!in_array($Category, ['malware', 'conflicting_vpn', 'adware', 'suspicious'], true)) {
+if (!in_array($Category, $AllowedCategories, true)) {
 $Category = 'malware';
 }
 $Severity = strtolower(trim((string)($Item['severity'] ?? 'high')));
@@ -2217,12 +2228,51 @@ if (!in_array($Severity, ['critical', 'high', 'medium', 'low'], true)) {
 $Severity = 'high';
 }
 $Target = mb_substr(trim((string)($Item['target'] ?? '')), 0, 240);
+$Detail = mb_substr(trim(Helper::stripZwnj((string)($Item['detail'] ?? ''))), 0, 240);
 $NormalizedThreats[] = [
 'key' => $Key,
 'name' => $Name,
 'category' => $Category,
 'severity' => $Severity,
 'target' => $Target,
+'detail' => $Detail,
+];
+}
+
+$NormalizedNeutralized = [];
+$SeenNeutralized = [];
+foreach ($RawNeutralized as $Item) {
+if (!is_array($Item)) {
+continue;
+}
+$Key = mb_substr(trim((string)($Item['key'] ?? '')), 0, 180);
+$Name = mb_substr(trim(Helper::stripZwnj((string)($Item['name'] ?? ''))), 0, 180);
+if ($Key === '' || $Name === '' || isset($SeenNeutralized[$Key])) {
+continue;
+}
+$SeenNeutralized[$Key] = true;
+$Category = strtolower(trim((string)($Item['category'] ?? 'malicious_download')));
+if (!in_array($Category, $AllowedCategories, true)) {
+$Category = 'malicious_download';
+}
+$Severity = strtolower(trim((string)($Item['severity'] ?? 'high')));
+if (!in_array($Severity, ['critical', 'high', 'medium', 'low'], true)) {
+$Severity = 'high';
+}
+$Action = strtolower(trim((string)($Item['action'] ?? 'deleted')));
+if (!in_array($Action, ['deleted', 'blocked_connection', 'quarantined'], true)) {
+$Action = 'deleted';
+}
+$Target = mb_substr(trim((string)($Item['target'] ?? '')), 0, 240);
+$Detail = mb_substr(trim(Helper::stripZwnj((string)($Item['detail'] ?? ''))), 0, 240);
+$NormalizedNeutralized[] = [
+'key' => $Key,
+'name' => $Name,
+'category' => $Category,
+'severity' => $Severity,
+'action' => $Action,
+'target' => $Target,
+'detail' => $Detail,
 ];
 }
 
@@ -2240,6 +2290,7 @@ array_merge([$EffectiveDeviceId], $ActiveKeys)
 }
 
 $ToNotify = [];
+$ToNotifyNeutralized = [];
 $StoredCount = 0;
 foreach ($NormalizedThreats as $Threat) {
 $Existing = $Db->fetch(
@@ -2284,8 +2335,62 @@ $ToNotify[] = $Threat;
 }
 }
 
+foreach ($NormalizedNeutralized as $Item) {
+if (isset($SeenKeys[$Item['key']])) {
+continue;
+}
+$Existing = $Db->fetch(
+'SELECT `ID`, `Last_Notified_At`, `Resolved` FROM `App_Security_Alerts` WHERE `Device_ID` = ? AND `Threat_Key` = ? LIMIT 1',
+[$EffectiveDeviceId, $Item['key']]
+);
+$ShouldNotify = $Existing === null
+|| (int)($Existing['Last_Notified_At'] ?? 0) <= 0
+|| ($Now - (int)($Existing['Last_Notified_At'] ?? 0)) >= $NeutralizedCooldown;
+
+$Db->execute(
+'INSERT INTO `App_Security_Alerts`
+(`Device_ID`, `User_UUID`, `Telegram_ID`, `Threat_Key`, `Threat_Name`, `Category`, `Severity`, `Target`, `First_Detected_At`, `Last_Detected_At`, `Last_Notified_At`, `Hit_Count`, `Resolved`)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 0)
+ON DUPLICATE KEY UPDATE
+`User_UUID` = COALESCE(NULLIF(VALUES(`User_UUID`), \'\'), `User_UUID`),
+`Telegram_ID` = COALESCE(NULLIF(VALUES(`Telegram_ID`), 0), `Telegram_ID`),
+`Threat_Name` = VALUES(`Threat_Name`),
+`Category` = VALUES(`Category`),
+`Severity` = VALUES(`Severity`),
+`Target` = VALUES(`Target`),
+`Last_Detected_At` = VALUES(`Last_Detected_At`),
+`Hit_Count` = `Hit_Count` + 1,
+`Resolved` = 1',
+[
+$EffectiveDeviceId,
+$UUID !== '' ? $UUID : null,
+$TelegramId > 0 ? $TelegramId : null,
+$Item['key'],
+$Item['name'],
+$Item['category'],
+$Item['severity'],
+$Item['target'],
+$Now,
+$Now,
+]
+);
+$StoredCount++;
+if ($ShouldNotify) {
+$ToNotifyNeutralized[] = $Item;
+}
+}
+
+if ($NormalizedNeutralized !== []) {
+$NeutralizedKeys = array_column($NormalizedNeutralized, 'key');
+$Marks = implode(',', array_fill(0, count($NeutralizedKeys), '?'));
+$Db->execute(
+"UPDATE `App_Security_Alerts` SET `Resolved` = 1 WHERE `Device_ID` = ? AND `Threat_Key` IN ({$Marks})",
+array_merge([$EffectiveDeviceId], $NeutralizedKeys)
+);
+}
+
 $Notified = false;
-if ($ToNotify !== [] && $TelegramId > 0) {
+if (($ToNotify !== [] || $ToNotifyNeutralized !== []) && $TelegramId > 0) {
 $User = Repository::getUser($TelegramId);
 $ChatId = (int)($User['Chat_ID'] ?? 0);
 if ($ChatId <= 0) {
@@ -2301,17 +2406,43 @@ $TimeLabel = method_exists('Helper', 'formatPersianDate') ? Helper::formatPersia
 
 $MsgLines = [
 Helper::frame('کاربر', $UserName, 'هشدار امنیتی دستگاه', $TelegramId),
-'🛡 <b>هشدار فوری سپر امنیتی آمبرلا</b>',
+'🛡 <b>گزارش فوری سپر امنیتی آمبرلا</b>',
 '💻 دستگاه: <b>' . self::supportEsc($DevLabel) . '</b>',
-'🕒 زمان شناسایی: <b>' . self::supportEsc($TimeLabel) . '</b>',
-'',
-'⚠️ <b>موارد مخرب یا ناسازگار شناسایی شده:</b>',
+'🕒 زمان: <b>' . self::supportEsc($TimeLabel) . '</b>',
 ];
+
+if ($ToNotifyNeutralized !== []) {
+$MsgLines[] = '';
+$MsgLines[] = '✅ <b>موارد خطرناک زیر شناسایی و فوراً حذف / مسدود شدند:</b>';
+foreach (array_slice($ToNotifyNeutralized, 0, 8) as $Item) {
+$ActionPrefix = match($Item['action']) {
+'blocked_connection' => '🚫 مسدودسازی لینک / دامنه تروجانی',
+'quarantined' => '🛡 قرنطینه امنیتی فایل',
+default => '🗑 حذف خودکار فایل / بدافزار آلوده',
+};
+$MsgLines[] = '• <b>' . $ActionPrefix . ':</b> ' . self::supportEsc($Item['name']);
+if ($Item['target'] !== '') {
+$MsgLines[] = '  مسیر/نشانی: <code>' . self::supportEsc(mb_substr($Item['target'], 0, 120)) . '</code>';
+}
+if ($Item['detail'] !== '') {
+$MsgLines[] = '  توضیح: ' . self::supportEsc(mb_substr($Item['detail'], 0, 140));
+}
+}
+if (count($ToNotifyNeutralized) > 8) {
+$MsgLines[] = '… و ' . (count($ToNotifyNeutralized) - 8) . ' مورد دیگر';
+}
+}
+
+if ($ToNotify !== []) {
+$MsgLines[] = '';
+$MsgLines[] = '⚠️ <b>موارد مخرب یا ناسازگار نیازمند پاکسازی روی دستگاه:</b>';
 foreach (array_slice($ToNotify, 0, 8) as $Item) {
 $CatText = match($Item['category']) {
 'conflicting_vpn' => 'فیلترشکن ناسازگار / رقیب',
 'adware' => 'تبلیغ افزار مزاحم',
 'suspicious' => 'فایل یا سرویس مشکوک',
+'malicious_download' => 'فایل دانلودی آلوده',
+'malicious_link' => 'لینک تروجانی / فیشینگ',
 default => 'بدافزار / ابزار مخرب',
 };
 $MsgLines[] = '• <b>' . self::supportEsc($Item['name']) . '</b> (' . $CatText . ')';
@@ -2323,7 +2454,8 @@ if (count($ToNotify) > 8) {
 $MsgLines[] = '… و ' . (count($ToNotify) - 8) . ' مورد دیگر';
 }
 $MsgLines[] = '';
-$MsgLines[] = '🔒 برای محافظت از امنیت حساب و جلوگیری از تداخل شبکه، اتصال آمبرلا تا پاکسازی موارد بالا مسدود است. از بخش <b>سپر امنیتی</b> داخل برنامه آمبرلا نسبت به حذف آن اقدام کنید.';
+$MsgLines[] = '🔒 برای محافظت از امنیت حساب و جلوگیری از تداخل شبکه، اتصال آمبرلا تا پاکسازی موارد فعال بالا مسدود است. از بخش <b>سپر امنیتی</b> داخل برنامه آمبرلا نسبت به حذف اقدام کنید.';
+}
 
 $Message = implode("\n", $MsgLines);
 try {
@@ -2335,7 +2467,11 @@ error_log('[Umbrella-Bot][SecurityAlert] telegram send failed: ' . $Error->getMe
 }
 
 if ($Notified) {
-$NotifiedKeys = array_column($ToNotify, 'key');
+$NotifiedKeys = array_values(array_unique(array_merge(
+array_column($ToNotify, 'key'),
+array_column($ToNotifyNeutralized, 'key')
+)));
+if ($NotifiedKeys !== []) {
 $Marks = implode(',', array_fill(0, count($NotifiedKeys), '?'));
 $Db->execute(
 "UPDATE `App_Security_Alerts` SET `Last_Notified_At` = ? WHERE `Device_ID` = ? AND `Threat_Key` IN ({$Marks})",
@@ -2343,10 +2479,12 @@ array_merge([$Now, $EffectiveDeviceId], $NotifiedKeys)
 );
 }
 }
+}
 
 return [
 'stored' => $StoredCount,
 'new_threats' => count($ToNotify),
+'neutralized_count' => count($ToNotifyNeutralized),
 'notified' => $Notified,
 ];
 }

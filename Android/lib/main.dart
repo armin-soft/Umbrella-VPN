@@ -23,6 +23,7 @@ import 'state/settings_controller.dart';
 import 'state/subscription_controller.dart';
 import 'state/toast_controller.dart';
 import 'state/update_controller.dart';
+import 'vpn/clash_api.dart';
 import 'vpn/cores.dart';
 import 'vpn/vpn_controller.dart';
 
@@ -205,6 +206,22 @@ Future<void> main(List<String> arguments) async {
       );
       toasts.error('هشدار سپر امنیتی', msg);
     };
+    security.onThreatNeutralized = (NeutralizedSecurityEvent event) {
+      auth.recordLocalNotification(
+        title: 'سپر امنیتی: ${event.actionLabelFa}',
+        body: '${event.name} (${event.target})',
+        level: 'warning',
+      );
+      toasts.warning(
+        'سپر امنیتی: ${event.actionLabelFa}',
+        event.name,
+      );
+    };
+    vpn.onNetworkConnectionsObserved = (List<CoreActivitySample> samples) =>
+        security.inspectLiveConnections(
+          samples,
+          closeConnection: ClashApi.closeConnection,
+        );
     vpn.onTunnelConnected = () {
       motion.pulseAmbient();
       unawaited(motion.checkConnectCpuBudget());

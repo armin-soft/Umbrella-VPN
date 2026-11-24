@@ -655,4 +655,9 @@ class NativeBridge {
     );
     return ok ?? false;
   }
+
+  Future<bool> requestStorageScanAccess() async {
+    final bool? ok = await _invoke<bool>('requestStorageScanAccess');
+    return ok ?? false;
+  }
 }

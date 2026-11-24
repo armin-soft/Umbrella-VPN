@@ -1,5 +1,6 @@
 package ir.umbrella.vpn
 
+import android.Manifest
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
@@ -13,9 +14,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings as AndroidSettings
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import ir.umbrella.vpn.bg.BoxService
 import ir.umbrella.vpn.constant.Status
 import java.io.File
+import java.io.RandomAccessFile
 import java.security.MessageDigest
 
 object UmbrellaSecurityScanner {
@@ -152,6 +156,270 @@ object UmbrellaSecurityScanner {
         }.getOrDefault(false)
     }
 
+    private fun fileSha256(file: File): String {
+        return runCatching {
+            val md = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(16384)
+                var total = 0L
+                while (total < 16L * 1024L * 1024L) {
+                    val r = input.read(buf)
+                    if (r <= 0) break
+                    md.update(buf, 0, r)
+                    total += r
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrDefault("")
+    }
+
+    private fun readSampleBytes(file: File, limitBytes: Int = 2 * 1024 * 1024): ByteArray {
+        return runCatching {
+            val size = file.length().coerceAtMost(limitBytes.toLong()).toInt()
+            if (size <= 0) return@runCatching ByteArray(0)
+            val out = ByteArray(size)
+            RandomAccessFile(file, "r").use { raf ->
+                raf.readFully(out)
+            }
+            out
+        }.getOrDefault(ByteArray(0))
+    }
+
+    private fun containsAsciiCi(bytes: ByteArray, needle: String): Boolean {
+        val target = needle.lowercase().encodeToByteArray()
+        if (target.isEmpty() || bytes.size < target.size) return false
+        outer@ for (i in 0..(bytes.size - target.size)) {
+            for (j in target.indices) {
+                var b = bytes[i + j].toInt() and 0xFF
+                if (b in 65..90) b += 32
+                if (b != (target[j].toInt() and 0xFF)) continue@outer
+            }
+            return true
+        }
+        return false
+    }
+
+    private fun containsBytes(bytes: ByteArray, seq: ByteArray, startOffset: Int = 0): Boolean {
+        if (seq.isEmpty() || bytes.size - startOffset < seq.size) return false
+        outer@ for (i in startOffset..(bytes.size - seq.size)) {
+            for (j in seq.indices) {
+                if (bytes[i + j] != seq[j]) continue@outer
+            }
+            return true
+        }
+        return false
+    }
+
+    private fun hasPeHeaderAt(buf: ByteArray, offset: Int): Boolean {
+        if (offset + 0x40 > buf.size) return false
+        if (buf[offset] != 0x4D.toByte() || buf[offset + 1] != 0x5A.toByte()) return false
+        val peRel = (buf[offset + 0x3C].toInt() and 0xFF) or
+            ((buf[offset + 0x3D].toInt() and 0xFF) shl 8) or
+            ((buf[offset + 0x3E].toInt() and 0xFF) shl 16) or
+            ((buf[offset + 0x3F].toInt() and 0xFF) shl 24)
+        if (peRel < 0x20 || peRel > 0x2000) return false
+        val pe = offset + peRel
+        if (pe + 6 > buf.size) return false
+        return buf[pe] == 'P'.code.toByte() &&
+            buf[pe + 1] == 'E'.code.toByte() &&
+            buf[pe + 2] == 0.toByte() &&
+            buf[pe + 3] == 0.toByte()
+    }
+
+    private fun hasRloOrDoubleExtension(fname: String): Boolean {
+        if (fname.any { it == '\u202E' || it == '\u202D' || it in '\u2066'..'\u2069' }) {
+            return true
+        }
+        val lower = fname.lowercase()
+        val dangerExts = listOf(".apk", ".exe", ".scr", ".bat", ".sh", ".vbs", ".js", ".hta")
+        val decoyExts = listOf(".jpg.", ".jpeg.", ".png.", ".gif.", ".webp.", ".pdf.", ".mp4.", ".zip.")
+        return dangerExts.any { lower.endsWith(it) } && decoyExts.any { lower.contains(it) }
+    }
+
+    private fun inspectDownloadedFile(file: File, selfPkg: String): SignatureMatch? {
+        val fname = file.name
+        val lower = fname.lowercase()
+        if (lower.contains("umbrella")) return null
+
+        if (hasRloOrDoubleExtension(fname)) {
+            return SignatureMatch(
+                key = "dl:masq:${lower.hashCode()}",
+                name = "فایل تروجانی با نام فریبنده ($fname)",
+                category = "malicious_download",
+                severity = "critical",
+                detail = "این فایل با پسوند دوگانه یا کاراکتر تغییر جهت سعی در پنهان کردن فایل اجرایی یا نصبی به جای تصویر/سند دارد.",
+            )
+        }
+
+        if (lower.endsWith(".apk")) {
+            val hit = matchKnownPackageOrLabel(lower, lower, selfPkg)
+            if (hit != null) {
+                return hit.copy(
+                    key = "${hit.key}:apk:${lower.hashCode()}",
+                    name = "${hit.name} (فایل نصبی)",
+                    detail = "فایل نصبی مخرب یا ناسازگار روی حافظه دستگاه یافت شد.",
+                )
+            }
+            return null
+        }
+
+        val isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+            lower.endsWith(".png") || lower.endsWith(".gif") ||
+            lower.endsWith(".webp") || lower.endsWith(".bmp") || lower.endsWith(".svg")
+        val isScriptOrWeb = lower.endsWith(".html") || lower.endsWith(".htm") ||
+            lower.endsWith(".url") || lower.endsWith(".js") || lower.endsWith(".sh")
+        if (!isImage && !isScriptOrWeb) return null
+
+        val sample = readSampleBytes(file)
+        if (sample.isEmpty()) return null
+
+        if (lower.endsWith(".svg")) {
+            if (containsAsciiCi(sample, "<script") ||
+                containsAsciiCi(sample, "onload=") ||
+                containsAsciiCi(sample, "onerror=") ||
+                containsAsciiCi(sample, "javascript:") ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file")
+            ) {
+                return SignatureMatch(
+                    key = "dl:svg:${lower.hashCode()}",
+                    name = "تصویر SVG حاوی کد تروجانی ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "فایل تصویر SVG حاوی اسکریپت یا کد مخرب است.",
+                )
+            }
+            return null
+        }
+
+        if (isImage) {
+            val validMagic = when {
+                lower.endsWith(".jpg") || lower.endsWith(".jpeg") ->
+                    sample.size >= 3 && sample[0] == 0xFF.toByte() && sample[1] == 0xD8.toByte() && sample[2] == 0xFF.toByte()
+                lower.endsWith(".png") ->
+                    sample.size >= 8 && sample[0] == 0x89.toByte() && sample[1] == 0x50.toByte() &&
+                        sample[2] == 0x4E.toByte() && sample[3] == 0x47.toByte()
+                lower.endsWith(".gif") ->
+                    sample.size >= 6 && sample[0] == 'G'.code.toByte() && sample[1] == 'I'.code.toByte() &&
+                        sample[2] == 'F'.code.toByte() && sample[3] == '8'.code.toByte()
+                lower.endsWith(".webp") ->
+                    sample.size >= 12 && sample[0] == 'R'.code.toByte() && sample[1] == 'I'.code.toByte() &&
+                        sample[2] == 'F'.code.toByte() && sample[3] == 'F'.code.toByte() &&
+                        sample[8] == 'W'.code.toByte() && sample[9] == 'E'.code.toByte() &&
+                        sample[10] == 'B'.code.toByte() && sample[11] == 'P'.code.toByte()
+                else -> sample.size >= 2 && sample[0] == 'B'.code.toByte() && sample[1] == 'M'.code.toByte()
+            }
+
+            val elfSig = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
+            val dexSig = "dex\n03".encodeToByteArray()
+
+            if (!validMagic &&
+                (hasPeHeaderAt(sample, 0) ||
+                    containsBytes(sample, elfSig, 0) ||
+                    containsBytes(sample, dexSig, 0) ||
+                    containsAsciiCi(sample, "androidmanifest.xml") ||
+                    containsAsciiCi(sample, "<script") ||
+                    containsAsciiCi(sample, "wscript.shell") ||
+                    containsAsciiCi(sample, "eicar-standard-antivirus-test-file"))
+            ) {
+                return SignatureMatch(
+                    key = "dl:fake_img:${lower.hashCode()}",
+                    name = "بدافزار در پوشش تصویر ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "فایل با نام تصویر ذخیره شده اما در واقع حاوی کد اجرایی یا نصبی مخرب است.",
+                )
+            }
+
+            var hasEmbeddedPe = false
+            for (pos in 16 until (sample.size - 0x40).coerceAtLeast(16)) {
+                if (sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
+                    hasPeHeaderAt(sample, pos)
+                ) {
+                    hasEmbeddedPe = true
+                    break
+                }
+            }
+            if (hasEmbeddedPe ||
+                containsBytes(sample, dexSig, 16) ||
+                (containsAsciiCi(sample, "androidmanifest.xml") && containsAsciiCi(sample, "classes.dex")) ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+                containsAsciiCi(sample, "<script") ||
+                containsAsciiCi(sample, "eval(atob(") ||
+                containsAsciiCi(sample, "urldownloadtofile")
+            ) {
+                return SignatureMatch(
+                    key = "dl:poly_img:${lower.hashCode()}",
+                    name = "تصویر آلوده به پی لود تروجانی ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "کد اجرایی یا اسکریپت تروجانی پنهان شده داخل تصویر شناسایی شد.",
+                )
+            }
+            return null
+        }
+
+        // Web/script download checks
+        if (containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+            containsAsciiCi(sample, "eval(atob(") ||
+            containsAsciiCi(sample, "wscript.shell") ||
+            containsAsciiCi(sample, "activexobject") ||
+            containsAsciiCi(sample, "grabify.link") ||
+            containsAsciiCi(sample, "iplogger.org") ||
+            containsAsciiCi(sample, "iplogger.com") ||
+            containsAsciiCi(sample, "2no.co") ||
+            containsAsciiCi(sample, "blasze.com")
+        ) {
+            return SignatureMatch(
+                key = "dl:web:${lower.hashCode()}",
+                name = "فایل لینک / صفحه تروجانی ($fname)",
+                category = "malicious_download",
+                severity = "high",
+                detail = "فایل دانلود شده حاوی لینک یا اسکریپت تروجانی و فیشینگ است.",
+            )
+        }
+        return null
+    }
+
+    fun hasStorageScanAccess(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    fun requestStorageScanAccess(activity: Activity): Boolean {
+        if (hasStorageScanAccess(activity)) return true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                val intent = Intent(
+                    AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.fromParts("package", activity.packageName, null),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                true
+            }.recoverCatching {
+                val fallback = Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(fallback)
+                true
+            }.getOrDefault(false)
+        } else {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ),
+                9412,
+            )
+            true
+        }
+    }
+
     fun scan(context: Context): Map<String, Any> {
         val pm = context.packageManager
         val selfPkg = context.packageName
@@ -196,34 +464,55 @@ object UmbrellaSecurityScanner {
             )
         }
 
-        // Scan accessible app-private or external download folders for malicious APK installers
+        // Scan accessible app-private and external download/media folders for malicious APKs, scripts, and disguised images
+        val publicDownloads = runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull()
+        val extStorage = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
         val candidateDirs = listOfNotNull(
             context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
-            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull(),
+            publicDownloads,
+            publicDownloads?.let { File(it, "Telegram") },
+            extStorage?.let { File(it, "Telegram/Telegram Images") },
+            extStorage?.let { File(it, "Telegram/Telegram Documents") },
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS) }.getOrNull(),
         )
+        val visited = hashSetOf<String>()
         for (dir in candidateDirs) {
             if (!dir.exists() || !dir.isDirectory) continue
             val children = runCatching { dir.listFiles() }.getOrNull() ?: continue
-            for (file in children.take(120)) {
+            for (file in children.take(160)) {
                 if (!file.isFile) continue
+                val abs = file.absolutePath
+                if (!visited.add(abs.lowercase())) continue
                 val fname = file.name.lowercase()
-                if (!fname.endsWith(".apk") || fname.contains("umbrella")) continue
+                if (fname.contains("umbrella")) continue
+                val watchExt = fname.endsWith(".apk") || fname.endsWith(".jpg") ||
+                    fname.endsWith(".jpeg") || fname.endsWith(".png") ||
+                    fname.endsWith(".gif") || fname.endsWith(".webp") ||
+                    fname.endsWith(".bmp") || fname.endsWith(".svg") ||
+                    fname.endsWith(".html") || fname.endsWith(".htm") ||
+                    fname.endsWith(".url") || fname.endsWith(".js") || fname.endsWith(".sh")
+                if (!watchExt && !hasRloOrDoubleExtension(file.name)) continue
+
                 scannedFiles++
-                val hit = matchKnownPackageOrLabel(fname, fname, selfPkg) ?: continue
-                val apkKey = "${hit.key}:apk:${fname.hashCode()}"
+                val hit = inspectDownloadedFile(file, selfPkg) ?: continue
+                val sha = fileSha256(file)
+                val findingKey = if (sha.isNotEmpty()) "${hit.key}:${sha.take(12)}" else hit.key
+                val isAppPkg = hit.category == "conflicting_vpn"
                 findings.putIfAbsent(
-                    apkKey,
+                    findingKey,
                     mutableMapOf(
-                        "key" to apkKey,
-                        "name" to "${hit.name} (فایل نصبی)",
+                        "key" to findingKey,
+                        "name" to hit.name,
                         "category" to hit.category,
                         "severity" to hit.severity,
-                        "target" to file.absolutePath,
-                        "detail" to "فایل نصبی مخرب یا ناسازگار روی حافظه دستگاه یافت شد.",
+                        "target" to abs,
+                        "detail" to hit.detail,
                         "remediationKind" to "file",
-                        "path" to file.absolutePath,
+                        "path" to abs,
                         "packageName" to "",
-                        "active" to false,
+                        "sha256" to sha,
+                        "active" to isAppPkg,
                         "signedValid" to false,
                         "blockedByPolicy" to true,
                     ),
@@ -266,6 +555,7 @@ object UmbrellaSecurityScanner {
             "scannedApps" to packages.size,
             "scannedFiles" to scannedFiles,
             "scannedAtMs" to System.currentTimeMillis(),
+            "storageAccessGranted" to hasStorageScanAccess(context),
             "threats" to sortedThreats,
         )
     }

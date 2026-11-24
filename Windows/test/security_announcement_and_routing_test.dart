@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/malicious_link_guard.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/data/gateway_client.dart';
@@ -22,6 +23,7 @@ import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/security_shield_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
+import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -611,6 +613,214 @@ void main() {
       expect((images[1].image as AssetImage).assetName, BrandAssets.securityAlert);
       expect(images[0].gaplessPlayback, isTrue);
       expect(images[1].gaplessPlayback, isTrue);
+    });
+  });
+
+  group('پایش دانلود و تصاویر آلوده، لینک تروجانی و اعلان تلگرام در ویندوز', () {
+    test('اسکنر C++ قواعد تصاویر polyglot، RLO، lnk/url و AMSI را دارد', () {
+      final String cpp = File(
+        'packages/umbrella_native/windows/security_scanner.cpp',
+      ).readAsStringSync();
+      expect(cpp.contains('malicious_download'), isTrue);
+      expect(cpp.contains('HasPeHeaderAt'), isTrue);
+      expect(cpp.contains('HasRloSpoofCharW'), isTrue);
+      expect(cpp.contains('HasDoubleMasqueradeExtension'), isTrue);
+      expect(cpp.contains('InspectShortcutThreat'), isTrue);
+      expect(cpp.contains('ContainsDangerousUrlOrPayload'), isTrue);
+      expect(cpp.contains('CandidateScanDirectories'), isTrue);
+      expect(cpp.contains('amsi.ScanFile'), isTrue);
+    });
+
+    test('MaliciousLinkGuard لینک های تروجانی، هموگراف و پسوند دوگانه را شناسایی می کند', () {
+      expect(
+        MaliciousLinkGuard.inspect('https://grabify.link/track123'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://xn--tlegrm-9va.com/login'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://cdn.evil.test/photo.png.exe'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('javascript:alert(1)'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://armin-soft.ir/app'),
+        isNull,
+      );
+    });
+
+    test('فایل دانلودی یا تصویر آلوده خودکار حذف شده و اعلان به تلگرام ارسال می شود', () async {
+      final List<(String, Map<String, dynamic>)> sent =
+          <(String, Map<String, dynamic>)>[];
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
+        sent.add((route, jsonDecode(req.body) as Map<String, dynamic>));
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{'ok': true, 'notified': 1})),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: false,
+          scannedProcesses: 40,
+          scannedApps: 12,
+          scannedFiles: 19,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'file:polyglot:img1',
+              name: 'تصویر دانلودشده آلوده به بدافزار',
+              category: 'malicious_download',
+              severity: 'critical',
+              target: r'C:\Users\Test\Downloads\invoice_scan.jpg',
+              detail: 'درون تصویر دانلودشده کد اجرایی مخرب شناسایی شد.',
+              path: r'C:\Users\Test\Downloads\invoice_scan.jpg',
+              remediationKind: 'file',
+              active: true,
+            ),
+          ],
+        );
+
+      final GatewayClient gw = GatewayClient(client: mockHttp);
+      final _SignedAuth auth = _SignedAuth(
+        native: native,
+        gateway: gw,
+        store: LocalStore.instance,
+      );
+      final List<NeutralizedSecurityEvent> notified = <NeutralizedSecurityEvent>[];
+
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        auth: auth,
+        watchDirectories: false,
+      )..onThreatNeutralized = notified.add;
+
+      final SecurityScanResult res = await sec.scanNow(silent: false);
+      expect(res.clean, isTrue);
+      expect(native.remediatedKeys, <String>['file:polyglot:img1']);
+      expect(sec.neutralizedEvents, hasLength(1));
+      expect(notified, hasLength(1));
+      expect(notified.single.action, 'auto_deleted');
+
+      final List<(String, Map<String, dynamic>)> alerts = sent
+          .where((e) => e.$1.contains('app/security-alert'))
+          .toList();
+      expect(alerts, isNotEmpty);
+      final List<dynamic>? neutralizedBody =
+          alerts.last.$2['neutralized'] as List<dynamic>?;
+      expect(neutralizedBody, hasLength(1));
+
+      sec.dispose();
+      auth.dispose();
+      gw.close();
+    });
+
+    test('ترافیک زنده با لینک تروجانی بلافاصله بسته شده و به تلگرام گزارش می شود', () async {
+      final List<(String, Map<String, dynamic>)> sent =
+          <(String, Map<String, dynamic>)>[];
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
+        sent.add((route, jsonDecode(req.body) as Map<String, dynamic>));
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{'ok': true, 'notified': 1})),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final _FakeNative native = _FakeNative();
+      final GatewayClient gw = GatewayClient(client: mockHttp);
+      final _SignedAuth auth = _SignedAuth(
+        native: native,
+        gateway: gw,
+        store: LocalStore.instance,
+      );
+      final List<String> closedIds = <String>[];
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        auth: auth,
+        watchDirectories: false,
+      );
+
+      await sec.inspectLiveConnections(
+        const <CoreActivitySample>[
+          CoreActivitySample(
+            id: 'conn-99',
+            host: 'grabify.link',
+            process: 'chrome.exe',
+          ),
+        ],
+        closeConnection: (String id) async {
+          closedIds.add(id);
+          return true;
+        },
+      );
+
+      expect(closedIds, <String>['conn-99']);
+      expect(sec.neutralizedEvents, hasLength(1));
+      expect(sec.neutralizedEvents.single.action, 'blocked_connection');
+      expect(sent.any((e) => e.$1.contains('app/security-alert')), isTrue);
+
+      sec.dispose();
+      auth.dispose();
+      gw.close();
+    });
+
+    testWidgets('SecurityShieldDialog در ویندوز لینک تروجانی را بررسی و بدون سرریز رندر می شود', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: true,
+          scannedProcesses: 20,
+          scannedApps: 10,
+          scannedFiles: 15,
+        );
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        watchDirectories: false,
+      );
+      await sec.scanNow(silent: true);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<SecurityScannerController>.value(
+          value: sec,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(
+                body: SecurityShieldDialog(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('security-link-input')),
+        'https://grabify.link/payload.exe',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('security-check-link-button')));
+      await tester.pump();
+
+      expect(sec.neutralizedEvents, hasLength(1));
+      expect(find.textContaining('مسدودسازی اتصال'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      sec.dispose();
     });
   });
 }

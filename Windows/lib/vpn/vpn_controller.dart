@@ -258,6 +258,8 @@ class VpnController extends ChangeNotifier {
   final ValueChanged<AppSettings>? onSettingsChanged;
   final VoidCallback? onRequireElevation;
   VoidCallback? onTunnelConnected;
+  Future<void> Function(List<CoreActivitySample> samples)?
+      onNetworkConnectionsObserved;
 
   /// بررسی دسترسی حساب پیش از هر اتصال. اگر رشته غیرخالی برگرداند، اتصال
   /// انجام نمی شود و همان پیام به کاربر نشان داده می شود (اشتراک منقضی،
@@ -4307,6 +4309,9 @@ class VpnController extends ChangeNotifier {
       );
       if (samples.isNotEmpty) {
         ActivityMonitorBuffer.instance.recordConnections(samples);
+        if (onNetworkConnectionsObserved != null) {
+          unawaited(onNetworkConnectionsObserved!(samples));
+        }
       }
     } catch (_) {}
   }

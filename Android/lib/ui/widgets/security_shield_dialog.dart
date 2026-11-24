@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/malicious_link_guard.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -82,7 +83,7 @@ class SecurityStatusBadge extends StatelessWidget {
     return Tooltip(
       message: danger
           ? 'تهدید یا فیلترشکن ناسازگار شناسایی شد؛ برای حذف ضربه بزنید'
-          : 'سپر امنیتی آمبرلا همیشه فعال است؛ برای اسکن و جزئیات ضربه بزنید',
+          : 'سپر امنیتی آمبرلا همیشه فعال است؛ برای اسکن و بررسی لینک ضربه بزنید',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -145,14 +146,14 @@ class SecurityStatusBadge extends StatelessWidget {
   }
 }
 
-/// پنجره سپر امنیتی آمبرلا در اندروید: نمایش نتیجه اسکن بلادرنگ، مسدودیت ها و حذف یا توقف تهدیدها.
-class SecurityShieldDialog extends StatelessWidget {
+/// پنجره مدیریت سپر امنیتی همیشه فعال اندروید، بررسی لینک و حذف فایل ها/اپ های مخرب.
+class SecurityShieldDialog extends StatefulWidget {
   const SecurityShieldDialog({super.key});
 
   static bool _isOpen = false;
 
   static Future<void> show(BuildContext context) async {
-    if (_isOpen || !context.mounted) return;
+    if (_isOpen) return;
     _isOpen = true;
     try {
       await showDialog<void>(
@@ -165,6 +166,35 @@ class SecurityShieldDialog extends StatelessWidget {
   }
 
   @override
+  State<SecurityShieldDialog> createState() => _SecurityShieldDialogState();
+}
+
+class _SecurityShieldDialogState extends State<SecurityShieldDialog> {
+  final TextEditingController _linkController = TextEditingController();
+
+  @override
+  void dispose() {
+    _linkController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkLink(
+    SecurityScannerController? security,
+    ToastController? toasts,
+  ) async {
+    final String raw = _linkController.text.trim();
+    if (raw.isEmpty || security == null) return;
+    final MaliciousLinkMatch? hit = await security.inspectAndBlockUrl(raw);
+    if (!mounted) return;
+    if (hit == null) {
+      toasts?.success('لینک سالم است', 'الگوی تروجانی یا فیشینگ در این نشانی یافت نشد.');
+    } else {
+      toasts?.error('لینک تروجانی مسدود شد', hit.detail);
+      _linkController.clear();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final SecurityScannerController? security =
         context.maybeWatch<SecurityScannerController>();
@@ -173,6 +203,8 @@ class SecurityShieldDialog extends StatelessWidget {
     final bool danger = security?.hasThreats ?? false;
     final SecurityScanResult report =
         security?.lastResult ?? const SecurityScanResult();
+    final List<NeutralizedSecurityEvent> neutralized =
+        security?.neutralizedEvents ?? const <NeutralizedSecurityEvent>[];
 
     return Dialog(
       backgroundColor: colors.surface,
@@ -220,7 +252,7 @@ class SecurityShieldDialog extends StatelessWidget {
                         Text(
                           danger
                               ? 'برای امنیت اتصال، اجرای هم زمان بدافزارها و فیلترشکن های ناسازگار مسدود است.'
-                              : 'دستگاه در برابر بدافزارها (JumpJump) و فیلترشکن های ناسازگار ایمن است.',
+                              : 'دستگاه در برابر بدافزارها (JumpJump)، فایل های آلوده و فیلترشکن های ناسازگار ایمن است.',
                           style: TextStyle(
                             fontSize: AppMetrics.fontSmall,
                             color: colors.textSecondary,
@@ -249,7 +281,7 @@ class SecurityShieldDialog extends StatelessWidget {
                   _StatChip(
                     icon: Icons.folder_open_rounded,
                     label:
-                        'فایل های بررسی شده: ${Fa.num(report.scannedFiles)}',
+                        'فایل ها و تصاویر بررسی شده: ${Fa.num(report.scannedFiles)}',
                   ),
                 ],
               ),
@@ -276,177 +308,165 @@ class SecurityShieldDialog extends StatelessWidget {
               ],
               const SizedBox(height: AppMetrics.space3),
               Expanded(
-                child: !danger
-                    ? Center(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              const SecurityShieldLogo(
-                                danger: false,
-                                size: AppMetrics.logoLg,
+                child: ListView(
+                  children: <Widget>[
+                    Container(
+                      padding: const EdgeInsets.all(AppMetrics.space3),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceHigh,
+                        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                        border: Border.all(color: colors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Text(
+                            'بررسی امنیتی لینک پیش از باز کردن',
+                            style: TextStyle(
+                              fontSize: AppMetrics.fontSmall,
+                              fontWeight: FontWeight.w700,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: AppMetrics.space2),
+                          TextField(
+                            key: const ValueKey<String>('security-link-input'),
+                            controller: _linkController,
+                            textDirection: TextDirection.ltr,
+                            decoration: const InputDecoration(
+                              hintText: 'https://example.com/...',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: AppMetrics.space3,
+                                vertical: AppMetrics.space2,
                               ),
-                              const SizedBox(height: AppMetrics.space2),
-                              Text(
-                                'هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: AppMetrics.fontBody,
-                                  fontWeight: FontWeight.w700,
-                                  color: colors.textPrimary,
-                                ),
+                            ),
+                            onSubmitted: (_) =>
+                                unawaited(_checkLink(security, toasts)),
+                          ),
+                          const SizedBox(height: AppMetrics.space2),
+                          Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: FilledButton.icon(
+                              key: const ValueKey<String>(
+                                'security-check-link-button',
                               ),
-                              const SizedBox(height: AppMetrics.space2),
-                              Text(
-                                'پایش لحظه ای برنامه های نصب شده و تونل های فعال دستگاه به طور خودکار در پس زمینه فعال است.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: AppMetrics.fontSmall,
-                                  color: colors.textSecondary,
-                                ),
+                              icon: const Icon(
+                                Icons.link_rounded,
+                                size: AppMetrics.iconSm,
                               ),
-                            ],
+                              label: const Text('بررسی لینک'),
+                              onPressed: security == null
+                                  ? null
+                                  : () => _checkLink(security, toasts),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!report.storageAccessGranted && security != null) ...<Widget>[
+                      const SizedBox(height: AppMetrics.space2),
+                      Container(
+                        padding: const EdgeInsets.all(AppMetrics.space3),
+                        decoration: BoxDecoration(
+                          color: colors.primarySoft,
+                          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                          border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.35),
                           ),
                         ),
-                      )
-                    : ListView.separated(
-                        itemCount: report.threats.length,
-                        separatorBuilder: (_, __) =>
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Text(
+                              'برای اسکن و حذف خودکار تصاویر و فایل های دانلودی عمومی اندروید، مجوز دسترسی فایل لازم است.',
+                              style: TextStyle(
+                                fontSize: AppMetrics.fontCaption,
+                                color: colors.textPrimary,
+                              ),
+                            ),
                             const SizedBox(height: AppMetrics.space2),
-                        itemBuilder: (BuildContext ctx, int index) {
-                          final SecurityThreat item = report.threats[index];
-                          final String btnLabel =
-                              item.remediationKind == 'vpn_settings'
-                                  ? 'باز کردن تنظیمات VPN سیستم'
-                                  : (item.packageName.isNotEmpty
-                                      ? 'حذف برنامه از دستگاه'
-                                      : 'حذف فوری فایل');
-                          return Container(
-                            padding: const EdgeInsets.all(AppMetrics.space3),
-                            decoration: BoxDecoration(
-                              color: colors.danger.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(
-                                AppMetrics.radiusButton,
-                              ),
-                              border: Border.all(
-                                color: colors.danger.withValues(alpha: 0.42),
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: OutlinedButton.icon(
+                                key: const ValueKey<String>(
+                                  'security-storage-access-button',
+                                ),
+                                icon: const Icon(
+                                  Icons.folder_shared_rounded,
+                                  size: AppMetrics.iconSm,
+                                ),
+                                label: const Text('فعال سازی اسکن دانلود و تصاویر'),
+                                onPressed: () =>
+                                    unawaited(security.requestStorageScanAccess()),
                               ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Row(
-                                  children: <Widget>[
-                                    Icon(
-                                      item.isConflictingVpn
-                                          ? Icons.vpn_lock_rounded
-                                          : Icons.bug_report_rounded,
-                                      size: AppMetrics.iconMd,
-                                      color: colors.danger,
-                                    ),
-                                    const SizedBox(width: AppMetrics.space2),
-                                    Expanded(
-                                      child: Text(
-                                        item.name,
-                                        style: TextStyle(
-                                          fontSize: AppMetrics.fontBody,
-                                          fontWeight: FontWeight.w800,
-                                          color: colors.textPrimary,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppMetrics.space2),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppMetrics.space2,
-                                        vertical: AppMetrics.space1,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: colors.danger.withValues(alpha: 0.16),
-                                        borderRadius: BorderRadius.circular(
-                                          AppMetrics.radiusSm,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        item.categoryLabelFa,
-                                        style: TextStyle(
-                                          fontSize: AppMetrics.fontCaption,
-                                          fontWeight: FontWeight.w700,
-                                          color: colors.danger,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: AppMetrics.space2),
-                                Text(
-                                  item.detail,
-                                  style: TextStyle(
-                                    fontSize: AppMetrics.fontSmall,
-                                    color: colors.textSecondary,
-                                  ),
-                                ),
-                                if (item.target.isNotEmpty) ...<Widget>[
-                                  const SizedBox(height: AppMetrics.space2),
-                                  Directionality(
-                                    textDirection: TextDirection.ltr,
-                                    child: Text(
-                                      item.target,
-                                      style: TextStyle(
-                                        fontSize: AppMetrics.fontCaption,
-                                        fontFamily: 'monospace',
-                                        color: colors.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: AppMetrics.space3),
-                                Align(
-                                  alignment: AlignmentDirectional.centerEnd,
-                                  child: FilledButton.icon(
-                                    key: ValueKey<String>(
-                                      'security-remediate-${item.key}',
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: colors.danger,
-                                      foregroundColor: colors.onPrimary,
-                                    ),
-                                    icon: Icon(
-                                      item.remediationKind == 'vpn_settings'
-                                          ? Icons.settings_ethernet_rounded
-                                          : Icons.delete_forever_rounded,
-                                      size: AppMetrics.iconSm,
-                                    ),
-                                    label: Text(btnLabel),
-                                    onPressed:
-                                        security == null || security.remediating
-                                            ? null
-                                            : () async {
-                                                final RemediationResult res =
-                                                    await security.remediateThreat(
-                                                  item,
-                                                );
-                                                if (toasts != null) {
-                                                  if (res.ok) {
-                                                    toasts.success(
-                                                      'تهدید برطرف شد',
-                                                      res.message,
-                                                    );
-                                                  } else {
-                                                    toasts.warning(
-                                                      'تکمیل حذف در سیستم عامل',
-                                                      res.message,
-                                                    );
-                                                  }
-                                                }
-                                              },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                          ],
+                        ),
                       ),
+                    ],
+                    const SizedBox(height: AppMetrics.space3),
+                    if (!danger)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppMetrics.space2,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const SecurityShieldLogo(
+                              danger: false,
+                              size: AppMetrics.logoLg,
+                            ),
+                            const SizedBox(height: AppMetrics.space2),
+                            Text(
+                              'هیچ بدافزار یا وی پی ان ناسازگاری یافت نشد',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: AppMetrics.fontBody,
+                                fontWeight: FontWeight.w700,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: AppMetrics.space2),
+                            Text(
+                              'پایش لحظه ای برنامه های نصب شده، لینک های تروجانی و فایل های دانلودی به طور خودکار در پس زمینه فعال است.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: AppMetrics.fontSmall,
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      for (final SecurityThreat item in report.threats) ...<Widget>[
+                        _ThreatCard(
+                          item: item,
+                          security: security,
+                          toasts: toasts,
+                        ),
+                        const SizedBox(height: AppMetrics.space2),
+                      ],
+                    if (neutralized.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppMetrics.space2),
+                      Text(
+                        'موارد حذف یا مسدودشده اخیر (ارسال شده به تلگرام)',
+                        style: TextStyle(
+                          fontSize: AppMetrics.fontSmall,
+                          fontWeight: FontWeight.w700,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: AppMetrics.space2),
+                      for (final NeutralizedSecurityEvent ev in neutralized.take(6)) ...<Widget>[
+                        _NeutralizedCard(event: ev),
+                        const SizedBox(height: AppMetrics.space2),
+                      ],
+                    ],
+                  ],
+                ),
               ),
               const SizedBox(height: AppMetrics.space3),
               Wrap(
@@ -510,6 +530,214 @@ class SecurityShieldDialog extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ThreatCard extends StatelessWidget {
+  const _ThreatCard({
+    required this.item,
+    required this.security,
+    required this.toasts,
+  });
+
+  final SecurityThreat item;
+  final SecurityScannerController? security;
+  final ToastController? toasts;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String btnLabel = item.remediationKind == 'vpn_settings'
+        ? 'باز کردن تنظیمات VPN سیستم'
+        : (item.packageName.isNotEmpty ? 'حذف برنامه از دستگاه' : 'حذف فوری فایل');
+    return Container(
+      padding: const EdgeInsets.all(AppMetrics.space3),
+      decoration: BoxDecoration(
+        color: colors.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusButton),
+        border: Border.all(color: colors.danger.withValues(alpha: 0.42)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                item.isConflictingVpn
+                    ? Icons.vpn_lock_rounded
+                    : Icons.bug_report_rounded,
+                size: AppMetrics.iconMd,
+                color: colors.danger,
+              ),
+              const SizedBox(width: AppMetrics.space2),
+              Expanded(
+                child: Text(
+                  item.name,
+                  style: TextStyle(
+                    fontSize: AppMetrics.fontBody,
+                    fontWeight: FontWeight.w800,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppMetrics.space2),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppMetrics.space2,
+                  vertical: AppMetrics.space1,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.danger.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
+                ),
+                child: Text(
+                  item.categoryLabelFa,
+                  style: TextStyle(
+                    fontSize: AppMetrics.fontCaption,
+                    fontWeight: FontWeight.w700,
+                    color: colors.danger,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppMetrics.space2),
+          Text(
+            item.detail,
+            style: TextStyle(
+              fontSize: AppMetrics.fontSmall,
+              color: colors.textSecondary,
+            ),
+          ),
+          if (item.target.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppMetrics.space2),
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                item.target,
+                style: TextStyle(
+                  fontSize: AppMetrics.fontCaption,
+                  fontFamily: 'monospace',
+                  color: colors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: AppMetrics.space3),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: FilledButton.icon(
+              key: ValueKey<String>('security-remediate-${item.key}'),
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.danger,
+                foregroundColor: colors.onPrimary,
+              ),
+              icon: Icon(
+                item.remediationKind == 'vpn_settings'
+                    ? Icons.settings_ethernet_rounded
+                    : Icons.delete_forever_rounded,
+                size: AppMetrics.iconSm,
+              ),
+              label: Text(btnLabel),
+              onPressed: security == null || security!.remediating
+                  ? null
+                  : () async {
+                      final RemediationResult res =
+                          await security!.remediateThreat(item);
+                      if (toasts != null) {
+                        if (res.ok) {
+                          toasts!.success('تهدید برطرف شد', res.message);
+                        } else {
+                          toasts!.warning(
+                            'تکمیل حذف در سیستم عامل',
+                            res.message,
+                          );
+                        }
+                      }
+                    },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NeutralizedCard extends StatelessWidget {
+  const _NeutralizedCard({required this.event});
+
+  final NeutralizedSecurityEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppMetrics.space3),
+      decoration: BoxDecoration(
+        color: colors.success.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+        border: Border.all(color: colors.success.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                event.action == 'blocked_connection'
+                    ? Icons.link_off_rounded
+                    : Icons.delete_sweep_rounded,
+                size: AppMetrics.iconSm,
+                color: colors.success,
+              ),
+              const SizedBox(width: AppMetrics.space2),
+              Expanded(
+                child: Text(
+                  event.name,
+                  style: TextStyle(
+                    fontSize: AppMetrics.fontSmall,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppMetrics.space2,
+                  vertical: AppMetrics.space1,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.success.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
+                ),
+                child: Text(
+                  event.actionLabelFa,
+                  style: TextStyle(
+                    fontSize: AppMetrics.fontCaption,
+                    fontWeight: FontWeight.w700,
+                    color: colors.success,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (event.target.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppMetrics.space1),
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                event.target,
+                style: TextStyle(
+                  fontSize: AppMetrics.fontCaption,
+                  fontFamily: 'monospace',
+                  color: colors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/malicious_link_guard.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/data/gateway_client.dart';
@@ -24,6 +25,7 @@ import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/security_shield_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
+import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -60,6 +62,9 @@ class _FakeNative implements NativeBridge {
       message: 'تهدید با موفقیت متوقف و حذف شد.',
     );
   }
+
+  @override
+  Future<bool> requestStorageScanAccess() async => true;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -677,6 +682,235 @@ void main() {
       expect((images[1].image as AssetImage).assetName, BrandAssets.securityAlert);
       expect(images[0].gaplessPlayback, isTrue);
       expect(images[1].gaplessPlayback, isTrue);
+    });
+  });
+
+  group('پایش دانلود و تصاویر آلوده، لینک تروجانی و اعلان تلگرام در اندروید', () {
+    test('اسکنر کاتلین و مانیفست مجوزها و قواعد تصویر Polyglot را رعایت می کنند', () {
+      final String kt = File(
+        'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
+      ).readAsStringSync();
+      expect(kt.contains('malicious_download'), isTrue);
+      expect(kt.contains('inspectDownloadedFile'), isTrue);
+      expect(kt.contains('hasPeHeaderAt'), isTrue);
+      expect(kt.contains('hasRloOrDoubleExtension'), isTrue);
+      expect(kt.contains('hasStorageScanAccess'), isTrue);
+      expect(kt.contains('requestStorageScanAccess'), isTrue);
+
+      final String manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest.contains('READ_MEDIA_IMAGES'), isTrue);
+      expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isTrue);
+      expect(manifest.contains('REQUEST_INSTALL_PACKAGES'), isFalse);
+      expect(manifest.contains('READ_SMS'), isFalse);
+      expect(manifest.contains('RECEIVE_SMS'), isFalse);
+    });
+
+    test('MaliciousLinkGuard لینک های تروجانی، هموگراف و پسوند دوگانه را مسدود می کند', () {
+      expect(
+        MaliciousLinkGuard.inspect('https://grabify.link/track123'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://xn--tlegrm-9va.com/login'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://cdn.evil.test/photo.jpg.apk'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('javascript:alert(1)'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://armin-soft.ir/app'),
+        isNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspect('https://telegram.org'),
+        isNull,
+      );
+    });
+
+    test('تصویر یا فایل دانلودی آلوده خودکار حذف شده و به تلگرام گزارش می شود', () async {
+      final List<(String, Map<String, dynamic>)> sent =
+          <(String, Map<String, dynamic>)>[];
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
+        sent.add((route, jsonDecode(req.body) as Map<String, dynamic>));
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{'ok': true, 'notified': 1})),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: false,
+          scannedApps: 28,
+          scannedFiles: 14,
+          storageAccessGranted: true,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'file:polyglot:img1',
+              name: 'تصویر آلوده به بدافزار (Polyglot)',
+              category: 'malicious_download',
+              severity: 'critical',
+              target: '/storage/emulated/0/Download/photo_payload.jpg',
+              detail: 'درون تصویر دانلودشده کد اجرایی مخرب شناسایی شد.',
+              path: '/storage/emulated/0/Download/photo_payload.jpg',
+              remediationKind: 'file',
+              active: true,
+            ),
+          ],
+        );
+
+      final GatewayClient gw = GatewayClient(
+        client: mockHttp,
+        enableNativeTransport: false,
+      );
+      final _SignedAuth auth = _SignedAuth(
+        native: native,
+        gateway: gw,
+        store: LocalStore.instance,
+      );
+      final List<NeutralizedSecurityEvent> notified = <NeutralizedSecurityEvent>[];
+
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        auth: auth,
+        watchDirectories: false,
+      )..onThreatNeutralized = notified.add;
+
+      final SecurityScanResult res = await sec.scanNow(silent: false);
+      expect(res.clean, isTrue);
+      expect(native.remediatedKeys, <String>['file:polyglot:img1']);
+      expect(sec.neutralizedEvents, hasLength(1));
+      expect(notified, hasLength(1));
+      expect(notified.single.action, 'auto_deleted');
+
+      final List<(String, Map<String, dynamic>)> alerts = sent
+          .where((e) => e.$1.contains('app/security-alert'))
+          .toList();
+      expect(alerts, isNotEmpty);
+      final List<dynamic>? neutralizedBody =
+          alerts.last.$2['neutralized'] as List<dynamic>?;
+      expect(neutralizedBody, hasLength(1));
+
+      sec.dispose();
+      auth.dispose();
+      gw.close();
+    });
+
+    test('ترافیک زنده با لینک تروجانی بلافاصله بسته شده و گزارش تلگرام می فرستد', () async {
+      final List<(String, Map<String, dynamic>)> sent =
+          <(String, Map<String, dynamic>)>[];
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        final String route = req.url.queryParameters['AppApi'] ?? req.url.path;
+        sent.add((route, jsonDecode(req.body) as Map<String, dynamic>));
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{'ok': true, 'notified': 1})),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final _FakeNative native = _FakeNative();
+      final GatewayClient gw = GatewayClient(
+        client: mockHttp,
+        enableNativeTransport: false,
+      );
+      final _SignedAuth auth = _SignedAuth(
+        native: native,
+        gateway: gw,
+        store: LocalStore.instance,
+      );
+      final List<String> closedIds = <String>[];
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        auth: auth,
+        watchDirectories: false,
+      );
+
+      await sec.inspectLiveConnections(
+        const <CoreActivitySample>[
+          CoreActivitySample(
+            id: 'conn-42',
+            host: 'grabify.link',
+            process: 'com.example.browser',
+          ),
+          CoreActivitySample(
+            id: 'conn-ok',
+            host: 'armin-soft.ir',
+            process: 'ir.umbrella.vpn',
+          ),
+        ],
+        closeConnection: (String id) async {
+          closedIds.add(id);
+          return true;
+        },
+      );
+
+      expect(closedIds, <String>['conn-42']);
+      expect(sec.neutralizedEvents, hasLength(1));
+      expect(sec.neutralizedEvents.single.action, 'blocked_connection');
+      expect(sent.any((e) => e.$1.contains('app/security-alert')), isTrue);
+
+      sec.dispose();
+      auth.dispose();
+      gw.close();
+    });
+
+    testWidgets('SecurityShieldDialog لینک تروجانی را بررسی و در عرض ۳۶۰ موبایل بدون سرریز رندر می شود', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 740));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: true,
+          scannedApps: 12,
+          scannedFiles: 9,
+          storageAccessGranted: false,
+        );
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        watchDirectories: false,
+      );
+      await sec.scanNow(silent: true);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<SecurityScannerController>.value(
+          value: sec,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(
+                body: SecurityShieldDialog(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey<String>('security-storage-access-button')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('security-link-input')),
+        'https://grabify.link/evil.apk',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('security-check-link-button')));
+      await tester.pump();
+
+      expect(sec.neutralizedEvents, hasLength(1));
+      expect(find.textContaining('مسدودسازی اتصال'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      sec.dispose();
     });
   });
 }

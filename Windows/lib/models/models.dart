@@ -1873,12 +1873,24 @@ class SecurityThreat {
   final bool blockedByPolicy;
 
   bool get isConflictingVpn => category == 'conflicting_vpn';
-  bool get isMalware => category == 'malware';
+  bool get isMalware =>
+      category == 'malware' ||
+      category == 'malicious_download' ||
+      category == 'malicious_link';
+
+  bool get isAutoRemediableFile =>
+      remediationKind == 'file' &&
+      path.isNotEmpty &&
+      (category == 'malicious_download' || category == 'malware');
 
   String get categoryLabelFa {
     switch (category) {
       case 'malware':
         return 'بدافزار / ابزار مخرب';
+      case 'malicious_download':
+        return 'فایل دانلودی / تصویر آلوده';
+      case 'malicious_link':
+        return 'لینک تروجانی / فیشینگ';
       case 'conflicting_vpn':
         return 'فیلترشکن ناسازگار';
       case 'adware':
@@ -1932,6 +1944,50 @@ class SecurityThreat {
       );
 }
 
+/// رویداد تهدیدی که به صورت خودکار توسط سپر امنیتی حذف یا مسدود شده است.
+class NeutralizedSecurityEvent {
+  const NeutralizedSecurityEvent({
+    required this.key,
+    required this.name,
+    required this.category,
+    required this.severity,
+    required this.target,
+    required this.detail,
+    required this.action,
+    required this.timestampMs,
+  });
+
+  final String key;
+  final String name;
+  final String category; // malicious_download | malicious_link | malware
+  final String severity;
+  final String target;
+  final String detail;
+  final String action; // deleted | blocked_connection | quarantined
+  final int timestampMs;
+
+  String get actionLabelFa {
+    switch (action) {
+      case 'blocked_connection':
+        return 'مسدودسازی اتصال';
+      case 'quarantined':
+        return 'قرنطینه امنیتی';
+      default:
+        return 'حذف خودکار';
+    }
+  }
+
+  Map<String, dynamic> toAlertPayload() => <String, dynamic>{
+        'key': key,
+        'name': name,
+        'category': category,
+        'severity': severity,
+        'action': action,
+        'target': target,
+        'detail': detail,
+      };
+}
+
 class SecurityScanResult {
   const SecurityScanResult({
     this.clean = true,
@@ -1939,6 +1995,7 @@ class SecurityScanResult {
     this.scannedApps = 0,
     this.scannedFiles = 0,
     this.scannedAtMs = 0,
+    this.storageAccessGranted = true,
     this.threats = const <SecurityThreat>[],
   });
 
@@ -1947,9 +2004,29 @@ class SecurityScanResult {
   final int scannedApps;
   final int scannedFiles;
   final int scannedAtMs;
+  final bool storageAccessGranted;
   final List<SecurityThreat> threats;
 
   bool get hasThreats => threats.isNotEmpty;
+
+  SecurityScanResult copyWith({
+    bool? clean,
+    int? scannedProcesses,
+    int? scannedApps,
+    int? scannedFiles,
+    int? scannedAtMs,
+    bool? storageAccessGranted,
+    List<SecurityThreat>? threats,
+  }) =>
+      SecurityScanResult(
+        clean: clean ?? this.clean,
+        scannedProcesses: scannedProcesses ?? this.scannedProcesses,
+        scannedApps: scannedApps ?? this.scannedApps,
+        scannedFiles: scannedFiles ?? this.scannedFiles,
+        scannedAtMs: scannedAtMs ?? this.scannedAtMs,
+        storageAccessGranted: storageAccessGranted ?? this.storageAccessGranted,
+        threats: threats ?? this.threats,
+      );
 
   factory SecurityScanResult.fromJson(Map<String, dynamic> map) {
     final List<SecurityThreat> items = JsonX.asList(map['threats'])
@@ -1962,6 +2039,8 @@ class SecurityScanResult {
       scannedApps: JsonX.integer(map['scannedApps']),
       scannedFiles: JsonX.integer(map['scannedFiles']),
       scannedAtMs: JsonX.integer(map['scannedAtMs']),
+      storageAccessGranted:
+          JsonX.boolean(map['storageAccessGranted'], fallback: true),
       threats: items,
     );
   }

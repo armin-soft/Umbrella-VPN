@@ -140,6 +140,9 @@ class _FakeNative implements NativeBridge {
       );
 
   @override
+  Future<bool> requestStorageScanAccess() async => true;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

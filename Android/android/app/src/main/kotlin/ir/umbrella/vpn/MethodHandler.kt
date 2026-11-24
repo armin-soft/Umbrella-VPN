@@ -138,6 +138,9 @@ class MethodHandler(
             "scanDeviceSecurity" -> scope.launch {
                 result.answer(call.method) { UmbrellaSecurityScanner.scan(activity) }
             }
+            "requestStorageScanAccess" -> result.answerNow(call.method) {
+                UmbrellaSecurityScanner.requestStorageScanAccess(activity)
+            }
             "remediateSecurityThreat" -> result.answerNow(call.method) {
                 UmbrellaSecurityScanner.remediate(
                     activity = activity,

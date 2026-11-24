@@ -624,6 +624,8 @@ class GatewayClient {
     required String platform,
     required String appVersion,
     required List<SecurityThreat> threats,
+    List<NeutralizedSecurityEvent> neutralized =
+        const <NeutralizedSecurityEvent>[],
     List<String> resolvedKeys = const <String>[],
     bool syncAll = false,
   }) async {
@@ -633,6 +635,10 @@ class GatewayClient {
       'platform': platform,
       'app_version': appVersion,
       'threats': threats.map((SecurityThreat t) => t.toAlertPayload()).toList(),
+      if (neutralized.isNotEmpty)
+        'neutralized': neutralized
+            .map((NeutralizedSecurityEvent e) => e.toAlertPayload())
+            .toList(),
       if (resolvedKeys.isNotEmpty) 'resolved_keys': resolvedKeys,
       if (syncAll) 'sync_all': true,
     });

@@ -433,6 +433,38 @@ $Res4 = $ProcessAlert->invoke(null, [
 ]);
 check($Res4['new_threats'] === 1 && $Res4['notified'] === true && count(TelegramClient::$SentReadable) === 2, 'reappearing resolved threat notifies user again');
 
+// Neutralized (auto-deleted download / blocked trojan link) triggers immediate user Telegram alert & stays resolved
+$Res5 = $ProcessAlert->invoke(null, [
+'token' => $Token,
+'device_id' => $DeviceId,
+'threats' => [],
+'neutralized' => [
+[
+'key' => 'dl:fake_img_trojan',
+'name' => 'تروجان پنهان در تصویر (aks.jpg)',
+'category' => 'malicious_download',
+'severity' => 'critical',
+'action' => 'deleted',
+'target' => 'C:\\Users\\Test\\Downloads\\aks.jpg',
+'detail' => 'فایل با پسوند تصویر حاوی کد اجرایی مخرب بود و خودکار حذف شد.',
+],
+[
+'key' => 'link:grabify.link',
+'name' => 'لینک تروجانی مسدود شد (grabify.link)',
+'category' => 'malicious_link',
+'severity' => 'high',
+'action' => 'blocked_connection',
+'target' => 'https://grabify.link/ABCD',
+'detail' => 'ارتباط با دامنه تروجانی یا فیشینگ در لحظه قطع شد.',
+],
+],
+]);
+check($Res5['neutralized_count'] === 2 && $Res5['notified'] === true, 'neutralized downloads and links notify Telegram user immediately');
+check((int)(Database::$Alerts[$DeviceId . '|dl:fake_img_trojan']['Resolved'] ?? 0) === 1, 'auto-deleted file alert stored with Resolved=1');
+check((int)(Database::$Alerts[$DeviceId . '|link:grabify.link']['Resolved'] ?? 0) === 1, 'blocked link alert stored with Resolved=1');
+$LastMsg = TelegramClient::$SentReadable[2][1] ?? '';
+check(str_contains($LastMsg, 'aks.jpg') && str_contains($LastMsg, 'grabify.link') && str_contains($LastMsg, 'حذف خودکار'), 'user Telegram alert includes neutralized file, link, and auto-delete status');
+
 // Also inspect announcementPayload directly
 $AnnPayloadMethod = new ReflectionMethod(AppGateway::class, 'announcementPayload');
 $Payload = $AnnPayloadMethod->invoke(null);
