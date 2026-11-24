@@ -97,7 +97,7 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   VpnStatus get status => current;
 
   @override
-  Future<void> disconnect() async {
+  Future<void> disconnect({bool silent = false}) async {
     disconnectCalls++;
     current = VpnStatus.disconnected;
     notifyListeners();
