@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/security_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
@@ -17,6 +18,7 @@ import '../widgets/common.dart';
 import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 import '../widgets/quick_connection_panel.dart';
+import '../widgets/security_shield_dialog.dart';
 
 /// صفحه اصلی اتصال؛ وضعیت و کنترل اتصال را در اولویت نگه می دارد.
 ///
@@ -255,6 +257,9 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     if (outcome.ok) {
       toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
+    } else if (outcome.needsSecurityCleanup) {
+      toasts.error('اتصال به دلیل سپر امنیتی مسدود شد', outcome.message);
+      unawaited(SecurityShieldDialog.show(context));
     } else if (!outcome.cancelled) {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
@@ -292,6 +297,8 @@ class _ConnectPageState extends State<ConnectPage> {
   Widget build(BuildContext context) {
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
+    final SecurityScannerController? security =
+        context.watch<SecurityScannerController?>();
     final SettingsController settings = context.watch<SettingsController>();
     final SubscriptionController subs = context.watch<SubscriptionController>();
     final ToastController toasts = context.read<ToastController>();
@@ -408,14 +415,33 @@ class _ConnectPageState extends State<ConnectPage> {
                             const SizedBox(width: AppMetrics.space2),
                           ] else
                             const SizedBox(width: AppMetrics.space2),
-                          _IpChip(
-                            ip: shownIp,
-                            flagCode: flagCode,
-                            country: connected ? countryName : '',
-                            connected: connected,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const SecurityStatusBadge(),
+                              if (security != null)
+                                const SizedBox(height: AppMetrics.space2),
+                              _IpChip(
+                                ip: shownIp,
+                                flagCode: flagCode,
+                                country: connected ? countryName : '',
+                                connected: connected,
+                              ),
+                            ],
                           ),
                         ],
                       ),
+                      if (security != null && security.hasThreats)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: AppMetrics.space3),
+                          child: _SecurityBlockBanner(
+                            threats: security.threats,
+                            onOpenShield: () =>
+                                SecurityShieldDialog.show(context),
+                          ),
+                        ),
                       if (!account.canConnect)
                         Padding(
                           padding:
@@ -907,6 +933,75 @@ class _AccessBanner extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SecurityBlockBanner extends StatelessWidget {
+  const _SecurityBlockBanner({
+    required this.threats,
+    required this.onOpenShield,
+  });
+
+  final List<SecurityThreat> threats;
+  final VoidCallback onOpenShield;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String names = threats.take(2).map((SecurityThreat t) => t.name).join('، ');
+    final String extra = threats.length > 2
+        ? ' و ${Fa.num(threats.length - 2)} مورد دیگر'
+        : '';
+    return Container(
+      key: const ValueKey<String>('connect-security-banner'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.danger.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: colors.danger.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.gpp_bad_rounded, color: colors.danger, size: 22),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'سپر امنیتی اتصال را مسدود کرده است',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colors.danger,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                Text(
+                  Fa.num('مورد شناسایی شده: $names$extra'),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppMetrics.space2),
+          FilledButton(
+            key: const ValueKey<String>('connect-security-cleanup-button'),
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.danger,
+              foregroundColor: colors.onPrimary,
+            ),
+            onPressed: onOpenShield,
+            child: const Text('حذف و پاکسازی'),
           ),
         ],
       ),

@@ -106,6 +106,9 @@ class InstalledAppInfo {
   final String name;
   final bool isSystem;
 
+  String get displayName => name.isEmpty ? packageName : name;
+  String get ruleTarget => packageName;
+
   factory InstalledAppInfo.fromMap(Map<Object?, Object?> raw) {
     return InstalledAppInfo(
       packageName: JsonX.text(raw['packageName']),
@@ -615,4 +618,41 @@ class NativeBridge {
   Future<bool> restoreNetworkDefaults() async => true;
 
   Future<bool> shutdownCores() async => stopCore();
+
+  Future<SecurityScanResult> scanDeviceSecurity() async {
+    final Map<Object?, Object?>? raw =
+        await _invoke<Map<Object?, Object?>>('scanDeviceSecurity');
+    if (raw == null) return SecurityScanResult.empty;
+    return SecurityScanResult.fromJson(JsonX.asMap(raw));
+  }
+
+  Future<RemediationResult> remediateSecurityThreat(
+    SecurityThreat threat,
+  ) async {
+    final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
+      'remediateSecurityThreat',
+      <String, dynamic>{
+        'key': threat.key,
+        'remediationKind': threat.remediationKind,
+        'packageName': threat.packageName,
+        'path': threat.path,
+      },
+    );
+    if (raw == null) {
+      return const RemediationResult(
+        ok: false,
+        message: 'ابزار حذف امنیتی بومی در این پلتفرم در دسترس نیست.',
+      );
+    }
+    return RemediationResult.fromJson(JsonX.asMap(raw));
+  }
+
+  Future<bool> isPackageInstalled(String packageName) async {
+    if (packageName.trim().isEmpty) return false;
+    final bool? ok = await _invoke<bool>(
+      'isPackageInstalled',
+      <String, dynamic>{'packageName': packageName},
+    );
+    return ok ?? false;
+  }
 }

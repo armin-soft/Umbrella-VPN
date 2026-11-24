@@ -663,50 +663,74 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
     super.dispose();
   }
 
+  Future<void> _pickInstalledApp() async {
+    playUiClick(context);
+    final NativeBridge? native = context.read<NativeBridge?>();
+    if (native == null) return;
+    final InstalledAppInfo? picked = await showDialog<InstalledAppInfo>(
+      context: context,
+      builder: (_) => _InstalledAppsPickerDialog(native: native),
+    );
+    if (!mounted || picked == null) return;
+    setState(() {
+      process.text = picked.packageName;
+      error = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: const Text('قانون برنامه'),
         content: SizedBox(
           width: AppMetrics.dialogMaxWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              TextField(
-                controller: process,
-                textDirection: TextDirection.ltr,
-                decoration: InputDecoration(
-                  labelText: 'نام بسته برنامه',
-                  hintText: 'org.telegram.messenger',
-                  errorText: error,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                TextField(
+                  controller: process,
+                  textDirection: TextDirection.ltr,
+                  decoration: InputDecoration(
+                    labelText: 'نام بسته برنامه',
+                    hintText: 'org.telegram.messenger',
+                    errorText: error,
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppMetrics.space3),
-              DropdownButtonFormField<AppRouteAction>(
-                initialValue: action,
-                isExpanded: true,
-                dropdownColor: context.colors.surface,
-                borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-                decoration: const InputDecoration(labelText: 'عملکرد مسیر'),
-                onTap: () => playUiClick(context),
-                items: <DropdownMenuItem<AppRouteAction>>[
-                  for (final AppRouteAction value in AppRouteAction.values)
-                    DropdownMenuItem<AppRouteAction>(
-                      value: value,
-                      child: Text(value.label),
-                    ),
-                ],
-                onChanged: (AppRouteAction? value) {
-                  playUiClick(context);
-                  if (value != null) setState(() => action = value);
-                },
-              ),
-              const SizedBox(height: AppMetrics.space3),
-              Text(
-                'نام بسته برنامه برای تطبیق دقیق به کار می رود؛ برای مسیریابی ساده تر می توانید از گزینه «مسیریابی برنامه های دستگاه» در بالا استفاده کنید.',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ],
+                const SizedBox(height: AppMetrics.space2),
+                OutlinedButton.icon(
+                  key: const ValueKey<String>('app-route-pick-installed'),
+                  onPressed: _pickInstalledApp,
+                  icon: const Icon(Icons.apps_rounded, size: AppMetrics.iconSm),
+                  label: const Text('انتخاب از برنامه های نصب شده'),
+                ),
+                const SizedBox(height: AppMetrics.space3),
+                DropdownButtonFormField<AppRouteAction>(
+                  initialValue: action,
+                  isExpanded: true,
+                  dropdownColor: context.colors.surface,
+                  borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                  decoration: const InputDecoration(labelText: 'عملکرد مسیر'),
+                  onTap: () => playUiClick(context),
+                  items: <DropdownMenuItem<AppRouteAction>>[
+                    for (final AppRouteAction value in AppRouteAction.values)
+                      DropdownMenuItem<AppRouteAction>(
+                        value: value,
+                        child: Text(value.label),
+                      ),
+                  ],
+                  onChanged: (AppRouteAction? value) {
+                    playUiClick(context);
+                    if (value != null) setState(() => action = value);
+                  },
+                ),
+                const SizedBox(height: AppMetrics.space3),
+                Text(
+                  'نام بسته برنامه برای تطبیق دقیق به کار می رود؛ می توانید از لیست برنامه های نصب شده انتخاب کنید یا از بخش «مسیریابی برنامه های دستگاه» در بالا استفاده نمایید.',
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
           ),
         ),
         actions: <Widget>[
@@ -731,4 +755,170 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
           ),
         ],
       );
+}
+
+class _InstalledAppsPickerDialog extends StatefulWidget {
+  const _InstalledAppsPickerDialog({required this.native});
+
+  final NativeBridge native;
+
+  @override
+  State<_InstalledAppsPickerDialog> createState() =>
+      _InstalledAppsPickerDialogState();
+}
+
+class _InstalledAppsPickerDialogState
+    extends State<_InstalledAppsPickerDialog> {
+  final TextEditingController _search = TextEditingController();
+  List<InstalledAppInfo> _apps = <InstalledAppInfo>[];
+  bool _loading = true;
+  bool _showSystem = false;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final List<InstalledAppInfo> list = await widget.native.getInstalledApps();
+      if (!mounted) return;
+      final List<InstalledAppInfo> sorted = List<InstalledAppInfo>.of(list)
+        ..sort((InstalledAppInfo a, InstalledAppInfo b) {
+          if (a.isSystem != b.isSystem) return a.isSystem ? 1 : -1;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+      setState(() {
+        _apps = sorted;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String q = _query.trim().toLowerCase();
+    final List<InstalledAppInfo> filtered = _apps
+        .where((InstalledAppInfo a) {
+          if (!_showSystem && a.isSystem) return false;
+          if (q.isEmpty) return true;
+          return a.name.toLowerCase().contains(q) ||
+              a.packageName.toLowerCase().contains(q);
+        })
+        .toList(growable: false);
+
+    return AlertDialog(
+      title: const Text('انتخاب برنامه نصب شده روی دستگاه'),
+      content: SizedBox(
+        width: AppMetrics.dialogMaxWidth,
+        height: 440,
+        child: Column(
+          children: <Widget>[
+            TextField(
+              key: const ValueKey<String>('installed-apps-search'),
+              controller: _search,
+              onChanged: (String v) => setState(() => _query = v),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded),
+                hintText: 'جست و جوی نام برنامه یا بسته...',
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _search.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+              ),
+            ),
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: _showSystem,
+              onChanged: (bool? v) => setState(() => _showSystem = v ?? false),
+              title: const Text('نمایش برنامه های سیستمی'),
+            ),
+            const SizedBox(height: AppMetrics.space1),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            'برنامه ای مطابق جست و جو یافت نشد.',
+                            style: TextStyle(color: colors.textSecondary),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: colors.border),
+                          itemBuilder: (BuildContext ctx, int index) {
+                            final InstalledAppInfo app = filtered[index];
+                            return ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: app.isSystem
+                                    ? colors.surfaceHigh
+                                    : colors.primarySoft,
+                                child: Icon(
+                                  app.isSystem
+                                      ? Icons.settings_applications_rounded
+                                      : Icons.apps_rounded,
+                                  size: 18,
+                                  color: app.isSystem
+                                      ? colors.textSecondary
+                                      : colors.primary,
+                                ),
+                              ),
+                              title: Text(
+                                app.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: Text(
+                                  app.packageName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: colors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              onTap: () => Navigator.of(ctx).pop(app),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('بستن'),
+        ),
+      ],
+    );
+  }
 }

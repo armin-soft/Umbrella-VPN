@@ -15,9 +15,9 @@ import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/advanced_network_settings.dart';
 import '../widgets/common.dart';
-import '../widgets/content_control.dart';
 import '../widgets/bypass_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
+import '../widgets/security_shield_dialog.dart';
 
 /// دسته های تنظیمات برنامه؛ بهینه سازی باتری فقط روی لپ تاپ در دسترس است.
 enum SettingsCategory {
@@ -63,7 +63,7 @@ extension SettingsCategoryX on SettingsCategory {
       case SettingsCategory.battery:
         return 'کاهش مصرف پس زمینه هنگام استفاده از باتری';
       case SettingsCategory.routing:
-        return 'منطقه مسیریابی، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
+        return 'منطقه مسیریابی، آی پی نسخه ۶، سایت های مستقیم و تفکیک برنامه ها';
       case SettingsCategory.dns:
         return 'سرورهای دی ان اس اصلی و مستقیم و دی ان اس مجازی';
       case SettingsCategory.inbound:
@@ -80,7 +80,7 @@ extension SettingsCategoryX on SettingsCategory {
       case SettingsCategory.battery:
         return 'مدیریت مصرف برنامه هنگام کار با باتری لپ تاپ';
       case SettingsCategory.routing:
-        return 'منطقه مسیریابی، قوانین توکار، آی پی نسخه ۶، کنترل محتوا و تفکیک برنامه ها';
+        return 'منطقه مسیریابی، قوانین توکار، آی پی نسخه ۶، سایت های مستقیم و تفکیک برنامه ها';
       case SettingsCategory.dns:
         return 'سرورهای دی ان اس اصلی و مستقیم، شیوه انتخاب نشانی و دی ان اس مجازی';
       case SettingsCategory.inbound:
@@ -300,6 +300,7 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle:
                 'پیکربندی عمومی، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن',
             icon: Icons.settings_rounded,
+            actions: <Widget>[SecurityStatusBadge()],
           ),
           const SizedBox(height: AppMetrics.space4),
           GlassCard(
@@ -348,12 +349,11 @@ class _SettingsPageState extends State<SettingsPage> {
       case SettingsCategory.battery:
         return cfg.batteryOptimization ? 'روشن' : 'خاموش';
       case SettingsCategory.routing:
-        final bool hasActiveRules = context.select<AuthController?, bool>(
-          (auth) => auth?.filter.hasActiveRules ?? false,
+        final bool hasBypass = context.select<AuthController?, bool>(
+          (auth) =>
+              (auth?.filter.bypassIran ?? false) ||
+              (auth?.filter.bypassDomains.isNotEmpty ?? false),
         );
-        if (hasActiveRules) {
-          return 'کنترل محتوا';
-        }
         if (cfg.routingRegion != RoutingRegion.other) {
           return cfg.routingRegion.label;
         }
@@ -361,6 +361,9 @@ class _SettingsPageState extends State<SettingsPage> {
             cfg.appRoutes.where((AppRouteRule r) => r.enabled).length;
         if (activeApps > 0) {
           return Fa.num('$activeApps برنامه');
+        }
+        if (hasBypass) {
+          return 'عبور مستقیم';
         }
         return cfg.blockAds ? 'ضد تبلیغات' : null;
       case SettingsCategory.dns:
@@ -813,14 +816,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ],
                 ],
-        ),
-        const SizedBox(height: AppMetrics.space5),
-        const _Section(
-          icon: Icons.family_restroom_rounded,
-          title: 'کنترل محتوا',
-          subtitle:
-              'فیلتر دسته بندی شده دامنه ها، هماهنگ خودکار با حساب کاربری شما',
-          children: <Widget>[ContentControlCard()],
         ),
         const SizedBox(height: AppMetrics.space5),
         const _Section(

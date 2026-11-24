@@ -108,6 +108,8 @@ if ($Route === 'wallet/cancel') { self::walletCancel(self::body()); return; }
 if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/activity') { self::recordActivityRoute(self::body()); return; }
 if ($Route === 'app/support-report') { self::supportReport(self::body()); return; }
+if ($Route === 'app/announcement') { self::announcement(); return; }
+if ($Route === 'app/security-alert') { self::securityAlert(self::body()); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
 
@@ -544,6 +546,7 @@ self::ok([
 'account' => $Profile,
 'filter' => self::filterPayload($UUID),
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
+'announcement' => self::announcementPayload(),
 ]);
 }
 
@@ -793,6 +796,7 @@ self::ok([
 'filter' => self::filterPayload($UUID),
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 'channel_url' => BotConfig::getChannelUrl(),
+'announcement' => self::announcementPayload(),
 'checked_at' => gmdate('c'),
 ]);
 }
@@ -840,6 +844,7 @@ $Payload = [
 'seen_at' => gmdate('c'),
 'emergency_enabled' => BotConfig::showEmergency(),
 'channel_url' => BotConfig::getChannelUrl(),
+'announcement' => self::announcementPayload(),
 ];
 $LinkedTg = (int)($Session['Telegram_ID'] ?? 0);
 if ($UUID !== '' && $UUID !== '_') {
@@ -2076,8 +2081,274 @@ private static function ping(): void {
 self::ok([
 'time' => gmdate('c'),
 'version' => '4',
-'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase', 'activity_monitor', 'support_report'],
+'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase', 'activity_monitor', 'support_report', 'app_announcement', 'security_alert'],
+'announcement' => self::announcementPayload(),
 ]);
+}
+
+private static function announcementPayload(): array {
+if (class_exists('BotConfig') && method_exists('BotConfig', 'getAppAnnouncement')) {
+return BotConfig::getAppAnnouncement();
+}
+$Channel = (class_exists('BotConfig') && method_exists('BotConfig', 'getChannelUrl'))
+? BotConfig::getChannelUrl()
+: 'https://t.me/UmbrellaVPN_Channel';
+return [
+'enabled' => true,
+'version' => 1,
+'title' => 'به کانال رسمی آمبرلا بپیوندید',
+'body' => '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
+'button_text' => 'عضویت در کانال رسمی',
+'button_url' => $Channel,
+'interval_hours' => 168,
+'starts_at' => 0,
+'updated_at' => 0,
+];
+}
+
+private static function announcement(): void {
+$Channel = (class_exists('BotConfig') && method_exists('BotConfig', 'getChannelUrl'))
+? BotConfig::getChannelUrl()
+: 'https://t.me/UmbrellaVPN_Channel';
+self::ok([
+'announcement' => self::announcementPayload(),
+'channel_url' => $Channel,
+'checked_at' => gmdate('c'),
+]);
+}
+
+private static function securityAlert(array $Body): void {
+self::ok(self::processSecurityAlert($Body));
+}
+
+private static function processSecurityAlert(array $Body): array {
+$Token = trim((string)($Body['token'] ?? self::bearer()));
+$RawDeviceId = trim((string)($Body['device_id'] ?? ''));
+$DeviceName = trim((string)($Body['device_name'] ?? ''));
+$Platform = trim((string)($Body['platform'] ?? ''));
+$RawThreats = is_array($Body['threats'] ?? null) ? $Body['threats'] : [];
+$RawResolved = is_array($Body['resolved_keys'] ?? null) ? $Body['resolved_keys'] : [];
+
+$Db = Database::getInstance();
+$Session = $Token !== '' ? self::sessionRow($Token) : null;
+$EffectiveDeviceId = $Session !== null
+? (string)($Session['Device_ID'] ?? '')
+: self::safeDeviceId($RawDeviceId);
+
+if ($EffectiveDeviceId === '') {
+self::fail(422, 'invalid_device', 'شناسه دستگاه ارسال نشد.');
+}
+
+$UUID = trim((string)($Session['User_UUID'] ?? ''));
+$TelegramId = (int)($Session['Telegram_ID'] ?? 0);
+$DeviceRow = $Db->fetch(
+'SELECT `ID`, `Device_ID`, `User_UUID`, `Telegram_ID`, `Device_Name`, `Platform`, `Is_Trusted` FROM `App_Devices` WHERE `Device_ID` = ? LIMIT 1',
+[$EffectiveDeviceId]
+);
+
+if ($Session === null) {
+if ($DeviceRow === null || (int)($DeviceRow['Is_Trusted'] ?? 0) !== 1) {
+return [
+'stored' => 0,
+'notified' => false,
+'new_threats' => 0,
+'reason' => 'unlinked_device',
+];
+}
+if ($UUID === '') {
+$UUID = trim((string)($DeviceRow['User_UUID'] ?? ''));
+}
+if ($TelegramId <= 0) {
+$TelegramId = (int)($DeviceRow['Telegram_ID'] ?? 0);
+}
+}
+
+if ($TelegramId <= 0 && $UUID !== '' && $UUID !== '_') {
+$TelegramId = self::autoLinkTelegramOwner($EffectiveDeviceId, $UUID, 0);
+if ($TelegramId <= 0) {
+$LinkedUser = self::resolveBotUser($UUID, 0);
+$TelegramId = (int)($LinkedUser['Telegram_ID'] ?? 0);
+}
+}
+
+if ($DeviceName === '' && $DeviceRow !== null) {
+$DeviceName = trim((string)($DeviceRow['Device_Name'] ?? ''));
+}
+if ($Platform === '' && $DeviceRow !== null) {
+$Platform = trim((string)($DeviceRow['Platform'] ?? ''));
+}
+
+$Now = time();
+$Cooldown = 86400; // 24 hours per threat key per device to prevent spam
+
+$ResolvedKeys = [];
+foreach ($RawResolved as $RK) {
+$CleanKey = mb_substr(trim((string)$RK), 0, 180);
+if ($CleanKey !== '') {
+$ResolvedKeys[] = $CleanKey;
+}
+}
+if ($ResolvedKeys !== []) {
+$Marks = implode(',', array_fill(0, count($ResolvedKeys), '?'));
+$Db->execute(
+"UPDATE `App_Security_Alerts` SET `Resolved` = 1 WHERE `Device_ID` = ? AND `Threat_Key` IN ({$Marks})",
+array_merge([$EffectiveDeviceId], $ResolvedKeys)
+);
+}
+
+$NormalizedThreats = [];
+$SeenKeys = [];
+foreach ($RawThreats as $Item) {
+if (!is_array($Item)) {
+continue;
+}
+$Key = mb_substr(trim((string)($Item['key'] ?? '')), 0, 180);
+$Name = mb_substr(trim(Helper::stripZwnj((string)($Item['name'] ?? ''))), 0, 180);
+if ($Key === '' || $Name === '' || isset($SeenKeys[$Key])) {
+continue;
+}
+$SeenKeys[$Key] = true;
+$Category = strtolower(trim((string)($Item['category'] ?? 'malware')));
+if (!in_array($Category, ['malware', 'conflicting_vpn', 'adware', 'suspicious'], true)) {
+$Category = 'malware';
+}
+$Severity = strtolower(trim((string)($Item['severity'] ?? 'high')));
+if (!in_array($Severity, ['critical', 'high', 'medium', 'low'], true)) {
+$Severity = 'high';
+}
+$Target = mb_substr(trim((string)($Item['target'] ?? '')), 0, 240);
+$NormalizedThreats[] = [
+'key' => $Key,
+'name' => $Name,
+'category' => $Category,
+'severity' => $Severity,
+'target' => $Target,
+];
+}
+
+if (!empty($Body['sync_all'])) {
+if ($NormalizedThreats === []) {
+$Db->execute('UPDATE `App_Security_Alerts` SET `Resolved` = 1 WHERE `Device_ID` = ?', [$EffectiveDeviceId]);
+} else {
+$ActiveKeys = array_column($NormalizedThreats, 'key');
+$Marks = implode(',', array_fill(0, count($ActiveKeys), '?'));
+$Db->execute(
+"UPDATE `App_Security_Alerts` SET `Resolved` = 1 WHERE `Device_ID` = ? AND `Threat_Key` NOT IN ({$Marks})",
+array_merge([$EffectiveDeviceId], $ActiveKeys)
+);
+}
+}
+
+$ToNotify = [];
+$StoredCount = 0;
+foreach ($NormalizedThreats as $Threat) {
+$Existing = $Db->fetch(
+'SELECT `ID`, `Last_Notified_At`, `Resolved` FROM `App_Security_Alerts` WHERE `Device_ID` = ? AND `Threat_Key` = ? LIMIT 1',
+[$EffectiveDeviceId, $Threat['key']]
+);
+$ShouldNotify = $Existing === null
+|| (int)($Existing['Resolved'] ?? 0) === 1
+|| (int)($Existing['Last_Notified_At'] ?? 0) <= 0
+|| ($Now - (int)($Existing['Last_Notified_At'] ?? 0)) >= $Cooldown;
+
+$Db->execute(
+'INSERT INTO `App_Security_Alerts`
+(`Device_ID`, `User_UUID`, `Telegram_ID`, `Threat_Key`, `Threat_Name`, `Category`, `Severity`, `Target`, `First_Detected_At`, `Last_Detected_At`, `Last_Notified_At`, `Hit_Count`, `Resolved`)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 0)
+ON DUPLICATE KEY UPDATE
+`User_UUID` = COALESCE(NULLIF(VALUES(`User_UUID`), \'\'), `User_UUID`),
+`Telegram_ID` = COALESCE(NULLIF(VALUES(`Telegram_ID`), 0), `Telegram_ID`),
+`Threat_Name` = VALUES(`Threat_Name`),
+`Category` = VALUES(`Category`),
+`Severity` = VALUES(`Severity`),
+`Target` = VALUES(`Target`),
+`Last_Detected_At` = VALUES(`Last_Detected_At`),
+`Hit_Count` = `Hit_Count` + 1,
+`Resolved` = 0',
+[
+$EffectiveDeviceId,
+$UUID !== '' ? $UUID : null,
+$TelegramId > 0 ? $TelegramId : null,
+$Threat['key'],
+$Threat['name'],
+$Threat['category'],
+$Threat['severity'],
+$Threat['target'],
+$Now,
+$Now,
+]
+);
+$StoredCount++;
+if ($ShouldNotify) {
+$ToNotify[] = $Threat;
+}
+}
+
+$Notified = false;
+if ($ToNotify !== [] && $TelegramId > 0) {
+$User = Repository::getUser($TelegramId);
+$ChatId = (int)($User['Chat_ID'] ?? 0);
+if ($ChatId <= 0) {
+$ChatId = $TelegramId;
+}
+$UserName = trim((string)($User['Full_Name'] ?? ($User['First_Name'] ?? 'کاربر')));
+if ($UserName === '') {
+$UserName = 'کاربر';
+}
+$PlatLabel = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($Platform) : ($Platform !== '' ? $Platform : 'دستگاه');
+$DevLabel = $DeviceName !== '' ? $DeviceName . ' (' . $PlatLabel . ')' : $PlatLabel;
+$TimeLabel = method_exists('Helper', 'formatPersianDate') ? Helper::formatPersianDate($Now, true) : gmdate('Y-m-d H:i', $Now);
+
+$MsgLines = [
+Helper::frame('کاربر', $UserName, 'هشدار امنیتی دستگاه', $TelegramId),
+'🛡 <b>هشدار فوری سپر امنیتی آمبرلا</b>',
+'💻 دستگاه: <b>' . self::supportEsc($DevLabel) . '</b>',
+'🕒 زمان شناسایی: <b>' . self::supportEsc($TimeLabel) . '</b>',
+'',
+'⚠️ <b>موارد مخرب یا ناسازگار شناسایی شده:</b>',
+];
+foreach (array_slice($ToNotify, 0, 8) as $Item) {
+$CatText = match($Item['category']) {
+'conflicting_vpn' => 'فیلترشکن ناسازگار / رقیب',
+'adware' => 'تبلیغ افزار مزاحم',
+'suspicious' => 'فایل یا سرویس مشکوک',
+default => 'بدافزار / ابزار مخرب',
+};
+$MsgLines[] = '• <b>' . self::supportEsc($Item['name']) . '</b> (' . $CatText . ')';
+if ($Item['target'] !== '') {
+$MsgLines[] = '  مسیر/شناسه: <code>' . self::supportEsc(mb_substr($Item['target'], 0, 120)) . '</code>';
+}
+}
+if (count($ToNotify) > 8) {
+$MsgLines[] = '… و ' . (count($ToNotify) - 8) . ' مورد دیگر';
+}
+$MsgLines[] = '';
+$MsgLines[] = '🔒 برای محافظت از امنیت حساب و جلوگیری از تداخل شبکه، اتصال آمبرلا تا پاکسازی موارد بالا مسدود است. از بخش <b>سپر امنیتی</b> داخل برنامه آمبرلا نسبت به حذف آن اقدام کنید.';
+
+$Message = implode("\n", $MsgLines);
+try {
+if (TelegramClient::sendReadableMessage($ChatId, null, $Message, TelegramClient::inlineKeyboard([Menu::userHome()]))) {
+$Notified = true;
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][SecurityAlert] telegram send failed: ' . $Error->getMessage());
+}
+
+if ($Notified) {
+$NotifiedKeys = array_column($ToNotify, 'key');
+$Marks = implode(',', array_fill(0, count($NotifiedKeys), '?'));
+$Db->execute(
+"UPDATE `App_Security_Alerts` SET `Last_Notified_At` = ? WHERE `Device_ID` = ? AND `Threat_Key` IN ({$Marks})",
+array_merge([$Now, $EffectiveDeviceId], $NotifiedKeys)
+);
+}
+}
+
+return [
+'stored' => $StoredCount,
+'new_threats' => count($ToNotify),
+'notified' => $Notified,
+];
 }
 
 /*
@@ -2675,7 +2946,7 @@ return $Data;
 $Opaque_Keys = [
 'token' => true, 'secret' => true, 'challenge' => true, 'device_id' => true,
 'uuid' => true, 'sub_url' => true, 'subscription_url' => true, 'account_base' => true,
-'content' => true, 'url' => true,
+'content' => true, 'url' => true, 'button_url' => true,
 'emergency_url' => true, 'channel_url' => true, 'support_url' => true,
 ];
 $Persian_Prose_Keys = [

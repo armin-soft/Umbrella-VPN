@@ -1623,6 +1623,7 @@ class SessionData {
     required this.account,
     required this.filter,
     this.offers = SubscriptionOffers.empty,
+    this.announcement,
     this.signedInAt,
   });
 
@@ -1632,6 +1633,7 @@ class SessionData {
   final Account account;
   final FilterSettings filter;
   final SubscriptionOffers offers;
+  final AppAnnouncement? announcement;
   final DateTime? signedInAt;
 
   /// کلید پایدار مالک نشست برای تفکیک تاریخچه اعلان ها بین حساب های متفاوت.
@@ -1647,6 +1649,7 @@ class SessionData {
     Account? account,
     FilterSettings? filter,
     SubscriptionOffers? offers,
+    AppAnnouncement? announcement,
   }) {
     return SessionData(
       token: token,
@@ -1655,6 +1658,7 @@ class SessionData {
       account: account ?? this.account,
       filter: filter ?? this.filter,
       offers: offers ?? this.offers,
+      announcement: announcement ?? this.announcement,
       signedInAt: signedInAt,
     );
   }
@@ -1666,10 +1670,12 @@ class SessionData {
         'account': account.toJson(),
         'filter': filter.toJson(),
         'offers': offers.toJson(),
+        if (announcement != null) 'announcement': announcement!.toJson(),
         'signed_in_at': signedInAt?.toIso8601String(),
       };
 
   factory SessionData.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
     return SessionData(
       token: JsonX.text(json['token']),
       uuid: JsonX.text(json['uuid']),
@@ -1677,9 +1683,310 @@ class SessionData {
       account: Account.fromJson(JsonX.asMap(json['account'])),
       filter: FilterSettings.fromJson(JsonX.asMap(json['filter'])),
       offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
+      announcement:
+          annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
       signedInAt: JsonX.dateTime(json['signed_in_at']),
     );
   }
+}
+
+/// اعلان پویای داخل برنامه (مدیریت شده از پنل ادمین ربات تلگرام).
+class AppAnnouncement {
+  const AppAnnouncement({
+    this.enabled = true,
+    this.version = 1,
+    required this.title,
+    required this.body,
+    required this.buttonText,
+    required this.buttonUrl,
+    this.intervalHours = 168,
+    this.startsAt = 0,
+    this.updatedAt = 0,
+  });
+
+  final bool enabled;
+  final int version;
+  final String title;
+  final String body;
+  final String buttonText;
+  final String buttonUrl;
+  final int intervalHours;
+  final int startsAt;
+  final int updatedAt;
+
+  static const String defaultTitle = 'به کانال رسمی آمبرلا بپیوندید';
+  static const String defaultBody =
+      '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.';
+  static const String defaultButtonText = 'عضویت در کانال رسمی';
+
+  static AppAnnouncement fallback() => AppAnnouncement(
+        enabled: true,
+        version: 1,
+        title: defaultTitle,
+        body: defaultBody,
+        buttonText: defaultButtonText,
+        buttonUrl: AppConfig.channelUrl,
+        intervalHours: 168,
+        startsAt: 0,
+        updatedAt: 0,
+      );
+
+  bool get isScheduledInFuture =>
+      startsAt > 0 &&
+      DateTime.now().toUtc().millisecondsSinceEpoch < startsAt * 1000;
+
+  bool get isDefaultChannelLink {
+    final String lower = buttonUrl.trim().toLowerCase();
+    return lower.isEmpty ||
+        lower == AppConfig.channelUrl.toLowerCase() ||
+        lower.contains('t.me/${AppConfig.channelUsername.toLowerCase()}') ||
+        lower.contains('domain=${AppConfig.channelUsername.toLowerCase()}');
+  }
+
+  String get displaySubtitleHandle {
+    final Uri? parsed = Uri.tryParse(buttonUrl.trim());
+    if (parsed == null) return AppConfig.channelHandle;
+    if ((parsed.host == 't.me' || parsed.host == 'telegram.me') &&
+        parsed.pathSegments.isNotEmpty &&
+        !parsed.pathSegments.first.startsWith('+')) {
+      return '@${parsed.pathSegments.first}';
+    }
+    if (parsed.host.isNotEmpty) {
+      return parsed.host;
+    }
+    return AppConfig.channelHandle;
+  }
+
+  bool sameContentAs(AppAnnouncement other) =>
+      enabled == other.enabled &&
+      version == other.version &&
+      title == other.title &&
+      body == other.body &&
+      buttonText == other.buttonText &&
+      buttonUrl == other.buttonUrl &&
+      intervalHours == other.intervalHours &&
+      startsAt == other.startsAt;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'enabled': enabled,
+        'version': version,
+        'title': title,
+        'body': body,
+        'button_text': buttonText,
+        'button_url': buttonUrl,
+        'interval_hours': intervalHours,
+        'starts_at': startsAt,
+        'updated_at': updatedAt,
+      };
+
+  factory AppAnnouncement.fromJson(Map<String, dynamic> json) {
+    if (json.isEmpty) return fallback();
+    final String title = JsonX.text(json['title'], defaultTitle).trim();
+    final String body = JsonX.text(json['body'], defaultBody).trim();
+    final String buttonText =
+        JsonX.text(json['button_text'], defaultButtonText).trim();
+    final String buttonUrl =
+        JsonX.text(json['button_url'], AppConfig.channelUrl).trim();
+    final int version = JsonX.integer(json['version'], 1);
+    final int interval = JsonX.integer(json['interval_hours'], 168);
+    return AppAnnouncement(
+      enabled: json.containsKey('enabled') ? JsonX.boolean(json['enabled']) : true,
+      version: version < 1 ? 1 : version,
+      title: title.isEmpty ? defaultTitle : title,
+      body: body.isEmpty ? defaultBody : body,
+      buttonText: buttonText.isEmpty ? defaultButtonText : buttonText,
+      buttonUrl: buttonUrl.isEmpty ? AppConfig.channelUrl : buttonUrl,
+      intervalHours: interval < 0 ? 0 : (interval > 8760 ? 8760 : interval),
+      startsAt: JsonX.integer(json['starts_at']),
+      updatedAt: JsonX.integer(json['updated_at']),
+    );
+  }
+}
+
+/// مشخصات یک برنامه نصب شده یا در حال اجرا روی دستگاه کاربر (برای انتخاب در قوانین مسیریابی).
+class InstalledAppInfo {
+  const InstalledAppInfo({
+    required this.name,
+    required this.processName,
+    this.path = '',
+    this.publisher = '',
+    this.running = false,
+  });
+
+  final String name;
+  final String processName;
+  final String path;
+  final String publisher;
+  final bool running;
+
+  String get ruleTarget => processName.isNotEmpty ? processName : path;
+
+  factory InstalledAppInfo.fromMap(Map<String, dynamic> map) => InstalledAppInfo(
+        name: JsonX.text(map['name']),
+        processName: JsonX.text(map['processName'], JsonX.text(map['packageName'])),
+        path: JsonX.text(map['path']),
+        publisher: JsonX.text(map['publisher']),
+        running: JsonX.boolean(map['running']),
+      );
+}
+
+/// یک تهدید امنیتی یا وی پی ان ناسازگار کشف شده روی دستگاه کاربر.
+class SecurityThreat {
+  const SecurityThreat({
+    required this.key,
+    required this.name,
+    required this.category,
+    required this.severity,
+    required this.target,
+    required this.detail,
+    this.remediationKind = 'process',
+    this.path = '',
+    this.processName = '',
+    this.packageName = '',
+    this.uninstallCmd = '',
+    this.registryRoot = '',
+    this.registryPath = '',
+    this.registryValue = '',
+    this.sha256 = '',
+    this.active = false,
+    this.signedValid = false,
+    this.blockedByPolicy = true,
+  });
+
+  final String key;
+  final String name;
+  final String category; // malware | conflicting_vpn | adware | suspicious
+  final String severity; // critical | high | medium
+  final String target;
+  final String detail;
+  final String remediationKind;
+  final String path;
+  final String processName;
+  final String packageName;
+  final String uninstallCmd;
+  final String registryRoot;
+  final String registryPath;
+  final String registryValue;
+  final String sha256;
+  final bool active;
+  final bool signedValid;
+  final bool blockedByPolicy;
+
+  bool get isConflictingVpn => category == 'conflicting_vpn';
+  bool get isMalware => category == 'malware';
+
+  String get categoryLabelFa {
+    switch (category) {
+      case 'malware':
+        return 'بدافزار / ابزار مخرب';
+      case 'conflicting_vpn':
+        return 'فیلترشکن ناسازگار';
+      case 'adware':
+        return 'تبلیغ افزار / سوءاستفاده ترافیک';
+      default:
+        return 'برنامه پرخطر';
+    }
+  }
+
+  Map<String, dynamic> toNativePayload() => <String, dynamic>{
+        'key': key,
+        'name': name,
+        'category': category,
+        'remediationKind': remediationKind,
+        'path': path,
+        'processName': processName,
+        'packageName': packageName,
+        'uninstallCmd': uninstallCmd,
+        'registryRoot': registryRoot,
+        'registryPath': registryPath,
+        'registryValue': registryValue,
+      };
+
+  Map<String, dynamic> toAlertPayload() => <String, dynamic>{
+        'key': key,
+        'name': name,
+        'category': category,
+        'severity': severity,
+        'target': target,
+      };
+
+  factory SecurityThreat.fromJson(Map<String, dynamic> map) => SecurityThreat(
+        key: JsonX.text(map['key']),
+        name: JsonX.text(map['name']),
+        category: JsonX.text(map['category'], 'suspicious'),
+        severity: JsonX.text(map['severity'], 'high'),
+        target: JsonX.text(map['target']),
+        detail: JsonX.text(map['detail']),
+        remediationKind: JsonX.text(map['remediationKind'], 'process'),
+        path: JsonX.text(map['path']),
+        processName: JsonX.text(map['processName']),
+        packageName: JsonX.text(map['packageName']),
+        uninstallCmd: JsonX.text(map['uninstallCmd']),
+        registryRoot: JsonX.text(map['registryRoot']),
+        registryPath: JsonX.text(map['registryPath']),
+        registryValue: JsonX.text(map['registryValue']),
+        sha256: JsonX.text(map['sha256']),
+        active: JsonX.boolean(map['active']),
+        signedValid: JsonX.boolean(map['signedValid']),
+        blockedByPolicy: JsonX.boolean(map['blockedByPolicy'], fallback: true),
+      );
+}
+
+class SecurityScanResult {
+  const SecurityScanResult({
+    this.clean = true,
+    this.scannedProcesses = 0,
+    this.scannedApps = 0,
+    this.scannedFiles = 0,
+    this.scannedAtMs = 0,
+    this.threats = const <SecurityThreat>[],
+  });
+
+  final bool clean;
+  final int scannedProcesses;
+  final int scannedApps;
+  final int scannedFiles;
+  final int scannedAtMs;
+  final List<SecurityThreat> threats;
+
+  bool get hasThreats => threats.isNotEmpty;
+
+  factory SecurityScanResult.fromJson(Map<String, dynamic> map) {
+    final List<SecurityThreat> items = JsonX.asList(map['threats'])
+        .map((Object? item) => SecurityThreat.fromJson(JsonX.asMap(item)))
+        .where((SecurityThreat t) => t.key.isNotEmpty)
+        .toList();
+    return SecurityScanResult(
+      clean: items.isEmpty && JsonX.boolean(map['clean'], fallback: true),
+      scannedProcesses: JsonX.integer(map['scannedProcesses']),
+      scannedApps: JsonX.integer(map['scannedApps']),
+      scannedFiles: JsonX.integer(map['scannedFiles']),
+      scannedAtMs: JsonX.integer(map['scannedAtMs']),
+      threats: items,
+    );
+  }
+}
+
+class RemediationResult {
+  const RemediationResult({
+    this.ok = false,
+    this.actionTaken = false,
+    this.stillPresent = false,
+    this.message = '',
+  });
+
+  final bool ok;
+  final bool actionTaken;
+  final bool stillPresent;
+  final String message;
+
+  factory RemediationResult.fromJson(Map<String, dynamic> map) =>
+      RemediationResult(
+        ok: JsonX.boolean(map['ok']),
+        actionTaken: JsonX.boolean(map['actionTaken']),
+        stillPresent: JsonX.boolean(map['stillPresent']),
+        message: JsonX.text(map['message']),
+      );
 }
 
 class AppNotification {

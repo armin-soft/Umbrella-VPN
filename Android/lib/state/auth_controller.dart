@@ -349,6 +349,12 @@ class AuthController extends ChangeNotifier {
   /// شخصی کاربر بی درنگ دریافت شوند.
   Future<void> Function()? onSubscriptionClaimed;
 
+  /// وقتی تنظیمات اعلان داخل برنامه از سرور دریافت یا به روزرسانی شد صدا زده می شود.
+  void Function(AppAnnouncement announcement)? onAnnouncementUpdated;
+
+  AppAnnouncement _announcement = AppAnnouncement.fallback();
+  AppAnnouncement get announcement => _announcement;
+
   bool _cancellingSignIn = false;
   Timer? _pollTimer;
   Timer? _clockTimer;
@@ -383,12 +389,21 @@ class AuthController extends ChangeNotifier {
     for (final AppNotification item in _notifications) {
       _announced.add(_keyOf(item));
     }
+    final Map<String, dynamic> annState =
+        _store.readJson(StoreKeys.appAnnouncementState);
+    final Map<String, dynamic> cachedAnn = JsonX.asMap(annState['cached']);
+    if (cachedAnn.isNotEmpty) {
+      _announcement = AppAnnouncement.fromJson(cachedAnn);
+    }
     final Map<String, dynamic> json = _store.readJson(StoreKeys.session);
     if (json.isNotEmpty) {
       _session = SessionData.fromJson(json);
       if (_session!.token.isEmpty) {
         _session = null;
       } else {
+        if (_session!.announcement != null) {
+          await _applyAnnouncement(_session!.announcement, notify: false);
+        }
         _phase = AuthPhase.done;
         _phone = _session!.account.phone;
         await _syncNotificationOwner(_session!.ownerKey);
@@ -397,7 +412,39 @@ class AuthController extends ChangeNotifier {
         unawaited(refreshAccount(silent: true).then<void>((_) {}));
       }
     }
+    unawaited(syncAnnouncement());
     notifyListeners();
+  }
+
+  Future<void> _applyAnnouncement(
+    AppAnnouncement? incoming, {
+    bool notify = true,
+  }) async {
+    if (incoming == null) return;
+    final bool changed = !_announcement.sameContentAs(incoming);
+    _announcement = incoming;
+    final Map<String, dynamic> state = Map<String, dynamic>.from(
+      _store.readJson(StoreKeys.appAnnouncementState),
+    );
+    state['cached'] = incoming.toJson();
+    await _store.writeJson(StoreKeys.appAnnouncementState, state);
+    if (changed) {
+      onAnnouncementUpdated?.call(incoming);
+      if (notify) {
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> syncAnnouncement() async {
+    try {
+      final AppAnnouncement? latest = await _gateway.fetchAnnouncement();
+      if (latest != null) {
+        await _applyAnnouncement(latest);
+      }
+    } catch (_) {
+      // دریافت اعلان در پس زمینه بی صدا است.
+    }
   }
 
   String _generateDeviceId() {
@@ -680,6 +727,9 @@ class AuthController extends ChangeNotifier {
       _phone = session.account.phone.isNotEmpty ? session.account.phone : _phone;
       _historySynced = false;
       await _syncNotificationOwner(session.ownerKey);
+      if (session.announcement != null) {
+        await _applyAnnouncement(session.announcement, notify: false);
+      }
       await _store.writeJson(StoreKeys.session, session.toJson());
       await _store.writeJson(StoreKeys.filter, session.filter.toJson());
       onFilterChanged?.call(session.filter);
@@ -799,6 +849,7 @@ class AuthController extends ChangeNotifier {
         SubscriptionOffers? offers,
         bool? emergencyEnabled,
         bool? botLinked,
+        AppAnnouncement? announcement,
       }) beat = await _gateway.heartbeat(
         token: session.token,
         deviceId: _deviceId,
@@ -812,6 +863,9 @@ class AuthController extends ChangeNotifier {
       );
       if (pendingActivity.isNotEmpty) {
         ActivityMonitorBuffer.instance.confirmSent(pendingActivity);
+      }
+      if (beat.announcement != null) {
+        await _applyAnnouncement(beat.announcement);
       }
       await _applyLiveServerState(
         account: beat.account,
@@ -1004,7 +1058,11 @@ class AuthController extends ChangeNotifier {
         account: preserved,
         filter: fresh.filter,
         offers: fresh.offers,
+        announcement: fresh.announcement,
       );
+      if (fresh.announcement != null) {
+        await _applyAnnouncement(fresh.announcement, notify: false);
+      }
       await _syncNotificationOwner(_session!.ownerKey);
       await _store.writeJson(StoreKeys.session, _session!.toJson());
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());

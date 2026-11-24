@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/security_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
@@ -17,6 +18,7 @@ import '../widgets/common.dart';
 import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 import '../widgets/quick_connection_panel.dart';
+import '../widgets/security_shield_dialog.dart';
 
 /// صفحه اصلی اتصال؛ وضعیت و کنترل اتصال را در اولویت نگه می دارد.
 ///
@@ -255,6 +257,9 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     if (outcome.ok) {
       toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
+    } else if (outcome.needsSecurityCleanup) {
+      toasts.error('سپر امنیتی اتصال را مسدود کرد', outcome.message);
+      unawaited(SecurityShieldDialog.show(context));
     } else if (!outcome.cancelled) {
       toasts.error('اتصال برقرار نشد', outcome.message);
     }
@@ -294,6 +299,8 @@ class _ConnectPageState extends State<ConnectPage> {
     final AuthController auth = context.watch<AuthController>();
     final SettingsController settings = context.watch<SettingsController>();
     final SubscriptionController subs = context.watch<SubscriptionController>();
+    final SecurityScannerController? security =
+        context.watch<SecurityScannerController?>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
     final VpnStatus status = vpn.status;
@@ -305,6 +312,7 @@ class _ConnectPageState extends State<ConnectPage> {
     final String flagCode = _flagForIp(vpn, connected, shownIp);
     final String countryName = CountryNames.fa(flagCode);
     final bool hasAccessBanner = !account.canConnect;
+    final bool hasSecurityBlock = security?.hasThreats ?? false;
     final bool hasOccasionBanner = OccasionService.instance.active != null;
 
     return LayoutBuilder(
@@ -409,6 +417,8 @@ class _ConnectPageState extends State<ConnectPage> {
                 runSpacing: AppMetrics.space1,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
+                  if (security != null)
+                    const SecurityStatusBadge(dense: true),
                   ipBadge,
                   if (subs.needsLogin)
                     Pill(
@@ -433,12 +443,31 @@ class _ConnectPageState extends State<ConnectPage> {
                       dense: landscapeSplit,
                     ),
                   ],
+                  if (security != null && landscapeSplit) ...<Widget>[
+                    const SizedBox(width: AppMetrics.space2),
+                    const SecurityStatusBadge(dense: true),
+                  ],
                   const SizedBox(width: AppMetrics.space2),
                   ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth: innerWidth * 0.44,
                     ),
-                    child: ipBadge,
+                    child: landscapeSplit
+                        ? ipBadge
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              if (security != null) ...<Widget>[
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: SecurityStatusBadge(dense: phoneSized),
+                                ),
+                                const SizedBox(height: AppMetrics.space1),
+                              ],
+                              ipBadge,
+                            ],
+                          ),
                   ),
                 ],
               ),
@@ -456,6 +485,17 @@ class _ConnectPageState extends State<ConnectPage> {
                   ),
                 ),
             ],
+            if (hasSecurityBlock)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: landscapeSplit ? AppMetrics.space1 : AppMetrics.space2,
+                ),
+                child: _SecurityBlockBanner(
+                  threats: security!.threats,
+                  dense: phoneSized || landscapeSplit,
+                  onOpenShield: () => SecurityShieldDialog.show(context),
+                ),
+              ),
             if (hasAccessBanner)
               Padding(
                 padding: EdgeInsets.only(
@@ -1139,6 +1179,92 @@ class _PingLine extends StatelessWidget {
               ),
         ),
       ],
+    );
+  }
+}
+
+/// بنر هشدار سپر امنیتی هنگام شناسایی بدافزار یا VPN ناسازگار روی گوشی.
+class _SecurityBlockBanner extends StatelessWidget {
+  const _SecurityBlockBanner({
+    required this.threats,
+    required this.onOpenShield,
+    this.dense = false,
+  });
+
+  final List<SecurityThreat> threats;
+  final VoidCallback onOpenShield;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String names = threats.take(2).map((SecurityThreat t) => t.name).join('، ');
+    final String extra = threats.length > 2
+        ? ' و ${Fa.num(threats.length - 2)} مورد دیگر'
+        : '';
+    return Container(
+      key: const ValueKey<String>('connect-security-banner'),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? AppMetrics.space2 + 2 : AppMetrics.space3,
+        vertical: dense ? AppMetrics.space1 + 2 : AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.danger.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: colors.danger.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.gpp_bad_rounded,
+            size: dense ? AppMetrics.iconSm : AppMetrics.iconMd,
+            color: colors.danger,
+          ),
+          const SizedBox(width: AppMetrics.space2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'سپر امنیتی اتصال را مسدود کرده است',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontSize: dense ? AppMetrics.fontCaption : null,
+                        fontWeight: FontWeight.w800,
+                        color: colors.danger,
+                      ),
+                ),
+                Text(
+                  'برنامه ناسازگار یا مخرب شناسایی شد: $names$extra',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppMetrics.space2),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.danger,
+              foregroundColor: colors.onPrimary,
+              padding: EdgeInsets.symmetric(
+                horizontal: dense ? 8 : 12,
+                vertical: dense ? 4 : 8,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: const Icon(Icons.cleaning_services_rounded, size: 15),
+            label: const Text('حذف و رفع مسدودی'),
+            onPressed: onOpenShield,
+          ),
+        ],
+      ),
     );
   }
 }

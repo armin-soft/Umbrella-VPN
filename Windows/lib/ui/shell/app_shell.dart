@@ -76,6 +76,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
+    final AuthController? auth = context.read<AuthController?>();
+    if (auth != null) {
+      auth.onAnnouncementUpdated = (AppAnnouncement _) {
+        if (mounted) {
+          unawaited(_maybeShowTelegramChannelPrompt());
+        }
+      };
+    }
     _telegramInitTimer = Timer(const Duration(milliseconds: 550), () {
       unawaited(_maybeShowTelegramChannelPrompt());
     });
@@ -125,7 +133,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     _telegramPromptOpen = true;
     try {
-      await TelegramChannelPrompt.showIfDue(context);
+      final AuthController? auth = context.read<AuthController?>();
+      if (auth != null) {
+        await TelegramChannelPrompt.showAnnouncementIfDue(
+          context,
+          announcement: auth.announcement,
+        );
+      } else {
+        await TelegramChannelPrompt.showIfDue(context);
+      }
     } catch (_) {
       // خطای احتمالی انبار محلی هرگز نباید کار پوسته اصلی را متوقف کند.
     } finally {

@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/security_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/update_controller.dart';
@@ -48,6 +49,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _telegramPromptOpen = false;
   Timer? _telegramInitTimer;
   Timer? _telegramPeriodicTimer;
+  AuthController? _boundAuth;
 
   static const List<NavDestination> _destinations = <NavDestination>[
     NavDestination(label: 'اتصال', icon: Icons.shield_outlined, activeIcon: Icons.shield_rounded),
@@ -78,6 +80,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final AuthController? auth = context.read<AuthController?>();
+    if (!identical(_boundAuth, auth)) {
+      if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
+        _boundAuth?.onAnnouncementUpdated = null;
+      }
+      _boundAuth = auth;
+      if (auth != null) {
+        auth.onAnnouncementUpdated = _onAnnouncementUpdated;
+      }
+    }
     if (_assetsPrecached) {
       return;
     }
@@ -92,8 +104,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  void _onAnnouncementUpdated(AppAnnouncement _) {
+    unawaited(_maybeShowTelegramChannelPrompt());
+  }
+
   @override
   void dispose() {
+    if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
+      _boundAuth?.onAnnouncementUpdated = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _telegramInitTimer?.cancel();
     _telegramPeriodicTimer?.cancel();
@@ -113,7 +132,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     _telegramPromptOpen = true;
     try {
-      await TelegramChannelPrompt.showIfDue(context);
+      final AuthController? auth = context.read<AuthController?>();
+      if (auth != null) {
+        await TelegramChannelPrompt.showAnnouncementIfDue(
+          context,
+          announcement: auth.announcement,
+        );
+      } else {
+        await TelegramChannelPrompt.showIfDue(context);
+      }
     } catch (_) {
       // خطای احتمالی انبار محلی هرگز نباید کار پوسته اصلی را متوقف کند.
     } finally {
@@ -159,6 +186,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       _triggerAutoSync();
+      final AuthController? auth = context.read<AuthController?>();
+      if (auth != null) {
+        unawaited(auth.syncAnnouncement());
+      }
+      final SecurityScannerController? security =
+          context.read<SecurityScannerController?>();
+      if (security != null) {
+        unawaited(security.scanNow(silent: true));
+      }
       unawaited(_maybeShowTelegramChannelPrompt());
     }
   }

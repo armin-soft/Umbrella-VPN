@@ -1,4 +1,5 @@
 #include "umbrella_native_plugin.h"
+#include "security_scanner.h"
 #include "winhttp_client.h"
 
 #include <flutter/standard_method_codec.h>
@@ -554,6 +555,119 @@ void UmbrellaNativePlugin::HandleMethodCall(
     bool proxy = ops_.DisableSystemProxy();
     ops_.FlushDns();
     result->Success(flutter::EncodableValue(proxy));
+    return;
+  }
+  if (method == "getInstalledApps") {
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      const auto apps = SecurityScanner::Instance().CollectInstalledApps();
+      flutter::EncodableList list;
+      list.reserve(apps.size());
+      for (const auto& app : apps) {
+        flutter::EncodableMap m;
+        m[flutter::EncodableValue("name")] = flutter::EncodableValue(app.name);
+        m[flutter::EncodableValue("processName")] =
+            flutter::EncodableValue(app.process_name);
+        m[flutter::EncodableValue("path")] = flutter::EncodableValue(app.path);
+        m[flutter::EncodableValue("publisher")] =
+            flutter::EncodableValue(app.publisher);
+        m[flutter::EncodableValue("running")] =
+            flutter::EncodableValue(app.running);
+        list.push_back(flutter::EncodableValue(std::move(m)));
+      }
+      return flutter::EncodableValue(std::move(list));
+    });
+    return;
+  }
+  if (method == "pickExecutableFile") {
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      return flutter::EncodableValue(
+          SecurityScanner::Instance().PickExecutableFile());
+    });
+    return;
+  }
+  if (method == "scanDeviceSecurity") {
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      const SecurityScanReport report =
+          SecurityScanner::Instance().ScanDeviceSecurity();
+      flutter::EncodableList threats;
+      threats.reserve(report.threats.size());
+      for (const auto& item : report.threats) {
+        flutter::EncodableMap m;
+        m[flutter::EncodableValue("key")] = flutter::EncodableValue(item.key);
+        m[flutter::EncodableValue("name")] = flutter::EncodableValue(item.name);
+        m[flutter::EncodableValue("category")] =
+            flutter::EncodableValue(item.category);
+        m[flutter::EncodableValue("severity")] =
+            flutter::EncodableValue(item.severity);
+        m[flutter::EncodableValue("target")] =
+            flutter::EncodableValue(item.target);
+        m[flutter::EncodableValue("detail")] =
+            flutter::EncodableValue(item.detail);
+        m[flutter::EncodableValue("remediationKind")] =
+            flutter::EncodableValue(item.remediation_kind);
+        m[flutter::EncodableValue("path")] = flutter::EncodableValue(item.path);
+        m[flutter::EncodableValue("processName")] =
+            flutter::EncodableValue(item.process_name);
+        m[flutter::EncodableValue("uninstallCmd")] =
+            flutter::EncodableValue(item.uninstall_cmd);
+        m[flutter::EncodableValue("registryRoot")] =
+            flutter::EncodableValue(item.registry_root);
+        m[flutter::EncodableValue("registryPath")] =
+            flutter::EncodableValue(item.registry_path);
+        m[flutter::EncodableValue("registryValue")] =
+            flutter::EncodableValue(item.registry_value);
+        m[flutter::EncodableValue("sha256")] =
+            flutter::EncodableValue(item.sha256);
+        m[flutter::EncodableValue("active")] =
+            flutter::EncodableValue(item.active);
+        m[flutter::EncodableValue("signedValid")] =
+            flutter::EncodableValue(item.signed_valid);
+        m[flutter::EncodableValue("blockedByPolicy")] =
+            flutter::EncodableValue(item.blocked_by_policy);
+        threats.push_back(flutter::EncodableValue(std::move(m)));
+      }
+      flutter::EncodableMap out;
+      out[flutter::EncodableValue("clean")] =
+          flutter::EncodableValue(report.clean);
+      out[flutter::EncodableValue("scannedProcesses")] =
+          flutter::EncodableValue(report.scanned_processes);
+      out[flutter::EncodableValue("scannedApps")] =
+          flutter::EncodableValue(report.scanned_apps);
+      out[flutter::EncodableValue("scannedFiles")] =
+          flutter::EncodableValue(report.scanned_files);
+      out[flutter::EncodableValue("scannedAtMs")] =
+          flutter::EncodableValue(report.scanned_at_ms);
+      out[flutter::EncodableValue("threats")] =
+          flutter::EncodableValue(std::move(threats));
+      return flutter::EncodableValue(std::move(out));
+    });
+    return;
+  }
+  if (method == "remediateSecurityThreat") {
+    SecurityThreatEntry target;
+    target.key = StringOf(args, "key");
+    target.name = StringOf(args, "name");
+    target.category = StringOf(args, "category");
+    target.remediation_kind = StringOf(args, "remediationKind");
+    target.path = StringOf(args, "path");
+    target.process_name = StringOf(args, "processName");
+    target.uninstall_cmd = StringOf(args, "uninstallCmd");
+    target.registry_root = StringOf(args, "registryRoot");
+    target.registry_path = StringOf(args, "registryPath");
+    target.registry_value = StringOf(args, "registryValue");
+    RunOffUiThread(reply_guard_, std::move(result), [target]() {
+      const RemediationOutcome outcome =
+          SecurityScanner::Instance().RemediateThreat(target);
+      flutter::EncodableMap out;
+      out[flutter::EncodableValue("ok")] = flutter::EncodableValue(outcome.ok);
+      out[flutter::EncodableValue("actionTaken")] =
+          flutter::EncodableValue(outcome.action_taken);
+      out[flutter::EncodableValue("stillPresent")] =
+          flutter::EncodableValue(outcome.still_present);
+      out[flutter::EncodableValue("message")] =
+          flutter::EncodableValue(outcome.message);
+      return flutter::EncodableValue(std::move(out));
+    });
     return;
   }
 

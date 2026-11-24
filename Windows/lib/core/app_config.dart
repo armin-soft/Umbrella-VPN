@@ -181,6 +181,8 @@ class AppConfig {
         'auth/device',
         'account/refresh',
         'app/notifications',
+        'app/announcement',
+        'app/security-alert',
         'app/ping',
         'filter/get',
         'filter/save',

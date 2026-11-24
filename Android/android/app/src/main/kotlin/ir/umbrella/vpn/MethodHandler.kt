@@ -135,6 +135,22 @@ class MethodHandler(
                 }
                 true
             }
+            "scanDeviceSecurity" -> scope.launch {
+                result.answer(call.method) { UmbrellaSecurityScanner.scan(activity) }
+            }
+            "remediateSecurityThreat" -> result.answerNow(call.method) {
+                UmbrellaSecurityScanner.remediate(
+                    activity = activity,
+                    key = call.argument<String>("key") ?: "",
+                    remediationKind = call.argument<String>("remediationKind") ?: "",
+                    packageName = call.argument<String>("packageName") ?: "",
+                    path = call.argument<String>("path") ?: "",
+                )
+            }
+            "isPackageInstalled" -> result.answerNow(call.method) {
+                val pkg = call.argument<String>("packageName") ?: ""
+                UmbrellaSecurityScanner.isPackageInstalled(activity, pkg)
+            }
             else -> result.notImplemented()
         }
     }

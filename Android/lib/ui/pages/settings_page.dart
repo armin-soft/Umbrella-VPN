@@ -14,9 +14,9 @@ import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/advanced_network_settings.dart';
 import '../widgets/common.dart';
-import '../widgets/content_control.dart';
 import '../widgets/bypass_control.dart';
 import '../widgets/lan_sharing_dialog.dart';
+import '../widgets/security_shield_dialog.dart';
 
 /// دسته های تنظیمات برنامه اندروید.
 enum SettingsCategory {
@@ -291,6 +291,9 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle:
                 'پیکربندی عمومی، مسیریابی، دی ان اس، ورودی و ترفندهای اتصال امن',
             icon: Icons.settings_rounded,
+            actions: <Widget>[
+              SecurityStatusBadge(),
+            ],
           ),
           const SizedBox(height: AppMetrics.space4),
           GlassCard(
@@ -755,14 +758,6 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle:
               'تعیین کنید هر برنامه از تونل عبور کند، مستقیم وصل شود یا مسدود گردد',
           children: <Widget>[AdvancedNetworkSettings()],
-        ),
-        const SizedBox(height: AppMetrics.space5),
-        const _Section(
-          icon: Icons.family_restroom_rounded,
-          title: 'کنترل محتوا',
-          subtitle:
-              'فیلتر دسته بندی شده دامنه ها، هماهنگ خودکار با حساب کاربری شما',
-          children: <Widget>[ContentControlCard()],
         ),
         const SizedBox(height: AppMetrics.space5),
         const _Section(

@@ -116,6 +116,7 @@ class ConnectOutcome {
     this.needsElevation = false,
     this.needsCores = false,
     this.needsRenewal = false,
+    this.needsSecurityCleanup = false,
     this.cancelled = false,
   });
 
@@ -126,6 +127,9 @@ class ConnectOutcome {
 
   /// اشتراک کاربر اجازه اتصال نمی دهد (منقضی، مسدود یا تمام شده).
   final bool needsRenewal;
+
+  /// سپر امنیتی به دلیل وجود بدافزار یا VPN ناسازگار اتصال را مسدود کرده است.
+  final bool needsSecurityCleanup;
 
   /// کاربر خودش وسط کار دکمه لغو را زد؛ این خطا نیست و نباید پیام خطا بدهد.
   final bool cancelled;
@@ -228,6 +232,7 @@ class VpnController extends ChangeNotifier {
     this.onRequireElevation,
     this.onRequireCores,
     this.accessGuard,
+    this.securityGuard,
     this.canAutoConnect,
   })  : _native = native,
         _ip = ipService,
@@ -256,6 +261,9 @@ class VpnController extends ChangeNotifier {
   /// انجام نمی شود و همان پیام به کاربر نشان داده می شود (اشتراک منقضی،
   /// مسدود یا تمام شده).
   final String Function()? accessGuard;
+
+  /// بررسی سپر امنیتی پیش از هر اتصال برای مسدودسازی بدافزار و VPN های ناسازگار.
+  final Future<String> Function()? securityGuard;
 
   /// شرط مجاز بودن اتصال خودکار در شروع برنامه (عبور از معرفی، ورود به حساب و
   /// داشتن اشتراک سالم) تا برنامه در صفحه معرفی یا ورود هرگز خودکار وصل نشود.
@@ -1326,6 +1334,19 @@ class VpnController extends ChangeNotifier {
       _log.add('اتصال رد شد: $blocked', level: 'warning');
       _setStatus(VpnStatus.failed, blocked);
       return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
+    }
+    // سپر امنیتی همیشه فعال: در صورت وجود بدافزار یا VPN ناسازگار (مثل JumpJump یا Psiphon) اتصال مسدود می شود.
+    if (securityGuard != null) {
+      final String secBlocked = await securityGuard!();
+      if (secBlocked.isNotEmpty) {
+        _log.add('اتصال به دلیل سپر امنیتی رد شد: $secBlocked', level: 'warning');
+        _setStatus(VpnStatus.failed, secBlocked);
+        return ConnectOutcome(
+          ok: false,
+          message: secBlocked,
+          needsSecurityCleanup: true,
+        );
+      }
     }
     final String? chainError = _settings.chain.enabled ? _settings.chain.validationError : null;
     final String? routeError = _settings.appRoutes

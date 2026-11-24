@@ -8,12 +8,14 @@ import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/storage.dart';
 import '../../core/theme.dart';
+import '../../core/utils.dart';
+import '../../models/models.dart';
 import 'common.dart';
 
-/// مدیریت زمان بندی و نمایش گفت و گوی دعوت به کانال رسمی تلگرام آمبرلا.
+/// مدیریت زمان بندی و نمایش گفت و گوی اعلان پویا / دعوت به کانال رسمی تلگرام آمبرلا.
 ///
-/// در نخستین اجرای برنامه نمایش داده می شود و پس از آن دقیقاً هر ۷ روز یک بار
-/// یادآوری می کند تا کاربر از اخبار، نسخه های جدید و ترفندهای اتصال مطلع بماند.
+/// به صورت پویا از پنل ادمین ربات تلگرام قابل تنظیم است و در صورت عدم تغییر
+/// یا آفلاین بودن، از اعلان پیش فرض دعوت به کانال رسمی با چرخه ۷ روزه استفاده می کند.
 class TelegramChannelPrompt {
   const TelegramChannelPrompt._();
 
@@ -35,10 +37,110 @@ class TelegramChannelPrompt {
   }
 
   /// ثبت زمان نمایش اعلان در انبار محلی (رشته ۶۴ بیتی بر پایه ساعت جهانی).
-  static Future<void> markShown({DateTime? at, LocalStore? store}) async {
+  static Future<void> markShown({
+    DateTime? at,
+    LocalStore? store,
+    int? announcementVersion,
+  }) async {
     final LocalStore target = store ?? LocalStore.instance;
     final int epochMs = (at ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
     await target.write(StoreKeys.telegramChannelPromptAt, epochMs.toString());
+    if (announcementVersion != null) {
+      final Map<String, dynamic> state = Map<String, dynamic>.from(
+        target.readJson(StoreKeys.appAnnouncementState),
+      );
+      state['shown_version'] = announcementVersion;
+      state['shown_at_ms'] = epochMs;
+      await target.writeJson(StoreKeys.appAnnouncementState, state);
+    }
+  }
+
+  /// بررسی موعد نمایش بر پایه تنظیمات پویای اعلان دریافت شده از ربات تلگرام.
+  static Future<bool> isAnnouncementDue(
+    AppAnnouncement announcement, {
+    DateTime? now,
+    LocalStore? store,
+  }) async {
+    if (!announcement.enabled) {
+      return false;
+    }
+    final DateTime current = (now ?? DateTime.now()).toUtc();
+    if (announcement.startsAt > 0 &&
+        current.millisecondsSinceEpoch < announcement.startsAt * 1000) {
+      return false;
+    }
+    final LocalStore target = store ?? LocalStore.instance;
+    final Map<String, dynamic> state = Map<String, dynamic>.from(
+      target.readJson(StoreKeys.appAnnouncementState),
+    );
+    int shownVersion = JsonX.integer(state['shown_version']);
+    int shownAtMs = JsonX.integer(state['shown_at_ms']);
+
+    if (shownAtMs <= 0 && announcement.version == 1) {
+      final DateTime? legacy = await normalizeClockSkewIfNeeded(
+        now: current,
+        store: target,
+      );
+      if (legacy != null) {
+        shownVersion = 1;
+        shownAtMs = legacy.millisecondsSinceEpoch;
+      }
+    }
+
+    if (shownAtMs <= 0 || shownVersion != announcement.version) {
+      return true;
+    }
+    if (shownAtMs > current.millisecondsSinceEpoch) {
+      state['shown_at_ms'] = current.millisecondsSinceEpoch;
+      await target.writeJson(StoreKeys.appAnnouncementState, state);
+      return false;
+    }
+    if (announcement.intervalHours <= 0) {
+      return false;
+    }
+    final int requiredMs = announcement.intervalHours * 3600 * 1000;
+    return (current.millisecondsSinceEpoch - shownAtMs) >= requiredMs;
+  }
+
+  /// باز کردن نشانی دکمه اعلان پویا (تلگرام مستقیم یا مرورگر پیش فرض).
+  static Future<bool> openActionUrl(
+    String rawUrl, {
+    Future<bool> Function(Uri uri)? canLaunch,
+    Future<bool> Function(Uri uri, LaunchMode mode)? launch,
+  }) async {
+    final String clean = rawUrl.trim();
+    if (clean.isEmpty ||
+        clean.toLowerCase() == AppConfig.channelUrl.toLowerCase()) {
+      return openChannel(canLaunch: canLaunch, launch: launch);
+    }
+    final Future<bool> Function(Uri) check = canLaunch ?? canLaunchUrl;
+    final Future<bool> Function(Uri, LaunchMode) opener =
+        launch ?? ((Uri uri, LaunchMode mode) => launchUrl(uri, mode: mode));
+
+    final Uri? webUri = Uri.tryParse(clean);
+    if (webUri == null || !webUri.hasScheme) {
+      return openChannel(canLaunch: canLaunch, launch: launch);
+    }
+    if ((webUri.host == 't.me' || webUri.host == 'telegram.me') &&
+        webUri.pathSegments.isNotEmpty) {
+      final String first = webUri.pathSegments.first;
+      if (first.isNotEmpty &&
+          !first.startsWith('+') &&
+          first.toLowerCase() != 'joinchat') {
+        final Uri tgUri = Uri.parse('tg://resolve?domain=$first');
+        try {
+          if (await check(tgUri) &&
+              await opener(tgUri, LaunchMode.externalNonBrowserApplication)) {
+            return true;
+          }
+        } catch (_) {}
+      }
+    }
+    try {
+      return await opener(webUri, LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// اگر ساعت سیستم به عقب برگشته باشد، مبدا ذخیره شده را به زمان جاری اصلاح
@@ -60,10 +162,6 @@ class TelegramChannelPrompt {
   }
 
   /// آیا اکنون زمان نمایش اعلان عضویت در کانال فرارسیده است؟
-  ///
-  /// - اگر تاکنون نمایش داده نشده باشد (`lastShownAt == null`): `true`
-  /// - اگر دست کم ۷ روز کامل از آخرین نمایش گذشته باشد: `true`
-  /// - در غیر این صورت: `false`
   static bool isDue({required DateTime? lastShownAt, DateTime? now}) {
     if (lastShownAt == null) {
       return true;
@@ -76,8 +174,8 @@ class TelegramChannelPrompt {
     return current.difference(baseline) >= repeatInterval;
   }
 
-  /// باز کردن کانال رسمی تلگرام: ابتدا در نرم افزار تلگرام دسکتاپ (در صورت نصب
-  /// بودن روی ویندوز) و در غیر این صورت در مرورگر پیش فرض سیستم.
+  /// باز کردن کانال رسمی تلگرام: ابتدا در اپلیکیشن تلگرام اندروید و در غیر
+  /// این صورت در مرورگر پیش فرض سیستم.
   static Future<bool> openChannel({
     Future<bool> Function(Uri uri)? canLaunch,
     Future<bool> Function(Uri uri, LaunchMode mode)? launch,
@@ -106,16 +204,20 @@ class TelegramChannelPrompt {
     }
   }
 
-  /// نمایش گفت و گوی عضویت در کانال و ثبت هم زمان تاریخ نمایش برای چرخه ۷ روزه.
-  /// خروجی `true` است اگر کاربر روی عضویت در کانال کلیک کرده باشد.
+  /// نمایش گفت و گوی اعلان/عضویت و ثبت هم زمان تاریخ نمایش.
   static Future<bool> show(
     BuildContext context, {
     DateTime? now,
     LocalStore? store,
+    AppAnnouncement? announcement,
     Future<bool> Function()? onJoinLaunch,
     bool animate = true,
   }) async {
-    await markShown(at: now, store: store);
+    await markShown(
+      at: now,
+      store: store,
+      announcementVersion: announcement?.version,
+    );
     if (!context.mounted) {
       return false;
     }
@@ -136,6 +238,7 @@ class TelegramChannelPrompt {
         return SafeArea(
           child: Center(
             child: TelegramChannelDialog(
+              announcement: announcement,
               onJoinLaunch: onJoinLaunch,
               animate: animate,
             ),
@@ -165,20 +268,51 @@ class TelegramChannelPrompt {
     return joined ?? false;
   }
 
-  /// بررسی موعد ۷ روزه و نمایش خودکار گفت و گو فقط در صورت فرارسیدن زمان آن.
-  static Future<bool> showIfDue(
+  /// بررسی موعد نمایش بر پایه اعلان پویای دریافتی از سرور (مدیریت شده در ربات).
+  static Future<bool> showAnnouncementIfDue(
     BuildContext context, {
+    required AppAnnouncement announcement,
     DateTime? now,
     LocalStore? store,
     Future<bool> Function()? onJoinLaunch,
     bool animate = true,
   }) async {
-    final DateTime? lastShown = await normalizeClockSkewIfNeeded(
+    return showIfDue(
+      context,
       now: now,
       store: store,
+      announcement: announcement,
+      onJoinLaunch: onJoinLaunch,
+      animate: animate,
     );
-    if (!isDue(lastShownAt: lastShown, now: now)) {
-      return false;
+  }
+
+  /// بررسی موعد ۷ روزه یا زمان بندی اعلان پویای ربات و نمایش خودکار گفت و گو.
+  static Future<bool> showIfDue(
+    BuildContext context, {
+    DateTime? now,
+    LocalStore? store,
+    AppAnnouncement? announcement,
+    Future<bool> Function()? onJoinLaunch,
+    bool animate = true,
+  }) async {
+    if (announcement != null) {
+      final bool due = await isAnnouncementDue(
+        announcement,
+        now: now,
+        store: store,
+      );
+      if (!due) {
+        return false;
+      }
+    } else {
+      final DateTime? lastShown = await normalizeClockSkewIfNeeded(
+        now: now,
+        store: store,
+      );
+      if (!isDue(lastShownAt: lastShown, now: now)) {
+        return false;
+      }
     }
     if (!context.mounted) {
       return false;
@@ -187,6 +321,7 @@ class TelegramChannelPrompt {
       context,
       now: now,
       store: store,
+      announcement: announcement,
       onJoinLaunch: onJoinLaunch,
       animate: animate,
     );
@@ -194,13 +329,12 @@ class TelegramChannelPrompt {
   }
 }
 
-/// گفت و گوی دعوت به کانال رسمی تلگرام آمبرلا با پالت رنگی اختصاصی آمبرلا
-/// (سازگار با هر دو حالت روشن و تاریک)، حلقه های تنفسی نرم، ستاره های درخشان،
-/// نشان شناور تلگرام و آیدی رسمی کانال.
+/// گفت و گوی دعوت به کانال رسمی تلگرام / اعلان پویای آمبرلا با پالت رنگی اختصاصی.
 class TelegramChannelDialog extends StatefulWidget {
   const TelegramChannelDialog({
     super.key,
     this.channelHandle = AppConfig.channelHandle,
+    this.announcement,
     this.onJoinLaunch,
     this.animate = true,
   });
@@ -219,6 +353,7 @@ class TelegramChannelDialog extends StatefulWidget {
   }
 
   final String channelHandle;
+  final AppAnnouncement? announcement;
   final Future<bool> Function()? onJoinLaunch;
   final bool animate;
 
@@ -275,8 +410,14 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
 
   void _handleJoin() {
     playUiClick(context);
-    final Future<bool> Function() launcher =
-        widget.onJoinLaunch ?? TelegramChannelPrompt.openChannel;
+    final Future<bool> Function() launcher = widget.onJoinLaunch ??
+        () {
+          final AppAnnouncement? ann = widget.announcement;
+          if (ann != null) {
+            return TelegramChannelPrompt.openActionUrl(ann.buttonUrl);
+          }
+          return TelegramChannelPrompt.openChannel();
+        };
     Navigator.of(context).pop(true);
     unawaited(launcher());
   }
@@ -290,6 +431,19 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final UmbrellaColors colors = context.colors;
+    final AppAnnouncement? ann = widget.announcement;
+    final String effectiveHandle =
+        ann != null ? ann.displaySubtitleHandle : widget.channelHandle;
+    final String titleText = ann?.title ?? 'به کانال رسمی آمبرلا بپیوندید';
+    final String bodyText = Fa.num(
+      ann?.body ??
+          '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
+    );
+    final String buttonText = ann?.buttonText ?? 'عضویت در کانال رسمی';
+    final bool isTelegramTarget = ann == null ||
+        ann.isDefaultChannelLink ||
+        ann.buttonUrl.toLowerCase().contains('t.me') ||
+        ann.buttonUrl.toLowerCase().contains('telegram.me');
 
     return Dialog(
       backgroundColor: colors.surface,
@@ -316,7 +470,8 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
             children: <Widget>[
               _TelegramHeader(
                 float: _floatController,
-                channelHandle: widget.channelHandle,
+                channelHandle: effectiveHandle,
+                icon: isTelegramTarget ? Icons.telegram : Icons.campaign_rounded,
                 onTapHandle: _handleJoin,
               ),
               Padding(
@@ -329,7 +484,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                 child: Column(
                   children: <Widget>[
                     Text(
-                      'به کانال رسمی آمبرلا بپیوندید',
+                      titleText,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.titleLarge?.copyWith(
                         color: colors.textPrimary,
@@ -339,9 +494,7 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                     ),
                     const SizedBox(height: AppMetrics.fontMicro),
                     Text(
-                      Fa.num(
-                        '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
-                      ),
+                      bodyText,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colors.textSecondary,
@@ -375,11 +528,13 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
                     ),
                   ),
                   icon: Icon(
-                    Icons.telegram,
+                    isTelegramTarget
+                        ? Icons.telegram
+                        : Icons.open_in_new_rounded,
                     size: AppMetrics.iconLg,
                     color: colors.onPrimary,
                   ),
-                  label: const Text('عضویت در کانال رسمی'),
+                  label: Text(buttonText),
                   onPressed: _handleJoin,
                 ),
               ),
@@ -411,14 +566,15 @@ class _TelegramHeader extends StatelessWidget {
   const _TelegramHeader({
     required this.float,
     required this.channelHandle,
+    required this.icon,
     required this.onTapHandle,
   });
 
   final Animation<double> float;
   final String channelHandle;
+  final IconData icon;
   final VoidCallback onTapHandle;
 
-  /// مختصات افقی، مختصات عمودی، اختلاف فاز حرکت و اندازه ستاره های درخشان.
   static const List<(double, double, double, double)> _sparkles =
       <(double, double, double, double)>[
     (-0.72, -0.55, 0.0, 14.0),
@@ -503,7 +659,7 @@ class _TelegramHeader extends StatelessWidget {
                             ),
                             alignment: Alignment.center,
                             child: Icon(
-                              Icons.telegram,
+                              icon,
                               size: AppMetrics.telegramAvatarSize,
                               color: colors.primary,
                             ),

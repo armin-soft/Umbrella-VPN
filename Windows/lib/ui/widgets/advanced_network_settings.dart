@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
+import '../../platform/native.dart';
 import '../../state/settings_controller.dart';
 import 'common.dart';
 
@@ -319,6 +322,7 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
   late final TextEditingController process;
   late AppRouteAction action;
   String? error;
+  bool _pickingFile = false;
 
   @override
   void initState() {
@@ -331,6 +335,40 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
   void dispose() {
     process.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickInstalledApp() async {
+    playUiClick(context);
+    final NativeBridge native = context.read<NativeBridge?>() ?? NativeBridge();
+    final InstalledAppInfo? chosen = await showDialog<InstalledAppInfo>(
+      context: context,
+      builder: (_) => _InstalledAppsPickerDialog(native: native),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      process.text = chosen.ruleTarget;
+      error = null;
+    });
+  }
+
+  Future<void> _browseExeFile() async {
+    if (_pickingFile) return;
+    playUiClick(context);
+    setState(() => _pickingFile = true);
+    try {
+      final NativeBridge native = context.read<NativeBridge?>() ?? NativeBridge();
+      final String? picked = await native.pickExecutableFile();
+      if (picked != null && picked.isNotEmpty && mounted) {
+        setState(() {
+          process.text = picked;
+          error = null;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _pickingFile = false);
+      }
+    }
   }
 
   @override
@@ -347,9 +385,33 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(
                   labelText: 'نام برنامه یا مسیر کامل فایل اجرایی',
-                  hintText: 'نام برنامه ویندوز',
+                  hintText: 'نام برنامه ویندوز (مثلاً chrome.exe)',
                   errorText: error,
                 ),
+              ),
+              const SizedBox(height: AppMetrics.space2),
+              Wrap(
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    key: const ValueKey<String>('app-route-pick-installed'),
+                    onPressed: _pickInstalledApp,
+                    icon: const Icon(Icons.apps_rounded, size: AppMetrics.iconSm),
+                    label: const Text('انتخاب از برنامه های نصب شده'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const ValueKey<String>('app-route-browse-exe'),
+                    onPressed: _pickingFile ? null : _browseExeFile,
+                    icon: Icon(
+                      _pickingFile
+                          ? Icons.hourglass_top_rounded
+                          : Icons.folder_open_rounded,
+                      size: AppMetrics.iconSm,
+                    ),
+                    label: const Text('انتخاب فایل (.exe)'),
+                  ),
+                ],
               ),
               const SizedBox(height: AppMetrics.space3),
               DropdownButtonFormField<AppRouteAction>(
@@ -401,4 +463,180 @@ class _AppRouteDialogState extends State<AppRouteDialog> {
           ),
         ],
       );
+}
+
+class _InstalledAppsPickerDialog extends StatefulWidget {
+  const _InstalledAppsPickerDialog({required this.native});
+
+  final NativeBridge native;
+
+  @override
+  State<_InstalledAppsPickerDialog> createState() =>
+      _InstalledAppsPickerDialogState();
+}
+
+class _InstalledAppsPickerDialogState
+    extends State<_InstalledAppsPickerDialog> {
+  final TextEditingController _search = TextEditingController();
+  List<InstalledAppInfo> _apps = <InstalledAppInfo>[];
+  bool _loading = true;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final List<InstalledAppInfo> items = await widget.native.installedApps();
+      if (!mounted) return;
+      setState(() {
+        _apps = items;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors c = context.colors;
+    final String q = _query.trim().toLowerCase();
+    final List<InstalledAppInfo> filtered = q.isEmpty
+        ? _apps
+        : _apps
+            .where((InstalledAppInfo a) =>
+                a.name.toLowerCase().contains(q) ||
+                a.processName.toLowerCase().contains(q) ||
+                a.publisher.toLowerCase().contains(q))
+            .toList(growable: false);
+
+    return AlertDialog(
+      title: const Text('انتخاب برنامه نصب شده یا در حال اجرا'),
+      content: SizedBox(
+        width: 520,
+        height: 440,
+        child: Column(
+          children: <Widget>[
+            TextField(
+              key: const ValueKey<String>('installed-apps-search'),
+              controller: _search,
+              onChanged: (String v) => setState(() => _query = v),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded),
+                hintText: 'جست و جوی نام برنامه یا فایل اجرایی...',
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _search.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+              ),
+            ),
+            const SizedBox(height: AppMetrics.space3),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            'برنامه ای مطابق جست و جو یافت نشد.',
+                            style: TextStyle(color: c.textSecondary),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: c.border),
+                          itemBuilder: (BuildContext ctx, int index) {
+                            final InstalledAppInfo app = filtered[index];
+                            return ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: app.running
+                                    ? c.success.withValues(alpha: 0.14)
+                                    : c.surfaceHigh,
+                                child: Icon(
+                                  app.running
+                                      ? Icons.play_circle_fill_rounded
+                                      : Icons.apps_rounded,
+                                  size: 18,
+                                  color: app.running
+                                      ? c.success
+                                      : c.textSecondary,
+                                ),
+                              ),
+                              title: Text(
+                                app.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: Text(
+                                  app.processName +
+                                      (app.publisher.isNotEmpty
+                                          ? ' · ${app.publisher}'
+                                          : ''),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: c.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              trailing: app.running
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: c.success.withValues(alpha: 0.14),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'در حال اجرا',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: c.success,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
+                              onTap: () => Navigator.of(ctx).pop(app),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('بستن'),
+        ),
+      ],
+    );
+  }
 }

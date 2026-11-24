@@ -295,5 +295,293 @@ return $Stored !== '' ? $Stored : Environment::getTelegramChannelId();
 public static function setTelegramChannelId(string $Channel_Id): void {
 Repository::setSetting('Telegram_Channel_ID', trim($Channel_Id));
 }
+
+// ── app inside-dialog announcement ─────────────────────────────────────────
+
+public const KEY_ANN_ENABLED = 'App_Ann_Enabled';
+public const KEY_ANN_VERSION = 'App_Ann_Version';
+public const KEY_ANN_TITLE = 'App_Ann_Title';
+public const KEY_ANN_BODY = 'App_Ann_Body';
+public const KEY_ANN_BTN_TEXT = 'App_Ann_Button_Text';
+public const KEY_ANN_BTN_URL = 'App_Ann_Button_Url';
+public const KEY_ANN_INTERVAL = 'App_Ann_Interval_Hours';
+public const KEY_ANN_STARTS_AT = 'App_Ann_Starts_At';
+public const KEY_ANN_UPDATED_AT = 'App_Ann_Updated_At';
+
+public const DEFAULT_ANN_TITLE = 'به کانال رسمی آمبرلا بپیوندید';
+public const DEFAULT_ANN_BODY = '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.';
+public const DEFAULT_ANN_BTN_TEXT = 'عضویت در کانال رسمی';
+public const DEFAULT_ANN_INTERVAL_HOURS = 168;
+
+/** @return array{enabled:bool,version:int,title:string,body:string,button_text:string,button_url:string,interval_hours:int,starts_at:int,updated_at:int} */
+public static function getAppAnnouncement(): array {
+$Enabled_Raw = Repository::getSetting(self::KEY_ANN_ENABLED, null);
+$Enabled = true;
+if ($Enabled_Raw !== null && trim((string)$Enabled_Raw) !== '') {
+$Norm = strtolower(trim((string)$Enabled_Raw));
+$Enabled = !in_array($Norm, ['0', 'false', 'off', 'no'], true);
+}
+
+$Version = max(1, (int)trim((string)Repository::getSetting(self::KEY_ANN_VERSION, '1')));
+
+$Title = trim((string)Repository::getSetting(self::KEY_ANN_TITLE, ''));
+if ($Title === '') {
+$Title = self::DEFAULT_ANN_TITLE;
+}
+
+$Body = trim((string)Repository::getSetting(self::KEY_ANN_BODY, ''));
+if ($Body === '') {
+$Body = self::DEFAULT_ANN_BODY;
+}
+
+$Button_Text = trim((string)Repository::getSetting(self::KEY_ANN_BTN_TEXT, ''));
+if ($Button_Text === '') {
+$Button_Text = self::DEFAULT_ANN_BTN_TEXT;
+}
+
+$Button_Url = trim((string)Repository::getSetting(self::KEY_ANN_BTN_URL, ''));
+if ($Button_Url === '') {
+$Button_Url = self::getChannelUrl();
+}
+
+$Interval_Raw = Repository::getSetting(self::KEY_ANN_INTERVAL, null);
+$Interval_Hours = self::DEFAULT_ANN_INTERVAL_HOURS;
+if ($Interval_Raw !== null && trim((string)$Interval_Raw) !== '') {
+$Interval_Hours = max(0, min(8760, (int)trim((string)$Interval_Raw)));
+}
+
+$Starts_At = max(0, (int)trim((string)Repository::getSetting(self::KEY_ANN_STARTS_AT, '0')));
+$Updated_At = max(0, (int)trim((string)Repository::getSetting(self::KEY_ANN_UPDATED_AT, '0')));
+
+return [
+'enabled' => $Enabled,
+'version' => $Version,
+'title' => Helper::stripZwnj($Title),
+'body' => Helper::stripZwnj($Body),
+'button_text' => Helper::stripZwnj($Button_Text),
+'button_url' => $Button_Url,
+'interval_hours' => $Interval_Hours,
+'starts_at' => $Starts_At,
+'updated_at' => $Updated_At,
+];
+}
+
+private static function touchAppAnnouncementUpdatedAt(): void {
+Repository::setSetting(self::KEY_ANN_UPDATED_AT, (string)time());
+}
+
+public static function setAppAnnouncementEnabled(bool $Enabled): void {
+Repository::setSetting(self::KEY_ANN_ENABLED, $Enabled ? '1' : '0');
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function setAppAnnouncementTitle(string $Title): void {
+$Clean = mb_substr(trim(Helper::stripZwnj($Title)), 0, 140);
+Repository::setSetting(self::KEY_ANN_TITLE, $Clean);
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function setAppAnnouncementBody(string $Body): void {
+$Clean = mb_substr(trim(Helper::stripZwnj($Body)), 0, 1200);
+Repository::setSetting(self::KEY_ANN_BODY, $Clean);
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function setAppAnnouncementButtonText(string $Text): void {
+$Clean = mb_substr(trim(Helper::stripZwnj($Text)), 0, 80);
+Repository::setSetting(self::KEY_ANN_BTN_TEXT, $Clean);
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function setAppAnnouncementButtonUrl(string $Url): void {
+$Normalized = self::validateAnnouncementUrl($Url);
+Repository::setSetting(self::KEY_ANN_BTN_URL, $Normalized);
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function setAppAnnouncementIntervalHours(int $Hours): void {
+$Bounded = max(0, min(8760, $Hours));
+Repository::setSetting(self::KEY_ANN_INTERVAL, (string)$Bounded);
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function setAppAnnouncementStartsAt(int $Timestamp): void {
+Repository::setSetting(self::KEY_ANN_STARTS_AT, (string)max(0, $Timestamp));
+self::touchAppAnnouncementUpdatedAt();
+}
+
+public static function republishAppAnnouncement(): int {
+$Current = max(1, (int)trim((string)Repository::getSetting(self::KEY_ANN_VERSION, '1')));
+$Next = $Current + 1;
+Repository::setSetting(self::KEY_ANN_VERSION, (string)$Next);
+self::touchAppAnnouncementUpdatedAt();
+return $Next;
+}
+
+public static function resetAppAnnouncementToDefaults(): void {
+foreach ([
+self::KEY_ANN_TITLE,
+self::KEY_ANN_BODY,
+self::KEY_ANN_BTN_TEXT,
+self::KEY_ANN_BTN_URL,
+] as $Key) {
+Repository::setSetting($Key, '');
+}
+Repository::setSetting(self::KEY_ANN_INTERVAL, (string)self::DEFAULT_ANN_INTERVAL_HOURS);
+Repository::setSetting(self::KEY_ANN_STARTS_AT, '0');
+self::republishAppAnnouncement();
+}
+
+public static function validateAnnouncementUrl(string $Input): string {
+$Raw = trim($Input);
+if ($Raw === '') {
+throw new InvalidArgumentException('لینک دکمه نمی تواند خالی باشد.');
+}
+if (str_starts_with($Raw, '@')) {
+$Handle = substr($Raw, 1);
+if (!preg_match('/^[A-Za-z][A-Za-z0-9_]{3,63}$/', $Handle)) {
+throw new InvalidArgumentException('نام کاربری کانال یا ربات معتبر نیست.');
+}
+return 'https://t.me/' . $Handle;
+}
+if (preg_match('~^(?:www\.)?t\.me/[^\s<>]+$~i', $Raw)) {
+return 'https://' . ltrim($Raw, '/');
+}
+if (preg_match('#^(?:https?|tg)://[^\s<>]+$#i', $Raw)) {
+return $Raw;
+}
+throw new InvalidArgumentException('لینک باید با https://، @ یا t.me/ شروع شود.');
+}
+
+public static function parseAnnouncementIntervalHours(string $Input): int {
+$Clean = mb_strtolower(trim(Helper::toEnglish(Helper::stripZwnj($Input))));
+$Clean = str_replace(['،', ',', '٬'], ' ', $Clean);
+$Clean = (string)preg_replace('/\s+/u', ' ', $Clean);
+if ($Clean === '' || in_array($Clean, ['0', 'once', 'یکبار', 'یک بار', 'فقط یکبار', 'فقط یک بار', 'بدون تکرار'], true)) {
+return 0;
+}
+if (preg_match('/^(\d{1,4})\s*(?:ساعت|h|hr|hrs|hour|hours)?$/u', $Clean, $M)) {
+$Hours = (int)$M[1];
+if ($Hours < 0 || $Hours > 8760) {
+throw new InvalidArgumentException('بازه تکرار باید بین ۰ تا ۸۷۶۰ ساعت باشد.');
+}
+return $Hours;
+}
+if (preg_match('/^(\d{1,3})\s*(?:روز|d|day|days)$/u', $Clean, $M)) {
+$Hours = (int)$M[1] * 24;
+if ($Hours < 0 || $Hours > 8760) {
+throw new InvalidArgumentException('بازه تکرار باید بین ۰ تا ۳۶۵ روز باشد.');
+}
+return $Hours;
+}
+if (preg_match('/^(\d{1,2})\s*(?:هفته|w|week|weeks)$/u', $Clean, $M)) {
+$Hours = (int)$M[1] * 168;
+if ($Hours < 0 || $Hours > 8760) {
+throw new InvalidArgumentException('بازه تکرار باید حداکثر ۵۲ هفته باشد.');
+}
+return $Hours;
+}
+throw new InvalidArgumentException('فرمت بازه معتبر نیست؛ مثلاً 0 (فقط یک بار)، 24 (ساعت) یا «3 روز» وارد کنید.');
+}
+
+public static function parseAnnouncementStartTime(string $Input, ?int $Now = null): int {
+$Ref = $Now ?? time();
+$Clean = mb_strtolower(trim(Helper::toEnglish(Helper::stripZwnj($Input))));
+$Clean = str_replace(['،', ','], ' ', $Clean);
+$Clean = (string)preg_replace('/\s+/u', ' ', $Clean);
+
+if ($Clean === '' || in_array($Clean, ['0', 'now', 'الان', 'فوری', 'هم اکنون', 'همین الان', 'بی درنگ'], true)) {
+return 0;
+}
+if (preg_match('/^\+?\s*(\d{1,4})\s*(?:دقیقه|دقيقه|m|min|mins|minute|minutes)$/u', $Clean, $M)) {
+return $Ref + ((int)$M[1] * 60);
+}
+if (preg_match('/^\+?\s*(\d{1,4})\s*(?:ساعت|h|hr|hrs|hour|hours)$/u', $Clean, $M)) {
+return $Ref + ((int)$M[1] * 3600);
+}
+if (preg_match('/^\+?\s*(\d{1,3})\s*(?:روز|d|day|days)$/u', $Clean, $M)) {
+return $Ref + ((int)$M[1] * 86400);
+}
+
+$Zone = new DateTimeZone('Asia/Tehran');
+if (preg_match('/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/', $Clean, $M)) {
+$Y = (int)$M[1];
+$Mo = (int)$M[2];
+$D = (int)$M[3];
+$H = isset($M[4]) ? (int)$M[4] : 0;
+$Mi = isset($M[5]) ? (int)$M[5] : 0;
+$S = isset($M[6]) ? (int)$M[6] : 0;
+if ($H > 23 || $Mi > 59 || $S > 59 || $Mo < 1 || $Mo > 12 || $D < 1 || $D > 31) {
+throw new InvalidArgumentException('تاریخ یا ساعت وارد شده معتبر نیست.');
+}
+if ($Y >= 1300 && $Y <= 1599) {
+[$Y, $Mo, $D] = self::jalaliToGregorian($Y, $Mo, $D);
+} elseif (!checkdate($Mo, $D, $Y)) {
+throw new InvalidArgumentException('تاریخ میلادی معتبر نیست.');
+}
+$Dt = (new DateTimeImmutable('now', $Zone))->setDate($Y, $Mo, $D)->setTime($H, $Mi, $S);
+return $Dt->getTimestamp();
+}
+
+if (preg_match('/^(\d{1,2}):(\d{2})$/', $Clean, $M)) {
+$H = (int)$M[1];
+$Mi = (int)$M[2];
+if ($H > 23 || $Mi > 59) {
+throw new InvalidArgumentException('ساعت باید بین 00:00 تا 23:59 باشد.');
+}
+$Dt = (new DateTimeImmutable('@' . $Ref))->setTimezone($Zone)->setTime($H, $Mi, 0);
+if ($Dt->getTimestamp() <= $Ref) {
+$Dt = $Dt->modify('+1 day');
+}
+return $Dt->getTimestamp();
+}
+
+throw new InvalidArgumentException('فرمت زمان شروع معتبر نیست؛ مثلاً «الان»، «+2 ساعت»، «18:30» یا «1405/09/15 18:00» بفرستید.');
+}
+
+/** @return array{0:int,1:int,2:int} */
+private static function jalaliToGregorian(int $Jy, int $Jm, int $Jd): array {
+$Jy += 1595;
+$Days = -355668 + (365 * $Jy) + (((int)($Jy / 33)) * 8) + ((int)((($Jy % 33) + 3) / 4)) + $Jd
++ (($Jm < 7) ? ($Jm - 1) * 31 : (($Jm - 7) * 30) + 186);
+$Gy = 400 * ((int)($Days / 146097));
+$Days %= 146097;
+if ($Days > 36524) {
+$Gy += 100 * ((int)(--$Days / 36524));
+$Days %= 36524;
+if ($Days >= 365) {
+$Days++;
+}
+}
+$Gy += 4 * ((int)($Days / 1461));
+$Days %= 1461;
+if ($Days > 365) {
+$Gy += (int)(($Days - 1) / 365);
+$Days = ($Days - 1) % 365;
+}
+$Gd = $Days + 1;
+$SalA = [0, 31, (($Gy % 4 === 0 && $Gy % 100 !== 0) || ($Gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+$Gm = 0;
+while ($Gm < 13 && $Gd > $SalA[$Gm]) {
+$Gd -= $SalA[$Gm];
+$Gm++;
+}
+return [$Gy, $Gm, $Gd];
+}
+
+public static function formatAnnouncementIntervalLabel(int $Hours): string {
+if ($Hours <= 0) {
+return 'فقط یک بار (بدون تکرار)';
+}
+if ($Hours % 168 === 0) {
+$Weeks = (int)($Hours / 168);
+return 'هر ' . Helper::toPersian((string)$Weeks) . ' هفته';
+}
+if ($Hours % 24 === 0) {
+$Days = (int)($Hours / 24);
+return 'هر ' . Helper::toPersian((string)$Days) . ' روز';
+}
+return 'هر ' . Helper::toPersian((string)$Hours) . ' ساعت';
+}
 }
 ?>

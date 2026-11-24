@@ -52,6 +52,12 @@ private const ROUTES = [
 'admin_accounts_menu' => [AdminFlow::class, 'accountsMenu'],
 'admin_support_menu' => [AdminFlow::class, 'supportMenu'],
 'admin_subscriptions_menu' => [AdminFlow::class, 'subscriptionsMenu'],
+'admin_app_announcement' => [AdminFlow::class, 'appAnnouncementMenu'],
+'admin_ann_toggle' => [AdminFlow::class, 'appAnnouncementToggle'],
+'admin_ann_republish' => [AdminFlow::class, 'appAnnouncementRepublish'],
+'admin_ann_reset' => [AdminFlow::class, 'appAnnouncementReset'],
+'admin_ann_schedule' => [AdminFlow::class, 'appAnnouncementScheduleMenu'],
+'admin_ann_start_now' => [AdminFlow::class, 'appAnnouncementStartNow'],
 'آمار کلی' => [AdminFlow::class, 'globalStats'],
 'تنظیمات' => [AdminFlow::class, 'menu'],
 'اعتبار حساب کاربری' => [AdminFlow::class, 'creditMenu'],
@@ -494,6 +500,16 @@ return;
 
 if (str_starts_with($Data, 'cfg_set:')) {
 AdminFlow::cfgStart($Context, substr($Data, strlen('cfg_set:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_ann_edit:')) {
+AdminFlow::appAnnouncementEditStart($Context, substr($Data, strlen('admin_ann_edit:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_ann_interval:')) {
+AdminFlow::appAnnouncementSetInterval($Context, max(0, (int)substr($Data, strlen('admin_ann_interval:'))));
 return;
 }
 

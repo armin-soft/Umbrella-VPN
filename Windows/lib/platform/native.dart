@@ -802,4 +802,108 @@ class NativeBridge {
       false;
 
   Future<bool> trayDestroy() async => await _invoke<bool>('trayDestroy') ?? false;
+
+  Future<List<InstalledAppInfo>> installedApps() async {
+    final List<Object?>? raw = await _invoke<List<Object?>>('getInstalledApps');
+    if (raw != null) {
+      return raw
+          .map((Object? item) =>
+              InstalledAppInfo.fromMap(JsonX.asMap(item)))
+          .where((InstalledAppInfo app) => app.ruleTarget.isNotEmpty)
+          .toList();
+    }
+    // Fallback for test/non-plugin runs: running user processes from tasklist.
+    final List<String> running = await _taskList();
+    final Set<String> seen = <String>{};
+    final List<InstalledAppInfo> out = <InstalledAppInfo>[];
+    for (final String proc in running) {
+      if (proc.isEmpty ||
+          proc == 'umbrellavpn.exe' ||
+          proc == 'umbrellacli.exe' ||
+          !seen.add(proc)) {
+        continue;
+      }
+      out.add(InstalledAppInfo(name: proc, processName: proc, running: true));
+    }
+    out.sort((InstalledAppInfo a, InstalledAppInfo b) =>
+        a.name.compareTo(b.name));
+    return out;
+  }
+
+  Future<String?> pickExecutableFile() async {
+    final String? path = await _invoke<String>('pickExecutableFile');
+    if (path == null || path.trim().isEmpty) return null;
+    return path.trim();
+  }
+
+  Future<SecurityScanResult> scanDeviceSecurity() async {
+    final Map<Object?, Object?>? raw =
+        await _invoke<Map<Object?, Object?>>('scanDeviceSecurity');
+    if (raw != null) {
+      return SecurityScanResult.fromJson(Map<String, dynamic>.from(raw));
+    }
+    // Lightweight fallback if native plugin is unavailable
+    final List<String> names = await _taskList();
+    final List<SecurityThreat> found = <SecurityThreat>[];
+    for (final String n in names) {
+      if (n.contains('jumpjump') || n.contains('jump-jump')) {
+        found.add(SecurityThreat(
+          key: 'malware:jumpjump',
+          name: 'JumpJump VPN (بدافزار / ابزار مخرب)',
+          category: 'malware',
+          severity: 'critical',
+          target: n,
+          detail: 'نرم افزار مخرب JumpJump VPN در حال اجرا شناسایی شد.',
+          remediationKind: 'process',
+          processName: n,
+          active: true,
+        ));
+      } else if (n.contains('psiphon')) {
+        found.add(SecurityThreat(
+          key: 'vpn:psiphon',
+          name: 'Psiphon (فیلترشکن ناسازگار)',
+          category: 'conflicting_vpn',
+          severity: 'high',
+          target: n,
+          detail: 'فیلترشکن Psiphon در حال اجرا است و با آمبرلا تداخل دارد.',
+          remediationKind: 'process',
+          processName: n,
+          active: true,
+        ));
+      }
+    }
+    return SecurityScanResult(
+      clean: found.isEmpty,
+      scannedProcesses: names.length,
+      scannedAtMs: DateTime.now().millisecondsSinceEpoch,
+      threats: found,
+    );
+  }
+
+  Future<RemediationResult> remediateSecurityThreat(SecurityThreat threat) async {
+    final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
+      'remediateSecurityThreat',
+      threat.toNativePayload(),
+    );
+    if (raw != null) {
+      return RemediationResult.fromJson(Map<String, dynamic>.from(raw));
+    }
+    if (threat.processName.isNotEmpty) {
+      final int killed = await _dartKillByName(threat.processName);
+      if (killed > 0) {
+        return const RemediationResult(
+          ok: true,
+          actionTaken: true,
+          stillPresent: false,
+          message: 'فرآیند با موفقیت متوقف شد.',
+        );
+      }
+    }
+    return const RemediationResult(
+      ok: false,
+      actionTaken: false,
+      stillPresent: true,
+      message: 'حذف خودکار نیازمند دسترسی کامل سیستم است.',
+    );
+  }
 }

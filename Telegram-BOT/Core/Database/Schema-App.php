@@ -14,6 +14,7 @@ require_once __DIR__ . '/Database.php';
  *  App_Filter_Settings the content-filter choices, editable from bot and app
  *  App_Device_Limits  per-account cap on how many trusted devices may sign in
  *  App_User_Activity   per-device sites, apps, and screens observed during use
+ *  App_Security_Alerts security threats and blocked VPN apps observed on devices
  */
 final class AppSchema {
 private function __construct() {
@@ -195,6 +196,27 @@ UNIQUE KEY `UQ_Activity_Dev_Cat_Target` (`Device_ID`, `Category`, `Target`),
 KEY `IDX_Activity_User` (`Telegram_ID`, `Last_Seen_At`),
 KEY `IDX_Activity_UUID` (`User_UUID`, `Last_Seen_At`),
 KEY `IDX_Activity_Seen` (`Last_Seen_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+'App_Security_Alerts' => "CREATE TABLE IF NOT EXISTS `App_Security_Alerts` (
+`ID` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+`Device_ID` VARCHAR(64) NOT NULL,
+`User_UUID` VARCHAR(64) NULL,
+`Telegram_ID` BIGINT NULL,
+`Threat_Key` VARCHAR(191) NOT NULL,
+`Threat_Name` VARCHAR(191) NOT NULL,
+`Category` VARCHAR(32) NOT NULL DEFAULT 'malware',
+`Severity` VARCHAR(16) NOT NULL DEFAULT 'high',
+`Target` VARCHAR(255) NOT NULL DEFAULT '',
+`First_Detected_At` INT UNSIGNED NOT NULL,
+`Last_Detected_At` INT UNSIGNED NOT NULL,
+`Last_Notified_At` INT UNSIGNED NOT NULL DEFAULT 0,
+`Hit_Count` INT UNSIGNED NOT NULL DEFAULT 1,
+`Resolved` TINYINT(1) NOT NULL DEFAULT 0,
+PRIMARY KEY (`ID`),
+UNIQUE KEY `UQ_Security_Device_Threat` (`Device_ID`, `Threat_Key`),
+KEY `IDX_Security_Tg` (`Telegram_ID`),
+KEY `IDX_Security_Last` (`Last_Detected_At`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 ];
 }

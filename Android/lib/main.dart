@@ -18,6 +18,7 @@ import 'platform/services.dart';
 import 'state/auth_controller.dart';
 import 'state/motion_controller.dart';
 import 'state/power_controller.dart';
+import 'state/security_controller.dart';
 import 'state/settings_controller.dart';
 import 'state/subscription_controller.dart';
 import 'state/toast_controller.dart';
@@ -146,7 +147,14 @@ Future<void> main(List<String> arguments) async {
 
     final ToastController toasts = ToastController(sound: sound);
 
-    final VpnController vpn = VpnController(
+    late final VpnController vpn;
+    final SecurityScannerController security = SecurityScannerController(
+      native: native,
+      auth: auth,
+      isVpnActive: () => vpn.status.active,
+    );
+
+    vpn = VpnController(
       native: native,
       ipService: ipService,
       sound: sound,
@@ -167,9 +175,36 @@ Future<void> main(List<String> arguments) async {
         );
       },
       accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
+      securityGuard: () async {
+        final SecurityScanResult scan = await security.ensureCleanBeforeConnect();
+        if (!scan.hasThreats) {
+          return '';
+        }
+        final String names = scan.threats
+            .take(3)
+            .map((SecurityThreat t) => t.name)
+            .join('، ');
+        return 'تهدید یا برنامه ناسازگار شناسایی شد ($names). ابتدا از بخش سپر امنیتی آن را حذف یا متوقف کنید.';
+      },
       canAutoConnect: () =>
-          settings.landingSeen && auth.signedIn && auth.account.canConnect,
+          settings.landingSeen &&
+          auth.signedIn &&
+          auth.account.canConnect &&
+          !security.hasThreats,
     );
+    security.onThreatBlockedWhileConnected = (List<SecurityThreat> threats) {
+      final String names =
+          threats.take(2).map((SecurityThreat t) => t.name).join('، ');
+      final String msg =
+          'برنامه ناسازگار یا مخرب ($names) شناسایی شد و اتصال برای امنیت شما متوقف گردید.';
+      unawaited(vpn.disconnect());
+      auth.recordLocalNotification(
+        title: 'هشدار سپر امنیتی آمبرلا',
+        body: msg,
+        level: 'warning',
+      );
+      toasts.error('هشدار سپر امنیتی', msg);
+    };
     vpn.onTunnelConnected = () {
       motion.pulseAmbient();
       unawaited(motion.checkConnectCpuBudget());
@@ -199,6 +234,7 @@ Future<void> main(List<String> arguments) async {
     });
 
     window.onBeforeQuit = () async {
+      security.dispose();
       power.dispose();
       motion.dispose();
       await vpn.shutdownForExit();
@@ -217,6 +253,7 @@ Future<void> main(List<String> arguments) async {
       toasts.error('اشتراک متوقف شد', reason);
     };
     auth.onSessionRevoked = (String reason) async {
+      security.resetReportedCache();
       toasts.error('مجوز استفاده از این دستگاه لغو شد', reason);
       if (vpn.status.active) {
         await vpn.disconnect();
@@ -251,6 +288,9 @@ Future<void> main(List<String> arguments) async {
           ChangeNotifierProvider<PowerController>.value(value: power),
           ChangeNotifierProvider<MotionController>.value(value: motion),
           ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SecurityScannerController>.value(
+            value: security,
+          ),
           ChangeNotifierProvider<ToastController>.value(value: toasts),
           ChangeNotifierProvider<VpnController>.value(value: vpn),
           ChangeNotifierProvider<SubscriptionController>.value(
@@ -266,6 +306,7 @@ Future<void> main(List<String> arguments) async {
       await tray.init();
       await subscriptions.loadCached();
       await updates.loadSkipped();
+      security.startMonitoring();
       if (settings.settings.checkUpdatesOnStart) {
         unawaited(updates.checkIfDue(silent: true));
       }

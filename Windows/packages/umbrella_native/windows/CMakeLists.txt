@@ -7,6 +7,7 @@ set(PLUGIN_NAME "umbrella_native_plugin")
 add_library(${PLUGIN_NAME} SHARED
   "umbrella_native_plugin.cpp"
   "system_ops.cpp"
+  "security_scanner.cpp"
   "tray_icon.cpp"
   "winhttp_client.cpp"
 )
@@ -26,7 +27,7 @@ if(MSVC)
   target_compile_options(${PLUGIN_NAME} PRIVATE /utf-8 /W3 /WX-)
 endif()
 
-target_link_libraries(${PLUGIN_NAME} PRIVATE iphlpapi ws2_32 wininet winhttp shell32 advapi32 ole32 user32 gdi32)
+target_link_libraries(${PLUGIN_NAME} PRIVATE iphlpapi ws2_32 wininet winhttp shell32 advapi32 ole32 user32 gdi32 wintrust crypt32 bcrypt version comdlg32)
 
 set_target_properties(${PLUGIN_NAME} PROPERTIES
   PREFIX ""

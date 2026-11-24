@@ -1088,6 +1088,12 @@ $Map = [
 'emergency_url' => 'تنظیمات ربات',
 'ticket_reply_text' => 'مدیریت تیکت ها',
 'global_filter_domains' => 'کنترل محتوا',
+'ann_title' => 'اعلان داخل برنامه',
+'ann_body' => 'اعلان داخل برنامه',
+'ann_btn_text' => 'اعلان داخل برنامه',
+'ann_btn_url' => 'اعلان داخل برنامه',
+'ann_interval' => 'زمان بندی اعلان برنامه',
+'ann_starts_at' => 'زمان بندی اعلان برنامه',
 ];
 
 if (str_starts_with($Flow, 'cfg:')) {
@@ -1531,9 +1537,299 @@ if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Rows = Menu::rows([
 [['📨پیامک تکی', 'ارسال پیامک تکی اول'], ['📢پیامک همگانی', 'ارسال پیامک همگانی اول']],
 [['🗣اطلاع رسانی به کاربر', 'اطلاع رسانی اول'], ['✏️اطلاع رسانی سفارشی', 'اطلاع رسانی سفارشی اول']],
-[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده']],
+[['🚫اطلاع رسانی عدم استفاده', 'اطلاع رسانی عدم استفاده'], ['📢اعلان داخل برنامه', 'admin_app_announcement']],
 ]);
 self::categoryMenu($Context, 'پیام رسانی و اطلاع رسانی', $Rows, 'مدیریت');
+}
+
+public static function appAnnouncementMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try { TelegramClient::answerCallbackQuery($Context->CallbackId, '📢تنظیمات اعلان برنامه...', false); } catch (Throwable) {}
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Ann = BotConfig::getAppAnnouncement();
+$Status = $Ann['enabled'] ? '🟢فعال' : '🔴غیرفعال';
+$Interval_Label = BotConfig::formatAnnouncementIntervalLabel((int)$Ann['interval_hours']);
+$Starts_At = (int)$Ann['starts_at'];
+$Start_Label = $Starts_At <= 0
+? 'فوری (از همین الان)'
+: Helper::formatDateTimeText((new DateTimeImmutable('@' . $Starts_At))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s'));
+$Body_Preview = mb_substr(str_replace(["\r", "\n"], ' ', (string)$Ann['body']), 0, 120);
+if (mb_strlen((string)$Ann['body']) > 120) {
+$Body_Preview .= '…';
+}
+
+$Text = self::header($Context, 'اعلان داخل برنامه')
+. Menu::section('📢', 'پنجره اطلاع رسانی در اپلیکیشن', [
+'وضعیت نمایش: *' . $Status . '*',
+'نسخه انتشار فعلی: *' . Helper::toPersian((string)$Ann['version']) . '*',
+'عنوان: *' . $Ann['title'] . '*',
+'متن: `' . $Body_Preview . '`',
+'دکمه اقدام: *' . $Ann['button_text'] . '*',
+'لینک دکمه: `' . $Ann['button_url'] . '`',
+'دوره تکرار: *' . $Interval_Label . '*',
+'شروع نمایش: *' . $Start_Label . '*',
+])
+. "\nℹ️با «بازنشر برای همه» حتی کاربرانی که قبلاً این پیام را بسته اند دوباره آن را می بینند.\n"
+. "🖼گرافیک بالای پنجره داخل خود اپلیکیشن ثابت است و نیاز به ارسال عکس ندارد."
+. Helper::adminFooter();
+
+$Toggle_Label = $Ann['enabled'] ? '🔴خاموش کردن اعلان' : '🟢روشن کردن اعلان';
+$Markup = array_merge(
+Menu::rows([
+[[$Toggle_Label, 'admin_ann_toggle'], ['📣بازنشر برای همه', 'admin_ann_republish']],
+[['✏️تغییر عنوان', 'admin_ann_edit:title'], ['📝تغییر متن پیام', 'admin_ann_edit:body']],
+[['🔘تغییر متن دکمه', 'admin_ann_edit:btn_text'], ['🔗تغییر لینک دکمه', 'admin_ann_edit:btn_url']],
+[['⏱زمان بندی و تکرار', 'admin_ann_schedule'], ['♻️بازگردانی پیش فرض', 'admin_ann_reset']],
+]),
+[Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome()]
+);
+self::logMenuProblems('app_announcement', $Markup);
+self::renderCfgScreen($Context, $Text, $Markup);
+}
+
+public static function appAnnouncementToggle(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Current = BotConfig::getAppAnnouncement();
+$Next = !$Current['enabled'];
+BotConfig::setAppAnnouncementEnabled($Next);
+Repository::logAdminAction($Context->UserId, 'app_ann_toggle', null, $Next ? 'enabled=1' : 'enabled=0');
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+$Next ? '✅اعلان داخل برنامه فعال شد.' : '⛔️اعلان داخل برنامه خاموش شد.',
+false
+);
+} catch (Throwable) {}
+}
+
+self::appAnnouncementMenu($Context);
+}
+
+public static function appAnnouncementRepublish(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Version = BotConfig::republishAppAnnouncement();
+Repository::logAdminAction($Context->UserId, 'app_ann_republish', null, 'version=' . $Version);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'📣نسخه ' . Helper::toPersian((string)$Version) . ' اعلان منتشر شد.',
+false
+);
+} catch (Throwable) {}
+}
+
+self::appAnnouncementMenu($Context);
+}
+
+public static function appAnnouncementReset(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::resetAppAnnouncementToDefaults();
+Repository::logAdminAction($Context->UserId, 'app_ann_reset', null, null);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '♻️متن و زمان بندی به حالت پیش فرض بازگشت.', false);
+} catch (Throwable) {}
+}
+
+self::appAnnouncementMenu($Context);
+}
+
+public static function appAnnouncementScheduleMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try { TelegramClient::answerCallbackQuery($Context->CallbackId, '⏱تنظیم زمان بندی...', false); } catch (Throwable) {}
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Ann = BotConfig::getAppAnnouncement();
+$Interval_Label = BotConfig::formatAnnouncementIntervalLabel((int)$Ann['interval_hours']);
+$Starts_At = (int)$Ann['starts_at'];
+$Start_Label = $Starts_At <= 0
+? 'فوری (از همین الان)'
+: Helper::formatDateTimeText((new DateTimeImmutable('@' . $Starts_At))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s'));
+
+$Text = self::header($Context, 'زمان بندی اعلان برنامه')
+. Menu::section('⏱', 'زمان بندی فعلی', [
+'دوره تکرار پس از بستن پنجره: *' . $Interval_Label . '*',
+'زمان شروع نمایش: *' . $Start_Label . '*',
+])
+. "\n💡*توضیح:* وقتی کاربر دکمه بستن یا ورود به لینک را می زند، پس از گذشت «دوره تکرار» دوباره پنجره به او نمایش داده می شود. روی حالت «فقط یک بار» برای هر نسخه فقط یک بار نشان داده می شود.\n"
+. Helper::adminFooter();
+
+$Markup = array_merge(
+Menu::rows([
+[['1️⃣فقط یک بار', 'admin_ann_interval:0'], ['🕛هر ۱۲ ساعت', 'admin_ann_interval:12']],
+[['📅هر ۲۴ ساعت', 'admin_ann_interval:24'], ['📆هر ۳ روز', 'admin_ann_interval:72']],
+[['🗓هر هفته (۷ روز)', 'admin_ann_interval:168'], ['🗓هر ۳۰ روز', 'admin_ann_interval:720']],
+[['⌨️بازه تکرار دلخواه', 'admin_ann_edit:interval'], ['🕒تنظیم زمان شروع', 'admin_ann_edit:starts_at']],
+[['🚀شروع فوری از الان', 'admin_ann_start_now']],
+]),
+[Menu::back('منوی قبلی', 'admin_app_announcement'), Menu::adminHome()]
+);
+self::logMenuProblems('app_announcement_schedule', $Markup);
+self::renderCfgScreen($Context, $Text, $Markup);
+}
+
+public static function appAnnouncementSetInterval(Context $Context, int $Hours): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::setAppAnnouncementIntervalHours($Hours);
+Repository::logAdminAction($Context->UserId, 'app_ann_interval', null, 'hours=' . $Hours);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'✅دوره تکرار روی «' . BotConfig::formatAnnouncementIntervalLabel($Hours) . '» تنظیم شد.',
+false
+);
+} catch (Throwable) {}
+}
+
+self::appAnnouncementScheduleMenu($Context);
+}
+
+public static function appAnnouncementStartNow(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::setAppAnnouncementStartsAt(0);
+Repository::logAdminAction($Context->UserId, 'app_ann_start_now', null, null);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '🚀شروع نمایش روی فوری تنظیم شد.', false);
+} catch (Throwable) {}
+}
+
+self::appAnnouncementScheduleMenu($Context);
+}
+
+public static function appAnnouncementEditStart(Context $Context, string $Field): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Ann = BotConfig::getAppAnnouncement();
+$Meta = match($Field) {
+'title' => [
+'flow' => 'admin:ann_title',
+'back' => 'admin_app_announcement',
+'prompt' => "✏️عنوان جدید پنجره اعلان داخل برنامه را بفرستید:\n🧾عنوان فعلی: <code>{$Ann['title']}</code>\n💡حداکثر ۱۴۰ کاراکتر.",
+],
+'body' => [
+'flow' => 'admin:ann_body',
+'back' => 'admin_app_announcement',
+'prompt' => "📝متن جدید اعلان داخل برنامه را بفرستید:\n🧾متن فعلی:\n<code>{$Ann['body']}</code>\n💡می توانید چند خط بنویسید (حداکثر ۱۲۰۰ کاراکتر).",
+],
+'btn_text' => [
+'flow' => 'admin:ann_btn_text',
+'back' => 'admin_app_announcement',
+'prompt' => "🔘متن دکمه اصلی پنجره را بفرستید:\n🧾مقدار فعلی: <code>{$Ann['button_text']}</code>\n💡مثلاً: «عضویت در کانال رسمی» یا «مشاهده اطلاعیه».",
+],
+'btn_url' => [
+'flow' => 'admin:ann_btn_url',
+'back' => 'admin_app_announcement',
+'prompt' => "🔗لینک مقصد دکمه را بفرستید:\n🧾لینک فعلی: <code>{$Ann['button_url']}</code>\n💡می توانید آدرس کامل با `https://`، آیدی با `@` یا لینک `t.me/...` بفرستید.",
+],
+'interval' => [
+'flow' => 'admin:ann_interval',
+'back' => 'admin_ann_schedule',
+'prompt' => "⌨️بازه تکرار دلخواه را بفرستید:\n🧾حالت فعلی: *" . BotConfig::formatAnnouncementIntervalLabel((int)$Ann['interval_hours']) . "*\n💡نمونه ها: `0` (فقط یک بار)، `6` یا `6 ساعت`، `3 روز`، `2 هفته`.",
+],
+'starts_at' => [
+'flow' => 'admin:ann_starts_at',
+'back' => 'admin_ann_schedule',
+'prompt' => "🕒زمان شروع نمایش اعلان را بفرستید (به وقت تهران):\n💡نمونه ها:\n• `الان` (نمایش فوری)\n• `+2 ساعت` یا `+30 دقیقه`\n• `18:30` (امروز یا فردا ساعت ۱۸:۳۰)\n• `1405/09/15 18:00` یا `2026-11-25 18:00`",
+],
+default => null,
+};
+
+if ($Meta === null) {
+self::appAnnouncementMenu($Context);
+return;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => $Meta['flow']]);
+self::renderCfgScreen(
+$Context,
+self::header($Context, $Field === 'interval' || $Field === 'starts_at' ? 'زمان بندی اعلان برنامه' : 'اعلان داخل برنامه')
+. $Meta['prompt'] . Helper::adminFooter(),
+Menu::adminNav('بازگشت', $Meta['back'])
+);
+}
+
+private static function appAnnouncementSaveInput(Context $Context, string $Field, string $Text): void {
+$Raw = trim($Text);
+$Is_Schedule = ($Field === 'interval' || $Field === 'starts_at');
+$Back_Target = $Is_Schedule ? 'admin_ann_schedule' : 'admin_app_announcement';
+
+try {
+switch ($Field) {
+case 'title':
+if ($Raw === '') {
+throw new InvalidArgumentException('عنوان اعلان نمی تواند خالی باشد.');
+}
+BotConfig::setAppAnnouncementTitle($Raw);
+$Notice = '✅عنوان اعلان داخل برنامه ثبت شد.';
+break;
+case 'body':
+if ($Raw === '') {
+throw new InvalidArgumentException('متن اعلان نمی تواند خالی باشد.');
+}
+BotConfig::setAppAnnouncementBody($Raw);
+$Notice = '✅متن اعلان داخل برنامه ثبت شد.';
+break;
+case 'btn_text':
+if ($Raw === '') {
+throw new InvalidArgumentException('متن دکمه نمی تواند خالی باشد.');
+}
+BotConfig::setAppAnnouncementButtonText($Raw);
+$Notice = '✅متن دکمه اعلان ثبت شد.';
+break;
+case 'btn_url':
+BotConfig::setAppAnnouncementButtonUrl($Raw);
+$Notice = '✅لینک دکمه اعلان با موفقیت ثبت شد.';
+break;
+case 'interval':
+$Hours = BotConfig::parseAnnouncementIntervalHours($Raw);
+BotConfig::setAppAnnouncementIntervalHours($Hours);
+$Notice = '✅دوره تکرار روی «' . BotConfig::formatAnnouncementIntervalLabel($Hours) . '» ثبت شد.';
+break;
+case 'starts_at':
+$Ts = BotConfig::parseAnnouncementStartTime($Raw);
+BotConfig::setAppAnnouncementStartsAt($Ts);
+$When_Label = $Ts <= 0
+? 'فوری (از همین الان)'
+: Helper::formatDateTimeText((new DateTimeImmutable('@' . $Ts))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s'));
+$Notice = '✅زمان شروع نمایش تنظیم شد: *' . $When_Label . '*';
+break;
+default:
+self::unknownAdminInput($Context);
+return;
+}
+} catch (Throwable $Error) {
+TelegramClient::sendMessage(
+$Context->ChatId,
+self::header($Context, $Is_Schedule ? 'زمان بندی اعلان برنامه' : 'اعلان داخل برنامه')
+. '⚠️' . $Error->getMessage() . "\n🔁لطفاً دوباره مقدار معتبر را بفرستید." . Helper::adminFooter(),
+TelegramClient::inlineKeyboard(Menu::adminNav('بازگشت', $Back_Target))
+);
+return;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+Repository::logAdminAction($Context->UserId, 'app_ann_' . $Field, null, mb_substr($Raw, 0, 120));
+TelegramClient::sendMessage(
+$Context->ChatId,
+self::header($Context, $Is_Schedule ? 'زمان بندی اعلان برنامه' : 'اعلان داخل برنامه')
+. $Notice . "\n" . ($Is_Schedule ? '' : "💡برای نمایش مجدد به کاربرانی که قبلاً پنجره را بسته اند، دکمه «📣بازنشر برای همه» را بزنید.") . Helper::adminFooter(),
+TelegramClient::inlineKeyboard(Menu::adminNav('اعلان داخل برنامه', $Back_Target))
+);
 }
 
 public static function serverServices(Context $Context): void {
@@ -2386,6 +2682,12 @@ $Flow === 'admin:version_changes' => self::versionChanges($Context, $Text),
 $Flow === 'admin:emergency_url' => self::retireEmergencyUrlInput($Context),
 str_starts_with($Flow, 'admin:cfg:') => self::cfgSave($Context, substr($Flow, strlen('admin:cfg:')), $Text),
 $Flow === 'admin:ticket_reply_text' => self::ticketAdminReplySend($Context, trim($Text)),
+$Flow === 'admin:ann_title' => self::appAnnouncementSaveInput($Context, 'title', $Text),
+$Flow === 'admin:ann_body' => self::appAnnouncementSaveInput($Context, 'body', $Text),
+$Flow === 'admin:ann_btn_text' => self::appAnnouncementSaveInput($Context, 'btn_text', $Text),
+$Flow === 'admin:ann_btn_url' => self::appAnnouncementSaveInput($Context, 'btn_url', $Text),
+$Flow === 'admin:ann_interval' => self::appAnnouncementSaveInput($Context, 'interval', $Text),
+$Flow === 'admin:ann_starts_at' => self::appAnnouncementSaveInput($Context, 'starts_at', $Text),
 default => self::unknownAdminInput($Context),
 };
 }

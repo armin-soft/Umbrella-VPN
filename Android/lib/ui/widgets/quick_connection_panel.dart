@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
+import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/toast_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import 'common.dart';
+import 'content_control.dart';
 import 'lan_sharing_dialog.dart';
 
 /// تنظیمات اتصال در یک پنل کوتاه و مستقل؛ الگوی SegmentedButton و ListTile
@@ -46,6 +48,7 @@ class QuickConnectionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final SettingsController settings = context.watch<SettingsController>();
+    final AuthController? auth = context.watch<AuthController?>();
     final VpnController vpn = context.read<VpnController>();
     final ToastController toasts = context.read<ToastController>();
     final AppSettings cfg = settings.settings;
@@ -74,7 +77,9 @@ class QuickConnectionPanel extends StatelessWidget {
                   child: SectionHeader(
                     icon: Icons.tune_rounded,
                     title: 'تنظیمات اتصال',
-                    subtitle: 'حالت سرویس و اشتراک گذاری شبکه محلی',
+                    subtitle: auth != null
+                        ? 'حالت سرویس، اشتراک گذاری شبکه محلی و کنترل محتوا'
+                        : 'حالت سرویس و اشتراک گذاری شبکه محلی',
                     trailing: Pill(
                       label: cfg.serviceMode.shortLabel,
                       icon: cfg.serviceMode.icon,
@@ -213,6 +218,18 @@ class QuickConnectionPanel extends StatelessWidget {
             onToggle: (bool value) =>
                 _toggleLanSharing(settings, vpn, value),
           ),
+          if (auth != null) ...<Widget>[
+            Divider(height: 1, color: colors.border),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(
+                AppMetrics.space3,
+                AppMetrics.space2,
+                AppMetrics.space3,
+                AppMetrics.space2,
+              ),
+              child: ContentControlCard(),
+            ),
+          ],
           const SizedBox(height: AppMetrics.space2),
         ],
       ),

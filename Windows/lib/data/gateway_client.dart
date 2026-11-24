@@ -554,6 +554,7 @@ class GatewayClient {
       'account': json['account'],
       'filter': json['filter'],
       'offers': json['offers'],
+      if (json['announcement'] != null) 'announcement': json['announcement'],
     });
   }
 
@@ -579,6 +580,7 @@ class GatewayClient {
   Future<SessionData> refresh(String token) async {
     final Map<String, dynamic> json =
         await _get('account/refresh', <String, String>{'token': token});
+    final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
     return SessionData(
       token: token,
       uuid: JsonX.text(JsonX.asMap(json['account'])['uuid']),
@@ -586,6 +588,7 @@ class GatewayClient {
       account: Account.fromJson(JsonX.asMap(json['account'])),
       filter: FilterSettings.fromJson(JsonX.asMap(json['filter'])),
       offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
+      announcement: annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
     );
   }
 
@@ -610,6 +613,7 @@ class GatewayClient {
         Account? account,
         FilterSettings? filter,
         SubscriptionOffers? offers,
+        AppAnnouncement? announcement,
         bool? emergencyEnabled,
         bool? botLinked,
       })> heartbeat({
@@ -634,6 +638,7 @@ class GatewayClient {
     final Map<String, dynamic> accountMap = JsonX.asMap(json['account']);
     final Map<String, dynamic> filterMap = JsonX.asMap(json['filter']);
     final Map<String, dynamic> offersMap = JsonX.asMap(json['offers']);
+    final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
     return (
       account: accountMap.isNotEmpty ? Account.fromJson(accountMap) : null,
       filter: filterMap.isNotEmpty ? FilterSettings.fromJson(filterMap) : null,
@@ -641,9 +646,41 @@ class GatewayClient {
           ? JsonX.boolean(json['emergency_enabled']) : null,
       offers:
           offersMap.isNotEmpty ? SubscriptionOffers.fromJson(offersMap) : null,
+      announcement: annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
       botLinked: json.containsKey('bot_linked')
           ? JsonX.boolean(json['bot_linked']) : null,
     );
+  }
+
+  Future<AppAnnouncement?> fetchAnnouncement() async {
+    try {
+      final Map<String, dynamic> json = await _get('app/announcement');
+      final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
+      if (annMap.isEmpty) return null;
+      return AppAnnouncement.fromJson(annMap);
+    } on ApiError {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> reportSecurityAlert({
+    required String token,
+    required String deviceId,
+    required String platform,
+    required String appVersion,
+    required List<SecurityThreat> threats,
+    List<String> resolvedKeys = const <String>[],
+    bool syncAll = false,
+  }) async {
+    return _post('app/security-alert', <String, dynamic>{
+      'token': token,
+      'device_id': deviceId,
+      'platform': platform,
+      'app_version': appVersion,
+      'threats': threats.map((SecurityThreat t) => t.toAlertPayload()).toList(),
+      if (resolvedKeys.isNotEmpty) 'resolved_keys': resolvedKeys,
+      if (syncAll) 'sync_all': true,
+    });
   }
 
   Future<String> sendSupportReport({
