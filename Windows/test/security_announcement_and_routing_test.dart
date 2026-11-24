@@ -1300,6 +1300,7 @@ void main() {
             ),
             needsBrowserLaunch: true,
             port: 443,
+            source: 'https_connect',
           ),
         );
         vpn.debugHandleInterceptedBlock(
@@ -1313,6 +1314,7 @@ void main() {
             ),
             needsBrowserLaunch: true,
             port: 443,
+            source: 'https_connect',
           ),
         );
         vpn.debugHandleInterceptedBlock(
@@ -1326,6 +1328,7 @@ void main() {
             ),
             needsBrowserLaunch: true,
             port: 443,
+            source: 'https_connect',
           ),
         );
         vpn.debugProcessCoreLogLine(
@@ -1387,6 +1390,7 @@ void main() {
             ),
             needsBrowserLaunch: false,
             port: 80,
+            source: 'http_direct_403',
           ),
         );
         vpnHttp.debugProcessCoreLogLine(

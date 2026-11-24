@@ -1131,7 +1131,7 @@ void main() {
         final _FakeNative native = _FakeNative();
         final VpnController vpn = VpnController(
           native: native,
-          ipService: _FakeIpService(),
+          ipService: IpService(),
           sound: _FakeSound(),
           tray: TrayService(native),
           provisioner: CoreProvisioner(),
@@ -1169,6 +1169,7 @@ void main() {
             ),
             needsBrowserLaunch: true,
             port: 443,
+            source: 'https_connect',
           ),
         );
         vpn.debugHandleInterceptedBlock(
@@ -1182,6 +1183,7 @@ void main() {
             ),
             needsBrowserLaunch: true,
             port: 443,
+            source: 'https_connect',
           ),
         );
         vpn.debugHandleInterceptedBlock(
@@ -1195,6 +1197,7 @@ void main() {
             ),
             needsBrowserLaunch: true,
             port: 443,
+            source: 'https_connect',
           ),
         );
         vpn.debugProcessCoreLogLine(
@@ -1224,7 +1227,7 @@ void main() {
         final List<Uri> direct403Launches = <Uri>[];
         final VpnController vpnHttp = VpnController(
           native: native,
-          ipService: _FakeIpService(),
+          ipService: IpService(),
           sound: _FakeSound(),
           tray: TrayService(native),
           provisioner: CoreProvisioner(),
@@ -1255,6 +1258,7 @@ void main() {
             ),
             needsBrowserLaunch: false,
             port: 80,
+            source: 'http_direct_403',
           ),
         );
         vpnHttp.debugProcessCoreLogLine(

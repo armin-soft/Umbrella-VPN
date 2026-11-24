@@ -8,7 +8,6 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/toast_controller.dart';
-import '../../vpn/vpn_controller.dart';
 import '../shell/app_shell.dart';
 import 'common.dart';
 
