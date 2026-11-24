@@ -27,7 +27,6 @@ import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/content_block_server.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
-import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {

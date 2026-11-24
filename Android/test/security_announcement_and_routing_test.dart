@@ -1030,5 +1030,123 @@ void main() {
         vpn.dispose();
       },
     );
+
+    test(
+      'RuntimeConfig.finalize routes primary content control & trojan links to umbrella-block-page',
+      () {
+        final Map<String, dynamic> runtime = <String, dynamic>{
+          'outbounds': <dynamic>[
+            <String, dynamic>{'type': 'direct', 'tag': RuntimeConfig.directOutboundTag},
+            <String, dynamic>{'type': 'selector', 'tag': 'select'},
+          ],
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{},
+            'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'},
+          },
+          'dns': <String, dynamic>{
+            'rules': <dynamic>[
+              <String, dynamic>{
+                'domain_suffix': <String>['pornhub.com'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'rule_set': <String>['geosite-category-ads-all'],
+                'action': 'reject',
+              },
+            ],
+          },
+          'route': <String, dynamic>{
+            'rules': <dynamic>[
+              <String, dynamic>{'action': 'sniff'},
+              <String, dynamic>{
+                'domain_suffix': <String>['pornhub.com'],
+                'rule_set': <String>['geosite-category-porn'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'domain_suffix': <String>['blocked-custom.example'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'domain_suffix': <String>['doubleclick.net'],
+                'rule_set': <String>['geosite-category-ads-all'],
+                'action': 'reject',
+              },
+              <String, dynamic>{
+                'package_name': <String>['com.example.blocked'],
+                'action': 'reject',
+              },
+            ],
+          },
+        };
+
+        RuntimeConfig.finalize(
+          runtime,
+          profileTags: const <String>{},
+          coreSettings: const <String, dynamic>{
+            'bypass-lan': true,
+            'resolve-destination': true,
+          },
+          blockPagePort: 45123,
+        );
+
+        final List<dynamic> outbounds = runtime['outbounds'] as List<dynamic>;
+        expect(
+          outbounds.any((dynamic o) =>
+              o is Map &&
+              o['tag'] == RuntimeConfig.blockPageOutboundTag &&
+              o['type'] == 'http' &&
+              o['server_port'] == 45123),
+          isTrue,
+        );
+
+        final List<Map<String, dynamic>> routeRules =
+            ((runtime['route'] as Map<String, dynamic>)['rules'] as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        final Map<String, dynamic> pornRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['domain_suffix']}'.contains('pornhub.com'),
+        );
+        expect(pornRule['action'], 'route');
+        expect(pornRule['outbound'], RuntimeConfig.blockPageOutboundTag);
+
+        final Map<String, dynamic> customRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['domain_suffix']}'.contains('blocked-custom.example'),
+        );
+        expect(customRule['outbound'], RuntimeConfig.blockPageOutboundTag);
+
+        final Map<String, dynamic> adsRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['domain_suffix']}'.contains('doubleclick.net'),
+        );
+        expect(adsRule['action'], 'reject');
+
+        final Map<String, dynamic> appRule = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['package_name']}'.contains('com.example.blocked'),
+        );
+        expect(appRule['action'], 'reject');
+
+        final int trojanIdx = routeRules.indexWhere(
+          (Map<String, dynamic> r) =>
+              r['outbound'] == RuntimeConfig.blockPageOutboundTag &&
+              '${r['domain_suffix']}'.contains('grabify.link'),
+        );
+        final int resolveIdx = routeRules.indexWhere(
+          (Map<String, dynamic> r) => r['action'] == 'resolve',
+        );
+        expect(trojanIdx, greaterThan(0));
+        expect(resolveIdx, greaterThan(trojanIdx));
+
+        final List<dynamic> dnsRules =
+            (runtime['dns'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+        expect(dnsRules.any((dynamic r) => '$r'.contains('pornhub.com')), isFalse);
+        expect(
+          dnsRules.any((dynamic r) => '$r'.contains('geosite-category-ads-all')),
+          isTrue,
+        );
+      },
+    );
   });
 }
