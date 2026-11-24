@@ -429,23 +429,34 @@ class RuntimeConfig {
         final bool isBlockRule =
             item['action'] == 'reject' || item['outbound'] == 'block';
         if (isBlockRule && _isPrimaryContentBlockRule(item)) {
-          rewrittenRules.addAll(_expandOrBlockRule(item));
+          rewrittenRules.addAll(_expandOrBlockRule(item, routeToBlockPage: true));
+        } else if (isBlockRule && _isDomainLevelBlockRule(item)) {
+          rewrittenRules.addAll(_expandOrBlockRule(item, routeToBlockPage: false));
         } else {
           rewrittenRules.add(item);
         }
       }
-      routeRules
-        ..clear()
-        ..addAll(rewrittenRules);
 
-      final bool hasTrojanRule = routeRules.any((dynamic item) {
+      final bool hasTrojanRule = rewrittenRules.any((dynamic item) {
         if (item is! Map) return false;
         if (item['outbound'] != blockPageOutboundTag) return false;
         return _containsString(item['domain_suffix'], 'grabify.link');
       });
+
+      int lastPreRouteIdx = -1;
+      for (int i = 0; i < rewrittenRules.length; i++) {
+        final dynamic item = rewrittenRules[i];
+        if (item is Map && _isPreRouteRule(item)) {
+          lastPreRouteIdx = i;
+        }
+      }
+
+      final List<dynamic> prefix = <dynamic>[];
+      final List<dynamic> promotedBlocks = <dynamic>[];
+      final List<dynamic> suffix = <dynamic>[];
+
       if (!hasTrojanRule) {
-        final int insertAt = _trojanBlockInsertIndex(routeRules);
-        routeRules.insertAll(insertAt, <Map<String, dynamic>>[
+        promotedBlocks.addAll(<Map<String, dynamic>>[
           <String, dynamic>{
             'domain_suffix':
                 MaliciousLinkGuard.knownMaliciousDomains.toList(growable: false),
@@ -459,6 +470,23 @@ class RuntimeConfig {
           },
         ]);
       }
+
+      for (int i = 0; i < rewrittenRules.length; i++) {
+        final dynamic item = rewrittenRules[i];
+        if (i <= lastPreRouteIdx) {
+          prefix.add(item);
+        } else if (item is Map && _isDomainLevelBlockRule(item)) {
+          promotedBlocks.add(item);
+        } else {
+          suffix.add(item);
+        }
+      }
+
+      routeRules
+        ..clear()
+        ..addAll(prefix)
+        ..addAll(promotedBlocks)
+        ..addAll(suffix);
     }
 
     // در حالت TUN، قوانین DNS مربوط به دسته های صفحه دار (غیر از تبلیغات) را
@@ -479,8 +507,9 @@ class RuntimeConfig {
   }
 
   static List<Map<String, dynamic>> _expandOrBlockRule(
-    Map<String, dynamic> source,
-  ) {
+    Map<String, dynamic> source, {
+    required bool routeToBlockPage,
+  }) {
     const List<String> matchKeys = <String>[
       'domain_suffix',
       'domain',
@@ -494,29 +523,36 @@ class RuntimeConfig {
         presentKeys.contains('domain')) {
       presentKeys.remove('domain');
     }
+
+    void applyTarget(Map<String, dynamic> rule) {
+      if (routeToBlockPage) {
+        rule.remove('method');
+        rule.remove('no_drop');
+        rule['action'] = 'route';
+        rule['outbound'] = blockPageOutboundTag;
+      } else {
+        rule.remove('outbound');
+        rule['action'] = 'reject';
+      }
+    }
+
     if (presentKeys.length <= 1) {
-      final Map<String, dynamic> single = Map<String, dynamic>.from(source)
-        ..remove('method')
-        ..remove('no_drop')
-        ..['action'] = 'route'
-        ..['outbound'] = blockPageOutboundTag;
+      final Map<String, dynamic> single = Map<String, dynamic>.from(source);
       if (!presentKeys.contains('domain') &&
           _nonEmptyRuleField(source['domain']) &&
           _nonEmptyRuleField(source['domain_suffix'])) {
         single.remove('domain');
       }
+      applyTarget(single);
       return <Map<String, dynamic>>[single];
     }
 
     final Map<String, dynamic> base = Map<String, dynamic>.from(source)
-      ..remove('method')
-      ..remove('no_drop')
       ..remove('domain')
       ..remove('domain_suffix')
       ..remove('domain_keyword')
-      ..remove('rule_set')
-      ..['action'] = 'route'
-      ..['outbound'] = blockPageOutboundTag;
+      ..remove('rule_set');
+    applyTarget(base);
 
     return presentKeys
         .map(
@@ -528,23 +564,34 @@ class RuntimeConfig {
         .toList(growable: false);
   }
 
-  static int _trojanBlockInsertIndex(List<dynamic> rules) {
-    int index = 0;
-    while (index < rules.length) {
-      final dynamic item = rules[index];
-      if (item is! Map) break;
-      final String action = '${item['action'] ?? ''}';
-      if (action == 'sniff' ||
-          action == 'hijack-dns' ||
-          _containsString(item['protocol'], 'dns') ||
-          item['port'] == 53 ||
-          _containsInt(item['port'], 53)) {
-        index++;
-        continue;
-      }
-      break;
+  static bool _isPreRouteRule(Map<dynamic, dynamic> item) {
+    final String action = '${item['action'] ?? ''}';
+    return action == 'sniff' ||
+        action == 'hijack-dns' ||
+        _containsString(item['protocol'], 'dns') ||
+        item['port'] == 53 ||
+        _containsInt(item['port'], 53);
+  }
+
+  static bool _isDomainLevelBlockRule(Map<dynamic, dynamic> item) {
+    final bool isBlockTarget = item['outbound'] == blockPageOutboundTag ||
+        item['action'] == 'reject' ||
+        item['outbound'] == 'block';
+    if (!isBlockTarget) return false;
+    if (_nonEmptyRuleField(item['ip_cidr']) ||
+        item['ip_is_private'] == true ||
+        item['ip_version'] != null ||
+        _containsString(item['protocol'], 'quic') ||
+        _nonEmptyRuleField(item['process_name']) ||
+        _nonEmptyRuleField(item['process_path']) ||
+        _nonEmptyRuleField(item['process_path_regex']) ||
+        _nonEmptyRuleField(item['package_name'])) {
+      return false;
     }
-    return index;
+    return _nonEmptyRuleField(item['domain']) ||
+        _nonEmptyRuleField(item['domain_suffix']) ||
+        _nonEmptyRuleField(item['domain_keyword']) ||
+        _nonEmptyRuleField(item['rule_set']);
   }
 
   static bool _isPrimaryContentBlockRule(Map<dynamic, dynamic> rule) {
