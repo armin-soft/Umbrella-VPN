@@ -1208,17 +1208,17 @@ std::map<std::string, std::string> SystemOps::ResolveProcessLabels(
     };
     LangCp* trans = nullptr;
     UINT trans_len = 0;
-    std::vector<std::pair<WORD, WORD>> probes;
+    std::vector<LangCp> probes;
     if (VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation",
                        reinterpret_cast<LPVOID*>(&trans), &trans_len) &&
         trans != nullptr && trans_len >= sizeof(LangCp)) {
-      probes.emplace_back(trans[0].lang, trans[0].cp);
+      probes.push_back(trans[0]);
     }
-    probes.emplace_back(0x0409, 0x04B0);
-    probes.emplace_back(0x0409, 0x04E4);
+    probes.push_back(LangCp{0x0409, 0x04B0});
+    probes.push_back(LangCp{0x0409, 0x04E4});
 
     auto query_field = [&](const wchar_t* field) -> std::string {
-      for (const auto& lc : probes) {
+      for (const LangCp& lc : probes) {
         wchar_t q[128] = {0};
         swprintf_s(q, L"\\StringFileInfo\\%04x%04x\\%s", lc.lang, lc.cp, field);
         wchar_t* val = nullptr;
