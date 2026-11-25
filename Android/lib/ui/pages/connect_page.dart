@@ -32,6 +32,9 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
+  bool _preConnectBusy = false;
+  int _preConnectEpoch = 0;
+
   /// آی پی دستگاه برای نمایش در نوار بالا.
   ///
   /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
@@ -158,6 +161,14 @@ class _ConnectPageState extends State<ConnectPage> {
     VpnController vpn,
     ToastController toasts,
   ) async {
+    if (_preConnectBusy && !vpn.status.busy) {
+      setState(() {
+        _preConnectEpoch++;
+        _preConnectBusy = false;
+      });
+      toasts.info('اتصال لغو شد');
+      return;
+    }
     await vpn.cancel();
     if (!mounted) {
       return;
@@ -170,7 +181,7 @@ class _ConnectPageState extends State<ConnectPage> {
     SubscriptionController subs,
     ToastController toasts,
   ) async {
-    if (vpn.status.busy) {
+    if (vpn.status.busy || _preConnectBusy) {
       return;
     }
     if (vpn.status.active) {
@@ -188,28 +199,40 @@ class _ConnectPageState extends State<ConnectPage> {
       toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
       return;
     }
+    Future<ConnectOutcome>? pendingConnect;
     if (vpn.nodes.isEmpty) {
-      await subs.syncPersonal();
-      if (!mounted) {
-        return;
-      }
-      if (vpn.nodes.isEmpty &&
-          subs.emergencyEnabled &&
-          subs.emergencyNodes.isEmpty &&
-          !subs.emergencyLoading) {
-        await subs.refreshEmergency();
-        if (!mounted) return;
-      }
-      if (vpn.nodes.isEmpty &&
-          !(subs.emergencyEnabled && subs.emergencyNodes.isNotEmpty)) {
-        toasts.error(
-          'اشتراک دریافت نشد',
-          'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
-        );
-        return;
+      final int epoch = ++_preConnectEpoch;
+      setState(() => _preConnectBusy = true);
+      try {
+        await subs.syncPersonal();
+        if (!mounted || epoch != _preConnectEpoch) {
+          return;
+        }
+        if (vpn.nodes.isEmpty &&
+            subs.emergencyEnabled &&
+            subs.emergencyNodes.isEmpty &&
+            !subs.emergencyLoading) {
+          await subs.refreshEmergency();
+          if (!mounted || epoch != _preConnectEpoch) return;
+        }
+        if (vpn.nodes.isEmpty &&
+            !(subs.emergencyEnabled && subs.emergencyNodes.isNotEmpty)) {
+          toasts.error(
+            'اشتراک دریافت نشد',
+            'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
+          );
+          return;
+        }
+        // Start `vpn.connect()` before clearing `_preConnectBusy` so the UI stays
+        // in `در حال اتصال` continuously without a single disconnected frame.
+        pendingConnect = vpn.connect();
+      } finally {
+        if (mounted && epoch == _preConnectEpoch && _preConnectBusy) {
+          setState(() => _preConnectBusy = false);
+        }
       }
     }
-    final ConnectOutcome outcome = await vpn.connect();
+    final ConnectOutcome outcome = await (pendingConnect ?? vpn.connect());
     if (!mounted) {
       return;
     }
@@ -261,7 +284,12 @@ class _ConnectPageState extends State<ConnectPage> {
         context.maybeWatch<SecurityScannerController>();
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
-    final VpnStatus status = vpn.status;
+    final bool preConnecting =
+        _preConnectBusy && vpn.status == VpnStatus.disconnected;
+    final VpnStatus status =
+        preConnecting ? VpnStatus.connecting : vpn.status;
+    final String statusMessage =
+        preConnecting ? 'در حال آماده سازی اتصال...' : vpn.message;
     final Color tone = VpnVisuals.color(context, status);
     final bool connected = status == VpnStatus.connected;
     final Account account = auth.account;
@@ -580,7 +608,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 _PingLine(pingMs: vpn.activePingMs)
               else
                 Text(
-                  Fa.num(vpn.message),
+                  Fa.num(statusMessage),
                   textAlign: TextAlign.center,
                   style: (dense
                           ? Theme.of(context).textTheme.bodySmall

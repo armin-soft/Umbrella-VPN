@@ -80,6 +80,7 @@ class RuntimeConfig {
     int stickyMinutes = 15,
     int? blockPagePort,
     bool preserveLogOutput = false,
+    bool hotReloadCompat = false,
     Map<String, String>? localRuleSetPaths,
     String? localDataDir,
   }) {
@@ -99,27 +100,32 @@ class RuntimeConfig {
     }
     final Map<String, dynamic>? monitoring =
         rawMonitoring is Map<String, dynamic> ? rawMonitoring : null;
-    if (monitoring != null) {
+    // `sing-box CheckHotReload` only allows modifying `experimental.monitoring.keep_top`
+    // (`withoutKeepTop`), rejecting changes to workers/debounce_window/url_test_timeout.
+    if (!hotReloadCompat && monitoring != null) {
       monitoring['workers'] = monitoringWorkers;
       monitoring['debounce_window'] = '200ms';
       monitoring['url_test_timeout'] = '4s';
     }
 
     // No dashboard download on the connection path. Clash API remains loopback.
-    final Map<String, dynamic>? clash =
-        experimental['clash_api'] as Map<String, dynamic>?;
-    clash?.remove('external_ui');
-    clash?.remove('external_ui_download_url');
-    if (clash != null && clashApiPort != null) {
-      if (clashApiPort <= 0) {
-        experimental.remove('clash_api');
-      } else {
-        clash['external_controller'] = '127.0.0.1:$clashApiPort';
+    // Modifying `experimental.clash_api` fails live HotReload, so skip when hot-reloading.
+    if (!hotReloadCompat) {
+      final Map<String, dynamic>? clash =
+          experimental['clash_api'] as Map<String, dynamic>?;
+      clash?.remove('external_ui');
+      clash?.remove('external_ui_download_url');
+      if (clash != null && clashApiPort != null) {
+        if (clashApiPort <= 0) {
+          experimental.remove('clash_api');
+        } else {
+          clash['external_controller'] = '127.0.0.1:$clashApiPort';
+        }
       }
     }
 
     // The controller captures stdout; do not let two writers truncate one log.
-    if (!preserveLogOutput) {
+    if (!preserveLogOutput && !hotReloadCompat) {
       (config['log'] as Map<String, dynamic>?)?.remove('output');
     }
 
@@ -127,7 +133,11 @@ class RuntimeConfig {
     // به شکل قدیمی تولید می کند (`download_detour` روی `rule_set`، `store_rdrc`،
     // `independent_cache`، `rule_set_ip_cidr_accept_empty` و `strategy` روی
     // قوانین DNS) تا اجرای `srun` روی هیچ تنظیمی با خطای `FATAL` متوقف نشود.
-    _migrateSingBox114Deprecations(config, experimental);
+    _migrateSingBox114Deprecations(
+      config,
+      experimental,
+      hotReloadCompat: hotReloadCompat,
+    );
     _configureDirectWireGuardResolver(config, profileTags, coreSettings);
 
     final _ResolvedTlsPadding? tlsPadding = _extractTlsPadding(coreSettings);
@@ -239,7 +249,12 @@ class RuntimeConfig {
     outbounds.insertAll(0, extra);
 
     // Patch route configuration (process matching, LAN bypass, destination resolve).
-    _finalizeRoute(config, outbounds, coreSettings);
+    _finalizeRoute(
+      config,
+      outbounds,
+      coreSettings,
+      hotReloadCompat: hotReloadCompat,
+    );
     final Map<String, String> localRuleSets =
         _discoverLocalRuleSets(localRuleSetPaths, localDataDir);
     _ensureRequestedLocalFilterRuleSets(
@@ -299,8 +314,9 @@ class RuntimeConfig {
   static void _finalizeRoute(
     Map<String, dynamic> config,
     List<dynamic> outbounds,
-    Map<String, dynamic>? coreSettings,
-  ) {
+    Map<String, dynamic>? coreSettings, {
+    bool hotReloadCompat = false,
+  }) {
     final dynamic rawRoute = config['route'];
     if (rawRoute is! Map<String, dynamic>) {
       return;
@@ -312,17 +328,21 @@ class RuntimeConfig {
 
     // 1. Enable socket-to-process lookup whenever any rule matches a process or
     //    when Clash API is active so opened applications/sites can be observed.
-    final bool needsFindProcess = rawRules.any((dynamic item) {
-      if (item is! Map) return false;
-      return _nonEmptyRuleField(item['process_name']) ||
-          _nonEmptyRuleField(item['process_path']) ||
-          _nonEmptyRuleField(item['process_path_regex']) ||
-          _nonEmptyRuleField(item['package_name']);
-    });
-    final bool hasClashApi = config['experimental'] is Map &&
-        (config['experimental'] as Map<dynamic, dynamic>)['clash_api'] is Map;
-    if (needsFindProcess || hasClashApi) {
-      rawRoute['find_process'] = true;
+    //    During live HotReload on Android (`hiddify-sing-box`), `route.find_process`
+    //    is non-reloadable and already enabled unconditionally by `route/router.go`.
+    if (!hotReloadCompat) {
+      final bool needsFindProcess = rawRules.any((dynamic item) {
+        if (item is! Map) return false;
+        return _nonEmptyRuleField(item['process_name']) ||
+            _nonEmptyRuleField(item['process_path']) ||
+            _nonEmptyRuleField(item['process_path_regex']) ||
+            _nonEmptyRuleField(item['package_name']);
+      });
+      final bool hasClashApi = config['experimental'] is Map &&
+          (config['experimental'] as Map<dynamic, dynamic>)['clash_api'] is Map;
+      if (needsFindProcess || hasClashApi) {
+        rawRoute['find_process'] = true;
+      }
     }
 
     // 2. Preserve `bypass-lan` when `route-rule` suppressed upstream BypassLAN.
@@ -910,11 +930,14 @@ class RuntimeConfig {
   /// - `dns.rules[*].rule_set_ip_cidr_accept_empty` و `geoip-*` در DNS -> پاک سازی
   static void _migrateSingBox114Deprecations(
     Map<String, dynamic> config,
-    Map<String, dynamic> experimental,
-  ) {
-    final Object? cacheFile = experimental['cache_file'];
-    if (cacheFile is Map<String, dynamic>) {
-      cacheFile.remove('store_rdrc');
+    Map<String, dynamic> experimental, {
+    bool hotReloadCompat = false,
+  }) {
+    if (!hotReloadCompat) {
+      final Object? cacheFile = experimental['cache_file'];
+      if (cacheFile is Map<String, dynamic>) {
+        cacheFile.remove('store_rdrc');
+      }
     }
 
     final Object? rawRoute = config['route'];
@@ -938,7 +961,9 @@ class RuntimeConfig {
     if (rawDns is! Map<String, dynamic>) {
       return;
     }
-    rawDns.remove('independent_cache');
+    if (!hotReloadCompat) {
+      rawDns.remove('independent_cache');
+    }
 
     final Object? rawDnsRules = rawDns['rules'];
     if (rawDnsRules is! List) {

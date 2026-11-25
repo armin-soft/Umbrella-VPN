@@ -2212,7 +2212,392 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    test('RuntimeConfig.finalize با hotReloadCompat فیلدهای غیرقابل hot-reload را تغییر نمی دهد', () async {
+      final Directory tempData =
+          await Directory.systemTemp.createTemp('umbrella_hr_');
+      addTearDown(() async {
+        if (await tempData.exists()) {
+          await tempData.delete(recursive: true);
+        }
+      });
+      final File adultSrs = File(
+        '${tempData.path}${Platform.pathSeparator}filter-adult.srs',
+      );
+      await adultSrs.writeAsBytes(List<int>.filled(64, 1));
+      final File irSiteSrs = File(
+        '${tempData.path}${Platform.pathSeparator}geosite-ir.srs',
+      );
+      await irSiteSrs.writeAsBytes(List<int>.filled(64, 2));
+
+      final Map<String, dynamic> cfg = <String, dynamic>{
+        'log': <String, dynamic>{'level': 'warn', 'output': 'box.log'},
+        'inbounds': <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'tun', 'tag': 'tun-in'},
+        ],
+        'dns': <String, dynamic>{
+          'independent_cache': true,
+          'servers': <Map<String, dynamic>>[
+            <String, dynamic>{'tag': 'dns-direct-group', 'type': 'local'},
+            <String, dynamic>{'tag': 'dns-remote-group', 'type': 'udp'},
+          ],
+          'rules': <Map<String, dynamic>>[],
+        },
+        'route': <String, dynamic>{
+          'find_process': false,
+          'rules': <Map<String, dynamic>>[
+            <String, dynamic>{'action': 'sniff'},
+          ],
+          'rule_set': <Map<String, dynamic>>[],
+        },
+        'outbounds': <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'},
+          for (int i = 0; i < 130; i++)
+            <String, dynamic>{'type': 'vless', 'tag': 'node-$i'},
+        ],
+        'experimental': <String, dynamic>{
+          'cache_file': <String, dynamic>{
+            'enabled': true,
+            'store_rdrc': true,
+          },
+          'monitoring': <String, dynamic>{
+            'workers': 8,
+            'debounce_window': '500ms',
+            'url_test_timeout': '5s',
+          },
+          'clash_api': <String, dynamic>{
+            'external_controller': '127.0.0.1:16756',
+            'external_ui': 'ui',
+          },
+        },
+      };
+
+      RuntimeConfig.finalize(
+        cfg,
+        profileTags: <String>{for (int i = 0; i < 130; i++) 'node-$i'},
+        coreSettings: <String, dynamic>{
+          'region': 'ir',
+          'bypass-lan': true,
+          'resolve-destination': true,
+          'route-rule': <String, dynamic>{
+            'rules': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'name': 'umbrella-filter-adult',
+                'enabled': true,
+              },
+            ],
+          },
+        },
+        blockPagePort: 18080,
+        preserveLogOutput: true,
+        hotReloadCompat: true,
+        localDataDir: tempData.path,
+      );
+
+      final Map<String, dynamic> monitoring =
+          (cfg['experimental'] as Map<String, dynamic>)['monitoring']
+              as Map<String, dynamic>;
+      expect(monitoring['workers'], 8);
+      expect(monitoring['debounce_window'], '500ms');
+      expect(monitoring['url_test_timeout'], '5s');
+      expect(monitoring['keep_top'], isA<Map<String, dynamic>>());
+
+      final Map<String, dynamic> clash =
+          (cfg['experimental'] as Map<String, dynamic>)['clash_api']
+              as Map<String, dynamic>;
+      expect(clash['external_ui'], 'ui');
+
+      final Map<String, dynamic> cacheFile =
+          (cfg['experimental'] as Map<String, dynamic>)['cache_file']
+              as Map<String, dynamic>;
+      expect(cacheFile['store_rdrc'], isTrue);
+      expect((cfg['dns'] as Map<String, dynamic>)['independent_cache'], isTrue);
+      expect((cfg['route'] as Map<String, dynamic>)['find_process'], isFalse);
+
+      expect(
+        (cfg['outbounds'] as List<dynamic>).any(
+          (dynamic o) =>
+              o is Map && o['tag'] == RuntimeConfig.blockPageOutboundTag,
+        ),
+        isTrue,
+      );
+      expect(
+        (cfg['outbounds'] as List<dynamic>).where(
+          (dynamic o) => o is Map && o['lazy'] == true,
+        ).length,
+        130,
+      );
+      expect(
+        ((cfg['route'] as Map<String, dynamic>)['rule_set'] as List<dynamic>)
+            .any((dynamic rs) => rs is Map && rs['tag'] == 'filter-adult'),
+        isTrue,
+      );
+
+      final String vpnControllerSrc = File(
+        '${Directory.current.path}/lib/vpn/vpn_controller.dart',
+      ).readAsStringSync();
+      expect(vpnControllerSrc, contains('hotReloadCompat: true'));
+    });
+
+    test('VpnController.connect بلافاصله وضعیت را روی در حال اتصال می گذارد', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+      final Directory tempDir =
+          await Directory.systemTemp.createTemp('umbrella_android_imm_');
+      addTearDown(() async {
+        AppLogger.instance.clear();
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final _ImmediateConnectNative native = _ImmediateConnectNative();
+      final _TestProvisioner provisioner = _TestProvisioner(tempDir.path);
+      await provisioner.init(native);
+      final Completer<String> scanGate = Completer<String>();
+      final List<VpnStatus> seenStatuses = <VpnStatus>[];
+
+      final VpnController controller = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: _FakeSound(),
+        tray: TrayService(native),
+        provisioner: provisioner,
+        settings: const AppSettings(corePreference: CorePreference.tun),
+        securityGuard: () => scanGate.future,
+      );
+      controller.addListener(() {
+        if (seenStatuses.isEmpty || seenStatuses.last != controller.status) {
+          seenStatuses.add(controller.status);
+        }
+      });
+      addTearDown(controller.dispose);
+
+      // Even before `securityGuard` finishes, `connect()` synchronously enters
+      // `VpnStatus.connecting` («در حال اتصال») so the UI shows immediate feedback.
+      final Future<ConnectOutcome> pending = controller.connect();
+      expect(controller.status, VpnStatus.connecting);
+      expect(controller.status.label, 'در حال اتصال');
+      expect(seenStatuses, contains(VpnStatus.connecting));
+      expect(seenStatuses, isNot(contains(VpnStatus.preparing)));
+
+      scanGate.complete('');
+      final ConnectOutcome outcome = await pending;
+      expect(outcome.ok, isFalse);
+      expect(controller.status, VpnStatus.failed);
+
+      // Cancellation while `securityGuard` is still running resets cleanly to disconnected.
+      final Completer<String> slowScan = Completer<String>();
+      final VpnController cancellable = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: _FakeSound(),
+        tray: TrayService(native),
+        provisioner: provisioner,
+        settings: const AppSettings(corePreference: CorePreference.tun),
+        securityGuard: () => slowScan.future,
+      );
+      addTearDown(cancellable.dispose);
+
+      final Future<ConnectOutcome> pendingCancel = cancellable.connect();
+      expect(cancellable.status, VpnStatus.connecting);
+      await cancellable.cancel();
+      slowScan.complete('');
+      final ConnectOutcome cancelOutcome = await pendingCancel;
+      expect(cancelOutcome.cancelled, isTrue);
+      expect(cancellable.status, VpnStatus.disconnected);
+    });
+
+    testWidgets('ConnectPage بلافاصله پس از لمس دکمه اتصال عبارت در حال اتصال را نمایش می دهد', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(420, 860));
+      addTearDown(() async => await tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+      final Directory tempDir =
+          await Directory.systemTemp.createTemp('umbrella_android_page_imm_');
+      addTearDown(() async {
+        AppLogger.instance.clear();
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final _ImmediateConnectNative native = _ImmediateConnectNative();
+      final _TestProvisioner provisioner = _TestProvisioner(tempDir.path);
+      await provisioner.init(native);
+      final _FakeSound sound = _FakeSound();
+      final Completer<String> scanGate = Completer<String>();
+
+      final VpnController vpn = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: sound,
+        tray: TrayService(native),
+        provisioner: provisioner,
+        settings: const AppSettings(corePreference: CorePreference.tun),
+        securityGuard: () => scanGate.future,
+      );
+      final SettingsController settings = SettingsController(
+        native: native,
+        sound: sound,
+        window: _FakeWindow(),
+      );
+      final GatewayClient gateway = GatewayClient(
+        client: MockClient((http.Request _) async => http.Response('{"ok":false}', 200)),
+        enableNativeTransport: false,
+      );
+      final _ConnectSignedAuth auth = _ConnectSignedAuth(
+        native: native,
+        gateway: gateway,
+        store: LocalStore.instance,
+      );
+      final Completer<void> syncGate = Completer<void>();
+      final _DelayedConnectSubs subs = _DelayedConnectSubs(
+        vpn: vpn,
+        auth: auth,
+        client: MockClient((http.Request _) async => http.Response('[]', 200)),
+        onSync: () => syncGate.future,
+      );
+      final ToastController toasts = ToastController();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<NativeBridge>.value(value: native),
+            Provider<SoundService>.value(value: sound),
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+            ChangeNotifierProvider<VpnController>.value(value: vpn),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: ConnectPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('اتصال'), findsOneWidget);
+
+      // Even while nodes are empty and `syncPersonal()` is still pending,
+      // tapping Connect immediately displays `در حال اتصال` and `لغو اتصال`.
+      final Finder connectBtn = find.text('اتصال');
+      await tester.ensureVisible(connectBtn);
+      await tester.tap(connectBtn);
+      await tester.pump();
+      expect(find.text('در حال اتصال'), findsOneWidget);
+      expect(find.text('لغو اتصال'), findsOneWidget);
+
+      // Provide a node and complete sync: stays continuously in `در حال اتصال`
+      // while `securityGuard` is still running (`scanGate` incomplete).
+      await vpn.applyNodes(const <VpnNode>[
+        VpnNode(
+          id: 'n1',
+          name: 'Node 1',
+          protocol: NodeProtocol.vless,
+          host: '1.1.1.1',
+          port: 443,
+          sourceId: 'user-sub',
+          pingMs: 120,
+          params: <String, dynamic>{'uuid': '11111111-1111-1111-1111-111111111111'},
+        ),
+      ], measure: false);
+      syncGate.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(vpn.status, VpnStatus.connecting);
+      expect(find.text('در حال اتصال'), findsOneWidget);
+      expect(find.text('لغو اتصال'), findsOneWidget);
+
+      // Tap cancel mid-security-scan cleanly resets back to `اتصال`.
+      final Finder cancelBtn = find.text('لغو اتصال');
+      await tester.ensureVisible(cancelBtn);
+      await tester.tap(cancelBtn);
+      scanGate.complete('');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(vpn.status, VpnStatus.disconnected);
+
+      toasts.clear();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+      subs.dispose();
+      vpn.dispose();
+      settings.dispose();
+      auth.dispose();
+      gateway.close();
+      toasts.dispose();
+    });
   });
+}
+
+class _ImmediateConnectNative extends _TestCoreNative {
+  _ImmediateConnectNative()
+      : super(
+          parseResult: (ok: true, content: '{"outbounds":[]}', message: ''),
+        );
+
+  @override
+  Future<bool> restoreNetworkDefaults() async => true;
+
+  @override
+  Future<String> localIp() async => '192.168.1.50';
+
+  @override
+  Future<({bool online, String fingerprint})?> networkState() async =>
+      (online: true, fingerprint: 'wifi');
+
+  @override
+  Future<bool> ensureVpnPermission() async => true;
+}
+
+class _ConnectSignedAuth extends AuthController {
+  _ConnectSignedAuth({
+    required super.native,
+    required super.gateway,
+    required super.store,
+  });
+
+  @override
+  bool get signedIn => true;
+
+  @override
+  Account get account => const Account(
+        name: 'کاربر تست',
+        enable: true,
+        isActive: true,
+      );
+
+  @override
+  SessionData? get session => const SessionData(
+        token: 'tok-connect-1',
+        uuid: '33333333-3333-4333-8333-333333333333',
+        deviceId: 'dev-connect-1',
+        account: Account(
+          name: 'کاربر تست',
+          enable: true,
+          isActive: true,
+        ),
+        filter: FilterSettings.empty,
+      );
+}
+
+class _DelayedConnectSubs extends SubscriptionController {
+  _DelayedConnectSubs({
+    required super.vpn,
+    required super.auth,
+    required super.client,
+    required this.onSync,
+  }) : super(enableNativeTransport: false);
+
+  final Future<void> Function() onSync;
+
+  @override
+  Future<void> syncPersonal() => onSync();
 }
 
 class _SmsTestNative extends _FakeNative {

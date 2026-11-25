@@ -1379,8 +1379,9 @@ class VpnController extends ChangeNotifier {
     // در گزارش ۱٫۰۱۲ دو «درخواست اتصال» با سه ثانیه فاصله آمد و هر دو
     // اجرا شدند. هر کدام هسته خودش را بالا می آورد، هر دو پورت ثابت ۱۷۰۷۸ را
     // می خواستند، و نتیجه اش همان «port 17078 is already in use» پشت سر هم و
-    // کشته شدن هسته ای بود که تازه کار کرده بود. `_status.active` اینجا کافی
-    // نیست چون وضعیت تا وقتی به `preparing` نرسیده هنوز `disconnected` است.
+    // کشته شدن هسته ای بود که تازه کار کرده بود. همچنین وضعیت بلافاصله در
+    // ورود به `connect()` تغییر می کند تا کاربر از همان لحظه اول «در حال اتصال»
+    // را ببیند.
     if (_connectInFlight) {
       return const ConnectOutcome(
         ok: false,
@@ -1398,6 +1399,11 @@ class VpnController extends ChangeNotifier {
       _autoSession = requested == null && !emergency;
     }
     _connectInFlight = true;
+    _cancelRequested = false;
+    _setStatus(
+      isAutoReconnect ? VpnStatus.reconnecting : VpnStatus.connecting,
+      isAutoReconnect ? 'در حال اتصال دوباره...' : 'در حال آماده سازی اتصال...',
+    );
     try {
       final ConnectOutcome outcome = await _connectInner(requested: requested);
       return _cancelRequested ? const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.') : outcome;
@@ -1511,6 +1517,7 @@ class VpnController extends ChangeNotifier {
     _singleNodeSession = requested != null || (!_emergencySession &&
         (_settings.selectionMode == SelectionMode.manual || !_settings.autoFailover));
     await _cancelRuntimePrewarm();
+    if (_cancelRequested) return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
     // سنجش در جریان همین حالا بسته می شود: نمونه هایش پورت های ثابت هسته
     // (۱۷۰۷۸ و ۱۶۷۵۶) را گرفته اند و اتصال بدون آن ها ممکن نیست.
     await _stopProbes();
@@ -1525,6 +1532,9 @@ class VpnController extends ChangeNotifier {
     // سپر امنیتی همیشه فعال: در صورت وجود بدافزار یا VPN ناسازگار (مثل JumpJump یا Psiphon) اتصال مسدود می شود.
     if (securityGuard != null) {
       final String secBlocked = await securityGuard!();
+      if (_cancelRequested) {
+        return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+      }
       if (secBlocked.isNotEmpty) {
         _log.add('اتصال به دلیل سپر امنیتی رد شد: $secBlocked', level: 'warning');
         _setStatus(VpnStatus.failed, secBlocked);
@@ -1539,22 +1549,23 @@ class VpnController extends ChangeNotifier {
     final String? routeError = _settings.appRoutes
         .map((AppRouteRule rule) => rule.validationError).whereType<String>().firstOrNull;
     if (chainError != null || routeError != null || _settings.appRoutes.length > 64) {
-      return ConnectOutcome(ok: false, message: chainError ?? routeError ?? 'حداکثر ۶۴ قانون برنامه مجاز است');
+      final String msg = chainError ?? routeError ?? 'حداکثر ۶۴ قانون برنامه مجاز است';
+      _setStatus(VpnStatus.failed, msg);
+      return ConnectOutcome(ok: false, message: msg);
     }
     if (_settings.appRoutes.any((AppRouteRule rule) => rule.enabled) &&
         !_settings.tunMode) {
-      return const ConnectOutcome(
-          ok: false,
-          message:
-              'قواعد برنامه فعال است؛ حالت سرویس را روی تونل کامل وی پی ان بگذارید یا قواعد را غیرفعال کنید.');
+      const String msg =
+          'قواعد برنامه فعال است؛ حالت سرویس را روی تونل کامل وی پی ان بگذارید یا قواعد را غیرفعال کنید.';
+      _setStatus(VpnStatus.failed, msg);
+      return const ConnectOutcome(ok: false, message: msg);
     }
     final bool hasAnyPool = _sessionNodes.isNotEmpty ||
         (requested == null && !_emergencySession && _emergencyNodes.isNotEmpty);
     if (!hasAnyPool) {
-      return const ConnectOutcome(
-        ok: false,
-        message: 'هیچ سروری موجود نیست؛ اشتراک در حال دریافت از سرور است.',
-      );
+      const String msg = 'هیچ سروری موجود نیست؛ اشتراک در حال دریافت از سرور است.';
+      _setStatus(VpnStatus.failed, msg);
+      return const ConnectOutcome(ok: false, message: msg);
     }
     final List<VpnNode> usableSessionNodes = _sessionNodes
         .where((VpnNode node) => usable(node) && !node.disabled)
@@ -1581,15 +1592,16 @@ class VpnController extends ChangeNotifier {
           ),
         ],
       );
-      return const ConnectOutcome(
-        ok: false,
-        message: 'سروری که با این نسخه کار کند در اشتراک شما نیست.',
-      );
+      const String msg = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
+      _setStatus(VpnStatus.failed, msg);
+      return const ConnectOutcome(ok: false, message: msg);
     }
 
     if (requested != null &&
         !usableSessionNodes.any((VpnNode node) => node.id == requested.id)) {
-      return const ConnectOutcome(ok: false, message: 'پروفایل انتخابی معتبر نیست.');
+      const String msg = 'پروفایل انتخابی معتبر نیست.';
+      _setStatus(VpnStatus.failed, msg);
+      return const ConnectOutcome(ok: false, message: msg);
     }
 
     final String deviceSeed = _device.machineId.isNotEmpty
@@ -1639,7 +1651,7 @@ class VpnController extends ChangeNotifier {
       'درخواست اتصال: نوع «$profileLabel»، ${Fa.num(requested == null ? candidates.length : 1)} مرحله مسیر برای این انتخاب، '
       'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',
     );
-    _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
+    _setStatus(VpnStatus.connecting, 'آماده سازی هسته و بررسی شبکه...');
     try {
       // Real-IP discovery already runs at initialization. It is diagnostic,
       // not a prerequisite for opening the VPN (blocked geo APIs took ~19s).
@@ -1673,7 +1685,7 @@ class VpnController extends ChangeNotifier {
                   ? candidate.protocol.label
                   : 'اشتراک');
           _setStatus(
-            VpnStatus.preparing,
+            VpnStatus.connecting,
             'تلاش ${Fa.num(index + 1)} از ${Fa.num(candidates.length)}: $stageLabel',
           );
           if (index > 0) {
@@ -1834,7 +1846,7 @@ class VpnController extends ChangeNotifier {
           needsCores: true,
         );
       }
-      _setStatus(VpnStatus.preparing, 'سرور بعدی امتحان می شود.');
+      _setStatus(VpnStatus.connecting, 'سرور بعدی امتحان می شود.');
       return const _AttemptResult(
         message: 'هسته آمبرلا برای این سرور ورودی معتبری نداشت؛ سرور بعدی امتحان می شود.',
       );
@@ -3128,6 +3140,7 @@ class VpnController extends ChangeNotifier {
         stickyMinutes: _settings.stickyMinutes,
         blockPagePort: blockPort,
         preserveLogOutput: true,
+        hotReloadCompat: true,
         localRuleSetPaths: _provisioner.localRuleSetPaths,
         localDataDir: '${_provisioner.dataDir}${sep}work${sep}data',
       );
