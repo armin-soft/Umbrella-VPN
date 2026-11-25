@@ -1060,7 +1060,10 @@ class RuntimeConfig {
     final Map<String, String> resolved = <String, String>{};
     if (explicitPaths != null) {
       for (final MapEntry<String, String> e in explicitPaths.entries) {
-        final String key = e.key.trim().toLowerCase();
+        String key = e.key.trim().toLowerCase();
+        if (key.endsWith('.srs')) {
+          key = key.substring(0, key.length - 4);
+        }
         final String path = e.value.trim();
         if (key.isNotEmpty && path.isNotEmpty) {
           resolved[key] = path;

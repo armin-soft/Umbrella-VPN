@@ -3114,9 +3114,9 @@ $Channell_ID_Int = (int)$Channell_ID;
 
 if ($Channell_ID_Int === 0) return;
 $Message = "✅سلام کاربران گرامی ربات با موفقیت بروز رسانی گردید.\n"
-. Helper::SEPARATOR . "\n"
+. Helper::SEPARATOR_LINE . "\n"
 . Helper::dateTimeBlock() . "\n"
-. Helper::SEPARATOR . "\n"
+. Helper::SEPARATOR_LINE . "\n"
 . "🔰اطلاعات بروز رسانی جدید بدین شرح است:\n\n"
 . "🔄نسخه جدید ربات: " . Helper::toPersian($Version)
 . ($Changes !== '' ? "\n\n" . $Changes : '');
