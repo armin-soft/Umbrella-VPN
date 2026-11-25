@@ -11,6 +11,8 @@ import '../platform/native.dart';
 /// مدیریت پوشه های کاری و فهرست هسته بومی نسخه اندروید (`hiddify-core.aar`).
 class CoreProvisioner {
   static List<CoreInfo> _catalog = <CoreInfo>[];
+  static final Map<String, Uint8List> _bundledDataCache =
+      <String, Uint8List>{};
   static const List<String> bundledDataFiles = <String>[
     'geoip-ir.srs',
     'geosite-ir.srs',
@@ -68,40 +70,57 @@ class CoreProvisioner {
       workDataDir,
       '$_dataDir${sep}data',
       if (extraDataDir != null && extraDataDir.isNotEmpty) extraDataDir,
-    ];
-    final Map<String, String> resolved = <String, String>{};
-    for (final String dirPath in targets.toSet()) {
-      try {
-        await Directory(dirPath).create(recursive: true);
-      } on FileSystemException {
-        continue;
-      }
-      for (final String name in bundledDataFiles) {
-        final File out = File('$dirPath$sep$name');
-        final String tag = name.endsWith('.srs')
-            ? name.substring(0, name.length - 4)
-            : name;
+    ].toSet().toList();
+
+    await Future.wait(
+      bundledDataFiles.map((String name) async {
+        if (_bundledDataCache.containsKey(name)) return;
         try {
           final ByteData data = await rootBundle.load('assets/data/$name');
-          if (!await out.exists() || await out.length() != data.lengthInBytes) {
-            await out.writeAsBytes(
-              data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-              flush: true,
-            );
-          }
-          if (dirPath == workDataDir || !resolved.containsKey(tag)) {
-            resolved[tag] = out.path;
-          }
-        } catch (_) {
-          // اگر asset در محیط تست در دسترس نبود، فایل سالم موجود را حفظ می کنیم.
-          if (await out.exists() && await out.length() >= 32) {
-            if (dirPath == workDataDir || !resolved.containsKey(tag)) {
-              resolved[tag] = out.path;
-            }
-          }
+          _bundledDataCache[name] = data.buffer
+              .asUint8List(data.offsetInBytes, data.lengthInBytes);
+        } catch (_) {}
+      }),
+    );
+
+    final Map<String, String> resolved = <String, String>{};
+    await Future.wait(
+      targets.map((String dirPath) async {
+        try {
+          await Directory(dirPath).create(recursive: true);
+        } on FileSystemException {
+          return;
         }
-      }
-    }
+        await Future.wait(
+          bundledDataFiles.map((String name) async {
+            final File out = File('$dirPath$sep$name');
+            final String tag = name.endsWith('.srs')
+                ? name.substring(0, name.length - 4)
+                : name;
+            final Uint8List? bytes = _bundledDataCache[name];
+            if (bytes != null) {
+              try {
+                if (!await out.exists() || await out.length() != bytes.length) {
+                  await out.writeAsBytes(bytes, flush: true);
+                }
+                if (dirPath == workDataDir || !resolved.containsKey(tag)) {
+                  resolved[tag] = out.path;
+                }
+              } catch (_) {}
+            } else {
+              // اگر asset در محیط تست در دسترس نبود، فایل سالم موجود را حفظ می کنیم.
+              try {
+                if (await out.exists() && await out.length() >= 32) {
+                  if (dirPath == workDataDir || !resolved.containsKey(tag)) {
+                    resolved[tag] = out.path;
+                  }
+                }
+              } catch (_) {}
+            }
+          }),
+        );
+      }),
+    );
     if (resolved.isNotEmpty) {
       _localRuleSetPaths = Map<String, String>.unmodifiable(resolved);
     }

@@ -1202,6 +1202,15 @@ class RuntimeConfig {
               }
             }
           }
+        } else if (name == 'umbrella-block-ads') {
+          for (final String tag in const <String>[
+            'filter-ads',
+            'filter-youtube-ads',
+          ]) {
+            if (localPaths.containsKey(tag)) {
+              requestedFilterTags.add(tag);
+            }
+          }
         }
         final Object? rawSets = rawRule['rule_set'];
         if (rawSets is List) {
@@ -1226,6 +1235,16 @@ class RuntimeConfig {
               }
             }
           }
+        }
+      }
+    }
+    if (coreSettings?['block-ads'] == true) {
+      for (final String tag in const <String>[
+        'filter-ads',
+        'filter-youtube-ads',
+      ]) {
+        if (localPaths.containsKey(tag)) {
+          requestedFilterTags.add(tag);
         }
       }
     }

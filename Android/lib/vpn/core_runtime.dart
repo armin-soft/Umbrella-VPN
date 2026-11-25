@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import '../platform/native.dart';
@@ -23,6 +25,7 @@ class CoreRuntime {
     NativeBridge? native,
     int? clashApiPort,
     int stickyMinutes = 15,
+    bool useCache = true,
     @visibleForTesting bool? forceAndroidPlatform,
   }) async {
     final String sep = Platform.pathSeparator;
@@ -36,6 +39,26 @@ class CoreRuntime {
     final NativeBridge bridge = native ?? NativeBridge();
 
     if ((forceAndroidPlatform ?? Platform.isAndroid) && bridge.available) {
+      final File parsedFile = File('$runDir${sep}parsed.json');
+      final File cacheStampFile = File('$runDir${sep}parsed.cache.sha256');
+      final String cacheKey = sha256
+          .convert(utf8.encode('$cacheSchemaVersion|android|${rawLinks.trim()}'))
+          .toString();
+
+      if (useCache &&
+          await cacheStampFile.exists() &&
+          await parsedFile.exists()) {
+        try {
+          final String cachedStamp = (await cacheStampFile.readAsString()).trim();
+          if (cachedStamp == cacheKey && await parsedFile.length() > 2) {
+            final String cachedJson = await parsedFile.readAsString();
+            if (cachedJson.trimLeft().startsWith('{')) {
+              return parsedFile;
+            }
+          }
+        } catch (_) {}
+      }
+
       final ({bool ok, String content, String message}) parsed =
           await bridge.parseConfig(
         content: rawLinks,
@@ -54,8 +77,10 @@ class CoreRuntime {
       if (parsed.content.isEmpty) {
         throw const FormatException('خروجی پیکربندی هسته خالی بود.');
       }
-      final File parsedFile = File('$runDir${sep}parsed.json');
       await parsedFile.writeAsString(parsed.content, flush: true);
+      try {
+        await cacheStampFile.writeAsString(cacheKey, flush: true);
+      } catch (_) {}
       return parsedFile;
     }
 

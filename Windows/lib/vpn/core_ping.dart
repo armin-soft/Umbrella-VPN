@@ -42,17 +42,22 @@ class CorePinger {
     _stopped = true;
     final List<Process> running = List<Process>.of(_running);
     _running.clear();
-    for (final Process process in running) {
-      try {
-        process.kill();
-        await process.exitCode.timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => -1,
-        );
-      } on Exception {
-        // فرایند از قبل بسته شده است.
-      }
+    if (running.isEmpty) {
+      return;
     }
+    await Future.wait(
+      running.map((Process process) async {
+        try {
+          process.kill();
+          await process.exitCode.timeout(
+            const Duration(milliseconds: 500),
+            onTimeout: () => -1,
+          );
+        } on Exception {
+          // فرایند از قبل بسته شده است.
+        }
+      }),
+    );
   }
 
   /// پورت های سنجش، یکی برای هر نمونه همزمان.

@@ -600,12 +600,14 @@ class UmbrellaCore {
         });
         // Keep suffix, geosite and geoip independent: they are alternatives,
         // and only name-based sets should generate DNS rules.
-        for (final String url in regionalRuleSetUrls('ir')) {
-          combinedRules.add(<String, dynamic>{
-            'list_order': combinedRules.length, 'enabled': true,
-            'name': 'umbrella-bypass-iran-set', 'outbound': 'direct',
-            'rule_set': <String>[url],
-          });
+        if (includeFilterRuleSets) {
+          for (final String url in regionalRuleSetUrls('ir')) {
+            combinedRules.add(<String, dynamic>{
+              'list_order': combinedRules.length, 'enabled': true,
+              'name': 'umbrella-bypass-iran-set', 'outbound': 'direct',
+              'rule_set': <String>[url],
+            });
+          }
         }
       }
 
@@ -622,7 +624,9 @@ class UmbrellaCore {
       if (combinedRules.isNotEmpty && networkSettings != null) {
         final bool adsAlreadyInFilter = (contentFilter?.enabled ?? false) &&
             (contentFilter?.activeBotCategories.contains('ads') ?? false);
-        if (networkSettings.blockAds && !adsAlreadyInFilter) {
+        if (includeFilterRuleSets &&
+            networkSettings.blockAds &&
+            !adsAlreadyInFilter) {
           combinedRules.add(<String, dynamic>{
             'list_order': combinedRules.length,
             'enabled': true,
@@ -641,14 +645,16 @@ class UmbrellaCore {
             'outbound': 'direct',
             'domain_suffix': <String>['.$code'],
           });
-          for (final String url in regionalRuleSetUrls(code)) {
-            combinedRules.add(<String, dynamic>{
-              'list_order': combinedRules.length,
-              'enabled': true,
-              'name': 'umbrella-region-$code',
-              'outbound': 'direct',
-              'rule_set': <String>[url],
-            });
+          if (includeFilterRuleSets) {
+            for (final String url in regionalRuleSetUrls(code)) {
+              combinedRules.add(<String, dynamic>{
+                'list_order': combinedRules.length,
+                'enabled': true,
+                'name': 'umbrella-region-$code',
+                'outbound': 'direct',
+                'rule_set': <String>[url],
+              });
+            }
           }
         }
       }
@@ -729,7 +735,9 @@ class UmbrellaCore {
       'enable-fake-dns':
           !isolatedProbe && (networkSettings?.enableFakeDns ?? false),
       // ── مسیر و انتخاب سرور ────────────────────────────────────────────
-      'region': (networkSettings?.routingRegion ?? RoutingRegion.other).coreValue,
+      'region': includeFilterRuleSets
+          ? (networkSettings?.routingRegion ?? RoutingRegion.other).coreValue
+          : RoutingRegion.other.coreValue,
       ...(networkSettings?.chain ?? const ChainSettings()).toCoreOptions(),
       if (combinedRules.isNotEmpty)
         'route-rule': <String, dynamic>{
@@ -744,7 +752,8 @@ class UmbrellaCore {
       'bypass-lan': networkSettings?.bypassLan ?? false,
       'allow-connection-from-lan': lanShared,
       'block-quic': networkSettings?.blockQuic ?? false,
-      'block-ads': networkSettings?.blockAds ?? false,
+      'block-ads':
+          includeFilterRuleSets && (networkSettings?.blockAds ?? false),
       'enable-full-config': false,
       'use-xray-core-when-possible': false,
       // رابط کلش روشن است؛ خود هسته در حالت `run` آن را روی ۱۶۷۵۶ باز می

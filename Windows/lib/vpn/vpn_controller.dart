@@ -577,6 +577,7 @@ class VpnController extends ChangeNotifier {
   Timer? _prewarmTimer;
   Future<void>? _prewarmInFlight;
   bool _prewarmCancelled = false;
+  final Set<Process> _prewarmProcesses = <Process>{};
   DateTime? _sessionStartUtc;
   int _healthFailures = 0;
 
@@ -936,13 +937,13 @@ class VpnController extends ChangeNotifier {
     }
     _measuring = false;
     await _corePing.stopAll();
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 4));
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 3));
     while (DateTime.now().isBefore(deadline)) {
       final List<int> held = await UmbrellaCore.heldReservedPorts();
       if (held.isEmpty) {
         return;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
@@ -2140,20 +2141,29 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _terminateForeignCores() async {
-    final List<String> running = await _native.runningCores();
-    for (final String core in running) {
-      if (_runningBinaries.contains(core)) {
-        continue;
-      }
-      final int killed = await _native.killByName(core);
-      if (killed > 0) {
-        _log.add('فیلترشکن یا هسته فعال دیگر بسته شد: $core', level: 'warning');
-      }
-    }
-    final bool proxy = await _native.systemProxyEnabled();
-    if (proxy) {
-      await _native.disableSystemProxy();
-      _log.add('پروکسی سیستمی ویندوز غیرفعال شد.', level: 'warning');
+    final List<Object> results = await Future.wait<Object>(<Future<Object>>[
+      _native.runningCores(),
+      _native.systemProxyEnabled(),
+    ]);
+    final List<String> running = results[0] as List<String>;
+    final bool proxy = results[1] as bool;
+    final List<String> targets = running
+        .where((String core) => !_runningBinaries.contains(core))
+        .toList(growable: false);
+    final List<Future<void>> tasks = <Future<void>>[
+      for (final String core in targets)
+        _native.killByName(core).then((int killed) {
+          if (killed > 0) {
+            _log.add('فیلترشکن یا هسته فعال دیگر بسته شد: $core', level: 'warning');
+          }
+        }),
+      if (proxy)
+        _native.disableSystemProxy().then((_) {
+          _log.add('پروکسی سیستمی ویندوز غیرفعال شد.', level: 'warning');
+        }),
+    ];
+    if (tasks.isNotEmpty) {
+      await Future.wait(tasks);
     }
   }
 
@@ -2586,6 +2596,11 @@ class VpnController extends ChangeNotifier {
   Future<void> _cancelRuntimePrewarm() async {
     _prewarmTimer?.cancel();
     _prewarmTimer = null;
+    for (final Process process in List<Process>.of(_prewarmProcesses)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
     final Future<void>? running = _prewarmInFlight;
     if (running == null) {
       return;
@@ -2593,7 +2608,7 @@ class VpnController extends ChangeNotifier {
     _prewarmCancelled = true;
     try {
       await running.timeout(
-        const Duration(seconds: 3),
+        const Duration(milliseconds: 250),
         onTimeout: () {},
       );
     } catch (_) {
@@ -2684,6 +2699,8 @@ class VpnController extends ChangeNotifier {
         flush: true,
       );
       if (shouldAbort()) return;
+      final ContentBlockServer? blockServer = await ensureBlockServerStarted();
+      if (shouldAbort()) return;
       await _provisioner.ensureDataRuleSets(
         extraDataDir: '${runDir.path}${Platform.pathSeparator}data',
       );
@@ -2694,9 +2711,13 @@ class VpnController extends ChangeNotifier {
         linksPath: prewarmLinks.path,
         settingsPath: prewarmSettings.path,
         stickyMinutes: _settings.stickyMinutes,
-        blockPagePort: _blockServer?.proxyPort,
+        blockPagePort: (blockServer != null && blockServer.proxyPort > 0)
+            ? blockServer.proxyPort
+            : null,
         localRuleSetPaths: _provisioner.localRuleSetPaths,
         cancelled: shouldAbort,
+        onStarted: _prewarmProcesses.add,
+        onFinished: _prewarmProcesses.remove,
       );
     } catch (_) {
       // Silent best-effort prewarm; foreground connect logs any real error.
@@ -4050,7 +4071,7 @@ class VpnController extends ChangeNotifier {
           return true;
         }
       }
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 35));
     }
     return false;
   }
@@ -5401,6 +5422,12 @@ class VpnController extends ChangeNotifier {
             );
       } catch (_) {}
     }
+    for (final Process process in List<Process>.of(_prewarmProcesses)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _prewarmProcesses.clear();
     for (final Process process in List<Process>.of(_preparingProcesses)) {
       try {
         process.kill();
@@ -5486,11 +5513,25 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _stopCoresInner() async {
-    for (final Process process in List<Process>.of(_preparingProcesses)) {
-      process.kill();
-      await process.exitCode.timeout(
-        const Duration(milliseconds: 400),
-        onTimeout: () => -1,
+    for (final Process process in List<Process>.of(_prewarmProcesses)) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _prewarmProcesses.clear();
+    final List<Process> prepping = List<Process>.of(_preparingProcesses);
+    _preparingProcesses.clear();
+    if (prepping.isNotEmpty) {
+      await Future.wait(
+        prepping.map((Process process) async {
+          try {
+            process.kill();
+            await process.exitCode.timeout(
+              const Duration(milliseconds: 250),
+              onTimeout: () => -1,
+            );
+          } catch (_) {}
+        }),
       );
     }
     await _sweepOrphanChildren();

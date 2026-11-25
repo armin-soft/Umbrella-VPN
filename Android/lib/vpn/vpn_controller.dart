@@ -1011,13 +1011,13 @@ class VpnController extends ChangeNotifier {
     }
     _measuring = false;
     await _corePing.stopAll();
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 4));
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 3));
     while (DateTime.now().isBefore(deadline)) {
       final List<int> held = await UmbrellaCore.heldReservedPorts();
       if (held.isEmpty) {
         return;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
@@ -2555,7 +2555,7 @@ class VpnController extends ChangeNotifier {
     _prewarmCancelled = true;
     try {
       await running.timeout(
-        const Duration(seconds: 3),
+        const Duration(milliseconds: 250),
         onTimeout: () {},
       );
     } catch (_) {
@@ -3440,7 +3440,7 @@ class VpnController extends ChangeNotifier {
           return _TunnelWaitOutcome.ready;
         }
       }
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     return _TunnelWaitOutcome.timedOut;
   }

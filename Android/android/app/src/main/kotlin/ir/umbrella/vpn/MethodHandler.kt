@@ -144,7 +144,10 @@ class MethodHandler(
                 true
             }
             "scanDeviceSecurity" -> scope.launch {
-                result.answer(call.method) { UmbrellaSecurityScanner.scan(activity) }
+                val quick = call.argument<Boolean>("quick") ?: false
+                result.answer(call.method) {
+                    UmbrellaSecurityScanner.scan(activity, quick = quick)
+                }
             }
             "requestStorageScanAccess" -> result.answerNow(call.method) {
                 UmbrellaSecurityScanner.requestStorageScanAccess(activity)

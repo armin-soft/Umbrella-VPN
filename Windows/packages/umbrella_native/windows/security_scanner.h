@@ -74,7 +74,9 @@ class SecurityScanner {
 
   /// Performs real multi-layer security scan across processes, installed programs,
   /// Run/Startup persistence, high-risk directories, PE heuristics, Authenticode, and AMSI.
-  SecurityScanReport ScanDeviceSecurity();
+  /// When [quick] is true, runs full process/registry checks and skips slow non-startup
+  /// media/temp crawls while leveraging the clean-file cache.
+  SecurityScanReport ScanDeviceSecurity(bool quick = false);
 
   /// Actively terminates, cleans startup entries, deletes malicious files, or invokes uninstallers.
   RemediationOutcome RemediateThreat(const SecurityThreatEntry& target);

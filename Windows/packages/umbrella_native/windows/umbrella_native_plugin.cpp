@@ -452,48 +452,70 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "killPid") {
-    result->Success(flutter::EncodableValue(ops_.KillPid(IntOf(args, "pid", 0))));
+    const int target_pid = IntOf(args, "pid", 0);
+    RunOffUiThread(reply_guard_, std::move(result), [target_pid]() {
+      return flutter::EncodableValue(SystemOps::Instance().KillPid(target_pid));
+    });
     return;
   }
   if (method == "killByName") {
-    result->Success(
-        flutter::EncodableValue(ops_.KillByName(StringOf(args, "name"))));
+    const std::string name = StringOf(args, "name");
+    RunOffUiThread(reply_guard_, std::move(result), [name]() {
+      return flutter::EncodableValue(SystemOps::Instance().KillByName(name));
+    });
     return;
   }
   if (method == "pidsHoldingPort") {
-    flutter::EncodableList list;
-    for (int pid : ops_.PidsHoldingPort(IntOf(args, "port", 0))) {
-      list.push_back(flutter::EncodableValue(pid));
-    }
-    result->Success(flutter::EncodableValue(list));
+    const int port = IntOf(args, "port", 0);
+    RunOffUiThread(reply_guard_, std::move(result), [port]() {
+      flutter::EncodableList list;
+      for (int pid : SystemOps::Instance().PidsHoldingPort(port)) {
+        list.push_back(flutter::EncodableValue(pid));
+      }
+      return flutter::EncodableValue(std::move(list));
+    });
     return;
   }
   if (method == "processNameOf") {
-    result->Success(
-        flutter::EncodableValue(ops_.ProcessNameOf(IntOf(args, "pid", 0))));
+    const int target_pid = IntOf(args, "pid", 0);
+    RunOffUiThread(reply_guard_, std::move(result), [target_pid]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().ProcessNameOf(target_pid));
+    });
     return;
   }
   if (method == "processPathOf") {
-    result->Success(
-        flutter::EncodableValue(ops_.ProcessPathOf(IntOf(args, "pid", 0))));
+    const int target_pid = IntOf(args, "pid", 0);
+    RunOffUiThread(reply_guard_, std::move(result), [target_pid]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().ProcessPathOf(target_pid));
+    });
     return;
   }
   if (method == "isRunning") {
-    result->Success(
-        flutter::EncodableValue(ops_.IsRunning(StringOf(args, "name"))));
+    const std::string name = StringOf(args, "name");
+    RunOffUiThread(reply_guard_, std::move(result), [name]() {
+      return flutter::EncodableValue(SystemOps::Instance().IsRunning(name));
+    });
     return;
   }
   if (method == "runningCores") {
-    flutter::EncodableList list;
-    for (const auto& name : ops_.ListRunningCores()) {
-      list.push_back(flutter::EncodableValue(name));
-    }
-    result->Success(flutter::EncodableValue(list));
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      flutter::EncodableList list;
+      for (const auto& name : SystemOps::Instance().ListRunningCores()) {
+        list.push_back(flutter::EncodableValue(name));
+      }
+      return flutter::EncodableValue(std::move(list));
+    });
     return;
   }
   if (method == "setSystemProxy") {
-    result->Success(flutter::EncodableValue(ops_.SetSystemProxy(
-        StringOf(args, "host", "127.0.0.1"), IntOf(args, "port", 0))));
+    const std::string host = StringOf(args, "host", "127.0.0.1");
+    const int port = IntOf(args, "port", 0);
+    RunOffUiThread(reply_guard_, std::move(result), [host, port]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().SetSystemProxy(host, port));
+    });
     return;
   }
   if (method == "disableSystemProxy") {
@@ -504,7 +526,10 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "systemProxyEnabled") {
-    result->Success(flutter::EncodableValue(ops_.SystemProxyEnabled()));
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().SystemProxyEnabled());
+    });
     return;
   }
   if (method == "flushDns") {
@@ -514,17 +539,20 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "tunnelStats") {
-    TunnelStats stats = ops_.ReadTunnelStats(StringOf(args, "hint", "sing-box"));
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("rx")] =
-        flutter::EncodableValue(static_cast<int64_t>(stats.rx_bytes));
-    map[flutter::EncodableValue("tx")] =
-        flutter::EncodableValue(static_cast<int64_t>(stats.tx_bytes));
-    map[flutter::EncodableValue("available")] =
-        flutter::EncodableValue(stats.available);
-    map[flutter::EncodableValue("adapter")] =
-        flutter::EncodableValue(stats.adapter);
-    result->Success(flutter::EncodableValue(map));
+    const std::string hint = StringOf(args, "hint", "sing-box");
+    RunOffUiThread(reply_guard_, std::move(result), [hint]() {
+      TunnelStats stats = SystemOps::Instance().ReadTunnelStats(hint);
+      flutter::EncodableMap map;
+      map[flutter::EncodableValue("rx")] =
+          flutter::EncodableValue(static_cast<int64_t>(stats.rx_bytes));
+      map[flutter::EncodableValue("tx")] =
+          flutter::EncodableValue(static_cast<int64_t>(stats.tx_bytes));
+      map[flutter::EncodableValue("available")] =
+          flutter::EncodableValue(stats.available);
+      map[flutter::EncodableValue("adapter")] =
+          flutter::EncodableValue(stats.adapter);
+      return flutter::EncodableValue(std::move(map));
+    });
     return;
   }
   if (method == "autostart") {
@@ -594,9 +622,11 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "restoreNetworkDefaults") {
-    bool proxy = ops_.DisableSystemProxy();
-    ops_.FlushDns();
-    result->Success(flutter::EncodableValue(proxy));
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      bool proxy = SystemOps::Instance().DisableSystemProxy();
+      SystemOps::Instance().FlushDns();
+      return flutter::EncodableValue(proxy);
+    });
     return;
   }
   if (method == "getInstalledApps") {
@@ -628,9 +658,10 @@ void UmbrellaNativePlugin::HandleMethodCall(
     return;
   }
   if (method == "scanDeviceSecurity") {
-    RunOffUiThread(reply_guard_, std::move(result), []() {
+    const bool quick = BoolOf(args, "quick", false);
+    RunOffUiThread(reply_guard_, std::move(result), [quick]() {
       const SecurityScanReport report =
-          SecurityScanner::Instance().ScanDeviceSecurity();
+          SecurityScanner::Instance().ScanDeviceSecurity(quick);
       flutter::EncodableList threats;
       threats.reserve(report.threats.size());
       for (const auto& item : report.threats) {

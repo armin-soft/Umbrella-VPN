@@ -629,6 +629,23 @@ class NativeBridge {
 
   Future<bool> shutdownCores() async => stopCore();
 
+  static Future<SecurityScanResult?> quickScanDeviceSecurity(
+    NativeBridge bridge,
+  ) async {
+    if (bridge.runtimeType != NativeBridge || !bridge.available) {
+      return null;
+    }
+    final Map<Object?, Object?>? raw =
+        await bridge._invoke<Map<Object?, Object?>>(
+      'scanDeviceSecurity',
+      const <String, dynamic>{'quick': true},
+    );
+    if (raw == null) {
+      return null;
+    }
+    return SecurityScanResult.fromJson(JsonX.asMap(raw));
+  }
+
   Future<SecurityScanResult> scanDeviceSecurity() async {
     final Map<Object?, Object?>? raw =
         await _invoke<Map<Object?, Object?>>('scanDeviceSecurity');

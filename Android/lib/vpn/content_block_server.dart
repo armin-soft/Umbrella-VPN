@@ -179,17 +179,24 @@ class ContentBlockServer {
       return null;
     }
 
-    _logoPng ??= await readAsset(BrandAssets.logo);
-    _shieldPng ??= await readAsset(BrandAssets.securityShield);
-    _alertPng ??= await readAsset(BrandAssets.securityAlert);
-    for (final MapEntry<int, ({String route, String asset})> entry
-        in _fontVariants.entries) {
-      if (_fontBytes.containsKey(entry.key)) continue;
-      final Uint8List? loaded = await readAsset(entry.value.asset);
-      if (loaded != null && loaded.isNotEmpty) {
-        _fontBytes[entry.key] = loaded;
-      }
-    }
+    await Future.wait(<Future<void>>[
+      if (_logoPng == null)
+        readAsset(BrandAssets.logo).then((Uint8List? b) => _logoPng ??= b),
+      if (_shieldPng == null)
+        readAsset(BrandAssets.securityShield)
+            .then((Uint8List? b) => _shieldPng ??= b),
+      if (_alertPng == null)
+        readAsset(BrandAssets.securityAlert)
+            .then((Uint8List? b) => _alertPng ??= b),
+      for (final MapEntry<int, ({String route, String asset})> entry
+          in _fontVariants.entries)
+        if (!_fontBytes.containsKey(entry.key))
+          readAsset(entry.value.asset).then((Uint8List? loaded) {
+            if (loaded != null && loaded.isNotEmpty) {
+              _fontBytes[entry.key] = loaded;
+            }
+          }),
+    ]);
   }
 
   /// ساخت نشانی کامل صفحه مسدودی مرورگر روی سرور لوکال.

@@ -1546,6 +1546,53 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       },
     );
+
+    test(
+      'بهینه سازی سرعت اتصال و اسکن امنیتی ویندوز و رشته پس زمینه بومی رعایت شده است',
+      () async {
+        final String scannerH = File(
+          'packages/umbrella_native/windows/security_scanner.h',
+        ).readAsStringSync();
+        expect(scannerH, contains('ScanDeviceSecurity(bool quick = false)'));
+
+        final String scannerCpp = File(
+          'packages/umbrella_native/windows/security_scanner.cpp',
+        ).readAsStringSync();
+        expect(scannerCpp, contains('g_clean_file_cache'));
+        expect(scannerCpp, contains('g_proc_version_cache'));
+        expect(scannerCpp, contains('ReadFileHeadAndTailBytes'));
+        expect(scannerCpp, contains('HasValidImageMagic'));
+        expect(scannerCpp, contains('InvalidateCleanFileCache'));
+        expect(scannerCpp, contains('CandidateScanDirectories(bool quick)'));
+        expect(scannerCpp, contains('amsi.ScanFile'));
+
+        final String sysOpsCpp = File(
+          'packages/umbrella_native/windows/system_ops.cpp',
+        ).readAsStringSync();
+        expect(sysOpsCpp, contains('ListRunningCores'));
+
+        final String pluginCpp = File(
+          'packages/umbrella_native/windows/umbrella_native_plugin.cpp',
+        ).readAsStringSync();
+        expect(pluginCpp, contains('RunOffUiThread'));
+        expect(pluginCpp, contains('"quick"'));
+
+        final String nativeDart = File('lib/platform/native.dart').readAsStringSync();
+        expect(nativeDart, contains('quickScanDeviceSecurity'));
+        expect(nativeDart, contains('if (raw != null) {'));
+
+        final String vpnCtrl = File('lib/vpn/vpn_controller.dart').readAsStringSync();
+        expect(vpnCtrl, contains('_prewarmProcesses'));
+        expect(vpnCtrl, contains('Future<void> _terminateForeignCores()'));
+
+        final String corePing = File('lib/vpn/core_ping.dart').readAsStringSync();
+        expect(corePing, contains('Future.wait('));
+
+        // quickScanDeviceSecurity safely yields null for mock/subclassed NativeBridge instances.
+        final _FakeNative mockNative = _FakeNative();
+        expect(await NativeBridge.quickScanDeviceSecurity(mockNative), isNull);
+      },
+    );
   });
 }
 

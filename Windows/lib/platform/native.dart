@@ -690,7 +690,7 @@ class NativeBridge {
   Future<List<String>> runningCores() async {
     final List<Object?>? raw =
         await _invoke<List<Object?>>('runningCores');
-    if (raw != null && raw.isNotEmpty) {
+    if (raw != null) {
       return raw.map((Object? item) => item.toString()).toList();
     }
     const List<String> known = <String>[
@@ -906,6 +906,23 @@ class NativeBridge {
     final String? path = await _invoke<String>('pickExecutableFile');
     if (path == null || path.trim().isEmpty) return null;
     return path.trim();
+  }
+
+  static Future<SecurityScanResult?> quickScanDeviceSecurity(
+    NativeBridge bridge,
+  ) async {
+    if (bridge.runtimeType != NativeBridge || !bridge.available) {
+      return null;
+    }
+    final Map<Object?, Object?>? raw =
+        await bridge._invoke<Map<Object?, Object?>>(
+      'scanDeviceSecurity',
+      const <String, dynamic>{'quick': true},
+    );
+    if (raw == null) {
+      return null;
+    }
+    return SecurityScanResult.fromJson(Map<String, dynamic>.from(raw));
   }
 
   Future<SecurityScanResult> scanDeviceSecurity() async {

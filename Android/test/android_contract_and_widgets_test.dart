@@ -43,6 +43,7 @@ import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
+import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _FakeNative implements NativeBridge {
@@ -1339,6 +1340,120 @@ void main() {
       );
       expect(compiled.path, endsWith('${Platform.pathSeparator}parsed.json'));
       expect(await compiled.readAsString(), contains('"outbounds"'));
+      expect(okNative.parseCalls, 1);
+
+      // Second call with identical links reuses parsed.json via SHA-256 cache.
+      final File cached = await CoreRuntime.compile(
+        runDir: tempDir.path,
+        linksPath: linksFile.path,
+        settingsPath: settingsFile.path,
+        native: okNative,
+        cancelled: () => false,
+        forceAndroidPlatform: true,
+      );
+      expect(cached.path, compiled.path);
+      expect(okNative.parseCalls, 1);
+
+      // Modified links invalidate parsed.cache.sha256 and re-invoke parseConfig.
+      await linksFile.writeAsString('${autoLinks.take(4).join('\n')}\n', flush: true);
+      await CoreRuntime.compile(
+        runDir: tempDir.path,
+        linksPath: linksFile.path,
+        settingsPath: settingsFile.path,
+        native: okNative,
+        cancelled: () => false,
+        forceAndroidPlatform: true,
+      );
+      expect(okNative.parseCalls, 2);
+
+      // Verify Android fast StartService settings omit remote .srs URLs & auto-rules,
+      // while RuntimeConfig.finalize injects bundled filter-ads + geoip-ir/geosite-ir offline.
+      const AppSettings adAndIrSettings = AppSettings(
+        blockAds: true,
+        routingRegion: RoutingRegion.ir,
+      );
+      final Map<String, dynamic> fastStartSettings = UmbrellaCore.settingsJson(
+        tun: true,
+        systemProxy: false,
+        port: 12334,
+        networkSettings: adAndIrSettings,
+        contentFilter: const FilterSettings(bypassIran: true),
+        includeFilterRuleSets: false,
+      );
+      expect(fastStartSettings['region'], 'other');
+      expect(fastStartSettings['block-ads'], isFalse);
+      expect(jsonEncode(fastStartSettings), isNot(contains('.srs')));
+
+      final Map<String, dynamic> fullHotReloadSettings = UmbrellaCore.settingsJson(
+        tun: true,
+        systemProxy: false,
+        port: 12334,
+        networkSettings: adAndIrSettings,
+        contentFilter: const FilterSettings(bypassIran: true),
+        includeFilterRuleSets: true,
+      );
+      expect(fullHotReloadSettings['region'], 'ir');
+      expect(fullHotReloadSettings['block-ads'], isTrue);
+
+      final Map<String, dynamic> offlineRuntime = <String, dynamic>{
+        'experimental': <String, dynamic>{'monitoring': <String, dynamic>{}},
+        'outbounds': <dynamic>[
+          <String, dynamic>{'tag': 'direct', 'type': 'direct'},
+          <String, dynamic>{'tag': 'select', 'type': 'selector'},
+        ],
+        'dns': <String, dynamic>{'rules': <dynamic>[]},
+        'route': <String, dynamic>{
+          'rule_set': <dynamic>[],
+          'rules': <dynamic>[
+            <String, dynamic>{'action': 'sniff'},
+          ],
+        },
+      };
+      RuntimeConfig.finalize(
+        offlineRuntime,
+        profileTags: const <String>{},
+        coreSettings: fullHotReloadSettings,
+        localRuleSetPaths: const <String, String>{
+          'filter-ads.srs': '/data/user/0/ir.umbrella.vpn/files/data/filter-ads.srs',
+          'geoip-ir.srs': '/data/user/0/ir.umbrella.vpn/files/data/geoip-ir.srs',
+          'geosite-ir.srs': '/data/user/0/ir.umbrella.vpn/files/data/geosite-ir.srs',
+        },
+      );
+      final List<Map<String, dynamic>> resolvedSets =
+          ((offlineRuntime['route'] as Map<String, dynamic>)['rule_set']
+                  as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      expect(
+        resolvedSets.any(
+          (Map<String, dynamic> r) =>
+              r['tag'] == 'filter-ads' && r['type'] == 'local',
+        ),
+        isTrue,
+      );
+      expect(
+        resolvedSets.any(
+          (Map<String, dynamic> r) =>
+              r['tag'] == 'geosite-ir' && r['type'] == 'local',
+        ),
+        isTrue,
+      );
+
+      final String scannerKt = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
+      ).readAsStringSync();
+      expect(scannerKt, contains('quick: Boolean = false'));
+      expect(scannerKt, contains('cleanFileCache'));
+      expect(scannerKt, contains('appLabelCache'));
+      expect(scannerKt, contains('readHeadAndTailBytes'));
+      expect(scannerKt, contains('invalidateCleanFileCache'));
+
+      final String methodHandlerKt = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+      ).readAsStringSync();
+      expect(methodHandlerKt, contains('call.argument<Boolean>("quick")'));
+
+      // NativeBridge.quickScanDeviceSecurity returns null for test subclasses.
+      expect(await NativeBridge.quickScanDeviceSecurity(okNative), isNull);
 
       final _TestCoreNative failNative = _TestCoreNative(
         parseResult: (ok: false, content: '', message: ''),
@@ -1349,6 +1464,7 @@ void main() {
           linksPath: linksFile.path,
           settingsPath: settingsFile.path,
           native: failNative,
+          useCache: false,
           cancelled: () => false,
           forceAndroidPlatform: true,
         ),
@@ -1364,6 +1480,7 @@ void main() {
           linksPath: linksFile.path,
           settingsPath: settingsFile.path,
           native: emptyNative,
+          useCache: false,
           cancelled: () => false,
           forceAndroidPlatform: true,
         ),
@@ -2826,6 +2943,7 @@ class _TestCoreNative extends _FakeNative {
   _TestCoreNative({required this.parseResult});
 
   final ({bool ok, String content, String message}) parseResult;
+  int parseCalls = 0;
   final StreamController<AndroidServiceEvent> _events =
       StreamController<AndroidServiceEvent>.broadcast();
   final List<String> startedConfigPaths = <String>[];
@@ -2858,8 +2976,10 @@ class _TestCoreNative extends _FakeNative {
     String configPath = '',
     String tempPath = '',
     bool debug = false,
-  }) async =>
-      parseResult;
+  }) async {
+    parseCalls++;
+    return parseResult;
+  }
 
   @override
   Future<Map<String, dynamic>> startCore({

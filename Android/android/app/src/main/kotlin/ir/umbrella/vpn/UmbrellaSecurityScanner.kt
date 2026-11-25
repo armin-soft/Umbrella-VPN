@@ -24,6 +24,7 @@ import ir.umbrella.vpn.constant.Status
 import java.io.File
 import java.io.RandomAccessFile
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 object UmbrellaSecurityScanner {
     data class SignatureMatch(
@@ -33,6 +34,39 @@ object UmbrellaSecurityScanner {
         val severity: String,
         val detail: String,
     )
+
+    private data class CleanFileStamp(
+        val size: Long,
+        val lastModified: Long,
+    )
+
+    private const val MAX_CLEAN_CACHE_ENTRIES = 20000
+    private const val MAX_LABEL_CACHE_ENTRIES = 4096
+
+    // In-memory clean-file and APK-label caches only store verified non-threat entries.
+    private val cleanFileCache = ConcurrentHashMap<String, CleanFileStamp>()
+    private val appLabelCache = ConcurrentHashMap<String, Pair<String, String>>()
+
+    private fun isCleanFileCached(pathLower: String, size: Long, lastModified: Long): Boolean {
+        val cached = cleanFileCache[pathLower] ?: return false
+        return cached.size == size && cached.lastModified == lastModified
+    }
+
+    private fun recordCleanFileCache(pathLower: String, size: Long, lastModified: Long) {
+        if (size <= 0L) return
+        if (cleanFileCache.size >= MAX_CLEAN_CACHE_ENTRIES) {
+            cleanFileCache.clear()
+        }
+        cleanFileCache[pathLower] = CleanFileStamp(size = size, lastModified = lastModified)
+    }
+
+    private fun invalidateCleanFileCache(path: String) {
+        if (path.isBlank()) {
+            cleanFileCache.clear()
+            return
+        }
+        cleanFileCache.remove(path.lowercase())
+    }
 
     private fun matchKnownPackageOrLabel(
         packageName: String,
@@ -188,6 +222,32 @@ object UmbrellaSecurityScanner {
         }.getOrDefault(ByteArray(0))
     }
 
+    private fun readHeadAndTailBytes(
+        file: File,
+        headBytes: Int = 256 * 1024,
+        tailBytes: Int = 512 * 1024,
+    ): ByteArray {
+        return runCatching {
+            val totalSize = file.length()
+            if (totalSize <= 0L) return@runCatching ByteArray(0)
+            val maxCombined = headBytes.toLong() + tailBytes.toLong()
+            if (totalSize <= maxCombined) {
+                return@runCatching readSampleBytes(file, totalSize.toInt())
+            }
+            val head = ByteArray(headBytes)
+            val tail = ByteArray(tailBytes)
+            RandomAccessFile(file, "r").use { raf ->
+                raf.readFully(head)
+                raf.seek(totalSize - tailBytes.toLong())
+                raf.readFully(tail)
+            }
+            val combined = ByteArray(head.size + tail.size)
+            System.arraycopy(head, 0, combined, 0, head.size)
+            System.arraycopy(tail, 0, combined, head.size, tail.size)
+            combined
+        }.getOrDefault(ByteArray(0))
+    }
+
     private fun containsAsciiCi(bytes: ByteArray, needle: String): Boolean {
         val target = needle.lowercase().encodeToByteArray()
         if (target.isEmpty() || bytes.size < target.size) return false
@@ -278,11 +338,19 @@ object UmbrellaSecurityScanner {
         return null
     }
 
-    private fun candidateWatchDirectories(context: Context): List<File> {
+    private fun candidateWatchDirectories(context: Context, quick: Boolean = false): List<File> {
         val publicDownloads = runCatching {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         }.getOrNull()
         val extStorage = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
+        if (quick) {
+            return listOfNotNull(
+                context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+                publicDownloads,
+                publicDownloads?.let { File(it, "Telegram") },
+                extStorage?.let { File(it, "Telegram/Telegram Documents") },
+            )
+        }
         return listOfNotNull(
             context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
             publicDownloads,
@@ -454,13 +522,14 @@ object UmbrellaSecurityScanner {
             lower.endsWith(".ps1") || lower.endsWith(".vbs") ||
             lower.endsWith(".hta")
 
-        val sample = readSampleBytes(file, 4 * 1024 * 1024)
-        if (sample.isEmpty()) return null
+        val header = readSampleBytes(file, 64 * 1024)
+        if (header.isEmpty()) return null
 
         val elfSig = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
         val dexSig = "dex\n03".encodeToByteArray()
 
         if (lower.endsWith(".svg")) {
+            val sample = if (file.length() <= header.size.toLong()) header else readSampleBytes(file, 2 * 1024 * 1024)
             if (containsAsciiCi(sample, "<script") ||
                 containsAsciiCi(sample, "onload=") ||
                 containsAsciiCi(sample, "onerror=") ||
@@ -481,22 +550,29 @@ object UmbrellaSecurityScanner {
         if (isImage) {
             val validMagic = when {
                 lower.endsWith(".jpg") || lower.endsWith(".jpeg") ->
-                    sample.size >= 3 && sample[0] == 0xFF.toByte() && sample[1] == 0xD8.toByte() && sample[2] == 0xFF.toByte()
+                    header.size >= 3 && header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() && header[2] == 0xFF.toByte()
                 lower.endsWith(".png") ->
-                    sample.size >= 8 && sample[0] == 0x89.toByte() && sample[1] == 0x50.toByte() &&
-                        sample[2] == 0x4E.toByte() && sample[3] == 0x47.toByte()
+                    header.size >= 8 && header[0] == 0x89.toByte() && header[1] == 0x50.toByte() &&
+                        header[2] == 0x4E.toByte() && header[3] == 0x47.toByte()
                 lower.endsWith(".gif") ->
-                    sample.size >= 6 && sample[0] == 'G'.code.toByte() && sample[1] == 'I'.code.toByte() &&
-                        sample[2] == 'F'.code.toByte() && sample[3] == '8'.code.toByte()
+                    header.size >= 6 && header[0] == 'G'.code.toByte() && header[1] == 'I'.code.toByte() &&
+                        header[2] == 'F'.code.toByte() && header[3] == '8'.code.toByte()
                 lower.endsWith(".webp") ->
-                    sample.size >= 12 && sample[0] == 'R'.code.toByte() && sample[1] == 'I'.code.toByte() &&
-                        sample[2] == 'F'.code.toByte() && sample[3] == 'F'.code.toByte() &&
-                        sample[8] == 'W'.code.toByte() && sample[9] == 'E'.code.toByte() &&
-                        sample[10] == 'B'.code.toByte() && sample[11] == 'P'.code.toByte()
+                    header.size >= 12 && header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte() &&
+                        header[2] == 'F'.code.toByte() && header[3] == 'F'.code.toByte() &&
+                        header[8] == 'W'.code.toByte() && header[9] == 'E'.code.toByte() &&
+                        header[10] == 'B'.code.toByte() && header[11] == 'P'.code.toByte()
                 lower.endsWith(".ico") ->
-                    sample.size >= 4 && sample[0] == 0.toByte() && sample[1] == 0.toByte() &&
-                        sample[2] == 1.toByte() && sample[3] == 0.toByte()
-                else -> sample.size >= 2 && sample[0] == 'B'.code.toByte() && sample[1] == 'M'.code.toByte()
+                    header.size >= 4 && header[0] == 0.toByte() && header[1] == 0.toByte() &&
+                        header[2] == 1.toByte() && header[3] == 0.toByte()
+                else -> header.size >= 2 && header[0] == 'B'.code.toByte() && header[1] == 'M'.code.toByte()
+            }
+            val sample = if (validMagic && file.length() > 768L * 1024L) {
+                readHeadAndTailBytes(file, 256 * 1024, 512 * 1024)
+            } else if (file.length() <= header.size.toLong()) {
+                header
+            } else {
+                readSampleBytes(file, 2 * 1024 * 1024)
             }
 
             if (!validMagic &&
@@ -549,9 +625,17 @@ object UmbrellaSecurityScanner {
         }
 
         if (isMedia) {
-            var hasEmbeddedBinary = hasPeHeaderAt(sample, 0) ||
-                containsBytes(sample, elfSig, 0) ||
-                containsBytes(sample, dexSig, 0)
+            val binaryHeader = hasPeHeaderAt(header, 0) ||
+                containsBytes(header, elfSig, 0) ||
+                containsBytes(header, dexSig, 0)
+            val sample = if (!binaryHeader && file.length() > 768L * 1024L) {
+                readHeadAndTailBytes(file, 256 * 1024, 512 * 1024)
+            } else if (file.length() <= header.size.toLong()) {
+                header
+            } else {
+                readSampleBytes(file, 768 * 1024)
+            }
+            var hasEmbeddedBinary = binaryHeader
             if (!hasEmbeddedBinary) {
                 for (pos in 16 until (sample.size - 0x40).coerceAtLeast(16)) {
                     if (sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
@@ -579,6 +663,14 @@ object UmbrellaSecurityScanner {
                 )
             }
             return null
+        }
+
+        val sample = if (file.length() <= header.size.toLong()) {
+            header
+        } else if (isArchive || isOffice || lower.endsWith(".pdf")) {
+            readSampleBytes(file, 4 * 1024 * 1024)
+        } else {
+            readSampleBytes(file, 2 * 1024 * 1024)
         }
 
         if (isArchive || isOffice || lower.endsWith(".pdf")) {
@@ -716,7 +808,7 @@ object UmbrellaSecurityScanner {
         }
     }
 
-    fun scan(context: Context): Map<String, Any> {
+    fun scan(context: Context, quick: Boolean = false): Map<String, Any> {
         val pm = context.packageManager
         val selfPkg = context.packageName
         val findings = linkedMapOf<String, MutableMap<String, Any>>()
@@ -736,8 +828,19 @@ object UmbrellaSecurityScanner {
             val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             if (isSystem && app.packageName.startsWith("com.android.")) continue
 
-            val label = runCatching { pm.getApplicationLabel(app).toString() }
-                .getOrDefault(app.packageName)
+            val sourceKey = app.sourceDir ?: ""
+            val cachedLabel = appLabelCache[app.packageName]
+            val label = if (cachedLabel != null && cachedLabel.first == sourceKey) {
+                cachedLabel.second
+            } else {
+                val loaded = runCatching { pm.getApplicationLabel(app).toString() }
+                    .getOrDefault(app.packageName)
+                if (appLabelCache.size >= MAX_LABEL_CACHE_ENTRIES) {
+                    appLabelCache.clear()
+                }
+                appLabelCache[app.packageName] = sourceKey to loaded
+                loaded
+            }
             val hit = matchKnownPackageOrLabel(app.packageName, label, selfPkg) ?: continue
             val sha = packageSigningSha256(pm, app.packageName)
             findings.putIfAbsent(
@@ -761,16 +864,19 @@ object UmbrellaSecurityScanner {
         }
 
         // Recursive bounded scan across accessible app-private, downloads, Telegram, media, and documents folders
-        val candidateDirs = candidateWatchDirectories(context)
+        val candidateDirs = candidateWatchDirectories(context, quick = quick)
+        val dirMaxDepth = if (quick) 1 else 3
+        val dirMaxFiles = if (quick) 200 else 800
         val visited = hashSetOf<String>()
         for (dir in candidateDirs) {
             if (!dir.exists() || !dir.isDirectory) continue
             val files = mutableListOf<File>()
-            collectFilesBounded(dir, 0, 3, 800, files)
+            collectFilesBounded(dir, 0, dirMaxDepth, dirMaxFiles, files)
             for (file in files) {
                 if (!file.isFile) continue
                 val abs = file.absolutePath
-                if (!visited.add(abs.lowercase())) continue
+                val absLower = abs.lowercase()
+                if (!visited.add(absLower)) continue
                 val fname = file.name.lowercase()
                 if (fname.contains("umbrella") ||
                     fname.endsWith(".tmp") ||
@@ -781,7 +887,16 @@ object UmbrellaSecurityScanner {
                 }
 
                 scannedFiles++
-                val hit = inspectDownloadedFile(file, selfPkg) ?: continue
+                val fsize = file.length()
+                val fmtime = file.lastModified()
+                if (isCleanFileCached(absLower, fsize, fmtime)) {
+                    continue
+                }
+                val hit = inspectDownloadedFile(file, selfPkg)
+                if (hit == null) {
+                    recordCleanFileCache(absLower, fsize, fmtime)
+                    continue
+                }
                 val sha = fileSha256(file)
                 val findingKey = if (sha.isNotEmpty()) "${hit.key}:${sha.take(12)}" else hit.key
                 val isAppPkg = hit.category == "conflicting_vpn"
@@ -861,6 +976,7 @@ object UmbrellaSecurityScanner {
                 actionTaken = true
             }
         }
+        invalidateCleanFileCache(path)
 
         if (packageName.isNotBlank() && packageName != activity.packageName) {
             runCatching {

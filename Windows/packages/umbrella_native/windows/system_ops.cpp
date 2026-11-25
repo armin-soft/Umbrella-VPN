@@ -1055,9 +1055,27 @@ bool SystemOps::IsRunning(const std::string& exe_name) {
 
 std::vector<std::string> SystemOps::ListRunningCores() {
   std::vector<std::string> found;
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return found;
+
+  std::unordered_set<std::string> targets;
+  targets.reserve(sizeof(kForeignCores) / sizeof(kForeignCores[0]));
   for (const char* core : kForeignCores) {
-    if (IsRunning(core)) found.push_back(core);
+    targets.insert(core);
   }
+
+  std::unordered_set<std::string> seen;
+  PROCESSENTRY32W entry = {0};
+  entry.dwSize = sizeof(entry);
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      const std::string lower = ToLowerAscii(ToUtf8(entry.szExeFile));
+      if (targets.count(lower) > 0 && seen.insert(lower).second) {
+        found.push_back(lower);
+      }
+    } while (Process32NextW(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
   return found;
 }
 

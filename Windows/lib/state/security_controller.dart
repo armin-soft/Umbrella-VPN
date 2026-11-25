@@ -199,46 +199,61 @@ class SecurityScannerController extends ChangeNotifier {
     }
     try {
       final SecurityScanResult rawResult = await _native.scanDeviceSecurity();
-      final List<SecurityThreat> remaining = <SecurityThreat>[];
-      final List<NeutralizedSecurityEvent> newlyDeleted =
-          <NeutralizedSecurityEvent>[];
+      return await _evaluateScanResult(rawResult, updateLastResult: true);
+    } catch (error) {
+      AppLogger.instance.add('خطا در پایش امنیتی: $error', level: 'warning');
+      return _lastResult;
+    } finally {
+      _scanning = false;
+      notifyListeners();
+    }
+  }
 
-      for (final SecurityThreat threat in rawResult.threats) {
-        if (autoDeleteMaliciousDownloads && threat.isAutoRemediableFile) {
-          final RemediationResult outcome =
-              await _native.remediateSecurityThreat(threat);
-          if (outcome.ok) {
-            final NeutralizedSecurityEvent event = NeutralizedSecurityEvent(
-              key: threat.key,
-              name: threat.name,
-              category: threat.category == 'malicious_link'
-                  ? 'malicious_link'
-                  : 'malicious_download',
-              severity: threat.severity,
-              target: threat.target.isNotEmpty ? threat.target : threat.path,
-              detail: threat.detail.isNotEmpty
-                  ? threat.detail
-                  : 'فایل دانلود شده حاوی بدافزار شناسایی و به صورت خودکار حذف شد.',
-              action: 'deleted',
-              timestampMs: DateTime.now().millisecondsSinceEpoch,
-            );
-            newlyDeleted.add(event);
-            _recordNeutralizedEvent(event, queueTelegram: true);
-            AppLogger.instance.add(
-              'سپر امنیتی آمبرلا فایل آلوده را خودکار حذف کرد: ${threat.name}',
-              level: 'warning',
-            );
-            continue;
-          }
+  Future<SecurityScanResult> _evaluateScanResult(
+    SecurityScanResult rawResult, {
+    required bool updateLastResult,
+  }) async {
+    final List<SecurityThreat> remaining = <SecurityThreat>[];
+    final List<NeutralizedSecurityEvent> newlyDeleted =
+        <NeutralizedSecurityEvent>[];
+
+    for (final SecurityThreat threat in rawResult.threats) {
+      if (autoDeleteMaliciousDownloads && threat.isAutoRemediableFile) {
+        final RemediationResult outcome =
+            await _native.remediateSecurityThreat(threat);
+        if (outcome.ok) {
+          final NeutralizedSecurityEvent event = NeutralizedSecurityEvent(
+            key: threat.key,
+            name: threat.name,
+            category: threat.category == 'malicious_link'
+                ? 'malicious_link'
+                : 'malicious_download',
+            severity: threat.severity,
+            target: threat.target.isNotEmpty ? threat.target : threat.path,
+            detail: threat.detail.isNotEmpty
+                ? threat.detail
+                : 'فایل دانلود شده حاوی بدافزار شناسایی و به صورت خودکار حذف شد.',
+            action: 'deleted',
+            timestampMs: DateTime.now().millisecondsSinceEpoch,
+          );
+          newlyDeleted.add(event);
+          _recordNeutralizedEvent(event, queueTelegram: true);
+          AppLogger.instance.add(
+            'سپر امنیتی آمبرلا فایل آلوده را خودکار حذف کرد: ${threat.name}',
+            level: 'warning',
+          );
+          continue;
         }
-        remaining.add(threat);
       }
+      remaining.add(threat);
+    }
 
-      final SecurityScanResult effective = rawResult.copyWith(
-        clean: remaining.isEmpty,
-        threats: remaining,
-      );
+    final SecurityScanResult effective = rawResult.copyWith(
+      clean: remaining.isEmpty,
+      threats: remaining,
+    );
 
+    if (updateLastResult || effective.hasThreats || !_hasCompletedInitialScan) {
       final Set<String> prevKeys =
           _lastResult.threats.map((SecurityThreat t) => t.key).toSet();
       final Set<String> nextKeys =
@@ -247,12 +262,6 @@ class SecurityScannerController extends ChangeNotifier {
       _lastResult = effective;
       _hasCompletedInitialScan = true;
       _lastScannedAt = DateTime.now();
-
-      if (newlyDeleted.isNotEmpty) {
-        _lastMessage = newlyDeleted.length == 1
-            ? 'فایل بدافزار «${newlyDeleted.first.name}» شناسایی و به صورت خودکار حذف شد.'
-            : '${Fa.num(newlyDeleted.length)} فایل آلوده شناسایی و خودکار حذف شدند.';
-      }
 
       final bool changed =
           prevKeys.length != nextKeys.length || !prevKeys.containsAll(nextKeys);
@@ -268,16 +277,18 @@ class SecurityScannerController extends ChangeNotifier {
       if (effective.hasThreats && (isVpnActive?.call() ?? false)) {
         onThreatBlockedWhileConnected?.call(effective.threats);
       }
-
-      await _syncServerAlertsIfNeeded(effective);
-      return effective;
-    } catch (error) {
-      AppLogger.instance.add('خطا در پایش امنیتی: $error', level: 'warning');
-      return _lastResult;
-    } finally {
-      _scanning = false;
-      notifyListeners();
     }
+
+    if (newlyDeleted.isNotEmpty) {
+      _lastMessage = newlyDeleted.length == 1
+          ? 'فایل بدافزار «${newlyDeleted.first.name}» شناسایی و به صورت خودکار حذف شد.'
+          : '${Fa.num(newlyDeleted.length)} فایل آلوده شناسایی و خودکار حذف شدند.';
+    }
+
+    if (updateLastResult || effective.hasThreats || newlyDeleted.isNotEmpty) {
+      await _syncServerAlertsIfNeeded(effective);
+    }
+    return effective;
   }
 
   void _recordNeutralizedEvent(
@@ -416,6 +427,20 @@ class SecurityScannerController extends ChangeNotifier {
 
   /// پیش از هر بار اتصال بررسی می کند سیستم پاک باشد؛ در غیر این صورت اتصال مسدود می شود.
   Future<SecurityScanResult> ensureCleanBeforeConnect() async {
+    if (!_lastResult.hasThreats) {
+      final SecurityScanResult? quick =
+          await NativeBridge.quickScanDeviceSecurity(_native);
+      if (quick != null) {
+        final SecurityScanResult evaluated =
+            await _evaluateScanResult(quick, updateLastResult: false);
+        if (evaluated.hasThreats) {
+          _lastMessage =
+              'پیش از برقراری اتصال باید برنامه ها یا تهدیدهای مسدود شده حذف شوند.';
+          notifyListeners();
+        }
+        return evaluated;
+      }
+    }
     final SecurityScanResult result = await scanNow(silent: false);
     if (result.hasThreats) {
       _lastMessage =
