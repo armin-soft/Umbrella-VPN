@@ -1,7 +1,7 @@
 import 'package:url_launcher/url_launcher.dart';
 
+import '../platform/services.dart';
 import 'malicious_link_guard.dart';
-import 'utils.dart';
 
 /// بازکننده ایمن نشانی های بیرونی: هر لینک را پیش از ارسال به مرورگر از
 /// `MaliciousLinkGuard` عبور می دهد تا نشانی های فیشینگ، تروجانی یا تغییرجهت

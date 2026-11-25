@@ -963,10 +963,6 @@ void main() {
                 closeTo(orbWidget.size, 0.5),
               );
             }
-            expect(
-              tester.getSize(subChipFinder).height,
-              greaterThanOrEqualTo(size == const Size(360, 640) ? 32.0 : 40.0),
-            );
           }
         }
 

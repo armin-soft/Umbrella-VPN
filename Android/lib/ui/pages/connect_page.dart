@@ -948,6 +948,7 @@ class _ConnectionStats extends StatelessWidget {
                     value: value.$2,
                     icon: value.$3,
                     accent: value.$4,
+                    connected: connected,
                     compact: compact,
                     dense: dense,
                   ),
@@ -966,6 +967,7 @@ class _ConnectionStatTile extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.accent,
+    this.connected = false,
     this.compact = false,
     this.dense = false,
   });
@@ -974,6 +976,7 @@ class _ConnectionStatTile extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color accent;
+  final bool connected;
   final bool compact;
   final bool dense;
 

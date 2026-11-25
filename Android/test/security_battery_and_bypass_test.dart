@@ -160,9 +160,9 @@ void main() {
   test('Android SafeUrlLauncher blocks unsafe domains and allows verified links', () async {
     int launched = 0;
     MaliciousLinkMatch? blocked;
-    final void Function(Uri, MaliciousLinkMatch)? prev =
+    final void Function(MaliciousLinkMatch)? prev =
         SafeUrlLauncher.onThreatBlocked;
-    SafeUrlLauncher.onThreatBlocked = (_, MaliciousLinkMatch m) => blocked = m;
+    SafeUrlLauncher.onThreatBlocked = (MaliciousLinkMatch m) => blocked = m;
     addTearDown(() => SafeUrlLauncher.onThreatBlocked = prev);
 
     expect(
@@ -206,14 +206,17 @@ void main() {
     expect(settings['url-test-interval'], 1800);
 
     final Map<String, dynamic> runtime = <String, dynamic>{
+      'experimental': <String, dynamic>{
+        'monitoring': <String, dynamic>{},
+      },
       'outbounds': <dynamic>[
         <String, dynamic>{'type': 'direct', 'tag': RuntimeConfig.directOutboundTag},
         <String, dynamic>{'type': 'selector', 'tag': 'select'},
       ],
       'dns': <String, dynamic>{
         'servers': <dynamic>[
-          <String, dynamic>{'tag': 'dns-remote', 'type': 'udp', 'server': '1.1.1.1'},
-          <String, dynamic>{'tag': 'dns-direct', 'type': 'udp', 'server': '8.8.8.8'},
+          <String, dynamic>{'tag': 'dns-remote-group', 'type': 'udp', 'server': '1.1.1.1'},
+          <String, dynamic>{'tag': 'dns-direct-group', 'type': 'udp', 'server': '8.8.8.8'},
         ],
         'rules': <dynamic>[
           <String, dynamic>{'domain': <String>['example.org'], 'server': 'dns-fake'},
@@ -222,18 +225,17 @@ void main() {
       'route': <String, dynamic>{
         'rule_set': <dynamic>[],
         'rules': <dynamic>[
+          <String, dynamic>{'ip_cidr': <String>['194.5.175.0/24'], 'outbound': RuntimeConfig.directOutboundTag},
           <String, dynamic>{'action': 'resolve'},
+          <String, dynamic>{'domain_suffix': <String>['digikala.com'], 'outbound': RuntimeConfig.directOutboundTag},
         ],
       },
     };
     RuntimeConfig.finalize(
       runtime,
-      settings: const AppSettings(),
-      filter: const FilterSettings(
-        bypassIran: true,
-        bypassDomains: <String>['digikala.com', '194.5.175.0/24'],
-      ),
-      dataDir: '/data/user/0/ir.umbrella.vpn/files/data',
+      profileTags: const <String>{},
+      coreSettings: settings,
+      localDataDir: '${Directory.current.path}/assets/data',
     );
     final List<Map<String, dynamic>> routeRules =
         ((runtime['route'] as Map<String, dynamic>)['rules'] as List<dynamic>)
@@ -277,12 +279,14 @@ void main() {
       final SettingsController settings = SettingsController(
         native: native,
         sound: SoundService(),
-        window: WindowService(),
+        window: WindowService(native),
       );
       final SubscriptionController subs = SubscriptionController(
         vpn: vpn,
         auth: auth,
-        client: gw,
+        client: MockClient(
+          (http.Request _) async => http.Response('[]', 200),
+        ),
         enableNativeTransport: false,
       );
       final ToastController toasts = ToastController();

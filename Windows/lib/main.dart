@@ -318,15 +318,15 @@ Future<void> main(List<String> arguments) async {
     auth.onSubscriptionClaimed = () async {
       await subscriptions.syncPersonal();
     };
-    VpnPhase prevVpnPhase = vpn.status.phase;
+    VpnStatus prevVpnStatus = vpn.status;
     vpn.addListener(() {
-      final VpnPhase next = vpn.status.phase;
-      if (next == prevVpnPhase) return;
-      final VpnPhase prev = prevVpnPhase;
-      prevVpnPhase = next;
+      final VpnStatus next = vpn.status;
+      if (next == prevVpnStatus) return;
+      final VpnStatus prev = prevVpnStatus;
+      prevVpnStatus = next;
       if (auth.signedIn &&
-          (next == VpnPhase.connected ||
-              (prev == VpnPhase.connected && next == VpnPhase.disconnected))) {
+          (next == VpnStatus.connected ||
+              (prev == VpnStatus.connected && next == VpnStatus.disconnected))) {
         unawaited(auth.refreshAccount(silent: true));
       }
     });

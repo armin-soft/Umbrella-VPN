@@ -59,7 +59,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
   Timer? _clockTimer;
   Timer? _autoSyncTimer;
   VpnController? _boundVpn;
-  VpnPhase _lastVpnPhase = VpnPhase.disconnected;
+  VpnStatus _lastVpnStatus = VpnStatus.disconnected;
 
   @override
   void initState() {
@@ -92,11 +92,11 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     super.didChangeDependencies();
     final VpnController? vpn = context.maybeRead<VpnController>();
     if (!identical(_boundVpn, vpn)) {
-      _boundVpn?.removeListener(_onVpnPhaseChanged);
+      _boundVpn?.removeListener(_onVpnStatusChanged);
       _boundVpn = vpn;
       if (vpn != null) {
-        _lastVpnPhase = vpn.status.phase;
-        vpn.addListener(_onVpnPhaseChanged);
+        _lastVpnStatus = vpn.status;
+        vpn.addListener(_onVpnStatusChanged);
       }
     }
     final bool active = TickerMode.of(context);
@@ -117,22 +117,22 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     }
   }
 
-  void _onVpnPhaseChanged() {
+  void _onVpnStatusChanged() {
     final VpnController? vpn = _boundVpn;
     if (vpn == null || !mounted) return;
-    final VpnPhase next = vpn.status.phase;
-    if (next == _lastVpnPhase) return;
-    final VpnPhase prev = _lastVpnPhase;
-    _lastVpnPhase = next;
-    if (next == VpnPhase.connected ||
-        (prev == VpnPhase.connected && next == VpnPhase.disconnected)) {
+    final VpnStatus next = vpn.status;
+    if (next == _lastVpnStatus) return;
+    final VpnStatus prev = _lastVpnStatus;
+    _lastVpnStatus = next;
+    if (next == VpnStatus.connected ||
+        (prev == VpnStatus.connected && next == VpnStatus.disconnected)) {
       unawaited(_autoSync());
     }
   }
 
   @override
   void dispose() {
-    _boundVpn?.removeListener(_onVpnPhaseChanged);
+    _boundVpn?.removeListener(_onVpnStatusChanged);
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     _autoSyncTimer?.cancel();

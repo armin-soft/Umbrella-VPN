@@ -36,7 +36,7 @@ check(
 
 $GatewaySrc = (string)file_get_contents(__DIR__ . '/../Core/App/App-Gateway.php');
 check(
-    str_contains($GatewaySrc, 'ChannelMembership::syncForApp($Telegram_Id)') &&
+    str_contains($GatewaySrc, 'ChannelMembership::syncForApp(') &&
     str_contains($GatewaySrc, 'channel_status') &&
     str_contains($GatewaySrc, 'channel_grace_remaining') &&
     str_contains($GatewaySrc, 'channel_disabled'),

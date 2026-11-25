@@ -68,18 +68,30 @@ void main() {
   });
 
   test('RuntimeConfig.finalize configures offline Iran bypass without DNS poisoning', () {
+    final Map<String, dynamic> coreSettings = UmbrellaCore.settingsJson(
+      tun: true,
+      systemProxy: false,
+      port: 12334,
+      networkSettings: const AppSettings(),
+      contentFilter: const FilterSettings(
+        bypassIran: true,
+        bypassDomains: <String>['bankmellat.ir', '185.143.232.0/24'],
+      ),
+    );
     final Map<String, dynamic> runtime = <String, dynamic>{
+      'experimental': <String, dynamic>{
+        'monitoring': <String, dynamic>{},
+      },
       'outbounds': <dynamic>[
         <String, dynamic>{'type': 'direct', 'tag': RuntimeConfig.directOutboundTag},
         <String, dynamic>{'type': 'selector', 'tag': 'select'},
       ],
       'dns': <String, dynamic>{
         'servers': <dynamic>[
-          <String, dynamic>{'tag': 'dns-remote', 'type': 'udp', 'server': '1.1.1.1'},
-          <String, dynamic>{'tag': 'dns-direct', 'type': 'udp', 'server': '8.8.8.8'},
+          <String, dynamic>{'tag': 'dns-remote-group', 'type': 'udp', 'server': '1.1.1.1'},
+          <String, dynamic>{'tag': 'dns-direct-group', 'type': 'udp', 'server': '8.8.8.8'},
         ],
         'rules': <dynamic>[
-          <String, dynamic>{'rule_set': <String>['geosite-ir'], 'server': 'dns-direct'},
           <String, dynamic>{'domain': <String>['example.com'], 'server': 'dns-fake'},
         ],
       },
@@ -99,8 +111,10 @@ void main() {
           },
         ],
         'rules': <dynamic>[
-          <String, dynamic>{'rule_set': <String>['geosite-ir'], 'outbound': RuntimeConfig.directOutboundTag},
+          <String, dynamic>{'ip_cidr': <String>['185.143.232.0/24'], 'outbound': RuntimeConfig.directOutboundTag},
           <String, dynamic>{'action': 'resolve'},
+          <String, dynamic>{'rule_set': <String>['geosite-ir'], 'outbound': RuntimeConfig.directOutboundTag},
+          <String, dynamic>{'domain_suffix': <String>['bankmellat.ir'], 'outbound': RuntimeConfig.directOutboundTag},
           <String, dynamic>{'rule_set': <String>['geoip-ir'], 'outbound': RuntimeConfig.directOutboundTag},
         ],
       },
@@ -108,12 +122,9 @@ void main() {
 
     RuntimeConfig.finalize(
       runtime,
-      settings: const AppSettings(),
-      filter: const FilterSettings(
-        bypassIran: true,
-        bypassDomains: <String>['bankmellat.ir', '185.143.232.0/24'],
-      ),
-      dataDir: r'C:\ProgramData\Umbrella\data',
+      profileTags: const <String>{},
+      coreSettings: coreSettings,
+      localDataDir: '${Directory.current.path}/assets/data',
     );
 
     final List<Map<String, dynamic>> ruleSets =
@@ -152,9 +163,9 @@ void main() {
   test('SafeUrlLauncher blocks malicious external URLs and notifies security monitor', () async {
     int rawLaunchCount = 0;
     final List<MaliciousLinkMatch> blockedMatches = <MaliciousLinkMatch>[];
-    final void Function(Uri, MaliciousLinkMatch)? prevCallback =
+    final void Function(MaliciousLinkMatch)? prevCallback =
         SafeUrlLauncher.onThreatBlocked;
-    SafeUrlLauncher.onThreatBlocked = (_, MaliciousLinkMatch m) => blockedMatches.add(m);
+    SafeUrlLauncher.onThreatBlocked = (MaliciousLinkMatch m) => blockedMatches.add(m);
     addTearDown(() => SafeUrlLauncher.onThreatBlocked = prevCallback);
 
     final bool openedBad = await SafeUrlLauncher.open(
