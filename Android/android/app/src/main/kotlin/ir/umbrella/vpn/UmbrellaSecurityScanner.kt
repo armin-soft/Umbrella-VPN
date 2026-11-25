@@ -160,6 +160,10 @@ object UmbrellaSecurityScanner {
         }.getOrDefault("")
     }
 
+    fun hasActiveOtherVpnTransport(context: Context): Boolean {
+        return isOtherVpnTransportActive(context)
+    }
+
     private fun isOtherVpnTransportActive(context: Context): Boolean {
         val coreStatus = BoxService.status.value ?: Status.Stopped
         if (coreStatus != Status.Stopped) {
@@ -175,6 +179,83 @@ object UmbrellaSecurityScanner {
                 caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
             }
         }.getOrDefault(false)
+    }
+
+    private fun collectThirdPartyVpnPackages(context: Context): List<String> {
+        val pm = context.packageManager
+        val selfPkg = context.packageName
+        val results = linkedSetOf<String>()
+        val vpnKeywords = listOf(
+            "hiddify", "psiphon", "v2ray", "nekobox", "nekoray", "clash",
+            "mihomo", "flclash", "openvpn", "wireguard", "amnezia",
+            "onedotonedotonedotone", "protonvpn", "nordvpn", "expressvpn",
+            "surfshark", "windscribe", "mullvad", "outline", "shadowsocks",
+            "v2box", "karing", "happ", "mahsa", "lantern", "hotspotshield",
+            "tunnelbear", "cyberghost", "adguard.android.vpn", "orbot",
+            "singbox", "sing_box", "sing.box", "shadowrocket", "streisand",
+            "napsternet", "httpcustom", "matsuri", "anonytun", "starkvpn",
+            "thundervpn", "supervpn", "privado", "bitvpn", "betternet",
+            "urbanvpn", "jumpjump",
+        )
+
+        val packagesWithServices = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getInstalledPackages(
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SERVICES.toLong()),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstalledPackages(PackageManager.GET_SERVICES)
+            }
+        }.getOrDefault(emptyList())
+
+        for (pkgInfo in packagesWithServices) {
+            val pkg = pkgInfo.packageName ?: continue
+            val pkgLower = pkg.lowercase()
+            if (pkg == selfPkg ||
+                pkgLower.startsWith("ir.umbrella.") ||
+                pkgLower.startsWith("org.telegram.") ||
+                pkgLower == "android" ||
+                pkgLower.startsWith("com.android.")
+            ) {
+                continue
+            }
+            val declaresVpnService = pkgInfo.services?.any { svc ->
+                svc.permission == Manifest.permission.BIND_VPN_SERVICE
+            } == true
+            val matchesKeyword = vpnKeywords.any { kw -> pkgLower.contains(kw) }
+            if (declaresVpnService || matchesKeyword) {
+                results.add(pkg)
+            }
+        }
+        return results.toList()
+    }
+
+    fun closeConflictingVpns(context: Context): Map<String, Any> {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val vpnPackages = collectThirdPartyVpnPackages(context)
+        val runningSet = runCatching {
+            am?.runningAppProcesses
+                ?.flatMap { it.pkgList?.toList().orEmpty() }
+                ?.toSet()
+                .orEmpty()
+        }.getOrDefault(emptySet())
+
+        val targeted = mutableListOf<String>()
+        for (pkg in vpnPackages) {
+            val isRunning = runningSet.isEmpty() || runningSet.contains(pkg)
+            if (isRunning) {
+                runCatching {
+                    am?.killBackgroundProcesses(pkg)
+                    targeted.add(pkg)
+                }
+            }
+        }
+        return mapOf(
+            "closedCount" to targeted.size,
+            "closedPackages" to targeted,
+            "otherTunnelActive" to isOtherVpnTransportActive(context),
+        )
     }
 
     fun isPackageInstalled(context: Context, packageName: String): Boolean {
@@ -931,7 +1012,7 @@ object UmbrellaSecurityScanner {
                     "category" to "conflicting_vpn",
                     "severity" to "high",
                     "target" to "Android VPN Service",
-                    "detail" to "یک فیلترشکن دیگر هم اکنون در اندروید فعال است و مانع برقراری اتصال امن آمبرلا می شود.",
+                    "detail" to "یک فیلترشکن دیگر هم اکنون در اندروید فعال است؛ هنگام اتصال تونل آمبرلا اتصال قبلی خودکار بسته می شود (مگر اینکه VPN همیشه روشن سیستم فعال باشد).",
                     "remediationKind" to "vpn_settings",
                     "active" to true,
                     "signedValid" to true,
@@ -997,11 +1078,19 @@ object UmbrellaSecurityScanner {
         }
 
         if (remediationKind == "vpn_settings") {
-            runCatching {
-                activity.startActivity(
-                    Intent(AndroidSettings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
+            val closed = runCatching {
+                (closeConflictingVpns(activity)["closedCount"] as? Int) ?: 0
+            }.getOrDefault(0)
+            if (closed > 0) {
                 actionTaken = true
+            }
+            if (isOtherVpnTransportActive(activity)) {
+                runCatching {
+                    activity.startActivity(
+                        Intent(AndroidSettings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    actionTaken = true
+                }
             }
         }
 

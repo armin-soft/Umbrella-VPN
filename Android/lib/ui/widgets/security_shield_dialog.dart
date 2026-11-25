@@ -517,7 +517,7 @@ class _ThreatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
     final String btnLabel = item.remediationKind == 'vpn_settings'
-        ? 'باز کردن تنظیمات وی پی ان سیستم'
+        ? 'توقف فیلترشکن / تنظیمات وی پی ان'
         : (item.packageName.isNotEmpty ? 'حذف برنامه از دستگاه' : 'حذف فوری فایل');
     return Container(
       padding: const EdgeInsets.all(AppMetrics.space3),

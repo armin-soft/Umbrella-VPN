@@ -3,9 +3,12 @@
 
 #include <iphlpapi.h>
 #include <ipifcons.h>
+#include <ras.h>
+#include <raserror.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <wininet.h>
+#include <winsvc.h>
 #include <winver.h>
 #include <ws2tcpip.h>
 #include <icmpapi.h>
@@ -153,14 +156,199 @@ bool ContainsInsensitive(const std::string& haystack, const std::string& needle)
 }
 
 const char* kForeignCores[] = {
-    "xray.exe",      "sing-box.exe",  "v2ray.exe",     "mihomo.exe",
-    "clash.exe",     "clash-meta.exe", "clash-verge.exe", "wireguard.exe",
-    "amneziawg.exe", "awg.exe",       "mieru.exe",     "openvpn.exe",
-    "shadowsocks.exe", "ss-local.exe", "trojan.exe",   "hysteria.exe",
-    "naive.exe",     "tun2socks.exe", "warp-svc.exe",  "nekoray.exe",
-    "v2rayn.exe",    "shadowrocket.exe", "outline.exe", "psiphon.exe",
-    "hiddifycli.exe", "hiddifycore.exe",
+    "xray.exe",
+    "sing-box.exe",
+    "v2ray.exe",
+    "mihomo.exe",
+    "clash.exe",
+    "clash-meta.exe",
+    "clash-verge.exe",
+    "clash verge.exe",
+    "clash for windows.exe",
+    "clash-nyanpasu.exe",
+    "mihomo-party.exe",
+    "flclash.exe",
+    "flclashcore.exe",
+    "sparkle.exe",
+    "wireguard.exe",
+    "amneziawg.exe",
+    "amneziavpn.exe",
+    "amneziavpn-service.exe",
+    "awg.exe",
+    "mieru.exe",
+    "openvpn.exe",
+    "openvpn-gui.exe",
+    "openvpnconnect.exe",
+    "ovpnhelper_service.exe",
+    "shadowsocks.exe",
+    "shadowsocksr-dotnet4.0.exe",
+    "ss-local.exe",
+    "trojan.exe",
+    "hysteria.exe",
+    "naive.exe",
+    "tun2socks.exe",
+    "warp-svc.exe",
+    "cloudflare warp.exe",
+    "warp-taskbar.exe",
+    "nekoray.exe",
+    "nekobox.exe",
+    "nekobox_core.exe",
+    "v2rayn.exe",
+    "v2rayu.exe",
+    "qv2ray.exe",
+    "matsuri.exe",
+    "winxray.exe",
+    "invisiblemanxrayclient.exe",
+    "v2box.exe",
+    "karing.exe",
+    "karingservice.exe",
+    "happ.exe",
+    "mahsa.exe",
+    "mahsang.exe",
+    "shadowrocket.exe",
+    "outline.exe",
+    "outline-client.exe",
+    "psiphon.exe",
+    "psiphon3.exe",
+    "psiphon-tunnel-core.exe",
+    "hiddify.exe",
+    "hiddifynext.exe",
+    "hiddify-next.exe",
+    "hiddify desktop.exe",
+    "hiddifycli.exe",
+    "hiddifycore.exe",
+    "protonvpn.exe",
+    "protonvpnservice.exe",
+    "protonvpn.client.exe",
+    "nordvpn.exe",
+    "nordvpn-service.exe",
+    "expressvpn.exe",
+    "expressvpnd.exe",
+    "expressvpn.appservice.exe",
+    "surfshark.exe",
+    "surfsharkservice.exe",
+    "windscribe.exe",
+    "windscribeservice.exe",
+    "mullvad-vpn.exe",
+    "mullvad-daemon.exe",
+    "lantern.exe",
+    "sstap.exe",
+    "hotspotshield.exe",
+    "hsswd.exe",
+    "urbanvpn.exe",
+    "betternet.exe",
+    "adguardvpn.exe",
+    "adguardvpn_svc.exe",
+    "cyberghost.exe",
+    "pia-client.exe",
+    "pia-service.exe",
+    "privado.exe",
+    "tailscaled.exe",
+    "tailscale-ipn.exe",
+    "zerotier_desktop_ui.exe",
+    "zerotier-one_x64.exe",
+    "vpnclient_x64.exe",
+    "tor.exe",
+    "jumpjump.exe",
 };
+
+std::string NormalizeDirLower(std::string path) {
+  std::string lower = ToLowerAscii(std::move(path));
+  for (char& ch : lower) {
+    if (ch == '/') ch = '\\';
+  }
+  while (lower.size() > 3 && lower.back() == '\\') {
+    lower.pop_back();
+  }
+  return lower;
+}
+
+std::string DirOfPathLower(const std::string& path) {
+  std::string norm = NormalizeDirLower(path);
+  size_t slash = norm.find_last_of('\\');
+  if (slash == std::string::npos) return std::string();
+  return norm.substr(0, slash);
+}
+
+bool StartsWithDirLower(const std::string& full_lower,
+                        const std::string& dir_lower) {
+  if (full_lower.empty() || dir_lower.empty()) return false;
+  if (full_lower.rfind(dir_lower, 0) != 0) return false;
+  return full_lower.size() == dir_lower.size() ||
+         full_lower[dir_lower.size()] == '\\';
+}
+
+std::vector<std::string> CollectUmbrellaExcludeDirsLower(
+    const std::vector<std::string>& extra_exclude_dirs) {
+  std::vector<std::string> dirs;
+  const std::string self_dir = DirOfPathLower(ToUtf8(ExePathW()));
+  if (!self_dir.empty()) dirs.push_back(self_dir);
+
+  wchar_t pd_buf[MAX_PATH * 2] = {0};
+  DWORD pd_len = GetEnvironmentVariableW(L"ProgramData", pd_buf, MAX_PATH * 2);
+  if (pd_len > 0 && pd_len < MAX_PATH * 2) {
+    dirs.push_back(NormalizeDirLower(ToUtf8(std::wstring(pd_buf, pd_len)) +
+                                     "\\Umbrella"));
+  }
+  wchar_t lad_buf[MAX_PATH * 2] = {0};
+  DWORD lad_len =
+      GetEnvironmentVariableW(L"LOCALAPPDATA", lad_buf, MAX_PATH * 2);
+  if (lad_len > 0 && lad_len < MAX_PATH * 2) {
+    dirs.push_back(NormalizeDirLower(ToUtf8(std::wstring(lad_buf, lad_len)) +
+                                     "\\Umbrella"));
+  }
+  for (const std::string& extra : extra_exclude_dirs) {
+    const std::string norm = NormalizeDirLower(extra);
+    if (!norm.empty()) dirs.push_back(norm);
+  }
+  return dirs;
+}
+
+bool IsForeignVpnExeMatch(const std::string& lower_exe,
+                          const std::string& full_lower,
+                          const std::string& win_dir_lower,
+                          const std::vector<std::string>& umbrella_dirs_lower,
+                          const std::unordered_set<std::string>& exact_targets) {
+  if (lower_exe.empty()) return false;
+  if (lower_exe.rfind("umbrella", 0) == 0) return false;
+  for (const std::string& udir : umbrella_dirs_lower) {
+    if (StartsWithDirLower(full_lower, udir)) {
+      return false;
+    }
+  }
+  if (!win_dir_lower.empty() && StartsWithDirLower(full_lower, win_dir_lower)) {
+    return false;
+  }
+  if (exact_targets.count(lower_exe) > 0) return true;
+
+  static const char* kProtectedApps[] = {
+      "chrome.exe",   "msedge.exe",   "firefox.exe", "brave.exe",
+      "opera.exe",    "vivaldi.exe",  "telegram.exe", "discord.exe",
+      "explorer.exe", "code.exe",     "devenv.exe",   "powershell.exe",
+      "pwsh.exe",     "cmd.exe",      "conhost.exe",
+  };
+  for (const char* safe_app : kProtectedApps) {
+    if (lower_exe == safe_app) return false;
+  }
+
+  static const char* kForeignSubstrings[] = {
+      "v2rayn",        "nekobox",       "nekoray",       "hiddify",
+      "clash verge",   "clash-verge",   "clash for windows",
+      "clash-nyanpasu","flclash",       "mihomo",        "psiphon",
+      "wireguard",     "amnezia",       "openvpn",       "surfshark",
+      "nordvpn",       "expressvpn",    "protonvpn",     "windscribe",
+      "mullvad",       "hotspotshield", "cyberghost",    "adguardvpn",
+      "karing",        "v2box",         "shadowrocket",  "tunnelbear",
+      "pia-client",    "tailscale-ipn", "tailscaled",    "warp-svc",
+      "cloudflare warp", "jumpjump",
+  };
+  for (const char* sub : kForeignSubstrings) {
+    if (lower_exe.find(sub) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
 
 const char* kOwnedCores[] = {
     "umbrellacli.exe",
@@ -1064,19 +1252,190 @@ std::vector<std::string> SystemOps::ListRunningCores() {
     targets.insert(core);
   }
 
+  const DWORD self_pid = GetCurrentProcessId();
+  const auto umbrella_dirs = CollectUmbrellaExcludeDirsLower({});
+  wchar_t win_buf[MAX_PATH] = {0};
+  const UINT win_len = GetWindowsDirectoryW(win_buf, MAX_PATH);
+  const std::string win_dir_lower =
+      win_len > 0 ? NormalizeDirLower(ToUtf8(std::wstring(win_buf, win_len)))
+                  : std::string();
+
   std::unordered_set<std::string> seen;
   PROCESSENTRY32W entry = {0};
   entry.dwSize = sizeof(entry);
   if (Process32FirstW(snapshot, &entry)) {
     do {
+      if (entry.th32ProcessID <= 4 || entry.th32ProcessID == self_pid) continue;
       const std::string lower = ToLowerAscii(ToUtf8(entry.szExeFile));
-      if (targets.count(lower) > 0 && seen.insert(lower).second) {
+      const std::string full_lower = NormalizeDirLower(
+          ProcessPathOf(static_cast<int>(entry.th32ProcessID)));
+      if (IsForeignVpnExeMatch(lower, full_lower, win_dir_lower, umbrella_dirs,
+                               targets) &&
+          seen.insert(lower).second) {
         found.push_back(lower);
       }
     } while (Process32NextW(snapshot, &entry));
   }
   CloseHandle(snapshot);
   return found;
+}
+
+int SystemOps::TerminateForeignVpns(
+    const std::vector<std::string>& extra_exclude_dirs,
+    const std::vector<int>& exclude_pids) {
+  int closed = 0;
+
+  // 1. Stop conflicting third-party VPN Windows services when permitted.
+  static const wchar_t* kForeignServices[] = {
+      L"CloudflareWARP",
+      L"OpenVPNService",
+      L"OpenVPNServiceInteractive",
+      L"OpenVPNServiceLegacy",
+      L"ProtonVPN Service",
+      L"ProtonVPNCallout",
+      L"nordvpn-service",
+      L"NordVPN Service",
+      L"ExpressVPN Service",
+      L"Surfshark Service",
+      L"WindscribeService",
+      L"MullvadVPN",
+      L"AmneziaVPN",
+      L"AdGuardVPNService",
+      L"Tailscale",
+      L"ZeroTierOneService",
+      L"HiddifyCliService",
+  };
+  SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+  if (scm != nullptr) {
+    for (const wchar_t* svc_name : kForeignServices) {
+      SC_HANDLE svc = OpenServiceW(scm, svc_name, SERVICE_STOP | SERVICE_QUERY_STATUS);
+      if (svc == nullptr) continue;
+      SERVICE_STATUS_PROCESS ssp = {};
+      DWORD needed = 0;
+      if (QueryServiceStatusEx(svc, SC_STATUS_PROCESS_INFO,
+                               reinterpret_cast<LPBYTE>(&ssp), sizeof(ssp),
+                               &needed) &&
+          ssp.dwCurrentState != SERVICE_STOPPED &&
+          ssp.dwCurrentState != SERVICE_STOP_PENDING) {
+        SERVICE_STATUS st = {};
+        if (ControlService(svc, SERVICE_CONTROL_STOP, &st)) {
+          ++closed;
+        }
+      }
+      CloseServiceHandle(svc);
+    }
+    CloseServiceHandle(scm);
+  }
+
+  // 2. Disconnect any active Windows built-in RAS/IKEv2/L2TP/PPTP/SSTP VPN tunnel.
+  HMODULE ras_mod = LoadLibraryW(L"rasapi32.dll");
+  if (ras_mod != nullptr) {
+    using RasEnumFn = DWORD(WINAPI*)(LPRASCONNW, LPDWORD, LPDWORD);
+    using RasHangUpFn = DWORD(WINAPI*)(HRASCONN);
+    auto enum_fn = reinterpret_cast<RasEnumFn>(
+        GetProcAddress(ras_mod, "RasEnumConnectionsW"));
+    auto hangup_fn = reinterpret_cast<RasHangUpFn>(
+        GetProcAddress(ras_mod, "RasHangUpW"));
+    if (enum_fn != nullptr && hangup_fn != nullptr) {
+      DWORD bytes = sizeof(RASCONNW) * 16;
+      DWORD count = 0;
+      std::vector<BYTE> ras_buf(bytes, 0);
+      auto* conns = reinterpret_cast<LPRASCONNW>(ras_buf.data());
+      conns[0].dwSize = sizeof(RASCONNW);
+      DWORD rc = enum_fn(conns, &bytes, &count);
+      if (rc == ERROR_BUFFER_TOO_SMALL && bytes > 0) {
+        ras_buf.assign(bytes, 0);
+        conns = reinterpret_cast<LPRASCONNW>(ras_buf.data());
+        conns[0].dwSize = sizeof(RASCONNW);
+        rc = enum_fn(conns, &bytes, &count);
+      }
+      if (rc == ERROR_SUCCESS && count > 0) {
+        for (DWORD i = 0; i < count; ++i) {
+          if (conns[i].hrasconn != nullptr &&
+              hangup_fn(conns[i].hrasconn) == ERROR_SUCCESS) {
+            ++closed;
+          }
+        }
+      }
+    }
+    FreeLibrary(ras_mod);
+  }
+
+  // 3. Terminate every running foreign VPN GUI, daemon, and core tree outside Umbrella dirs.
+  std::unordered_set<std::string> targets;
+  targets.reserve(sizeof(kForeignCores) / sizeof(kForeignCores[0]));
+  for (const char* core : kForeignCores) {
+    targets.insert(core);
+  }
+  const DWORD self_pid = GetCurrentProcessId();
+  std::unordered_set<DWORD> protected_pids;
+  protected_pids.insert(self_pid);
+  for (int pid : exclude_pids) {
+    if (pid > 0) protected_pids.insert(static_cast<DWORD>(pid));
+  }
+  const auto umbrella_dirs = CollectUmbrellaExcludeDirsLower(extra_exclude_dirs);
+  wchar_t win_buf[MAX_PATH] = {0};
+  const UINT win_len = GetWindowsDirectoryW(win_buf, MAX_PATH);
+  const std::string win_dir_lower =
+      win_len > 0 ? NormalizeDirLower(ToUtf8(std::wstring(win_buf, win_len)))
+                  : std::string();
+
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot != INVALID_HANDLE_VALUE) {
+    std::unordered_map<DWORD, std::vector<DWORD>> children;
+    std::vector<DWORD> matched_roots;
+    PROCESSENTRY32W entry = {0};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+      do {
+        const DWORD pid = entry.th32ProcessID;
+        if (pid <= 4) continue;
+        children[entry.th32ParentProcessID].push_back(pid);
+        if (protected_pids.count(pid) > 0) continue;
+        const std::string lower = ToLowerAscii(ToUtf8(entry.szExeFile));
+        const std::string full_lower =
+            NormalizeDirLower(ProcessPathOf(static_cast<int>(pid)));
+        if (IsForeignVpnExeMatch(lower, full_lower, win_dir_lower,
+                                 umbrella_dirs, targets)) {
+          matched_roots.push_back(pid);
+        }
+      } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+
+    std::unordered_set<DWORD> kill_set;
+    std::vector<DWORD> queue;
+    for (DWORD root_pid : matched_roots) {
+      if (kill_set.insert(root_pid).second) {
+        queue.push_back(root_pid);
+      }
+    }
+    for (size_t i = 0; i < queue.size(); ++i) {
+      auto it = children.find(queue[i]);
+      if (it == children.end()) continue;
+      for (DWORD child_pid : it->second) {
+        if (child_pid > 4 && protected_pids.count(child_pid) == 0 &&
+            kill_set.insert(child_pid).second) {
+          queue.push_back(child_pid);
+        }
+      }
+    }
+    for (DWORD pid : queue) {
+      HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+      if (proc != nullptr) {
+        if (TerminateProcess(proc, 0) != FALSE) {
+          ++closed;
+        }
+        CloseHandle(proc);
+      }
+    }
+  }
+
+  // 4. Clear any leftover system HTTP proxy enabled by another VPN.
+  if (SystemProxyEnabled() && DisableSystemProxy()) {
+    ++closed;
+  }
+  return closed;
 }
 
 bool SystemOps::SystemProxyEnabled() {

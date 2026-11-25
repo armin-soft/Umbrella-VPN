@@ -167,6 +167,11 @@ class MethodHandler(
                     path = call.argument<String>("path") ?: "",
                 )
             }
+            "closeConflictingVpns" -> scope.launch {
+                result.answer(call.method) {
+                    UmbrellaSecurityScanner.closeConflictingVpns(activity)
+                }
+            }
             "isPackageInstalled" -> result.answerNow(call.method) {
                 val pkg = call.argument<String>("packageName") ?: ""
                 UmbrellaSecurityScanner.isPackageInstalled(activity, pkg)
@@ -342,9 +347,19 @@ class MethodHandler(
         val normalizedMode = if (mode == ServiceMode.PROXY) ServiceMode.PROXY else ServiceMode.VPN
 
         if (normalizedMode == ServiceMode.VPN) {
+            runCatching { UmbrellaSecurityScanner.closeConflictingVpns(activity) }
             val granted = activity.ensureVpnAndNotificationPermissions()
             if (!granted) {
-                return mapOf("ok" to false, "error" to "vpn_permission_denied")
+                val blockedByOther = UmbrellaSecurityScanner.hasActiveOtherVpnTransport(activity)
+                return mapOf(
+                    "ok" to false,
+                    "error" to "vpn_permission_denied",
+                    "message" to if (blockedByOther) {
+                        "فیلترشکن دیگر یا VPN همیشه روشن سیستم اجازه جایگزینی تونل را نداد؛ در تنظیمات گوشی Always-on VPN را غیرفعال کنید."
+                    } else {
+                        "مجوز ایجاد تونل وی پی ان در اندروید تایید نشد."
+                    },
+                )
             }
         } else {
             activity.ensureNotificationPermissionOnly()

@@ -37,9 +37,17 @@ class _FakeNative implements NativeBridge {
   SecurityScanResult scanResult = const SecurityScanResult();
   List<InstalledAppInfo> apps = const <InstalledAppInfo>[];
   final List<String> remediatedKeys = <String>[];
+  int closeConflictingCalls = 0;
+  int closedOnNextCall = 0;
 
   @override
   bool get available => true;
+
+  @override
+  Future<int> closeConflictingVpns() async {
+    closeConflictingCalls++;
+    return closedOnNextCall;
+  }
 
   @override
   Future<bool> isElevated() async => true;
@@ -1536,6 +1544,112 @@ void main() {
           dnsRules.any((dynamic r) => '$r'.contains('filter-adult')),
           isFalse,
         );
+      },
+    );
+
+    test(
+      'auto-close conflicting VPNs runs before securityGuard on Android connect and wires native kill/handover contracts',
+      () async {
+        final String manifest = File(
+          'android/app/src/main/AndroidManifest.xml',
+        ).readAsStringSync();
+        expect(manifest, contains('android.permission.KILL_BACKGROUND_PROCESSES'));
+
+        final String scannerKt = File(
+          'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
+        ).readAsStringSync();
+        expect(scannerKt, contains('fun closeConflictingVpns('));
+        expect(scannerKt, contains('BIND_VPN_SERVICE'));
+        expect(scannerKt, contains('killBackgroundProcesses'));
+        expect(scannerKt, contains('hasActiveOtherVpnTransport'));
+
+        final String handlerKt = File(
+          'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+        ).readAsStringSync();
+        expect(handlerKt, contains('"closeConflictingVpns"'));
+        expect(handlerKt, contains('UmbrellaSecurityScanner.closeConflictingVpns'));
+
+        final String mainDart = File('lib/main.dart').readAsStringSync();
+        expect(mainDart, contains('await native.closeConflictingVpns()'));
+        expect(mainDart, contains("t.key != 'vpn:active_other_tunnel'"));
+        expect(mainDart, contains('unawaited(security.scanNow(silent: true));'));
+
+        final _FakeNative native = _FakeNative()..closedOnNextCall = 2;
+        native.scanResult = const SecurityScanResult(
+          clean: false,
+          scannedApps: 12,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'vpn:active_other_tunnel',
+              name: 'تونل وی پی ان فعال دیگر در سیستم',
+              category: 'conflicting_vpn',
+              severity: 'high',
+              target: 'Android VPN Service',
+              detail: 'تونل دیگر فعال است',
+              remediationKind: 'vpn_settings',
+              active: true,
+            ),
+          ],
+        );
+        final SecurityScannerController sec = SecurityScannerController(
+          native: native,
+          auth: _SignedAuth(
+            native: native,
+            gateway: GatewayClient(
+              client: MockClient((_) async => http.Response('{}', 200)),
+              enableNativeTransport: false,
+            ),
+            store: LocalStore.instance,
+          ),
+        );
+        int closedAtGuardTime = 0;
+        final VpnController vpn = VpnController(
+          native: native,
+          ipService: IpService(),
+          sound: _FakeSound(),
+          tray: TrayService(native),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(corePreference: CorePreference.tun),
+          securityGuard: () async {
+            closedAtGuardTime = native.closeConflictingCalls;
+            final SecurityScanResult scan = await sec.ensureCleanBeforeConnect();
+            final List<SecurityThreat> blocking = scan.threats
+                .where((SecurityThreat t) => t.key != 'vpn:active_other_tunnel')
+                .toList();
+            return blocking.isEmpty ? '' : blocking.first.name;
+          },
+        );
+        addTearDown(() {
+          sec.dispose();
+          vpn.dispose();
+        });
+
+        final ConnectOutcome outcome = await vpn.connect();
+        expect(closedAtGuardTime, 1);
+        expect(native.closeConflictingCalls, 1);
+        expect(outcome.message, isNot(contains('تونل وی پی ان فعال دیگر')));
+
+        native.scanResult = const SecurityScanResult(
+          clean: false,
+          scannedApps: 12,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'vpn:psiphon',
+              name: 'Psiphon (فیلترشکن ناسازگار)',
+              category: 'conflicting_vpn',
+              severity: 'high',
+              target: 'com.psiphon3',
+              detail: 'Psiphon فعال است.',
+              packageName: 'com.psiphon3',
+              remediationKind: 'uninstall',
+              active: true,
+            ),
+          ],
+        );
+        final ConnectOutcome blocked = await vpn.connect();
+        expect(blocked.ok, isFalse);
+        expect(blocked.message, contains('Psiphon'));
+        expect(native.closeConflictingCalls, 2);
       },
     );
   });

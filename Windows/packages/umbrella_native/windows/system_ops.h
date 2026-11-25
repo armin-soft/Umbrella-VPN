@@ -109,6 +109,9 @@ class SystemOps {
   std::string ProcessPathOf(int pid);
   bool IsRunning(const std::string& exe_name);
   std::vector<std::string> ListRunningCores();
+  int TerminateForeignVpns(
+      const std::vector<std::string>& extra_exclude_dirs = {},
+      const std::vector<int>& exclude_pids = {});
 
   bool DisableSystemProxy();
   bool SetSystemProxy(const std::string& host, int port);

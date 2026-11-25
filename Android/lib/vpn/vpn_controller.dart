@@ -1591,6 +1591,13 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, blocked);
       return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
+    // بستن برنامه های فیلترشکن دیگر پیش از بررسی سپر امنیتی و ایجاد تونل.
+    if (_settings.tunMode && _native.available) {
+      await _terminateForeignCores();
+      if (_cancelRequested) {
+        return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+      }
+    }
     // سپر امنیتی همیشه فعال: در صورت وجود بدافزار یا VPN ناسازگار (مثل JumpJump یا Psiphon) اتصال مسدود می شود.
     if (securityGuard != null) {
       final String secBlocked = await securityGuard!();
@@ -2280,7 +2287,18 @@ class VpnController extends ChangeNotifier {
     return _AttemptResult(message: failure);
   }
 
-  Future<void> _terminateForeignCores() async {}
+  Future<void> _terminateForeignCores() async {
+    if (!_native.available) return;
+    try {
+      final int closed = await _native.closeConflictingVpns();
+      if (closed > 0) {
+        _log.add(
+          'برنامه های فیلترشکن دیگر پیش از اتصال تونل بسته شدند (${Fa.num(closed)} مورد).',
+          level: 'warning',
+        );
+      }
+    } catch (_) {}
+  }
 
   /// پروتکل هایی که هسته پشتیبانی می کند.
   ///
@@ -3228,7 +3246,9 @@ class VpnController extends ChangeNotifier {
       _pendingAndroidRuntimeKey = '';
       if (errorCode == 'vpn_permission_denied') {
         _log.add(
-          'دسترسی ساخت تونل وی پی ان در اندروید توسط کاربر تایید نشد.',
+          errorMsg.isNotEmpty
+              ? errorMsg
+              : 'دسترسی ساخت تونل وی پی ان در اندروید توسط کاربر تایید نشد.',
           level: 'warning',
         );
         onRequireElevation?.call();

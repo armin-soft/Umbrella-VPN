@@ -709,6 +709,35 @@ class NativeBridge {
         .toList();
   }
 
+  /// بستن خودکار تمام نرم افزارها، سرویس ها و تونل های VPN باز پیش از اتصال آمبرلا.
+  Future<int> closeConflictingVpns({
+    List<String> excludeDirs = const <String>[],
+    List<int> excludePids = const <int>[],
+  }) async {
+    if (!available) {
+      return 0;
+    }
+    final int? count = await _invoke<int>(
+      'terminateForeignVpns',
+      <String, dynamic>{
+        'excludeDirs': excludeDirs,
+        'excludePids': excludePids,
+      },
+    );
+    if (count != null) {
+      return count;
+    }
+    if (!Platform.isWindows) {
+      return 0;
+    }
+    int killed = 0;
+    for (final String core in await runningCores()) {
+      killed += await _dartKillByName(core);
+    }
+    await _dartDisableSystemProxy();
+    return killed;
+  }
+
   Future<bool> setSystemProxy({
     String host = '127.0.0.1',
     required int port,

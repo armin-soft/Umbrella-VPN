@@ -191,11 +191,23 @@ Future<void> main(List<String> arguments) async {
       // بدون اشتراک سالم، هیچ اتصالی برقرار نمی شود.
       accessGuard: () => auth.account.canConnect ? '' : auth.account.accessReason,
       securityGuard: () async {
+        if (native.available) {
+          await native.closeConflictingVpns(
+            excludeDirs: <String>[
+              if (provisioner.dataDir.isNotEmpty) provisioner.dataDir,
+            ],
+          );
+        }
         final SecurityScanResult scan = await security.ensureCleanBeforeConnect();
-        if (!scan.hasThreats) {
+        final List<SecurityThreat> blocking = settings.settings.tunMode
+            ? scan.threats
+                .where((SecurityThreat t) => t.key != 'vpn:active_other_tunnel')
+                .toList()
+            : scan.threats;
+        if (blocking.isEmpty) {
           return '';
         }
-        final String names = scan.threats
+        final String names = blocking
             .take(3)
             .map((SecurityThreat t) => t.name)
             .join('، ');
@@ -206,7 +218,9 @@ Future<void> main(List<String> arguments) async {
           settings.landingSeen &&
           auth.signedIn &&
           auth.account.canConnect &&
-          !security.hasThreats,
+          !security.threats.any(
+            (SecurityThreat t) => t.key != 'vpn:active_other_tunnel',
+          ),
     );
     security.onThreatBlockedWhileConnected = (List<SecurityThreat> threats) {
       final String names =
@@ -246,6 +260,7 @@ Future<void> main(List<String> arguments) async {
     vpn.onTunnelConnected = () {
       motion.pulseAmbient();
       unawaited(motion.checkConnectCpuBudget());
+      unawaited(security.scanNow(silent: true));
     };
     vpn.updateSettings(settings.settings);
     final PowerController power = PowerController(

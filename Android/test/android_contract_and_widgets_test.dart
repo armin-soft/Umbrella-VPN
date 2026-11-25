@@ -148,6 +148,9 @@ class _FakeNative implements NativeBridge {
   Future<bool> requestStorageScanAccess() async => true;
 
   @override
+  Future<int> closeConflictingVpns() async => 0;
+
+  @override
   Future<bool> openExternalUrl(
     String url, {
     String title = '',

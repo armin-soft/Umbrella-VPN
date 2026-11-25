@@ -509,6 +509,43 @@ void UmbrellaNativePlugin::HandleMethodCall(
     });
     return;
   }
+  if (method == "terminateForeignVpns") {
+    std::vector<std::string> exclude_dirs;
+    auto dir_it = args.find(flutter::EncodableValue(std::string("excludeDirs")));
+    if (dir_it != args.end()) {
+      if (const auto* list =
+              std::get_if<flutter::EncodableList>(&dir_it->second)) {
+        for (const auto& item : *list) {
+          if (const auto* s = std::get_if<std::string>(&item)) {
+            if (!s->empty()) exclude_dirs.push_back(*s);
+          }
+        }
+      }
+    }
+    std::vector<int> exclude_pids;
+    auto pid_it = args.find(flutter::EncodableValue(std::string("excludePids")));
+    if (pid_it != args.end()) {
+      if (const auto* list =
+              std::get_if<flutter::EncodableList>(&pid_it->second)) {
+        for (const auto& item : *list) {
+          if (const auto* p32 = std::get_if<int32_t>(&item)) {
+            exclude_pids.push_back(*p32);
+          } else if (const auto* p64 = std::get_if<int64_t>(&item)) {
+            exclude_pids.push_back(static_cast<int>(*p64));
+          }
+        }
+      }
+    }
+    RunOffUiThread(
+        reply_guard_, std::move(result),
+        [exclude_dirs = std::move(exclude_dirs),
+         exclude_pids = std::move(exclude_pids)]() {
+          return flutter::EncodableValue(
+              SystemOps::Instance().TerminateForeignVpns(exclude_dirs,
+                                                         exclude_pids));
+        });
+    return;
+  }
   if (method == "setSystemProxy") {
     const std::string host = StringOf(args, "host", "127.0.0.1");
     const int port = IntOf(args, "port", 0);

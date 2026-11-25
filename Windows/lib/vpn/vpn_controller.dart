@@ -1486,6 +1486,13 @@ class VpnController extends ChangeNotifier {
       _setStatus(VpnStatus.failed, blocked);
       return ConnectOutcome(ok: false, message: blocked, needsRenewal: true);
     }
+    // بستن تمام وی پی ان ها و هسته های باز قبلی پیش از بررسی سپر امنیتی و اتصال.
+    if (_native.available) {
+      await _terminateForeignCores();
+      if (_cancelRequested) {
+        return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
+      }
+    }
     // سپر امنیتی همیشه فعال: در صورت وجود بدافزار یا VPN ناسازگار (مثل JumpJump یا Psiphon) اتصال مسدود می شود.
     if (securityGuard != null) {
       final String secBlocked = await securityGuard!();
@@ -2188,6 +2195,24 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _terminateForeignCores() async {
+    if (!_native.available) {
+      return;
+    }
+    int nativeClosed = 0;
+    try {
+      nativeClosed = await _native.closeConflictingVpns(
+        excludeDirs: <String>[
+          if (_provisioner.dataDir.isNotEmpty) _provisioner.dataDir,
+        ],
+        excludePids: List<int>.of(_runningPids),
+      );
+    } catch (_) {}
+    if (nativeClosed > 0) {
+      _log.add(
+        'فیلترشکن ها یا اتصالات وی پی ان باز قبلی بسته شدند (${Fa.num(nativeClosed)} مورد).',
+        level: 'warning',
+      );
+    }
     final List<Object> results = await Future.wait<Object>(<Future<Object>>[
       _native.runningCores(),
       _native.systemProxyEnabled(),

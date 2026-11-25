@@ -37,9 +37,20 @@ class _FakeNative implements NativeBridge {
   String? pickedExe;
   final List<String> remediatedKeys = <String>[];
   int portLookupCalls = 0;
+  int closeConflictingCalls = 0;
+  int closedOnNextCall = 0;
 
   @override
   bool get available => true;
+
+  @override
+  Future<int> closeConflictingVpns({
+    List<String> excludeDirs = const <String>[],
+    List<int> excludePids = const <int>[],
+  }) async {
+    closeConflictingCalls++;
+    return closedOnNextCall;
+  }
 
   @override
   Future<bool> isElevated() async => true;
@@ -1641,6 +1652,110 @@ void main() {
         idleB.dispose();
         await Future<void>.delayed(const Duration(milliseconds: 20));
         expect(mockNative.portLookupCalls, 0);
+      },
+    );
+
+    test(
+      'auto-close conflicting VPNs runs before securityGuard on Windows connect and wires native RAS/service/process termination contracts',
+      () async {
+        final String sysOpsH = File(
+          'packages/umbrella_native/windows/system_ops.h',
+        ).readAsStringSync();
+        expect(sysOpsH, contains('TerminateForeignVpns'));
+
+        final String sysOpsCpp = File(
+          'packages/umbrella_native/windows/system_ops.cpp',
+        ).readAsStringSync();
+        expect(sysOpsCpp, contains('int SystemOps::TerminateForeignVpns('));
+        expect(sysOpsCpp, contains('RasEnumConnectionsW'));
+        expect(sysOpsCpp, contains('RasHangUpW'));
+        expect(sysOpsCpp, contains('SERVICE_CONTROL_STOP'));
+        expect(sysOpsCpp, contains('CollectUmbrellaExcludeDirsLower'));
+
+        final String pluginCpp = File(
+          'packages/umbrella_native/windows/umbrella_native_plugin.cpp',
+        ).readAsStringSync();
+        expect(pluginCpp, contains('"terminateForeignVpns"'));
+
+        final String mainDart = File('lib/main.dart').readAsStringSync();
+        expect(mainDart, contains('await native.closeConflictingVpns('));
+        expect(mainDart, contains("t.key != 'vpn:active_other_tunnel'"));
+        expect(mainDart, contains('unawaited(security.scanNow(silent: true));'));
+
+        final _FakeNative native = _FakeNative()..closedOnNextCall = 3;
+        native.scanResult = const SecurityScanResult(
+          clean: false,
+          scannedProcesses: 42,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'vpn:active_other_tunnel',
+              name: 'تونل وی پی ان فعال دیگر در سیستم',
+              category: 'conflicting_vpn',
+              severity: 'high',
+              target: 'Windows VPN Tunnel',
+              detail: 'یک فیلترشکن دیگر فعال است',
+              remediationKind: 'vpn_settings',
+              active: true,
+            ),
+          ],
+        );
+        final SecurityScannerController sec = SecurityScannerController(
+          native: native,
+          auth: _SignedAuth(
+            native: native,
+            gateway: GatewayClient(
+              client: MockClient((_) async => http.Response('{}', 200)),
+            ),
+            store: LocalStore.instance,
+          ),
+        );
+        int closedAtGuardTime = 0;
+        final VpnController vpn = VpnController(
+          native: native,
+          ipService: IpService(),
+          sound: _FakeSound(),
+          tray: TrayService(native),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(corePreference: CorePreference.tun),
+          securityGuard: () async {
+            closedAtGuardTime = native.closeConflictingCalls;
+            final SecurityScanResult scan = await sec.ensureCleanBeforeConnect();
+            final List<SecurityThreat> blocking = scan.threats
+                .where((SecurityThreat t) => t.key != 'vpn:active_other_tunnel')
+                .toList();
+            return blocking.isEmpty ? '' : blocking.first.name;
+          },
+        );
+        addTearDown(() {
+          sec.dispose();
+          vpn.dispose();
+        });
+
+        final ConnectOutcome outcome = await vpn.connect();
+        expect(closedAtGuardTime, 1);
+        expect(native.closeConflictingCalls, 1);
+        expect(outcome.message, isNot(contains('تونل وی پی ان فعال دیگر')));
+
+        native.scanResult = const SecurityScanResult(
+          clean: false,
+          scannedProcesses: 42,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'vpn:psiphon',
+              name: 'Psiphon (فیلترشکن ناسازگار)',
+              category: 'conflicting_vpn',
+              severity: 'high',
+              target: 'psiphon3.exe',
+              detail: 'Psiphon فعال است.',
+              processName: 'psiphon3.exe',
+              active: true,
+            ),
+          ],
+        );
+        final ConnectOutcome blocked = await vpn.connect();
+        expect(blocked.ok, isFalse);
+        expect(blocked.message, contains('Psiphon'));
+        expect(native.closeConflictingCalls, 2);
       },
     );
   });

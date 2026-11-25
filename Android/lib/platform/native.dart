@@ -631,6 +631,15 @@ class NativeBridge {
 
   Future<bool> shutdownCores() async => stopCore();
 
+  /// بستن پس زمینه اپلیکیشن های VPN دیگر پیش از برقراری تونل آمبرلا.
+  Future<int> closeConflictingVpns() async {
+    if (!available) return 0;
+    final Map<Object?, Object?>? raw =
+        await _invoke<Map<Object?, Object?>>('closeConflictingVpns');
+    if (raw == null) return 0;
+    return JsonX.integer(raw['closedCount']);
+  }
+
   static Future<SecurityScanResult?> quickScanDeviceSecurity(
     NativeBridge bridge,
   ) async {
