@@ -3024,6 +3024,10 @@ void main() {
     });
 
     test('توقف غیرمنتظره سرویس اندروید با پیام خالی بازاتصال را با enableRawConfig فعال می کند و user_stopped/vpn_revoked بدون لوپ قطع می شوند', () async {
+      final HttpOverrides? previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = previousOverrides);
+
       SharedPreferences.setMockInitialValues(<String, Object>{});
       await LocalStore.instance.init();
       final Directory tempDir =
@@ -3049,6 +3053,11 @@ void main() {
       }
 
       clashStub.listen((HttpRequest req) async {
+        if (req.uri.path == '/logs') {
+          req.response.statusCode = HttpStatus.notFound;
+          await req.response.close();
+          return;
+        }
         req.response.headers.contentType = ContentType.json;
         if (req.uri.path == '/proxies') {
           final String nowUtc = DateTime.now().toUtc().toIso8601String();
