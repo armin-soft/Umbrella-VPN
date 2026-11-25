@@ -572,7 +572,10 @@ class UpdateService {
       final String url = JsonX.text(asset['browser_download_url']);
       if (url.isEmpty || !name.endsWith('.apk')) continue;
       anyApk ??= asset;
-      if (exactAbiPattern != null && exactAbiPattern.hasMatch(name)) {
+      final bool isExactAbi = exactAbiPattern != null &&
+          !(abi == 'x86' && name.contains('x86_64')) &&
+          exactAbiPattern.hasMatch(name);
+      if (isExactAbi) {
         return asset;
       }
       if (name.contains('universal') || !knownAbiPattern.hasMatch(name)) {

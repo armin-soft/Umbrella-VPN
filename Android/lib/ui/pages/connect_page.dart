@@ -1373,8 +1373,7 @@ class _UpdateBanner extends StatelessWidget {
           ),
           Text(
             Fa.num(subtitle),
-            maxLines: dense ? 1 : 2,
-            overflow: TextOverflow.ellipsis,
+            softWrap: true,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: hasError ? colors.danger : colors.textSecondary,
                 ),
