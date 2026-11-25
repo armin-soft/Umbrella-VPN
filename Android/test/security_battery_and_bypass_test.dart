@@ -199,11 +199,22 @@ void main() {
       networkSettings: const AppSettings(),
       contentFilter: const FilterSettings(
         bypassIran: true,
-        bypassDomains: <String>['digikala.com', '194.5.175.0/24'],
+        bypassDomains: <String>['digikala.com', '185.143.232.10', '194.5.175.0/24'],
       ),
       batterySaving: true,
     );
     expect(settings['url-test-interval'], 1800);
+    final List<Map<String, dynamic>> coreRules =
+        ((settings['route-rule'] as Map<String, dynamic>)['rules']
+                as List<dynamic>)
+            .cast<Map<String, dynamic>>();
+    final Map<String, dynamic> ipRule = coreRules.firstWhere(
+      (Map<String, dynamic> r) => r['name'] == 'umbrella-bypass-user-ip',
+    );
+    expect(
+      ipRule['ip_cidr'],
+      containsAll(<String>['185.143.232.10/32', '194.5.175.0/24']),
+    );
 
     final Map<String, dynamic> runtime = <String, dynamic>{
       'experimental': <String, dynamic>{

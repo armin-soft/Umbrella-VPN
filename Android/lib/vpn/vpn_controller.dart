@@ -797,14 +797,23 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _cacheNodes() async {
+    if (_disposed) {
+      return;
+    }
     final String raw = jsonEncode(
       _nodes.map((VpnNode node) => node.toJson()).toList(),
     );
+    if (_disposed) {
+      return;
+    }
     await LocalStore.instance.writeFile(StoreKeys.nodesCache, raw);
   }
 
   /// سرورهای تازه خوانده شده از اشتراک ها؛ پینگ ها از قبل موجود حفظ می شوند.
   Future<void> applyNodes(List<VpnNode> nodes, {bool measure = true}) async {
+    if (_disposed) {
+      return;
+    }
     final Map<String, VpnNode> previous = <String, VpnNode>{
       for (final VpnNode node in _nodes) node.id: node,
     };
@@ -822,6 +831,9 @@ class VpnController extends ChangeNotifier {
       );
     }).toList();
     await _cacheNodes();
+    if (_disposed) {
+      return;
+    }
     _notify();
     if (_nodes.isNotEmpty && !_status.active && !_status.busy) {
       _scheduleRuntimePrewarm();
@@ -842,7 +854,7 @@ class VpnController extends ChangeNotifier {
   bool _tunnelFailureReported = false;
 
   Future<void> refreshPings({bool all = true, bool tunnelProbe = true}) async {
-    if (_measuring || _nodes.isEmpty) {
+    if (_disposed || _measuring || _nodes.isEmpty) {
       return;
     }
     // سنجش هسته ای و اتصال هر دو پورت های ثابت هسته (۱۷۰۷۸ و ۱۶۷۵۶) را
@@ -882,6 +894,7 @@ class VpnController extends ChangeNotifier {
         target,
         concurrency: 8,
         onProgress: (int done, int total) {
+          if (_disposed) return;
           _pingProgressDone = done;
           _pingProgressTotal = total;
           _notify();
@@ -889,6 +902,10 @@ class VpnController extends ChangeNotifier {
       );
     } on Exception catch (error) {
       _log.add('سنجش پینگ ناموفق بود: ${error.toString()}', level: 'warning');
+    }
+    if (_disposed) {
+      _measuring = false;
+      return;
     }
     // تاخیر واقعی تونل: هسته هر سرور را یک بار امتحان می کند و عدد دقیق را
     // می دهد؛ اگر هسته در دسترس نباشد، نتیجه تی سی پی و آی سی ام پی همان
@@ -908,7 +925,7 @@ class VpnController extends ChangeNotifier {
     }
     // اگر اتصال در این میان شروع شده باشد، سنجش را خودمان بستیم؛ گزارش
     // «تاخیر تونل برای ۰ سرور» آن وقت فقط گیج کننده است.
-    if (_status.active) {
+    if (_disposed || _status.active) {
       _measuring = false;
       _notify();
       return;
@@ -931,6 +948,9 @@ class VpnController extends ChangeNotifier {
       await _measureActiveNetworkPing(active);
     }
     _measuring = false;
+    if (_disposed) {
+      return;
+    }
     await _cacheNodes();
     // تنها وقتی خبری برای گفتن هست که چیزی به دست نیامده باشد؛ و آن هم یک
     // بار، نه هر دو دقیقه یک بار. پینگ شبکه ای که در فهرست آمده، عدد کاربر
@@ -1006,8 +1026,11 @@ class VpnController extends ChangeNotifier {
   /// این سنجش تونل کاربر را دست نمی زند و فقط برای این است که عدد پینگ سرور
   /// متصل هیچ وقت صفر نماند.
   Future<void> _measureActiveNetworkPing(VpnNode node) async {
+    if (_disposed) {
+      return;
+    }
     final VpnNode updated = await _ping.measure(node, attempts: 1);
-    if (!updated.hasPing) {
+    if (_disposed || !updated.hasPing) {
       return;
     }
     _nodes = _nodes

@@ -111,9 +111,10 @@ void main() {
   test('auxiliary hop cannot replace account gating or authorized input', () {
     final String controller = File('lib/vpn/vpn_controller.dart').readAsStringSync();
     final int start = controller.indexOf('Future<ConnectOutcome> _connectInner');
-    final String connect = controller.substring(start, controller.indexOf('final List<VpnNode> fitting', start));
+    final String connect = controller.substring(start, controller.indexOf('final List<VpnNode> autoStages', start));
     expect(connect.indexOf('accessGuard?.call()'), lessThan(connect.indexOf('_settings.chain')));
-    expect(connect, contains('if (_sessionNodes.isEmpty)'));
+    expect(connect, contains('final bool hasAnyPool = _sessionNodes.isNotEmpty'));
+    expect(connect, contains('if (!hasAnyPool)'));
     expect(controller, contains('networkSettings: _settings'));
     expect(controller, contains('(!_settings.tunMode || !_device.elevated)'));
     expect(controller, contains('if (_healthInFlight || _status != VpnStatus.connected) return;'));

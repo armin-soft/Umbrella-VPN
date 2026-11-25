@@ -150,6 +150,7 @@ void main() {
         port: 443,
         sourceId: sourceId,
         favorite: favorite,
+        raw: proto == NodeProtocol.mieru ? '{"port":443}' : '',
         params: const <String, dynamic>{},
       );
     }

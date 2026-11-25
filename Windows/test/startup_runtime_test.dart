@@ -178,11 +178,22 @@ void main() {
   test('cancellation stays latched and automatic mode cannot restart a pool per node', () {
     final String source = File('lib/vpn/vpn_controller.dart').readAsStringSync();
     final String finish = source.split('void _finishCancel()').last.split('Future<ConnectOutcome> connect').first;
-    expect(finish, contains('if (!_connectInFlight) _cancelRequested = false;'));
-    expect(source, contains('? _candidates(node, selection.reason) : <VpnNode>[node]'));
+    expect(
+      RegExp(r'if\s*\(!_connectInFlight\)\s*\{\s*_cancelRequested\s*=\s*false;')
+          .hasMatch(finish),
+      isTrue,
+    );
+    expect(
+      RegExp(r'_singleNodeSession\s*\?\s*<VpnNode>\[autoStages\.first\]\s*:\s*autoStages')
+          .hasMatch(source),
+      isTrue,
+    );
     expect(source, contains('await process.exitCode.timeout'));
     expect(source, contains('if (pending != null) return pending;'));
     expect(source, contains('generation != _cancelGeneration'));
-    expect(source, contains('if (_connectInFlight) { await cancel(); return; }'));
+    expect(
+      source,
+      contains('if (_connectInFlight || _waitingForNetwork) { await cancel(); return; }'),
+    );
   });
 }

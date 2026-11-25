@@ -727,6 +727,17 @@ class UmbrellaCore {
   /// [args] دیگر نباید `-tun`/`--system-proxy`/`--in-proxy-port` را هم بفرستد؛
   /// همان ها اینجا هستند. اگر روزی کلیدی از هسته اضافه شد و اینجا نبود، همان
   /// مقدار پیش فرض خودش (صفر) می شود؛ برای همین تا جای ممکن همه می نویسیم.
+  static String _toIpCidr(String value) {
+    if (value.contains('/')) {
+      return value;
+    }
+    final InternetAddress? addr = InternetAddress.tryParse(value);
+    if (addr == null) {
+      return value;
+    }
+    return addr.type == InternetAddressType.IPv6 ? '$value/128' : '$value/32';
+  }
+
   static Map<String, dynamic> settingsJson({
     required bool tun,
     required bool systemProxy,
@@ -771,7 +782,8 @@ class UmbrellaCore {
               FilterSettings.normalizeBypassTarget(rawTarget);
           if (normalized == null) continue;
           if (FilterSettings.isIpOrCidr(normalized)) {
-            if (!directCidrs.contains(normalized)) directCidrs.add(normalized);
+            final String cidr = _toIpCidr(normalized);
+            if (!directCidrs.contains(cidr)) directCidrs.add(cidr);
           } else {
             if (!directDomains.contains(normalized)) {
               directDomains.add(normalized);

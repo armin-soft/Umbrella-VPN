@@ -247,7 +247,7 @@ void main() {
       final String core = read('lib/vpn/umbrella_core.dart');
       expect(core.contains("'keep-top': -1"), isTrue);
       expect(core.contains("'ipinfo-url': ''"), isTrue);
-      expect(core.contains("'url-test-interval': 600"), isTrue);
+      expect(core.contains("'url-test-interval': batterySaving ? 1800 : 600"), isTrue);
       // `lowest` یعنی گروه انتخاب روی بالانسر کم ترین تاخیر می رود، پس
       // خود هسته سریع ترین را برمی دارد و هنگام افتادن سوییچ می کند.
       expect(core.contains("'default-proxy': 'lowest'"), isTrue);
@@ -360,7 +360,7 @@ void main() {
       expect(services.contains('SHA256SUMS.txt'), isTrue);
       // دکمه دانلود باید واقعا مرورگر را باز کند، نه فقط گزارش بنویسد.
       final String updates = read('lib/state/update_controller.dart');
-      expect(updates.contains('launchUrl'), isTrue);
+      expect(updates.contains('SafeUrlLauncher.open'), isTrue);
       final String main = read('lib/main.dart');
       expect(main.contains('updates.checkIfDue(silent: true)'), isTrue);
       expect(main.contains('updates.check(silent: true)'), isFalse);
@@ -801,6 +801,8 @@ void main() {
         // هیچ وقت نمایش داده نمی شود: PortHolder.label برای هسته های
         // شناخته شده «یک هسته فیلترشکن دیگر» برمی گرداند.
         "'hiddify',",
+        // پالایش داخلی نام فرایند هسته در گزارش رصد ترافیک (`ClashApi._cleanObservedProcess`).
+        "lower.startsWith('hiddify') ||",
       ];
       for (final File file in files) {
         final List<String> lines = file.readAsLinesSync();

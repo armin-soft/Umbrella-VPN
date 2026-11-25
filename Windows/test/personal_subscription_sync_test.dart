@@ -487,9 +487,14 @@ void main() {
 
       expect(vpn.contains('bool get _canCaptureBaselineIp'), isTrue);
       expect(vpn.contains('bool isAutoReconnect = false'), isTrue);
-      expect(vpn.contains('connect(isAutoReconnect: true)'), isTrue);
       expect(
-        shell.contains('if (!vpn.status.active && !vpn.status.busy)'),
+        RegExp(r'connect\([^)]*isAutoReconnect:\s*true').hasMatch(vpn),
+        isTrue,
+      );
+      expect(
+        shell.contains(
+          'if (!accountOnly && !vpn.status.active && !vpn.status.busy)',
+        ),
         isTrue,
       );
       expect(
