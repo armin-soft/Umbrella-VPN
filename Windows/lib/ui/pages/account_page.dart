@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/safe_url_launcher.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
@@ -233,7 +234,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     if (result.status == 'payment_required' && result.checkoutUrl.isNotEmpty) {
       final Uri? url = Uri.tryParse(result.checkoutUrl);
       final bool opened = url != null &&
-          await launchUrl(url, mode: LaunchMode.externalApplication);
+          await SafeUrlLauncher.open(url, mode: LaunchMode.externalApplication);
       if (opened) {
         toasts.info(
           'درگاه پرداخت باز شد',
@@ -402,7 +403,8 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
       return;
     }
     try {
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+      if (!await SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication) &&
+          mounted) {
         toasts.error('باز کردن درگاه ناموفق بود', 'از دکمه ادامه پرداخت استفاده کنید.');
       }
     } catch (_) {
@@ -659,7 +661,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     }
     final Uri? uri = Uri.tryParse(link);
     if (uri == null || uri.scheme != 'https' || uri.host != 't.me' ||
-        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        !await SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) toasts.error('باز کردن تلگرام ناموفق بود', 'لینک جدید بگیرید و دوباره تلاش کنید.');
       return;
     }
@@ -674,7 +676,7 @@ class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
     final Uri uri = Uri.parse('https://t.me/UmbrellaVPN_BOT');
     try {
       final bool ok =
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          await SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication);
       if (!ok) {
         toasts.error('مرورگر باز نشد', 'ربات تلگرام آمبرلا');
       }

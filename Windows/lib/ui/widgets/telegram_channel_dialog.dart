@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_config.dart';
+import '../../core/safe_url_launcher.dart';
 import '../../core/storage.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
@@ -112,7 +113,7 @@ class TelegramChannelPrompt {
     }
     final Future<bool> Function(Uri) check = canLaunch ?? canLaunchUrl;
     final Future<bool> Function(Uri, LaunchMode) opener =
-        launch ?? ((Uri uri, LaunchMode mode) => launchUrl(uri, mode: mode));
+        launch ?? ((Uri uri, LaunchMode mode) => SafeUrlLauncher.open(uri, mode: mode));
 
     final Uri? webUri = Uri.tryParse(clean);
     if (webUri == null || !webUri.hasScheme) {
@@ -183,7 +184,7 @@ class TelegramChannelPrompt {
   }) async {
     final Future<bool> Function(Uri) check = canLaunch ?? canLaunchUrl;
     final Future<bool> Function(Uri, LaunchMode) opener =
-        launch ?? ((Uri uri, LaunchMode mode) => launchUrl(uri, mode: mode));
+        launch ?? ((Uri uri, LaunchMode mode) => SafeUrlLauncher.open(uri, mode: mode));
 
     final Uri appUri = Uri.parse(AppConfig.channelAppUrl);
     final Uri webUri = Uri.parse(AppConfig.channelUrl);

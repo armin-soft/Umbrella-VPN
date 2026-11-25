@@ -362,6 +362,45 @@ class AuthController extends ChangeNotifier {
   bool _restored = false;
   bool _checkingDeviceAccess = false;
   bool _revokingSession = false;
+  bool _batterySaving = false;
+  bool _appVisible = true;
+  DateTime? _lastHeartbeatAt;
+
+  Duration get _effectiveHeartbeatInterval {
+    if (_session?.account.channelStatus == 'grace') {
+      return const Duration(seconds: 30);
+    }
+    if (!_appVisible && _batterySaving) {
+      return const Duration(seconds: 150);
+    }
+    if (_batterySaving || !_appVisible) {
+      return const Duration(seconds: 90);
+    }
+    return const Duration(seconds: 30);
+  }
+
+  void setBatterySaving(bool value) {
+    if (_batterySaving == value) return;
+    _batterySaving = value;
+    if (_heartbeatTimer != null && _session != null) {
+      _rescheduleHeartbeat();
+    }
+  }
+
+  void setAppVisible(bool visible) {
+    if (_appVisible == visible) return;
+    _appVisible = visible;
+    if (_heartbeatTimer != null && _session != null) {
+      _rescheduleHeartbeat();
+      if (visible) {
+        final DateTime? last = _lastHeartbeatAt;
+        if (last == null ||
+            DateTime.now().difference(last) >= const Duration(seconds: 25)) {
+          unawaited(_checkDeviceAccess());
+        }
+      }
+    }
+  }
 
   Future<void> restore() async {
     if (_restored) {
@@ -820,12 +859,17 @@ class AuthController extends ChangeNotifier {
     });
   }
 
+  void _rescheduleHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(_effectiveHeartbeatInterval, (_) {
+      unawaited(_checkDeviceAccess());
+    });
+  }
+
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
     unawaited(_checkDeviceAccess());
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_checkDeviceAccess());
-    });
+    _rescheduleHeartbeat();
   }
 
   /// وضعیت مجوز دستگاه از درگاه بررسی می شود. خطای شبکه نشست را باطل نمی کند؛
@@ -836,6 +880,7 @@ class AuthController extends ChangeNotifier {
     if (session == null) return;
 
     _checkingDeviceAccess = true;
+    _lastHeartbeatAt = DateTime.now();
     try {
       final List<Map<String, dynamic>> pendingActivity =
           ActivityMonitorBuffer.instance.snapshotPayload();
@@ -1014,7 +1059,10 @@ class AuthController extends ChangeNotifier {
         a.awgIpv6 == b.awgIpv6 &&
         a.subscriptionUrl == b.subscriptionUrl &&
         a.accountBase == b.accountBase &&
-        a.emergencyEnabled == b.emergencyEnabled;
+        a.emergencyEnabled == b.emergencyEnabled &&
+        a.channelStatus == b.channelStatus &&
+        a.channelGraceRemainingSeconds == b.channelGraceRemainingSeconds &&
+        a.channelDisabled == b.channelDisabled;
   }
 
   static bool _subscriptionNeedsResync(Account prev, Account next) {

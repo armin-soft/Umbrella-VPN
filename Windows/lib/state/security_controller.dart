@@ -41,6 +41,7 @@ class SecurityScannerController extends ChangeNotifier {
   void Function(NeutralizedSecurityEvent event)? onThreatNeutralized;
 
   static const Duration scanInterval = Duration(seconds: 45);
+  static const Duration batteryScanInterval = Duration(seconds: 180);
   static const Duration _linkCooldown = Duration(seconds: 60);
 
   Timer? _timer;
@@ -51,6 +52,8 @@ class SecurityScannerController extends ChangeNotifier {
   SecurityScanResult _lastResult = const SecurityScanResult();
   bool _scanning = false;
   bool _remediating = false;
+  bool _batterySaving = false;
+  bool _monitoringActive = false;
   String _lastMessage = '';
   DateTime? _lastScannedAt;
 
@@ -88,14 +91,31 @@ class SecurityScannerController extends ChangeNotifier {
   }
 
   void startMonitoring({bool watchDownloadFolders = true}) {
-    if (_timer != null) return;
+    if (_monitoringActive) return;
+    _monitoringActive = true;
     unawaited(scanNow(silent: true));
-    _timer = Timer.periodic(scanInterval, (_) {
-      unawaited(scanNow(silent: true));
-    });
+    _restartScanTimer();
     if (watchDownloadFolders) {
       _attachDownloadWatchers();
     }
+  }
+
+  void setBatterySaving(bool value) {
+    if (_batterySaving == value) return;
+    _batterySaving = value;
+    if (_monitoringActive) {
+      _restartScanTimer();
+    }
+  }
+
+  void _restartScanTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(
+      _batterySaving ? batteryScanInterval : scanInterval,
+      (_) {
+        unawaited(scanNow(silent: true));
+      },
+    );
   }
 
   void _attachDownloadWatchers() {
@@ -107,13 +127,23 @@ class SecurityScannerController extends ChangeNotifier {
       candidates.add('$profile\\Downloads\\Telegram Desktop');
       candidates.add('$profile\\Desktop');
       candidates.add('$profile\\Pictures');
+      candidates.add('$profile\\Videos');
+      candidates.add('$profile\\Music');
+      candidates.add('$profile\\Documents');
     }
-    for (final String path in candidates) {
+    final String? appData = Platform.environment['APPDATA'];
+    if (appData != null && appData.isNotEmpty) {
+      candidates.add('$appData\\Telegram Desktop');
+    }
+    for (final String path in candidates.toSet()) {
       try {
         final Directory dir = Directory(path);
         if (!dir.existsSync()) continue;
         final StreamSubscription<FileSystemEvent> sub = dir
-            .watch(events: FileSystemEvent.create | FileSystemEvent.modify)
+            .watch(
+              events: FileSystemEvent.create | FileSystemEvent.modify,
+              recursive: true,
+            )
             .listen(
           (FileSystemEvent event) {
             final String lower = event.path.toLowerCase();
@@ -136,6 +166,7 @@ class SecurityScannerController extends ChangeNotifier {
   }
 
   void stopMonitoring() {
+    _monitoringActive = false;
     _timer?.cancel();
     _timer = null;
     _watchDebounce?.cancel();
@@ -358,6 +389,29 @@ class SecurityScannerController extends ChangeNotifier {
     notifyListeners();
     await _syncServerAlertsIfNeeded(_lastResult);
     return hit;
+  }
+
+  Future<void> recordBlockedExternalUrl(MaliciousLinkMatch hit) async {
+    final DateTime now = DateTime.now();
+    final DateTime? last = _recentBlockedLinks[hit.key];
+    if (last != null && now.difference(last) < _linkCooldown) {
+      return;
+    }
+    _recentBlockedLinks[hit.key] = now;
+    final NeutralizedSecurityEvent event = NeutralizedSecurityEvent(
+      key: hit.key,
+      name: hit.title,
+      category: 'malicious_link',
+      severity: hit.severity,
+      target: hit.target,
+      detail: hit.detail,
+      action: 'blocked_url',
+      timestampMs: now.millisecondsSinceEpoch,
+    );
+    _lastMessage = hit.title;
+    _recordNeutralizedEvent(event, queueTelegram: true);
+    notifyListeners();
+    await _syncServerAlertsIfNeeded(_lastResult);
   }
 
   /// پیش از هر بار اتصال بررسی می کند سیستم پاک باشد؛ در غیر این صورت اتصال مسدود می شود.

@@ -9,6 +9,7 @@ import '../../models/models.dart';
 import '../../platform/native.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/motion_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/update_controller.dart';
@@ -181,9 +182,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  void _propagateVisibility(bool visible) {
+    context.maybeRead<MotionController>()?.setAppVisible(visible);
+    context.maybeRead<VpnController>()?.setAppVisible(visible);
+    context.maybeRead<AuthController>()?.setAppVisible(visible);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final bool visible = AppShell.isLifecycleVisible(state);
+    _propagateVisibility(visible);
     if (_appVisible != visible && mounted) {
       setState(() => _appVisible = visible);
     }
@@ -198,6 +206,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     switch (event) {
       case 'show':
         await widget.windowService.show();
+        _propagateVisibility(true);
         if (mounted && !_appVisible) {
           setState(() => _appVisible = true);
         }
@@ -206,6 +215,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         break;
       case 'servers':
         await widget.windowService.show();
+        _propagateVisibility(true);
         if (mounted) {
           setState(() {
             _appVisible = true;
@@ -216,6 +226,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         break;
       case 'settings':
         await widget.windowService.show();
+        _propagateVisibility(true);
         if (mounted) {
           setState(() {
             _appVisible = true;

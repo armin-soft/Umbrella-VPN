@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_config.dart';
+import '../../core/safe_url_launcher.dart';
 import '../../core/theme.dart';
 import '../../core/ui_formatters.dart';
 import '../../core/utils.dart';
@@ -631,7 +632,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication);
     } on Exception {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

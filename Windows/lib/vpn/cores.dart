@@ -17,11 +17,23 @@ import '../platform/services.dart';
 class CoreProvisioner {
 
   static List<CoreInfo> _catalog = <CoreInfo>[];
+  static const List<String> bundledDataFiles = <String>[
+    'geoip-ir.srs',
+    'geosite-ir.srs',
+    'geoip-arvancloud.srs',
+    'geoip-parspack.srs',
+    'geoip-derakcloud.srs',
+    'geoip-iranserver.srs',
+  ];
+
   String _dataDir = '';
+  Map<String, String> _localRuleSetPaths = const <String, String>{};
 
   List<CoreInfo> get catalog => _catalog;
 
   String get dataDir => _dataDir;
+
+  Map<String, String> get localRuleSetPaths => _localRuleSetPaths;
 
   /// پوشه هسته ها در محل نصب برنامه.
   String get binDir => '$bundledDir${Platform.pathSeparator}bin';
@@ -49,9 +61,54 @@ class CoreProvisioner {
     } on FileSystemException {
       // پوشه داده از قبل ساخته شده یا دسترسی نیست؛ اجرای برنامه ادامه می یابد.
     }
+    await ensureDataRuleSets(
+      extraDataDir: '$_dataDir${Platform.pathSeparator}run${Platform.pathSeparator}data',
+    );
     if (_catalog.isEmpty) {
       _catalog = await _loadCatalog();
     }
+  }
+
+  Future<Map<String, String>> ensureDataRuleSets({String? extraDataDir}) async {
+    if (_dataDir.isEmpty) return _localRuleSetPaths;
+    final String sep = Platform.pathSeparator;
+    final String primaryDir = '$_dataDir${sep}data';
+    final List<String> targets = <String>[
+      primaryDir,
+      if (extraDataDir != null && extraDataDir.isNotEmpty) extraDataDir,
+    ];
+    final Map<String, String> resolved = <String, String>{};
+    for (final String dirPath in targets) {
+      try {
+        await Directory(dirPath).create(recursive: true);
+      } on FileSystemException {
+        continue;
+      }
+      for (final String name in bundledDataFiles) {
+        final File out = File('$dirPath$sep$name');
+        final String tag = name.endsWith('.srs')
+            ? name.substring(0, name.length - 4)
+            : name;
+        try {
+          if (!await out.exists() || await out.length() < 32) {
+            final ByteData data = await rootBundle.load('assets/data/$name');
+            await out.writeAsBytes(
+              data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+              flush: true,
+            );
+          }
+          if (dirPath == primaryDir || !resolved.containsKey(tag)) {
+            resolved[tag] = out.path;
+          }
+        } catch (_) {
+          // اگر asset در محیط تست در دسترس نبود، ادامه می دهیم.
+        }
+      }
+    }
+    if (resolved.isNotEmpty) {
+      _localRuleSetPaths = Map<String, String>.unmodifiable(resolved);
+    }
+    return _localRuleSetPaths;
   }
 
   Future<List<CoreInfo>> _loadCatalog() async {

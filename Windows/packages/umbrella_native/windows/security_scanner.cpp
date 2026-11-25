@@ -25,6 +25,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #pragma comment(lib, "wintrust.lib")
 #pragma comment(lib, "crypt32.lib")
@@ -939,6 +940,77 @@ bool ContainsDangerousUrlOrPayload(const std::string& lower_text) {
   return false;
 }
 
+bool ContainsElfHeaderAt(const std::vector<BYTE>& buf, size_t offset) {
+  return offset + 4 <= buf.size() && buf[offset] == 0x7F &&
+         buf[offset + 1] == 'E' && buf[offset + 2] == 'L' &&
+         buf[offset + 3] == 'F';
+}
+
+bool ContainsDexHeaderAt(const std::vector<BYTE>& buf, size_t offset) {
+  return offset + 6 <= buf.size() && buf[offset] == 'd' &&
+         buf[offset + 1] == 'e' && buf[offset + 2] == 'x' &&
+         buf[offset + 3] == '\n' && buf[offset + 4] == '0' &&
+         buf[offset + 5] == '3';
+}
+
+bool IsDangerousArchiveEntryName(const std::string& lower_name,
+                                 bool is_office_openxml) {
+  if (lower_name.empty()) return false;
+  if (HasDoubleMasqueradeExtension(lower_name)) return true;
+  if (lower_name.find("umbrella") != std::string::npos) return false;
+  if (MatchKnownThreatText(lower_name).matched) return true;
+  if (is_office_openxml && lower_name.find("vbaproject.bin") != std::string::npos) {
+    return true;
+  }
+  static const char* kDangerArchiveExts[] = {
+      ".exe", ".scr", ".pif", ".com", ".bat", ".cmd", ".vbs", ".vbe",
+      ".js",  ".jse", ".wsf", ".wsh", ".ps1", ".hta", ".msi", ".lnk",
+      ".dll", ".apk",
+  };
+  for (const char* ext : kDangerArchiveExts) {
+    if (EndsWithCi(lower_name, ext)) return true;
+  }
+  return false;
+}
+
+bool InspectZipBufferForPayloads(const std::vector<BYTE>& buf,
+                                 bool is_office_openxml,
+                                 std::string* hit_entry_out) {
+  // Scan PKZIP Local File Headers (PK\x03\x04) and Central Directory entries (PK\x01\x02)
+  // directly inside the sampled buffer — zero external dependencies required.
+  for (size_t i = 0; i + 46 < buf.size(); ++i) {
+    if (buf[i] != 'P' || buf[i + 1] != 'K') continue;
+    if (buf[i + 2] == 0x03 && buf[i + 3] == 0x04 && i + 30 < buf.size()) {
+      const uint16_t name_len =
+          static_cast<uint16_t>(buf[i + 26]) |
+          (static_cast<uint16_t>(buf[i + 27]) << 8);
+      if (name_len > 0 && name_len <= 512 && i + 30 + name_len <= buf.size()) {
+        std::string entry_name(
+            reinterpret_cast<const char*>(buf.data() + i + 30), name_len);
+        const std::string lower_entry = ToLowerAscii(entry_name);
+        if (IsDangerousArchiveEntryName(lower_entry, is_office_openxml)) {
+          *hit_entry_out = entry_name;
+          return true;
+        }
+      }
+    } else if (buf[i + 2] == 0x01 && buf[i + 3] == 0x02 && i + 46 < buf.size()) {
+      const uint16_t name_len =
+          static_cast<uint16_t>(buf[i + 28]) |
+          (static_cast<uint16_t>(buf[i + 29]) << 8);
+      if (name_len > 0 && name_len <= 512 && i + 46 + name_len <= buf.size()) {
+        std::string entry_name(
+            reinterpret_cast<const char*>(buf.data() + i + 46), name_len);
+        const std::string lower_entry = ToLowerAscii(entry_name);
+        if (IsDangerousArchiveEntryName(lower_entry, is_office_openxml)) {
+          *hit_entry_out = entry_name;
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 std::vector<std::wstring> CandidateScanDirectories() {
   std::vector<std::wstring> dirs;
   wchar_t temp[MAX_PATH * 2] = {0};
@@ -968,11 +1040,32 @@ std::vector<std::wstring> CandidateScanDirectories() {
     dirs.emplace_back(pictures);
     CoTaskMemFree(pictures);
   }
+  PWSTR videos = nullptr;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &videos)) &&
+      videos != nullptr) {
+    dirs.emplace_back(videos);
+    CoTaskMemFree(videos);
+  }
+  PWSTR music = nullptr;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Music, 0, nullptr, &music)) &&
+      music != nullptr) {
+    dirs.emplace_back(music);
+    CoTaskMemFree(music);
+  }
   PWSTR documents = nullptr;
   if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &documents)) &&
       documents != nullptr) {
     dirs.emplace_back(documents);
     CoTaskMemFree(documents);
+  }
+  PWSTR roaming = nullptr;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roaming)) &&
+      roaming != nullptr) {
+    std::wstring tg_roaming = std::wstring(roaming) + L"\\Telegram Desktop";
+    if (DirectoryExistsW(tg_roaming)) {
+      dirs.emplace_back(tg_roaming);
+    }
+    CoTaskMemFree(roaming);
   }
   PWSTR startup = nullptr;
   if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Startup, 0, nullptr, &startup)) &&
@@ -987,6 +1080,49 @@ std::vector<std::wstring> CandidateScanDirectories() {
     CoTaskMemFree(common_startup);
   }
   return dirs;
+}
+
+bool ShouldSkipSubdirLower(const std::string& lower_dir_name) {
+  return lower_dir_name == "." || lower_dir_name == ".." ||
+         lower_dir_name == ".git" || lower_dir_name == "node_modules" ||
+         lower_dir_name == "umbrella" || lower_dir_name == "umbrellavpn" ||
+         lower_dir_name == "__pycache__";
+}
+
+void CollectFilesRecursiveBounded(
+    const std::wstring& root_dir,
+    int depth,
+    int max_depth,
+    int max_files,
+    std::vector<std::pair<std::wstring, std::wstring>>* out) {
+  if (static_cast<int>(out->size()) >= max_files || depth > max_depth) return;
+  WIN32_FIND_DATAW fd = {};
+  HANDLE find = FindFirstFileW((root_dir + L"\\*").c_str(), &fd);
+  if (find == INVALID_HANDLE_VALUE) return;
+
+  std::vector<std::wstring> subdirs;
+  do {
+    const std::wstring fname_w(fd.cFileName);
+    if (fname_w == L"." || fname_w == L"..") continue;
+    if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+      if (depth < max_depth &&
+          (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+        const std::string lower_sub = ToLowerAscii(ToUtf8(fname_w));
+        if (!ShouldSkipSubdirLower(lower_sub)) {
+          subdirs.push_back(root_dir + L"\\" + fname_w);
+        }
+      }
+      continue;
+    }
+    out->emplace_back(root_dir + L"\\" + fname_w, fname_w);
+    if (static_cast<int>(out->size()) >= max_files) break;
+  } while (FindNextFileW(find, &fd));
+  FindClose(find);
+
+  for (const auto& sub : subdirs) {
+    if (static_cast<int>(out->size()) >= max_files) break;
+    CollectFilesRecursiveBounded(sub, depth + 1, max_depth, max_files, out);
+  }
 }
 
 bool TerminateProcessesMatching(const std::string& process_name,
@@ -1370,21 +1506,28 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
     }
   }
 
-  // 4. High-risk user directories scan (Temp, Downloads, Telegram Desktop, Desktop, Pictures, Documents, Startup)
+  // 4. High-risk user directories scan (recursive bounded traversal across ALL extensions:
+  //    executables, scripts, archives, images, audio, video, documents, and disguised files)
   std::unordered_set<std::string> visited_paths;
   for (const auto& dir : CandidateScanDirectories()) {
-    WIN32_FIND_DATAW fd = {};
-    HANDLE find = FindFirstFileW((dir + L"\\*").c_str(), &fd);
-    if (find == INVALID_HANDLE_VALUE) continue;
-
-    int checked_in_dir = 0;
-    do {
-      if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
-      if (++checked_in_dir > 320) break;
-
-      const std::wstring fname_w(fd.cFileName);
+    std::vector<std::pair<std::wstring, std::wstring>> files;
+    CollectFilesRecursiveBounded(dir, 0, 3, 800, &files);
+    for (const auto& pair : files) {
+      const std::wstring& wfull = pair.first;
+      const std::wstring& fname_w = pair.second;
       const std::string fname = ToUtf8(fname_w);
       const std::string lower_fn = ToLowerAscii(fname);
+      const std::string full = ToUtf8(wfull);
+      if (IsUmbrellaSafeBinary(full) || lower_fn.find("umbrella") != std::string::npos) {
+        continue;
+      }
+      if (EndsWithCi(lower_fn, ".tmp") || EndsWithCi(lower_fn, ".crdownload") ||
+          EndsWithCi(lower_fn, ".part")) {
+        continue;
+      }
+      const std::string full_lower = ToLowerAscii(full);
+      if (!visited_paths.insert(full_lower).second) continue;
+
       const bool is_exec = EndsWithCi(lower_fn, ".exe") ||
                            EndsWithCi(lower_fn, ".scr") ||
                            EndsWithCi(lower_fn, ".pif") ||
@@ -1399,29 +1542,52 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
                            EndsWithCi(lower_fn, ".wsh") ||
                            EndsWithCi(lower_fn, ".ps1") ||
                            EndsWithCi(lower_fn, ".hta") ||
-                           EndsWithCi(lower_fn, ".msi");
+                           EndsWithCi(lower_fn, ".msi") ||
+                           EndsWithCi(lower_fn, ".dll") ||
+                           EndsWithCi(lower_fn, ".apk");
       const bool is_image = EndsWithCi(lower_fn, ".jpg") ||
                             EndsWithCi(lower_fn, ".jpeg") ||
                             EndsWithCi(lower_fn, ".png") ||
                             EndsWithCi(lower_fn, ".gif") ||
                             EndsWithCi(lower_fn, ".webp") ||
                             EndsWithCi(lower_fn, ".bmp") ||
-                            EndsWithCi(lower_fn, ".svg");
-      const bool is_link_or_doc = EndsWithCi(lower_fn, ".lnk") ||
+                            EndsWithCi(lower_fn, ".svg") ||
+                            EndsWithCi(lower_fn, ".ico");
+      const bool is_media = EndsWithCi(lower_fn, ".mp4") ||
+                            EndsWithCi(lower_fn, ".mkv") ||
+                            EndsWithCi(lower_fn, ".avi") ||
+                            EndsWithCi(lower_fn, ".mov") ||
+                            EndsWithCi(lower_fn, ".webm") ||
+                            EndsWithCi(lower_fn, ".mp3") ||
+                            EndsWithCi(lower_fn, ".wav") ||
+                            EndsWithCi(lower_fn, ".flac") ||
+                            EndsWithCi(lower_fn, ".ogg") ||
+                            EndsWithCi(lower_fn, ".m4a") ||
+                            EndsWithCi(lower_fn, ".aac") ||
+                            EndsWithCi(lower_fn, ".opus");
+      const bool is_archive = EndsWithCi(lower_fn, ".zip") ||
+                              EndsWithCi(lower_fn, ".rar") ||
+                              EndsWithCi(lower_fn, ".7z") ||
+                              EndsWithCi(lower_fn, ".tar") ||
+                              EndsWithCi(lower_fn, ".gz") ||
+                              EndsWithCi(lower_fn, ".iso") ||
+                              EndsWithCi(lower_fn, ".img");
+      const bool is_office = EndsWithCi(lower_fn, ".doc") ||
+                             EndsWithCi(lower_fn, ".docx") ||
+                             EndsWithCi(lower_fn, ".xls") ||
+                             EndsWithCi(lower_fn, ".xlsx") ||
+                             EndsWithCi(lower_fn, ".ppt") ||
+                             EndsWithCi(lower_fn, ".pptx") ||
+                             EndsWithCi(lower_fn, ".rtf");
+      const bool is_link_or_doc = is_archive || is_office ||
+                                  EndsWithCi(lower_fn, ".lnk") ||
                                   EndsWithCi(lower_fn, ".url") ||
                                   EndsWithCi(lower_fn, ".html") ||
                                   EndsWithCi(lower_fn, ".htm") ||
                                   EndsWithCi(lower_fn, ".pdf") ||
-                                  EndsWithCi(lower_fn, ".zip") ||
-                                  EndsWithCi(lower_fn, ".rar") ||
-                                  EndsWithCi(lower_fn, ".7z");
-      if (!is_exec && !is_image && !is_link_or_doc) continue;
+                                  EndsWithCi(lower_fn, ".txt") ||
+                                  EndsWithCi(lower_fn, ".csv");
 
-      const std::wstring wfull = dir + L"\\" + fname_w;
-      const std::string full = ToUtf8(wfull);
-      if (IsUmbrellaSafeBinary(full)) continue;
-      const std::string full_lower = ToLowerAscii(full);
-      if (!visited_paths.insert(full_lower).second) continue;
       report.scanned_files++;
 
       // A. Unicode RLO / Double-Extension masquerade detection (e.g., photo.jpg.exe)
@@ -1522,10 +1688,17 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
                      img_bytes.size() >= 2 &&
                      img_bytes[0] == 'B' && img_bytes[1] == 'M') {
             valid_magic = true;
+          } else if (EndsWithCi(lower_fn, ".ico") &&
+                     img_bytes.size() >= 4 &&
+                     img_bytes[0] == 0 && img_bytes[1] == 0 &&
+                     img_bytes[2] == 1 && img_bytes[3] == 0) {
+            valid_magic = true;
           }
 
           if (!valid_magic &&
               (HasPeHeaderAt(img_bytes, 0) ||
+               ContainsElfHeaderAt(img_bytes, 0) ||
+               ContainsDexHeaderAt(img_bytes, 0) ||
                ContainsAsciiBytesCi(img_bytes, "<script") ||
                ContainsAsciiBytesCi(img_bytes, "wscript.shell") ||
                ContainsAsciiBytesCi(img_bytes, "activexobject") ||
@@ -1551,8 +1724,9 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
 
           bool embedded_pe = false;
           for (size_t pos = 16; pos + 0x40 < img_bytes.size(); ++pos) {
-            if (img_bytes[pos] == 0x4D && img_bytes[pos + 1] == 0x5A &&
-                HasPeHeaderAt(img_bytes, pos)) {
+            if ((img_bytes[pos] == 0x4D && img_bytes[pos + 1] == 0x5A &&
+                 HasPeHeaderAt(img_bytes, pos)) ||
+                ContainsElfHeaderAt(img_bytes, pos)) {
               embedded_pe = true;
               break;
             }
@@ -1602,15 +1776,78 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
         continue;
       }
 
-      // D. Downloaded .url shortcuts, HTML, PDF, and archive payload inspection
+      // D. Downloaded audio/video media polyglot & disguised binary detection
+      if (is_media) {
+        std::vector<BYTE> media_bytes;
+        if (ReadFileSampleBytes(wfull, 4 * 1024 * 1024, &media_bytes)) {
+          bool media_threat =
+              HasPeHeaderAt(media_bytes, 0) ||
+              ContainsElfHeaderAt(media_bytes, 0) ||
+              ContainsDexHeaderAt(media_bytes, 0) ||
+              ContainsAsciiBytesCi(media_bytes, "eicar-standard-antivirus-test-file") ||
+              ContainsAsciiBytesCi(media_bytes, "<script") ||
+              ContainsAsciiBytesCi(media_bytes, "wscript.shell") ||
+              ContainsAsciiBytesCi(media_bytes, "urldownloadtofile") ||
+              ContainsAsciiBytesCi(media_bytes, "powershell -enc");
+          if (!media_threat) {
+            for (size_t pos = 16; pos + 0x40 < media_bytes.size(); ++pos) {
+              if (media_bytes[pos] == 0x4D && media_bytes[pos + 1] == 0x5A &&
+                  HasPeHeaderAt(media_bytes, pos)) {
+                media_threat = true;
+                break;
+              }
+            }
+          }
+          if (media_threat) {
+            const std::string sha = ComputeFileSha256(wfull);
+            SecurityThreatEntry item;
+            item.key = !sha.empty() ? ("dl:media:" + sha.substr(0, 16))
+                                    : ("dl:media:" + lower_fn);
+            item.name = "فایل رسانه ای حاوی بدافزار (" + fname + ")";
+            item.category = "malicious_download";
+            item.severity = "critical";
+            item.target = full;
+            item.detail =
+                "این فایل صوتی یا ویدیویی در واقع حاوی فایل اجرایی یا کد مخرب تروجانی است.";
+            item.remediation_kind = "file";
+            item.path = full;
+            item.process_name = fname;
+            item.sha256 = sha;
+            add_finding(std::move(item));
+            continue;
+          }
+        }
+        int amsi_media = 0;
+        if (amsi.ScanFile(wfull, &amsi_media)) {
+          const std::string sha = ComputeFileSha256(wfull);
+          SecurityThreatEntry item;
+          item.key = !sha.empty() ? ("dl:amsi_media:" + sha.substr(0, 16))
+                                  : ("dl:amsi_media:" + lower_fn);
+          item.name = "فایل رسانه ای بدافزاری (" + fname + ")";
+          item.category = "malicious_download";
+          item.severity = "critical";
+          item.target = full;
+          item.detail =
+              "موتور امنیتی ویندوز (AMSI) این فایل صوتی/ویدیویی را به عنوان بدافزار شناسایی کرد.";
+          item.remediation_kind = "file";
+          item.path = full;
+          item.process_name = fname;
+          item.sha256 = sha;
+          add_finding(std::move(item));
+        }
+        continue;
+      }
+
+      // E. Downloaded .url shortcuts, HTML, PDF, Office docs, and archives inspection
       if (is_link_or_doc) {
         std::vector<BYTE> doc_bytes;
-        if (ReadFileSampleBytes(wfull, 4 * 1024 * 1024, &doc_bytes)) {
+        if (ReadFileSampleBytes(wfull, 6 * 1024 * 1024, &doc_bytes)) {
           if (EndsWithCi(lower_fn, ".url") || EndsWithCi(lower_fn, ".html") ||
               EndsWithCi(lower_fn, ".htm")) {
             std::string body_lower = ToLowerAscii(std::string(
                 reinterpret_cast<const char*>(doc_bytes.data()), doc_bytes.size()));
-            if (ContainsDangerousUrlOrPayload(body_lower)) {
+            if (ContainsDangerousUrlOrPayload(body_lower) ||
+                HasPeHeaderAt(doc_bytes, 0)) {
               const std::string sha = ComputeFileSha256(wfull);
               SecurityThreatEntry item;
               item.key = !sha.empty() ? ("dl:web:" + sha.substr(0, 16))
@@ -1628,22 +1865,49 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
               add_finding(std::move(item));
               continue;
             }
-          } else if (ContainsAsciiBytesCi(doc_bytes, "eicar-standard-antivirus-test-file")) {
-            const std::string sha = ComputeFileSha256(wfull);
-            SecurityThreatEntry item;
-            item.key = !sha.empty() ? ("dl:eicar:" + sha.substr(0, 16))
-                                    : ("dl:eicar:" + lower_fn);
-            item.name = "فایل آزمایشی یا آلوده دانلودی (" + fname + ")";
-            item.category = "malicious_download";
-            item.severity = "critical";
-            item.target = full;
-            item.detail = "امضای استاندارد بدافزار درون فایل دانلود شده یافت شد.";
-            item.remediation_kind = "file";
-            item.path = full;
-            item.process_name = fname;
-            item.sha256 = sha;
-            add_finding(std::move(item));
-            continue;
+          } else {
+            // Inspect ZIP / Office OpenXML entries + disguised PE/script payloads inside docs/archives.
+            const bool check_zip = is_archive || is_office;
+            std::string dangerous_entry;
+            const bool has_bad_zip_entry =
+                check_zip &&
+                InspectZipBufferForPayloads(doc_bytes, is_office, &dangerous_entry);
+            bool embedded_pe = HasPeHeaderAt(doc_bytes, 0) ||
+                               ContainsElfHeaderAt(doc_bytes, 0);
+            if (!embedded_pe && !is_archive) {
+              for (size_t pos = 16; pos + 0x40 < doc_bytes.size(); ++pos) {
+                if (doc_bytes[pos] == 0x4D && doc_bytes[pos + 1] == 0x5A &&
+                    HasPeHeaderAt(doc_bytes, pos)) {
+                  embedded_pe = true;
+                  break;
+                }
+              }
+            }
+            if (has_bad_zip_entry || embedded_pe ||
+                ContainsAsciiBytesCi(doc_bytes, "eicar-standard-antivirus-test-file") ||
+                ContainsAsciiBytesCi(doc_bytes, "wscript.shell") ||
+                ContainsAsciiBytesCi(doc_bytes, "urldownloadtofile") ||
+                ContainsAsciiBytesCi(doc_bytes, "powershell -enc")) {
+              const std::string sha = ComputeFileSha256(wfull);
+              SecurityThreatEntry item;
+              item.key = !sha.empty() ? ("dl:doc:" + sha.substr(0, 16))
+                                      : ("dl:doc:" + lower_fn);
+              item.name = has_bad_zip_entry
+                              ? ("آرشیو / سند حاوی فایل مخرب (" + fname + ")")
+                              : ("سند یا فایل دانلودی آلوده (" + fname + ")");
+              item.category = "malicious_download";
+              item.severity = "critical";
+              item.target = full;
+              item.detail = has_bad_zip_entry
+                                ? ("فایل خطرناک درون بسته یا سند یافت شد: " + dangerous_entry)
+                                : "پی لود اجرایی، اسکریپت مخرب یا امضای بدافزار درون فایل دانلود شده یافت شد.";
+              item.remediation_kind = "file";
+              item.path = full;
+              item.process_name = fname;
+              item.sha256 = sha;
+              add_finding(std::move(item));
+              continue;
+            }
           }
         }
         int amsi_doc = 0;
@@ -1667,7 +1931,56 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
         continue;
       }
 
-      // E. Executables & script installers in Downloads / Temp / Desktop
+      // F. Unknown / extensionless files: detect disguised PE/ELF/DEX, scripts, EICAR, or AMSI hits
+      if (!is_exec) {
+        std::vector<BYTE> unknown_bytes;
+        if (ReadFileSampleBytes(wfull, 2 * 1024 * 1024, &unknown_bytes)) {
+          if (HasPeHeaderAt(unknown_bytes, 0) ||
+              ContainsElfHeaderAt(unknown_bytes, 0) ||
+              ContainsDexHeaderAt(unknown_bytes, 0) ||
+              ContainsAsciiBytesCi(unknown_bytes, "eicar-standard-antivirus-test-file") ||
+              ContainsAsciiBytesCi(unknown_bytes, "wscript.shell") ||
+              ContainsAsciiBytesCi(unknown_bytes, "powershell -enc")) {
+            const std::string sha = ComputeFileSha256(wfull);
+            SecurityThreatEntry item;
+            item.key = !sha.empty() ? ("dl:unk:" + sha.substr(0, 16))
+                                    : ("dl:unk:" + lower_fn);
+            item.name = "فایل ناشناس یا پنهان آلوده (" + fname + ")";
+            item.category = "malicious_download";
+            item.severity = "critical";
+            item.target = full;
+            item.detail =
+                "فایل بدون پسوند معتبر حاوی سرآیند اجرایی یا اسکریپت مخرب است.";
+            item.remediation_kind = "file";
+            item.path = full;
+            item.process_name = fname;
+            item.sha256 = sha;
+            add_finding(std::move(item));
+            continue;
+          }
+        }
+        int amsi_unk = 0;
+        if (amsi.ScanFile(wfull, &amsi_unk)) {
+          const std::string sha = ComputeFileSha256(wfull);
+          SecurityThreatEntry item;
+          item.key = !sha.empty() ? ("dl:amsi_unk:" + sha.substr(0, 16))
+                                  : ("dl:amsi_unk:" + lower_fn);
+          item.name = "فایل بدافزاری شناسایی شده (" + fname + ")";
+          item.category = "malicious_download";
+          item.severity = "critical";
+          item.target = full;
+          item.detail =
+              "موتور امنیتی ویندوز (AMSI) این فایل را به عنوان بدافزار شناسایی کرد.";
+          item.remediation_kind = "file";
+          item.path = full;
+          item.process_name = fname;
+          item.sha256 = sha;
+          add_finding(std::move(item));
+        }
+        continue;
+      }
+
+      // G. Executables & script installers in Downloads / Temp / Desktop
       const std::string product = ReadVersionStringW(wfull, L"ProductName");
       const std::string company = ReadVersionStringW(wfull, L"CompanyName");
       const SignatureHit sig =
@@ -1729,8 +2042,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity() {
           add_finding(std::move(item));
         }
       }
-    } while (FindNextFileW(find, &fd));
-    FindClose(find);
+    }
   }
 
   report.threats.reserve(findings.size());

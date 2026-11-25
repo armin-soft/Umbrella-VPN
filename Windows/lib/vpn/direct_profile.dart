@@ -42,7 +42,7 @@ class DirectProfile {
     return result;
   }
 
-  static String encode(VpnNode node) {
+  static String encode(VpnNode node, {bool batterySaving = false}) {
     final Map<String, dynamic> p = node.params;
     const String tag = 'umbrella-direct-profile';
     if (node.protocol == NodeProtocol.mieru) {
@@ -72,7 +72,9 @@ class DirectProfile {
         (awg ? 'preshared_key' : 'pre_shared_key'): JsonX.text(p['presharedKey']),
       'allowed_ips': JsonX.text(p['allowedIps'], '0.0.0.0/0, ::/0')
           .split(',').map((String s) => s.trim()).where((String s) => s.isNotEmpty).toList(),
-      'persistent_keepalive_interval': JsonX.integer(p['keepalive'], 25),
+      'persistent_keepalive_interval': batterySaving
+          ? JsonX.integer(p['keepalive'], 25).clamp(45, 90)
+          : JsonX.integer(p['keepalive'], 25),
     };
     final Map<String, dynamic> awgOptions = <String, dynamic>{};
     for (final String key in <String>['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4']) {

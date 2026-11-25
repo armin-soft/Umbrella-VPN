@@ -784,6 +784,7 @@ class UmbrellaCore {
     AppSettings? networkSettings,
     FilterSettings? contentFilter,
     bool isolatedProbe = false,
+    bool batterySaving = false,
   }) {
     final String normalizedLog =
         CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
@@ -807,12 +808,39 @@ class UmbrellaCore {
       // Content blocks precede user direct routes, so bypass cannot defeat an
       // administrator policy. The core also emits matching direct DNS rules.
       if (contentFilter != null && contentFilter.bypassDomains.isNotEmpty) {
-        combinedRules.add(<String, dynamic>{
-          'list_order': combinedRules.length, 'enabled': true,
-          'name': 'umbrella-bypass-user', 'outbound': 'direct',
-          'domain': contentFilter.bypassDomains,
-          'domain_suffix': contentFilter.bypassDomains,
-        });
+        final List<String> directDomains = <String>[];
+        final List<String> directCidrs = <String>[];
+        for (final String rawTarget in contentFilter.bypassDomains) {
+          final String? normalized =
+              FilterSettings.normalizeBypassTarget(rawTarget);
+          if (normalized == null) continue;
+          if (FilterSettings.isIpOrCidr(normalized)) {
+            if (!directCidrs.contains(normalized)) directCidrs.add(normalized);
+          } else {
+            if (!directDomains.contains(normalized)) {
+              directDomains.add(normalized);
+            }
+          }
+        }
+        if (directDomains.isNotEmpty) {
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length,
+            'enabled': true,
+            'name': 'umbrella-bypass-user',
+            'outbound': 'direct',
+            'domain': directDomains,
+            'domain_suffix': directDomains,
+          });
+        }
+        if (directCidrs.isNotEmpty) {
+          combinedRules.add(<String, dynamic>{
+            'list_order': combinedRules.length,
+            'enabled': true,
+            'name': 'umbrella-bypass-user-ip',
+            'outbound': 'direct',
+            'ip_cidr': directCidrs,
+          });
+        }
       }
       if (contentFilter?.bypassIran ?? false) {
         combinedRules.add(<String, dynamic>{
@@ -976,9 +1004,9 @@ class UmbrellaCore {
       // پایش اولیه در لحظه شروع اجرا بی درنگ انجام می شود؛ دوره بازسنجی
       // ۱۸۰ ثانیه است تا اتصال های باز کاربر هر ۳۰ ثانیه با سوییچ بی مورد قطع
       // نشوند ولی اگر گرهی افت کرد به موقع جایگزین شود.
-      // هم راستا با Hiddify (۱۰ دقیقه = ۶۰۰ ثانیه): پایش اولیه در لحظه شروع بی درنگ
-      // اجرا می شود و از بازسنجی های پرفشار میان اتصال جلوگیری می شود.
-      'url-test-interval': 600,
+      // هم راستا با Hiddify (۱۰ دقیقه = ۶۰۰ ثانیه؛ در حالت بهینه سازی باتری ۳۰ دقیقه):
+      // پایش اولیه در لحظه شروع بی درنگ اجرا می شود و از بازسنجی های پرفشار جلوگیری می شود.
+      'url-test-interval': batterySaving ? 1800 : 600,
       // نشانی خواندن آی پی و موقعیت خروجی.
       //
       // این کلید در گزارش های پیشین تنظیم نشده بود، پس هسته خط

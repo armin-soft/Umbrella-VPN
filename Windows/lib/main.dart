@@ -8,7 +8,9 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/app_config.dart';
+import 'core/malicious_link_guard.dart';
 import 'core/persian.dart';
+import 'core/safe_url_launcher.dart';
 import 'core/storage.dart';
 import 'core/utils.dart';
 import 'models/models.dart';
@@ -230,6 +232,10 @@ Future<void> main(List<String> arguments) async {
         event.name,
       );
     };
+    SafeUrlLauncher.onThreatBlocked = (MaliciousLinkMatch hit) {
+      unawaited(security.recordBlockedExternalUrl(hit));
+      toasts.error(hit.title, hit.detail);
+    };
     vpn.onNetworkConnectionsObserved = (List<CoreActivitySample> samples) =>
         security.inspectLiveConnections(
           samples,
@@ -249,8 +255,16 @@ Future<void> main(List<String> arguments) async {
     power.addListener(() {
       vpn.setBatterySaving(power.active);
       motion.setPowerSaving(power.lowOrSaving);
+      security.setBatterySaving(power.lowOrSaving);
+      auth.setBatterySaving(power.lowOrSaving);
     });
     power.start();
+    window.onVisibilityChanged = () {
+      final bool visible = !window.isHiddenToTray;
+      motion.setAppVisible(visible);
+      vpn.setAppVisible(visible);
+      auth.setAppVisible(visible);
+    };
     settings.onDebugLogExpired = vpn.scheduleLiveReload;
     settings.addListener(() {
       vpn.updateSettings(settings.settings);
@@ -275,12 +289,15 @@ Future<void> main(List<String> arguments) async {
       if (vpn.status.active) {
         unawaited(vpn.disconnect());
       }
+      final String title = auth.account.channelDisabled
+          ? 'عضویت در کانال تلگرام'
+          : 'اشتراک متوقف شد';
       auth.recordLocalNotification(
-        title: 'اشتراک متوقف شد',
+        title: title,
         body: reason,
         level: 'warning',
       );
-      toasts.error('اشتراک متوقف شد', reason);
+      toasts.error(title, reason);
     };
     auth.onSessionRevoked = (String reason) async {
       security.resetReportedCache();
@@ -363,8 +380,13 @@ Future<void> main(List<String> arguments) async {
       });
       // همگام سازی خودکار حساب از درگاه سرور، کنترل محتوا، طرح های هدیه و سرورها.
       bool syncing = false;
+      int bgSyncCounter = 0;
       Timer.periodic(const Duration(minutes: 5), (_) {
         if (!auth.signedIn || syncing) {
+          return;
+        }
+        bgSyncCounter++;
+        if (!motion.appVisible && power.lowOrSaving && (bgSyncCounter % 3 != 0)) {
           return;
         }
         syncing = true;

@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v7';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v8';
 
   static int _nonce = 0;
 
@@ -164,6 +164,7 @@ class CoreRuntime {
         coreSettings: decodedSettings,
         stickyMinutes: stickyMinutes,
         blockPagePort: blockPagePort,
+        localDataDir: '$runDir${sep}data',
       );
       if (cancelled()) {
         throw const FormatException('Core preparation cancelled');

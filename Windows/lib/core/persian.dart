@@ -177,6 +177,27 @@ class Fa {
     return buffer.toString();
   }
 
+  /// حذف کامل اموجی ها و نمادهای گرافیکی از متن اعلان ها با حفظ حروف فارسی و اعداد.
+  static String stripEmojis(String text) {
+    if (text.isEmpty) return '';
+    final StringBuffer buffer = StringBuffer();
+    for (final int rune in text.runes) {
+      final bool isEmoji = (rune >= 0x1F000 && rune <= 0x1FAFF) ||
+          (rune >= 0x2300 && rune <= 0x23FF) ||
+          (rune >= 0x2600 && rune <= 0x27BF) ||
+          (rune >= 0x2B00 && rune <= 0x2BFF) ||
+          (rune >= 0xFE00 && rune <= 0xFE0F) ||
+          rune == 0x200D;
+      if (!isEmoji) {
+        buffer.writeCharCode(rune);
+      }
+    }
+    return buffer
+        .toString()
+        .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
+        .trim();
+  }
+
   /// جداکننده هزارگان با ارقام فارسی.
   static String grouped(NumericValue value) {
     final String raw = value.round().abs().toString();

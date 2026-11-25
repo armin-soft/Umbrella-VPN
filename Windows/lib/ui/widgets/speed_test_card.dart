@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/persian.dart';
+import '../../core/safe_url_launcher.dart';
 import '../../core/theme.dart';
 import '../../vpn/speed_test.dart';
 import '../../vpn/vpn_controller.dart';
@@ -44,7 +45,10 @@ class SpeedTestCard extends StatelessWidget {
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton.icon(
           icon: const Icon(Icons.open_in_new_rounded), label: const Text('آزمون مستقل دی ان اس در مرورگر'),
           onPressed: !connected ? null : withUiClick(context, () async {
-            final bool opened = await launchUrl(Uri.parse('https://www.dnsleaktest.com/'), mode: LaunchMode.externalApplication);
+            final bool opened = await SafeUrlLauncher.open(
+              Uri.parse('https://www.dnsleaktest.com/'),
+              mode: LaunchMode.externalApplication,
+            );
             if (!opened && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مرورگر باز نشد؛ صفحه آزمون نشت دی ان اس را دستی باز کنید.')));
           }),
         )),
