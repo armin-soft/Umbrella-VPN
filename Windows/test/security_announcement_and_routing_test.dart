@@ -1226,21 +1226,21 @@ void main() {
                 .cast<Map<String, dynamic>>();
         expect(
           ruleSets.any((Map<String, dynamic> rs) =>
-              rs['tag'] == 'umbrella-filter-local-adult' &&
+              rs['tag'] == 'filter-adult' &&
               rs['type'] == 'local' &&
               rs['path'] == 'data/filter-adult.srs'),
           isTrue,
         );
         expect(
           ruleSets.any((Map<String, dynamic> rs) =>
-              rs['tag'] == 'umbrella-filter-local-gambling' &&
+              rs['tag'] == 'filter-gambling' &&
               rs['type'] == 'local' &&
               rs['path'] == 'data/filter-gambling.srs'),
           isTrue,
         );
         expect(
           ruleSets.any((Map<String, dynamic> rs) =>
-              rs['tag'] == 'umbrella-filter-local-ads' &&
+              rs['tag'] == 'filter-ads' &&
               rs['type'] == 'local' &&
               rs['path'] == 'data/filter-ads.srs'),
           isTrue,
@@ -1251,24 +1251,24 @@ void main() {
                 .cast<Map<String, dynamic>>();
         expect(
           routeRules.any((Map<String, dynamic> r) =>
-              '${r['rule_set']}'.contains('umbrella-filter-local-adult') &&
+              '${r['rule_set']}'.contains('filter-adult') &&
               r['outbound'] == RuntimeConfig.blockPageOutboundTag),
           isTrue,
         );
         expect(
           routeRules.any((Map<String, dynamic> r) =>
-              '${r['rule_set']}'.contains('umbrella-filter-local-ads') &&
+              '${r['rule_set']}'.contains('filter-ads') &&
               r['action'] == 'reject'),
           isTrue,
         );
         final List<dynamic> dnsRules =
             (runtime['dns'] as Map<String, dynamic>)['rules'] as List<dynamic>;
         expect(
-          dnsRules.any((dynamic r) => '$r'.contains('umbrella-filter-local-ads')),
+          dnsRules.any((dynamic r) => '$r'.contains('filter-ads')),
           isTrue,
         );
         expect(
-          dnsRules.any((dynamic r) => '$r'.contains('umbrella-filter-local-adult')),
+          dnsRules.any((dynamic r) => '$r'.contains('filter-adult')),
           isFalse,
         );
       },
