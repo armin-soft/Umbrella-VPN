@@ -11,6 +11,8 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -41,8 +43,8 @@ class ServiceNotification(
         private const val BALLOON_NOTIFICATION_ID = 2
         private const val SECURITY_ALERT_NOTIFICATION_ID = 3
         private const val CHANNEL_ID = "umbrella_service_v2"
-        private const val BALLOON_CHANNEL_ID = "umbrella_alerts_v2"
-        private const val SECURITY_ALERT_CHANNEL_ID = "umbrella_security_alerts_v1"
+        private const val BALLOON_CHANNEL_ID = "umbrella_alerts_v3"
+        private const val SECURITY_ALERT_CHANNEL_ID = "umbrella_security_alerts_v2"
         private const val BRAND_COLOR = 0xFFE11D48.toInt()
         private const val PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 
@@ -70,15 +72,27 @@ class ServiceNotification(
         fun sanitizePersian(raw: String): String {
             if (raw.isEmpty()) return ""
             val sb = StringBuilder(raw.length)
-            for (ch in raw) {
-                when (ch) {
-                    in '0'..'9' -> sb.append(PERSIAN_DIGITS[ch - '0'])
-                    in '\u0660'..'\u0669' -> sb.append(PERSIAN_DIGITS[ch - '\u0660'])
-                    '\u200C' -> sb.append(' ')
-                    else -> sb.append(ch)
+            var index = 0
+            while (index < raw.length) {
+                val cp = raw.codePointAt(index)
+                val step = Character.charCount(cp)
+                val isEmoji = (cp in 0x1F000..0x1FAFF) ||
+                    (cp in 0x2300..0x23FF) ||
+                    (cp in 0x2600..0x27BF) ||
+                    (cp in 0x2B00..0x2BFF) ||
+                    (cp in 0xFE00..0xFE0F) ||
+                    cp == 0x200D
+                if (!isEmoji) {
+                    when (cp) {
+                        in '0'.code..'9'.code -> sb.append(PERSIAN_DIGITS[cp - '0'.code])
+                        in 0x0660..0x0669 -> sb.append(PERSIAN_DIGITS[cp - 0x0660])
+                        0x200C -> sb.append(' ')
+                        else -> sb.appendCodePoint(cp)
+                    }
                 }
+                index += step
             }
-            return sb.toString().trim()
+            return sb.toString().replace(Regex(" {2,}"), " ").trim()
         }
 
         fun resetSessionState() {
@@ -134,11 +148,13 @@ class ServiceNotification(
                 .setColor(BRAND_COLOR)
                 .setContentTitle(cleanTitle)
                 .setContentText(cleanBody)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody))
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(false)
-                .setSilent(true)
-                .setTimeoutAfter(7000L)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setTimeoutAfter(8000L)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(if (warning) NotificationCompat.CATEGORY_STATUS else NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(openIntent)
             if (largeIcon != null) {
@@ -211,27 +227,40 @@ class ServiceNotification(
 
         private fun ensureAlertChannel(context: Context) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val audioAttrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
             val channel = NotificationChannel(
                 BALLOON_CHANNEL_ID,
                 context.getString(R.string.alerts_channel_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                setSound(null, null)
-                enableVibration(false)
-                setShowBadge(false)
+                setSound(soundUri, audioAttrs)
+                enableVibration(true)
+                setShowBadge(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
             UmbrellaApplication.notification.createNotificationChannel(channel)
         }
 
         private fun ensureSecurityAlertChannel(context: Context) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val audioAttrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
             val channel = NotificationChannel(
                 SECURITY_ALERT_CHANNEL_ID,
                 context.getString(R.string.alerts_channel_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
+                setSound(soundUri, audioAttrs)
                 enableVibration(true)
                 setShowBadge(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
             UmbrellaApplication.notification.createNotificationChannel(channel)
         }

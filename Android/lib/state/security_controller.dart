@@ -41,16 +41,20 @@ class SecurityScannerController extends ChangeNotifier {
   void Function(NeutralizedSecurityEvent event)? onThreatNeutralized;
 
   static const Duration scanInterval = Duration(seconds: 45);
+  static const Duration batteryScanInterval = Duration(seconds: 180);
   static const Duration _linkCooldown = Duration(seconds: 60);
 
   Timer? _timer;
   Timer? _watchDebounce;
+  StreamSubscription<AndroidServiceEvent>? _nativeWatcherSub;
   final List<StreamSubscription<FileSystemEvent>> _dirWatchers =
       <StreamSubscription<FileSystemEvent>>[];
   Future<SecurityScanResult>? _inflightScan;
   SecurityScanResult _lastResult = const SecurityScanResult();
   bool _scanning = false;
   bool _remediating = false;
+  bool _batterySaving = false;
+  bool _monitoringActive = false;
   String _lastMessage = '';
   DateTime? _lastScannedAt;
 
@@ -88,22 +92,64 @@ class SecurityScannerController extends ChangeNotifier {
   }
 
   void startMonitoring({bool watchDownloadFolders = true}) {
-    if (_timer != null) return;
+    if (_monitoringActive) return;
+    _monitoringActive = true;
     unawaited(scanNow(silent: true));
-    _timer = Timer.periodic(scanInterval, (_) {
-      unawaited(scanNow(silent: true));
-    });
+    _restartScanTimer();
     if (watchDownloadFolders) {
       _attachDownloadWatchers();
     }
   }
 
+  void setBatterySaving(bool value) {
+    if (_batterySaving == value) return;
+    _batterySaving = value;
+    if (_monitoringActive) {
+      _restartScanTimer();
+    }
+  }
+
+  void _restartScanTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(
+      _batterySaving ? batteryScanInterval : scanInterval,
+      (_) {
+        unawaited(scanNow(silent: true));
+      },
+    );
+  }
+
+  bool _nativeWatcherStarted = false;
+
   void _attachDownloadWatchers() {
+    if (_native.available && _nativeWatcherSub == null) {
+      try {
+        _nativeWatcherStarted = true;
+        unawaited(_native.startSecurityFileWatcher().catchError((_) => false));
+        _nativeWatcherSub = _native.serviceEvents().listen(
+          (AndroidServiceEvent event) {
+            if (event.type != 'security_file') return;
+            _watchDebounce?.cancel();
+            _watchDebounce = Timer(const Duration(milliseconds: 650), () {
+              unawaited(scanNow(silent: true));
+            });
+          },
+          onError: (_) {},
+        );
+      } catch (_) {
+        _nativeWatcherStarted = false;
+      }
+    }
     if (_dirWatchers.isNotEmpty) return;
     const List<String> candidates = <String>[
       '/storage/emulated/0/Download',
       '/storage/emulated/0/Download/Telegram',
+      '/storage/emulated/0/Telegram/Telegram Images',
+      '/storage/emulated/0/Telegram/Telegram Documents',
       '/storage/emulated/0/Pictures',
+      '/storage/emulated/0/Movies',
+      '/storage/emulated/0/Music',
+      '/storage/emulated/0/Documents',
     ];
     for (final String path in candidates) {
       try {
@@ -133,12 +179,24 @@ class SecurityScannerController extends ChangeNotifier {
   }
 
   void stopMonitoring() {
+    _monitoringActive = false;
     _timer?.cancel();
     _timer = null;
     _watchDebounce?.cancel();
     _watchDebounce = null;
-    for (final StreamSubscription<FileSystemEvent> sub in _dirWatchers) {
+    final StreamSubscription<AndroidServiceEvent>? sub = _nativeWatcherSub;
+    _nativeWatcherSub = null;
+    if (sub != null) {
       unawaited(sub.cancel());
+    }
+    if (_nativeWatcherStarted && _native.available) {
+      _nativeWatcherStarted = false;
+      try {
+        unawaited(_native.stopSecurityFileWatcher().catchError((_) => false));
+      } catch (_) {}
+    }
+    for (final StreamSubscription<FileSystemEvent> s in _dirWatchers) {
+      unawaited(s.cancel());
     }
     _dirWatchers.clear();
   }
@@ -363,6 +421,29 @@ class SecurityScannerController extends ChangeNotifier {
     notifyListeners();
     await _syncServerAlertsIfNeeded(_lastResult);
     return hit;
+  }
+
+  Future<void> recordBlockedExternalUrl(MaliciousLinkMatch hit) async {
+    final DateTime now = DateTime.now();
+    final DateTime? last = _recentBlockedLinks[hit.key];
+    if (last != null && now.difference(last) < _linkCooldown) {
+      return;
+    }
+    _recentBlockedLinks[hit.key] = now;
+    final NeutralizedSecurityEvent event = NeutralizedSecurityEvent(
+      key: hit.key,
+      name: hit.title,
+      category: 'malicious_link',
+      severity: hit.severity,
+      target: hit.target,
+      detail: hit.detail,
+      action: 'blocked_url',
+      timestampMs: now.millisecondsSinceEpoch,
+    );
+    _lastMessage = hit.title;
+    _recordNeutralizedEvent(event, queueTelegram: true);
+    notifyListeners();
+    await _syncServerAlertsIfNeeded(_lastResult);
   }
 
   /// پیش از هر بار اتصال بررسی می کند دستگاه پاک باشد؛ در غیر این صورت اتصال مسدود می شود.

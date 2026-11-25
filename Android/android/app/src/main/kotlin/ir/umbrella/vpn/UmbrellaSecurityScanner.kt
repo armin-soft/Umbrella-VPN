@@ -13,6 +13,9 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.FileObserver
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings as AndroidSettings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -231,9 +234,174 @@ object UmbrellaSecurityScanner {
             return true
         }
         val lower = fname.lowercase()
-        val dangerExts = listOf(".apk", ".exe", ".scr", ".bat", ".sh", ".vbs", ".js", ".hta")
-        val decoyExts = listOf(".jpg.", ".jpeg.", ".png.", ".gif.", ".webp.", ".pdf.", ".mp4.", ".zip.")
+        val dangerExts = listOf(".apk", ".exe", ".scr", ".bat", ".sh", ".vbs", ".js", ".hta", ".ps1", ".cmd", ".msi", ".dll", ".pif")
+        val decoyExts = listOf(".jpg.", ".jpeg.", ".png.", ".gif.", ".webp.", ".pdf.", ".mp4.", ".mp3.", ".wav.", ".doc.", ".docx.", ".zip.", ".rar.")
         return dangerExts.any { lower.endsWith(it) } && decoyExts.any { lower.contains(it) }
+    }
+
+    private fun isDangerousArchiveEntry(lowerEntry: String, isOfficeOpenXml: Boolean): Boolean {
+        if (lowerEntry.isBlank() || lowerEntry.contains("umbrella")) return false
+        if (hasRloOrDoubleExtension(lowerEntry)) return true
+        if (matchKnownPackageOrLabel(lowerEntry, lowerEntry, "") != null) return true
+        if (isOfficeOpenXml && lowerEntry.contains("vbaproject.bin")) return true
+        val badExts = listOf(
+            ".apk", ".exe", ".scr", ".pif", ".com", ".bat", ".cmd",
+            ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".ps1", ".hta", ".msi", ".lnk", ".dll", ".sh",
+        )
+        return badExts.any { lowerEntry.endsWith(it) }
+    }
+
+    private fun inspectZipBufferForPayloads(buf: ByteArray, isOfficeOpenXml: Boolean): String? {
+        var i = 0
+        while (i + 46 < buf.size) {
+            if (buf[i] == 'P'.code.toByte() && buf[i + 1] == 'K'.code.toByte()) {
+                if (buf[i + 2] == 0x03.toByte() && buf[i + 3] == 0x04.toByte() && i + 30 < buf.size) {
+                    val nameLen = (buf[i + 26].toInt() and 0xFF) or ((buf[i + 27].toInt() and 0xFF) shl 8)
+                    if (nameLen in 1..512 && i + 30 + nameLen <= buf.size) {
+                        val entryName = String(buf, i + 30, nameLen, Charsets.UTF_8)
+                        if (isDangerousArchiveEntry(entryName.lowercase(), isOfficeOpenXml)) {
+                            return entryName
+                        }
+                    }
+                } else if (buf[i + 2] == 0x01.toByte() && buf[i + 3] == 0x02.toByte() && i + 46 < buf.size) {
+                    val nameLen = (buf[i + 28].toInt() and 0xFF) or ((buf[i + 29].toInt() and 0xFF) shl 8)
+                    if (nameLen in 1..512 && i + 46 + nameLen <= buf.size) {
+                        val entryName = String(buf, i + 46, nameLen, Charsets.UTF_8)
+                        if (isDangerousArchiveEntry(entryName.lowercase(), isOfficeOpenXml)) {
+                            return entryName
+                        }
+                    }
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    private fun candidateWatchDirectories(context: Context): List<File> {
+        val publicDownloads = runCatching {
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        }.getOrNull()
+        val extStorage = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
+        return listOfNotNull(
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+            publicDownloads,
+            publicDownloads?.let { File(it, "Telegram") },
+            extStorage?.let { File(it, "Telegram/Telegram Images") },
+            extStorage?.let { File(it, "Telegram/Telegram Documents") },
+            extStorage?.let { File(it, "Telegram/Telegram Audio") },
+            extStorage?.let { File(it, "Telegram/Telegram Video") },
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM) }.getOrNull(),
+        )
+    }
+
+    private val activeObservers = mutableListOf<FileObserver>()
+    private val observerHandler = Handler(Looper.getMainLooper())
+    private var observerRunnable: Runnable? = null
+
+    fun startFileObservers(onChanged: (String) -> Unit): Boolean {
+        stopFileObservers()
+        val publicDownloads = runCatching {
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        }.getOrNull()
+        val extStorage = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
+        val dirs = listOfNotNull(
+            publicDownloads,
+            publicDownloads?.let { File(it, "Telegram") },
+            extStorage?.let { File(it, "Telegram/Telegram Images") },
+            extStorage?.let { File(it, "Telegram/Telegram Documents") },
+            extStorage?.let { File(it, "Telegram/Telegram Audio") },
+            extStorage?.let { File(it, "Telegram/Telegram Video") },
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC) }.getOrNull(),
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS) }.getOrNull(),
+        ).distinctBy { it.absolutePath.lowercase() }
+
+        val mask = FileObserver.CREATE or FileObserver.MOVED_TO or FileObserver.CLOSE_WRITE
+        for (dir in dirs) {
+            if (!dir.exists() || !dir.isDirectory) continue
+            runCatching {
+                val handleEvent = { relativePath: String? ->
+                    val name = relativePath.orEmpty()
+                    val lower = name.lowercase()
+                    if (name.isNotBlank() &&
+                        !lower.contains("umbrella") &&
+                        !lower.endsWith(".tmp") &&
+                        !lower.endsWith(".crdownload") &&
+                        !lower.endsWith(".part")
+                    ) {
+                        val full = File(dir, name).absolutePath
+                        observerHandler.post {
+                            observerRunnable?.let { observerHandler.removeCallbacks(it) }
+                            val r = Runnable { onChanged(full) }
+                            observerRunnable = r
+                            observerHandler.postDelayed(r, 650L)
+                        }
+                    }
+                }
+                val obs: FileObserver = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    object : FileObserver(dir, mask) {
+                        override fun onEvent(event: Int, path: String?) = handleEvent(path)
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    object : FileObserver(dir.absolutePath, mask) {
+                        override fun onEvent(event: Int, path: String?) = handleEvent(path)
+                    }
+                }
+                obs.startWatching()
+                activeObservers.add(obs)
+            }
+        }
+        return activeObservers.isNotEmpty()
+    }
+
+    fun stopFileObservers() {
+        observerRunnable?.let { observerHandler.removeCallbacks(it) }
+        observerRunnable = null
+        for (obs in activeObservers) {
+            runCatching { obs.stopWatching() }
+        }
+        activeObservers.clear()
+    }
+
+    private fun collectFilesBounded(
+        root: File,
+        depth: Int,
+        maxDepth: Int,
+        maxFiles: Int,
+        out: MutableList<File>,
+    ) {
+        if (out.size >= maxFiles || depth > maxDepth) return
+        val children = runCatching { root.listFiles() }.getOrNull() ?: return
+        val subdirs = mutableListOf<File>()
+        for (child in children) {
+            val lower = child.name.lowercase()
+            if (child.isDirectory) {
+                if (depth < maxDepth &&
+                    lower != ".git" &&
+                    lower != "node_modules" &&
+                    !lower.startsWith(".trash") &&
+                    !lower.contains("umbrella")
+                ) {
+                    subdirs.add(child)
+                }
+                continue
+            }
+            if (child.isFile) {
+                out.add(child)
+                if (out.size >= maxFiles) break
+            }
+        }
+        for (sub in subdirs) {
+            if (out.size >= maxFiles) break
+            collectFilesBounded(sub, depth + 1, maxDepth, maxFiles, out)
+        }
     }
 
     private fun inspectDownloadedFile(file: File, selfPkg: String): SignatureMatch? {
@@ -265,13 +433,32 @@ object UmbrellaSecurityScanner {
 
         val isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
             lower.endsWith(".png") || lower.endsWith(".gif") ||
-            lower.endsWith(".webp") || lower.endsWith(".bmp") || lower.endsWith(".svg")
+            lower.endsWith(".webp") || lower.endsWith(".bmp") ||
+            lower.endsWith(".svg") || lower.endsWith(".ico")
+        val isMedia = lower.endsWith(".mp4") || lower.endsWith(".mkv") ||
+            lower.endsWith(".avi") || lower.endsWith(".mov") ||
+            lower.endsWith(".webm") || lower.endsWith(".mp3") ||
+            lower.endsWith(".wav") || lower.endsWith(".flac") ||
+            lower.endsWith(".ogg") || lower.endsWith(".m4a") ||
+            lower.endsWith(".aac") || lower.endsWith(".opus")
+        val isArchive = lower.endsWith(".zip") || lower.endsWith(".rar") ||
+            lower.endsWith(".7z") || lower.endsWith(".tar") ||
+            lower.endsWith(".gz") || lower.endsWith(".iso")
+        val isOffice = lower.endsWith(".doc") || lower.endsWith(".docx") ||
+            lower.endsWith(".xls") || lower.endsWith(".xlsx") ||
+            lower.endsWith(".ppt") || lower.endsWith(".pptx") ||
+            lower.endsWith(".rtf")
         val isScriptOrWeb = lower.endsWith(".html") || lower.endsWith(".htm") ||
-            lower.endsWith(".url") || lower.endsWith(".js") || lower.endsWith(".sh")
-        if (!isImage && !isScriptOrWeb) return null
+            lower.endsWith(".url") || lower.endsWith(".js") ||
+            lower.endsWith(".sh") || lower.endsWith(".bat") ||
+            lower.endsWith(".ps1") || lower.endsWith(".vbs") ||
+            lower.endsWith(".hta")
 
-        val sample = readSampleBytes(file)
+        val sample = readSampleBytes(file, 4 * 1024 * 1024)
         if (sample.isEmpty()) return null
+
+        val elfSig = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
+        val dexSig = "dex\n03".encodeToByteArray()
 
         if (lower.endsWith(".svg")) {
             if (containsAsciiCi(sample, "<script") ||
@@ -306,11 +493,11 @@ object UmbrellaSecurityScanner {
                         sample[2] == 'F'.code.toByte() && sample[3] == 'F'.code.toByte() &&
                         sample[8] == 'W'.code.toByte() && sample[9] == 'E'.code.toByte() &&
                         sample[10] == 'B'.code.toByte() && sample[11] == 'P'.code.toByte()
+                lower.endsWith(".ico") ->
+                    sample.size >= 4 && sample[0] == 0.toByte() && sample[1] == 0.toByte() &&
+                        sample[2] == 1.toByte() && sample[3] == 0.toByte()
                 else -> sample.size >= 2 && sample[0] == 'B'.code.toByte() && sample[1] == 'M'.code.toByte()
             }
-
-            val elfSig = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
-            val dexSig = "dex\n03".encodeToByteArray()
 
             if (!validMagic &&
                 (hasPeHeaderAt(sample, 0) ||
@@ -332,8 +519,11 @@ object UmbrellaSecurityScanner {
 
             var hasEmbeddedPe = false
             for (pos in 16 until (sample.size - 0x40).coerceAtLeast(16)) {
-                if (sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
-                    hasPeHeaderAt(sample, pos)
+                if ((sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
+                        hasPeHeaderAt(sample, pos)) ||
+                    (pos + 4 <= sample.size && sample[pos] == 0x7F.toByte() &&
+                        sample[pos + 1] == 'E'.code.toByte() && sample[pos + 2] == 'L'.code.toByte() &&
+                        sample[pos + 3] == 'F'.code.toByte())
                 ) {
                     hasEmbeddedPe = true
                     break
@@ -358,24 +548,130 @@ object UmbrellaSecurityScanner {
             return null
         }
 
-        // Web/script download checks
-        if (containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-            containsAsciiCi(sample, "eval(atob(") ||
+        if (isMedia) {
+            var hasEmbeddedBinary = hasPeHeaderAt(sample, 0) ||
+                containsBytes(sample, elfSig, 0) ||
+                containsBytes(sample, dexSig, 0)
+            if (!hasEmbeddedBinary) {
+                for (pos in 16 until (sample.size - 0x40).coerceAtLeast(16)) {
+                    if (sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
+                        hasPeHeaderAt(sample, pos)
+                    ) {
+                        hasEmbeddedBinary = true
+                        break
+                    }
+                }
+            }
+            if (hasEmbeddedBinary ||
+                (containsAsciiCi(sample, "androidmanifest.xml") && containsAsciiCi(sample, "classes.dex")) ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+                containsAsciiCi(sample, "<script") ||
+                containsAsciiCi(sample, "wscript.shell") ||
+                containsAsciiCi(sample, "urldownloadtofile") ||
+                containsAsciiCi(sample, "eval(atob(")
+            ) {
+                return SignatureMatch(
+                    key = "dl:media:${lower.hashCode()}",
+                    name = "فایل رسانه ای حاوی بدافزار ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "این فایل صوتی یا ویدیویی حاوی کد اجرایی یا پی لود تروجانی است.",
+                )
+            }
+            return null
+        }
+
+        if (isArchive || isOffice || lower.endsWith(".pdf")) {
+            val badEntry = if (isArchive || isOffice) {
+                inspectZipBufferForPayloads(sample, isOffice)
+            } else {
+                null
+            }
+            if (badEntry != null) {
+                return SignatureMatch(
+                    key = "dl:archive:${lower.hashCode()}",
+                    name = "بسته یا سند حاوی فایل مخرب ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "درون آرشیو یا سند، فایل مشکوک و مخرب شناسایی شد: $badEntry",
+                )
+            }
+            if (hasPeHeaderAt(sample, 0) ||
+                containsBytes(sample, elfSig, 0) ||
+                containsBytes(sample, dexSig, 0) ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+                containsAsciiCi(sample, "wscript.shell") ||
+                containsAsciiCi(sample, "urldownloadtofile") ||
+                containsAsciiCi(sample, "powershell -enc")
+            ) {
+                return SignatureMatch(
+                    key = "dl:doc:${lower.hashCode()}",
+                    name = "سند یا بسته دانلودی آلوده ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "امضای بدافزار، کد اجرایی یا اسکریپت مخرب درون سند دانلود شده یافت شد.",
+                )
+            }
+            return null
+        }
+
+        // Web/script downloads & dangerous executables/unknown extensionless files
+        if (isScriptOrWeb) {
+            if (hasPeHeaderAt(sample, 0) ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+                containsAsciiCi(sample, "eval(atob(") ||
+                containsAsciiCi(sample, "wscript.shell") ||
+                containsAsciiCi(sample, "activexobject") ||
+                containsAsciiCi(sample, "urldownloadtofile") ||
+                containsAsciiCi(sample, "powershell -enc") ||
+                containsAsciiCi(sample, "grabify.link") ||
+                containsAsciiCi(sample, "iplogger.org") ||
+                containsAsciiCi(sample, "iplogger.com") ||
+                containsAsciiCi(sample, "2no.co") ||
+                containsAsciiCi(sample, "blasze.com")
+            ) {
+                return SignatureMatch(
+                    key = "dl:web:${lower.hashCode()}",
+                    name = "فایل لینک / اسکریپت تروجانی ($fname)",
+                    category = "malicious_download",
+                    severity = "high",
+                    detail = "فایل دانلود شده حاوی لینک یا اسکریپت تروجانی و فیشینگ است.",
+                )
+            }
+            return null
+        }
+
+        // Remaining / unknown / extensionless files & standalone executables (.exe/.scr/.so)
+        val execByExt = lower.endsWith(".exe") || lower.endsWith(".scr") ||
+            lower.endsWith(".msi") || lower.endsWith(".bat")
+        if (execByExt ||
+            hasPeHeaderAt(sample, 0) ||
+            containsBytes(sample, elfSig, 0) ||
+            containsBytes(sample, dexSig, 0) ||
+            containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
             containsAsciiCi(sample, "wscript.shell") ||
-            containsAsciiCi(sample, "activexobject") ||
-            containsAsciiCi(sample, "grabify.link") ||
-            containsAsciiCi(sample, "iplogger.org") ||
-            containsAsciiCi(sample, "iplogger.com") ||
-            containsAsciiCi(sample, "2no.co") ||
-            containsAsciiCi(sample, "blasze.com")
+            containsAsciiCi(sample, "powershell -enc")
         ) {
-            return SignatureMatch(
-                key = "dl:web:${lower.hashCode()}",
-                name = "فایل لینک / صفحه تروجانی ($fname)",
-                category = "malicious_download",
-                severity = "high",
-                detail = "فایل دانلود شده حاوی لینک یا اسکریپت تروجانی و فیشینگ است.",
-            )
+            val hit = matchKnownPackageOrLabel(lower, lower, selfPkg)
+            if (hit != null) {
+                return hit.copy(
+                    key = "${hit.key}:bin:${lower.hashCode()}",
+                    category = if (hit.category == "conflicting_vpn") "conflicting_vpn" else "malicious_download",
+                )
+            }
+            if (execByExt || hasPeHeaderAt(sample, 0) ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+                containsAsciiCi(sample, "wscript.shell") ||
+                containsAsciiCi(sample, "powershell -enc")
+            ) {
+                return SignatureMatch(
+                    key = "dl:bin:${lower.hashCode()}",
+                    name = "فایل اجرایی یا پی لود مشکوک ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "فایل اجرایی ناشناس یا پی لود مشکوک در پوشه دانلودها شناسایی شد.",
+                )
+            }
         }
         return null
     }
@@ -464,35 +760,25 @@ object UmbrellaSecurityScanner {
             )
         }
 
-        // Scan accessible app-private and external download/media folders for malicious APKs, scripts, and disguised images
-        val publicDownloads = runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull()
-        val extStorage = runCatching { Environment.getExternalStorageDirectory() }.getOrNull()
-        val candidateDirs = listOfNotNull(
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
-            publicDownloads,
-            publicDownloads?.let { File(it, "Telegram") },
-            extStorage?.let { File(it, "Telegram/Telegram Images") },
-            extStorage?.let { File(it, "Telegram/Telegram Documents") },
-            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES) }.getOrNull(),
-            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS) }.getOrNull(),
-        )
+        // Recursive bounded scan across accessible app-private, downloads, Telegram, media, and documents folders
+        val candidateDirs = candidateWatchDirectories(context)
         val visited = hashSetOf<String>()
         for (dir in candidateDirs) {
             if (!dir.exists() || !dir.isDirectory) continue
-            val children = runCatching { dir.listFiles() }.getOrNull() ?: continue
-            for (file in children.take(160)) {
+            val files = mutableListOf<File>()
+            collectFilesBounded(dir, 0, 3, 800, files)
+            for (file in files) {
                 if (!file.isFile) continue
                 val abs = file.absolutePath
                 if (!visited.add(abs.lowercase())) continue
                 val fname = file.name.lowercase()
-                if (fname.contains("umbrella")) continue
-                val watchExt = fname.endsWith(".apk") || fname.endsWith(".jpg") ||
-                    fname.endsWith(".jpeg") || fname.endsWith(".png") ||
-                    fname.endsWith(".gif") || fname.endsWith(".webp") ||
-                    fname.endsWith(".bmp") || fname.endsWith(".svg") ||
-                    fname.endsWith(".html") || fname.endsWith(".htm") ||
-                    fname.endsWith(".url") || fname.endsWith(".js") || fname.endsWith(".sh")
-                if (!watchExt && !hasRloOrDoubleExtension(file.name)) continue
+                if (fname.contains("umbrella") ||
+                    fname.endsWith(".tmp") ||
+                    fname.endsWith(".crdownload") ||
+                    fname.endsWith(".part")
+                ) {
+                    continue
+                }
 
                 scannedFiles++
                 val hit = inspectDownloadedFile(file, selfPkg) ?: continue

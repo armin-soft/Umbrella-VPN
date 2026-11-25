@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
 import android.os.StatFs
 import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
@@ -145,6 +146,12 @@ class MethodHandler(
             "requestStorageScanAccess" -> result.answerNow(call.method) {
                 UmbrellaSecurityScanner.requestStorageScanAccess(activity)
             }
+            "startSecurityFileWatcher" -> result.answerNow(call.method) {
+                activity.startSecurityFileWatcher()
+            }
+            "stopSecurityFileWatcher" -> result.answerNow(call.method) {
+                activity.stopSecurityFileWatcher()
+            }
             "remediateSecurityThreat" -> result.answerNow(call.method) {
                 UmbrellaSecurityScanner.remediate(
                     activity = activity,
@@ -244,6 +251,8 @@ class MethodHandler(
         val batteryPercent = if (level >= 0 && scale > 0) ((level * 100) / scale).coerceIn(0, 100) else -1
         val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
         val powerPlugged = plugged != 0
+        val powerMgr = activity.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val isPowerSaveMode = powerMgr?.isPowerSaveMode ?: false
         val uptimeSeconds = (SystemClock.elapsedRealtime() / 1000L).toInt().coerceAtLeast(0)
 
         return mapOf(
@@ -261,6 +270,7 @@ class MethodHandler(
             "diskFreeMb" to diskFreeMb,
             "batteryPercent" to batteryPercent,
             "powerPlugged" to powerPlugged,
+            "isPowerSaveMode" to isPowerSaveMode,
             "uptimeSeconds" to uptimeSeconds,
             "batteryOptimized" to !isIgnoringBatteryOptimizations(),
             "canRequestInstallPackages" to canInstall,

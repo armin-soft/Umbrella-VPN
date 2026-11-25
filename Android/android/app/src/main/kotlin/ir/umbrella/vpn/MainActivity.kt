@@ -79,9 +79,21 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
 
     override fun onDestroy() {
         ir.umbrella.vpn.bg.DefaultNetworkMonitor.onNetworkStateChanged = null
+        UmbrellaSecurityScanner.stopFileObservers()
         unregisterSmsReceiver()
         runCatching { serviceConnection.disconnect() }
         super.onDestroy()
+    }
+
+    fun startSecurityFileWatcher(): Boolean {
+        return UmbrellaSecurityScanner.startFileObservers { path ->
+            eventHandler.onSecurityFileEvent(path)
+        }
+    }
+
+    fun stopSecurityFileWatcher(): Boolean {
+        UmbrellaSecurityScanner.stopFileObservers()
+        return true
     }
 
     fun reconnectServiceObserver(force: Boolean = true) {

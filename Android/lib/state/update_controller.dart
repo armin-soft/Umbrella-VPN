@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
 import '../core/persian.dart';
+import '../core/safe_url_launcher.dart';
 import '../core/storage.dart';
 import '../models/models.dart';
 import '../platform/native.dart';
@@ -273,14 +274,10 @@ class UpdateController extends ChangeNotifier {
         final Uri? fallbackUri = Uri.tryParse(info.url);
         bool openedBrowser = false;
         if (fallbackUri != null) {
-          try {
-            openedBrowser = await launchUrl(
-              fallbackUri,
-              mode: LaunchMode.externalApplication,
-            );
-          } on Exception {
-            openedBrowser = false;
-          }
+          openedBrowser = await SafeUrlLauncher.open(
+            fallbackUri,
+            mode: LaunchMode.externalApplication,
+          );
         }
         if (openedBrowser) {
           _phase = 'فایل نسخه جدید برای نصب ایمن در مرورگر سیستم باز شد.';
@@ -333,10 +330,6 @@ class UpdateController extends ChangeNotifier {
     if (uri == null) {
       return false;
     }
-    try {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } on Exception {
-      return false;
-    }
+    return SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication);
   }
 }

@@ -71,6 +71,12 @@ class _FakeNative implements NativeBridge {
   Future<bool> requestStorageScanAccess() async => true;
 
   @override
+  Future<bool> startSecurityFileWatcher() async => true;
+
+  @override
+  Future<bool> stopSecurityFileWatcher() async => true;
+
+  @override
   Future<bool> stopCore() async => true;
 
   @override

@@ -80,6 +80,8 @@ class RuntimeConfig {
     int stickyMinutes = 15,
     int? blockPagePort,
     bool preserveLogOutput = false,
+    Map<String, String>? localRuleSetPaths,
+    String? localDataDir,
   }) {
     if (config['outbounds'] is! List || config['experimental'] is! Map) {
       throw const FormatException(
@@ -243,6 +245,13 @@ class RuntimeConfig {
       outbounds,
       blockPagePort: blockPagePort,
     );
+    _configureOfflineIranBypass(
+      config,
+      outbounds,
+      coreSettings,
+      localRuleSetPaths: localRuleSetPaths,
+      localDataDir: localDataDir,
+    );
   }
 
   /// A domain-named WireGuard peer must be resolved before the tunnel can
@@ -264,7 +273,8 @@ class RuntimeConfig {
     final dynamic endpoints = config['endpoints'];
     if (endpoints is! List) return;
     for (final dynamic item in endpoints) {
-      if (item is! Map<String, dynamic> || item['type'] != 'wireguard' ||
+      if (item is! Map<String, dynamic> ||
+          (item['type'] != 'wireguard' && item['type'] != 'awg') ||
           item['tag'] != 'umbrella-direct-profile' ||
           !profileTags.contains(item['tag']) ||
           '${item['detour'] ?? ''}'.isNotEmpty ||
@@ -939,6 +949,392 @@ class RuntimeConfig {
       migrated.add(rawRule);
     }
     rawDns['rules'] = migrated;
+  }
+
+  static const List<String> _iranLocalRuleSetTags = <String>[
+    'geoip-ir',
+    'geosite-ir',
+    'geoip-arvancloud',
+    'geoip-parspack',
+    'geoip-derakcloud',
+    'geoip-iranserver',
+  ];
+
+  static const List<String> _iranIpRuleSetTags = <String>[
+    'geoip-ir',
+    'geoip-arvancloud',
+    'geoip-parspack',
+    'geoip-derakcloud',
+    'geoip-iranserver',
+  ];
+
+  static Map<String, String> _discoverLocalRuleSets(
+    Map<String, String>? explicitPaths,
+    String? localDataDir,
+  ) {
+    final Map<String, String> resolved = <String, String>{};
+    if (explicitPaths != null) {
+      for (final MapEntry<String, String> e in explicitPaths.entries) {
+        final String key = e.key.trim().toLowerCase();
+        final String path = e.value.trim();
+        if (key.isNotEmpty && path.isNotEmpty) {
+          resolved[key] = path;
+        }
+      }
+    }
+    if (localDataDir != null && localDataDir.trim().isNotEmpty) {
+      final String sep = Platform.pathSeparator;
+      final String base = localDataDir.endsWith(sep)
+          ? localDataDir.substring(0, localDataDir.length - 1)
+          : localDataDir;
+      for (final String tag in _iranLocalRuleSetTags) {
+        if (resolved.containsKey(tag)) continue;
+        final File candidate = File('$base$sep$tag.srs');
+        if (candidate.existsSync() && candidate.lengthSync() >= 32) {
+          resolved[tag] = candidate.path;
+        }
+      }
+    }
+    return resolved;
+  }
+
+  static String? _matchingLocalTag(
+    Map<String, dynamic> ruleSet,
+    Map<String, String> localPaths,
+  ) {
+    final String tag = '${ruleSet['tag'] ?? ''}'.trim().toLowerCase();
+    if (tag.isNotEmpty && localPaths.containsKey(tag)) {
+      return tag;
+    }
+    final String url = '${ruleSet['url'] ?? ''}'.trim().toLowerCase();
+    if (url.isNotEmpty) {
+      for (final String candidate in localPaths.keys) {
+        if (url.endsWith('/$candidate.srs') || url.endsWith('$candidate.srs')) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  static void _configureOfflineIranBypass(
+    Map<String, dynamic> config,
+    List<dynamic> outbounds,
+    Map<String, dynamic>? coreSettings, {
+    Map<String, String>? localRuleSetPaths,
+    String? localDataDir,
+  }) {
+    final Object? rawRoute = config['route'];
+    if (rawRoute is! Map<String, dynamic>) return;
+    final Object? rawRules = rawRoute['rules'];
+    if (rawRules is! List<dynamic>) return;
+
+    final Map<String, String> localPaths =
+        _discoverLocalRuleSets(localRuleSetPaths, localDataDir);
+
+    final List<dynamic> ruleSets = rawRoute['rule_set'] is List
+        ? (rawRoute['rule_set'] as List<dynamic>)
+        : <dynamic>[];
+    final Map<String, String> knownTagByLocalKey = <String, String>{};
+    for (final dynamic item in ruleSets) {
+      if (item is! Map<String, dynamic>) continue;
+      final String existingTag = '${item['tag'] ?? ''}'.trim();
+      final String? matchedKey = _matchingLocalTag(item, localPaths);
+      if (matchedKey != null) {
+        final String localPath = localPaths[matchedKey]!;
+        final String finalTag =
+            existingTag.isNotEmpty ? existingTag : matchedKey;
+        item
+          ..['type'] = 'local'
+          ..['tag'] = finalTag
+          ..['format'] = 'binary'
+          ..['path'] = localPath
+          ..remove('url')
+          ..remove('http_client')
+          ..remove('download_detour')
+          ..remove('update_interval');
+        knownTagByLocalKey[matchedKey] = finalTag;
+      } else if (existingTag.isNotEmpty) {
+        knownTagByLocalKey.putIfAbsent(existingTag.toLowerCase(), () => existingTag);
+      }
+    }
+
+    final String? directTag = _findDirectOutboundTag(outbounds);
+    final bool hasIranBypass = _hasIranBypassConfig(
+      coreSettings,
+      rawRules,
+      directTag: directTag,
+    );
+
+    if (hasIranBypass && localPaths.isNotEmpty) {
+      for (final String key in _iranLocalRuleSetTags) {
+        final String? path = localPaths[key];
+        if (path == null || knownTagByLocalKey.containsKey(key)) continue;
+        ruleSets.add(<String, dynamic>{
+          'type': 'local',
+          'tag': key,
+          'format': 'binary',
+          'path': path,
+        });
+        knownTagByLocalKey[key] = key;
+      }
+      if (ruleSets.isNotEmpty) {
+        rawRoute['rule_set'] = ruleSets;
+      }
+    }
+
+    final Object? rawDns = config['dns'];
+    final List<dynamic>? dnsServers =
+        rawDns is Map<String, dynamic> && rawDns['servers'] is List
+            ? rawDns['servers'] as List<dynamic>
+            : null;
+    final bool hasRemoteDnsGroup = dnsServers != null &&
+        dnsServers.any((dynamic s) => s is Map && s['tag'] == 'dns-remote-group');
+    final bool hasDirectDnsGroup = dnsServers != null &&
+        dnsServers.any((dynamic s) => s is Map && s['tag'] == 'dns-direct-group');
+
+    if (hasIranBypass && directTag != null) {
+      final List<String> extraIpTags = <String>[
+        for (final String key in _iranIpRuleSetTags)
+          if (knownTagByLocalKey.containsKey(key)) knownTagByLocalKey[key]!,
+      ];
+      if (extraIpTags.isNotEmpty) {
+        bool attached = false;
+        for (final dynamic item in rawRules) {
+          if (item is! Map<String, dynamic>) continue;
+          if (item['outbound'] != directTag) continue;
+          final Object? rs = item['rule_set'];
+          if (rs is List &&
+              rs.any((Object? t) => '$t'.toLowerCase().contains('geoip-ir'))) {
+            final List<String> merged = <String>[
+              for (final Object? t in rs) '$t',
+            ];
+            for (final String tag in extraIpTags) {
+              if (!merged.contains(tag)) merged.add(tag);
+            }
+            item['rule_set'] = merged;
+            attached = true;
+            break;
+          }
+        }
+        if (!attached) {
+          rawRules.add(<String, dynamic>{
+            'rule_set': extraIpTags,
+            'outbound': directTag,
+          });
+        }
+      }
+    }
+
+    final bool hasIpBypass = rawRules.any(
+      (dynamic r) =>
+          r is Map &&
+          directTag != null &&
+          r['outbound'] == directTag &&
+          (_nonEmptyRuleField(r['ip_cidr']) ||
+              r['ip_is_private'] == true ||
+              _ruleHasGeoIpRuleSet(r['rule_set'])),
+    );
+    if (hasRemoteDnsGroup && hasIpBypass) {
+      final bool alreadyHasResolve = rawRules.any(
+        (dynamic item) => item is Map && item['action'] == 'resolve',
+      );
+      if (!alreadyHasResolve) {
+        final String? strategy = _effectiveResolveStrategy(coreSettings);
+        rawRules.insert(_resolveInsertIndex(rawRules), <String, dynamic>{
+          'action': 'resolve',
+          'server': 'dns-remote-group',
+          if (strategy != null) 'strategy': strategy,
+        });
+      }
+    }
+
+    final int resolveIdx =
+        rawRules.indexWhere((dynamic r) => r is Map && r['action'] == 'resolve');
+    if (resolveIdx >= 0 && hasRemoteDnsGroup) {
+      final Map<String, dynamic> resolveRule =
+          rawRules[resolveIdx] as Map<String, dynamic>;
+      resolveRule['server'] ??= 'dns-remote-group';
+    }
+
+    if (resolveIdx >= 0 && directTag != null) {
+      final List<dynamic> domainDirectBeforeResolve = <dynamic>[];
+      final List<dynamic> ipDirectAfterResolve = <dynamic>[];
+      final List<dynamic> remaining = <dynamic>[];
+      for (final dynamic item in rawRules) {
+        if (item is Map<String, dynamic> && item['outbound'] == directTag) {
+          if (_isPureDomainDirectRule(item)) {
+            domainDirectBeforeResolve.add(item);
+            continue;
+          }
+          if (_isPureIpDirectRule(item)) {
+            ipDirectAfterResolve.add(item);
+            continue;
+          }
+        }
+        remaining.add(item);
+      }
+      if (domainDirectBeforeResolve.isNotEmpty ||
+          ipDirectAfterResolve.isNotEmpty) {
+        final int insertDomainAt = _resolveInsertIndex(remaining);
+        remaining.insertAll(insertDomainAt, domainDirectBeforeResolve);
+        final int newResolveIdx = remaining
+            .indexWhere((dynamic r) => r is Map && r['action'] == 'resolve');
+        if (newResolveIdx >= 0) {
+          final int bypassIdx = _bypassLanInsertIndex(remaining, directTag);
+          final int insertIpAt =
+              bypassIdx > newResolveIdx ? bypassIdx : newResolveIdx + 1;
+          remaining.insertAll(insertIpAt, ipDirectAfterResolve);
+        } else {
+          remaining.addAll(ipDirectAfterResolve);
+        }
+        rawRules
+          ..clear()
+          ..addAll(remaining);
+      }
+    }
+
+    if (hasDirectDnsGroup && rawDns is Map<String, dynamic> && rawDns['rules'] is List) {
+      final List<dynamic> dnsRules = rawDns['rules'] as List<dynamic>;
+      final List<String> directDomains = _extractUserBypassDomains(coreSettings);
+      final List<String> directSuffixes = <String>[
+        if (hasIranBypass) '.ir',
+        ...directDomains,
+      ];
+      final String? geositeIrTag = knownTagByLocalKey['geosite-ir'];
+      final bool needsDnsRule =
+          directSuffixes.isNotEmpty || (hasIranBypass && geositeIrTag != null);
+      if (needsDnsRule) {
+        final bool alreadyHasIranDirectDns = dnsRules.any((dynamic r) {
+          if (r is! Map || r['server'] != 'dns-direct-group') return false;
+          if (hasIranBypass &&
+              (_containsString(r['domain_suffix'], '.ir') ||
+                  (geositeIrTag != null &&
+                      _containsString(r['rule_set'], geositeIrTag)))) {
+            return true;
+          }
+          return directDomains.isNotEmpty &&
+              directDomains.every(
+                (String d) => _containsString(r['domain_suffix'], d),
+              );
+        });
+        if (!alreadyHasIranDirectDns) {
+          final Map<String, dynamic> directDnsRule = <String, dynamic>{
+            if (directDomains.isNotEmpty) 'domain': directDomains,
+            if (directSuffixes.isNotEmpty) 'domain_suffix': directSuffixes,
+            if (hasIranBypass && geositeIrTag != null)
+              'rule_set': <String>[geositeIrTag],
+            'server': 'dns-direct-group',
+          };
+          int insertAt = dnsRules.indexWhere((dynamic r) {
+            if (r is! Map) return false;
+            final String srv = '${r['server'] ?? ''}';
+            return srv == 'dns-fake' || srv == 'dns-remote-group';
+          });
+          if (insertAt < 0) insertAt = dnsRules.length;
+          dnsRules.insert(insertAt, directDnsRule);
+        }
+      }
+    }
+  }
+
+  static bool _hasIranBypassConfig(
+    Map<String, dynamic>? coreSettings,
+    List<dynamic> rules, {
+    String? directTag,
+  }) {
+    if ('${coreSettings?['region'] ?? ''}'.toLowerCase() == 'ir') return true;
+    final Object? routeRule = coreSettings?['route-rule'];
+    if (routeRule is Map && routeRule['rules'] is List) {
+      for (final dynamic item in routeRule['rules'] as List) {
+        if (item is Map &&
+            '${item['name'] ?? ''}'.startsWith('umbrella-bypass-iran')) {
+          return true;
+        }
+      }
+    }
+    if (directTag == null) return false;
+    return rules.any((dynamic r) {
+      if (r is! Map || r['outbound'] != directTag) return false;
+      return _containsString(r['domain_suffix'], '.ir') ||
+          _ruleHasGeoIrRuleSet(r['rule_set']);
+    });
+  }
+
+  static bool _ruleHasGeoIrRuleSet(Object? value) {
+    if (value is String) {
+      final String l = value.toLowerCase();
+      return l.contains('geoip-ir') || l.contains('geosite-ir');
+    }
+    if (value is List) {
+      return value.any((Object? e) {
+        final String l = '$e'.toLowerCase();
+        return l.contains('geoip-ir') || l.contains('geosite-ir');
+      });
+    }
+    return false;
+  }
+
+  static bool _ruleHasGeoIpRuleSet(Object? value) {
+    if (value is String) return value.toLowerCase().contains('geoip-');
+    if (value is List) {
+      return value.any((Object? e) => '$e'.toLowerCase().contains('geoip-'));
+    }
+    return false;
+  }
+
+  static bool _isPureDomainDirectRule(Map<String, dynamic> rule) {
+    if (_nonEmptyRuleField(rule['process_name']) ||
+        _nonEmptyRuleField(rule['process_path']) ||
+        _nonEmptyRuleField(rule['process_path_regex']) ||
+        _nonEmptyRuleField(rule['package_name']) ||
+        _nonEmptyRuleField(rule['ip_cidr']) ||
+        rule['ip_is_private'] == true ||
+        _ruleHasGeoIpRuleSet(rule['rule_set'])) {
+      return false;
+    }
+    return _nonEmptyRuleField(rule['domain']) ||
+        _nonEmptyRuleField(rule['domain_suffix']) ||
+        _nonEmptyRuleField(rule['domain_keyword']) ||
+        _nonEmptyRuleField(rule['rule_set']);
+  }
+
+  static bool _isPureIpDirectRule(Map<String, dynamic> rule) {
+    if (_nonEmptyRuleField(rule['process_name']) ||
+        _nonEmptyRuleField(rule['process_path']) ||
+        _nonEmptyRuleField(rule['process_path_regex']) ||
+        _nonEmptyRuleField(rule['package_name']) ||
+        _nonEmptyRuleField(rule['domain']) ||
+        _nonEmptyRuleField(rule['domain_suffix']) ||
+        _nonEmptyRuleField(rule['domain_keyword'])) {
+      return false;
+    }
+    return rule['ip_is_private'] == true ||
+        _nonEmptyRuleField(rule['ip_cidr']) ||
+        _ruleHasGeoIpRuleSet(rule['rule_set']);
+  }
+
+  static List<String> _extractUserBypassDomains(
+    Map<String, dynamic>? coreSettings,
+  ) {
+    final Object? routeRule = coreSettings?['route-rule'];
+    if (routeRule is! Map || routeRule['rules'] is! List) {
+      return const <String>[];
+    }
+    final List<String> out = <String>[];
+    for (final dynamic item in routeRule['rules'] as List) {
+      if (item is! Map || item['name'] != 'umbrella-bypass-user') continue;
+      for (final String key in const <String>['domain_suffix', 'domain']) {
+        final Object? raw = item[key];
+        if (raw is List) {
+          for (final Object? entry in raw) {
+            final String v = '$entry'.trim().toLowerCase();
+            if (v.isNotEmpty && !out.contains(v)) out.add(v);
+          }
+        }
+      }
+    }
+    return out;
   }
 
   static bool _nonEmptyRuleField(Object? value) {

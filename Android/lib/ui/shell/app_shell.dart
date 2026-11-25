@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../platform/services.dart';
 import '../../state/auth_controller.dart';
+import '../../state/motion_controller.dart';
 import '../../state/security_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
@@ -184,6 +185,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final bool visible = AppShell.isLifecycleVisible(state);
     widget.windowService.setLifecycleVisible(visible);
+    context.maybeRead<MotionController>()?.setAppVisible(visible);
+    context.maybeRead<VpnController>()?.setAppVisible(visible);
+    context.maybeRead<AuthController>()?.setAppVisible(visible);
     if (_appVisible != visible && mounted) {
       setState(() => _appVisible = visible);
     }

@@ -67,6 +67,7 @@ class AndroidServiceEvent {
     this.code = '',
     this.online = false,
     this.fingerprint = '',
+    this.path = '',
     this.messages = const <String>[],
   });
 
@@ -77,6 +78,7 @@ class AndroidServiceEvent {
   final String code;
   final bool online;
   final String fingerprint;
+  final String path;
   final List<String> messages;
 
   factory AndroidServiceEvent.fromMap(Map<Object?, Object?> raw) {
@@ -95,6 +97,7 @@ class AndroidServiceEvent {
       code: JsonX.text(raw['code']),
       online: raw['online'] == true,
       fingerprint: JsonX.text(raw['fingerprint']),
+      path: JsonX.text(raw['path']),
       messages: msgList,
     );
   }
@@ -549,11 +552,12 @@ class NativeBridge {
     final Map<String, dynamic> info = await getPlatformInfo();
     final int pct = JsonX.integer(info['batteryPercent'], -1);
     final bool plugged = JsonX.boolean(info['powerPlugged']);
+    final bool powerSave = JsonX.boolean(info['isPowerSaveMode']);
     return BatteryPowerState(
       hasBattery: true,
       onBattery: !plugged,
-      energySaver: !ignoring,
-      powerKnown: true,
+      energySaver: powerSave,
+      powerKnown: info.isNotEmpty,
       batteryPercent: pct,
       ignoringBatteryOptimizations: ignoring,
     );
@@ -664,6 +668,16 @@ class NativeBridge {
 
   Future<bool> requestStorageScanAccess() async {
     final bool? ok = await _invoke<bool>('requestStorageScanAccess');
+    return ok ?? false;
+  }
+
+  Future<bool> startSecurityFileWatcher() async {
+    final bool? ok = await _invoke<bool>('startSecurityFileWatcher');
+    return ok ?? false;
+  }
+
+  Future<bool> stopSecurityFileWatcher() async {
+    final bool? ok = await _invoke<bool>('stopSecurityFileWatcher');
     return ok ?? false;
   }
 

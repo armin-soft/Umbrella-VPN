@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_config.dart';
 import '../../core/persian.dart';
+import '../../core/safe_url_launcher.dart';
 import '../../core/theme.dart';
 import '../../data/gateway_client.dart';
 import '../widgets/common.dart';
@@ -74,7 +75,7 @@ class _DeveloperCard extends StatelessWidget {
   Future<void> _open(String url) async {
     final Uri? uri = Uri.tryParse(url);
     if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication);
     }
   }
 

@@ -630,6 +630,9 @@ class Account {
     this.subscriptionUrl = '',
     this.accountBase = '',
     this.emergencyEnabled = false,
+    this.channelStatus = 'member',
+    this.channelGraceRemainingSeconds = 0,
+    this.channelDisabled = false,
   });
 
   final int panelId;
@@ -656,6 +659,9 @@ class Account {
   final String subscriptionUrl;
   final String accountBase;
   final bool emergencyEnabled;
+  final String channelStatus;
+  final int channelGraceRemainingSeconds;
+  final bool channelDisabled;
 
   Account copyWith({
     int? panelId,
@@ -683,6 +689,9 @@ class Account {
     String? subscriptionUrl,
     String? accountBase,
     bool? emergencyEnabled,
+    String? channelStatus,
+    int? channelGraceRemainingSeconds,
+    bool? channelDisabled,
   }) {
     return Account(
       panelId: panelId ?? this.panelId,
@@ -709,6 +718,10 @@ class Account {
       subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       accountBase: accountBase ?? this.accountBase,
       emergencyEnabled: emergencyEnabled ?? this.emergencyEnabled,
+      channelStatus: channelStatus ?? this.channelStatus,
+      channelGraceRemainingSeconds:
+          channelGraceRemainingSeconds ?? this.channelGraceRemainingSeconds,
+      channelDisabled: channelDisabled ?? this.channelDisabled,
     );
   }
 
@@ -978,10 +991,14 @@ class Account {
 
   /// اجازه اتصال به سرورها. اگر حساب منقضی، غیرفعال، مسدود یا حجمش تمام شده
   /// باشد، اتصال ممنوع است و برنامه باید همین را به کاربر بگوید.
-  bool get canConnect => enable && isActive && !expired && !quotaFinished;
+  bool get canConnect =>
+      enable && isActive && !expired && !quotaFinished && !channelDisabled;
 
   /// دلیل بسته بودن دسترسی، به فارسی؛ اگر دسترسی باز باشد رشته خالی است.
   String get accessReason {
+    if (channelDisabled || channelStatus == 'disabled') {
+      return 'عضویت شما در کانال اطلاع رسانی تایید نشد و اتصال موقتا متوقف شده است؛ پس از عضویت در کانال دوباره وصل شوید.';
+    }
     if (!enable) {
       return 'حساب شما مسدود شده است؛ برای بررسی با پشتیبانی تماس بگیرید.';
     }
@@ -1022,6 +1039,9 @@ class Account {
         'subscription_url': subscriptionUrl,
         'account_base': accountBase,
         'emergency_enabled': emergencyEnabled,
+        'channel_status': channelStatus,
+        'channel_grace_remaining_seconds': channelGraceRemainingSeconds,
+        'channel_disabled': channelDisabled,
       };
 
   factory Account.fromJson(Map<String, dynamic> json) {
@@ -1055,6 +1075,10 @@ class Account {
       ),
       accountBase: JsonX.text(json['account_base']),
       emergencyEnabled: JsonX.boolean(json['emergency_enabled']),
+      channelStatus: JsonX.text(json['channel_status'], 'member'),
+      channelGraceRemainingSeconds:
+          JsonX.integer(json['channel_grace_remaining_seconds']),
+      channelDisabled: JsonX.boolean(json['channel_disabled']),
     );
   }
 
@@ -1251,6 +1275,98 @@ class FilterSettings {
         }
       } else if (!valid.contains(domain)) {
         valid.add(domain);
+      }
+    }
+    return (valid: valid, invalid: invalid);
+  }
+
+  static bool isIpOrCidr(String token) {
+    final String trimmed = token.trim();
+    if (trimmed.contains('/')) {
+      final List<String> parts = trimmed.split('/');
+      if (parts.length != 2) return false;
+      final InternetAddress? ip = InternetAddress.tryParse(parts[0]);
+      final int? prefix = int.tryParse(parts[1]);
+      if (ip == null || prefix == null) return false;
+      if (ip.type == InternetAddressType.IPv4) return prefix >= 0 && prefix <= 32;
+      if (ip.type == InternetAddressType.IPv6) return prefix >= 0 && prefix <= 128;
+      return false;
+    }
+    return InternetAddress.tryParse(trimmed) != null;
+  }
+
+  static bool _isPrivateOrReservedIp(InternetAddress addr) {
+    if (addr.isLoopback || addr.isLinkLocal || addr.isMulticast) return true;
+    final List<int> b = addr.rawAddress;
+    if (addr.type == InternetAddressType.IPv4 && b.length == 4) {
+      if (b[0] == 0 || b[0] == 10 || b[0] == 127) return true;
+      if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
+      if (b[0] == 192 && b[1] == 168) return true;
+      if (b[0] == 169 && b[1] == 254) return true;
+      if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return true;
+      if (b[0] >= 224) return true;
+    } else if (addr.type == InternetAddressType.IPv6 && b.length == 16) {
+      if (b.every((int x) => x == 0)) return true;
+      if ((b[0] & 0xFE) == 0xFC) return true;
+    }
+    return false;
+  }
+
+  /// نرمال سازی ورودی های مسیر مستقیم (دامنه، نشانی وب، IP عمومی یا CIDR).
+  static String? normalizeBypassTarget(String input) {
+    String value = Fa.toEn(input).trim();
+    if (value.isEmpty) return null;
+    value = value.replaceAll(
+      RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]'),
+      '',
+    );
+    value = value.replaceAll(
+      RegExp('^["\'`<>()\\[\\]{}+\\s]+|["\'`<>()\\[\\]{}\\s]+\$'),
+      '',
+    );
+    value = value.replaceFirst(RegExp(r'^[a-z][a-z0-9+.-]*://', caseSensitive: false), '');
+    if (value.contains('/')) {
+      final int slash = value.indexOf('/');
+      final String host = value.substring(0, slash).replaceAll('[', '').replaceAll(']', '');
+      final String rest = value.substring(slash + 1).split(RegExp(r'[?#\s]')).first;
+      final InternetAddress? ip = InternetAddress.tryParse(host);
+      final int? prefix = int.tryParse(rest);
+      if (ip != null && prefix != null) {
+        final int maxPrefix = ip.type == InternetAddressType.IPv4 ? 32 : 128;
+        if (prefix >= 0 && prefix <= maxPrefix && !_isPrivateOrReservedIp(ip)) {
+          return '${ip.address.toLowerCase()}/$prefix';
+        }
+        return null;
+      }
+    }
+    final String stripped = value
+        .split(RegExp(r'[/?#\\]'))
+        .first
+        .replaceAll('[', '')
+        .replaceAll(']', '');
+    final InternetAddress? singleIp = InternetAddress.tryParse(stripped);
+    if (singleIp != null) {
+      return _isPrivateOrReservedIp(singleIp) ? null : singleIp.address.toLowerCase();
+    }
+    return normalizeDomainSuffix(input);
+  }
+
+  /// تجزیه یک یا چند دامنه، لینک، IP یا CIDR برای فهرست مسیر مستقیم.
+  static ({List<String> valid, List<String> invalid}) parseBypassInputs(
+    String raw,
+  ) {
+    final String cleaned =
+        raw.replaceAll('،', ',').replaceAll('؛', ';').replaceAll('\r', '\n');
+    final List<String> valid = <String>[];
+    final List<String> invalid = <String>[];
+    for (final String piece in cleaned.split(RegExp(r'[\s,;]+'))) {
+      final String token = piece.trim();
+      if (token.isEmpty) continue;
+      final String? target = normalizeBypassTarget(token);
+      if (target == null) {
+        if (!invalid.contains(token)) invalid.add(token);
+      } else if (!valid.contains(target)) {
+        valid.add(target);
       }
     }
     return (valid: valid, invalid: invalid);
@@ -1472,6 +1588,17 @@ class FilterSettings {
       return domains;
     }
 
+    List<String> parseBypassTargets(Object? raw) {
+      final List<String> targets = <String>[];
+      for (final Object? item in JsonX.asList(raw)) {
+        final String? clean = normalizeBypassTarget(item.toString());
+        if (clean != null && !targets.contains(clean)) {
+          targets.add(clean);
+        }
+      }
+      return targets;
+    }
+
     final Map<String, dynamic> bypass = JsonX.asMap(json['bypass']);
     final Map<String, dynamic> global = JsonX.asMap(json['global']);
     final Map<String, dynamic> personal = JsonX.asMap(json['personal']);
@@ -1479,7 +1606,7 @@ class FilterSettings {
     return FilterSettings(
       enabled: JsonX.boolean(json['enabled']),
       bypassIran: JsonX.boolean(bypass['iran']),
-      bypassDomains: parseDomains(bypass['domains']),
+      bypassDomains: parseBypassTargets(bypass['domains']),
       categories: parseCategories(json['categories']),
       customDomains: parseDomains(json['custom_domains']),
       updatedBy: JsonX.text(json['updated_by'], 'app'),
@@ -1722,10 +1849,12 @@ class AppNotification {
 
   static String summarizeTitle(String rawTitle, [String rawBody = '']) {
     String clean = Fa.num(
-      rawTitle
-          .replaceAll('\u200c', ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim(),
+      Fa.stripEmojis(
+        rawTitle
+            .replaceAll('\u200c', ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim(),
+      ),
     );
     if (clean.contains('گزارش شبانه')) {
       return 'گزارش شبانه';
@@ -1809,7 +1938,9 @@ class AppNotification {
 
     if (!normalized.contains('\n') && normalized.length <= maxChars) {
       return Fa.num(
-        _stripUrls(normalized.replaceAll(RegExp(r'\s{2,}'), ' ').trim()),
+        Fa.stripEmojis(
+          _stripUrls(normalized.replaceAll(RegExp(r'\s{2,}'), ' ').trim()),
+        ),
       );
     }
 
@@ -1854,7 +1985,7 @@ class AppNotification {
       .trim();
 
   static String _clip(String text, int maxChars) {
-    final String clean = Fa.num(text.trim());
+    final String clean = Fa.num(Fa.stripEmojis(text.trim()));
     if (clean.length <= maxChars) {
       return clean;
     }

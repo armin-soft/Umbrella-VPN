@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/app_config.dart';
 import '../core/core_display.dart';
 import '../core/malicious_link_guard.dart';
+import '../core/safe_url_launcher.dart';
 import '../core/storage.dart';
 import '../core/theme.dart';
 import '../core/utils.dart';
@@ -318,6 +319,8 @@ class VpnController extends ChangeNotifier {
   TunnelStats get stats => _stats;
   bool _batterySaving = false;
   bool get batterySaving => _batterySaving;
+  bool _appVisible = true;
+  bool get appVisible => _appVisible;
   final Stopwatch _statsClock = Stopwatch();
   Duration? _lastStatsSample;
   Duration? _lastTraySpeedUpdate;
@@ -329,6 +332,17 @@ class VpnController extends ChangeNotifier {
     if (_statsTimer?.isActive ?? false) _scheduleStatsTimer();
     if (_liveTimer?.isActive ?? false) _scheduleLiveTimer();
     _notify();
+  }
+
+  void setAppVisible(bool visible) {
+    if (_disposed || _appVisible == visible) return;
+    _appVisible = visible;
+    if (_statsTimer?.isActive ?? false) _scheduleStatsTimer();
+    if (_liveTimer?.isActive ?? false) _scheduleLiveTimer();
+    if (visible && _status == VpnStatus.connected) {
+      unawaited(_tickStats());
+      unawaited(_refreshLivePing());
+    }
   }
 
   GeoInfo _geo = GeoInfo.empty;
@@ -2355,8 +2369,10 @@ class VpnController extends ChangeNotifier {
 
   /// لینک سرور برای دادن به هسته (برای سنجش پینگ و پنجره CLI هم استفاده
   /// می شود).
-  static String linkFor(VpnNode node) {
-    if (DirectProfile.handles(node)) return DirectProfile.encode(node);
+  static String linkFor(VpnNode node, {bool batterySaving = false}) {
+    if (DirectProfile.handles(node)) {
+      return DirectProfile.encode(node, batterySaving: batterySaving);
+    }
     final String raw = node.raw.trim();
     if (raw.contains('://')) {
       final String normalized =
@@ -2385,7 +2401,8 @@ class VpnController extends ChangeNotifier {
   ///
   /// لینک اصلی همان چیزی است که در اشتراک بود؛ اگر نبود، از فیلدهای سرور
   /// ساخته می شود. هسته خودش جزئیات پروتکل را می فهمد.
-  String _umbrellaLink(VpnNode node) => linkFor(node);
+  String _umbrellaLink(VpnNode node) =>
+      linkFor(node, batterySaving: _batterySaving);
 
   /// چند لینک برای دادن به هسته، به ترتیب اولویت.
   ///
@@ -2404,7 +2421,7 @@ class VpnController extends ChangeNotifier {
       if (!usable(n)) {
         return;
       }
-      final String link = linkFor(n).trim();
+      final String link = linkFor(n, batterySaving: _batterySaving).trim();
       if (link.isEmpty) {
         return;
       }
@@ -2426,7 +2443,9 @@ class VpnController extends ChangeNotifier {
     // over the entire subscription or silently select a different server.
     if (_singleNodeSession || DirectProfile.handles(chosen)) {
       add(chosen);
-      return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
+      return pool.isEmpty
+          ? <String>[linkFor(chosen, batterySaving: _batterySaving).trim()]
+          : pool;
     }
     // در حالت خودکار چندسروره، ترتیب فهرست باید کاملاً یکتا و پایدار بماند
     // (مستقل از تغییر پینگ یا چرخش انتخاب گر) تا هم تگ های ترتیبی هسته در
@@ -2448,7 +2467,9 @@ class VpnController extends ChangeNotifier {
     }
     add(chosen);
     // اگر هیچ کدام سازگار نبود، لااقل همان یکی.
-    return pool.isEmpty ? <String>[linkFor(chosen).trim()] : pool;
+    return pool.isEmpty
+        ? <String>[linkFor(chosen, batterySaving: _batterySaving).trim()]
+        : pool;
   }
 
   /// پیش آماده سازی بی صدا و پس زمینه `parsed.json` و `runtime.json` پس از
@@ -2575,11 +2596,15 @@ class VpnController extends ChangeNotifier {
             logFile: logPath,
             networkSettings: _settings,
             contentFilter: _contentFilter,
+            batterySaving: _batterySaving,
           ),
         ),
         flush: true,
       );
       if (shouldAbort()) return;
+      await _provisioner.ensureDataRuleSets(
+        extraDataDir: '${runDir.path}${Platform.pathSeparator}data',
+      );
       await CoreRuntime.compile(
         runDir: runDir.path,
         linksPath: prewarmLinks.path,
@@ -2921,6 +2946,7 @@ class VpnController extends ChangeNotifier {
         logFile: coreLog,
         networkSettings: _settings,
         contentFilter: _contentFilter,
+        batterySaving: _batterySaving,
       ),
     );
     _lastSettingsMap = rawSettings;
@@ -3055,6 +3081,9 @@ class VpnController extends ChangeNotifier {
           ? blockServer.proxyPort
           : null;
 
+      await _provisioner.ensureDataRuleSets(
+        extraDataDir: '${_provisioner.dataDir}${sep}work${sep}data',
+      );
       RuntimeConfig.finalize(
         decoded,
         profileTags: profileTags,
@@ -3062,6 +3091,8 @@ class VpnController extends ChangeNotifier {
         stickyMinutes: _settings.stickyMinutes,
         blockPagePort: blockPort,
         preserveLogOutput: true,
+        localRuleSetPaths: _provisioner.localRuleSetPaths,
+        localDataDir: '${_provisioner.dataDir}${sep}work${sep}data',
       );
       final File runtimeFile = File('${plan.runDir}${sep}runtime-android.json');
       await runtimeFile.writeAsString(jsonEncode(decoded), flush: true);
@@ -3647,14 +3678,20 @@ class VpnController extends ChangeNotifier {
 
   void _scheduleStatsTimer() {
     _statsTimer?.cancel();
-    _statsTimer = Timer.periodic(
-      Duration(seconds: _batterySaving ? 5 : 1), (_) => _tickStats());
+    final int seconds = !_appVisible
+        ? (_batterySaving ? 20 : 12)
+        : (_batterySaving ? 5 : 1);
+    _statsTimer =
+        Timer.periodic(Duration(seconds: seconds), (_) => _tickStats());
   }
 
   void _scheduleLiveTimer() {
     _liveTimer?.cancel();
-    _liveTimer = Timer.periodic(Duration(seconds: _batterySaving ? 30 : 10),
-        (_) => unawaited(_refreshLivePing()));
+    final int seconds = !_appVisible
+        ? (_batterySaving ? 90 : 45)
+        : (_batterySaving ? 30 : 10);
+    _liveTimer = Timer.periodic(
+        Duration(seconds: seconds), (_) => unawaited(_refreshLivePing()));
   }
 
   /// خواندن پینگ واقعی خروجی فعال: ابتدا بدون سربار شبکه از پایش داخلی خود
@@ -4489,17 +4526,19 @@ class VpnController extends ChangeNotifier {
         return false;
       }
     }
+    final MaliciousLinkMatch? hit =
+        MaliciousLinkGuard.inspectUrl(uri.toString());
+    if (hit != null) {
+      SafeUrlLauncher.onThreatBlocked?.call(hit);
+      return false;
+    }
     final bool nativeOpened = await _native.openExternalUrl(
       uri.toString(),
       title: title,
       body: body,
     );
     if (nativeOpened) return true;
-    try {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      return false;
-    }
+    return SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication);
   }
 
   void _startCoreBlockLogMonitor() {

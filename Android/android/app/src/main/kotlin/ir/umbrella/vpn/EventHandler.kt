@@ -79,6 +79,15 @@ class EventHandler : EventChannel.StreamHandler, ServiceConnection.Callback {
         )
     }
 
+    fun onSecurityFileEvent(path: String) {
+        emit(
+            mapOf(
+                "type" to "security_file",
+                "path" to path,
+            ),
+        )
+    }
+
     private fun emit(payload: Map<String, Any>) {
         mainHandler.post {
             sink?.success(payload)

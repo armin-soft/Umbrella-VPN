@@ -290,6 +290,12 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   Future<void> refreshPings({bool all = true, bool tunnelProbe = true}) async {}
 
   @override
+  void setBatterySaving(bool value) {}
+
+  @override
+  void setAppVisible(bool visible) {}
+
+  @override
   Future<void> shutdownForExit() async {
     shutdownCalled = true;
   }
@@ -918,10 +924,25 @@ void main() {
           final Finder subChipFinder =
               find.byKey(const ValueKey<String>('connection-profile-user-sub'));
           expect(subChipFinder, findsOneWidget);
-          final ChoiceChip subChip = tester.widget<ChoiceChip>(subChipFinder);
-          expect(subChip.padding, isNull);
-          expect(subChip.visualDensity, isNull);
-          expect(subChip.materialTapTargetSize, isNull);
+          expect(
+            find.byKey(const ValueKey<String>('connection-profile-user-wireguard')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey<String>('connection-profile-user-amnezia')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey<String>('connection-profile-user-mieru')),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: subChipFinder,
+              matching: find.byType(CustomPaint),
+            ),
+            findsWidgets,
+          );
           expect(
             find.descendant(
               of: find.byType(ConnectPage),
