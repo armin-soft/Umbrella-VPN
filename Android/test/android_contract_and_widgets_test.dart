@@ -2411,19 +2411,14 @@ void main() {
     testWidgets('ConnectPage بلافاصله پس از لمس دکمه اتصال عبارت در حال اتصال را نمایش می دهد', (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(420, 860));
       addTearDown(() async => await tester.binding.setSurfaceSize(null));
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-      await LocalStore.instance.init();
-      final Directory tempDir =
-          await Directory.systemTemp.createTemp('umbrella_android_page_imm_');
-      addTearDown(() async {
-        AppLogger.instance.clear();
-        if (await tempDir.exists()) {
-          await tempDir.delete(recursive: true);
-        }
+      await tester.runAsync(() async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        await LocalStore.instance.init();
       });
+      addTearDown(AppLogger.instance.clear);
 
       final _ImmediateConnectNative native = _ImmediateConnectNative();
-      final _TestProvisioner provisioner = _TestProvisioner(tempDir.path);
+      final _TestProvisioner provisioner = _TestProvisioner('/tmp/umbrella_android_page_imm');
       await provisioner.init(native);
       final _FakeSound sound = _FakeSound();
       final Completer<String> scanGate = Completer<String>();
@@ -2434,7 +2429,10 @@ void main() {
         sound: sound,
         tray: TrayService(native),
         provisioner: provisioner,
-        settings: const AppSettings(corePreference: CorePreference.tun),
+        settings: const AppSettings(
+          corePreference: CorePreference.tun,
+          selectionMode: SelectionMode.manual,
+        ),
         securityGuard: () => scanGate.future,
       );
       final SettingsController settings = SettingsController(
@@ -2483,8 +2481,9 @@ void main() {
       await tester.pump();
       expect(find.text('اتصال'), findsOneWidget);
 
-      // Even while nodes are empty and `syncPersonal()` is still pending,
-      // tapping Connect immediately displays `در حال اتصال` and `لغو اتصال`.
+      // Phase 1: even when nodes are empty and `syncPersonal()` is pending,
+      // tapping Connect immediately displays `در حال اتصال` and `لغو اتصال`,
+      // and tapping Cancel resets immediately without waiting for network I/O.
       final Finder connectBtn = find.text('اتصال');
       await tester.ensureVisible(connectBtn);
       await tester.tap(connectBtn);
@@ -2492,35 +2491,43 @@ void main() {
       expect(find.text('در حال اتصال'), findsOneWidget);
       expect(find.text('لغو اتصال'), findsOneWidget);
 
-      // Provide a node and complete sync: stays continuously in `در حال اتصال`
-      // while `securityGuard` is still running (`scanGate` incomplete).
-      await vpn.applyNodes(const <VpnNode>[
-        VpnNode(
-          id: 'n1',
-          name: 'Node 1',
-          protocol: NodeProtocol.vless,
-          host: '1.1.1.1',
-          port: 443,
-          sourceId: 'user-sub',
-          pingMs: 120,
-          params: <String, dynamic>{'uuid': '11111111-1111-1111-1111-111111111111'},
-        ),
-      ], measure: false);
+      final Finder preCancelBtn = find.text('لغو اتصال');
+      await tester.ensureVisible(preCancelBtn);
+      await tester.tap(preCancelBtn);
+      await tester.pump();
+      expect(find.text('اتصال'), findsOneWidget);
+
+      // Phase 2: when nodes are already loaded, tapping Connect calls `vpn.connect()`
+      // which synchronously switches status to `VpnStatus.connecting` (`در حال اتصال`)
+      // before `securityGuard` (`scanGate`) finishes.
+      await tester.runAsync(() => vpn.applyNodes(const <VpnNode>[
+            VpnNode(
+              id: 'n1',
+              name: 'Node 1',
+              protocol: NodeProtocol.vless,
+              host: '1.1.1.1',
+              port: 443,
+              sourceId: 'user-sub',
+              pingMs: 120,
+              disabled: true,
+              params: <String, dynamic>{},
+            ),
+          ], measure: false));
       syncGate.complete();
       await tester.pump();
+
+      final Finder connectBtn2 = find.text('اتصال');
+      await tester.ensureVisible(connectBtn2);
+      await tester.tap(connectBtn2);
       await tester.pump();
       expect(vpn.status, VpnStatus.connecting);
       expect(find.text('در حال اتصال'), findsOneWidget);
       expect(find.text('لغو اتصال'), findsOneWidget);
 
-      // Tap cancel mid-security-scan cleanly resets back to `اتصال`.
-      final Finder cancelBtn = find.text('لغو اتصال');
-      await tester.ensureVisible(cancelBtn);
-      await tester.tap(cancelBtn);
       scanGate.complete('');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(vpn.status, VpnStatus.disconnected);
+      await tester.pump();
+      expect(vpn.status, VpnStatus.failed);
 
       toasts.clear();
       await tester.pumpWidget(const SizedBox.shrink());

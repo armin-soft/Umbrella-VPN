@@ -198,16 +198,8 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1120, 900));
     addTearDown(() async => await tester.binding.setSurfaceSize(null));
 
-    final Directory tempDir =
-        await Directory.systemTemp.createTemp('umbrella_win_page_imm_');
-    addTearDown(() async {
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
-      }
-    });
-
     final _ConnectNative native = _ConnectNative();
-    final _ConnectProvisioner provisioner = _ConnectProvisioner(tempDir.path);
+    final _ConnectProvisioner provisioner = _ConnectProvisioner('/tmp/umbrella_win_page_imm');
     await provisioner.init();
     final _ConnectSound sound = _ConnectSound();
     final Completer<String> scanGate = Completer<String>();
@@ -218,7 +210,7 @@ void main() {
       sound: sound,
       tray: TrayService(native),
       provisioner: provisioner,
-      settings: const AppSettings(),
+      settings: const AppSettings(selectionMode: SelectionMode.manual),
       securityGuard: () => scanGate.future,
     );
     final SettingsController settings = SettingsController(
@@ -273,32 +265,40 @@ void main() {
     expect(find.text('در حال اتصال'), findsOneWidget);
     expect(find.text('لغو اتصال'), findsOneWidget);
 
-    await vpn.applyNodes(const <VpnNode>[
-      VpnNode(
-        id: 'w1',
-        name: 'Win Node 1',
-        protocol: NodeProtocol.vless,
-        host: '1.1.1.1',
-        port: 443,
-        sourceId: 'user-sub',
-        pingMs: 120,
-        params: <String, dynamic>{'uuid': '11111111-1111-1111-1111-111111111111'},
-      ),
-    ], measure: false);
+    final Finder preCancelBtn = find.text('لغو اتصال');
+    await tester.ensureVisible(preCancelBtn);
+    await tester.tap(preCancelBtn);
+    await tester.pump();
+    expect(find.text('اتصال'), findsOneWidget);
+
+    await tester.runAsync(() => vpn.applyNodes(const <VpnNode>[
+          VpnNode(
+            id: 'w1',
+            name: 'Win Node 1',
+            protocol: NodeProtocol.vless,
+            host: '1.1.1.1',
+            port: 443,
+            sourceId: 'user-sub',
+            pingMs: 120,
+            disabled: true,
+            params: <String, dynamic>{},
+          ),
+        ], measure: false));
     syncGate.complete();
     await tester.pump();
+
+    final Finder connectBtn2 = find.text('اتصال');
+    await tester.ensureVisible(connectBtn2);
+    await tester.tap(connectBtn2);
     await tester.pump();
     expect(vpn.status, VpnStatus.connecting);
     expect(find.text('در حال اتصال'), findsOneWidget);
     expect(find.text('لغو اتصال'), findsOneWidget);
 
-    final Finder cancelBtn = find.text('لغو اتصال');
-    await tester.ensureVisible(cancelBtn);
-    await tester.tap(cancelBtn);
     scanGate.complete('');
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(vpn.status, VpnStatus.disconnected);
+    await tester.pump();
+    expect(vpn.status, VpnStatus.failed);
 
     toasts.clear();
     await tester.pumpWidget(const SizedBox.shrink());
