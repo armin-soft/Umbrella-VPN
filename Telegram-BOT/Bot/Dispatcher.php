@@ -673,8 +673,8 @@ return;
 }
 
 if (str_starts_with($Data, 'app_device_status:')) {
-$Parts = explode(':', $Data);
-AppFlow::devices($Context, (int)($Parts[2] ?? 0));
+[$Prefix, $Page] = array_pad(explode(':', substr($Data, strlen('app_device_status:')), 2), 2, '0');
+AppFlow::removeRevokedDevice($Context, $Prefix, (int)$Page);
 return;
 }
 

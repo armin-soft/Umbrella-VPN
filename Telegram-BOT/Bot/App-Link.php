@@ -479,7 +479,7 @@ private static function safeDomainLabel(string $Domain): string {
 return str_replace(['*', '_', '`', '[', ']'], ['＊', '＿', '｀', '［', '］'], $Domain);
 }
 
-/** The devices that ever signed in, with trust state and paging. */
+/** Active trusted devices for this account, with bounded paging. */
 public static function devices(Context $Context, int $Page = 0): void {
 $Account = self::accountOrPrompt($Context, 'user_device_menu');
 
@@ -488,7 +488,7 @@ if ($Account === null) return;
 $Database = \Database::getInstance();
 $Parameters = [(string)$Account['uuid'], $Context->UserId];
 $Total = (int)$Database->scalar(
-'SELECT COUNT(*) FROM `App_Devices` WHERE `User_UUID` = ? OR `Telegram_ID` = ?',
+'SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1 AND (`User_UUID` = ? OR `Telegram_ID` = ?)',
 $Parameters,
 0
 );
@@ -497,7 +497,7 @@ if ($Total <= 0) {
 self::reply(
 $Context,
 \Helper::userGreeting($Context, 'دستگاه های من')
-. '📱هنوز دستگاهی ثبت نشده است.' . \Helper::userFooter(),
+. '📱هیچ دستگاه تایید شده ای ثبت نشده است.' . \Helper::userFooter(),
 TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_device_menu'), Menu::userHome()])
 );
 return;
@@ -509,7 +509,7 @@ $Page = max(0, min($Page, $PageCount - 1));
 $Offset = $Page * $PageSize;
 $Rows = $Database->fetchAll(
 'SELECT * FROM `App_Devices`
-WHERE `User_UUID` = ? OR `Telegram_ID` = ?
+WHERE `Is_Trusted` = 1 AND (`User_UUID` = ? OR `Telegram_ID` = ?)
 ORDER BY `Last_Seen_At` DESC LIMIT ? OFFSET ?',
 [...$Parameters, $PageSize, $Offset]
 );
@@ -521,7 +521,6 @@ $Text .= '📄صفحه ' . \Helper::toPersian((string)($Page + 1))
 }
 
 foreach ($Rows as $Index => $Row) {
-$Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
 $Platform_Raw = (string)($Row['Platform'] ?? '');
 $Platform_Label = method_exists('Helper', 'formatPlatform') ? \Helper::formatPlatform($Platform_Raw) : $Platform_Raw;
 $Ip_Label = \Helper::toPersian((string)($Row['Last_IP'] ?? ''));
@@ -529,7 +528,7 @@ $Text .= (\Helper::toPersian((string)($Offset + $Index + 1))) . ') '
 . '📱 ' . (string)($Row['Device_Name'] ?? 'دستگاه')
 . "\n   🖥 " . $Platform_Label
 . ($Ip_Label !== '' ? "\n   🌐 " . $Ip_Label : '')
-. "\n   " . ($Trusted ? '✅ تایید شده' : '⚪️ تایید نشده')
+. "\n   ✅ تایید شده"
 . "\n➖➖➖➖➖➖➖➖➖\n";
 }
 
@@ -539,8 +538,8 @@ $Buttons = [];
 foreach ($Rows as $Row) {
 $Id = (string)$Row['Device_ID'];
 $Buttons[] = [[
-'text' => ((int)($Row['Is_Trusted'] ?? 0) === 1 ? '⛔️ لغو اعتماد ' : '⚪️ اعتماد لغو شده · ') . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
-'callback_data' => (int)($Row['Is_Trusted'] ?? 0) === 1 ? 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page : 'app_device_status:' . substr($Id, 0, 24) . ':' . $Page,
+'text' => '⛔️ لغو اعتماد ' . mb_substr((string)($Row['Device_Name'] ?? $Id), 0, 20),
+'callback_data' => 'app_device_revoke:' . substr($Id, 0, 24) . ':' . $Page,
 ]];
 }
 
@@ -559,6 +558,57 @@ $Buttons[] = Menu::back('منوی قبلی', 'user_device_menu');
 $Buttons[] = Menu::userHome();
 
 self::reply($Context, $Text, TelegramClient::inlineKeyboard($Buttons));
+}
+
+/** Deletes an untrusted/revoked device row if an older status button is tapped. */
+public static function removeRevokedDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {
+$Account = self::accountOrPrompt($Context, 'user_device_menu');
+
+if ($Account === null) return;
+
+$Prefix = preg_replace('/[^A-Za-z0-9_-]/', '', $Device_Prefix) ?? '';
+
+if ($Prefix === '') {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'شناسه دستگاه معتبر نیست', true);
+}
+return;
+}
+
+$Database = \Database::getInstance();
+$Devices = $Database->fetchAll(
+'SELECT `Device_ID` FROM `App_Devices`
+WHERE `Device_ID` LIKE ? AND `Is_Trusted` = 0 AND (`User_UUID` = ? OR `Telegram_ID` = ?)',
+[$Prefix . '%', (string)$Account['uuid'], $Context->UserId]
+);
+
+if ($Devices !== []) {
+$Database->transaction(static function (\Database $Database) use ($Devices): void {
+foreach ($Devices as $Device) {
+$Device_Id = (string)$Device['Device_ID'];
+$Database->execute('DELETE FROM `App_SignIn_Requests` WHERE `Device_ID` = ?', [$Device_Id]);
+$Database->execute(
+'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP
+WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
+[$Device_Id]
+);
+$Database->execute('DELETE FROM `App_Notifications` WHERE `Device_ID` = ?', [$Device_Id]);
+$Database->execute(
+'DELETE FROM `App_Devices` WHERE `Device_ID` = ? AND `Is_Trusted` = 0',
+[$Device_Id]
+);
+}
+});
+}
+
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+$Devices !== [] ? '🗑 دستگاه لغو اعتمادشده حذف شد.' : 'دستگاه از فهرست حذف شده است.'
+);
+}
+
+self::devices($Context, $Page);
 }
 
 public static function revokeDevice(Context $Context, string $Device_Prefix, int $Page = 0): void {

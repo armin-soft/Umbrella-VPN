@@ -9,9 +9,12 @@ $Dispatcher = (string)file_get_contents($Root . '/Bot/Dispatcher.php');
 
 $Checks = [
     'device rows are counted and loaded by a bounded page and offset' =>
-        str_contains($AppLink, 'SELECT COUNT(*) FROM `App_Devices`') &&
+        str_contains($AppLink, 'SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1') &&
         str_contains($AppLink, '$PageSize = 5;') &&
         str_contains($AppLink, 'LIMIT ? OFFSET ?'),
+    'revoked status callbacks remove untrusted rows instead of leaving them in the list' =>
+        str_contains($Dispatcher, "str_starts_with(\$Data, 'app_device_status:')") &&
+        str_contains($Dispatcher, 'AppFlow::removeRevokedDevice($Context, $Prefix, (int)$Page)'),
     'previous and next page callbacks are rendered only for multiple pages' =>
         str_contains($AppLink, "'app_devices_page:' . (\$Page - 1)") &&
         str_contains($AppLink, "'app_devices_page:' . (\$Page + 1)") &&

@@ -17,12 +17,12 @@ public static function normalizePhone(string $S): string { return $S; }
 final class SystemNotifications { public static function queue(...$Args): int { return 0; } }
 final class PanelClient { public static function findByTelegramId(int $Id): array { return ['uuid' => 'owner']; } public static function findByPhone(string $Phone): array { return ['uuid' => 'owner']; } }
 final class TelegramClient {
-public static array $Response = []; public static array $ApiCalls = []; public static array $Sent = []; public static bool $FailSend = false; public static array $Rows = [];
+public static array $Response = []; public static array $ApiCalls = []; public static array $Sent = []; public static bool $FailSend = false; public static array $Rows = []; public static string $Text = '';
 public static function call(string $Method, array $Args): array { self::$ApiCalls[] = [$Method, $Args]; return self::$Response; }
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function sendMessage(int $Chat, string $Text, array $Markup): array { self::$Sent[] = $Chat; if (self::$FailSend) throw new RuntimeException('simulated Telegram failure'); return ['ok' => true]; }
-public static function editMessageText(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
-public static function editOrSendMessage(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
+public static function editMessageText(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Text = $Text; self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
+public static function editOrSendMessage(int $Chat, ?int $Id, string $Text, array $Markup): array { self::$Text = $Text; self::$Rows = $Markup['inline_keyboard']; return ['ok' => true]; }
 public static function answerCallbackQuery(?string $Id, string $Text, bool $Alert = false): void {}
 }
 final class IppanelClient { public static array $Sent = []; public static bool $Fail = false; public static function send(int $Id, string $Phone, string $Text): bool { self::$Sent[] = $Id; return !self::$Fail; } }
@@ -30,15 +30,23 @@ final class Database {
 public static array $Settings = []; public static array $Devices = []; public static array $Queued = []; public static array $Users = []; public static array $Revoked = []; public static bool $FailWrite = false;
 public static function getInstance(): self { return new self(); }
 public function transaction(callable $Fn): mixed { $Before = self::$Settings; try { return $Fn($this); } catch (Throwable $E) { self::$Settings = $Before; throw $E; } }
-public function scalar(string $Q, array $P = [], mixed $Default = null): mixed { if (str_contains($Q, '`Settings`')) return self::$Settings[$P[0]] ?? null; return count(self::$Devices); }
+public function scalar(string $Q, array $P = [], mixed $Default = null): mixed {
+if (str_contains($Q, '`Settings`')) return self::$Settings[$P[0]] ?? null;
+if (str_contains($Q, '`Is_Trusted` = 1')) return count(array_filter(self::$Devices, fn($D) => ($D['Is_Trusted'] ?? 0) === 1));
+return count(self::$Devices);
+}
 public function fetch(string $Q, array $P): ?array { return self::$Users[$P[0]] ?? null; }
 public function fetchAll(string $Q, array $P = []): array {
 if (str_contains($Q, 'Device_ID` LIKE')) {
 $Matches = array_values(array_filter(self::$Devices, fn($D) => str_starts_with($D['Device_ID'], rtrim($P[0], '%'))));
 if (count($P) === 1) return array_slice($Matches, 0, 2);
-return array_values(array_filter($Matches, fn($D) => $D['Is_Trusted'] === 1 && ($D['User_UUID'] === $P[1] || $D['Telegram_ID'] === $P[2])));
+$WantTrusted = str_contains($Q, '`Is_Trusted` = 0') ? 0 : 1;
+return array_values(array_filter($Matches, fn($D) => ($D['Is_Trusted'] ?? 0) === $WantTrusted && ($D['User_UUID'] === $P[1] || $D['Telegram_ID'] === $P[2])));
 }
-if (str_contains($Q, 'LIMIT ? OFFSET ?')) return count($P) >= 4 ? array_slice(self::$Devices, $P[3], $P[2]) : array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? 0);
+if (str_contains($Q, 'LIMIT ? OFFSET ?')) {
+$Source = str_contains($Q, '`Is_Trusted` = 1') ? array_values(array_filter(self::$Devices, fn($D) => ($D['Is_Trusted'] ?? 0) === 1)) : self::$Devices;
+return count($P) >= 4 ? array_slice($Source, $P[3], $P[2]) : array_slice($Source, $P[1] ?? 0, $P[0] ?? 0);
+}
 if (str_contains($Q, 'FROM `App_Devices` AS `D`')) return array_slice(self::$Devices, $P[1] ?? 0, $P[0] ?? count(self::$Devices));
 if (str_contains($Q, 'FROM `App_Devices` WHERE `Is_Trusted` = 1')) return array_values(array_filter(self::$Devices, fn($D) => $D['Is_Trusted'] === 1));
 if (str_contains($Q, 'WHERE `Phone` IN')) return array_values(array_filter(self::$Devices, fn($D) => in_array((string)($D['Phone'] ?? ''), $P, true) && $D['Is_Trusted'] === 1));
@@ -50,6 +58,7 @@ public function execute(string $Q, array $P): void {
 if (str_contains($Q, 'INSERT INTO `Settings`')) { if (self::$FailWrite && $P[0] === 'Telegram_Channel_ID') throw new RuntimeException('write failure'); self::$Settings[$P[0]] = $P[1]; }
 if (str_contains($Q, 'INSERT INTO `App_Notifications`')) self::$Queued[] = [$Q, $P];
 if (str_contains($Q, 'UPDATE `App_Devices`')) foreach (self::$Devices as &$D) { if ($D['Device_ID'] === $P[0]) $D['Is_Trusted'] = 0; }
+if (str_contains($Q, 'DELETE FROM `App_Devices`')) self::$Devices = array_values(array_filter(self::$Devices, fn($D) => !(($D['Device_ID'] ?? '') === $P[0] && ($D['Is_Trusted'] ?? 0) === 0)));
 if (str_contains($Q, 'UPDATE `App_Sessions`')) self::$Revoked[] = $P[0];
 }
 }
@@ -123,14 +132,24 @@ check(str_contains((string)$FailureReason->invoke(null, 99, 99), 'مدیریت')
 check(str_contains((string)$FailureReason->invoke(null, 2, 99), 'اشتراک فعالی هم ندارد'), 'user without devices or active subscription gets clear reason');
 Database::$Users = []; Database::$Queued = []; Database::$Devices = [];
 $Context = new Context();
-Database::$Devices = [['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1, 'Device_Name' => 'phone', 'Platform' => 'Android']];
+Database::$Devices = [
+['Device_ID' => 'device-one', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 1, 'Device_Name' => 'phone', 'Platform' => 'Android'],
+['Device_ID' => 'device-revoked', 'User_UUID' => 'owner', 'Telegram_ID' => 1, 'Is_Trusted' => 0, 'Device_Name' => 'Nokia 5.4', 'Platform' => 'Android'],
+];
 AppFlow::devices($Context);
 check(str_contains(TelegramClient::$Rows[0][0]['text'], '⛔️ لغو اعتماد'), 'trusted device has revoke action');
+check(!str_contains(TelegramClient::$Text, 'Nokia 5.4') && !str_contains(TelegramClient::$Text, 'تایید نشده'), 'untrusted devices are excluded from my-devices list');
+check(count(TelegramClient::$Rows) === 3 && !str_contains(json_encode(TelegramClient::$Rows, JSON_UNESCAPED_UNICODE), 'اعتماد لغو شده'), 'revoked button is not shown in my-devices list');
+AppFlow::removeRevokedDevice($Context, 'device-one');
+check(count(Database::$Devices) === 2, 'removeRevokedDevice refuses to delete a trusted device');
+AppFlow::removeRevokedDevice($Context, 'device-revoked');
+check(count(Database::$Devices) === 1 && Database::$Devices[0]['Device_ID'] === 'device-one', 'tapping legacy revoked status button deletes untrusted device');
+Database::$Revoked = [];
 AppFlow::confirmRevokeDevice($Context, 'device-one');
 check(Database::$Devices[0]['Is_Trusted'] === 0 && Database::$Revoked === ['device-one'], 'revocation clears trust and invalidates sessions');
 check(Database::$Queued === [], 'administrator-session revocation does not enqueue an app notification');
-check(str_contains(TelegramClient::$Rows[0][0]['text'], '⚪️ اعتماد لغو شده'), 'revoked device button changes icon and text');
-check(str_starts_with(TelegramClient::$Rows[0][0]['callback_data'], 'app_device_status:'), 'revoked button cannot re-grant or repeat revoke');
+check(!str_contains(TelegramClient::$Text, 'phone') && !str_contains(json_encode(TelegramClient::$Rows, JSON_UNESCAPED_UNICODE), 'اعتماد لغو شده'), 'revoked device disappears from my-devices list immediately');
+check(count(TelegramClient::$Rows) === 2 && TelegramClient::$Rows[0][0]['callback_data'] === 'user_device_menu', 'empty my-devices screen retains only navigation buttons after revoking last trusted device');
 $Queued = count(Database::$Queued); AppFlow::confirmRevokeDevice($Context, 'device-one');
 check(count(Database::$Queued) === $Queued, 'repeat revoke does not queue duplicate notice');
 $AdminContext = new Context(); $AdminContext->UserId = 99; $AdminContext->ChatId = 99;
