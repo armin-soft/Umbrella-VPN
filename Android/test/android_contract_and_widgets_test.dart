@@ -3314,7 +3314,7 @@ class _RecoveryCoreNative extends _ImmediateConnectNative {
   @override
   Future<({bool ok, String message})> hotReloadConfig({
     required String configPath,
-    required String profileName = 'فیلترشکن آمبرلا',
+    String profileName = 'Umbrella VPN',
   }) async {
     if (startCalls.isNotEmpty && startCalls.last.enableRawConfig) {
       hotReloadCallsOnRaw++;
