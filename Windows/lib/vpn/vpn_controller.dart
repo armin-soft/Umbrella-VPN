@@ -4632,8 +4632,8 @@ class VpnController extends ChangeNotifier {
             : await _native.isRunning(_runningBinaries.first));
     if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
     if (!alive) {
-      final ({bool online, String fingerprint})? netState =
-          await _native.networkState();
+      final ({bool online, String adapter, String ip, String fingerprint})?
+          netState = await _native.networkState();
       if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
       if (netState != null && !netState.online) {
         await _enterWaitingForNetwork();
@@ -4683,8 +4683,8 @@ class VpnController extends ChangeNotifier {
       return;
     }
 
-    final ({bool online, String fingerprint})? netState =
-        await _native.networkState();
+    final ({bool online, String adapter, String ip, String fingerprint})?
+        netState = await _native.networkState();
     if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
     if (netState != null && !netState.online) {
       await _enterWaitingForNetwork();
@@ -4732,8 +4732,8 @@ class VpnController extends ChangeNotifier {
     }
     _networkProbeInFlight = true;
     try {
-      final ({bool online, String fingerprint})? state =
-          await _native.networkState();
+      final ({bool online, String adapter, String ip, String fingerprint})?
+          state = await _native.networkState();
       if (state == null || _disposed || _shuttingDown) return;
       _onNetworkStateChanged(state.online, state.fingerprint);
     } finally {
@@ -4852,8 +4852,8 @@ class VpnController extends ChangeNotifier {
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
     await _disableProxy();
-    final ({bool online, String fingerprint})? netState =
-        await _native.networkState();
+    final ({bool online, String adapter, String ip, String fingerprint})?
+        netState = await _native.networkState();
     if (netState != null && !netState.online) {
       await _enterWaitingForNetwork();
       return;

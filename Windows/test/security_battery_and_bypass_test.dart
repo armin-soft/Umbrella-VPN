@@ -197,18 +197,18 @@ void main() {
     );
   });
 
-  test('Account parses channelDisabled and channelGraceRemaining cleanly', () {
+  test('Account parses channelDisabled and channelGraceRemainingSeconds cleanly', () {
     final Account acct = Account.fromJson(<String, dynamic>{
       'uuid': 'u-1',
       'enable': false,
       'is_active': false,
       'channel_disabled': true,
       'channel_status': 'left',
-      'channel_grace_remaining': 140,
+      'channel_grace_remaining_seconds': 140,
     });
     expect(acct.channelDisabled, isTrue);
     expect(acct.channelStatus, 'left');
-    expect(acct.channelGraceRemaining, 140);
+    expect(acct.channelGraceRemainingSeconds, 140);
     expect(acct.canConnect, isFalse);
   });
 }
