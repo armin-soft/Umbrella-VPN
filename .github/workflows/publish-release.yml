@@ -68,8 +68,11 @@ jobs:
             '🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۱' \
             '' \
             '- نمایش فوری وضعیت «در حال اتصال» و امکان لغو سریع بلافاصله پس از لمس دکمه اتصال در اندروید و ویندوز' \
-            '- همگام سازی یکپارچه فیلتر محتوای آفلاین (مجموعه قواعد داخلی بدون وابستگی به اینترنت) و رفع خطای اجرای همزمان در اندروید' \
-            '- رفع خطای ResolveProcessLabels در بیلد بومی ویندوز و بهبود پایداری انتخابگر برنامه ها' \
+            '- بوت تک مرحله ای (enableRawConfig) و کش پیکربندی اجرایی در اندروید برای کاهش محسوس زمان اتصال' \
+            '- اسکنر امنیتی سریع بومی ویندوز و اندروید بدون ایجاد تاخیر در مسیر اتصال' \
+            '- رتبه بندی هوشمند سرورها، اولویت بندی گره های پین شده و ارتقای خودکار پروفایل مستقیم هنگام افت استخر' \
+            '- رفع مشکل بازاتصال خودکار اندروید پس از افت سرویس، خروج تمیز با دکمه توقف اعلان و تشخیص لغو دسترسی VPN' \
+            '- همگام سازی یکپارچه فیلتر محتوای آفلاین و بهبود بروزرسانی درون برنامه ای اندروید و ویندوز' \
             > notes.txt
 
           publish_to_repo() {
@@ -79,6 +82,9 @@ jobs:
 
             GH_TOKEN="$token" gh release view "$TAG" --repo "$target_repo" --json tagName >/dev/null 2>&1 && exists=1 || exists=0
             if [ "$exists" -eq 1 ]; then
+              if [ "$target_repo" = "$SOURCE_REPO" ]; then
+                GH_TOKEN="$token" gh api --method PATCH "repos/$target_repo/git/refs/tags/$TAG" -f sha="$release_target" -F force=true >/dev/null 2>&1 || true
+              fi
               GH_TOKEN="$token" gh release upload "$TAG" release-assets/* --clobber --repo "$target_repo"
               GH_TOKEN="$token" gh release edit "$TAG" --repo "$target_repo" \
                 --title "$TITLE" \
