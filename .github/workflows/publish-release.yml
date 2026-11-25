@@ -1,4 +1,4 @@
-name: Publish Combined 1.0.0 Release
+name: Publish Combined 1.0.1 Release
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Download latest Windows and Android 1.0.0 installers
+      - name: Download latest Windows and Android 1.0.1 installers
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REPO: ${{ github.repository }}
@@ -23,20 +23,20 @@ jobs:
           rm -rf release-assets
           mkdir -p release-assets
 
-          # 1. Latest Windows x64 installer from the v1.0.0-windows draft release
-          gh release download v1.0.0-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.0-x64.exe' --dir release-assets --clobber
-          test -s release-assets/UmbrellaVPN-Setup-1.0.0-x64.exe
+          # 1. Latest Windows x64 installer from the v1.0.1-windows draft release
+          gh release download v1.0.1-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.1-x64.exe' --dir release-assets --clobber
+          test -s release-assets/UmbrellaVPN-Setup-1.0.1-x64.exe
 
-          # 2. Latest signed Android APKs from the v1.0.0-android draft release
-          gh release download v1.0.0-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
+          # 2. Latest signed Android APKs from the v1.0.1-android draft release
+          gh release download v1.0.1-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
           rm -f release-assets/SHA256SUMS.txt
 
           for apk in \
-            UmbrellaVPN-1.0.0-universal.apk \
-            UmbrellaVPN-1.0.0-arm64-v8a.apk \
-            UmbrellaVPN-1.0.0-armeabi-v7a.apk \
-            UmbrellaVPN-1.0.0-x86_64.apk; do
+            UmbrellaVPN-1.0.1-universal.apk \
+            UmbrellaVPN-1.0.1-arm64-v8a.apk \
+            UmbrellaVPN-1.0.1-armeabi-v7a.apk \
+            UmbrellaVPN-1.0.1-x86_64.apk; do
             test -s "release-assets/$apk"
           done
 
@@ -44,16 +44,16 @@ jobs:
           (
             cd release-assets
             sha256sum \
-              UmbrellaVPN-Setup-1.0.0-x64.exe \
-              UmbrellaVPN-1.0.0-universal.apk \
-              UmbrellaVPN-1.0.0-arm64-v8a.apk \
-              UmbrellaVPN-1.0.0-armeabi-v7a.apk \
-              UmbrellaVPN-1.0.0-x86_64.apk > SHA256SUMS.txt
+              UmbrellaVPN-Setup-1.0.1-x64.exe \
+              UmbrellaVPN-1.0.1-universal.apk \
+              UmbrellaVPN-1.0.1-arm64-v8a.apk \
+              UmbrellaVPN-1.0.1-armeabi-v7a.apk \
+              UmbrellaVPN-1.0.1-x86_64.apk > SHA256SUMS.txt
           )
           ls -lh release-assets
           cat release-assets/SHA256SUMS.txt
 
-      - name: Publish 1.0.0 release with Windows and Android assets
+      - name: Publish 1.0.1 release with Windows and Android assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -62,9 +62,15 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          TAG="1.0.0"
-          TITLE="Umbrella VPN 1.0.0"
-          printf '%s' '🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۰' > notes.txt
+          TAG="1.0.1"
+          TITLE="Umbrella VPN 1.0.1"
+          cat <<'EOF' > notes.txt
+🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۱
+
+- نمایش فوری وضعیت «در حال اتصال» و امکان لغو سریع بلافاصله پس از لمس دکمه اتصال در اندروید و ویندوز
+- همگام سازی یکپارچه فیلتر محتوای آفلاین (مجموعه قواعد داخلی بدون وابستگی به اینترنت) و رفع خطای اجرای همزمان در اندروید
+- رفع خطای ResolveProcessLabels در بیلد بومی ویندوز و بهبود پایداری انتخابگر برنامه ها
+EOF
 
           publish_to_repo() {
             local target_repo="$1"
