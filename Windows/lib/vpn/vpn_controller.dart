@@ -878,6 +878,9 @@ class VpnController extends ChangeNotifier {
       return;
     }
     await _cacheNodes();
+    if (!_status.active && !_disposed) {
+      _scheduleRuntimePrewarm();
+    }
     // تنها وقتی خبری برای گفتن هست که چیزی به دست نیامده باشد؛ و آن هم یک
     // بار، نه هر دو دقیقه یک بار. پینگ شبکه ای که در فهرست آمده، عدد کاربر
     // را دارد و همین کافی است.
@@ -1358,17 +1361,28 @@ class VpnController extends ChangeNotifier {
     if (emergencyOnly) {
       final List<VpnNode> emUsable = emergencyNodes.where(accepts).toList();
       if (emUsable.isEmpty) return const <VpnNode>[];
-      final SelectionResult picked = balancer.pick(
-        nodes: emUsable,
-        mode: mode,
-        deviceSeed: deviceSeed,
-        preferredNodeId: preferredNodeId,
-        stickyMinutes: stickyMinutes,
-        allowFailover: allowFailover,
-      );
-      return picked.node == null
-          ? <VpnNode>[emUsable.first]
-          : <VpnNode>[picked.node!];
+      final List<VpnNode> emPool = emUsable
+          .where((VpnNode n) => !DirectProfile.handles(n))
+          .toList();
+      final List<VpnNode> emDirect = emUsable
+          .where((VpnNode n) => DirectProfile.handles(n))
+          .toList();
+      final List<VpnNode> emStages = <VpnNode>[];
+      if (emPool.isNotEmpty) {
+        final SelectionResult picked = balancer.pick(
+          nodes: emPool,
+          mode: mode,
+          deviceSeed: deviceSeed,
+          preferredNodeId: preferredNodeId,
+          stickyMinutes: stickyMinutes,
+          allowFailover: allowFailover,
+        );
+        emStages.add(picked.node ?? emPool.first);
+      }
+      emStages
+        ..addAll(emDirect.where((VpnNode n) => n.favorite))
+        ..addAll(emDirect.where((VpnNode n) => !n.favorite));
+      return emStages;
     }
 
     final List<VpnNode> usablePersonal =
@@ -1381,6 +1395,12 @@ class VpnController extends ChangeNotifier {
         .toList();
 
     final List<VpnNode> stages = <VpnNode>[];
+    final List<VpnNode> pinnedDirect =
+        directNodes.where((VpnNode n) => n.favorite).toList();
+    final List<VpnNode> normalDirect =
+        directNodes.where((VpnNode n) => !n.favorite).toList();
+
+    VpnNode? pickedPool;
     if (poolNodes.isNotEmpty) {
       final SelectionResult picked = balancer.pick(
         nodes: poolNodes,
@@ -1390,16 +1410,43 @@ class VpnController extends ChangeNotifier {
         stickyMinutes: stickyMinutes,
         allowFailover: allowFailover,
       );
-      stages.add(picked.node ?? poolNodes.first);
+      pickedPool = picked.node ?? poolNodes.first;
     }
 
-    final List<VpnNode> pinnedDirect =
-        directNodes.where((VpnNode n) => n.favorite).toList();
-    final List<VpnNode> normalDirect =
-        directNodes.where((VpnNode n) => !n.favorite).toList();
-    stages
-      ..addAll(pinnedDirect)
-      ..addAll(normalDirect);
+    final bool preferredIsHealthyDirect = preferredNodeId.isNotEmpty &&
+        directNodes.any(
+          (VpnNode n) =>
+              n.id == preferredNodeId && !balancer.recentlyFailed(n),
+        );
+    final bool allPoolFailed = poolNodes.isNotEmpty &&
+        poolNodes.every(balancer.recentlyFailed) &&
+        directNodes.any((VpnNode n) => !balancer.recentlyFailed(n));
+
+    if ((preferredIsHealthyDirect || allPoolFailed) && directNodes.isNotEmpty) {
+      if (preferredIsHealthyDirect) {
+        final VpnNode pref = directNodes.firstWhere(
+          (VpnNode n) => n.id == preferredNodeId,
+        );
+        stages.add(pref);
+        stages
+          ..addAll(pinnedDirect.where((VpnNode n) => n.id != pref.id))
+          ..addAll(normalDirect.where((VpnNode n) => n.id != pref.id));
+      } else {
+        stages
+          ..addAll(pinnedDirect)
+          ..addAll(normalDirect);
+      }
+      if (pickedPool != null) {
+        stages.add(pickedPool);
+      }
+    } else {
+      if (pickedPool != null) {
+        stages.add(pickedPool);
+      }
+      stages
+        ..addAll(pinnedDirect)
+        ..addAll(normalDirect);
+    }
 
     final List<VpnNode> emPool = emergencyNodes
         .where((VpnNode n) => !DirectProfile.handles(n) && accepts(n))
@@ -2530,29 +2577,71 @@ class VpnController extends ChangeNotifier {
           ? <String>[linkFor(chosen, batterySaving: _batterySaving).trim()]
           : pool;
     }
-    // در حالت خودکار چندسروره، ترتیب فهرست باید کاملاً یکتا و پایدار بماند
-    // (مستقل از تغییر پینگ یا چرخش انتخاب گر) تا هم تگ های ترتیبی هسته در
-    // `data/clash.db` همیشه به همان سرور اشاره کنند و هم کش `runtime.json`
-    // پیش آماده شده در لحظه زدن دکمه اتصال بی درنگ و بدون کامپایل دوباره اجرا
-    // شود. پین شده ها اول قرار می گیرند و بقیه به ترتیب پایدار فهرست می آیند.
+    // سرور انتخاب شده همیشه اولین لینک قرار می گیرد؛ بعد گره های پین شده
+    // و بقیه گره های اشتراک بر اساس سلامت و کمترین تاخیر رتبه بندی می شوند
+    // تا sing-box سریع ترین سرورها را در همان دسته اول بیازماید و گره های
+    // اخیراً ناموفق یا تست نشده عقب بیفتند.
+    add(chosen);
     final List<VpnNode> candidates =
         (chosen.sourceId.startsWith('emergency-') ? _emergencyNodes : _nodes)
-            .where((VpnNode n) => !n.disabled && !DirectProfile.handles(n)).toList();
-    for (final VpnNode n in candidates) {
-      if (n.favorite) {
-        add(n);
+            .where((VpnNode n) => !n.disabled && !DirectProfile.handles(n))
+            .toList();
+    final Map<String, int> originalOrder = <String, int>{
+      for (int i = 0; i < candidates.length; i++) candidates[i].id: i,
+    };
+    int rankPoolNode(VpnNode a, VpnNode b) {
+      final bool aFailed = _balancer.recentlyFailed(a);
+      final bool bFailed = _balancer.recentlyFailed(b);
+      if (aFailed != bFailed) {
+        return aFailed ? 1 : -1;
       }
-    }
-    for (final VpnNode n in candidates) {
-      if (!n.favorite) {
-        add(n);
+      if (a.hasPing != b.hasPing) {
+        return a.hasPing ? -1 : 1;
       }
+      if (a.hasPing && b.hasPing) {
+        final int cmp = _balancer.score(a).compareTo(_balancer.score(b));
+        if (cmp != 0) return cmp;
+      }
+      return (originalOrder[a.id] ?? 0).compareTo(originalOrder[b.id] ?? 0);
     }
-    add(chosen);
+    final List<VpnNode> pinned = candidates
+        .where((VpnNode n) => n.favorite)
+        .toList()
+      ..sort(rankPoolNode);
+    final List<VpnNode> ordinary = candidates
+        .where((VpnNode n) => !n.favorite)
+        .toList()
+      ..sort(rankPoolNode);
+    for (final VpnNode n in pinned) {
+      add(n);
+    }
+    for (final VpnNode n in ordinary) {
+      add(n);
+    }
     // اگر هیچ کدام سازگار نبود، لااقل همان یکی.
     return pool.isEmpty
         ? <String>[linkFor(chosen, batterySaving: _batterySaving).trim()]
         : pool;
+  }
+
+  VpnNode? _pickPrewarmPoolNode() {
+    final String deviceSeed = _device.machineId.isNotEmpty
+        ? _device.machineId
+        : _device.hostname;
+    final List<VpnNode> stages = buildAutoCandidates(
+      personalNodes: _nodes,
+      emergencyNodes: const <VpnNode>[],
+      balancer: _balancer,
+      mode: _settings.selectionMode,
+      deviceSeed: deviceSeed,
+      preferredNodeId: _settings.lastNodeId,
+      stickyMinutes: _settings.stickyMinutes,
+      allowFailover: _settings.autoFailover,
+      emergencyOnly: false,
+      accepts: (VpnNode n) =>
+          usable(n) && !n.disabled && !DirectProfile.handles(n) && _fitsPreference(n),
+    );
+    return stages.isEmpty ? null : stages.first;
   }
 
   /// پیش آماده سازی بی صدا و پس زمینه `parsed.json` و `runtime.json` پس از
@@ -2632,10 +2721,8 @@ class VpnController extends ChangeNotifier {
         _connectInFlight;
     try {
       if (shouldAbort()) return;
-      final List<VpnNode> usableNodes = _nodes
-          .where((VpnNode node) => usable(node) && !node.disabled && !DirectProfile.handles(node))
-          .toList();
-      if (usableNodes.isEmpty) return;
+      final VpnNode? picked = _pickPrewarmPoolNode();
+      if (picked == null) return;
       final String binary = CliSession.wanted(_settings)
           ? umbrellaCliBinary
           : UmbrellaCore.engineBinary;
@@ -2651,7 +2738,7 @@ class VpnController extends ChangeNotifier {
       _singleNodeSession = false;
       final List<String> pool;
       try {
-        pool = _linkPool(usableNodes.first);
+        pool = _linkPool(picked);
       } finally {
         _singleNodeSession = savedSingle;
       }
@@ -4290,10 +4377,15 @@ class VpnController extends ChangeNotifier {
           );
         }
         _notify();
+        if (!_singleNodeSession && _activeNode != null) {
+          _balancer.markFailed(_activeNode!.id);
+        }
         if (_settings.autoFailover && _reconnectAttempts < 5) {
           _reconnectAttempts++;
           _verifyInFlight = false;
           await _reconnect();
+        } else {
+          _healthFailures++;
         }
         return;
       }
@@ -4702,6 +4794,9 @@ class VpnController extends ChangeNotifier {
         return;
       }
       _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی فوری...', level: 'warning');
+      if (!_singleNodeSession) {
+        _balancer.markFailed(node.id);
+      }
       if (_settings.autoFailover && _reconnectAttempts < 5) {
         _reconnectAttempts++;
         await _reconnect();
@@ -4762,6 +4857,9 @@ class VpnController extends ChangeNotifier {
     );
     _notify();
     if (_healthFailures >= 2) {
+      if (!_singleNodeSession) {
+        _balancer.markFailed(node.id);
+      }
       if (_settings.autoFailover && _reconnectAttempts < 5) {
         _reconnectAttempts++;
         await _reconnect();
@@ -4821,6 +4919,7 @@ class VpnController extends ChangeNotifier {
 
     if (_waitingForNetwork && !_connectInFlight) {
       _waitingForNetwork = false;
+      _stopNetworkWatcher();
       _reconnectAttempts = 0;
       _log.add('اینترنت دستگاه برقرار شد؛ اتصال خودکار مجدد به آمبرلا...');
       unawaited(_resumeAfterNetworkRestore());
@@ -4923,7 +5022,14 @@ class VpnController extends ChangeNotifier {
     final int backoffMs =
         (1000 * _reconnectAttempts.clamp(1, 5)).clamp(1000, 10000);
     await Future<void>.delayed(Duration(milliseconds: backoffMs));
-    if (_disposed || generation != _cancelGeneration) return;
+    if (_disposed || _shuttingDown || generation != _cancelGeneration) return;
+    final ({bool online, String adapter, String ip, String fingerprint})?
+        postWaitNet = await _native.networkState();
+    if (_disposed || _shuttingDown || generation != _cancelGeneration) return;
+    if (postWaitNet != null && !postWaitNet.online) {
+      await _enterWaitingForNetwork();
+      return;
+    }
     _status = VpnStatus.disconnected;
     final ConnectOutcome outcome = await connect(
       requested: _requestedNode,
@@ -4931,6 +5037,12 @@ class VpnController extends ChangeNotifier {
       emergency: _emergencySession,
     );
     if (!outcome.ok && !outcome.cancelled && !_waitingForNetwork) {
+      final ({bool online, String adapter, String ip, String fingerprint})?
+          afterNet = await _native.networkState();
+      if (afterNet != null && !afterNet.online) {
+        await _enterWaitingForNetwork();
+        return;
+      }
       await _failAndCleanup(outcome.message);
     }
   }

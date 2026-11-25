@@ -338,6 +338,7 @@ class MethodHandler(
         val settingsJson = call.argument<String>("settingsJson") ?: ""
         val profileName = call.argument<String>("profileName") ?: "فیلترشکن آمبرلا"
         val mode = call.argument<String>("serviceMode") ?: ServiceMode.VPN
+        val enableRawConfig = call.argument<Boolean>("enableRawConfig") ?: false
         val normalizedMode = if (mode == ServiceMode.PROXY) ServiceMode.PROXY else ServiceMode.VPN
 
         if (normalizedMode == ServiceMode.VPN) {
@@ -368,6 +369,7 @@ class MethodHandler(
         Settings.activeConfigPath = configPath
         Settings.activeSettingsJson = settingsJson
         Settings.activeProfileName = profileName
+        Settings.activeEnableRawConfig = enableRawConfig
 
         withContext(Dispatchers.Main) {
             BoxService.start(activity, startCore = true)

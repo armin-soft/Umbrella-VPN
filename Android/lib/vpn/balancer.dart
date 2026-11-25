@@ -122,8 +122,10 @@ class NodeBalancer {
         }
         final VpnNode? best = _bestAuto(usable);
         if (best == null) {
+          final VpnNode? fallbackPinned =
+              usable.where((VpnNode node) => node.favorite).firstOrNull;
           return SelectionResult(
-            node: current ?? usable.first,
+            node: fallbackPinned ?? current ?? usable.first,
             reason: 'پینگی اندازه گیری نشد؛ نزدیک ترین گزینه انتخاب شد.',
           );
         }
@@ -162,6 +164,9 @@ class NodeBalancer {
     measured.sort((VpnNode a, VpnNode b) => _score(a).compareTo(_score(b)));
     return measured.first;
   }
+
+  /// امتیاز کمتر بهتر است: پینگ پایین و پایداری بالا.
+  double score(VpnNode node) => _score(node);
 
   /// امتیاز کمتر بهتر است: پینگ پایین و پایداری بالا.
   double _score(VpnNode node) {

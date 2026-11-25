@@ -373,7 +373,7 @@ class ServiceNotification(
         val stopIntent = PendingIntent.getBroadcast(
             service,
             1,
-            Intent(Action.SERVICE_CLOSE).setPackage(service.packageName),
+            Intent(Action.SERVICE_USER_CLOSE).setPackage(service.packageName),
             pendingFlags,
         )
 

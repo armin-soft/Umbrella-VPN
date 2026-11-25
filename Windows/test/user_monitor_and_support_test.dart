@@ -208,6 +208,25 @@ void main() {
     );
     expect(emOnly.map((VpnNode n) => n.id).toList(), <String>['em1']);
     expect(const AppSettings().autoFailover, isTrue);
+
+    // Failed pool promotes healthy DirectProfile nodes to stage 0 immediately.
+    final NodeBalancer failedPoolBalancer = NodeBalancer()..markFailed('v1');
+    final List<VpnNode> promoted = VpnController.buildAutoCandidates(
+      personalNodes: <VpnNode>[vless, wg, awg, mieru],
+      emergencyNodes: <VpnNode>[em],
+      balancer: failedPoolBalancer,
+      mode: SelectionMode.auto,
+      deviceSeed: 'seed-1',
+      preferredNodeId: '',
+      stickyMinutes: 15,
+      allowFailover: true,
+      emergencyOnly: false,
+      accepts: (_) => true,
+    );
+    expect(
+      promoted.map((VpnNode n) => n.id).toList(),
+      <String>['awg1', 'wg1', 'm1', 'v1', 'em1'],
+    );
   });
 
   test('RuntimeConfig.finalize زمانی که clash_api فعال است find_process را روشن می کند', () {

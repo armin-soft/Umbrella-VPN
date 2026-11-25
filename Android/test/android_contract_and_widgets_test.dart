@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/core/ui_formatters.dart';
@@ -39,6 +40,7 @@ import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
+import 'package:umbrella_vpn/vpn/balancer.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
@@ -2819,6 +2821,399 @@ void main() {
       gateway.close();
       toasts.dispose();
     });
+
+    test('CoreRuntime.loadCachedRuntime کش runtime-android را برای بوت مستقیم enableRawConfig می سازد و پورت/لاگ را بدون باطل شدن کش به روز می کند', () async {
+      final Directory tempDir =
+          await Directory.systemTemp.createTemp('umbrella_android_raw_');
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final String sep = Platform.pathSeparator;
+      final File ruleFile = File('${tempDir.path}${sep}geosite-ir.srs');
+      await ruleFile.writeAsBytes(List<int>.filled(64, 7), flush: true);
+
+      final Map<String, dynamic> fullSettings = <String, dynamic>{
+        'region': 'ir',
+        'log-file': '${tempDir.path}${sep}old.log',
+        'block-ads': true,
+      };
+      final List<String> links = <String>[
+        'vless://11111111-1111-1111-1111-111111111111@192.0.2.1:443#Fast',
+        'vless://22222222-2222-2222-2222-222222222222@192.0.2.2:443#Backup',
+      ];
+      final String key = CoreRuntime.runtimeCacheKey(
+        preparedLinks: links,
+        fullSettings: fullSettings,
+        stickyMinutes: 15,
+        serviceMode: 'vpn',
+        hasBlockPage: true,
+        localRuleSetPaths: <String, String>{'geosite-ir': ruleFile.path},
+      );
+
+      final Map<String, dynamic> rawRuntime = <String, dynamic>{
+        'log': <String, dynamic>{'output': '${tempDir.path}${sep}old.log'},
+        'inbounds': <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'tun', 'tag': 'tun-in'},
+        ],
+        'route': <String, dynamic>{
+          'rule_set': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'tag': 'geosite-ir',
+              'type': 'local',
+              'format': 'binary',
+              'path': ruleFile.path,
+            },
+          ],
+        },
+        'outbounds': <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'vless', 'tag': 'Fast'},
+          <String, dynamic>{
+            'type': 'http',
+            'tag': RuntimeConfig.blockPageOutboundTag,
+            'server': '127.0.0.1',
+            'server_port': 18080,
+          },
+        ],
+        'experimental': <String, dynamic>{
+          'monitoring': <String, dynamic>{
+            'workers': RuntimeConfig.monitoringWorkers,
+            'debounce_window': '200ms',
+            'url_test_timeout': '4s',
+          },
+        },
+      };
+
+      await CoreRuntime.saveRuntimeCache(
+        runDir: tempDir.path,
+        runtimeKey: key,
+        config: rawRuntime,
+      );
+
+      // Matching key patches new blockPagePort and coreLogPath in place.
+      final File? loaded = await CoreRuntime.loadCachedRuntime(
+        runDir: tempDir.path,
+        runtimeKey: key,
+        blockPagePort: 19091,
+        coreLogPath: '${tempDir.path}${sep}new-core.log',
+        hasBlockPage: true,
+      );
+      expect(loaded, isNotNull);
+      expect(loaded!.path, endsWith('${sep}runtime-android.json'));
+      final Map<String, dynamic> updated =
+          jsonDecode(await loaded.readAsString()) as Map<String, dynamic>;
+      expect((updated['log'] as Map<String, dynamic>)['output'], '${tempDir.path}${sep}new-core.log');
+      final Map<String, dynamic> blockOutbound =
+          (updated['outbounds'] as List<dynamic>)
+              .cast<Map<String, dynamic>>()
+              .firstWhere((Map<String, dynamic> o) => o['tag'] == RuntimeConfig.blockPageOutboundTag);
+      expect(blockOutbound['server_port'], 19091);
+
+      // Missing local .srs file invalidates cleanly.
+      await ruleFile.delete();
+      expect(
+        await CoreRuntime.loadCachedRuntime(
+          runDir: tempDir.path,
+          runtimeKey: key,
+          blockPagePort: 19091,
+          coreLogPath: '${tempDir.path}${sep}new-core.log',
+          hasBlockPage: true,
+        ),
+        isNull,
+      );
+      await ruleFile.writeAsBytes(List<int>.filled(64, 7), flush: true);
+
+      // Changed link invalidates key.
+      final String changedKey = CoreRuntime.runtimeCacheKey(
+        preparedLinks: <String>[links.first],
+        fullSettings: fullSettings,
+        stickyMinutes: 15,
+        serviceMode: 'vpn',
+        hasBlockPage: true,
+        localRuleSetPaths: <String, String>{'geosite-ir': ruleFile.path},
+      );
+      expect(changedKey, isNot(key));
+      expect(
+        await CoreRuntime.loadCachedRuntime(
+          runDir: tempDir.path,
+          runtimeKey: changedKey,
+          blockPagePort: 19091,
+          hasBlockPage: true,
+        ),
+        isNull,
+      );
+
+      // Kotlin native wiring contract for enableRawConfig, notification close, and revoke.
+      final String methodHandlerKt = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+      ).readAsStringSync();
+      final String settingsKt = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/Settings.kt',
+      ).readAsStringSync();
+      final String boxServiceKt = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/BoxService.kt',
+      ).readAsStringSync();
+      final String notifKt = File(
+        '${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/ServiceNotification.kt',
+      ).readAsStringSync();
+      expect(methodHandlerKt, contains('call.argument<Boolean>("enableRawConfig")'));
+      expect(settingsKt, contains('activeEnableRawConfig'));
+      expect(boxServiceKt, contains('enable_raw_config = Settings.activeEnableRawConfig'));
+      expect(boxServiceKt, contains('"vpn_revoked"'));
+      expect(boxServiceKt, contains('"user_stopped"'));
+      expect(notifKt, contains('Action.SERVICE_USER_CLOSE'));
+    });
+
+    test('VpnController.buildAutoCandidates پس از شکست مسیرهای اشتراک، WireGuard/AWG/Mieru را بلافاصله جلو می آورد', () {
+      VpnNode makeNode(String id, NodeProtocol proto, {int ping = 0}) {
+        return VpnNode(
+          id: id,
+          name: id,
+          protocol: proto,
+          host: 'example.com',
+          port: 443,
+          sourceId: 'src',
+          pingMs: ping,
+          stability: 0.9,
+          checkedAt: ping > 0 ? DateTime.now() : null,
+          raw: proto == NodeProtocol.mieru ? '{"port":443}' : '',
+          params: const <String, dynamic>{},
+        );
+      }
+
+      final VpnNode v1 = makeNode('v1', NodeProtocol.vless, ping: 80);
+      final VpnNode wg1 = makeNode('wg1', NodeProtocol.wireguard, ping: 110);
+      final NodeBalancer balancer = NodeBalancer();
+
+      // Normal order keeps pool ahead of direct.
+      expect(
+        VpnController.buildAutoCandidates(
+          personalNodes: <VpnNode>[v1, wg1],
+          emergencyNodes: const <VpnNode>[],
+          balancer: balancer,
+          mode: SelectionMode.auto,
+          deviceSeed: 'seed-a',
+          preferredNodeId: '',
+          stickyMinutes: 15,
+          allowFailover: true,
+          emergencyOnly: false,
+          accepts: (_) => true,
+        ).map((VpnNode n) => n.id).toList(),
+        <String>['v1', 'wg1'],
+      );
+
+      // Once all pool nodes fail, direct WG promotes ahead of the failed pool.
+      balancer.markFailed('v1');
+      expect(
+        VpnController.buildAutoCandidates(
+          personalNodes: <VpnNode>[v1, wg1],
+          emergencyNodes: const <VpnNode>[],
+          balancer: balancer,
+          mode: SelectionMode.auto,
+          deviceSeed: 'seed-a',
+          preferredNodeId: '',
+          stickyMinutes: 15,
+          allowFailover: true,
+          emergencyOnly: false,
+          accepts: (_) => true,
+        ).map((VpnNode n) => n.id).toList(),
+        <String>['wg1', 'v1'],
+      );
+    });
+
+    test('توقف غیرمنتظره سرویس اندروید با پیام خالی بازاتصال را با enableRawConfig فعال می کند و user_stopped/vpn_revoked بدون لوپ قطع می شوند', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+      final Directory tempDir =
+          await Directory.systemTemp.createTemp('umbrella_android_e2e_');
+      HttpServer? clashStub;
+      try {
+        clashStub = await HttpServer.bind(
+          InternetAddress.loopbackIPv4,
+          AppConfig.coreClashPort,
+        );
+      } on SocketException {
+        clashStub = null;
+      }
+      addTearDown(() async {
+        AppLogger.instance.clear();
+        await clashStub?.close(force: true);
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      if (clashStub == null) {
+        return;
+      }
+
+      clashStub.listen((HttpRequest req) async {
+        req.response.headers.contentType = ContentType.json;
+        if (req.uri.path == '/proxies') {
+          final String nowUtc = DateTime.now().toUtc().toIso8601String();
+          req.response.write(jsonEncode(<String, dynamic>{
+            'proxies': <String, dynamic>{
+              'select': <String, dynamic>{
+                'type': 'Selector',
+                'now': 'lowest',
+                'all': <String>['lowest'],
+              },
+              'lowest': <String, dynamic>{
+                'type': 'URLTest',
+                'now': 'Node0',
+                'all': <String>['Node0'],
+              },
+              'Node0': <String, dynamic>{
+                'type': 'VLESS',
+                'history': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'time': nowUtc,
+                    'delay': 55,
+                    'from_cache': false,
+                  },
+                ],
+              },
+            },
+          }));
+        } else if (req.uri.path == '/connections') {
+          req.response.write('{"downloadTotal":0,"uploadTotal":0,"connections":[]}');
+        } else {
+          req.response.write('{}');
+        }
+        await req.response.close();
+      });
+
+      final _RecoveryCoreNative native = _RecoveryCoreNative(tempDir.path);
+      final _TestProvisioner provisioner = _TestProvisioner(tempDir.path);
+      await provisioner.init(native);
+      final _FakeSound sound = _FakeSound();
+
+      final VpnController controller = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: sound,
+        tray: TrayService(native),
+        provisioner: provisioner,
+        settings: const AppSettings(
+          corePreference: CorePreference.systemProxy,
+          serviceMode: InboundServiceMode.proxy,
+          tunMode: false,
+          mixedPort: 12334,
+          autoFailover: true,
+        ),
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await native.closeEvents();
+      });
+
+      await controller.applyNodes(<VpnNode>[
+        const VpnNode(
+          id: 'n1',
+          name: 'FastNode',
+          protocol: NodeProtocol.vless,
+          host: '198.51.100.10',
+          port: 443,
+          sourceId: 'sub-1',
+          params: <String, dynamic>{'uuid': '11111111-1111-1111-1111-111111111111'},
+          raw: 'vless://11111111-1111-1111-1111-111111111111@198.51.100.10:443#FastNode',
+        ),
+      ], measure: false);
+
+      // 1) Cold connect builds runtime-android.json via current-config.json.
+      final ConnectOutcome initial = await controller.connect();
+      expect(initial.ok, isTrue);
+      expect(controller.status, VpnStatus.connected);
+      expect(native.startCalls.length, 1);
+      expect(native.startCalls.first.enableRawConfig, isFalse);
+
+      // 2) Unexpected stop with EMPTY status message still triggers _reconnect(),
+      //    and the recovery boot uses 1-shot cached runtime-android.json with enableRawConfig: true and 0 hotReloads.
+      native.coreStatus = <String, dynamic>{
+        'status': 'Stopped',
+        'active': false,
+        'starting': false,
+        'stopping': false,
+        'lastError': '',
+      };
+      native.emitServiceEvent(
+        const AndroidServiceEvent(type: 'status', status: 'Stopped', message: ''),
+      );
+
+      final DateTime deadline = DateTime.now().add(const Duration(seconds: 6));
+      while (DateTime.now().isBefore(deadline) && native.startCalls.length < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      while (DateTime.now().isBefore(deadline) &&
+          controller.status != VpnStatus.connected) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      expect(controller.status, VpnStatus.connected);
+      expect(native.startCalls.length, 2);
+      expect(native.startCalls[1].enableRawConfig, isTrue);
+      expect(native.startCalls[1].configPath, endsWith('runtime-android.json'));
+      expect(native.hotReloadCallsOnRaw, 0);
+
+      // 3) Notification user_stopped disconnects cleanly without looping back into reconnect.
+      native.coreStatus = <String, dynamic>{
+        'status': 'Stopped',
+        'active': false,
+        'starting': false,
+        'stopping': false,
+        'lastError': '',
+      };
+      native.emitServiceEvent(
+        const AndroidServiceEvent(
+          type: 'alert',
+          alert: 'StartService',
+          message: 'user_stopped',
+        ),
+      );
+      native.emitServiceEvent(
+        const AndroidServiceEvent(type: 'status', status: 'Stopped', message: ''),
+      );
+      final DateTime stopDeadline = DateTime.now().add(const Duration(seconds: 2));
+      while (DateTime.now().isBefore(stopDeadline) &&
+          controller.status != VpnStatus.disconnected) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+      expect(controller.status, VpnStatus.disconnected);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(native.startCalls.length, 2);
+
+      // 4) Re-connect warm (still 1-shot enableRawConfig: true) then simulate OS vpn_revoked.
+      final ConnectOutcome warm = await controller.connect();
+      expect(warm.ok, isTrue);
+      expect(native.startCalls.length, 3);
+      expect(native.startCalls[2].enableRawConfig, isTrue);
+
+      native.coreStatus = <String, dynamic>{
+        'status': 'Stopped',
+        'active': false,
+        'starting': false,
+        'stopping': false,
+        'lastError': '',
+      };
+      native.emitServiceEvent(
+        const AndroidServiceEvent(
+          type: 'alert',
+          alert: 'RequestVPNPermission',
+          message: 'vpn_revoked',
+        ),
+      );
+      native.emitServiceEvent(
+        const AndroidServiceEvent(type: 'status', status: 'Stopped', message: ''),
+      );
+      final DateTime revokeDeadline = DateTime.now().add(const Duration(seconds: 2));
+      while (DateTime.now().isBefore(revokeDeadline) &&
+          controller.status != VpnStatus.failed) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+      expect(controller.status, VpnStatus.failed);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(native.startCalls.length, 3);
+    });
   });
 }
 
@@ -2840,6 +3235,95 @@ class _ImmediateConnectNative extends _TestCoreNative {
 
   @override
   Future<bool> ensureVpnPermission() async => true;
+}
+
+class _RecoveryCoreNative extends _ImmediateConnectNative {
+  _RecoveryCoreNative(this._dataRoot);
+
+  final String _dataRoot;
+  final List<({String configPath, bool enableRawConfig})> startCalls =
+      <({String configPath, bool enableRawConfig})>[];
+  int hotReloadCallsOnRaw = 0;
+
+  @override
+  Future<Map<String, dynamic>> startCore({
+    required String configPath,
+    required String settingsJson,
+    required String profileName,
+    String serviceMode = 'vpn',
+    bool enableRawConfig = false,
+  }) async {
+    startCalls.add((configPath: configPath, enableRawConfig: enableRawConfig));
+    final String sep = Platform.pathSeparator;
+    final File currentConfig =
+        File('$_dataRoot${sep}work${sep}data${sep}current-config.json');
+    await currentConfig.parent.create(recursive: true);
+    if (!enableRawConfig) {
+      await currentConfig.writeAsString(
+        jsonEncode(<String, dynamic>{
+          'log': <String, dynamic>{'level': 'warn', 'output': ''},
+          'inbounds': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'type': 'mixed',
+              'tag': 'mixed-in',
+              'listen': '127.0.0.1',
+              'listen_port': 12334,
+            },
+          ],
+          'dns': <String, dynamic>{'rules': <dynamic>[]},
+          'route': <String, dynamic>{
+            'rule_set': <dynamic>[],
+            'rules': <Map<String, dynamic>>[
+              <String, dynamic>{'action': 'sniff'},
+            ],
+          },
+          'outbounds': <Map<String, dynamic>>[
+            <String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'},
+            <String, dynamic>{'type': 'vless', 'tag': 'Node0'},
+          ],
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{
+              'workers': 10,
+              'debounce_window': '500ms',
+              'url_test_timeout': '5s',
+            },
+          },
+        }),
+        flush: true,
+      );
+    }
+    coreStatus = <String, dynamic>{
+      'status': 'Started',
+      'active': true,
+      'starting': false,
+      'stopping': false,
+      'lastError': '',
+    };
+    scheduleMicrotask(() {
+      emitServiceEvent(
+        const AndroidServiceEvent(type: 'status', status: 'Started'),
+      );
+    });
+    return <String, dynamic>{'ok': true, 'serviceMode': serviceMode};
+  }
+
+  @override
+  Future<int> tcpPing(String host, int port, {int timeoutMs = 1500}) async =>
+      coreStatus['active'] == true ? 4 : -1;
+
+  @override
+  Future<({bool ok, String message})> hotReloadConfig({
+    required String configPath,
+    required String profileName = 'فیلترشکن آمبرلا',
+  }) async {
+    if (startCalls.isNotEmpty && startCalls.last.enableRawConfig) {
+      hotReloadCallsOnRaw++;
+    }
+    return (ok: true, message: '');
+  }
+
+  @override
+  Future<bool> restoreNetworkDefaults() async => true;
 }
 
 class _ConnectSignedAuth extends AuthController {
@@ -2987,6 +3471,7 @@ class _TestCoreNative extends _FakeNative {
     required String settingsJson,
     required String profileName,
     String serviceMode = 'vpn',
+    bool enableRawConfig = false,
   }) async {
     startedConfigPaths.add(configPath);
     coreStatus = <String, dynamic>{

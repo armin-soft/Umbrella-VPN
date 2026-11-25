@@ -47,6 +47,10 @@ object Settings {
         get() = prefs.getString("active_profile_name", "فیلترشکن آمبرلا") ?: "فیلترشکن آمبرلا"
         set(value) = prefs.edit().putString("active_profile_name", value).apply()
 
+    var activeEnableRawConfig: Boolean
+        get() = prefs.getBoolean("active_enable_raw_config", false)
+        set(value) = prefs.edit().putBoolean("active_enable_raw_config", value).apply()
+
     var notificationsEnabled: Boolean
         get() = prefs.getBoolean("notifications_enabled", true)
         set(value) = prefs.edit().putBoolean("notifications_enabled", value).apply()

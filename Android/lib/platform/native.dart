@@ -310,6 +310,7 @@ class NativeBridge {
     required String settingsJson,
     required String profileName,
     String serviceMode = 'vpn',
+    bool enableRawConfig = false,
   }) async {
     final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
       'startCore',
@@ -318,6 +319,7 @@ class NativeBridge {
         'settingsJson': settingsJson,
         'profileName': profileName,
         'serviceMode': serviceMode,
+        'enableRawConfig': enableRawConfig,
       },
     );
     return JsonX.asMap(raw);

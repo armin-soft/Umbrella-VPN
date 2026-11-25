@@ -121,7 +121,11 @@ class BoxService(
         }
     }
 
-    private data class StartFailure(val alert: Alert, val message: String?)
+    private data class StartFailure(
+        val alert: Alert,
+        val message: String?,
+        val isError: Boolean = true,
+    )
 
     var fileDescriptor: ParcelFileDescriptor? = null
     private val notification = ServiceNotification(service)
@@ -134,6 +138,9 @@ class BoxService(
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 Action.SERVICE_CLOSE -> stopService()
+                Action.SERVICE_USER_CLOSE -> stopService(
+                    StartFailure(Alert.StartService, "user_stopped", isError = false),
+                )
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         serviceUpdateIdleMode()
@@ -214,7 +221,7 @@ class BoxService(
                         StartRequest(
                             config_path = configPath,
                             config_name = Settings.activeProfileName,
-                            enable_raw_config = false,
+                            enable_raw_config = Settings.activeEnableRawConfig,
                         ),
                     )
                     if (startResp.core_state == CoreStates.STOPPED ||
@@ -277,7 +284,7 @@ class BoxService(
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun stopService() {
+    private fun stopService(failure: StartFailure? = null) {
         if (status.value == Status.Stopped || status.value == Status.Stopping) return
         status.value = Status.Stopping
         notification.close()
@@ -286,12 +293,12 @@ class BoxService(
             // Interrupt an in-progress StartService() call inside Go before joining startJob.
             runCatching { Mobile.stop() }
             runningStart?.cancelAndJoin()
-            teardown(null)
+            teardown(failure)
         }
     }
 
     private suspend fun teardown(failure: StartFailure?) = withContext(NonCancellable) {
-        if (failure != null) {
+        if (failure != null && failure.isError) {
             lastStartError = failure.message ?: failure.alert.name
         }
         Settings.startedByUser = false
@@ -370,6 +377,7 @@ class BoxService(
                 receiver,
                 IntentFilter().apply {
                     addAction(Action.SERVICE_CLOSE)
+                    addAction(Action.SERVICE_USER_CLOSE)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
                     }
@@ -394,7 +402,7 @@ class BoxService(
     }
 
     fun onRevoke() {
-        stopService()
+        stopService(StartFailure(Alert.RequestVPNPermission, "vpn_revoked", isError = true))
     }
 
     fun sendNotification(notification: Notification) {
