@@ -94,7 +94,7 @@ public static function bypassDomainsStart(Context $Context): void {
 if (self::accountOrPrompt($Context) === null) return;
 Repository::updateUserSession($Context->UserId, ['Flow' => 'app:bypass_domains', 'Step' => 1]);
 self::reply($Context, \Helper::userGreeting($Context, 'وارد کردن لینک')
-. "دامنه یا نشانی سایت را بفرستید. برای حذف، پیش از دامنه - بگذارید؛ هر دامنه و زیر دامنه هایش خارج از فیلترشکن باز می شود.\nمثال: example.com یا -example.com"
+. "دامنه، لینک، IP یا CIDR را بفرستید. برای حذف، پیش از آن - بگذارید؛ نشانی های ثبت شده خارج از فیلترشکن باز می شوند.\nمثال: example.com یا 185.10.20.0/24 یا -example.com"
 . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
 }
 
@@ -102,9 +102,9 @@ public static function bypassDomainsInput(Context $Context, string $Text): void 
 $Account = self::accountOrPrompt($Context);
 if ($Account === null) return;
 if (in_array(trim($Text), ['/cancel', 'انصراف', 'بازگشت'], true)) { self::bypassMenu($Context); return; }
-$parsed = AppFilter::parseDomainsInput($Text);
+$parsed = AppBypass::parseTargetsInput($Text);
 if ($parsed['add'] === [] && $parsed['remove'] === []) {
-TelegramClient::sendMessage($Context->ChatId, 'دامنه معتبر پیدا نشد؛ دوباره بفرستید.', TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, 'دامنه یا IP معتبر پیدا نشد؛ دوباره بفرستید.', TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
 return;
 }
 $UUID = (string)$Account['uuid'];
@@ -647,7 +647,7 @@ WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
 }
 });
 
-SystemNotifications::queue($Context->UserId, 'امنیت دستگاه', '⚠️مجوز یکی از دستگاه های حساب شما لغو شد. اگر کار شما نبود، حساب را بررسی کنید.');
+SystemNotifications::queue($Context->UserId, 'امنیت دستگاه', 'مجوز یکی از دستگاه های حساب شما لغو شد. اگر کار شما نبود، حساب را بررسی کنید.');
 if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, 'مجوز لغو شد؛ برنامه از حساب خارج خواهد شد.');
 }

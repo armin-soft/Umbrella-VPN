@@ -341,7 +341,7 @@ $Event = implode(':', [$User_ID, $Exp_Stamp, $Days]);
 $App_Key = 'ExpiryNotice_' . hash('sha256', $Event . ':app');
 if (!self::hasSetting($App_Key) && self::claimDaily('renewal_app', $User_ID, $Today)) {
 if (self::claimOnce($App_Key, '1')) {
-SystemNotifications::queue($User_ID, 'یادآور تمدید اشتراک', '⚠️اشتراک ' . $Subscription . ' شما ' . Helper::toPersian((string)$Days) . ' روز دیگر به اتمام می رسد. زمان باقی مانده: ' . $Remaining_Label, 'expiry-warning:' . $Event, 'warning');
+SystemNotifications::queue($User_ID, 'یادآور تمدید اشتراک', 'اشتراک ' . $Subscription . ' شما ' . Helper::toPersian((string)$Days) . ' روز دیگر به پایان می رسد. زمان باقی مانده: ' . $Remaining_Label, 'expiry-warning:' . $Event, 'warning');
 }
 }
 
@@ -885,7 +885,7 @@ if ($Channel_Name === '' && $Channel_ID === '') return;
 if ($Full_Check) Repository::setSetting('Last_Channel_Check_At', (string)time());
 $Grace_Seconds = Environment::getChannelGraceSeconds();
 $Ids = $Full_Check ? Repository::allUserIds() : array_column(Database::getInstance()->fetchAll(
-'SELECT `Telegram_ID` FROM `Users` WHERE (`Channel_Grace_Started_At` > 0 OR `Channel_Client_Disabled_At` > 0) AND (`Channel_Member_Check_At` IS NULL OR `Channel_Member_Check_At` < ?) ORDER BY `Channel_Member_Check_At` ASC LIMIT 200', [time() - 60]
+'SELECT `Telegram_ID` FROM `Users` WHERE (`Channel_Grace_Started_At` > 0 OR `Channel_Client_Disabled_At` > 0 OR (`Client_ID` IS NOT NULL AND `Client_ID` != \'\' AND `Client_ID` != \'_\' AND (`Channel_Member_Check_At` IS NULL OR `Channel_Member_Check_At` < ?))) ORDER BY COALESCE(`Channel_Member_Check_At`, 0) ASC LIMIT 200', [time() - 300]
 ), 'Telegram_ID');
 foreach ($Ids as $User_ID) {
 $User_ID = (int)$User_ID;
@@ -961,7 +961,7 @@ return;
 
 if (!ChannelMembership::suspend($User_ID)) return;
 if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_disabled_app', $User_ID)) {
-SystemNotifications::queue($User_ID, 'قطع به دلیل عضویت کانال', '⛔️مهلت عضویت تمام شد؛ کلاینت به دلیل عدم عضویت قطع شد. برای اتصال دوباره عضو شوید: ' . $Channel_Url, 'channel-disabled:' . $Grace_Started_At, 'warning');
+SystemNotifications::queue($User_ID, 'قطع به دلیل عضویت کانال', 'مهلت عضویت تمام شد و اشتراک موقتا قطع شد. پس از عضویت دوباره فعال می شود.', 'channel-disabled:' . $Grace_Started_At, 'warning');
 }
 
 $Phone = (string)($User['Phone'] ?? '');
@@ -1008,7 +1008,7 @@ private static function sendLeaveWarning(int $Chat_ID, int $User_ID, string $Ful
 $User = Repository::getUser($User_ID);
 $Phone = (string)($User['Phone'] ?? '');
 if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_warn_app', $User_ID)) {
-SystemNotifications::queue($User_ID, 'هشدار عضویت کانال', '⚠️شما عضو کانال نیستید. مهلت باقی مانده: ' . self::graceLabel(max(0, $Minutes) * 60) . ' — ' . $Channel_Url, 'channel-warning:' . (int)($User['Channel_Grace_Started_At'] ?? 0) . ':' . ($First ? 'first' : 'reminder'), 'warning');
+SystemNotifications::queue($User_ID, 'هشدار عضویت کانال', 'شما عضو کانال نیستید. مهلت باقی مانده: ' . self::graceLabel(max(0, $Minutes) * 60), 'channel-warning:' . (int)($User['Channel_Grace_Started_At'] ?? 0) . ':' . ($First ? 'first' : 'reminder'), 'warning');
 }
 
 if ($First && Helper::validatePhone($Phone) && self::claimDaily('channel_warn_sms', $User_ID)) {
@@ -1135,7 +1135,7 @@ Repository::addSubscriptionLog($User_ID, 'expire', $Subscription, null, null, '�
 $Expired_Event = IppanelClient::subscriptionEvent('expired', $Row);
 $Expire_App_Key = 'ExpireNotice_' . hash('sha256', $User_ID . ':' . $Expired_Event . ':app');
 if (!self::hasSetting($Expire_App_Key) && self::claimDaily('expired_app', $User_ID) && self::claimOnce($Expire_App_Key, '1')) {
-SystemNotifications::queue($User_ID, 'انقضای اشتراک', '⏳اشتراک ' . $Subscription . ' شما به پایان رسید؛ برای ادامه سرویس تمدید کنید.', 'expired:' . (int)($Row['Expiration_Time_Stamp'] ?? 0), 'warning');
+SystemNotifications::queue($User_ID, 'انقضای اشتراک', 'اشتراک ' . $Subscription . ' شما به پایان رسید؛ برای ادامه سرویس تمدید کنید.', 'expired:' . (int)($Row['Expiration_Time_Stamp'] ?? 0), 'warning');
 }
 
 if ($Chat_ID > 0) {

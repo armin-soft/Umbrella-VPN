@@ -186,7 +186,7 @@ $Text = $Greeting . Helper::noticeBlock(
 }
 
 if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_warn_app', $Context->UserId)) {
-SystemNotifications::queue($Context->UserId, 'عضویت کانال', '⚠️شما عضو کانال اطلاع رسانی نیستید؛ برای ادامه سرویس عضو شوید: ' . $Channel_Url, 'channel-warning:' . (int)($Grace_Started_At ?? 0) . ':first', 'warning');
+SystemNotifications::queue($Context->UserId, 'عضویت کانال', 'شما عضو کانال اطلاع رسانی نیستید؛ برای جلوگیری از قطع سرویس عضو شوید.', 'channel-warning:' . (int)($Grace_Started_At ?? 0) . ':first', 'warning');
 }
 if ($Context->IsCallback && $Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️ابتدا عضو کانال شوید.', true);

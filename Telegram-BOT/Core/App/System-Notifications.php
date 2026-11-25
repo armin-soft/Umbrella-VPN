@@ -34,13 +34,13 @@ $Rows = $Db->fetchAll('SELECT `Device_ID` FROM `App_Devices` WHERE `Is_Trusted` 
 // Store full, un-shortened text so Telegram Bot views (including AppLink::notifications)
 // always show the complete message; summarization runs exclusively in formatForWindowsApp().
 $Body = html_entity_decode(strip_tags(TelegramClient::md($Body)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-$RawTitle = mb_substr(trim(strip_tags($Title)), 0, 190);
+$RawTitle = mb_substr(self::stripEmojis(trim(strip_tags($Title))), 0, 190);
 if (method_exists('Helper', 'stripZwnj')) $RawTitle = Helper::stripZwnj($RawTitle);
 if (method_exists('Helper', 'digitsToPersian')) $RawTitle = Helper::digitsToPersian($RawTitle);
 $Title = $RawTitle;
 if (method_exists('Helper', 'stripZwnj')) $Body = Helper::stripZwnj($Body);
 if (method_exists('Helper', 'digitsToPersian')) $Body = Helper::digitsToPersian($Body);
-$Body = mb_substr($Body, 0, 12000);
+$Body = mb_substr(self::stripEmojis($Body), 0, 12000);
 if (trim($Body) === '') return 0;
 if ($Event === '') {
 $Day = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d');
@@ -81,8 +81,9 @@ self::queue((int)$Rows[0]['Telegram_ID'], 'اعلان سیستمی آمبرلا'
  * @return array{title: string, body: string, level: string}
  */
 public static function formatForWindowsApp(string $Title, string $Body, string $Level = 'info', int $Max = 160): array {
-$CleanTitle = preg_replace('/\s+/u', ' ', str_replace("\u{200C}", ' ', trim($Title))) ?? trim($Title);
-$NormalizedBody = str_replace(["\u{200C}", "\r\n", "\r", '*', '`'], [' ', "\n", "\n", '', ''], trim($Body));
+$RawBodyForLevel = trim($Body);
+$CleanTitle = self::stripEmojis(preg_replace('/\s+/u', ' ', str_replace("\u{200C}", ' ', trim($Title))) ?? trim($Title));
+$NormalizedBody = self::stripEmojis(str_replace(["\u{200C}", "\r\n", "\r", '*', '`'], [' ', "\n", "\n", '', ''], $RawBodyForLevel));
 if (method_exists('Helper', 'digitsToPersian')) {
 $CleanTitle = Helper::digitsToPersian($CleanTitle);
 $NormalizedBody = Helper::digitsToPersian($NormalizedBody);
@@ -103,7 +104,7 @@ return [
 if ($CleanTitle === 'اعلان سیستمی آمبرلا' || $CleanTitle === '') {
 $CleanTitle = self::inferTitle($NormalizedBody);
 if ($FinalLevel === 'info') {
-$FinalLevel = self::inferLevel($NormalizedBody);
+$FinalLevel = self::inferLevel($RawBodyForLevel);
 }
 } elseif ($CleanTitle === 'یادآور تمدید اشتراک') {
 $CleanTitle = 'تمدید اشتراک';
@@ -185,10 +186,23 @@ if (count($Lines) === 3) break;
 }
 
 $Joined = $Lines !== [] ? implode(' · ', $Lines) : $StripUrl(preg_replace('/\s+/u', ' ', $Raw) ?? $Raw);
+$Joined = self::stripEmojis($Joined);
 if (mb_strlen($Joined) > $Max) {
 $Joined = rtrim(mb_substr($Joined, 0, $Max - 1)) . '…';
 }
 return $Joined;
+}
+
+/** حذف کامل اموجی ها و نمادهای تزئینی برای اعلان های برنامه (بدون اختلال در حروف فارسی و اعداد). */
+public static function stripEmojis(string $Text): string {
+$Cleaned = preg_replace(
+'/[\x{1F000}-\x{1FAFF}\x{2300}-\x{23FF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}\x{FE00}-\x{FE0F}\x{1F1E6}-\x{1F1FF}]/u',
+'',
+$Text
+) ?? $Text;
+$Cleaned = str_replace("\u{200D}", '', $Cleaned);
+$Cleaned = preg_replace('/[ \t]{2,}/u', ' ', $Cleaned) ?? $Cleaned;
+return trim($Cleaned);
 }
 
 private static function extractField(string $Text, string $Pattern): ?string {

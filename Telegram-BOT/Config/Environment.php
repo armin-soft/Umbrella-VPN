@@ -122,7 +122,7 @@ return $Url !== '' ? $Url : 'https://t.me/UmbrellaVPN_Channel';
 
 
 public static function getChannelGraceSeconds(): int {
-return self::getInt('CHANNEL_GRACE_SECONDS', 3600);
+return max(60, self::getInt('CHANNEL_GRACE_SECONDS', 300));
 }
 
 public static function getSupportUrl(): string {

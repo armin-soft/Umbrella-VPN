@@ -55,6 +55,13 @@ $Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خ�
 TelegramClient::sendMessage($Context->ChatId, $Welcome_Text, TelegramClient::inlineKeyboard([
 [['text' => '🤖📋منوی خدمات ربات', 'callback_data' => 'منوی خدمات ربات']],
 ]));
+if (!class_exists('AppBotLink')) {
+$AppLinkPath = __DIR__ . '/../Core/App/App-Bot-Link.php';
+if (is_file($AppLinkPath)) require_once $AppLinkPath;
+}
+if (class_exists('AppBotLink') && method_exists('AppBotLink', 'resumePendingIfAny')) {
+AppBotLink::resumePendingIfAny($Context);
+}
 }
 
 else {
@@ -91,6 +98,13 @@ $Notice = match ($Result) {
 default => '✅عضویت شما در کانال تأیید گردید.',
 };
 TelegramClient::sendMessage($Context->ChatId, $Greeting . $Notice . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::userHome()]));
+if (!class_exists('AppBotLink')) {
+$AppLinkPath = __DIR__ . '/../Core/App/App-Bot-Link.php';
+if (is_file($AppLinkPath)) require_once $AppLinkPath;
+}
+if (class_exists('AppBotLink') && method_exists('AppBotLink', 'resumePendingIfAny')) {
+AppBotLink::resumePendingIfAny($Context);
+}
 return;
 }
 

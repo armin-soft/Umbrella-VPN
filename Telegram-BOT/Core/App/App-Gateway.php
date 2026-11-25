@@ -16,6 +16,7 @@ require_once __DIR__ . '/../Storage/Repository.php';
 require_once __DIR__ . '/../Support/Bot-Config.php';
 require_once __DIR__ . '/../Support/Helper.php';
 require_once __DIR__ . '/../../Bot/Context.php';
+require_once __DIR__ . '/../../Bot/Channel-Membership.php';
 require_once __DIR__ . '/../../Bot/Subscription.php';
 require_once __DIR__ . '/../Payment/ZarinPal.php';
 require_once __DIR__ . '/App-Filter.php';
@@ -789,7 +790,8 @@ $UUID,
 (int)($Session['Telegram_ID'] ?? 0)
 );
 $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $Account);
-$Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg);
+$ChannelState = self::syncChannelState($LinkedTg, $UUID, $Account);
+$Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg, $ChannelState);
 
 self::ok([
 'account' => $Profile,
@@ -854,7 +856,8 @@ $UUID,
 $LinkedTg
 );
 $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $PanelAccount);
-$Payload['account'] = self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg);
+$ChannelState = self::syncChannelState($LinkedTg, $UUID, $PanelAccount);
+$Payload['account'] = self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg, $ChannelState);
 $Payload['bot_linked'] = $LinkedTg > 0 && (int)($PanelAccount['telegram_id'] ?? 0) === $LinkedTg;
 $Payload['filter'] = self::filterPayload($UUID);
 $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
@@ -1055,7 +1058,26 @@ if ($ByUuid !== null) return $ByUuid;
 return null;
 }
 
-private static function accountPayloadWithExtras(array $Account, string $UUID, int $LinkedTg = 0): array {
+private static function syncChannelState(int $LinkedTg, string $UUID, ?array &$Account): ?array {
+if ($LinkedTg <= 0 || !class_exists('ChannelMembership') || !method_exists('ChannelMembership', 'syncForApp')) {
+return null;
+}
+try {
+$State = ChannelMembership::syncForApp($LinkedTg, 30);
+if (!empty($State['changed']) && $UUID !== '' && $UUID !== '_') {
+$Fresh = PanelClient::get($UUID);
+if (is_array($Fresh) && $Fresh !== []) {
+$Account = $Fresh;
+}
+}
+return $State;
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][App-Gateway][Channel] ' . $Error->getMessage());
+return null;
+}
+}
+
+private static function accountPayloadWithExtras(array $Account, string $UUID, int $LinkedTg = 0, ?array $ChannelState = null): array {
 $Profile = AppFilter::accountPayload($Account);
 if (trim((string)($Profile['telegram_id'] ?? '')) === '' && $LinkedTg > 0) {
 $Profile['telegram_id'] = (string)$LinkedTg;
@@ -1071,6 +1093,29 @@ if (trim((string)($Profile['phone'] ?? '')) === '' && trim((string)($BotUser['Ph
 $Profile['phone'] = trim((string)$BotUser['Phone']);
 }
 }
+$ChannelStatus = 'member';
+$ChannelGraceRemaining = 0;
+$ChannelDisabled = false;
+if (is_array($ChannelState)) {
+$ChannelStatus = (string)($ChannelState['status'] ?? 'member');
+$ChannelGraceRemaining = max(0, (int)($ChannelState['grace_remaining_seconds'] ?? 0));
+$ChannelDisabled = !empty($ChannelState['disabled']);
+} elseif ($BotUser !== null) {
+$DisabledAt = (int)($BotUser['Channel_Client_Disabled_At'] ?? 0);
+$GraceStartedAt = (int)($BotUser['Channel_Grace_Started_At'] ?? 0);
+$ClientStatus = (string)($BotUser['Client_Status'] ?? '');
+if ($DisabledAt > 0 || str_contains($ClientStatus, 'عدم عضویت')) {
+$ChannelStatus = 'disabled';
+$ChannelDisabled = true;
+} elseif ($GraceStartedAt > 0) {
+$GraceSeconds = Environment::getChannelGraceSeconds();
+$ChannelStatus = 'grace';
+$ChannelGraceRemaining = max(0, $GraceSeconds - max(0, time() - $GraceStartedAt));
+}
+}
+$Profile['channel_status'] = $ChannelStatus;
+$Profile['channel_grace_remaining_seconds'] = $ChannelGraceRemaining;
+$Profile['channel_disabled'] = $ChannelDisabled;
 $Base = PanelClient::accountBase($Account);
 $Profile['account_base'] = $Base;
 $Profile['subscription_url'] = self::subscriptionUrl($Account, $Base, $UUID);

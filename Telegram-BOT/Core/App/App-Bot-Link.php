@@ -4,7 +4,63 @@ declare(strict_types=1);
 /** Short-lived, single-use capability: the app session and Telegram user both consent. */
 final class AppBotLink {
 private const TTL = 600;
+/** @var array<int, array{token: string, expires_at: int}> */
+private static array $pendingByUser = [];
 private function __construct() {}
+
+private static function pendingKey(int $UserId): string {
+return 'pending_app_link:' . $UserId;
+}
+
+private static function savePendingToken(int $UserId, string $Token): void {
+if ($UserId <= 0 || preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1) return;
+$Payload = ['token' => $Token, 'expires_at' => time() + self::TTL];
+self::$pendingByUser[$UserId] = $Payload;
+if (class_exists('Repository') && method_exists('Repository', 'setSetting')) {
+try {
+Repository::setSetting(self::pendingKey($UserId), json_encode($Payload, JSON_UNESCAPED_SLASHES));
+} catch (Throwable) {}
+}
+}
+
+private static function popPendingToken(int $UserId): string {
+if ($UserId <= 0) return '';
+$Token = '';
+$ExpiresAt = 0;
+if (isset(self::$pendingByUser[$UserId])) {
+$Token = (string)(self::$pendingByUser[$UserId]['token'] ?? '');
+$ExpiresAt = (int)(self::$pendingByUser[$UserId]['expires_at'] ?? 0);
+unset(self::$pendingByUser[$UserId]);
+}
+if (class_exists('Repository') && method_exists('Repository', 'getSetting')) {
+try {
+$Raw = trim((string)Repository::getSetting(self::pendingKey($UserId), ''));
+if ($Raw !== '') {
+$Decoded = json_decode($Raw, true);
+if (is_array($Decoded)) {
+$Token = (string)($Decoded['token'] ?? $Token);
+$ExpiresAt = (int)($Decoded['expires_at'] ?? $ExpiresAt);
+}
+if (method_exists('Repository', 'setSetting')) {
+Repository::setSetting(self::pendingKey($UserId), '');
+}
+}
+} catch (Throwable) {}
+}
+if (preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1 || ($ExpiresAt > 0 && $ExpiresAt < time())) {
+return '';
+}
+return $Token;
+}
+
+public static function resumePendingIfAny(Context $Context): bool {
+if ($Context->ChatId !== $Context->UserId || $Context->UserId <= 0) return false;
+if (UserFlow::membershipStatus($Context->UserId) !== 'member') return false;
+$Token = self::popPendingToken($Context->UserId);
+if ($Token === '') return false;
+self::presentPrompt($Context, $Token);
+return true;
+}
 
 public static function issue(array $Session): array {
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
@@ -32,10 +88,15 @@ return ['linked' => false, 'url' => 'https://t.me/' . $Username . '?start=app_' 
 public static function begin(Context $Context, string $Token): void {
 if ($Context->ChatId !== $Context->UserId || preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1) return;
 if (UserFlow::membershipStatus($Context->UserId) !== 'member') {
+self::savePendingToken($Context->UserId, $Token);
 UserFlow::start($Context);
-TelegramClient::sendMessage($Context->ChatId, 'پس از عضویت و تأیید کانال، لینک اختصاصی برنامه را دوباره باز کنید.');
+TelegramClient::sendMessage($Context->ChatId, 'پس از عضویت و تأیید کانال، درخواست اتصال حساب به صورت خودکار ادامه پیدا می کند.');
 return;
 }
+self::presentPrompt($Context, $Token);
+}
+
+private static function presentPrompt(Context $Context, string $Token): void {
 $Db = Database::getInstance();
 $Hash = hash('sha256', $Token);
 $Db->execute('UPDATE `App_Bot_Link_Requests` SET `Telegram_ID` = ? WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = ?)', [$Context->UserId, $Hash, time(), $Context->UserId]);
