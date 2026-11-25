@@ -341,7 +341,7 @@ void main() {
     test('AndroidManifest.xml and core manifest expose required capabilities', () {
       final String manifest =
           File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
-      expect(manifest, isNot(contains('android.permission.REQUEST_INSTALL_PACKAGES')));
+      expect(manifest, contains('android.permission.REQUEST_INSTALL_PACKAGES'));
       expect(manifest, isNot(contains('installPackagesPermission')));
       expect(manifest, contains('android.permission.BIND_VPN_SERVICE'));
       expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
@@ -355,6 +355,26 @@ void main() {
       expect(manifest, contains('.bg.TileService'));
       expect(manifest, contains('.bg.BootReceiver'));
       expect(manifest, contains('androidx.core.content.FileProvider'));
+
+      final String methodHandler = File(
+        'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+      ).readAsStringSync();
+      expect(methodHandler, contains('getPackageArchiveInfo'));
+      expect(methodHandler, contains('ClipData.newRawUri'));
+      expect(methodHandler, contains('signature_mismatch'));
+      expect(methodHandler, contains('invalid_apk_archive'));
+      expect(methodHandler, contains('install_permission_required'));
+
+      final String updateCtrl =
+          File('lib/state/update_controller.dart').readAsStringSync();
+      expect(updateCtrl, contains('resumePendingInstallIfPermitted'));
+      expect(updateCtrl, contains('installDetailed'));
+      final int dlInstallAt = updateCtrl.indexOf('Future<bool> downloadAndInstall()');
+      final String dlInstallBody = updateCtrl.substring(
+        dlInstallAt,
+        updateCtrl.indexOf('Future<bool> openDownloadPage()', dlInstallAt),
+      );
+      expect(dlInstallBody, isNot(contains('SafeUrlLauncher.open')));
 
       final Map<String, dynamic> coreManifest = jsonDecode(
         File('assets/cores/manifest.json').readAsStringSync(),
@@ -2532,6 +2552,148 @@ void main() {
       toasts.clear();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 5));
+      subs.dispose();
+      vpn.dispose();
+      settings.dispose();
+      auth.dispose();
+      gateway.close();
+      toasts.dispose();
+    });
+
+    testWidgets('ConnectPage بنر اعلان نسخه جدید را در موبایل عمودی، افقی و تبلت بدون سرریز نشان می دهد', (WidgetTester tester) async {
+      await tester.runAsync(() async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        await LocalStore.instance.init();
+      });
+      addTearDown(AppLogger.instance.clear);
+
+      const String sampleHash =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      final MockClient updateHttp = MockClient((http.Request req) async {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, dynamic>>[
+            <String, dynamic>{
+              'tag_name': '9.9.9',
+              'prerelease': false,
+              'draft': false,
+              'published_at': '2026-11-25T12:00:00Z',
+              'body': '- بهبود اتصال و نصب درون برنامه ای',
+              'assets': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'name': 'UmbrellaVPN-9.9.9-arm64-v8a.apk',
+                  'browser_download_url':
+                      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-arm64-v8a.apk',
+                  'size': 22000000,
+                  'digest': 'sha256:$sampleHash',
+                },
+              ],
+            },
+          ])),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      });
+
+      final _ImmediateConnectNative native = _ImmediateConnectNative();
+      final _TestProvisioner provisioner = _TestProvisioner('/tmp/umbrella_android_upd_banner');
+      await provisioner.init(native);
+      final _FakeSound sound = _FakeSound();
+      final VpnController vpn = VpnController(
+        native: native,
+        ipService: _FakeIpService(),
+        sound: sound,
+        tray: TrayService(native),
+        provisioner: provisioner,
+        settings: const AppSettings(),
+      );
+      final SettingsController settings = SettingsController(
+        native: native,
+        sound: sound,
+        window: _FakeWindow(),
+      );
+      final GatewayClient gateway = GatewayClient(
+        client: MockClient((http.Request _) async => http.Response('{"ok":false}', 200)),
+        enableNativeTransport: false,
+      );
+      final _ConnectSignedAuth auth = _ConnectSignedAuth(
+        native: native,
+        gateway: gateway,
+        store: LocalStore.instance,
+      );
+      final SubscriptionController subs = SubscriptionController(
+        vpn: vpn,
+        auth: auth,
+        client: MockClient((http.Request _) async => http.Response('[]', 200)),
+      );
+      final UpdateController updates = UpdateController(
+        native,
+        service: UpdateService(client: updateHttp, preferredAbi: 'arm64-v8a'),
+      );
+      await tester.runAsync(() => updates.check(silent: false));
+      expect(updates.available, isNotNull);
+
+      final ToastController toasts = ToastController();
+      final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+      final FlutterExceptionHandler? prevError = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails d) => errors.add(d);
+      addTearDown(() => FlutterError.onError = prevError);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      for (final Size size in const <Size>[
+        Size(320, 568),
+        Size(667, 375),
+        Size(1024, 768),
+      ]) {
+        await tester.binding.setSurfaceSize(size);
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              Provider<NativeBridge>.value(value: native),
+              Provider<SoundService>.value(value: sound),
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+              ChangeNotifierProvider<VpnController>.value(value: vpn),
+              ChangeNotifierProvider<UpdateController>.value(value: updates),
+              ChangeNotifierProvider<ToastController>.value(value: toasts),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: const Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(body: ConnectPage()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey<String>('connect-update-banner')),
+          findsOneWidget,
+          reason: 'Expected update banner at $size',
+        );
+        expect(find.textContaining('نسخه جدید'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('connect-update-action-button')),
+          findsOneWidget,
+        );
+      }
+      expect(errors, isEmpty, reason: errors.map((e) => e.exceptionAsString()).join('\n'));
+
+      final Finder dismissBtn =
+          find.byKey(const ValueKey<String>('connect-update-dismiss-button'));
+      await tester.ensureVisible(dismissBtn);
+      await tester.tap(dismissBtn);
+      await tester.pump();
+      expect(find.byKey(const ValueKey<String>('connect-update-banner')), findsNothing);
+
+      toasts.clear();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+      updates.dispose();
+      updateHttp.close();
       subs.dispose();
       vpn.dispose();
       settings.dispose();

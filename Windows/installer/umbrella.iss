@@ -113,7 +113,7 @@ Filename: "{tmp}\VC_redist.x64.exe"; Parameters: "/install /quiet /norestart"; S
 ; with the elevated token Setup already holds. Inno's postinstall entries run as
 ; the original, unelevated user by default, which fails with CreateProcess 740.
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
-; When launched from the in-app updater (/VERYSILENT /RelaunchAfterUpdate=1),
+; When launched from the in-app updater (/SILENT /RelaunchAfterUpdate=1),
 ; automatically reopen the freshly upgraded application once copying finishes.
 Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent runascurrentuser; Check: ShouldRelaunchAfterUpdate
 
@@ -211,15 +211,27 @@ begin
     end;
   end;
 
-  // هر فرایند باقی مانده از برنامه یا هسته ها (درخت فرایند کامل) را
-  // می بندیم تا هیچ قفلی روی فایل های اجرایی و کتابخانه ها نماند.
+  // ابتدا هسته ها و سرویس های جانبی را با درخت فرایند می بندیم.
+  // هرگز /T را برای UmbrellaVPN.exe به کار نبرید؛ چون اگر نصب کننده
+  // از داخل خود برنامه به عنوان زیرفرایند اجرا شده باشد، /T خودِ نصب کننده
+  // را هم پیش از نصب خواهد بست!
   Exec(
     ExpandConstant('{sys}\taskkill.exe'),
-    '/F /T /IM UmbrellaVPN.exe /IM UmbrellaCli.exe ' +
+    '/F /T /IM UmbrellaCli.exe ' +
     '/IM UmbrellaCoreEngine.exe /IM UmbrellaAdmin.exe /IM sing-box.exe',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   if ResultCode = 0 then
     HadActiveApp := True;
+
+  if (FindUmbrellaWindow() <> 0) or CheckForMutexes(UmbrellaAppMutex) then
+  begin
+    Exec(
+      ExpandConstant('{sys}\taskkill.exe'),
+      '/F /IM UmbrellaVPN.exe',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    if ResultCode = 0 then
+      HadActiveApp := True;
+  end;
 
   if (AppDir <> '') and DirExists(AppDir) then
   begin

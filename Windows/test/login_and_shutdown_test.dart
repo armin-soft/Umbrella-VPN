@@ -285,6 +285,24 @@ void main() {
       expect(iss, contains('UmbrellaAdmin.exe'));
       expect(iss, contains('sing-box.exe'));
       expect(iss, contains('ClearLoopbackProxy()'));
+
+      // نصب کننده نباید با /T خودِ UmbrellaVPN.exe و زیرفرایند نصب را بکشد.
+      expect(
+        iss,
+        isNot(contains(RegExp(r'/T\s+/IM\s+UmbrellaVPN\.exe'))),
+      );
+      expect(iss, contains('/F /IM UmbrellaVPN.exe'));
+      expect(iss, contains('/SILENT'));
+      expect(iss, contains('runascurrentuser'));
+
+      // لانچ نصب کننده باید بدون قفل کردن پوشه نصب و جدا از درخت پردازشی مادر اجرا شود.
+      final String ops =
+          File('packages/umbrella_native/windows/system_ops.cpp')
+              .readAsStringSync();
+      expect(ops, contains('CREATE_BREAKAWAY_FROM_JOB'));
+      expect(ops, contains('CREATE_NEW_PROCESS_GROUP'));
+      expect(ops, contains(':Zone.Identifier'));
+      expect(ops, contains('info.lpDirectory'));
     });
   });
 }

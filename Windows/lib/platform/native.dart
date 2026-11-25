@@ -260,12 +260,41 @@ class NativeBridge {
   Future<bool> relaunchElevated() async =>
       await _invoke<bool>('relaunchElevated') ?? false;
 
-  Future<bool> runElevated(String exe, {String args = ''}) async =>
-      await _invoke<bool>('runElevated', <String, dynamic>{
-        'exe': exe,
-        'args': args,
-      }) ??
-      false;
+  Future<bool> runElevated(String exe, {String args = ''}) async {
+    final bool? ok = await _invoke<bool>('runElevated', <String, dynamic>{
+      'exe': exe,
+      'args': args,
+    });
+    if (ok != null) {
+      return ok;
+    }
+    try {
+      String psQuote(String v) => "'${v.replaceAll("'", "''")}'";
+      final String dir = File(exe).parent.path;
+      final String argClause = args.trim().isEmpty
+          ? ''
+          : ' -ArgumentList ${psQuote(args.trim())}';
+      final String script =
+          'Start-Process -FilePath ${psQuote(exe)}'
+          ' -WorkingDirectory ${psQuote(dir)}'
+          '$argClause -Verb RunAs';
+      await Process.start(
+        'powershell',
+        <String>[
+          '-NoProfile',
+          '-NonInteractive',
+          '-WindowStyle',
+          'Hidden',
+          '-Command',
+          script,
+        ],
+        mode: ProcessStartMode.detached,
+      );
+      return true;
+    } on Object {
+      return false;
+    }
+  }
 
   /// ابعاد ناحیه کاری نمایشگر اصلی در واحد منطقی، بدون نوار وظیفه.
   Future<Size?> primaryWorkArea() async {

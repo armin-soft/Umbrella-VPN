@@ -242,7 +242,7 @@ jobs:
               echo "keyAlias=umbrella-release"
               echo "keyPassword=$gen_pass"
             } > android/key.properties
-            echo 'Generated dedicated non-debug release keystore for CI.'
+            echo '::warning title=Ephemeral Android Signing Key::ANDROID_KEYSTORE_BASE64 secret is not configured; generated an ephemeral release keystore (in-place upgrades require persistent keystore).'
           fi
       - name: Build universal and split-ABI release APKs
         run: |

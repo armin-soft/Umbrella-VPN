@@ -1183,7 +1183,7 @@ class UpdateService {
       );
     }
     final String args = silentRelaunch
-        ? '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS '
+        ? '/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS '
             '/SP- /RelaunchAfterUpdate=1'
         : '';
     return native.runElevated(file.path, args: args);

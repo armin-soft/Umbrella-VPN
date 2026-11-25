@@ -3,10 +3,12 @@ package ir.umbrella.vpn
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.BatteryManager
@@ -53,6 +55,7 @@ import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Proxy
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 class MethodHandler(
@@ -553,14 +556,104 @@ class MethodHandler(
         }.getOrDefault(false)
     }
 
+    private fun extractSigningDigests(pkgInfo: PackageInfo?): Set<String> {
+        if (pkgInfo == null) return emptySet()
+        val sigBytes: List<ByteArray> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val info = pkgInfo.signingInfo ?: return emptySet()
+            val signers = if (info.hasMultipleSigners()) {
+                info.apkContentsSigners
+            } else {
+                info.signingCertificateHistory
+            }
+            signers?.map { it.toByteArray() }.orEmpty()
+        } else {
+            @Suppress("DEPRECATION")
+            pkgInfo.signatures?.map { it.toByteArray() }.orEmpty()
+        }
+        if (sigBytes.isEmpty()) return emptySet()
+        return sigBytes.mapNotNull { bytes ->
+            runCatching {
+                MessageDigest.getInstance("SHA-256")
+                    .digest(bytes)
+                    .joinToString("") { "%02x".format(it) }
+            }.getOrNull()
+        }.toSet()
+    }
+
+    private fun readArchiveInfo(path: String): PackageInfo? {
+        val pm = activity.packageManager
+        val basic = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(path, PackageManager.PackageInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(path, 0)
+            }
+        }.getOrNull() ?: return null
+
+        val withSigs = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(
+                    path,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()),
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(path, PackageManager.GET_SIGNING_CERTIFICATES)
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(path, PackageManager.GET_SIGNATURES)
+            }
+        }.getOrNull()
+        return withSigs ?: basic
+    }
+
+    private fun readInstalledSigningDigests(): Set<String> {
+        return runCatching {
+            val pm = activity.packageManager
+            val pkgInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(
+                    activity.packageName,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()),
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(activity.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(activity.packageName, PackageManager.GET_SIGNATURES)
+            }
+            extractSigningDigests(pkgInfo)
+        }.getOrDefault(emptySet())
+    }
+
     private fun handleInstallApk(path: String): Map<String, Any> {
         val file = File(path)
-        if (!file.exists()) {
+        if (!file.exists() || !file.isFile || file.length() <= 0L) {
             return mapOf("ok" to false, "reason" to "file_not_found")
         }
         if (!hasInstallPackagesManifestPermission()) {
-            return mapOf("ok" to false, "reason" to "browser_install_preferred")
+            return mapOf("ok" to false, "reason" to "install_permission_not_declared")
         }
+
+        val archiveInfo = readArchiveInfo(file.absolutePath)
+        if (archiveInfo == null) {
+            runCatching { file.delete() }
+            return mapOf("ok" to false, "reason" to "invalid_apk_archive")
+        }
+        if (archiveInfo.packageName != activity.packageName) {
+            return mapOf("ok" to false, "reason" to "package_mismatch")
+        }
+
+        val archiveDigests = extractSigningDigests(archiveInfo)
+        val installedDigests = readInstalledSigningDigests()
+        if (archiveDigests.isNotEmpty() &&
+            installedDigests.isNotEmpty() &&
+            archiveDigests.intersect(installedDigests).isEmpty()
+        ) {
+            return mapOf("ok" to false, "reason" to "signature_mismatch")
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()
         ) {
@@ -572,17 +665,47 @@ class MethodHandler(
             return mapOf("ok" to false, "reason" to "install_permission_required")
         }
 
-        val uri = FileProvider.getUriForFile(
-            activity,
-            "${activity.packageName}.updates",
-            file,
-        )
+        val uri = runCatching {
+            FileProvider.getUriForFile(
+                activity,
+                "${activity.packageName}.updates",
+                file,
+            )
+        }.getOrNull() ?: return mapOf("ok" to false, "reason" to "file_provider_error")
+
         val installIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
+            clipData = ClipData.newRawUri("apk", uri)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra(Intent.EXTRA_RETURN_RESULT, true)
         }
-        activity.startActivity(installIntent)
+        val launched = runCatching {
+            if (installIntent.resolveActivity(activity.packageManager) != null) {
+                activity.startActivity(installIntent)
+                true
+            } else {
+                @Suppress("DEPRECATION")
+                val fallback = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                    data = uri
+                    clipData = ClipData.newRawUri("apk", uri)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                }
+                if (fallback.resolveActivity(activity.packageManager) != null) {
+                    activity.startActivity(fallback)
+                    true
+                } else {
+                    false
+                }
+            }
+        }.getOrDefault(false)
+        if (!launched) {
+            return mapOf("ok" to false, "reason" to "install_launch_failed")
+        }
         return mapOf("ok" to true)
     }
 

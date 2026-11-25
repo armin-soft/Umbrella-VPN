@@ -493,8 +493,12 @@ class _DevicePageState extends State<DevicePage> {
           InfoRow(
             icon: Icons.install_mobile_rounded,
             label: 'نصب نسخه جدید',
-            value: device.canRequestInstallPackages ? 'مستقیم داخل برنامه' : 'از طریق مرورگر سیستم',
-            valueColor: colors.success,
+            value: device.canRequestInstallPackages
+                ? 'مستقیم داخل برنامه'
+                : 'نیاز به تایید در تنظیمات',
+            valueColor: device.canRequestInstallPackages
+                ? colors.success
+                : colors.warning,
           ),
           const Divider(height: AppMetrics.space3),
           InfoRow(

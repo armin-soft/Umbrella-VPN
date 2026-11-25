@@ -202,6 +202,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (security != null) {
         unawaited(security.scanNow(silent: true));
       }
+      final UpdateController? updates = context.maybeRead<UpdateController>();
+      if (updates != null) {
+        unawaited(updates.resumePendingInstallIfPermitted());
+      }
       unawaited(_maybeShowTelegramChannelPrompt());
     }
   }

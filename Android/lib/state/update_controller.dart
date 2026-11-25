@@ -79,6 +79,13 @@ class UpdateController extends ChangeNotifier {
   bool _installing = false;
   bool get installing => _installing;
 
+  bool _awaitingInstallPermission = false;
+  bool get awaitingInstallPermission => _awaitingInstallPermission;
+
+  File? _pendingInstallFile;
+  String _pendingInstallSha256 = '';
+  String _pendingInstallVersion = '';
+
   String _skippedVersion = '';
   String get skippedVersion => _skippedVersion;
 
@@ -261,43 +268,29 @@ class UpdateController extends ChangeNotifier {
 
       _installing = true;
       _speedBytesPerSec = 0;
+      _awaitingInstallPermission = false;
+      _pendingInstallFile = null;
+      _pendingInstallSha256 = '';
+      _pendingInstallVersion = '';
       _phase = Fa.num('در حال نصب خودکار نسخه ${info.version}...');
       notifyListeners();
 
-      final bool ok = await _service.install(
+      final ({bool ok, String reason}) installRes =
+          await _service.installDetailed(
         file,
         _native,
         expectedSha256: info.sha256,
-        silentRelaunch: true,
       );
-      if (!ok) {
-        final Uri? fallbackUri = Uri.tryParse(info.url);
-        bool openedBrowser = false;
-        if (fallbackUri != null) {
-          openedBrowser = await SafeUrlLauncher.open(
-            fallbackUri,
-            mode: LaunchMode.externalApplication,
-          );
-        }
-        if (openedBrowser) {
-          _phase = 'فایل نسخه جدید برای نصب ایمن در مرورگر سیستم باز شد.';
-          _log.add(Fa.num('لینک نصب نسخه ${info.version} به مرورگر سیستم سپرده شد.'));
-          _installing = false;
-          _downloading = false;
-          notifyListeners();
-          return true;
-        }
-        _installing = false;
-        _downloading = false;
-        _phase = '';
-        _error = 'دسترسی نصب از منابع ناشناس صادر نشده یا نصب لغو شد؛ '
-            'پس از فعال سازی اجازه نصب دوباره روی نصب کلیک کنید.';
-        _log.add(_error, level: 'warning');
-        notifyListeners();
-        return false;
+      if (!installRes.ok) {
+        return _handleInstallFailure(
+          reason: installRes.reason,
+          file: file,
+          expectedSha256: info.sha256,
+          version: info.version,
+        );
       }
 
-      _phase = 'صفحه نصب نسخه جدید باز شد؛ نصب را در سیستم عامل تایید کنید.';
+      _phase = 'صفحه نصب نسخه جدید باز شد؛ گزینه «به روز رسانی» را تایید کنید.';
       _log.add(Fa.num('نصب نسخه ${info.version} به اندروید سپرده شد.'));
       _installing = false;
       _downloading = false;
@@ -319,6 +312,103 @@ class UpdateController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// پس از بازگشت کاربر از تنظیمات «اجازه نصب از این منبع»، فایل تاییدشدهٔ قبلی
+  /// بدون دانلود دوباره بلافاصله نصب می شود.
+  Future<bool> resumePendingInstallIfPermitted() async {
+    final File? file = _pendingInstallFile;
+    if (!_awaitingInstallPermission ||
+        file == null ||
+        _downloading ||
+        _installing) {
+      return false;
+    }
+    final Map<String, dynamic> info = await _native.getPlatformInfo();
+    if (info['canRequestInstallPackages'] != true) {
+      return false;
+    }
+    _awaitingInstallPermission = false;
+    _installing = true;
+    _error = '';
+    _phase = Fa.num('در حال اجرای نصب نسخه $_pendingInstallVersion...');
+    notifyListeners();
+
+    final ({bool ok, String reason}) installRes =
+        await _service.installDetailed(
+      file,
+      _native,
+      expectedSha256: _pendingInstallSha256,
+    );
+    if (!installRes.ok) {
+      return _handleInstallFailure(
+        reason: installRes.reason,
+        file: file,
+        expectedSha256: _pendingInstallSha256,
+        version: _pendingInstallVersion,
+      );
+    }
+
+    _pendingInstallFile = null;
+    _pendingInstallSha256 = '';
+    _pendingInstallVersion = '';
+    _phase = 'صفحه نصب نسخه جدید باز شد؛ گزینه «به روز رسانی» را تایید کنید.';
+    _log.add('نصب خودکار نسخه جدید پس از تایید دسترسی آغاز شد.');
+    _installing = false;
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> _handleInstallFailure({
+    required String reason,
+    required File file,
+    required String expectedSha256,
+    required String version,
+  }) async {
+    _installing = false;
+    _downloading = false;
+    _phase = '';
+    switch (reason) {
+      case 'install_permission_required':
+        _awaitingInstallPermission = true;
+        _pendingInstallFile = file;
+        _pendingInstallSha256 = expectedSha256;
+        _pendingInstallVersion = version;
+        _error = 'دسترسی نصب برای آمبرلا هنوز فعال نیست؛ در صفحه تنظیمات بازشده '
+            'گزینه «اجازه از این منبع» را روشن کنید و به برنامه برگردید.';
+        break;
+      case 'invalid_apk_archive':
+      case 'sha256_mismatch':
+        try {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } on Exception {
+          // نادیده گرفته می شود.
+        }
+        _pendingInstallFile = null;
+        _error = 'بسته نصب دریافت شده معتبر یا کامل نیست؛ دوباره روی دانلود و نصب بزنید.';
+        break;
+      case 'signature_mismatch':
+        _pendingInstallFile = null;
+        _error = 'امضای دیجیتال این نسخه با نسخه فعلی هم خوانی ندارد؛ '
+            'ابتدا نسخه فعلی را حذف و سپس نسخه جدید را نصب کنید.';
+        break;
+      case 'package_mismatch':
+        _pendingInstallFile = null;
+        _error = 'شناسه بسته دریافت شده با برنامه آمبرلا مطابقت ندارد.';
+        break;
+      default:
+        _pendingInstallFile = file;
+        _pendingInstallSha256 = expectedSha256;
+        _pendingInstallVersion = version;
+        _error = 'باز کردن نصب کننده سیستم انجام نشد؛ دسترسی نصب برنامه ها را '
+            'بررسی کرده و دوباره تلاش کنید.';
+        break;
+    }
+    _log.add(_error, level: 'warning');
+    notifyListeners();
+    return false;
   }
 
   /// پشتیبان باز کردن صفحه انتشار رسمی (کانال پایدار یا بتا).

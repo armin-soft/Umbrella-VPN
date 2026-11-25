@@ -231,12 +231,58 @@ bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
   }
   std::wstring file = ToWide(exe);
   std::wstring parameters = ToWide(args);
+  std::wstring work_dir;
+  const size_t slash = file.find_last_of(L"\\/");
+  if (slash != std::wstring::npos && slash > 0) {
+    work_dir = file.substr(0, slash);
+  }
+  if (!is_core && !file.empty()) {
+    const std::wstring motw = file + L":Zone.Identifier";
+    DeleteFileW(motw.c_str());
+  }
+
+  // When launching an external installer from an already-elevated process,
+  // spawn it detached and outside our job/tree so quitting the app (or setup
+  // closing UmbrellaVPN.exe) never aborts the installer mid-flight.
+  if (!is_core && IsElevated() && !file.empty()) {
+    std::wstring cmdline = L"\"" + file + L"\"";
+    if (!parameters.empty()) {
+      cmdline += L" ";
+      cmdline += parameters;
+    }
+    STARTUPINFOW si = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_SHOWNORMAL;
+    PROCESS_INFORMATION pi = {0};
+    const DWORD flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP |
+                        CREATE_BREAKAWAY_FROM_JOB | CREATE_UNICODE_ENVIRONMENT;
+    BOOL started = CreateProcessW(
+        file.c_str(), cmdline.data(), nullptr, nullptr, FALSE, flags, nullptr,
+        work_dir.empty() ? nullptr : work_dir.c_str(), &si, &pi);
+    if (!started && GetLastError() == ERROR_ACCESS_DENIED) {
+      started = CreateProcessW(
+          file.c_str(), cmdline.data(), nullptr, nullptr, FALSE,
+          DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP |
+              CREATE_UNICODE_ENVIRONMENT,
+          nullptr, work_dir.empty() ? nullptr : work_dir.c_str(), &si, &pi);
+    }
+    if (started) {
+      WaitForInputIdle(pi.hProcess, 1500);
+      if (pi.hThread) CloseHandle(pi.hThread);
+      if (pi.hProcess) CloseHandle(pi.hProcess);
+      SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
+      return true;
+    }
+  }
+
   SHELLEXECUTEINFOW info = {0};
   info.cbSize = sizeof(info);
-  info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+  info.fMask = SEE_MASK_NOCLOSEPROCESS | (is_core ? SEE_MASK_FLAG_NO_UI : 0);
   info.lpVerb = L"runas";
   info.lpFile = file.c_str();
   info.lpParameters = parameters.empty() ? nullptr : parameters.c_str();
+  info.lpDirectory = work_dir.empty() ? nullptr : work_dir.c_str();
   info.nShow = SW_SHOWNORMAL;
   const BOOL ok = ShellExecuteExW(&info);
   SetEnvironmentVariableW(L"UMBRELLA_OWNER_PID", nullptr);
@@ -244,7 +290,12 @@ bool SystemOps::RunElevated(const std::string& exe, const std::string& args) {
   if (is_core) {
     shutdown_clean_.store(false, std::memory_order_release);
   }
-  if (info.hProcess) CloseHandle(info.hProcess);
+  if (info.hProcess) {
+    if (!is_core) {
+      WaitForInputIdle(info.hProcess, 1500);
+    }
+    CloseHandle(info.hProcess);
+  }
   return true;
 }
 

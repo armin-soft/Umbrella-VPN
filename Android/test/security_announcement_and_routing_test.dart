@@ -750,7 +750,7 @@ void main() {
       final String manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
       expect(manifest.contains('READ_MEDIA_IMAGES'), isTrue);
       expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isTrue);
-      expect(manifest.contains('REQUEST_INSTALL_PACKAGES'), isFalse);
+      expect(manifest.contains('REQUEST_INSTALL_PACKAGES'), isTrue);
       expect(manifest.contains('READ_SMS'), isFalse);
       expect(manifest.contains('RECEIVE_SMS'), isFalse);
     });

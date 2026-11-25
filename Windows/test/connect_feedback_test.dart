@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/subscription_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
+import 'package:umbrella_vpn/state/update_controller.dart';
 import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
@@ -303,6 +305,137 @@ void main() {
     toasts.clear();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 5));
+    subs.dispose();
+    vpn.dispose();
+    settings.dispose();
+    auth.dispose();
+    gateway.close();
+    toasts.dispose();
+  });
+
+  testWidgets('ConnectPage در ویندوز بنر اعلان نسخه جدید را نمایش می دهد و امکان بستن دارد', (WidgetTester tester) async {
+    addTearDown(() async => await tester.binding.setSurfaceSize(null));
+
+    const String sampleHash =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final MockClient updateHttp = MockClient((http.Request _) async {
+      return http.Response.bytes(
+        utf8.encode(jsonEncode(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'tag_name': 'v9.9.9-windows',
+            'prerelease': false,
+            'draft': false,
+            'published_at': '2026-11-25T12:00:00Z',
+            'body': '- نصب خودکار به روز رسانی بدون خطای خروج',
+            'assets': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'name': 'UmbrellaVPN-Setup-9.9.9-x64.exe',
+                'browser_download_url':
+                    'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/v9.9.9-windows/UmbrellaVPN-Setup-9.9.9-x64.exe',
+                'size': 40000000,
+                'digest': 'sha256:$sampleHash',
+              },
+            ],
+          },
+        ])),
+        200,
+        headers: const <String, String>{
+          'content-type': 'application/json; charset=utf-8',
+        },
+      );
+    });
+
+    final _ConnectNative native = _ConnectNative();
+    final _ConnectProvisioner provisioner = _ConnectProvisioner('/tmp/umbrella_win_upd_banner');
+    await provisioner.init();
+    final _ConnectSound sound = _ConnectSound();
+    final VpnController vpn = VpnController(
+      native: native,
+      ipService: _ConnectIpService(),
+      sound: sound,
+      tray: TrayService(native),
+      provisioner: provisioner,
+      settings: const AppSettings(),
+    );
+    final SettingsController settings = SettingsController(
+      native: native,
+      sound: sound,
+      window: WindowService(native),
+    );
+    final GatewayClient gateway = GatewayClient(
+      client: MockClient((http.Request _) async => http.Response('{"ok":false}', 200)),
+      enableNativeTransport: false,
+    );
+    final _SignedConnectAuth auth = _SignedConnectAuth(
+      native: native,
+      gateway: gateway,
+      store: LocalStore.instance,
+    );
+    final SubscriptionController subs = SubscriptionController(
+      vpn: vpn,
+      auth: auth,
+      client: MockClient((http.Request _) async => http.Response('[]', 200)),
+    );
+    final UpdateController updates = UpdateController(
+      native,
+      service: UpdateService(client: updateHttp),
+    );
+    await tester.runAsync(() => updates.check(silent: false));
+    expect(updates.available, isNotNull);
+
+    final ToastController toasts = ToastController();
+    final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+    final FlutterExceptionHandler? prevError = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails d) => errors.add(d);
+    addTearDown(() => FlutterError.onError = prevError);
+
+    for (final Size size in const <Size>[Size(800, 600), Size(1120, 900)]) {
+      await tester.binding.setSurfaceSize(size);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<SoundService>.value(value: sound),
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+            ChangeNotifierProvider<VpnController>.value(value: vpn),
+            ChangeNotifierProvider<UpdateController>.value(value: updates),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: ConnectPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('connect-update-banner')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('نسخه جدید'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('connect-update-action-button')),
+        findsOneWidget,
+      );
+    }
+    expect(errors, isEmpty, reason: errors.map((e) => e.exceptionAsString()).join('\n'));
+
+    final Finder dismissBtn =
+        find.byKey(const ValueKey<String>('connect-update-dismiss-button'));
+    await tester.ensureVisible(dismissBtn);
+    await tester.tap(dismissBtn);
+    await tester.pump();
+    expect(find.byKey(const ValueKey<String>('connect-update-banner')), findsNothing);
+
+    toasts.clear();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
+    updates.dispose();
+    updateHttp.close();
     subs.dispose();
     vpn.dispose();
     settings.dispose();

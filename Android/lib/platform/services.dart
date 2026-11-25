@@ -560,6 +560,11 @@ class UpdateService {
 
   Map<String, dynamic>? _pickAndroidApk(List<Map<String, dynamic>> assets) {
     final String abi = _preferredAbi.toLowerCase();
+    final RegExp? exactAbiPattern = abi.isNotEmpty
+        ? RegExp('(^|[-_])${RegExp.escape(abi)}([-_.]|\$)')
+        : null;
+    final RegExp knownAbiPattern =
+        RegExp(r'(^|[-_])(arm64-v8a|armeabi-v7a|x86_64|x86)([-_.]|$)');
     Map<String, dynamic>? universalApk;
     Map<String, dynamic>? anyApk;
     for (final Map<String, dynamic> asset in assets) {
@@ -567,13 +572,10 @@ class UpdateService {
       final String url = JsonX.text(asset['browser_download_url']);
       if (url.isEmpty || !name.endsWith('.apk')) continue;
       anyApk ??= asset;
-      if (abi.isNotEmpty && name.contains(abi)) {
+      if (exactAbiPattern != null && exactAbiPattern.hasMatch(name)) {
         return asset;
       }
-      if (name.contains('universal') ||
-          (!name.contains('arm64') &&
-              !name.contains('armeabi') &&
-              !name.contains('x86_64'))) {
+      if (name.contains('universal') || !knownAbiPattern.hasMatch(name)) {
         universalApk ??= asset;
       }
     }
@@ -697,7 +699,12 @@ class UpdateService {
       if (targetDir != null) {
         dir = targetDir;
       } else {
-        final Directory base = await getTemporaryDirectory();
+        Directory? base;
+        try {
+          base = await getApplicationSupportDirectory();
+        } on Exception {
+          base = await getTemporaryDirectory();
+        }
         dir = Directory(
           '${base.path}${Platform.pathSeparator}umbrella-updates',
         );
@@ -739,11 +746,14 @@ class UpdateService {
       if (streamed.statusCode >= 300) {
         return null;
       }
-      final int total = streamed.contentLength ?? info.sizeBytes;
+      final int total = (streamed.contentLength ?? 0) > 0
+          ? streamed.contentLength!
+          : info.sizeBytes;
       int received = 0;
       final IOSink activeSink = partFile.openWrite();
       sink = activeSink;
-      await for (final List<int> chunk in streamed.stream) {
+      await for (final List<int> chunk
+          in streamed.stream.timeout(const Duration(seconds: 45))) {
         if (isCancelled != null && isCancelled()) {
           await activeSink.close();
           sink = null;
@@ -759,6 +769,13 @@ class UpdateService {
       await activeSink.flush();
       await activeSink.close();
       sink = null;
+
+      if (received <= 0 || (total > 0 && received < total)) {
+        if (await partFile.exists()) {
+          await partFile.delete();
+        }
+        return null;
+      }
 
       onProgress(1.0, received, received);
       if (!await _matchesSha256(partFile, expectedSha256)) {
@@ -789,25 +806,40 @@ class UpdateService {
   }
 
   /// درخواست نصب فایل APK از طریق سیستم عامل اندروید پس از تایید مجدد SHA-256.
+  Future<({bool ok, String reason})> installDetailed(
+    File file,
+    NativeBridge native, {
+    required String expectedSha256,
+  }) async {
+    final String lower = file.path.toLowerCase();
+    final String digest = expectedSha256.trim().toLowerCase();
+    if (!hasValidSha256(digest) || !lower.endsWith('.apk')) {
+      return (ok: false, reason: 'invalid_apk_archive');
+    }
+    try {
+      if (!await file.exists()) {
+        return (ok: false, reason: 'file_not_found');
+      }
+      if (!await _matchesSha256(file, digest)) {
+        return (ok: false, reason: 'sha256_mismatch');
+      }
+    } on Exception {
+      return (ok: false, reason: 'file_not_found');
+    }
+    return native.installApk(file.path);
+  }
+
   Future<bool> install(
     File file,
     NativeBridge native, {
     required String expectedSha256,
     bool silentRelaunch = true,
   }) async {
-    final String lower = file.path.toLowerCase();
-    final String digest = expectedSha256.trim().toLowerCase();
-    if (!hasValidSha256(digest) || !lower.endsWith('.apk')) {
-      return false;
-    }
-    try {
-      if (!await file.exists() || !await _matchesSha256(file, digest)) {
-        return false;
-      }
-    } on Exception {
-      return false;
-    }
-    final ({bool ok, String reason}) result = await native.installApk(file.path);
+    final ({bool ok, String reason}) result = await installDetailed(
+      file,
+      native,
+      expectedSha256: expectedSha256,
+    );
     return result.ok;
   }
 

@@ -12,6 +12,7 @@ import '../../state/security_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
+import '../../state/update_controller.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/brand_widgets.dart';
 import '../widgets/common.dart';
@@ -282,6 +283,8 @@ class _ConnectPageState extends State<ConnectPage> {
     final SubscriptionController subs = context.watch<SubscriptionController>();
     final SecurityScannerController? security =
         context.maybeWatch<SecurityScannerController>();
+    final UpdateController? updates = context.maybeWatch<UpdateController>();
+    final UpdateInfo? availableUpdate = updates?.available;
     final ToastController toasts = context.read<ToastController>();
     final UmbrellaColors colors = context.colors;
     final bool preConnecting =
@@ -494,6 +497,17 @@ class _ConnectPageState extends State<ConnectPage> {
                           ? 'اشتراک شما اجازه اتصال ندارد'
                           : 'حساب شما مسدود شده است'),
                   message: account.accessReason,
+                  dense: phoneSized || landscapeSplit,
+                ),
+              ),
+            if (updates != null && availableUpdate != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: landscapeSplit ? AppMetrics.space1 : AppMetrics.space2,
+                ),
+                child: _UpdateBanner(
+                  updates: updates,
+                  info: availableUpdate,
                   dense: phoneSized || landscapeSplit,
                 ),
               ),
@@ -1248,6 +1262,194 @@ class _AccessBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// بنر اطلاع رسانی نسخه جدید روی صفحه اتصال.
+class _UpdateBanner extends StatelessWidget {
+  const _UpdateBanner({
+    required this.updates,
+    required this.info,
+    this.dense = false,
+  });
+
+  final UpdateController updates;
+  final UpdateInfo info;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final bool active = updates.downloading || updates.installing;
+    final bool hasError = updates.error.isNotEmpty;
+    final Color accent = hasError
+        ? colors.danger
+        : (info.preRelease ? colors.warning : colors.info);
+    final List<String> changelog = info.changelogItems;
+    final String subtitle = hasError
+        ? updates.error
+        : active
+            ? (updates.phase.isNotEmpty
+                ? updates.phase
+                : 'در حال دریافت بسته به روز رسانی...')
+            : (changelog.isNotEmpty
+                ? changelog.first
+                : 'برای دریافت و نصب خودکار نسخه جدید اقدام کنید.');
+    final String titleText = info.preRelease
+        ? Fa.num('نسخه آزمایشی جدید ${info.version} در دسترس است')
+        : Fa.num('نسخه جدید ${info.version} در دسترس است');
+
+    final Widget actionButton = (updates.downloading && !updates.installing)
+        ? OutlinedButton(
+            key: const ValueKey<String>('connect-update-action-button'),
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.symmetric(
+                horizontal: dense ? AppMetrics.space2 : AppMetrics.space3,
+                vertical: dense ? AppMetrics.space1 : AppMetrics.space2,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: withUiClick(context, updates.cancelDownload),
+            child: const Text('لغو'),
+          )
+        : FilledButton.icon(
+            key: const ValueKey<String>('connect-update-action-button'),
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: colors.onPrimary,
+              padding: EdgeInsets.symmetric(
+                horizontal: dense ? AppMetrics.space2 : AppMetrics.space3,
+                vertical: dense ? AppMetrics.space1 : AppMetrics.space2,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: updates.installing
+                ? null
+                : withUiClick(
+                    context,
+                    () => unawaited(updates.downloadAndInstall()),
+                  ),
+            icon: const Icon(Icons.download_rounded, size: AppMetrics.iconSm),
+            label: Text(
+              updates.installing
+                  ? 'در حال نصب...'
+                  : (hasError ? 'تلاش دوباره' : 'دریافت و نصب'),
+            ),
+          );
+
+    final Widget? dismissButton = (!active && !info.mandatory)
+        ? IconButton(
+            key: const ValueKey<String>('connect-update-dismiss-button'),
+            tooltip: 'بعدا',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            visualDensity: VisualDensity.compact,
+            onPressed: withUiClick(
+              context,
+              () => unawaited(updates.skipCurrent()),
+            ),
+            icon: Icon(
+              Icons.close_rounded,
+              size: AppMetrics.iconSm,
+              color: colors.textSecondary,
+            ),
+          )
+        : null;
+
+    final Widget infoColumn = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            titleText,
+            softWrap: true,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontSize: dense ? AppMetrics.fontCaption : null,
+                  fontWeight: FontWeight.w800,
+                  color: accent,
+                ),
+          ),
+          Text(
+            Fa.num(subtitle),
+            maxLines: dense ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: hasError ? colors.danger : colors.textSecondary,
+                ),
+          ),
+          if (updates.downloading) ...<Widget>[
+            const SizedBox(height: AppMetrics.space1),
+            ProgressLine(
+              value: updates.progress,
+              color: accent,
+              height: 4,
+            ),
+          ],
+        ],
+      ),
+    );
+
+    final Widget leadingIcon = active
+        ? SizedBox(
+            width: dense ? AppMetrics.iconSm : AppMetrics.iconMd,
+            height: dense ? AppMetrics.iconSm : AppMetrics.iconMd,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              color: accent,
+              value: updates.downloading && updates.progress > 0
+                  ? updates.progress
+                  : null,
+            ),
+          )
+        : Icon(
+            Icons.system_update_rounded,
+            size: dense ? AppMetrics.iconSm : AppMetrics.iconMd,
+            color: accent,
+          );
+
+    return Container(
+      key: const ValueKey<String>('connect-update-banner'),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? AppMetrics.space2 : AppMetrics.space3,
+        vertical: dense ? AppMetrics.space1 : AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: dense
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    leadingIcon,
+                    const SizedBox(width: AppMetrics.space2),
+                    infoColumn,
+                    if (dismissButton != null) dismissButton,
+                  ],
+                ),
+                const SizedBox(height: AppMetrics.space1),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: actionButton,
+                ),
+              ],
+            )
+          : Row(
+              children: <Widget>[
+                leadingIcon,
+                const SizedBox(width: AppMetrics.space2),
+                infoColumn,
+                const SizedBox(width: AppMetrics.space2),
+                actionButton,
+                if (dismissButton != null) dismissButton,
+              ],
+            ),
     );
   }
 }

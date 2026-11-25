@@ -286,7 +286,7 @@ class UpdateController extends ChangeNotifier {
 
       final Future<void> Function()? exitHook = onExitForInstall;
       if (exitHook != null) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await Future<void>.delayed(const Duration(milliseconds: 600));
         await exitHook();
       } else {
         _installing = false;

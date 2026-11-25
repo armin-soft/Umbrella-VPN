@@ -1,12 +1,17 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:umbrella_vpn/core/app_config.dart';
+import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/native.dart';
 import 'package:umbrella_vpn/platform/services.dart';
+import 'package:umbrella_vpn/state/update_controller.dart';
 
 void main() {
   group('DeviceProfile.fromNative', () {
@@ -183,5 +188,189 @@ void main() {
       expect(optimized.shouldOptimize, isTrue);
       expect(optimized.isCriticallyLowBattery, isTrue);
     });
+
+    test('does not match x86 onto x86_64 APK asset', () async {
+      const String x86_64Hash =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      const String universalHash =
+          'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+      final MockClient client = MockClient((http.Request req) async {
+        if (req.url.toString() == AppConfig.releasesListApiUrl) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<Map<String, dynamic>>[
+                <String, dynamic>{
+                  'tag_name': '9.9.9',
+                  'prerelease': false,
+                  'draft': false,
+                  'published_at': '2026-11-22T12:00:00Z',
+                  'assets': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-9.9.9-x86_64.apk',
+                      'browser_download_url':
+                          'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-x86_64.apk',
+                      'digest': 'sha256:$x86_64Hash',
+                    },
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-9.9.9-universal.apk',
+                      'browser_download_url':
+                          'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-universal.apk',
+                      'digest': 'sha256:$universalHash',
+                    },
+                  ],
+                },
+              ]),
+            ),
+            200,
+          );
+        }
+        return http.Response('', 404);
+      });
+
+      final UpdateService x86Service = UpdateService(
+        client: client,
+        preferredAbi: 'x86',
+      );
+      final ({UpdateInfo? available, List<UpdateInfo> releases}) cat =
+          await x86Service.fetchCatalog(channel: UpdateChannel.stable);
+      expect(cat.available?.assetName, 'UmbrellaVPN-9.9.9-universal.apk');
+      client.close();
+    });
+
+    test('in-app APK update installs directly, handles permission resume, and reports archive errors', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+
+      final Directory tempDir = await Directory.systemTemp.createTemp('umb_upd_');
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final List<int> apkBytes = utf8.encode('PK-fake-apk-binary-payload-9.9.9');
+      final String apkSha = sha256.convert(apkBytes).toString();
+      final MockClient client = MockClient((http.Request req) async {
+        if (req.url.toString() == AppConfig.releasesListApiUrl) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<Map<String, dynamic>>[
+                <String, dynamic>{
+                  'tag_name': '9.9.9',
+                  'prerelease': false,
+                  'draft': false,
+                  'published_at': '2026-11-25T12:00:00Z',
+                  'assets': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'name': 'UmbrellaVPN-9.9.9-arm64-v8a.apk',
+                      'browser_download_url':
+                          'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/9.9.9/UmbrellaVPN-9.9.9-arm64-v8a.apk',
+                      'size': apkBytes.length,
+                      'digest': 'sha256:$apkSha',
+                    },
+                  ],
+                },
+              ]),
+            ),
+            200,
+          );
+        }
+        return http.Response.bytes(apkBytes, 200);
+      });
+
+      final _InstallFakeNative native = _InstallFakeNative();
+      final UpdateController ctrl = UpdateController(
+        native,
+        service: _TestDirUpdateService(
+          defaultDir: tempDir,
+          client: client,
+          preferredAbi: 'arm64-v8a',
+        ),
+      );
+      addTearDown(() {
+        ctrl.dispose();
+        client.close();
+      });
+
+      await ctrl.check(silent: false);
+      expect(ctrl.available, isNotNull);
+
+      // 1. Permission required first -> stays in-app, saves pending file, resumes on grant.
+      native.nextInstallResult = (ok: false, reason: 'install_permission_required');
+      native.canRequestInstall = false;
+      expect(await ctrl.downloadAndInstall(), isFalse);
+      expect(ctrl.awaitingInstallPermission, isTrue);
+      expect(ctrl.error, contains('اجازه از این منبع'));
+      expect(native.installedPaths, hasLength(1));
+
+      // Resuming before granting permission must NOT trigger another install loop.
+      expect(await ctrl.resumePendingInstallIfPermitted(), isFalse);
+      expect(native.installedPaths, hasLength(1));
+
+      // Once permission is enabled, resuming automatically launches Android installer!
+      native.canRequestInstall = true;
+      native.nextInstallResult = (ok: true, reason: '');
+      expect(await ctrl.resumePendingInstallIfPermitted(), isTrue);
+      expect(ctrl.awaitingInstallPermission, isFalse);
+      expect(ctrl.error, isEmpty);
+      expect(native.installedPaths, hasLength(2));
+
+      // 2. Signature mismatch surfaces exact error without opening external browser.
+      native.nextInstallResult = (ok: false, reason: 'signature_mismatch');
+      expect(await ctrl.downloadAndInstall(), isFalse);
+      expect(ctrl.error, contains('امضای دیجیتال'));
+
+      // 3. Invalid archive deletes bad file and shows exact error.
+      native.nextInstallResult = (ok: false, reason: 'invalid_apk_archive');
+      expect(await ctrl.downloadAndInstall(), isFalse);
+      expect(ctrl.error, contains('معتبر یا کامل نیست'));
+      expect(File(native.installedPaths.last).existsSync(), isFalse);
+    });
   });
+}
+
+class _InstallFakeNative implements NativeBridge {
+  ({bool ok, String reason}) nextInstallResult = (ok: true, reason: '');
+  bool canRequestInstall = true;
+  final List<String> installedPaths = <String>[];
+
+  @override
+  Future<({bool ok, String reason})> installApk(String path) async {
+    installedPaths.add(path);
+    return nextInstallResult;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getPlatformInfo() async =>
+      <String, dynamic>{'canRequestInstallPackages': canRequestInstall};
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestDirUpdateService extends UpdateService {
+  _TestDirUpdateService({
+    required this.defaultDir,
+    super.client,
+    super.preferredAbi,
+  });
+
+  final Directory defaultDir;
+
+  @override
+  Future<File?> download(
+    UpdateInfo info, {
+    required void Function(double progress, int received, int total) onProgress,
+    bool Function()? isCancelled,
+    Directory? targetDir,
+  }) {
+    return super.download(
+      info,
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+      targetDir: targetDir ?? defaultDir,
+    );
+  }
 }

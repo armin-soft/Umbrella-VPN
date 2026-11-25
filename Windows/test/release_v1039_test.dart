@@ -675,6 +675,10 @@ void main() {
       expect(updatesPage, contains('UpdateChannel.stable'));
       expect(updatesPage, contains('UpdateChannel.beta'));
       expect(updatesPage, contains('downloadAndInstall'));
+
+      final String services = File('lib/platform/services.dart').readAsStringSync();
+      expect(services, contains('/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS'));
+      expect(services, contains('/RelaunchAfterUpdate=1'));
     });
   });
 
