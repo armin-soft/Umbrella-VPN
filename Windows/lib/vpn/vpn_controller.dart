@@ -5582,7 +5582,7 @@ class VpnController extends ChangeNotifier {
           _orphansKilled++;
         }
       }
-    } on Exception {
+    } on Object {
       // پاکسازی نباید هرگز جلوی بستن اتصال را بگیرد.
     }
   }
@@ -5709,8 +5709,15 @@ class VpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     unawaited(_stopCoreBlockLogMonitor());
     unawaited(_blockServer?.stop());
-    unawaited(_stopCores());
-    unawaited(_native.shutdownCores());
+    if (_hasTrackedCoreProcesses ||
+        _prewarmProcesses.isNotEmpty ||
+        _prewarmInFlight != null ||
+        _connectInFlight ||
+        _status != VpnStatus.disconnected ||
+        _proxyPort != 0) {
+      unawaited(_stopCores());
+      unawaited(_native.shutdownCores());
+    }
     super.dispose();
   }
 }

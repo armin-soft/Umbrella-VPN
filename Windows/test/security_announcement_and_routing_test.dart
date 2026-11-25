@@ -36,6 +36,7 @@ class _FakeNative implements NativeBridge {
   List<InstalledAppInfo> apps = const <InstalledAppInfo>[];
   String? pickedExe;
   final List<String> remediatedKeys = <String>[];
+  int portLookupCalls = 0;
 
   @override
   bool get available => true;
@@ -71,6 +72,27 @@ class _FakeNative implements NativeBridge {
 
   @override
   Future<int> shutdownCores({bool skipIfClean = false}) async => 0;
+
+  @override
+  Future<List<int>> pidsHoldingPort(int port) async {
+    portLookupCalls++;
+    return const <int>[];
+  }
+
+  @override
+  Future<String> processNameOf(int pid) async => '';
+
+  @override
+  Future<String> processPathOf(int pid) async => '';
+
+  @override
+  Future<List<String>> runningCores() async => const <String>[];
+
+  @override
+  Future<bool> systemProxyEnabled() async => false;
+
+  @override
+  Future<bool> isRunning(String name) async => false;
 
   @override
   Future<bool> killPid(int pid) async => true;
@@ -1354,28 +1376,33 @@ void main() {
         ) async {
           final Socket sock =
               await Socket.connect(InternetAddress.loopbackIPv4, uri.port);
-          final String pq = uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
-          sock.write('GET $pq HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n');
-          await sock.flush();
-          final List<int> bytes = await sock.fold<List<int>>(
-            <int>[],
-            (List<int> acc, List<int> chunk) => acc..addAll(chunk),
-          );
-          final String raw = latin1.decode(bytes);
-          final int split = raw.indexOf('\r\n\r\n');
-          final String head = split >= 0 ? raw.substring(0, split) : raw;
-          final int code = int.tryParse(
-                RegExp(r'HTTP/1\.[01]\s+(\d+)').firstMatch(head)?.group(1) ??
-                    '',
-              ) ??
-              0;
-          final List<int> bodyBytes =
-              split >= 0 ? bytes.sublist(split + 4) : const <int>[];
-          return (
-            statusCode: code,
-            head: head.toLowerCase(),
-            body: utf8.decode(bodyBytes, allowMalformed: true),
-          );
+          try {
+            final String pq =
+                uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+            sock.write('GET $pq HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n');
+            await sock.flush();
+            final List<int> bytes = await sock.fold<List<int>>(
+              <int>[],
+              (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+            );
+            final String raw = latin1.decode(bytes);
+            final int split = raw.indexOf('\r\n\r\n');
+            final String head = split >= 0 ? raw.substring(0, split) : raw;
+            final int code = int.tryParse(
+                  RegExp(r'HTTP/1\.[01]\s+(\d+)').firstMatch(head)?.group(1) ??
+                      '',
+                ) ??
+                0;
+            final List<int> bodyBytes =
+                split >= 0 ? bytes.sublist(split + 4) : const <int>[];
+            return (
+              statusCode: code,
+              head: head.toLowerCase(),
+              body: utf8.decode(bodyBytes, allowMalformed: true),
+            );
+          } finally {
+            await sock.close();
+          }
         }
 
         final ({int statusCode, String head, String body}) favRes =
@@ -1584,6 +1611,7 @@ void main() {
         final String vpnCtrl = File('lib/vpn/vpn_controller.dart').readAsStringSync();
         expect(vpnCtrl, contains('_prewarmProcesses'));
         expect(vpnCtrl, contains('Future<void> _terminateForeignCores()'));
+        expect(vpnCtrl, contains('} on Object {'));
 
         final String corePing = File('lib/vpn/core_ping.dart').readAsStringSync();
         expect(corePing, contains('Future.wait('));
@@ -1591,6 +1619,28 @@ void main() {
         // quickScanDeviceSecurity safely yields null for mock/subclassed NativeBridge instances.
         final _FakeNative mockNative = _FakeNative();
         expect(await NativeBridge.quickScanDeviceSecurity(mockNative), isNull);
+
+        // Concurrent idle VpnController disposals must not race on reserved ports or probe native port holders.
+        final VpnController idleA = VpnController(
+          native: mockNative,
+          ipService: IpService(),
+          sound: _FakeSound(),
+          tray: TrayService(mockNative),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        final VpnController idleB = VpnController(
+          native: mockNative,
+          ipService: IpService(),
+          sound: _FakeSound(),
+          tray: TrayService(mockNative),
+          provisioner: CoreProvisioner(),
+          settings: const AppSettings(),
+        );
+        idleA.dispose();
+        idleB.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(mockNative.portLookupCalls, 0);
       },
     );
   });

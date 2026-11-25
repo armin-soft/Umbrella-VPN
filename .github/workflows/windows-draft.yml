@@ -159,7 +159,7 @@ jobs:
           }
           flutter test --reporter expanded 2>&1 | Tee-Object -Variable tests
           if ($LASTEXITCODE -ne 0) {
-            $errLines = $tests | Where-Object { "$_" -match '\[E\]|EXCEPTION|Expected:|Actual:|Some tests failed|Failed assertion|^\s+#\d+' }
+            $errLines = $tests | Where-Object { "$_" -match '\[E\]|EXCEPTION|Error:|NoSuchMethodError|StateError|Bad state|TypeError|RangeError|ArgumentError|ConcurrentModificationError|Expected:|Actual:|Some tests failed|Failed assertion|^\s+#\d+|^\s+(?:package:|dart:|test[\\/]|lib[\\/])' }
             if (-not $errLines) { $errLines = $tests | Select-Object -Last 80 }
             $detail = ($errLines | Select-Object -Last 80 | Out-String).Replace('%','%25').Replace("`r",'').Replace("`n",'%0A')
             Write-Output "::error::$detail"
