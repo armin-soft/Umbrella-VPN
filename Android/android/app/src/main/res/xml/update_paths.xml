@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="internal_updates" path="umbrella-updates/" />
+    <cache-path name="cache_updates" path="umbrella-updates/" />
+    <external-files-path name="external_updates" path="umbrella-updates/" />
+</paths>

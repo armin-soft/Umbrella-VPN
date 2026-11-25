@@ -1,0 +1,1185 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/persian.dart';
+import '../../core/theme.dart';
+import '../../models/models.dart';
+import '../../platform/services.dart';
+import '../../state/auth_controller.dart';
+import '../../state/security_controller.dart';
+import '../../state/settings_controller.dart';
+import '../../state/subscription_controller.dart';
+import '../../state/toast_controller.dart';
+import '../../state/update_controller.dart';
+import '../../vpn/vpn_controller.dart';
+import '../widgets/brand_widgets.dart';
+import '../widgets/common.dart';
+import '../widgets/flag_view.dart';
+import '../widgets/live_clock.dart';
+import '../widgets/quick_connection_panel.dart';
+import '../widgets/security_shield_dialog.dart';
+
+/// صفحه اصلی اتصال؛ وضعیت و کنترل اتصال را در اولویت نگه می دارد.
+///
+/// گزینه های جانبی اتصال از دکمه اختصاصی باز می شوند تا صفحه اصلی خلوت بماند؛
+/// حالت سرویس و اشتراک گذاری شبکه از پنجره تنظیمات اتصال در دسترس هستند.
+class ConnectPage extends StatefulWidget {
+  const ConnectPage({super.key});
+
+  @override
+  State<ConnectPage> createState() => _ConnectPageState();
+}
+
+class _ConnectPageState extends State<ConnectPage> {
+  bool _preConnectBusy = false;
+  int _preConnectEpoch = 0;
+
+  /// آی پی دستگاه برای نمایش در نوار بالا.
+  ///
+  /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
+  /// واقعی همین دستگاه؛ و اگر خواندن آن از اینترنت هنوز تمام نشده باشد، آی پی
+  /// داخلی کارت شبکه.
+  String _deviceIp(VpnController vpn) {
+    if (vpn.status == VpnStatus.connected && vpn.exitIp.isNotEmpty) {
+      return vpn.exitIp;
+    }
+    if (vpn.realIp.isNotEmpty) {
+      return vpn.realIp;
+    }
+    if (vpn.geo.ip.isNotEmpty) {
+      return vpn.geo.ip;
+    }
+    final String local = vpn.device.localIp;
+    return local.isEmpty ? 'در حال خواندن' : local;
+  }
+
+  /// پرچم مناسب همان آی پی که نشان می دهیم.
+  static String _flagForIp(VpnController vpn, bool connected, String ip) {
+    if (connected) {
+      if (vpn.geo.ip.isNotEmpty &&
+          vpn.geo.ip == ip &&
+          vpn.geo.flagCode.isNotEmpty) {
+        return vpn.geo.flagCode;
+      }
+      final String fromNode = vpn.activeNode?.flagCode ?? '';
+      if (fromNode.isNotEmpty) {
+        return fromNode;
+      }
+      final String fromGeo = vpn.geo.flagCode;
+      if (fromGeo.isNotEmpty && !_isPrivateIp(ip)) {
+        return fromGeo;
+      }
+      return '';
+    }
+    if (_isPrivateIp(ip) || ip == 'در حال خواندن') {
+      return '';
+    }
+    if (vpn.geo.ip.isNotEmpty && vpn.geo.ip == ip) {
+      return vpn.geo.flagCode;
+    }
+    return '';
+  }
+
+  /// آی پی داخلی است؟ (بدون پرچم، بدون کشور)
+  static bool _isPrivateIp(String ip) {
+    final String value = ip.trim();
+    if (value.isEmpty) {
+      return false;
+    }
+    if (value.startsWith('10.') ||
+        value.startsWith('192.168.') ||
+        value.startsWith('127.') ||
+        value.startsWith('169.254.')) {
+      return true;
+    }
+    if (value.startsWith('172.')) {
+      final List<String> parts = value.split('.');
+      if (parts.length > 1) {
+        final int? second = int.tryParse(parts[1]);
+        if (second != null && second >= 16 && second <= 31) {
+          return true;
+        }
+      }
+    }
+    return value.toLowerCase().startsWith('fe80') || value == '::1';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final SubscriptionController subs =
+          context.read<SubscriptionController>();
+      final AuthController auth = context.read<AuthController>();
+      final VpnController vpn = context.read<VpnController>();
+      await OccasionService.instance.load();
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+      if (auth.signedIn &&
+          subs.totalNodes == 0 &&
+          !subs.loadingAll &&
+          !subs.personalLoading) {
+        await subs.syncPersonal();
+      }
+      if (mounted &&
+          !vpn.measuring &&
+          vpn.nodes.isNotEmpty &&
+          vpn.nodes.every((VpnNode node) => !node.hasPing)) {
+        unawaited(vpn.refreshPings(all: false, tunnelProbe: false));
+      }
+    });
+  }
+
+  /// خط دوم اعلان اتصال، بدون نام سرور: فقط پینگ و وضعیت.
+  static String _connectedNote(VpnController vpn) {
+    final int ping = vpn.activePingMs;
+    if (ping > 0) {
+      return 'پینگ ${Fa.ms(ping)}';
+    }
+    return 'اتصال امن برقرار است';
+  }
+
+  /// آیکون مناسب همان سلام ساعت روز (صبح، ظهر، عصر، شب).
+  static IconData _greetingIcon() {
+    switch (Fa.greetingKey()) {
+      case 'morning':
+        return Icons.wb_twilight_rounded;
+      case 'noon':
+        return Icons.wb_sunny_rounded;
+      case 'evening':
+        return Icons.nights_stay_rounded;
+      default:
+        return Icons.bedtime_rounded;
+    }
+  }
+
+  /// لغو اتصال در حال ساخت (دکمه «لغو اتصال»).
+  Future<void> _cancelConnection(
+    VpnController vpn,
+    ToastController toasts,
+  ) async {
+    if (_preConnectBusy && !vpn.status.busy) {
+      setState(() {
+        _preConnectEpoch++;
+        _preConnectBusy = false;
+      });
+      toasts.info('اتصال لغو شد');
+      return;
+    }
+    await vpn.cancel();
+    if (!mounted) {
+      return;
+    }
+    toasts.info('اتصال لغو شد');
+  }
+
+  Future<void> _toggleConnection(
+    VpnController vpn,
+    SubscriptionController subs,
+    ToastController toasts,
+  ) async {
+    if (vpn.status.busy || _preConnectBusy) {
+      return;
+    }
+    if (vpn.status.active) {
+      await vpn.disconnect();
+      if (!mounted) return;
+      toasts.info('اتصال قطع شد');
+      return;
+    }
+    final AuthController auth = context.read<AuthController>();
+    if (!auth.signedIn) {
+      toasts.error('ورود لازم است', 'ابتدا وارد حساب کاربری خود شوید.');
+      return;
+    }
+    if (!auth.account.canConnect) {
+      toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
+      return;
+    }
+    Future<ConnectOutcome>? pendingConnect;
+    if (vpn.nodes.isEmpty) {
+      final int epoch = ++_preConnectEpoch;
+      setState(() => _preConnectBusy = true);
+      try {
+        await subs.syncPersonal();
+        if (!mounted || epoch != _preConnectEpoch) {
+          return;
+        }
+        if (vpn.nodes.isEmpty &&
+            subs.emergencyEnabled &&
+            subs.emergencyNodes.isEmpty &&
+            !subs.emergencyLoading) {
+          await subs.refreshEmergency();
+          if (!mounted || epoch != _preConnectEpoch) return;
+        }
+        if (vpn.nodes.isEmpty &&
+            !(subs.emergencyEnabled && subs.emergencyNodes.isNotEmpty)) {
+          toasts.error(
+            'اشتراک دریافت نشد',
+            'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
+          );
+          return;
+        }
+        // Start `vpn.connect()` before clearing `_preConnectBusy` so the UI stays
+        // in `در حال اتصال` continuously without a single disconnected frame.
+        pendingConnect = vpn.connect();
+      } finally {
+        if (mounted && epoch == _preConnectEpoch && _preConnectBusy) {
+          setState(() => _preConnectBusy = false);
+        }
+      }
+    }
+    final ConnectOutcome outcome = await (pendingConnect ?? vpn.connect());
+    if (!mounted) {
+      return;
+    }
+    if (outcome.ok) {
+      toasts.success('به آمبرلا متصل شد', _connectedNote(vpn));
+    } else if (outcome.needsSecurityCleanup) {
+      toasts.error('اتصال به دلیل سپر امنیتی مسدود شد', outcome.message);
+      unawaited(SecurityShieldDialog.show(context));
+    } else if (!outcome.cancelled) {
+      toasts.error('اتصال برقرار نشد', outcome.message);
+    }
+  }
+
+  void _openConnectionSettings() {
+    final UmbrellaColors colors = context.colors;
+    final Size viewport = MediaQuery.sizeOf(context);
+    // When a display feature splits the viewport, Flutter's RTL fallback picks
+    // the right pane; anchoring at the center avoids that directional bias.
+    showModalBottomSheet<void>(
+      context: context,
+      anchorPoint: Offset(viewport.width / 2, viewport.height / 2),
+      useRootNavigator: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      enableDrag: true,
+      constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+      backgroundColor: colors.surface,
+      barrierColor: colors.background.withValues(alpha: 0.68),
+      elevation: AppMetrics.space6,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppMetrics.radiusXxl),
+        ),
+        side: BorderSide(color: colors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      builder: (BuildContext context) => const _ConnectionSettingsSheet(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final VpnController vpn = context.watch<VpnController>();
+    final AuthController auth = context.watch<AuthController>();
+    final SecurityScannerController? security =
+        context.maybeWatch<SecurityScannerController>();
+    final SettingsController settings = context.watch<SettingsController>();
+    final SubscriptionController subs = context.watch<SubscriptionController>();
+    final UpdateController? updates = context.maybeWatch<UpdateController>();
+    final UpdateInfo? availableUpdate = updates?.available;
+    final ToastController toasts = context.read<ToastController>();
+    final UmbrellaColors colors = context.colors;
+    final bool preConnecting =
+        _preConnectBusy && vpn.status == VpnStatus.disconnected;
+    final VpnStatus status =
+        preConnecting ? VpnStatus.connecting : vpn.status;
+    final String statusMessage =
+        preConnecting ? 'در حال آماده سازی اتصال...' : vpn.message;
+    final Color tone = VpnVisuals.color(context, status);
+    final bool connected = status == VpnStatus.connected;
+    final Account account = auth.account;
+
+    final String shownIp = _deviceIp(vpn);
+    final String flagCode = _flagForIp(vpn, connected, shownIp);
+    final String countryName = CountryNames.fa(flagCode);
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // Prominent artwork on desktop, bounded by the content width.
+        final double preferredOrb = constraints.maxHeight < 650
+            ? 240
+            : (constraints.maxHeight < 780 ? 290 : 330);
+        final double availableOrb = (constraints.maxWidth - 2 * AppMetrics.space6 - 2 * AppMetrics.space6).clamp(100.0, 330.0);
+        final double orb = preferredOrb.clamp(100.0, availableOrb);
+        return SingleChildScrollView(
+          padding: AppMetrics.pagePadding,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: (constraints.maxHeight - 2 * AppMetrics.space6).clamp(0.0, double.infinity),
+            ),
+            child: GlassCard(
+              radius: AppMetrics.radiusHuge,
+              padding: const EdgeInsets.fromLTRB(
+                AppMetrics.space6,
+                AppMetrics.space5,
+                AppMetrics.space6,
+                AppMetrics.space5,
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  Color.alphaBlend(
+                    tone.withValues(
+                      alpha: Theme.of(context).brightness == Brightness.light
+                          ? 0.08
+                          : 0.12,
+                    ),
+                    colors.surface,
+                  ),
+                  colors.surface,
+                  colors.backgroundAlt,
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  // ── نوار بالا: خوش آمدگویی، تاریخ زنده و آی پی ────────
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: AppMetrics.space1),
+                                      child: Icon(
+                                        _greetingIcon(),
+                                        size: AppMetrics.iconMd,
+                                        color: colors.warning,
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppMetrics.space2),
+                                    Expanded(
+                                      child: Text(
+                                        Fa.num(
+                                          'سلام ${account.displayName}، '
+                                          '${Fa.greeting()}',
+                                        ),
+                                        softWrap: true,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: AppMetrics.space1),
+                                LiveDateTimeLine(
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: colors.textSecondary),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (subs.needsLogin) ...<Widget>[
+                            const SizedBox(width: AppMetrics.space2),
+                            Pill(
+                              label: 'برای اشتراک وارد شو',
+                              icon: Icons.login_rounded,
+                              color: colors.warning,
+                            ),
+                            const SizedBox(width: AppMetrics.space2),
+                          ] else
+                            const SizedBox(width: AppMetrics.space2),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const SecurityStatusBadge(),
+                              if (security != null)
+                                const SizedBox(height: AppMetrics.space2),
+                              _IpChip(
+                                ip: shownIp,
+                                flagCode: flagCode,
+                                country: connected ? countryName : '',
+                                connected: connected,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (security != null && security.hasThreats)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: AppMetrics.space3),
+                          child: _SecurityBlockBanner(
+                            threats: security.threats,
+                            onOpenShield: () =>
+                                SecurityShieldDialog.show(context),
+                          ),
+                        ),
+                      if (!account.canConnect)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: AppMetrics.space3),
+                          child: _AccessBanner(
+                            title: account.enable
+                                ? 'اشتراک شما اجازه اتصال ندارد'
+                                : 'حساب شما مسدود شده است',
+                            message: account.accessReason,
+                          ),
+                        ),
+                      if (updates != null && availableUpdate != null)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: AppMetrics.space3),
+                          child: _UpdateBanner(
+                            updates: updates,
+                            info: availableUpdate,
+                          ),
+                        ),
+                      if (OccasionService.instance.active != null)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: AppMetrics.space3),
+                          child: OccasionBanner(
+                            occasion: OccasionService.instance.active,
+                            enabled: settings.settings.occasionEffects,
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  // ── مرکز صفحه: گنبد وضعیت، دکمه اصلی و منوی اتصال ─────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppMetrics.space4,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Semantics(
+                          button: true,
+                          label: status.busy
+                              ? 'لغو اتصال'
+                              : (status.active ? 'قطع اتصال' : 'اتصال'),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: status == VpnStatus.disconnecting
+                                ? null
+                                : withUiClick(
+                                    context,
+                                    status.busy
+                                        ? () => _cancelConnection(vpn, toasts)
+                                        : () =>
+                                            _toggleConnection(vpn, subs, toasts),
+                                  ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: <Widget>[
+                                StatusOrb(
+                                  image: status.image,
+                                  color: tone,
+                                  size: orb,
+                                  active: status.busy,
+                                ),
+                                if (!status.busy)
+                                  Positioned(
+                                    right: orb * 0.06,
+                                    bottom: orb * 0.06,
+                                    child: Container(
+                                    width: orb * 0.24,
+                                    height: orb * 0.24,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: (status.active
+                                              ? colors.danger
+                                              : colors.primary)
+                                          .withValues(alpha: 0.94),
+                                      boxShadow: <BoxShadow>[
+                                        BoxShadow(
+                                          color: (status.active
+                                                  ? colors.danger
+                                                  : colors.primary)
+                                              .withValues(alpha: 0.38),
+                                          blurRadius: 24,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      Icons.power_settings_new_rounded,
+                                      size: orb * 0.12,
+                                      color: colors.onPrimary,
+                                    ),
+                                  )),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppMetrics.space3),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            if (connected && flagCode.isNotEmpty) ...<Widget>[
+                              FlagView(
+                                code: flagCode,
+                                width: AppMetrics.flagWidth,
+                              ),
+                              const SizedBox(width: AppMetrics.space2),
+                            ],
+                            Flexible(
+                              child: Text(
+                                Fa.num(
+                                  connected
+                                      ? 'به آمبرلا متصل شد'
+                                      : status.label,
+                                ),
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      color: tone,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppMetrics.space1),
+                        if (connected)
+                          _PingLine(pingMs: vpn.activePingMs)
+                        else
+                          Text(
+                            Fa.num(statusMessage),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: colors.textSecondary),
+                          ),
+                        const SizedBox(height: AppMetrics.space5),
+                        SizedBox(
+                          width: AppMetrics.controlMaxWidth,
+                          child: status.busy
+                              ? GradientButton(
+                                  label: status == VpnStatus.disconnecting
+                                      ? 'در حال لغو...'
+                                      : 'لغو اتصال',
+                                  icon: Icons.cancel_rounded,
+                                  height: AppMetrics.controlHeightLarge,
+                                  tone: colors.warning,
+                                  loading: status == VpnStatus.disconnecting,
+                                  onPressed: status == VpnStatus.disconnecting
+                                      ? null
+                                      : () => _cancelConnection(vpn, toasts),
+                                )
+                              : GradientButton(
+                                  label: status.active ? 'قطع اتصال' : 'اتصال',
+                                  icon: Icons.power_settings_new_rounded,
+                                  height: AppMetrics.controlHeightLarge,
+                                  tone: status.active
+                                      ? colors.danger
+                                      : colors.primary,
+                                  onPressed: () =>
+                                      _toggleConnection(vpn, subs, toasts),
+                                ),
+                        ),
+                        if (!account.canConnect)
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(top: AppMetrics.space2),
+                            child: Text(
+                              Fa.num(
+                                'اتصال تا تمدید یا رفع مسدودی اشتراک ممکن نیست.',
+                              ),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: colors.danger),
+                            ),
+                          ),
+                        const SizedBox(height: AppMetrics.space3),
+
+                        // تنظیمات جانبی فقط با درخواست کاربر باز می شوند؛
+                        // کنترل اصلی اتصال در همین صفحه بدون تغییر می ماند.
+                        SizedBox(
+                          width: AppMetrics.controlMaxWidth,
+                          child: OutlinedButton.icon(
+                            key: const ValueKey<String>(
+                              'connection-settings-button',
+                            ),
+                            onPressed: withUiClick(context, _openConnectionSettings),
+                            icon: const Icon(Icons.tune_rounded),
+                            label: const Text('تنظیمات اتصال'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ── نوار پایین: آمار زنده اتصال ───────────────────────
+                  _ConnectionStats(vpn: vpn, connected: connected),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// برگه تنظیمات اتصال: ورود از پایین، گوشه های نرم و کنترل های لمسی استاندارد.
+class _ConnectionSettingsSheet extends StatelessWidget {
+  const _ConnectionSettingsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = !context.watch<VpnController>().status.busy;
+    return ConstrainedBox(
+      key: const ValueKey<String>('connection-settings-sheet'),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom + AppMetrics.space3,
+        ),
+        child: Center(
+          child: QuickConnectionPanel(
+            enabled: enabled,
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// آمار زنده اتصال در پایین کارت اصلی.
+class _ConnectionStats extends StatelessWidget {
+  const _ConnectionStats({required this.vpn, required this.connected});
+
+  final VpnController vpn;
+  final bool connected;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final List<(String, String, IconData, Color)> values =
+        <(String, String, IconData, Color)>[
+      (
+        'پینگ',
+        vpn.activePingMs > 0 ? Fa.ms(vpn.activePingMs) : '—',
+        Icons.speed_rounded,
+        colors.success,
+      ),
+      (
+        'مدت اتصال',
+        connected ? Fa.duration(vpn.stats.connectedFor) : '—',
+        Icons.timer_outlined,
+        colors.info,
+      ),
+      (
+        'دریافتی',
+        vpn.stats.available ? Fa.bytes(vpn.stats.rx) : '—',
+        Icons.south_rounded,
+        colors.primary,
+      ),
+      (
+        'ارسالی',
+        vpn.stats.available ? Fa.bytes(vpn.stats.tx) : '—',
+        Icons.north_rounded,
+        colors.warning,
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool narrow = constraints.maxWidth < AppMetrics.breakpointGrid;
+        const double gap = AppMetrics.space3;
+        final double tileWidth = narrow
+            ? (constraints.maxWidth - gap) / 2
+            : (constraints.maxWidth - gap * 3) / 4;
+        return Wrap(
+          spacing: gap,
+          runSpacing: AppMetrics.space2,
+          children: values
+              .map(
+                ((String, String, IconData, Color) value) => SizedBox(
+                  width: tileWidth,
+                  child: _ConnectionStatTile(
+                    label: value.$1,
+                    value: value.$2,
+                    icon: value.$3,
+                    accent: value.$4,
+                  ),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _ConnectionStatTile extends StatelessWidget {
+  const _ConnectionStatTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space3,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          IconSquare(
+            icon: icon,
+            color: accent,
+            size: AppMetrics.iconBoxMd,
+            radius: AppMetrics.radiusMd,
+          ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  Fa.num(label),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+                const SizedBox(height: AppMetrics.space1),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    Fa.num(value),
+                    maxLines: 1,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// پینگ سرور متصل، زیر وضعیت اتصال.
+class _PingLine extends StatelessWidget {
+  const _PingLine({required this.pingMs});
+
+  final int pingMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final bool known = pingMs > 0;
+    final Color tone = !known
+        ? colors.textSecondary
+        : (pingMs < 80
+            ? colors.success
+            : (pingMs < 180 ? colors.warning : colors.danger));
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Icon(Icons.speed_rounded, size: AppMetrics.iconSm, color: tone),
+        const SizedBox(width: AppMetrics.space2),
+        Text(
+          Fa.num(known ? 'پینگ ${Fa.ms(pingMs)}' : 'پینگ در حال اندازه گیری'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: tone,
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+      ],
+    );
+  }
+}
+
+/// هشدار دسترسی: اشتراک منقضی، مسدود یا تمام شده.
+class _AccessBanner extends StatelessWidget {
+  const _AccessBanner({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space4,
+        vertical: AppMetrics.space3,
+      ),
+      decoration: BoxDecoration(
+        color: colors.danger.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: colors.danger.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.lock_rounded,
+            size: AppMetrics.iconMd,
+            color: colors.danger,
+          ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  Fa.num(title),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: colors.danger,
+                      ),
+                ),
+                Text(
+                  Fa.num(message),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UpdateBanner extends StatelessWidget {
+  const _UpdateBanner({
+    required this.updates,
+    required this.info,
+  });
+
+  final UpdateController updates;
+  final UpdateInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final bool active = updates.downloading || updates.installing;
+    final bool hasError = updates.error.isNotEmpty;
+    final Color accent = hasError
+        ? colors.danger
+        : (info.preRelease ? colors.warning : colors.info);
+    final List<String> changelog = info.changelogItems;
+    final String subtitle = hasError
+        ? updates.error
+        : active
+            ? (updates.phase.isNotEmpty
+                ? updates.phase
+                : 'در حال دریافت بسته به روز رسانی...')
+            : (changelog.isNotEmpty
+                ? changelog.first
+                : 'برای دریافت و نصب خودکار نسخه جدید اقدام کنید.');
+    final String titleText = info.preRelease
+        ? Fa.num('نسخه آزمایشی جدید ${info.version} در دسترس است')
+        : Fa.num('نسخه جدید ${info.version} در دسترس است');
+
+    return Container(
+      key: const ValueKey<String>('connect-update-banner'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: <Widget>[
+          if (active)
+            SizedBox(
+              width: AppMetrics.iconMd,
+              height: AppMetrics.iconMd,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: accent,
+                value: updates.downloading && updates.progress > 0
+                    ? updates.progress
+                    : null,
+              ),
+            )
+          else
+            Icon(
+              Icons.system_update_rounded,
+              size: AppMetrics.iconMd,
+              color: accent,
+            ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  titleText,
+                  softWrap: true,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                      ),
+                ),
+                Text(
+                  Fa.num(subtitle),
+                  softWrap: true,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: hasError ? colors.danger : colors.textSecondary,
+                      ),
+                ),
+                if (updates.downloading) ...<Widget>[
+                  const SizedBox(height: AppMetrics.space1),
+                  ProgressLine(
+                    value: updates.progress,
+                    color: accent,
+                    height: 5,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: AppMetrics.space2),
+          if (updates.downloading && !updates.installing)
+            OutlinedButton(
+              key: const ValueKey<String>('connect-update-action-button'),
+              onPressed: withUiClick(context, updates.cancelDownload),
+              child: const Text('لغو'),
+            )
+          else
+            FilledButton.icon(
+              key: const ValueKey<String>('connect-update-action-button'),
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: colors.onPrimary,
+              ),
+              onPressed: updates.installing
+                  ? null
+                  : withUiClick(
+                      context,
+                      () => unawaited(updates.downloadAndInstall()),
+                    ),
+              icon: const Icon(Icons.download_rounded, size: AppMetrics.iconSm),
+              label: Text(
+                updates.installing
+                    ? 'در حال نصب...'
+                    : (hasError ? 'تلاش دوباره' : 'دریافت و نصب'),
+              ),
+            ),
+          if (!active && !info.mandatory) ...<Widget>[
+            const SizedBox(width: AppMetrics.space1),
+            IconButton(
+              key: const ValueKey<String>('connect-update-dismiss-button'),
+              tooltip: 'بعدا',
+              visualDensity: VisualDensity.compact,
+              onPressed: withUiClick(
+                context,
+                () => unawaited(updates.skipCurrent()),
+              ),
+              icon: Icon(
+                Icons.close_rounded,
+                size: AppMetrics.iconSm,
+                color: colors.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SecurityBlockBanner extends StatelessWidget {
+  const _SecurityBlockBanner({
+    required this.threats,
+    required this.onOpenShield,
+  });
+
+  final List<SecurityThreat> threats;
+  final VoidCallback onOpenShield;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String names = threats.take(2).map((SecurityThreat t) => t.name).join('، ');
+    final String extra = threats.length > 2
+        ? ' و ${Fa.num(threats.length - 2)} مورد دیگر'
+        : '';
+    return Container(
+      key: const ValueKey<String>('connect-security-banner'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.danger.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: colors.danger.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const SecurityShieldLogo(danger: true, size: AppMetrics.iconBoxSm),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'سپر امنیتی اتصال را مسدود کرده است',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colors.danger,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                Text(
+                  Fa.num('مورد شناسایی شده: $names$extra'),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppMetrics.space2),
+          FilledButton(
+            key: const ValueKey<String>('connect-security-cleanup-button'),
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.danger,
+              foregroundColor: colors.onPrimary,
+            ),
+            onPressed: onOpenShield,
+            child: const Text('حذف و پاکسازی'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// نشان خوانا و مرتب آی پی با پرچم کشور و دکمه تازه سازی.
+class _IpChip extends StatelessWidget {
+  const _IpChip({
+    required this.ip,
+    required this.flagCode,
+    required this.country,
+    required this.connected,
+  });
+
+  final String ip;
+  final String flagCode;
+  final String country;
+  final bool connected;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final String caption = connected
+        ? (country.isNotEmpty ? 'آی پی اتصال · $country' : 'آی پی اتصال')
+        : 'آی پی دستگاه';
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppMetrics.space3,
+        vertical: AppMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(
+          color: connected
+              ? colors.success.withValues(alpha: 0.35)
+              : colors.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (flagCode.isNotEmpty) ...<Widget>[
+            FlagView(code: flagCode, width: AppMetrics.flagWidth),
+            const SizedBox(width: AppMetrics.space2),
+          ],
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                Fa.num(caption),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color:
+                          connected ? colors.success : colors.textSecondary,
+                      fontWeight:
+                          connected ? FontWeight.w700 : FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: AppMetrics.space1),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  ip,
+                  textDirection: TextDirection.ltr,
+                  maxLines: 1,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

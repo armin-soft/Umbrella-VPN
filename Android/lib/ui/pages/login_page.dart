@@ -1,0 +1,820 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../core/app_config.dart';
+import '../../core/safe_url_launcher.dart';
+import '../../core/theme.dart';
+import '../../core/ui_formatters.dart';
+import '../../core/utils.dart';
+import '../../models/models.dart';
+import '../../platform/native.dart';
+import '../../state/auth_controller.dart';
+import '../../state/settings_controller.dart';
+import '../widgets/brand_widgets.dart';
+import '../widgets/gateway_dialog.dart';
+import '../widgets/common.dart';
+import '../widgets/shell_widgets.dart';
+
+/// صفحه ورود: شماره موبایل، نام و نام خانوادگی برای کاربر جدید، کد پیامکی و
+/// تایید دستگاه در تلگرام.
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _phone = TextEditingController();
+  final TextEditingController _firstName = TextEditingController();
+  final TextEditingController _lastName = TextEditingController();
+  final TextEditingController _code = TextEditingController();
+  final FocusNode _codeFocus = FocusNode();
+  MobileOperator _operator = MobileOperator.unknown;
+  bool _autoSubmittingCode = false;
+  AuthController? _auth;
+  NativeBridge? _native;
+  StreamSubscription<String>? _smsSub;
+  bool _smsListening = false;
+  String _smsHint = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final AuthController auth = context.read<AuthController>();
+    _auth = auth;
+    try {
+      _native = Provider.of<NativeBridge>(context, listen: false);
+    } on ProviderNotFoundException {
+      _native = context.read<NativeBridge?>();
+    }
+    if (auth.phone.isNotEmpty) {
+      _phone.text = IranPhone.display(auth.phone);
+      _operator = IranPhone.operator(auth.phone);
+    }
+    _firstName.text = auth.firstName;
+    _lastName.text = auth.lastName;
+    _phone.addListener(_syncOperator);
+    auth.addListener(_onAuthChanged);
+    _smsSub = _native?.smsCodeEvents().listen(_applyDetectedOtp);
+    if (auth.phase == AuthPhase.code) {
+      unawaited(_startSmsConsent());
+    }
+  }
+
+  void _onAuthChanged() {
+    final AuthController? auth = _auth;
+    if (auth == null || !mounted) return;
+    if (auth.phase == AuthPhase.code) {
+      if (!_smsListening) {
+        _autoSubmittingCode = false;
+        unawaited(_startSmsConsent());
+      }
+    } else if (_smsListening) {
+      _autoSubmittingCode = false;
+      unawaited(_stopSmsConsent());
+    }
+  }
+
+  Future<void> _startSmsConsent() async {
+    final NativeBridge? native = _native;
+    if (native == null) return;
+    _smsListening = true;
+    final bool started = await native.startSmsUserConsent();
+    if (!mounted) return;
+    setState(() {
+      _smsHint = started
+          ? 'پس از دریافت پیامک، تاییدیه خواندن خودکار کد نمایش داده می شود.'
+          : '';
+    });
+  }
+
+  Future<void> _stopSmsConsent() async {
+    _smsListening = false;
+    final NativeBridge? native = _native;
+    if (native != null) {
+      await native.stopSmsUserConsent();
+    }
+  }
+
+  Future<void> _applyDetectedOtp(String rawCode) async {
+    if (!mounted) return;
+    final AuthController auth = context.read<AuthController>();
+    if (auth.phase != AuthPhase.code) return;
+    final String extracted = NativeBridge.extractSmsVerificationCode(rawCode);
+    if (extracted.isEmpty) return;
+    final String formatted = Fa.num(
+      extracted.length > 6 ? extracted.substring(0, 6) : extracted,
+    );
+    _code.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    setState(() {
+      _smsHint = 'کد تایید پیامکی به صورت خودکار وارد شد.';
+    });
+    await _onCodeChanged(formatted, auth);
+  }
+
+  Future<void> _pasteOtpFromClipboard(AuthController auth) async {
+    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    final String raw = data?.text ?? '';
+    final String code = NativeBridge.extractSmsVerificationCode(raw);
+    if (code.isNotEmpty) {
+      await _applyDetectedOtp(code);
+      return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Fa.num('کد تاییدی در حافظه کلیپ برد پیدا نشد.'),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _syncOperator() {
+    final MobileOperator value = IranPhone.operator(_phone.text);
+    if (value != _operator) {
+      setState(() => _operator = value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _auth?.removeListener(_onAuthChanged);
+    _smsSub?.cancel();
+    if (_smsListening) {
+      unawaited(_native?.stopSmsUserConsent() ?? Future<void>.value());
+    }
+    _phone.dispose();
+    _firstName.dispose();
+    _lastName.dispose();
+    _code.dispose();
+    _codeFocus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AuthController auth = context.watch<AuthController>();
+    final SettingsController settings = context.watch<SettingsController>();
+    final UmbrellaColors colors = context.colors;
+    return Scaffold(
+      backgroundColor: colors.background,
+      body: Column(
+        children: <Widget>[
+          TitleBar(
+            onToggleTheme: () => settings.toggleTheme(
+              effectiveBrightness: Theme.of(context).brightness,
+            ),
+            darkTheme: Theme.of(context).brightness == Brightness.dark,
+          ),
+          Expanded(
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: const Alignment(-0.8, -0.9),
+                        radius: 1.5,
+                        colors: <Color>[
+                          colors.primary.withValues(
+                            alpha: Theme.of(context).brightness ==
+                                    Brightness.dark
+                                ? 0.20
+                                : 0.10,
+                          ),
+                          colors.background,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < AppMetrics.breakpointColumns * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0)) {
+                      return SafeArea(
+                        top: false,
+                        child: SingleChildScrollView(
+                          padding: AppMetrics.responsivePagePadding(context),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: <Widget>[
+                                  const BrandMark(size: AppMetrics.logoMd),
+                                  const SizedBox(height: AppMetrics.space4),
+                                  Text(Fa.num('ورود امن با شماره موبایل'),
+                                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: AppMetrics.space4),
+                                  _loginCard(context, auth),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    return Row(
+                  children: <Widget>[
+                    Expanded(
+                      flex: 5,
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space10, vertical: AppMetrics.space9),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            const BrandMark(size: AppMetrics.logoMd),
+                            const SizedBox(height: AppMetrics.space7),
+                            Text(
+                              Fa.num('ورود امن با شماره موبایل'),
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.4,
+                                  ),
+                            ),
+                            const SizedBox(height: AppMetrics.space3),
+                            Text(
+                              Fa.num(
+                                'کد تایید پیامک می شود و جزئیات دستگاه شما در تلگرام نمایش داده می شود تا فقط خودتان ورود را تایید کنید.',
+                              ),
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: colors.textSecondary,
+                                    height: 1.9,
+                                  ),
+                            ),
+                            const SizedBox(height: AppMetrics.space6),
+                            for (final (IconData icon, String text) item in const <(IconData, String)>[
+                              (Icons.sms_rounded, 'کد تایید ۶ رقمی پیامکی'),
+                              (Icons.phonelink_lock_rounded, 'تایید دستگاه در تلگرام'),
+                              (Icons.verified_user_rounded, 'ثبت و همگام سازی حساب در ربات'),
+                            ])
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: AppMetrics.space3),
+                                child: Row(
+                                  children: <Widget>[
+                                    Icon(item.$1, size: AppMetrics.iconSm, color: colors.primary),
+                                    const SizedBox(width: AppMetrics.space3),
+                                    Expanded(child: Text(
+                                      Fa.num(item.$2),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: colors.textSecondary,
+                                          ),
+                                    )),
+                                  ],
+                                ),
+                              ),
+                            const SizedBox(height: AppMetrics.space6),
+                            Text(
+                              Fa.num(
+                                'نسخه ${AppConfig.versionLabel} | اندروید ۶٫۰ به بالا',
+                              ),
+                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: colors.textSecondary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 4,
+                      child: Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space9, vertical: AppMetrics.space9),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: AppMetrics.dialogMaxWidth),
+                            child: _loginCard(context, auth),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loginCard(BuildContext context, AuthController auth) {
+    final bool compact = AppMetrics.isCompactWidth(context);
+    return GlassCard(
+      padding: EdgeInsets.all(compact ? AppMetrics.space5 : AppMetrics.space7),
+      radius: compact ? AppMetrics.radiusXl : AppMetrics.radiusHuge,
+      elevated: true,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 240),
+          child: _step(context, auth),
+        ),
+      ),
+    );
+  }
+
+  Widget _step(BuildContext context, AuthController auth) {
+    switch (auth.phase) {
+      case AuthPhase.profile:
+        return _profileStep(context, auth);
+      case AuthPhase.code:
+        return _codeStep(context, auth);
+      case AuthPhase.telegram:
+        return _telegramStep(context, auth);
+      case AuthPhase.phone:
+      case AuthPhase.done:
+        return _phoneStep(context, auth);
+    }
+  }
+
+  Widget _phoneStep(BuildContext context, AuthController auth) {
+    final UmbrellaColors colors = context.colors;
+    return Column(
+      key: const ValueKey<String>('phone'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(
+          Fa.num('شماره موبایل'),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+        ),
+        const SizedBox(height: AppMetrics.space2),
+        Text(
+          Fa.num('شماره را وارد کنید تا کد تایید برای شما پیامک شود.'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
+        ),
+        const SizedBox(height: AppMetrics.space6),
+        TextField(
+          controller: _phone,
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.left,
+          keyboardType: TextInputType.phone,
+          autofillHints: const <String>[AutofillHints.telephoneNumberNational],
+          textInputAction: TextInputAction.done,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                letterSpacing: 1.6,
+                fontWeight: FontWeight.w700,
+              ),
+          inputFormatters: <TextInputFormatter>[
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩+\- ]')),
+            const PersianDigitsFormatter(),
+            LengthLimitingTextInputFormatter(18),
+          ],
+          decoration: const InputDecoration(
+            hintText: '۰۹۱۲۳۴۵۶۷۸۹',
+            prefixIcon: Icon(Icons.smartphone_rounded, size: AppMetrics.iconMd),
+          ),
+          onSubmitted: (_) => _submitPhone(auth),
+        ),
+        const SizedBox(height: AppMetrics.space3),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppMetrics.space2,
+          runSpacing: AppMetrics.space1,
+          children: <Widget>[
+            OperatorBadge(operator: _operator),
+            if (_operator != MobileOperator.unknown)
+              Text(
+                Fa.num('اپراتور تشخیص داده شد'),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.success,
+                    ),
+              ),
+          ],
+        ),
+        if (auth.error.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppMetrics.space4),
+          _Message(text: auth.error, kind: _MessageKind.error),
+          if (auth.error.contains('درگاه') ||
+              auth.error.contains('سرور') ||
+              auth.error.contains('ارتباط')) ...<Widget>[
+            const SizedBox(height: AppMetrics.space2),
+            Row(
+              children: <Widget>[
+                Icon(Icons.dns_rounded, size: AppMetrics.iconXs, color: colors.textSecondary),
+                const SizedBox(width: AppMetrics.space2),
+                Expanded(
+                  child: Wrap(
+                    spacing: AppMetrics.space1,
+                    runSpacing: AppMetrics.space1,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        'نشانی فعلی درگاه:',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: colors.textSecondary),
+                      ),
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          auth.gatewayHost,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: colors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: withUiClick(context, () => showGatewayDialog(context)),
+                  child: Text(Fa.num('تغییر نشانی')),
+                ),
+              ],
+            ),
+          ],
+        ],
+        if (auth.info.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppMetrics.space4),
+          _Message(text: auth.info, kind: _MessageKind.info),
+        ],
+        const SizedBox(height: AppMetrics.space6),
+        GradientButton(
+          label: 'دریافت کد تایید',
+          icon: Icons.arrow_back_rounded,
+          loading: auth.busy,
+          onPressed: auth.busy ? null : () => _submitPhone(auth),
+        ),
+        const SizedBox(height: AppMetrics.space4),
+        Text(
+          Fa.num('با ورود، شرایط استفاده و سیاست حریم خصوصی آمبرلا را می پذیرید.'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.textSecondary,
+                height: 1.7,
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _profileStep(BuildContext context, AuthController auth) {
+    final UmbrellaColors colors = context.colors;
+    return Column(
+      key: const ValueKey<String>('profile'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            IconAction(
+              icon: Icons.arrow_back_rounded,
+              onTap: auth.resetToPhoneStep,
+              tooltip: 'بازگشت',
+            ),
+            const SizedBox(width: AppMetrics.space3),
+            Expanded(
+              child: Text(
+                Fa.num('تکمیل ثبت نام'),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppMetrics.space2),
+        Text(
+          Fa.num('این شماره در سیستم نیست؛ برای ساخت حساب نام و نام خانوادگی را وارد کنید.'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
+        ),
+        const SizedBox(height: AppMetrics.space5),
+        TextField(
+          controller: _firstName,
+          decoration: const InputDecoration(
+            labelText: 'نام',
+            prefixIcon: Icon(Icons.person_outline_rounded, size: AppMetrics.iconMd),
+          ),
+        ),
+        const SizedBox(height: AppMetrics.space3),
+        TextField(
+          controller: _lastName,
+          decoration: const InputDecoration(
+            labelText: 'نام خانوادگی',
+            prefixIcon: Icon(Icons.badge_outlined, size: AppMetrics.iconMd),
+          ),
+        ),
+        if (auth.error.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppMetrics.space4),
+          _Message(text: auth.error, kind: _MessageKind.error),
+        ],
+        const SizedBox(height: AppMetrics.space6),
+        GradientButton(
+          label: 'ثبت نام و دریافت کد',
+          icon: Icons.arrow_back_rounded,
+          loading: auth.busy,
+          onPressed: auth.busy
+              ? null
+              : () => auth.submitProfile(_firstName.text, _lastName.text),
+        ),
+      ],
+    );
+  }
+
+  Widget _codeStep(BuildContext context, AuthController auth) {
+    final UmbrellaColors colors = context.colors;
+    return Column(
+      key: const ValueKey<String>('code'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            IconAction(
+              icon: Icons.arrow_back_rounded,
+              onTap: auth.resetToPhoneStep,
+              tooltip: 'بازگشت',
+            ),
+            const SizedBox(width: AppMetrics.space3),
+            Expanded(
+              child: Text(
+                Fa.num('کد تایید'),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppMetrics.space2),
+        Text(
+          Fa.num('کد ارسال شده به ${IranPhone.display(auth.phone)} را وارد کنید.'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
+        ),
+        const SizedBox(height: AppMetrics.space5),
+        AutofillGroup(
+          child: TextField(
+            controller: _code,
+            focusNode: _codeFocus,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            keyboardType: TextInputType.number,
+            autofillHints: const <String>[AutofillHints.oneTimeCode],
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]')),
+              const PersianDigitsFormatter(),
+              LengthLimitingTextInputFormatter(6),
+            ],
+            style: const TextStyle(
+              fontSize: AppMetrics.fontDisplay,
+              letterSpacing: 16,
+              fontWeight: FontWeight.w900,
+              fontFamily: AppTheme.fontFamily,
+            ),
+            decoration: const InputDecoration(hintText: 'ــــــ'),
+            onChanged: (String value) => _onCodeChanged(value, auth),
+            onSubmitted: (String value) => auth.verifyCode(value),
+          ),
+        ),
+        if (_smsHint.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppMetrics.space2),
+          Row(
+            children: <Widget>[
+              Icon(Icons.sms_rounded, size: AppMetrics.iconXs, color: colors.info),
+              const SizedBox(width: AppMetrics.space2),
+              Expanded(
+                child: Text(
+                  Fa.num(_smsHint),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.info,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: AppMetrics.space4),
+        Wrap(
+          spacing: AppMetrics.space2,
+          runSpacing: AppMetrics.space1,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            Icon(Icons.timer_outlined, size: AppMetrics.iconSm, color: colors.textSecondary),
+            const SizedBox(width: AppMetrics.space2),
+            Text(
+              Fa.num('زمان باقی مانده: ${Fa.countdown(Duration(seconds: auth.secondsLeft))}'),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+            ),
+            TextButton(
+              onPressed: auth.resendIn > 0
+                  ? null
+                  : withUiClick(context, () {
+                      unawaited(_startSmsConsent());
+                      auth.resendCode();
+                    }),
+              child: Text(
+                auth.resendIn > 0
+                    ? Fa.num('ارسال دوباره تا ${Fa.num(auth.resendIn)} ثانیه')
+                    : 'ارسال دوباره کد',
+              ),
+            ),
+            TextButton.icon(
+              onPressed: auth.busy
+                  ? null
+                  : withUiClick(context, () => _pasteOtpFromClipboard(auth)),
+              icon: const Icon(Icons.content_paste_rounded, size: AppMetrics.iconXs),
+              label: const Text('جای گذاری کد'),
+            ),
+          ],
+        ),
+        if (auth.error.isNotEmpty) ...<Widget>[
+          _Message(text: auth.error, kind: _MessageKind.error),
+          const SizedBox(height: AppMetrics.space3),
+        ],
+        GradientButton(
+          label: 'تایید کد',
+          icon: Icons.verified_rounded,
+          loading: auth.busy,
+          onPressed: auth.busy ? null : () => auth.verifyCode(_code.text),
+        ),
+      ],
+    );
+  }
+
+  Widget _telegramStep(BuildContext context, AuthController auth) {
+    final UmbrellaColors colors = context.colors;
+    return Column(
+      key: const ValueKey<String>('telegram'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            IconSquare(icon: Icons.send_rounded, color: colors.info, size: AppMetrics.iconBoxLg),
+            const SizedBox(width: AppMetrics.space3),
+            Expanded(
+              child: Text(
+                Fa.num('تایید در تلگرام'),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppMetrics.space3),
+        Text(
+          Fa.num(
+            auth.stage == SignInStage.needsTelegram
+                ? 'برای تایید دستگاه، یک بار ربات آمبرلا را باز کنید و دکمه شروع را بزنید؛ سپس اینجا بررسی کنید.'
+                : 'جزئیات دستگاه و آی پی شما به تلگرام ارسال شد. اگر خودتان بودید «خودم بودم» و در غیر این صورت «نبودم» را بزنید.',
+          ),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+                height: 1.9,
+              ),
+        ),
+        const SizedBox(height: AppMetrics.space5),
+        if (auth.stage == SignInStage.awaitingTelegram)
+          Row(
+            children: <Widget>[
+              const SizedBox(
+                width: AppMetrics.iconSm,
+                height: AppMetrics.iconSm,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: AppMetrics.space3),
+              Expanded(
+                child: Text(
+                  Fa.num('در انتظار تایید شما در تلگرام...'),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        if (auth.error.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppMetrics.space3),
+          _Message(text: auth.error, kind: _MessageKind.error),
+        ],
+        const SizedBox(height: AppMetrics.space5),
+        GradientButton(
+          label: 'باز کردن تلگرام',
+          icon: Icons.open_in_new_rounded,
+          onPressed: () => _openBot(auth.botUrl),
+        ),
+        const SizedBox(height: AppMetrics.space3),
+        OutlinedButton.icon(
+          onPressed: auth.busy ? null : withUiClick(context, auth.checkNow),
+          icon: const Icon(Icons.refresh_rounded, size: AppMetrics.iconSm),
+          label: const Text('بررسی دوباره وضعیت'),
+        ),
+        const SizedBox(height: AppMetrics.space3),
+        TextButton(
+          onPressed: auth.busy ? null : withUiClick(context, auth.cancelPendingSignIn),
+          child: const Text('لغو درخواست ورود'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _onCodeChanged(String value, AuthController auth) async {
+    if (value.length < 6) {
+      _autoSubmittingCode = false;
+      return;
+    }
+    if (value.length != 6 || auth.busy || _autoSubmittingCode) return;
+    _autoSubmittingCode = true;
+    await auth.verifyCode(value);
+    _autoSubmittingCode = false;
+  }
+
+  Future<void> _submitPhone(AuthController auth) async {
+    final bool ok = await auth.submitPhone(_phone.text);
+    if (ok) {
+      _code.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && context.read<AuthController>().phase == AuthPhase.code) {
+          _codeFocus.requestFocus();
+        }
+      });
+    }
+  }
+
+  Future<void> _openBot(String url) async {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) {
+      return;
+    }
+    try {
+      await SafeUrlLauncher.open(uri, mode: LaunchMode.externalApplication);
+    } on Exception {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(Fa.num('باز کردن تلگرام ممکن نشد؛ ${AppConfig.botUsername} را دستی باز کنید.'))),
+        );
+      }
+    }
+  }
+}
+
+enum _MessageKind { info, error }
+
+class _Message extends StatelessWidget {
+  const _Message({required this.text, required this.kind});
+
+  final String text;
+  final _MessageKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    final UmbrellaColors colors = context.colors;
+    final Color tone = kind == _MessageKind.error ? colors.danger : colors.info;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space4, vertical: AppMetrics.space3),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
+        border: Border.all(color: tone.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            kind == _MessageKind.error
+                ? Icons.error_outline_rounded
+                : Icons.info_outline_rounded,
+            size: AppMetrics.iconSm,
+            color: tone,
+          ),
+          const SizedBox(width: AppMetrics.space3),
+          Expanded(
+            child: Text(
+              Fa.num(text),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.textPrimary,
+                    height: 1.8,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "updated_at": "2026-11-22",
+  "note": "تنها هسته نسخه اندروید نیز دقیقا همان موتور رسمی hiddify-core نسخه ۵.۹.۱۵ (همانند نسخه ویندوز) است که به صورت کتابخانه بومی اندروید (hiddify-core.aar) در فایل APK بسته بندی می شود. هیچ هسته جانبی دیگری در بسته نیست و برنامه بدون نیاز به دانلود هسته از اینترنت بلافاصله اجرا می شود.",
+  "app": "ir.umbrella.vpn",
+  "platform": "android",
+  "cores": [
+    {
+      "id": "hiddify",
+      "title": "موتور آمبرلا",
+      "role": "همه پروتکل ها و همه قالب های اشتراک با همان موتور hiddify-core",
+      "binary": "hiddify-core.aar",
+      "cli_prefix": "umbrella",
+      "version": "5.9.15",
+      "url": "https://github.com/hiddify/hiddify-core/releases/download/v5.9.15/hiddify-lib-android.tar.gz",
+      "archive": "tgz",
+      "inside": "hiddify-core.aar",
+      "required": true,
+      "sha256": "f63b14e4ef2b88bdf893f25c42169c09074e38db03a8f26b64961406a8d22d5d"
+    }
+  ]
+}

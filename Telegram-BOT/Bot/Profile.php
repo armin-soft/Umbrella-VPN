@@ -1,0 +1,196 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/Context.php';
+require_once __DIR__ . '/Common.php';
+require_once __DIR__ . '/../Core/Telegram/Telegram.php';
+require_once __DIR__ . '/../Core/Server/Umbrella-Server.php';
+require_once __DIR__ . '/../Core/Server/Umbrella-Panel.php';
+require_once __DIR__ . '/../Core/Database/Database.php';
+require_once __DIR__ . '/../Core/Support/Helper.php';
+require_once __DIR__ . '/../Core/Storage/Repository.php';
+
+final class ProfileFlow {
+private const FLOW_NAME = 'profile_name';
+private const FLOW_PHONE = 'profile_phone';
+private function __construct() {
+}
+
+public static function begin(Context $Context): void {
+$User = Repository::getUser($Context->UserId);
+if (class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try { $User = Common::syncSubscriptionFromServer($User); } catch (Throwable) {}
+}
+$Profile_Updated_At = (string)($User['Profile_Updated_At'] ?? '');
+$Has_Full_Name = trim((string)($User['Full_Name'] ?? '')) !== '';
+$Has_Phone = trim((string)($User['Phone'] ?? '')) !== '';
+$Profile_Is_Complete = $Has_Full_Name && $Has_Phone;
+$Has_Profile = $Profile_Updated_At !== '' && $Profile_Updated_At !== '0000-00-00 00:00:00';
+
+if ($Profile_Is_Complete && $Has_Profile) {
+$Last_Update = (int)strtotime($Profile_Updated_At);
+$Now = time();
+$Days_Since = (int)(($Now - $Last_Update) / 86400);
+
+if ($Days_Since < 30) {
+$Remaining = 30 - $Days_Since;
+$Remaining_Fa = Helper::toPersian((string)$Remaining);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, "⛔️ویرایش پروفایل هر ۳۰ روز یکبار مجاز است.\n⚠️{$Remaining_Fa} روز تا ویرایش بعدی باقی مانده.", true);
+}
+
+else {
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "⛔️ویرایش پروفایل کاربری هر ۳۰ روز یکبار مجاز می باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️تعداد روزهای باقی مانده تا ویرایش بعدی: `{$Remaining_Fa}` روز." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome(),
+]));
+}
+
+return;
+}
+}
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, $Profile_Is_Complete ? '✏️ویرایش پروفایل' : '📝ثبت پروفایل', false);
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => self::FLOW_NAME]);
+$Welcome_Text = $Profile_Is_Complete
+? "🙇‍♂️لطفا به پرسش هایی که از شما پرسیده می شود به دقت پاسخ دهید."
+: "🙇‍♂️لطفا به پرسش هایی که از شما پرسیده می شود به دقت پاسخ دهید.\n\n⚠️نکته:وارد کردن اطلاعات کاربری الزامی می باشد.";
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, Common::greet($Context, 'پروفایل کاربری') . $Welcome_Text . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+self::askName($Context);
+}
+
+private static function askName(Context $Context): void {
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش اول:نام و نام خانوادگی خود را وارد کنید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+}
+
+public static function processName(Context $Context, string $Text): void {
+if (!Helper::validateFullName($Text)) {
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: نام و نام خانوادگی وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید حروف فارسی و حداقل دو کلمه باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+self::askName($Context);
+return;
+}
+
+$Full_Name = trim((string)preg_replace('/\s+/u', ' ', $Text));
+$Old_User = Repository::getUser($Context->UserId);
+$Old_Phone = trim((string)($Old_User['Phone'] ?? ''));
+$Old_Client_ID = trim((string)($Old_User['Client_ID'] ?? ''));
+$Old_Has_Phone = $Old_Phone !== '';
+$Old_Has_Client = $Old_Client_ID !== '' && $Old_Client_ID !== '_';
+Repository::updateUser($Context->UserId, ['Full_Name' => $Full_Name]);
+
+if (!$Old_Has_Client && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try {
+$Synced = Common::syncSubscriptionFromServer(Repository::getUser($Context->UserId));
+$Old_Client_ID = trim((string)($Synced['Client_ID'] ?? $Old_Client_ID));
+$Old_Has_Client = $Old_Client_ID !== '' && $Old_Client_ID !== '_';
+if ($Old_Phone === '') {
+$Old_Phone = trim((string)($Synced['Phone'] ?? ''));
+$Old_Has_Phone = $Old_Phone !== '';
+}
+} catch (Throwable) {}
+}
+
+if ($Old_Has_Client) {
+self::pushProfileToServer($Old_Client_ID, $Full_Name, $Old_Phone, $Context->UserId);
+}
+
+if ($Old_Has_Phone) {
+Repository::touchUserTime($Context->UserId, 'Profile_Updated_At');
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش نام با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()
+]));
+
+return;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => self::FLOW_PHONE]);
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️نام و نام خانوادگی وارد شده صحیح می باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⁉️پرسش دوم:شماره موبایل معتبر خود را وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+}
+
+public static function processPhone(Context $Context, string $Text): void {
+if (!Helper::validatePhone($Text)) {
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌خطا: شماره موبایل وارد شده صحیح نمی باشد.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:فرمت ارسالی باید یکی از اپراتور های (همراه اول،ایرانسل،رایتل) باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+return;
+}
+
+$Phone = Helper::normalizePhone($Text);
+$Operator = Helper::detectOperator($Phone);
+
+if ($Operator === 'نامعتبر' || !in_array($Operator, ['همراه اول', 'ایرانسل', 'رایتل'], true)) {
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌پیش شماره این شماره در فهرست سه اپراتور پشتیبانی شده نیست.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:تنها اپراتورهای مجاز (همراه اول، ایرانسل، رایتل) قابل ثبت می باشند." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌شماره موبایل معتبر را دوباره وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+return;
+}
+
+$Existing = Repository::findUserByPhone($Phone, $Context->UserId);
+
+if (!empty($Existing)) {
+$Existing_Name = (string)($Existing['Full_Name'] ?? 'کاربر دیگر');
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "⛔️این شماره موبایل قبلاً در سیستم ثبت شده است و مجاز به استفاده مجدد از آن نمی باشید.\n➖➖➖➖➖➖➖➖➖\n⚠️نکته:در صورتی که فکر می کنید اشتباهی رخ داده است به پشتیبانی مراجعه کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "❌لطفاً شماره موبایل دیگری وارد کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+return;
+}
+
+$Old_User = Repository::getUser($Context->UserId);
+$Full_Name = trim((string)($Old_User['Full_Name'] ?? ''));
+$Client_ID = trim((string)($Old_User['Client_ID'] ?? ''));
+$Has_Client = $Client_ID !== '' && $Client_ID !== '_';
+Repository::updateUser($Context->UserId, ['Phone' => $Phone, 'Operator' => $Operator]);
+Repository::touchUserTime($Context->UserId, 'Profile_Updated_At');
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+
+if (!$Has_Client && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
+try {
+$Synced = Common::syncSubscriptionFromServer(Repository::getUser($Context->UserId));
+$Client_ID = trim((string)($Synced['Client_ID'] ?? ''));
+$Has_Client = $Client_ID !== '' && $Client_ID !== '_';
+} catch (Throwable) {}
+}
+
+if ($Has_Client) {
+self::pushProfileToServer($Client_ID, $Full_Name, $Phone, $Context->UserId);
+}
+
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'پروفایل کاربری') . "✔️شماره ثبت شد؛ اپراتور پایه بر اساس پیش شماره: {$Operator}.\nℹ️در شماره ترابردشده، اپراتور فعلی ممکن است متفاوت باشد." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, Common::greet($Context, 'پروفایل کاربری') . "✅ویرایش و ثبت پروفایل با موفقیت انجام گردید." . Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('منوی قبلی', 'user_account_menu'), Menu::userHome()]));
+}
+
+private static function pushProfileToServer(string $Client_ID, string $Full_Name, string $Phone, int $Telegram_Id = 0): void {
+if ($Client_ID === '' || $Client_ID === '_') return;
+$Payload = [];
+if ($Full_Name !== '') $Payload['name'] = $Full_Name;
+if ($Phone !== '') $Payload['comment'] = $Phone;
+if ($Telegram_Id > 0) $Payload['telegram_id'] = $Telegram_Id;
+if ($Payload === []) return;
+
+$Response = ServerClient::updateUser($Client_ID, $Payload);
+
+if (($Response['StatusCode'] ?? 0) >= 300) {
+error_log('[Umbrella-Bot][Profile-Sync] Client_ID=' . $Client_ID . ' Status=' . ($Response['StatusCode'] ?? 0) . ' Body=' . mb_substr((string)($Response['Body'] ?? ''), 0, 200));
+}
+
+if ($Telegram_Id > 0 && class_exists('Database')) {
+try {
+$Db = Database::getInstance();
+if (method_exists($Db, 'execute')) {
+$Db->execute(
+'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Telegram_Id, $Client_ID]
+);
+$Db->execute(
+'UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
+[$Telegram_Id, $Client_ID]
+);
+}
+} catch (Throwable) {}
+}
+}
+}
+?>

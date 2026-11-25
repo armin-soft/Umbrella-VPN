@@ -1,0 +1,5 @@
+# This file is a copy of the standard Flutter Windows ignore rules.
+flutter/ephemeral/
+flutter/generated_plugin_registrant.cc
+flutter/generated_plugin_registrant.h
+flutter/generated_plugins.cmake
