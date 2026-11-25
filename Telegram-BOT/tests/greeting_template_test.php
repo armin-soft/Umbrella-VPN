@@ -54,4 +54,8 @@ check(str_contains($Text, "به بخش {$Title} خوش آمدید.\n"), 'literal
 $Admin = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
 check(str_contains($Admin, "[['💳مدیریت اعتبار', 'اعتبار حساب کاربری']]"), 'credit button emoji is preserved');
 check(str_contains($Admin, "self::categoryMenu(\$Context, 'مدیریت اعتبار',"), 'credit greeting title is plain');
+$MaskedPhone = Helper::formatPhoneDisplay('09123456789', true);
+check(str_contains($MaskedPhone, '۰۹۱۲***۶۷۸۹') && str_starts_with($MaskedPhone, "\u{2066}\u{200E}") && str_ends_with($MaskedPhone, "\u{200E}\u{2069}"), 'masked phone display converts digits to Persian inside LTR isolate');
+$PlainPhone = Helper::formatPhoneDisplay('+989123456789');
+check(str_contains($PlainPhone, '۰۹۱۲۳۴۵۶۷۸۹') && str_starts_with($PlainPhone, "\u{2066}\u{200E}") && str_ends_with($PlainPhone, "\u{200E}\u{2069}"), 'full phone display normalizes prefix and isolates RTL direction');
 echo "OK greeting template tests ({$Checks} assertions, " . count($Titles) . " distinct titles)\n";

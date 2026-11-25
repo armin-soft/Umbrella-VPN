@@ -1316,7 +1316,13 @@ return [
 /** Notification delivery must not turn a committed purchase into an error. */
 private static function appPaymentNotice(int $TelegramId, string $Text): void {
 try {
-TelegramClient::sendMessage($TelegramId, '💳 ' . $Text, TelegramClient::inlineKeyboard([
+$User = class_exists('Repository') && method_exists('Repository', 'getUser') ? Repository::getUser($TelegramId) : [];
+$UserName = trim((string)($User['Full_Name'] ?? ($User['First_Name'] ?? '')));
+$Frame = method_exists('Helper', 'frame')
+? Helper::frame('کاربر', $UserName !== '' ? $UserName : 'کاربر', 'پرداخت زرین پال', $TelegramId)
+: '';
+$Footer = method_exists('Helper', 'userFooter') ? Helper::userFooter() : '';
+TelegramClient::sendMessage($TelegramId, $Frame . '💳 ' . $Text . $Footer, TelegramClient::inlineKeyboard([
 [['text' => '✅بررسی پرداخت', 'callback_data' => 'بررسی پرداخت']],
 [['text' => '💳خرید و تمدید اشتراک', 'callback_data' => 'user_subscriptions_menu']],
 ]));
@@ -2089,7 +2095,10 @@ $Lines[] = '• نام: ' . ($TgId > 0 ? '<a href="tg://user?id=' . $TgId . '">'
 } else {
 $Lines[] = '• نام: <i>کاربر مهمان / پیش از ورود</i>';
 }
-if ($UserPhone !== '') $Lines[] = '• موبایل: <code>' . self::supportEsc($UserPhone) . '</code>';
+if ($UserPhone !== '') {
+$UserPhoneLabel = method_exists('Helper', 'formatPhoneDisplay') ? Helper::formatPhoneDisplay($UserPhone) : $UserPhone;
+$Lines[] = '• موبایل: <code>' . self::supportEsc($UserPhoneLabel) . '</code>';
+}
 if ($TgId > 0) $Lines[] = '• آیدی تلگرام: <code>' . $TgId . '</code>';
 if ($Uuid !== '' && $Uuid !== '_') $Lines[] = '• شناسه سرویس: <code>' . self::supportEsc($Uuid) . '</code>';
 if ($SubPlan !== '' || $SubStatus !== '') {

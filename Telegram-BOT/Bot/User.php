@@ -51,7 +51,7 @@ return;
 
 if ($Status === 'member') {
 self::registerNewUserFeedback($Context);
-$Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید.\n👇برای دیدن خدمات ربات، دکمه زیر را بزنید:";
+$Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید.\n👇برای دیدن خدمات ربات، دکمه زیر را بزنید:" . Helper::userFooter();
 TelegramClient::sendMessage($Context->ChatId, $Welcome_Text, TelegramClient::inlineKeyboard([
 [['text' => '🤖📋منوی خدمات ربات', 'callback_data' => 'منوی خدمات ربات']],
 ]));
@@ -791,8 +791,11 @@ $Sub_Text .= "└─📤حجم باقیمانده: *{$Remaining_GB_Label}*";
 }
 }
 
+$PhoneDisplay = method_exists('Helper', 'formatPhoneDisplay')
+? Helper::formatPhoneDisplay((string)$Phone)
+: Helper::toPersian((string)$Phone);
 $Profile_Text = "👤نام و نام خانوادگی: *" . Helper::mention((string)$FullName, $Context->UserId) . "*\n"
-. "📞شماره موبایل: " . Helper::toPersian((string)$Phone) . " (*اپراتور پایه: {$Operator}*)\n"
+. "📞شماره موبایل: {$PhoneDisplay} (*اپراتور پایه: {$Operator}*)\n"
 . "💳اعتبار حساب: *{$Balance_Formatted}*\n"
 . "🆔شناسه تلگرام: `" . Helper::toPersian((string)$Context->UserId) . "`\n"
 . "📅تاریخ عضویت: *{$Created_At_Label}*\n"
@@ -1021,7 +1024,7 @@ $Text .= "👛موجودی پس از تراکنش: <b>{$Balance_After}</b>\n";
 $Text .= "➖➖➖➖➖➖➖➖➖\n";
 }
 
-$Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper::toPersian((string)$Total_Pages) . Helper::userFooter() . "*";
+$Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper::toPersian((string)$Total_Pages) . Helper::userFooter();
 }
 
 $Buttons = [];
@@ -1087,7 +1090,7 @@ if ($Usage !== '') $Text .= "📊حجم: {$Usage}\n";
 $Text .= "➖➖➖➖➖➖➖➖➖\n";
 }
 
-$Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper::toPersian((string)$Total_Pages) . Helper::userFooter() . "*";
+$Text .= "📄صفحه " . Helper::toPersian((string)$Page) . " از " . Helper::toPersian((string)$Total_Pages) . Helper::userFooter();
 }
 
 $Buttons = [];
@@ -1152,7 +1155,10 @@ $Description = mb_substr(trim($Text), 0, 1000);
 if ($Media !== null && ($Draft['Flow'] ?? '') === 'user:ticket_category' && !empty($Draft['Ticket_Description'])) $Description = (string)$Draft['Ticket_Description'];
 if ($Media !== null) {
 $Saved = json_decode((string)($Draft['Ticket_Media_JSON'] ?? ''), true) ?: [];
-if (count($Saved) >= 10) { TelegramClient::sendMessage($Context->ChatId, '⚠️حداکثر ۱۰ پیوست برای ایجاد تیکت؛ موارد بیشتر را پس از ثبت در پاسخ تیکت بفرستید.'); return; }
+if (count($Saved) >= 10) {
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'تیکت جدید') . '⚠️حداکثر ۱۰ پیوست برای ایجاد تیکت؛ موارد بیشتر را پس از ثبت در پاسخ تیکت بفرستید.' . Helper::userFooter());
+return;
+}
 $Saved[] = $Media;
 Repository::updateUserSession($Context->UserId, ['Ticket_Media_JSON' => json_encode($Saved, JSON_UNESCAPED_UNICODE)]);
 if ($Description === '') $Description = '📎پیوست بدون کپشن';

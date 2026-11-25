@@ -42,7 +42,13 @@ SystemNotifications::queue($UserId, 'فعالسازی پس از عضویت کا�
 }
 $Chat = (int)($User['Chat_ID'] ?? 0);
 $CanSend = !method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_restored_tg', $UserId);
-if ($Chat > 0 && $CanSend) { try { TelegramClient::sendMessage($Chat, '✅' . $Text); } catch (Throwable) {} }
+if ($Chat > 0 && $CanSend) {
+$Frame = method_exists('Helper', 'frame')
+? Helper::frame('کاربر', (string)($User['Full_Name'] ?? ''), 'عضویت در کانال', $UserId)
+: '';
+$Footer = method_exists('Helper', 'userFooter') ? Helper::userFooter() : '';
+try { TelegramClient::sendMessage($Chat, $Frame . '✅' . $Text . $Footer); } catch (Throwable) {}
+}
 return 'restored';
 } catch (Throwable $Error) { error_log('[Umbrella-Bot][Channel-Restore] ' . $Error->getMessage()); return 'pending'; }
 finally { Repository::releaseCronLock($Lock); }

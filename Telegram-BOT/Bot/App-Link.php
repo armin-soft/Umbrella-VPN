@@ -46,10 +46,14 @@ $Usage = \Helper::formatGB((float)($Account['current_usage_GB'] ?? 0));
 $Limit = \Helper::formatGB((float)($Account['usage_limit_GB'] ?? 0));
 $Active = (bool)($Account['is_active'] ?? false);
 
+$AccountPhone = (string)($Account['phone'] ?? '');
+$AccountPhoneDisplay = method_exists('Helper', 'formatPhoneDisplay')
+? \Helper::formatPhoneDisplay($AccountPhone)
+: \Helper::toPersian($AccountPhone);
 $Text = \Helper::userGreeting($Context, 'حساب آمبرلا')
 . Menu::section('👤', 'حساب کاربری', [
 '🧑نام: ' . $Name,
-'📞شماره: ' . \Helper::toPersian((string)($Account['phone'] ?? '')),
+'📞شماره: ' . $AccountPhoneDisplay,
 '📊مصرف: ' . $Usage . ' از ' . $Limit,
 '🚦وضعیت: ' . ($Active ? 'فعال ✅' : 'غیرفعال ⛔️'),
 ])
@@ -104,14 +108,14 @@ if ($Account === null) return;
 if (in_array(trim($Text), ['/cancel', 'انصراف', 'بازگشت'], true)) { self::bypassMenu($Context); return; }
 $parsed = AppBypass::parseTargetsInput($Text);
 if ($parsed['add'] === [] && $parsed['remove'] === []) {
-TelegramClient::sendMessage($Context->ChatId, 'دامنه یا IP معتبر پیدا نشد؛ دوباره بفرستید.', TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, \Helper::userGreeting($Context, 'عبور مستقیم سایت ها') . '⚠️دامنه یا IP معتبر پیدا نشد؛ دوباره بفرستید.' . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
 return;
 }
 $UUID = (string)$Account['uuid'];
 $settings = AppBypass::load($UUID);
 $next = array_values(array_unique(array_merge(array_diff($settings['domains'], $parsed['remove']), $parsed['add'])));
 if (count($next) > AppBypass::MAX_DOMAINS || $parsed['invalid'] !== []) {
-TelegramClient::sendMessage($Context->ChatId, 'دامنه نامعتبر یا تعداد بیش از ۲۰۰ است؛ هیچ تغییری ذخیره نشد.', TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
+TelegramClient::sendMessage($Context->ChatId, \Helper::userGreeting($Context, 'عبور مستقیم سایت ها') . '⚠️دامنه نامعتبر یا تعداد بیش از ۲۰۰ است؛ هیچ تغییری ذخیره نشد.' . \Helper::userFooter(), TelegramClient::inlineKeyboard([Menu::back('انصراف', 'app_bypass'), Menu::userHome()]));
 return;
 }
 $settings['domains'] = $next;

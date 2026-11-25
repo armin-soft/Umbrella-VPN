@@ -85,12 +85,20 @@ $Db->execute('INSERT INTO `App_Bot_Link_Requests` (`Token_Hash`,`Session_Hash`,`
 return ['linked' => false, 'url' => 'https://t.me/' . $Username . '?start=app_' . $Token, 'expires_in' => self::TTL];
 }
 
+private static function greetText(Context $Context, string $Section = 'اتصال برنامه به تلگرام'): string {
+return method_exists('Helper', 'userGreeting') ? Helper::userGreeting($Context, $Section) : '';
+}
+
+private static function footerText(): string {
+return method_exists('Helper', 'userFooter') ? Helper::userFooter() : '';
+}
+
 public static function begin(Context $Context, string $Token): void {
 if ($Context->ChatId !== $Context->UserId || preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1) return;
 if (UserFlow::membershipStatus($Context->UserId) !== 'member') {
 self::savePendingToken($Context->UserId, $Token);
 UserFlow::start($Context);
-TelegramClient::sendMessage($Context->ChatId, 'پس از عضویت و تأیید کانال، درخواست اتصال حساب به صورت خودکار ادامه پیدا می کند.');
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⏳پس از عضویت و تأیید کانال، درخواست اتصال حساب به صورت خودکار ادامه پیدا می کند.' . self::footerText());
 return;
 }
 self::presentPrompt($Context, $Token);
@@ -102,11 +110,13 @@ $Hash = hash('sha256', $Token);
 $Db->execute('UPDATE `App_Bot_Link_Requests` SET `Telegram_ID` = ? WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = ?)', [$Context->UserId, $Hash, time(), $Context->UserId]);
 $Row = $Db->fetch('SELECT `Phone`, `Telegram_ID` FROM `App_Bot_Link_Requests` WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ?', [$Hash, time()]);
 if ($Row === null || (int)$Row['Telegram_ID'] !== $Context->UserId) {
-TelegramClient::sendMessage($Context->ChatId, 'این لینک منقضی شده یا متعلق به درخواست دیگری است؛ از حساب من لینک جدید بگیرید.'); return;
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⚠️این لینک منقضی شده یا متعلق به درخواست دیگری است؛ از حساب من لینک جدید بگیرید.' . self::footerText()); return;
 }
 $Phone = (string)$Row['Phone'];
-$Masked = substr($Phone, 0, 4) . '***' . substr($Phone, -4);
-TelegramClient::sendMessage($Context->ChatId, 'آیا اتصال حساب برنامه با شماره ' . Helper::toPersian($Masked) . ' به همین حساب تلگرام را تأیید می کنید؟ اگر خودتان درخواست نداده اید، تأیید نکنید.', TelegramClient::inlineKeyboard([
+$PhoneLabel = method_exists('Helper', 'formatPhoneDisplay')
+? Helper::formatPhoneDisplay($Phone, true)
+: Helper::toPersian(substr($Phone, 0, 4) . '***' . substr($Phone, -4));
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '🔗آیا اتصال حساب برنامه با شماره ' . $PhoneLabel . ' به همین حساب تلگرام را تأیید می کنید؟ اگر خودتان درخواست نداده اید، تأیید نکنید.' . self::footerText(), TelegramClient::inlineKeyboard([
 [['text' => '✅تأیید اتصال حساب', 'callback_data' => 'app_link:' . $Token]],
 ]));
 }
@@ -114,7 +124,7 @@ TelegramClient::sendMessage($Context->ChatId, 'آیا اتصال حساب برن
 public static function confirm(Context $Context, string $Token): void {
 if ($Context->ChatId !== $Context->UserId || preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1) return;
 if (UserFlow::membershipStatus($Context->UserId) !== 'member') {
-TelegramClient::sendMessage($Context->ChatId, 'ابتدا عضویت کانال را تأیید کنید و لینک برنامه را دوباره باز کنید.');
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⚠️ابتدا عضویت کانال را تأیید کنید و لینک برنامه را دوباره باز کنید.' . self::footerText());
 return;
 }
 $UuidLock = ''; $UserLock = ''; $PhoneLock = '';
@@ -169,7 +179,7 @@ Common::syncSubscriptionFromServer($Fresh_User, $Linked_Panel);
 }
 } catch (Throwable) {}
 }
-TelegramClient::sendMessage($Context->ChatId, '✅حساب برنامه و ربات متصل شد. اطلاعات در پنل و برنامه همگام می شود.');
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '✅حساب برنامه و ربات متصل شد. اطلاعات در پنل و برنامه همگام می شود.' . self::footerText());
 } catch (Throwable $Error) {
 error_log('[Umbrella-Bot][App-Bot-Link] ' . $Error->getMessage());
 $Message = match ($Error->getMessage()) {
@@ -177,7 +187,7 @@ $Message = match ($Error->getMessage()) {
 'expired' => 'لینک منقضی یا استفاده شده است؛ از برنامه لینک جدید بگیرید.',
 default => 'همگام سازی کامل نشد؛ کمی بعد دوباره با همین دکمه تلاش کنید یا با پشتیبانی تماس بگیرید.',
 };
-TelegramClient::sendMessage($Context->ChatId, $Message);
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⚠️' . $Message . self::footerText());
 } finally {
 if ($PhoneLock !== '') Repository::releaseCronLock($PhoneLock);
 if ($UserLock !== '') Repository::releaseCronLock($UserLock);

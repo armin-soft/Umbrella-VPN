@@ -24,6 +24,10 @@ class CoreProvisioner {
     'geoip-parspack.srs',
     'geoip-derakcloud.srs',
     'geoip-iranserver.srs',
+    'filter-adult.srs',
+    'filter-gambling.srs',
+    'filter-ads.srs',
+    'filter-youtube-ads.srs',
   ];
 
   String _dataDir = '';
@@ -90,8 +94,8 @@ class CoreProvisioner {
             ? name.substring(0, name.length - 4)
             : name;
         try {
-          if (!await out.exists() || await out.length() < 32) {
-            final ByteData data = await rootBundle.load('assets/data/$name');
+          final ByteData data = await rootBundle.load('assets/data/$name');
+          if (!await out.exists() || await out.length() != data.lengthInBytes) {
             await out.writeAsBytes(
               data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
               flush: true,
@@ -101,7 +105,12 @@ class CoreProvisioner {
             resolved[tag] = out.path;
           }
         } catch (_) {
-          // اگر asset در محیط تست در دسترس نبود، ادامه می دهیم.
+          // اگر asset در محیط تست در دسترس نبود، فایل سالم موجود را حفظ می کنیم.
+          if (await out.exists() && await out.length() >= 32) {
+            if (dirPath == primaryDir || !resolved.containsKey(tag)) {
+              resolved[tag] = out.path;
+            }
+          }
         }
       }
     }

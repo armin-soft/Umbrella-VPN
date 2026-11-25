@@ -94,7 +94,6 @@ public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'gambling' => 'شرط بندی',
 'ads' => 'تبلیغات',
-'dating' => 'دوست یابی',
 ];
 public static function loadGlobal(): array {
 return ['enabled' => false, 'categories' => ['adult'], 'custom_domains' => ['example.com']];

@@ -32,24 +32,6 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
-  String _profile = 'user-sub';
-
-  void _selectProfile(String id) {
-    final VpnController vpn = context.read<VpnController>();
-    if (vpn.status.busy || id == _profile) return;
-    playUiClick(context);
-    setState(() => _profile = id);
-  }
-
-  bool _switchPending(VpnController vpn) {
-    if (!vpn.status.active) return false;
-    if (vpn.autoSession) return _profile != 'user-sub';
-    if (vpn.emergencySession) return _profile != 'emergency';
-    if (_profile == 'user-sub' || _profile == 'emergency') return true;
-    final String? source = vpn.activeNode?.sourceId;
-    return source != null && source.isNotEmpty && source != _profile;
-  }
-
   /// آی پی دستگاه برای نمایش در نوار بالا.
   ///
   /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
@@ -192,13 +174,10 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     if (vpn.status.active) {
-      final bool switching = _switchPending(vpn);
       await vpn.disconnect();
       if (!mounted) return;
-      if (!switching) {
-        toasts.info('اتصال قطع شد');
-        return;
-      }
+      toasts.info('اتصال قطع شد');
+      return;
     }
     final AuthController auth = context.read<AuthController>();
     if (!auth.signedIn) {
@@ -209,27 +188,12 @@ class _ConnectPageState extends State<ConnectPage> {
       toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
       return;
     }
-    if (_profile == 'emergency') {
-      if (!subs.emergencyEnabled) {
-        toasts.error('حالت اضطراری غیرفعال است');
-        return;
-      }
-      if (subs.emergencyNodes.isEmpty && !subs.emergencyLoading) {
-        await subs.refreshEmergency();
-        if (!mounted) return;
-      }
-      if (subs.emergencyNodes.isEmpty) {
-        toasts.error('مسیر اضطراری آماده نیست', subs.emergencyLoading ? 'در حال دریافت منابع اضطراری هستیم.' : subs.emergencyError);
-        return;
-      }
-    }
-    if (_profile != 'emergency' && vpn.nodes.isEmpty) {
+    if (vpn.nodes.isEmpty) {
       await subs.syncPersonal();
       if (!mounted) {
         return;
       }
       if (vpn.nodes.isEmpty &&
-          _profile == 'user-sub' &&
           subs.emergencyEnabled &&
           subs.emergencyNodes.isEmpty &&
           !subs.emergencyLoading) {
@@ -237,9 +201,7 @@ class _ConnectPageState extends State<ConnectPage> {
         if (!mounted) return;
       }
       if (vpn.nodes.isEmpty &&
-          !(_profile == 'user-sub' &&
-              subs.emergencyEnabled &&
-              subs.emergencyNodes.isNotEmpty)) {
+          !(subs.emergencyEnabled && subs.emergencyNodes.isNotEmpty)) {
         toasts.error(
           'اشتراک دریافت نشد',
           'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
@@ -247,23 +209,7 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
     }
-    VpnNode? requested;
-    if (_profile != 'user-sub' && _profile != 'emergency') {
-      final List<VpnNode> matches = vpn.nodes.where((VpnNode node) =>
-          node.sourceId == _profile && VpnController.usable(node) && !node.disabled).toList();
-      if (matches.isEmpty) {
-        await subs.syncPersonal();
-        if (!mounted) return;
-        matches.addAll(vpn.nodes.where((VpnNode node) =>
-            node.sourceId == _profile && VpnController.usable(node) && !node.disabled));
-      }
-      if (matches.isEmpty) {
-        toasts.error('پروفایل دریافت نشد', 'اشتراک انتخابی در دسترس نیست یا پیکربندی معتبر ندارد.');
-        return;
-      }
-      requested = matches.first;
-    }
-    final ConnectOutcome outcome = await vpn.connect(requested: requested, emergency: _profile == 'emergency');
+    final ConnectOutcome outcome = await vpn.connect();
     if (!mounted) {
       return;
     }
@@ -489,7 +435,7 @@ class _ConnectPageState extends State<ConnectPage> {
                           button: true,
                           label: status.busy
                               ? 'لغو اتصال'
-                              : (status.active && !_switchPending(vpn) ? 'قطع اتصال' : 'اتصال'),
+                              : (status.active ? 'قطع اتصال' : 'اتصال'),
                           child: InkWell(
                             customBorder: const CircleBorder(),
                             onTap: status == VpnStatus.disconnecting
@@ -519,13 +465,13 @@ class _ConnectPageState extends State<ConnectPage> {
                                     height: orb * 0.24,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: (status.active && !_switchPending(vpn)
+                                      color: (status.active
                                               ? colors.danger
                                               : colors.primary)
                                           .withValues(alpha: 0.94),
                                       boxShadow: <BoxShadow>[
                                         BoxShadow(
-                                          color: (status.active && !_switchPending(vpn)
+                                          color: (status.active
                                                   ? colors.danger
                                                   : colors.primary)
                                               .withValues(alpha: 0.38),
@@ -603,10 +549,10 @@ class _ConnectPageState extends State<ConnectPage> {
                                       : () => _cancelConnection(vpn, toasts),
                                 )
                               : GradientButton(
-                                  label: status.active && !_switchPending(vpn) ? 'قطع اتصال' : 'اتصال',
+                                  label: status.active ? 'قطع اتصال' : 'اتصال',
                                   icon: Icons.power_settings_new_rounded,
                                   height: AppMetrics.controlHeightLarge,
-                                  tone: status.active && !_switchPending(vpn)
+                                  tone: status.active
                                       ? colors.danger
                                       : colors.primary,
                                   onPressed: () =>
@@ -626,49 +572,6 @@ class _ConnectPageState extends State<ConnectPage> {
                                   .textTheme
                                   .labelSmall
                                   ?.copyWith(color: colors.danger),
-                            ),
-                          ),
-                        const SizedBox(height: AppMetrics.space4),
-
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: AppMetrics.space2,
-                          runSpacing: AppMetrics.space2,
-                          children: <Widget>[
-                            for (final ({String id, String title, IconData icon}) profile in <({String id, String title, IconData icon})>[
-                              (id: 'user-sub', title: 'خودکار', icon: Icons.auto_awesome_rounded),
-                              (id: 'user-wireguard', title: 'وایرگارد', icon: Icons.vpn_key_rounded),
-                              (id: 'user-amnezia', title: 'آمنزیا', icon: Icons.shield_rounded),
-                              (id: 'user-mieru', title: 'میرو', icon: Icons.hub_rounded),
-                            ])
-                              ChoiceChip(
-                                key: ValueKey<String>('connection-profile-${profile.id}'),
-                                avatar: Icon(profile.icon, size: AppMetrics.iconSm),
-                                label: Text(profile.title),
-                                showCheckmark: false,
-                                selected: _profile == profile.id,
-                                onSelected: status.busy ? null : (_) => _selectProfile(profile.id),
-                              ),
-                            if (subs.emergencyEnabled)
-                              ChoiceChip(
-                                key: const ValueKey<String>('connection-profile-emergency'),
-                                avatar: const Icon(Icons.emergency_rounded, size: AppMetrics.iconSm),
-                                label: const Text('اضطراری'),
-                                selected: _profile == 'emergency',
-                                showCheckmark: false,
-                                onSelected: status.busy ? null : (_) => _selectProfile('emergency'),
-                              ),
-                          ],
-                        ),
-                        if (_switchPending(vpn))
-                          Padding(
-                            padding: const EdgeInsets.only(top: AppMetrics.space2),
-                            child: Text(
-                              'برای تغییر مسیر، دکمه اتصال را بزنید.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: colors.textSecondary,
-                              ),
                             ),
                           ),
                         const SizedBox(height: AppMetrics.space3),

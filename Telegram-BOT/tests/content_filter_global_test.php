@@ -91,7 +91,7 @@ $Check(!in_array('global.example', $Personal_After['custom_domains'], true), 'ad
 $Check(in_array('new-personal.example', $Personal_After['custom_domains'], true), 'app can still save personal domains');
 $Check(in_array('adult', $Saved['categories'], true) && in_array('global.example', $Saved['custom_domains'], true), 'saved response still enforces global policy');
 
-// The Windows UI exposes only the four bot categories, so mimic its model
+// The Windows UI exposes only the three bot categories, so mimic its model
 // dropping a legacy category from both the effective list and personal snapshot.
 $Windows_View = AppFilter::loadEffective('account-one');
 $Windows_View['categories'] = array_values(array_intersect($Windows_View['categories'], array_keys(AppFilter::BOT_CATEGORIES)));

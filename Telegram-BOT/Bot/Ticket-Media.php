@@ -62,7 +62,11 @@ $Ticket = $Message !== null ? Repository::getTicket((int)$Message['Ticket_ID']) 
 if ($Ticket === null || (!$Context->isAdmin() && (int)$Ticket['User_ID'] !== $Context->UserId)) return;
 $Media = self::decode($Message);
 $Ok = $Media !== null && self::send($Context->ChatId, $Media);
-if (!$Ok) TelegramClient::sendMessage($Context->ChatId, '⚠️پیوست در دسترس نیست؛ لطفاً فرستنده دوباره ارسال کند.');
+if (!$Ok) {
+$Greeting = method_exists('Helper', 'userGreeting') ? Helper::userGreeting($Context, 'پیوست تیکت') : '';
+$Footer = method_exists('Helper', 'userFooter') ? Helper::userFooter() : '';
+TelegramClient::sendMessage($Context->ChatId, $Greeting . '⚠️پیوست در دسترس نیست؛ لطفاً فرستنده دوباره ارسال کند.' . $Footer);
+}
 }
 
 public static function buttons(array $Messages, int $Page): array {

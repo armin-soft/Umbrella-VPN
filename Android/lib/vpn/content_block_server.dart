@@ -279,14 +279,6 @@ class ContentBlockServer {
               'دسترسی به این وب سایت بر اساس فیلتر سایت های شرط بندی و قمار در کنترل محتوای آمبرلا مسدود شده است.',
           isSecurityThreat: false,
         ),
-      'dating' => BlockedHostDetails(
-          domain: cleanHost,
-          category: 'dating',
-          categoryLabel: 'همسریابی و شبکه های دوستیابی',
-          reason:
-              'دسترسی به این وب سایت بر اساس فیلتر شبکه های دوستیابی در کنترل محتوای آمبرلا مسدود شده است.',
-          isSecurityThreat: false,
-        ),
       'custom' => BlockedHostDetails(
           domain: cleanHost,
           category: 'custom',

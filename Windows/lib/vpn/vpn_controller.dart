@@ -2654,6 +2654,7 @@ class VpnController extends ChangeNotifier {
         settingsPath: prewarmSettings.path,
         stickyMinutes: _settings.stickyMinutes,
         blockPagePort: _blockServer?.proxyPort,
+        localRuleSetPaths: _provisioner.localRuleSetPaths,
         cancelled: shouldAbort,
       );
     } catch (_) {
@@ -3032,6 +3033,7 @@ class VpnController extends ChangeNotifier {
         blockPagePort: (blockServer != null && blockServer.proxyPort > 0)
             ? blockServer.proxyPort
             : null,
+        localRuleSetPaths: _provisioner.localRuleSetPaths,
         cancelled: () => _cancelRequested || _disposed || preparationEpoch != _connectionEpoch,
         onStarted: _preparingProcesses.add,
         onFinished: _preparingProcesses.remove,

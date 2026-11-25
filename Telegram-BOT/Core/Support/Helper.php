@@ -836,6 +836,23 @@ public static function validatePhone(string $Phone): bool {
 return (bool)preg_match('/^09\d{9}$/', static::normalizePhone($Phone));
 }
 
+public static function formatPhoneDisplay(string $Phone, bool $Mask = false): string {
+$Raw = trim($Phone);
+if ($Raw === '') {
+return '';
+}
+
+$Normalized = static::normalizePhone($Raw);
+$Display = $Normalized !== '' ? $Normalized : static::toEnglish($Raw);
+
+if ($Mask && strlen($Display) >= 8) {
+$Display = substr($Display, 0, 4) . '***' . substr($Display, -4);
+}
+
+$Display = static::toPersian($Display);
+return "\u{2066}\u{200E}" . $Display . "\u{200E}\u{2069}";
+}
+
 public static function detectOperator(string $Phone): string {
 $Phone = static::normalizePhone($Phone);
 

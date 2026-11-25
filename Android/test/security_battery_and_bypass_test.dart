@@ -314,14 +314,9 @@ void main() {
         'user-amnezia',
         'user-mieru',
       ]) {
-        final Finder card = find.byKey(ValueKey<String>('connection-profile-$mode'));
-        expect(card, findsOneWidget);
-        expect(find.descendant(of: card, matching: find.byType(CustomPaint)), findsWidgets);
+        expect(find.byKey(ValueKey<String>('connection-profile-$mode')), findsNothing);
       }
 
-      await tester.tap(find.byKey(const ValueKey<String>('connection-profile-user-amnezia')));
-      await tester.pump();
-      expect(tester.takeException(), isNull);
       expect(Fa.stripEmojis('⚠️ هشدار'), 'هشدار');
 
       await tester.pumpWidget(const SizedBox());

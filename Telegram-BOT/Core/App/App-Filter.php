@@ -25,7 +25,6 @@ public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'gambling' => 'شرط بندی',
 'ads' => 'تبلیغات',
-'dating' => 'دوست یابی',
 ];
 
 public const CATEGORIES = [

@@ -84,7 +84,7 @@ void main() {
     await LocalStore.instance.init();
   });
 
-  testWidgets('profile chips only select, including while connected', (tester) async {
+  testWidgets('connect page hides manual profile selector chips', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1120, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final native = _Native();
@@ -102,23 +102,17 @@ void main() {
       ChangeNotifierProvider<ToastController>.value(value: toasts),
     ], child: MaterialApp(theme: AppTheme.dark(), home: const Scaffold(body: ConnectPage()))));
     await tester.pump();
-    final wireguard = find.byKey(const ValueKey<String>('connection-profile-user-wireguard'));
-    await tester.ensureVisible(wireguard);
-    await tester.tap(wireguard);
-    await tester.pump();
-    expect(tester.widget<ChoiceChip>(wireguard).selected, isTrue);
+    for (final String key in const <String>[
+      'connection-profile-user-sub',
+      'connection-profile-user-wireguard',
+      'connection-profile-user-amnezia',
+      'connection-profile-user-mieru',
+      'connection-profile-emergency',
+    ]) {
+      expect(find.byKey(ValueKey<String>(key)), findsNothing);
+    }
     expect(vpn.connections, 0);
     expect(vpn.disconnections, 0);
-    vpn.setConnected();
-    await tester.pump();
-    final auto = find.byKey(const ValueKey<String>('connection-profile-user-sub'));
-    await tester.ensureVisible(auto);
-    await tester.tap(auto);
-    await tester.pump();
-    expect(tester.widget<ChoiceChip>(auto).selected, isTrue);
-    expect(vpn.connections, 0);
-    expect(vpn.disconnections, 0);
-    expect(find.text('برای تغییر مسیر، دکمه اتصال را بزنید.'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     subs.dispose(); auth.dispose(); settings.dispose(); toasts.dispose(); vpn.dispose();
   });

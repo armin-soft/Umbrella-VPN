@@ -1391,6 +1391,15 @@ void main() {
         );
         expect(pornRule['action'], 'route');
         expect(pornRule['outbound'], RuntimeConfig.blockPageOutboundTag);
+        expect(pornRule.containsKey('rule_set'), isFalse);
+
+        final Map<String, dynamic> pornRuleSet = routeRules.firstWhere(
+          (Map<String, dynamic> r) =>
+              '${r['rule_set']}'.contains('geosite-category-porn'),
+        );
+        expect(pornRuleSet['action'], 'route');
+        expect(pornRuleSet['outbound'], RuntimeConfig.blockPageOutboundTag);
+        expect(pornRuleSet.containsKey('domain_suffix'), isFalse);
 
         final Map<String, dynamic> customRule = routeRules.firstWhere(
           (Map<String, dynamic> r) =>
@@ -1403,6 +1412,7 @@ void main() {
               '${r['domain_suffix']}'.contains('doubleclick.net'),
         );
         expect(adsRule['action'], 'reject');
+        expect(adsRule.containsKey('rule_set'), isFalse);
 
         final Map<String, dynamic> appRule = routeRules.firstWhere(
           (Map<String, dynamic> r) =>
@@ -1427,6 +1437,100 @@ void main() {
         expect(
           dnsRules.any((dynamic r) => '$r'.contains('geosite-category-ads-all')),
           isTrue,
+        );
+      },
+    );
+
+    test(
+      'Android RuntimeConfig.finalize injects bundled local filter-*.srs rule sets offline when omitted during StartService',
+      () {
+        final Map<String, dynamic> coreSettings = UmbrellaCore.settingsJson(
+          tun: true,
+          systemProxy: false,
+          port: 12334,
+          includeFilterRuleSets: false,
+          contentFilter: const FilterSettings(
+            enabled: true,
+            categories: <String>['adult', 'gambling', 'ads'],
+            customDomains: <String>['custom-blocked.example'],
+          ),
+        );
+        final Map<String, dynamic> runtime = <String, dynamic>{
+          'outbounds': <dynamic>[
+            <String, dynamic>{'tag': 'direct', 'type': 'direct'},
+            <String, dynamic>{'tag': 'select', 'type': 'selector'},
+          ],
+          'dns': <String, dynamic>{
+            'rules': <dynamic>[],
+          },
+          'route': <String, dynamic>{
+            'rule_set': <dynamic>[],
+            'rules': <dynamic>[
+              <String, dynamic>{'action': 'sniff'},
+            ],
+          },
+        };
+        RuntimeConfig.finalize(
+          runtime,
+          profileTags: const <String>{},
+          coreSettings: coreSettings,
+          blockPagePort: 45124,
+          localRuleSetPaths: const <String, String>{
+            'filter-adult.srs': '/data/user/0/ir.umbrella.vpn/files/data/filter-adult.srs',
+            'filter-gambling.srs': '/data/user/0/ir.umbrella.vpn/files/data/filter-gambling.srs',
+            'filter-ads.srs': '/data/user/0/ir.umbrella.vpn/files/data/filter-ads.srs',
+          },
+        );
+        final List<Map<String, dynamic>> ruleSets =
+            ((runtime['route'] as Map<String, dynamic>)['rule_set']
+                    as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        expect(
+          ruleSets.any((Map<String, dynamic> rs) =>
+              rs['tag'] == 'umbrella-filter-local-adult' &&
+              rs['type'] == 'local' &&
+              rs['path'] == '/data/user/0/ir.umbrella.vpn/files/data/filter-adult.srs'),
+          isTrue,
+        );
+        expect(
+          ruleSets.any((Map<String, dynamic> rs) =>
+              rs['tag'] == 'umbrella-filter-local-gambling' &&
+              rs['type'] == 'local' &&
+              rs['path'] == '/data/user/0/ir.umbrella.vpn/files/data/filter-gambling.srs'),
+          isTrue,
+        );
+        expect(
+          ruleSets.any((Map<String, dynamic> rs) =>
+              rs['tag'] == 'umbrella-filter-local-ads' &&
+              rs['type'] == 'local' &&
+              rs['path'] == '/data/user/0/ir.umbrella.vpn/files/data/filter-ads.srs'),
+          isTrue,
+        );
+        final List<Map<String, dynamic>> routeRules =
+            ((runtime['route'] as Map<String, dynamic>)['rules']
+                    as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+        expect(
+          routeRules.any((Map<String, dynamic> r) =>
+              '${r['rule_set']}'.contains('umbrella-filter-local-adult') &&
+              r['outbound'] == RuntimeConfig.blockPageOutboundTag),
+          isTrue,
+        );
+        expect(
+          routeRules.any((Map<String, dynamic> r) =>
+              '${r['rule_set']}'.contains('umbrella-filter-local-ads') &&
+              r['action'] == 'reject'),
+          isTrue,
+        );
+        final List<dynamic> dnsRules =
+            (runtime['dns'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+        expect(
+          dnsRules.any((dynamic r) => '$r'.contains('umbrella-filter-local-ads')),
+          isTrue,
+        );
+        expect(
+          dnsRules.any((dynamic r) => '$r'.contains('umbrella-filter-local-adult')),
+          isFalse,
         );
       },
     );

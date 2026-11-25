@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -33,24 +32,6 @@ class ConnectPage extends StatefulWidget {
 }
 
 class _ConnectPageState extends State<ConnectPage> {
-  String _profile = 'user-sub';
-
-  void _selectProfile(String id) {
-    final VpnController vpn = context.read<VpnController>();
-    if (vpn.status.busy || id == _profile) return;
-    playUiClick(context);
-    setState(() => _profile = id);
-  }
-
-  bool _switchPending(VpnController vpn) {
-    if (!vpn.status.active) return false;
-    if (vpn.autoSession) return _profile != 'user-sub';
-    if (vpn.emergencySession) return _profile != 'emergency';
-    if (_profile == 'user-sub' || _profile == 'emergency') return true;
-    final String? source = vpn.activeNode?.sourceId;
-    return source != null && source.isNotEmpty && source != _profile;
-  }
-
   /// آی پی دستگاه برای نمایش در نوار بالا.
   ///
   /// وقتی تونل وصل است، آی پی خروجی نشان داده می شود. وقتی قطع است، آی پی
@@ -193,13 +174,10 @@ class _ConnectPageState extends State<ConnectPage> {
       return;
     }
     if (vpn.status.active) {
-      final bool switching = _switchPending(vpn);
       await vpn.disconnect();
       if (!mounted) return;
-      if (!switching) {
-        toasts.info('اتصال قطع شد');
-        return;
-      }
+      toasts.info('اتصال قطع شد');
+      return;
     }
     final AuthController auth = context.read<AuthController>();
     if (!auth.signedIn) {
@@ -210,27 +188,12 @@ class _ConnectPageState extends State<ConnectPage> {
       toasts.error(auth.account.statusLabelFa, auth.account.accessReason);
       return;
     }
-    if (_profile == 'emergency') {
-      if (!subs.emergencyEnabled) {
-        toasts.error('حالت اضطراری غیرفعال است');
-        return;
-      }
-      if (subs.emergencyNodes.isEmpty && !subs.emergencyLoading) {
-        await subs.refreshEmergency();
-        if (!mounted) return;
-      }
-      if (subs.emergencyNodes.isEmpty) {
-        toasts.error('مسیر اضطراری آماده نیست', subs.emergencyLoading ? 'در حال دریافت منابع اضطراری هستیم.' : subs.emergencyError);
-        return;
-      }
-    }
-    if (_profile != 'emergency' && vpn.nodes.isEmpty) {
+    if (vpn.nodes.isEmpty) {
       await subs.syncPersonal();
       if (!mounted) {
         return;
       }
       if (vpn.nodes.isEmpty &&
-          _profile == 'user-sub' &&
           subs.emergencyEnabled &&
           subs.emergencyNodes.isEmpty &&
           !subs.emergencyLoading) {
@@ -238,9 +201,7 @@ class _ConnectPageState extends State<ConnectPage> {
         if (!mounted) return;
       }
       if (vpn.nodes.isEmpty &&
-          !(_profile == 'user-sub' &&
-              subs.emergencyEnabled &&
-              subs.emergencyNodes.isNotEmpty)) {
+          !(subs.emergencyEnabled && subs.emergencyNodes.isNotEmpty)) {
         toasts.error(
           'اشتراک دریافت نشد',
           'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',
@@ -248,23 +209,7 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
     }
-    VpnNode? requested;
-    if (_profile != 'user-sub' && _profile != 'emergency') {
-      final List<VpnNode> matches = vpn.nodes.where((VpnNode node) =>
-          node.sourceId == _profile && VpnController.usable(node) && !node.disabled).toList();
-      if (matches.isEmpty) {
-        await subs.syncPersonal();
-        if (!mounted) return;
-        matches.addAll(vpn.nodes.where((VpnNode node) =>
-            node.sourceId == _profile && VpnController.usable(node) && !node.disabled));
-      }
-      if (matches.isEmpty) {
-        toasts.error('پروفایل دریافت نشد', 'اشتراک انتخابی در دسترس نیست یا پیکربندی معتبر ندارد.');
-        return;
-      }
-      requested = matches.first;
-    }
-    final ConnectOutcome outcome = await vpn.connect(requested: requested, emergency: _profile == 'emergency');
+    final ConnectOutcome outcome = await vpn.connect();
     if (!mounted) {
       return;
     }
@@ -540,9 +485,7 @@ class _ConnectPageState extends State<ConnectPage> {
             button: true,
             label: status.busy
                 ? 'لغو اتصال'
-                : (status.active && !_switchPending(vpn)
-                    ? 'قطع اتصال'
-                    : 'اتصال'),
+                : (status.active ? 'قطع اتصال' : 'اتصال'),
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: status == VpnStatus.disconnecting
@@ -571,13 +514,13 @@ class _ConnectPageState extends State<ConnectPage> {
                         height: orbSize * 0.24,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: (status.active && !_switchPending(vpn)
+                          color: (status.active
                                   ? colors.danger
                                   : colors.primary)
                               .withValues(alpha: 0.94),
                           boxShadow: <BoxShadow>[
                             BoxShadow(
-                              color: (status.active && !_switchPending(vpn)
+                              color: (status.active
                                       ? colors.danger
                                       : colors.primary)
                                   .withValues(alpha: 0.38),
@@ -652,19 +595,7 @@ class _ConnectPageState extends State<ConnectPage> {
           required double buttonHeight,
           required double secondaryHeight,
           required double gapAfterPrimary,
-          required double gapAfterChips,
-          required bool compactModeCards,
-          required double modeWidth,
         }) {
-          final List<({String id, String title, String subtitle})> profiles =
-              <({String id, String title, String subtitle})>[
-            (id: 'user-sub', title: 'خودکار', subtitle: 'بهینه'),
-            (id: 'user-wireguard', title: 'وایرگارد', subtitle: 'پرشتاب'),
-            (id: 'user-amnezia', title: 'آمنزیا', subtitle: 'ضد فیلتر'),
-            (id: 'user-mieru', title: 'میرو', subtitle: 'پایدار'),
-            if (subs.emergencyEnabled)
-              (id: 'emergency', title: 'اضطراری', subtitle: 'پشتیبان'),
-          ];
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -684,14 +615,10 @@ class _ConnectPageState extends State<ConnectPage> {
                             : () => _cancelConnection(vpn, toasts),
                       )
                     : GradientButton(
-                        label: status.active && !_switchPending(vpn)
-                            ? 'قطع اتصال'
-                            : 'اتصال',
+                        label: status.active ? 'قطع اتصال' : 'اتصال',
                         icon: Icons.power_settings_new_rounded,
                         height: buttonHeight,
-                        tone: status.active && !_switchPending(vpn)
-                            ? colors.danger
-                            : colors.primary,
+                        tone: status.active ? colors.danger : colors.primary,
                         onPressed: () =>
                             _toggleConnection(vpn, subs, toasts),
                       ),
@@ -709,29 +636,6 @@ class _ConnectPageState extends State<ConnectPage> {
                   ),
                 ),
               SizedBox(height: gapAfterPrimary),
-              SizedBox(
-                width: modeWidth,
-                child: _ConnectionModeSelector(
-                  profiles: profiles,
-                  selectedId: _profile,
-                  disabled: status.busy,
-                  compact: compactModeCards,
-                  onSelected: _selectProfile,
-                ),
-              ),
-              if (_switchPending(vpn))
-                Padding(
-                  padding: const EdgeInsets.only(top: AppMetrics.space2),
-                  child: Text(
-                    'برای تغییر مسیر، دکمه اتصال را بزنید.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: colors.textSecondary),
-                  ),
-                ),
-              SizedBox(height: gapAfterChips),
               SizedBox(
                 width: AppMetrics.controlMaxWidth,
                 height: secondaryHeight,
@@ -839,10 +743,6 @@ class _ConnectPageState extends State<ConnectPage> {
                                       buttonHeight: AppMetrics.controlHeightSmall,
                                       secondaryHeight: AppMetrics.controlHeightSmall,
                                       gapAfterPrimary: AppMetrics.space2,
-                                      gapAfterChips: AppMetrics.space2,
-                                      compactModeCards: true,
-                                      modeWidth: (cW * 0.54)
-                                          .clamp(220.0, AppMetrics.controlMaxWidth),
                                     ),
                                   ),
                                 ),
@@ -898,26 +798,14 @@ class _ConnectPageState extends State<ConnectPage> {
                       final double gapPrimary = desktopSized
                           ? AppMetrics.space4
                           : AppMetrics.space2 + 2;
-                      final double gapChips = desktopSized
-                          ? AppMetrics.space3
-                          : AppMetrics.space2;
-                      final bool compactCards = !desktopSized;
-                      final double modeBarWidth =
-                          cW.clamp(220.0, desktopSized ? 520.0 : 420.0);
-                      final bool twoRows = subs.emergencyEnabled && modeBarWidth < 380;
-                      final double modeHeight =
-                          twoRows ? 104 : (compactCards ? 50 : 54);
                       final double reserved =
                           (desktopSized ? 72 : 66) +
                           buttonHeight +
-                          modeHeight +
                           secondaryHeight +
                           gapStatus +
                           gapButton +
                           gapPrimary +
-                          gapChips +
                           (!account.canConnect ? 28 : 0) +
-                          (_switchPending(vpn) ? 28 : 0) +
                           6;
                       final double maxOrb = desktopSized
                           ? (cH < 560 ? 250 : (cH < 640 ? 290 : 330))
@@ -943,9 +831,6 @@ class _ConnectPageState extends State<ConnectPage> {
                                   buttonHeight: buttonHeight,
                                   secondaryHeight: secondaryHeight,
                                   gapAfterPrimary: gapPrimary,
-                                  gapAfterChips: gapChips,
-                                  compactModeCards: compactCards,
-                                  modeWidth: modeBarWidth,
                                 ),
                               ],
                             ),
@@ -1420,404 +1305,4 @@ class _IpChip extends StatelessWidget {
       ),
     );
   }
-}
-
-/// نوار کارت های مدرن انتخاب پروتکل و حالت اتصال با لوگوی اختصاصی هر پروتکل.
-class _ConnectionModeSelector extends StatelessWidget {
-  const _ConnectionModeSelector({
-    required this.profiles,
-    required this.selectedId,
-    required this.disabled,
-    required this.compact,
-    required this.onSelected,
-  });
-
-  final List<({String id, String title, String subtitle})> profiles;
-  final String selectedId;
-  final bool disabled;
-  final bool compact;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints box) {
-        final bool splitFifth = profiles.length > 4 && box.maxWidth < 360;
-        final List<({String id, String title, String subtitle})> topRow =
-            splitFifth ? profiles.take(4).toList() : profiles;
-        final List<({String id, String title, String subtitle})> bottomRow =
-            splitFifth
-                ? profiles.skip(4).toList()
-                : const <({String id, String title, String subtitle})>[];
-
-        Widget buildRow(
-          List<({String id, String title, String subtitle})> items,
-        ) {
-          return Row(
-            children: <Widget>[
-              for (int i = 0; i < items.length; i++) ...<Widget>[
-                if (i > 0) SizedBox(width: compact ? 6 : AppMetrics.space2),
-                Expanded(
-                  child: _ConnectionModeCard(
-                    key: ValueKey<String>('connection-profile-${items[i].id}'),
-                    id: items[i].id,
-                    title: items[i].title,
-                    subtitle: items[i].subtitle,
-                    selected: selectedId == items[i].id,
-                    disabled: disabled,
-                    compact: compact,
-                    onTap: () => onSelected(items[i].id),
-                  ),
-                ),
-              ],
-            ],
-          );
-        }
-
-        if (bottomRow.isEmpty) {
-          return buildRow(topRow);
-        }
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            buildRow(topRow),
-            const SizedBox(height: 6),
-            buildRow(bottomRow),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ConnectionModeCard extends StatelessWidget {
-  const _ConnectionModeCard({
-    super.key,
-    required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.disabled,
-    required this.compact,
-    required this.onTap,
-  });
-
-  final String id;
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final bool disabled;
-  final bool compact;
-  final VoidCallback onTap;
-
-  static Color _accentFor(String id, UmbrellaColors colors) {
-    switch (id) {
-      case 'user-wireguard':
-        return const Color(0xFFE11D48);
-      case 'user-amnezia':
-        return colors.warning;
-      case 'user-mieru':
-        return colors.info;
-      case 'emergency':
-        return colors.danger;
-      default:
-        return colors.primary;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final UmbrellaColors colors = context.colors;
-    final Color accent = _accentFor(id, colors);
-    final Color bg = selected
-        ? Color.alphaBlend(
-            accent.withValues(alpha: 0.16),
-            colors.surfaceHigh,
-          )
-        : colors.surfaceHigh.withValues(alpha: 0.62);
-    final Color borderColor =
-        selected ? accent.withValues(alpha: 0.85) : colors.border;
-
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: title,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-          onTap: disabled ? null : onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            constraints: BoxConstraints(minHeight: compact ? 44 : 52),
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 4 : AppMetrics.space2,
-              vertical: compact ? 5 : 6,
-            ),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-              border: Border.all(
-                color: borderColor,
-                width: selected ? 1.4 : 1.0,
-              ),
-              boxShadow: selected
-                  ? <BoxShadow>[
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.18),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : const <BoxShadow>[],
-            ),
-            child: compact
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      _ProtocolLogoMark(
-                        modeId: id,
-                        size: 18,
-                        color: selected ? accent : colors.textSecondary,
-                      ),
-                      const SizedBox(height: 3),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    fontSize: 10.5,
-                                    fontWeight: selected
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                    color: selected
-                                        ? colors.textPrimary
-                                        : colors.textSecondary,
-                                  ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color:
-                              accent.withValues(alpha: selected ? 0.2 : 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: _ProtocolLogoMark(
-                            modeId: id,
-                            size: 18,
-                            color: selected ? accent : colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.centerStart,
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(
-                                      fontWeight: selected
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
-                                      color: selected
-                                          ? colors.textPrimary
-                                          : colors.textSecondary,
-                                    ),
-                              ),
-                            ),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.centerStart,
-                              child: Text(
-                                subtitle,
-                                maxLines: 1,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      fontSize: 9.5,
-                                      color: selected
-                                          ? accent
-                                          : colors.textSecondary
-                                              .withValues(alpha: 0.78),
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// لوگوی برداری اختصاصی برای هر پروتکل اتصال (خودکار، وایرگارد، آمنزیا، میرو، اضطراری).
-class _ProtocolLogoMark extends StatelessWidget {
-  const _ProtocolLogoMark({
-    required this.modeId,
-    required this.size,
-    required this.color,
-  });
-
-  final String modeId;
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size.square(size),
-      painter: _ProtocolLogoPainter(modeId: modeId, color: color),
-    );
-  }
-}
-
-class _ProtocolLogoPainter extends CustomPainter {
-  const _ProtocolLogoPainter({required this.modeId, required this.color});
-
-  final String modeId;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double s = math.min(size.width, size.height);
-    final Offset c = Offset(size.width / 2, size.height / 2);
-    final Paint stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = (s * 0.105).clamp(1.4, 2.4)
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final Paint fill = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    switch (modeId) {
-      case 'user-wireguard':
-        canvas.drawCircle(c, s * 0.42, stroke);
-        final Path wg = Path()
-          ..moveTo(c.dx - s * 0.22, c.dy - s * 0.08)
-          ..cubicTo(
-            c.dx - s * 0.08,
-            c.dy - s * 0.30,
-            c.dx + s * 0.22,
-            c.dy - s * 0.24,
-            c.dx + s * 0.16,
-            c.dy - s * 0.02,
-          )
-          ..cubicTo(
-            c.dx + s * 0.12,
-            c.dy + s * 0.16,
-            c.dx - s * 0.14,
-            c.dy + s * 0.18,
-            c.dx - s * 0.02,
-            c.dy + s * 0.26,
-          );
-        canvas.drawPath(wg, stroke);
-        canvas.drawCircle(
-          Offset(c.dx + s * 0.05, c.dy - s * 0.08),
-          s * 0.07,
-          fill,
-        );
-        break;
-      case 'user-amnezia':
-        final Path shield = Path()
-          ..moveTo(c.dx, c.dy - s * 0.44)
-          ..lineTo(c.dx + s * 0.36, c.dy - s * 0.24)
-          ..lineTo(c.dx + s * 0.32, c.dy + s * 0.12)
-          ..quadraticBezierTo(c.dx, c.dy + s * 0.46, c.dx, c.dy + s * 0.46)
-          ..quadraticBezierTo(
-            c.dx,
-            c.dy + s * 0.46,
-            c.dx - s * 0.32,
-            c.dy + s * 0.12,
-          )
-          ..lineTo(c.dx - s * 0.36, c.dy - s * 0.24)
-          ..close();
-        canvas.drawPath(shield, stroke);
-        final Path inner = Path()
-          ..moveTo(c.dx - s * 0.16, c.dy + s * 0.12)
-          ..lineTo(c.dx, c.dy - s * 0.18)
-          ..lineTo(c.dx + s * 0.16, c.dy + s * 0.12);
-        canvas.drawPath(inner, stroke);
-        break;
-      case 'user-mieru':
-        canvas.drawCircle(Offset(c.dx - s * 0.16, c.dy), s * 0.23, stroke);
-        canvas.drawCircle(Offset(c.dx + s * 0.16, c.dy), s * 0.23, stroke);
-        canvas.drawCircle(c, s * 0.07, fill);
-        break;
-      case 'emergency':
-        final Path tri = Path()
-          ..moveTo(c.dx, c.dy - s * 0.38)
-          ..lineTo(c.dx + s * 0.38, c.dy + s * 0.32)
-          ..lineTo(c.dx - s * 0.38, c.dy + s * 0.32)
-          ..close();
-        canvas.drawPath(tri, stroke);
-        canvas.drawLine(
-          Offset(c.dx, c.dy - s * 0.10),
-          Offset(c.dx, c.dy + s * 0.08),
-          stroke,
-        );
-        canvas.drawCircle(
-          Offset(c.dx, c.dy + s * 0.20),
-          s * 0.055,
-          fill,
-        );
-        break;
-      default:
-        final Rect canopy = Rect.fromCircle(
-          center: Offset(c.dx, c.dy + s * 0.02),
-          radius: s * 0.40,
-        );
-        canvas.drawArc(canopy, math.pi, math.pi, false, stroke);
-        canvas.drawLine(
-          Offset(c.dx - s * 0.40, c.dy + s * 0.02),
-          Offset(c.dx + s * 0.40, c.dy + s * 0.02),
-          stroke,
-        );
-        final Path hook = Path()
-          ..moveTo(c.dx, c.dy - s * 0.38)
-          ..lineTo(c.dx, c.dy + s * 0.28)
-          ..arcToPoint(
-            Offset(c.dx + s * 0.16, c.dy + s * 0.28),
-            radius: Radius.circular(s * 0.08),
-            clockwise: false,
-          );
-        canvas.drawPath(hook, stroke);
-        canvas.drawCircle(
-          Offset(c.dx + s * 0.26, c.dy - s * 0.26),
-          s * 0.06,
-          fill,
-        );
-        break;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ProtocolLogoPainter oldDelegate) =>
-      oldDelegate.modeId != modeId || oldDelegate.color != color;
 }

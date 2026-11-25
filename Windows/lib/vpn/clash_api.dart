@@ -1097,16 +1097,18 @@ class ClashApi {
 
       String matchedRuleHint = '';
       if (lower.contains('umbrella-filter-adult') ||
+          lower.contains('filter-adult') ||
           lower.contains('category-porn')) {
         matchedRuleHint = 'adult';
       } else if (lower.contains('umbrella-filter-gambling') ||
+          lower.contains('filter-gambling') ||
           lower.contains('category-betting')) {
         matchedRuleHint = 'gambling';
-      } else if (lower.contains('umbrella-filter-dating')) {
-        matchedRuleHint = 'dating';
       } else if (lower.contains('umbrella-filter-custom')) {
         matchedRuleHint = 'custom';
       } else if (lower.contains('umbrella-filter-ads') ||
+          lower.contains('filter-ads') ||
+          lower.contains('filter-youtube-ads') ||
           lower.contains('category-ads')) {
         matchedRuleHint = 'ads';
       }

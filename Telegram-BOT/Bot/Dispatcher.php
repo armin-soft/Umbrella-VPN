@@ -759,7 +759,9 @@ $Has_Media = TicketMedia::extract($Context) !== null;
 
 if (!$Has_Media && $Text === '') {
 $InputFlow = (string)(Repository::getUserSession($Context->UserId)['Flow'] ?? '');
-if (str_contains($InputFlow, 'ticket')) TelegramClient::sendMessage($Context->ChatId, '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به صورت عکس، فایل یا متن ارسال کنید.');
+if (str_contains($InputFlow, 'ticket')) {
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'تیکت پشتیبانی') . '⚠️این نوع پیام قابل ثبت در تیکت نیست؛ آن را به صورت عکس، فایل یا متن ارسال کنید.' . Helper::userFooter());
+}
 return;
 }
 if (!$Has_Media && preg_match('/^\/start(?:@\w+)? app_([a-f0-9]{32})$/D', $Text, $Match) === 1) {
@@ -777,7 +779,7 @@ $CleanText = trim((string)$CleanText);
 if (!$Context->isAdmin() && Helper::containsProfanity($CleanText)) {
 try { Repository::setBlocked($Context->UserId, true); } catch (Throwable $E) {
 error_log('[Umbrella-Bot][Profanity-Block] setBlocked failed: ' . $E->getMessage());
-TelegramClient::sendMessage($Context->ChatId, '⚠️این پیام قابل پردازش نیست؛ خطای موقت در ثبت وضعیت حساب رخ داد.');
+TelegramClient::sendMessage($Context->ChatId, Helper::userGreeting($Context, 'هشدار سیستم') . '⚠️این پیام قابل پردازش نیست؛ خطای موقت در ثبت وضعیت حساب رخ داد.' . Helper::userFooter());
 return;
 }
 

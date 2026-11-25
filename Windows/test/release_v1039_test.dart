@@ -70,10 +70,10 @@ void main() {
   });
 
   group('v1.0.39 — همگام سازی کامل کنترل محتوا با ربات تلگرام', () {
-    test('دقیقاً چهار دسته رسمی ربات تلگرام پشتیبانی و همگام می شوند', () {
+    test('دقیقاً سه دسته رسمی ربات تلگرام پشتیبانی و همگام می شوند', () {
       expect(
         FilterSettings.categoryLabels.keys.toList(),
-        <String>['adult', 'gambling', 'ads', 'dating'],
+        <String>['adult', 'gambling', 'ads'],
       );
 
       final FilterSettings parsed = FilterSettings.fromJson(<String, dynamic>{
@@ -89,7 +89,7 @@ void main() {
         'updated_by': 'telegram',
       });
       expect(parsed.enabled, isTrue);
-      expect(parsed.categories, <String>['adult', 'ads', 'dating']);
+      expect(parsed.categories, <String>['adult', 'ads']);
       expect(
         parsed.normalizedCustomDomains,
         <String>['example.com', 'tracker.net'],
@@ -138,7 +138,7 @@ void main() {
         logFile: 'core.log',
         contentFilter: const FilterSettings(
           enabled: true,
-          categories: <String>['adult', 'gambling', 'ads', 'dating'],
+          categories: <String>['adult', 'gambling', 'ads'],
           customDomains: <String>['custom-block.test'],
         ),
       );
@@ -146,7 +146,7 @@ void main() {
           settings['route-rule'] as Map<String, dynamic>;
       final List<Map<String, dynamic>> rules =
           (routeRule['rules'] as List<dynamic>).cast<Map<String, dynamic>>();
-      expect(rules, hasLength(5));
+      expect(rules, hasLength(10));
       expect(
         rules.every((Map<String, dynamic> item) => item['outbound'] == 'block'),
         isTrue,
@@ -700,7 +700,7 @@ void main() {
             .readAsStringSync(),
         contains('UmbrellaVPN/1.0.0'),
       );
-      expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v7');
+      expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v9');
       final Map<String, dynamic> manifest =
           jsonDecode(File('assets/cores/manifest.json').readAsStringSync())
               as Map<String, dynamic>;

@@ -921,27 +921,21 @@ void main() {
           expect(find.textContaining('اشخاص ثالث'), findsNothing);
           expect(find.textContaining('سلب مسئولیت'), findsNothing);
 
-          final Finder subChipFinder =
-              find.byKey(const ValueKey<String>('connection-profile-user-sub'));
-          expect(subChipFinder, findsOneWidget);
+          expect(
+            find.byKey(const ValueKey<String>('connection-profile-user-sub')),
+            findsNothing,
+          );
           expect(
             find.byKey(const ValueKey<String>('connection-profile-user-wireguard')),
-            findsOneWidget,
+            findsNothing,
           );
           expect(
             find.byKey(const ValueKey<String>('connection-profile-user-amnezia')),
-            findsOneWidget,
+            findsNothing,
           );
           expect(
             find.byKey(const ValueKey<String>('connection-profile-user-mieru')),
-            findsOneWidget,
-          );
-          expect(
-            find.descendant(
-              of: subChipFinder,
-              matching: find.byType(CustomPaint),
-            ),
-            findsWidgets,
+            findsNothing,
           );
           expect(
             find.descendant(

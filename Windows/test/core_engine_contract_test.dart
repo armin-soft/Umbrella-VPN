@@ -597,7 +597,7 @@ void main() {
           remoteDns: 'https://sky.rethinkdns.com/dns-query',
           contentFilter: const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads', 'dating'],
+            categories: <String>['adult', 'gambling', 'ads'],
             customDomains: <String>['blocked.example.com'],
             bypassDomains: <String>['direct-example.org'],
             bypassIran: true,
@@ -629,14 +629,13 @@ void main() {
         final List<Map<String, dynamic>> rejectRouteRules = routeRules
             .where((Map<String, dynamic> item) => item['action'] == 'reject')
             .toList();
-        expect(rejectRouteRules.length, greaterThanOrEqualTo(5));
+        expect(rejectRouteRules.length, greaterThanOrEqualTo(4));
         expect(
           jsonEncode(rejectRouteRules),
           allOf(
             contains('pornhub.com'),
             contains('bet365.com'),
             contains('doubleclick.net'),
-            contains('tinder.com'),
             contains('blocked.example.com'),
           ),
         );
@@ -734,7 +733,7 @@ void main() {
           ),
           contentFilter: const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads', 'dating'],
+            categories: <String>['adult', 'gambling', 'ads'],
             customDomains: <String>[
               'https://www.My-Blocked-Site.TEST/path',
               'second-blocked.example',
@@ -781,15 +780,12 @@ void main() {
         );
         final String ruleSetDump = jsonEncode(route['rule_set']);
         expect(ruleSetDump, isNot(contains('download_detour')));
-        expect(ruleSetDump, contains('"http_client"'));
         expect(
           ruleSetDump,
           allOf(
-            contains('geosite-category-porn.srs'),
-            contains('geosite-category-betting-ru.srs'),
-            contains('geosite-category-ads-all.srs'),
-            contains('geosite-category-ads-and-telemetry.srs'),
-            contains('geosite-category-ads-ir.srs'),
+            contains('filter-adult'),
+            contains('filter-gambling'),
+            contains('filter-ads'),
             contains('geosite-ir.srs'),
             contains('geoip-ir.srs'),
           ),
@@ -1190,7 +1186,7 @@ void main() {
       final List<InterceptedBlockEvent> intercepted = <InterceptedBlockEvent>[];
       const FilterSettings filter = FilterSettings(
         enabled: true,
-        categories: <String>['adult', 'gambling', 'ads', 'dating'],
+        categories: <String>['adult', 'gambling', 'ads'],
         customDomains: <String>['my-blocked-site.test'],
       );
       final ContentBlockServer blockServer = ContentBlockServer(

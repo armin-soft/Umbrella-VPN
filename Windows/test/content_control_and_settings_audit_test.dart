@@ -204,6 +204,7 @@ void main() {
         },
       );
 
+      expect(policy.categories, <String>['adult']);
       expect(policy.isGlobalCategory('adult'), isTrue);
       expect(policy.isGlobalDomain('https://www.global.example/path'), isTrue);
       expect(policy.isGlobalCategory('dating'), isFalse);
@@ -211,6 +212,7 @@ void main() {
       final FilterSettings edited = policy.copyWith(
         categories: <String>['adult', 'dating', 'ads'],
       );
+      expect(edited.categories, <String>['adult', 'ads']);
       final Map<String, dynamic> json = edited.toJson();
       expect((json['global'] as Map<String, dynamic>)['categories'], <String>['adult']);
       expect((json['personal'] as Map<String, dynamic>)['enabled'], isFalse);
@@ -223,10 +225,14 @@ void main() {
   });
 
   group('UmbrellaCore — کنترل محتوای دولایه و هماهنگی با مسیریابی', () {
-    test('مسدودسازی فوری بزرگسالان، قمار، تبلیغات، دوستیابی و دامنه سفارشی بدون خطای مثبت کاذب', () {
+    test('مسدودسازی فوری بزرگسالان، قمار، تبلیغات و دامنه سفارشی بدون خطای مثبت کاذب', () {
+      expect(
+        FilterSettings.categoryLabels.keys.toList(),
+        <String>['adult', 'gambling', 'ads'],
+      );
       const FilterSettings all = FilterSettings(
         enabled: true,
-        categories: <String>['adult', 'gambling', 'ads', 'dating'],
+        categories: <String>['adult', 'gambling', 'ads'],
         customDomains: <String>['custom-blocked.org'],
       );
 
@@ -250,10 +256,6 @@ void main() {
         'tapsell.ir',
         'ads.yahoo.com',
         'adserver.example.net',
-        'tinder.com',
-        'api.bumble.com',
-        'badoo.com',
-        'grindr.com',
         'custom-blocked.org',
         'deep.sub.custom-blocked.org',
       ]) {
@@ -295,7 +297,7 @@ void main() {
       }
     });
 
-    test('مجموعه قوانین رسمی geosite همراه با blockAds و routingRegion حفظ و بدون تکرار تولید می شوند', () {
+    test('مجموعه قوانین محلی کنترل محتوا همراه با blockAds و routingRegion به صورت قوانین مجزا تولید می شوند', () {
       final Map<String, dynamic> out = UmbrellaCore.settingsJson(
         tun: true,
         systemProxy: false,
@@ -318,18 +320,51 @@ void main() {
       final List<Map<String, dynamic>> rules =
           ((out['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>)
               .cast<Map<String, dynamic>>();
-      // adult + gambling + customDomains + game.exe + blockAds + region(ir) = 6
-      expect(rules, hasLength(6));
-      expect(rules[0]['rule_set'], contains(contains('geosite-category-porn.srs')));
-      expect(rules[1]['rule_set'], contains(contains('geosite-category-betting-ru.srs')));
-      expect(rules[2]['domain_suffix'], <String>['blocked-user.site']);
-      expect(rules[3]['process_name'], <String>['game.exe']);
-      expect(rules[3]['outbound'], 'direct');
-      expect(rules[4]['outbound'], 'block');
-      expect(rules[4]['rule_set'], contains(contains('geosite-category-ads-all.srs')));
-      expect(rules[5]['outbound'], 'direct');
-      expect(rules[5]['rule_set'], contains(contains('geosite-ir.srs')));
-      expect(rules[5]['rule_set'], contains(contains('geoip-ir.srs')));
+      final List<Map<String, dynamic>> adultRules = rules
+          .where((Map<String, dynamic> r) => r['name'] == 'umbrella-filter-adult')
+          .toList();
+      final List<Map<String, dynamic>> gamblingRules = rules
+          .where((Map<String, dynamic> r) => r['name'] == 'umbrella-filter-gambling')
+          .toList();
+      expect(adultRules, hasLength(3));
+      expect(
+        adultRules.any((r) => (r['rule_set'] as List<dynamic>?)?.any((u) => '$u'.contains('filter-adult.srs')) ?? false),
+        isTrue,
+      );
+      expect(gamblingRules, hasLength(3));
+      expect(
+        gamblingRules.any((r) => (r['rule_set'] as List<dynamic>?)?.any((u) => '$u'.contains('filter-gambling.srs')) ?? false),
+        isTrue,
+      );
+      // Every category rule uses a single matcher so sing-box OR-matches safely.
+      for (final Map<String, dynamic> r in <Map<String, dynamic>>[...adultRules, ...gamblingRules]) {
+        final int matchers = <String>['domain_suffix', 'domain_keyword', 'rule_set']
+            .where(r.containsKey)
+            .length;
+        expect(matchers, 1);
+      }
+      final Map<String, dynamic> customRule = rules.firstWhere(
+        (Map<String, dynamic> r) => r['name'] == 'umbrella-filter-custom',
+      );
+      expect(customRule['domain_suffix'], <String>['blocked-user.site']);
+      final Map<String, dynamic> gameRule = rules.firstWhere(
+        (Map<String, dynamic> r) => '${r['process_name']}'.contains('game.exe'),
+      );
+      expect(gameRule['outbound'], 'direct');
+      final Map<String, dynamic> adsBlockRule = rules.firstWhere(
+        (Map<String, dynamic> r) => r['name'] == 'umbrella-block-ads',
+      );
+      expect(adsBlockRule['outbound'], 'block');
+      expect(adsBlockRule['rule_set'], contains(contains('geosite-category-ads-all.srs')));
+      final List<Map<String, dynamic>> regionRules = rules
+          .where((Map<String, dynamic> r) => r['name'] == 'umbrella-region-ir')
+          .toList();
+      expect(regionRules, hasLength(3));
+      expect(regionRules.every((r) => r['outbound'] == 'direct'), isTrue);
+      final String regionDump = jsonEncode(regionRules);
+      expect(regionDump, contains('.ir'));
+      expect(regionDump, contains('geosite-ir.srs'));
+      expect(regionDump, contains('geoip-ir.srs'));
 
       // وقتی دسته ads در کنترل محتوا روشن است، blockAds دوباره تکرار نمی شود.
       final Map<String, dynamic> dedup = UmbrellaCore.settingsJson(
@@ -343,9 +378,11 @@ void main() {
           categories: <String>['ads'],
         ),
       );
-      final List<dynamic> dedupRules =
-          (dedup['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
-      expect(dedupRules, hasLength(1));
+      final List<Map<String, dynamic>> dedupRules =
+          ((dedup['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      expect(dedupRules.every((r) => r['name'] == 'umbrella-filter-ads'), isTrue);
+      expect(dedupRules.any((r) => r['name'] == 'umbrella-block-ads'), isFalse);
     });
   });
 

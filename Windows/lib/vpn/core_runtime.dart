@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v8';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v9';
 
   static int _nonce = 0;
 
@@ -33,6 +33,7 @@ class CoreRuntime {
     int? blockPagePort,
     int stickyMinutes = 15,
     bool useCache = true,
+    Map<String, String>? localRuleSetPaths,
   }) async {
     // `build` enables data/clash.db, but srun does not perform hcore.Setup's
     // directory creation. A fresh installation must work without old files.
@@ -52,9 +53,15 @@ class CoreRuntime {
       utf8.encode('$cacheSchemaVersion|parse|$engineStamp|'),
       linkBytes,
     ]);
+    final List<String> localKeys = (localRuleSetPaths ?? const <String, String>{})
+        .keys
+        .map((String k) => k.trim().toLowerCase())
+        .where((String k) => k.isNotEmpty)
+        .toList()
+      ..sort();
     final String runtimeKey = _sha256(<List<int>>[
       utf8.encode(
-        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|block=${blockPagePort ?? 'none'}|sticky=$stickyMinutes|',
+        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|block=${blockPagePort ?? 'none'}|sticky=$stickyMinutes|local=${localKeys.join(',')}|',
       ),
       _canonicalSettingsBytes(settingsBytes),
     ]);
@@ -164,6 +171,7 @@ class CoreRuntime {
         coreSettings: decodedSettings,
         stickyMinutes: stickyMinutes,
         blockPagePort: blockPagePort,
+        localRuleSetPaths: localRuleSetPaths,
         localDataDir: '$runDir${sep}data',
       );
       if (cancelled()) {

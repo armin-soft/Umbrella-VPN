@@ -85,12 +85,10 @@ void main() {
 
   const String uuid = '11111111-2222-4333-8444-555555555555';
 
-  test('emergency chip uses emergency_rounded and drops legacy emergency list link', () {
+  test('connect page hides manual profile selector and drops legacy emergency list link', () {
     final String connect =
         File('lib/ui/pages/connect_page.dart').readAsStringSync();
-    expect(connect, contains("ValueKey<String>('connection-profile-emergency')"));
-    expect(connect, contains('Icons.emergency_rounded'));
-    expect(connect, contains("const Text('اضطراری')"));
+    expect(connect, isNot(contains('connection-profile-')));
     expect(connect, isNot(contains('اشخاص ثالث')));
     expect(connect, isNot(contains('سلب مسئولیت')));
     expect(

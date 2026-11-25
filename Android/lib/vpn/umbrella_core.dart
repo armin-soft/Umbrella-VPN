@@ -52,9 +52,12 @@ class UmbrellaCore {
 
   static String describeWindowsExitCode(int code) => '';
 
-  /// قوانین مسدودسازی آفلاین و آنی کنترل محتوا برای چهار دسته همگام با ربات تلگرام
+  /// قوانین مسدودسازی آفلاین و آنی کنترل محتوا برای سه دسته همگام با ربات تلگرام
   static const String _geoRuleSetBase =
       'https://raw.githubusercontent.com/$id/$id-geo/rule-set';
+
+  /// نشانی قوانین داخلی مسدودسازی محتوا که با فایل های محلی `.srs` همراه برنامه جایگزین می شوند.
+  static const String _localFilterRuleSetBase = 'https://local.umbrella';
 
   /// مجموعه قوانین رسمی مسدودسازی تبلیغات، بدافزار، فیشینگ و استخراج رمز ارز در هسته.
   static const List<String> adBlockRuleSetUrls = <String>[
@@ -72,12 +75,11 @@ class UmbrellaCore {
         '$_geoRuleSetBase/country/geosite-$regionCode.srs',
       ];
 
-  /// (`adult`, `gambling`, `ads`, `dating`) و دامنه های سفارشی کاربر.
+  /// (`adult`, `gambling`, `ads`) و دامنه های سفارشی کاربر.
   ///
-  /// هر دسته هم قوانین آفلاین فوری (`domain_suffix` / `domain_keyword`) دارد که از
-  /// میلی ثانیه اول بدون هیچ وابستگی به دانلود کار می کند و هم مجموعه قوانین رسمی
-  /// `.srs` دارد که از داخل تونل بارگذاری و در کش هسته ذخیره می شود تا ده ها هزار
-  /// دامنه و زیردامنه را در هر دو لایه DNS (`REFUSED`) و مسیر/SNI (`reject`) ببندد.
+  /// هر دسته قوانین آفلاین فوری (`domain_suffix` و `domain_keyword`) به صورت قوانین
+  /// مجزا دارد و مجموعه قوانین کامل `.srs` همراه برنامه را نیز به شکل قانون مستقل
+  /// اعمال می کند تا هر نوع تطبیق (`OR`) بدون دانلود اینترنتی در لایه DNS و مسیر/SNI عمل کند.
   static List<Map<String, dynamic>> contentControlRules(
     FilterSettings? filter, {
     int startOrder = 0,
@@ -92,16 +94,33 @@ class UmbrellaCore {
     for (final String category in filter.activeBotCategories) {
       final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
       if (spec == null) continue;
-      rules.add(<String, dynamic>{
-        'list_order': order++,
-        'enabled': true,
-        'name': 'umbrella-filter-$category',
-        'outbound': 'block',
-        if (spec.suffixes.isNotEmpty) 'domain_suffix': spec.suffixes,
-        if (spec.keywords.isNotEmpty) 'domain_keyword': spec.keywords,
-        if (includeRemoteRuleSets && spec.ruleSets.isNotEmpty)
+      if (spec.suffixes.isNotEmpty) {
+        rules.add(<String, dynamic>{
+          'list_order': order++,
+          'enabled': true,
+          'name': 'umbrella-filter-$category',
+          'outbound': 'block',
+          'domain_suffix': spec.suffixes,
+        });
+      }
+      if (spec.keywords.isNotEmpty) {
+        rules.add(<String, dynamic>{
+          'list_order': order++,
+          'enabled': true,
+          'name': 'umbrella-filter-$category',
+          'outbound': 'block',
+          'domain_keyword': spec.keywords,
+        });
+      }
+      if (includeRemoteRuleSets && spec.ruleSets.isNotEmpty) {
+        rules.add(<String, dynamic>{
+          'list_order': order++,
+          'enabled': true,
+          'name': 'umbrella-filter-$category',
+          'outbound': 'block',
           'rule_set': spec.ruleSets,
-      });
+        });
+      }
     }
 
     final List<String> custom = filter.normalizedCustomDomains;
@@ -111,7 +130,6 @@ class UmbrellaCore {
         'enabled': true,
         'name': 'umbrella-filter-custom',
         'outbound': 'block',
-        'domain': custom,
         'domain_suffix': custom,
       });
     }
@@ -122,7 +140,7 @@ class UmbrellaCore {
   static bool matchesContentFilter(FilterSettings? filter, String rawHost) =>
       matchesContentFilterCategory(filter, rawHost) != null;
 
-  /// تعیین کلید دقیق دسته کنترل محتوا (`custom`, `adult`, `gambling`, `dating`, `ads`)
+  /// تعیین کلید دقیق دسته کنترل محتوا (`custom`, `adult`, `gambling`, `ads`)
   /// که نام میزبان را مسدود کرده است (یا `null` در صورت مجاز بودن).
   static String? matchesContentFilterCategory(
     FilterSettings? filter,
@@ -167,7 +185,7 @@ class UmbrellaCore {
     if (probe.isEmpty) return false;
     bool matchesSuffix(String suffix) =>
         probe == suffix || probe.endsWith('.$suffix');
-    for (final String category in const <String>['adult', 'gambling', 'dating']) {
+    for (final String category in const <String>['adult', 'gambling']) {
       final _CategoryFilterSpec? spec = _categoryFilterSpecs[category];
       if (spec == null) continue;
       if (spec.suffixes.any(matchesSuffix) || spec.keywords.any(probe.contains)) {
@@ -181,7 +199,7 @@ class UmbrellaCore {
       <String, _CategoryFilterSpec>{
     'adult': _CategoryFilterSpec(
       ruleSets: <String>[
-        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs',
+        '$_localFilterRuleSetBase/filter-adult.srs',
       ],
       suffixes: <String>[
         'xxx',
@@ -273,7 +291,7 @@ class UmbrellaCore {
     ),
     'gambling': _CategoryFilterSpec(
       ruleSets: <String>[
-        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-betting-ru.srs',
+        '$_localFilterRuleSetBase/filter-gambling.srs',
       ],
       suffixes: <String>[
         'bet',
@@ -359,9 +377,8 @@ class UmbrellaCore {
     ),
     'ads': _CategoryFilterSpec(
       ruleSets: <String>[
-        ...adBlockRuleSetUrls,
-        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-and-telemetry.srs',
-        'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-ir.srs',
+        '$_localFilterRuleSetBase/filter-ads.srs',
+        '$_localFilterRuleSetBase/filter-youtube-ads.srs',
       ],
       suffixes: <String>[
         'doubleclick.net',
@@ -446,69 +463,6 @@ class UmbrellaCore {
         'exoclick',
       ],
     ),
-    'dating': _CategoryFilterSpec(
-      suffixes: <String>[
-        'dating',
-        'tinder.com',
-        'gotinder.com',
-        'tindersparks.com',
-        'bumble.com',
-        'badoo.com',
-        'badoocdn.com',
-        'okcupid.com',
-        'match.com',
-        'hinge.co',
-        'pof.com',
-        'zoosk.com',
-        'happn.com',
-        'grindr.com',
-        'meetic.com',
-        'eharmony.com',
-        'ashleymadison.com',
-        'seeking.com',
-        'feeld.co',
-        'coffeemeetsbagel.com',
-        'cmb.io',
-        'tantanapp.com',
-        'mamba.ru',
-        'lovoo.com',
-        'tagged.com',
-        'meetme.com',
-        'skout.com',
-        'clover.co',
-        'weareher.com',
-        'scruff.com',
-        'jackd.com',
-        'hornet.com',
-        'muzz.com',
-        'muzmatch.com',
-        'salams.app',
-        'christianmingle.com',
-        'jdate.com',
-        'ourtime.com',
-        'silversingles.com',
-        'elitesingles.com',
-        'parship.de',
-        'theleague.com',
-        'hily.com',
-        'boo.world',
-        'pure.app',
-        'downapp.com',
-        'yubo.live',
-        'azarlive.com',
-        'omegle.com',
-        'ometv.tv',
-        'chatroulette.com',
-      ],
-      keywords: <String>[
-        'tinder',
-        'bumble',
-        'badoo',
-        'okcupid',
-        'grindr',
-        'chatroulette',
-      ],
-    ),
   };
 
   /// پورت های رزروشده ای که همین حالا گرفته اند.
@@ -568,6 +522,7 @@ class UmbrellaCore {
     FilterSettings? contentFilter,
     bool isolatedProbe = false,
     bool batterySaving = false,
+    bool includeFilterRuleSets = true,
   }) {
     final String normalizedLog =
         CoreLogLevel.normalize(networkSettings?.logLevel ?? logLevel);
@@ -586,6 +541,7 @@ class UmbrellaCore {
       final List<Map<String, dynamic>> filterRules = contentControlRules(
         contentFilter,
         startOrder: 0,
+        includeRemoteRuleSets: includeFilterRuleSets,
       );
       combinedRules.addAll(filterRules);
       // Content blocks precede user direct routes, so bypass cannot defeat an
@@ -611,7 +567,6 @@ class UmbrellaCore {
             'enabled': true,
             'name': 'umbrella-bypass-user',
             'outbound': 'direct',
-            'domain': directDomains,
             'domain_suffix': directDomains,
           });
         }
@@ -673,8 +628,16 @@ class UmbrellaCore {
             'name': 'umbrella-region-$code',
             'outbound': 'direct',
             'domain_suffix': <String>['.$code'],
-            'rule_set': regionalRuleSetUrls(code),
           });
+          for (final String url in regionalRuleSetUrls(code)) {
+            combinedRules.add(<String, dynamic>{
+              'list_order': combinedRules.length,
+              'enabled': true,
+              'name': 'umbrella-region-$code',
+              'outbound': 'direct',
+              'rule_set': <String>[url],
+            });
+          }
         }
       }
     }

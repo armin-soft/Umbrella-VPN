@@ -13,7 +13,7 @@ import '../platform/native.dart';
 class CoreRuntime {
   const CoreRuntime._();
 
-  static const String cacheSchemaVersion = 'umbrella-android-runtime-v8';
+  static const String cacheSchemaVersion = 'umbrella-android-runtime-v9';
 
   static Future<File> compile({
     required String runDir,

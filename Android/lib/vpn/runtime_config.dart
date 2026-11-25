@@ -240,6 +240,13 @@ class RuntimeConfig {
 
     // Patch route configuration (process matching, LAN bypass, destination resolve).
     _finalizeRoute(config, outbounds, coreSettings);
+    final Map<String, String> localRuleSets =
+        _discoverLocalRuleSets(localRuleSetPaths, localDataDir);
+    _ensureRequestedLocalFilterRuleSets(
+      config,
+      coreSettings,
+      localPaths: localRuleSets,
+    );
     _configureContentBlockRouting(
       config,
       outbounds,
@@ -423,19 +430,20 @@ class RuntimeConfig {
     List<dynamic> outbounds, {
     int? blockPagePort,
   }) {
-    if (blockPagePort == null || blockPagePort <= 0 || blockPagePort > 65535) {
-      return;
-    }
-    final bool hasBlockPageOutbound = outbounds.any(
-      (dynamic item) => item is Map && item['tag'] == blockPageOutboundTag,
-    );
-    if (!hasBlockPageOutbound) {
-      outbounds.add(<String, dynamic>{
-        'type': 'http',
-        'tag': blockPageOutboundTag,
-        'server': '127.0.0.1',
-        'server_port': blockPagePort,
-      });
+    final bool hasBlockPage =
+        blockPagePort != null && blockPagePort > 0 && blockPagePort <= 65535;
+    if (hasBlockPage) {
+      final bool hasBlockPageOutbound = outbounds.any(
+        (dynamic item) => item is Map && item['tag'] == blockPageOutboundTag,
+      );
+      if (!hasBlockPageOutbound) {
+        outbounds.add(<String, dynamic>{
+          'type': 'http',
+          'tag': blockPageOutboundTag,
+          'server': '127.0.0.1',
+          'server_port': blockPagePort,
+        });
+      }
     }
 
     final Object? rawRoute = config['route'];
@@ -450,9 +458,13 @@ class RuntimeConfig {
         final bool isBlockRule =
             item['action'] == 'reject' || item['outbound'] == 'block';
         if (isBlockRule && _isPrimaryContentBlockRule(item)) {
-          rewrittenRules.addAll(_expandOrBlockRule(item, routeToBlockPage: true));
+          rewrittenRules.addAll(
+            _expandOrBlockRule(item, routeToBlockPage: hasBlockPage),
+          );
         } else if (isBlockRule && _isDomainLevelBlockRule(item)) {
-          rewrittenRules.addAll(_expandOrBlockRule(item, routeToBlockPage: false));
+          rewrittenRules.addAll(
+            _expandOrBlockRule(item, routeToBlockPage: false),
+          );
         } else {
           rewrittenRules.add(item);
         }
@@ -476,7 +488,7 @@ class RuntimeConfig {
       final List<dynamic> promotedBlocks = <dynamic>[];
       final List<dynamic> suffix = <dynamic>[];
 
-      if (!hasTrojanRule) {
+      if (hasBlockPage && !hasTrojanRule) {
         promotedBlocks.addAll(<Map<String, dynamic>>[
           <String, dynamic>{
             'domain_suffix':
@@ -510,21 +522,75 @@ class RuntimeConfig {
         ..addAll(suffix);
     }
 
-    // در حالت TUN، قوانین DNS مربوط به دسته های صفحه دار (غیر از تبلیغات) را
-    // اجازه می دهیم به لایه route برسند تا مرورگر به جای خطای DNS به صفحه
-    // مدرن آمبرلا هدایت شود. قوانین تبلیغات (ads) همچنان در DNS مسدود می مانند.
+    // در حالت TUN با صفحه مسدودی فعال، قوانین DNS مربوط به دسته های صفحه دار
+    // (غیر از تبلیغات) را اجازه می دهیم به لایه route برسند تا مرورگر به جای
+    // خطای DNS به صفحه مدرن آمبرلا هدایت شود. قوانین تبلیغات (ads) همچنان در
+    // DNS مسدود می مانند و قوانین چندفیلدی DNS نیز به قواعد OR مستقل شکسته می شوند.
     final Object? rawDns = config['dns'];
     if (rawDns is Map<String, dynamic> && rawDns['rules'] is List) {
       final List<dynamic> dnsRules = rawDns['rules'] as List<dynamic>;
-      dnsRules.removeWhere((dynamic item) {
-        if (item is! Map<String, dynamic>) return false;
+      final List<dynamic> rewrittenDns = <dynamic>[];
+      for (final dynamic item in dnsRules) {
+        if (item is! Map<String, dynamic>) {
+          rewrittenDns.add(item);
+          continue;
+        }
         final bool isRejectDns = item['action'] == 'reject' ||
             item['server'] == 'dns-block' ||
             item['outbound'] == 'block';
-        if (!isRejectDns) return false;
-        return _isPrimaryContentBlockRule(item);
-      });
+        if (!isRejectDns) {
+          rewrittenDns.add(item);
+          continue;
+        }
+        if (hasBlockPage && _isPrimaryContentBlockRule(item)) {
+          continue;
+        }
+        rewrittenDns.addAll(_expandDnsBlockRule(item));
+      }
+      dnsRules
+        ..clear()
+        ..addAll(rewrittenDns);
     }
+  }
+
+  static List<Map<String, dynamic>> _expandDnsBlockRule(
+    Map<String, dynamic> source,
+  ) {
+    const List<String> matchKeys = <String>[
+      'domain_suffix',
+      'domain',
+      'domain_keyword',
+      'rule_set',
+    ];
+    final List<String> presentKeys = matchKeys
+        .where((String k) => _nonEmptyRuleField(source[k]))
+        .toList();
+    if (presentKeys.contains('domain_suffix') &&
+        presentKeys.contains('domain')) {
+      presentKeys.remove('domain');
+    }
+    if (presentKeys.length <= 1) {
+      final Map<String, dynamic> single = Map<String, dynamic>.from(source);
+      if (!presentKeys.contains('domain') &&
+          _nonEmptyRuleField(source['domain']) &&
+          _nonEmptyRuleField(source['domain_suffix'])) {
+        single.remove('domain');
+      }
+      return <Map<String, dynamic>>[single];
+    }
+    final Map<String, dynamic> base = Map<String, dynamic>.from(source)
+      ..remove('domain')
+      ..remove('domain_suffix')
+      ..remove('domain_keyword')
+      ..remove('rule_set');
+    return presentKeys
+        .map(
+          (String key) => <String, dynamic>{
+            ...base,
+            key: source[key],
+          },
+        )
+        .toList(growable: false);
   }
 
   static List<Map<String, dynamic>> _expandOrBlockRule(
@@ -633,8 +699,7 @@ class RuntimeConfig {
         return lower.contains('porn') ||
             lower.contains('adult') ||
             lower.contains('gambling') ||
-            lower.contains('betting') ||
-            lower.contains('dating');
+            lower.contains('betting');
       });
       if (hasPrimaryRuleSet) {
         return true;
@@ -968,6 +1033,28 @@ class RuntimeConfig {
     'geoip-iranserver',
   ];
 
+  static const List<String> _contentFilterLocalRuleSetTags = <String>[
+    'filter-adult',
+    'filter-gambling',
+    'filter-ads',
+    'filter-youtube-ads',
+  ];
+
+  static const Map<String, String> _localRuleSetTagAliases = <String, String>{
+    'geosite-category-porn': 'filter-adult',
+    'geosite-category-gambling': 'filter-gambling',
+    'geosite-category-betting': 'filter-gambling',
+    'geosite-category-betting-ru': 'filter-gambling',
+    'geosite-category-ads-all': 'filter-ads',
+  };
+
+  static const Map<String, List<String>> _filterCategoryLocalTags =
+      <String, List<String>>{
+    'adult': <String>['filter-adult'],
+    'gambling': <String>['filter-gambling'],
+    'ads': <String>['filter-ads', 'filter-youtube-ads'],
+  };
+
   static Map<String, String> _discoverLocalRuleSets(
     Map<String, String>? explicitPaths,
     String? localDataDir,
@@ -987,7 +1074,10 @@ class RuntimeConfig {
       final String base = localDataDir.endsWith(sep)
           ? localDataDir.substring(0, localDataDir.length - 1)
           : localDataDir;
-      for (final String tag in _iranLocalRuleSetTags) {
+      for (final String tag in <String>[
+        ..._iranLocalRuleSetTags,
+        ..._contentFilterLocalRuleSetTags,
+      ]) {
         if (resolved.containsKey(tag)) continue;
         final File candidate = File('$base$sep$tag.srs');
         if (candidate.existsSync() && candidate.lengthSync() >= 32) {
@@ -1003,8 +1093,14 @@ class RuntimeConfig {
     Map<String, String> localPaths,
   ) {
     final String tag = '${ruleSet['tag'] ?? ''}'.trim().toLowerCase();
-    if (tag.isNotEmpty && localPaths.containsKey(tag)) {
-      return tag;
+    if (tag.isNotEmpty) {
+      if (localPaths.containsKey(tag)) {
+        return tag;
+      }
+      final String? alias = _localRuleSetTagAliases[tag];
+      if (alias != null && localPaths.containsKey(alias)) {
+        return alias;
+      }
     }
     final String url = '${ruleSet['url'] ?? ''}'.trim().toLowerCase();
     if (url.isNotEmpty) {
@@ -1013,8 +1109,164 @@ class RuntimeConfig {
           return candidate;
         }
       }
+      for (final MapEntry<String, String> entry
+          in _localRuleSetTagAliases.entries) {
+        if (localPaths.containsKey(entry.value) &&
+            (url.endsWith('/${entry.key}.srs') ||
+                url.endsWith('${entry.key}.srs'))) {
+          return entry.value;
+        }
+      }
     }
     return null;
+  }
+
+  static void _ensureRequestedLocalFilterRuleSets(
+    Map<String, dynamic> config,
+    Map<String, dynamic>? coreSettings, {
+    required Map<String, String> localPaths,
+  }) {
+    if (localPaths.isEmpty) return;
+    final Object? rawRoute = config['route'];
+    if (rawRoute is! Map<String, dynamic>) return;
+
+    final List<dynamic> ruleSets = rawRoute['rule_set'] is List
+        ? (rawRoute['rule_set'] as List<dynamic>)
+        : <dynamic>[];
+    final Map<String, String> knownTagByLocalKey = <String, String>{};
+    for (final dynamic item in ruleSets) {
+      if (item is! Map<String, dynamic>) continue;
+      final String existingTag = '${item['tag'] ?? ''}'.trim();
+      final String? matchedKey = _matchingLocalTag(item, localPaths);
+      if (matchedKey != null) {
+        final String localPath = localPaths[matchedKey]!;
+        final String finalTag =
+            existingTag.isNotEmpty ? existingTag : matchedKey;
+        item
+          ..['type'] = 'local'
+          ..['tag'] = finalTag
+          ..['format'] = 'binary'
+          ..['path'] = localPath
+          ..remove('url')
+          ..remove('http_client')
+          ..remove('download_detour')
+          ..remove('update_interval');
+        knownTagByLocalKey[matchedKey] = finalTag;
+      } else if (existingTag.isNotEmpty) {
+        knownTagByLocalKey.putIfAbsent(
+          existingTag.toLowerCase(),
+          () => existingTag,
+        );
+      }
+    }
+
+    final Set<String> requestedFilterTags = <String>{};
+    final Object? routeRule = coreSettings?['route-rule'];
+    if (routeRule is Map && routeRule['rules'] is List) {
+      for (final dynamic rawRule in routeRule['rules'] as List<dynamic>) {
+        if (rawRule is! Map || rawRule['enabled'] == false) continue;
+        final String name = '${rawRule['name'] ?? ''}'.trim().toLowerCase();
+        if (name.startsWith('umbrella-filter-')) {
+          final String category = name.substring('umbrella-filter-'.length);
+          final List<String>? mapped = _filterCategoryLocalTags[category];
+          if (mapped != null) {
+            for (final String tag in mapped) {
+              if (localPaths.containsKey(tag)) {
+                requestedFilterTags.add(tag);
+              }
+            }
+          }
+        }
+        final Object? rawSets = rawRule['rule_set'];
+        if (rawSets is List) {
+          for (final Object? entry in rawSets) {
+            final String lower = '$entry'.trim().toLowerCase();
+            for (final String tag in _contentFilterLocalRuleSetTags) {
+              if (localPaths.containsKey(tag) &&
+                  (lower == tag ||
+                      lower.endsWith('/$tag.srs') ||
+                      lower.endsWith('$tag.srs'))) {
+                requestedFilterTags.add(tag);
+              }
+            }
+            for (final MapEntry<String, String> alias
+                in _localRuleSetTagAliases.entries) {
+              if (_contentFilterLocalRuleSetTags.contains(alias.value) &&
+                  localPaths.containsKey(alias.value) &&
+                  (lower == alias.key ||
+                      lower.endsWith('/${alias.key}.srs') ||
+                      lower.endsWith('${alias.key}.srs'))) {
+                requestedFilterTags.add(alias.value);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (requestedFilterTags.isEmpty) {
+      if (ruleSets.isNotEmpty) {
+        rawRoute['rule_set'] = ruleSets;
+      }
+      return;
+    }
+
+    final List<dynamic> routeRules = rawRoute['rules'] is List
+        ? (rawRoute['rules'] as List<dynamic>)
+        : <dynamic>[];
+    final Object? rawDns = config['dns'];
+    final List<dynamic>? dnsRules =
+        rawDns is Map<String, dynamic> && rawDns['rules'] is List
+            ? rawDns['rules'] as List<dynamic>
+            : null;
+
+    for (final String tag in requestedFilterTags) {
+      final String? path = localPaths[tag];
+      if (path == null) continue;
+      final String finalTag = knownTagByLocalKey.putIfAbsent(tag, () {
+        ruleSets.add(<String, dynamic>{
+          'type': 'local',
+          'tag': tag,
+          'format': 'binary',
+          'path': path,
+        });
+        return tag;
+      });
+
+      final bool hasRouteRule = routeRules.any(
+        (dynamic r) => r is Map && _containsString(r['rule_set'], finalTag),
+      );
+      if (!hasRouteRule) {
+        routeRules.add(<String, dynamic>{
+          'rule_set': <String>[finalTag],
+          'action': 'reject',
+        });
+      }
+
+      if (dnsRules != null) {
+        final bool hasDnsRule = dnsRules.any(
+          (dynamic r) => r is Map && _containsString(r['rule_set'], finalTag),
+        );
+        if (!hasDnsRule) {
+          int insertAt = dnsRules.indexWhere((dynamic r) {
+            if (r is! Map) return false;
+            final String srv = '${r['server'] ?? ''}';
+            return srv == 'dns-fake' || srv == 'dns-remote-group';
+          });
+          if (insertAt < 0) insertAt = dnsRules.length;
+          dnsRules.insert(insertAt, <String, dynamic>{
+            'rule_set': <String>[finalTag],
+            'action': 'reject',
+          });
+        }
+      }
+    }
+
+    if (ruleSets.isNotEmpty) {
+      rawRoute['rule_set'] = ruleSets;
+    }
+    if (rawRoute['rules'] == null && routeRules.isNotEmpty) {
+      rawRoute['rules'] = routeRules;
+    }
   }
 
   static void _configureOfflineIranBypass(
@@ -1219,20 +1471,25 @@ class RuntimeConfig {
               );
         });
         if (!alreadyHasIranDirectDns) {
-          final Map<String, dynamic> directDnsRule = <String, dynamic>{
-            if (directDomains.isNotEmpty) 'domain': directDomains,
-            if (directSuffixes.isNotEmpty) 'domain_suffix': directSuffixes,
-            if (hasIranBypass && geositeIrTag != null)
-              'rule_set': <String>[geositeIrTag],
-            'server': 'dns-direct-group',
-          };
           int insertAt = dnsRules.indexWhere((dynamic r) {
             if (r is! Map) return false;
             final String srv = '${r['server'] ?? ''}';
             return srv == 'dns-fake' || srv == 'dns-remote-group';
           });
           if (insertAt < 0) insertAt = dnsRules.length;
-          dnsRules.insert(insertAt, directDnsRule);
+          final List<Map<String, dynamic>> directRules = <Map<String, dynamic>>[
+            if (directSuffixes.isNotEmpty)
+              <String, dynamic>{
+                'domain_suffix': directSuffixes,
+                'server': 'dns-direct-group',
+              },
+            if (hasIranBypass && geositeIrTag != null)
+              <String, dynamic>{
+                'rule_set': <String>[geositeIrTag],
+                'server': 'dns-direct-group',
+              },
+          ];
+          dnsRules.insertAll(insertAt, directRules);
         }
       }
     }

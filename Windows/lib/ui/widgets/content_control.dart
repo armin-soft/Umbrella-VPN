@@ -25,7 +25,6 @@ class _ContentControlCardState extends State<ContentControlCard> {
     'adult': Icons.no_adult_content_rounded,
     'gambling': Icons.casino_rounded,
     'ads': Icons.ad_units_rounded,
-    'dating': Icons.person_off_rounded,
   };
 
   final TextEditingController _domainController = TextEditingController();

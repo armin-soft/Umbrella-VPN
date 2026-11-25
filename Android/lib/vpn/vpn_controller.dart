@@ -2597,6 +2597,7 @@ class VpnController extends ChangeNotifier {
             networkSettings: _settings,
             contentFilter: _contentFilter,
             batterySaving: _batterySaving,
+            includeFilterRuleSets: false,
           ),
         ),
         flush: true,
@@ -2947,9 +2948,22 @@ class VpnController extends ChangeNotifier {
         networkSettings: _settings,
         contentFilter: _contentFilter,
         batterySaving: _batterySaving,
+        includeFilterRuleSets: false,
       ),
     );
-    _lastSettingsMap = rawSettings;
+    _lastSettingsMap = DirectProfile.sessionSettings(
+      _activeNode,
+      UmbrellaCore.settingsJson(
+        tun: plan.tun,
+        systemProxy: false,
+        port: effectivePort,
+        logFile: coreLog,
+        networkSettings: _settings,
+        contentFilter: _contentFilter,
+        batterySaving: _batterySaving,
+        includeFilterRuleSets: true,
+      ),
+    );
     final String settingsPayload = jsonEncode(rawSettings);
     await File(settingsPath).writeAsString(settingsPayload, flush: true);
     await ensureBlockServerStarted();
