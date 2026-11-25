@@ -1719,7 +1719,7 @@ if ($Sub_Url === '' || count($Segments) < 3) {
 self::fail(409, 'no_subscription_url', 'نشانی اشتراک اختصاصی در سرور تنظیم نشده است.');
 }
 
-$User_Agents = ['Umbrella-Windows/1.0.0', 'SingBox/1.10.0'];
+$User_Agents = ['Umbrella-Windows/1.0.1', 'SingBox/1.10.0'];
 $Last_Status = 0;
 $Last_Error = '';
 
