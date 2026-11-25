@@ -158,6 +158,7 @@ Database::$Devices = [['ID' => 3, 'Device_ID' => 'admin-device', 'User_UUID' => 
 Database::$Queued = [];
 AdminFlow::toggleAppDevice($AdminContext, 'admin-device');
 check(Database::$Devices[0]['Is_Trusted'] === 0 && in_array('admin-device', Database::$Revoked, true), 'admin can revoke their device and invalidate its session');
+check(!str_contains(TelegramClient::$Text, 'admin laptop') && str_contains(TelegramClient::$Text, 'هنوز دستگاهی'), 'revoked device is immediately hidden from admin app-devices list');
 check(Database::$Queued === [], 'admin device permission revocation does not enqueue a direct app notification');
 $Scheduler = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');
 check(str_contains($Scheduler, 'if (!Repository::nightlyReportEnabled($User_ID)) continue;'), 'nightly scheduler observes persisted preference');

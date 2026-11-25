@@ -925,13 +925,13 @@ public static function usersMenu(Context $Context): void {
 self::menu($Context);
 }
 
-/** مدیریت یکپارچه فهرست دستگاه ها و مجوز ورود برنامه. */
+/** مدیریت یکپارچه فهرست دستگاه های فعال برنامه و لغو مجوز ورود. */
 public static function appDevicesMenu(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Database = Database::getInstance();
 // سه دستگاه در هر صفحه: اطلاعات کامل و نام های بلند در محدودیت پیام تلگرام جا می شوند.
 $Page_Size = 3;
-$Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices`', [], 0);
+$Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1', [], 0);
 $Page_Count = max(1, (int)ceil($Total / $Page_Size));
 $Page = max(0, min($Page, $Page_Count - 1));
 // نام و منشن از یک رکورد واحد می آیند. شناسه تلگرام اولویت دارد؛
@@ -945,15 +945,16 @@ $Rows = $Database->fetchAll(
 . '(`D`.`Telegram_ID` > 0 AND `O`.`Telegram_ID` = `D`.`Telegram_ID`) OR '
 . '(COALESCE(`D`.`Telegram_ID`, 0) <= 0 AND `D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `O`.`Phone` = `D`.`Phone`) '
 . 'HAVING COUNT(*) = 1) '
+. 'WHERE `D`.`Is_Trusted` = 1 '
 . 'ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC LIMIT ? OFFSET ?',
 [$Page_Size, $Page * $Page_Size]
 );
 $Text = Helper::adminGreeting($Context, 'مدیریت دستگاه های برنامه')
-. Menu::section('📲', 'فهرست دستگاه های ثبت شده', [
-'📊تعداد کل: ' . Helper::toPersian((string)$Total) . ' دستگاه',
+. Menu::section('📲', 'فهرست دستگاه های فعال برنامه', [
+'📊تعداد دستگاه های فعال: ' . Helper::toPersian((string)$Total) . ' دستگاه',
 '📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$Page_Count),
-'🔐دکمه شماره دار هر دستگاه، مجوز ورود همان دستگاه را تغییر می دهد.',
-'ℹ️مجاز بودن دستگاه به معنی آنلاین بودن آن نیست؛ زمان آخرین فعالیت، زمان ثبت شده سرور است.',
+'🔐دکمه شماره دار هر دستگاه، مجوز ورود همان دستگاه را لغو می کند.',
+'ℹ️فهرست فقط شامل دستگاه های فعال و مجاز است؛ زمان آخرین فعالیت، زمان ثبت شده سرور است.',
 ]);
 // داده های دریافتی از دستگاه نباید قالب پیام یا لینک های آن را تغییر دهند.
 $Plain = static function (string $Value, int $Limit = 64): string {
@@ -964,7 +965,7 @@ return htmlspecialchars($Value !== '' ? $Value : 'ثبت نشده', ENT_QUOTES |
 };
 $Buttons = [];
 if ($Rows === []) {
-$Text .= "\n📭هنوز دستگاهی در برنامه ثبت نشده است.\n";
+$Text .= "\n📭هنوز دستگاهی در برنامه فعال نیست.\n";
 }
 foreach ($Rows as $Index => $Row) {
 $Number = Helper::toPersian((string)($Page * $Page_Size + $Index + 1));
@@ -1031,10 +1032,10 @@ public static function deleteDevicesPrompt(Context $Context, int $Id = 0, int $P
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Page = max(0, $Page);
 $Db = Database::getInstance();
-if ($Id <= 0) $Page = min($Page, max(0, (int)ceil((int)$Db->scalar('SELECT COUNT(*) FROM `App_Devices`', [], 0) / 3) - 1));
+if ($Id <= 0) $Page = min($Page, max(0, (int)ceil((int)$Db->scalar('SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1', [], 0) / 3) - 1));
 $Rows = $Id > 0
 ? $Db->fetchAll('SELECT `ID`, `Device_Name` FROM `App_Devices` WHERE `ID` = ? LIMIT 1', [$Id])
-: $Db->fetchAll('SELECT `ID`, `Device_Name` FROM `App_Devices` ORDER BY `Last_Seen_At` DESC, `ID` DESC LIMIT 3 OFFSET ?', [$Page * 3]);
+: $Db->fetchAll('SELECT `ID`, `Device_Name` FROM `App_Devices` WHERE `Is_Trusted` = 1 ORDER BY `Last_Seen_At` DESC, `ID` DESC LIMIT 3 OFFSET ?', [$Page * 3]);
 if ($Rows === []) { self::appDevicesMenu($Context, $Page); return; }
 $Token = DeviceDeletion::prepare($Context->UserId, $Context->ChatId, array_column($Rows, 'ID'), $Page);
 $Text = Helper::adminGreeting($Context, 'تأیید حذف دستگاه')

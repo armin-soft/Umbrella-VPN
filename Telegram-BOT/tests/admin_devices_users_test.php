@@ -57,7 +57,14 @@ final class Database {
 public static array $Devices = []; public static array $Users = []; public static array $Sessions = []; public static array $Requests = []; public static array $Notices = [];
 public static bool $Fail = false; public static int $Queries = 0; public static array $LastParams = [];
 public static function getInstance(): self { return new self(); }
-public function scalar(string $Sql, array $Args = [], int $Default = 0): int { self::$Queries++; return str_contains($Sql, '`Users`') ? count(self::$Users) : count(self::$Devices); }
+public function scalar(string $Sql, array $Args = [], int $Default = 0): int {
+self::$Queries++;
+if (str_contains($Sql, '`Users`')) return count(self::$Users);
+$Devices = str_contains($Sql, '`Is_Trusted` = 1')
+? array_values(array_filter(self::$Devices, static fn(array $D): bool => (int)($D['Is_Trusted'] ?? 0) === 1))
+: self::$Devices;
+return count($Devices);
+}
 public function fetch(string $Sql, array $Args): ?array {
 self::$Queries++;
 check(str_contains($Sql, 'FOR UPDATE'), 'confirmation record locked');
@@ -69,8 +76,11 @@ if (str_contains($Sql, 'FROM `Users`')) return array_slice(array_values(self::$U
 if (str_contains($Sql, 'WHERE `ID` <= ? FOR UPDATE')) return array_values(array_filter(self::$Devices, static fn(array $row): bool => $row['ID'] <= $Args[0]));
 if (str_contains($Sql, 'WHERE `ID` IN')) { check(str_contains($Sql, 'FOR UPDATE'), 'selected device rows locked'); return array_values(array_intersect_key(self::$Devices, array_flip($Args))); }
 if (str_contains($Sql, 'WHERE `ID` = ?')) return isset(self::$Devices[$Args[0]]) ? [self::$Devices[$Args[0]]] : [];
-if (str_contains($Sql, 'LIMIT 3 OFFSET')) return array_slice(array_values(self::$Devices), $Args[0], 3);
-return array_slice(array_values(self::$Devices), $Args[1], $Args[0]);
+$Devices = str_contains($Sql, '`Is_Trusted` = 1')
+? array_values(array_filter(self::$Devices, static fn(array $D): bool => (int)($D['Is_Trusted'] ?? 0) === 1))
+: array_values(self::$Devices);
+if (str_contains($Sql, 'LIMIT 3 OFFSET')) return array_slice($Devices, $Args[0], 3);
+return array_slice($Devices, $Args[1], $Args[0]);
 }
 public function execute(string $Sql, array $Args): void {
 self::$Queries++;
@@ -117,6 +127,13 @@ check(!isset(Database::$Devices[1]) && count(Database::$Devices) === 6, 'single 
 check(Database::$Sessions['same_prefix_1'] === 'revoked' && !isset(Database::$Requests['same_prefix_1']) && !isset(Database::$Notices['same_prefix_1']), 'sessions, pending/approved challenges and private notifications invalidated');
 check(Database::$Sessions['same_prefix_2'] === 'active', 'other devices unchanged');
 check(!(DeviceDeletion::confirm(99, 99, $Token)['valid'] ?? false), 'replay cannot delete again');
+seed();
+Database::$Devices[0] = ['ID' => 90, 'Device_ID' => 'inactive_0', 'Device_Name' => 'Inactive Skip', 'Telegram_ID' => 90, 'User_UUID' => 'account-90', 'Is_Trusted' => 0];
+AdminFlow::deleteDevicesPrompt($Admin, 0, 0);
+check(!str_contains(TelegramClient::$Text, 'Inactive Skip'), 'page deletion skips inactive devices');
+$Token = substr(calls()[0], strlen('admin_devices_delete_confirm:'));
+DeviceDeletion::confirm(99, 99, $Token);
+check(isset(Database::$Devices[0]) && !isset(Database::$Devices[1]) && !isset(Database::$Devices[2]) && !isset(Database::$Devices[3]), 'page deletion deletes active devices on page 0 while preserving inactive rows');
 seed(); AdminFlow::deleteDevicesPrompt($Admin, 0, 1);
 $Token = substr(calls()[0], strlen('admin_devices_delete_confirm:'));
 // Change sorting/list contents after preview; confirmation must use original IDs 4,5,6.

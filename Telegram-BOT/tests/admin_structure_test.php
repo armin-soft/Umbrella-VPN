@@ -59,7 +59,13 @@ public static string $LastQuery = '';
 public static array $LastParams = [];
 public function scalar(string $Query, array $Params = [], int $Default = 0): int {
 if (str_contains($Query, 'Tickets')) return str_contains($Query, "'answered'") || str_contains($Query, "'closed'") ? 0 : count(Repository::$Tickets);
-return str_contains($Query, 'App_Devices') ? count(self::$Devices) : 0;
+if (str_contains($Query, 'App_Devices')) {
+$Devices = str_contains($Query, '`Is_Trusted` = 1')
+? array_values(array_filter(self::$Devices, static fn(array $D): bool => (int)($D['Is_Trusted'] ?? 0) === 1))
+: self::$Devices;
+return count($Devices);
+}
+return 0;
 }
 public function fetch(string $Query, array $Params = []): ?array {
 return null;
@@ -68,8 +74,11 @@ public function fetchAll(string $Query, array $Params = []): array {
 self::$LastQuery = $Query;
 self::$LastParams = $Params;
 if (str_contains($Query, 'App_User_Activity')) return [];
-if (count($Params) < 2) return self::$Devices;
-return array_slice(self::$Devices, $Params[1], $Params[0]);
+$Devices = str_contains($Query, '`Is_Trusted` = 1')
+? array_values(array_filter(self::$Devices, static fn(array $D): bool => (int)($D['Is_Trusted'] ?? 0) === 1))
+: self::$Devices;
+if (count($Params) < 2) return $Devices;
+return array_slice($Devices, $Params[1], $Params[0]);
 }
 }
 final class BotConfig {
@@ -383,9 +392,26 @@ Database::$Devices[] = [
 'App_Version' => '1.2.3', 'Phone' => '09123456789',
 'Owner_Name' => 'علی رضایی', 'Owner_Telegram_ID' => 123456789,
 'Last_Seen_At' => '2026-11-16 12:30:00', 'Last_IP' => '192.0.2.1',
-'Is_Trusted' => $Index % 2,
+'Is_Trusted' => 1,
 ];
 }
+// Inactive / untrusted devices must remain excluded from admin appDevicesMenu.
+Database::$Devices[] = [
+'ID' => 98, 'Device_ID' => str_repeat('x', 64),
+'Device_Name' => 'Inactive Hidden Device A', 'Platform' => 'Windows',
+'App_Version' => '1.0.0', 'Phone' => '09120000001',
+'Owner_Name' => 'کاربر غیرفعال', 'Owner_Telegram_ID' => 987654321,
+'Last_Seen_At' => '2026-11-16 13:00:00', 'Last_IP' => '198.51.100.10',
+'Is_Trusted' => 0,
+];
+Database::$Devices[] = [
+'ID' => 99, 'Device_ID' => str_repeat('y', 64),
+'Device_Name' => 'Inactive Hidden Device B', 'Platform' => 'Android',
+'App_Version' => '1.0.0', 'Phone' => '09120000002',
+'Owner_Name' => 'کاربر غیرفعال دو', 'Owner_Telegram_ID' => 987654322,
+'Last_Seen_At' => '2026-11-16 13:05:00', 'Last_IP' => '198.51.100.11',
+'Is_Trusted' => 0,
+];
 Database::$Devices[1]['Owner_Telegram_ID'] = null;
 Database::$Devices[1]['Owner_Name'] = null;
 Database::$Devices[1]['Last_Seen_At'] = null;
@@ -398,16 +424,24 @@ check(str_contains(TelegramClient::$Text, 'نام کامل ثبت نشده') && 
 check(str_contains(TelegramClient::$Text, 'آخرین فعالیت: ثبت نشده'), 'missing activity is not invented');
 check(str_contains(TelegramClient::$Text, '&lt;b&gt;name&lt;/b&gt;'), 'device markup is escaped');
 check(substr_count(TelegramClient::$Text, '📱دستگاه شماره') === 3, 'three clearly separated device cards');
+check(!str_contains(TelegramClient::$Text, 'Inactive Hidden Device') && !str_contains(TelegramClient::$Text, 'غیرمجاز'), 'inactive devices are omitted from first page');
 check(!in_array('device_limit_menu', $DeviceCalls, true), 'no duplicate device limit shortcut in list');
 check(in_array('admin_devices_page:1', $DeviceCalls, true), 'first page has next page');
 check(!in_array('admin_devices_page:-1', $DeviceCalls, true), 'first page has no previous page');
-check(str_contains(Database::$LastQuery, 'HAVING COUNT(*) = 1') && str_contains(Database::$LastQuery, 'COALESCE(`D`.`Telegram_ID`, 0) <= 0'), 'owner fallback is unique and cannot override Telegram identity');
+check(str_contains(Database::$LastQuery, 'HAVING COUNT(*) = 1') && str_contains(Database::$LastQuery, 'COALESCE(`D`.`Telegram_ID`, 0) <= 0') && str_contains(Database::$LastQuery, '`D`.`Is_Trusted` = 1'), 'owner fallback is unique, cannot override Telegram identity, and filters active devices only');
 AdminFlow::appDevicesMenu($Context, 999);
 check(Database::$LastParams === [3, 6], 'oversized device page clamps to last');
 $DeviceCalls = calls();
 check(str_contains(TelegramClient::$Text, '📱دستگاه شماره 7'), 'numbering continues across pages');
+check(!str_contains(TelegramClient::$Text, 'Inactive Hidden Device') && !str_contains(TelegramClient::$Text, 'غیرمجاز'), 'inactive devices are omitted from last page');
 check(in_array('admin_devices_page:1', $DeviceCalls, true) && !in_array('admin_devices_page:3', $DeviceCalls, true), 'last page has previous only');
 check(str_ends_with($DeviceCalls[0], ':2'), 'toggle preserves page');
+Database::$Devices = [
+['ID' => 100, 'Device_ID' => str_repeat('z', 64), 'Device_Name' => 'Inactive Only', 'Platform' => 'Android', 'App_Version' => '1.0.0', 'Phone' => '09120000003', 'Is_Trusted' => 0],
+];
+AdminFlow::appDevicesMenu($Context, 0);
+check(calls() === ['admin_devices_menu', 'مدیریت'], 'inactive-only device table renders empty active list');
+check(str_contains(TelegramClient::$Text, 'هنوز دستگاهی') && !str_contains(TelegramClient::$Text, 'Inactive Only'), 'inactive-only device table excludes inactive cards');
 Database::$Devices = [];
 AdminFlow::appDevicesMenu($Context, 4);
 check(calls() === ['admin_devices_menu', 'مدیریت'], 'empty device list retains only parent and home');

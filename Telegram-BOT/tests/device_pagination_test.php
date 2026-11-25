@@ -25,9 +25,10 @@ $Checks = [
     'revocation confirmation preserves the current page' =>
         str_contains($AppLink, "'app_device_revoke_confirm:' . \$Prefix . ':' . \$Page") &&
         str_contains($AppLink, 'self::devices($Context, $Page);'),
-    'admin device section lists all devices with pagination and owner details' =>
+    'admin device section lists active trusted devices only with pagination and owner details' =>
         str_contains($Admin, 'public static function appDevicesMenu(Context $Context, int $Page = 0)') &&
-        str_contains($Admin, "SELECT COUNT(*) FROM `App_Devices`") &&
+        str_contains($Admin, 'SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1') &&
+        str_contains($Admin, 'WHERE `D`.`Is_Trusted` = 1 ') &&
         str_contains($Admin, 'LIMIT ? OFFSET ?') &&
         str_contains($Admin, '`Owner_Telegram_ID`'),
     'admin can grant or revoke a device permission and invalidate sessions on revoke' =>
