@@ -99,17 +99,22 @@ jobs:
           PUBLISHED_REPO=""
           if [ -n "${RELEASES_TOKEN:-}" ]; then
             echo "RELEASES_TOKEN is set; attempting to publish to $RELEASES_REPO..."
-            if publish_to_repo "$RELEASES_REPO" "main" "$RELEASES_TOKEN"; then
+            RELEASES_BRANCH=$(GH_TOKEN="$RELEASES_TOKEN" gh repo view "$RELEASES_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+            [ -z "$RELEASES_BRANCH" ] && RELEASES_BRANCH="Default"
+            echo "Resolved $RELEASES_REPO target branch: $RELEASES_BRANCH"
+            if publish_to_repo "$RELEASES_REPO" "$RELEASES_BRANCH" "$RELEASES_TOKEN"; then
               PUBLISHED_REPO="$RELEASES_REPO"
+              echo "::notice::Published $TAG to $RELEASES_REPO (target $RELEASES_BRANCH)"
             else
-              echo "Failed publishing to $RELEASES_REPO using RELEASES_TOKEN; falling back to $SOURCE_REPO."
+              echo "::warning::Failed publishing to $RELEASES_REPO (target $RELEASES_BRANCH) using RELEASES_TOKEN; falling back to $SOURCE_REPO."
             fi
           else
-            echo "RELEASES_TOKEN secret is not configured; falling back to $SOURCE_REPO."
+            echo "::warning::RELEASES_TOKEN secret is not configured; falling back to $SOURCE_REPO."
           fi
 
+          publish_to_repo "$SOURCE_REPO" "$COMMIT" "$GH_TOKEN"
+          echo "::notice::Published $TAG to $SOURCE_REPO"
           if [ -z "$PUBLISHED_REPO" ]; then
-            publish_to_repo "$SOURCE_REPO" "$COMMIT" "$GH_TOKEN"
             PUBLISHED_REPO="$SOURCE_REPO"
           fi
 
