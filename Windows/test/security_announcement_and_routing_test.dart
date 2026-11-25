@@ -1192,6 +1192,9 @@ void main() {
           ),
         );
         final Map<String, dynamic> runtime = <String, dynamic>{
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{},
+          },
           'outbounds': <dynamic>[
             <String, dynamic>{'tag': 'direct', 'type': 'direct'},
             <String, dynamic>{'tag': 'select', 'type': 'selector'},

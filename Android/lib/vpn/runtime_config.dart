@@ -515,11 +515,11 @@ class RuntimeConfig {
         }
       }
 
-      routeRules
-        ..clear()
-        ..addAll(prefix)
-        ..addAll(promotedBlocks)
-        ..addAll(suffix);
+      rawRoute['rules'] = <dynamic>[
+        ...prefix,
+        ...promotedBlocks,
+        ...suffix,
+      ];
     }
 
     // در حالت TUN با صفحه مسدودی فعال، قوانین DNS مربوط به دسته های صفحه دار
@@ -547,9 +547,7 @@ class RuntimeConfig {
         }
         rewrittenDns.addAll(_expandDnsBlockRule(item));
       }
-      dnsRules
-        ..clear()
-        ..addAll(rewrittenDns);
+      rawDns['rules'] = rewrittenDns;
     }
   }
 
@@ -968,7 +966,7 @@ class RuntimeConfig {
       'method',
       'no_drop',
     };
-    final List<Map<String, dynamic>> migrated = <Map<String, dynamic>>[];
+    final List<dynamic> migrated = <dynamic>[];
     for (final dynamic rawRule in rawDnsRules) {
       if (rawRule is! Map<String, dynamic>) continue;
       rawRule.remove('rule_set_ip_cidr_accept_empty');
@@ -1440,9 +1438,7 @@ class RuntimeConfig {
         } else {
           remaining.addAll(ipDirectAfterResolve);
         }
-        rawRules
-          ..clear()
-          ..addAll(remaining);
+        rawRoute['rules'] = remaining;
       }
     }
 
