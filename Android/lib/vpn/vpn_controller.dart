@@ -20,6 +20,7 @@ import 'balancer.dart';
 import 'clash_api.dart';
 import 'content_block_server.dart';
 import 'core_runtime.dart';
+import 'runtime_config.dart';
 import 'startup_verification.dart';
 import 'cores.dart';
 import 'umbrella_core.dart';
@@ -406,6 +407,10 @@ class VpnController extends ChangeNotifier {
     if (_serviceEventSub != null || !_native.available) return;
     _serviceEventSub = _native.serviceEvents().listen(
       (AndroidServiceEvent event) {
+        if (event.type == 'network') {
+          _onNetworkStateChanged(event.online, event.fingerprint);
+          return;
+        }
         if (event.type == 'alert' && event.message.isNotEmpty) {
           _lastServiceAlert = event.message;
           return;
@@ -421,6 +426,7 @@ class VpnController extends ChangeNotifier {
           final bool wasRunning = _androidServiceRunning;
           _androidServiceRunning = false;
           if (!_stoppingOwnCore &&
+              !_waitingForNetwork &&
               wasRunning &&
               _status == VpnStatus.connected) {
             unawaited(_handleUnexpectedServiceStop(message));
@@ -432,13 +438,29 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _handleUnexpectedServiceStop(String message) async {
+    if (_disposed || _shuttingDown || _stoppingOwnCore || _waitingForNetwork) {
+      return;
+    }
+    final ({bool online, String fingerprint})? netState =
+        await _native.networkState();
     if (_disposed || _shuttingDown || _stoppingOwnCore) return;
+    if (netState != null && !netState.online) {
+      await _enterWaitingForNetwork();
+      return;
+    }
     _log.add(
       message.isNotEmpty
           ? 'سرویس اتصال اندروید متوقف شد: $message'
           : 'سرویس اتصال اندروید متوقف شد.',
       level: 'warning',
     );
+    if (message.isNotEmpty &&
+        _settings.autoFailover &&
+        _reconnectAttempts < 5) {
+      _reconnectAttempts++;
+      await _reconnect();
+      return;
+    }
     await _failAndCleanup(
       message.isNotEmpty ? message : 'سرویس وی پی ان توسط سیستم متوقف شد.',
     );
@@ -567,12 +589,14 @@ class VpnController extends ChangeNotifier {
             : 'غیرفعال سازی قوانین کنترل محتوا روی اتصال فعال...',
       );
       unawaited(() async {
-        final VpnNode? requested = _singleNodeSession ? _activeNode : null;
+        final VpnNode? requested =
+            _autoSession ? null : (_singleNodeSession ? _activeNode : null);
+        final bool emergency = _emergencySession;
         unawaited(ClashApi.closeAllConnections());
         await disconnect(silent: true);
         unawaited(_native.flushDns());
         if (!_disposed && !_shuttingDown) {
-          await connect(requested: requested, emergency: _emergencySession);
+          await connect(requested: requested, emergency: emergency);
           unawaited(_native.flushDns());
         }
       }());
@@ -619,6 +643,20 @@ class VpnController extends ChangeNotifier {
   /// هسته ای که برای هر سرور جواب داده است (شناسه سرور → نام هسته).
   final Map<String, String> _preferredCore = <String, String>{};
   int _reconnectAttempts = 0;
+
+  VpnNode? _requestedNode;
+  bool _autoSession = false;
+  bool get autoSession =>
+      _autoSession && (_connectInFlight || _status.active || _status.busy);
+
+  bool _waitingForNetwork = false;
+  bool get waitingForNetwork => _waitingForNetwork;
+  bool _lastNetworkOnline = true;
+  String _lastNetworkFingerprint = '';
+  Timer? _networkWatchTimer;
+  bool _networkProbeInFlight = false;
+  Map<String, dynamic>? _lastSettingsMap;
+  final Map<String, String> _resolvedProcessLabels = <String, String>{};
 
   /// سرورهایی که در همین تلاش اتصال با خطای «قابل اجرا نبود» رد شده اند.
   ///
@@ -1214,10 +1252,12 @@ class VpnController extends ChangeNotifier {
         return;
       }
       unawaited(() async {
-        final VpnNode? target = _singleNodeSession ? _activeNode : null;
+        final VpnNode? target =
+            _autoSession ? null : (_singleNodeSession ? _activeNode : null);
+        final bool emergency = _emergencySession;
         await disconnect(silent: true);
         if (!_disposed && !_shuttingDown) {
-          await connect(requested: target, emergency: _emergencySession);
+          await connect(requested: target, emergency: emergency);
         }
       }());
     });
@@ -1239,11 +1279,18 @@ class VpnController extends ChangeNotifier {
   Future<void> cancel() async {
     _autoConnectRetryTimer?.cancel();
     _autoConnectRetryTimer = null;
-    if (!_connectInFlight && !_status.busy && _status != VpnStatus.connected) {
+    if (!_waitingForNetwork &&
+        !_connectInFlight &&
+        !_status.busy &&
+        _status != VpnStatus.connected) {
       return;
     }
     _cancelGeneration++;
     _cancelRequested = true;
+    _waitingForNetwork = false;
+    _stopNetworkWatcher();
+    _requestedNode = null;
+    _autoSession = false;
     _log.add('درخواست لغو اتصال از طرف کاربر.', level: 'warning');
     _setStatus(VpnStatus.disconnecting, 'لغو اتصال...');
     await _stopCores();
@@ -1255,13 +1302,19 @@ class VpnController extends ChangeNotifier {
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
+    _waitingForNetwork = false;
+    _stopNetworkWatcher();
     _stopLiveMeasurement();
     _connectedAt = null;
     _stats = TunnelStats.empty;
     _tunnelVerified = false;
     _exitIp = '';
     // Keep cancellation latched until the in-flight connect has unwound.
-    if (!_connectInFlight) _cancelRequested = false;
+    if (!_connectInFlight) {
+      _cancelRequested = false;
+      _requestedNode = null;
+      _autoSession = false;
+    }
     _activeNode = null;
     _setStatus(VpnStatus.disconnected, 'اتصال قطع شد.');
     unawaited(
@@ -1301,8 +1354,11 @@ class VpnController extends ChangeNotifier {
       return const ConnectOutcome(ok: false, message: 'اتصال از قبل برقرار است.');
     }
     if (!isAutoReconnect) {
+      _waitingForNetwork = false;
       _reconnectAttempts = 0;
       _emergencySession = emergency;
+      _requestedNode = requested;
+      _autoSession = requested == null && !emergency;
     }
     _connectInFlight = true;
     try {
@@ -1327,6 +1383,90 @@ class VpnController extends ChangeNotifier {
         }
       }
     }
+  }
+
+  /// ساخت زنجیره چندمرحله ای اتصال خودکار (`خودکار`):
+  /// ۱) گروه اشتراک عمومی (`!DirectProfile.handles`) به ترتیب انتخاب گر؛
+  /// ۲) پروفایل های مستقیم (`DirectProfile.handles`: WireGuard / AmneziaWG / Mieru)؛
+  /// ۳) مسیر اضطراری (`emergencyNodes`) به عنوان آخرین پشتیبان در صورت نبود یا شکست مراحل قبل.
+  @visibleForTesting
+  static List<VpnNode> buildAutoCandidates({
+    required List<VpnNode> personalNodes,
+    required List<VpnNode> emergencyNodes,
+    required NodeBalancer balancer,
+    required SelectionMode mode,
+    required String deviceSeed,
+    required String preferredNodeId,
+    required int stickyMinutes,
+    required bool allowFailover,
+    required bool emergencyOnly,
+    required bool Function(VpnNode node) accepts,
+  }) {
+    if (emergencyOnly) {
+      final List<VpnNode> emUsable = emergencyNodes.where(accepts).toList();
+      if (emUsable.isEmpty) return const <VpnNode>[];
+      final SelectionResult picked = balancer.pick(
+        nodes: emUsable,
+        mode: mode,
+        deviceSeed: deviceSeed,
+        preferredNodeId: preferredNodeId,
+        stickyMinutes: stickyMinutes,
+        allowFailover: allowFailover,
+      );
+      return picked.node == null
+          ? <VpnNode>[emUsable.first]
+          : <VpnNode>[picked.node!];
+    }
+
+    final List<VpnNode> usablePersonal =
+        personalNodes.where(accepts).toList();
+    final List<VpnNode> poolNodes = usablePersonal
+        .where((VpnNode n) => !DirectProfile.handles(n))
+        .toList();
+    final List<VpnNode> directNodes = usablePersonal
+        .where((VpnNode n) => DirectProfile.handles(n))
+        .toList();
+
+    final List<VpnNode> stages = <VpnNode>[];
+    if (poolNodes.isNotEmpty) {
+      final SelectionResult picked = balancer.pick(
+        nodes: poolNodes,
+        mode: mode,
+        deviceSeed: deviceSeed,
+        preferredNodeId: preferredNodeId,
+        stickyMinutes: stickyMinutes,
+        allowFailover: allowFailover,
+      );
+      stages.add(picked.node ?? poolNodes.first);
+    }
+
+    final List<VpnNode> pinnedDirect =
+        directNodes.where((VpnNode n) => n.favorite).toList();
+    final List<VpnNode> normalDirect =
+        directNodes.where((VpnNode n) => !n.favorite).toList();
+    stages
+      ..addAll(pinnedDirect)
+      ..addAll(normalDirect);
+
+    final List<VpnNode> emPool = emergencyNodes
+        .where((VpnNode n) => !DirectProfile.handles(n) && accepts(n))
+        .toList();
+    final List<VpnNode> emDirect = emergencyNodes
+        .where((VpnNode n) => DirectProfile.handles(n) && accepts(n))
+        .toList();
+    if (emPool.isNotEmpty) {
+      final SelectionResult emPicked = balancer.pick(
+        nodes: emPool,
+        mode: mode,
+        deviceSeed: deviceSeed,
+        preferredNodeId: '',
+        stickyMinutes: stickyMinutes,
+        allowFailover: allowFailover,
+      );
+      stages.add(emPicked.node ?? emPool.first);
+    }
+    stages.addAll(emDirect);
+    return stages;
   }
 
   Future<ConnectOutcome> _connectInner({VpnNode? requested}) async {
@@ -1371,15 +1511,24 @@ class VpnController extends ChangeNotifier {
           message:
               'قواعد برنامه فعال است؛ حالت سرویس را روی تونل کامل وی پی ان بگذارید یا قواعد را غیرفعال کنید.');
     }
-    if (_sessionNodes.isEmpty) {
+    final bool hasAnyPool = _sessionNodes.isNotEmpty ||
+        (requested == null && !_emergencySession && _emergencyNodes.isNotEmpty);
+    if (!hasAnyPool) {
       return const ConnectOutcome(
         ok: false,
         message: 'هیچ سروری موجود نیست؛ اشتراک در حال دریافت از سرور است.',
       );
     }
-    final List<VpnNode> usableNodes =
-        _sessionNodes.where((VpnNode node) => usable(node) && !node.disabled).toList();
-    if (usableNodes.isEmpty) {
+    final List<VpnNode> usableSessionNodes = _sessionNodes
+        .where((VpnNode node) => usable(node) && !node.disabled)
+        .toList();
+    final List<VpnNode> usableEmergencyFallback =
+        (requested == null && !_emergencySession)
+            ? _emergencyNodes
+                .where((VpnNode node) => usable(node) && !node.disabled)
+                .toList()
+            : const <VpnNode>[];
+    if (usableSessionNodes.isEmpty && usableEmergencyFallback.isEmpty) {
       _log.add(
         'هیچ سروری از ${Fa.num(_nodes.length)} سرور اشتراک برای هسته آمبرلا '
         'ورودی معتبر نداشت.',
@@ -1401,22 +1550,56 @@ class VpnController extends ChangeNotifier {
       );
     }
 
-    final List<VpnNode> fitting = usableNodes
-        .where((VpnNode node) => _fitsPreference(node) &&
-            (requested != null || !DirectProfile.handles(node)))
-        .toList();
     if (requested != null &&
-        !usableNodes.any((VpnNode node) => node.id == requested.id)) {
+        !usableSessionNodes.any((VpnNode node) => node.id == requested.id)) {
       return const ConnectOutcome(ok: false, message: 'پروفایل انتخابی معتبر نیست.');
     }
-    if (fitting.isEmpty) {
-      const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
-      _setStatus(VpnStatus.failed, message);
-      return const ConnectOutcome(ok: false, message: message);
+
+    final String deviceSeed = _device.machineId.isNotEmpty
+        ? _device.machineId
+        : _device.hostname;
+    final List<VpnNode> autoStages = requested == null
+        ? buildAutoCandidates(
+            personalNodes: _nodes,
+            emergencyNodes: _emergencyNodes,
+            balancer: _balancer,
+            mode: _settings.selectionMode,
+            deviceSeed: deviceSeed,
+            preferredNodeId: _settings.lastNodeId,
+            stickyMinutes: _settings.stickyMinutes,
+            allowFailover: _settings.autoFailover,
+            emergencyOnly: _emergencySession,
+            accepts: (VpnNode node) =>
+                usable(node) && !node.disabled && _fitsPreference(node),
+          )
+        : const <VpnNode>[];
+
+    final List<VpnNode> candidates;
+    if (requested != null) {
+      if (!_fitsPreference(requested)) {
+        const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
+        _setStatus(VpnStatus.failed, message);
+        return const ConnectOutcome(ok: false, message: message);
+      }
+      candidates = _singleNodeSession
+          ? _candidates(requested, 'سرور انتخابی شما.')
+          : <VpnNode>[requested];
+    } else {
+      if (autoStages.isEmpty) {
+        const String message = 'سروری که با این نسخه کار کند در اشتراک شما نیست.';
+        _setStatus(VpnStatus.failed, message);
+        return const ConnectOutcome(ok: false, message: message);
+      }
+      candidates = _singleNodeSession
+          ? <VpnNode>[autoStages.first]
+          : autoStages;
     }
-    final String profileLabel = _emergencySession ? 'اضطراری' : (requested == null ? 'خودکار' : requested.protocol.label);
+
+    final String profileLabel = _emergencySession
+        ? 'اضطراری'
+        : (requested == null ? 'خودکار' : requested.protocol.label);
     _log.add(
-      'درخواست اتصال: نوع «$profileLabel»، ${Fa.num(requested == null ? fitting.length : 1)} مسیر برای این انتخاب، '
+      'درخواست اتصال: نوع «$profileLabel»، ${Fa.num(requested == null ? candidates.length : 1)} مرحله مسیر برای این انتخاب، '
       'حالت «${_settings.corePreference.faName}» با هسته آمبرلا.',
     );
     _setStatus(VpnStatus.preparing, 'آماده سازی هسته و بررسی شبکه...');
@@ -1425,30 +1608,7 @@ class VpnController extends ChangeNotifier {
       // not a prerequisite for opening the VPN (blocked geo APIs took ~19s).
       if (_cancelRequested) return const ConnectOutcome(ok: false, cancelled: true, message: 'اتصال لغو شد.');
 
-      final SelectionResult selection = requested != null
-          ? SelectionResult(node: requested, reason: 'سرور انتخابی شما.')
-          : _balancer.pick(
-              nodes: fitting,
-              mode: _settings.selectionMode,
-              deviceSeed: _device.machineId.isNotEmpty
-                  ? _device.machineId
-                  : _device.hostname,
-              preferredNodeId: _settings.lastNodeId,
-              stickyMinutes: _settings.stickyMinutes,
-              allowFailover: _settings.autoFailover,
-            );
-
-      final VpnNode? node = selection.node;
-      if (node == null) {
-        _setStatus(VpnStatus.failed, selection.reason);
-        return ConnectOutcome(ok: false, message: selection.reason);
-      }
-
       _unusableInThisRun.clear();
-      // Automatic mode gives the entire pool to one core. Recreating that
-      // same pool for each candidate erases every selection result.
-      final List<VpnNode> candidates = _singleNodeSession
-          ? _candidates(node, selection.reason) : <VpnNode>[node];
       // کل اشتراک امتحان می شود، نه چند سرور اول. بودجه زمانی فقط برای وقتی
       // است که هیچ کدام جواب نمی دهند؛ در آن حالت برنامه نباید برای همیشه
       // روی «تلاش N از M» بماند و باید به کاربر بگوید چه کرد.
@@ -1461,8 +1621,8 @@ class VpnController extends ChangeNotifier {
         }
         if (index > 0 && DateTime.now().isAfter(connectDeadline)) {
           _log.add(
-            'بودجه زمانی اتصال تمام شد: ${Fa.num(attempted)} سرور از '
-            '${Fa.num(candidates.length)} سرور اشتراک امتحان شد و هیچ '
+            'بودجه زمانی اتصال تمام شد: ${Fa.num(attempted)} مرحله از '
+            '${Fa.num(candidates.length)} مسیر امتحان شد و هیچ '
             'کدام تونل نساخت.',
             level: 'warning',
           );
@@ -1470,10 +1630,21 @@ class VpnController extends ChangeNotifier {
         }
         final VpnNode candidate = candidates[index];
         if (candidates.length > 1) {
+          final String stageLabel = candidate.sourceId.startsWith('emergency-')
+              ? 'اضطراری'
+              : (DirectProfile.handles(candidate)
+                  ? candidate.protocol.label
+                  : 'اشتراک');
           _setStatus(
             VpnStatus.preparing,
-            'تلاش ${Fa.num(index + 1)} از ${Fa.num(candidates.length)}: ${candidate.name}',
+            'تلاش ${Fa.num(index + 1)} از ${Fa.num(candidates.length)}: $stageLabel',
           );
+          if (index > 0) {
+            _log.add(
+              'مسیر قبلی پاسخ نداد؛ تلاش خودکار روی مسیر «$stageLabel»...',
+              level: 'info',
+            );
+          }
         }
         attempted++;
         final _AttemptResult attempt = await _attempt(candidate);
@@ -1743,6 +1914,13 @@ class VpnController extends ChangeNotifier {
         continue;
       }
 
+      await _applyAndroidRuntimePatch(plan);
+      if (_cancelRequested || _disposed) {
+        await _stopCores();
+        await _disableProxy();
+        return const _AttemptResult(cancelled: true, message: 'اتصال لغو شد.');
+      }
+
       // Match `hiddify-app` + `hiddify-core v5.9.1/v2/hcore/connectivity.go`:
       // once the box and inbound (TUN / mixed port) are running, enter Waiting
       // and transition to Connected the instant the core's outbound monitor
@@ -1765,7 +1943,8 @@ class VpnController extends ChangeNotifier {
           final Map<String, dynamic> st = await _native.getCoreStatus();
           return _statusMapAlive(st);
         },
-        budget: _singleNodeSession && !_activeChain.enabled
+        budget: (_singleNodeSession || DirectProfile.handles(node)) &&
+                !_activeChain.enabled
             ? const Duration(seconds: 20)
             : const Duration(seconds: 60),
         interval: const Duration(milliseconds: 120),
@@ -1784,7 +1963,7 @@ class VpnController extends ChangeNotifier {
               // A single direct profile can time out while its tunnel or DNS is
               // warming up. Test the same endpoint once against a second URL;
               // never silently switch to the automatic subscription.
-              if (_singleNodeSession && DirectProfile.handles(node) &&
+              if (DirectProfile.handles(node) &&
                   !_activeChain.enabled && !directRetested) {
                 directRetested = true;
                 _log.add('مسیر «${node.protocol.label}» پاسخ نداد؛ همان مسیر با نشانی سنجش دیگری دوباره بررسی می شود.', level: 'warning');
@@ -1882,7 +2061,6 @@ class VpnController extends ChangeNotifier {
         await _stopCores();
         await _disableProxy();
         if (poolExhausted && !_singleNodeSession) {
-          _setStatus(VpnStatus.failed, 'هیچ سرور در دسترسی پاسخ نداد.');
           return const _AttemptResult(
             message: 'هیچ سرور در دسترسی پاسخ نداد.',
           );
@@ -2734,20 +2912,21 @@ class VpnController extends ChangeNotifier {
     _activeLocalProxySecret = localAuthEnabled ? proxySecret : '';
     _launchedFilterSignature = _contentFilter.effectSignature;
 
-    final String settingsPayload = jsonEncode(
-      DirectProfile.sessionSettings(
-        _activeNode,
-        UmbrellaCore.settingsJson(
-          tun: plan.tun,
-          systemProxy: false,
-          port: effectivePort,
-          logFile: coreLog,
-          networkSettings: _settings,
-          contentFilter: _contentFilter,
-        ),
+    final Map<String, dynamic> rawSettings = DirectProfile.sessionSettings(
+      _activeNode,
+      UmbrellaCore.settingsJson(
+        tun: plan.tun,
+        systemProxy: false,
+        port: effectivePort,
+        logFile: coreLog,
+        networkSettings: _settings,
+        contentFilter: _contentFilter,
       ),
     );
+    _lastSettingsMap = rawSettings;
+    final String settingsPayload = jsonEncode(rawSettings);
     await File(settingsPath).writeAsString(settingsPayload, flush: true);
+    await ensureBlockServerStarted();
 
     final List<String> originalLinks = await File(plan.linksPath).readAsLines();
     final PreparedLinks prepared = await LinkPreparation.prepare(
@@ -2824,6 +3003,82 @@ class VpnController extends ChangeNotifier {
     _androidServiceRunning = true;
     _log.add('سرویس هسته آمبرلا در حالت ${plan.tun ? 'تونل کامل' : 'پروکسی'} اجرا شد.');
     return true;
+  }
+
+  Future<void> _applyAndroidRuntimePatch(LaunchPlan plan) async {
+    if (!_native.available || _cancelRequested || _disposed) return;
+    try {
+      final String sep = Platform.pathSeparator;
+      final File currentFile = File(
+        '${_provisioner.dataDir}${sep}work${sep}data${sep}current-config.json',
+      );
+      if (!await currentFile.exists()) return;
+      final Object? decoded = jsonDecode(await currentFile.readAsString());
+      if (decoded is! Map<String, dynamic>) return;
+
+      final Set<String> profileTags = <String>{};
+      const Set<String> internalTags = <String>{
+        'direct',
+        'direct §hide§',
+        'bypass',
+        'block',
+        'select',
+        'lowest',
+        'balance',
+        RuntimeConfig.blockPageOutboundTag,
+      };
+      final dynamic outbounds = decoded['outbounds'];
+      if (outbounds is List) {
+        for (final dynamic item in outbounds) {
+          if (item is Map) {
+            final String tag = '${item['tag'] ?? ''}'.trim();
+            if (tag.isNotEmpty && !internalTags.contains(tag)) {
+              profileTags.add(tag);
+            }
+          }
+        }
+      }
+      final dynamic endpoints = decoded['endpoints'];
+      if (endpoints is List) {
+        for (final dynamic item in endpoints) {
+          if (item is Map) {
+            final String tag = '${item['tag'] ?? ''}'.trim();
+            if (tag.isNotEmpty && !internalTags.contains(tag)) {
+              profileTags.add(tag);
+            }
+          }
+        }
+      }
+
+      final ContentBlockServer? blockServer = await ensureBlockServerStarted();
+      final int? blockPort = (blockServer != null && blockServer.proxyPort > 0)
+          ? blockServer.proxyPort
+          : null;
+
+      RuntimeConfig.finalize(
+        decoded,
+        profileTags: profileTags,
+        coreSettings: _lastSettingsMap,
+        stickyMinutes: _settings.stickyMinutes,
+        blockPagePort: blockPort,
+        preserveLogOutput: true,
+      );
+      final File runtimeFile = File('${plan.runDir}${sep}runtime-android.json');
+      await runtimeFile.writeAsString(jsonEncode(decoded), flush: true);
+      final ({bool ok, String message}) reloaded =
+          await _native.hotReloadConfig(
+        configPath: runtimeFile.path,
+        profileName: AppConfig.appName,
+      );
+      if (!reloaded.ok && reloaded.message.isNotEmpty) {
+        _log.add(
+          'پیکربندی تکمیلی اندروید اعمال نشد: ${reloaded.message}',
+          level: 'warning',
+        );
+      }
+    } catch (err) {
+      _log.add('خطا در اعمال پیکربندی تکمیلی اندروید: $err', level: 'warning');
+    }
   }
 
   static bool _statusMapAlive(Map<String, dynamic> st) {
@@ -3323,7 +3578,7 @@ class VpnController extends ChangeNotifier {
           );
         }
         _notify();
-        if (_settings.autoFailover && _reconnectAttempts < 3) {
+        if (_settings.autoFailover && _reconnectAttempts < 5) {
           _reconnectAttempts++;
           _verifyInFlight = false;
           await _reconnect();
@@ -3371,7 +3626,7 @@ class VpnController extends ChangeNotifier {
     _scheduleStatsTimer();
     _healthTimer?.cancel();
     _healthTimer =
-        Timer.periodic(const Duration(seconds: 15), (_) => _tickHealth());
+        Timer.periodic(const Duration(seconds: 8), (_) => _tickHealth());
     _ipTimer?.cancel();
     _ipTimer = Timer.periodic(const Duration(seconds: 120), (_) {
       unawaited(_verifyTunnel());
@@ -3599,7 +3854,41 @@ class VpnController extends ChangeNotifier {
         timeout: Duration(milliseconds: force ? 300 : 650),
       );
       if (samples.isNotEmpty) {
-        ActivityMonitorBuffer.instance.recordConnections(samples);
+        if (!force && _native.available) {
+          final List<String> missing = samples
+              .map((CoreActivitySample s) => s.process)
+              .where((String p) =>
+                  p.contains('.') &&
+                  p.isNotEmpty &&
+                  !_resolvedProcessLabels.containsKey(p))
+              .toSet()
+              .take(16)
+              .toList(growable: false);
+          if (missing.isNotEmpty) {
+            final Map<String, String> resolved = await _native
+                .resolveAppLabels(missing)
+                .timeout(
+                  const Duration(milliseconds: 350),
+                  onTimeout: () => const <String, String>{},
+                );
+            if (_resolvedProcessLabels.length > 256) {
+              _resolvedProcessLabels.clear();
+            }
+            for (final String p in missing) {
+              final String? label = resolved[p] ?? resolved[p.toLowerCase()];
+              if (label != null && label.trim().isNotEmpty) {
+                _resolvedProcessLabels[p] = label.trim();
+                _resolvedProcessLabels[p.toLowerCase()] = label.trim();
+              } else {
+                _resolvedProcessLabels[p] = '';
+              }
+            }
+          }
+        }
+        ActivityMonitorBuffer.instance.recordConnections(
+          samples,
+          resolvedLabels: _resolvedProcessLabels,
+        );
         if (onNetworkConnectionsObserved != null) {
           unawaited(onNetworkConnectionsObserved!(samples));
         }
@@ -3685,8 +3974,15 @@ class VpnController extends ChangeNotifier {
     final bool alive = _androidServiceRunning || _statusMapAlive(coreStatus);
     if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
     if (!alive) {
+      final ({bool online, String fingerprint})? netState =
+          await _native.networkState();
+      if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+      if (netState != null && !netState.online) {
+        await _enterWaitingForNetwork();
+        return;
+      }
       _log.add('هسته اتصال متوقف شد؛ تلاش برای بازیابی فوری...', level: 'warning');
-      if (_settings.autoFailover && _reconnectAttempts < 3) {
+      if (_settings.autoFailover && _reconnectAttempts < 5) {
         _reconnectAttempts++;
         await _reconnect();
       } else {
@@ -3729,21 +4025,161 @@ class VpnController extends ChangeNotifier {
       return;
     }
 
+    final ({bool online, String fingerprint})? netState =
+        await _native.networkState();
+    if (epoch != _connectionEpoch || _status != VpnStatus.connected) return;
+    if (netState != null && !netState.online) {
+      await _enterWaitingForNetwork();
+      return;
+    }
+
     _healthFailures++;
     _tunnelVerified = false;
     _log.add(
       'ترافیک از تونل رد نمی شود؛ بررسی سلامت ناموفق بود '
-      '(${Fa.num(_healthFailures)} از ۴).',
+      '(${Fa.num(_healthFailures)} از ۲).',
       level: 'warning',
     );
     _notify();
-    if (_healthFailures >= 4) {
-      if (_settings.autoFailover && _reconnectAttempts < 3) {
+    if (_healthFailures >= 2) {
+      if (_settings.autoFailover && _reconnectAttempts < 5) {
         _reconnectAttempts++;
         await _reconnect();
       } else {
         await _failAndCleanup('اتصال پایدار نماند؛ دوباره تلاش کنید.');
       }
+    }
+  }
+
+  void _ensureNetworkWatcherStarted() {
+    if (_disposed || _shuttingDown) return;
+    if (_networkWatchTimer != null && _networkWatchTimer!.isActive) return;
+    _networkWatchTimer = Timer.periodic(
+      const Duration(milliseconds: 2500),
+      (_) => unawaited(_pollNetworkState()),
+    );
+  }
+
+  void _stopNetworkWatcher() {
+    _networkWatchTimer?.cancel();
+    _networkWatchTimer = null;
+  }
+
+  Future<void> _pollNetworkState() async {
+    if (_disposed ||
+        _shuttingDown ||
+        _networkProbeInFlight ||
+        !_waitingForNetwork) {
+      return;
+    }
+    _networkProbeInFlight = true;
+    try {
+      final ({bool online, String fingerprint})? state =
+          await _native.networkState();
+      if (state == null || _disposed || _shuttingDown) return;
+      _onNetworkStateChanged(state.online, state.fingerprint);
+    } finally {
+      _networkProbeInFlight = false;
+    }
+  }
+
+  void _onNetworkStateChanged(bool online, String fingerprint) {
+    if (_disposed || _shuttingDown) return;
+    if (!online) {
+      _lastNetworkOnline = false;
+      if (_status == VpnStatus.connected && !_waitingForNetwork) {
+        unawaited(_enterWaitingForNetwork());
+      }
+      return;
+    }
+    final bool wasOffline = !_lastNetworkOnline;
+    final bool interfaceChanged = _lastNetworkFingerprint.isNotEmpty &&
+        fingerprint.isNotEmpty &&
+        fingerprint != _lastNetworkFingerprint;
+    _lastNetworkOnline = true;
+    _lastNetworkFingerprint = fingerprint;
+
+    if (_waitingForNetwork && !_connectInFlight) {
+      _waitingForNetwork = false;
+      _stopNetworkWatcher();
+      _reconnectAttempts = 0;
+      _log.add('اینترنت دستگاه برقرار شد؛ اتصال خودکار مجدد به آمبرلا...');
+      unawaited(_resumeAfterNetworkRestore());
+      return;
+    }
+
+    if (!wasOffline &&
+        interfaceChanged &&
+        _status == VpnStatus.connected &&
+        !_connectInFlight &&
+        !_healthInFlight) {
+      final int epoch = _connectionEpoch;
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 1200), () async {
+          if (_disposed ||
+              _shuttingDown ||
+              epoch != _connectionEpoch ||
+              _status != VpnStatus.connected) {
+            return;
+          }
+          final bool flows = await _tunnelFlowsNow();
+          if (!flows &&
+              epoch == _connectionEpoch &&
+              _status == VpnStatus.connected &&
+              _settings.autoFailover) {
+            _log.add('شبکه دستگاه تغییر کرد؛ بازیابی سریع مسیر امن...');
+            _reconnectAttempts = 1;
+            await _reconnect();
+          }
+        }),
+      );
+    }
+  }
+
+  Future<void> _enterWaitingForNetwork() async {
+    if (_disposed || _shuttingDown || _waitingForNetwork) return;
+    _waitingForNetwork = true;
+    _lastNetworkOnline = false;
+    _statsTimer?.cancel();
+    _healthTimer?.cancel();
+    _ipTimer?.cancel();
+    _stopLiveMeasurement();
+    _connectedAt = null;
+    _activeCoreLogPath = '';
+    _stats = TunnelStats.empty;
+    _tunnelVerified = false;
+    _setStatus(
+      VpnStatus.reconnecting,
+      'اتصال اینترنت قطع شد؛ در انتظار برقراری مجدد...',
+    );
+    _log.add(
+      'اتصال اینترنت دستگاه قطع شد؛ به محض برقراری شبکه اتصال به صورت خودکار ادامه می یابد.',
+      level: 'warning',
+    );
+    await _stopCoreBlockLogMonitor();
+    await _stopCores();
+    await _disableProxy();
+    _ensureNetworkWatcherStarted();
+  }
+
+  Future<void> _resumeAfterNetworkRestore() async {
+    final int generation = _cancelGeneration;
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (_disposed ||
+        _shuttingDown ||
+        generation != _cancelGeneration ||
+        _connectInFlight ||
+        _status == VpnStatus.connected) {
+      return;
+    }
+    _status = VpnStatus.disconnected;
+    final ConnectOutcome outcome = await connect(
+      requested: _requestedNode,
+      isAutoReconnect: true,
+      emergency: _emergencySession,
+    );
+    if (!outcome.ok && !outcome.cancelled && !_waitingForNetwork) {
+      await _failAndCleanup(outcome.message);
     }
   }
 
@@ -3759,12 +4195,23 @@ class VpnController extends ChangeNotifier {
     _setStatus(VpnStatus.reconnecting, 'اتصال دوباره...');
     await _stopCores();
     await _disableProxy();
-    final int backoffMs = 800 * _reconnectAttempts.clamp(1, 4);
+    final ({bool online, String fingerprint})? netState =
+        await _native.networkState();
+    if (netState != null && !netState.online) {
+      await _enterWaitingForNetwork();
+      return;
+    }
+    final int backoffMs =
+        (1000 * _reconnectAttempts.clamp(1, 5)).clamp(1000, 10000);
     await Future<void>.delayed(Duration(milliseconds: backoffMs));
     if (_disposed || generation != _cancelGeneration) return;
     _status = VpnStatus.disconnected;
-    final ConnectOutcome outcome = await connect(isAutoReconnect: true);
-    if (!outcome.ok && !outcome.cancelled) {
+    final ConnectOutcome outcome = await connect(
+      requested: _requestedNode,
+      isAutoReconnect: true,
+      emergency: _emergencySession,
+    );
+    if (!outcome.ok && !outcome.cancelled && !_waitingForNetwork) {
       await _failAndCleanup(outcome.message);
     }
   }
@@ -4164,10 +4611,13 @@ class VpnController extends ChangeNotifier {
     _cancelGeneration++;
     _filterReloadTimer?.cancel();
     _autoConnectRetryTimer?.cancel();
-    if (_connectInFlight) { await cancel(); return; }
+    if (_connectInFlight || _waitingForNetwork) { await cancel(); return; }
     if (_status == VpnStatus.disconnected && !_hasTrackedCoreProcesses) {
       return;
     }
+    _stopNetworkWatcher();
+    _requestedNode = null;
+    _autoSession = false;
     _setStatus(VpnStatus.disconnecting, 'قطع اتصال...');
     await _sampleActivityIfDue(force: true);
     // سنجشی که بعد از قطع اتصال شروع شود، هسته ای بالا می آورد و پورت ها را
@@ -4219,6 +4669,8 @@ class VpnController extends ChangeNotifier {
     _prewarmTimer?.cancel();
     _filterReloadTimer?.cancel();
     _autoConnectRetryTimer?.cancel();
+    _waitingForNetwork = false;
+    _stopNetworkWatcher();
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();
@@ -4292,6 +4744,10 @@ class VpnController extends ChangeNotifier {
   }
 
   Future<void> _failAndCleanup(String reason) async {
+    _waitingForNetwork = false;
+    _stopNetworkWatcher();
+    _requestedNode = null;
+    _autoSession = false;
     await _stopCoreBlockLogMonitor();
     await _stopCores();
     await _disableProxy();
@@ -4371,6 +4827,8 @@ class VpnController extends ChangeNotifier {
     _filterReloadTimer?.cancel();
     _liveReloadTimer?.cancel();
     _autoConnectRetryTimer?.cancel();
+    _waitingForNetwork = false;
+    _stopNetworkWatcher();
     _statsTimer?.cancel();
     _healthTimer?.cancel();
     _ipTimer?.cancel();

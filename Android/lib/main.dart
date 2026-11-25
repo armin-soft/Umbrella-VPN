@@ -288,6 +288,18 @@ Future<void> main(List<String> arguments) async {
     auth.onSubscriptionClaimed = () async {
       await subscriptions.syncPersonal();
     };
+    VpnPhase prevVpnPhase = vpn.status.phase;
+    vpn.addListener(() {
+      final VpnPhase next = vpn.status.phase;
+      if (next == prevVpnPhase) return;
+      final VpnPhase prev = prevVpnPhase;
+      prevVpnPhase = next;
+      if (auth.signedIn &&
+          (next == VpnPhase.connected ||
+              (prev == VpnPhase.connected && next == VpnPhase.disconnected))) {
+        unawaited(auth.refreshAccount(silent: true));
+      }
+    });
     final UpdateController updates = UpdateController(
       native,
       service: UpdateService(preferredAbi: deviceAbi),

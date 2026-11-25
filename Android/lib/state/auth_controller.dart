@@ -854,7 +854,6 @@ class AuthController extends ChangeNotifier {
         token: session.token,
         deviceId: _deviceId,
         activity: pendingActivity,
-        currentScreen: ActivityMonitorBuffer.instance.currentScreen,
         deviceName: _device.hostname,
         platform: defaultTargetPlatform == TargetPlatform.android
             ? 'Android'

@@ -161,7 +161,7 @@ class _BufferedActivity {
   int up = 0;
 }
 
-/// بافر سبک در حافظه برای تجمیع سایت ها، برنامه ها و صفحه های باز شده در برنامه.
+/// بافر سبک در حافظه برای تجمیع سایت ها و نرم افزارها/اپ های باز شده.
 class ActivityMonitorBuffer {
   ActivityMonitorBuffer();
 
@@ -170,21 +170,11 @@ class ActivityMonitorBuffer {
   final Map<String, _BufferedActivity> _pending = <String, _BufferedActivity>{};
   final Map<String, ({int down, int up})> _watermarks =
       <String, ({int down, int up})>{};
-  String _currentScreen = '';
 
-  String get currentScreen => _currentScreen;
-
-  void recordScreen(String label) {
-    final String clean = label.trim();
-    if (clean.isEmpty) return;
-    _currentScreen = clean;
-    final _BufferedActivity entry =
-        _pending.putIfAbsent('screen\x00$clean', () => _BufferedActivity());
-    entry.hits += 1;
-    _trimOverflow();
-  }
-
-  void recordConnections(List<CoreActivitySample> samples) {
+  void recordConnections(
+    List<CoreActivitySample> samples, {
+    Map<String, String> resolvedLabels = const <String, String>{},
+  }) {
     for (final CoreActivitySample sample in samples) {
       final String connId = sample.id.trim();
       int deltaDown = sample.downBytes;
@@ -219,9 +209,13 @@ class ActivityMonitorBuffer {
         site.up += deltaUp;
       }
 
-      if (sample.process.isNotEmpty) {
+      final String appLabel = ClashApi.friendlyProcessName(
+        sample.process,
+        resolvedLabels: resolvedLabels,
+      );
+      if (appLabel.isNotEmpty) {
         final _BufferedActivity app = _pending.putIfAbsent(
-          'app\x00${sample.process}',
+          'app\x00$appLabel',
           () => _BufferedActivity(),
         );
         if (isNew) app.hits += 1;
@@ -239,6 +233,7 @@ class ActivityMonitorBuffer {
       final int sep = item.key.indexOf('\x00');
       if (sep <= 0) continue;
       final String category = item.key.substring(0, sep);
+      if (category != 'site' && category != 'app') continue;
       final String target = item.key.substring(sep + 1);
       final _BufferedActivity v = item.value;
       if (v.hits <= 0 && v.down <= 0 && v.up <= 0) continue;
@@ -285,7 +280,6 @@ class ActivityMonitorBuffer {
   void clear() {
     _pending.clear();
     _watermarks.clear();
-    _currentScreen = '';
   }
 }
 
@@ -653,12 +647,18 @@ class ClashApi {
       if (metaRaw is! Map) continue;
 
       final String id = '${entry['id'] ?? ''}'.trim();
-      final String host = _cleanObservedHost(
-        '${metaRaw['host'] ?? metaRaw['sniffHost'] ?? ''}',
-      );
-      final String process = _cleanObservedProcess(
-        '${metaRaw['processPath'] ?? metaRaw['process'] ?? metaRaw['packageName'] ?? metaRaw['user'] ?? ''}',
-      );
+      final String rawHost = _firstNonEmptyMeta(metaRaw, const <String>[
+        'host',
+        'sniffHost',
+      ]);
+      final String rawProcess = _firstNonEmptyMeta(metaRaw, const <String>[
+        'processPath',
+        'process',
+        'packageName',
+        'user',
+      ]);
+      final String host = _cleanObservedHost(rawHost);
+      final String process = _cleanObservedProcess(rawProcess);
       if (host.isEmpty && process.isEmpty) continue;
 
       final Object? downRaw = entry['download'];
@@ -672,6 +672,16 @@ class ClashApi {
       ));
     }
     return out;
+  }
+
+  static String _firstNonEmptyMeta(Map<dynamic, dynamic> meta, List<String> keys) {
+    for (final String key in keys) {
+      final Object? v = meta[key];
+      if (v == null) continue;
+      final String s = '$v'.trim();
+      if (s.isNotEmpty) return s;
+    }
+    return '';
   }
 
   static Future<List<CoreActivitySample>> activeConnections({
@@ -689,24 +699,178 @@ class ClashApi {
     return parseConnections(json);
   }
 
+  static const Set<String> _ignoredObservedHosts = <String>{
+    'localhost',
+    'connectivitycheck.gstatic.com',
+    'captive.apple.com',
+    'msftconnecttest.com',
+    'msftncsi.com',
+    'detectportal.firefox.com',
+    'dns.google',
+    'one.one.one.one',
+  };
+
+  static final RegExp _domainLabelPattern = RegExp(
+    r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$',
+  );
+
   static String _cleanObservedHost(String raw) {
     String h = raw.trim().toLowerCase();
     if (h.isEmpty) return '';
-    h = h.replaceAll(RegExp(r':\d+$'), '').replaceAll(RegExp(r'^\.+|\.+$'), '');
+    if (h.contains('://')) {
+      h = Uri.tryParse(h)?.host.toLowerCase() ?? h;
+    } else if (h.contains('/')) {
+      h = h.split('/').first;
+    }
+    if (h.startsWith('[') && h.contains(']')) {
+      h = h.substring(1, h.indexOf(']'));
+    } else {
+      h = h.replaceAll(RegExp(r':\d+$'), '');
+    }
+    h = h.replaceAll(RegExp(r'^\.+|\.+$'), '');
+    if (h.startsWith('www.') && h.length > 5) {
+      h = h.substring(4);
+    }
     if (h.isEmpty ||
-        h == 'localhost' ||
+        _ignoredObservedHosts.contains(h) ||
         h.endsWith('.local') ||
         h.endsWith('.arpa') ||
-        h == '127.0.0.1' ||
-        h == '::1' ||
-        h.startsWith('10.') ||
-        h.startsWith('192.168.') ||
-        RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(h)) {
+        h.endsWith('.internal') ||
+        h.endsWith('.lan')) {
       return '';
     }
-    if (!h.contains('.')) return '';
+    if (InternetAddress.tryParse(h) != null) {
+      return '';
+    }
+    if (!_domainLabelPattern.hasMatch(h)) return '';
     return h.length > 180 ? h.substring(0, 180) : h;
   }
+
+  static const Set<String> _ignoredSystemProcesses = <String>{
+    'root',
+    'system',
+    'nobody',
+    'shell',
+    'radio',
+    'media',
+    'graphics',
+    'bluetooth',
+    'nfc',
+    'wifi',
+    'svchost.exe',
+    'svchost',
+    'lsass.exe',
+    'services.exe',
+    'csrss.exe',
+    'smss.exe',
+    'wininit.exe',
+    'spoolsv.exe',
+    'dwm.exe',
+    'fontdrvhost.exe',
+    'audiodg.exe',
+    'runtimebroker.exe',
+    'searchhost.exe',
+    'taskhostw.exe',
+    'backgroundtaskhost.exe',
+    'conhost.exe',
+    'compattelrunner.exe',
+    'sihost.exe',
+    'ctfmon.exe',
+    'wmiprvse.exe',
+    'trustedinstaller.exe',
+    'tiworker.exe',
+    'msiexec.exe',
+    'smartscreen.exe',
+    'winlogon.exe',
+    'dashost.exe',
+    'dllhost.exe',
+    'werfault.exe',
+    'taskmgr.exe',
+    'com.android.systemui',
+  };
+
+  static const Map<String, String> _knownProcessNames = <String, String>{
+    'chrome.exe': 'Google Chrome',
+    'msedge.exe': 'Microsoft Edge',
+    'firefox.exe': 'Mozilla Firefox',
+    'brave.exe': 'Brave',
+    'opera.exe': 'Opera',
+    'vivaldi.exe': 'Vivaldi',
+    'telegram.exe': 'Telegram',
+    'ayugram.exe': 'AyuGram',
+    'kotatogram.exe': 'Kotatogram',
+    'discord.exe': 'Discord',
+    'whatsapp.exe': 'WhatsApp',
+    'whatsapp.root.exe': 'WhatsApp',
+    'code.exe': 'Visual Studio Code',
+    'cursor.exe': 'Cursor',
+    'spotify.exe': 'Spotify',
+    'idman.exe': 'Internet Download Manager',
+    'steam.exe': 'Steam',
+    'steamwebhelper.exe': 'Steam',
+    'epicgameslauncher.exe': 'Epic Games',
+    'winrar.exe': 'WinRAR',
+    '7zfm.exe': '7-Zip',
+    'vlc.exe': 'VLC Media Player',
+    'obs64.exe': 'OBS Studio',
+    'anydesk.exe': 'AnyDesk',
+    'rustdesk.exe': 'RustDesk',
+    'slack.exe': 'Slack',
+    'zoom.exe': 'Zoom',
+    'notion.exe': 'Notion',
+    'postman.exe': 'Postman',
+    'thunderbird.exe': 'Mozilla Thunderbird',
+    'qbittorrent.exe': 'qBittorrent',
+    'utorrent.exe': 'uTorrent',
+    'winscp.exe': 'WinSCP',
+    'putty.exe': 'PuTTY',
+    'filezilla.exe': 'FileZilla',
+    'windowsterminal.exe': 'Windows Terminal',
+    'wt.exe': 'Windows Terminal',
+    'powershell.exe': 'PowerShell',
+    'pwsh.exe': 'PowerShell',
+    'explorer.exe': 'Windows Explorer',
+    'com.instagram.android': 'Instagram',
+    'com.instagram.lite': 'Instagram Lite',
+    'org.telegram.messenger': 'Telegram',
+    'org.telegram.messenger.web': 'Telegram',
+    'org.thunderdog.challegram': 'Telegram X',
+    'com.whatsapp': 'WhatsApp',
+    'com.whatsapp.w4b': 'WhatsApp Business',
+    'com.android.chrome': 'Google Chrome',
+    'org.mozilla.firefox': 'Mozilla Firefox',
+    'com.brave.browser': 'Brave',
+    'com.opera.browser': 'Opera',
+    'com.microsoft.emmx': 'Microsoft Edge',
+    'com.google.android.youtube': 'YouTube',
+    'com.google.android.apps.youtube.music': 'YouTube Music',
+    'com.spotify.music': 'Spotify',
+    'com.zhiliaoapp.musically': 'TikTok',
+    'com.ss.android.ugc.trill': 'TikTok',
+    'com.discord': 'Discord',
+    'com.linkedin.android': 'LinkedIn',
+    'com.twitter.android': 'X',
+    'com.reddit.frontpage': 'Reddit',
+    'com.pinterest': 'Pinterest',
+    'com.snapchat.android': 'Snapchat',
+    'com.google.android.gm': 'Gmail',
+    'com.openai.chatgpt': 'ChatGPT',
+    'com.android.vending': 'Google Play',
+    'ir.eitaa.messenger': 'ایتا',
+    'ir.nasim': 'بله',
+    'app.rbmain.a': 'روبیکا',
+    'com.rubika.android': 'روبیکا',
+    'ir.soroush.messenger': 'سروش پلاس',
+    'ir.resaneh1.iptv': 'تلوبیون',
+    'cab.snapp.passenger': 'اسنپ',
+    'ir.divar': 'دیوار',
+    'com.digikala': 'دیجی کالا',
+  };
+
+  static final RegExp _numericOnly = RegExp(r'^\d+$');
+  static final RegExp _androidPkgPattern = RegExp(
+    r'^(?:com|org|net|ir|io|app|me)\.[a-z0-9_]+(?:\.[a-z0-9_]+)+$',
+  );
 
   static String _cleanObservedProcess(String raw) {
     String p = raw.trim();
@@ -714,19 +878,97 @@ class ClashApi {
     if (p.contains('\\')) p = p.split('\\').last;
     if (p.contains('/')) p = p.split('/').last;
     p = p.trim();
+    if (p.isEmpty || _numericOnly.hasMatch(p)) return '';
+    if (InternetAddress.tryParse(p.replaceAll('[', '').replaceAll(']', '')) !=
+        null) {
+      return '';
+    }
     final String lower = p.toLowerCase();
-    if (lower.isEmpty ||
-        lower == 'sing-box' ||
+    if (lower == 'sing-box' ||
         lower.startsWith('sing-box.') ||
         lower == 'umbrella' ||
         lower.startsWith('umbrella.') ||
         lower.startsWith('umbrellacore') ||
         lower.startsWith('umbrella_vpn') ||
         lower.startsWith('umbrella-vpn') ||
-        lower == 'ir.umbrella.vpn') {
+        lower.startsWith('hiddify') ||
+        lower.startsWith('clash') ||
+        lower.startsWith('mihomo') ||
+        lower.startsWith('xray') ||
+        lower == 'ir.umbrella.vpn' ||
+        _ignoredSystemProcesses.contains(lower)) {
       return '';
     }
     return p.length > 120 ? p.substring(0, 120) : p;
+  }
+
+  /// تبدیل نام خام فرایند یا شناسه بسته به نام خوانای نرم افزار یا اپلیکیشن.
+  static String friendlyProcessName(
+    String raw, {
+    Map<String, String> resolvedLabels = const <String, String>{},
+  }) {
+    final String cleaned = _cleanObservedProcess(raw);
+    if (cleaned.isEmpty) return '';
+    final String lower = cleaned.toLowerCase();
+
+    final String? directResolved =
+        resolvedLabels[cleaned] ?? resolvedLabels[lower];
+    if (directResolved != null && directResolved.trim().isNotEmpty) {
+      final String candidate = directResolved.trim();
+      return candidate.length > 120 ? candidate.substring(0, 120) : candidate;
+    }
+
+    final String? mapped = _knownProcessNames[lower];
+    if (mapped != null) return mapped;
+
+    if (lower.endsWith('.exe') && cleaned.length > 4) {
+      final String base = cleaned.substring(0, cleaned.length - 4).trim();
+      if (base.isEmpty || _numericOnly.hasMatch(base)) return '';
+      final List<String> words = base
+          .split(RegExp(r'[_\-]+'))
+          .where((String w) => w.isNotEmpty)
+          .map((String w) =>
+              w.length == 1 ? w.toUpperCase() : '${w[0].toUpperCase()}${w.substring(1)}')
+          .toList();
+      final String title = words.join(' ');
+      return title.length > 120 ? title.substring(0, 120) : title;
+    }
+
+    if (_androidPkgPattern.hasMatch(lower)) {
+      const Set<String> skipTokens = <String>{
+        'com',
+        'org',
+        'net',
+        'ir',
+        'io',
+        'app',
+        'me',
+        'android',
+        'mobile',
+        'messenger',
+        'client',
+        'apps',
+        'google',
+      };
+      final List<String> parts = lower
+          .split('.')
+          .where((String part) => part.isNotEmpty && !skipTokens.contains(part))
+          .take(2)
+          .map((String part) => part
+              .split('_')
+              .where((String w) => w.isNotEmpty)
+              .map((String w) =>
+                  w.length == 1 ? w.toUpperCase() : '${w[0].toUpperCase()}${w.substring(1)}')
+              .join(' '))
+          .where((String s) => s.isNotEmpty)
+          .toList();
+      if (parts.isNotEmpty) {
+        final String label = parts.join(' ');
+        return label.length > 120 ? label.substring(0, 120) : label;
+      }
+    }
+
+    return cleaned;
   }
 
   /// انتخاب خروجی فعال یک گروه (`selector`) در رابط کلش هسته و بستن اتصال های

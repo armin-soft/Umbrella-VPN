@@ -631,7 +631,6 @@ class GatewayClient {
       if (deviceName.isNotEmpty) 'device_name': deviceName,
       if (platform.isNotEmpty) 'platform': platform,
       if (appVersion.isNotEmpty) 'app_version': appVersion,
-      if (currentScreen.isNotEmpty) 'current_screen': currentScreen,
       if (activity.isNotEmpty) 'activity': activity,
     };
     final Map<String, dynamic> json = await _post('auth/device', body);

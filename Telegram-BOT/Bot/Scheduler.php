@@ -92,6 +92,7 @@ self::runOperations();
 if ($Mode !== 'all') return;
 self::purgeStaleCronLocks();
 self::purgeOldDailyNoticesIfDue();
+self::purgeUserActivityIfDue();
 self::checkChannelMemberships();
 self::sendExpiryWarnings();
 self::sendDailyReportIfDue();
@@ -224,6 +225,27 @@ Repository::purgeOldDailyNotices(14);
 Repository::setSetting('Last_Daily_Notice_Purge', $Today);
 }
 catch (Throwable) {}
+}
+
+public static function purgeUserActivityIfDue(): void {
+if (!class_exists('Database') || !method_exists(Repository::class, 'getSetting') || !method_exists(Repository::class, 'setSetting')) return;
+$Now = time();
+$Last = (int)Repository::getSetting('Last_User_Activity_Reset_At', 0);
+$Db = Database::getInstance();
+try {
+if ($Last <= 0) {
+$Db->execute('DELETE FROM `App_User_Activity` WHERE `Last_Seen_At` < ? OR `Category` = ?', [$Now - 86400, 'screen']);
+Repository::setSetting('Last_User_Activity_Reset_At', (string)$Now);
+return;
+}
+if (($Now - $Last) >= 86400) {
+$Db->execute('DELETE FROM `App_User_Activity`', []);
+Repository::setSetting('Last_User_Activity_Reset_At', (string)$Now);
+}
+}
+catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Scheduler] purgeUserActivityIfDue failed: ' . $Error->getMessage());
+}
 }
 
 private static function purgeStaleCronLocks(): void {

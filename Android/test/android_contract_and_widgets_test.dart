@@ -267,6 +267,9 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   bool get emergencySession => false;
 
   @override
+  bool get autoSession => false;
+
+  @override
   TunnelStats get stats => const TunnelStats();
 
   @override
@@ -2013,16 +2016,18 @@ void main() {
       expect(samples.first.process, 'com.instagram.android');
 
       final ActivityMonitorBuffer buf = ActivityMonitorBuffer();
-      buf.recordScreen('اتصال');
       buf.recordConnections(samples);
       final List<Map<String, dynamic>> snapshot = buf.snapshotPayload();
-      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'app' && e['target'] == 'com.instagram.android'), isTrue);
+      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'app' && e['target'] == 'Instagram'), isTrue);
       expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'site' && e['target'] == 'instagram.com'), isTrue);
-      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'screen' && e['target'] == 'اتصال'), isTrue);
+      expect(snapshot.any((Map<String, dynamic> e) => e['category'] == 'screen'), isFalse);
       buf.confirmSent(snapshot);
       expect(buf.snapshotPayload(), isEmpty);
 
       final Map<String, dynamic> cfg = <String, dynamic>{
+        'inbounds': <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'tun', 'tag': 'tun-in'},
+        ],
         'route': <String, dynamic>{'find_process': false, 'rules': <Map<String, dynamic>>[]},
         'outbounds': <Map<String, dynamic>>[<String, dynamic>{'type': 'direct', 'tag': 'direct §hide§'}],
         'experimental': <String, dynamic>{
@@ -2030,11 +2035,28 @@ void main() {
           'clash_api': <String, dynamic>{'external_controller': '127.0.0.1:16756'},
         },
       };
-      RuntimeConfig.finalize(cfg, profileTags: const <String>{});
+      RuntimeConfig.finalize(
+        cfg,
+        profileTags: const <String>{},
+        blockPagePort: 18080,
+        preserveLogOutput: true,
+      );
       expect((cfg['route'] as Map<String, dynamic>)['find_process'], isTrue);
+      expect(
+        (cfg['outbounds'] as List<dynamic>).any(
+          (dynamic o) => o is Map && o['tag'] == RuntimeConfig.blockPageOutboundTag,
+        ),
+        isTrue,
+      );
+      expect((cfg['inbounds'] as List<dynamic>).single['tag'], 'tun-in');
+      expect(const AppSettings().autoFailover, isTrue);
 
       final String pfWrapper = File('${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/PlatformInterfaceWrapper.kt').readAsStringSync();
       expect(pfWrapper, contains('findConnectionOwner'));
+      final String serviceNotifKt = File('${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/ServiceNotification.kt').readAsStringSync();
+      expect(serviceNotifKt, contains('tunnelConfirmed'));
+      final String boxServiceKt = File('${Directory.current.path}/android/app/src/main/kotlin/ir/umbrella/vpn/bg/BoxService.kt').readAsStringSync();
+      expect(boxServiceKt, isNot(contains('notification.showConnected()')));
     });
 
     testWidgets('ارسال به پشتیبانی در صفحه گزارش ها بدون سرریز روی موبایل ۳۶۰x۶۴۰ کار می کند', (WidgetTester tester) async {

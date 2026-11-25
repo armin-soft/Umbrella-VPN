@@ -65,6 +65,8 @@ class AndroidServiceEvent {
     this.alert = '',
     this.message = '',
     this.code = '',
+    this.online = false,
+    this.fingerprint = '',
     this.messages = const <String>[],
   });
 
@@ -73,6 +75,8 @@ class AndroidServiceEvent {
   final String alert;
   final String message;
   final String code;
+  final bool online;
+  final String fingerprint;
   final List<String> messages;
 
   factory AndroidServiceEvent.fromMap(Map<Object?, Object?> raw) {
@@ -89,6 +93,8 @@ class AndroidServiceEvent {
       alert: JsonX.text(raw['alert']),
       message: JsonX.text(raw['message']),
       code: JsonX.text(raw['code']),
+      online: raw['online'] == true,
+      fingerprint: JsonX.text(raw['fingerprint']),
       messages: msgList,
     );
   }
@@ -676,5 +682,73 @@ class NativeBridge {
       },
     );
     return ok ?? false;
+  }
+
+  /// جریان لحظه ای تغییر شبکه فیزیکی اندروید (وای فای / دیتا / قطع اینترنت).
+  Stream<({bool online, String fingerprint})> networkEvents() {
+    return serviceEvents()
+        .where((AndroidServiceEvent event) => event.type == 'network')
+        .map((AndroidServiceEvent event) => (
+              online: event.online,
+              fingerprint: event.fingerprint,
+            ));
+  }
+
+  /// خواندن وضعیت فعلی شبکه پایه غیر VPN اندروید.
+  Future<({bool online, String fingerprint})?> networkState() async {
+    try {
+      final Map<Object?, Object?>? raw =
+          await _invoke<Map<Object?, Object?>>('networkState');
+      if (raw == null) return null;
+      return (
+        online: raw['online'] == true,
+        fingerprint: JsonX.text(raw['fingerprint']),
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  /// تبدیل شناسه پکیج های اندروید به نام واقعی اپلیکیشن نصب شده روی دستگاه.
+  Future<Map<String, String>> resolveAppLabels(List<String> packages) async {
+    if (packages.isEmpty) return const <String, String>{};
+    try {
+      final Map<Object?, Object?>? raw =
+          await _invoke<Map<Object?, Object?>>(
+        'resolveAppLabels',
+        <String, dynamic>{'packages': packages},
+      );
+      if (raw == null || raw.isEmpty) return const <String, String>{};
+      final Map<String, String> out = <String, String>{};
+      raw.forEach((Object? k, Object? v) {
+        final String key = k?.toString().trim() ?? '';
+        final String val = v?.toString().trim() ?? '';
+        if (key.isNotEmpty && val.isNotEmpty) {
+          out[key] = val;
+        }
+      });
+      return out;
+    } on Object {
+      return const <String, String>{};
+    }
+  }
+
+  /// بارگذاری زنده پیکربندی تکمیل شده بدون بستن تونل اندروید.
+  Future<({bool ok, String message})> hotReloadConfig({
+    required String configPath,
+    String profileName = 'Umbrella VPN',
+  }) async {
+    final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
+      'hotReloadConfig',
+      <String, dynamic>{
+        'configPath': configPath,
+        'profileName': profileName,
+      },
+    );
+    final Map<String, dynamic> map = JsonX.asMap(raw);
+    return (
+      ok: JsonX.boolean(map['ok']),
+      message: JsonX.text(map['message']),
+    );
   }
 }

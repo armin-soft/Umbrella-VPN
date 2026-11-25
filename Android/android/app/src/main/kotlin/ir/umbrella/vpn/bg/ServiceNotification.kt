@@ -39,8 +39,10 @@ class ServiceNotification(
         private const val TAG = "UmbrellaNotification"
         private const val NOTIFICATION_ID = 1
         private const val BALLOON_NOTIFICATION_ID = 2
+        private const val SECURITY_ALERT_NOTIFICATION_ID = 3
         private const val CHANNEL_ID = "umbrella_service_v2"
         private const val BALLOON_CHANNEL_ID = "umbrella_alerts_v2"
+        private const val SECURITY_ALERT_CHANNEL_ID = "umbrella_security_alerts_v1"
         private const val BRAND_COLOR = 0xFFE11D48.toInt()
         private const val PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 
@@ -62,6 +64,9 @@ class ServiceNotification(
         @Volatile
         private var hasAlertedThisSession: Boolean = false
 
+        @Volatile
+        private var tunnelConfirmed: Boolean = false
+
         fun sanitizePersian(raw: String): String {
             if (raw.isEmpty()) return ""
             val sb = StringBuilder(raw.length)
@@ -80,6 +85,7 @@ class ServiceNotification(
             desiredConnectedTitle = ""
             desiredConnectedText = ""
             hasAlertedThisSession = false
+            tunnelConfirmed = false
         }
 
         fun updateConnectedNotification(
@@ -87,6 +93,7 @@ class ServiceNotification(
             body: String,
             alert: Boolean,
         ) {
+            tunnelConfirmed = true
             val cleanTitle = sanitizePersian(title)
             val cleanBody = sanitizePersian(body)
             if (cleanTitle.isNotEmpty()) {
@@ -96,7 +103,7 @@ class ServiceNotification(
                 desiredConnectedText = cleanBody
             }
             val instance = activeInstance ?: return
-            instance.renderConnected(alert = alert)
+            instance.showConnected(alert = alert)
         }
 
         fun showStandaloneBalloon(
@@ -146,7 +153,7 @@ class ServiceNotification(
             title: String,
             body: String,
         ) {
-            ensureAlertChannel(context)
+            ensureSecurityAlertChannel(context)
             val cleanTitle = sanitizePersian(title).ifEmpty { "سپر کنترل محتوای آمبرلا" }
             val cleanBody = sanitizePersian(body).ifEmpty { "دسترسی به این صفحه مسدود شد." }
             val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
@@ -159,7 +166,7 @@ class ServiceNotification(
                 pendingFlags,
             )
             val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.ic_notif_failed)
-            val builder = NotificationCompat.Builder(context, BALLOON_CHANNEL_ID)
+            val builder = NotificationCompat.Builder(context, SECURITY_ALERT_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_umbrella)
                 .setColor(BRAND_COLOR)
                 .setContentTitle(cleanTitle)
@@ -167,15 +174,19 @@ class ServiceNotification(
                 .setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody))
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(false)
-                .setSilent(true)
-                .setTimeoutAfter(12000L)
+                .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
+                .setTimeoutAfter(15000L)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_ERROR)
                 .setContentIntent(openPending)
             if (largeIcon != null) {
                 builder.setLargeIcon(largeIcon)
             }
-            UmbrellaApplication.notification.notify(BALLOON_NOTIFICATION_ID, builder.build())
+            UmbrellaApplication.notification.notify(
+                SECURITY_ALERT_NOTIFICATION_ID,
+                builder.build(),
+            )
         }
 
         fun cancelStandaloneBalloon() {
@@ -211,6 +222,19 @@ class ServiceNotification(
             }
             UmbrellaApplication.notification.createNotificationChannel(channel)
         }
+
+        private fun ensureSecurityAlertChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val channel = NotificationChannel(
+                SECURITY_ALERT_CHANNEL_ID,
+                context.getString(R.string.alerts_channel_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                enableVibration(true)
+                setShowBadge(true)
+            }
+            UmbrellaApplication.notification.createNotificationChannel(channel)
+        }
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -243,6 +267,7 @@ class ServiceNotification(
     fun showStarting() {
         activeInstance = this
         isConnectedState = false
+        tunnelConfirmed = false
         cancelStandaloneBalloon()
         registerCloseReceiverIfNeeded()
         ensureServiceChannel(service)
@@ -264,7 +289,16 @@ class ServiceNotification(
     }
 
     fun renderConnected(alert: Boolean = false) {
-        if (!isConnectedState) return
+        if (!isConnectedState && !tunnelConfirmed) return
+        if (!tunnelConfirmed) {
+            render(
+                title = service.getString(R.string.app_name),
+                contentText = service.getString(R.string.status_starting),
+                logoRes = R.drawable.ic_notif_connecting,
+                alert = false,
+            )
+            return
+        }
         val title = desiredConnectedTitle.ifBlank {
             service.getString(R.string.status_connected_title)
         }

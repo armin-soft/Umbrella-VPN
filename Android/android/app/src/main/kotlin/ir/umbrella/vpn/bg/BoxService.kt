@@ -233,7 +233,6 @@ class BoxService(
             withContext(Dispatchers.Main) {
                 coroutineContext.ensureActive()
                 status.value = Status.Started
-                notification.showConnected()
             }
             notification.startPolling()
             null

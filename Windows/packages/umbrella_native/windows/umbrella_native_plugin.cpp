@@ -334,6 +334,48 @@ void UmbrellaNativePlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(ops_.DefaultAdapterName()));
     return;
   }
+  if (method == "networkState") {
+    RunOffUiThread(reply_guard_, std::move(result), []() {
+      const std::string ip = SystemOps::Instance().LocalIpv4();
+      const std::string adapter = SystemOps::Instance().DefaultAdapterName();
+      const bool online = !ip.empty() || !adapter.empty();
+      flutter::EncodableMap map;
+      map[flutter::EncodableValue("online")] = flutter::EncodableValue(online);
+      map[flutter::EncodableValue("ip")] = flutter::EncodableValue(ip);
+      map[flutter::EncodableValue("adapter")] =
+          flutter::EncodableValue(adapter);
+      map[flutter::EncodableValue("fingerprint")] =
+          flutter::EncodableValue(adapter + "|" + ip);
+      return flutter::EncodableValue(map);
+    });
+    return;
+  }
+  if (method == "resolveProcessLabels") {
+    std::vector<std::string> names;
+    auto it = args.find(flutter::EncodableValue(std::string("names")));
+    if (it != args.end()) {
+      if (const auto* list =
+              std::get_if<flutter::EncodableList>(&it->second)) {
+        for (const auto& item : *list) {
+          if (const auto* s = std::get_if<std::string>(&item)) {
+            if (!s->empty()) names.push_back(*s);
+          }
+        }
+      }
+    }
+    RunOffUiThread(reply_guard_, std::move(result),
+                   [names = std::move(names)]() {
+                     const auto resolved =
+                         SystemOps::Instance().ResolveProcessLabels(names);
+                     flutter::EncodableMap out;
+                     for (const auto& kv : resolved) {
+                       out[flutter::EncodableValue(kv.first)] =
+                           flutter::EncodableValue(kv.second);
+                     }
+                     return flutter::EncodableValue(std::move(out));
+                   });
+    return;
+  }
   if (method == "httpRequest") {
     WinHttpRequestSpec spec;
     spec.method = StringOf(args, "method", "GET");

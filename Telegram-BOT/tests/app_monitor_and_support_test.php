@@ -80,11 +80,18 @@ return false;
 }
 public function scalar(string $Q, array $P = [], mixed $Default = 0): mixed {
 if (str_contains($Q, 'COUNT(*)') && str_contains($Q, 'App_User_Activity')) {
+$Pool = str_contains($Q, "`Category` IN ('site', 'app')")
+? array_filter(self::$Activities, static fn(array $A): bool => in_array($A['Category'] ?? '', ['site', 'app'], true))
+: self::$Activities;
 if (str_contains($Q, 'WHERE (')) {
-$Matches = array_filter(self::$Activities, static fn(array $A): bool => self::matchesActivity($A, $P));
+$Matches = array_filter($Pool, static fn(array $A): bool => self::matchesActivity($A, $P));
 return count($Matches);
 }
-return count(self::$Activities);
+if (str_contains($Q, 'AND (')) {
+$Matches = array_filter($Pool, static fn(array $A): bool => self::matchesActivity($A, $P));
+return count($Matches);
+}
+return count($Pool);
 }
 return $Default;
 }
@@ -149,7 +156,14 @@ return [];
 }
 public function execute(string $Q, array $P = []): void {
 if (str_contains($Q, 'DELETE FROM `App_User_Activity`')) {
-if (str_contains($Q, 'WHERE (')) {
+if (str_contains($Q, '`Last_Seen_At` < ?')) {
+$Cutoff = (int)($P[0] ?? 0);
+$Cat = (string)($P[1] ?? '');
+self::$Activities = array_values(array_filter(
+self::$Activities,
+static fn(array $A): bool => (int)($A['Last_Seen_At'] ?? 0) >= $Cutoff && ($A['Category'] ?? '') !== $Cat
+));
+} elseif (str_contains($Q, 'WHERE (')) {
 self::$Activities = array_values(array_filter(
 self::$Activities,
 static fn(array $A): bool => !self::matchesActivity($A, $P)
@@ -228,13 +242,29 @@ final class AppSecret {}
 final class AppBotLink {}
 final class BotIdentity { public static function link(): string { return 'https://t.me/UmbrellaBot'; } }
 final class IppanelClient { public static function send(...$A): bool { return true; } }
-final class ServerClient { public static function getUser(string $U): array { return ['StatusCode' => 200, 'Json' => []]; } }
+final class ServerClient { public static function getUser(string $U): array { return ['StatusCode' => 200, 'Json' => []]; } public static function liveUsers(): array { return []; } public static function listUsers(): array { return ['StatusCode' => 200, 'Json' => []]; } }
 final class SubscriptionFlow {}
 final class UserFlow {}
 final class AppFlow {}
 final class Zarinpal {}
 final class TicketMedia {}
 final class DeviceDeletion {}
+final class Scheduler {
+public static function purgeUserActivityIfDue(): void {
+$Now = time();
+$Last = (int)Repository::getSetting('Last_User_Activity_Reset_At', '0');
+$Db = Database::getInstance();
+if ($Last <= 0) {
+$Db->execute('DELETE FROM `App_User_Activity` WHERE `Last_Seen_At` < ? OR `Category` = ?', [$Now - 86400, 'screen']);
+Repository::setSetting('Last_User_Activity_Reset_At', (string)$Now);
+return;
+}
+if (($Now - $Last) >= 86400) {
+$Db->execute('DELETE FROM `App_User_Activity`', []);
+Repository::setSetting('Last_User_Activity_Reset_At', (string)$Now);
+}
+}
+}
 
 foreach ([
 'Core/App/App-Gateway.php' => 'AppGateway',
@@ -267,13 +297,15 @@ check(str_contains($GatewayCode, "if (\$Route === 'app/support-report')"), 'AppG
 check(str_contains($GatewayCode, "\$LevelCondition = \$AdminOnlyManual ? \" AND `Level` = 'manual'\" : '';"), 'Admin sessions only receive manual test pushes while automated notifications stay suppressed');
 check(str_contains($GatewayCode, "'activity_monitor'") && str_contains($GatewayCode, "'support_report'"), 'AppGateway ping advertises activity_monitor and support_report');
 
-// 3. Activity target normalization & storage
+// 3. Activity target normalization & storage (sites & exact Windows/Android app names only, no IPs, no UIDs, no screens)
 $Norm = new ReflectionMethod(AppGateway::class, 'normalizeActivityTarget');
-check($Norm->invoke(null, 'site', 'https://YouTube.com:443/') === 'youtube.com', 'site normalization strips scheme and port and lowercases');
-check($Norm->invoke(null, 'site', 'localhost') === '' && $Norm->invoke(null, 'site', '127.0.0.1') === '' && $Norm->invoke(null, 'site', '192.168.1.10') === '', 'loopback and private IPs are ignored');
-check($Norm->invoke(null, 'app', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe') === 'chrome.exe', 'Windows process path extracts binary name');
-check($Norm->invoke(null, 'app', 'com.instagram.android') === 'com.instagram.android', 'Android package name preserved');
+check($Norm->invoke(null, 'site', 'https://www.YouTube.com:443/') === 'youtube.com', 'site normalization strips scheme, www, port and lowercases');
+check($Norm->invoke(null, 'site', 'localhost') === '' && $Norm->invoke(null, 'site', '127.0.0.1') === '' && $Norm->invoke(null, 'site', '192.168.1.10') === '' && $Norm->invoke(null, 'site', '142.250.185.78') === '' && $Norm->invoke(null, 'site', '2606:4700::1') === '', 'loopback, private and public raw IPs are ignored');
+check($Norm->invoke(null, 'app', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe') === 'Google Chrome', 'Windows process path resolves exact application name');
+check($Norm->invoke(null, 'app', 'com.instagram.android') === 'Instagram', 'Android package name resolves exact app name');
+check($Norm->invoke(null, 'app', '10284') === '' && $Norm->invoke(null, 'app', 'svchost.exe') === '', 'numeric UIDs and Windows background noise excluded');
 check($Norm->invoke(null, 'app', 'sing-box.exe') === '' && $Norm->invoke(null, 'app', 'ir.umbrella.vpn') === '', 'VPN core processes excluded from app monitoring');
+check($Norm->invoke(null, 'screen', 'اتصال') === '', 'in-app screens are no longer recorded');
 
 $StoreAct = new ReflectionMethod(AppGateway::class, 'storeActivity');
 $Stored = $StoreAct->invoke(null, 'dev-1', 'uuid-1', 101, [
@@ -282,16 +314,18 @@ $Stored = $StoreAct->invoke(null, 'dev-1', 'uuid-1', 101, [
 ['category' => 'site', 'target' => 'github.com', 'hits' => 2, 'down' => 2048, 'up' => 512],
 ['category' => 'app', 'target' => 'C:\\Users\\Ali\\Telegram.exe', 'hits' => 1, 'down' => 1024, 'up' => 256],
 ['category' => 'app', 'target' => 'sing-box.exe', 'hits' => 5, 'down' => 999, 'up' => 999],
+['category' => 'app', 'target' => '10244', 'hits' => 3],
+['category' => 'site', 'target' => '142.250.185.78', 'hits' => 4],
 ['category' => 'site', 'target' => '127.0.0.1', 'hits' => 4],
 ],
 ]);
-check($Stored === 3 && count(Database::$Activities) === 3, 'storeActivity saves site, app, and screen while filtering core/localhost noise');
+check($Stored === 2 && count(Database::$Activities) === 2, 'storeActivity saves site and exact app names while filtering IPs, UIDs, screens and core noise');
 
 // Upsert increments hits/bytes rather than duplicating rows
 $StoreAct->invoke(null, 'dev-1', 'uuid-1', 101, [
 'activity' => [['category' => 'site', 'target' => 'github.com', 'hits' => 3, 'down' => 1024, 'up' => 256]],
 ]);
-check(count(Database::$Activities) === 3 && Database::$Activities[0]['Hits'] === 5 && Database::$Activities[0]['Bytes_Down'] === 3072, 'activity upsert aggregates repeated visits per device');
+check(count(Database::$Activities) === 2 && Database::$Activities[0]['Hits'] === 5 && Database::$Activities[0]['Bytes_Down'] === 3072, 'activity upsert aggregates repeated visits per device');
 
 // 4. Support sender resolution even when session/token is absent or guest
 Repository::$Users[101] = ['Telegram_ID' => 101, 'Full_Name' => 'سارا محمدی', 'Phone' => '09121112233', 'Client_ID' => 'uuid-1', 'Subscription' => 'یک ماهه'];
@@ -299,7 +333,7 @@ Database::$Devices = [
 ['ID' => 7, 'Device_ID' => 'dev-1', 'Device_Name' => 'Laptop <Win>', 'Platform' => 'Windows', 'App_Version' => '1.0.5', 'Phone' => '09121112233', 'Telegram_ID' => 101, 'User_UUID' => 'uuid-1', 'Is_Trusted' => 1, 'Last_Seen_At' => time(), 'Last_IP' => '203.0.113.5'],
 ['ID' => 8, 'Device_ID' => 'dev-android', 'Device_Name' => 'Galaxy A54', 'Platform' => 'Android', 'App_Version' => '1.0.2', 'Phone' => '09120009988', 'Telegram_ID' => 0, 'User_UUID' => 'uuid-2', 'Is_Trusted' => 1, 'Last_Seen_At' => time() - 60, 'Last_IP' => '198.51.100.8'],
 ];
-Database::$Activities[] = ['Device_ID' => 'dev-android', 'User_UUID' => 'uuid-2', 'Telegram_ID' => 0, 'Category' => 'app', 'Target' => 'com.android.chrome', 'Hits' => 4, 'Bytes_Down' => 4096, 'Bytes_Up' => 512, 'Last_Seen_At' => time()];
+Database::$Activities[] = ['Device_ID' => 'dev-android', 'User_UUID' => 'uuid-2', 'Telegram_ID' => 0, 'Category' => 'app', 'Target' => 'Google Chrome', 'Hits' => 4, 'Bytes_Down' => 4096, 'Bytes_Up' => 512, 'Last_Seen_At' => time()];
 
 $ResolveSender = new ReflectionMethod(AppGateway::class, 'resolveSupportSender');
 $Resolved = $ResolveSender->invoke(null, '', 'dev-1', '');
@@ -309,6 +343,7 @@ check($Resolved['telegram_id'] === 101 && ($Resolved['user']['Full_Name'] ?? '')
 $AdminCtx = new Context(true);
 AdminFlow::userMonitorList($AdminCtx, 0);
 check(str_contains(TelegramClient::$LastText, 'سارا محمدی') && str_contains(TelegramClient::$LastText, 'Galaxy A54'), 'userMonitorList shows both Telegram-linked and app-only users');
+check(!str_contains(TelegramClient::$LastText, 'بخش') && str_contains(TelegramClient::$LastText, 'هر ۲۴ ساعت'), 'userMonitorList omits screen count and documents 24h auto-reset');
 $AllMonitorBtns = array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? []));
 $MonitorCallbacks = array_column($AllMonitorBtns, 'callback_data');
 check(in_array('admin_monitor_view:t:101:0:all:0', $MonitorCallbacks, true) && in_array('admin_monitor_view:d:8:0:all:0', $MonitorCallbacks, true), 'user monitor exposes clickable user detail callbacks');
@@ -316,14 +351,15 @@ check(in_array('admin_monitor_view:t:101:0:all:0', $MonitorCallbacks, true) && i
 $Route = new ReflectionMethod(Dispatcher::class, 'routeCallbackInner');
 $AdminCtx->CallbackData = 'admin_monitor_view:t:101:0:all:0';
 $Route->invoke(null, $AdminCtx);
-check(str_contains(TelegramClient::$LastText, 'github.com') && str_contains(TelegramClient::$LastText, 'Telegram.exe') && str_contains(TelegramClient::$LastText, 'اتصال'), 'userMonitorView displays opened sites, software, and in-app screens');
+check(str_contains(TelegramClient::$LastText, 'github.com') && str_contains(TelegramClient::$LastText, 'Telegram') && !str_contains(TelegramClient::$LastText, 'اتصال'), 'userMonitorView displays opened sites and exact software name without in-app screens');
 check(str_contains(TelegramClient::$LastText, 'Laptop &lt;Win&gt;'), 'userMonitorView HTML-escapes client device names');
 
 $AdminCtx->CallbackData = 'admin_monitor_view:d:8:0:app:0';
 $Route->invoke(null, $AdminCtx);
-check(str_contains(TelegramClient::$LastText, 'com.android.chrome') && !str_contains(TelegramClient::$LastText, 'github.com'), 'category filter isolates apps from sites accurately');
+check(str_contains(TelegramClient::$LastText, 'Google Chrome') && !str_contains(TelegramClient::$LastText, 'github.com'), 'category filter isolates Android apps from sites accurately');
 $ViewCallbacks = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
 check(in_array('admin_monitor_clr:d:8:0:app', $ViewCallbacks, true), 'user monitor view exposes clear-user-history button');
+check(!in_array('admin_monitor_view:d:8:0:screen:0', $ViewCallbacks, true), 'screen filter button is removed from user monitor view');
 check(in_array('admin_monitor_clrall:0', $MonitorCallbacks, true), 'user monitor list exposes clear-all-history button');
 
 // 6. Clearing single-user and all-user monitoring history via confirmation flow
@@ -331,18 +367,18 @@ $AdminCtx->CallbackData = 'admin_monitor_clr:t:101:0:all';
 $Route->invoke(null, $AdminCtx);
 $ConfirmUserCallbacks = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
 check(in_array('admin_monitor_clrok:t:101:0:all', $ConfirmUserCallbacks, true), 'user clear prompt requires confirmation before deleting');
-check(count(Database::$Activities) === 4, 'user clear prompt does not delete rows before confirmation');
+check(count(Database::$Activities) === 3, 'user clear prompt does not delete rows before confirmation');
 
 $GuestCtx = new Context(false);
 $GuestCtx->CallbackData = 'admin_monitor_clrok:t:101:0:all';
 $Route->invoke(null, $GuestCtx);
 $GuestCtx->CallbackData = 'admin_monitor_clrall_ok:0';
 $Route->invoke(null, $GuestCtx);
-check(count(Database::$Activities) === 4, 'non-admin cannot clear monitoring history');
+check(count(Database::$Activities) === 3, 'non-admin cannot clear monitoring history');
 
 $AdminCtx->CallbackData = 'admin_monitor_clrok:t:101:0:all';
 $Route->invoke(null, $AdminCtx);
-check(count(Database::$Activities) === 1 && Database::$Activities[0]['Target'] === 'com.android.chrome', 'confirming per-user clear deletes only that user activities');
+check(count(Database::$Activities) === 1 && Database::$Activities[0]['Target'] === 'Google Chrome', 'confirming per-user clear deletes only that user activities');
 check(count(Database::$Devices) === 2, 'per-user monitor clear preserves trusted devices');
 check(str_contains(TelegramClient::$LastText, 'تاریخچه رصد'), 'per-user monitor clear returns to user view with notice');
 
@@ -362,7 +398,16 @@ $AdminCtx->CallbackData = 'admin_monitor_clrall:0';
 $Route->invoke(null, $AdminCtx);
 check(str_contains(TelegramClient::$LastAlert, 'وجود ندارد'), 'clear-all warns when history is already empty');
 
-// 7. No forbidden English VPN wording in monitored admin/app notices
+// 7. 24-hour automatic activity reset check
+Database::$Activities[] = ['Device_ID' => 'dev-1', 'User_UUID' => 'uuid-1', 'Telegram_ID' => 101, 'Category' => 'site', 'Target' => 'example.com', 'Hits' => 2, 'Bytes_Down' => 500, 'Bytes_Up' => 100, 'Last_Seen_At' => time()];
+Repository::setSetting('Last_User_Activity_Reset_At', (string)(time() - 86405));
+Scheduler::purgeUserActivityIfDue();
+check(Database::$Activities === [] && count(Database::$Devices) === 2, '24h scheduler purge clears App_User_Activity while preserving App_Devices');
+check((int)Repository::getSetting('Last_User_Activity_Reset_At', '0') >= time() - 5, '24h scheduler purge updates Last_User_Activity_Reset_At');
+$SchedulerCode = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');
+check(str_contains($SchedulerCode, 'self::purgeUserActivityIfDue();'), 'Scheduler::run invokes purgeUserActivityIfDue');
+
+// 8. No forbidden English VPN wording in monitored admin/app notices
 $AdminSrc = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
 $AppLinkSrc = (string)file_get_contents(dirname(__DIR__) . '/Bot/App-Link.php');
 check(!str_contains($AdminSrc, 'اتصال VPN') && !str_contains($AppLinkSrc, 'خارج از VPN') && !str_contains($GatewayCode, 'اتصال VPN'), 'Persian VPN notices avoid raw English VPN wording');

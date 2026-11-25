@@ -12,7 +12,6 @@ import '../../state/security_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/update_controller.dart';
-import '../../vpn/clash_api.dart';
 import '../../vpn/vpn_controller.dart';
 import '../pages/about_page.dart';
 import '../pages/account_page.dart';
@@ -65,7 +64,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    ActivityMonitorBuffer.instance.recordScreen(_destinations[_index].label);
     _appVisible = AppShell.isLifecycleVisible(
       WidgetsBinding.instance.lifecycleState,
     );
@@ -150,14 +148,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   DateTime? _lastAutoSyncAt;
 
-  void _triggerAutoSync() {
+  void _triggerAutoSync({bool force = false, bool accountOnly = false}) {
     if (!mounted) {
       return;
     }
     final DateTime now = DateTime.now();
     final DateTime? last = _lastAutoSyncAt;
-    if (last != null &&
-        now.difference(last) < const Duration(seconds: 45)) {
+    if (!force &&
+        last != null &&
+        now.difference(last) < const Duration(seconds: 8)) {
       return;
     }
     _lastAutoSyncAt = now;
@@ -165,14 +164,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final SubscriptionController subs = context.read<SubscriptionController>();
     final VpnController vpn = context.read<VpnController>();
     if (auth.signedIn) {
-      unawaited(auth.autoSync());
-      if (!subs.personalLoading && !subs.loadingAll) {
-        unawaited(subs.syncPersonal());
+      if (accountOnly) {
+        unawaited(auth.refreshAccount(silent: true));
+      } else {
+        unawaited(auth.autoSync());
+        if (!subs.personalLoading && !subs.loadingAll) {
+          unawaited(subs.syncPersonal());
+        }
       }
     }
     // فقط زمانی که تونل فعال نیست آی پی واقعی سیستم را بازخوانی کن تا آی پی
     // خروجی سرور VPN جایگزین آی پی واقعی پیش از اتصال نشود.
-    if (!vpn.status.active && !vpn.status.busy) {
+    if (!accountOnly && !vpn.status.active && !vpn.status.busy) {
       unawaited(vpn.refreshIp());
     }
   }
@@ -185,7 +188,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       setState(() => _appVisible = visible);
     }
     if (state == AppLifecycleState.resumed) {
-      _triggerAutoSync();
+      _triggerAutoSync(force: _index == 2);
       final AuthController? auth = context.maybeRead<AuthController>();
       if (auth != null) {
         unawaited(auth.syncAnnouncement());
@@ -207,8 +210,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       }
       _index = value;
     });
-    if (value >= 0 && value < _destinations.length) {
-      ActivityMonitorBuffer.instance.recordScreen(_destinations[value].label);
+    if (value == 2) {
+      _triggerAutoSync(force: true, accountOnly: true);
     }
   }
 

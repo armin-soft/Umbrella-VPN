@@ -19,12 +19,16 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.hiddify.core.api.v2.hcommon.ResponseCode
 import com.hiddify.core.api.v2.hcore.CoreClient
+import com.hiddify.core.api.v2.hcore.CoreStates
 import com.hiddify.core.api.v2.hcore.FetchUrlError
 import com.hiddify.core.api.v2.hcore.FetchUrlRequest
+import com.hiddify.core.api.v2.hcore.MessageType
 import com.hiddify.core.api.v2.hcore.ParseRequest
+import com.hiddify.core.api.v2.hcore.StartRequest
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import ir.umbrella.vpn.bg.BoxService
+import ir.umbrella.vpn.bg.DefaultNetworkMonitor
 import ir.umbrella.vpn.bg.ServiceNotification
 import ir.umbrella.vpn.constant.PerAppProxyMode
 import ir.umbrella.vpn.constant.ServiceMode
@@ -160,6 +164,22 @@ class MethodHandler(
                     title = call.argument<String>("title") ?: "",
                     body = call.argument<String>("body") ?: "",
                 )
+            }
+            "resolveAppLabels" -> result.answerNow(call.method) {
+                handleResolveAppLabels(
+                    call.argument<List<String>>("packages").orEmpty(),
+                )
+            }
+            "networkState" -> result.answerNow(call.method) {
+                handleNetworkState()
+            }
+            "hotReloadConfig" -> scope.launch {
+                result.answer(call.method) {
+                    handleHotReloadConfig(
+                        configPath = call.argument<String>("configPath") ?: "",
+                        profileName = call.argument<String>("profileName") ?: "Umbrella VPN",
+                    )
+                }
             }
             else -> result.notImplemented()
         }
@@ -632,6 +652,11 @@ class MethodHandler(
         if (scheme != "http" && scheme != "https") {
             return false
         }
+        if (title.isNotBlank()) {
+            runCatching {
+                ServiceNotification.showBlockedUrlBalloon(activity, trimmed, title, body)
+            }
+        }
         val launched = runCatching {
             val viewIntent = Intent(Intent.ACTION_VIEW, parsed).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -639,11 +664,88 @@ class MethodHandler(
             activity.startActivity(viewIntent)
             true
         }.getOrDefault(false)
-        if (title.isNotBlank()) {
-            runCatching {
-                ServiceNotification.showBlockedUrlBalloon(activity, trimmed, title, body)
+        return launched || title.isNotBlank()
+    }
+
+    private fun handleResolveAppLabels(packages: List<String>): Map<String, String> {
+        if (packages.isEmpty()) return emptyMap()
+        val pm = activity.packageManager
+        val selfPkg = activity.packageName
+        val out = linkedMapOf<String, String>()
+        for (raw in packages) {
+            val pkg = raw.trim()
+            if (pkg.isEmpty() || pkg == selfPkg || pkg.all { it.isDigit() }) continue
+            val label = runCatching {
+                val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0L))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getApplicationInfo(pkg, 0)
+                }
+                pm.getApplicationLabel(info)?.toString()?.trim().orEmpty()
+            }.getOrNull()
+            if (!label.isNullOrEmpty() && !label.equals(pkg, ignoreCase = false)) {
+                out[pkg] = label
             }
         }
-        return launched
+        return out
+    }
+
+    private fun handleNetworkState(): Map<String, Any> {
+        val underlying = DefaultNetworkMonitor.defaultNetwork
+        if (underlying != null) {
+            val (online, fp) = DefaultNetworkMonitor.describeNetwork(underlying)
+            if (online) {
+                return mapOf("online" to true, "fingerprint" to fp)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val cm = UmbrellaApplication.connectivity
+            for (net in cm.allNetworks) {
+                val (online, fp) = DefaultNetworkMonitor.describeNetwork(net)
+                if (online) {
+                    return mapOf("online" to true, "fingerprint" to fp)
+                }
+            }
+        }
+        return mapOf("online" to false, "fingerprint" to "offline")
+    }
+
+    private suspend fun handleHotReloadConfig(
+        configPath: String,
+        profileName: String,
+    ): Map<String, Any> {
+        if (configPath.isBlank() || !File(configPath).exists()) {
+            return mapOf("ok" to false, "message" to "missing configPath")
+        }
+        var statusNow = BoxService.status.value ?: Status.Stopped
+        if (statusNow == Status.Starting) {
+            for (i in 0 until 100) {
+                delay(50)
+                statusNow = BoxService.status.value ?: Status.Stopped
+                if (statusNow != Status.Starting) break
+            }
+        }
+        if (statusNow != Status.Started) {
+            return mapOf("ok" to false, "message" to "service not started")
+        }
+        return runCatching {
+            val client = GrpcClientProvider.coreGrpcClient(
+                port = Settings.grpcServicePort,
+                callTimeoutSeconds = 20L,
+            ).create(CoreClient::class)
+            val resp = client.HotReload().execute(
+                StartRequest(
+                    config_path = configPath,
+                    config_name = profileName,
+                    enable_raw_config = true,
+                ),
+            )
+            val ok = resp.core_state != CoreStates.STOPPED &&
+                (resp.message_type == MessageType.EMPTY || resp.message.isBlank())
+            mapOf("ok" to ok, "message" to resp.message)
+        }.getOrElse { err ->
+            mapOf("ok" to false, "message" to (err.message ?: err.toString()))
+        }
     }
 }

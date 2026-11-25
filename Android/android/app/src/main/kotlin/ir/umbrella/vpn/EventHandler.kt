@@ -69,6 +69,16 @@ class EventHandler : EventChannel.StreamHandler, ServiceConnection.Callback {
         )
     }
 
+    fun onNetworkStateChanged(online: Boolean, fingerprint: String) {
+        emit(
+            mapOf(
+                "type" to "network",
+                "online" to online,
+                "fingerprint" to fingerprint,
+            ),
+        )
+    }
+
     private fun emit(payload: Map<String, Any>) {
         mainHandler.post {
             sink?.success(payload)

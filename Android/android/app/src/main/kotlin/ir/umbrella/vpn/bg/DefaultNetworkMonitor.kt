@@ -1,6 +1,7 @@
 package ir.umbrella.vpn.bg
 
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Build
 import com.hiddify.core.libbox.InterfaceUpdateListener
 import ir.umbrella.vpn.UmbrellaApplication
@@ -11,21 +12,69 @@ object DefaultNetworkMonitor {
     var defaultNetwork: Network? = null
 
     @Volatile
+    var onNetworkStateChanged: ((Boolean, String) -> Unit)? = null
+
+    @Volatile
     private var listener: InterfaceUpdateListener? = null
 
+    @Volatile
+    private var lastReportedFingerprint: String = ""
+
+    fun describeNetwork(network: Network?): Pair<Boolean, String> {
+        if (network == null) {
+            return false to "offline"
+        }
+        val caps = runCatching {
+            UmbrellaApplication.connectivity.getNetworkCapabilities(network)
+        }.getOrNull()
+        if (caps == null ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
+            !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        ) {
+            return false to "offline"
+        }
+        val lp = runCatching {
+            UmbrellaApplication.connectivity.getLinkProperties(network)
+        }.getOrNull()
+        val ifName = lp?.interfaceName?.trim().orEmpty()
+        val transport = when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cell"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "eth"
+            else -> "other"
+        }
+        val addrs = lp?.linkAddresses
+            ?.mapNotNull { it.address?.hostAddress }
+            ?.sorted()
+            ?.joinToString(",")
+            .orEmpty()
+        return true to "$transport|$ifName|$addrs"
+    }
+
+    private fun notifyAppNetwork(network: Network?) {
+        val (online, fp) = describeNetwork(network)
+        if (fp == lastReportedFingerprint) return
+        lastReportedFingerprint = fp
+        onNetworkStateChanged?.invoke(online, fp)
+    }
+
     suspend fun start() {
+        lastReportedFingerprint = ""
         DefaultNetworkListener.start(this) { network ->
             defaultNetwork = network
             checkDefaultInterfaceUpdate(network)
+            notifyAppNetwork(network)
         }
         defaultNetwork = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             UmbrellaApplication.connectivity.activeNetwork
         } else {
             DefaultNetworkListener.get()
         }
+        notifyAppNetwork(defaultNetwork)
     }
 
     suspend fun stop() {
+        lastReportedFingerprint = ""
         DefaultNetworkListener.stop(this)
     }
 

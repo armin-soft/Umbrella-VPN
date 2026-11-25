@@ -15,8 +15,10 @@ import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/state/auth_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/ui/pages/logs_page.dart';
+import 'package:umbrella_vpn/vpn/balancer.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
+import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _TestNative implements NativeBridge {
   @override
@@ -59,7 +61,7 @@ void main() {
     ActivityMonitorBuffer.instance.clear();
   });
 
-  test('ClashApi.parseConnections و ActivityMonitorBuffer سایت و برنامه و صفحه را تجمیع می کنند', () {
+  test('ClashApi.parseConnections و ActivityMonitorBuffer سایت و نام خوانای برنامه را تجمیع می کنند', () {
     final List<CoreActivitySample> samples = ClashApi.parseConnections(<String, dynamic>{
       'connections': <Map<String, dynamic>>[
         <String, dynamic>{
@@ -99,8 +101,10 @@ void main() {
     expect(samples[1].process, 'Telegram.exe');
 
     final ActivityMonitorBuffer buf = ActivityMonitorBuffer();
-    buf.recordScreen('اتصال');
-    buf.recordConnections(samples);
+    buf.recordConnections(
+      samples,
+      resolvedLabels: const <String, String>{'Telegram.exe': 'Telegram Desktop'},
+    );
     // Repeated poll of same connection only adds byte delta without inflating hits.
     buf.recordConnections(<CoreActivitySample>[
       const CoreActivitySample(
@@ -120,12 +124,89 @@ void main() {
     expect(yt['down'], 3048);
     expect(yt['up'], 712);
     expect(
-      payload.any((Map<String, dynamic> e) => e['category'] == 'screen' && e['target'] == 'اتصال'),
+      payload.any((Map<String, dynamic> e) => e['category'] == 'app' && e['target'] == 'Google Chrome'),
       isTrue,
+    );
+    expect(
+      payload.any((Map<String, dynamic> e) => e['category'] == 'app' && e['target'] == 'Telegram Desktop'),
+      isTrue,
+    );
+    expect(
+      payload.any((Map<String, dynamic> e) => e['category'] == 'screen'),
+      isFalse,
     );
 
     buf.confirmSent(payload);
     expect(buf.snapshotPayload(), isEmpty);
+  });
+
+  test('VpnController.buildAutoCandidates آبشار خودکار و پشتیبان اضطراری را دقیق می سازد', () {
+    VpnNode makeNode(String id, NodeProtocol proto, String sourceId, {bool favorite = false}) {
+      return VpnNode(
+        id: id,
+        name: id,
+        protocol: proto,
+        host: 'example.com',
+        port: 443,
+        sourceId: sourceId,
+        favorite: favorite,
+        params: const <String, dynamic>{},
+      );
+    }
+
+    final VpnNode vless = makeNode('v1', NodeProtocol.vless, 'user-sub');
+    final VpnNode wg = makeNode('wg1', NodeProtocol.wireguard, 'user-wg');
+    final VpnNode awg = makeNode('awg1', NodeProtocol.amnezia, 'user-awg', favorite: true);
+    final VpnNode mieru = makeNode('m1', NodeProtocol.mieru, 'user-mieru');
+    final VpnNode em = makeNode('em1', NodeProtocol.vless, 'emergency-0');
+
+    final List<VpnNode> fullCascade = VpnController.buildAutoCandidates(
+      personalNodes: <VpnNode>[vless, wg, awg, mieru],
+      emergencyNodes: <VpnNode>[em],
+      balancer: NodeBalancer(),
+      mode: SelectionMode.auto,
+      deviceSeed: 'seed-1',
+      preferredNodeId: '',
+      stickyMinutes: 15,
+      allowFailover: true,
+      emergencyOnly: false,
+      accepts: (_) => true,
+    );
+    expect(
+      fullCascade.map((VpnNode n) => n.id).toList(),
+      <String>['v1', 'awg1', 'wg1', 'm1', 'em1'],
+    );
+
+    // When personal subscription is empty, auto falls back to emergency.
+    final List<VpnNode> fallbackOnly = VpnController.buildAutoCandidates(
+      personalNodes: const <VpnNode>[],
+      emergencyNodes: <VpnNode>[em],
+      balancer: NodeBalancer(),
+      mode: SelectionMode.auto,
+      deviceSeed: 'seed-1',
+      preferredNodeId: '',
+      stickyMinutes: 15,
+      allowFailover: true,
+      emergencyOnly: false,
+      accepts: (_) => true,
+    );
+    expect(fallbackOnly.map((VpnNode n) => n.id).toList(), <String>['em1']);
+
+    // Emergency-only session never leaks personal nodes.
+    final List<VpnNode> emOnly = VpnController.buildAutoCandidates(
+      personalNodes: <VpnNode>[vless, wg],
+      emergencyNodes: <VpnNode>[em],
+      balancer: NodeBalancer(),
+      mode: SelectionMode.auto,
+      deviceSeed: 'seed-1',
+      preferredNodeId: '',
+      stickyMinutes: 15,
+      allowFailover: true,
+      emergencyOnly: true,
+      accepts: (_) => true,
+    );
+    expect(emOnly.map((VpnNode n) => n.id).toList(), <String>['em1']);
+    expect(const AppSettings().autoFailover, isTrue);
   });
 
   test('RuntimeConfig.finalize زمانی که clash_api فعال است find_process را روشن می کند', () {
@@ -189,13 +270,12 @@ void main() {
       deviceName: 'Ali-PC',
       platform: 'Windows',
       appVersion: '1.0.5',
-      currentScreen: 'گزارش ها',
       activity: <Map<String, dynamic>>[
         <String, dynamic>{'category': 'site', 'target': 'github.com', 'hits': 2, 'down': 1024, 'up': 256},
       ],
     );
     expect(requests.last.$1, contains('auth/device'));
-    expect(requests.last.$2['current_screen'], 'گزارش ها');
+    expect(requests.last.$2.containsKey('current_screen'), isFalse);
     expect((requests.last.$2['activity'] as List<dynamic>).length, 1);
 
     final String msg = await gateway.sendSupportReport(

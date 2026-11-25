@@ -6,6 +6,7 @@
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <wininet.h>
+#include <winver.h>
 #include <ws2tcpip.h>
 #include <icmpapi.h>
 
@@ -24,6 +25,7 @@
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "version.lib")
 
 namespace umbrella {
 namespace {
@@ -1180,6 +1182,129 @@ bool SystemOps::AutostartEnabled(const std::string& app_name) {
   return ReadRegistryString(HKEY_CURRENT_USER, kRunKey, ToWide(app_name),
                             &value) &&
          !value.empty();
+}
+
+std::map<std::string, std::string> SystemOps::ResolveProcessLabels(
+    const std::vector<std::string>& names) {
+  std::map<std::string, std::string> result;
+  if (names.empty()) return result;
+
+  auto read_pe_label = [](const std::wstring& exe_path) -> std::string {
+    if (exe_path.empty()) return std::string();
+    const DWORD attrs = GetFileAttributesW(exe_path.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+      return std::string();
+    }
+    DWORD dummy = 0;
+    const DWORD size = GetFileVersionInfoSizeW(exe_path.c_str(), &dummy);
+    if (size == 0 || size > 4 * 1024 * 1024) return std::string();
+    std::vector<BYTE> data(size);
+    if (!GetFileVersionInfoW(exe_path.c_str(), 0, size, data.data())) {
+      return std::string();
+    }
+    struct LangCp {
+      WORD lang;
+      WORD cp;
+    };
+    LangCp* trans = nullptr;
+    UINT trans_len = 0;
+    std::vector<std::pair<WORD, WORD>> probes;
+    if (VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation",
+                       reinterpret_cast<LPVOID*>(&trans), &trans_len) &&
+        trans != nullptr && trans_len >= sizeof(LangCp)) {
+      probes.emplace_back(trans[0].lang, trans[0].cp);
+    }
+    probes.emplace_back(0x0409, 0x04B0);
+    probes.emplace_back(0x0409, 0x04E4);
+
+    auto query_field = [&](const wchar_t* field) -> std::string {
+      for (const auto& lc : probes) {
+        wchar_t q[128] = {0};
+        swprintf_s(q, L"\\StringFileInfo\\%04x%04x\\%s", lc.lang, lc.cp, field);
+        wchar_t* val = nullptr;
+        UINT val_len = 0;
+        if (VerQueryValueW(data.data(), q, reinterpret_cast<LPVOID*>(&val),
+                           &val_len) &&
+            val != nullptr && val_len > 0) {
+          std::string utf8 = ToUtf8(std::wstring(val));
+          while (!utf8.empty() &&
+                 (utf8.back() == ' ' || utf8.back() == '\t' ||
+                  utf8.back() == '\r' || utf8.back() == '\n')) {
+            utf8.pop_back();
+          }
+          size_t lead = 0;
+          while (lead < utf8.size() &&
+                 (utf8[lead] == ' ' || utf8[lead] == '\t')) {
+            ++lead;
+          }
+          utf8 = utf8.substr(lead);
+          if (!utf8.empty()) return utf8;
+        }
+      }
+      return std::string();
+    };
+
+    std::string desc = query_field(L"FileDescription");
+    std::string prod = query_field(L"ProductName");
+    const std::string desc_low = ToLowerAscii(desc);
+    if (!desc.empty() && desc_low != "application" &&
+        desc_low != "launcher" && desc_low != "setup" &&
+        desc_low.find(".exe") == std::string::npos) {
+      return desc;
+    }
+    const std::string prod_low = ToLowerAscii(prod);
+    if (!prod.empty() &&
+        !(prod_low.find("windows") != std::string::npos &&
+          prod_low.find("operating system") != std::string::npos) &&
+        prod_low.find(".exe") == std::string::npos) {
+      return prod;
+    }
+    return !desc.empty() ? desc : prod;
+  };
+
+  std::unordered_map<std::string, std::wstring> running_paths;
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snap != INVALID_HANDLE_VALUE) {
+    PROCESSENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snap, &entry)) {
+      do {
+        const std::string exe_key = ToLowerAscii(ToUtf8(entry.szExeFile));
+        if (exe_key.empty() || running_paths.count(exe_key) > 0) continue;
+        HANDLE proc =
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+        if (proc != nullptr) {
+          wchar_t buf[MAX_PATH * 4] = {0};
+          DWORD len = static_cast<DWORD>(sizeof(buf) / sizeof(buf[0]));
+          if (QueryFullProcessImageNameW(proc, 0, buf, &len) && len > 0) {
+            running_paths[exe_key] = std::wstring(buf, len);
+          }
+          CloseHandle(proc);
+        }
+      } while (Process32NextW(snap, &entry));
+    }
+    CloseHandle(snap);
+  }
+
+  for (const std::string& raw : names) {
+    if (raw.empty()) continue;
+    std::wstring path;
+    if (raw.find('\\') != std::string::npos || raw.find('/') != std::string::npos) {
+      path = ToWide(raw);
+    }
+    if (path.empty()) {
+      const std::string key = ToLowerAscii(ExtractFileName(raw));
+      auto it = running_paths.find(key);
+      if (it != running_paths.end()) {
+        path = it->second;
+      }
+    }
+    std::string label = read_pe_label(path);
+    if (!label.empty()) {
+      result[raw] = label;
+    }
+  }
+  return result;
 }
 
 int64_t SystemOps::ProcessCpuTimeMicros() {

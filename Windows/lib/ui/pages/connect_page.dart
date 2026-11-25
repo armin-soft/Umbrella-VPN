@@ -43,8 +43,9 @@ class _ConnectPageState extends State<ConnectPage> {
 
   bool _switchPending(VpnController vpn) {
     if (!vpn.status.active) return false;
+    if (vpn.autoSession) return _profile != 'user-sub';
     if (vpn.emergencySession) return _profile != 'emergency';
-    if (_profile == 'emergency') return true;
+    if (_profile == 'user-sub' || _profile == 'emergency') return true;
     final String? source = vpn.activeNode?.sourceId;
     return source != null && source.isNotEmpty && source != _profile;
   }
@@ -227,7 +228,18 @@ class _ConnectPageState extends State<ConnectPage> {
       if (!mounted) {
         return;
       }
-      if (vpn.nodes.isEmpty) {
+      if (vpn.nodes.isEmpty &&
+          _profile == 'user-sub' &&
+          subs.emergencyEnabled &&
+          subs.emergencyNodes.isEmpty &&
+          !subs.emergencyLoading) {
+        await subs.refreshEmergency();
+        if (!mounted) return;
+      }
+      if (vpn.nodes.isEmpty &&
+          !(_profile == 'user-sub' &&
+              subs.emergencyEnabled &&
+              subs.emergencyNodes.isNotEmpty)) {
         toasts.error(
           'اشتراک دریافت نشد',
           'بسته فعال حساب و اتصال اینترنت را بررسی کنید.',

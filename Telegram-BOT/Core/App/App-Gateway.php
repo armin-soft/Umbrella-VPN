@@ -859,7 +859,7 @@ $Payload['bot_linked'] = $LinkedTg > 0 && (int)($PanelAccount['telegram_id'] ?? 
 $Payload['filter'] = self::filterPayload($UUID);
 $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
 }
-if (isset($Body['activity']) || isset($Body['current_screen'])) {
+if (isset($Body['activity'])) {
 $Payload['activity_stored'] = self::storeActivity($DeviceId, $UUID, $LinkedTg, $Body);
 }
 self::ok($Payload);
@@ -1724,16 +1724,34 @@ $Stored = self::storeActivity($DeviceId, $UUID, $LinkedTg, $Body);
 self::ok(['stored' => $Stored]);
 }
 
+private static function resetActivityIfDue(): void {
+if (class_exists('Scheduler') && method_exists('Scheduler', 'purgeUserActivityIfDue')) {
+Scheduler::purgeUserActivityIfDue();
+return;
+}
+$Now = time();
+$Last = (int)Repository::getSetting('Last_User_Activity_Reset_At', 0);
+$Db = Database::getInstance();
+try {
+if ($Last <= 0) {
+$Db->execute('DELETE FROM `App_User_Activity` WHERE `Last_Seen_At` < ? OR `Category` = ?', [$Now - 86400, 'screen']);
+Repository::setSetting('Last_User_Activity_Reset_At', (string)$Now);
+return;
+}
+if (($Now - $Last) >= 86400) {
+$Db->execute('DELETE FROM `App_User_Activity`', []);
+Repository::setSetting('Last_User_Activity_Reset_At', (string)$Now);
+}
+} catch (Throwable) {}
+}
+
 private static function storeActivity(string $DeviceId, string $UUID, int $TelegramId, array $Body): int {
 $DeviceId = trim($DeviceId);
 if ($DeviceId === '') return 0;
 
-$Items = is_array($Body['activity'] ?? null) ? $Body['activity'] : [];
-$Screen = trim((string)($Body['current_screen'] ?? ''));
-if ($Screen !== '') {
-$Items[] = ['category' => 'screen', 'target' => $Screen, 'hits' => 1, 'down' => 0, 'up' => 0];
-}
+self::resetActivityIfDue();
 
+$Items = is_array($Body['activity'] ?? null) ? $Body['activity'] : [];
 if ($Items === []) return 0;
 
 $Now = time();
@@ -1743,7 +1761,7 @@ $Db = Database::getInstance();
 foreach (array_slice($Items, 0, 60) as $Raw) {
 if (!is_array($Raw)) continue;
 $Category = strtolower(trim((string)($Raw['category'] ?? '')));
-if (!in_array($Category, ['site', 'app', 'screen'], true)) continue;
+if (!in_array($Category, ['site', 'app'], true)) continue;
 
 $Target = self::normalizeActivityTarget($Category, (string)($Raw['target'] ?? ''));
 if ($Target === '') continue;
@@ -1793,38 +1811,168 @@ $Host = strtolower($Clean);
 if (str_contains($Host, '://')) {
 $Parsed = parse_url($Host, PHP_URL_HOST);
 $Host = is_string($Parsed) ? strtolower($Parsed) : $Host;
+} else {
+$SlashPos = strpos($Host, '/');
+if ($SlashPos !== false) $Host = substr($Host, 0, $SlashPos);
 }
+if (str_starts_with($Host, '[') && str_contains($Host, ']')) {
+$Host = substr($Host, 1, (int)strpos($Host, ']') - 1);
+} else {
 $Host = preg_replace('/:\d+$/', '', $Host) ?? $Host;
+}
 $Host = trim($Host, " \t\n\r\0\x0B.");
-if ($Host === '' || $Host === 'localhost' || str_ends_with($Host, '.local') || str_ends_with($Host, '.arpa')) {
+if (str_starts_with($Host, 'www.') && strlen($Host) > 5) {
+$Host = substr($Host, 4);
+}
+if ($Host === '' || $Host === 'localhost' || str_ends_with($Host, '.local') || str_ends_with($Host, '.arpa') || str_ends_with($Host, '.internal') || str_ends_with($Host, '.lan')) {
+return '';
+}
+if (in_array($Host, ['connectivitycheck.gstatic.com', 'captive.apple.com', 'msftconnecttest.com', 'msftncsi.com', 'detectportal.firefox.com', 'dns.google', 'one.one.one.one'], true)) {
 return '';
 }
 if (filter_var($Host, FILTER_VALIDATE_IP) !== false) {
-if (filter_var($Host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
 return '';
 }
-} elseif (!str_contains($Host, '.') || !preg_match('/^[a-z0-9][a-z0-9._-]{1,175}$/', $Host)) {
+if (preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $Host) !== 1) {
 return '';
 }
 return substr($Host, 0, 180);
 }
 
 if ($Category === 'app') {
-$Normalized = str_replace('\\', '/', $Clean);
-if (str_contains($Normalized, '/')) {
-$Normalized = basename($Normalized);
+return self::normalizeAppDisplayName($Clean);
 }
-$Lower = strtolower(trim($Normalized));
-foreach (['sing-box', 'hiddify', 'umbrella_vpn', 'umbrella-vpn', 'umbrella.exe', 'ir.umbrella.vpn', 'clash'] as $Ignored) {
+
+return '';
+}
+
+public static function normalizeAppDisplayName(string $Raw): string {
+$Normalized = trim(str_replace('\\', '/', $Raw));
+if ($Normalized === '') return '';
+if (str_contains($Normalized, '/')) {
+$Normalized = trim(basename($Normalized));
+}
+if ($Normalized === '' || ctype_digit($Normalized)) return '';
+$TrimmedIp = trim($Normalized, '[]');
+if (filter_var($TrimmedIp, FILTER_VALIDATE_IP) !== false) return '';
+
+$Lower = strtolower($Normalized);
+foreach (['sing-box', 'hiddify', 'umbrella_vpn', 'umbrella-vpn', 'umbrella.exe', 'umbrellacore', 'ir.umbrella.vpn', 'clash', 'mihomo', 'xray'] as $Ignored) {
 if ($Lower === $Ignored || str_starts_with($Lower, $Ignored . '.')) {
 return '';
 }
 }
-return function_exists('mb_substr') ? mb_substr(trim($Normalized), 0, 120, 'UTF-8') : substr(trim($Normalized), 0, 120);
+if (in_array($Lower, [
+'root', 'system', 'nobody', 'shell', 'radio', 'media', 'graphics', 'bluetooth', 'nfc', 'wifi',
+'svchost.exe', 'svchost', 'lsass.exe', 'services.exe', 'csrss.exe', 'smss.exe', 'wininit.exe',
+'spoolsv.exe', 'dwm.exe', 'fontdrvhost.exe', 'audiodg.exe', 'runtimebroker.exe', 'searchhost.exe',
+'taskhostw.exe', 'backgroundtaskhost.exe', 'conhost.exe', 'compattelrunner.exe', 'sihost.exe',
+'ctfmon.exe', 'wmiprvse.exe', 'trustedinstaller.exe', 'tiworker.exe', 'msiexec.exe', 'smartscreen.exe',
+'winlogon.exe', 'dashost.exe', 'dllhost.exe', 'werfault.exe', 'taskmgr.exe', 'com.android.systemui',
+], true)) {
+return '';
 }
 
-$Screen = trim(Helper::stripZwnj(Helper::repairMojibake($Clean)));
-return function_exists('mb_substr') ? mb_substr($Screen, 0, 80, 'UTF-8') : substr($Screen, 0, 80);
+static $Known = [
+'chrome.exe' => 'Google Chrome',
+'msedge.exe' => 'Microsoft Edge',
+'firefox.exe' => 'Mozilla Firefox',
+'brave.exe' => 'Brave',
+'opera.exe' => 'Opera',
+'vivaldi.exe' => 'Vivaldi',
+'telegram.exe' => 'Telegram',
+'ayugram.exe' => 'AyuGram',
+'kotatogram.exe' => 'Kotatogram',
+'discord.exe' => 'Discord',
+'whatsapp.exe' => 'WhatsApp',
+'whatsapp.root.exe' => 'WhatsApp',
+'code.exe' => 'Visual Studio Code',
+'cursor.exe' => 'Cursor',
+'spotify.exe' => 'Spotify',
+'idman.exe' => 'Internet Download Manager',
+'steam.exe' => 'Steam',
+'steamwebhelper.exe' => 'Steam',
+'epicgameslauncher.exe' => 'Epic Games',
+'winrar.exe' => 'WinRAR',
+'7zfm.exe' => '7-Zip',
+'vlc.exe' => 'VLC Media Player',
+'obs64.exe' => 'OBS Studio',
+'anydesk.exe' => 'AnyDesk',
+'rustdesk.exe' => 'RustDesk',
+'slack.exe' => 'Slack',
+'zoom.exe' => 'Zoom',
+'notion.exe' => 'Notion',
+'postman.exe' => 'Postman',
+'thunderbird.exe' => 'Mozilla Thunderbird',
+'qbittorrent.exe' => 'qBittorrent',
+'utorrent.exe' => 'uTorrent',
+'winscp.exe' => 'WinSCP',
+'putty.exe' => 'PuTTY',
+'filezilla.exe' => 'FileZilla',
+'photoshop.exe' => 'Adobe Photoshop',
+'illustrator.exe' => 'Adobe Illustrator',
+'afterfx.exe' => 'Adobe After Effects',
+'adobe premiere pro.exe' => 'Adobe Premiere Pro',
+'windowsterminal.exe' => 'Windows Terminal',
+'wt.exe' => 'Windows Terminal',
+'powershell.exe' => 'PowerShell',
+'pwsh.exe' => 'PowerShell',
+'explorer.exe' => 'Windows Explorer',
+'com.instagram.android' => 'Instagram',
+'com.instagram.lite' => 'Instagram Lite',
+'org.telegram.messenger' => 'Telegram',
+'org.telegram.messenger.web' => 'Telegram',
+'org.thunderdog.challegram' => 'Telegram X',
+'com.whatsapp' => 'WhatsApp',
+'com.whatsapp.w4b' => 'WhatsApp Business',
+'com.android.chrome' => 'Google Chrome',
+'org.mozilla.firefox' => 'Mozilla Firefox',
+'com.brave.browser' => 'Brave',
+'com.opera.browser' => 'Opera',
+'com.microsoft.emmx' => 'Microsoft Edge',
+'com.google.android.youtube' => 'YouTube',
+'com.google.android.apps.youtube.music' => 'YouTube Music',
+'com.spotify.music' => 'Spotify',
+'com.zhiliaoapp.musically' => 'TikTok',
+'com.ss.android.ugc.trill' => 'TikTok',
+'com.discord' => 'Discord',
+'com.linkedin.android' => 'LinkedIn',
+'com.twitter.android' => 'X',
+'com.reddit.frontpage' => 'Reddit',
+'com.pinterest' => 'Pinterest',
+'com.snapchat.android' => 'Snapchat',
+'com.google.android.gm' => 'Gmail',
+'com.openai.chatgpt' => 'ChatGPT',
+'com.android.vending' => 'Google Play',
+'ir.eitaa.messenger' => 'ایتا',
+'ir.nasim' => 'بله',
+'app.rbmain.a' => 'روبیکا',
+'com.rubika.android' => 'روبیکا',
+'ir.soroush.messenger' => 'سروش پلاس',
+'ir.resaneh1.iptv' => 'تلوبیون',
+'cab.snapp.passenger' => 'اسنپ',
+'ir.divar' => 'دیوار',
+'com.digikala' => 'دیجی کالا',
+];
+if (isset($Known[$Lower])) {
+return $Known[$Lower];
+}
+if (str_ends_with($Lower, '.exe') && strlen($Normalized) > 4) {
+$Base = trim(substr($Normalized, 0, -4));
+if ($Base === '' || ctype_digit($Base)) return '';
+$Spaced = str_replace(['_', '-'], ' ', $Base);
+$Titled = ucwords($Spaced);
+return function_exists('mb_substr') ? mb_substr($Titled, 0, 120, 'UTF-8') : substr($Titled, 0, 120);
+}
+if (preg_match('/^(?:com|org|net|ir|io|app|me)\.[a-z0-9_]+(?:\.[a-z0-9_]+)+$/', $Lower) === 1) {
+$Parts = array_values(array_filter(explode('.', $Lower), static fn(string $P): bool => !in_array($P, ['com', 'org', 'net', 'ir', 'io', 'app', 'me', 'android', 'mobile', 'messenger', 'client', 'apps', 'google'], true)));
+if ($Parts !== []) {
+$Label = ucwords(str_replace('_', ' ', implode(' ', array_slice($Parts, 0, 2))));
+return function_exists('mb_substr') ? mb_substr($Label, 0, 120, 'UTF-8') : substr($Label, 0, 120);
+}
+}
+$Cleaned = trim(preg_replace('/\s+/u', ' ', $Normalized) ?? $Normalized);
+return function_exists('mb_substr') ? mb_substr($Cleaned, 0, 120, 'UTF-8') : substr($Cleaned, 0, 120);
 }
 
 private static function supportReport(array $Body): void {

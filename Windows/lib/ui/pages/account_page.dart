@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../../state/auth_controller.dart';
 import '../../state/subscription_controller.dart';
 import '../../state/toast_controller.dart';
+import '../../vpn/vpn_controller.dart';
 import '../shell/app_shell.dart';
 import '../widgets/common.dart';
 
@@ -49,17 +50,20 @@ class AccountPage extends StatefulWidget {
   State<AccountPage> createState() => _AccountPageState();
 }
 
-class _AccountPageState extends State<AccountPage> {
+class _AccountPageState extends State<AccountPage> with WidgetsBindingObserver {
   bool _syncInFlight = false;
   bool _accountFresh = false;
   bool _wasTabActive = false;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
   Timer? _autoSyncTimer;
+  VpnController? _boundVpn;
+  VpnPhase _lastVpnPhase = VpnPhase.disconnected;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _clockTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(
@@ -70,7 +74,7 @@ class _AccountPageState extends State<AccountPage> {
       }
       setState(() => _now = DateTime.now());
     });
-    _autoSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+    _autoSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted ||
           !AppShell.isLifecycleVisible(
             WidgetsBinding.instance.lifecycleState,
@@ -85,6 +89,15 @@ class _AccountPageState extends State<AccountPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final VpnController? vpn = context.maybeRead<VpnController>();
+    if (!identical(_boundVpn, vpn)) {
+      _boundVpn?.removeListener(_onVpnPhaseChanged);
+      _boundVpn = vpn;
+      if (vpn != null) {
+        _lastVpnPhase = vpn.status.phase;
+        vpn.addListener(_onVpnPhaseChanged);
+      }
+    }
     final bool active = TickerMode.of(context);
     if (active && !_wasTabActive) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -97,7 +110,29 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      unawaited(_autoSync());
+    }
+  }
+
+  void _onVpnPhaseChanged() {
+    final VpnController? vpn = _boundVpn;
+    if (vpn == null || !mounted) return;
+    final VpnPhase next = vpn.status.phase;
+    if (next == _lastVpnPhase) return;
+    final VpnPhase prev = _lastVpnPhase;
+    _lastVpnPhase = next;
+    if (next == VpnPhase.connected ||
+        (prev == VpnPhase.connected && next == VpnPhase.disconnected)) {
+      unawaited(_autoSync());
+    }
+  }
+
+  @override
   void dispose() {
+    _boundVpn?.removeListener(_onVpnPhaseChanged);
+    WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     _autoSyncTimer?.cancel();
     super.dispose();
@@ -115,12 +150,6 @@ class _AccountPageState extends State<AccountPage> {
     _syncInFlight = true;
     try {
       final bool accountFresh = await auth.refreshAccount(silent: true);
-      await auth.refreshBotLinkStatus();
-      if (auth.botLinked == true) {
-        await auth.refreshWallet(silent: true);
-        await auth.loadSubscriptionPlans();
-      }
-      await subs.syncPersonal();
       if (!mounted) {
         return;
       }
@@ -128,6 +157,19 @@ class _AccountPageState extends State<AccountPage> {
         _accountFresh = accountFresh;
         _now = DateTime.now();
       });
+      await auth.refreshBotLinkStatus();
+      if (!mounted) {
+        return;
+      }
+      if (auth.botLinked == true) {
+        await Future.wait<void>(<Future<void>>[
+          auth.refreshWallet(silent: true).then<void>((_) {}),
+          auth.loadSubscriptionPlans(),
+        ]);
+      }
+      if (!subs.personalLoading && !subs.loadingAll) {
+        unawaited(subs.syncPersonal());
+      }
     } catch (_) {
       // به روز رسانی پس زمینه کاملاً خودکار و بی صداست.
     } finally {

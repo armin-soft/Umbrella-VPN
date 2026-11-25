@@ -122,6 +122,9 @@ self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیر�
 public static function userMonitorList(Context $Context, int $Page = 0, string $Notice = ''): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
+if (class_exists('Scheduler') && method_exists('Scheduler', 'purgeUserActivityIfDue')) {
+Scheduler::purgeUserActivityIfDue();
+}
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 
 $Db = Database::getInstance();
@@ -148,17 +151,17 @@ $ActivityStats = [];
 try {
 $StatRows = $Db->fetchAll(
 'SELECT `Device_ID`, `Category`, COUNT(*) AS `Cnt`, COALESCE(MAX(`Last_Seen_At`), 0) AS `Last_At` '
-. 'FROM `App_User_Activity` GROUP BY `Device_ID`, `Category`',
+. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\') GROUP BY `Device_ID`, `Category`',
 []
 );
 foreach ($StatRows as $Stat) {
 $DevId = (string)($Stat['Device_ID'] ?? '');
 if ($DevId === '') continue;
 if (!isset($ActivityStats[$DevId])) {
-$ActivityStats[$DevId] = ['site' => 0, 'app' => 0, 'screen' => 0, 'last' => 0];
+$ActivityStats[$DevId] = ['site' => 0, 'app' => 0, 'last' => 0];
 }
 $Cat = (string)($Stat['Category'] ?? '');
-if (isset($ActivityStats[$DevId][$Cat])) {
+if ($Cat === 'site' || $Cat === 'app') {
 $ActivityStats[$DevId][$Cat] += (int)($Stat['Cnt'] ?? 0);
 }
 $ActivityStats[$DevId]['last'] = max($ActivityStats[$DevId]['last'], (int)($Stat['Last_At'] ?? 0));
@@ -191,18 +194,21 @@ $Groups[$GroupKey] = [
 'trusted' => 0,
 'sites' => 0,
 'apps' => 0,
-'screens' => 0,
+'has_win' => false,
+'has_android' => false,
 'last_seen' => 0,
 ];
 }
 $Groups[$GroupKey]['devices']++;
 if ((int)($Dev['Is_Trusted'] ?? 0) === 1) $Groups[$GroupKey]['trusted']++;
+$PlatLower = strtolower((string)($Dev['Platform'] ?? ''));
+if (str_contains($PlatLower, 'win')) $Groups[$GroupKey]['has_win'] = true;
+if (str_contains($PlatLower, 'android')) $Groups[$GroupKey]['has_android'] = true;
 $DevId = (string)($Dev['Device_ID'] ?? '');
 $LastDev = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
-$Stat = $ActivityStats[$DevId] ?? ['site' => 0, 'app' => 0, 'screen' => 0, 'last' => 0];
+$Stat = $ActivityStats[$DevId] ?? ['site' => 0, 'app' => 0, 'last' => 0];
 $Groups[$GroupKey]['sites'] += (int)$Stat['site'];
 $Groups[$GroupKey]['apps'] += (int)$Stat['app'];
-$Groups[$GroupKey]['screens'] += (int)$Stat['screen'];
 $Groups[$GroupKey]['last_seen'] = max($Groups[$GroupKey]['last_seen'], $LastDev, (int)$Stat['last']);
 }
 
@@ -220,7 +226,8 @@ $Text = Helper::adminGreeting($Context, 'رصد کاربران')
 . Menu::section('👁', 'پایش لحظه ای کاربران در اپلیکیشن آمبرلا', [
 '👥تعداد کاربران ثبت شده: ' . Helper::toPersian((string)$Total) . ' کاربر',
 '📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$PageCount),
-'ℹ️روی نام هر کاربر کلیک کنید تا دستگاه ها، سایت ها و برنامه های باز شده او را ببینید.',
+'🔄بازنشانی خودکار تاریخچه رصد: هر ۲۴ ساعت',
+'ℹ️روی نام هر کاربر کلیک کنید تا دستگاه ها، سایت ها و نرم افزارها/اپلیکیشن های باز شده او را ببینید.',
 ]);
 
 $Buttons = [];
@@ -236,16 +243,20 @@ $NameLink = $TgId > 0 ? '<a href="tg://user?id=' . $TgId . '">' . $NameSafe . '<
 $LastText = $Group['last_seen'] > 0
 ? Helper::formatDateTimeText((string)$Group['last_seen'])
 : 'ثبت نشده';
+$AppUnit = ($Group['has_android'] && !$Group['has_win'])
+? 'اپلیکیشن'
+: (($Group['has_win'] && !$Group['has_android']) ? 'نرم افزار' : 'نرم افزار/اپ');
+$AppEmoji = ($Group['has_android'] && !$Group['has_win']) ? '📱' : '💻';
 
 $Text .= "\n{$Num}. 👤 " . $NameLink . "\n"
 . ($TgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$TgId) . "</code>\n" : '')
 . ($Group['phone'] !== '' ? '📞شماره: <code>' . self::listText(Helper::toPersian((string)$Group['phone'])) . "</code>\n" : '')
 . '📱دستگاه ها: ' . Helper::toPersian((string)$Group['trusted']) . ' مجاز از ' . Helper::toPersian((string)$Group['devices']) . "\n"
-. '📊رصد ثبت شده: 🌐 ' . Helper::toPersian((string)$Group['sites']) . ' سایت | 💻 ' . Helper::toPersian((string)$Group['apps']) . ' برنامه | 📱 ' . Helper::toPersian((string)$Group['screens']) . " بخش\n"
+. '📊رصد ثبت شده: 🌐 ' . Helper::toPersian((string)$Group['sites']) . ' سایت | ' . $AppEmoji . ' ' . Helper::toPersian((string)$Group['apps']) . ' ' . $AppUnit . "\n"
 . '🕓آخرین فعالیت: ' . self::listText($LastText) . "\n➖➖➖➖➖➖➖➖➖\n";
 
 $BtnTitle = $Num . '. 👁 ' . mb_substr((string)$Group['name'], 0, 26)
-. ' (' . Helper::toPersian((string)$Group['sites']) . '🌐 ' . Helper::toPersian((string)$Group['apps']) . '💻)';
+. ' (' . Helper::toPersian((string)$Group['sites']) . '🌐 ' . Helper::toPersian((string)$Group['apps']) . $AppEmoji . ')';
 $Buttons[] = [Menu::button($BtnTitle, 'admin_monitor_view:' . $Group['selector'] . ':' . $Page . ':all:0')];
 }
 
@@ -351,12 +362,44 @@ return [
 ];
 }
 
-/** جزئیات رصد یک کاربر: دستگاه ها + سایت ها + نرم افزارها + صفحات برنامه. */
+private static function cleanMonitorActivityRow(array $Row): ?array {
+$Cat = strtolower(trim((string)($Row['Category'] ?? '')));
+if ($Cat !== 'site' && $Cat !== 'app') return null;
+$RawTarget = trim((string)($Row['Target'] ?? ''));
+if ($RawTarget === '') return null;
+if ($Cat === 'site') {
+$Host = strtolower($RawTarget);
+if (str_contains($Host, '://')) {
+$Parsed = parse_url($Host, PHP_URL_HOST);
+$Host = is_string($Parsed) ? strtolower($Parsed) : $Host;
+}
+$Host = trim(preg_replace('/:\d+$/', '', $Host) ?? $Host, " \t\n\r\0\x0B.");
+if (str_starts_with($Host, 'www.') && strlen($Host) > 5) {
+$Host = substr($Host, 4);
+}
+if ($Host === '' || $Host === 'localhost' || str_ends_with($Host, '.local') || str_ends_with($Host, '.arpa') || str_ends_with($Host, '.internal') || str_ends_with($Host, '.lan') || filter_var($Host, FILTER_VALIDATE_IP) !== false || !str_contains($Host, '.')) {
+return null;
+}
+$Row['Target'] = $Host;
+return $Row;
+}
+$Display = class_exists('AppGateway') && method_exists('AppGateway', 'normalizeAppDisplayName')
+? AppGateway::normalizeAppDisplayName($RawTarget)
+: $RawTarget;
+if ($Display === '') return null;
+$Row['Target'] = $Display;
+return $Row;
+}
+
+/** جزئیات رصد یک کاربر: دستگاه ها + سایت ها + نرم افزارها و اپلیکیشن ها. */
 public static function userMonitorView(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all', int $InnerPage = 0, string $Notice = ''): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
+if (class_exists('Scheduler') && method_exists('Scheduler', 'purgeUserActivityIfDue')) {
+Scheduler::purgeUserActivityIfDue();
+}
 
-$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$Category = in_array($Category, ['all', 'site', 'app'], true) ? $Category : 'all';
 $ListPage = max(0, $ListPage);
 $InnerPage = max(0, $InnerPage);
 $Db = Database::getInstance();
@@ -378,18 +421,26 @@ self::userMonitorList($Context, $ListPage);
 return;
 }
 
-$AllActivities = [];
+$RawActivities = [];
 if ($ActConds !== []) {
 try {
-$AllActivities = $Db->fetchAll(
+$RawActivities = $Db->fetchAll(
 'SELECT `Device_ID`, `Category`, `Target`, `Hits`, `Bytes_Down`, `Bytes_Up`, `Last_Seen_At` '
-. 'FROM `App_User_Activity` WHERE (' . implode(' OR ', $ActConds) . ') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
+. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\') AND (' . implode(' OR ', $ActConds) . ') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
 $ActParams
 );
 } catch (Throwable) {}
 }
 
-$Counts = ['site' => 0, 'app' => 0, 'screen' => 0];
+$AllActivities = [];
+foreach ($RawActivities as $RawAct) {
+$Cleaned = self::cleanMonitorActivityRow($RawAct);
+if ($Cleaned !== null) {
+$AllActivities[] = $Cleaned;
+}
+}
+
+$Counts = ['site' => 0, 'app' => 0];
 foreach ($AllActivities as $Act) {
 $Cat = (string)($Act['Category'] ?? '');
 if (isset($Counts[$Cat])) $Counts[$Cat]++;
@@ -406,9 +457,24 @@ $InnerPage = max(0, min($InnerPage, $InnerPages - 1));
 $Visible = array_slice($Filtered, $InnerPage * $PerPage, $PerPage);
 
 $DeviceMap = [];
+$DevicePlatformMap = [];
+$HasWin = false;
+$HasAndroid = false;
 foreach ($DeviceRows as $D) {
-$DeviceMap[(string)$D['Device_ID']] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
+$Did = (string)$D['Device_ID'];
+$DeviceMap[$Did] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
+$PlatLow = strtolower((string)($D['Platform'] ?? ''));
+if (str_contains($PlatLow, 'win')) { $HasWin = true; $DevicePlatformMap[$Did] = 'win'; }
+elseif (str_contains($PlatLow, 'android')) { $HasAndroid = true; $DevicePlatformMap[$Did] = 'android'; }
+else { $DevicePlatformMap[$Did] = ''; }
 }
+$AppSectionTitle = ($HasAndroid && !$HasWin)
+? 'اپلیکیشن ها'
+: (($HasWin && !$HasAndroid) ? 'نرم افزارها' : 'نرم افزارها و اپلیکیشن ها');
+$AppShortLabel = ($HasAndroid && !$HasWin)
+? 'اپلیکیشن ها'
+: (($HasWin && !$HasAndroid) ? 'نرم افزارها' : 'نرم افزار/اپ');
+$AppSectionEmoji = ($HasAndroid && !$HasWin) ? '📱' : '💻';
 
 $TitleLink = $OwnerTgId > 0
 ? '<a href="tg://user?id=' . $OwnerTgId . '">' . self::listText($DisplayName) . '</a>'
@@ -419,7 +485,8 @@ $Text = Helper::adminGreeting($Context, 'رصد فعالیت کاربر')
 . '👤کاربر: ' . $TitleLink . "\n"
 . ($OwnerTgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$OwnerTgId) . "</code>\n" : '')
 . ($DisplayPhone !== '' ? '📞شماره موبایل: <code>' . self::listText(Helper::toPersian($DisplayPhone)) . "</code>\n" : '')
-. '📊آمار کل رصد: 🌐 ' . Helper::toPersian((string)$Counts['site']) . ' سایت | 💻 ' . Helper::toPersian((string)$Counts['app']) . ' نرم افزار/اپ | 📱 ' . Helper::toPersian((string)$Counts['screen']) . " صفحه برنامه\n"
+. '📊آمار کل رصد: 🌐 ' . Helper::toPersian((string)$Counts['site']) . ' سایت | ' . $AppSectionEmoji . ' ' . Helper::toPersian((string)$Counts['app']) . ' ' . $AppSectionTitle . "\n"
+. "🔄بازنشانی خودکار: هر ۲۴ ساعت\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . '📱<b>دستگاه های کاربر (' . Helper::toPersian((string)count($DeviceRows)) . "):</b>\n";
 
@@ -437,9 +504,8 @@ $Text .= Helper::toPersian((string)($Idx + 1)) . '. ' . $TrustIcon . ' '
 
 $CatLabel = match ($Category) {
 'site' => '🌐 سایت های باز شده',
-'app' => '💻 نرم افزارها و اپلیکیشن ها',
-'screen' => '📱 بخش های باز شده در برنامه',
-default => '👁 همه فعالیت های رصد شده',
+'app' => $AppSectionEmoji . ' ' . $AppSectionTitle . ' باز شده',
+default => '👁 همه سایت ها و ' . $AppSectionTitle,
 };
 $Text .= "\n➖➖➖➖➖➖➖➖➖\n<b>{$CatLabel}</b> (صفحه " . Helper::toPersian((string)($InnerPage + 1)) . ' از ' . Helper::toPersian((string)$InnerPages) . "):\n\n";
 
@@ -449,11 +515,13 @@ $Text .= "📭هنوز موردی در این بخش ثبت نشده است.\n<i
 
 foreach ($Visible as $Item) {
 $Cat = (string)($Item['Category'] ?? '');
-$Icon = match ($Cat) { 'site' => '🌐', 'app' => '💻', default => '📱' };
+$DevIdItem = (string)($Item['Device_ID'] ?? '');
+$ItemPlat = $DevicePlatformMap[$DevIdItem] ?? '';
+$Icon = $Cat === 'site' ? '🌐' : ($ItemPlat === 'android' ? '📱' : '💻');
 $TargetLabel = self::listText((string)($Item['Target'] ?? ''));
 $Hits = (int)($Item['Hits'] ?? 1);
 $Bytes = (int)($Item['Bytes_Down'] ?? 0) + (int)($Item['Bytes_Up'] ?? 0);
-$DevName = $DeviceMap[(string)($Item['Device_ID'] ?? '')] ?? '';
+$DevName = $DeviceMap[$DevIdItem] ?? '';
 $WhenTs = (int)($Item['Last_Seen_At'] ?? 0);
 $WhenText = $WhenTs > 0 ? Helper::formatDateTimeText((string)$WhenTs) : '';
 
@@ -474,10 +542,7 @@ $FilterButtons = [
 [
 Menu::button(($Category === 'all' ? '✅' : '') . '👁همه (' . Helper::toPersian((string)array_sum($Counts)) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':all:0'),
 Menu::button(($Category === 'site' ? '✅' : '') . '🌐سایت ها (' . Helper::toPersian((string)$Counts['site']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':site:0'),
-],
-[
-Menu::button(($Category === 'app' ? '✅' : '') . '💻نرم افزار/اپ (' . Helper::toPersian((string)$Counts['app']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':app:0'),
-Menu::button(($Category === 'screen' ? '✅' : '') . '📱صفحات (' . Helper::toPersian((string)$Counts['screen']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':screen:0'),
+Menu::button(($Category === 'app' ? '✅' : '') . $AppSectionEmoji . $AppShortLabel . ' (' . Helper::toPersian((string)$Counts['app']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':app:0'),
 ],
 ];
 
@@ -502,7 +567,7 @@ $ListPage = max(0, $ListPage);
 $Db = Database::getInstance();
 $Count = 0;
 try {
-$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity`', [], 0);
+$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\')', [], 0);
 } catch (Throwable) {}
 
 if ($Count <= 0) {
@@ -516,7 +581,7 @@ return;
 $Text = Helper::adminGreeting($Context, 'پاک کردن تاریخچه رصد')
 . '⚠️آیا از پاک کردن کل تاریخچه رصد کاربران (' . Helper::toPersian((string)$Count) . " مورد ثبت شده) مطمئن هستید؟\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "ℹ️دستگاه های مجاز کاربران حفظ می شوند و فقط سوابق سایت ها، برنامه ها و بخش های رصد شده پاک می شوند."
+. "ℹ️دستگاه های مجاز کاربران حفظ می شوند و فقط سوابق سایت ها و نرم افزارها/اپلیکیشن های رصد شده پاک می شوند."
 . Helper::adminFooter();
 $Rows = [
 [Menu::button('✅تأیید پاک کردن کل تاریخچه', 'admin_monitor_clrall_ok:' . $ListPage)],
@@ -534,7 +599,7 @@ $ListPage = max(0, $ListPage);
 $Db = Database::getInstance();
 $Count = 0;
 try {
-$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity`', [], 0);
+$Count = (int)$Db->scalar('SELECT COUNT(*) FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\')', [], 0);
 $Db->execute('DELETE FROM `App_User_Activity`', []);
 } catch (Throwable $Error) {
 error_log('[Umbrella-Bot][MonitorClearAll] ' . $Error->getMessage());
@@ -551,7 +616,7 @@ self::userMonitorList($Context, 0, '🧹کل تاریخچه رصد کاربرا�
 public static function userMonitorClearUserAsk(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all'): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
-$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$Category = in_array($Category, ['all', 'site', 'app'], true) ? $Category : 'all';
 $ListPage = max(0, $ListPage);
 $Target = self::resolveMonitorTarget($TargetKey);
 $ActConds = (array)$Target['act_conds'];
@@ -568,7 +633,7 @@ $Db = Database::getInstance();
 $Count = 0;
 try {
 $Count = (int)$Db->scalar(
-'SELECT COUNT(*) FROM `App_User_Activity` WHERE (' . implode(' OR ', $ActConds) . ')',
+'SELECT COUNT(*) FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\') AND (' . implode(' OR ', $ActConds) . ')',
 $ActParams,
 0
 );
@@ -586,7 +651,7 @@ $DisplayName = self::listText((string)$Target['display_name']);
 $Text = Helper::adminGreeting($Context, 'پاک کردن تاریخچه رصد کاربر')
 . '⚠️آیا از پاک کردن تاریخچه رصد کاربر <b>' . $DisplayName . '</b> (' . Helper::toPersian((string)$Count) . " مورد ثبت شده) مطمئن هستید؟\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "ℹ️دستگاه های این کاربر حذف نمی شوند و فقط تاریخچه رصد فعالیت ها پاک می شود."
+. "ℹ️دستگاه های این کاربر حذف نمی شوند و فقط تاریخچه رصد سایت ها و برنامه ها پاک می شود."
 . Helper::adminFooter();
 $Rows = [
 [Menu::button('✅تأیید پاک کردن تاریخچه کاربر', 'admin_monitor_clrok:' . $TargetKey . ':' . $ListPage . ':' . $Category)],
@@ -600,7 +665,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function userMonitorClearUserConfirm(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all'): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
-$Category = in_array($Category, ['all', 'site', 'app', 'screen'], true) ? $Category : 'all';
+$Category = in_array($Category, ['all', 'site', 'app'], true) ? $Category : 'all';
 $ListPage = max(0, $ListPage);
 $Target = self::resolveMonitorTarget($TargetKey);
 $ActConds = (array)$Target['act_conds'];

@@ -63,6 +63,9 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         UmbrellaApplication.initialize(this)
         super.onCreate(savedInstanceState)
+        ir.umbrella.vpn.bg.DefaultNetworkMonitor.onNetworkStateChanged = { online, fp ->
+            eventHandler.onNetworkStateChanged(online, fp)
+        }
         serviceConnection.connect()
     }
 
@@ -75,6 +78,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
     }
 
     override fun onDestroy() {
+        ir.umbrella.vpn.bg.DefaultNetworkMonitor.onNetworkStateChanged = null
         unregisterSmsReceiver()
         runCatching { serviceConnection.disconnect() }
         super.onDestroy()

@@ -78,6 +78,8 @@ class SystemOps {
   std::string LocalIpv4();
   std::string DefaultAdapterName();
   std::string DefaultAdapterMac();
+  std::map<std::string, std::string> ResolveProcessLabels(
+      const std::vector<std::string>& names);
 
   int PingHost(const std::string& host, int timeout_ms);
   int TcpPing(const std::string& host, int port, int timeout_ms);

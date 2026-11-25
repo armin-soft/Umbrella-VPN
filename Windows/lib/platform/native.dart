@@ -335,6 +335,49 @@ class NativeBridge {
   Future<String> adapterName() async =>
       await _invoke<String>('adapterName') ?? '';
 
+  /// وضعیت شبکه فیزیکی ویندوز (برخط بودن، آداپتور و IP غیر TUN) برای تشخیص تغییر شبکه.
+  Future<({bool online, String adapter, String ip, String fingerprint})?>
+      networkState() async {
+    try {
+      final raw = await _channel.invokeMapMethod<String, dynamic>('networkState');
+      if (raw == null) return null;
+      return (
+        online: raw['online'] == true,
+        adapter: raw['adapter']?.toString() ?? '',
+        ip: raw['ip']?.toString() ?? '',
+        fingerprint: raw['fingerprint']?.toString() ?? '',
+      );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// تبدیل نام فایل های اجرایی ویندوز (مانند `chrome.exe`) به نام خوانای نرم افزار از منابع PE.
+  Future<Map<String, String>> resolveProcessLabels(List<String> names) async {
+    if (names.isEmpty) return const <String, String>{};
+    try {
+      final Map<Object?, Object?>? raw =
+          await _invoke<Map<Object?, Object?>>(
+        'resolveProcessLabels',
+        <String, dynamic>{'names': names},
+      );
+      if (raw == null || raw.isEmpty) return const <String, String>{};
+      final Map<String, String> out = <String, String>{};
+      raw.forEach((Object? k, Object? v) {
+        final String key = k?.toString().trim() ?? '';
+        final String val = v?.toString().trim() ?? '';
+        if (key.isNotEmpty && val.isNotEmpty) {
+          out[key] = val;
+        }
+      });
+      return out;
+    } on Object {
+      return const <String, String>{};
+    }
+  }
+
   /// پینگ ICMP عمدا از پلاگین بومی گرفته نمی شود: آن پیاده سازی روی رشته رابط
   /// کاربری اجرا می شد و با سنجش چند سرور، کل پنجره قفل می کرد. اجرای ping.exe
   /// با Process.run ناهمگام است و رابط را آزاد می گذارد.

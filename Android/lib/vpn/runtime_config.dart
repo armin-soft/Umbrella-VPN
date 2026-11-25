@@ -79,22 +79,29 @@ class RuntimeConfig {
     Map<String, dynamic>? coreSettings,
     int stickyMinutes = 15,
     int? blockPagePort,
+    bool preserveLogOutput = false,
   }) {
-    if (config['outbounds'] is! List ||
-        config['experimental'] is! Map ||
-        config['experimental']['monitoring'] is! Map) {
+    if (config['outbounds'] is! List || config['experimental'] is! Map) {
       throw const FormatException(
-        'Built runtime has no outbound monitoring configuration',
+        'Built runtime has no experimental/outbounds configuration',
       );
     }
     final List<dynamic> outbounds = config['outbounds'] as List<dynamic>;
     final Map<String, dynamic> experimental =
         config['experimental'] as Map<String, dynamic>;
-    final Map<String, dynamic> monitoring =
-        experimental['monitoring'] as Map<String, dynamic>;
-    monitoring['workers'] = monitoringWorkers;
-    monitoring['debounce_window'] = '200ms';
-    monitoring['url_test_timeout'] = '4s';
+    final Object? rawMonitoring = experimental['monitoring'];
+    if (!preserveLogOutput && rawMonitoring is! Map) {
+      throw const FormatException(
+        'Built runtime has no outbound monitoring configuration',
+      );
+    }
+    final Map<String, dynamic>? monitoring =
+        rawMonitoring is Map<String, dynamic> ? rawMonitoring : null;
+    if (monitoring != null) {
+      monitoring['workers'] = monitoringWorkers;
+      monitoring['debounce_window'] = '200ms';
+      monitoring['url_test_timeout'] = '4s';
+    }
 
     // No dashboard download on the connection path. Clash API remains loopback.
     final Map<String, dynamic>? clash =
@@ -110,7 +117,9 @@ class RuntimeConfig {
     }
 
     // The controller captures stdout; do not let two writers truncate one log.
-    (config['log'] as Map<String, dynamic>?)?.remove('output');
+    if (!preserveLogOutput) {
+      (config['log'] as Map<String, dynamic>?)?.remove('output');
+    }
 
     // ارتقای خودکار فیلدهای منسوخ شده `sing-box 1.14+` که هسته `v5.9.11` هنوز
     // به شکل قدیمی تولید می کند (`download_detour` روی `rule_set`، `store_rdrc`،
@@ -213,14 +222,16 @@ class RuntimeConfig {
       for (final Map<String, dynamic> endpoint in lazyEndpoints) {
         endpoint['lazy'] = true;
       }
-      monitoring['keep_top'] = <String, dynamic>{
-        'count': keepTopCount,
-        'batch': keepTopBatch,
-        'quick': true,
-        'refresh': '1h',
-      };
+      if (monitoring != null) {
+        monitoring['keep_top'] = <String, dynamic>{
+          'count': keepTopCount,
+          'batch': keepTopBatch,
+          'quick': true,
+          'refresh': '1h',
+        };
+      }
     } else {
-      monitoring.remove('keep_top');
+      monitoring?.remove('keep_top');
     }
     // Download detours are looked up when a transport is constructed.
     outbounds.insertAll(0, extra);
