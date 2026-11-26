@@ -400,3 +400,12 @@ jobs:
             gh release create "$tag" dist/*.apk dist/SHA256SUMS.txt --repo "$SOURCE_REPO" --target "$COMMIT" --draft --title "Umbrella VPN $version - Android" --notes "$notes"
           fi
           gh release view "$tag" --repo "$SOURCE_REPO" --json url,isDraft,assets
+
+      - name: Scan released APKs on VirusTotal
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.channel == 'release' || inputs.channel == 'both') }}
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          python3 ../.github/scripts/virustotal_scan.py dist/*.apk

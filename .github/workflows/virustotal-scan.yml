@@ -1,0 +1,83 @@
+name: VirusTotal Release Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to scan (leave empty for latest release)'
+        required: false
+        default: '1.0.2'
+        type: string
+      include_windows:
+        description: 'Also scan Windows .exe installer'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  virustotal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          RELEASES_REPO: 'armin-soft/Umbrella-VPN-Releases'
+          TAG_INPUT: ${{ inputs.tag }}
+          INCLUDE_WINDOWS: ${{ inputs.include_windows }}
+        run: |
+          set -euo pipefail
+          rm -rf scan-assets
+          mkdir -p scan-assets
+
+          TOKEN="$GH_TOKEN"
+          REPO="$SOURCE_REPO"
+          TAG="$TAG_INPUT"
+
+          if [ -z "$TAG" ]; then
+            if [ -n "${RELEASES_TOKEN:-}" ] && TAG_FOUND=$(GH_TOKEN="$RELEASES_TOKEN" gh release list --repo "$RELEASES_REPO" --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null) && [ -n "$TAG_FOUND" ]; then
+              TOKEN="$RELEASES_TOKEN"
+              REPO="$RELEASES_REPO"
+              TAG="$TAG_FOUND"
+            elif TAG_FOUND=$(gh release list --repo "$RELEASES_REPO" --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null) && [ -n "$TAG_FOUND" ]; then
+              REPO="$RELEASES_REPO"
+              TAG="$TAG_FOUND"
+            else
+              TAG=$(GH_TOKEN="$GH_TOKEN" gh release list --repo "$SOURCE_REPO" --limit 1 --json tagName --jq '.[0].tagName')
+            fi
+          else
+            if [ -n "${RELEASES_TOKEN:-}" ] && GH_TOKEN="$RELEASES_TOKEN" gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+              TOKEN="$RELEASES_TOKEN"
+              REPO="$RELEASES_REPO"
+            elif gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+              REPO="$RELEASES_REPO"
+            fi
+          fi
+
+          if [ -z "$TAG" ]; then
+            echo "::error::Could not determine release tag to scan."
+            exit 1
+          fi
+
+          echo "Downloading assets for tag $TAG from $REPO..."
+          if [ "$INCLUDE_WINDOWS" = "true" ]; then
+            GH_TOKEN="$TOKEN" gh release download "$TAG" --repo "$REPO" -p '*.apk' -p '*.exe' --dir scan-assets --clobber
+          else
+            GH_TOKEN="$TOKEN" gh release download "$TAG" --repo "$REPO" -p '*.apk' --dir scan-assets --clobber
+          fi
+          ls -lh scan-assets
+
+      - name: Submit and check binaries on VirusTotal
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          python3 .github/scripts/virustotal_scan.py scan-assets/*.apk scan-assets/*.exe

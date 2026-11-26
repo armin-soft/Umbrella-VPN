@@ -12,8 +12,10 @@ permissions:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download latest Windows and Android 1.0.2 installers
         env:
           GH_TOKEN: ${{ github.token }}
@@ -132,3 +134,11 @@ jobs:
           GH_TOKEN="$verify_token" gh release view "$TAG" --repo "$PUBLISHED_REPO" \
             --json url,tagName,name,isDraft,isPrerelease,body,assets \
             --jq '{url, tagName, name, isDraft, isPrerelease, body, assets: [.assets[] | {name, size}]}'
+
+      - name: Scan published installers on VirusTotal
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          python3 .github/scripts/virustotal_scan.py release-assets/*.apk release-assets/*.exe

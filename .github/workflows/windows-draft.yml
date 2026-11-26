@@ -413,3 +413,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }
           gh release view $tag --repo $env:SOURCE_REPO --json url,isDraft,assets
           if ($LASTEXITCODE -ne 0) { throw 'Draft verification failed' }
+
+      - name: Scan released Windows installer on VirusTotal
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.channel == 'release' || inputs.channel == 'both') }}
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          $exes = @(Get-ChildItem installer/output -Filter '*.exe' | ForEach-Object { $_.FullName })
+          if ($exes.Count -gt 0) {
+            python ../.github/scripts/virustotal_scan.py @exes
+          }
