@@ -150,6 +150,6 @@ void main() {
   });
 
   test('نسخهٔ ویندوز با نسخهٔ انتشار همسان است', () {
-    expect(AppConfig.version, '1.0.1');
+    expect(AppConfig.version, '1.0.2');
   });
 }

@@ -682,27 +682,27 @@ void main() {
     });
   });
 
-  group('نسخه ۱.۰.۱ — هسته ۵.۹.۱۵ و یکپارچگی نسخه در همه فایل ها', () {
-    test('مانیفست هسته به 5.9.15 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 1.0.1 است', () {
-      expect(AppConfig.version, '1.0.1');
-      expect(AppConfig.versionLabel, '1.0.1');
-      expect(AppConfig.buildNumber, 2);
-      expect(File('pubspec.yaml').readAsStringSync(), contains('version: 1.0.1+2'));
+  group('نسخه ۱.۰.۲ — هسته ۵.۹.۱۵ و یکپارچگی نسخه در همه فایل ها', () {
+    test('مانیفست هسته به 5.9.15 با چک سام رسمی ارتقا یافته و نسخه برنامه در همه جا 1.0.2 است', () {
+      expect(AppConfig.version, '1.0.2');
+      expect(AppConfig.versionLabel, '1.0.2');
+      expect(AppConfig.buildNumber, 3);
+      expect(File('pubspec.yaml').readAsStringSync(), contains('version: 1.0.2+3'));
       expect(
         File('installer/umbrella.iss').readAsStringSync(),
-        contains('#define AppVersion "1.0.1"'),
+        contains('#define AppVersion "1.0.2"'),
       );
       expect(
         File('windows/CMakeLists.txt').readAsStringSync(),
-        contains('project(UmbrellaVPN VERSION "1.0.1" LANGUAGES C CXX)'),
+        contains('project(UmbrellaVPN VERSION "1.0.2" LANGUAGES C CXX)'),
       );
       final String workflow =
           File('../.github/workflows/windows-draft.yml').readAsStringSync();
-      expect(workflow, contains('name: UmbrellaVPN-Setup-1.0.1-x64'));
+      expect(workflow, contains('name: UmbrellaVPN-Setup-1.0.2-x64'));
       expect(
         File('packages/umbrella_native/windows/winhttp_client.cpp')
             .readAsStringSync(),
-        contains('UmbrellaVPN/1.0.1'),
+        contains('UmbrellaVPN/1.0.2'),
       );
       expect(CoreRuntime.cacheSchemaVersion, 'umbrella-runtime-v9');
       final Map<String, dynamic> manifest =
@@ -1232,10 +1232,10 @@ void main() {
       // نسخه Runner.rc و THIRD-PARTY-NOTICES و سربرگ اصلی صفحه درباره.
       final String runnerRc =
           File('windows/runner/Runner.rc').readAsStringSync();
-      expect(runnerRc, contains('FILEVERSION 1,0,1,0'));
-      expect(runnerRc, contains('PRODUCTVERSION 1,0,1,0'));
-      expect(runnerRc, contains('VALUE "FileVersion", "1.0.1.0"'));
-      expect(runnerRc, contains('VALUE "ProductVersion", "1.0.1.0"'));
+      expect(runnerRc, contains('FILEVERSION 1,0,2,0'));
+      expect(runnerRc, contains('PRODUCTVERSION 1,0,2,0'));
+      expect(runnerRc, contains('VALUE "FileVersion", "1.0.2.0"'));
+      expect(runnerRc, contains('VALUE "ProductVersion", "1.0.2.0"'));
       expect(runnerRc, contains('VALUE "CompanyName", "Umbrella"'));
 
       final String notices = File('THIRD-PARTY-NOTICES.txt').readAsStringSync();
