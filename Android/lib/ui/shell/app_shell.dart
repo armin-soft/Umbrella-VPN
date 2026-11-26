@@ -559,7 +559,6 @@ class _MoreTile extends StatelessWidget {
     required this.onTap,
     this.badge = false,
     this.selected = false,
-    this.danger = false,
   });
 
   final IconData icon;
@@ -568,14 +567,11 @@ class _MoreTile extends StatelessWidget {
   final VoidCallback onTap;
   final bool badge;
   final bool selected;
-  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     final UmbrellaColors colors = context.colors;
-    final Color tone = danger
-        ? colors.danger
-        : (selected ? colors.primary : colors.textPrimary);
+    final Color tone = selected ? colors.primary : colors.textPrimary;
     return ListTile(
       onTap: withUiClick(context, onTap),
       shape: RoundedRectangleBorder(
