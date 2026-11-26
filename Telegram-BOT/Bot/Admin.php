@@ -4126,7 +4126,8 @@ $Rows = [
 [$On
 ? Menu::button('⛔️غیرفعال کردن تأیید دومرحله ای', 'admin_2fa_off')
 : Menu::button('✅فعال کردن تأیید دومرحله ای', 'admin_2fa_on')],
-[Menu::back('منوی قبلی', 'admin_devices_menu'), Menu::adminHome()],
+Menu::back('منوی قبلی', 'admin_devices_menu'),
+Menu::adminHome(),
 ];
 self::logMenuProblems('two-step', $Rows);
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
