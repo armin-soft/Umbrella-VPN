@@ -7,9 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -36,6 +38,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         private const val REQ_VPN_PERMISSION = 2001
         private const val REQ_NOTIFICATION_PERMISSION = 2002
         private const val REQ_SMS_USER_CONSENT = 2003
+        private const val REQ_STORAGE_TREE_ACCESS = 2004
 
         fun extractVerificationCode(message: String?): String {
             if (message.isNullOrBlank()) return ""
@@ -226,6 +229,28 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         return withTimeoutOrNull(45_000L) { deferred.await() } ?: false
     }
 
+    fun launchStorageTreePicker(): Boolean {
+        return runCatching {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    putExtra(
+                        DocumentsContract.EXTRA_INITIAL_URI,
+                        Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload"),
+                    )
+                }
+            }
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQ_STORAGE_TREE_ACCESS)
+            true
+        }.getOrDefault(false)
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -243,6 +268,19 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
                     }
                 }
                 unregisterSmsReceiver()
+            }
+            REQ_STORAGE_TREE_ACCESS -> {
+                if (resultCode == RESULT_OK) {
+                    val treeUri = data?.data
+                    if (treeUri != null) {
+                        UmbrellaSecurityScanner.persistSafTreeUri(
+                            this,
+                            treeUri,
+                            data.flags,
+                        )
+                        eventHandler.onSecurityFileEvent(treeUri.toString())
+                    }
+                }
             }
         }
     }

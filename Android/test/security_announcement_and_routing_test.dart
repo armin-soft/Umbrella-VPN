@@ -475,18 +475,21 @@ void main() {
   });
 
   group('قراردادها، جابجایی کنترل محتوا و انتخاب گر برنامه در اندروید', () {
-    test('Manifest مجوز REQUEST_DELETE_PACKAGES دارد و لایه Kotlin و UI قراردادها را رعایت می کنند', () {
+    test('Manifest از الگوی کمترین دسترسی تبعیت می کند و لایه Kotlin و UI قراردادها را رعایت می کنند', () {
       final String manifest = File(
         'android/app/src/main/AndroidManifest.xml',
       ).readAsStringSync();
-      expect(manifest, contains('android.permission.REQUEST_DELETE_PACKAGES'));
+      expect(manifest, isNot(contains('android.permission.REQUEST_DELETE_PACKAGES')));
+      expect(manifest, isNot(contains('android.permission.KILL_BACKGROUND_PROCESSES')));
+      expect(manifest, isNot(contains('android.permission.MANAGE_EXTERNAL_STORAGE')));
       expect(manifest, contains('android.permission.QUERY_ALL_PACKAGES'));
 
       final String scannerKt = File(
         'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
       ).readAsStringSync();
-      expect(scannerKt, contains('ACTION_DELETE'));
+      expect(scannerKt, contains('ACTION_APPLICATION_DETAILS_SETTINGS'));
       expect(scannerKt, contains('ACTION_VPN_SETTINGS'));
+      expect(scannerKt, contains('ACTION_OPEN_DOCUMENT_TREE'));
       expect(scannerKt, contains('jumpjump'));
       expect(scannerKt, contains('psiphon'));
 
@@ -750,14 +753,16 @@ void main() {
       ).readAsStringSync();
       expect(kt.contains('malicious_download'), isTrue);
       expect(kt.contains('inspectDownloadedFile'), isTrue);
+      expect(kt.contains('inspectSafDocument'), isTrue);
       expect(kt.contains('hasPeHeaderAt'), isTrue);
       expect(kt.contains('hasRloOrDoubleExtension'), isTrue);
       expect(kt.contains('hasStorageScanAccess'), isTrue);
       expect(kt.contains('requestStorageScanAccess'), isTrue);
+      expect(kt.contains('DocumentsContract'), isTrue);
 
       final String manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
-      expect(manifest.contains('READ_MEDIA_IMAGES'), isTrue);
-      expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isTrue);
+      expect(manifest.contains('READ_MEDIA_IMAGES'), isFalse);
+      expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isFalse);
       expect(manifest.contains('REQUEST_INSTALL_PACKAGES'), isTrue);
       expect(manifest.contains('READ_SMS'), isFalse);
       expect(manifest.contains('RECEIVE_SMS'), isFalse);
@@ -1553,14 +1558,15 @@ void main() {
         final String manifest = File(
           'android/app/src/main/AndroidManifest.xml',
         ).readAsStringSync();
-        expect(manifest, contains('android.permission.KILL_BACKGROUND_PROCESSES'));
+        expect(manifest, isNot(contains('android.permission.KILL_BACKGROUND_PROCESSES')));
+        expect(manifest, contains('android.permission.BIND_VPN_SERVICE'));
 
         final String scannerKt = File(
           'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
         ).readAsStringSync();
         expect(scannerKt, contains('fun closeConflictingVpns('));
         expect(scannerKt, contains('BIND_VPN_SERVICE'));
-        expect(scannerKt, contains('killBackgroundProcesses'));
+        expect(scannerKt, isNot(contains('killBackgroundProcesses')));
         expect(scannerKt, contains('hasActiveOtherVpnTransport'));
 
         final String handlerKt = File(

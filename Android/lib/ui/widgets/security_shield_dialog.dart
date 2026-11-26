@@ -354,7 +354,7 @@ class SecurityShieldDialog extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: <Widget>[
                               Text(
-                                'برای اسکن و حذف خودکار تصاویر و فایل های دانلودی عمومی اندروید، مجوز دسترسی فایل لازم است.',
+                                'برای اسکن و پاکسازی خودکار فایل های دانلودی عمومی، پوشه دانلودها را از انتخاب گر امن اندروید تایید کنید.',
                                 style: TextStyle(
                                   fontSize: AppMetrics.fontCaption,
                                   color: colors.textPrimary,
@@ -371,7 +371,7 @@ class SecurityShieldDialog extends StatelessWidget {
                                     Icons.folder_shared_rounded,
                                     size: AppMetrics.iconSm,
                                   ),
-                                  label: const Text('فعال سازی اسکن دانلود و تصاویر'),
+                                  label: const Text('انتخاب پوشه دانلودها برای اسکن'),
                                   onPressed: () =>
                                       unawaited(security.requestStorageScanAccess()),
                                 ),

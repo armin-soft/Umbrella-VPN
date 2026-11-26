@@ -2,7 +2,6 @@ package ir.umbrella.vpn
 
 import android.Manifest
 import android.app.Activity
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -16,12 +15,13 @@ import android.os.Environment
 import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.Settings as AndroidSettings
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import ir.umbrella.vpn.bg.BoxService
 import ir.umbrella.vpn.constant.Status
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -232,29 +232,14 @@ object UmbrellaSecurityScanner {
     }
 
     fun closeConflictingVpns(context: Context): Map<String, Any> {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        // Android automatically hands over and revokes any active third-party
+        // VpnService tunnel when Umbrella calls VpnService.prepare + Builder.establish.
         val vpnPackages = collectThirdPartyVpnPackages(context)
-        val runningSet = runCatching {
-            am?.runningAppProcesses
-                ?.flatMap { it.pkgList?.toList().orEmpty() }
-                ?.toSet()
-                .orEmpty()
-        }.getOrDefault(emptySet())
-
-        val targeted = mutableListOf<String>()
-        for (pkg in vpnPackages) {
-            val isRunning = runningSet.isEmpty() || runningSet.contains(pkg)
-            if (isRunning) {
-                runCatching {
-                    am?.killBackgroundProcesses(pkg)
-                    targeted.add(pkg)
-                }
-            }
-        }
+        val otherTunnelActive = isOtherVpnTransportActive(context)
         return mapOf(
-            "closedCount" to targeted.size,
-            "closedPackages" to targeted,
-            "otherTunnelActive" to isOtherVpnTransportActive(context),
+            "closedCount" to if (otherTunnelActive) 1 else 0,
+            "closedPackages" to vpnPackages,
+            "otherTunnelActive" to otherTunnelActive,
         )
     }
 
@@ -553,8 +538,190 @@ object UmbrellaSecurityScanner {
         }
     }
 
+    private data class SafDocumentEntry(
+        val docUri: Uri,
+        val name: String,
+        val size: Long,
+        val lastModified: Long,
+    )
+
+    private fun readSafSampleBytes(context: Context, docUri: Uri, limitBytes: Int = 2 * 1024 * 1024): ByteArray {
+        return runCatching {
+            context.contentResolver.openInputStream(docUri)?.use { input ->
+                val out = ByteArrayOutputStream()
+                val buf = ByteArray(16384)
+                var remaining = limitBytes
+                while (remaining > 0) {
+                    val toRead = remaining.coerceAtMost(buf.size)
+                    val r = input.read(buf, 0, toRead)
+                    if (r <= 0) break
+                    out.write(buf, 0, r)
+                    remaining -= r
+                }
+                out.toByteArray()
+            } ?: ByteArray(0)
+        }.getOrDefault(ByteArray(0))
+    }
+
+    private fun readSafHeadAndTailBytes(
+        context: Context,
+        docUri: Uri,
+        totalSize: Long,
+        headBytes: Int = 256 * 1024,
+        tailBytes: Int = 512 * 1024,
+    ): ByteArray {
+        if (totalSize <= 0L) return ByteArray(0)
+        val maxCombined = headBytes.toLong() + tailBytes.toLong()
+        if (totalSize <= maxCombined) {
+            return readSafSampleBytes(context, docUri, totalSize.toInt())
+        }
+        return runCatching {
+            context.contentResolver.openFileDescriptor(docUri, "r")?.use { pfd ->
+                FileInputStream(pfd.fileDescriptor).use { fis ->
+                    val channel = fis.channel
+                    val head = ByteArray(headBytes)
+                    val headLen = fis.read(head).coerceAtLeast(0)
+                    channel.position(totalSize - tailBytes.toLong())
+                    val tail = ByteArray(tailBytes)
+                    var tailLen = 0
+                    while (tailLen < tailBytes) {
+                        val r = fis.read(tail, tailLen, tailBytes - tailLen)
+                        if (r <= 0) break
+                        tailLen += r
+                    }
+                    val combined = ByteArray(headLen + tailLen)
+                    System.arraycopy(head, 0, combined, 0, headLen)
+                    System.arraycopy(tail, 0, combined, headLen, tailLen)
+                    combined
+                }
+            } ?: readSafSampleBytes(context, docUri, headBytes + tailBytes)
+        }.getOrDefault(readSafSampleBytes(context, docUri, headBytes + tailBytes))
+    }
+
+    private fun safFileSha256(context: Context, docUri: Uri): String {
+        return runCatching {
+            val md = MessageDigest.getInstance("SHA-256")
+            context.contentResolver.openInputStream(docUri)?.use { input ->
+                val buf = ByteArray(16384)
+                var total = 0L
+                while (total < 16L * 1024L * 1024L) {
+                    val r = input.read(buf)
+                    if (r <= 0) break
+                    md.update(buf, 0, r)
+                    total += r
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrDefault("")
+    }
+
+    private fun safDocumentExists(context: Context, docUri: Uri): Boolean {
+        return runCatching {
+            context.contentResolver.query(
+                docUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+                null,
+                null,
+                null,
+            )?.use { it.moveToFirst() } == true
+        }.getOrDefault(false)
+    }
+
+    private fun collectSafDocumentsBounded(
+        context: Context,
+        treeUri: Uri,
+        docId: String,
+        depth: Int,
+        maxDepth: Int,
+        maxFiles: Int,
+        out: MutableList<SafDocumentEntry>,
+    ) {
+        if (out.size >= maxFiles || depth > maxDepth) return
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+        )
+        val subdirs = mutableListOf<String>()
+        runCatching {
+            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val sizeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                val modIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                while (cursor.moveToNext()) {
+                    if (idIdx < 0) continue
+                    val childId = cursor.getString(idIdx) ?: continue
+                    val childName = if (nameIdx >= 0) cursor.getString(nameIdx) ?: "" else ""
+                    val childMime = if (mimeIdx >= 0) cursor.getString(mimeIdx) ?: "" else ""
+                    val childSize = if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) cursor.getLong(sizeIdx) else 0L
+                    val childMod = if (modIdx >= 0 && !cursor.isNull(modIdx)) cursor.getLong(modIdx) else 0L
+                    val lower = childName.lowercase()
+                    if (childMime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        if (depth < maxDepth &&
+                            lower != ".git" &&
+                            lower != "node_modules" &&
+                            !lower.startsWith(".trash") &&
+                            !lower.contains("umbrella")
+                        ) {
+                            subdirs.add(childId)
+                        }
+                        continue
+                    }
+                    if (childName.isBlank()) continue
+                    val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+                    out.add(
+                        SafDocumentEntry(
+                            docUri = childUri,
+                            name = childName,
+                            size = childSize,
+                            lastModified = childMod,
+                        ),
+                    )
+                    if (out.size >= maxFiles) break
+                }
+            }
+        }
+        for (subId in subdirs) {
+            if (out.size >= maxFiles) break
+            collectSafDocumentsBounded(context, treeUri, subId, depth + 1, maxDepth, maxFiles, out)
+        }
+    }
+
     private fun inspectDownloadedFile(file: File, selfPkg: String): SignatureMatch? {
-        val fname = file.name
+        return inspectDownloadedPayload(
+            fname = file.name,
+            totalLength = file.length(),
+            selfPkg = selfPkg,
+            readHead = { readSampleBytes(file, 64 * 1024) },
+            readSample = { limit -> readSampleBytes(file, limit) },
+            readHeadAndTail = { head, tail -> readHeadAndTailBytes(file, head, tail) },
+        )
+    }
+
+    private fun inspectSafDocument(context: Context, doc: SafDocumentEntry, selfPkg: String): SignatureMatch? {
+        return inspectDownloadedPayload(
+            fname = doc.name,
+            totalLength = doc.size,
+            selfPkg = selfPkg,
+            readHead = { readSafSampleBytes(context, doc.docUri, 64 * 1024) },
+            readSample = { limit -> readSafSampleBytes(context, doc.docUri, limit) },
+            readHeadAndTail = { head, tail -> readSafHeadAndTailBytes(context, doc.docUri, doc.size, head, tail) },
+        )
+    }
+
+    private fun inspectDownloadedPayload(
+        fname: String,
+        totalLength: Long,
+        selfPkg: String,
+        readHead: () -> ByteArray,
+        readSample: (Int) -> ByteArray,
+        readHeadAndTail: (Int, Int) -> ByteArray,
+    ): SignatureMatch? {
         val lower = fname.lowercase()
         if (lower.contains("umbrella")) return null
 
@@ -599,18 +766,16 @@ object UmbrellaSecurityScanner {
             lower.endsWith(".rtf")
         val isScriptOrWeb = lower.endsWith(".html") || lower.endsWith(".htm") ||
             lower.endsWith(".url") || lower.endsWith(".js") ||
-            lower.endsWith(".sh") || lower.endsWith(".bat") ||
-            lower.endsWith(".ps1") || lower.endsWith(".vbs") ||
-            lower.endsWith(".hta")
+            lower.endsWith(".sh") || lower.endsWith(".hta")
 
-        val header = readSampleBytes(file, 64 * 1024)
+        val header = readHead()
         if (header.isEmpty()) return null
 
         val elfSig = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
         val dexSig = "dex\n03".encodeToByteArray()
 
         if (lower.endsWith(".svg")) {
-            val sample = if (file.length() <= header.size.toLong()) header else readSampleBytes(file, 2 * 1024 * 1024)
+            val sample = if (totalLength in 1L..header.size.toLong()) header else readSample(2 * 1024 * 1024)
             if (containsAsciiCi(sample, "<script") ||
                 containsAsciiCi(sample, "onload=") ||
                 containsAsciiCi(sample, "onerror=") ||
@@ -648,12 +813,12 @@ object UmbrellaSecurityScanner {
                         header[2] == 1.toByte() && header[3] == 0.toByte()
                 else -> header.size >= 2 && header[0] == 'B'.code.toByte() && header[1] == 'M'.code.toByte()
             }
-            val sample = if (validMagic && file.length() > 768L * 1024L) {
-                readHeadAndTailBytes(file, 256 * 1024, 512 * 1024)
-            } else if (file.length() <= header.size.toLong()) {
+            val sample = if (validMagic && totalLength > 768L * 1024L) {
+                readHeadAndTail(256 * 1024, 512 * 1024)
+            } else if (totalLength in 1L..header.size.toLong()) {
                 header
             } else {
-                readSampleBytes(file, 2 * 1024 * 1024)
+                readSample(2 * 1024 * 1024)
             }
 
             if (!validMagic &&
@@ -662,7 +827,6 @@ object UmbrellaSecurityScanner {
                     containsBytes(sample, dexSig, 0) ||
                     containsAsciiCi(sample, "androidmanifest.xml") ||
                     containsAsciiCi(sample, "<script") ||
-                    containsAsciiCi(sample, "wscript.shell") ||
                     containsAsciiCi(sample, "eicar-standard-antivirus-test-file"))
             ) {
                 return SignatureMatch(
@@ -690,9 +854,7 @@ object UmbrellaSecurityScanner {
                 containsBytes(sample, dexSig, 16) ||
                 (containsAsciiCi(sample, "androidmanifest.xml") && containsAsciiCi(sample, "classes.dex")) ||
                 containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "<script") ||
-                containsAsciiCi(sample, "eval(atob(") ||
-                containsAsciiCi(sample, "urldownloadtofile")
+                containsAsciiCi(sample, "<script")
             ) {
                 return SignatureMatch(
                     key = "dl:poly_img:${lower.hashCode()}",
@@ -709,12 +871,12 @@ object UmbrellaSecurityScanner {
             val binaryHeader = hasPeHeaderAt(header, 0) ||
                 containsBytes(header, elfSig, 0) ||
                 containsBytes(header, dexSig, 0)
-            val sample = if (!binaryHeader && file.length() > 768L * 1024L) {
-                readHeadAndTailBytes(file, 256 * 1024, 512 * 1024)
-            } else if (file.length() <= header.size.toLong()) {
+            val sample = if (!binaryHeader && totalLength > 768L * 1024L) {
+                readHeadAndTail(256 * 1024, 512 * 1024)
+            } else if (totalLength in 1L..header.size.toLong()) {
                 header
             } else {
-                readSampleBytes(file, 768 * 1024)
+                readSample(768 * 1024)
             }
             var hasEmbeddedBinary = binaryHeader
             if (!hasEmbeddedBinary) {
@@ -730,10 +892,7 @@ object UmbrellaSecurityScanner {
             if (hasEmbeddedBinary ||
                 (containsAsciiCi(sample, "androidmanifest.xml") && containsAsciiCi(sample, "classes.dex")) ||
                 containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "<script") ||
-                containsAsciiCi(sample, "wscript.shell") ||
-                containsAsciiCi(sample, "urldownloadtofile") ||
-                containsAsciiCi(sample, "eval(atob(")
+                containsAsciiCi(sample, "<script")
             ) {
                 return SignatureMatch(
                     key = "dl:media:${lower.hashCode()}",
@@ -746,12 +905,12 @@ object UmbrellaSecurityScanner {
             return null
         }
 
-        val sample = if (file.length() <= header.size.toLong()) {
+        val sample = if (totalLength in 1L..header.size.toLong()) {
             header
         } else if (isArchive || isOffice || lower.endsWith(".pdf")) {
-            readSampleBytes(file, 4 * 1024 * 1024)
+            readSample(4 * 1024 * 1024)
         } else {
-            readSampleBytes(file, 2 * 1024 * 1024)
+            readSample(2 * 1024 * 1024)
         }
 
         if (isArchive || isOffice || lower.endsWith(".pdf")) {
@@ -772,10 +931,7 @@ object UmbrellaSecurityScanner {
             if (hasPeHeaderAt(sample, 0) ||
                 containsBytes(sample, elfSig, 0) ||
                 containsBytes(sample, dexSig, 0) ||
-                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "wscript.shell") ||
-                containsAsciiCi(sample, "urldownloadtofile") ||
-                containsAsciiCi(sample, "powershell -enc")
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file")
             ) {
                 return SignatureMatch(
                     key = "dl:doc:${lower.hashCode()}",
@@ -788,15 +944,10 @@ object UmbrellaSecurityScanner {
             return null
         }
 
-        // Web/script downloads & dangerous executables/unknown extensionless files
+        // Web/script downloads & phishing link payloads
         if (isScriptOrWeb) {
             if (hasPeHeaderAt(sample, 0) ||
                 containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "eval(atob(") ||
-                containsAsciiCi(sample, "wscript.shell") ||
-                containsAsciiCi(sample, "activexobject") ||
-                containsAsciiCi(sample, "urldownloadtofile") ||
-                containsAsciiCi(sample, "powershell -enc") ||
                 containsAsciiCi(sample, "grabify.link") ||
                 containsAsciiCi(sample, "iplogger.org") ||
                 containsAsciiCi(sample, "iplogger.com") ||
@@ -814,16 +965,14 @@ object UmbrellaSecurityScanner {
             return null
         }
 
-        // Remaining / unknown / extensionless files & standalone executables (.exe/.scr/.so)
+        // Remaining / unknown / extensionless files & standalone executables
         val execByExt = lower.endsWith(".exe") || lower.endsWith(".scr") ||
             lower.endsWith(".msi") || lower.endsWith(".bat")
         if (execByExt ||
             hasPeHeaderAt(sample, 0) ||
             containsBytes(sample, elfSig, 0) ||
             containsBytes(sample, dexSig, 0) ||
-            containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-            containsAsciiCi(sample, "wscript.shell") ||
-            containsAsciiCi(sample, "powershell -enc")
+            containsAsciiCi(sample, "eicar-standard-antivirus-test-file")
         ) {
             val hit = matchKnownPackageOrLabel(lower, lower, selfPkg)
             if (hit != null) {
@@ -832,10 +981,9 @@ object UmbrellaSecurityScanner {
                     category = if (hit.category == "conflicting_vpn") "conflicting_vpn" else "malicious_download",
                 )
             }
-            if (execByExt || hasPeHeaderAt(sample, 0) ||
-                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "wscript.shell") ||
-                containsAsciiCi(sample, "powershell -enc")
+            if (execByExt ||
+                hasPeHeaderAt(sample, 0) ||
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file")
             ) {
                 return SignatureMatch(
                     key = "dl:bin:${lower.hashCode()}",
@@ -849,44 +997,42 @@ object UmbrellaSecurityScanner {
         return null
     }
 
-    fun hasStorageScanAccess(context: Context): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-            ) == PackageManager.PERMISSION_GRANTED
+    fun persistSafTreeUri(context: Context, treeUri: Uri, intentFlags: Int = 0) {
+        val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            (intentFlags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                treeUri,
+                takeFlags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }.recoverCatching {
+            context.contentResolver.takePersistableUriPermission(
+                treeUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
         }
+    }
+
+    fun hasStorageScanAccess(context: Context): Boolean {
+        return runCatching {
+            context.contentResolver.persistedUriPermissions.any { it.isReadPermission }
+        }.getOrDefault(false)
     }
 
     fun requestStorageScanAccess(activity: Activity): Boolean {
         if (hasStorageScanAccess(activity)) return true
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            runCatching {
-                val intent = Intent(
-                    AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.fromParts("package", activity.packageName, null),
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(intent)
-                true
-            }.recoverCatching {
-                val fallback = Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(fallback)
-                true
-            }.getOrDefault(false)
-        } else {
-            ActivityCompat.requestPermissions(
-                activity,
-                arrayOf(
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                ),
-                9412,
-            )
-            true
+        if (activity is MainActivity) {
+            return activity.launchStorageTreePicker()
         }
+        return runCatching {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+            activity.startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 
     fun scan(context: Context, quick: Boolean = false): Map<String, Any> {
@@ -1002,6 +1148,59 @@ object UmbrellaSecurityScanner {
             }
         }
 
+        // Scan user-approved Storage Access Framework (SAF) folders via DocumentsContract
+        val safEntries = mutableListOf<SafDocumentEntry>()
+        val safTrees = runCatching { context.contentResolver.persistedUriPermissions }.getOrDefault(emptyList())
+        for (perm in safTrees) {
+            if (!perm.isReadPermission) continue
+            val rootDocId = runCatching { DocumentsContract.getTreeDocumentId(perm.uri) }.getOrNull() ?: continue
+            collectSafDocumentsBounded(context, perm.uri, rootDocId, 0, dirMaxDepth, dirMaxFiles, safEntries)
+            if (safEntries.size >= dirMaxFiles) break
+        }
+        for (doc in safEntries) {
+            val uriStr = doc.docUri.toString()
+            val uriLower = uriStr.lowercase()
+            if (!visited.add(uriLower)) continue
+            val fname = doc.name.lowercase()
+            if (fname.contains("umbrella") ||
+                fname.endsWith(".tmp") ||
+                fname.endsWith(".crdownload") ||
+                fname.endsWith(".part")
+            ) {
+                continue
+            }
+            scannedFiles++
+            if (isCleanFileCached(uriLower, doc.size, doc.lastModified)) {
+                continue
+            }
+            val hit = inspectSafDocument(context, doc, selfPkg)
+            if (hit == null) {
+                recordCleanFileCache(uriLower, doc.size, doc.lastModified)
+                continue
+            }
+            val sha = safFileSha256(context, doc.docUri)
+            val findingKey = if (sha.isNotEmpty()) "${hit.key}:${sha.take(12)}" else hit.key
+            val isAppPkg = hit.category == "conflicting_vpn"
+            findings.putIfAbsent(
+                findingKey,
+                mutableMapOf(
+                    "key" to findingKey,
+                    "name" to hit.name,
+                    "category" to hit.category,
+                    "severity" to hit.severity,
+                    "target" to doc.name,
+                    "detail" to hit.detail,
+                    "remediationKind" to "file",
+                    "path" to uriStr,
+                    "packageName" to "",
+                    "sha256" to sha,
+                    "active" to isAppPkg,
+                    "signedValid" to false,
+                    "blockedByPolicy" to true,
+                ),
+            )
+        }
+
         // Live conflicting VPN tunnel detection when Umbrella itself is disconnected
         if (isOtherVpnTransportActive(context)) {
             findings.putIfAbsent(
@@ -1052,22 +1251,27 @@ object UmbrellaSecurityScanner {
         var actionTaken = false
 
         if (remediationKind == "file" && path.isNotBlank()) {
-            val file = File(path)
-            if (file.exists() && file.delete()) {
-                actionTaken = true
+            if (path.startsWith("content://")) {
+                val docUri = Uri.parse(path)
+                val deleted = runCatching {
+                    DocumentsContract.deleteDocument(activity.contentResolver, docUri)
+                }.getOrDefault(false)
+                if (deleted) {
+                    actionTaken = true
+                }
+            } else {
+                val file = File(path)
+                if (file.exists() && file.delete()) {
+                    actionTaken = true
+                }
             }
         }
         invalidateCleanFileCache(path)
 
         if (packageName.isNotBlank() && packageName != activity.packageName) {
-            runCatching {
-                val am = activity.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                am?.killBackgroundProcesses(packageName)
-                actionTaken = true
-            }
             if (isPackageInstalled(activity, packageName)) {
                 val intent = Intent(
-                    Intent.ACTION_DELETE,
+                    AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     Uri.fromParts("package", packageName, null),
                 ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 runCatching {
@@ -1078,12 +1282,6 @@ object UmbrellaSecurityScanner {
         }
 
         if (remediationKind == "vpn_settings") {
-            val closed = runCatching {
-                (closeConflictingVpns(activity)["closedCount"] as? Int) ?: 0
-            }.getOrDefault(0)
-            if (closed > 0) {
-                actionTaken = true
-            }
             if (isOtherVpnTransportActive(activity)) {
                 runCatching {
                     activity.startActivity(
@@ -1097,7 +1295,11 @@ object UmbrellaSecurityScanner {
         val stillInstalled = if (packageName.isNotBlank()) {
             isPackageInstalled(activity, packageName)
         } else if (remediationKind == "file" && path.isNotBlank()) {
-            File(path).exists()
+            if (path.startsWith("content://")) {
+                safDocumentExists(activity, Uri.parse(path))
+            } else {
+                File(path).exists()
+            }
         } else if (remediationKind == "vpn_settings") {
             isOtherVpnTransportActive(activity)
         } else {
@@ -1108,7 +1310,7 @@ object UmbrellaSecurityScanner {
         val message = when {
             ok -> "تهدید با موفقیت متوقف و حذف شد."
             packageName.isNotBlank() ->
-                "پنجره حذف سیستم باز شد؛ پس از تایید حذف برنامه، وضعیت امنیتی خودکار تایید می شود."
+                "صفحه تنظیمات برنامه باز شد؛ پس از تایید حذف برنامه، وضعیت امنیتی خودکار تایید می شود."
             remediationKind == "vpn_settings" ->
                 "تنظیمات وی پی ان سیستم باز شد؛ فیلترشکن دیگر را قطع کنید تا سپر امنیتی سبز شود."
             actionTaken ->
