@@ -244,10 +244,16 @@ def main(argv: list[str]) -> int:
     for path in files:
         rows.append(scan_file(path, api_key))
 
-    # Give newly submitted files a moment, then refresh status once if needed.
-    pending = [r for r in rows if r["status"] == "Submitted (scanning)"]
-    if pending:
-        time.sleep(20)
+    # Give newly submitted files a moment, then refresh status up to twice so
+    # fresh analyses can report vendor counts directly in the summary.
+    for wait_secs in (25, 35):
+        pending = [
+            r for r in rows
+            if r["status"] in ("Submitted (scanning)", "Queued / Analyzing")
+        ]
+        if not pending:
+            break
+        time.sleep(wait_secs)
         for row in pending:
             code, data = _curl_json("GET", f"{VT_BASE}/files/{row['sha256']}", api_key)
             if code == 200:
@@ -260,6 +266,7 @@ def main(argv: list[str]) -> int:
         "| --- | --- | --- | --- | --- |",
     ]
     for row in rows:
+        print(f"::notice title=VirusTotal {row['name']}::{row['status']} | {row['url']}")
         lines.append(
             f"| `{row['name']}` | {row['size']} | `{row['sha256']}` | **{row['status']}** | [View Report]({row['url']}) |"
         )
