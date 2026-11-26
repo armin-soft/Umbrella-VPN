@@ -12,6 +12,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.provider.Settings as AndroidSettings
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -39,6 +40,8 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         private const val REQ_NOTIFICATION_PERMISSION = 2002
         private const val REQ_SMS_USER_CONSENT = 2003
         private const val REQ_STORAGE_TREE_ACCESS = 2004
+        private const val REQ_ALL_FILES_ACCESS = 2005
+        private const val REQ_LEGACY_STORAGE_ACCESS = 2006
 
         fun extractVerificationCode(message: String?): String {
             if (message.isNullOrBlank()) return ""
@@ -62,14 +65,30 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
     private var vpnPermissionDeferred: CompletableDeferred<Boolean>? = null
     private var notificationPermissionDeferred: CompletableDeferred<Boolean>? = null
     private var smsReceiver: BroadcastReceiver? = null
+    private var lastKnownStorageAccess: Boolean? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         UmbrellaApplication.initialize(this)
         super.onCreate(savedInstanceState)
+        lastKnownStorageAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this)
         ir.umbrella.vpn.bg.DefaultNetworkMonitor.onNetworkStateChanged = { online, fp ->
             eventHandler.onNetworkStateChanged(online, fp)
         }
         serviceConnection.connect()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val hasAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this)
+        val prev = lastKnownStorageAccess
+        lastKnownStorageAccess = hasAccess
+        if (prev != null && prev != hasAccess) {
+            UmbrellaSecurityScanner.invalidateAllCleanCache()
+            if (hasAccess) {
+                startSecurityFileWatcher()
+            }
+            eventHandler.onSecurityFileEvent("storage_access:$hasAccess")
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -229,6 +248,41 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         return withTimeoutOrNull(45_000L) { deferred.await() } ?: false
     }
 
+    fun launchAllFilesAccessSettings(): Boolean {
+        if (UmbrellaSecurityScanner.hasStorageScanAccess(this)) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val appIntent = Intent(
+                AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.fromParts("package", packageName, null),
+            )
+            val openedApp = runCatching {
+                @Suppress("DEPRECATION")
+                startActivityForResult(appIntent, REQ_ALL_FILES_ACCESS)
+                true
+            }.getOrDefault(false)
+            if (openedApp) return true
+
+            val allIntent = Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            val openedAll = runCatching {
+                @Suppress("DEPRECATION")
+                startActivityForResult(allIntent, REQ_ALL_FILES_ACCESS)
+                true
+            }.getOrDefault(false)
+            if (openedAll) return true
+
+            return launchStorageTreePicker()
+        }
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            ),
+            REQ_LEGACY_STORAGE_ACCESS,
+        )
+        return true
+    }
+
     fun launchStorageTreePicker(): Boolean {
         return runCatching {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
@@ -282,6 +336,15 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
                     }
                 }
             }
+            REQ_ALL_FILES_ACCESS -> {
+                val hasAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this)
+                lastKnownStorageAccess = hasAccess
+                UmbrellaSecurityScanner.invalidateAllCleanCache()
+                if (hasAccess) {
+                    startSecurityFileWatcher()
+                    eventHandler.onSecurityFileEvent("all_files_access")
+                }
+            }
         }
     }
 
@@ -292,10 +355,21 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_NOTIFICATION_PERMISSION) {
-            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-            notificationPermissionDeferred?.complete(granted)
-            notificationPermissionDeferred = null
+        when (requestCode) {
+            REQ_NOTIFICATION_PERMISSION -> {
+                val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+                notificationPermissionDeferred?.complete(granted)
+                notificationPermissionDeferred = null
+            }
+            REQ_LEGACY_STORAGE_ACCESS -> {
+                val hasAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this)
+                lastKnownStorageAccess = hasAccess
+                UmbrellaSecurityScanner.invalidateAllCleanCache()
+                if (hasAccess) {
+                    startSecurityFileWatcher()
+                    eventHandler.onSecurityFileEvent("legacy_storage_access")
+                }
+            }
         }
     }
 

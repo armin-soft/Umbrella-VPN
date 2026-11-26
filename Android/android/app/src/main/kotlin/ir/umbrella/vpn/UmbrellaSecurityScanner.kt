@@ -17,6 +17,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.Settings as AndroidSettings
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import ir.umbrella.vpn.bg.BoxService
 import ir.umbrella.vpn.constant.Status
 import java.io.ByteArrayOutputStream
@@ -1013,16 +1015,76 @@ object UmbrellaSecurityScanner {
         }
     }
 
-    fun hasStorageScanAccess(context: Context): Boolean {
+    fun invalidateAllCleanCache() {
+        cleanFileCache.clear()
+    }
+
+    private fun hasSafTreeAccess(context: Context): Boolean {
         return runCatching {
             context.contentResolver.persistedUriPermissions.any { it.isReadPermission }
         }.getOrDefault(false)
     }
 
+    private fun canOpenAllFilesSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        val appIntent = Intent(
+            AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+            Uri.fromParts("package", context.packageName, null),
+        )
+        if (appIntent.resolveActivity(context.packageManager) != null) return true
+        val allIntent = Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+        return allIntent.resolveActivity(context.packageManager) != null
+    }
+
+    fun hasStorageScanAccess(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) {
+                return true
+            }
+            return !canOpenAllFilesSettings(context) && hasSafTreeAccess(context)
+        }
+        val readGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
+        val writeGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
+        return readGranted && writeGranted
+    }
+
     fun requestStorageScanAccess(activity: Activity): Boolean {
         if (hasStorageScanAccess(activity)) return true
         if (activity is MainActivity) {
-            return activity.launchStorageTreePicker()
+            return activity.launchAllFilesAccessSettings()
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val opened = runCatching {
+                activity.startActivity(
+                    Intent(
+                        AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.fromParts("package", activity.packageName, null),
+                    ),
+                )
+                true
+            }.recoverCatching {
+                activity.startActivity(
+                    Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
+                )
+                true
+            }.getOrDefault(false)
+            if (opened) return true
+        } else {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ),
+                2006,
+            )
+            return true
         }
         return runCatching {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(

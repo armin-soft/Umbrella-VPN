@@ -475,13 +475,22 @@ void main() {
   });
 
   group('قراردادها، جابجایی کنترل محتوا و انتخاب گر برنامه در اندروید', () {
-    test('Manifest از الگوی کمترین دسترسی تبعیت می کند و لایه Kotlin و UI قراردادها را رعایت می کنند', () {
+    test('Manifest از الگوی رعایت سپر امنیتی گوگل پلی تبعیت می کند و لایه Kotlin و UI قراردادها را رعایت می کنند', () {
       final String manifest = File(
         'android/app/src/main/AndroidManifest.xml',
       ).readAsStringSync();
       expect(manifest, isNot(contains('android.permission.REQUEST_DELETE_PACKAGES')));
       expect(manifest, isNot(contains('android.permission.KILL_BACKGROUND_PROCESSES')));
-      expect(manifest, isNot(contains('android.permission.MANAGE_EXTERNAL_STORAGE')));
+      expect(manifest, isNot(contains('android.permission.READ_SMS')));
+      expect(manifest, isNot(contains('android.permission.RECEIVE_SMS')));
+      expect(manifest, isNot(contains('android.permission.BIND_ACCESSIBILITY_SERVICE')));
+      expect(manifest, isNot(contains('android.permission.BIND_NOTIFICATION_LISTENER_SERVICE')));
+      expect(manifest, isNot(contains('android.permission.READ_MEDIA_IMAGES')));
+      expect(manifest, contains('android.permission.MANAGE_EXTERNAL_STORAGE'));
+      expect(manifest, contains('android.permission.READ_EXTERNAL_STORAGE'));
+      expect(manifest, contains('android.permission.WRITE_EXTERNAL_STORAGE'));
+      expect(manifest, contains('android:maxSdkVersion="29"'));
+      expect(manifest, contains('android:requestLegacyExternalStorage="true"'));
       expect(manifest, contains('android.permission.QUERY_ALL_PACKAGES'));
 
       final String scannerKt = File(
@@ -489,6 +498,9 @@ void main() {
       ).readAsStringSync();
       expect(scannerKt, contains('ACTION_APPLICATION_DETAILS_SETTINGS'));
       expect(scannerKt, contains('ACTION_VPN_SETTINGS'));
+      expect(scannerKt, contains('ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION'));
+      expect(scannerKt, contains('ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION'));
+      expect(scannerKt, contains('isExternalStorageManager'));
       expect(scannerKt, contains('ACTION_OPEN_DOCUMENT_TREE'));
       expect(scannerKt, contains('jumpjump'));
       expect(scannerKt, contains('psiphon'));
@@ -762,7 +774,7 @@ void main() {
 
       final String manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
       expect(manifest.contains('READ_MEDIA_IMAGES'), isFalse);
-      expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isFalse);
+      expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isTrue);
       expect(manifest.contains('REQUEST_INSTALL_PACKAGES'), isTrue);
       expect(manifest.contains('READ_SMS'), isFalse);
       expect(manifest.contains('RECEIVE_SMS'), isFalse);
@@ -962,6 +974,10 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const ValueKey<String>('security-storage-access-button')), findsOneWidget);
+      expect(find.text('مجوز دسترسی کامل مدیریت فایل'), findsOneWidget);
+      expect(find.text('دسترسی کامل مدیریت فایل'), findsOneWidget);
+      expect(find.text('انتخاب پوشه دانلودها برای اسکن'), findsNothing);
+      expect(find.textContaining('سپر امنیتی گوگل پلی'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('security-link-input')),
         findsNothing,
@@ -986,6 +1002,25 @@ void main() {
       expect(sec.neutralizedEvents, hasLength(1));
       expect(sec.neutralizedEvents.single.action, 'blocked_connection');
       expect(find.textContaining('مسدودسازی اتصال'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      native.scanResult = const SecurityScanResult(
+        clean: true,
+        scannedApps: 12,
+        scannedFiles: 25,
+        storageAccessGranted: true,
+      );
+      await sec.scanNow(silent: false);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('security-storage-access-button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('security-storage-access-active-card')),
+        findsOneWidget,
+      );
+      expect(find.text('دسترسی کامل مدیریت فایل فعال است'), findsOneWidget);
       expect(tester.takeException(), isNull);
       sec.dispose();
     });

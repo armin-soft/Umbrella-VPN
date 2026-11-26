@@ -18,7 +18,6 @@ import '../pages/about_page.dart';
 import '../pages/account_page.dart';
 import '../pages/connect_page.dart';
 import '../pages/device_page.dart';
-import '../pages/exit_page.dart';
 import '../pages/logs_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
@@ -292,30 +291,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     _selectTab(5);
-                  },
-                ),
-                _MoreTile(
-                  icon: Icons.power_settings_new_rounded,
-                  title: 'خروج',
-                  subtitle: 'قطع اتصال و بستن کامل برنامه',
-                  danger: true,
-                  onTap: () async {
-                    Navigator.of(sheetContext).pop();
-                    final VpnController vpn = context.read<VpnController>();
-                    await showDialog<void>(
-                      context: context,
-                      builder: (_) => Dialog(
-                        insetPadding: const EdgeInsets.all(AppMetrics.space4),
-                        child: ExitPage(
-                          onCancelTap: () => Navigator.of(context).pop(),
-                          onExit: () async {
-                            Navigator.of(context).pop();
-                            await vpn.disconnect(silent: true);
-                            await widget.windowService.quit();
-                          },
-                        ),
-                      ),
-                    );
                   },
                 ),
               ],

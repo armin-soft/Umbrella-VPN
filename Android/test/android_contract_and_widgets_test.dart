@@ -1103,11 +1103,17 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
         expect(tester.takeException(), isNull);
+        expect(find.text('دستگاه من'), findsOneWidget);
+        expect(find.text('به روز رسانی'), findsOneWidget);
         expect(find.text('درباره'), findsOneWidget);
-        expect(find.text('خروج'), findsOneWidget);
+        expect(find.text('خروج'), findsNothing);
         Navigator.of(tester.element(find.text('درباره'))).pop();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
+
+        final String shellSource = File('lib/ui/shell/app_shell.dart').readAsStringSync();
+        expect(shellSource, isNot(contains("title: 'خروج'")));
+        expect(shellSource, isNot(contains('ExitPage(')));
 
         setViewport(const Size(844, 390));
         await tester.pumpWidget(buildShell());

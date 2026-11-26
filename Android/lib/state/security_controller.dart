@@ -129,6 +129,11 @@ class SecurityScannerController extends ChangeNotifier {
         _nativeWatcherSub = _native.serviceEvents().listen(
           (AndroidServiceEvent event) {
             if (event.type != 'security_file') return;
+            if (event.path.startsWith('storage_access:true') ||
+                event.path == 'all_files_access' ||
+                event.path == 'legacy_storage_access') {
+              _refreshDirWatchers();
+            }
             _watchDebounce?.cancel();
             _watchDebounce = Timer(const Duration(milliseconds: 650), () {
               unawaited(scanNow(silent: true));
@@ -140,6 +145,18 @@ class SecurityScannerController extends ChangeNotifier {
         _nativeWatcherStarted = false;
       }
     }
+    _attachDirWatchers();
+  }
+
+  void _refreshDirWatchers() {
+    for (final StreamSubscription<FileSystemEvent> s in _dirWatchers) {
+      unawaited(s.cancel());
+    }
+    _dirWatchers.clear();
+    _attachDirWatchers();
+  }
+
+  void _attachDirWatchers() {
     if (_dirWatchers.isNotEmpty) return;
     const List<String> candidates = <String>[
       '/storage/emulated/0/Download',
@@ -286,6 +303,8 @@ class SecurityScannerController extends ChangeNotifier {
     );
 
     if (updateLastResult || effective.hasThreats || !_hasCompletedInitialScan) {
+      final bool gainedStorageAccess =
+          !_lastResult.storageAccessGranted && effective.storageAccessGranted;
       final Set<String> prevKeys =
           _lastResult.threats.map((SecurityThreat t) => t.key).toSet();
       final Set<String> nextKeys =
@@ -294,6 +313,10 @@ class SecurityScannerController extends ChangeNotifier {
       _lastResult = effective;
       _hasCompletedInitialScan = true;
       _lastScannedAt = DateTime.now();
+
+      if (gainedStorageAccess && _monitoringActive) {
+        _refreshDirWatchers();
+      }
 
       final bool changed =
           prevKeys.length != nextKeys.length || !prevKeys.containsAll(nextKeys);

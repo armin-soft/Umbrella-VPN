@@ -342,6 +342,9 @@ class SecurityShieldDialog extends StatelessWidget {
                       if (!report.storageAccessGranted && security != null) ...<Widget>[
                         const SizedBox(height: AppMetrics.space2),
                         Container(
+                          key: const ValueKey<String>(
+                            'security-storage-access-card',
+                          ),
                           padding: const EdgeInsets.all(AppMetrics.space3),
                           decoration: BoxDecoration(
                             color: colors.primarySoft,
@@ -353,11 +356,33 @@ class SecurityShieldDialog extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: <Widget>[
+                              Row(
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.admin_panel_settings_rounded,
+                                    size: AppMetrics.iconMd,
+                                    color: colors.primary,
+                                  ),
+                                  const SizedBox(width: AppMetrics.space2),
+                                  Expanded(
+                                    child: Text(
+                                      'مجوز دسترسی کامل مدیریت فایل',
+                                      style: TextStyle(
+                                        fontSize: AppMetrics.fontSmall,
+                                        fontWeight: FontWeight.w800,
+                                        color: colors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppMetrics.space1),
                               Text(
-                                'برای اسکن و پاکسازی خودکار فایل های دانلودی عمومی، پوشه دانلودها را از انتخاب گر امن اندروید تایید کنید.',
+                                'برای اسکن کامل حافظه و پاکسازی خودکار فایل های دانلودی و تصاویر آلوده، دسترسی کامل مدیریت فایل را در تنظیمات اندروید تایید کنید. تمام بررسی ها کاملاً محلی و با رعایت سپر امنیتی گوگل پلی انجام شده و هیچ فایلی به سرور ارسال نمی شود.',
                                 style: TextStyle(
                                   fontSize: AppMetrics.fontCaption,
-                                  color: colors.textPrimary,
+                                  color: colors.textSecondary,
+                                  height: 1.5,
                                 ),
                               ),
                               const SizedBox(height: AppMetrics.space2),
@@ -368,12 +393,61 @@ class SecurityShieldDialog extends StatelessWidget {
                                     'security-storage-access-button',
                                   ),
                                   icon: const Icon(
-                                    Icons.folder_shared_rounded,
+                                    Icons.folder_open_rounded,
                                     size: AppMetrics.iconSm,
                                   ),
-                                  label: const Text('انتخاب پوشه دانلودها برای اسکن'),
+                                  label: const Text('دسترسی کامل مدیریت فایل'),
                                   onPressed: () =>
                                       unawaited(security.requestStorageScanAccess()),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (report.storageAccessGranted && security != null) ...<Widget>[
+                        const SizedBox(height: AppMetrics.space2),
+                        Container(
+                          key: const ValueKey<String>(
+                            'security-storage-access-active-card',
+                          ),
+                          padding: const EdgeInsets.all(AppMetrics.space3),
+                          decoration: BoxDecoration(
+                            color: colors.surfaceHigh,
+                            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+                            border: Border.all(
+                              color: colors.success.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Icon(
+                                Icons.verified_user_rounded,
+                                size: AppMetrics.iconMd,
+                                color: colors.success,
+                              ),
+                              const SizedBox(width: AppMetrics.space2),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      'دسترسی کامل مدیریت فایل فعال است',
+                                      style: TextStyle(
+                                        fontSize: AppMetrics.fontSmall,
+                                        fontWeight: FontWeight.w700,
+                                        color: colors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppMetrics.space1),
+                                    Text(
+                                      'اسکن عمیق و پاکسازی خودکار فایل های دانلودی با رعایت سپر امنیتی گوگل پلی و بدون ارسال فایل به سرور فعال است.',
+                                      style: TextStyle(
+                                        fontSize: AppMetrics.fontCaption,
+                                        color: colors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
