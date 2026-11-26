@@ -17,23 +17,51 @@ require_once __DIR__ . '/../Storage/Repository.php';
  */
 final class AppTwoStep {
 private const PREFIX = 'AppTwoStep_';
+private const GLOBAL_KEY = 'App_Two_Step_Global';
 
 private function __construct() {
 }
 
-/** Two-step is on unless that Telegram account explicitly turned it off. */
-public static function enabled(int $Telegram_Id): bool {
-if ($Telegram_Id <= 0) {
-return true;
-}
+/** Whether two-step confirmation is globally enabled from the admin panel (on by default). */
+public static function globalEnabled(): bool {
+$Value = Repository::getSetting(self::GLOBAL_KEY, '');
 
-$Value = Repository::getSetting(self::key($Telegram_Id), null);
-
-if ($Value === null) {
+if ($Value === null || $Value === '') {
 return true;
 }
 
 return (string)$Value !== '0';
+}
+
+public static function setGlobal(bool $Enabled): void {
+Repository::setSetting(self::GLOBAL_KEY, $Enabled ? '1' : '0');
+}
+
+/** Per-account preference (when globally enabled). */
+public static function userEnabled(int $Telegram_Id): bool {
+if ($Telegram_Id <= 0) {
+return true;
+}
+
+$Value = Repository::getSetting(self::key($Telegram_Id), '');
+
+if ($Value === null || $Value === '') {
+return true;
+}
+
+return (string)$Value !== '0';
+}
+
+/**
+ * Effective two-step status for an account: if disabled globally in the
+ * admin panel, always false; otherwise uses the account's setting (default on).
+ */
+public static function enabled(int $Telegram_Id): bool {
+if (!self::globalEnabled()) {
+return false;
+}
+
+return self::userEnabled($Telegram_Id);
 }
 
 public static function set(int $Telegram_Id, bool $Enabled): void {

@@ -535,6 +535,10 @@ $Day_Key = ($Day !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($Day)) ===
 : self::tehranToday();
 $Key = 'DailyNotice_' . $Day_Key . '_' . hash('sha256', $Category . ':' . $Target_Key);
 
+if ((string)self::getSetting($Key, '') !== '') {
+return false;
+}
+
 try {
 return Database::getInstance()->execute(
 'INSERT IGNORE INTO `Settings` (`Key`, `Value`) VALUES (?, ?)',

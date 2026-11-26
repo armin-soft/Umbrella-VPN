@@ -175,7 +175,9 @@ return false;
 
 $Pattern_Code = trim($Pattern_Code !== '' ? $Pattern_Code : Environment::getOtpPatternCode());
 $Api_Key = trim(Environment::getSmsApiKey());
-$Sender_Raw = trim(Environment::getSmsSender());
+$Explicit_Otp_Sender = method_exists('Environment', 'get') ? trim((string)Environment::get('IPPANEL_OTP_SENDER', '')) : '';
+$Web_Sender_Raw = trim(Environment::getSmsSender());
+$Sender_Raw = trim(method_exists('Environment', 'getOtpSender') ? Environment::getOtpSender() : $Web_Sender_Raw);
 
 if ($Pattern_Code === '') {
 error_log('[Umbrella-Bot][Ippanel-Pattern] کد الگو (IPPANEL_OTP_PATTERN) تنظیم نشده است.');
@@ -183,28 +185,38 @@ error_log('[Umbrella-Bot][Ippanel-Pattern] کد الگو (IPPANEL_OTP_PATTERN) �
 return false;
 }
 
-if ($Api_Key === '' || $Sender_Raw === '') {
+if ($Api_Key === '' || ($Sender_Raw === '' && $Web_Sender_Raw === '')) {
 error_log('[Umbrella-Bot][Ippanel-Pattern] کلید API یا شماره فرستنده تنظیم نشده است.');
 \Repository::logSms(0, $Phone, 'اطلاعات احراز هویت پنل پیامک تنظیم نشده است', false);
 return false;
 }
 
+$Url = trim(Environment::getSmsUrl());
+
+if ($Url === '' || (str_contains($Url, '/v1/') === false && str_contains($Url, '/api/send') === false)) {
+$Url = self::SEND_URL;
+}
+
+$Recipient = Helper::toE164($Phone);
+$From = self::formatSender($Sender_Raw !== '' ? $Sender_Raw : '+983000505');
+$Attempt_Senders = [$From];
+if ($Explicit_Otp_Sender === '' && $From !== '+983000505') {
+$Attempt_Senders[] = '+983000505';
+}
+
+$Ok = false;
+$Last_Status = 0;
+foreach ($Attempt_Senders as $Candidate_Sender) {
 $Payload = [
 'sending_type' => 'pattern',
-'from_number' => self::formatSender($Sender_Raw),
+'from_number' => $Candidate_Sender,
 'code' => $Pattern_Code,
-'recipients' => [Helper::toE164($Phone)],
+'recipients' => [$Recipient],
 'params' => [
 // «کد تایید» پترن: متغیر %Code% از نوع عدد.
 'Code' => $Code,
 ],
 ];
-
-$Url = trim(Environment::getSmsUrl());
-
-if ($Url === '' || str_contains($Url, '/v1/') === false && str_contains($Url, '/api/send') === false) {
-$Url = self::SEND_URL;
-}
 
 self::throttle();
 
@@ -214,21 +226,67 @@ $Result = HttpClient::post($Url, $Payload, [
 'Authorization' => $Api_Key,
 ]);
 
-$Status = (int)($Result['StatusCode'] ?? 0);
+$Last_Status = (int)($Result['StatusCode'] ?? 0);
 $Meta_Status = (bool)($Result['Json']['meta']['status'] ?? false);
 $Meta_Message = (string)($Result['Json']['meta']['message'] ?? '');
-$Ok = $Status >= 200 && $Status < 300 && $Meta_Status;
+$Meta_Code = (string)($Result['Json']['meta']['message_code'] ?? '');
+$Ok = $Last_Status >= 200 && $Last_Status < 300 && $Meta_Status;
+
+if ($Ok) {
+\Repository::logSms(0, $Phone, 'پیامک کد تایید ارسال شد', true);
+return true;
+}
 
 // The code itself must never reach the log or the database.
-if (!$Ok) {
 error_log(sprintf(
-'[Umbrella-Bot][Ippanel-Pattern] ارسال ناموفق | Phone=%s Status=%d Meta=%s Body=%s',
-$Phone, $Status, $Meta_Message, mb_substr((string)($Result['Body'] ?? ''), 0, 300)
+'[Umbrella-Bot][Ippanel-Pattern] ارسال ناموفق | Phone=%s Pattern=%s From=%s Status=%d Meta=%s Code=%s Body=%s',
+$Phone, $Pattern_Code, $Candidate_Sender, $Last_Status, $Meta_Message, $Meta_Code, mb_substr((string)($Result['Body'] ?? ''), 0, 300)
+));
+
+if (!in_array($Last_Status, [400, 422], true)) {
+break;
+}
+}
+
+// If IPPanel rejected pattern parameters/sender with 4xx, try plain webservice delivery
+// using the configured sender so login is not deadlocked (still never logging the OTP code).
+if (in_array($Last_Status, [400, 404, 422], true) && $Web_Sender_Raw !== '') {
+$Fallback_Payload = [
+'sending_type' => 'webservice',
+'from_number' => self::formatSender($Web_Sender_Raw),
+'message' => "سلام کد تایید شما {$Code} می باشد.\nسرور آمبرلا - آرمین سافت",
+'params' => [
+'recipients' => [$Recipient],
+],
+];
+
+self::throttle();
+
+$Fallback_Result = HttpClient::post($Url, $Fallback_Payload, [
+'Content-Type' => 'application/json; charset=utf-8',
+'Accept' => 'application/json',
+'Authorization' => $Api_Key,
+]);
+
+$Fb_Status = (int)($Fallback_Result['StatusCode'] ?? 0);
+$Fb_Meta_Status = (bool)($Fallback_Result['Json']['meta']['status'] ?? false);
+$Fb_Meta_Msg = (string)($Fallback_Result['Json']['meta']['message'] ?? '');
+$Fb_Meta_Code = (string)($Fallback_Result['Json']['meta']['message_code'] ?? '');
+$Fb_Ok = $Fb_Status >= 200 && $Fb_Status < 300 && $Fb_Meta_Status;
+
+if ($Fb_Ok) {
+\Repository::logSms(0, $Phone, 'پیامک کد تایید با وب سرویس جایگزین ارسال شد', true);
+return true;
+}
+
+error_log(sprintf(
+'[Umbrella-Bot][Ippanel-OtpFallback] ارسال ناموفق | Phone=%s From=%s Status=%d Meta=%s Code=%s Body=%s',
+$Phone, self::formatSender($Web_Sender_Raw), $Fb_Status, $Fb_Meta_Msg, $Fb_Meta_Code, mb_substr((string)($Fallback_Result['Body'] ?? ''), 0, 300)
 ));
 }
 
-\Repository::logSms(0, $Phone, $Ok ? 'پیامک کد تایید ارسال شد' : 'ارسال پیامک کد تایید رد شد', $Ok);
-return $Ok;
+\Repository::logSms(0, $Phone, 'ارسال پیامک کد تایید رد شد', false);
+return false;
 }
 
 private static function formatSender(string $Sender): string {
@@ -241,8 +299,12 @@ $Normalized = preg_replace('/[\s\-]/', '', $Sender);
 if (!ctype_digit($Normalized)) return $Sender;
 $Length = strlen($Normalized);
 
-if ($Length >= 4 && $Length <= 8) {
+if ($Length >= 4 && $Length <= 5) {
 return $Normalized;
+}
+
+if ($Length >= 6 && $Length <= 9) {
+return '+98' . ltrim($Normalized, '0');
 }
 
 if (str_starts_with($Normalized, '0098')) {

@@ -618,12 +618,20 @@ $Rows = Menu::rows([
 self::categoryMenu($Context, 'کیف پول و مالی', $Rows);
 }
 
+private static function hasUserProfile(array $User): bool {
+$Full_Name = trim((string)($User['Full_Name'] ?? ''));
+$Phone = trim((string)($User['Phone'] ?? ''));
+return $Full_Name !== '' && $Phone !== '';
+}
+
 public static function accountMenu(Context $Context): void {
+[$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
 $Rows = Menu::rows([
 [['👤پروفایل کاربری', 'پروفایل کاربری']],
-[['✏️ویرایش پروفایل', 'ویرایش پروفایل']],
 ]);
-[$User, $Live] = self::subscriptionMenuState($Context->UserId, true);
+if (self::hasUserProfile($User)) {
+$Rows[] = [Menu::button('✏️ویرایش پروفایل', 'ویرایش پروفایل')];
+}
 if (self::nightlyMenuVisible($User, $Live)) {
 $On = Repository::nightlyReportEnabled($Context->UserId);
 $Rows[] = [Menu::button($On ? '🔔گزارش شبانه: روشن — خاموش کردن' : '🔕گزارش شبانه: خاموش — روشن کردن', $On ? 'nightly_report_off' : 'nightly_report_on')];

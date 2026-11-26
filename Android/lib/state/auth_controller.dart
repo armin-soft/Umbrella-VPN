@@ -1854,6 +1854,7 @@ class AuthController extends ChangeNotifier {
     onFilterChanged?.call(FilterSettings.empty);
     _phase = AuthPhase.phone;
     _stage = SignInStage.unknown;
+    final String challenge = _challenge;
     _challenge = '';
     _error = '';
     _info = '';
@@ -1861,7 +1862,7 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     if (callServer && session != null) {
       try {
-        await _gateway.signOut(token: session.token, challenge: _challenge);
+        await _gateway.signOut(token: session.token, challenge: challenge);
       } on ApiError {
         // قطع نشست در سرور اختیاری است؛ خروج محلی در هر حال انجام می شود.
       }

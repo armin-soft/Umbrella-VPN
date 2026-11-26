@@ -683,12 +683,16 @@ $Failed_Transient = 0;
 
 $Now_Stamp = time();
 $Skipped_No_Subscription = 0;
+$Seen_Users = [];
+$Seen_Chats = [];
+$Seen_Clients = [];
 
 foreach ($Rows as $U) {
 $User_ID = (int)($U['Telegram_ID'] ?? 0);
 $Chat_ID = (int)($U['Chat_ID'] ?? 0);
 
-if ($User_ID <= 0) continue;
+if ($User_ID <= 0 || isset($Seen_Users[$User_ID])) continue;
+$Seen_Users[$User_ID] = true;
 if (!Repository::nightlyReportEnabled($User_ID)) continue;
 $U = Repository::getUser($User_ID) ?? [];
 $Live = $Live_Map[$User_ID] ?? null;
@@ -758,11 +762,19 @@ $Text = Helper::frame('کاربر', $Name, 'گزارش شبانه مصرف', $Us
 . "\n💡<b>نکته:</b> با مدیریت هوشمند مصرف، اتصال پایدارتری خواهید داشت."
 . Helper::userFooter();
 
-// Recheck local holds/preferences and enforce strict per-user once-per-day cap
-// immediately before either transport so even an interrupted batch never resends.
+// Recheck local holds/preferences and enforce strict per-user/chat/client once-per-day cap
+// immediately before either transport so even an interrupted batch or duplicate user row never resends.
+$Fresh_User = Repository::getUser($User_ID) ?? [];
 if (!Repository::nightlyReportEnabled($User_ID)
-|| !self::nightlyRecipientEligible(Repository::getUser($User_ID) ?? [], $Live)) continue;
+|| !self::nightlyRecipientEligible($Fresh_User, $Live)) continue;
+$Client_Key = trim((string)($Fresh_User['Client_ID'] ?? ($U['Client_ID'] ?? '')));
+if ($Chat_ID > 0 && isset($Seen_Chats[$Chat_ID])) continue;
+if ($Client_Key !== '' && $Client_Key !== '_' && isset($Seen_Clients[$Client_Key])) continue;
 if (!self::claimDaily('nightly_report', $User_ID, $Today)) continue;
+if ($Chat_ID > 0 && $Chat_ID !== $User_ID && !self::claimDaily('nightly_report_chat', $Chat_ID, $Today)) continue;
+if ($Client_Key !== '' && $Client_Key !== '_' && !self::claimDaily('nightly_report_client', $Client_Key, $Today)) continue;
+if ($Chat_ID > 0) $Seen_Chats[$Chat_ID] = true;
+if ($Client_Key !== '' && $Client_Key !== '_') $Seen_Clients[$Client_Key] = true;
 SystemNotifications::queue($User_ID, 'گزارش شبانه مصرف', $Text, 'nightly:' . $Today);
 if ($Chat_ID <= 0) continue;
 $Result = TelegramClient::sendMessage($Chat_ID, $Text, TelegramClient::inlineKeyboard([

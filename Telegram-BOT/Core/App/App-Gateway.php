@@ -395,11 +395,14 @@ self::ok([
 // so a bookkeeping problem can never turn into «cannot sign in».
 if (!AppTwoStep::enabled($Telegram_Id) && self::decide($Challenge, true, $Telegram_Id)) {
 try {
-TelegramClient::sendSystemMessage($Telegram_Id, self::signedInMessage($Row), TelegramClient::inlineKeyboard([
+$Buttons = [
 [['text' => '📱منوی دستگاه', 'callback_data' => 'user_device_menu']],
 [['text' => '📱دستگاه های من', 'callback_data' => 'app_devices']],
-[['text' => '🔐تأیید دومرحله ای', 'callback_data' => 'app_2fa']],
-]));
+];
+if (!method_exists('AppTwoStep', 'globalEnabled') || AppTwoStep::globalEnabled()) {
+$Buttons[] = [['text' => '🔐تأیید دومرحله ای', 'callback_data' => 'app_2fa']];
+}
+TelegramClient::sendSystemMessage($Telegram_Id, self::signedInMessage($Row), TelegramClient::inlineKeyboard($Buttons));
 }
 
 catch (Throwable $Error) {
@@ -606,19 +609,51 @@ private static function signOut(array $Body): void {
 $Token = trim((string)($Body['token'] ?? ''));
 $Challenge = preg_replace('/[^a-f0-9]/', '', (string)($Body['challenge'] ?? '')) ?? '';
 $Database = Database::getInstance();
+$Now = time();
+$Device_Ids = [];
 
 if ($Token !== '') {
+$Token_Hash = hash('sha256', $Token);
+$Session_Row = $Database->fetch(
+'SELECT `Device_ID` FROM `App_Sessions` WHERE `Token_Hash` = ? LIMIT 1',
+[$Token_Hash]
+);
+$Session_Device = is_array($Session_Row) ? trim((string)($Session_Row['Device_ID'] ?? '')) : '';
+if ($Session_Device !== '') {
+$Device_Ids[] = $Session_Device;
+}
 $Database->execute(
 'UPDATE `App_Sessions` SET `Revoked_At` = ? WHERE `Token_Hash` = ? AND `Revoked_At` IS NULL',
-[time(), hash('sha256', $Token)]
+[$Now, $Token_Hash]
 );
 }
 
 if ($Challenge !== '') {
+$Request_Row = $Database->fetch(
+'SELECT `Device_ID` FROM `App_SignIn_Requests` WHERE `Challenge` = ? LIMIT 1',
+[$Challenge]
+);
+$Request_Device = is_array($Request_Row) ? trim((string)($Request_Row['Device_ID'] ?? '')) : '';
+if ($Request_Device !== '') {
+$Device_Ids[] = $Request_Device;
+}
+if ($Device_Ids === []) {
 $Database->execute(
 'UPDATE `App_Devices` SET `Is_Trusted` = 0
 WHERE `Device_ID` = (SELECT `Device_ID` FROM `App_SignIn_Requests` WHERE `Challenge` = ? LIMIT 1)',
 [$Challenge]
+);
+}
+}
+
+foreach (array_values(array_unique($Device_Ids)) as $Device_Id) {
+$Database->execute(
+'UPDATE `App_Devices` SET `Is_Trusted` = 0 WHERE `Device_ID` = ?',
+[$Device_Id]
+);
+$Database->execute(
+'UPDATE `App_Sessions` SET `Revoked_At` = ? WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
+[$Now, $Device_Id]
 );
 }
 

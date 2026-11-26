@@ -18,6 +18,7 @@ require_once __DIR__ . '/../Core/Database/Database.php';
 require_once __DIR__ . '/../Config/Environment.php';
 require_once __DIR__ . '/Scheduler.php';
 require_once __DIR__ . '/../Core/App/App-Device-Limit.php';
+require_once __DIR__ . '/../Core/App/App-Two-Step.php';
 
 final class AdminFlow {
 /**
@@ -113,6 +114,7 @@ $Rows = Menu::rows([
 [['👁رصد کاربران', 'admin_user_monitor']],
 [['📲دستگاه های برنامه', 'admin_devices']],
 [['🔐سقف دستگاه حساب', 'device_limit_menu']],
+[['🛡تأیید دومرحله ای', 'admin_2fa_menu']],
 [['🗑حذف همه دستگاه ها', 'admin_devices_delete_all_menu']],
 ]);
 self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
@@ -540,9 +542,9 @@ $Text .= $Line . "\n";
 
 $FilterButtons = [
 [
-Menu::button(($Category === 'all' ? '✅' : '') . '👁همه (' . Helper::toPersian((string)array_sum($Counts)) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':all:0'),
-Menu::button(($Category === 'site' ? '✅' : '') . '🌐سایت ها (' . Helper::toPersian((string)$Counts['site']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':site:0'),
-Menu::button(($Category === 'app' ? '✅' : '') . $AppSectionEmoji . $AppShortLabel . ' (' . Helper::toPersian((string)$Counts['app']) . ')', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':app:0'),
+Menu::button(($Category === 'all' ? '✅' : '') . '👁همه (' . Helper::toPersian((string)array_sum($Counts)) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':all'),
+Menu::button(($Category === 'site' ? '✅' : '') . '🌐سایت ها (' . Helper::toPersian((string)$Counts['site']) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':site'),
+Menu::button(($Category === 'app' ? '✅' : '') . $AppSectionEmoji . $AppShortLabel . ' (' . Helper::toPersian((string)$Counts['app']) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':app'),
 ],
 ];
 
@@ -551,7 +553,7 @@ $FilterButtons,
 Menu::pages($InnerPage, $InnerPages, 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':'),
 [
 [Menu::button('🗑پاک کردن تاریخچه رصد کاربر', 'admin_monitor_clr:' . $TargetKey . ':' . $ListPage . ':' . $Category)],
-[Menu::button('🔄بروزرسانی رصد', 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':' . $InnerPage)],
+[Menu::button('🔄بروزرسانی رصد', 'admin_monitor_refresh:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':' . $InnerPage)],
 ],
 Menu::adminNav('فهرست رصد', 'admin_user_monitor_page:' . $ListPage)
 );
@@ -4103,6 +4105,51 @@ $Text = self::header($Context, 'مجوز دستگاه کاربران')
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard([
 Menu::back('منوی قبلی', 'admin_devices_menu'), Menu::adminHome(),
 ]));
+}
+
+/** «🛡تأیید دومرحله ای» — کنترل سراسری تایید دومرحله ای برنامه از پنل مدیریت. */
+public static function twoStepMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
+
+$On = class_exists('AppTwoStep') ? AppTwoStep::globalEnabled() : true;
+$Text = self::header($Context, 'تأیید دومرحله ای برنامه')
+. Menu::section('🛡', 'وضعیت کلی تأیید دومرحله ای ورود به برنامه', [
+'🚦وضعیت فعلی: ' . ($On ? '🟢فعال' : '🔴غیرفعال'),
+'🟢 فعال: کاربران دارای حساب متصل تلگرام، ورود جدید خود را با زدن «✅خودم بودم» در تلگرام تأیید می کنند (مگر آن که خودشان خاموش کرده باشند).',
+'🔴 غیرفعال: ورود همه کاربران به برنامه تنها با کد پیامکی انجام می شود و بلافاصله بعد از هر ورود، اطلاعیه آن به تلگرامشان ارسال می گردد.',
+])
+. Helper::adminFooter();
+
+$Rows = [
+[$On
+? Menu::button('⛔️غیرفعال کردن تأیید دومرحله ای', 'admin_2fa_off')
+: Menu::button('✅فعال کردن تأیید دومرحله ای', 'admin_2fa_on')],
+[Menu::back('منوی قبلی', 'admin_devices_menu'), Menu::adminHome()],
+];
+self::logMenuProblems('two-step', $Rows);
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
+}
+
+public static function setTwoStep(Context $Context, bool $Enabled): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+$Was = class_exists('AppTwoStep') ? AppTwoStep::globalEnabled() : true;
+$Changed = $Was !== $Enabled;
+
+if ($Changed && class_exists('AppTwoStep')) {
+AppTwoStep::setGlobal($Enabled);
+}
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+$Message = $Changed
+? ($Enabled ? '✅تأیید دومرحله ای برای همه کاربران فعال شد.' : '⛔️تأیید دومرحله ای برای همه کاربران غیرفعال شد.')
+: 'ℹ️وضعیت تغییری نکرد.';
+TelegramClient::answerCallbackQuery($Context->CallbackId, $Message, false);
+}
+
+self::twoStepMenu($Context);
 }
 
 /** Second step: show the current state and let the admin pick the new cap. */

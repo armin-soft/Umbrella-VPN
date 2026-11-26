@@ -150,6 +150,10 @@ public static function getSmsSender(): string {
 return self::get('IPPANEL_SENDER', self::get('SMS_SENDER'));
 }
 
+public static function getOtpSender(): string {
+return self::get('IPPANEL_OTP_SENDER', self::getSmsSender());
+}
+
 public static function getTelegramChannelId(): string {
 return self::get('TELEGRAM_CHANNEL_ID');
 }

@@ -358,6 +358,9 @@ $AdminCtx->CallbackData = 'admin_monitor_view:d:8:0:app:0';
 $Route->invoke(null, $AdminCtx);
 check(str_contains(TelegramClient::$LastText, 'Google Chrome') && !str_contains(TelegramClient::$LastText, 'github.com'), 'category filter isolates Android apps from sites accurately');
 $ViewCallbacks = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
+check(Menu::problems(TelegramClient::$LastMarkup['inline_keyboard'] ?? []) === [], 'user monitor view has zero duplicate callbacks on page 0');
+check(in_array('admin_monitor_tab:d:8:0:all', $ViewCallbacks, true), 'user monitor view uses distinct tab callbacks');
+check(in_array('admin_monitor_refresh:d:8:0:app:0', $ViewCallbacks, true), 'user monitor view uses distinct refresh callback');
 check(in_array('admin_monitor_clr:d:8:0:app', $ViewCallbacks, true), 'user monitor view exposes clear-user-history button');
 check(!in_array('admin_monitor_view:d:8:0:screen:0', $ViewCallbacks, true), 'screen filter button is removed from user monitor view');
 check(in_array('admin_monitor_clrall:0', $MonitorCallbacks, true), 'user monitor list exposes clear-all-history button');
@@ -397,6 +400,33 @@ TelegramClient::$LastAlert = '';
 $AdminCtx->CallbackData = 'admin_monitor_clrall:0';
 $Route->invoke(null, $AdminCtx);
 check(str_contains(TelegramClient::$LastAlert, 'وجود ندارد'), 'clear-all warns when history is already empty');
+
+// Multi-page userMonitorView: zero duplicate callbacks on page 0, page 1, and page 2
+for ($I = 1; $I <= 25; $I++) {
+Database::$Activities[] = [
+'Device_ID' => 'dev-1', 'User_UUID' => 'uuid-1', 'Telegram_ID' => 101,
+'Category' => $I % 2 === 0 ? 'site' : 'app',
+'Target' => 'target-' . $I . '.example',
+'Hits' => $I, 'Bytes_Down' => 1024, 'Bytes_Up' => 256,
+'Last_Seen_At' => time() - $I,
+];
+}
+foreach ([0, 1, 2] as $PageIdx) {
+$AdminCtx->CallbackData = 'admin_monitor_view:t:101:0:all:' . $PageIdx;
+$Route->invoke(null, $AdminCtx);
+$Kb = TelegramClient::$LastMarkup['inline_keyboard'] ?? [];
+check(Menu::problems($Kb) === [], 'userMonitorView has zero duplicate buttons on page ' . $PageIdx);
+$Cbs = array_column(array_merge(...$Kb), 'callback_data');
+check(in_array('admin_monitor_tab:t:101:0:all', $Cbs, true), 'tab button distinct on page ' . $PageIdx);
+check(in_array('admin_monitor_refresh:t:101:0:all:' . $PageIdx, $Cbs, true), 'refresh button distinct on page ' . $PageIdx);
+}
+$AdminCtx->CallbackData = 'admin_monitor_tab:t:101:0:site';
+$Route->invoke(null, $AdminCtx);
+check(Menu::problems(TelegramClient::$LastMarkup['inline_keyboard'] ?? []) === [], 'tab callback renders clean keyboard');
+$AdminCtx->CallbackData = 'admin_monitor_refresh:t:101:0:site:1';
+$Route->invoke(null, $AdminCtx);
+check(Menu::problems(TelegramClient::$LastMarkup['inline_keyboard'] ?? []) === [], 'refresh callback renders clean keyboard');
+Database::$Activities = [];
 
 // 7. 24-hour automatic activity reset check
 Database::$Activities[] = ['Device_ID' => 'dev-1', 'User_UUID' => 'uuid-1', 'Telegram_ID' => 101, 'Category' => 'site', 'Target' => 'example.com', 'Hits' => 2, 'Bytes_Down' => 500, 'Bytes_Up' => 100, 'Last_Seen_At' => time()];

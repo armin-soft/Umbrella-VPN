@@ -164,7 +164,7 @@ $Menus = [
 'menu' => ['مدیریت', null, ['خاموش کردن ربات', 'اعتبار حساب کاربری', 'جرایم', 'admin_devices_menu', 'admin_content_filter', 'admin_accounts_menu', 'عملیات کلاینت سرور', 'پیکربندی سرور', 'منوی گزارش', 'منوی پیامک', 'مدیریت تیکت ها', 'admin_subscriptions_menu', 'منوی سیستم', 'بروز رسانی']],
 'creditMenu' => ['اعتبار حساب کاربری', 'مدیریت', ['افزایش اعتبار اول', 'کسر اعتبار اول', 'مشاهده اعتبار اول']],
 'crimes' => ['جرایم', 'مدیریت', ['مسدودیت اول', 'رفع مسدودیت اول', 'مشاهده مسدودی ها']],
-'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_user_monitor', 'admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu']],
+'devicesMenu' => ['admin_devices_menu', 'مدیریت', ['admin_user_monitor', 'admin_devices', 'device_limit_menu', 'admin_2fa_menu', 'admin_devices_delete_all_menu']],
 'accountsMenu' => ['admin_accounts_menu', 'مدیریت', ['admin_users', 'حذف کاربر اول', 'منقضی اشتراک اول']],
 'serverClientsMenu' => ['عملیات کلاینت سرور', 'مدیریت', ['فعالسازی کلاینت اول', 'غیر فعالسازی کلاینت اول', 'بروز رسانی داده های کاربران اول']],
 'serverConfig' => ['پیکربندی سرور', 'مدیریت', ['وضعیت سرور', 'سرویس های سرور', 'بروز رسانی میزان استفاده اول', 'تنظیمات ربات']],
@@ -178,7 +178,7 @@ $Menus = [
 $AdminWidths = [
 'menu' => array_fill(0, 14, 1),
 'creditMenu' => [2, 1, 1], 'crimes' => [2, 1, 1],
-'devicesMenu' => [1, 1, 1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
+'devicesMenu' => [1, 1, 1, 1, 1, 1], 'accountsMenu' => [1, 1, 1, 1],
 'serverClientsMenu' => [2, 1, 1], 'serverConfig' => [2, 1, 1, 1],
 'reportMenu' => [1, 1, 1, 1, 1], 'smsMenu' => [2, 2, 2, 1],
 'supportMenu' => [1], 'ticketAdminMenu' => [1], 'subscriptionsMenu' => [1, 1, 1], 'systemMenu' => [1, 1, 1],
@@ -251,7 +251,7 @@ check(calls() === ['تایید تنظیم مجدد دیتابیس', 'منوی س
 // Parent navigation on the existing leaf screens (whose live data is not mocked).
 $AdminSource = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
 $LeafParents = [
-'appDevicesMenu' => 'admin_devices_menu', 'deviceLimitMenu' => 'admin_devices_menu',
+'appDevicesMenu' => 'admin_devices_menu', 'deviceLimitMenu' => 'admin_devices_menu', 'twoStepMenu' => 'admin_devices_menu',
 'blockedList' => 'جرایم', 'askUpdateUserData' => 'عملیات کلاینت سرور',
 'globalStats' => 'منوی گزارش', 'dailyReport' => 'منوی گزارش',
 'financialReport' => 'منوی گزارش', 'userRanking' => 'منوی گزارش',
@@ -273,7 +273,7 @@ $UserMenus = [
 'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
-'accountMenu' => ['user_account_menu', ['پروفایل کاربری', 'ویرایش پروفایل']],
+'accountMenu' => ['user_account_menu', ['پروفایل کاربری']],
 'deviceMenu' => ['user_device_menu', ['app_filter', 'app_bypass', 'app_2fa', 'app_devices']],
 'statsMenu' => ['user_stats_menu', ['سابقه اشتراک', 'گزارش مصرف']],
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
@@ -281,7 +281,7 @@ $UserMenus = [
 $UserWidths = [
 'serviceMenu' => [1, 1, 1, 1, 1, 1, 1, 1],
 'subscriptionsMenu' => [2, 1, 1], 'walletMenu' => [1, 1, 1],
-'accountMenu' => [1, 1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1], 'supportMenu' => [1, 1, 1],
+'accountMenu' => [1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1], 'supportMenu' => [1, 1, 1],
 ];
 foreach ($UserMenus as $Method => [$Call, $Actions]) {
 $Expected = $Method === 'serviceMenu' ? $Actions : array_merge($Actions, ['منوی خدمات ربات']);
@@ -328,6 +328,14 @@ Repository::$User = [];
 $UserContext->CallbackData = 'user_security_menu';
 $Route->invoke(null, $UserContext);
 check(calls() === array_merge($UserMenus['accountMenu'][1], ['منوی خدمات ربات']), 'legacy security callback redirects to account');
+// Profile edit button is hidden until both Full_Name and Phone are recorded.
+Repository::$User = ['Full_Name' => 'سارا رضایی', 'Phone' => ''];
+UserFlow::accountMenu($UserContext);
+check(calls() === ['پروفایل کاربری', 'منوی خدمات ربات'], 'incomplete profile keeps edit button hidden');
+Repository::$User = ['Full_Name' => 'سارا رضایی', 'Phone' => '09123456789'];
+UserFlow::accountMenu($UserContext);
+check(calls() === ['پروفایل کاربری', 'ویرایش پروفایل', 'منوی خدمات ربات'], 'registered profile displays edit button');
+Repository::$User = [];
 $Now = time();
 foreach ([
 'active' => [['Subscription' => '۱ ماهه', 'Expiration_Time_Stamp' => $Now + 86400], true, true],
@@ -384,7 +392,7 @@ check(str_contains($Body, 'Menu::userHome()'), $Method . ': keeps user home');
 // Device cards: owner links, safe display, stable numbering and bounded pagination.
 AdminFlow::devicesMenu($Context);
 check(TelegramClient::$Text === "مدیریت دستگاه ها\n📌*بخش مورد نظر را انتخاب کنید:*", 'device category uses plain greeting section and separate prompt');
-check(calls() === ['admin_user_monitor', 'admin_devices', 'device_limit_menu', 'admin_devices_delete_all_menu', 'مدیریت'], 'device limit and user monitor live in device management');
+check(calls() === ['admin_user_monitor', 'admin_devices', 'device_limit_menu', 'admin_2fa_menu', 'admin_devices_delete_all_menu', 'مدیریت'], 'device limit, 2FA control, and user monitor live in device management');
 for ($Index = 0; $Index < 7; $Index++) {
 Database::$Devices[] = [
 'ID' => $Index + 1, 'Device_ID' => str_pad((string)$Index, 64, 'a'),

@@ -385,6 +385,9 @@ match($Data) {
 'app_2fa' => AppFlow::twoStepMenu($Context),
 'app_2fa_on' => AppFlow::setTwoStep($Context, true),
 'app_2fa_off' => AppFlow::setTwoStep($Context, false),
+'admin_2fa_menu' => AdminFlow::twoStepMenu($Context),
+'admin_2fa_on' => AdminFlow::setTwoStep($Context, true),
+'admin_2fa_off' => AdminFlow::setTwoStep($Context, false),
 'app_devices' => AppFlow::devices($Context),
 'app_notifications' => UserFlow::accountMenu($Context),
 'nightly_report_on' => UserFlow::setNightlyReport($Context, true),
@@ -587,6 +590,12 @@ if (preg_match('/^admin_user_monitor_page:([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::userMonitorList($Context, (int)$Match[1]); return;
 }
 if (preg_match('/^admin_monitor_view:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen):([0-9]+)$/D', $Data, $Match)) {
+AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], (int)$Match[4]); return;
+}
+if (preg_match('/^admin_monitor_tab:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen)$/D', $Data, $Match)) {
+AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], 0); return;
+}
+if (preg_match('/^admin_monitor_refresh:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen):([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], (int)$Match[4]); return;
 }
 if (preg_match('/^admin_monitor_clrall:([0-9]+)$/D', $Data, $Match)) {

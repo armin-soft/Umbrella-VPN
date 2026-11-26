@@ -768,6 +768,14 @@ self::renderTwoStep($Context);
 }
 
 public static function setTwoStep(Context $Context, bool $Enabled): void {
+if (!AppTwoStep::globalEnabled()) {
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '⛔️تأیید دومرحله ای از پنل مدیریت غیرفعال شده است.', true);
+}
+self::renderTwoStep($Context);
+return;
+}
+
 $Changed = AppTwoStep::enabled($Context->UserId) !== $Enabled;
 
 if ($Changed) {
@@ -785,6 +793,23 @@ self::renderTwoStep($Context);
 }
 
 private static function renderTwoStep(Context $Context): void {
+$Global_On = AppTwoStep::globalEnabled();
+if (!$Global_On) {
+$Text = \Helper::userGreeting($Context, 'تأیید دومرحله ای ورود')
+. "🔐 *تأیید دومرحله ای ورود به برنامه*\n"
+. "🚦وضعیت: 🔴غیرفعال (تنظیم شده از پنل مدیریت)\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "ℹ️ در حال حاضر تأیید دومرحله ای تلگرامی از سوی مدیریت غیرفعال است و ورود به برنامه تنها با کد پیامکی انجام می شود؛ پس از هر ورود، اطلاعیه آن به تلگرام شما ارسال می گردد."
+. \Helper::userFooter();
+
+$Rows = [
+Menu::back('منوی قبلی', 'user_device_menu'),
+Menu::userHome(),
+];
+self::reply($Context, $Text, TelegramClient::inlineKeyboard($Rows));
+return;
+}
+
 $On = AppTwoStep::enabled($Context->UserId);
 $Text = \Helper::userGreeting($Context, 'تأیید دومرحله ای ورود')
 . "🔐 *تأیید دومرحله ای ورود به برنامه*\n"
