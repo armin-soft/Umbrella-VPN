@@ -312,6 +312,8 @@ $Route->invoke(null, $AdminCtx);
 $Html = (string)(TelegramClient::$LastDocument['content'] ?? '');
 check(str_contains($Html, 'هدیه مرادی') && str_contains($Html, 'github.com') && str_contains($Html, 'Visual Studio Code') && str_contains($Html, 'Instagram'), 'per-user HTML export includes identity and all three separated activity tables');
 check(str_contains($Html, 'data-cat="site"') && str_contains($Html, 'data-cat="software"') && str_contains($Html, 'data-cat="mobile"'), 'HTML export includes interactive site/software/mobile filter blocks');
+check(str_contains($Html, "@font-face{font-family:'Vazirmatn';src:url('data:font/ttf;base64,") && str_contains($Html, 'data:image/png;base64,'), 'HTML export embeds offline Vazirmatn font and Umbrella brand logo');
+check(str_contains($Html, '#07080B') && str_contains($Html, '#E11D2E') && str_contains($Html, '#F5F6FA') && str_contains($Html, '#D21027'), 'HTML export matches UmbrellaColors dark and light brand palette');
 check(!is_file(TelegramClient::$LastDocument['path'] ?? ''), 'temporary HTML export file is removed after sendDocument');
 
 echo "OK app_monitor_split_and_html_test ({$Checks} assertions)\n";

@@ -867,6 +867,68 @@ $Clean = Helper::stripZwnj($Clean);
 return htmlspecialchars($Clean, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+/** بارگذاری فونت رسمی Vazirmatn و لوگوی برند برای فایل HTML آفلاین و یکپارچه. */
+private static function monitorBrandAssets(): array {
+static $Cache = null;
+if ($Cache !== null) {
+return $Cache;
+}
+$Roots = [
+dirname(__DIR__) . '/Resources',
+__DIR__ . '/Resources',
+dirname(__DIR__, 2) . '/Resources',
+];
+$ResDir = '';
+foreach ($Roots as $Candidate) {
+if (is_dir($Candidate)) {
+$ResDir = $Candidate;
+break;
+}
+}
+
+$FontCss = '';
+if ($ResDir !== '') {
+$FontMap = [
+['file' => 'fonts/Vazirmatn-Regular.ttf', 'weight' => 400],
+['file' => 'fonts/Vazirmatn-Bold.ttf', 'weight' => 700],
+['file' => 'fonts/Vazirmatn-ExtraBold.ttf', 'weight' => 800],
+];
+foreach ($FontMap as $FontDef) {
+$Path = $ResDir . '/' . $FontDef['file'];
+if (is_file($Path) && is_readable($Path)) {
+$Raw = @file_get_contents($Path);
+if (is_string($Raw) && $Raw !== '') {
+$B64 = base64_encode($Raw);
+$FontCss .= "@font-face{font-family:'Vazirmatn';src:url('data:font/ttf;base64," . $B64 . "') format('truetype');font-style:normal;font-weight:" . $FontDef['weight'] . ";font-display:swap}\n";
+}
+}
+}
+}
+
+$LogoDataUri = '';
+$LogoCandidates = [];
+if ($ResDir !== '') {
+$LogoCandidates[] = $ResDir . '/logo-brand.png';
+$LogoCandidates[] = dirname($ResDir) . '/Logo.png';
+}
+$LogoCandidates[] = dirname(__DIR__) . '/Logo.png';
+foreach ($LogoCandidates as $LogoPath) {
+if (is_file($LogoPath) && is_readable($LogoPath)) {
+$Size = @filesize($LogoPath);
+if ($Size !== false && $Size > 0 && $Size <= 800000) {
+$ImgRaw = @file_get_contents($LogoPath);
+if (is_string($ImgRaw) && $ImgRaw !== '') {
+$LogoDataUri = 'data:image/png;base64,' . base64_encode($ImgRaw);
+break;
+}
+}
+}
+}
+
+$Cache = ['font_css' => $FontCss, 'logo_uri' => $LogoDataUri];
+return $Cache;
+}
+
 /** ساخت گزارش کامل HTML برای رصد کل کاربران یا یک کاربر مشخص. */
 public static function renderMonitorHtmlReport(string $Scope = 'all'): array {
 self::ensureAppSchemaReady();
@@ -876,8 +938,8 @@ Scheduler::purgeUserActivityIfDue();
 
 $Db = Database::getInstance();
 $UsersData = [];
-$Summary = ['users' => 0, 'devices' => 0, 'site' => 0, 'software' => 0, 'mobile' => 0, 'bytes' => 0];
-$ScopeTitle = 'گزارش جامع رصد کاربران فیلترشکن آمبرلا';
+$Summary = ['users' => 0, 'devices' => 0, 'trusted_devices' => 0, 'site' => 0, 'software' => 0, 'mobile' => 0, 'hits' => 0, 'bytes' => 0];
+$ScopeTitle = 'گزارش جامع رصد کاربران آمبرلا';
 
 if ($Scope !== 'all') {
 $Target = self::resolveMonitorTarget($Scope);
@@ -988,8 +1050,10 @@ $DeviceKindMap = [];
 $HasDesktop = false;
 $HasMobile = false;
 $LastSeenTs = 0;
+$TrustedCnt = 0;
 
 foreach ($DeviceRows as $D) {
+if ((int)($D['Is_Trusted'] ?? 0) === 1) $TrustedCnt++;
 $Did = (string)($D['Device_ID'] ?? '');
 if ($Did !== '') {
 $DeviceMap[$Did] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
@@ -1006,22 +1070,27 @@ $FallbackKind = ($HasMobile && !$HasDesktop) ? 'mobile' : (($HasDesktop && !$Has
 
 $Buckets = ['site' => [], 'software' => [], 'mobile' => []];
 $UserBytes = 0;
+$UserHits = 0;
 foreach ((array)($Entry['activities'] ?? []) as $RawAct) {
 $Cleaned = self::cleanMonitorActivityRow($RawAct);
 if ($Cleaned === null) continue;
 $Kind = self::classifyMonitorActivity($Cleaned, $DeviceKindMap, $FallbackKind);
 $Cleaned['_classified'] = $Kind;
+$HitsVal = (int)($Cleaned['Hits'] ?? 1);
 $Bytes = (int)($Cleaned['Bytes_Down'] ?? 0) + (int)($Cleaned['Bytes_Up'] ?? 0);
 $UserBytes += $Bytes;
+$UserHits += $HitsVal;
 $LastSeenTs = max($LastSeenTs, (int)($Cleaned['Last_Seen_At'] ?? 0));
 $Buckets[$Kind][] = $Cleaned;
 }
 
 $Summary['users']++;
 $Summary['devices'] += count($DeviceRows);
+$Summary['trusted_devices'] += $TrustedCnt;
 $Summary['site'] += count($Buckets['site']);
 $Summary['software'] += count($Buckets['software']);
 $Summary['mobile'] += count($Buckets['mobile']);
+$Summary['hits'] += $UserHits;
 $Summary['bytes'] += $UserBytes;
 
 $PreparedUsers[] = [
@@ -1029,9 +1098,11 @@ $PreparedUsers[] = [
 'tg_id' => (int)($Entry['tg_id'] ?? 0),
 'phone' => (string)($Entry['phone'] ?? ''),
 'devices' => $DeviceRows,
+'trusted_cnt' => $TrustedCnt,
 'device_map' => $DeviceMap,
 'buckets' => $Buckets,
 'last_seen' => $LastSeenTs,
+'hits' => $UserHits,
 'bytes' => $UserBytes,
 ];
 }
@@ -1040,34 +1111,63 @@ usort($PreparedUsers, static fn(array $A, array $B): int => $B['last_seen'] <=> 
 
 $GeneratedAt = Helper::formatDateTimeText((string)time());
 $SummaryBytes = Helper::formatBytes((int)$Summary['bytes']);
+$TotalCats = max(1, (int)$Summary['site'] + (int)$Summary['software'] + (int)$Summary['mobile']);
+$PctSite = (int)round(((int)$Summary['site'] * 100) / $TotalCats);
+$PctSoft = (int)round(((int)$Summary['software'] * 100) / $TotalCats);
+$PctMob = max(0, 100 - $PctSite - $PctSoft);
+if ($Summary['site'] + $Summary['software'] + $Summary['mobile'] === 0) {
+$PctSite = $PctSoft = $PctMob = 0;
+}
+
+$Brand = self::monitorBrandAssets();
+$LogoHtml = $Brand['logo_uri'] !== ''
+? '<img src="' . $Brand['logo_uri'] . '" alt="لوگوی آمبرلا">'
+: '<svg viewBox="0 0 64 64" width="44" height="44" aria-hidden="true"><defs><linearGradient id="ug" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#E11D2E"/><stop offset="100%" stop-color="#8E0E1B"/></linearGradient></defs><path d="M32 6C17 6 7 16 7 29h50C57 16 47 6 32 6Z" fill="url(#ug)"/><path d="M32 29v19a6 6 0 0 1-12 0" fill="none" stroke="#F3F5F9" stroke-width="4" stroke-linecap="round"/></svg>';
+$FaviconHtml = $Brand['logo_uri'] !== '' ? '<link rel="icon" type="image/png" href="' . $Brand['logo_uri'] . '">' : '';
 
 $CardsHtml = '';
 foreach ($PreparedUsers as $UIdx => $User) {
-$TotalActs = count($User['buckets']['site']) + count($User['buckets']['software']) + count($User['buckets']['mobile']);
+$SiteCnt = count($User['buckets']['site']);
+$SoftCnt = count($User['buckets']['software']);
+$MobCnt = count($User['buckets']['mobile']);
+$TotalActs = $SiteCnt + $SoftCnt + $MobCnt;
 $LastText = $User['last_seen'] > 0 ? Helper::formatDateTimeText((string)$User['last_seen']) : 'ثبت نشده';
-$TgText = $User['tg_id'] > 0 ? Helper::toPersian((string)$User['tg_id']) : 'ثبت نشده';
-$PhoneText = $User['phone'] !== '' ? Helper::toPersian($User['phone']) : 'ثبت نشده';
+$TgRaw = $User['tg_id'] > 0 ? (string)$User['tg_id'] : '';
+$TgText = $TgRaw !== '' ? Helper::toPersian($TgRaw) : 'ثبت نشده';
+$PhoneRaw = $User['phone'];
+$PhoneText = $PhoneRaw !== '' ? Helper::toPersian($PhoneRaw) : 'ثبت نشده';
+
+$UserCatDenom = max(1, $TotalActs);
+$UserPctSite = $TotalActs > 0 ? round(($SiteCnt * 100) / $UserCatDenom, 1) : 0;
+$UserPctSoft = $TotalActs > 0 ? round(($SoftCnt * 100) / $UserCatDenom, 1) : 0;
+$UserPctMob = $TotalActs > 0 ? max(0, round(100 - $UserPctSite - $UserPctSoft, 1)) : 0;
 
 $DeviceRowsHtml = '';
 foreach ($User['devices'] as $DIdx => $Dev) {
 $PlatRaw = (string)($Dev['Platform'] ?? '');
 $PlatLabel = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($PlatRaw) : $PlatRaw;
 $Kind = self::deviceCategoryKind($PlatRaw);
-$KindLabel = $Kind === 'mobile' ? '📱 موبایل' : ($Kind === 'software' ? '💻 کامپیوتر' : '📲 نامشخص');
+$KindBadge = $Kind === 'mobile'
+? '<span class="kind-badge mob">📱 موبایل</span>'
+: ($Kind === 'software' ? '<span class="kind-badge soft">💻 کامپیوتر</span>' : '<span class="kind-badge unk">📲 نامشخص</span>');
 $DevTs = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
 if ($DevTs <= 0) $DevTs = self::monitorTimestamp($Dev['First_Seen_At'] ?? 0);
 $DevWhen = $DevTs > 0 ? Helper::formatDateTimeText((string)$DevTs) : 'ثبت نشده';
 $Trusted = (int)($Dev['Is_Trusted'] ?? 0) === 1;
-$StatusBadge = $Trusted ? '<span class="badge ok">✅ مجاز</span>' : '<span class="badge no">⛔️ غیرمجاز</span>';
+$StatusBadge = $Trusted ? '<span class="badge ok"><span class="bdot"></span>مجاز</span>' : '<span class="badge no"><span class="bdot"></span>غیرمجاز</span>';
+$IpRaw = trim((string)($Dev['Last_IP'] ?? ''));
+$IpCell = $IpRaw !== ''
+? '<button type="button" class="copy-code" data-copy="' . self::htmlEsc($IpRaw) . '" title="کپی آی پی"><code>' . self::htmlEsc($IpRaw) . '</code></button>'
+: '<span class="muted">—</span>';
 $DeviceRowsHtml .= '<tr>'
-. '<td>' . self::htmlEsc(Helper::toPersian((string)($DIdx + 1))) . '</td>'
-. '<td><strong>' . self::htmlEsc((string)($Dev['Device_Name'] ?? 'دستگاه')) . '</strong></td>'
-. '<td>' . $KindLabel . '</td>'
+. '<td class="num-col">' . self::htmlEsc(Helper::toPersian((string)($DIdx + 1))) . '</td>'
+. '<td><strong class="dev-name">' . self::htmlEsc((string)($Dev['Device_Name'] ?? 'دستگاه')) . '</strong></td>'
+. '<td>' . $KindBadge . '</td>'
 . '<td>' . self::htmlEsc($PlatLabel !== '' ? $PlatLabel : 'نامشخص') . '</td>'
-. '<td dir="ltr">' . self::htmlEsc((string)($Dev['App_Version'] ?? '—')) . '</td>'
+. '<td dir="ltr" class="mono-col">' . self::htmlEsc((string)($Dev['App_Version'] ?? '—')) . '</td>'
 . '<td>' . $StatusBadge . '</td>'
-. '<td dir="ltr"><code>' . self::htmlEsc((string)($Dev['Last_IP'] ?? '—')) . '</code></td>'
-. '<td>' . self::htmlEsc($DevWhen) . '</td>'
+. '<td dir="ltr">' . $IpCell . '</td>'
+. '<td class="time-col">' . self::htmlEsc($DevWhen) . '</td>'
 . '</tr>';
 }
 if ($DeviceRowsHtml === '') {
@@ -1077,34 +1177,44 @@ $DeviceRowsHtml = '<tr><td colspan="8" class="empty">دستگاهی ثبت نش�
 $BuildActTable = static function (string $CatKey, string $Heading, string $EmptyMsg) use ($User): string {
 $Items = $User['buckets'][$CatKey] ?? [];
 $CountFa = self::htmlEsc(Helper::toPersian((string)count($Items)));
+$MaxScore = 1;
+foreach ($Items as $It) {
+$Score = ((int)($It['Bytes_Down'] ?? 0) + (int)($It['Bytes_Up'] ?? 0)) ?: max(1, (int)($It['Hits'] ?? 1));
+if ($Score > $MaxScore) $MaxScore = $Score;
+}
 $RowsHtml = '';
 foreach ($Items as $AIdx => $Act) {
 $Did = (string)($Act['Device_ID'] ?? '');
 $DevName = $User['device_map'][$Did] ?? 'دستگاه';
-$Hits = Helper::toPersian((string)((int)($Act['Hits'] ?? 1)));
-$Bytes = Helper::formatBytes((int)($Act['Bytes_Down'] ?? 0) + (int)($Act['Bytes_Up'] ?? 0));
+$HitsInt = (int)($Act['Hits'] ?? 1);
+$BytesInt = (int)($Act['Bytes_Down'] ?? 0) + (int)($Act['Bytes_Up'] ?? 0);
+$Hits = Helper::toPersian((string)$HitsInt);
+$Bytes = Helper::formatBytes($BytesInt);
 $WhenTs = (int)($Act['Last_Seen_At'] ?? 0);
 $WhenStr = $WhenTs > 0 ? Helper::formatDateTimeText((string)$WhenTs) : 'ثبت نشده';
-$RowsHtml .= '<tr class="act-row" data-search="' . self::htmlEsc(strtolower((string)($Act['Target'] ?? '') . ' ' . $DevName)) . '">'
-. '<td>' . self::htmlEsc(Helper::toPersian((string)($AIdx + 1))) . '</td>'
-. '<td dir="ltr" class="target-cell"><code>' . self::htmlEsc((string)($Act['Target'] ?? '')) . '</code></td>'
-. '<td>' . self::htmlEsc($Hits) . ' بار</td>'
-. '<td dir="ltr">' . self::htmlEsc($Bytes) . '</td>'
+$Score = $BytesInt > 0 ? $BytesInt : max(1, $HitsInt);
+$BarPct = max(4, min(100, (int)round(($Score * 100) / $MaxScore)));
+$TargetVal = (string)($Act['Target'] ?? '');
+$RowsHtml .= '<tr class="act-row" data-search="' . self::htmlEsc(strtolower($TargetVal . ' ' . $DevName)) . '">'
+. '<td class="num-col">' . self::htmlEsc(Helper::toPersian((string)($AIdx + 1))) . '</td>'
+. '<td dir="ltr" class="target-cell"><div class="target-wrap"><code class="target-code">' . self::htmlEsc($TargetVal) . '</code><div class="mini-bar"><span class="' . $CatKey . '" style="width:' . $BarPct . '%"></span></div></div></td>'
+. '<td class="hits-col"><span class="hit-chip">' . self::htmlEsc($Hits) . ' بار</span></td>'
+. '<td dir="ltr" class="mono-col">' . self::htmlEsc($Bytes) . '</td>'
 . '<td>' . self::htmlEsc($DevName) . '</td>'
-. '<td>' . self::htmlEsc($WhenStr) . '</td>'
+. '<td class="time-col">' . self::htmlEsc($WhenStr) . '</td>'
 . '</tr>';
 }
 if ($RowsHtml === '') {
 $RowsHtml = '<tr><td colspan="6" class="empty">' . self::htmlEsc($EmptyMsg) . '</td></tr>';
 }
-return '<div class="cat-block" data-cat="' . $CatKey . '">'
+return '<div class="cat-block cat-' . $CatKey . '" data-cat="' . $CatKey . '">'
 . '<div class="cat-head"><h4>' . $Heading . '</h4><span class="pill ' . $CatKey . '">' . $CountFa . ' مورد</span></div>'
 . '<div class="table-wrap"><table><thead><tr><th>#</th><th>نام / نشانی</th><th>تعداد</th><th>ترافیک</th><th>دستگاه</th><th>آخرین زمان</th></tr></thead><tbody>'
 . $RowsHtml
 . '</tbody></table></div></div>';
 };
 
-$SearchMeta = strtolower((string)$User['name'] . ' ' . $User['phone'] . ' ' . $User['tg_id']);
+$SearchMeta = strtolower((string)$User['name'] . ' ' . $PhoneRaw . ' ' . $TgRaw);
 foreach ($User['devices'] as $Dev) {
 $SearchMeta .= ' ' . strtolower((string)($Dev['Device_Name'] ?? '') . ' ' . ($Dev['Last_IP'] ?? '') . ' ' . ($Dev['Platform'] ?? ''));
 }
@@ -1114,27 +1224,42 @@ $SearchMeta .= ' ' . strtolower((string)($Act['Target'] ?? ''));
 }
 }
 
-$CardsHtml .= '<section class="user-card" data-has-act="' . ($TotalActs > 0 ? '1' : '0') . '" data-search="' . self::htmlEsc($SearchMeta) . '">'
+$TgMetaHtml = $TgRaw !== ''
+? '<button type="button" class="meta-chip copy-code" data-copy="' . self::htmlEsc($TgRaw) . '" title="کپی شناسه"><span>🆔 تلگرام:</span><code>' . self::htmlEsc($TgText) . '</code></button>'
+: '<span class="meta-chip"><span>🆔 تلگرام:</span><span class="muted">' . self::htmlEsc($TgText) . '</span></span>';
+$PhoneMetaHtml = $PhoneRaw !== ''
+? '<button type="button" class="meta-chip copy-code" data-copy="' . self::htmlEsc($PhoneRaw) . '" title="کپی شماره"><span>📞 موبایل:</span><code dir="ltr">' . self::htmlEsc($PhoneText) . '</code></button>'
+: '<span class="meta-chip"><span>📞 موبایل:</span><span class="muted">' . self::htmlEsc($PhoneText) . '</span></span>';
+
+$CardsHtml .= '<section class="user-card" data-has-act="' . ($TotalActs > 0 ? '1' : '0') . '" data-last="' . (int)$User['last_seen'] . '" data-bytes="' . (int)$User['bytes'] . '" data-hits="' . (int)$User['hits'] . '" data-search="' . self::htmlEsc($SearchMeta) . '">'
 . '<div class="user-head">'
 . '<div class="user-title">'
 . '<span class="user-num">' . self::htmlEsc(Helper::toPersian((string)($UIdx + 1))) . '</span>'
-. '<div>'
-. '<h3>👤 ' . self::htmlEsc((string)$User['name']) . '</h3>'
+. '<div class="user-info">'
+. '<h3>' . self::htmlEsc((string)$User['name']) . '</h3>'
 . '<div class="user-meta">'
-. '<span>🆔 تلگرام: <code>' . self::htmlEsc($TgText) . '</code></span>'
-. '<span>📞 موبایل: <code dir="ltr">' . self::htmlEsc($PhoneText) . '</code></span>'
-. '<span>🕒 آخرین فعالیت: ' . self::htmlEsc($LastText) . '</span>'
-. '<span>📊 حجم کل: ' . self::htmlEsc(Helper::formatBytes((int)$User['bytes'])) . '</span>'
+. $TgMetaHtml
+. $PhoneMetaHtml
+. '<span class="meta-chip"><span>🕒 آخرین فعالیت:</span><strong>' . self::htmlEsc($LastText) . '</strong></span>'
+. '<span class="meta-chip"><span>📊 حجم کل:</span><strong dir="ltr">' . self::htmlEsc(Helper::formatBytes((int)$User['bytes'])) . '</strong></span>'
 . '</div>'
 . '</div>'
 . '</div>'
+. '<div class="user-right">'
 . '<div class="user-pills">'
-. '<span class="pill site">🌐 ' . self::htmlEsc(Helper::toPersian((string)count($User['buckets']['site']))) . ' سایت</span>'
-. '<span class="pill software">💻 ' . self::htmlEsc(Helper::toPersian((string)count($User['buckets']['software']))) . ' نرم افزار</span>'
-. '<span class="pill mobile">📱 ' . self::htmlEsc(Helper::toPersian((string)count($User['buckets']['mobile']))) . ' اپلیکیشن</span>'
+. '<span class="pill site">🌐 ' . self::htmlEsc(Helper::toPersian((string)$SiteCnt)) . ' سایت</span>'
+. '<span class="pill software">💻 ' . self::htmlEsc(Helper::toPersian((string)$SoftCnt)) . ' نرم افزار</span>'
+. '<span class="pill mobile">📱 ' . self::htmlEsc(Helper::toPersian((string)$MobCnt)) . ' اپلیکیشن</span>'
+. '</div>'
+. '<button type="button" class="collapse-btn" onclick="toggleCard(this)" aria-expanded="true"><span>جمع کردن</span><span class="chev">▾</span></button>'
 . '</div>'
 . '</div>'
-. '<div class="devices-box"><h4>📲 دستگاه های کاربر (' . self::htmlEsc(Helper::toPersian((string)count($User['devices']))) . ')</h4>'
+. ($TotalActs > 0
+? '<div class="ratio-bar" title="سهم نسبی سایت، نرم افزار و اپلیکیشن"><span class="seg-site" style="width:' . $UserPctSite . '%"></span><span class="seg-soft" style="width:' . $UserPctSoft . '%"></span><span class="seg-mob" style="width:' . $UserPctMob . '%"></span></div>'
+: '')
+. '<div class="card-body">'
+. '<div class="devices-box">'
+. '<div class="sub-head"><h4>📲 دستگاه های کاربر (' . self::htmlEsc(Helper::toPersian((string)count($User['devices']))) . ')</h4><span class="muted small">' . self::htmlEsc(Helper::toPersian((string)$User['trusted_cnt'])) . ' مجاز</span></div>'
 . '<div class="table-wrap"><table><thead><tr><th>#</th><th>نام دستگاه</th><th>نوع</th><th>سیستم عامل</th><th>نسخه</th><th>وضعیت</th><th>آخرین آی پی</th><th>آخرین فعالیت</th></tr></thead><tbody>'
 . $DeviceRowsHtml
 . '</tbody></table></div></div>'
@@ -1142,6 +1267,7 @@ $CardsHtml .= '<section class="user-card" data-has-act="' . ($TotalActs > 0 ? '1
 . $BuildActTable('site', '🌐 سایت های باز شده', 'سایتی ثبت نشده است.')
 . $BuildActTable('software', '💻 نرم افزارهای باز شده (کامپیوتر)', 'نرم افزاری ثبت نشده است.')
 . $BuildActTable('mobile', '📱 اپلیکیشن های باز شده (موبایل)', 'اپلیکیشنی ثبت نشده است.')
+. '</div>'
 . '</div>'
 . '</section>';
 }
@@ -1151,60 +1277,164 @@ $CardsHtml = '<div class="empty-state">📭 هنوز هیچ کاربر یا فع
 }
 
 $Html = '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-. '<title>' . self::htmlEsc($ScopeTitle) . '</title>'
+. $FaviconHtml
+. '<title>' . self::htmlEsc($ScopeTitle) . ' | آمبرلا</title>'
 . '<style>'
-. ':root{--bg:#0b1220;--panel:#121c2e;--card:#162238;--border:#253552;--text:#e6edf7;--muted:#93a6c8;--accent:#38bdf8;--site:#0ea5e9;--soft:#8b5cf6;--mob:#10b981;--code:#0d1626}'
-. 'body.light{--bg:#f4f7fb;--panel:#ffffff;--card:#ffffff;--border:#dce4f0;--text:#122033;--muted:#5a6b84;--accent:#0284c7;--site:#0284c7;--soft:#6d28d9;--mob:#059669;--code:#eef3fa}'
-. '*{box-sizing:border-box}body{margin:0;padding:24px;font-family:Vazirmatn,Tahoma,Segoe UI,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}'
-. '.wrap{max-width:1280px;margin:0 auto}.hero{background:linear-gradient(135deg,#13233f,#0f172a);border:1px solid var(--border);border-radius:18px;padding:22px 24px;margin-bottom:18px;color:#f8fafc;display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:center}'
-. '.hero h1{margin:0 0 6px;font-size:21px}.hero .sub{font-size:13px;color:#cbd5e1}'
-. '.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid #33486b;background:#1b2c4a;color:#f1f5f9;padding:8px 14px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:13px}'
-. '.btn:hover{border-color:var(--accent)}.btn.active{background:var(--accent);color:#06121e;border-color:var(--accent);font-weight:700}'
-. '.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;margin-bottom:18px}'
-. '.stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px}.stat .k{font-size:12px;color:var(--muted)}.stat .v{font-size:20px;font-weight:700;margin-top:4px}'
-. '.toolbar{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}'
-. '.search{flex:1;min-width:220px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:14px}'
-. '.filters{display:flex;flex-wrap:wrap;gap:8px}.fbtn{border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 13px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:13px}'
-. '.fbtn.active{background:var(--accent);color:#06121e;border-color:var(--accent);font-weight:700}'
-. '.user-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.15)}'
-. '.user-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px}'
-. '.user-title{display:flex;gap:12px;align-items:flex-start}.user-num{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#06121e;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}'
-. '.user-title h3{margin:0 0 6px;font-size:17px}.user-meta{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13px;color:var(--muted)}'
-. '.user-pills{display:flex;flex-wrap:wrap;gap:8px}.pill{padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;background:var(--code);border:1px solid var(--border)}'
-. '.pill.site{color:#38bdf8;border-color:rgba(14,165,233,.4)}.pill.software{color:#a78bfa;border-color:rgba(139,92,246,.4)}.pill.mobile{color:#34d399;border-color:rgba(16,185,129,.4)}'
-. '.devices-box{margin-bottom:16px}.devices-box h4,.cat-head h4{margin:0 0 10px;font-size:14px}'
-. '.cat-block{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:12px}.cat-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}'
-. '.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}'
-. 'th{color:var(--muted);font-weight:600;background:rgba(255,255,255,.02)}code{background:var(--code);padding:2px 7px;border-radius:6px;font-family:Consolas,monospace;font-size:12px}'
-. '.badge{padding:2px 8px;border-radius:8px;font-size:12px}.badge.ok{background:rgba(16,185,129,.16);color:#34d399}.badge.no{background:rgba(239,68,68,.16);color:#f87171}'
-. '.empty,.empty-state{text-align:center;color:var(--muted);padding:16px}body.light .hero{background:linear-gradient(135deg,#0284c7,#1d4ed8)}'
-. '@media print{body{background:#fff;color:#000;padding:0}.toolbar,.actions{display:none}.user-card{box-shadow:none;break-inside:avoid}}'
+. $Brand['font_css']
+. ":root{color-scheme:dark;--bg:#07080B;--bg-alt:#0C0E13;--surface:#12141B;--surface-high:#1A1D26;--border:#272B37;--text:#F3F5F9;--muted:#9AA2B4;--primary:#E11D2E;--primary-soft:#3A1017;--primary-deep:#8E0E1B;--success:#22C55E;--warning:#F59E0B;--danger:#FF6B6B;--info:#60A5FA;--software:#A855F7;--mobile:#22C55E;--glass:rgba(255,255,255,.06);--shadow:rgba(0,0,0,.60);--code:#0C0E13;--r-sm:8px;--r-md:12px;--r-btn:14px;--r-lg:16px;--r-xl:20px;--r-xxl:24px}"
+. "body.light{color-scheme:light;--bg:#F5F6FA;--bg-alt:#FFFFFF;--surface:#FFFFFF;--surface-high:#F0F2F8;--border:#E1E5EF;--text:#10131C;--muted:#5B6478;--primary:#D21027;--primary-soft:#FDE7EA;--primary-deep:#9B0C1D;--success:#15803D;--warning:#92400E;--danger:#DC2626;--info:#2563EB;--software:#7C3AED;--mobile:#15803D;--glass:rgba(0,0,0,.04);--shadow:rgba(16,19,28,.12);--code:#F0F2F8}"
+. "*{box-sizing:border-box}html{-webkit-text-size-adjust:100%;scrollbar-gutter:stable}"
+. "body{margin:0;padding:24px 16px 48px;font-family:'Vazirmatn','Segoe UI','Segoe UI Symbol',Tahoma,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.75;overflow-x:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}"
+. "body::before{content:'';position:fixed;inset:-25%;pointer-events:none;z-index:-1;background:radial-gradient(45% 40% at 86% 8%,rgba(225,29,46,.14),transparent 65%),radial-gradient(38% 36% at 12% 88%,rgba(96,165,250,.08),transparent 66%)}"
+. "body.light::before{background:radial-gradient(45% 40% at 86% 8%,rgba(210,16,39,.09),transparent 65%),radial-gradient(38% 36% at 12% 88%,rgba(37,99,235,.07),transparent 66%)}"
+. ".wrap{max-width:1240px;margin:0 auto}"
+. ".hero{position:relative;overflow:hidden;background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xxl);padding:24px;margin-bottom:20px;box-shadow:0 24px 54px -22px var(--shadow);display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px;align-items:center}"
+. ".hero::before{content:'';position:absolute;inset:0 12% auto;height:2px;background:linear-gradient(90deg,transparent,var(--primary),transparent)}"
+. ".brand-row{display:flex;align-items:center;gap:16px}"
+. ".logo-box{width:68px;height:68px;border-radius:var(--r-xl);background:linear-gradient(145deg,var(--surface-high),var(--bg));border:1px solid rgba(225,29,46,.32);display:grid;place-items:center;flex-shrink:0;box-shadow:0 12px 28px rgba(225,29,46,.18);overflow:hidden}"
+. ".logo-box img{width:60px;height:60px;object-fit:contain;border-radius:var(--r-lg);display:block}"
+. ".hero-text h1{margin:0 0 6px;font-size:clamp(18px,3vw,23px);font-weight:800;letter-spacing:-.2px;line-height:1.35}"
+. ".hero-badges{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12.5px;color:var(--muted)}"
+. ".live-pill{display:inline-flex;align-items:center;gap:7px;padding:3px 10px;border-radius:999px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.28);color:var(--success);font-weight:700;font-size:11.5px}"
+. ".live-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(34,197,94,.18);animation:pulse 2s infinite}"
+. "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}"
+. ".actions{display:flex;gap:8px;flex-wrap:wrap}"
+. ".btn{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:10px 15px;border-radius:var(--r-btn);cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;transition:all .18s ease;display:inline-flex;align-items:center;gap:6px}"
+. ".btn:hover{border-color:var(--primary);transform:translateY(-1px)}.btn.primary{background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;border-color:transparent;box-shadow:0 10px 24px rgba(225,29,46,.28)}"
+. ".stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin-bottom:16px}"
+. ".stat{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xl);padding:16px;display:flex;align-items:center;gap:12px;transition:border-color .2s}"
+. ".stat:hover{border-color:rgba(225,29,46,.45)}"
+. ".stat-ico{width:42px;height:42px;border-radius:var(--r-md);display:grid;place-items:center;font-size:19px;flex-shrink:0;background:var(--surface-high);border:1px solid var(--border)}"
+. ".stat.brand .stat-ico{background:var(--primary-soft);border-color:rgba(225,29,46,.32)}.stat.site .stat-ico{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.3)}.stat.soft .stat-ico{background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.3)}.stat.mob .stat-ico{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}"
+. ".stat .k{font-size:12px;color:var(--muted);font-weight:400}.stat .v{font-size:21px;font-weight:800;line-height:1.25;margin-top:2px}.stat .subv{font-size:11px;color:var(--muted)}"
+. ".dist-card{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xl);padding:14px 18px;margin-bottom:18px}"
+. ".dist-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px;font-size:12.5px;font-weight:700}"
+. ".dist-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}"
+. ".dist-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:5px;vertical-align:middle}"
+. ".ratio-bar{height:8px;border-radius:999px;background:var(--surface-high);overflow:hidden;display:flex;gap:2px;margin-bottom:14px}"
+. ".ratio-bar span{display:block;height:100%;transition:width .35s ease}"
+. ".seg-site{background:var(--info)}.seg-soft{background:var(--software)}.seg-mob{background:var(--mobile)}"
+. ".toolbar{position:sticky;top:10px;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:14px 16px;margin-bottom:20px;box-shadow:0 16px 38px -14px var(--shadow);display:flex;flex-direction:column;gap:12px}"
+. ".tool-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center}"
+. ".search-box{position:relative;flex:1;min-width:230px}"
+. ".search{width:100%;padding:11px 38px 11px 36px;border-radius:var(--r-btn);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13.5px;outline:none;transition:border-color .18s}"
+. ".search:focus{border-color:var(--primary)}"
+. ".search-ico{position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;opacity:.75}"
+. ".clear-q{position:absolute;left:10px;top:50%;transform:translateY(-50%);border:none;background:var(--surface-high);color:var(--muted);width:22px;height:22px;border-radius:50%;cursor:pointer;display:none;font-size:13px;line-height:1}"
+. ".clear-q.show{display:grid;place-items:center}"
+. ".sort-sel{padding:10px 14px;border-radius:var(--r-btn);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}"
+. ".tool-bot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}"
+. ".filters{display:flex;flex-wrap:wrap;gap:8px}"
+. ".fbtn{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:7px 14px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;transition:all .18s}"
+. ".fbtn:hover{border-color:var(--primary)}.fbtn.active{background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(225,29,46,.24)}"
+. ".result-count{font-size:12.5px;color:var(--muted);font-weight:700}"
+. ".user-card{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xxl);padding:20px;margin-bottom:20px;box-shadow:0 18px 42px -20px var(--shadow);transition:border-color .2s}"
+. ".user-card:hover{border-color:rgba(225,29,46,.36)}"
+. ".user-card.collapsed .card-body{display:none}"
+. ".user-card.collapsed .chev{transform:rotate(90deg)}"
+. ".user-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:flex-start;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px}"
+. ".user-title{display:flex;gap:14px;align-items:flex-start;flex:1;min-width:260px}"
+. ".user-num{width:38px;height:38px;border-radius:var(--r-md);background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;box-shadow:0 8px 18px rgba(225,29,46,.28)}"
+. ".user-info h3{margin:0 0 8px;font-size:17.5px;font-weight:800;line-height:1.3}"
+. ".user-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12.5px;color:var(--muted)}"
+. ".meta-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--surface-high);border:1px solid var(--border);color:var(--muted);font-family:inherit;font-size:12px}"
+. ".meta-chip strong{color:var(--text)}"
+. ".copy-code{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:3px 9px;border-radius:999px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;transition:border-color .15s}"
+. ".copy-code:hover{border-color:var(--primary)}.copy-code code{background:transparent;padding:0}"
+. ".user-right{display:flex;flex-direction:column;align-items:flex-end;gap:10px}"
+. ".user-pills{display:flex;flex-wrap:wrap;gap:8px}"
+. ".pill{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-high);border:1px solid var(--border)}"
+. ".pill.site{color:var(--info);border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.08)}"
+. ".pill.software{color:var(--software);border-color:rgba(168,85,247,.35);background:rgba(168,85,247,.08)}"
+. ".pill.mobile{color:var(--mobile);border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.08)}"
+. ".collapse-btn{border:1px solid var(--border);background:var(--surface-high);color:var(--muted);padding:5px 11px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;gap:5px}"
+. ".collapse-btn:hover{color:var(--text);border-color:var(--primary)}.chev{display:inline-block;transition:transform .2s}"
+. ".devices-box{background:var(--surface-high);border:1px solid var(--border);border-radius:var(--r-xl);padding:14px;margin-bottom:14px}"
+. ".sub-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.sub-head h4,.cat-head h4{margin:0;font-size:14px;font-weight:800}"
+. ".cats-grid{display:grid;grid-template-columns:1fr;gap:14px}"
+. ".cat-block{background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--r-xl);padding:14px}"
+. ".cat-site{border-top:2px solid var(--info)}.cat-software{border-top:2px solid var(--software)}.cat-mobile{border-top:2px solid var(--mobile)}"
+. ".cat-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}"
+. ".table-wrap{overflow-x:auto;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface)}"
+. "table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}tr:last-child td{border-bottom:none}"
+. "th{color:var(--muted);font-weight:700;font-size:12px;background:var(--surface-high)}tbody tr:hover td{background:var(--glass)}"
+. ".num-col{color:var(--muted);width:36px;font-weight:700}.mono-col,.time-col{font-size:12.5px;color:var(--muted)}"
+. "code{background:var(--code);padding:3px 8px;border-radius:var(--r-sm);font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:12.5px;color:var(--text)}"
+. ".target-wrap{display:flex;flex-direction:column;gap:5px;min-width:140px}.target-code{align-self:flex-start;font-weight:600}"
+. ".mini-bar{height:3px;width:100%;background:var(--surface-high);border-radius:999px;overflow:hidden}.mini-bar span{display:block;height:100%;border-radius:999px}"
+. ".mini-bar span.site{background:var(--info)}.mini-bar span.software{background:var(--software)}.mini-bar span.mobile{background:var(--mobile)}"
+. ".hit-chip{display:inline-block;padding:2px 8px;border-radius:var(--r-sm);background:var(--surface-high);border:1px solid var(--border);font-size:12px;font-weight:700}"
+. ".kind-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700}"
+. ".kind-badge.soft{background:rgba(168,85,247,.12);color:var(--software)}.kind-badge.mob{background:rgba(34,197,94,.12);color:var(--mobile)}.kind-badge.unk{background:var(--surface-high);color:var(--muted)}"
+. ".badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700}.bdot{width:6px;height:6px;border-radius:50%;background:currentColor}"
+. ".badge.ok{background:rgba(34,197,94,.14);color:var(--success)}.badge.no{background:rgba(255,107,107,.14);color:var(--danger)}"
+. ".muted{color:var(--muted)}.small{font-size:12px}.empty,.empty-state{text-align:center;color:var(--muted);padding:20px}"
+. ".foot{margin-top:26px;padding-top:18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}"
+. ".toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;box-shadow:0 12px 28px rgba(0,0,0,.45);transition:all .22s;z-index:99}"
+. ".toast.show{opacity:1;transform:translateX(-50%) translateY(0)}"
+. "@media(max-width:680px){body{padding:14px 10px 36px}.hero{padding:18px}.user-card{padding:15px}.user-right{align-items:flex-start;width:100%}}"
+. "@media print{body{background:#fff;color:#10131C;padding:0}body::before,.toolbar,.actions,.collapse-btn,.toast{display:none!important}.user-card,.stat,.devices-box,.cat-block{box-shadow:none;background:#fff;border-color:#d8dee9;break-inside:avoid}.user-card.collapsed .card-body{display:block!important}}"
 . '</style></head><body><div class="wrap">'
-. '<header class="hero"><div><h1>☂️ ' . self::htmlEsc($ScopeTitle) . '</h1><div class="sub">🕒 تاریخ و زمان تهیه گزارش: ' . self::htmlEsc($GeneratedAt) . ' | 🔄 بازنشانی خودکار تاریخچه رصد: هر ۲۴ ساعت</div></div>'
-. '<div class="actions"><button class="btn" onclick="document.body.classList.toggle(\'light\')">🌓 تغییر تم</button><button class="btn" onclick="window.print()">🖨 چاپ / ذخیره PDF</button></div></header>'
+. '<header class="hero">'
+. '<div class="brand-row"><div class="logo-box">' . $LogoHtml . '</div>'
+. '<div class="hero-text"><h1>' . self::htmlEsc($ScopeTitle) . '</h1>'
+. '<div class="hero-badges"><span class="live-pill"><span class="live-dot"></span>پایش هوشمند آمبرلا</span>'
+. '<span>🕒 تاریخ تهیه: ' . self::htmlEsc($GeneratedAt) . '</span>'
+. '<span>🔄 بازنشانی خودکار: هر ۲۴ ساعت</span></div></div></div>'
+. '<div class="actions">'
+. '<button type="button" class="btn" id="themeBtn" onclick="toggleTheme()">☀️ تم روشن</button>'
+. '<button type="button" class="btn" id="expandAllBtn" onclick="toggleAllCards()">↕️ باز / بستن همه</button>'
+. '<button type="button" class="btn primary" onclick="window.print()">🖨 چاپ / ذخیره PDF</button>'
+. '</div></header>'
 . '<section class="stats">'
-. '<div class="stat"><div class="k">👥 کاربران ثبت شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['users'])) . '</div></div>'
-. '<div class="stat"><div class="k">📲 کل دستگاه ها</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['devices'])) . '</div></div>'
-. '<div class="stat"><div class="k">🌐 سایت های رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['site'])) . '</div></div>'
-. '<div class="stat"><div class="k">💻 نرم افزارهای رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['software'])) . '</div></div>'
-. '<div class="stat"><div class="k">📱 اپلیکیشن های رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['mobile'])) . '</div></div>'
-. '<div class="stat"><div class="k">📊 مجموع ترافیک</div><div class="v" dir="ltr">' . self::htmlEsc($SummaryBytes) . '</div></div>'
+. '<div class="stat brand"><div class="stat-ico">👥</div><div><div class="k">کاربران ثبت شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['users'])) . '</div><div class="subv">در پنل رصد</div></div></div>'
+. '<div class="stat"><div class="stat-ico">📲</div><div><div class="k">دستگاه های کاربر</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['devices'])) . '</div><div class="subv">' . self::htmlEsc(Helper::toPersian((string)$Summary['trusted_devices'])) . ' دستگاه مجاز</div></div></div>'
+. '<div class="stat site"><div class="stat-ico">🌐</div><div><div class="k">سایت های رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['site'])) . '</div><div class="subv">سهم ' . self::htmlEsc(Helper::toPersian((string)$PctSite)) . '٪</div></div></div>'
+. '<div class="stat soft"><div class="stat-ico">💻</div><div><div class="k">نرم افزارهای کامپیوتر</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['software'])) . '</div><div class="subv">سهم ' . self::htmlEsc(Helper::toPersian((string)$PctSoft)) . '٪</div></div></div>'
+. '<div class="stat mob"><div class="stat-ico">📱</div><div><div class="k">اپلیکیشن های موبایل</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['mobile'])) . '</div><div class="subv">سهم ' . self::htmlEsc(Helper::toPersian((string)$PctMob)) . '٪</div></div></div>'
+. '<div class="stat brand"><div class="stat-ico">📊</div><div><div class="k">مجموع ترافیک</div><div class="v" dir="ltr">' . self::htmlEsc($SummaryBytes) . '</div><div class="subv">' . self::htmlEsc(Helper::toPersian((string)$Summary['hits'])) . ' درخواست</div></div></div>'
+. '</section>'
+. '<section class="dist-card"><div class="dist-head"><span>📈 توزیع تفکیک شده فعالیت های شبکه</span>'
+. '<div class="dist-legend">'
+. '<span><i style="background:var(--info)"></i>سایت ها (' . self::htmlEsc(Helper::toPersian((string)$PctSite)) . '٪)</span>'
+. '<span><i style="background:var(--software)"></i>نرم افزارها (' . self::htmlEsc(Helper::toPersian((string)$PctSoft)) . '٪)</span>'
+. '<span><i style="background:var(--mobile)"></i>اپلیکیشن ها (' . self::htmlEsc(Helper::toPersian((string)$PctMob)) . '٪)</span>'
+. '</div></div>'
+. '<div class="ratio-bar" style="margin-bottom:0"><span class="seg-site" style="width:' . $PctSite . '%"></span><span class="seg-soft" style="width:' . $PctSoft . '%"></span><span class="seg-mob" style="width:' . $PctMob . '%"></span></div>'
 . '</section>'
 . '<div class="toolbar">'
-. '<input id="q" class="search" type="search" placeholder="🔍 جستجو نام کاربر، شماره، دستگاه، سایت، نرم افزار یا اپلیکیشن..." oninput="applyFilter()">'
+. '<div class="tool-top">'
+. '<div class="search-box"><span class="search-ico">🔍</span><input id="q" class="search" type="search" placeholder="جستجو بر اساس نام کاربر، شماره موبایل، تلگرام، دستگاه، IP، سایت، نرم افزار یا اپلیکیشن... (کلید /)" oninput="applyFilter()"><button type="button" id="clearQ" class="clear-q" onclick="clearSearch()" title="پاک کردن">×</button></div>'
+. '<select id="sortSel" class="sort-sel" onchange="sortCards(this.value)"><option value="last">🕒 مرتب سازی: آخرین فعالیت</option><option value="bytes">📊 مرتب سازی: بیشترین ترافیک</option><option value="hits">🔥 مرتب سازی: بیشترین بازدید</option></select>'
+. '</div>'
+. '<div class="tool-bot">'
 . '<div class="filters">'
-. '<button class="fbtn active" data-cat="all" onclick="setCat(\'all\',this)">👁 همه</button>'
-. '<button class="fbtn" data-cat="site" onclick="setCat(\'site\',this)">🌐 سایت ها</button>'
-. '<button class="fbtn" data-cat="software" onclick="setCat(\'software\',this)">💻 نرم افزارها</button>'
-. '<button class="fbtn" data-cat="mobile" onclick="setCat(\'mobile\',this)">📱 اپلیکیشن ها</button>'
-. '<button class="fbtn" id="actOnlyBtn" onclick="toggleActOnly(this)">⚡ فقط دارای فعالیت</button>'
+. '<button type="button" class="fbtn active" data-cat="all" onclick="setCat(\'all\',this)">👁 همه</button>'
+. '<button type="button" class="fbtn" data-cat="site" onclick="setCat(\'site\',this)">🌐 سایت ها (' . self::htmlEsc(Helper::toPersian((string)$Summary['site'])) . ')</button>'
+. '<button type="button" class="fbtn" data-cat="software" onclick="setCat(\'software\',this)">💻 نرم افزارها (' . self::htmlEsc(Helper::toPersian((string)$Summary['software'])) . ')</button>'
+. '<button type="button" class="fbtn" data-cat="mobile" onclick="setCat(\'mobile\',this)">📱 اپلیکیشن ها (' . self::htmlEsc(Helper::toPersian((string)$Summary['mobile'])) . ')</button>'
+. '<button type="button" class="fbtn" id="actOnlyBtn" onclick="toggleActOnly(this)">⚡ فقط دارای فعالیت</button>'
+. '</div>'
+. '<div class="result-count" id="resultCount">نمایش ' . self::htmlEsc(Helper::toPersian((string)$Summary['users'])) . ' کاربر</div>'
 . '</div></div>'
 . '<main id="cards">' . $CardsHtml . '</main>'
-. '</div><script>'
-. 'var currentCat="all",actOnly=false;'
+. '<div id="noMatch" class="empty-state" style="display:none">🔍 هیچ کاربری با عبارت یا فیلتر انتخابی پیدا نشد.</div>'
+. '<footer class="foot"><span class="live-dot"></span><span>داشبورد گزارش رصد آمبرلا · طراحی هماهنگ با رابط کاربری و فونت رسمی Vazirmatn</span></footer>'
+. '</div><div id="toast" class="toast">کپی شد</div><script>'
+. 'var currentCat="all",actOnly=false,allCollapsed=false;'
+. 'function faNum(n){var f=["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];return String(n).replace(/[0-9]/g,function(d){return f[+d]});}'
+. 'function showToast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(window._tt);window._tt=setTimeout(function(){t.classList.remove("show")},1800);}'
+. 'function toggleTheme(){var l=document.body.classList.toggle("light");document.getElementById("themeBtn").textContent=l?"🌙 تم تیره":"☀️ تم روشن";try{localStorage.setItem("umbrella-monitor-theme",l?"light":"dark");}catch(e){}}'
+. 'try{if(localStorage.getItem("umbrella-monitor-theme")==="light"){document.body.classList.add("light");document.getElementById("themeBtn").textContent="🌙 تم تیره";}}catch(e){}'
+. 'function toggleCard(btn){var c=btn.closest(".user-card");if(!c)return;var col=c.classList.toggle("collapsed");btn.setAttribute("aria-expanded",col?"false":"true");btn.firstElementChild.textContent=col?"باز کردن":"جمع کردن";}'
+. 'function toggleAllCards(){allCollapsed=!allCollapsed;document.querySelectorAll(".user-card").forEach(function(c){c.classList.toggle("collapsed",allCollapsed);var b=c.querySelector(".collapse-btn");if(b){b.setAttribute("aria-expanded",allCollapsed?"false":"true");b.firstElementChild.textContent=allCollapsed?"باز کردن":"جمع کردن";}});}'
+. 'function clearSearch(){var inp=document.getElementById("q");inp.value="";applyFilter();inp.focus();}'
 . 'function setCat(c,btn){currentCat=c;document.querySelectorAll(".fbtn[data-cat]").forEach(function(b){b.classList.remove("active")});btn.classList.add("active");applyFilter();}'
 . 'function toggleActOnly(btn){actOnly=!actOnly;btn.classList.toggle("active",actOnly);applyFilter();}'
-. 'function applyFilter(){var q=(document.getElementById("q").value||"").trim().toLowerCase();document.querySelectorAll(".user-card").forEach(function(card){var okAct=!actOnly||card.getAttribute("data-has-act")==="1";var okQ=!q||(card.getAttribute("data-search")||"").indexOf(q)!==-1;card.style.display=(okAct&&okQ)?"":"none";card.querySelectorAll(".cat-block").forEach(function(b){var bc=b.getAttribute("data-cat");b.style.display=(currentCat==="all"||currentCat===bc)?"":"none";});card.querySelectorAll("tr.act-row").forEach(function(r){r.style.display=(!q||(r.getAttribute("data-search")||"").indexOf(q)!==-1||(card.getAttribute("data-search")||"").indexOf(q)!==-1)?"":"none";});});}'
+. 'function sortCards(by){var wrap=document.getElementById("cards");var cards=Array.prototype.slice.call(wrap.querySelectorAll(".user-card"));cards.sort(function(a,b){return (+b.getAttribute("data-"+by)||0)-(+a.getAttribute("data-"+by)||0);});cards.forEach(function(c){wrap.appendChild(c);});}'
+. 'function applyFilter(){var inp=document.getElementById("q");var q=(inp.value||"").trim().toLowerCase();document.getElementById("clearQ").classList.toggle("show",q.length>0);var cards=document.querySelectorAll(".user-card"),vis=0;cards.forEach(function(card){var okAct=!actOnly||card.getAttribute("data-has-act")==="1";var okQ=!q||(card.getAttribute("data-search")||"").indexOf(q)!==-1;var show=okAct&&okQ;card.style.display=show?"":"none";if(show)vis++;card.querySelectorAll(".cat-block").forEach(function(b){var bc=b.getAttribute("data-cat");b.style.display=(currentCat==="all"||currentCat===bc)?"":"none";});card.querySelectorAll("tr.act-row").forEach(function(r){r.style.display=(!q||(r.getAttribute("data-search")||"").indexOf(q)!==-1||(card.getAttribute("data-search")||"").indexOf(q)!==-1)?"":"none";});});document.getElementById("resultCount").textContent="نمایش "+faNum(vis)+" از "+faNum(cards.length)+" کاربر";document.getElementById("noMatch").style.display=(cards.length>0&&vis===0)?"block":"none";}'
+. 'document.addEventListener("click",function(e){var b=e.target.closest(".copy-code");if(!b)return;var val=b.getAttribute("data-copy")||"";if(!val)return;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(val).then(function(){showToast("کپی شد: "+val);}).catch(function(){});}else{var ta=document.createElement("textarea");ta.value=val;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");showToast("کپی شد: "+val);}catch(ex){}document.body.removeChild(ta);}});'
+. 'document.addEventListener("keydown",function(e){if(e.key==="/"&&document.activeElement.tagName!=="INPUT"){e.preventDefault();document.getElementById("q").focus();}});'
 . '</script></body></html>';
 
 return [
