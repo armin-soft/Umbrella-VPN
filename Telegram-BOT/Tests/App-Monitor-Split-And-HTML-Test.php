@@ -314,6 +314,9 @@ check(str_contains($Html, 'هدیه مرادی') && str_contains($Html, 'github.
 check(str_contains($Html, 'data-cat="site"') && str_contains($Html, 'data-cat="software"') && str_contains($Html, 'data-cat="mobile"'), 'HTML export includes interactive site/software/mobile filter blocks');
 check(str_contains($Html, "@font-face{font-family:'Vazirmatn';src:url('data:font/ttf;base64,") && str_contains($Html, 'data:image/png;base64,'), 'HTML export embeds offline Vazirmatn font and Umbrella brand logo');
 check(str_contains($Html, '#07080B') && str_contains($Html, '#E11D2E') && str_contains($Html, '#F5F6FA') && str_contains($Html, '#D21027'), 'HTML export matches UmbrellaColors dark and light brand palette');
+check(str_contains($Html, '<symbol id="i-globe"') && str_contains($Html, '<use href="#i-globe"/>') && preg_match('/[\x{1F300}-\x{1FAFF}]/u', $Html) !== 1, 'HTML export uses crisp RTL SVG icons with zero system emojis');
+check(str_contains($Html, '@media(max-width:1040px)') && str_contains($Html, '@media(max-width:960px)') && str_contains($Html, 'data-label="نام دستگاه"') && str_contains($Html, 'data-label="نام / نشانی"'), 'HTML export includes responsive tablet/mobile stacked-card breakpoints');
+check(str_contains($Html, '۱.۰.۲') && str_contains($Html, '۵.۱۱۷.۱۵۹.۱۸') && !str_contains($Html, '>1.0.2<') && !str_contains($Html, '>5.117.159.18<'), 'HTML export renders versions and IPs using Persian digits');
 check(!is_file(TelegramClient::$LastDocument['path'] ?? ''), 'temporary HTML export file is removed after sendDocument');
 
 echo "OK app_monitor_split_and_html_test ({$Checks} assertions)\n";

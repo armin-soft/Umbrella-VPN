@@ -929,6 +929,76 @@ $Cache = ['font_css' => $FontCss, 'logo_uri' => $LogoDataUri];
 return $Cache;
 }
 
+private static function faDigits(string $Value): string {
+return strtr($Value, [
+'0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴',
+'5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹',
+'٠' => '۰', '١' => '۱', '٢' => '۲', '٣' => '۳', '٤' => '۴',
+'٥' => '۵', '٦' => '۶', '٧' => '۷', '٨' => '۸', '٩' => '۹',
+]);
+}
+
+private static function faNumber(int|float|string $Value): string {
+$Raw = (string)$Value;
+$Pers = method_exists('Helper', 'toPersian') ? Helper::toPersian($Raw) : $Raw;
+return self::faDigits($Pers);
+}
+
+private static function faBytesDisplay(int $Bytes): string {
+$Text = method_exists('Helper', 'formatBytes') ? Helper::formatBytes($Bytes) : ($Bytes . ' بایت');
+$Text = preg_replace('/\bKB\b/i', 'کیلوبایت', $Text) ?? $Text;
+$Text = preg_replace('/\bMB\b/i', 'مگابایت', $Text) ?? $Text;
+$Text = preg_replace('/\bGB\b/i', 'گیگابایت', $Text) ?? $Text;
+$Text = preg_replace('/\bTB\b/i', 'ترابایت', $Text) ?? $Text;
+$Text = preg_replace('/\bPB\b/i', 'پتابایت', $Text) ?? $Text;
+$Text = preg_replace('/\bB\b/i', 'بایت', $Text) ?? $Text;
+return self::faDigits($Text);
+}
+
+private static function faTargetDisplay(string $Target): string {
+if ($Target === '') return '—';
+if (preg_match('/[A-Za-z]/', $Target) === 1) {
+return $Target;
+}
+return self::faDigits($Target);
+}
+
+private static function monitorSvg(string $Id, string $ExtraClass = ''): string {
+return '<svg class="ico' . ($ExtraClass !== '' ? ' ' . $ExtraClass : '') . '" aria-hidden="true" focusable="false"><use href="#' . $Id . '"/></svg>';
+}
+
+private static function monitorSvgDefs(): string {
+return '<svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden"><defs>'
+. '<symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>'
+. '<symbol id="i-devices" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="2"/><path d="M6 18h6"/><path d="M9 14v4"/><rect x="16" y="8" width="6" height="12" rx="1.5"/><path d="M19 17.5h.01"/></symbol>'
+. '<symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>'
+. '<symbol id="i-desktop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></symbol>'
+. '<symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></symbol>'
+. '<symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>'
+. '<symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>'
+. '<symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></symbol>'
+. '<symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>'
+. '<symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>'
+. '<symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></symbol>'
+. '<symbol id="i-print" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>'
+. '<symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>'
+. '<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>'
+. '<symbol id="i-sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></symbol>'
+. '<symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>'
+. '<symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>'
+. '<symbol id="i-telegram" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>'
+. '<symbol id="i-call" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>'
+. '<symbol id="i-shield-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></symbol>'
+. '<symbol id="i-shield-no" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m14.5 9.5-5 5"/><path d="m9.5 9.5 5 5"/></symbol>'
+. '<symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>'
+. '<symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>'
+. '<symbol id="i-empty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>'
+. '<symbol id="i-unknown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></symbol>'
+. '<symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>'
+. '<symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></symbol>'
+. '</defs></svg>';
+}
+
 /** ساخت گزارش کامل HTML برای رصد کل کاربران یا یک کاربر مشخص. */
 public static function renderMonitorHtmlReport(string $Scope = 'all'): array {
 self::ensureAppSchemaReady();
@@ -1109,8 +1179,8 @@ $PreparedUsers[] = [
 
 usort($PreparedUsers, static fn(array $A, array $B): int => $B['last_seen'] <=> $A['last_seen']);
 
-$GeneratedAt = Helper::formatDateTimeText((string)time());
-$SummaryBytes = Helper::formatBytes((int)$Summary['bytes']);
+$GeneratedAt = self::faDigits(Helper::formatDateTimeText((string)time()));
+$SummaryBytes = self::faBytesDisplay((int)$Summary['bytes']);
 $TotalCats = max(1, (int)$Summary['site'] + (int)$Summary['software'] + (int)$Summary['mobile']);
 $PctSite = (int)round(((int)$Summary['site'] * 100) / $TotalCats);
 $PctSoft = (int)round(((int)$Summary['software'] * 100) / $TotalCats);
@@ -1131,11 +1201,11 @@ $SiteCnt = count($User['buckets']['site']);
 $SoftCnt = count($User['buckets']['software']);
 $MobCnt = count($User['buckets']['mobile']);
 $TotalActs = $SiteCnt + $SoftCnt + $MobCnt;
-$LastText = $User['last_seen'] > 0 ? Helper::formatDateTimeText((string)$User['last_seen']) : 'ثبت نشده';
+$LastText = $User['last_seen'] > 0 ? self::faDigits(Helper::formatDateTimeText((string)$User['last_seen'])) : 'ثبت نشده';
 $TgRaw = $User['tg_id'] > 0 ? (string)$User['tg_id'] : '';
-$TgText = $TgRaw !== '' ? Helper::toPersian($TgRaw) : 'ثبت نشده';
+$TgText = $TgRaw !== '' ? self::faNumber($TgRaw) : 'ثبت نشده';
 $PhoneRaw = $User['phone'];
-$PhoneText = $PhoneRaw !== '' ? Helper::toPersian($PhoneRaw) : 'ثبت نشده';
+$PhoneText = $PhoneRaw !== '' ? self::faNumber($PhoneRaw) : 'ثبت نشده';
 
 $UserCatDenom = max(1, $TotalActs);
 $UserPctSite = $TotalActs > 0 ? round(($SiteCnt * 100) / $UserCatDenom, 1) : 0;
@@ -1145,38 +1215,45 @@ $UserPctMob = $TotalActs > 0 ? max(0, round(100 - $UserPctSite - $UserPctSoft, 1
 $DeviceRowsHtml = '';
 foreach ($User['devices'] as $DIdx => $Dev) {
 $PlatRaw = (string)($Dev['Platform'] ?? '');
-$PlatLabel = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($PlatRaw) : $PlatRaw;
+$PlatLabel = method_exists('Helper', 'formatPlatform') ? self::faDigits(Helper::formatPlatform($PlatRaw)) : self::faDigits($PlatRaw);
 $Kind = self::deviceCategoryKind($PlatRaw);
 $KindBadge = $Kind === 'mobile'
-? '<span class="kind-badge mob">📱 موبایل</span>'
-: ($Kind === 'software' ? '<span class="kind-badge soft">💻 کامپیوتر</span>' : '<span class="kind-badge unk">📲 نامشخص</span>');
+? '<span class="kind-badge mob">' . self::monitorSvg('i-phone', 'ico-sm') . '<span>موبایل</span></span>'
+: ($Kind === 'software'
+? '<span class="kind-badge soft">' . self::monitorSvg('i-desktop', 'ico-sm') . '<span>کامپیوتر</span></span>'
+: '<span class="kind-badge unk">' . self::monitorSvg('i-unknown', 'ico-sm') . '<span>نامشخص</span></span>');
 $DevTs = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
 if ($DevTs <= 0) $DevTs = self::monitorTimestamp($Dev['First_Seen_At'] ?? 0);
-$DevWhen = $DevTs > 0 ? Helper::formatDateTimeText((string)$DevTs) : 'ثبت نشده';
+$DevWhen = $DevTs > 0 ? self::faDigits(Helper::formatDateTimeText((string)$DevTs)) : 'ثبت نشده';
 $Trusted = (int)($Dev['Is_Trusted'] ?? 0) === 1;
-$StatusBadge = $Trusted ? '<span class="badge ok"><span class="bdot"></span>مجاز</span>' : '<span class="badge no"><span class="bdot"></span>غیرمجاز</span>';
+$StatusBadge = $Trusted
+? '<span class="badge ok">' . self::monitorSvg('i-shield-ok', 'ico-sm') . '<span>مجاز</span></span>'
+: '<span class="badge no">' . self::monitorSvg('i-shield-no', 'ico-sm') . '<span>غیرمجاز</span></span>';
+$VerRaw = trim((string)($Dev['App_Version'] ?? ''));
+$VerFa = $VerRaw !== '' ? self::faDigits($VerRaw) : '—';
 $IpRaw = trim((string)($Dev['Last_IP'] ?? ''));
 $IpCell = $IpRaw !== ''
-? '<button type="button" class="copy-code" data-copy="' . self::htmlEsc($IpRaw) . '" title="کپی آی پی"><code>' . self::htmlEsc($IpRaw) . '</code></button>'
+? '<button type="button" class="copy-code" data-copy="' . self::htmlEsc($IpRaw) . '" title="کپی نشانی آی پی">' . self::monitorSvg('i-copy', 'ico-sm') . '<bdi dir="ltr" class="fa-mono">' . self::htmlEsc(self::faDigits($IpRaw)) . '</bdi></button>'
 : '<span class="muted">—</span>';
+$RowNumFa = self::faNumber($DIdx + 1);
 $DeviceRowsHtml .= '<tr>'
-. '<td class="num-col">' . self::htmlEsc(Helper::toPersian((string)($DIdx + 1))) . '</td>'
-. '<td><strong class="dev-name">' . self::htmlEsc((string)($Dev['Device_Name'] ?? 'دستگاه')) . '</strong></td>'
-. '<td>' . $KindBadge . '</td>'
-. '<td>' . self::htmlEsc($PlatLabel !== '' ? $PlatLabel : 'نامشخص') . '</td>'
-. '<td dir="ltr" class="mono-col">' . self::htmlEsc((string)($Dev['App_Version'] ?? '—')) . '</td>'
-. '<td>' . $StatusBadge . '</td>'
-. '<td dir="ltr">' . $IpCell . '</td>'
-. '<td class="time-col">' . self::htmlEsc($DevWhen) . '</td>'
+. '<td class="num-col" data-label="ردیف"><span class="row-num-pill">' . self::htmlEsc($RowNumFa) . '</span></td>'
+. '<td data-label="نام دستگاه"><strong class="dev-name">' . self::htmlEsc((string)($Dev['Device_Name'] ?? 'دستگاه')) . '</strong></td>'
+. '<td data-label="نوع">' . $KindBadge . '</td>'
+. '<td data-label="سیستم عامل">' . self::htmlEsc($PlatLabel !== '' ? $PlatLabel : 'نامشخص') . '</td>'
+. '<td data-label="نسخه"><bdi dir="ltr" class="fa-mono mono-col">' . self::htmlEsc($VerFa) . '</bdi></td>'
+. '<td data-label="وضعیت">' . $StatusBadge . '</td>'
+. '<td data-label="آخرین آی پی">' . $IpCell . '</td>'
+. '<td data-label="آخرین فعالیت" class="time-col">' . self::htmlEsc($DevWhen) . '</td>'
 . '</tr>';
 }
 if ($DeviceRowsHtml === '') {
 $DeviceRowsHtml = '<tr><td colspan="8" class="empty">دستگاهی ثبت نشده است.</td></tr>';
 }
 
-$BuildActTable = static function (string $CatKey, string $Heading, string $EmptyMsg) use ($User): string {
+$BuildActTable = static function (string $CatKey, string $IconId, string $Heading, string $EmptyMsg) use ($User): string {
 $Items = $User['buckets'][$CatKey] ?? [];
-$CountFa = self::htmlEsc(Helper::toPersian((string)count($Items)));
+$CountFa = self::htmlEsc(self::faNumber(count($Items)));
 $MaxScore = 1;
 foreach ($Items as $It) {
 $Score = ((int)($It['Bytes_Down'] ?? 0) + (int)($It['Bytes_Up'] ?? 0)) ?: max(1, (int)($It['Hits'] ?? 1));
@@ -1188,28 +1265,30 @@ $Did = (string)($Act['Device_ID'] ?? '');
 $DevName = $User['device_map'][$Did] ?? 'دستگاه';
 $HitsInt = (int)($Act['Hits'] ?? 1);
 $BytesInt = (int)($Act['Bytes_Down'] ?? 0) + (int)($Act['Bytes_Up'] ?? 0);
-$Hits = Helper::toPersian((string)$HitsInt);
-$Bytes = Helper::formatBytes($BytesInt);
+$Hits = self::faNumber($HitsInt);
+$Bytes = self::faBytesDisplay($BytesInt);
 $WhenTs = (int)($Act['Last_Seen_At'] ?? 0);
-$WhenStr = $WhenTs > 0 ? Helper::formatDateTimeText((string)$WhenTs) : 'ثبت نشده';
+$WhenStr = $WhenTs > 0 ? self::faDigits(Helper::formatDateTimeText((string)$WhenTs)) : 'ثبت نشده';
 $Score = $BytesInt > 0 ? $BytesInt : max(1, $HitsInt);
 $BarPct = max(4, min(100, (int)round(($Score * 100) / $MaxScore)));
 $TargetVal = (string)($Act['Target'] ?? '');
+$TargetDisplay = self::faTargetDisplay($TargetVal);
+$RowNumFa = self::faNumber($AIdx + 1);
 $RowsHtml .= '<tr class="act-row" data-search="' . self::htmlEsc(strtolower($TargetVal . ' ' . $DevName)) . '">'
-. '<td class="num-col">' . self::htmlEsc(Helper::toPersian((string)($AIdx + 1))) . '</td>'
-. '<td dir="ltr" class="target-cell"><div class="target-wrap"><code class="target-code">' . self::htmlEsc($TargetVal) . '</code><div class="mini-bar"><span class="' . $CatKey . '" style="width:' . $BarPct . '%"></span></div></div></td>'
-. '<td class="hits-col"><span class="hit-chip">' . self::htmlEsc($Hits) . ' بار</span></td>'
-. '<td dir="ltr" class="mono-col">' . self::htmlEsc($Bytes) . '</td>'
-. '<td>' . self::htmlEsc($DevName) . '</td>'
-. '<td class="time-col">' . self::htmlEsc($WhenStr) . '</td>'
+. '<td class="num-col" data-label="ردیف"><span class="row-num-pill">' . self::htmlEsc($RowNumFa) . '</span></td>'
+. '<td data-label="نام / نشانی" class="target-cell"><div class="target-wrap"><code class="target-code" dir="auto">' . self::htmlEsc($TargetDisplay) . '</code><div class="mini-bar"><span class="' . $CatKey . '" style="width:' . $BarPct . '%"></span></div></div></td>'
+. '<td data-label="تعداد" class="hits-col"><span class="hit-chip">' . self::htmlEsc($Hits) . ' بار</span></td>'
+. '<td data-label="ترافیک" class="mono-col">' . self::htmlEsc($Bytes) . '</td>'
+. '<td data-label="دستگاه">' . self::htmlEsc($DevName) . '</td>'
+. '<td data-label="آخرین زمان" class="time-col">' . self::htmlEsc($WhenStr) . '</td>'
 . '</tr>';
 }
 if ($RowsHtml === '') {
 $RowsHtml = '<tr><td colspan="6" class="empty">' . self::htmlEsc($EmptyMsg) . '</td></tr>';
 }
 return '<div class="cat-block cat-' . $CatKey . '" data-cat="' . $CatKey . '">'
-. '<div class="cat-head"><h4>' . $Heading . '</h4><span class="pill ' . $CatKey . '">' . $CountFa . ' مورد</span></div>'
-. '<div class="table-wrap"><table><thead><tr><th>#</th><th>نام / نشانی</th><th>تعداد</th><th>ترافیک</th><th>دستگاه</th><th>آخرین زمان</th></tr></thead><tbody>'
+. '<div class="cat-head"><h4 class="ico-title">' . self::monitorSvg($IconId) . '<span>' . self::htmlEsc($Heading) . '</span></h4><span class="pill ' . $CatKey . '">' . $CountFa . ' مورد</span></div>'
+. '<div class="table-wrap"><table><thead><tr><th class="col-num">#</th><th>نام / نشانی</th><th>تعداد</th><th>ترافیک</th><th>دستگاه</th><th>آخرین زمان</th></tr></thead><tbody>'
 . $RowsHtml
 . '</tbody></table></div></div>';
 };
@@ -1225,33 +1304,33 @@ $SearchMeta .= ' ' . strtolower((string)($Act['Target'] ?? ''));
 }
 
 $TgMetaHtml = $TgRaw !== ''
-? '<button type="button" class="meta-chip copy-code" data-copy="' . self::htmlEsc($TgRaw) . '" title="کپی شناسه"><span>🆔 تلگرام:</span><code>' . self::htmlEsc($TgText) . '</code></button>'
-: '<span class="meta-chip"><span>🆔 تلگرام:</span><span class="muted">' . self::htmlEsc($TgText) . '</span></span>';
+? '<button type="button" class="meta-chip copy-code" data-copy="' . self::htmlEsc($TgRaw) . '" title="کپی شناسه">' . self::monitorSvg('i-telegram', 'ico-sm') . '<span>تلگرام:</span><bdi dir="ltr" class="fa-mono">' . self::htmlEsc($TgText) . '</bdi>' . self::monitorSvg('i-copy', 'ico-sm copy-hint') . '</button>'
+: '<span class="meta-chip">' . self::monitorSvg('i-telegram', 'ico-sm') . '<span>تلگرام:</span><span class="muted">' . self::htmlEsc($TgText) . '</span></span>';
 $PhoneMetaHtml = $PhoneRaw !== ''
-? '<button type="button" class="meta-chip copy-code" data-copy="' . self::htmlEsc($PhoneRaw) . '" title="کپی شماره"><span>📞 موبایل:</span><code dir="ltr">' . self::htmlEsc($PhoneText) . '</code></button>'
-: '<span class="meta-chip"><span>📞 موبایل:</span><span class="muted">' . self::htmlEsc($PhoneText) . '</span></span>';
+? '<button type="button" class="meta-chip copy-code" data-copy="' . self::htmlEsc($PhoneRaw) . '" title="کپی شماره">' . self::monitorSvg('i-call', 'ico-sm') . '<span>موبایل:</span><bdi dir="ltr" class="fa-mono">' . self::htmlEsc($PhoneText) . '</bdi>' . self::monitorSvg('i-copy', 'ico-sm copy-hint') . '</button>'
+: '<span class="meta-chip">' . self::monitorSvg('i-call', 'ico-sm') . '<span>موبایل:</span><span class="muted">' . self::htmlEsc($PhoneText) . '</span></span>';
 
 $CardsHtml .= '<section class="user-card" data-has-act="' . ($TotalActs > 0 ? '1' : '0') . '" data-last="' . (int)$User['last_seen'] . '" data-bytes="' . (int)$User['bytes'] . '" data-hits="' . (int)$User['hits'] . '" data-search="' . self::htmlEsc($SearchMeta) . '">'
 . '<div class="user-head">'
 . '<div class="user-title">'
-. '<span class="user-num">' . self::htmlEsc(Helper::toPersian((string)($UIdx + 1))) . '</span>'
+. '<span class="user-num">' . self::htmlEsc(self::faNumber($UIdx + 1)) . '</span>'
 . '<div class="user-info">'
 . '<h3>' . self::htmlEsc((string)$User['name']) . '</h3>'
 . '<div class="user-meta">'
 . $TgMetaHtml
 . $PhoneMetaHtml
-. '<span class="meta-chip"><span>🕒 آخرین فعالیت:</span><strong>' . self::htmlEsc($LastText) . '</strong></span>'
-. '<span class="meta-chip"><span>📊 حجم کل:</span><strong dir="ltr">' . self::htmlEsc(Helper::formatBytes((int)$User['bytes'])) . '</strong></span>'
+. '<span class="meta-chip">' . self::monitorSvg('i-clock', 'ico-sm') . '<span>آخرین فعالیت:</span><strong>' . self::htmlEsc($LastText) . '</strong></span>'
+. '<span class="meta-chip">' . self::monitorSvg('i-activity', 'ico-sm') . '<span>حجم کل:</span><strong>' . self::htmlEsc(self::faBytesDisplay((int)$User['bytes'])) . '</strong></span>'
 . '</div>'
 . '</div>'
 . '</div>'
 . '<div class="user-right">'
 . '<div class="user-pills">'
-. '<span class="pill site">🌐 ' . self::htmlEsc(Helper::toPersian((string)$SiteCnt)) . ' سایت</span>'
-. '<span class="pill software">💻 ' . self::htmlEsc(Helper::toPersian((string)$SoftCnt)) . ' نرم افزار</span>'
-. '<span class="pill mobile">📱 ' . self::htmlEsc(Helper::toPersian((string)$MobCnt)) . ' اپلیکیشن</span>'
+. '<span class="pill site">' . self::monitorSvg('i-globe', 'ico-sm') . '<span>' . self::htmlEsc(self::faNumber($SiteCnt)) . ' سایت</span></span>'
+. '<span class="pill software">' . self::monitorSvg('i-desktop', 'ico-sm') . '<span>' . self::htmlEsc(self::faNumber($SoftCnt)) . ' نرم افزار</span></span>'
+. '<span class="pill mobile">' . self::monitorSvg('i-phone', 'ico-sm') . '<span>' . self::htmlEsc(self::faNumber($MobCnt)) . ' اپلیکیشن</span></span>'
 . '</div>'
-. '<button type="button" class="collapse-btn" onclick="toggleCard(this)" aria-expanded="true"><span>جمع کردن</span><span class="chev">▾</span></button>'
+. '<button type="button" class="collapse-btn" onclick="toggleCard(this)" aria-expanded="true">' . self::monitorSvg('i-chevron', 'ico-sm chev') . '<span class="col-lbl">جمع کردن</span></button>'
 . '</div>'
 . '</div>'
 . ($TotalActs > 0
@@ -1259,21 +1338,21 @@ $CardsHtml .= '<section class="user-card" data-has-act="' . ($TotalActs > 0 ? '1
 : '')
 . '<div class="card-body">'
 . '<div class="devices-box">'
-. '<div class="sub-head"><h4>📲 دستگاه های کاربر (' . self::htmlEsc(Helper::toPersian((string)count($User['devices']))) . ')</h4><span class="muted small">' . self::htmlEsc(Helper::toPersian((string)$User['trusted_cnt'])) . ' مجاز</span></div>'
-. '<div class="table-wrap"><table><thead><tr><th>#</th><th>نام دستگاه</th><th>نوع</th><th>سیستم عامل</th><th>نسخه</th><th>وضعیت</th><th>آخرین آی پی</th><th>آخرین فعالیت</th></tr></thead><tbody>'
+. '<div class="sub-head"><h4 class="ico-title">' . self::monitorSvg('i-devices') . '<span>دستگاه های کاربر (' . self::htmlEsc(self::faNumber(count($User['devices']))) . ')</span></h4><span class="muted small">' . self::htmlEsc(self::faNumber($User['trusted_cnt'])) . ' مجاز</span></div>'
+. '<div class="table-wrap"><table><thead><tr><th class="col-num">#</th><th>نام دستگاه</th><th>نوع</th><th>سیستم عامل</th><th>نسخه</th><th>وضعیت</th><th>آخرین آی پی</th><th>آخرین فعالیت</th></tr></thead><tbody>'
 . $DeviceRowsHtml
 . '</tbody></table></div></div>'
 . '<div class="cats-grid">'
-. $BuildActTable('site', '🌐 سایت های باز شده', 'سایتی ثبت نشده است.')
-. $BuildActTable('software', '💻 نرم افزارهای باز شده (کامپیوتر)', 'نرم افزاری ثبت نشده است.')
-. $BuildActTable('mobile', '📱 اپلیکیشن های باز شده (موبایل)', 'اپلیکیشنی ثبت نشده است.')
+. $BuildActTable('site', 'i-globe', 'سایت های باز شده', 'سایتی ثبت نشده است.')
+. $BuildActTable('software', 'i-desktop', 'نرم افزارهای باز شده (کامپیوتر)', 'نرم افزاری ثبت نشده است.')
+. $BuildActTable('mobile', 'i-phone', 'اپلیکیشن های باز شده (موبایل)', 'اپلیکیشنی ثبت نشده است.')
 . '</div>'
 . '</div>'
 . '</section>';
 }
 
 if ($CardsHtml === '') {
-$CardsHtml = '<div class="empty-state">📭 هنوز هیچ کاربر یا فعالیتی در رصد ثبت نشده است.</div>';
+$CardsHtml = '<div class="empty-state">' . self::monitorSvg('i-empty', 'ico-lg') . '<span>هنوز هیچ کاربر یا فعالیتی در رصد ثبت نشده است.</span></div>';
 }
 
 $Html = '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -1283,158 +1362,208 @@ $Html = '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><m
 . $Brand['font_css']
 . ":root{color-scheme:dark;--bg:#07080B;--bg-alt:#0C0E13;--surface:#12141B;--surface-high:#1A1D26;--border:#272B37;--text:#F3F5F9;--muted:#9AA2B4;--primary:#E11D2E;--primary-soft:#3A1017;--primary-deep:#8E0E1B;--success:#22C55E;--warning:#F59E0B;--danger:#FF6B6B;--info:#60A5FA;--software:#A855F7;--mobile:#22C55E;--glass:rgba(255,255,255,.06);--shadow:rgba(0,0,0,.60);--code:#0C0E13;--r-sm:8px;--r-md:12px;--r-btn:14px;--r-lg:16px;--r-xl:20px;--r-xxl:24px}"
 . "body.light{color-scheme:light;--bg:#F5F6FA;--bg-alt:#FFFFFF;--surface:#FFFFFF;--surface-high:#F0F2F8;--border:#E1E5EF;--text:#10131C;--muted:#5B6478;--primary:#D21027;--primary-soft:#FDE7EA;--primary-deep:#9B0C1D;--success:#15803D;--warning:#92400E;--danger:#DC2626;--info:#2563EB;--software:#7C3AED;--mobile:#15803D;--glass:rgba(0,0,0,.04);--shadow:rgba(16,19,28,.12);--code:#F0F2F8}"
-. "*{box-sizing:border-box}html{-webkit-text-size-adjust:100%;scrollbar-gutter:stable}"
-. "body{margin:0;padding:24px 16px 48px;font-family:'Vazirmatn','Segoe UI','Segoe UI Symbol',Tahoma,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.75;overflow-x:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}"
+. "*{box-sizing:border-box}html{-webkit-text-size-adjust:100%;scrollbar-gutter:stable;scroll-behavior:smooth}"
+. "body{margin:0;direction:rtl;text-align:right;padding:24px 18px 56px;font-family:'Vazirmatn',Tahoma,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.75;overflow-x:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}"
 . "body::before{content:'';position:fixed;inset:-25%;pointer-events:none;z-index:-1;background:radial-gradient(45% 40% at 86% 8%,rgba(225,29,46,.14),transparent 65%),radial-gradient(38% 36% at 12% 88%,rgba(96,165,250,.08),transparent 66%)}"
 . "body.light::before{background:radial-gradient(45% 40% at 86% 8%,rgba(210,16,39,.09),transparent 65%),radial-gradient(38% 36% at 12% 88%,rgba(37,99,235,.07),transparent 66%)}"
-. ".wrap{max-width:1240px;margin:0 auto}"
-. ".hero{position:relative;overflow:hidden;background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xxl);padding:24px;margin-bottom:20px;box-shadow:0 24px 54px -22px var(--shadow);display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px;align-items:center}"
+. ".ico{width:17px;height:17px;flex-shrink:0;display:inline-block;vertical-align:middle}.ico-sm{width:15px;height:15px}.ico-lg{width:22px;height:22px}.ico-title{display:inline-flex;align-items:center;gap:8px;min-width:0}"
+. "bdi,.fa-mono{unicode-bidi:isolate;font-family:'Vazirmatn',Tahoma,system-ui,sans-serif}"
+. ".wrap{max-width:1240px;margin:0 auto;width:100%}"
+. ".hero{position:relative;overflow:hidden;background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xxl);padding:22px 24px;margin-bottom:18px;box-shadow:0 24px 54px -22px var(--shadow);display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px;align-items:center}"
 . ".hero::before{content:'';position:absolute;inset:0 12% auto;height:2px;background:linear-gradient(90deg,transparent,var(--primary),transparent)}"
-. ".brand-row{display:flex;align-items:center;gap:16px}"
-. ".logo-box{width:68px;height:68px;border-radius:var(--r-xl);background:linear-gradient(145deg,var(--surface-high),var(--bg));border:1px solid rgba(225,29,46,.32);display:grid;place-items:center;flex-shrink:0;box-shadow:0 12px 28px rgba(225,29,46,.18);overflow:hidden}"
-. ".logo-box img{width:60px;height:60px;object-fit:contain;border-radius:var(--r-lg);display:block}"
-. ".hero-text h1{margin:0 0 6px;font-size:clamp(18px,3vw,23px);font-weight:800;letter-spacing:-.2px;line-height:1.35}"
-. ".hero-badges{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12.5px;color:var(--muted)}"
-. ".live-pill{display:inline-flex;align-items:center;gap:7px;padding:3px 10px;border-radius:999px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.28);color:var(--success);font-weight:700;font-size:11.5px}"
-. ".live-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(34,197,94,.18);animation:pulse 2s infinite}"
+. ".brand-row{display:flex;align-items:center;gap:16px;min-width:0;flex:1 1 360px}"
+. ".logo-box{width:64px;height:64px;border-radius:var(--r-xl);background:linear-gradient(145deg,var(--surface-high),var(--bg));border:1px solid rgba(225,29,46,.32);display:grid;place-items:center;flex-shrink:0;box-shadow:0 12px 28px rgba(225,29,46,.18);overflow:hidden}"
+. ".logo-box img{width:56px;height:56px;object-fit:contain;border-radius:var(--r-lg);display:block}"
+. ".hero-text{min-width:0;flex:1}.hero-text h1{margin:0 0 8px;font-size:clamp(17px,2.4vw,22px);font-weight:800;letter-spacing:-.2px;line-height:1.4;overflow-wrap:anywhere}"
+. ".hero-badges{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:12.5px;color:var(--muted)}"
+. ".hero-badge-item{display:inline-flex;align-items:center;gap:6px}"
+. ".live-pill{display:inline-flex;align-items:center;gap:7px;padding:3px 11px;border-radius:999px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.28);color:var(--success);font-weight:700;font-size:11.5px}"
+. ".live-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(34,197,94,.18);animation:pulse 2s infinite;flex-shrink:0}"
 . "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}"
-. ".actions{display:flex;gap:8px;flex-wrap:wrap}"
-. ".btn{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:10px 15px;border-radius:var(--r-btn);cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;transition:all .18s ease;display:inline-flex;align-items:center;gap:6px}"
+. ".actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}"
+. ".btn{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:10px 14px;border-radius:var(--r-btn);cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;transition:all .18s ease;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}"
 . ".btn:hover{border-color:var(--primary);transform:translateY(-1px)}.btn.primary{background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;border-color:transparent;box-shadow:0 10px 24px rgba(225,29,46,.28)}"
-. ".stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin-bottom:16px}"
-. ".stat{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xl);padding:16px;display:flex;align-items:center;gap:12px;transition:border-color .2s}"
-. ".stat:hover{border-color:rgba(225,29,46,.45)}"
-. ".stat-ico{width:42px;height:42px;border-radius:var(--r-md);display:grid;place-items:center;font-size:19px;flex-shrink:0;background:var(--surface-high);border:1px solid var(--border)}"
-. ".stat.brand .stat-ico{background:var(--primary-soft);border-color:rgba(225,29,46,.32)}.stat.site .stat-ico{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.3)}.stat.soft .stat-ico{background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.3)}.stat.mob .stat-ico{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}"
-. ".stat .k{font-size:12px;color:var(--muted);font-weight:400}.stat .v{font-size:21px;font-weight:800;line-height:1.25;margin-top:2px}.stat .subv{font-size:11px;color:var(--muted)}"
-. ".dist-card{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xl);padding:14px 18px;margin-bottom:18px}"
-. ".dist-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px;font-size:12.5px;font-weight:700}"
-. ".dist-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}"
-. ".dist-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:5px;vertical-align:middle}"
-. ".ratio-bar{height:8px;border-radius:999px;background:var(--surface-high);overflow:hidden;display:flex;gap:2px;margin-bottom:14px}"
+. ".stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}"
+. ".stat{min-width:0;background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xl);padding:16px 18px;display:flex;align-items:center;gap:14px;transition:border-color .2s}"
+. ".stat:hover{border-color:rgba(225,29,46,.45)}.stat-body{min-width:0;flex:1}"
+. ".stat-ico{width:44px;height:44px;border-radius:var(--r-md);display:grid;place-items:center;flex-shrink:0;background:var(--surface-high);border:1px solid var(--border);color:var(--text)}"
+. ".stat.brand .stat-ico{background:var(--primary-soft);border-color:rgba(225,29,46,.32);color:var(--primary)}.stat.site .stat-ico{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.3);color:var(--info)}.stat.soft .stat-ico{background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.3);color:var(--software)}.stat.mob .stat-ico{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3);color:var(--mobile)}"
+. ".stat .k{font-size:12.5px;color:var(--muted);font-weight:400}.stat .v{font-size:clamp(18px,2.2vw,22px);font-weight:800;line-height:1.3;margin-top:2px;overflow-wrap:anywhere}.stat .subv{font-size:11.5px;color:var(--muted);margin-top:2px}"
+. ".dist-card{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xl);padding:15px 18px;margin-bottom:16px}"
+. ".dist-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 16px;align-items:center;margin-bottom:10px;font-size:13px;font-weight:700}"
+. ".dist-legend{display:flex;flex-wrap:wrap;gap:10px 16px;font-size:12px;color:var(--muted)}"
+. ".dist-legend-item{display:inline-flex;align-items:center;gap:6px}"
+. ".dist-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}"
+. ".ratio-bar{height:8px;border-radius:999px;background:var(--surface-high);overflow:hidden;display:flex;gap:2px;margin-bottom:16px}"
 . ".ratio-bar span{display:block;height:100%;transition:width .35s ease}"
 . ".seg-site{background:var(--info)}.seg-soft{background:var(--software)}.seg-mob{background:var(--mobile)}"
-. ".toolbar{position:sticky;top:10px;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:14px 16px;margin-bottom:20px;box-shadow:0 16px 38px -14px var(--shadow);display:flex;flex-direction:column;gap:12px}"
+. ".toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:16px;margin-bottom:20px;box-shadow:0 16px 38px -18px var(--shadow);display:flex;flex-direction:column;gap:12px}"
 . ".tool-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center}"
-. ".search-box{position:relative;flex:1;min-width:230px}"
-. ".search{width:100%;padding:11px 38px 11px 36px;border-radius:var(--r-btn);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13.5px;outline:none;transition:border-color .18s}"
+. ".search-box{position:relative;flex:1 1 280px;min-width:0}"
+. ".search{width:100%;padding:11px 40px 11px 38px;border-radius:var(--r-btn);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13.5px;outline:none;transition:border-color .18s}"
 . ".search:focus{border-color:var(--primary)}"
-. ".search-ico{position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;opacity:.75}"
-. ".clear-q{position:absolute;left:10px;top:50%;transform:translateY(-50%);border:none;background:var(--surface-high);color:var(--muted);width:22px;height:22px;border-radius:50%;cursor:pointer;display:none;font-size:13px;line-height:1}"
-. ".clear-q.show{display:grid;place-items:center}"
-. ".sort-sel{padding:10px 14px;border-radius:var(--r-btn);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}"
-. ".tool-bot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}"
-. ".filters{display:flex;flex-wrap:wrap;gap:8px}"
-. ".fbtn{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:7px 14px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;transition:all .18s}"
+. ".search-ico{position:absolute;right:13px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);display:flex;align-items:center}"
+. ".clear-q{position:absolute;left:10px;top:50%;transform:translateY(-50%);border:none;background:var(--surface-high);color:var(--muted);width:24px;height:24px;border-radius:50%;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0}"
+. ".clear-q.show{display:inline-flex}"
+. ".sort-wrap{position:relative;display:flex;align-items:center;flex:0 1 260px;min-width:210px}"
+. ".sort-ico{position:absolute;right:12px;pointer-events:none;color:var(--muted);display:flex;align-items:center}"
+. ".sort-chev{position:absolute;left:12px;pointer-events:none;color:var(--muted);display:flex;align-items:center}"
+. ".sort-sel{width:100%;appearance:none;-webkit-appearance:none;padding:11px 36px 11px 34px;border-radius:var(--r-btn);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;outline:none}"
+. ".sort-sel:focus{border-color:var(--primary)}"
+. ".tool-bot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 16px;align-items:center}"
+. ".filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}"
+. ".fbtn{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:7px 13px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;transition:all .18s;display:inline-flex;align-items:center;gap:6px}"
 . ".fbtn:hover{border-color:var(--primary)}.fbtn.active{background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(225,29,46,.24)}"
-. ".result-count{font-size:12.5px;color:var(--muted);font-weight:700}"
-. ".user-card{background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xxl);padding:20px;margin-bottom:20px;box-shadow:0 18px 42px -20px var(--shadow);transition:border-color .2s}"
+. ".result-count{font-size:12.5px;color:var(--muted);font-weight:700;white-space:nowrap}"
+. ".user-card{min-width:0;background:linear-gradient(225deg,var(--surface),var(--bg-alt));border:1px solid var(--border);border-radius:var(--r-xxl);padding:20px;margin-bottom:20px;box-shadow:0 18px 42px -20px var(--shadow);transition:border-color .2s}"
 . ".user-card:hover{border-color:rgba(225,29,46,.36)}"
 . ".user-card.collapsed .card-body{display:none}"
 . ".user-card.collapsed .chev{transform:rotate(90deg)}"
-. ".user-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:flex-start;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px}"
-. ".user-title{display:flex;gap:14px;align-items:flex-start;flex:1;min-width:260px}"
-. ".user-num{width:38px;height:38px;border-radius:var(--r-md);background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;box-shadow:0 8px 18px rgba(225,29,46,.28)}"
-. ".user-info h3{margin:0 0 8px;font-size:17.5px;font-weight:800;line-height:1.3}"
+. ".user-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px 18px;align-items:flex-start;border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px}"
+. ".user-title{display:flex;gap:14px;align-items:flex-start;flex:1 1 380px;min-width:0}"
+. ".user-num{width:40px;height:40px;border-radius:var(--r-md);background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;box-shadow:0 8px 18px rgba(225,29,46,.28)}"
+. ".user-info{min-width:0;flex:1}.user-info h3{margin:0 0 10px;font-size:17.5px;font-weight:800;line-height:1.35;overflow-wrap:anywhere}"
 . ".user-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12.5px;color:var(--muted)}"
-. ".meta-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--surface-high);border:1px solid var(--border);color:var(--muted);font-family:inherit;font-size:12px}"
+. ".meta-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:var(--surface-high);border:1px solid var(--border);color:var(--muted);font-family:inherit;font-size:12px;max-width:100%;flex-wrap:wrap}"
 . ".meta-chip strong{color:var(--text)}"
-. ".copy-code{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:3px 9px;border-radius:999px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;transition:border-color .15s}"
-. ".copy-code:hover{border-color:var(--primary)}.copy-code code{background:transparent;padding:0}"
-. ".user-right{display:flex;flex-direction:column;align-items:flex-end;gap:10px}"
+. ".copy-code{border:1px solid var(--border);background:var(--surface-high);color:var(--text);padding:4px 10px;border-radius:999px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;transition:border-color .15s;max-width:100%}"
+. ".copy-code:hover{border-color:var(--primary)}.copy-hint{opacity:.65}"
+. ".user-right{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex:0 1 auto}"
 . ".user-pills{display:flex;flex-wrap:wrap;gap:8px}"
-. ".pill{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-high);border:1px solid var(--border)}"
+. ".pill{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-high);border:1px solid var(--border);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}"
 . ".pill.site{color:var(--info);border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.08)}"
 . ".pill.software{color:var(--software);border-color:rgba(168,85,247,.35);background:rgba(168,85,247,.08)}"
 . ".pill.mobile{color:var(--mobile);border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.08)}"
-. ".collapse-btn{border:1px solid var(--border);background:var(--surface-high);color:var(--muted);padding:5px 11px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;gap:5px}"
-. ".collapse-btn:hover{color:var(--text);border-color:var(--primary)}.chev{display:inline-block;transition:transform .2s}"
-. ".devices-box{background:var(--surface-high);border:1px solid var(--border);border-radius:var(--r-xl);padding:14px;margin-bottom:14px}"
-. ".sub-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.sub-head h4,.cat-head h4{margin:0;font-size:14px;font-weight:800}"
-. ".cats-grid{display:grid;grid-template-columns:1fr;gap:14px}"
-. ".cat-block{background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--r-xl);padding:14px}"
+. ".collapse-btn{border:1px solid var(--border);background:var(--surface-high);color:var(--muted);padding:6px 12px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px}"
+. ".collapse-btn:hover{color:var(--text);border-color:var(--primary)}.chev{transition:transform .2s}"
+. ".card-body{display:flex;flex-direction:column;gap:16px;min-width:0}"
+. ".devices-box{min-width:0;background:var(--surface-high);border:1px solid var(--border);border-radius:var(--r-xl);padding:15px}"
+. ".sub-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}.sub-head h4,.cat-head h4{margin:0;font-size:14.5px;font-weight:800}"
+. ".cats-grid{display:grid;grid-template-columns:1fr;gap:16px;min-width:0}"
+. ".cat-block{min-width:0;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--r-xl);padding:15px}"
 . ".cat-site{border-top:2px solid var(--info)}.cat-software{border-top:2px solid var(--software)}.cat-mobile{border-top:2px solid var(--mobile)}"
-. ".cat-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}"
-. ".table-wrap{overflow-x:auto;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface)}"
-. "table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}tr:last-child td{border-bottom:none}"
-. "th{color:var(--muted);font-weight:700;font-size:12px;background:var(--surface-high)}tbody tr:hover td{background:var(--glass)}"
-. ".num-col{color:var(--muted);width:36px;font-weight:700}.mono-col,.time-col{font-size:12.5px;color:var(--muted)}"
-. "code{background:var(--code);padding:3px 8px;border-radius:var(--r-sm);font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:12.5px;color:var(--text)}"
-. ".target-wrap{display:flex;flex-direction:column;gap:5px;min-width:140px}.target-code{align-self:flex-start;font-weight:600}"
-. ".mini-bar{height:3px;width:100%;background:var(--surface-high);border-radius:999px;overflow:hidden}.mini-bar span{display:block;height:100%;border-radius:999px}"
+. ".cat-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}"
+. ".table-wrap{overflow-x:auto;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface);width:100%}"
+. "table{width:100%;border-collapse:collapse;font-size:13px}"
+. "th,td{padding:11px 13px;border-bottom:1px solid var(--border);text-align:right;vertical-align:middle}tr:last-child td{border-bottom:none}"
+. "th{color:var(--muted);font-weight:700;font-size:12px;background:var(--surface-high);white-space:nowrap}tbody tr:hover td{background:var(--glass)}"
+. ".col-num,.num-col{width:46px;color:var(--muted);font-weight:700;text-align:center}.row-num-pill{display:inline-block;min-width:24px;text-align:center}"
+. ".dev-name{display:inline-block;font-weight:700;max-width:230px;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.5}"
+. ".mono-col,.time-col{font-size:12.5px;color:var(--muted);white-space:nowrap}.hits-col{white-space:nowrap}"
+. ".target-cell{min-width:190px;max-width:380px}"
+. ".target-wrap{display:flex;flex-direction:column;gap:6px;min-width:0}"
+. ".target-code{align-self:flex-start;max-width:100%;background:var(--code);padding:4px 9px;border-radius:var(--r-sm);font-family:ui-monospace,'Cascadia Mono',Consolas,'Vazirmatn',monospace;font-size:12.5px;font-weight:600;color:var(--text);unicode-bidi:isolate;overflow-wrap:anywhere;word-break:break-word;line-height:1.5}"
+. ".mini-bar{height:4px;width:100%;background:var(--surface-high);border-radius:999px;overflow:hidden}.mini-bar span{display:block;height:100%;border-radius:999px}"
 . ".mini-bar span.site{background:var(--info)}.mini-bar span.software{background:var(--software)}.mini-bar span.mobile{background:var(--mobile)}"
-. ".hit-chip{display:inline-block;padding:2px 8px;border-radius:var(--r-sm);background:var(--surface-high);border:1px solid var(--border);font-size:12px;font-weight:700}"
-. ".kind-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700}"
+. ".hit-chip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:var(--r-sm);background:var(--surface-high);border:1px solid var(--border);font-size:12px;font-weight:700}"
+. ".kind-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}"
 . ".kind-badge.soft{background:rgba(168,85,247,.12);color:var(--software)}.kind-badge.mob{background:rgba(34,197,94,.12);color:var(--mobile)}.kind-badge.unk{background:var(--surface-high);color:var(--muted)}"
-. ".badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700}.bdot{width:6px;height:6px;border-radius:50%;background:currentColor}"
+. ".badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}"
 . ".badge.ok{background:rgba(34,197,94,.14);color:var(--success)}.badge.no{background:rgba(255,107,107,.14);color:var(--danger)}"
-. ".muted{color:var(--muted)}.small{font-size:12px}.empty,.empty-state{text-align:center;color:var(--muted);padding:20px}"
-. ".foot{margin-top:26px;padding-top:18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}"
-. ".toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;box-shadow:0 12px 28px rgba(0,0,0,.45);transition:all .22s;z-index:99}"
+. ".muted{color:var(--muted)}.small{font-size:12px}"
+. ".empty,.empty-state{text-align:center;color:var(--muted);padding:24px 16px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}"
+. "td.empty{display:table-cell}"
+. ".foot{margin-top:26px;padding-top:18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);text-align:center}"
+. ".toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:linear-gradient(225deg,var(--primary),var(--primary-deep));color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;box-shadow:0 12px 28px rgba(0,0,0,.45);transition:all .22s;z-index:99;max-width:92vw;text-align:center}"
 . ".toast.show{opacity:1;transform:translateX(-50%) translateY(0)}"
-. "@media(max-width:680px){body{padding:14px 10px 36px}.hero{padding:18px}.user-card{padding:15px}.user-right{align-items:flex-start;width:100%}}"
-. "@media print{body{background:#fff;color:#10131C;padding:0}body::before,.toolbar,.actions,.collapse-btn,.toast{display:none!important}.user-card,.stat,.devices-box,.cat-block{box-shadow:none;background:#fff;border-color:#d8dee9;break-inside:avoid}.user-card.collapsed .card-body{display:block!important}}"
-. '</style></head><body><div class="wrap">'
+. ".top-btn{position:fixed;left:18px;bottom:22px;width:42px;height:42px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text);box-shadow:0 10px 26px var(--shadow);cursor:pointer;display:grid;place-items:center;opacity:0;pointer-events:none;transform:translateY(10px);transition:all .2s;z-index:50}"
+. ".top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}.top-btn:hover{border-color:var(--primary);color:var(--primary)}"
+. "@media(max-width:1040px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.user-right{width:100%;flex-direction:row;justify-content:space-between;align-items:center}}"
+. "@media(max-width:960px){"
+. "body{padding:14px 10px 40px}"
+. ".hero{padding:16px}.brand-row{flex-basis:100%}.actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.actions .btn.primary{grid-column:1 / -1}"
+. ".sort-wrap{flex:1 1 100%;min-width:0}"
+. ".user-card{padding:14px;border-radius:var(--r-xl)}.user-right{flex-direction:column;align-items:stretch}.collapse-btn{align-self:flex-end}"
+. ".devices-box,.cat-block{padding:12px}"
+. ".table-wrap{overflow:visible;border:none;background:transparent}"
+. "table,tbody{display:block;width:100%}thead{display:none}"
+. "tbody tr{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:10px;overflow:hidden;box-shadow:0 6px 18px -12px var(--shadow)}"
+. "tbody tr:last-child{margin-bottom:0}"
+. "tbody tr:hover td{background:transparent}"
+. "tbody td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px dashed var(--border);text-align:left;white-space:normal;min-width:0}"
+. "tbody td:last-child{border-bottom:none}"
+. "tbody td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700;text-align:right;flex-shrink:0}"
+. "tbody td.num-col{width:100%;background:var(--surface-high);border-bottom:1px solid var(--border);padding:7px 12px;justify-content:space-between;text-align:left}"
+. "tbody td.num-col::before{content:attr(data-label)}"
+. "tbody td.target-cell{max-width:none;min-width:0;flex-direction:column;align-items:stretch;gap:7px;text-align:right}"
+. "tbody td.target-cell::before{text-align:right}"
+. ".dev-name{max-width:none;text-align:left}"
+. ".target-wrap{width:100%}.target-code{align-self:flex-start;max-width:100%}"
+. ".mono-col,.time-col{white-space:normal;text-align:left}"
+. "tbody td.empty{display:block;text-align:center;padding:18px 12px}tbody td.empty::before{display:none}"
+. "}"
+. "@media(max-width:520px){.stats{gap:10px}.stat{padding:12px;gap:10px}.stat-ico{width:38px;height:38px}.logo-box{width:54px;height:54px}.logo-box img{width:46px;height:46px}.user-title{gap:10px}.user-num{width:34px;height:34px;font-size:14px}.fbtn{font-size:12px;padding:6px 11px}}"
+. "@media(max-width:380px){.stats{grid-template-columns:1fr}.actions{grid-template-columns:1fr}}"
+. "@media print{body{background:#fff;color:#10131C;padding:0}body::before,.toolbar,.actions,.collapse-btn,.toast,.top-btn{display:none!important}.user-card,.stat,.devices-box,.cat-block{box-shadow:none;background:#fff;border-color:#d8dee9;break-inside:avoid}.user-card.collapsed .card-body{display:block!important}}"
+. '</style></head><body>'
+. self::monitorSvgDefs()
+. '<div class="wrap">'
 . '<header class="hero">'
 . '<div class="brand-row"><div class="logo-box">' . $LogoHtml . '</div>'
 . '<div class="hero-text"><h1>' . self::htmlEsc($ScopeTitle) . '</h1>'
-. '<div class="hero-badges"><span class="live-pill"><span class="live-dot"></span>پایش هوشمند آمبرلا</span>'
-. '<span>🕒 تاریخ تهیه: ' . self::htmlEsc($GeneratedAt) . '</span>'
-. '<span>🔄 بازنشانی خودکار: هر ۲۴ ساعت</span></div></div></div>'
+. '<div class="hero-badges">'
+. '<span class="live-pill"><span class="live-dot"></span><span>پایش هوشمند آمبرلا</span></span>'
+. '<span class="hero-badge-item">' . self::monitorSvg('i-clock', 'ico-sm') . '<span>تاریخ تهیه: ' . self::htmlEsc($GeneratedAt) . '</span></span>'
+. '<span class="hero-badge-item">' . self::monitorSvg('i-refresh', 'ico-sm') . '<span>بازنشانی خودکار: هر ۲۴ ساعت</span></span>'
+. '</div></div></div>'
 . '<div class="actions">'
-. '<button type="button" class="btn" id="themeBtn" onclick="toggleTheme()">☀️ تم روشن</button>'
-. '<button type="button" class="btn" id="expandAllBtn" onclick="toggleAllCards()">↕️ باز / بستن همه</button>'
-. '<button type="button" class="btn primary" onclick="window.print()">🖨 چاپ / ذخیره PDF</button>'
+. '<button type="button" class="btn" id="themeBtn" onclick="toggleTheme()">' . self::monitorSvg('i-sun', 'ico-sm') . '<span id="themeTxt">تم روشن</span></button>'
+. '<button type="button" class="btn" id="expandAllBtn" onclick="toggleAllCards()">' . self::monitorSvg('i-expand', 'ico-sm') . '<span id="expandTxt">جمع کردن همه</span></button>'
+. '<button type="button" class="btn primary" onclick="window.print()">' . self::monitorSvg('i-print', 'ico-sm') . '<span>چاپ / ذخیره PDF</span></button>'
 . '</div></header>'
 . '<section class="stats">'
-. '<div class="stat brand"><div class="stat-ico">👥</div><div><div class="k">کاربران ثبت شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['users'])) . '</div><div class="subv">در پنل رصد</div></div></div>'
-. '<div class="stat"><div class="stat-ico">📲</div><div><div class="k">دستگاه های کاربر</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['devices'])) . '</div><div class="subv">' . self::htmlEsc(Helper::toPersian((string)$Summary['trusted_devices'])) . ' دستگاه مجاز</div></div></div>'
-. '<div class="stat site"><div class="stat-ico">🌐</div><div><div class="k">سایت های رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['site'])) . '</div><div class="subv">سهم ' . self::htmlEsc(Helper::toPersian((string)$PctSite)) . '٪</div></div></div>'
-. '<div class="stat soft"><div class="stat-ico">💻</div><div><div class="k">نرم افزارهای کامپیوتر</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['software'])) . '</div><div class="subv">سهم ' . self::htmlEsc(Helper::toPersian((string)$PctSoft)) . '٪</div></div></div>'
-. '<div class="stat mob"><div class="stat-ico">📱</div><div><div class="k">اپلیکیشن های موبایل</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['mobile'])) . '</div><div class="subv">سهم ' . self::htmlEsc(Helper::toPersian((string)$PctMob)) . '٪</div></div></div>'
-. '<div class="stat brand"><div class="stat-ico">📊</div><div><div class="k">مجموع ترافیک</div><div class="v" dir="ltr">' . self::htmlEsc($SummaryBytes) . '</div><div class="subv">' . self::htmlEsc(Helper::toPersian((string)$Summary['hits'])) . ' درخواست</div></div></div>'
+. '<div class="stat brand"><div class="stat-ico">' . self::monitorSvg('i-users', 'ico-lg') . '</div><div class="stat-body"><div class="k">کاربران ثبت شده</div><div class="v">' . self::htmlEsc(self::faNumber($Summary['users'])) . '</div><div class="subv">در پنل رصد</div></div></div>'
+. '<div class="stat"><div class="stat-ico">' . self::monitorSvg('i-devices', 'ico-lg') . '</div><div class="stat-body"><div class="k">دستگاه های کاربر</div><div class="v">' . self::htmlEsc(self::faNumber($Summary['devices'])) . '</div><div class="subv">' . self::htmlEsc(self::faNumber($Summary['trusted_devices'])) . ' دستگاه مجاز</div></div></div>'
+. '<div class="stat site"><div class="stat-ico">' . self::monitorSvg('i-globe', 'ico-lg') . '</div><div class="stat-body"><div class="k">سایت های رصد شده</div><div class="v">' . self::htmlEsc(self::faNumber($Summary['site'])) . '</div><div class="subv">سهم ' . self::htmlEsc(self::faNumber($PctSite)) . '٪</div></div></div>'
+. '<div class="stat soft"><div class="stat-ico">' . self::monitorSvg('i-desktop', 'ico-lg') . '</div><div class="stat-body"><div class="k">نرم افزارهای کامپیوتر</div><div class="v">' . self::htmlEsc(self::faNumber($Summary['software'])) . '</div><div class="subv">سهم ' . self::htmlEsc(self::faNumber($PctSoft)) . '٪</div></div></div>'
+. '<div class="stat mob"><div class="stat-ico">' . self::monitorSvg('i-phone', 'ico-lg') . '</div><div class="stat-body"><div class="k">اپلیکیشن های موبایل</div><div class="v">' . self::htmlEsc(self::faNumber($Summary['mobile'])) . '</div><div class="subv">سهم ' . self::htmlEsc(self::faNumber($PctMob)) . '٪</div></div></div>'
+. '<div class="stat brand"><div class="stat-ico">' . self::monitorSvg('i-activity', 'ico-lg') . '</div><div class="stat-body"><div class="k">مجموع ترافیک</div><div class="v">' . self::htmlEsc($SummaryBytes) . '</div><div class="subv">' . self::htmlEsc(self::faNumber($Summary['hits'])) . ' درخواست</div></div></div>'
 . '</section>'
-. '<section class="dist-card"><div class="dist-head"><span>📈 توزیع تفکیک شده فعالیت های شبکه</span>'
+. '<section class="dist-card"><div class="dist-head"><span class="ico-title">' . self::monitorSvg('i-chart') . '<span>توزیع تفکیک شده فعالیت های شبکه</span></span>'
 . '<div class="dist-legend">'
-. '<span><i style="background:var(--info)"></i>سایت ها (' . self::htmlEsc(Helper::toPersian((string)$PctSite)) . '٪)</span>'
-. '<span><i style="background:var(--software)"></i>نرم افزارها (' . self::htmlEsc(Helper::toPersian((string)$PctSoft)) . '٪)</span>'
-. '<span><i style="background:var(--mobile)"></i>اپلیکیشن ها (' . self::htmlEsc(Helper::toPersian((string)$PctMob)) . '٪)</span>'
+. '<span class="dist-legend-item"><i style="background:var(--info)"></i><span>سایت ها (' . self::htmlEsc(self::faNumber($PctSite)) . '٪)</span></span>'
+. '<span class="dist-legend-item"><i style="background:var(--software)"></i><span>نرم افزارها (' . self::htmlEsc(self::faNumber($PctSoft)) . '٪)</span></span>'
+. '<span class="dist-legend-item"><i style="background:var(--mobile)"></i><span>اپلیکیشن ها (' . self::htmlEsc(self::faNumber($PctMob)) . '٪)</span></span>'
 . '</div></div>'
 . '<div class="ratio-bar" style="margin-bottom:0"><span class="seg-site" style="width:' . $PctSite . '%"></span><span class="seg-soft" style="width:' . $PctSoft . '%"></span><span class="seg-mob" style="width:' . $PctMob . '%"></span></div>'
 . '</section>'
 . '<div class="toolbar">'
 . '<div class="tool-top">'
-. '<div class="search-box"><span class="search-ico">🔍</span><input id="q" class="search" type="search" placeholder="جستجو بر اساس نام کاربر، شماره موبایل، تلگرام، دستگاه، IP، سایت، نرم افزار یا اپلیکیشن... (کلید /)" oninput="applyFilter()"><button type="button" id="clearQ" class="clear-q" onclick="clearSearch()" title="پاک کردن">×</button></div>'
-. '<select id="sortSel" class="sort-sel" onchange="sortCards(this.value)"><option value="last">🕒 مرتب سازی: آخرین فعالیت</option><option value="bytes">📊 مرتب سازی: بیشترین ترافیک</option><option value="hits">🔥 مرتب سازی: بیشترین بازدید</option></select>'
+. '<div class="search-box"><span class="search-ico">' . self::monitorSvg('i-search') . '</span><input id="q" class="search" type="search" placeholder="جستجو بر اساس نام کاربر، موبایل، تلگرام، دستگاه، IP، سایت یا برنامه..." oninput="applyFilter()"><button type="button" id="clearQ" class="clear-q" onclick="clearSearch()" title="پاک کردن">' . self::monitorSvg('i-x', 'ico-sm') . '</button></div>'
+. '<div class="sort-wrap"><span class="sort-ico">' . self::monitorSvg('i-sort', 'ico-sm') . '</span><select id="sortSel" class="sort-sel" onchange="sortCards(this.value)"><option value="last">مرتب سازی: آخرین فعالیت</option><option value="bytes">مرتب سازی: بیشترین ترافیک</option><option value="hits">مرتب سازی: بیشترین بازدید</option></select><span class="sort-chev">' . self::monitorSvg('i-chevron', 'ico-sm') . '</span></div>'
 . '</div>'
 . '<div class="tool-bot">'
 . '<div class="filters">'
-. '<button type="button" class="fbtn active" data-cat="all" onclick="setCat(\'all\',this)">👁 همه</button>'
-. '<button type="button" class="fbtn" data-cat="site" onclick="setCat(\'site\',this)">🌐 سایت ها (' . self::htmlEsc(Helper::toPersian((string)$Summary['site'])) . ')</button>'
-. '<button type="button" class="fbtn" data-cat="software" onclick="setCat(\'software\',this)">💻 نرم افزارها (' . self::htmlEsc(Helper::toPersian((string)$Summary['software'])) . ')</button>'
-. '<button type="button" class="fbtn" data-cat="mobile" onclick="setCat(\'mobile\',this)">📱 اپلیکیشن ها (' . self::htmlEsc(Helper::toPersian((string)$Summary['mobile'])) . ')</button>'
-. '<button type="button" class="fbtn" id="actOnlyBtn" onclick="toggleActOnly(this)">⚡ فقط دارای فعالیت</button>'
+. '<button type="button" class="fbtn active" data-cat="all" onclick="setCat(\'all\',this)">' . self::monitorSvg('i-eye', 'ico-sm') . '<span>همه</span></button>'
+. '<button type="button" class="fbtn" data-cat="site" onclick="setCat(\'site\',this)">' . self::monitorSvg('i-globe', 'ico-sm') . '<span>سایت ها (' . self::htmlEsc(self::faNumber($Summary['site'])) . ')</span></button>'
+. '<button type="button" class="fbtn" data-cat="software" onclick="setCat(\'software\',this)">' . self::monitorSvg('i-desktop', 'ico-sm') . '<span>نرم افزارها (' . self::htmlEsc(self::faNumber($Summary['software'])) . ')</span></button>'
+. '<button type="button" class="fbtn" data-cat="mobile" onclick="setCat(\'mobile\',this)">' . self::monitorSvg('i-phone', 'ico-sm') . '<span>اپلیکیشن ها (' . self::htmlEsc(self::faNumber($Summary['mobile'])) . ')</span></button>'
+. '<button type="button" class="fbtn" id="actOnlyBtn" onclick="toggleActOnly(this)">' . self::monitorSvg('i-bolt', 'ico-sm') . '<span>فقط دارای فعالیت</span></button>'
 . '</div>'
-. '<div class="result-count" id="resultCount">نمایش ' . self::htmlEsc(Helper::toPersian((string)$Summary['users'])) . ' کاربر</div>'
+. '<div class="result-count" id="resultCount">نمایش ' . self::htmlEsc(self::faNumber($Summary['users'])) . ' کاربر</div>'
 . '</div></div>'
 . '<main id="cards">' . $CardsHtml . '</main>'
-. '<div id="noMatch" class="empty-state" style="display:none">🔍 هیچ کاربری با عبارت یا فیلتر انتخابی پیدا نشد.</div>'
-. '<footer class="foot"><span class="live-dot"></span><span>داشبورد گزارش رصد آمبرلا · طراحی هماهنگ با رابط کاربری و فونت رسمی Vazirmatn</span></footer>'
-. '</div><div id="toast" class="toast">کپی شد</div><script>'
+. '<div id="noMatch" class="empty-state" style="display:none">' . self::monitorSvg('i-search', 'ico-lg') . '<span>هیچ کاربری با عبارت یا فیلتر انتخابی پیدا نشد.</span></div>'
+. '<footer class="foot"><span class="live-dot"></span><span>داشبورد گزارش رصد آمبرلا · طراحی راست چین با فونت رسمی Vazirmatn</span></footer>'
+. '</div><button type="button" id="topBtn" class="top-btn" onclick="window.scrollTo({top:0,behavior:\'smooth\'})" title="بازگشت به بالا" aria-label="بازگشت به بالا">' . self::monitorSvg('i-arrow-up') . '</button>'
+. '<div id="toast" class="toast">کپی شد</div><script>'
 . 'var currentCat="all",actOnly=false,allCollapsed=false;'
 . 'function faNum(n){var f=["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];return String(n).replace(/[0-9]/g,function(d){return f[+d]});}'
+. 'function enNum(s){return String(s).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))});}'
 . 'function showToast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(window._tt);window._tt=setTimeout(function(){t.classList.remove("show")},1800);}'
-. 'function toggleTheme(){var l=document.body.classList.toggle("light");document.getElementById("themeBtn").textContent=l?"🌙 تم تیره":"☀️ تم روشن";try{localStorage.setItem("umbrella-monitor-theme",l?"light":"dark");}catch(e){}}'
-. 'try{if(localStorage.getItem("umbrella-monitor-theme")==="light"){document.body.classList.add("light");document.getElementById("themeBtn").textContent="🌙 تم تیره";}}catch(e){}'
-. 'function toggleCard(btn){var c=btn.closest(".user-card");if(!c)return;var col=c.classList.toggle("collapsed");btn.setAttribute("aria-expanded",col?"false":"true");btn.firstElementChild.textContent=col?"باز کردن":"جمع کردن";}'
-. 'function toggleAllCards(){allCollapsed=!allCollapsed;document.querySelectorAll(".user-card").forEach(function(c){c.classList.toggle("collapsed",allCollapsed);var b=c.querySelector(".collapse-btn");if(b){b.setAttribute("aria-expanded",allCollapsed?"false":"true");b.firstElementChild.textContent=allCollapsed?"باز کردن":"جمع کردن";}});}'
+. 'function syncThemeBtn(l){var u=document.querySelector("#themeBtn use");if(u)u.setAttribute("href",l?"#i-moon":"#i-sun");var tx=document.getElementById("themeTxt");if(tx)tx.textContent=l?"تم تیره":"تم روشن";}'
+. 'function toggleTheme(){var l=document.body.classList.toggle("light");syncThemeBtn(l);try{localStorage.setItem("umbrella-monitor-theme",l?"light":"dark");}catch(e){}}'
+. 'try{if(localStorage.getItem("umbrella-monitor-theme")==="light"){document.body.classList.add("light");syncThemeBtn(true);}}catch(e){}'
+. 'function toggleCard(btn){var c=btn.closest(".user-card");if(!c)return;var col=c.classList.toggle("collapsed");btn.setAttribute("aria-expanded",col?"false":"true");var lbl=btn.querySelector(".col-lbl");if(lbl)lbl.textContent=col?"باز کردن":"جمع کردن";}'
+. 'function toggleAllCards(){allCollapsed=!allCollapsed;document.querySelectorAll(".user-card").forEach(function(c){c.classList.toggle("collapsed",allCollapsed);var b=c.querySelector(".collapse-btn");if(b){b.setAttribute("aria-expanded",allCollapsed?"false":"true");var lbl=b.querySelector(".col-lbl");if(lbl)lbl.textContent=allCollapsed?"باز کردن":"جمع کردن";}});var et=document.getElementById("expandTxt");if(et)et.textContent=allCollapsed?"باز کردن همه":"جمع کردن همه";}'
 . 'function clearSearch(){var inp=document.getElementById("q");inp.value="";applyFilter();inp.focus();}'
 . 'function setCat(c,btn){currentCat=c;document.querySelectorAll(".fbtn[data-cat]").forEach(function(b){b.classList.remove("active")});btn.classList.add("active");applyFilter();}'
 . 'function toggleActOnly(btn){actOnly=!actOnly;btn.classList.toggle("active",actOnly);applyFilter();}'
 . 'function sortCards(by){var wrap=document.getElementById("cards");var cards=Array.prototype.slice.call(wrap.querySelectorAll(".user-card"));cards.sort(function(a,b){return (+b.getAttribute("data-"+by)||0)-(+a.getAttribute("data-"+by)||0);});cards.forEach(function(c){wrap.appendChild(c);});}'
-. 'function applyFilter(){var inp=document.getElementById("q");var q=(inp.value||"").trim().toLowerCase();document.getElementById("clearQ").classList.toggle("show",q.length>0);var cards=document.querySelectorAll(".user-card"),vis=0;cards.forEach(function(card){var okAct=!actOnly||card.getAttribute("data-has-act")==="1";var okQ=!q||(card.getAttribute("data-search")||"").indexOf(q)!==-1;var show=okAct&&okQ;card.style.display=show?"":"none";if(show)vis++;card.querySelectorAll(".cat-block").forEach(function(b){var bc=b.getAttribute("data-cat");b.style.display=(currentCat==="all"||currentCat===bc)?"":"none";});card.querySelectorAll("tr.act-row").forEach(function(r){r.style.display=(!q||(r.getAttribute("data-search")||"").indexOf(q)!==-1||(card.getAttribute("data-search")||"").indexOf(q)!==-1)?"":"none";});});document.getElementById("resultCount").textContent="نمایش "+faNum(vis)+" از "+faNum(cards.length)+" کاربر";document.getElementById("noMatch").style.display=(cards.length>0&&vis===0)?"block":"none";}'
-. 'document.addEventListener("click",function(e){var b=e.target.closest(".copy-code");if(!b)return;var val=b.getAttribute("data-copy")||"";if(!val)return;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(val).then(function(){showToast("کپی شد: "+val);}).catch(function(){});}else{var ta=document.createElement("textarea");ta.value=val;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");showToast("کپی شد: "+val);}catch(ex){}document.body.removeChild(ta);}});'
+. 'function applyFilter(){var inp=document.getElementById("q");var raw=(inp.value||"").trim();var q=enNum(raw).toLowerCase();document.getElementById("clearQ").classList.toggle("show",raw.length>0);var cards=document.querySelectorAll(".user-card"),vis=0;cards.forEach(function(card){var okAct=!actOnly||card.getAttribute("data-has-act")==="1";var meta=enNum(card.getAttribute("data-search")||"").toLowerCase();var okQ=!q||meta.indexOf(q)!==-1;var show=okAct&&okQ;card.style.display=show?"":"none";if(show)vis++;card.querySelectorAll(".cat-block").forEach(function(b){var bc=b.getAttribute("data-cat");b.style.display=(currentCat==="all"||currentCat===bc)?"":"none";});card.querySelectorAll("tr.act-row").forEach(function(r){var rm=enNum(r.getAttribute("data-search")||"").toLowerCase();r.style.display=(!q||rm.indexOf(q)!==-1||meta.indexOf(q)!==-1)?"":"none";});});document.getElementById("resultCount").textContent="نمایش "+faNum(vis)+" از "+faNum(cards.length)+" کاربر";document.getElementById("noMatch").style.display=(cards.length>0&&vis===0)?"flex":"none";}'
+. 'document.addEventListener("click",function(e){var b=e.target.closest(".copy-code");if(!b)return;var val=b.getAttribute("data-copy")||"";if(!val)return;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(val).then(function(){showToast("کپی شد: "+faNum(val));}).catch(function(){});}else{var ta=document.createElement("textarea");ta.value=val;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");showToast("کپی شد: "+faNum(val));}catch(ex){}document.body.removeChild(ta);}});'
 . 'document.addEventListener("keydown",function(e){if(e.key==="/"&&document.activeElement.tagName!=="INPUT"){e.preventDefault();document.getElementById("q").focus();}});'
+. 'window.addEventListener("scroll",function(){var tb=document.getElementById("topBtn");if(tb)tb.classList.toggle("show",(window.scrollY||document.documentElement.scrollTop||0)>340);},{passive:true});'
 . '</script></body></html>';
 
 return [
@@ -1465,11 +1594,11 @@ $Sent = false;
 try {
 if (@file_put_contents($TmpPath, (string)$Report['html']) !== false) {
 $Caption = "📄 <b>" . self::listText((string)$Report['title']) . "</b>\n"
-. '👥 کاربران: ' . Helper::toPersian((string)$Summary['users'])
-. ' | 📱 دستگاه ها: ' . Helper::toPersian((string)$Summary['devices']) . "\n"
-. '🌐 سایت: ' . Helper::toPersian((string)$Summary['site'])
-. ' | 💻 نرم افزار: ' . Helper::toPersian((string)$Summary['software'])
-. ' | 📱 اپلیکیشن: ' . Helper::toPersian((string)$Summary['mobile']);
+. '👥 کاربران: ' . self::faNumber($Summary['users'])
+. ' | 📱 دستگاه ها: ' . self::faNumber($Summary['devices']) . "\n"
+. '🌐 سایت: ' . self::faNumber($Summary['site'])
+. ' | 💻 نرم افزار: ' . self::faNumber($Summary['software'])
+. ' | 📱 اپلیکیشن: ' . self::faNumber($Summary['mobile']);
 $Res = TelegramClient::sendDocument($Context->ChatId, $TmpPath, $Caption);
 $Sent = is_array($Res) && !empty($Res['ok']);
 }
