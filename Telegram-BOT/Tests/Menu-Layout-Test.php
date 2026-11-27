@@ -14,7 +14,7 @@ declare(strict_types=1);
  *   - هر ردیف حداکثر دو دکمه داشته باشد تا در موبایل بریده نشود.
  *   - هر صفحه پایانی برای بازگشت داشته باشد.
  *
- * اجرا:  php Telegram-BOT/tests/menu_layout_test.php
+ * اجرا:  php Telegram-BOT/Tests/Menu-Layout-Test.php
  * کد خروج صفر یعنی همه صفحه ها سالم اند.
  */
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * آزمون جامع کنترل محتوا و دامنه های سفارشی (افزودن، حذف، نرمال سازی، همگام سازی و منوهای ربات).
  *
- * اجرا:  php Telegram-BOT/tests/content_filter_domains_test.php
+ * اجرا:  php Telegram-BOT/Tests/Content-Filter-Domains-Test.php
  */
 
 $Root = dirname(__DIR__);

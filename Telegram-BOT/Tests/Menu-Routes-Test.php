@@ -17,7 +17,7 @@ declare(strict_types=1);
  * `['برچسب', 'فراخوان']` داخل Menu::rows / Menu::button ساخته می شوند؛ هر دو
  * خوانده می شوند.
  *
- * اجرا:  php Telegram-BOT/tests/menu_routes_test.php
+ * اجرا:  php Telegram-BOT/Tests/Menu-Routes-Test.php
  */
 
 $Root = dirname(__DIR__);

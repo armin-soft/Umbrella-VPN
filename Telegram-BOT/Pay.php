@@ -17,9 +17,9 @@ mb_internal_encoding('UTF-8');
 require_once __DIR__ . '/Core/Payment/ZarinPal.php';
 $Page_Style = <<<'CSS'
 
-@font-face{font-family:Vazirmatn;src:url('Resources/fonts/Vazirmatn-Regular.ttf') format('truetype');font-style:normal;font-weight:400;font-display:swap}
-@font-face{font-family:Vazirmatn;src:url('Resources/fonts/Vazirmatn-Bold.ttf') format('truetype');font-style:normal;font-weight:700;font-display:swap}
-@font-face{font-family:Vazirmatn;src:url('Resources/fonts/Vazirmatn-ExtraBold.ttf') format('truetype');font-style:normal;font-weight:800;font-display:swap}
+@font-face{font-family:Vazirmatn;src:url('Resources/Fonts/Vazirmatn-Regular.ttf') format('truetype');font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:Vazirmatn;src:url('Resources/Fonts/Vazirmatn-Bold.ttf') format('truetype');font-style:normal;font-weight:700;font-display:swap}
+@font-face{font-family:Vazirmatn;src:url('Resources/Fonts/Vazirmatn-ExtraBold.ttf') format('truetype');font-style:normal;font-weight:800;font-display:swap}
 :root{color-scheme:light;--bg:#f3f6fb;--surface:#fff;--surface-high:#f8f9fc;--line:rgba(21,32,51,.10);--txt:#172033;--mut:#697386;--brand:#e11d2e;--brand-deep:#8e0e1b;--ok:#16875d;--err:#d92d3a}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scrollbar-gutter:stable}

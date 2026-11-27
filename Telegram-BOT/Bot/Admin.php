@@ -889,9 +889,9 @@ break;
 $FontCss = '';
 if ($ResDir !== '') {
 $FontMap = [
-['file' => 'fonts/Vazirmatn-Regular.ttf', 'weight' => 400],
-['file' => 'fonts/Vazirmatn-Bold.ttf', 'weight' => 700],
-['file' => 'fonts/Vazirmatn-ExtraBold.ttf', 'weight' => 800],
+['file' => 'Fonts/Vazirmatn-Regular.ttf', 'weight' => 400],
+['file' => 'Fonts/Vazirmatn-Bold.ttf', 'weight' => 700],
+['file' => 'Fonts/Vazirmatn-ExtraBold.ttf', 'weight' => 800],
 ];
 foreach ($FontMap as $FontDef) {
 $Path = $ResDir . '/' . $FontDef['file'];
@@ -908,7 +908,7 @@ $FontCss .= "@font-face{font-family:'Vazirmatn';src:url('data:font/ttf;base64," 
 $LogoDataUri = '';
 $LogoCandidates = [];
 if ($ResDir !== '') {
-$LogoCandidates[] = $ResDir . '/logo-brand.png';
+$LogoCandidates[] = $ResDir . '/Logo-Brand.png';
 $LogoCandidates[] = dirname($ResDir) . '/Logo.png';
 }
 $LogoCandidates[] = dirname(__DIR__) . '/Logo.png';

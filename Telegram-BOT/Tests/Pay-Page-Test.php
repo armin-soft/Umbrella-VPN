@@ -19,10 +19,10 @@ checkPayPage(str_contains($source, 'color-scheme:light;--bg:#f3f6fb'), 'payment 
 checkPayPage(str_contains($source, '--brand:#e11d2e'), 'payment accent matches Umbrella red');
 checkPayPage(str_contains($source, '--brand-deep:#8e0e1b'), 'payment gradient matches Umbrella deep red');
 checkPayPage(!str_contains($source, 'cdn.jsdelivr.net'), 'payment page has no third-party font dependency');
-checkPayPage(str_contains($source, "src:url('Resources/fonts/Vazirmatn-Regular.ttf')"), 'payment page loads the local Persian font');
+checkPayPage(str_contains($source, "src:url('Resources/Fonts/Vazirmatn-Regular.ttf')"), 'payment page loads the local Persian font');
 checkPayPage(str_contains($source, 'src="Logo.png"') && is_file(__DIR__ . '/../Logo.png'), 'payment page uses the real Umbrella logo');
 foreach (['Vazirmatn-Regular.ttf', 'Vazirmatn-Bold.ttf', 'Vazirmatn-ExtraBold.ttf', 'OFL.txt'] as $fontAsset) {
-    checkPayPage(is_file(__DIR__ . '/../Resources/fonts/' . $fontAsset), 'local font asset exists: ' . $fontAsset);
+    checkPayPage(is_file(__DIR__ . '/../Resources/Fonts/' . $fontAsset), 'local font asset exists: ' . $fontAsset);
 }
 checkPayPage(str_contains($source, 'prefers-reduced-motion:reduce'), 'payment animations respect reduced motion');
 checkPayPage(str_contains($source, 'location.replace'), 'automatic checkout redirect remains in place');

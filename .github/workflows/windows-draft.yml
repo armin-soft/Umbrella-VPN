@@ -81,7 +81,7 @@ jobs:
             exit 1
           }
           echo "$probe_out"
-          for test_file in Telegram-BOT/tests/*_test.php; do
+          for test_file in Telegram-BOT/Tests/*-Test.php; do
             echo "Running $test_file"
             if ! out=$(php -d error_reporting=E_ALL -d display_errors=1 "$test_file" 2>&1) || echo "$out" | grep -Eq '(^|[[:space:]])(PHP )?(Deprecated|Warning|Notice):'; then
               esc="${out//%/%25}"
@@ -117,7 +117,7 @@ jobs:
           php-version: '8.3'
           extensions: pdo_mysql, mbstring, curl, openssl
           coverage: none
-      - run: php Telegram-BOT/tests/cancelled_payment_mysql_integration.php
+      - run: php Telegram-BOT/Tests/Cancelled-Payment-MySQL-Integration.php
   installer:
     needs: [telegram-bot, cancelled-payment-mysql]
     # A manually requested installer artifact can be built even when the

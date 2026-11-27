@@ -62,9 +62,9 @@ $Rel = ltrim(str_replace('\\', '/', substr($Path, strlen($Root))), '/');
 $Ext = strtolower($Info->getExtension());
 if (!in_array($Ext, ['php', 'sql', 'json'], true)) continue;
 $Content = (string)file_get_contents($Path);
-$IsTest = str_starts_with($Rel, 'tests/');
+$IsTest = str_starts_with($Rel, 'Tests/');
 
-if ($Ext === 'php' && $Rel !== 'tests/persian_and_php85_test.php') {
+if ($Ext === 'php' && $Rel !== 'Tests/Persian-And-PHP85-Test.php') {
 $CodeOnly = '';
 foreach (token_get_all($Content) as $Tok) {
 if (is_array($Tok) && in_array($Tok[0], [T_COMMENT, T_DOC_COMMENT, T_CONSTANT_ENCAPSED_STRING], true)) continue;
