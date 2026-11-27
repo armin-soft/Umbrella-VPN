@@ -121,7 +121,8 @@ self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیر�
 }
 
 private static function cleanMonitorPersonName(string $Raw): string {
-$Clean = trim((string)(preg_replace('/\s+/u', ' ', Helper::stripZwnj($Raw)) ?? $Raw));
+$Stripped = method_exists('Helper', 'stripZwnj') ? Helper::stripZwnj($Raw) : str_replace("\u{200C}", '', $Raw);
+$Clean = trim((string)(preg_replace('/\s+/u', ' ', $Stripped) ?? $Raw));
 if ($Clean === '' || $Clean === '_' || $Clean === 'کاربر' || $Clean === 'کاربر آمبرلا') {
 return '';
 }
@@ -157,7 +158,7 @@ return $DeviceKindMap[$DevId];
 $RowPlatKind = self::deviceCategoryKind((string)($Row['Platform'] ?? ''));
 if ($RowPlatKind !== '') return $RowPlatKind;
 
-$Target = trim((string)($Row['Target'] ?? ''));
+$Target = trim((string)($Row['_raw_target'] ?? ($Row['Target'] ?? '')));
 $LowTarget = strtolower($Target);
 if (str_ends_with($LowTarget, '.exe') || in_array($LowTarget, [
 'visual studio code', 'windows terminal', 'powershell', 'windows explorer',
@@ -525,6 +526,7 @@ $Display = class_exists('AppGateway') && method_exists('AppGateway', 'normalizeA
 ? AppGateway::normalizeAppDisplayName($RawTarget)
 : $RawTarget;
 if ($Display === '') return null;
+$Row['_raw_target'] = $RawTarget;
 $Row['Target'] = $Display;
 return $Row;
 }

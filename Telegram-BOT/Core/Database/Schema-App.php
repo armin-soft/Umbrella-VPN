@@ -80,6 +80,7 @@ if ($Id <= 0 || $DevId === '') continue;
 $CurrentName = trim((string)($Dev['Full_Name'] ?? ''));
 $ResolvedName = '';
 if ($CurrentName === '') {
+try {
 if ($TgId > 0) {
 $U = $Database->fetch('SELECT `Full_Name` FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$TgId]);
 $ResolvedName = trim((string)($U['Full_Name'] ?? ''));
@@ -92,7 +93,9 @@ if ($ResolvedName === '' && $Phone !== '') {
 $U = $Database->fetch('SELECT `Full_Name` FROM `Users` WHERE `Phone` = ? LIMIT 1', [$Phone]);
 $ResolvedName = trim((string)($U['Full_Name'] ?? ''));
 }
+} catch (Throwable) {}
 if ($ResolvedName === '') {
+try {
 $Req = $Database->fetch(
 'SELECT `Full_Name` FROM `App_SignIn_Requests` '
 . 'WHERE (`Device_ID` = ? OR (`User_UUID` IS NOT NULL AND `User_UUID` <> \'\' AND `User_UUID` = ?) OR (`Phone` IS NOT NULL AND `Phone` <> \'\' AND `Phone` = ?)) '
@@ -101,6 +104,7 @@ $Req = $Database->fetch(
 [$DevId, $Uuid, $Phone]
 );
 $ResolvedName = trim((string)($Req['Full_Name'] ?? ''));
+} catch (Throwable) {}
 }
 if (in_array($ResolvedName, ['_', 'کاربر', 'کاربر آمبرلا'], true) || preg_match('/^user-[0-9]+$/i', $ResolvedName) === 1) {
 $ResolvedName = '';

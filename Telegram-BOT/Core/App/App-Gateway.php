@@ -1952,7 +1952,7 @@ $Db = Database::getInstance();
 foreach (array_slice($Items, 0, 60) as $Raw) {
 if (!is_array($Raw)) continue;
 $Category = strtolower(trim((string)($Raw['category'] ?? '')));
-if (!in_array($Category, ['site', 'app'], true)) continue;
+if (!in_array($Category, ['site', 'app', 'software', 'mobile'], true)) continue;
 
 $Target = self::normalizeActivityTarget($Category, (string)($Raw['target'] ?? ''));
 if ($Target === '') continue;
@@ -2030,7 +2030,7 @@ return '';
 return substr($Host, 0, 180);
 }
 
-if ($Category === 'app') {
+if ($Category === 'app' || $Category === 'software' || $Category === 'mobile') {
 return self::normalizeAppDisplayName($Clean);
 }
 
@@ -3337,7 +3337,8 @@ return gmdate('Y-m-d H:i:s');
 }
 
 private static function isMeaningfulName(string $Name): bool {
-$Clean = trim(preg_replace('/\s+/u', ' ', \Helper::stripZwnj($Name)) ?? $Name);
+$Stripped = method_exists('Helper', 'stripZwnj') ? \Helper::stripZwnj($Name) : str_replace("\u{200C}", '', $Name);
+$Clean = trim(preg_replace('/\s+/u', ' ', $Stripped) ?? $Name);
 if ($Clean === '' || $Clean === '_' || $Clean === 'کاربر' || $Clean === 'کاربر آمبرلا') {
 return false;
 }
@@ -3345,7 +3346,8 @@ return preg_match('/^user-[0-9]+$/i', $Clean) !== 1;
 }
 
 private static function resolveBestUserName(string $Candidate = '', string $Phone = '', string $UUID = '', string $DeviceId = '', int $TelegramId = 0): string {
-$Candidate = trim(preg_replace('/\s+/u', ' ', \Helper::stripZwnj($Candidate)) ?? $Candidate);
+$Stripped = method_exists('Helper', 'stripZwnj') ? \Helper::stripZwnj($Candidate) : str_replace("\u{200C}", '', $Candidate);
+$Candidate = trim(preg_replace('/\s+/u', ' ', $Stripped) ?? $Candidate);
 if (self::isMeaningfulName($Candidate)) {
 return mb_substr($Candidate, 0, 190);
 }
