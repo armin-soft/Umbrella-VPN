@@ -208,7 +208,13 @@ $Full_Name = trim($First . ' ' . $Last);
 if ($Exists) {
 // For a returning customer the panel's name wins over the (empty) form field.
 if ($Full_Name === '') {
-$Full_Name = trim((string)($Known['name'] ?? $Known['Name'] ?? ''));
+$Full_Name = self::resolveBestUserName(
+trim((string)($Known['name'] ?? $Known['Name'] ?? '')),
+$Phone,
+(string)($Known['uuid'] ?? ''),
+$Device_Id,
+(int)($Known['telegram_id'] ?? 0)
+);
 }
 
 $UUID = trim((string)($Known['uuid'] ?? ''));
@@ -271,7 +277,7 @@ self::fail(503, 'sms_failed', 'ارسال پیامک ناموفق بود؛ دو�
 
 self::otpGlobalCapIncrement();
 Repository::setSetting($Cooldown_Key, (string)$Now);
-self::trackDevice($Device_Id, $Body, $Phone);
+self::trackDevice($Device_Id, $Body, $Phone, self::isMeaningfulName($Full_Name) ? $Full_Name : '');
 
 self::ok([
 'challenge' => $Challenge,
@@ -363,6 +369,32 @@ Database::getInstance()->execute(
 );
 $Row['User_UUID'] = $UUID;
 $Row['Telegram_ID'] = $Telegram_Id;
+}
+
+$Resolved_Name = self::resolveBestUserName(
+trim((string)($Row['Full_Name'] ?? '')),
+$Phone,
+$UUID,
+(string)($Row['Device_ID'] ?? ''),
+$Telegram_Id
+);
+if ($Resolved_Name !== '') {
+$Row['Full_Name'] = $Resolved_Name;
+try {
+Database::getInstance()->execute(
+'UPDATE `App_SignIn_Requests` SET `Full_Name` = COALESCE(NULLIF(TRIM(`Full_Name`), \'\'), ?) WHERE `Challenge` = ?',
+[$Resolved_Name, $Challenge]
+);
+} catch (Throwable) {}
+}
+self::touchDeviceSeen((string)($Row['Device_ID'] ?? ''), $UUID, $Telegram_Id, $Resolved_Name);
+if ($Telegram_Id > 0 && $Resolved_Name !== '') {
+try {
+Database::getInstance()->execute(
+"UPDATE `Users` SET `Full_Name` = CASE WHEN `Full_Name` IS NULL OR `Full_Name` = '' THEN ? ELSE `Full_Name` END, `Phone` = CASE WHEN `Phone` IS NULL OR `Phone` = '' THEN ? ELSE `Phone` END WHERE `Telegram_ID` = ?",
+[$Resolved_Name, $Phone, $Telegram_Id]
+);
+} catch (Throwable) {}
 }
 
 // If no Telegram account exists, phone ownership has already been verified by
@@ -541,6 +573,17 @@ Database::getInstance()->execute(
 
 $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, (int)($Row['Telegram_ID'] ?? 0), $Account);
 $Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg);
+$ResolvedName = self::resolveBestUserName(
+trim((string)($Profile['name'] ?? ($Row['Full_Name'] ?? ''))),
+trim((string)($Profile['phone'] ?? ($Row['Phone'] ?? ''))),
+$UUID,
+(string)$Row['Device_ID'],
+$LinkedTg
+);
+self::touchDeviceSeen((string)$Row['Device_ID'], $UUID, $LinkedTg, $ResolvedName);
+if ($ResolvedName !== '' && (!isset($Profile['name']) || !self::isMeaningfulName((string)$Profile['name']))) {
+$Profile['name'] = $ResolvedName;
+}
 
 self::ok([
 'uuid' => $UUID,
@@ -609,7 +652,7 @@ private static function signOut(array $Body): void {
 $Token = trim((string)($Body['token'] ?? ''));
 $Challenge = preg_replace('/[^a-f0-9]/', '', (string)($Body['challenge'] ?? '')) ?? '';
 $Database = Database::getInstance();
-$Now = time();
+$Now = self::tehranNow();
 $Device_Ids = [];
 
 if ($Token !== '') {
@@ -709,13 +752,18 @@ $Device = $Database->fetch(
 if ($Device === null) {
 throw new RuntimeException('The approved sign-in device is not registered.');
 }
+$NowStr = self::tehranNow();
+$DeviceFullName = self::isMeaningfulName((string)($Row['Full_Name'] ?? ''))
+? trim((string)$Row['Full_Name'])
+: '';
 $Database->execute(
 'UPDATE `App_Devices`
 SET `Is_Trusted` = 1, `Last_Seen_At` = ?,
-`Telegram_ID` = COALESCE(`Telegram_ID`, ?),
-`User_UUID` = CASE WHEN `User_UUID` IS NULL OR LENGTH(`User_UUID`) = 0 THEN ? ELSE `User_UUID` END
+`Telegram_ID` = COALESCE(NULLIF(`Telegram_ID`, 0), ?),
+`User_UUID` = CASE WHEN `User_UUID` IS NULL OR LENGTH(`User_UUID`) = 0 THEN ? ELSE `User_UUID` END,
+`Full_Name` = CASE WHEN (`Full_Name` IS NULL OR LENGTH(TRIM(`Full_Name`)) = 0) AND ? <> \'\' THEN ? ELSE `Full_Name` END
 WHERE `Device_ID` = ?',
-[time(), $Telegram_Id, (string)$Row['User_UUID'], (string)$Row['Device_ID']]
+[$NowStr, $Telegram_Id > 0 ? $Telegram_Id : null, (string)$Row['User_UUID'], $DeviceFullName, $DeviceFullName, (string)$Row['Device_ID']]
 );
 }
 
@@ -827,6 +875,7 @@ $UUID,
 $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $Account);
 $ChannelState = self::syncChannelState($LinkedTg, $UUID, $Account);
 $Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg, $ChannelState);
+self::touchDeviceSeen((string)$Session['Device_ID'], $UUID, $LinkedTg, trim((string)($Profile['name'] ?? '')), (string)($Session['Token_Hash'] ?? ''));
 
 self::ok([
 'account' => $Profile,
@@ -867,15 +916,27 @@ $DeviceName = trim((string)($Body['device_name'] ?? ''));
 $Platform = trim((string)($Body['platform'] ?? ''));
 $AppVersion = trim((string)($Body['app_version'] ?? ''));
 $ClientIp = self::clientIp();
+$NowStr = self::tehranNow();
+$PanelFullName = is_array($PanelAccount) ? trim((string)($PanelAccount['name'] ?? '')) : '';
+if (!self::isMeaningfulName($PanelFullName)) {
+$PanelFullName = '';
+}
 Database::getInstance()->execute(
 'UPDATE `App_Devices` SET `Last_Seen_At` = ?,
 `Device_Name` = COALESCE(NULLIF(?, \'\'), `Device_Name`),
+`Full_Name` = CASE WHEN (`Full_Name` IS NULL OR LENGTH(TRIM(`Full_Name`)) = 0) AND ? <> \'\' THEN ? ELSE `Full_Name` END,
 `Platform` = COALESCE(NULLIF(?, \'\'), `Platform`),
 `App_Version` = COALESCE(NULLIF(?, \'\'), `App_Version`),
 `Last_IP` = COALESCE(NULLIF(?, \'\'), `Last_IP`)
 WHERE `Device_ID` = ?',
-[time(), substr($DeviceName, 0, 120), substr($Platform, 0, 60), substr($AppVersion, 0, 32), substr($ClientIp, 0, 64), $DeviceId]
+[$NowStr, substr($DeviceName, 0, 120), $PanelFullName, $PanelFullName, substr($Platform, 0, 60), substr($AppVersion, 0, 32), substr($ClientIp, 0, 64), $DeviceId]
 );
+try {
+$TokenHash = trim((string)($Session['Token_Hash'] ?? ''));
+if ($TokenHash !== '') {
+Database::getInstance()->execute('UPDATE `App_Sessions` SET `Last_Used_At` = ? WHERE `Token_Hash` = ?', [$NowStr, $TokenHash]);
+}
+} catch (Throwable) {}
 
 $Payload = [
 'seen_at' => gmdate('c'),
@@ -1128,6 +1189,18 @@ if (trim((string)($Profile['phone'] ?? '')) === '' && trim((string)($BotUser['Ph
 $Profile['phone'] = trim((string)$BotUser['Phone']);
 }
 }
+if (!self::isMeaningfulName((string)($Profile['name'] ?? ''))) {
+$Best = self::resolveBestUserName(
+(string)($Profile['name'] ?? ''),
+trim((string)($Profile['phone'] ?? '')),
+$UUID,
+'',
+$LinkedTg
+);
+if ($Best !== '') {
+$Profile['name'] = $Best;
+}
+}
 $ChannelStatus = 'member';
 $ChannelGraceRemaining = 0;
 $ChannelDisabled = false;
@@ -1192,6 +1265,37 @@ return $LinkedTg;
 }
 
 $Uid = (int)($BotUser['Telegram_ID'] ?? 0);
+if ($Uid > 0 && trim((string)($BotUser['Full_Name'] ?? '')) === '') {
+$ResolvedBotName = self::resolveBestUserName(
+trim((string)($Account['name'] ?? '')),
+trim((string)($BotUser['Phone'] ?? '')),
+$UUID,
+'',
+$Uid
+);
+if ($ResolvedBotName !== '') {
+$BotUser['Full_Name'] = $ResolvedBotName;
+try {
+Database::getInstance()->execute(
+'UPDATE `Users` SET `Full_Name` = ? WHERE `Telegram_ID` = ? AND (`Full_Name` IS NULL OR `Full_Name` = \'\')',
+[$ResolvedBotName, $Uid]
+);
+} catch (Throwable) {}
+}
+}
+$FullDeviceSyncName = trim((string)($BotUser['Full_Name'] ?? ''));
+if (!self::isMeaningfulName($FullDeviceSyncName)) {
+$FullDeviceSyncName = trim((string)($Account['name'] ?? ''));
+}
+if (self::isMeaningfulName($FullDeviceSyncName)) {
+try {
+Database::getInstance()->execute(
+'UPDATE `App_Devices` SET `Full_Name` = ? WHERE `User_UUID` = ? AND (`Full_Name` IS NULL OR LENGTH(TRIM(`Full_Name`)) = 0)',
+[$FullDeviceSyncName, $UUID]
+);
+} catch (Throwable) {}
+}
+
 if ($Uid > 0 && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer')) {
 try { Common::syncSubscriptionFromServer($BotUser, $Account); } catch (Throwable) {}
 }
@@ -1806,6 +1910,7 @@ self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $DeviceId = (string)$Session['Device_ID'];
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 $LinkedTg = self::autoLinkTelegramOwner($DeviceId, $UUID, (int)($Session['Telegram_ID'] ?? 0));
+self::touchDeviceSeen($DeviceId, $UUID, $LinkedTg, '', (string)($Session['Token_Hash'] ?? ''));
 $Stored = self::storeActivity($DeviceId, $UUID, $LinkedTg, $Body);
 self::ok(['stored' => $Stored]);
 }
@@ -2101,6 +2206,9 @@ $DeviceRow = $Sender['device_row'] ?? null;
 $TgId = (int)($Sender['telegram_id'] ?? 0);
 $Uuid = trim((string)($Sender['user_uuid'] ?? ''));
 $UserName = trim((string)($UserRow['Full_Name'] ?? ($UserRow['First_Name'] ?? '')));
+if ($UserName === '' && is_array($DeviceRow)) {
+$UserName = trim((string)($DeviceRow['Full_Name'] ?? ''));
+}
 $UserPhone = trim((string)($UserRow['Phone'] ?? ($DeviceRow['Phone'] ?? $Phone)));
 $SubPlan = trim((string)($UserRow['Subscription'] ?? ''));
 $SubStatus = trim((string)($UserRow['Client_Status'] ?? ''));
@@ -2880,6 +2988,16 @@ private static function resolveAccount(string $Phone, string $Full_Name, int $Te
 
 if (is_array($Account) && $Account !== []) {
 $Existing_UUID = trim((string)($Account['uuid'] ?? ''));
+if ($Existing_UUID !== '' && !self::isMeaningfulName((string)($Account['name'] ?? '')) && self::isMeaningfulName($Full_Name)) {
+try {
+$UpdatedName = PanelClient::update($Existing_UUID, ['name' => $Full_Name]);
+if (is_array($UpdatedName) && !empty($UpdatedName['name'])) {
+$Account['name'] = $UpdatedName['name'];
+} else {
+$Account['name'] = $Full_Name;
+}
+} catch (Throwable) {}
+}
 if ($Existing_UUID !== '' && $Telegram_Id > 0) {
 self::syncBotUserClientId($Telegram_Id, $Existing_UUID);
 self::syncLinkedBotUserFromPanel($Existing_UUID, $Telegram_Id, $Account);
@@ -3074,7 +3192,7 @@ $Token = bin2hex(random_bytes(32));
 Database::getInstance()->execute(
 'INSERT INTO `App_Sessions` (`Token_Hash`, `User_UUID`, `Device_ID`, `Telegram_ID`, `Last_Used_At`)
 VALUES (?, ?, ?, ?, ?)',
-[hash('sha256', $Token), (string)$Row['User_UUID'], (string)$Row['Device_ID'], (int)$Row['Telegram_ID'], time()]
+[hash('sha256', $Token), (string)$Row['User_UUID'], (string)$Row['Device_ID'], (int)$Row['Telegram_ID'], self::tehranNow()]
 );
 
 return $Token;
@@ -3185,25 +3303,115 @@ error_log('[Umbrella-Bot][Gateway] failed-login notice failed: ' . $Error->getMe
 }
 }
 
-private static function trackDevice(string $Device_Id, array $Body, string $Phone): void {
+private static function trackDevice(string $Device_Id, array $Body, string $Phone, string $Full_Name = ''): void {
+$CleanName = self::isMeaningfulName($Full_Name) ? mb_substr(trim($Full_Name), 0, 190) : '';
 Database::getInstance()->execute(
 'INSERT INTO `App_Devices`
-(`Device_ID`, `Device_Name`, `Platform`, `App_Version`, `Phone`, `Last_Seen_At`, `Last_IP`)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+(`Device_ID`, `Device_Name`, `Full_Name`, `Platform`, `App_Version`, `Phone`, `Last_Seen_At`, `Last_IP`)
+VALUES (?, ?, NULLIF(?, \'\'), ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
-`Device_Name` = VALUES(`Device_Name`), `Platform` = VALUES(`Platform`),
+`Device_Name` = VALUES(`Device_Name`),
+`Full_Name` = COALESCE(NULLIF(`Full_Name`, \'\'), VALUES(`Full_Name`)),
+`Platform` = VALUES(`Platform`),
 `App_Version` = VALUES(`App_Version`), `Phone` = VALUES(`Phone`),
 `Last_Seen_At` = VALUES(`Last_Seen_At`), `Last_IP` = VALUES(`Last_IP`)',
 [
 $Device_Id,
 mb_substr((string)($Body['device_name'] ?? ''), 0, 190),
+$CleanName,
 mb_substr((string)($Body['platform'] ?? ''), 0, 190),
 mb_substr((string)($Body['app_version'] ?? ''), 0, 40),
 $Phone,
-time(),
+self::tehranNow(),
 self::clientIp(),
 ]
 );
+}
+
+private static function tehranNow(): string {
+try {
+return (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s');
+} catch (Throwable) {
+return gmdate('Y-m-d H:i:s');
+}
+}
+
+private static function isMeaningfulName(string $Name): bool {
+$Clean = trim(preg_replace('/\s+/u', ' ', \Helper::stripZwnj($Name)) ?? $Name);
+if ($Clean === '' || $Clean === '_' || $Clean === 'کاربر' || $Clean === 'کاربر آمبرلا') {
+return false;
+}
+return preg_match('/^user-[0-9]+$/i', $Clean) !== 1;
+}
+
+private static function resolveBestUserName(string $Candidate = '', string $Phone = '', string $UUID = '', string $DeviceId = '', int $TelegramId = 0): string {
+$Candidate = trim(preg_replace('/\s+/u', ' ', \Helper::stripZwnj($Candidate)) ?? $Candidate);
+if (self::isMeaningfulName($Candidate)) {
+return mb_substr($Candidate, 0, 190);
+}
+try {
+$Db = Database::getInstance();
+if ($TelegramId > 0) {
+$User = Repository::getUser($TelegramId);
+$Name = trim((string)($User['Full_Name'] ?? ''));
+if (self::isMeaningfulName($Name)) return mb_substr($Name, 0, 190);
+}
+if ($Phone !== '') {
+$User = Repository::findUserByPhone($Phone);
+$Name = trim((string)($User['Full_Name'] ?? ''));
+if (self::isMeaningfulName($Name)) return mb_substr($Name, 0, 190);
+}
+if ($UUID !== '' && $UUID !== '_') {
+$User = $Db->fetch('SELECT `Full_Name` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
+$Name = trim((string)($User['Full_Name'] ?? ''));
+if (self::isMeaningfulName($Name)) return mb_substr($Name, 0, 190);
+}
+$DevConds = [];
+$DevParams = [];
+if ($DeviceId !== '') { $DevConds[] = '`Device_ID` = ?'; $DevParams[] = $DeviceId; }
+if ($UUID !== '' && $UUID !== '_') { $DevConds[] = '`User_UUID` = ?'; $DevParams[] = $UUID; }
+if ($Phone !== '') { $DevConds[] = '`Phone` = ?'; $DevParams[] = $Phone; }
+if ($DevConds !== []) {
+$Dev = $Db->fetch(
+'SELECT `Full_Name` FROM `App_Devices` WHERE (' . implode(' OR ', $DevConds) . ') AND `Full_Name` IS NOT NULL AND LENGTH(TRIM(`Full_Name`)) > 0 ORDER BY `ID` DESC LIMIT 1',
+$DevParams
+);
+$Name = trim((string)($Dev['Full_Name'] ?? ''));
+if (self::isMeaningfulName($Name)) return mb_substr($Name, 0, 190);
+
+$Req = $Db->fetch(
+'SELECT `Full_Name` FROM `App_SignIn_Requests` WHERE (' . implode(' OR ', $DevConds) . ') AND `Full_Name` IS NOT NULL AND LENGTH(TRIM(`Full_Name`)) > 0 ORDER BY `ID` DESC LIMIT 1',
+$DevParams
+);
+$Name = trim((string)($Req['Full_Name'] ?? ''));
+if (self::isMeaningfulName($Name)) return mb_substr($Name, 0, 190);
+}
+} catch (Throwable) {}
+return '';
+}
+
+private static function touchDeviceSeen(string $DeviceId, string $UUID = '', int $TelegramId = 0, string $FullName = '', string $TokenHash = ''): void {
+$DeviceId = trim($DeviceId);
+if ($DeviceId === '') return;
+$NowStr = self::tehranNow();
+$CleanName = self::isMeaningfulName($FullName) ? mb_substr(trim($FullName), 0, 190) : '';
+$ClientIp = self::clientIp();
+try {
+Database::getInstance()->execute(
+'UPDATE `App_Devices` SET `Last_Seen_At` = ?, '
+. '`Last_IP` = COALESCE(NULLIF(?, \'\'), `Last_IP`), '
+. '`User_UUID` = CASE WHEN (`User_UUID` IS NULL OR LENGTH(TRIM(`User_UUID`)) = 0) AND ? <> \'\' THEN ? ELSE `User_UUID` END, '
+. '`Telegram_ID` = CASE WHEN COALESCE(`Telegram_ID`, 0) <= 0 AND ? > 0 THEN ? ELSE `Telegram_ID` END, '
+. '`Full_Name` = CASE WHEN (`Full_Name` IS NULL OR LENGTH(TRIM(`Full_Name`)) = 0) AND ? <> \'\' THEN ? ELSE `Full_Name` END '
+. 'WHERE `Device_ID` = ?',
+[$NowStr, substr($ClientIp, 0, 45), $UUID, $UUID, $TelegramId, $TelegramId, $CleanName, $CleanName, $DeviceId]
+);
+} catch (Throwable) {}
+if ($TokenHash !== '') {
+try {
+Database::getInstance()->execute('UPDATE `App_Sessions` SET `Last_Used_At` = ? WHERE `Token_Hash` = ?', [$NowStr, $TokenHash]);
+} catch (Throwable) {}
+}
 }
 
 private static function safeDeviceId(string $Raw): string {

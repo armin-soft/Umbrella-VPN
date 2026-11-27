@@ -120,6 +120,86 @@ $Rows = Menu::rows([
 self::categoryMenu($Context, 'مدیریت دستگاه ها', $Rows, 'مدیریت');
 }
 
+private static function cleanMonitorPersonName(string $Raw): string {
+$Clean = trim((string)(preg_replace('/\s+/u', ' ', Helper::stripZwnj($Raw)) ?? $Raw));
+if ($Clean === '' || $Clean === '_' || $Clean === 'کاربر' || $Clean === 'کاربر آمبرلا') {
+return '';
+}
+if (preg_match('/^user-[0-9]+$/i', $Clean) === 1) {
+return '';
+}
+return $Clean;
+}
+
+private static function deviceCategoryKind(string $Platform): string {
+$Low = strtolower(trim($Platform));
+if ($Low === '') return '';
+if (str_contains($Low, 'android') || str_contains($Low, 'ios') || str_contains($Low, 'iphone') || str_contains($Low, 'ipad') || str_contains($Low, 'harmony')) {
+return 'mobile';
+}
+if (str_contains($Low, 'win') || str_contains($Low, 'mac') || str_contains($Low, 'darwin') || str_contains($Low, 'linux') || str_contains($Low, 'ubuntu') || str_contains($Low, 'desktop')) {
+return 'software';
+}
+return '';
+}
+
+private static function classifyMonitorActivity(array $Row, array $DeviceKindMap = [], string $FallbackKind = ''): string {
+$Cat = strtolower(trim((string)($Row['Category'] ?? '')));
+if ($Cat === 'site') return 'site';
+if ($Cat === 'software') return 'software';
+if ($Cat === 'mobile') return 'mobile';
+if ($Cat !== 'app') return 'software';
+
+$DevId = (string)($Row['Device_ID'] ?? '');
+if ($DevId !== '' && isset($DeviceKindMap[$DevId]) && $DeviceKindMap[$DevId] !== '') {
+return $DeviceKindMap[$DevId];
+}
+$RowPlatKind = self::deviceCategoryKind((string)($Row['Platform'] ?? ''));
+if ($RowPlatKind !== '') return $RowPlatKind;
+
+$Target = trim((string)($Row['Target'] ?? ''));
+$LowTarget = strtolower($Target);
+if (str_ends_with($LowTarget, '.exe') || in_array($LowTarget, [
+'visual studio code', 'windows terminal', 'powershell', 'windows explorer',
+'internet download manager', 'winrar', '7-zip', 'obs studio', 'anydesk',
+'rustdesk', 'putty', 'winscp', 'filezilla', 'steam', 'epic games',
+'qbittorrent', 'utorrent', 'adobe photoshop', 'adobe illustrator',
+'adobe after effects', 'adobe premiere pro', 'cursor', 'notepad++',
+], true)) {
+return 'software';
+}
+if (preg_match('/^(?:com|org|net|ir|io|app|me)\.[a-z0-9_]+(?:\.[a-z0-9_]+)+$/', $LowTarget) === 1 || in_array($Target, [
+'ایتا', 'بله', 'روبیکا', 'اسنپ', 'دیوار', 'دیجی کالا', 'تلوبیون', 'سروش پلاس',
+'Google Play', 'YouTube Music', 'Instagram Lite', 'Telegram X', 'WhatsApp Business',
+], true)) {
+return 'mobile';
+}
+
+return $FallbackKind !== '' ? $FallbackKind : 'software';
+}
+
+private static function fetchMonitorSignInNameMap(Database $Db): array {
+$Map = ['dev' => [], 'uuid' => [], 'phone' => []];
+try {
+$Reqs = $Db->fetchAll(
+'SELECT `Device_ID`, `User_UUID`, `Phone`, `Full_Name` FROM `App_SignIn_Requests` '
+. 'WHERE `Full_Name` IS NOT NULL AND LENGTH(TRIM(`Full_Name`)) > 0 ORDER BY `ID` DESC LIMIT 500',
+[]
+);
+foreach ($Reqs as $R) {
+$Name = self::cleanMonitorPersonName((string)($R['Full_Name'] ?? ''));
+if ($Name === '') continue;
+$DevId = trim((string)($R['Device_ID'] ?? ''));
+$Uuid = trim((string)($R['User_UUID'] ?? ''));
+$Phone = trim((string)($R['Phone'] ?? ''));
+if ($DevId !== '' && !isset($Map['dev'][$DevId])) $Map['dev'][$DevId] = $Name;
+if ($Uuid !== '' && $Uuid !== '_' && !isset($Map['uuid'][$Uuid])) $Map['uuid'][$Uuid] = $Name;
+if ($Phone !== '' && !isset($Map['phone'][$Phone])) $Map['phone'][$Phone] = $Name;
+}
+} catch (Throwable) {}
+return $Map;
+}
+
 /** رصد کاربران: فهرست کاربران حاضر در نرم افزار/اپلیکیشن به ترتیب آخرین فعالیت. */
 public static function userMonitorList(Context $Context, int $Page = 0, string $Notice = ''): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
@@ -133,7 +213,7 @@ $Db = Database::getInstance();
 $Devices = [];
 try {
 $Devices = $Db->fetchAll(
-'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`User_UUID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
+'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Full_Name` AS `Device_Full_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`User_UUID`, `D`.`Is_Trusted`, `D`.`First_Seen_At`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
 . '`U`.`Full_Name` AS `Owner_Name`, `U`.`Phone` AS `Owner_Phone`, `U`.`Telegram_ID` AS `Matched_Tg_ID` '
 . 'FROM `App_Devices` AS `D` '
 . 'LEFT JOIN `Users` AS `U` ON `U`.`ID` = ('
@@ -149,22 +229,44 @@ $Devices = $Db->fetchAll(
 error_log('[Umbrella-Bot][MonitorList] devices: ' . $Error->getMessage());
 }
 
+$SignInNames = self::fetchMonitorSignInNameMap($Db);
+
+$DeviceKindMap = [];
+foreach ($Devices as $Dev) {
+$Did = (string)($Dev['Device_ID'] ?? '');
+if ($Did !== '') {
+$DeviceKindMap[$Did] = self::deviceCategoryKind((string)($Dev['Platform'] ?? ''));
+}
+}
+
 $ActivityStats = [];
 try {
 $StatRows = $Db->fetchAll(
 'SELECT `Device_ID`, `Category`, COUNT(*) AS `Cnt`, COALESCE(MAX(`Last_Seen_At`), 0) AS `Last_At` '
-. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\') GROUP BY `Device_ID`, `Category`',
+. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\', \'software\', \'mobile\') GROUP BY `Device_ID`, `Category`',
 []
 );
 foreach ($StatRows as $Stat) {
 $DevId = (string)($Stat['Device_ID'] ?? '');
 if ($DevId === '') continue;
 if (!isset($ActivityStats[$DevId])) {
-$ActivityStats[$DevId] = ['site' => 0, 'app' => 0, 'last' => 0];
+$ActivityStats[$DevId] = ['site' => 0, 'software' => 0, 'mobile' => 0, 'last' => 0];
 }
-$Cat = (string)($Stat['Category'] ?? '');
-if ($Cat === 'site' || $Cat === 'app') {
-$ActivityStats[$DevId][$Cat] += (int)($Stat['Cnt'] ?? 0);
+$Cat = strtolower((string)($Stat['Category'] ?? ''));
+$Cnt = (int)($Stat['Cnt'] ?? 0);
+if ($Cat === 'site') {
+$ActivityStats[$DevId]['site'] += $Cnt;
+} elseif ($Cat === 'software') {
+$ActivityStats[$DevId]['software'] += $Cnt;
+} elseif ($Cat === 'mobile') {
+$ActivityStats[$DevId]['mobile'] += $Cnt;
+} elseif ($Cat === 'app') {
+$Kind = $DeviceKindMap[$DevId] ?? '';
+if ($Kind === 'mobile') {
+$ActivityStats[$DevId]['mobile'] += $Cnt;
+} else {
+$ActivityStats[$DevId]['software'] += $Cnt;
+}
 }
 $ActivityStats[$DevId]['last'] = max($ActivityStats[$DevId]['last'], (int)($Stat['Last_At'] ?? 0));
 }
@@ -176,6 +278,7 @@ $TgId = (int)($Dev['Telegram_ID'] ?? 0);
 if ($TgId <= 0) $TgId = (int)($Dev['Matched_Tg_ID'] ?? 0);
 $Uuid = trim((string)($Dev['User_UUID'] ?? ''));
 $Phone = trim((string)($Dev['Owner_Phone'] ?? ($Dev['Phone'] ?? '')));
+$DevId = (string)($Dev['Device_ID'] ?? '');
 if ($TgId > 0) {
 $GroupKey = 't:' . $TgId;
 } elseif ($Uuid !== '' && $Uuid !== '_') {
@@ -186,31 +289,40 @@ $GroupKey = 'p:' . $Phone;
 $GroupKey = 'd:' . (int)($Dev['ID'] ?? 0);
 }
 
+$CandidateName = self::cleanMonitorPersonName((string)($Dev['Owner_Name'] ?? ''))
+?: self::cleanMonitorPersonName((string)($Dev['Device_Full_Name'] ?? ($Dev['Full_Name'] ?? '')))
+?: ($SignInNames['dev'][$DevId] ?? '')
+?: ($Uuid !== '' && $Uuid !== '_' ? ($SignInNames['uuid'][$Uuid] ?? '') : '')
+?: ($Phone !== '' ? ($SignInNames['phone'][$Phone] ?? '') : '');
+
 if (!isset($Groups[$GroupKey])) {
 $Groups[$GroupKey] = [
 'selector' => $TgId > 0 ? ('t:' . $TgId) : ('d:' . (int)($Dev['ID'] ?? 0)),
 'tg_id' => $TgId,
-'name' => trim((string)($Dev['Owner_Name'] ?? '')) ?: trim((string)($Dev['Device_Name'] ?? '')) ?: 'کاربر برنامه',
+'name' => $CandidateName !== '' ? $CandidateName : (trim((string)($Dev['Device_Name'] ?? '')) ?: 'کاربر برنامه'),
+'has_person_name' => $CandidateName !== '',
 'phone' => $Phone,
 'devices' => 0,
 'trusted' => 0,
 'sites' => 0,
-'apps' => 0,
-'has_win' => false,
-'has_android' => false,
+'software' => 0,
+'mobile' => 0,
 'last_seen' => 0,
 ];
+} elseif (!$Groups[$GroupKey]['has_person_name'] && $CandidateName !== '') {
+$Groups[$GroupKey]['name'] = $CandidateName;
+$Groups[$GroupKey]['has_person_name'] = true;
 }
 $Groups[$GroupKey]['devices']++;
 if ((int)($Dev['Is_Trusted'] ?? 0) === 1) $Groups[$GroupKey]['trusted']++;
-$PlatLower = strtolower((string)($Dev['Platform'] ?? ''));
-if (str_contains($PlatLower, 'win')) $Groups[$GroupKey]['has_win'] = true;
-if (str_contains($PlatLower, 'android')) $Groups[$GroupKey]['has_android'] = true;
-$DevId = (string)($Dev['Device_ID'] ?? '');
 $LastDev = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
-$Stat = $ActivityStats[$DevId] ?? ['site' => 0, 'app' => 0, 'last' => 0];
+if ($LastDev <= 0) {
+$LastDev = self::monitorTimestamp($Dev['First_Seen_At'] ?? 0);
+}
+$Stat = $ActivityStats[$DevId] ?? ['site' => 0, 'software' => 0, 'mobile' => 0, 'last' => 0];
 $Groups[$GroupKey]['sites'] += (int)$Stat['site'];
-$Groups[$GroupKey]['apps'] += (int)$Stat['app'];
+$Groups[$GroupKey]['software'] += (int)$Stat['software'];
+$Groups[$GroupKey]['mobile'] += (int)$Stat['mobile'];
 $Groups[$GroupKey]['last_seen'] = max($Groups[$GroupKey]['last_seen'], $LastDev, (int)$Stat['last']);
 }
 
@@ -225,16 +337,16 @@ $Slice = array_slice($GroupList, $Page * $PageSize, $PageSize);
 
 $Text = Helper::adminGreeting($Context, 'رصد کاربران')
 . ($Notice !== '' ? $Notice . "\n➖➖➖➖➖➖➖➖➖\n" : '')
-. Menu::section('👁', 'پایش لحظه ای کاربران در اپلیکیشن آمبرلا', [
+. Menu::section('👁', 'پایش لحظه ای کاربران در اپلیکیشن و نرم افزار آمبرلا', [
 '👥تعداد کاربران ثبت شده: ' . Helper::toPersian((string)$Total) . ' کاربر',
 '📄صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$PageCount),
 '🔄بازنشانی خودکار تاریخچه رصد: هر ۲۴ ساعت',
-'ℹ️روی نام هر کاربر کلیک کنید تا دستگاه ها، سایت ها و نرم افزارها/اپلیکیشن های باز شده او را ببینید.',
+'ℹ️روی نام هر کاربر کلیک کنید تا دستگاه ها، سایت ها، نرم افزارها و اپلیکیشن های باز شده او را جداگانه ببینید.',
 ]);
 
 $Buttons = [];
 if ($Slice === []) {
-$Text .= "\n📭هنوز کاربری در اپلیکیشن ثبت یا فعال نشده است.\n";
+$Text .= "\n📭هنوز کاربری در اپلیکیشن یا نرم افزار ثبت یا فعال نشده است.\n";
 }
 
 foreach ($Slice as $Index => $Group) {
@@ -245,20 +357,18 @@ $NameLink = $TgId > 0 ? '<a href="tg://user?id=' . $TgId . '">' . $NameSafe . '<
 $LastText = $Group['last_seen'] > 0
 ? Helper::formatDateTimeText((string)$Group['last_seen'])
 : 'ثبت نشده';
-$AppUnit = ($Group['has_android'] && !$Group['has_win'])
-? 'اپلیکیشن'
-: (($Group['has_win'] && !$Group['has_android']) ? 'نرم افزار' : 'نرم افزار/اپ');
-$AppEmoji = ($Group['has_android'] && !$Group['has_win']) ? '📱' : '💻';
 
 $Text .= "\n{$Num}. 👤 " . $NameLink . "\n"
 . ($TgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$TgId) . "</code>\n" : '')
 . ($Group['phone'] !== '' ? '📞شماره: <code>' . self::listText(Helper::toPersian((string)$Group['phone'])) . "</code>\n" : '')
 . '📱دستگاه ها: ' . Helper::toPersian((string)$Group['trusted']) . ' مجاز از ' . Helper::toPersian((string)$Group['devices']) . "\n"
-. '📊رصد ثبت شده: 🌐 ' . Helper::toPersian((string)$Group['sites']) . ' سایت | ' . $AppEmoji . ' ' . Helper::toPersian((string)$Group['apps']) . ' ' . $AppUnit . "\n"
+. '📊رصد ثبت شده: 🌐 ' . Helper::toPersian((string)$Group['sites']) . ' سایت | 💻 ' . Helper::toPersian((string)$Group['software']) . ' نرم افزار | 📱 ' . Helper::toPersian((string)$Group['mobile']) . " اپلیکیشن\n"
 . '🕓آخرین فعالیت: ' . self::listText($LastText) . "\n➖➖➖➖➖➖➖➖➖\n";
 
-$BtnTitle = $Num . '. 👁 ' . mb_substr((string)$Group['name'], 0, 26)
-. ' (' . Helper::toPersian((string)$Group['sites']) . '🌐 ' . Helper::toPersian((string)$Group['apps']) . $AppEmoji . ')';
+$BtnTitle = $Num . '. 👁 ' . mb_substr((string)$Group['name'], 0, 22)
+. ' (' . Helper::toPersian((string)$Group['sites']) . '🌐 '
+. Helper::toPersian((string)$Group['software']) . '💻 '
+. Helper::toPersian((string)$Group['mobile']) . '📱)';
 $Buttons[] = [Menu::button($BtnTitle, 'admin_monitor_view:' . $Group['selector'] . ':' . $Page . ':all:0')];
 }
 
@@ -266,6 +376,7 @@ $Buttons = array_merge(
 $Buttons,
 Menu::pages($Page, $PageCount, 'admin_user_monitor_page:'),
 [
+[Menu::button('📄خروجی HTML رصد کاربران', 'admin_monitor_html:all')],
 [Menu::button('🗑پاک کردن کل تاریخچه رصد', 'admin_monitor_clrall:' . $Page)],
 [Menu::button('🔄بروزرسانی فهرست', 'admin_user_monitor_page:' . $Page)],
 Menu::back('منوی قبلی', 'admin_devices_menu'),
@@ -331,9 +442,34 @@ static fn(array $D): string => trim((string)($D['Device_ID'] ?? '')),
 $DeviceRows
 ))));
 
-$DisplayName = trim((string)($UserRow['Full_Name'] ?? ''))
-?: trim((string)($DeviceRows[0]['Device_Name'] ?? ''))
-?: 'کاربر برنامه';
+$DisplayName = self::cleanMonitorPersonName((string)($UserRow['Full_Name'] ?? ''));
+if ($DisplayName === '') {
+foreach ($DeviceRows as $D) {
+$DevPerson = self::cleanMonitorPersonName((string)($D['Full_Name'] ?? ''));
+if ($DevPerson !== '') {
+$DisplayName = $DevPerson;
+break;
+}
+}
+}
+if ($DisplayName === '') {
+$SignInNames = self::fetchMonitorSignInNameMap($Db);
+foreach ($DeviceIds as $Did) {
+if (!empty($SignInNames['dev'][$Did])) {
+$DisplayName = $SignInNames['dev'][$Did];
+break;
+}
+}
+if ($DisplayName === '' && $UserUuid !== '' && $UserUuid !== '_' && !empty($SignInNames['uuid'][$UserUuid])) {
+$DisplayName = $SignInNames['uuid'][$UserUuid];
+}
+if ($DisplayName === '' && $UserPhone !== '' && !empty($SignInNames['phone'][$UserPhone])) {
+$DisplayName = $SignInNames['phone'][$UserPhone];
+}
+}
+if ($DisplayName === '') {
+$DisplayName = trim((string)($DeviceRows[0]['Device_Name'] ?? '')) ?: 'کاربر برنامه';
+}
 $DisplayPhone = $UserPhone !== '' ? $UserPhone : trim((string)($DeviceRows[0]['Phone'] ?? ''));
 
 $ActConds = [];
@@ -366,7 +502,7 @@ return [
 
 private static function cleanMonitorActivityRow(array $Row): ?array {
 $Cat = strtolower(trim((string)($Row['Category'] ?? '')));
-if ($Cat !== 'site' && $Cat !== 'app') return null;
+if (!in_array($Cat, ['site', 'app', 'software', 'mobile'], true)) return null;
 $RawTarget = trim((string)($Row['Target'] ?? ''));
 if ($RawTarget === '') return null;
 if ($Cat === 'site') {
@@ -401,7 +537,7 @@ if (class_exists('Scheduler') && method_exists('Scheduler', 'purgeUserActivityIf
 Scheduler::purgeUserActivityIfDue();
 }
 
-$Category = in_array($Category, ['all', 'site', 'app'], true) ? $Category : 'all';
+$Category = in_array($Category, ['all', 'site', 'software', 'mobile', 'app'], true) ? $Category : 'all';
 $ListPage = max(0, $ListPage);
 $InnerPage = max(0, $InnerPage);
 $Db = Database::getInstance();
@@ -428,55 +564,51 @@ if ($ActConds !== []) {
 try {
 $RawActivities = $Db->fetchAll(
 'SELECT `Device_ID`, `Category`, `Target`, `Hits`, `Bytes_Down`, `Bytes_Up`, `Last_Seen_At` '
-. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\') AND (' . implode(' OR ', $ActConds) . ') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
+. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\', \'software\', \'mobile\') AND (' . implode(' OR ', $ActConds) . ') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
 $ActParams
 );
 } catch (Throwable) {}
 }
 
+$DeviceMap = [];
+$DeviceKindMap = [];
+$HasDesktop = false;
+$HasMobile = false;
+foreach ($DeviceRows as $D) {
+$Did = (string)($D['Device_ID'] ?? '');
+if ($Did === '') continue;
+$DeviceMap[$Did] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
+$Kind = self::deviceCategoryKind((string)($D['Platform'] ?? ''));
+$DeviceKindMap[$Did] = $Kind;
+if ($Kind === 'software') $HasDesktop = true;
+elseif ($Kind === 'mobile') $HasMobile = true;
+}
+$FallbackKind = ($HasMobile && !$HasDesktop) ? 'mobile' : (($HasDesktop && !$HasMobile) ? 'software' : '');
+
 $AllActivities = [];
+$Counts = ['site' => 0, 'software' => 0, 'mobile' => 0];
 foreach ($RawActivities as $RawAct) {
 $Cleaned = self::cleanMonitorActivityRow($RawAct);
-if ($Cleaned !== null) {
+if ($Cleaned === null) continue;
+$Classified = self::classifyMonitorActivity($Cleaned, $DeviceKindMap, $FallbackKind);
+$Cleaned['_classified'] = $Classified;
 $AllActivities[] = $Cleaned;
-}
-}
-
-$Counts = ['site' => 0, 'app' => 0];
-foreach ($AllActivities as $Act) {
-$Cat = (string)($Act['Category'] ?? '');
-if (isset($Counts[$Cat])) $Counts[$Cat]++;
+if (isset($Counts[$Classified])) $Counts[$Classified]++;
 }
 
-$Filtered = $Category === 'all'
-? $AllActivities
-: array_values(array_filter($AllActivities, static fn(array $A): bool => ($A['Category'] ?? '') === $Category));
+$Filtered = match ($Category) {
+'site' => array_values(array_filter($AllActivities, static fn(array $A): bool => ($A['_classified'] ?? '') === 'site')),
+'software' => array_values(array_filter($AllActivities, static fn(array $A): bool => ($A['_classified'] ?? '') === 'software')),
+'mobile' => array_values(array_filter($AllActivities, static fn(array $A): bool => ($A['_classified'] ?? '') === 'mobile')),
+'app' => array_values(array_filter($AllActivities, static fn(array $A): bool => in_array($A['_classified'] ?? '', ['software', 'mobile'], true))),
+default => $AllActivities,
+};
 
 $PerPage = 10;
 $TotalFiltered = count($Filtered);
 $InnerPages = max(1, (int)ceil($TotalFiltered / $PerPage));
 $InnerPage = max(0, min($InnerPage, $InnerPages - 1));
 $Visible = array_slice($Filtered, $InnerPage * $PerPage, $PerPage);
-
-$DeviceMap = [];
-$DevicePlatformMap = [];
-$HasWin = false;
-$HasAndroid = false;
-foreach ($DeviceRows as $D) {
-$Did = (string)$D['Device_ID'];
-$DeviceMap[$Did] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
-$PlatLow = strtolower((string)($D['Platform'] ?? ''));
-if (str_contains($PlatLow, 'win')) { $HasWin = true; $DevicePlatformMap[$Did] = 'win'; }
-elseif (str_contains($PlatLow, 'android')) { $HasAndroid = true; $DevicePlatformMap[$Did] = 'android'; }
-else { $DevicePlatformMap[$Did] = ''; }
-}
-$AppSectionTitle = ($HasAndroid && !$HasWin)
-? 'اپلیکیشن ها'
-: (($HasWin && !$HasAndroid) ? 'نرم افزارها' : 'نرم افزارها و اپلیکیشن ها');
-$AppShortLabel = ($HasAndroid && !$HasWin)
-? 'اپلیکیشن ها'
-: (($HasWin && !$HasAndroid) ? 'نرم افزارها' : 'نرم افزار/اپ');
-$AppSectionEmoji = ($HasAndroid && !$HasWin) ? '📱' : '💻';
 
 $TitleLink = $OwnerTgId > 0
 ? '<a href="tg://user?id=' . $OwnerTgId . '">' . self::listText($DisplayName) . '</a>'
@@ -487,17 +619,21 @@ $Text = Helper::adminGreeting($Context, 'رصد فعالیت کاربر')
 . '👤کاربر: ' . $TitleLink . "\n"
 . ($OwnerTgId > 0 ? '🆔شناسه تلگرام: <code>' . Helper::toPersian((string)$OwnerTgId) . "</code>\n" : '')
 . ($DisplayPhone !== '' ? '📞شماره موبایل: <code>' . self::listText(Helper::toPersian($DisplayPhone)) . "</code>\n" : '')
-. '📊آمار کل رصد: 🌐 ' . Helper::toPersian((string)$Counts['site']) . ' سایت | ' . $AppSectionEmoji . ' ' . Helper::toPersian((string)$Counts['app']) . ' ' . $AppSectionTitle . "\n"
+. '📊آمار کل رصد: 🌐 ' . Helper::toPersian((string)$Counts['site']) . ' سایت | 💻 ' . Helper::toPersian((string)$Counts['software']) . ' نرم افزار | 📱 ' . Helper::toPersian((string)$Counts['mobile']) . " اپلیکیشن\n"
 . "🔄بازنشانی خودکار: هر ۲۴ ساعت\n"
 . "➖➖➖➖➖➖➖➖➖\n"
 . '📱<b>دستگاه های کاربر (' . Helper::toPersian((string)count($DeviceRows)) . "):</b>\n";
 
 foreach (array_slice($DeviceRows, 0, 5) as $Idx => $Dev) {
-$Plat = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform((string)($Dev['Platform'] ?? '')) : (string)($Dev['Platform'] ?? '');
+$PlatRaw = (string)($Dev['Platform'] ?? '');
+$Plat = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($PlatRaw) : $PlatRaw;
+$DevKind = self::deviceCategoryKind($PlatRaw);
+$DevEmoji = $DevKind === 'mobile' ? '📱' : ($DevKind === 'software' ? '💻' : '📲');
 $LastDevTs = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
+if ($LastDevTs <= 0) $LastDevTs = self::monitorTimestamp($Dev['First_Seen_At'] ?? 0);
 $LastDev = $LastDevTs > 0 ? Helper::formatDateTimeText((string)$LastDevTs) : 'ثبت نشده';
 $TrustIcon = (int)($Dev['Is_Trusted'] ?? 0) === 1 ? '✅' : '⛔️';
-$Text .= Helper::toPersian((string)($Idx + 1)) . '. ' . $TrustIcon . ' '
+$Text .= Helper::toPersian((string)($Idx + 1)) . '. ' . $TrustIcon . ' ' . $DevEmoji . ' '
 . self::listText((string)($Dev['Device_Name'] ?? 'دستگاه'))
 . ($Plat !== '' ? ' (' . self::listText($Plat) . ')' : '')
 . (!empty($Dev['App_Version']) ? ' | نسخه ' . self::listText(Helper::toPersian((string)$Dev['App_Version'])) : '')
@@ -506,20 +642,25 @@ $Text .= Helper::toPersian((string)($Idx + 1)) . '. ' . $TrustIcon . ' '
 
 $CatLabel = match ($Category) {
 'site' => '🌐 سایت های باز شده',
-'app' => $AppSectionEmoji . ' ' . $AppSectionTitle . ' باز شده',
-default => '👁 همه سایت ها و ' . $AppSectionTitle,
+'software' => '💻 نرم افزارهای باز شده',
+'mobile' => '📱 اپلیکیشن های باز شده',
+'app' => '💻📱 نرم افزارها و اپلیکیشن های باز شده',
+default => '👁 همه سایت ها، نرم افزارها و اپلیکیشن ها',
 };
 $Text .= "\n➖➖➖➖➖➖➖➖➖\n<b>{$CatLabel}</b> (صفحه " . Helper::toPersian((string)($InnerPage + 1)) . ' از ' . Helper::toPersian((string)$InnerPages) . "):\n\n";
 
 if ($Visible === []) {
-$Text .= "📭هنوز موردی در این بخش ثبت نشده است.\n<i>(هنگام اتصال فیلترشکن آمبرلا و استفاده کاربر از سایت ها و برنامه ها، اطلاعات خودکار ثبت می شود.)</i>\n";
+$Text .= "📭هنوز موردی در این بخش ثبت نشده است.\n<i>(هنگام اتصال فیلترشکن آمبرلا و استفاده کاربر از سایت ها، نرم افزارها و اپلیکیشن ها، اطلاعات خودکار ثبت می شود.)</i>\n";
 }
 
 foreach ($Visible as $Item) {
-$Cat = (string)($Item['Category'] ?? '');
+$Classified = (string)($Item['_classified'] ?? 'software');
 $DevIdItem = (string)($Item['Device_ID'] ?? '');
-$ItemPlat = $DevicePlatformMap[$DevIdItem] ?? '';
-$Icon = $Cat === 'site' ? '🌐' : ($ItemPlat === 'android' ? '📱' : '💻');
+$TypeBadge = match ($Classified) {
+'site' => '🌐 سایت',
+'mobile' => '📱 اپلیکیشن',
+default => '💻 نرم افزار',
+};
 $TargetLabel = self::listText((string)($Item['Target'] ?? ''));
 $Hits = (int)($Item['Hits'] ?? 1);
 $Bytes = (int)($Item['Bytes_Down'] ?? 0) + (int)($Item['Bytes_Up'] ?? 0);
@@ -527,7 +668,7 @@ $DevName = $DeviceMap[$DevIdItem] ?? '';
 $WhenTs = (int)($Item['Last_Seen_At'] ?? 0);
 $WhenText = $WhenTs > 0 ? Helper::formatDateTimeText((string)$WhenTs) : '';
 
-$Line = "{$Icon} <code>{$TargetLabel}</code> — " . Helper::toPersian((string)$Hits) . ' بار';
+$Line = "{$TypeBadge} · <code>{$TargetLabel}</code> — " . Helper::toPersian((string)$Hits) . ' بار';
 if ($Bytes > 0) {
 $Line .= ' | ' . Helper::formatBytes($Bytes);
 }
@@ -540,11 +681,15 @@ $Line .= "\n   🕒 " . self::listText($WhenText);
 $Text .= $Line . "\n";
 }
 
+$TotalAll = $Counts['site'] + $Counts['software'] + $Counts['mobile'];
 $FilterButtons = [
 [
-Menu::button(($Category === 'all' ? '✅' : '') . '👁همه (' . Helper::toPersian((string)array_sum($Counts)) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':all'),
+Menu::button(($Category === 'all' ? '✅' : '') . '👁همه (' . Helper::toPersian((string)$TotalAll) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':all'),
 Menu::button(($Category === 'site' ? '✅' : '') . '🌐سایت ها (' . Helper::toPersian((string)$Counts['site']) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':site'),
-Menu::button(($Category === 'app' ? '✅' : '') . $AppSectionEmoji . $AppShortLabel . ' (' . Helper::toPersian((string)$Counts['app']) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':app'),
+],
+[
+Menu::button(($Category === 'software' ? '✅' : '') . '💻نرم افزارها (' . Helper::toPersian((string)$Counts['software']) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':software'),
+Menu::button(($Category === 'mobile' ? '✅' : '') . '📱اپلیکیشن ها (' . Helper::toPersian((string)$Counts['mobile']) . ')', 'admin_monitor_tab:' . $TargetKey . ':' . $ListPage . ':mobile'),
 ],
 ];
 
@@ -552,6 +697,7 @@ $Buttons = array_merge(
 $FilterButtons,
 Menu::pages($InnerPage, $InnerPages, 'admin_monitor_view:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':'),
 [
+[Menu::button('📄خروجی HTML رصد این کاربر', 'admin_monitor_html:' . $TargetKey)],
 [Menu::button('🗑پاک کردن تاریخچه رصد کاربر', 'admin_monitor_clr:' . $TargetKey . ':' . $ListPage . ':' . $Category)],
 [Menu::button('🔄بروزرسانی رصد', 'admin_monitor_refresh:' . $TargetKey . ':' . $ListPage . ':' . $Category . ':' . $InnerPage)],
 ],
@@ -583,7 +729,7 @@ return;
 $Text = Helper::adminGreeting($Context, 'پاک کردن تاریخچه رصد')
 . '⚠️آیا از پاک کردن کل تاریخچه رصد کاربران (' . Helper::toPersian((string)$Count) . " مورد ثبت شده) مطمئن هستید؟\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "ℹ️دستگاه های مجاز کاربران حفظ می شوند و فقط سوابق سایت ها و نرم افزارها/اپلیکیشن های رصد شده پاک می شوند."
+. "ℹ️دستگاه های مجاز کاربران حفظ می شوند و فقط سوابق سایت ها، نرم افزارها و اپلیکیشن های رصد شده پاک می شوند."
 . Helper::adminFooter();
 $Rows = [
 [Menu::button('✅تأیید پاک کردن کل تاریخچه', 'admin_monitor_clrall_ok:' . $ListPage)],
@@ -618,7 +764,7 @@ self::userMonitorList($Context, 0, '🧹کل تاریخچه رصد کاربرا�
 public static function userMonitorClearUserAsk(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all'): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
-$Category = in_array($Category, ['all', 'site', 'app'], true) ? $Category : 'all';
+$Category = in_array($Category, ['all', 'site', 'software', 'mobile', 'app'], true) ? $Category : 'all';
 $ListPage = max(0, $ListPage);
 $Target = self::resolveMonitorTarget($TargetKey);
 $ActConds = (array)$Target['act_conds'];
@@ -653,7 +799,7 @@ $DisplayName = self::listText((string)$Target['display_name']);
 $Text = Helper::adminGreeting($Context, 'پاک کردن تاریخچه رصد کاربر')
 . '⚠️آیا از پاک کردن تاریخچه رصد کاربر <b>' . $DisplayName . '</b> (' . Helper::toPersian((string)$Count) . " مورد ثبت شده) مطمئن هستید؟\n"
 . "➖➖➖➖➖➖➖➖➖\n"
-. "ℹ️دستگاه های این کاربر حذف نمی شوند و فقط تاریخچه رصد سایت ها و برنامه ها پاک می شود."
+. "ℹ️دستگاه های این کاربر حذف نمی شوند و فقط تاریخچه رصد سایت ها، نرم افزارها و اپلیکیشن ها پاک می شود."
 . Helper::adminFooter();
 $Rows = [
 [Menu::button('✅تأیید پاک کردن تاریخچه کاربر', 'admin_monitor_clrok:' . $TargetKey . ':' . $ListPage . ':' . $Category)],
@@ -667,7 +813,7 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 public static function userMonitorClearUserConfirm(Context $Context, string $TargetKey, int $ListPage = 0, string $Category = 'all'): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 self::ensureAppSchemaReady();
-$Category = in_array($Category, ['all', 'site', 'app'], true) ? $Category : 'all';
+$Category = in_array($Category, ['all', 'site', 'software', 'mobile', 'app'], true) ? $Category : 'all';
 $ListPage = max(0, $ListPage);
 $Target = self::resolveMonitorTarget($TargetKey);
 $ActConds = (array)$Target['act_conds'];
@@ -711,12 +857,418 @@ $Category,
 );
 }
 
+private static function htmlEsc(string $Value): string {
+$Clean = method_exists('Helper', 'repairMojibake') ? Helper::repairMojibake($Value) : $Value;
+if (method_exists('Helper', 'stripZwnj')) {
+$Clean = Helper::stripZwnj($Clean);
+}
+return htmlspecialchars($Clean, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+/** ساخت گزارش کامل HTML برای رصد کل کاربران یا یک کاربر مشخص. */
+public static function renderMonitorHtmlReport(string $Scope = 'all'): array {
+self::ensureAppSchemaReady();
+if (class_exists('Scheduler') && method_exists('Scheduler', 'purgeUserActivityIfDue')) {
+Scheduler::purgeUserActivityIfDue();
+}
+
+$Db = Database::getInstance();
+$UsersData = [];
+$Summary = ['users' => 0, 'devices' => 0, 'site' => 0, 'software' => 0, 'mobile' => 0, 'bytes' => 0];
+$ScopeTitle = 'گزارش جامع رصد کاربران فیلترشکن آمبرلا';
+
+if ($Scope !== 'all') {
+$Target = self::resolveMonitorTarget($Scope);
+$DeviceRows = (array)$Target['device_rows'];
+$UserRow = (array)$Target['user_row'];
+if ($DeviceRows !== [] || $UserRow !== []) {
+$ActConds = (array)$Target['act_conds'];
+$ActParams = (array)$Target['act_params'];
+$RawActs = [];
+if ($ActConds !== []) {
+try {
+$RawActs = $Db->fetchAll(
+'SELECT `Device_ID`, `Category`, `Target`, `Hits`, `Bytes_Down`, `Bytes_Up`, `Last_Seen_At` '
+. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\', \'software\', \'mobile\') AND (' . implode(' OR ', $ActConds) . ') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
+$ActParams
+);
+} catch (Throwable) {}
+}
+$UsersData[] = [
+'name' => (string)$Target['display_name'],
+'tg_id' => (int)$Target['owner_tg_id'],
+'phone' => (string)$Target['display_phone'],
+'devices' => $DeviceRows,
+'activities' => $RawActs,
+];
+$ScopeTitle = 'گزارش رصد کاربر: ' . (string)$Target['display_name'];
+}
+} else {
+$Devices = [];
+try {
+$Devices = $Db->fetchAll(
+'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Full_Name` AS `Device_Full_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`User_UUID`, `D`.`Is_Trusted`, `D`.`First_Seen_At`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
+. '`U`.`Full_Name` AS `Owner_Name`, `U`.`Phone` AS `Owner_Phone`, `U`.`Telegram_ID` AS `Matched_Tg_ID` '
+. 'FROM `App_Devices` AS `D` '
+. 'LEFT JOIN `Users` AS `U` ON `U`.`ID` = ('
+. 'SELECT MIN(`O`.`ID`) FROM `Users` AS `O` WHERE '
+. '(`D`.`Telegram_ID` > 0 AND `O`.`Telegram_ID` = `D`.`Telegram_ID`) OR '
+. '(`D`.`User_UUID` IS NOT NULL AND `D`.`User_UUID` != \'\' AND `O`.`Client_ID` = `D`.`User_UUID`) OR '
+. '(COALESCE(`D`.`Telegram_ID`, 0) <= 0 AND `D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `O`.`Phone` = `D`.`Phone`)'
+. ') '
+. 'ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC',
+[]
+);
+} catch (Throwable) {}
+
+$SignInNames = self::fetchMonitorSignInNameMap($Db);
+$AllActs = [];
+try {
+$AllActs = $Db->fetchAll(
+'SELECT `Device_ID`, `User_UUID`, `Telegram_ID`, `Category`, `Target`, `Hits`, `Bytes_Down`, `Bytes_Up`, `Last_Seen_At` '
+. 'FROM `App_User_Activity` WHERE `Category` IN (\'site\', \'app\', \'software\', \'mobile\') ORDER BY `Last_Seen_At` DESC, `Hits` DESC',
+[]
+);
+} catch (Throwable) {}
+
+$ActsByDev = [];
+foreach ($AllActs as $Act) {
+$Did = (string)($Act['Device_ID'] ?? '');
+if ($Did !== '') $ActsByDev[$Did][] = $Act;
+}
+
+$Grouped = [];
+foreach ($Devices as $Dev) {
+$TgId = (int)($Dev['Telegram_ID'] ?? 0);
+if ($TgId <= 0) $TgId = (int)($Dev['Matched_Tg_ID'] ?? 0);
+$Uuid = trim((string)($Dev['User_UUID'] ?? ''));
+$Phone = trim((string)($Dev['Owner_Phone'] ?? ($Dev['Phone'] ?? '')));
+$DevId = (string)($Dev['Device_ID'] ?? '');
+if ($TgId > 0) $GroupKey = 't:' . $TgId;
+elseif ($Uuid !== '' && $Uuid !== '_') $GroupKey = 'u:' . $Uuid;
+elseif ($Phone !== '') $GroupKey = 'p:' . $Phone;
+else $GroupKey = 'd:' . (int)($Dev['ID'] ?? 0);
+
+$CandidateName = self::cleanMonitorPersonName((string)($Dev['Owner_Name'] ?? ''))
+?: self::cleanMonitorPersonName((string)($Dev['Device_Full_Name'] ?? ($Dev['Full_Name'] ?? '')))
+?: ($SignInNames['dev'][$DevId] ?? '')
+?: ($Uuid !== '' && $Uuid !== '_' ? ($SignInNames['uuid'][$Uuid] ?? '') : '')
+?: ($Phone !== '' ? ($SignInNames['phone'][$Phone] ?? '') : '');
+
+if (!isset($Grouped[$GroupKey])) {
+$Grouped[$GroupKey] = [
+'name' => $CandidateName !== '' ? $CandidateName : (trim((string)($Dev['Device_Name'] ?? '')) ?: 'کاربر برنامه'),
+'has_person_name' => $CandidateName !== '',
+'tg_id' => $TgId,
+'phone' => $Phone,
+'devices' => [],
+'activities' => [],
+];
+} elseif (!$Grouped[$GroupKey]['has_person_name'] && $CandidateName !== '') {
+$Grouped[$GroupKey]['name'] = $CandidateName;
+$Grouped[$GroupKey]['has_person_name'] = true;
+}
+$Grouped[$GroupKey]['devices'][] = $Dev;
+if ($DevId !== '' && isset($ActsByDev[$DevId])) {
+foreach ($ActsByDev[$DevId] as $A) {
+$Grouped[$GroupKey]['activities'][] = $A;
+}
+}
+}
+$UsersData = array_values($Grouped);
+}
+
+$PreparedUsers = [];
+foreach ($UsersData as $Entry) {
+$DeviceRows = (array)($Entry['devices'] ?? []);
+$DeviceMap = [];
+$DeviceKindMap = [];
+$HasDesktop = false;
+$HasMobile = false;
+$LastSeenTs = 0;
+
+foreach ($DeviceRows as $D) {
+$Did = (string)($D['Device_ID'] ?? '');
+if ($Did !== '') {
+$DeviceMap[$Did] = trim((string)($D['Device_Name'] ?? '')) ?: 'دستگاه';
+$Kind = self::deviceCategoryKind((string)($D['Platform'] ?? ''));
+$DeviceKindMap[$Did] = $Kind;
+if ($Kind === 'software') $HasDesktop = true;
+elseif ($Kind === 'mobile') $HasMobile = true;
+}
+$Ts = self::monitorTimestamp($D['Last_Seen_At'] ?? 0);
+if ($Ts <= 0) $Ts = self::monitorTimestamp($D['First_Seen_At'] ?? 0);
+$LastSeenTs = max($LastSeenTs, $Ts);
+}
+$FallbackKind = ($HasMobile && !$HasDesktop) ? 'mobile' : (($HasDesktop && !$HasMobile) ? 'software' : '');
+
+$Buckets = ['site' => [], 'software' => [], 'mobile' => []];
+$UserBytes = 0;
+foreach ((array)($Entry['activities'] ?? []) as $RawAct) {
+$Cleaned = self::cleanMonitorActivityRow($RawAct);
+if ($Cleaned === null) continue;
+$Kind = self::classifyMonitorActivity($Cleaned, $DeviceKindMap, $FallbackKind);
+$Cleaned['_classified'] = $Kind;
+$Bytes = (int)($Cleaned['Bytes_Down'] ?? 0) + (int)($Cleaned['Bytes_Up'] ?? 0);
+$UserBytes += $Bytes;
+$LastSeenTs = max($LastSeenTs, (int)($Cleaned['Last_Seen_At'] ?? 0));
+$Buckets[$Kind][] = $Cleaned;
+}
+
+$Summary['users']++;
+$Summary['devices'] += count($DeviceRows);
+$Summary['site'] += count($Buckets['site']);
+$Summary['software'] += count($Buckets['software']);
+$Summary['mobile'] += count($Buckets['mobile']);
+$Summary['bytes'] += $UserBytes;
+
+$PreparedUsers[] = [
+'name' => (string)($Entry['name'] ?? 'کاربر برنامه'),
+'tg_id' => (int)($Entry['tg_id'] ?? 0),
+'phone' => (string)($Entry['phone'] ?? ''),
+'devices' => $DeviceRows,
+'device_map' => $DeviceMap,
+'buckets' => $Buckets,
+'last_seen' => $LastSeenTs,
+'bytes' => $UserBytes,
+];
+}
+
+usort($PreparedUsers, static fn(array $A, array $B): int => $B['last_seen'] <=> $A['last_seen']);
+
+$GeneratedAt = Helper::formatDateTimeText((string)time());
+$SummaryBytes = Helper::formatBytes((int)$Summary['bytes']);
+
+$CardsHtml = '';
+foreach ($PreparedUsers as $UIdx => $User) {
+$TotalActs = count($User['buckets']['site']) + count($User['buckets']['software']) + count($User['buckets']['mobile']);
+$LastText = $User['last_seen'] > 0 ? Helper::formatDateTimeText((string)$User['last_seen']) : 'ثبت نشده';
+$TgText = $User['tg_id'] > 0 ? Helper::toPersian((string)$User['tg_id']) : 'ثبت نشده';
+$PhoneText = $User['phone'] !== '' ? Helper::toPersian($User['phone']) : 'ثبت نشده';
+
+$DeviceRowsHtml = '';
+foreach ($User['devices'] as $DIdx => $Dev) {
+$PlatRaw = (string)($Dev['Platform'] ?? '');
+$PlatLabel = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($PlatRaw) : $PlatRaw;
+$Kind = self::deviceCategoryKind($PlatRaw);
+$KindLabel = $Kind === 'mobile' ? '📱 موبایل' : ($Kind === 'software' ? '💻 کامپیوتر' : '📲 نامشخص');
+$DevTs = self::monitorTimestamp($Dev['Last_Seen_At'] ?? 0);
+if ($DevTs <= 0) $DevTs = self::monitorTimestamp($Dev['First_Seen_At'] ?? 0);
+$DevWhen = $DevTs > 0 ? Helper::formatDateTimeText((string)$DevTs) : 'ثبت نشده';
+$Trusted = (int)($Dev['Is_Trusted'] ?? 0) === 1;
+$StatusBadge = $Trusted ? '<span class="badge ok">✅ مجاز</span>' : '<span class="badge no">⛔️ غیرمجاز</span>';
+$DeviceRowsHtml .= '<tr>'
+. '<td>' . self::htmlEsc(Helper::toPersian((string)($DIdx + 1))) . '</td>'
+. '<td><strong>' . self::htmlEsc((string)($Dev['Device_Name'] ?? 'دستگاه')) . '</strong></td>'
+. '<td>' . $KindLabel . '</td>'
+. '<td>' . self::htmlEsc($PlatLabel !== '' ? $PlatLabel : 'نامشخص') . '</td>'
+. '<td dir="ltr">' . self::htmlEsc((string)($Dev['App_Version'] ?? '—')) . '</td>'
+. '<td>' . $StatusBadge . '</td>'
+. '<td dir="ltr"><code>' . self::htmlEsc((string)($Dev['Last_IP'] ?? '—')) . '</code></td>'
+. '<td>' . self::htmlEsc($DevWhen) . '</td>'
+. '</tr>';
+}
+if ($DeviceRowsHtml === '') {
+$DeviceRowsHtml = '<tr><td colspan="8" class="empty">دستگاهی ثبت نشده است.</td></tr>';
+}
+
+$BuildActTable = static function (string $CatKey, string $Heading, string $EmptyMsg) use ($User): string {
+$Items = $User['buckets'][$CatKey] ?? [];
+$CountFa = self::htmlEsc(Helper::toPersian((string)count($Items)));
+$RowsHtml = '';
+foreach ($Items as $AIdx => $Act) {
+$Did = (string)($Act['Device_ID'] ?? '');
+$DevName = $User['device_map'][$Did] ?? 'دستگاه';
+$Hits = Helper::toPersian((string)((int)($Act['Hits'] ?? 1)));
+$Bytes = Helper::formatBytes((int)($Act['Bytes_Down'] ?? 0) + (int)($Act['Bytes_Up'] ?? 0));
+$WhenTs = (int)($Act['Last_Seen_At'] ?? 0);
+$WhenStr = $WhenTs > 0 ? Helper::formatDateTimeText((string)$WhenTs) : 'ثبت نشده';
+$RowsHtml .= '<tr class="act-row" data-search="' . self::htmlEsc(strtolower((string)($Act['Target'] ?? '') . ' ' . $DevName)) . '">'
+. '<td>' . self::htmlEsc(Helper::toPersian((string)($AIdx + 1))) . '</td>'
+. '<td dir="ltr" class="target-cell"><code>' . self::htmlEsc((string)($Act['Target'] ?? '')) . '</code></td>'
+. '<td>' . self::htmlEsc($Hits) . ' بار</td>'
+. '<td dir="ltr">' . self::htmlEsc($Bytes) . '</td>'
+. '<td>' . self::htmlEsc($DevName) . '</td>'
+. '<td>' . self::htmlEsc($WhenStr) . '</td>'
+. '</tr>';
+}
+if ($RowsHtml === '') {
+$RowsHtml = '<tr><td colspan="6" class="empty">' . self::htmlEsc($EmptyMsg) . '</td></tr>';
+}
+return '<div class="cat-block" data-cat="' . $CatKey . '">'
+. '<div class="cat-head"><h4>' . $Heading . '</h4><span class="pill ' . $CatKey . '">' . $CountFa . ' مورد</span></div>'
+. '<div class="table-wrap"><table><thead><tr><th>#</th><th>نام / نشانی</th><th>تعداد</th><th>ترافیک</th><th>دستگاه</th><th>آخرین زمان</th></tr></thead><tbody>'
+. $RowsHtml
+. '</tbody></table></div></div>';
+};
+
+$SearchMeta = strtolower((string)$User['name'] . ' ' . $User['phone'] . ' ' . $User['tg_id']);
+foreach ($User['devices'] as $Dev) {
+$SearchMeta .= ' ' . strtolower((string)($Dev['Device_Name'] ?? '') . ' ' . ($Dev['Last_IP'] ?? '') . ' ' . ($Dev['Platform'] ?? ''));
+}
+foreach (['site', 'software', 'mobile'] as $Ck) {
+foreach ($User['buckets'][$Ck] as $Act) {
+$SearchMeta .= ' ' . strtolower((string)($Act['Target'] ?? ''));
+}
+}
+
+$CardsHtml .= '<section class="user-card" data-has-act="' . ($TotalActs > 0 ? '1' : '0') . '" data-search="' . self::htmlEsc($SearchMeta) . '">'
+. '<div class="user-head">'
+. '<div class="user-title">'
+. '<span class="user-num">' . self::htmlEsc(Helper::toPersian((string)($UIdx + 1))) . '</span>'
+. '<div>'
+. '<h3>👤 ' . self::htmlEsc((string)$User['name']) . '</h3>'
+. '<div class="user-meta">'
+. '<span>🆔 تلگرام: <code>' . self::htmlEsc($TgText) . '</code></span>'
+. '<span>📞 موبایل: <code dir="ltr">' . self::htmlEsc($PhoneText) . '</code></span>'
+. '<span>🕒 آخرین فعالیت: ' . self::htmlEsc($LastText) . '</span>'
+. '<span>📊 حجم کل: ' . self::htmlEsc(Helper::formatBytes((int)$User['bytes'])) . '</span>'
+. '</div>'
+. '</div>'
+. '</div>'
+. '<div class="user-pills">'
+. '<span class="pill site">🌐 ' . self::htmlEsc(Helper::toPersian((string)count($User['buckets']['site']))) . ' سایت</span>'
+. '<span class="pill software">💻 ' . self::htmlEsc(Helper::toPersian((string)count($User['buckets']['software']))) . ' نرم افزار</span>'
+. '<span class="pill mobile">📱 ' . self::htmlEsc(Helper::toPersian((string)count($User['buckets']['mobile']))) . ' اپلیکیشن</span>'
+. '</div>'
+. '</div>'
+. '<div class="devices-box"><h4>📲 دستگاه های کاربر (' . self::htmlEsc(Helper::toPersian((string)count($User['devices']))) . ')</h4>'
+. '<div class="table-wrap"><table><thead><tr><th>#</th><th>نام دستگاه</th><th>نوع</th><th>سیستم عامل</th><th>نسخه</th><th>وضعیت</th><th>آخرین آی پی</th><th>آخرین فعالیت</th></tr></thead><tbody>'
+. $DeviceRowsHtml
+. '</tbody></table></div></div>'
+. '<div class="cats-grid">'
+. $BuildActTable('site', '🌐 سایت های باز شده', 'سایتی ثبت نشده است.')
+. $BuildActTable('software', '💻 نرم افزارهای باز شده (کامپیوتر)', 'نرم افزاری ثبت نشده است.')
+. $BuildActTable('mobile', '📱 اپلیکیشن های باز شده (موبایل)', 'اپلیکیشنی ثبت نشده است.')
+. '</div>'
+. '</section>';
+}
+
+if ($CardsHtml === '') {
+$CardsHtml = '<div class="empty-state">📭 هنوز هیچ کاربر یا فعالیتی در رصد ثبت نشده است.</div>';
+}
+
+$Html = '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+. '<title>' . self::htmlEsc($ScopeTitle) . '</title>'
+. '<style>'
+. ':root{--bg:#0b1220;--panel:#121c2e;--card:#162238;--border:#253552;--text:#e6edf7;--muted:#93a6c8;--accent:#38bdf8;--site:#0ea5e9;--soft:#8b5cf6;--mob:#10b981;--code:#0d1626}'
+. 'body.light{--bg:#f4f7fb;--panel:#ffffff;--card:#ffffff;--border:#dce4f0;--text:#122033;--muted:#5a6b84;--accent:#0284c7;--site:#0284c7;--soft:#6d28d9;--mob:#059669;--code:#eef3fa}'
+. '*{box-sizing:border-box}body{margin:0;padding:24px;font-family:Vazirmatn,Tahoma,Segoe UI,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}'
+. '.wrap{max-width:1280px;margin:0 auto}.hero{background:linear-gradient(135deg,#13233f,#0f172a);border:1px solid var(--border);border-radius:18px;padding:22px 24px;margin-bottom:18px;color:#f8fafc;display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:center}'
+. '.hero h1{margin:0 0 6px;font-size:21px}.hero .sub{font-size:13px;color:#cbd5e1}'
+. '.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid #33486b;background:#1b2c4a;color:#f1f5f9;padding:8px 14px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:13px}'
+. '.btn:hover{border-color:var(--accent)}.btn.active{background:var(--accent);color:#06121e;border-color:var(--accent);font-weight:700}'
+. '.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;margin-bottom:18px}'
+. '.stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px}.stat .k{font-size:12px;color:var(--muted)}.stat .v{font-size:20px;font-weight:700;margin-top:4px}'
+. '.toolbar{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}'
+. '.search{flex:1;min-width:220px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:14px}'
+. '.filters{display:flex;flex-wrap:wrap;gap:8px}.fbtn{border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 13px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:13px}'
+. '.fbtn.active{background:var(--accent);color:#06121e;border-color:var(--accent);font-weight:700}'
+. '.user-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.15)}'
+. '.user-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px}'
+. '.user-title{display:flex;gap:12px;align-items:flex-start}.user-num{width:34px;height:34px;border-radius:10px;background:var(--accent);color:#06121e;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}'
+. '.user-title h3{margin:0 0 6px;font-size:17px}.user-meta{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13px;color:var(--muted)}'
+. '.user-pills{display:flex;flex-wrap:wrap;gap:8px}.pill{padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700;background:var(--code);border:1px solid var(--border)}'
+. '.pill.site{color:#38bdf8;border-color:rgba(14,165,233,.4)}.pill.software{color:#a78bfa;border-color:rgba(139,92,246,.4)}.pill.mobile{color:#34d399;border-color:rgba(16,185,129,.4)}'
+. '.devices-box{margin-bottom:16px}.devices-box h4,.cat-head h4{margin:0 0 10px;font-size:14px}'
+. '.cat-block{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:12px}.cat-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}'
+. '.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}'
+. 'th{color:var(--muted);font-weight:600;background:rgba(255,255,255,.02)}code{background:var(--code);padding:2px 7px;border-radius:6px;font-family:Consolas,monospace;font-size:12px}'
+. '.badge{padding:2px 8px;border-radius:8px;font-size:12px}.badge.ok{background:rgba(16,185,129,.16);color:#34d399}.badge.no{background:rgba(239,68,68,.16);color:#f87171}'
+. '.empty,.empty-state{text-align:center;color:var(--muted);padding:16px}body.light .hero{background:linear-gradient(135deg,#0284c7,#1d4ed8)}'
+. '@media print{body{background:#fff;color:#000;padding:0}.toolbar,.actions{display:none}.user-card{box-shadow:none;break-inside:avoid}}'
+. '</style></head><body><div class="wrap">'
+. '<header class="hero"><div><h1>☂️ ' . self::htmlEsc($ScopeTitle) . '</h1><div class="sub">🕒 تاریخ و زمان تهیه گزارش: ' . self::htmlEsc($GeneratedAt) . ' | 🔄 بازنشانی خودکار تاریخچه رصد: هر ۲۴ ساعت</div></div>'
+. '<div class="actions"><button class="btn" onclick="document.body.classList.toggle(\'light\')">🌓 تغییر تم</button><button class="btn" onclick="window.print()">🖨 چاپ / ذخیره PDF</button></div></header>'
+. '<section class="stats">'
+. '<div class="stat"><div class="k">👥 کاربران ثبت شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['users'])) . '</div></div>'
+. '<div class="stat"><div class="k">📲 کل دستگاه ها</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['devices'])) . '</div></div>'
+. '<div class="stat"><div class="k">🌐 سایت های رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['site'])) . '</div></div>'
+. '<div class="stat"><div class="k">💻 نرم افزارهای رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['software'])) . '</div></div>'
+. '<div class="stat"><div class="k">📱 اپلیکیشن های رصد شده</div><div class="v">' . self::htmlEsc(Helper::toPersian((string)$Summary['mobile'])) . '</div></div>'
+. '<div class="stat"><div class="k">📊 مجموع ترافیک</div><div class="v" dir="ltr">' . self::htmlEsc($SummaryBytes) . '</div></div>'
+. '</section>'
+. '<div class="toolbar">'
+. '<input id="q" class="search" type="search" placeholder="🔍 جستجو نام کاربر، شماره، دستگاه، سایت، نرم افزار یا اپلیکیشن..." oninput="applyFilter()">'
+. '<div class="filters">'
+. '<button class="fbtn active" data-cat="all" onclick="setCat(\'all\',this)">👁 همه</button>'
+. '<button class="fbtn" data-cat="site" onclick="setCat(\'site\',this)">🌐 سایت ها</button>'
+. '<button class="fbtn" data-cat="software" onclick="setCat(\'software\',this)">💻 نرم افزارها</button>'
+. '<button class="fbtn" data-cat="mobile" onclick="setCat(\'mobile\',this)">📱 اپلیکیشن ها</button>'
+. '<button class="fbtn" id="actOnlyBtn" onclick="toggleActOnly(this)">⚡ فقط دارای فعالیت</button>'
+. '</div></div>'
+. '<main id="cards">' . $CardsHtml . '</main>'
+. '</div><script>'
+. 'var currentCat="all",actOnly=false;'
+. 'function setCat(c,btn){currentCat=c;document.querySelectorAll(".fbtn[data-cat]").forEach(function(b){b.classList.remove("active")});btn.classList.add("active");applyFilter();}'
+. 'function toggleActOnly(btn){actOnly=!actOnly;btn.classList.toggle("active",actOnly);applyFilter();}'
+. 'function applyFilter(){var q=(document.getElementById("q").value||"").trim().toLowerCase();document.querySelectorAll(".user-card").forEach(function(card){var okAct=!actOnly||card.getAttribute("data-has-act")==="1";var okQ=!q||(card.getAttribute("data-search")||"").indexOf(q)!==-1;card.style.display=(okAct&&okQ)?"":"none";card.querySelectorAll(".cat-block").forEach(function(b){var bc=b.getAttribute("data-cat");b.style.display=(currentCat==="all"||currentCat===bc)?"":"none";});card.querySelectorAll("tr.act-row").forEach(function(r){r.style.display=(!q||(r.getAttribute("data-search")||"").indexOf(q)!==-1||(card.getAttribute("data-search")||"").indexOf(q)!==-1)?"":"none";});});}'
+. '</script></body></html>';
+
+return [
+'html' => $Html,
+'summary' => $Summary,
+'title' => $ScopeTitle,
+];
+}
+
+/** تولید و ارسال فایل HTML رصد کاربران یا یک کاربر در تلگرام. */
+public static function userMonitorExportHtml(Context $Context, string $Scope = 'all'): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Scope = ($Scope === 'all' || preg_match('/^(t:[1-9][0-9]*|d:[1-9][0-9]*)$/D', $Scope) === 1) ? $Scope : 'all';
+
+$Report = self::renderMonitorHtmlReport($Scope);
+$Summary = (array)$Report['summary'];
+if ((int)($Summary['users'] ?? 0) <= 0 && $Scope !== 'all') {
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, 'اطلاعاتی برای خروجی این کاربر پیدا نشد.', true);
+}
+return;
+}
+
+$Slug = $Scope === 'all' ? 'all' : preg_replace('/[^A-Za-z0-9_-]/', '-', $Scope);
+$FileName = 'umbrella-monitor-' . $Slug . '-' . gmdate('Ymd-His') . '.html';
+$TmpPath = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . $FileName;
+$Sent = false;
+try {
+if (@file_put_contents($TmpPath, (string)$Report['html']) !== false) {
+$Caption = "📄 <b>" . self::listText((string)$Report['title']) . "</b>\n"
+. '👥 کاربران: ' . Helper::toPersian((string)$Summary['users'])
+. ' | 📱 دستگاه ها: ' . Helper::toPersian((string)$Summary['devices']) . "\n"
+. '🌐 سایت: ' . Helper::toPersian((string)$Summary['site'])
+. ' | 💻 نرم افزار: ' . Helper::toPersian((string)$Summary['software'])
+. ' | 📱 اپلیکیشن: ' . Helper::toPersian((string)$Summary['mobile']);
+$Res = TelegramClient::sendDocument($Context->ChatId, $TmpPath, $Caption);
+$Sent = is_array($Res) && !empty($Res['ok']);
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][MonitorHtml] ' . $Error->getMessage());
+$Sent = false;
+} finally {
+if (is_file($TmpPath)) {
+@unlink($TmpPath);
+}
+}
+
+if ($Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+$Sent ? '📄فایل HTML رصد کاربران ارسال شد.' : '❌ارسال فایل HTML ناموفق بود؛ دوباره تلاش کنید.',
+!$Sent
+);
+}
+}
+
 private static function monitorTimestamp(mixed $Raw): int {
 if (is_int($Raw) || (is_string($Raw) && ctype_digit(trim($Raw)))) {
 return (int)$Raw;
 }
 $Str = trim((string)$Raw);
-if ($Str === '' || $Str === '0000-00-00 00:00:00') return 0;
+if ($Str === '' || str_starts_with($Str, '0000-00-00')) return 0;
+if (method_exists('Helper', 'parseServerTime')) {
+$ServerTs = Helper::parseServerTime($Str);
+if ($ServerTs > 0) return $ServerTs;
+}
 $Parsed = strtotime($Str);
 return $Parsed === false ? 0 : $Parsed;
 }
@@ -939,13 +1491,21 @@ $Page = max(0, min($Page, $Page_Count - 1));
 // نام و منشن از یک رکورد واحد می آیند. شناسه تلگرام اولویت دارد؛
 // شماره فقط وقتی شناسه نداریم و دقیقاً یک کاربر منطبق است استفاده می شود.
 $Rows = $Database->fetchAll(
-'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
-. '`U`.`Full_Name` AS `Owner_Name`, '
+'SELECT `D`.`ID`, `D`.`Device_ID`, `D`.`Device_Name`, `D`.`Full_Name` AS `Device_Full_Name`, `D`.`User_UUID`, `D`.`Platform`, `D`.`Phone`, `D`.`Telegram_ID`, `D`.`Is_Trusted`, `D`.`First_Seen_At`, `D`.`Last_Seen_At`, `D`.`Last_IP`, `D`.`App_Version`, '
+. 'COALESCE('
+. 'NULLIF(TRIM(`U`.`Full_Name`), \'\'), '
+. 'NULLIF(TRIM(`D`.`Full_Name`), \'\'), '
+. '(SELECT `R`.`Full_Name` FROM `App_SignIn_Requests` AS `R` WHERE ('
+. '`R`.`Device_ID` = `D`.`Device_ID` OR '
+. '(`D`.`User_UUID` IS NOT NULL AND LENGTH(`D`.`User_UUID`) > 0 AND `R`.`User_UUID` = `D`.`User_UUID`) OR '
+. '(`D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `R`.`Phone` = `D`.`Phone`)'
+. ') AND `R`.`Full_Name` IS NOT NULL AND LENGTH(TRIM(`R`.`Full_Name`)) > 0 ORDER BY `R`.`ID` DESC LIMIT 1)'
+. ') AS `Owner_Name`, '
 . 'CASE WHEN `D`.`Telegram_ID` > 0 THEN `D`.`Telegram_ID` ELSE `U`.`Telegram_ID` END AS `Owner_Telegram_ID` '
 . 'FROM `App_Devices` AS `D` LEFT JOIN `Users` AS `U` ON `U`.`ID` = ('
 . 'SELECT MIN(`O`.`ID`) FROM `Users` AS `O` WHERE '
 . '(`D`.`Telegram_ID` > 0 AND `O`.`Telegram_ID` = `D`.`Telegram_ID`) OR '
-. '(COALESCE(`D`.`Telegram_ID`, 0) <= 0 AND `D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `O`.`Phone` = `D`.`Phone`) '
+. '(COALESCE(`D`.`Telegram_ID`, 0) <= 0 AND ((`D`.`User_UUID` IS NOT NULL AND LENGTH(`D`.`User_UUID`) > 0 AND `O`.`Client_ID` = `D`.`User_UUID`) OR (`D`.`Phone` IS NOT NULL AND LENGTH(`D`.`Phone`) > 0 AND `O`.`Phone` = `D`.`Phone`))) '
 . 'HAVING COUNT(*) = 1) '
 . 'WHERE `D`.`Is_Trusted` = 1 '
 . 'ORDER BY `D`.`Last_Seen_At` DESC, `D`.`ID` DESC LIMIT ? OFFSET ?',
@@ -973,14 +1533,22 @@ foreach ($Rows as $Index => $Row) {
 $Number = Helper::toPersian((string)($Page * $Page_Size + $Index + 1));
 $Trusted = (int)($Row['Is_Trusted'] ?? 0) === 1;
 $Device_Name = trim((string)($Row['Device_Name'] ?? '')) ?: 'دستگاه بی نام';
-$Owner = trim((string)($Row['Owner_Name'] ?? '')) ?: 'نام کامل ثبت نشده';
+$Owner_Raw = self::cleanMonitorPersonName((string)($Row['Owner_Name'] ?? ''))
+?: self::cleanMonitorPersonName((string)($Row['Device_Full_Name'] ?? ($Row['Full_Name'] ?? '')));
+$Owner = $Owner_Raw !== '' ? $Owner_Raw : 'نام کامل ثبت نشده';
 $Owner_Id = (int)($Row['Owner_Telegram_ID'] ?? 0);
 $Owner_Label = $Plain($Owner, 190);
 if ($Owner_Id > 0) {
 $Owner_Label = '<a href="tg://user?id=' . $Owner_Id . '">' . $Owner_Label . '</a>';
 }
 $When_Raw = trim((string)($Row['Last_Seen_At'] ?? ''));
-$When_Label = method_exists('Helper', 'formatDateTimeText') ? Helper::formatDateTimeText($When_Raw) : ($When_Raw !== '' && $When_Raw !== '0000-00-00 00:00:00' ? $When_Raw : 'ثبت نشده');
+if ($When_Raw === '' || str_starts_with($When_Raw, '0000-00-00')) {
+$First_Raw = trim((string)($Row['First_Seen_At'] ?? ''));
+if ($First_Raw !== '' && !str_starts_with($First_Raw, '0000-00-00')) {
+$When_Raw = $First_Raw;
+}
+}
+$When_Label = method_exists('Helper', 'formatDateTimeText') ? Helper::formatDateTimeText($When_Raw) : ($When_Raw !== '' && !str_starts_with($When_Raw, '0000-00-00') ? $When_Raw : 'ثبت نشده');
 $Platform_Raw = (string)($Row['Platform'] ?? '');
 $Platform_Label = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($Platform_Raw) : $Platform_Raw;
 $Text .= "\n📱دستگاه شماره {$Number}\n"

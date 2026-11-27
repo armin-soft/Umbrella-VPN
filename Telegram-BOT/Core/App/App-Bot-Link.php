@@ -166,8 +166,30 @@ if ((int)($Panel['telegram_id'] ?? 0) !== $Id) throw new RuntimeException('panel
 $Linked_Panel = $Panel;
 $SignIn = $Db->fetch("SELECT `Full_Name` FROM `App_SignIn_Requests` WHERE `User_UUID` = ? AND `Device_ID` = ? AND `Phone` = ? AND `Stage` = 'approved' ORDER BY `ID` DESC LIMIT 1", [$UUID, $Row['Device_ID'], $Phone]);
 $Name = trim((string)($SignIn['Full_Name'] ?? ''));
+if ($Name === '' || in_array($Name, ['_', 'کاربر', 'کاربر آمبرلا'], true) || preg_match('/^user-[0-9]+$/i', $Name) === 1) {
+$SignInAny = $Db->fetch("SELECT `Full_Name` FROM `App_SignIn_Requests` WHERE (`User_UUID` = ? OR `Phone` = ?) AND `Full_Name` IS NOT NULL AND LENGTH(TRIM(`Full_Name`)) > 0 ORDER BY `ID` DESC LIMIT 1", [$UUID, $Phone]);
+$Candidate = trim((string)($SignInAny['Full_Name'] ?? ''));
+if ($Candidate !== '' && !in_array($Candidate, ['_', 'کاربر', 'کاربر آمبرلا'], true) && preg_match('/^user-[0-9]+$/i', $Candidate) !== 1) {
+$Name = $Candidate;
+} else {
+$Name = '';
+}
+}
+if ($Name === '') {
+$DevRow = $Db->fetch('SELECT `Full_Name` FROM `App_Devices` WHERE `Device_ID` = ? LIMIT 1', [$Row['Device_ID']]);
+$Candidate = trim((string)($DevRow['Full_Name'] ?? ''));
+if ($Candidate !== '' && !in_array($Candidate, ['_', 'کاربر', 'کاربر آمبرلا'], true) && preg_match('/^user-[0-9]+$/i', $Candidate) !== 1) {
+$Name = $Candidate;
+}
+}
+if ($Name === '') {
+$Candidate = trim((string)($Panel['name'] ?? ''));
+if ($Candidate !== '' && !in_array($Candidate, ['_', 'کاربر', 'کاربر آمبرلا'], true) && preg_match('/^user-[0-9]+$/i', $Candidate) !== 1) {
+$Name = $Candidate;
+}
+}
 $Db->execute('UPDATE `Users` SET `Client_ID` = ?, `Phone` = CASE WHEN `Phone` IS NULL OR `Phone` = ? THEN ? ELSE `Phone` END, `Full_Name` = CASE WHEN `Full_Name` IS NULL OR `Full_Name` = ? THEN ? ELSE `Full_Name` END WHERE `Telegram_ID` = ?', [$UUID, '', $Phone, '', $Name, $Id]);
-$Db->execute('UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)', [$Id, $UUID, $Id]);
+$Db->execute('UPDATE `App_Devices` SET `Telegram_ID` = ?, `Full_Name` = CASE WHEN (`Full_Name` IS NULL OR `Full_Name` = \'\') AND ? <> \'\' THEN ? ELSE `Full_Name` END WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)', [$Id, $Name, $Name, $UUID, $Id]);
 $Db->execute('UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)', [$Id, $UUID, $Id]);
 $Db->execute('UPDATE `App_Bot_Link_Requests` SET `Used_At` = ? WHERE `Token_Hash` = ?', [time(), hash('sha256', $Token)]);
 });

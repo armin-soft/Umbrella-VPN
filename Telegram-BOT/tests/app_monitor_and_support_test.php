@@ -145,6 +145,7 @@ return false;
 }));
 }
 if (str_contains($Q, 'FROM `App_User_Activity`')) {
+if ($P === []) return self::$Activities;
 return array_values(array_filter(self::$Activities, static function (array $A) use ($P): bool {
 foreach ($P as $Param) {
 if ($Param === ($A['Device_ID'] ?? '') || $Param === (int)($A['Telegram_ID'] ?? -1) || $Param === ($A['User_UUID'] ?? '')) return true;
@@ -198,6 +199,7 @@ public static string $LastText = '';
 public static array $LastMarkup = [];
 public static string $LastAlert = '';
 public static array $ReadableSent = [];
+public static array $LastDocument = [];
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function sendMessage(int $ChatId, string $Text, array $Markup = []): array { self::$LastText = $Text; self::$LastMarkup = $Markup; return ['ok' => true]; }
 public static function editOrSendMessage(int $ChatId, ?int $MessageId, string $Text, array $Markup = []): void { self::$LastText = $Text; self::$LastMarkup = $Markup; }
@@ -208,6 +210,15 @@ self::$LastText = $Text;
 self::$LastMarkup = $Markup;
 self::$ReadableSent[] = [$ChatId, $Text, $Markup];
 return true;
+}
+public static function sendDocument(int $ChatId, string $Path, string $Caption = '', array $Markup = []): array {
+self::$LastDocument = [
+'chat_id' => $ChatId,
+'path' => $Path,
+'caption' => $Caption,
+'content' => is_file($Path) ? (string)file_get_contents($Path) : '',
+];
+return ['ok' => true];
 }
 }
 
@@ -344,15 +355,46 @@ $AdminCtx = new Context(true);
 AdminFlow::userMonitorList($AdminCtx, 0);
 check(str_contains(TelegramClient::$LastText, 'سارا محمدی') && str_contains(TelegramClient::$LastText, 'Galaxy A54'), 'userMonitorList shows both Telegram-linked and app-only users');
 check(!str_contains(TelegramClient::$LastText, 'بخش') && str_contains(TelegramClient::$LastText, 'هر ۲۴ ساعت'), 'userMonitorList omits screen count and documents 24h auto-reset');
+check(str_contains(TelegramClient::$LastText, 'سایت |') && str_contains(TelegramClient::$LastText, 'نرم افزار |') && str_contains(TelegramClient::$LastText, 'اپلیکیشن'), 'userMonitorList separates site, desktop software and mobile application counters');
 $AllMonitorBtns = array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? []));
 $MonitorCallbacks = array_column($AllMonitorBtns, 'callback_data');
 check(in_array('admin_monitor_view:t:101:0:all:0', $MonitorCallbacks, true) && in_array('admin_monitor_view:d:8:0:all:0', $MonitorCallbacks, true), 'user monitor exposes clickable user detail callbacks');
+check(in_array('admin_monitor_html:all', $MonitorCallbacks, true), 'userMonitorList exposes HTML export callback');
 
 $Route = new ReflectionMethod(Dispatcher::class, 'routeCallbackInner');
 $AdminCtx->CallbackData = 'admin_monitor_view:t:101:0:all:0';
 $Route->invoke(null, $AdminCtx);
 check(str_contains(TelegramClient::$LastText, 'github.com') && str_contains(TelegramClient::$LastText, 'Telegram') && !str_contains(TelegramClient::$LastText, 'اتصال'), 'userMonitorView displays opened sites and exact software name without in-app screens');
 check(str_contains(TelegramClient::$LastText, 'Laptop &lt;Win&gt;'), 'userMonitorView HTML-escapes client device names');
+
+$ViewAllCbs = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [])), 'callback_data');
+check(in_array('admin_monitor_tab:t:101:0:software', $ViewAllCbs, true) && in_array('admin_monitor_tab:t:101:0:mobile', $ViewAllCbs, true), 'userMonitorView provides separate software and mobile app filter tabs');
+check(in_array('admin_monitor_html:t:101', $ViewAllCbs, true), 'userMonitorView provides per-user HTML export callback');
+
+// Verify distinct software vs mobile filtering and HTML export
+$AdminCtx->CallbackData = 'admin_monitor_tab:t:101:0:software';
+$Route->invoke(null, $AdminCtx);
+check(str_contains(TelegramClient::$LastText, 'Telegram') && !str_contains(TelegramClient::$LastText, 'github.com'), 'software tab isolates desktop software from websites');
+
+$AdminCtx->CallbackData = 'admin_monitor_tab:d:8:0:mobile';
+$Route->invoke(null, $AdminCtx);
+check(str_contains(TelegramClient::$LastText, 'Google Chrome') && !str_contains(TelegramClient::$LastText, 'Telegram'), 'mobile tab isolates Android apps cleanly');
+
+TelegramClient::$LastDocument = [];
+$AdminCtx->CallbackData = 'admin_monitor_html:all';
+$Route->invoke(null, $AdminCtx);
+check(!empty(TelegramClient::$LastDocument['content']) && str_contains(TelegramClient::$LastDocument['content'], '<!DOCTYPE html>') && str_contains(TelegramClient::$LastDocument['content'], 'سایت های باز شده') && str_contains(TelegramClient::$LastDocument['content'], 'نرم افزارهای باز شده') && str_contains(TelegramClient::$LastDocument['content'], 'اپلیکیشن های باز شده'), 'HTML export generates complete separated RTL report and sends document');
+check(str_contains(TelegramClient::$LastDocument['content'], 'Laptop &lt;Win&gt;') && !is_file(TelegramClient::$LastDocument['path']), 'HTML export escapes device names and deletes temp file after send');
+
+// App-only registered user displays Full_Name stored on App_Devices when Telegram is unlinked
+Database::$Devices[1]['Full_Name'] = 'زهرا کریمی';
+AdminFlow::userMonitorList($AdminCtx, 0);
+check(str_contains(TelegramClient::$LastText, 'زهرا کریمی'), 'userMonitorList displays Full_Name for app-registered user without Telegram');
+Database::$Devices[1]['Full_Name'] = '';
+
+// Restore target view before legacy category checks
+$AdminCtx->CallbackData = 'admin_monitor_view:t:101:0:all:0';
+$Route->invoke(null, $AdminCtx);
 
 $AdminCtx->CallbackData = 'admin_monitor_view:d:8:0:app:0';
 $Route->invoke(null, $AdminCtx);
@@ -437,9 +479,11 @@ check((int)Repository::getSetting('Last_User_Activity_Reset_At', '0') >= time() 
 $SchedulerCode = (string)file_get_contents(dirname(__DIR__) . '/Bot/Scheduler.php');
 check(str_contains($SchedulerCode, 'self::purgeUserActivityIfDue();'), 'Scheduler::run invokes purgeUserActivityIfDue');
 
-// 8. No forbidden English VPN wording in monitored admin/app notices
+// 8. No forbidden English VPN wording in monitored admin/app notices + TIMESTAMP datetime writes + Full_Name schema
 $AdminSrc = (string)file_get_contents(dirname(__DIR__) . '/Bot/Admin.php');
 $AppLinkSrc = (string)file_get_contents(dirname(__DIR__) . '/Bot/App-Link.php');
 check(!str_contains($AdminSrc, 'اتصال VPN') && !str_contains($AppLinkSrc, 'خارج از VPN') && !str_contains($GatewayCode, 'اتصال VPN'), 'Persian VPN notices avoid raw English VPN wording');
+check(str_contains($SchemaApp, '`Full_Name` VARCHAR(190) NULL') && str_contains($SchemaSql, '`Full_Name` VARCHAR(190) NULL'), 'App_Devices schema defines Full_Name column');
+check(str_contains($GatewayCode, 'private static function tehranNow(): string') && !str_contains($GatewayCode, "[time(), \$Telegram_Id"), 'AppGateway uses formatted datetime strings for TIMESTAMP columns instead of raw Unix integer timestamps');
 
 echo "OK monitor and support tests ({$Checks} assertions)\n";

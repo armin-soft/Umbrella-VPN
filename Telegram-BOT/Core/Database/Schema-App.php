@@ -36,6 +36,100 @@ try {
 $Exists = $Database->scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'App_Notifications' AND column_name = 'Event_Key'");
 if (!(int)$Exists) $Database->connection()->exec('ALTER TABLE `App_Notifications` ADD COLUMN `Event_Key` CHAR(64) NULL UNIQUE');
 } catch (Throwable $Error) { error_log('[Umbrella-Bot][AppSchema] notification event key: ' . $Error->getMessage()); }
+
+try {
+$HasFullName = (int)$Database->scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'App_Devices' AND column_name = 'Full_Name'");
+if ($HasFullName === 0) {
+$Database->connection()->exec('ALTER TABLE `App_Devices` ADD COLUMN `Full_Name` VARCHAR(190) NULL AFTER `Device_Name`');
+}
+$Backfilled = '';
+try {
+$Backfilled = (string)$Database->scalar("SELECT `Value` FROM `Settings` WHERE `Key` = 'App_Devices_Backfill_V1' LIMIT 1", [], '');
+} catch (Throwable) {
+$Backfilled = '';
+}
+if ($HasFullName === 0 || $Backfilled !== '1') {
+self::backfillDeviceIdentityAndSeen($Database);
+try {
+$Database->execute(
+'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
+['App_Devices_Backfill_V1', '1']
+);
+} catch (Throwable) {}
+}
+} catch (Throwable $Error) { error_log('[Umbrella-Bot][AppSchema] devices full name: ' . $Error->getMessage()); }
+}
+
+private static function backfillDeviceIdentityAndSeen(Database $Database): void {
+try {
+$Devices = $Database->fetchAll(
+'SELECT `ID`, `Device_ID`, `User_UUID`, `Telegram_ID`, `Phone`, `Full_Name`, '
+. 'CAST(`First_Seen_At` AS CHAR) AS `First_Char`, CAST(`Last_Seen_At` AS CHAR) AS `Last_Char` '
+. 'FROM `App_Devices` ORDER BY `ID` ASC',
+[]
+);
+$Tz = new DateTimeZone('Asia/Tehran');
+foreach ($Devices as $Dev) {
+$Id = (int)($Dev['ID'] ?? 0);
+$DevId = (string)($Dev['Device_ID'] ?? '');
+$Uuid = trim((string)($Dev['User_UUID'] ?? ''));
+$TgId = (int)($Dev['Telegram_ID'] ?? 0);
+$Phone = trim((string)($Dev['Phone'] ?? ''));
+if ($Id <= 0 || $DevId === '') continue;
+
+$CurrentName = trim((string)($Dev['Full_Name'] ?? ''));
+$ResolvedName = '';
+if ($CurrentName === '') {
+if ($TgId > 0) {
+$U = $Database->fetch('SELECT `Full_Name` FROM `Users` WHERE `Telegram_ID` = ? LIMIT 1', [$TgId]);
+$ResolvedName = trim((string)($U['Full_Name'] ?? ''));
+}
+if ($ResolvedName === '' && $Uuid !== '' && $Uuid !== '_') {
+$U = $Database->fetch('SELECT `Full_Name` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$Uuid]);
+$ResolvedName = trim((string)($U['Full_Name'] ?? ''));
+}
+if ($ResolvedName === '' && $Phone !== '') {
+$U = $Database->fetch('SELECT `Full_Name` FROM `Users` WHERE `Phone` = ? LIMIT 1', [$Phone]);
+$ResolvedName = trim((string)($U['Full_Name'] ?? ''));
+}
+if ($ResolvedName === '') {
+$Req = $Database->fetch(
+'SELECT `Full_Name` FROM `App_SignIn_Requests` '
+. 'WHERE (`Device_ID` = ? OR (`User_UUID` IS NOT NULL AND `User_UUID` <> \'\' AND `User_UUID` = ?) OR (`Phone` IS NOT NULL AND `Phone` <> \'\' AND `Phone` = ?)) '
+. 'AND `Full_Name` IS NOT NULL AND LENGTH(TRIM(`Full_Name`)) > 0 '
+. 'ORDER BY `ID` DESC LIMIT 1',
+[$DevId, $Uuid, $Phone]
+);
+$ResolvedName = trim((string)($Req['Full_Name'] ?? ''));
+}
+if (in_array($ResolvedName, ['_', 'کاربر', 'کاربر آمبرلا'], true) || preg_match('/^user-[0-9]+$/i', $ResolvedName) === 1) {
+$ResolvedName = '';
+}
+}
+
+$LastChar = trim((string)($Dev['Last_Char'] ?? ''));
+$FirstChar = trim((string)($Dev['First_Char'] ?? ''));
+$FixedSeen = '';
+if ($LastChar === '' || str_starts_with($LastChar, '0000-00-00')) {
+$ActTs = (int)$Database->scalar('SELECT COALESCE(MAX(`Last_Seen_At`), 0) FROM `App_User_Activity` WHERE `Device_ID` = ?', [$DevId], 0);
+if ($ActTs > 0) {
+$FixedSeen = (new DateTimeImmutable('@' . $ActTs))->setTimezone($Tz)->format('Y-m-d H:i:s');
+} elseif ($FirstChar !== '' && !str_starts_with($FirstChar, '0000-00-00')) {
+$FixedSeen = $FirstChar;
+}
+}
+
+if ($ResolvedName !== '' && $FixedSeen !== '') {
+$Database->execute('UPDATE `App_Devices` SET `Full_Name` = ?, `Last_Seen_At` = ? WHERE `ID` = ?', [$ResolvedName, $FixedSeen, $Id]);
+} elseif ($ResolvedName !== '') {
+$Database->execute('UPDATE `App_Devices` SET `Full_Name` = ? WHERE `ID` = ?', [$ResolvedName, $Id]);
+} elseif ($FixedSeen !== '') {
+$Database->execute('UPDATE `App_Devices` SET `Last_Seen_At` = ? WHERE `ID` = ?', [$FixedSeen, $Id]);
+}
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][AppSchema] backfill devices: ' . $Error->getMessage());
+}
 }
 
 private static function statements(): array {
@@ -77,6 +171,7 @@ KEY `IDX_App_Bot_Link_Expiry` (`Expires_At`)
 `Client_ID` VARCHAR(255) NULL,
 `Telegram_ID` BIGINT NULL,
 `Device_Name` VARCHAR(190) NULL,
+`Full_Name` VARCHAR(190) NULL,
 `Platform` VARCHAR(190) NULL,
 `App_Version` VARCHAR(40) NULL,
 `Phone` VARCHAR(20) NULL,

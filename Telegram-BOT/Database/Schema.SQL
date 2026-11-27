@@ -277,6 +277,7 @@ CREATE TABLE IF NOT EXISTS `App_Devices` (
 `Client_ID` VARCHAR(255) NULL,
 `Telegram_ID` BIGINT NULL,
 `Device_Name` VARCHAR(190) NULL,
+`Full_Name` VARCHAR(190) NULL,
 `Platform` VARCHAR(190) NULL,
 `App_Version` VARCHAR(40) NULL,
 `Phone` VARCHAR(20) NULL,

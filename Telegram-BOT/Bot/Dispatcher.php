@@ -589,13 +589,17 @@ AdminFlow::accountUserView($Context, (int)$Match[1], (int)$Match[2]); return;
 if (preg_match('/^admin_user_monitor_page:([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::userMonitorList($Context, (int)$Match[1]); return;
 }
-if (preg_match('/^admin_monitor_view:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen):([0-9]+)$/D', $Data, $Match)) {
+if (str_starts_with($Data, 'admin_monitor_html:')) {
+$Scope = substr($Data, strlen('admin_monitor_html:'));
+AdminFlow::userMonitorExportHtml($Context, $Scope); return;
+}
+if (preg_match('/^admin_monitor_view:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|software|mobile|app|screen):([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], (int)$Match[4]); return;
 }
-if (preg_match('/^admin_monitor_tab:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen)$/D', $Data, $Match)) {
+if (preg_match('/^admin_monitor_tab:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|software|mobile|app|screen)$/D', $Data, $Match)) {
 AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], 0); return;
 }
-if (preg_match('/^admin_monitor_refresh:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen):([0-9]+)$/D', $Data, $Match)) {
+if (preg_match('/^admin_monitor_refresh:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|software|mobile|app|screen):([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::userMonitorView($Context, $Match[1], (int)$Match[2], $Match[3], (int)$Match[4]); return;
 }
 if (preg_match('/^admin_monitor_clrall:([0-9]+)$/D', $Data, $Match)) {
@@ -604,10 +608,10 @@ AdminFlow::userMonitorClearAllAsk($Context, (int)$Match[1]); return;
 if (preg_match('/^admin_monitor_clrall_ok:([0-9]+)$/D', $Data, $Match)) {
 AdminFlow::userMonitorClearAllConfirm($Context, (int)$Match[1]); return;
 }
-if (preg_match('/^admin_monitor_clr:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen)$/D', $Data, $Match)) {
+if (preg_match('/^admin_monitor_clr:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|software|mobile|app|screen)$/D', $Data, $Match)) {
 AdminFlow::userMonitorClearUserAsk($Context, $Match[1], (int)$Match[2], $Match[3]); return;
 }
-if (preg_match('/^admin_monitor_clrok:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|app|screen)$/D', $Data, $Match)) {
+if (preg_match('/^admin_monitor_clrok:(t:[1-9][0-9]*|d:[1-9][0-9]*):([0-9]+):(all|site|software|mobile|app|screen)$/D', $Data, $Match)) {
 AdminFlow::userMonitorClearUserConfirm($Context, $Match[1], (int)$Match[2], $Match[3]); return;
 }
 
