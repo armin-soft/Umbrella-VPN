@@ -11,6 +11,7 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:umbrella_vpn/core/malicious_link_guard.dart';
+import 'package:umbrella_vpn/core/safe_url_launcher.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/data/gateway_client.dart';
@@ -805,6 +806,110 @@ void main() {
         MaliciousLinkGuard.inspectUrl('https://telegram.org'),
         isNull,
       );
+      expect(
+        MaliciousLinkGuard.inspectUrl(
+          'http://127.0.0.1:49201/blocked?domain=grabify.link&category=security',
+        ),
+        isNull,
+      );
+
+      // فناوری های تشخیص لینک ۲۰۲۶:
+      // ۱. دیکدر Punycode (RFC 3492) و هموگراف سیریلیک (مثلاً pаypal.com = xn--pypal-4ve.com)
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://xn--pypal-4ve.com/signin'),
+        isNotNull,
+      );
+      // ۲. ترکیب الفبای لاتین و سیریلیک (Mixed-Script Homoglyph)
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://te\u0406egram.org/login'),
+        isNotNull,
+      );
+      // ۳. آی پی مبهم (Decimal / Hex / Octal)
+      expect(
+        MaliciousLinkGuard.inspectUrl('http://3232235826/login'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl('http://0x7f000001/payload'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl('http://0177.0.0.1/gate'),
+        isNotNull,
+      );
+      // ۴. فریب @ Userinfo
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://telegram.org@evil.com/auth'),
+        isNotNull,
+      );
+      // ۵. جعل برند در زیردامنه، Combosquatting و Typosquatting
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://telegram.org.verify-gift.xyz/claim'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://shaparak-pay.top/portal'),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://telegrma.com/login'),
+        isNotNull,
+      );
+      // ۶. بازرسی بازگشتی Open Redirect و Base64 Payload
+      expect(
+        MaliciousLinkGuard.inspectUrl(
+          'https://www.google.com/url?q=https://grabify.link/track',
+        ),
+        isNotNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl(
+          'https://middle.example/go?next=aHR0cHM6Ly9ncmFiaWZ5LmxpbmsveHl6',
+        ),
+        isNotNull,
+      );
+    });
+
+    test('SafeUrlLauncher ریدایرکت کوتاه کننده لینک را پیش از باز شدن مسدود می کند', () async {
+      MaliciousLinkMatch? blocked;
+      final void Function(MaliciousLinkMatch)? prev =
+          SafeUrlLauncher.onThreatBlocked;
+      SafeUrlLauncher.onThreatBlocked = (MaliciousLinkMatch m) => blocked = m;
+      addTearDown(() => SafeUrlLauncher.onThreatBlocked = prev);
+
+      bool opened = false;
+      final bool allowed = await SafeUrlLauncher.open(
+        Uri.parse('https://bit.ly/3phish2026'),
+        redirectResolver: (Uri u) async =>
+            Uri.parse('https://telegram.org.verify-account.xyz/auth'),
+        launcher: (_, __) async {
+          opened = true;
+          return true;
+        },
+      );
+      expect(allowed, isFalse);
+      expect(opened, isFalse);
+      expect(blocked, isNotNull);
+    });
+
+    test('تاریخچه نسخه ها در UpdatesPage موارد تغییرات را زیر هم تفکیک می کند', () {
+      const UpdateInfo rel = UpdateInfo(
+        version: '1.0.2',
+        downloadUrl: 'https://example.invalid/app.apk',
+        notes:
+            '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.2 • امضای دائمی و یکپارچه نسخه اندروید • ارتقای اسکنر امنیتی اندروید',
+      );
+      expect(rel.changelogItems, <String>[
+        '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.2',
+        'امضای دائمی و یکپارچه نسخه اندروید',
+        'ارتقای اسکنر امنیتی اندروید',
+      ]);
+
+      final String updatesUi = File(
+        'lib/ui/pages/updates_page.dart',
+      ).readAsStringSync();
+      expect(updatesUi, isNot(contains("join(' · ')")));
+      expect(updatesUi, contains('noteItems:'));
     });
 
     test('تصویر یا فایل دانلودی آلوده خودکار حذف شده و به تلگرام گزارش می شود', () async {

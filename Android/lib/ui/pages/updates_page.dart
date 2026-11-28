@@ -390,8 +390,11 @@ class _UpdatesPageState extends State<UpdatesPage> {
                   _VersionRow(
                     version: AppConfig.version,
                     date: 'نسخه فعلی',
-                    notes:
-                        'هسته به روز شده با مصرف پردازنده کمتر، کنترل محتوای همگام با ربات، کانال پایدار و بتا و نصب درون برنامه ای.',
+                    noteItems: const <String>[
+                      'هسته به روز شده با مصرف پردازنده کمتر و پایداری بیشتر',
+                      'کنترل محتوای همگام با ربات و سپر امنیتی همیشه فعال',
+                      'پشتیبانی از کانال انتشار پایدار و بتا با نصب درون برنامه ای',
+                    ],
                     current: true,
                     preRelease: false,
                   )
@@ -402,9 +405,11 @@ class _UpdatesPageState extends State<UpdatesPage> {
                       date: item.publishedAt != null
                           ? Fa.tehranDate(item.publishedAt)
                           : (item.preRelease ? 'انتشار بتا' : 'انتشار رسمی'),
-                      notes: item.changelogItems.isNotEmpty
-                          ? item.changelogItems.take(3).join(' · ')
-                          : 'بهبود پایداری اتصال، سرعت هسته و رفع خطاها.',
+                      noteItems: item.changelogItems.isNotEmpty
+                          ? item.changelogItems.take(6).toList(growable: false)
+                          : const <String>[
+                              'بهبود پایداری اتصال، سرعت هسته و رفع خطاها.',
+                            ],
                       current: item.isCurrentVersion,
                       preRelease: item.preRelease,
                     ),
@@ -552,14 +557,14 @@ class _VersionRow extends StatelessWidget {
   const _VersionRow({
     required this.version,
     required this.date,
-    required this.notes,
+    required this.noteItems,
     this.current = false,
     this.preRelease = false,
   });
 
   final String version;
   final String date;
-  final String notes;
+  final List<String> noteItems;
   final bool current;
   final bool preRelease;
 
@@ -619,13 +624,30 @@ class _VersionRow extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppMetrics.space2),
-          Text(
-            Fa.num(notes),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.65,
-                ),
-          ),
+          for (int i = 0; i < noteItems.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == noteItems.length - 1 ? 0 : AppMetrics.space1,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '•  ',
+                    style: TextStyle(color: colors.primary),
+                  ),
+                  Expanded(
+                    child: Text(
+                      Fa.num(noteItems[i]),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.6,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

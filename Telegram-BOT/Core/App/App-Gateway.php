@@ -2532,7 +2532,7 @@ $DeviceName = trim((string)($DeviceRow['Device_Name'] ?? ''));
 if ($Platform === '' && $DeviceRow !== null) {
 $Platform = trim((string)($DeviceRow['Platform'] ?? ''));
 }
-self::storeSecurityDeviceState($EffectiveDeviceId, $Payload);
+self::storeSecurityDeviceState($EffectiveDeviceId, $Body);
 
 $Now = time();
 $Cooldown = 86400; // 24 hours per active threat key per device to prevent spam
@@ -2614,7 +2614,7 @@ if (!in_array($Severity, ['critical', 'high', 'medium', 'low'], true)) {
 $Severity = 'high';
 }
 $Action = strtolower(trim((string)($Item['action'] ?? 'deleted')));
-if (!in_array($Action, ['deleted', 'blocked_connection', 'quarantined'], true)) {
+if (!in_array($Action, ['deleted', 'blocked_connection', 'blocked_url', 'quarantined'], true)) {
 $Action = 'deleted';
 }
 $Target = mb_substr(trim((string)($Item['target'] ?? '')), 0, 240);
@@ -2770,7 +2770,7 @@ $MsgLines[] = '';
 $MsgLines[] = '✅ <b>موارد خطرناک زیر شناسایی و فوراً حذف / مسدود شدند:</b>';
 foreach (array_slice($ToNotifyNeutralized, 0, 8) as $Item) {
 $ActionPrefix = match($Item['action']) {
-'blocked_connection' => '🚫 مسدودسازی لینک / دامنه تروجانی',
+'blocked_connection', 'blocked_url' => '🚫 مسدودسازی لینک / دامنه تروجانی',
 'quarantined' => '🛡 قرنطینه امنیتی فایل',
 default => '🗑 حذف خودکار فایل / بدافزار آلوده',
 };

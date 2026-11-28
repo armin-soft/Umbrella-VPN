@@ -3548,37 +3548,42 @@ class UpdateInfo {
   bool get isCurrentVersion =>
       compareVersions(version, AppConfig.version) == 0;
 
-  /// یادداشت های انتشار پاک سازی شده برای نمایش خوانا داخل برنامه.
+  /// یادداشت های انتشار پاک سازی شده برای نمایش خوانا به صورت خطوط مجزا زیر هم.
   List<String> get changelogItems {
     if (notes.trim().isEmpty) {
       return const <String>[];
     }
     final List<String> out = <String>[];
     for (final String raw in notes.replaceAll('\r\n', '\n').split('\n')) {
-      String line = raw
-          .replaceAll('\u200c', ' ')
-          .replaceFirst(RegExp(r'^\s*#{1,6}\s*'), '')
-          .replaceFirst(RegExp(r'^\s*[-*•]\s*'), '')
-          .replaceAll('**', '')
-          .replaceAll('`', '')
-          .replaceAll(RegExp(r'https?://\S+'), '')
-          .replaceAll(RegExp(r'\s{2,}'), ' ')
-          .trim();
-      if (line.isEmpty || RegExp(r'^[-=_]{3,}$').hasMatch(line)) {
-        continue;
-      }
-      if (line.toLowerCase().startsWith('full changelog')) {
-        continue;
-      }
-      if (RegExp(
-        r'^(?:sha[-_ ]?256\s*[:=]\s*)?[0-9a-fA-F]{64}(?:\s+\S+)?$',
-        caseSensitive: false,
-      ).hasMatch(line)) {
-        continue;
-      }
-      out.add(line);
-      if (out.length >= 8) {
-        break;
+      final List<String> segments = raw.contains('•') || raw.contains('·')
+          ? raw.split(RegExp(r'\s*[•·]\s*'))
+          : <String>[raw];
+      for (final String seg in segments) {
+        String line = seg
+            .replaceAll('\u200c', ' ')
+            .replaceFirst(RegExp(r'^\s*#{1,6}\s*'), '')
+            .replaceFirst(RegExp(r'^\s*[-*•]\s*'), '')
+            .replaceAll('**', '')
+            .replaceAll('`', '')
+            .replaceAll(RegExp(r'https?://\S+'), '')
+            .replaceAll(RegExp(r'\s{2,}'), ' ')
+            .trim();
+        if (line.isEmpty || RegExp(r'^[-=_]{3,}$').hasMatch(line)) {
+          continue;
+        }
+        if (line.toLowerCase().startsWith('full changelog')) {
+          continue;
+        }
+        if (RegExp(
+          r'^(?:sha[-_ ]?256\s*[:=]\s*)?[0-9a-fA-F]{64}(?:\s+\S+)?$',
+          caseSensitive: false,
+        ).hasMatch(line)) {
+          continue;
+        }
+        out.add(line);
+        if (out.length >= 10) {
+          return out;
+        }
       }
     }
     return out;

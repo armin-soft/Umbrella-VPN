@@ -457,13 +457,30 @@ $Res5 = $ProcessAlert->invoke(null, [
 'target' => 'https://grabify.link/ABCD',
 'detail' => 'ارتباط با دامنه تروجانی یا فیشینگ در لحظه قطع شد.',
 ],
+[
+'key' => 'link:homoglyph:pаypal',
+'name' => 'لینک فیشینگ هموگراف مسدود شد',
+'category' => 'malicious_link',
+'severity' => 'critical',
+'action' => 'blocked_url',
+'target' => 'https://xn--pypal-4ve.com/login',
+'detail' => 'دامنه جعلی هموگراف پیش از باز شدن در مرورگر مسدود شد.',
 ],
+],
+'security_status' => 'safe',
+'scanned_at_ms' => 1763800009000,
+'scanned_files' => 84,
+'scanned_apps' => 25,
+'scanned_processes' => 42,
 ]);
-check($Res5['neutralized_count'] === 2 && $Res5['notified'] === true, 'neutralized downloads and links notify Telegram user immediately');
+check($Res5['neutralized_count'] === 3 && $Res5['notified'] === true, 'neutralized downloads and links notify Telegram user immediately');
 check((int)(Database::$Alerts[$DeviceId . '|dl:fake_img_trojan']['Resolved'] ?? 0) === 1, 'auto-deleted file alert stored with Resolved=1');
 check((int)(Database::$Alerts[$DeviceId . '|link:grabify.link']['Resolved'] ?? 0) === 1, 'blocked link alert stored with Resolved=1');
+check((int)(Database::$Alerts[$DeviceId . '|link:homoglyph:pаypal']['Resolved'] ?? 0) === 1, 'blocked external URL alert stored with Resolved=1');
+$SavedShield = json_decode((string)(Repository::$Settings['App_Security_State_' . sha1($DeviceId)] ?? '{}'), true);
+check((int)($SavedShield['scanned_files'] ?? 0) === 84, 'storeSecurityDeviceState receives $Body without undefined $Payload crash');
 $LastMsg = TelegramClient::$SentReadable[2][1] ?? '';
-check(str_contains($LastMsg, 'aks.jpg') && str_contains($LastMsg, 'grabify.link') && str_contains($LastMsg, 'حذف خودکار'), 'user Telegram alert includes neutralized file, link, and auto-delete status');
+check(str_contains($LastMsg, 'aks.jpg') && str_contains($LastMsg, 'grabify.link') && str_contains($LastMsg, 'مسدودسازی لینک') && str_contains($LastMsg, 'حذف خودکار'), 'user Telegram alert includes neutralized file, blocked_url link, and auto-delete status');
 
 // Also inspect announcementPayload directly
 $AnnPayloadMethod = new ReflectionMethod(AppGateway::class, 'announcementPayload');
