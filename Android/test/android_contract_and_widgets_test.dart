@@ -413,7 +413,7 @@ void main() {
           File('lib/state/update_controller.dart').readAsStringSync();
       expect(updateCtrl, contains('resumePendingInstallIfPermitted'));
       expect(updateCtrl, contains('installDetailed'));
-      final int dlInstallAt = updateCtrl.indexOf('Future<bool> downloadAndInstall()');
+      final int dlInstallAt = updateCtrl.indexOf('Future<bool> downloadAndInstall(');
       final String dlInstallBody = updateCtrl.substring(
         dlInstallAt,
         updateCtrl.indexOf('Future<bool> openDownloadPage()', dlInstallAt),
@@ -2803,48 +2803,52 @@ void main() {
       final ToastController toasts = ToastController();
       final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
       final FlutterExceptionHandler? prevError = FlutterError.onError;
-      FlutterError.onError = (FlutterErrorDetails d) => errors.add(d);
       addTearDown(() => FlutterError.onError = prevError);
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      for (final Size size in const <Size>[
-        Size(320, 568),
-        Size(667, 375),
-        Size(1024, 768),
-      ]) {
-        await tester.binding.setSurfaceSize(size);
-        await tester.pumpWidget(
-          MultiProvider(
-            providers: [
-              Provider<NativeBridge>.value(value: native),
-              Provider<SoundService>.value(value: sound),
-              ChangeNotifierProvider<SettingsController>.value(value: settings),
-              ChangeNotifierProvider<AuthController>.value(value: auth),
-              ChangeNotifierProvider<SubscriptionController>.value(value: subs),
-              ChangeNotifierProvider<VpnController>.value(value: vpn),
-              ChangeNotifierProvider<UpdateController>.value(value: updates),
-              ChangeNotifierProvider<ToastController>.value(value: toasts),
-            ],
-            child: MaterialApp(
-              theme: AppTheme.dark(),
-              home: const Directionality(
-                textDirection: TextDirection.rtl,
-                child: Scaffold(body: ConnectPage()),
+      FlutterError.onError = (FlutterErrorDetails d) => errors.add(d);
+      try {
+        for (final Size size in const <Size>[
+          Size(320, 568),
+          Size(667, 375),
+          Size(1024, 768),
+        ]) {
+          await tester.binding.setSurfaceSize(size);
+          await tester.pumpWidget(
+            MultiProvider(
+              providers: [
+                Provider<NativeBridge>.value(value: native),
+                Provider<SoundService>.value(value: sound),
+                ChangeNotifierProvider<SettingsController>.value(value: settings),
+                ChangeNotifierProvider<AuthController>.value(value: auth),
+                ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+                ChangeNotifierProvider<VpnController>.value(value: vpn),
+                ChangeNotifierProvider<UpdateController>.value(value: updates),
+                ChangeNotifierProvider<ToastController>.value(value: toasts),
+              ],
+              child: MaterialApp(
+                theme: AppTheme.dark(),
+                home: const Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Scaffold(body: ConnectPage()),
+                ),
               ),
             ),
-          ),
-        );
-        await tester.pump();
-        expect(
-          find.byKey(const ValueKey<String>('connect-update-banner')),
-          findsOneWidget,
-          reason: 'Expected update banner at $size',
-        );
-        expect(find.textContaining('نسخه جدید'), findsOneWidget);
-        expect(
-          find.byKey(const ValueKey<String>('connect-update-action-button')),
-          findsOneWidget,
-        );
+          );
+          await tester.pump();
+          expect(
+            find.byKey(const ValueKey<String>('connect-update-banner')),
+            findsOneWidget,
+            reason: 'Expected update banner at $size',
+          );
+          expect(find.textContaining('نسخه جدید'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey<String>('connect-update-action-button')),
+            findsOneWidget,
+          );
+        }
+      } finally {
+        FlutterError.onError = prevError;
       }
       expect(errors, isEmpty, reason: errors.map((e) => e.exceptionAsString()).join('\n'));
 

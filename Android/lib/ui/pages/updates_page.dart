@@ -365,7 +365,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 children: <Widget>[
                   SectionHeader(
                     icon: Icons.download_for_offline_rounded,
-                    title: 'دانلود و نصب به روز رسانی',
+                    title: 'وضعیت و دریافت به روز رسانی',
                     subtitle: updates.checking
                         ? Fa.num(
                             'در حال جستجو برای آخرین نسخه در کانال ${updates.channel.label}...',
