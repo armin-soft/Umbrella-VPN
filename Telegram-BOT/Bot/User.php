@@ -139,7 +139,8 @@ if (method_exists(Repository::class, 'touchUserTime')) {
 Repository::touchUserTime($UserId, 'Registered_At');
 }
 $UUID = trim((string)($User['Client_ID'] ?? ''));
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
+$UUID = '';
 $Phone = method_exists('Helper', 'normalizePhone')
 ? Helper::normalizePhone((string)($User['Phone'] ?? ''))
 : trim((string)($User['Phone'] ?? ''));
@@ -147,8 +148,26 @@ if ($Phone !== '' && class_exists('PanelClient') && method_exists('PanelClient',
 try {
 $Account = PanelClient::findByPhone($Phone);
 $UUID = trim((string)($Account['uuid'] ?? ''));
-if ($UUID !== '') {
+if ($UUID !== '' && $UUID !== '_') {
 Repository::updateUser($UserId, ['Client_ID' => $UUID]);
+}
+} catch (Throwable) {}
+}
+if (($UUID === '' || $UUID === '_') && class_exists('Database')) {
+try {
+$DevRow = Database::getInstance()->fetch(
+'SELECT `User_UUID`, `Phone` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `User_UUID` IS NOT NULL AND `User_UUID` <> \'\' AND `User_UUID` <> \'_\' ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1',
+[$UserId]
+);
+$CandidateUuid = trim((string)($DevRow['User_UUID'] ?? ''));
+if ($CandidateUuid !== '' && $CandidateUuid !== '_') {
+$UUID = $CandidateUuid;
+$Upd = ['Client_ID' => $UUID];
+$DevPhone = trim((string)($DevRow['Phone'] ?? ''));
+if ($DevPhone !== '' && trim((string)($User['Phone'] ?? '')) === '') {
+$Upd['Phone'] = $DevPhone;
+}
+Repository::updateUser($UserId, $Upd);
 }
 } catch (Throwable) {}
 }
@@ -156,8 +175,12 @@ Repository::updateUser($UserId, ['Client_ID' => $UUID]);
 if ($UUID !== '' && $UUID !== '_' && class_exists('PanelClient')) {
 try {
 $Current = PanelClient::get($UUID);
-if (is_array($Current) && (string)($Current['telegram_id'] ?? '') !== (string)$UserId) {
-PanelClient::update($UUID, ['telegram_id' => (string)$UserId]);
+if (is_array($Current) && (int)($Current['telegram_id'] ?? 0) !== $UserId) {
+if (method_exists('PanelClient', 'linkTelegramId')) {
+PanelClient::linkTelegramId($UUID, $UserId, $Current);
+} else {
+PanelClient::update($UUID, ['telegram_id' => $UserId]);
+}
 }
 } catch (Throwable) {}
 }
@@ -302,23 +325,37 @@ private static function linkPanelAccount(Context $Context): void {
 $User = Repository::getUser($Context->UserId);
 $UUID = trim((string)($User['Client_ID'] ?? ''));
 
-if ($UUID === '') {
+if ($UUID === '' || $UUID === '_') {
+$UUID = '';
 $Phone = \Helper::normalizePhone((string)($User['Phone'] ?? ''));
 
-if ($Phone === '') return;
-
+if ($Phone !== '') {
 try {
 $Account = PanelClient::findByPhone($Phone);
-}
-
-catch (Throwable $Error) {
-error_log('[Umbrella-Bot][Panel-Link] lookup failed: ' . $Error->getMessage());
-return;
-}
-
 $UUID = trim((string)($Account['uuid'] ?? ''));
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Panel-Link] lookup failed: ' . $Error->getMessage());
+}
+}
 
-if ($UUID === '') return;
+if (($UUID === '' || $UUID === '_') && class_exists('Database')) {
+try {
+$DevRow = Database::getInstance()->fetch(
+'SELECT `User_UUID`, `Phone` FROM `App_Devices` WHERE `Telegram_ID` = ? AND `User_UUID` IS NOT NULL AND `User_UUID` <> \'\' AND `User_UUID` <> \'_\' ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1',
+[$Context->UserId]
+);
+$Candidate = trim((string)($DevRow['User_UUID'] ?? ''));
+if ($Candidate !== '' && $Candidate !== '_') {
+$UUID = $Candidate;
+$DevPhone = trim((string)($DevRow['Phone'] ?? ''));
+if ($DevPhone !== '' && trim((string)($User['Phone'] ?? '')) === '') {
+Repository::updateUser($Context->UserId, ['Phone' => $DevPhone]);
+}
+}
+} catch (Throwable) {}
+}
+
+if ($UUID === '' || $UUID === '_') return;
 
 // Remembered locally, so the next launch does not have to search again.
 Repository::updateUser($Context->UserId, ['Client_ID' => $UUID]);
@@ -334,12 +371,16 @@ catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Panel-Link] read failed: ' . $Error->getMessage());
 }
 
-if (is_array($Current) && (string)($Current['telegram_id'] ?? '') === (string)$Context->UserId) {
+if (is_array($Current) && (int)($Current['telegram_id'] ?? 0) === $Context->UserId) {
 return;
 }
 
 try {
-PanelClient::update($UUID, ['telegram_id' => (string)$Context->UserId]);
+if (method_exists('PanelClient', 'linkTelegramId')) {
+PanelClient::linkTelegramId($UUID, $Context->UserId, is_array($Current) ? $Current : null);
+} else {
+PanelClient::update($UUID, ['telegram_id' => $Context->UserId]);
+}
 }
 
 catch (Throwable $Error) {
@@ -404,6 +445,13 @@ TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, 
 
 else {
 TelegramClient::sendMessage($Context->ChatId, $Text, $Keyboard);
+}
+
+$ClientId = trim((string)($User['Client_ID'] ?? ''));
+if (($ClientId === '' || $ClientId === '_') && class_exists('AppBotLink', false) && method_exists('AppBotLink', 'remindPendingIfAny')) {
+try {
+AppBotLink::remindPendingIfAny($Context);
+} catch (Throwable) {}
 }
 }
 

@@ -197,13 +197,110 @@ return null;
 
 /** PATCH the fields the bot is allowed to change. */
 public static function update(string $UUID, array $Payload): ?array {
+$UUID = trim($UUID);
 if ($UUID === '' || $Payload === []) return null;
 
-$Response = HttpClient::patch(self::usersUrl() . rawurlencode($UUID) . '/', $Payload, ServerClient::postHeaders());
+if (array_key_exists('telegram_id', $Payload)) {
+$Payload['telegram_id'] = max(0, (int)$Payload['telegram_id']);
+}
+
+$Url = self::usersUrl() . rawurlencode($UUID) . '/';
+$Response = ['StatusCode' => 0, 'Body' => '', 'Json' => null, 'Error' => ''];
+
+for ($Try = 1; $Try <= 2; $Try++) {
+$Response = HttpClient::patch($Url, $Payload, ServerClient::postHeaders(), 20);
+$Status = (int)($Response['StatusCode'] ?? 0);
 $Json = $Response['Json'] ?? null;
 
-if (!is_array($Json)) return null;
+if ($Status >= 200 && $Status < 300) {
+if (is_array($Json) && self::extractRecord($Json) !== null) {
 return self::extractRecord($Json);
+}
+$Verified = self::get($UUID);
+if ($Verified !== null) {
+return $Verified;
+}
+return array_merge(['uuid' => $UUID], $Payload);
+}
+
+if (is_array($Json) && $Status === 0 && self::extractRecord($Json) !== null) {
+return self::extractRecord($Json);
+}
+
+if ($Status >= 400 && $Status < 500 && $Status !== 408 && $Status !== 429) {
+break;
+}
+
+if ($Try < 2) {
+usleep(250000);
+}
+}
+
+error_log(
+'[Umbrella-Bot][Panel-API] update failed for uuid=' . $UUID
+. ' | HTTP=' . (int)($Response['StatusCode'] ?? 0)
+. ' | curl=' . (string)($Response['Error'] ?? '')
+. ' | body=' . mb_substr((string)($Response['Body'] ?? ''), 0, 250)
+);
+return null;
+}
+
+/**
+ * Ensures the numeric Telegram id is written to the panel account and read
+ * back cleanly so bot, server, and apps stay synchronized.
+ */
+public static function linkTelegramId(string $UUID, int $Telegram_Id, ?array $Current_Panel = null): ?array {
+$UUID = trim($UUID);
+if ($UUID === '' || $UUID === '_' || $Telegram_Id <= 0) {
+return null;
+}
+
+$Current = is_array($Current_Panel) && $Current_Panel !== [] ? $Current_Panel : self::get($UUID);
+if (is_array($Current) && (int)($Current['telegram_id'] ?? 0) === $Telegram_Id) {
+return $Current;
+}
+
+self::update($UUID, ['telegram_id' => $Telegram_Id]);
+$Fresh = self::get($UUID);
+if (is_array($Fresh) && (int)($Fresh['telegram_id'] ?? 0) === $Telegram_Id) {
+return $Fresh;
+}
+
+$Base = is_array($Fresh) && $Fresh !== [] ? $Fresh : (is_array($Current) ? $Current : []);
+$Fallback_Payload = ['telegram_id' => $Telegram_Id];
+if (isset($Base['name']) && trim((string)$Base['name']) !== '') {
+$Fallback_Payload['name'] = (string)$Base['name'];
+}
+if (array_key_exists('comment', $Base)) {
+$Fallback_Payload['comment'] = (string)($Base['comment'] ?? '');
+}
+if (isset($Base['usage_limit_GB']) && is_numeric($Base['usage_limit_GB'])) {
+$Fallback_Payload['usage_limit_GB'] = (float)$Base['usage_limit_GB'];
+}
+if (isset($Base['package_days']) && is_numeric($Base['package_days'])) {
+$Fallback_Payload['package_days'] = (int)$Base['package_days'];
+}
+if (array_key_exists('is_active', $Base)) {
+$Fallback_Payload['is_active'] = (bool)$Base['is_active'];
+}
+if (array_key_exists('enable', $Base)) {
+$Fallback_Payload['enable'] = (bool)$Base['enable'];
+}
+
+$Url = self::usersUrl() . rawurlencode($UUID) . '/';
+$Fallback_Res = HttpClient::patch($Url, $Fallback_Payload, ServerClient::postHeaders(), 20);
+$Verified = self::get($UUID);
+if (is_array($Verified) && (int)($Verified['telegram_id'] ?? 0) === $Telegram_Id) {
+return $Verified;
+}
+
+error_log(
+'[Umbrella-Bot][Panel-API] linkTelegramId verification failed for uuid=' . $UUID
+. ' tg=' . $Telegram_Id
+. ' | HTTP=' . (int)($Fallback_Res['StatusCode'] ?? 0)
+. ' | body=' . mb_substr((string)($Fallback_Res['Body'] ?? ''), 0, 250)
+);
+return null;
 }
 
 /**

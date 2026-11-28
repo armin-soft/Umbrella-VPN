@@ -486,6 +486,11 @@ $Account = self::accountOrPrompt($Context, 'user_device_menu');
 if ($Account === null) return;
 
 $Database = \Database::getInstance();
+if (class_exists('AppSchema') && method_exists('AppSchema', 'deduplicateTrustedDevices')) {
+try {
+\AppSchema::deduplicateTrustedDevices($Database, '', (string)$Account['uuid'], $Context->UserId);
+} catch (\Throwable) {}
+}
 $Parameters = [(string)$Account['uuid'], $Context->UserId];
 $Total = (int)$Database->scalar(
 'SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1 AND (`User_UUID` = ? OR `Telegram_ID` = ?)',

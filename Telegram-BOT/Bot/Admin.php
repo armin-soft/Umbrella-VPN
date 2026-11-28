@@ -211,6 +211,9 @@ Scheduler::purgeUserActivityIfDue();
 Repository::updateUserSession($Context->UserId, ['Flow' => null, 'Temp_UID' => null, 'Broadcast_Mode' => null]);
 
 $Db = Database::getInstance();
+if (class_exists('AppSchema') && method_exists('AppSchema', 'deduplicateTrustedDevices')) {
+try { AppSchema::deduplicateTrustedDevices($Db); } catch (Throwable) {}
+}
 $Devices = [];
 try {
 $Devices = $Db->fetchAll(
@@ -1845,6 +1848,9 @@ self::menu($Context);
 public static function appDevicesMenu(Context $Context, int $Page = 0): void {
 if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
 $Database = Database::getInstance();
+if (class_exists('AppSchema') && method_exists('AppSchema', 'deduplicateTrustedDevices')) {
+try { AppSchema::deduplicateTrustedDevices($Database); } catch (Throwable) {}
+}
 // سه دستگاه در هر صفحه: اطلاعات کامل و نام های بلند در محدودیت پیام تلگرام جا می شوند.
 $Page_Size = 3;
 $Total = (int)$Database->scalar('SELECT COUNT(*) FROM `App_Devices` WHERE `Is_Trusted` = 1', [], 0);
@@ -6050,6 +6056,7 @@ $Prepared_Users = [];
 $Row_Meta = [];
 $Missing_Tg_Rows = [];
 $Duplicate_Tg_Rows = [];
+$Server_Missing_Tg_Push = [];
 $Invalid_Rows = 0;
 
 foreach ($Rows as $Row) {
@@ -6063,7 +6070,8 @@ $Invalid_Rows++;
 continue;
 }
 
-$Telegram_ID = (int)($Row['telegram_id'] ?? 0);
+$Server_Raw_Tg = (int)($Row['telegram_id'] ?? 0);
+$Telegram_ID = $Server_Raw_Tg;
 $Raw_Name = trim((string)($Row['name'] ?? ''));
 $Comment = trim((string)($Row['comment'] ?? ''));
 $Row_Id = (int)($Row['id'] ?? 0);
@@ -6077,6 +6085,31 @@ $Telegram_ID = (int)$Linked_Row['Telegram_ID'];
 } catch (Throwable) {}
 }
 
+if ($Telegram_ID <= 0 && $Comment !== '' && method_exists('Repository', 'findUserByPhone')) {
+$Norm_Comment_Phone = Helper::normalizePhone($Comment);
+if (Helper::validatePhone($Norm_Comment_Phone)) {
+try {
+$Phone_User = Repository::findUserByPhone($Norm_Comment_Phone, 0);
+$Phone_Client = trim((string)($Phone_User['Client_ID'] ?? ''));
+if (!empty($Phone_User) && ($Phone_Client === '' || $Phone_Client === '_' || $Phone_Client === $Uuid)) {
+$Found_Tg = (int)($Phone_User['Telegram_ID'] ?? 0);
+if ($Found_Tg > 0) {
+$Telegram_ID = $Found_Tg;
+}
+}
+} catch (Throwable) {}
+}
+}
+
+if ($Telegram_ID <= 0 && $Has_Devices_Table && method_exists($Db, 'fetchOne')) {
+try {
+$Dev_Row = $Db->fetchOne('SELECT `Telegram_ID` FROM `App_Devices` WHERE `User_UUID` = ? AND `Telegram_ID` > 0 ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1', [$Uuid]);
+if (is_array($Dev_Row) && (int)($Dev_Row['Telegram_ID'] ?? 0) > 0) {
+$Telegram_ID = (int)$Dev_Row['Telegram_ID'];
+}
+} catch (Throwable) {}
+}
+
 if ($Telegram_ID <= 0) {
 $Missing_Tg_Rows[] = [
 'name' => $Raw_Name !== '' ? $Raw_Name : 'بدون نام',
@@ -6084,6 +6117,10 @@ $Missing_Tg_Rows[] = [
 'uuid' => $Uuid,
 ];
 continue;
+}
+
+if ($Server_Raw_Tg <= 0 && $Telegram_ID > 0) {
+$Server_Missing_Tg_Push[$Uuid] = $Telegram_ID;
 }
 
 $Built = self::buildBulkUserRow($Row, $Telegram_ID, $Uuid);
@@ -6209,6 +6246,14 @@ $Db_Err_Text = self::header($Context, 'بروز رسانی داده های کا�
 . Helper::adminFooter();
 TelegramClient::sendMessage($Context->ChatId, $Db_Err_Text, TelegramClient::inlineKeyboard($Retry_Nav));
 return;
+}
+
+if (!empty($Server_Missing_Tg_Push) && method_exists('ServerClient', 'updateUser')) {
+foreach ($Server_Missing_Tg_Push as $Push_Uuid => $Push_Tg) {
+try {
+ServerClient::updateUser((string)$Push_Uuid, ['telegram_id' => (int)$Push_Tg]);
+} catch (Throwable) {}
+}
 }
 
 try {
@@ -6591,6 +6636,37 @@ $Local_User = $Local_By_Client;
 elseif ($Server_Telegram_ID > 0) {
 $Target_Telegram_ID = $Server_Telegram_ID;
 $Local_User = Repository::getUser($Server_Telegram_ID);
+}
+
+if ($Target_Telegram_ID <= 0 && $Server_Comment !== '' && method_exists('Repository', 'findUserByPhone')) {
+$Norm_Comment_Phone = Helper::normalizePhone($Server_Comment);
+if (Helper::validatePhone($Norm_Comment_Phone)) {
+try {
+$Phone_Match = Repository::findUserByPhone($Norm_Comment_Phone, 0);
+$Phone_Client = trim((string)($Phone_Match['Client_ID'] ?? ''));
+if (!empty($Phone_Match) && ($Phone_Client === '' || $Phone_Client === '_' || $Phone_Client === $Server_UUID)) {
+$Candidate_Tg = (int)($Phone_Match['Telegram_ID'] ?? 0);
+if ($Candidate_Tg > 0) {
+$Target_Telegram_ID = $Candidate_Tg;
+$Local_User = $Phone_Match;
+}
+}
+} catch (Throwable) {}
+}
+}
+
+if ($Target_Telegram_ID <= 0 && class_exists('Database')) {
+try {
+$Db = Database::getInstance();
+if (method_exists($Db, 'fetchOne')) {
+$Dev_Match = $Db->fetchOne('SELECT `Telegram_ID` FROM `App_Devices` WHERE `User_UUID` = ? AND `Telegram_ID` > 0 ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1', [$Server_UUID]);
+$Dev_Tg = (int)($Dev_Match['Telegram_ID'] ?? 0);
+if ($Dev_Tg > 0) {
+$Target_Telegram_ID = $Dev_Tg;
+$Local_User = Repository::getUser($Dev_Tg);
+}
+}
+} catch (Throwable) {}
 }
 
 if ($Target_Telegram_ID <= 0) {

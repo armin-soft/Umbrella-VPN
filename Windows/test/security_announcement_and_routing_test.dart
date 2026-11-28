@@ -2705,6 +2705,42 @@ void main() {
       expect(vpnSrc.contains(r"'نشانی پروکسی: 127.0.0.1:${plan.proxyPort}'"), isTrue);
       expect(advSrc.contains('Fa.num(settings.appRoutes[i].process)'), isFalse);
     });
+
+    test('پشتیبان گیری و بازیابی شناسه دستگاه و ارسال نام و پلتفرم یکسان بدون نیم فاصله', () async {
+      final String authSrc = File('lib/state/auth_controller.dart').readAsStringSync();
+      expect(authSrc.contains('\u200C'), isFalse);
+      expect(authSrc.contains("readFile('device_id.txt')"), isTrue);
+      expect(authSrc.contains("writeFile('device_id.txt', _deviceId)"), isTrue);
+      expect(authSrc.contains('platform: _device.platformLabel'), isFalse);
+      expect(authSrc.contains('deviceName: _device.deviceName'), isTrue);
+
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await LocalStore.instance.init();
+      const String savedId = '11223344556677889900aabbccddeeff';
+      await LocalStore.instance.writeFile('device_id.txt', savedId);
+      await LocalStore.instance.remove(StoreKeys.deviceId);
+      addTearDown(() async {
+        final File f = await LocalStore.instance.file('device_id.txt');
+        if (await f.exists()) {
+          await f.delete();
+        }
+        await LocalStore.instance.remove(StoreKeys.deviceId);
+      });
+
+      final AuthController auth = AuthController(
+        native: _FakeNative(),
+        gateway: GatewayClient(
+          baseUrl: 'https://example.invalid/index.php?AppApi=',
+          enableNativeTransport: false,
+          client: MockClient((http.Request _) async => http.Response('{"ok":true}', 200)),
+        ),
+        store: LocalStore.instance,
+      );
+      addTearDown(auth.dispose);
+      await auth.restore();
+      expect(auth.deviceId, savedId);
+      expect(LocalStore.instance.read(StoreKeys.deviceId), savedId);
+    });
   });
 }
 

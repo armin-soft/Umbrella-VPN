@@ -144,7 +144,12 @@ self::fail(422, 'invalid_device', 'شناسه دستگاه ارسال نشد.');
 // One trusted device per account by default — the admin raises it per user
 // from the bot's «📱مجوز دستگاه کاربران» panel. Checked before any SMS is
 // spent, and checked again at verify() (belt and braces).
-$Device_Limit = AppDeviceLimit::check($Phone, $Device_Id);
+$Device_Limit = AppDeviceLimit::check(
+$Phone,
+$Device_Id,
+(string)($Body['device_name'] ?? ''),
+(string)($Body['platform'] ?? '')
+);
 
 if (!$Device_Limit['allowed']) {
 error_log('[Umbrella-Bot][App-Auth] device limit reached | phone-masked-' . substr(md5($Phone), 0, 8) . ' | used=' . $Device_Limit['used'] . '/limit=' . $Device_Limit['limit']);
@@ -228,7 +233,14 @@ $Linked = Repository::findUserByPhone($Phone);
 $Telegram_Id = (int)($Linked['Telegram_ID'] ?? 0);
 
 if ($Telegram_Id > 0 && $UUID !== '') {
-try { PanelClient::update($UUID, ['telegram_id' => $Telegram_Id]); }
+self::syncBotUserClientId($Telegram_Id, $UUID);
+try {
+if (method_exists(PanelClient::class, 'linkTelegramId')) {
+PanelClient::linkTelegramId($UUID, $Telegram_Id, $Known);
+} else {
+PanelClient::update($UUID, ['telegram_id' => $Telegram_Id]);
+}
+}
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] telegram link failed: ' . $Error->getMessage()); }
 }
 }
@@ -311,7 +323,12 @@ self::notifyFailedLogin((string)$Row['Phone'], 'too_many_attempts', $Row, (int)$
 self::fail(429, 'too_many_attempts', 'تعداد تلاش ها زیاد شد؛ کد جدید بگیرید.');
 }
 
-$Device_Limit = AppDeviceLimit::check((string)$Row['Phone'], (string)$Row['Device_ID']);
+$Device_Limit = AppDeviceLimit::check(
+(string)$Row['Phone'],
+(string)$Row['Device_ID'],
+(string)($Row['Device_Name'] ?? ''),
+(string)($Row['Platform'] ?? '')
+);
 
 if (!$Device_Limit['allowed']) {
 error_log('[Umbrella-Bot][App-Auth] device limit reached at verify | used=' . $Device_Limit['used'] . '/limit=' . $Device_Limit['limit']);
@@ -803,6 +820,18 @@ return false;
 
 if ($Approved) {
 try {
+if (class_exists('AppSchema') && method_exists('AppSchema', 'deduplicateTrustedDevices')) {
+AppSchema::deduplicateTrustedDevices(
+$Database,
+(string)$Row['Device_ID'],
+(string)($Row['User_UUID'] ?? ''),
+$Telegram_Id,
+(string)($Row['Phone'] ?? '')
+);
+}
+} catch (Throwable) {}
+
+try {
 Repository::addNotification(
 $Telegram_Id,
 'app_signin',
@@ -825,13 +854,38 @@ private static function botMembershipStatus(): void {
 $Session = self::sessionRow(self::bearer());
 if ($Session === null) self::fail(401, 'invalid_token', 'نشست منقضی شده است.');
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
-$User = ($UUID === '' || $UUID === '_')
-? null
-: Database::getInstance()->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
-$Linked = (int)($User['Telegram_ID'] ?? 0);
-if ($Linked <= 0) self::ok(['linked' => false]);
+if ($UUID === '' || $UUID === '_') {
+self::ok(['linked' => false]);
+}
 $Panel = PanelClient::get($UUID);
-if (!$Panel) self::fail(502, 'panel_unavailable', 'بررسی اتصال در پنل انجام نشد؛ دوباره تلاش کنید.');
+if (!$Panel) {
+if (PanelClient::lastGetStatus() === 404) {
+AppAccountRevocation::revoke($UUID);
+self::fail(403, 'device_revoked', 'حساب پنلی این نشست حذف شده است؛ اتصال فیلترشکن قطع و نشست برنامه بسته می شود.');
+}
+self::fail(502, 'panel_unavailable', 'بررسی اتصال در پنل انجام نشد؛ دوباره تلاش کنید.');
+}
+$Linked = self::autoLinkTelegramOwner(
+(string)($Session['Device_ID'] ?? ''),
+$UUID,
+(int)($Session['Telegram_ID'] ?? 0)
+);
+$Linked = self::syncLinkedBotUserFromPanel($UUID, $Linked, $Panel);
+if ($Linked <= 0) {
+$User = Database::getInstance()->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
+$Linked = (int)($User['Telegram_ID'] ?? 0);
+}
+if ($Linked <= 0) {
+self::ok(['linked' => false]);
+}
+if ((int)($Panel['telegram_id'] ?? 0) !== $Linked && (int)($Panel['telegram_id'] ?? 0) <= 0) {
+$Updated = method_exists(PanelClient::class, 'linkTelegramId')
+? PanelClient::linkTelegramId($UUID, $Linked, $Panel)
+: PanelClient::update($UUID, ['telegram_id' => $Linked]);
+if (is_array($Updated)) {
+$Panel = $Updated;
+}
+}
 self::ok(['linked' => (int)($Panel['telegram_id'] ?? 0) === $Linked]);
 }
 
@@ -885,6 +939,11 @@ $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $Account);
 $ChannelState = self::syncChannelState($LinkedTg, $UUID, $Account);
 $Profile = self::accountPayloadWithExtras($Account, $UUID, $LinkedTg, $ChannelState);
 self::touchDeviceSeen((string)$Session['Device_ID'], $UUID, $LinkedTg, trim((string)($Profile['name'] ?? '')), (string)($Session['Token_Hash'] ?? ''));
+try {
+if (class_exists('AppSchema') && method_exists('AppSchema', 'deduplicateTrustedDevices')) {
+AppSchema::deduplicateTrustedDevices(Database::getInstance(), (string)$Session['Device_ID'], $UUID, $LinkedTg);
+}
+} catch (Throwable) {}
 
 self::ok([
 'account' => $Profile,
@@ -963,6 +1022,11 @@ $UUID,
 $LinkedTg
 );
 $LinkedTg = self::syncLinkedBotUserFromPanel($UUID, $LinkedTg, $PanelAccount);
+try {
+if (class_exists('AppSchema') && method_exists('AppSchema', 'deduplicateTrustedDevices')) {
+AppSchema::deduplicateTrustedDevices(Database::getInstance(), $DeviceId, $UUID, $LinkedTg);
+}
+} catch (Throwable) {}
 $ChannelState = self::syncChannelState($LinkedTg, $UUID, $PanelAccount);
 $Payload['account'] = self::accountPayloadWithExtras($PanelAccount, $UUID, $LinkedTg, $ChannelState);
 $Payload['bot_linked'] = $LinkedTg > 0 && (int)($PanelAccount['telegram_id'] ?? 0) === $LinkedTg;
@@ -1257,6 +1321,8 @@ if (!empty($ByPhone) && ($ExistingClient === '' || $ExistingClient === '_' || $E
 $BotUser = $ByPhone;
 $FoundUid = (int)($ByPhone['Telegram_ID'] ?? 0);
 if ($FoundUid > 0) {
+self::syncBotUserClientId($FoundUid, $UUID);
+$BotUser['Client_ID'] = $UUID;
 try {
 Database::getInstance()->execute(
 'UPDATE `App_Devices` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)',
@@ -1273,10 +1339,41 @@ Database::getInstance()->execute(
 }
 
 if ($BotUser === null) {
+try {
+$Db = Database::getInstance();
+$CandidateRow = $Db->fetch(
+'SELECT `Telegram_ID` FROM `App_Devices` WHERE `User_UUID` = ? AND `Telegram_ID` > 0 ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1',
+[$UUID]
+);
+if (!$CandidateRow) {
+$CandidateRow = $Db->fetch(
+'SELECT `Telegram_ID` FROM `App_Bot_Link_Requests` WHERE `User_UUID` = ? AND `Used_At` IS NOT NULL AND `Telegram_ID` > 0 ORDER BY `Used_At` DESC LIMIT 1',
+[$UUID]
+);
+}
+$CandidateUid = (int)($CandidateRow['Telegram_ID'] ?? 0);
+if ($CandidateUid > 0) {
+$MaybeUser = Repository::getUser($CandidateUid);
+$MaybeClient = trim((string)($MaybeUser['Client_ID'] ?? ''));
+if (!empty($MaybeUser) && ($MaybeClient === '' || $MaybeClient === '_' || $MaybeClient === $UUID)) {
+$BotUser = $MaybeUser;
+self::syncBotUserClientId($CandidateUid, $UUID);
+$BotUser['Client_ID'] = $UUID;
+}
+}
+} catch (Throwable) {}
+}
+
+if ($BotUser === null) {
 return $LinkedTg;
 }
 
 $Uid = (int)($BotUser['Telegram_ID'] ?? 0);
+$CurrentBotClient = trim((string)($BotUser['Client_ID'] ?? ''));
+if ($Uid > 0 && ($CurrentBotClient === '' || $CurrentBotClient === '_')) {
+self::syncBotUserClientId($Uid, $UUID);
+$BotUser['Client_ID'] = $UUID;
+}
 if ($Uid > 0 && trim((string)($BotUser['Full_Name'] ?? '')) === '') {
 $ResolvedBotName = self::resolveBestUserName(
 trim((string)($Account['name'] ?? '')),
@@ -1314,7 +1411,9 @@ try { Common::syncSubscriptionFromServer($BotUser, $Account); } catch (Throwable
 
 if ($Uid > 0 && (int)($Account['telegram_id'] ?? 0) === 0 && trim((string)($BotUser['Client_ID'] ?? '')) === $UUID) {
 try {
-$Updated = PanelClient::update($UUID, ['telegram_id' => $Uid]);
+$Updated = method_exists(PanelClient::class, 'linkTelegramId')
+? PanelClient::linkTelegramId($UUID, $Uid, $Account)
+: PanelClient::update($UUID, ['telegram_id' => $Uid]);
 if (is_array($Updated) && (int)($Updated['telegram_id'] ?? 0) === $Uid) {
 $Account['telegram_id'] = $Uid;
 }
@@ -3101,7 +3200,14 @@ self::syncBotUserClientId($Telegram_Id, $New_UUID);
 try { Repository::updateUser($Telegram_Id, ['Free_Plan_Claimed' => 1]); }
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] automatic free plan user flag failed: ' . $Error->getMessage()); }
 if ((int)($Created['telegram_id'] ?? 0) !== $Telegram_Id) {
-try { PanelClient::update($New_UUID, ['telegram_id' => $Telegram_Id]); }
+try {
+$LinkedCreated = method_exists(PanelClient::class, 'linkTelegramId')
+? PanelClient::linkTelegramId($New_UUID, $Telegram_Id, $Created)
+: PanelClient::update($New_UUID, ['telegram_id' => $Telegram_Id]);
+if (is_array($LinkedCreated) && (int)($LinkedCreated['telegram_id'] ?? 0) === $Telegram_Id) {
+$Created['telegram_id'] = $Telegram_Id;
+}
+}
 catch (Throwable $Error) { error_log('[Umbrella-Bot][Gateway] telegram_id link after create failed for ' . $Phone . ': ' . $Error->getMessage()); }
 }
 self::syncLinkedBotUserFromPanel($New_UUID, $Telegram_Id, $Created);

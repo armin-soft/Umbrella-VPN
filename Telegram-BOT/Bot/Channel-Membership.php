@@ -127,17 +127,29 @@ return false;
 try {
 $Pending = self::clearPendingJoin($UserId);
 $User = Repository::getUser($UserId);
+$Restored = false;
 if (!$AlreadyRestored) {
 $DisabledAt = (int)($User['Channel_Client_Disabled_At'] ?? 0);
 $GraceAt = (int)($User['Channel_Grace_Started_At'] ?? 0);
 if ($DisabledAt > 0 || $GraceAt > 0) {
 $Restore = self::restore($UserId);
 if ($Restore === 'restored') {
-return true;
+$Restored = true;
 }
 }
 }
-if ($Pending === null) return false;
+if ($Pending === null) {
+if ($Restored && class_exists('UserFlow') && method_exists('UserFlow', 'onAutoChannelJoinedById')) {
+try {
+$ChatId = (int)($User['Chat_ID'] ?? $UserId);
+$FullName = trim((string)($User['Full_Name'] ?? ($User['First_Name'] ?? 'کاربر'))) ?: 'کاربر';
+if ($ChatId > 0) {
+UserFlow::onAutoChannelJoinedById($UserId, $ChatId, $FullName);
+}
+} catch (Throwable) {}
+}
+return $Restored;
+}
 
 $ChatId = (int)($Pending['chat_id'] ?? 0);
 if ($ChatId <= 0) $ChatId = (int)($User['Chat_ID'] ?? $UserId);

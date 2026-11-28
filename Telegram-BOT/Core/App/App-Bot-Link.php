@@ -23,14 +23,13 @@ Repository::setSetting(self::pendingKey($UserId), json_encode($Payload, JSON_UNE
 }
 }
 
-private static function popPendingToken(int $UserId): string {
+private static function peekPendingToken(int $UserId): string {
 if ($UserId <= 0) return '';
 $Token = '';
 $ExpiresAt = 0;
 if (isset(self::$pendingByUser[$UserId])) {
 $Token = (string)(self::$pendingByUser[$UserId]['token'] ?? '');
 $ExpiresAt = (int)(self::$pendingByUser[$UserId]['expires_at'] ?? 0);
-unset(self::$pendingByUser[$UserId]);
 }
 if (class_exists('Repository') && method_exists('Repository', 'getSetting')) {
 try {
@@ -38,28 +37,72 @@ $Raw = trim((string)Repository::getSetting(self::pendingKey($UserId), ''));
 if ($Raw !== '') {
 $Decoded = json_decode($Raw, true);
 if (is_array($Decoded)) {
-$Token = (string)($Decoded['token'] ?? $Token);
-$ExpiresAt = (int)($Decoded['expires_at'] ?? $ExpiresAt);
+$SettingToken = (string)($Decoded['token'] ?? '');
+$SettingExpires = (int)($Decoded['expires_at'] ?? 0);
+if ($SettingExpires >= $ExpiresAt && $SettingToken !== '') {
+$Token = $SettingToken;
+$ExpiresAt = $SettingExpires;
 }
-if (method_exists('Repository', 'setSetting')) {
-Repository::setSetting(self::pendingKey($UserId), '');
 }
 }
 } catch (Throwable) {}
 }
 if (preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1 || ($ExpiresAt > 0 && $ExpiresAt < time())) {
+self::clearPendingToken($UserId);
 return '';
 }
+return $Token;
+}
+
+private static function clearPendingToken(int $UserId): void {
+if ($UserId <= 0) return;
+unset(self::$pendingByUser[$UserId]);
+if (class_exists('Repository') && method_exists('Repository', 'setSetting')) {
+try {
+Repository::setSetting(self::pendingKey($UserId), '');
+} catch (Throwable) {}
+}
+}
+
+private static function popPendingToken(int $UserId): string {
+$Token = self::peekPendingToken($UserId);
+self::clearPendingToken($UserId);
 return $Token;
 }
 
 public static function resumePendingIfAny(Context $Context): bool {
 if ($Context->ChatId !== $Context->UserId || $Context->UserId <= 0) return false;
 if (UserFlow::membershipStatus($Context->UserId) !== 'member') return false;
-$Token = self::popPendingToken($Context->UserId);
+if (method_exists($Context, 'saveUser')) {
+$Context->saveUser();
+}
+$Token = self::peekPendingToken($Context->UserId);
 if ($Token === '') return false;
-self::presentPrompt($Context, $Token);
-return true;
+return self::presentPrompt($Context, $Token, true);
+}
+
+public static function remindPendingIfAny(Context $Context): bool {
+if ($Context->ChatId !== $Context->UserId || $Context->UserId <= 0) return false;
+if (UserFlow::membershipStatus($Context->UserId) !== 'member') return false;
+$Token = self::peekPendingToken($Context->UserId);
+if ($Token === '') return false;
+if (class_exists('Repository') && method_exists('Repository', 'getUser')) {
+try {
+$ExistingUser = Repository::getUser($Context->UserId);
+$ExistingClient = trim((string)($ExistingUser['Client_ID'] ?? ''));
+if ($ExistingClient !== '' && $ExistingClient !== '_') {
+self::clearPendingToken($Context->UserId);
+return false;
+}
+} catch (Throwable) {}
+}
+if (class_exists('Repository') && method_exists('Repository', 'getSetting')) {
+$LastPrompt = (int)Repository::getSetting('pending_app_link_prompt:' . $Context->UserId, '0');
+if (time() - $LastPrompt < 60) {
+return false;
+}
+}
+return self::presentPrompt($Context, $Token, true);
 }
 
 public static function resumePendingById(int $UserId, int $ChatId = 0, string $FullName = 'کاربر'): bool {
@@ -68,7 +111,7 @@ if ($UserId <= 0 || $TargetChat !== $UserId) return false;
 if (class_exists('UserFlow') && method_exists('UserFlow', 'membershipStatus') && UserFlow::membershipStatus($UserId) !== 'member') {
 return false;
 }
-$Token = self::popPendingToken($UserId);
+$Token = self::peekPendingToken($UserId);
 if ($Token === '') return false;
 $Db = Database::getInstance();
 $Hash = hash('sha256', $Token);
@@ -78,8 +121,14 @@ $Greeting = method_exists('Helper', 'frame')
 ? Helper::frame('کاربر', $FullName !== '' ? $FullName : 'کاربر', 'اتصال برنامه به تلگرام', $UserId)
 : '';
 if ($Row === null || (int)$Row['Telegram_ID'] !== $UserId) {
+self::clearPendingToken($UserId);
 TelegramClient::sendMessage($TargetChat, $Greeting . '⚠️این لینک منقضی شده یا متعلق به درخواست دیگری است؛ از حساب من لینک جدید بگیرید.' . self::footerText());
 return true;
+}
+if (class_exists('Repository') && method_exists('Repository', 'setSetting')) {
+try {
+Repository::setSetting('pending_app_link_prompt:' . $UserId, (string)time());
+} catch (Throwable) {}
 }
 $Phone = (string)$Row['Phone'];
 $PhoneLabel = method_exists('Helper', 'formatPhoneDisplay')
@@ -100,10 +149,21 @@ $SignIn = $Db->fetch("SELECT `Phone` FROM `App_SignIn_Requests` WHERE `Device_ID
 $Phone = Helper::normalizePhone((string)($SignIn['Phone'] ?? ''));
 if ($UUID === '' || $UUID === '_' || (string)($DeviceRow['User_UUID'] ?? '') !== $UUID || (int)($DeviceRow['Is_Trusted'] ?? 0) !== 1 || !Helper::validatePhone($Phone)) throw new RuntimeException('invalid_account');
 $Linked = $Db->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? LIMIT 1', [$UUID]);
-if ((int)($Linked['Telegram_ID'] ?? 0) > 0) {
+$LinkedTg = (int)($Linked['Telegram_ID'] ?? 0);
+if ($LinkedTg > 0) {
 $Panel = PanelClient::get($UUID);
 if (!$Panel) throw new RuntimeException('panel_unavailable');
-if ((int)($Panel['telegram_id'] ?? 0) === (int)$Linked['Telegram_ID']) return ['linked' => true];
+if ((int)($Panel['telegram_id'] ?? 0) === $LinkedTg) return ['linked' => true];
+$Synced = method_exists(PanelClient::class, 'linkTelegramId')
+? PanelClient::linkTelegramId($UUID, $LinkedTg, $Panel)
+: PanelClient::update($UUID, ['telegram_id' => $LinkedTg]);
+if (is_array($Synced) && (int)($Synced['telegram_id'] ?? 0) === $LinkedTg) {
+return ['linked' => true];
+}
+$Verified = PanelClient::get($UUID);
+if (is_array($Verified) && (int)($Verified['telegram_id'] ?? 0) === $LinkedTg) {
+return ['linked' => true];
+}
 }
 $Username = BotIdentity::username();
 if (!preg_match('/^[A-Za-z0-9_]{5,32}$/D', $Username)) throw new RuntimeException('bot_unavailable');
@@ -124,22 +184,35 @@ return method_exists('Helper', 'userFooter') ? Helper::userFooter() : '';
 
 public static function begin(Context $Context, string $Token): void {
 if ($Context->ChatId !== $Context->UserId || preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1) return;
+if (method_exists($Context, 'saveUser')) {
+$Context->saveUser();
+}
 if (UserFlow::membershipStatus($Context->UserId) !== 'member') {
 self::savePendingToken($Context->UserId, $Token);
 UserFlow::start($Context);
 TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⏳پس از عضویت و تأیید کانال، درخواست اتصال حساب به صورت خودکار ادامه پیدا می کند.' . self::footerText());
 return;
 }
-self::presentPrompt($Context, $Token);
+self::savePendingToken($Context->UserId, $Token);
+self::presentPrompt($Context, $Token, false);
 }
 
-private static function presentPrompt(Context $Context, string $Token): void {
+private static function presentPrompt(Context $Context, string $Token, bool $FromPending = false): bool {
 $Db = Database::getInstance();
 $Hash = hash('sha256', $Token);
 $Db->execute('UPDATE `App_Bot_Link_Requests` SET `Telegram_ID` = ? WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = ?)', [$Context->UserId, $Hash, time(), $Context->UserId]);
 $Row = $Db->fetch('SELECT `Phone`, `Telegram_ID` FROM `App_Bot_Link_Requests` WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ?', [$Hash, time()]);
 if ($Row === null || (int)$Row['Telegram_ID'] !== $Context->UserId) {
-TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⚠️این لینک منقضی شده یا متعلق به درخواست دیگری است؛ از حساب من لینک جدید بگیرید.' . self::footerText()); return;
+if ($FromPending) {
+self::clearPendingToken($Context->UserId);
+}
+TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⚠️این لینک منقضی شده یا متعلق به درخواست دیگری است؛ از حساب من لینک جدید بگیرید.' . self::footerText());
+return false;
+}
+if (class_exists('Repository') && method_exists('Repository', 'setSetting')) {
+try {
+Repository::setSetting('pending_app_link_prompt:' . $Context->UserId, (string)time());
+} catch (Throwable) {}
 }
 $Phone = (string)$Row['Phone'];
 $PhoneLabel = method_exists('Helper', 'formatPhoneDisplay')
@@ -148,11 +221,16 @@ $PhoneLabel = method_exists('Helper', 'formatPhoneDisplay')
 TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '🔗آیا اتصال حساب برنامه با شماره ' . $PhoneLabel . ' به همین حساب تلگرام را تأیید می کنید؟ اگر خودتان درخواست نداده اید، تأیید نکنید.' . self::footerText(), TelegramClient::inlineKeyboard([
 [['text' => '✅تأیید اتصال حساب', 'callback_data' => 'app_link:' . $Token]],
 ]));
+return true;
 }
 
 public static function confirm(Context $Context, string $Token): void {
 if ($Context->ChatId !== $Context->UserId || preg_match('/^[a-f0-9]{32}$/D', $Token) !== 1) return;
+if (method_exists($Context, 'saveUser')) {
+$Context->saveUser();
+}
 if (UserFlow::membershipStatus($Context->UserId) !== 'member') {
+self::savePendingToken($Context->UserId, $Token);
 TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '⚠️ابتدا عضویت کانال را تأیید کنید و لینک برنامه را دوباره باز کنید.' . self::footerText());
 return;
 }
@@ -175,20 +253,40 @@ $UUID = (string)$Row['User_UUID']; $Phone = (string)$Row['Phone']; $Id = $Contex
 $Session = $Db->fetch('SELECT `S`.`User_UUID`, `S`.`Revoked_At`, `D`.`Is_Trusted`, `D`.`User_UUID` AS `Device_UUID` FROM `App_Sessions` AS `S` JOIN `App_Devices` AS `D` ON `D`.`Device_ID` = `S`.`Device_ID` WHERE `S`.`Token_Hash` = ? AND `S`.`Device_ID` = ? FOR UPDATE', [$Row['Session_Hash'], $Row['Device_ID']]);
 if (!$Session || $Session['Revoked_At'] !== null || (int)$Session['Is_Trusted'] !== 1 || $Session['User_UUID'] !== $UUID || $Session['Device_UUID'] !== $UUID) throw new RuntimeException('expired');
 $User = $Db->fetch('SELECT `Client_ID`, `Phone`, `Is_Blocked` FROM `Users` WHERE `Telegram_ID` = ? FOR UPDATE', [$Id]);
+if (!$User && class_exists('Repository') && method_exists('Repository', 'createUserIfMissing')) {
+Repository::createUserIfMissing($Id);
+$User = $Db->fetch('SELECT `Client_ID`, `Phone`, `Is_Blocked` FROM `Users` WHERE `Telegram_ID` = ? FOR UPDATE', [$Id]);
+}
 if (!$User || (int)($User['Is_Blocked'] ?? 0) === 1) throw new RuntimeException('conflict');
 $Client = trim((string)($User['Client_ID'] ?? '')); $ExistingPhone = trim((string)($User['Phone'] ?? ''));
-if (($Client !== '' && $Client !== '_' && $Client !== $UUID) || ($ExistingPhone !== '' && Helper::normalizePhone($ExistingPhone) !== $Phone)) throw new RuntimeException('conflict');
+if ($Client !== '' && $Client !== '_' && $Client !== $UUID) {
+$StaleDeleted = false;
+if (method_exists(PanelClient::class, 'lastGetStatus')) {
+$OldPanel = PanelClient::get($Client);
+if ($OldPanel === null && PanelClient::lastGetStatus() === 404) {
+$StaleDeleted = true;
+}
+}
+if (!$StaleDeleted) {
+throw new RuntimeException('conflict');
+}
+}
+if ($ExistingPhone !== '' && Helper::normalizePhone($ExistingPhone) !== $Phone) throw new RuntimeException('conflict');
 $Other = $Db->fetch('SELECT `Telegram_ID` FROM `Users` WHERE `Client_ID` = ? AND `Telegram_ID` <> ? LIMIT 1 FOR UPDATE', [$UUID, $Id]);
 if ($Other || Repository::findUserByPhone($Phone, $Id) !== []) throw new RuntimeException('conflict');
 $ExistingPanel = PanelClient::findByTelegramId($Id);
-if (PanelClient::lastListError() !== null) throw new RuntimeException('panel_unavailable');
-if ($ExistingPanel && (string)($ExistingPanel['uuid'] ?? '') !== $UUID) throw new RuntimeException('conflict');
+if (PanelClient::lastListError() === null && $ExistingPanel && (string)($ExistingPanel['uuid'] ?? '') !== $UUID) {
+throw new RuntimeException('conflict');
+}
 $Panel = PanelClient::get($UUID);
 if (!$Panel) throw new RuntimeException('panel_unavailable');
 $PanelId = (int)($Panel['telegram_id'] ?? 0);
 if ($PanelId > 0 && $PanelId !== $Id) throw new RuntimeException('conflict');
 if ($PanelId !== $Id) {
-if (!PanelClient::update($UUID, ['telegram_id' => $Id])) throw new RuntimeException('panel_unavailable');
+$Updated = method_exists(PanelClient::class, 'linkTelegramId')
+? PanelClient::linkTelegramId($UUID, $Id, $Panel)
+: PanelClient::update($UUID, ['telegram_id' => $Id]);
+if (!$Updated) throw new RuntimeException('panel_unavailable');
 $Panel = PanelClient::get($UUID);
 if ((int)($Panel['telegram_id'] ?? 0) !== $Id) throw new RuntimeException('panel_unavailable');
 }
@@ -220,8 +318,10 @@ $Name = $Candidate;
 $Db->execute('UPDATE `Users` SET `Client_ID` = ?, `Phone` = CASE WHEN `Phone` IS NULL OR `Phone` = ? THEN ? ELSE `Phone` END, `Full_Name` = CASE WHEN `Full_Name` IS NULL OR `Full_Name` = ? THEN ? ELSE `Full_Name` END WHERE `Telegram_ID` = ?', [$UUID, '', $Phone, '', $Name, $Id]);
 $Db->execute('UPDATE `App_Devices` SET `Telegram_ID` = ?, `Full_Name` = CASE WHEN (`Full_Name` IS NULL OR `Full_Name` = \'\') AND ? <> \'\' THEN ? ELSE `Full_Name` END WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)', [$Id, $Name, $Name, $UUID, $Id]);
 $Db->execute('UPDATE `App_Sessions` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)', [$Id, $UUID, $Id]);
+$Db->execute('UPDATE `App_SignIn_Requests` SET `Telegram_ID` = ? WHERE `User_UUID` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0)', [$Id, $UUID]);
 $Db->execute('UPDATE `App_Bot_Link_Requests` SET `Used_At` = ? WHERE `Token_Hash` = ?', [time(), hash('sha256', $Token)]);
 });
+self::clearPendingToken($Context->UserId);
 if (is_array($Linked_Panel) && class_exists('Common') && method_exists('Common', 'syncSubscriptionFromServer') && method_exists('Repository', 'getUser')) {
 try {
 $Fresh_User = Repository::getUser($Context->UserId);
@@ -233,6 +333,9 @@ Common::syncSubscriptionFromServer($Fresh_User, $Linked_Panel);
 TelegramClient::sendMessage($Context->ChatId, self::greetText($Context) . '✅حساب برنامه و ربات متصل شد. اطلاعات در پنل و برنامه همگام می شود.' . self::footerText());
 } catch (Throwable $Error) {
 error_log('[Umbrella-Bot][App-Bot-Link] ' . $Error->getMessage());
+if ($Error->getMessage() === 'expired') {
+self::clearPendingToken($Context->UserId);
+}
 $Message = match ($Error->getMessage()) {
 'conflict' => 'این تلگرام، شماره یا حساب پنل قبلاً به حساب دیگری متصل شده است؛ برای بررسی با پشتیبانی تماس بگیرید.',
 'expired' => 'لینک منقضی یا استفاده شده است؛ از برنامه لینک جدید بگیرید.',

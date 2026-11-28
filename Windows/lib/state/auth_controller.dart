@@ -426,11 +426,26 @@ class AuthController extends ChangeNotifier {
     // Keep the phone field filled after an update or an expired server session.
     // The sign-in token is restored separately below; never save an OTP.
     _phone = _store.read(StoreKeys.lastPhone) ?? '';
-    _deviceId = _store.read(StoreKeys.deviceId) ?? '';
+    _deviceId = (_store.read(StoreKeys.deviceId) ?? '').trim();
+    if (_deviceId.isEmpty) {
+      try {
+        final String backedUp = (await _store.readFile('device_id.txt') ?? '').trim();
+        if (RegExp(r'^[A-Za-z0-9_-]{16,64}$').hasMatch(backedUp)) {
+          _deviceId = backedUp;
+          await _store.write(StoreKeys.deviceId, _deviceId);
+        }
+      } catch (_) {}
+    }
     if (_deviceId.isEmpty) {
       _deviceId = _generateDeviceId();
       await _store.write(StoreKeys.deviceId, _deviceId);
     }
+    try {
+      final String? existingBackup = await _store.readFile('device_id.txt');
+      if (existingBackup == null || existingBackup.trim() != _deviceId) {
+        await _store.writeFile('device_id.txt', _deviceId);
+      }
+    } catch (_) {}
     // اعلان های ذخیره شده پیش از شروع پایش دوره ای بارگذاری می شوند تا هیچ
     // درخواست همزمانی تاریخچه قبلی را جا نیندازد یا دوباره صدا ندهد.
     final List<dynamic> cached = _store.readJsonList(StoreKeys.notifications);
@@ -793,7 +808,9 @@ class AuthController extends ChangeNotifier {
           phone: phone,
           deviceId: _deviceId,
           deviceName: _device.deviceName,
-          platform: _device.platformLabel,
+          platform: defaultTargetPlatform == TargetPlatform.android
+              ? 'Android'
+              : 'Windows',
         ),
       );
       _challenge = start.challenge;
@@ -843,7 +860,9 @@ class AuthController extends ChangeNotifier {
           phone: _phone,
           deviceId: _deviceId,
           deviceName: _device.deviceName,
-          platform: _device.platformLabel,
+          platform: defaultTargetPlatform == TargetPlatform.android
+              ? 'Android'
+              : 'Windows',
           firstName: _firstName,
           lastName: _lastName,
         ),
@@ -1086,7 +1105,7 @@ class AuthController extends ChangeNotifier {
         token: session.token,
         deviceId: _deviceId,
         activity: pendingActivity,
-        deviceName: _device.hostname,
+        deviceName: _device.deviceName,
         platform: defaultTargetPlatform == TargetPlatform.android
             ? 'Android'
             : 'Windows',

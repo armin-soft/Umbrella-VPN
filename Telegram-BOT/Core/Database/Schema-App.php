@@ -59,6 +59,473 @@ $Database->execute(
 } catch (Throwable) {}
 }
 } catch (Throwable $Error) { error_log('[Umbrella-Bot][AppSchema] devices full name: ' . $Error->getMessage()); }
+
+try {
+$LastDedup = 0;
+try {
+$LastDedup = (int)$Database->scalar("SELECT `Value` FROM `Settings` WHERE `Key` = 'App_Devices_Dedup_Last_At' LIMIT 1", [], 0);
+} catch (Throwable) {
+$LastDedup = 0;
+}
+$NowTs = time();
+if ($NowTs - $LastDedup >= 60) {
+self::deduplicateTrustedDevices($Database);
+try {
+$Database->execute(
+'INSERT INTO `Settings` (`Key`, `Value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `Value` = VALUES(`Value`)',
+['App_Devices_Dedup_Last_At', (string)$NowTs]
+);
+} catch (Throwable) {}
+}
+} catch (Throwable $Error) { error_log('[Umbrella-Bot][AppSchema] devices dedup: ' . $Error->getMessage()); }
+}
+
+/**
+ * Merges and removes duplicate trusted device rows belonging to the same user
+ * on the same physical device (for example after updating from v1.0.1 to a newer
+ * release where a fresh Device_ID or different platform/name casing was registered).
+ */
+public static function deduplicateTrustedDevices(
+?Database $Database = null,
+string $KeepDeviceId = '',
+string $ScopeUuid = '',
+int $ScopeTelegramId = 0,
+string $ScopePhone = ''
+): int {
+$Db = $Database ?? Database::getInstance();
+if (!method_exists($Db, 'fetchAll') || !method_exists($Db, 'execute')) {
+return 0;
+}
+
+$KeepDeviceId = trim($KeepDeviceId);
+$ScopeUuid = trim($ScopeUuid);
+$ScopePhoneNorm = self::normalizePhoneForDedup($ScopePhone);
+
+try {
+$Rows = $Db->fetchAll(
+'SELECT `ID`, `Device_ID`, `User_UUID`, `Client_ID`, `Telegram_ID`, `Device_Name`, `Full_Name`, '
+. '`Platform`, `App_Version`, `Phone`, `Push_Enabled`, `Last_IP`, '
+. 'UNIX_TIMESTAMP(`First_Seen_At`) AS `First_Ts`, UNIX_TIMESTAMP(`Last_Seen_At`) AS `Last_Ts` '
+. 'FROM `App_Devices` WHERE `Is_Trusted` = 1 ORDER BY `ID` ASC',
+[]
+);
+if (count($Rows) < 2) {
+return 0;
+}
+
+$UserUuidToTg = [];
+$UserTgToUuid = [];
+$UserPhoneToKeys = [];
+try {
+$UserRows = $Db->fetchAll('SELECT `Telegram_ID`, `Client_ID`, `Phone` FROM `Users`', []);
+foreach ($UserRows as $URow) {
+$UTg = (int)($URow['Telegram_ID'] ?? 0);
+$UUuid = trim((string)($URow['Client_ID'] ?? ''));
+if ($UUuid === '_') $UUuid = '';
+$UPhone = self::normalizePhoneForDedup((string)($URow['Phone'] ?? ''));
+if ($UTg > 0 && $UUuid !== '') {
+$UserUuidToTg[$UUuid] = $UTg;
+$UserTgToUuid[$UTg] = $UUuid;
+}
+if ($UPhone !== '') {
+if (!isset($UserPhoneToKeys[$UPhone])) $UserPhoneToKeys[$UPhone] = [];
+if ($UTg > 0) $UserPhoneToKeys[$UPhone][] = 'tg:' . $UTg;
+if ($UUuid !== '') $UserPhoneToKeys[$UPhone][] = 'uuid:' . $UUuid;
+}
+}
+} catch (Throwable) {}
+
+$N = count($Rows);
+$Parent = range(0, $N - 1);
+$Find = static function (int $X) use (&$Parent): int {
+while ($Parent[$X] !== $X) {
+$Parent[$X] = $Parent[$Parent[$X]];
+$X = $Parent[$X];
+}
+return $X;
+};
+$Union = static function (int $A, int $B) use (&$Parent, $Find): void {
+$Ra = $Find($A);
+$Rb = $Find($B);
+if ($Ra !== $Rb) {
+$Parent[$Rb] = $Ra;
+}
+};
+
+$KeyOwner = [];
+foreach ($Rows as $Idx => $Row) {
+$Keys = [];
+$Uuid = trim((string)($Row['User_UUID'] ?? ''));
+if ($Uuid === '_') $Uuid = '';
+$Cid = trim((string)($Row['Client_ID'] ?? ''));
+if ($Cid === '_') $Cid = '';
+$Tg = (int)($Row['Telegram_ID'] ?? 0);
+$Phone = self::normalizePhoneForDedup((string)($Row['Phone'] ?? ''));
+
+if ($Uuid !== '') {
+$Keys[] = 'uuid:' . $Uuid;
+if (isset($UserUuidToTg[$Uuid])) {
+$Keys[] = 'tg:' . $UserUuidToTg[$Uuid];
+}
+}
+if ($Cid !== '') {
+$Keys[] = 'uuid:' . $Cid;
+if (isset($UserUuidToTg[$Cid])) {
+$Keys[] = 'tg:' . $UserUuidToTg[$Cid];
+}
+}
+if ($Tg > 0) {
+$Keys[] = 'tg:' . $Tg;
+if (isset($UserTgToUuid[$Tg])) {
+$Keys[] = 'uuid:' . $UserTgToUuid[$Tg];
+}
+}
+if ($Phone !== '') {
+$Keys[] = 'phone:' . $Phone;
+foreach ($UserPhoneToKeys[$Phone] ?? [] as $ExtraKey) {
+$Keys[] = $ExtraKey;
+}
+}
+
+foreach (array_unique($Keys) as $Key) {
+if (isset($KeyOwner[$Key])) {
+$Union($Idx, $KeyOwner[$Key]);
+} else {
+$KeyOwner[$Key] = $Idx;
+}
+}
+}
+
+$OwnerGroups = [];
+foreach ($Rows as $Idx => $Row) {
+$Root = $Find($Idx);
+$OwnerGroups[$Root][] = $Row;
+}
+
+$ScopeActive = ($ScopeUuid !== '' && $ScopeUuid !== '_') || $ScopeTelegramId > 0 || $ScopePhoneNorm !== '';
+$Removed = 0;
+
+foreach ($OwnerGroups as $GroupRows) {
+if (count($GroupRows) < 2) {
+continue;
+}
+if ($ScopeActive && $KeepDeviceId === '') {
+$MatchesScope = false;
+foreach ($GroupRows as $GRow) {
+$GUuid = trim((string)($GRow['User_UUID'] ?? ''));
+$GCid = trim((string)($GRow['Client_ID'] ?? ''));
+$GTg = (int)($GRow['Telegram_ID'] ?? 0);
+$GPhone = self::normalizePhoneForDedup((string)($GRow['Phone'] ?? ''));
+if (($ScopeUuid !== '' && $ScopeUuid !== '_' && ($GUuid === $ScopeUuid || $GCid === $ScopeUuid))
+|| ($ScopeTelegramId > 0 && $GTg === $ScopeTelegramId)
+|| ($ScopePhoneNorm !== '' && $GPhone === $ScopePhoneNorm)) {
+$MatchesScope = true;
+break;
+}
+}
+if (!$MatchesScope) {
+continue;
+}
+}
+
+$M = count($GroupRows);
+$Dsu = range(0, $M - 1);
+$FindDev = static function (int $X) use (&$Dsu): int {
+while ($Dsu[$X] !== $X) {
+$Dsu[$X] = $Dsu[$Dsu[$X]];
+$X = $Dsu[$X];
+}
+return $X;
+};
+$UnionDev = static function (int $A, int $B) use (&$Dsu, $FindDev): void {
+$Ra = $FindDev($A);
+$Rb = $FindDev($B);
+if ($Ra !== $Rb) {
+$Dsu[$Rb] = $Ra;
+}
+};
+
+for ($I = 0; $I < $M; $I++) {
+for ($J = $I + 1; $J < $M; $J++) {
+if (self::isSamePhysicalDeviceRow($GroupRows[$I], $GroupRows[$J])) {
+$UnionDev($I, $J);
+}
+}
+}
+
+$DeviceClusters = [];
+foreach ($GroupRows as $Idx => $GRow) {
+$DeviceClusters[$FindDev($Idx)][] = $GRow;
+}
+
+foreach ($DeviceClusters as $Cluster) {
+if (count($Cluster) < 2) {
+continue;
+}
+
+usort($Cluster, static function (array $A, array $B) use ($KeepDeviceId): int {
+$AKeep = $KeepDeviceId !== '' && trim((string)($A['Device_ID'] ?? '')) === $KeepDeviceId ? 1 : 0;
+$BKeep = $KeepDeviceId !== '' && trim((string)($B['Device_ID'] ?? '')) === $KeepDeviceId ? 1 : 0;
+if ($AKeep !== $BKeep) {
+return $BKeep <=> $AKeep;
+}
+
+$ASeen = max((int)($A['Last_Ts'] ?? 0), (int)($A['First_Ts'] ?? 0));
+$BSeen = max((int)($B['Last_Ts'] ?? 0), (int)($B['First_Ts'] ?? 0));
+if ($ASeen !== $BSeen) {
+return $BSeen <=> $ASeen;
+}
+
+$AVer = self::normalizeVersionForDedup((string)($A['App_Version'] ?? ''));
+$BVer = self::normalizeVersionForDedup((string)($B['App_Version'] ?? ''));
+if ($AVer !== '' && $BVer !== '') {
+$VerCmp = version_compare($BVer, $AVer);
+if ($VerCmp !== 0) {
+return $VerCmp;
+}
+} elseif ($AVer !== $BVer) {
+return ($BVer !== '' ? 1 : 0) <=> ($AVer !== '' ? 1 : 0);
+}
+
+return (int)($B['ID'] ?? 0) <=> (int)($A['ID'] ?? 0);
+});
+
+$Winner = $Cluster[0];
+$Losers = array_slice($Cluster, 1);
+
+$WinId = (int)($Winner['ID'] ?? 0);
+$WinDevId = trim((string)($Winner['Device_ID'] ?? ''));
+if ($WinId <= 0 || $WinDevId === '') {
+continue;
+}
+
+$MergedUuid = trim((string)($Winner['User_UUID'] ?? ''));
+if ($MergedUuid === '_') $MergedUuid = '';
+$MergedCid = trim((string)($Winner['Client_ID'] ?? ''));
+if ($MergedCid === '_') $MergedCid = '';
+$MergedTg = (int)($Winner['Telegram_ID'] ?? 0);
+$MergedPhone = trim((string)($Winner['Phone'] ?? ''));
+$MergedFullName = trim((string)($Winner['Full_Name'] ?? ''));
+$MergedDevName = trim((string)($Winner['Device_Name'] ?? ''));
+$MergedPlatform = trim((string)($Winner['Platform'] ?? ''));
+$MergedIp = trim((string)($Winner['Last_IP'] ?? ''));
+
+foreach ($Losers as $Loser) {
+$LUuid = trim((string)($Loser['User_UUID'] ?? ''));
+if ($LUuid === '_') $LUuid = '';
+$LCid = trim((string)($Loser['Client_ID'] ?? ''));
+if ($LCid === '_') $LCid = '';
+$LTg = (int)($Loser['Telegram_ID'] ?? 0);
+$LPhone = trim((string)($Loser['Phone'] ?? ''));
+$LFullName = trim((string)($Loser['Full_Name'] ?? ''));
+$LDevName = trim((string)($Loser['Device_Name'] ?? ''));
+$LPlatform = trim((string)($Loser['Platform'] ?? ''));
+$LIp = trim((string)($Loser['Last_IP'] ?? ''));
+
+if ($MergedUuid === '' && $LUuid !== '') $MergedUuid = $LUuid;
+if ($MergedCid === '' && $LCid !== '') $MergedCid = $LCid;
+if ($MergedTg <= 0 && $LTg > 0) $MergedTg = $LTg;
+if ($MergedPhone === '' && $LPhone !== '') $MergedPhone = $LPhone;
+if ($MergedFullName === '' && $LFullName !== '' && $LFullName !== '_') $MergedFullName = $LFullName;
+if ((self::isGenericDeviceName(self::normalizeDeviceNameForDedup($MergedDevName))) && !self::isGenericDeviceName(self::normalizeDeviceNameForDedup($LDevName))) {
+$MergedDevName = $LDevName;
+}
+if ($MergedPlatform === '' && $LPlatform !== '') $MergedPlatform = $LPlatform;
+if ($MergedIp === '' && $LIp !== '') $MergedIp = $LIp;
+}
+if ($MergedCid === '' && $MergedUuid !== '') $MergedCid = $MergedUuid;
+if ($MergedUuid === '' && $MergedCid !== '') $MergedUuid = $MergedCid;
+
+$MergeFn = static function () use (
+$Db,
+$WinId,
+$WinDevId,
+$MergedUuid,
+$MergedCid,
+$MergedTg,
+$MergedPhone,
+$MergedFullName,
+$MergedDevName,
+$MergedPlatform,
+$MergedIp,
+$Losers,
+&$Removed
+): void {
+$Db->execute(
+'UPDATE `App_Devices` SET `User_UUID` = COALESCE(NULLIF(?, \'\'), `User_UUID`), '
+. '`Client_ID` = COALESCE(NULLIF(?, \'\'), `Client_ID`), '
+. '`Telegram_ID` = CASE WHEN ? > 0 THEN ? ELSE `Telegram_ID` END, '
+. '`Phone` = COALESCE(NULLIF(?, \'\'), `Phone`), '
+. '`Full_Name` = COALESCE(NULLIF(?, \'\'), `Full_Name`), '
+. '`Device_Name` = COALESCE(NULLIF(?, \'\'), `Device_Name`), '
+. '`Platform` = COALESCE(NULLIF(?, \'\'), `Platform`), '
+. '`Last_IP` = COALESCE(NULLIF(?, \'\'), `Last_IP`) '
+. 'WHERE `ID` = ?',
+[$MergedUuid, $MergedCid, $MergedTg, $MergedTg, $MergedPhone, $MergedFullName, $MergedDevName, $MergedPlatform, $MergedIp, $WinId]
+);
+
+foreach ($Losers as $Loser) {
+$LoserId = (int)($Loser['ID'] ?? 0);
+$LoserDevId = trim((string)($Loser['Device_ID'] ?? ''));
+if ($LoserId <= 0 || $LoserDevId === '' || $LoserId === $WinId) {
+continue;
+}
+
+try {
+$Db->execute(
+'UPDATE `App_Sessions` SET `Revoked_At` = CURRENT_TIMESTAMP WHERE `Device_ID` = ? AND `Revoked_At` IS NULL',
+[$LoserDevId]
+);
+} catch (Throwable) {}
+try { $Db->execute('DELETE FROM `App_SignIn_Requests` WHERE `Device_ID` = ?', [$LoserDevId]); } catch (Throwable) {}
+try { $Db->execute('DELETE FROM `App_Notifications` WHERE `Device_ID` = ?', [$LoserDevId]); } catch (Throwable) {}
+try {
+$Db->execute('UPDATE IGNORE `App_Security_Alerts` SET `Device_ID` = ? WHERE `Device_ID` = ?', [$WinDevId, $LoserDevId]);
+$Db->execute('DELETE FROM `App_Security_Alerts` WHERE `Device_ID` = ?', [$LoserDevId]);
+} catch (Throwable) {}
+try {
+$Db->execute('UPDATE IGNORE `App_User_Activity` SET `Device_ID` = ? WHERE `Device_ID` = ?', [$WinDevId, $LoserDevId]);
+$Db->execute('DELETE FROM `App_User_Activity` WHERE `Device_ID` = ?', [$LoserDevId]);
+} catch (Throwable) {}
+
+$Db->execute('DELETE FROM `App_Devices` WHERE `ID` = ?', [$LoserId]);
+$Removed++;
+}
+};
+
+if (method_exists($Db, 'transaction')) {
+$Db->transaction($MergeFn);
+} else {
+$MergeFn();
+}
+}
+}
+
+return $Removed;
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][AppSchema] deduplicateTrustedDevices: ' . $Error->getMessage());
+return 0;
+}
+}
+
+public static function isSamePhysicalDeviceRow(array $A, array $B, bool $AllowGenericMatch = true): bool {
+$PlatA = self::normalizePlatformForDedup((string)($A['Platform'] ?? ''));
+$PlatB = self::normalizePlatformForDedup((string)($B['Platform'] ?? ''));
+$NameA = self::normalizeDeviceNameForDedup((string)($A['Device_Name'] ?? ''));
+$NameB = self::normalizeDeviceNameForDedup((string)($B['Device_Name'] ?? ''));
+
+if ($PlatA !== '' && $PlatB !== '' && $PlatA !== $PlatB) {
+return false;
+}
+
+$GenericA = self::isGenericDeviceName($NameA);
+$GenericB = self::isGenericDeviceName($NameB);
+
+if ($PlatA !== '' && $PlatA === $PlatB) {
+if (($GenericA || $GenericB) && $AllowGenericMatch) {
+return true;
+}
+if (!$GenericA && !$GenericB && $NameA === $NameB) {
+return true;
+}
+if ($GenericA && $GenericB && $AllowGenericMatch) {
+return true;
+}
+
+if (!$GenericA && !$GenericB) {
+$CompactA = (string)(preg_replace('/[\s\-_]+/u', '', $NameA) ?? $NameA);
+$CompactB = (string)(preg_replace('/[\s\-_]+/u', '', $NameB) ?? $NameB);
+if ($CompactA !== '' && $CompactA === $CompactB) {
+return true;
+}
+
+$Short = mb_strlen($NameA, 'UTF-8') <= mb_strlen($NameB, 'UTF-8') ? $NameA : $NameB;
+$Long = $Short === $NameA ? $NameB : $NameA;
+if (mb_strlen($Short, 'UTF-8') >= 4 && str_contains($Long, $Short)) {
+$Remainder = trim(str_replace($Short, '', $Long), " \t\n\r\0\x0B-_()");
+if ($Remainder !== '' && preg_match('/\d/', $Remainder) !== 1) {
+if (preg_match('/^(samsung|xiaomi|redmi|poco|google|huawei|honor|realme|oppo|vivo|nokia|sony|motorola|oneplus|asus|lenovo|hp|dell|acer|msi|apple|desktop|laptop|pc|android|windows)$/i', $Remainder) === 1) {
+return true;
+}
+}
+}
+}
+return false;
+}
+
+if (($PlatA === '' || $PlatB === '') && !$GenericA && !$GenericB && $NameA === $NameB) {
+return true;
+}
+
+return false;
+}
+
+private static function normalizePhoneForDedup(string $Phone): string {
+$Digits = strtr(trim($Phone), [
+'۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+'۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+'٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+'٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+]);
+$Digits = (string)(preg_replace('/\D+/', '', $Digits) ?? '');
+if ($Digits === '') return '';
+if (str_starts_with($Digits, '0098') && strlen($Digits) >= 13) {
+$Digits = '0' . substr($Digits, 4);
+} elseif (str_starts_with($Digits, '98') && strlen($Digits) === 12) {
+$Digits = '0' . substr($Digits, 2);
+} elseif (strlen($Digits) === 10 && str_starts_with($Digits, '9')) {
+$Digits = '0' . $Digits;
+}
+return $Digits;
+}
+
+private static function normalizePlatformForDedup(string $Platform): string {
+$Lower = mb_strtolower(trim($Platform), 'UTF-8');
+if ($Lower === '') return '';
+if (str_contains($Lower, 'win') || str_contains($Lower, 'ویندوز')) return 'windows';
+if (str_contains($Lower, 'android') || str_contains($Lower, 'اندروید')) return 'android';
+if (str_contains($Lower, 'ios') || str_contains($Lower, 'iphone') || str_contains($Lower, 'ipad') || str_contains($Lower, 'آیفون') || str_contains($Lower, 'آیپد')) return 'ios';
+if (str_contains($Lower, 'mac') || str_contains($Lower, 'darwin') || str_contains($Lower, 'مک')) return 'macos';
+if (str_contains($Lower, 'linux') || str_contains($Lower, 'لینوکس')) return 'linux';
+return $Lower;
+}
+
+private static function normalizeDeviceNameForDedup(string $Name): string {
+$Clean = str_replace(["\xE2\x80\x8C", "\xE2\x80\x8F", "\xE2\x80\x8E"], ' ', trim($Name));
+$Clean = (string)(preg_replace('/\s+/u', ' ', $Clean) ?? $Clean);
+return mb_strtolower(trim($Clean), 'UTF-8');
+}
+
+private static function isGenericDeviceName(string $Normalized): bool {
+return in_array($Normalized, [
+'',
+'_',
+'unknown',
+'device',
+'desktop',
+'mobile',
+'windows',
+'windows pc',
+'android',
+'android device',
+'ios',
+'macos',
+'linux',
+'دستگاه',
+'دستگاه بی نام',
+'دستگاه نامشخص',
+'رایانه ویندوز',
+'دستگاه اندروید',
+], true);
+}
+
+private static function normalizeVersionForDedup(string $Version): string {
+$Trimmed = ltrim(trim($Version), 'vV');
+if ($Trimmed === '') return '';
+if (preg_match('/^(\d+(?:\.\d+){1,3})/', $Trimmed, $Matches) === 1) {
+return $Matches[1];
+}
+return '';
 }
 
 private static function backfillDeviceIdentityAndSeen(Database $Database): void {

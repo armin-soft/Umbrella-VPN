@@ -1341,13 +1341,27 @@ $User = $By_Phone;
 }
 }
 }
+if (empty($User) && $Uuid !== '' && class_exists('Database')) {
+try {
+$Dev_Match = Database::getInstance()->fetch(
+'SELECT `Telegram_ID` FROM `App_Devices` WHERE `User_UUID` = ? AND `Telegram_ID` > 0 ORDER BY `Is_Trusted` DESC, `ID` DESC LIMIT 1',
+[$Uuid]
+);
+$Dev_Tg = (int)($Dev_Match['Telegram_ID'] ?? 0);
+if ($Dev_Tg > 0) {
+$User = Repository::getUser($Dev_Tg);
+}
+} catch (Throwable) {}
+}
 if (empty($User)) continue;
 
 $User_ID = (int)($User['Telegram_ID'] ?? 0);
 if ($User_ID <= 0) continue;
 
 if ($Has_Full_Sync) {
-if ($Uuid !== '' && (trim((string)($User['Client_ID'] ?? '')) === '' || trim((string)($User['Client_ID'] ?? '')) === '_')) {
+$Current_Client = trim((string)($User['Client_ID'] ?? ''));
+if ($Uuid !== '' && ($Current_Client === '' || $Current_Client === '_')) {
+try { Repository::updateUser($User_ID, ['Client_ID' => $Uuid]); } catch (Throwable) {}
 $User['Client_ID'] = $Uuid;
 }
 Common::syncSubscriptionFromServer($User, $Row);
