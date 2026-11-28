@@ -364,6 +364,82 @@ class AmsiScanner {
   void* session_ = nullptr;
 };
 
+bool ContainsAsciiBytesCi(const std::vector<BYTE>& haystack, const char* needle);
+bool HasPeHeaderAt(const std::vector<BYTE>& buf, size_t offset);
+bool ContainsElfHeaderAt(const std::vector<BYTE>& buf, size_t offset);
+bool ContainsDexHeaderAt(const std::vector<BYTE>& buf, size_t offset);
+bool ReadFileSampleBytes(const std::wstring& path, size_t max_bytes,
+                         std::vector<BYTE>* out);
+bool ContainsDangerousUrlOrPayload(const std::string& lower_text);
+
+double ComputeShannonEntropy(const BYTE* data, size_t len) {
+  if (data == nullptr || len == 0) return 0.0;
+  std::array<size_t, 256> freq{};
+  for (size_t i = 0; i < len; ++i) {
+    freq[data[i]]++;
+  }
+  double ent = 0.0;
+  for (size_t count : freq) {
+    if (count == 0) continue;
+    double p = static_cast<double>(count) / static_cast<double>(len);
+    ent -= p * std::log2(p);
+  }
+  return ent;
+}
+
+bool ContainsBinderOrPayloadBytes(const std::vector<BYTE>& buf,
+                                  size_t start_offset = 0) {
+  if (start_offset >= buf.size()) return false;
+  for (size_t pos = start_offset; pos + 0x40 < buf.size(); ++pos) {
+    if ((buf[pos] == 0x4D && buf[pos + 1] == 0x5A &&
+         HasPeHeaderAt(buf, pos)) ||
+        ContainsElfHeaderAt(buf, pos) ||
+        ContainsDexHeaderAt(buf, pos)) {
+      return true;
+    }
+    if (pos + 4 <= buf.size() && buf[pos] == 'P' && buf[pos + 1] == 'K' &&
+        buf[pos + 2] == 0x03 && buf[pos + 3] == 0x04) {
+      return true;
+    }
+    if (pos + 7 <= buf.size() && buf[pos] == 'R' && buf[pos + 1] == 'a' &&
+        buf[pos + 2] == 'r' && buf[pos + 3] == '!' && buf[pos + 4] == 0x1A &&
+        buf[pos + 5] == 0x07) {
+      return true;
+    }
+    if (pos + 6 <= buf.size() && buf[pos] == '7' && buf[pos + 1] == 'z' &&
+        buf[pos + 2] == 0xBC && buf[pos + 3] == 0xAF &&
+        buf[pos + 4] == 0x27 && buf[pos + 5] == 0x1C) {
+      return true;
+    }
+  }
+  std::vector<BYTE> slice;
+  if (start_offset == 0) {
+    return ContainsAsciiBytesCi(buf, "eicar-standard-antivirus-test-file") ||
+           ContainsAsciiBytesCi(buf, "<script") ||
+           ContainsAsciiBytesCi(buf, "wscript.shell") ||
+           ContainsAsciiBytesCi(buf, "urldownloadtofile") ||
+           ContainsAsciiBytesCi(buf, "frombase64string") ||
+           ContainsAsciiBytesCi(buf, "invoke-expression") ||
+           ContainsAsciiBytesCi(buf, "powershell -enc") ||
+           ContainsAsciiBytesCi(buf, "basestart-") ||
+           ContainsAsciiBytesCi(buf, "-baseend") ||
+           ContainsAsciiBytesCi(buf, "tvqqaam") ||
+           ContainsAsciiBytesCi(buf, "uesdb");
+  }
+  slice.assign(buf.begin() + static_cast<std::ptrdiff_t>(start_offset), buf.end());
+  return ContainsAsciiBytesCi(slice, "eicar-standard-antivirus-test-file") ||
+         ContainsAsciiBytesCi(slice, "<script") ||
+         ContainsAsciiBytesCi(slice, "wscript.shell") ||
+         ContainsAsciiBytesCi(slice, "urldownloadtofile") ||
+         ContainsAsciiBytesCi(slice, "frombase64string") ||
+         ContainsAsciiBytesCi(slice, "invoke-expression") ||
+         ContainsAsciiBytesCi(slice, "powershell -enc") ||
+         ContainsAsciiBytesCi(slice, "basestart-") ||
+         ContainsAsciiBytesCi(slice, "-baseend") ||
+         ContainsAsciiBytesCi(slice, "tvqqaam") ||
+         ContainsAsciiBytesCi(slice, "uesdb");
+}
+
 struct PeHeuristicResult {
   bool is_pe = false;
   bool suspicious = false;
@@ -379,28 +455,109 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
   if (file == INVALID_HANDLE_VALUE) return res;
   LARGE_INTEGER size = {};
   if (!GetFileSizeEx(file, &size) || size.QuadPart < 256 ||
-      size.QuadPart > 24LL * 1024 * 1024) {
+      size.QuadPart > 32LL * 1024 * 1024) {
     CloseHandle(file);
     return res;
   }
+  const uint64_t total_file_size = static_cast<uint64_t>(size.QuadPart);
   const size_t cap = static_cast<size_t>(std::min<int64_t>(size.QuadPart, 4LL * 1024 * 1024));
   std::vector<BYTE> buf(cap);
   DWORD read_bytes = 0;
   bool ok = ReadFile(file, buf.data(), static_cast<DWORD>(cap), &read_bytes, nullptr) != 0;
-  CloseHandle(file);
-  if (!ok || read_bytes < 256) return res;
 
-  res.is_pe = (buf[0] == 'M' && buf[1] == 'Z');
-  std::array<size_t, 256> freq{};
-  for (DWORD i = 0; i < read_bytes; ++i) {
-    freq[buf[i]]++;
+  res.is_pe = (ok && read_bytes >= 64 && buf[0] == 'M' && buf[1] == 'Z');
+  if (!ok || read_bytes < 256) {
+    CloseHandle(file);
+    return res;
   }
-  double ent = 0.0;
-  for (size_t count : freq) {
-    if (count == 0) continue;
-    double p = static_cast<double>(count) / static_cast<double>(read_bytes);
-    ent -= p * std::log2(p);
+
+  // Parse PE sections & check for section-level high-entropy packing and bound overlays.
+  uint64_t pe_end_offset = 0;
+  bool high_entropy_code_section = false;
+  if (HasPeHeaderAt(buf, 0)) {
+    const uint32_t pe_off =
+        static_cast<uint32_t>(buf[0x3C]) |
+        (static_cast<uint32_t>(buf[0x3D]) << 8) |
+        (static_cast<uint32_t>(buf[0x3E]) << 16) |
+        (static_cast<uint32_t>(buf[0x3F]) << 24);
+    if (pe_off + 24 <= read_bytes) {
+      const uint16_t num_sections =
+          static_cast<uint16_t>(buf[pe_off + 6]) |
+          (static_cast<uint16_t>(buf[pe_off + 7]) << 8);
+      const uint16_t opt_hdr_size =
+          static_cast<uint16_t>(buf[pe_off + 20]) |
+          (static_cast<uint16_t>(buf[pe_off + 21]) << 8);
+      const size_t sec_table = static_cast<size_t>(pe_off) + 24 + opt_hdr_size;
+      const uint16_t safe_secs = std::min<uint16_t>(num_sections, 32);
+      for (uint16_t s = 0; s < safe_secs; ++s) {
+        const size_t sh = sec_table + static_cast<size_t>(s) * 40;
+        if (sh + 40 > read_bytes) break;
+        std::string sec_name;
+        for (size_t c = 0; c < 8 && buf[sh + c] != 0; ++c) {
+          sec_name.push_back(static_cast<char>(std::tolower(buf[sh + c])));
+        }
+        const uint32_t raw_size =
+            static_cast<uint32_t>(buf[sh + 16]) |
+            (static_cast<uint32_t>(buf[sh + 17]) << 8) |
+            (static_cast<uint32_t>(buf[sh + 18]) << 16) |
+            (static_cast<uint32_t>(buf[sh + 19]) << 24);
+        const uint32_t raw_ptr =
+            static_cast<uint32_t>(buf[sh + 20]) |
+            (static_cast<uint32_t>(buf[sh + 21]) << 8) |
+            (static_cast<uint32_t>(buf[sh + 22]) << 16) |
+            (static_cast<uint32_t>(buf[sh + 23]) << 24);
+        if (raw_size > 0) {
+          const uint64_t end_pos = static_cast<uint64_t>(raw_ptr) + raw_size;
+          if (end_pos <= total_file_size && end_pos > pe_end_offset) {
+            pe_end_offset = end_pos;
+          }
+          if (sec_name != ".rsrc" && raw_size >= 4096 &&
+              raw_ptr < read_bytes) {
+            const size_t avail = std::min<size_t>(
+                static_cast<size_t>(raw_size),
+                read_bytes - static_cast<size_t>(raw_ptr));
+            if (avail >= 4096) {
+              const double sec_ent =
+                  ComputeShannonEntropy(buf.data() + raw_ptr, avail);
+              if (sec_ent >= 7.65 &&
+                  (sec_name == ".text" || sec_name == "upx0" ||
+                   sec_name == "upx1" || sec_name == ".themida" ||
+                   sec_name == ".vmp0" || sec_name == ".enigma")) {
+                high_entropy_code_section = true;
+              }
+            }
+          }
+        }
+      }
+    }
   }
+
+  // Check PE overlay (>16KB trailing data after last section) for bound second PE/archive/payload.
+  if (pe_end_offset > 0 && total_file_size > pe_end_offset + 16384ULL) {
+    const uint64_t overlay_len = total_file_size - pe_end_offset;
+    const size_t overlay_cap = static_cast<size_t>(
+        std::min<uint64_t>(overlay_len, 1024ULL * 1024ULL));
+    std::vector<BYTE> overlay(overlay_cap);
+    LARGE_INTEGER seek_pos = {};
+    seek_pos.QuadPart = static_cast<LONGLONG>(pe_end_offset);
+    DWORD ov_read = 0;
+    if (SetFilePointerEx(file, seek_pos, nullptr, FILE_BEGIN) != 0 &&
+        ReadFile(file, overlay.data(), static_cast<DWORD>(overlay_cap),
+                 &ov_read, nullptr) != 0 &&
+        ov_read >= 64) {
+      overlay.resize(ov_read);
+      if (ContainsBinderOrPayloadBytes(overlay, 0)) {
+        CloseHandle(file);
+        res.suspicious = true;
+        res.reason =
+            "فایل بایندر با پی لود اجرایی یا آرشیو پنهان شده در بخش انتهایی (Overlay) شناسایی شد";
+        return res;
+      }
+    }
+  }
+  CloseHandle(file);
+
+  const double ent = ComputeShannonEntropy(buf.data(), read_bytes);
   res.entropy = ent;
 
   std::string ascii_view;
@@ -415,14 +572,41 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
   }
 
   const bool injection_apis =
-      ascii_view.find("virtualallocex") != std::string::npos &&
-      ascii_view.find("writeprocessmemory") != std::string::npos &&
-      (ascii_view.find("createremotethread") != std::string::npos ||
-       ascii_view.find("ntunmapviewofsection") != std::string::npos);
+      (ascii_view.find("virtualallocex") != std::string::npos &&
+       ascii_view.find("writeprocessmemory") != std::string::npos &&
+       (ascii_view.find("createremotethread") != std::string::npos ||
+        ascii_view.find("ntunmapviewofsection") != std::string::npos ||
+        ascii_view.find("zwunmapviewofsection") != std::string::npos ||
+        ascii_view.find("queueuserapc") != std::string::npos)) ||
+      ((ascii_view.find("ntunmapviewofsection") != std::string::npos ||
+        ascii_view.find("zwunmapviewofsection") != std::string::npos) &&
+       (ascii_view.find("setthreadcontext") != std::string::npos ||
+        ascii_view.find("wow64setthreadcontext") != std::string::npos) &&
+       ascii_view.find("resumethread") != std::string::npos);
+
+  const bool amsi_etw_bypass =
+      ascii_view.find("amsiscanbuffer") != std::string::npos &&
+      ascii_view.find("virtualprotect") != std::string::npos &&
+      (ascii_view.find("etweventwrite") != std::string::npos || ent >= 6.8);
 
   const bool keylogger_apis =
       ascii_view.find("setwindowshookexa") != std::string::npos ||
       ascii_view.find("setwindowshookexw") != std::string::npos;
+
+  const bool rat_family_marker =
+      ascii_view.find("xworm") != std::string::npos ||
+      ascii_view.find("asyncrat") != std::string::npos ||
+      ascii_view.find("remcos") != std::string::npos ||
+      ascii_view.find("njrat") != std::string::npos ||
+      ascii_view.find("lummastealer") != std::string::npos ||
+      ascii_view.find("agenttesla") != std::string::npos ||
+      ascii_view.find("nanocore") != std::string::npos ||
+      ascii_view.find("darkcomet") != std::string::npos ||
+      ascii_view.find("castleloader") != std::string::npos ||
+      ascii_view.find("latrodectus") != std::string::npos ||
+      ascii_view.find("deerstealer") != std::string::npos ||
+      ascii_view.find("cobaltstrike") != std::string::npos ||
+      ascii_view.find("meterpreter") != std::string::npos;
 
   const bool double_ext =
       ContainsCi(ToUtf8(path), ".pdf.exe") ||
@@ -437,14 +621,24 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
     res.reason = "فایل با پسوند دوگانه فریبنده شناسایی شد";
     return res;
   }
-  if (injection_apis && ent >= 6.8) {
+  if (rat_family_marker) {
     res.suspicious = true;
-    res.reason = "الگوی تزریق کد به پردازش و فشرده سازی مشکوک (Entropy بالا)";
+    res.reason = "امضای بدافزار سرقت اطلاعات یا کنترل از راه دور (RAT) در فایل شناسایی شد";
     return res;
   }
-  if (keylogger_apis && ent >= 7.1) {
+  if (amsi_etw_bypass) {
     res.suspicious = true;
-    res.reason = "الگوی شنود ورودی کاربر و باینری رمزگذاری شده";
+    res.reason = "الگوی دور زدن موتور امنیتی AMSI / ETW در فایل بدون امضا شناسایی شد";
+    return res;
+  }
+  if (injection_apis && (ent >= 6.6 || high_entropy_code_section)) {
+    res.suspicious = true;
+    res.reason = "الگوی تزریق کد یا Process Hollowing به همراه فشرده سازی مشکوک (Entropy بالا)";
+    return res;
+  }
+  if (keylogger_apis && (ent >= 6.9 || high_entropy_code_section)) {
+    res.suspicious = true;
+    res.reason = "الگوی شنود ورودی کاربر (کی لاگر) و باینری رمزگذاری شده";
     return res;
   }
   return res;
@@ -461,9 +655,34 @@ struct SignatureHit {
 
 SignatureHit MatchKnownThreatText(const std::string& text) {
   const std::string lower = ToLowerAscii(text);
-  if (lower.empty() || IsUmbrellaSafeBinary(lower) ||
-      lower.find("umbrella") != std::string::npos) {
+  if (lower.empty() || IsUmbrellaSafeBinary(lower)) {
     return SignatureHit{};
+  }
+  if (lower.find("xworm") != std::string::npos ||
+      lower.find("asyncrat") != std::string::npos ||
+      lower.find("remcos") != std::string::npos ||
+      lower.find("njrat") != std::string::npos ||
+      lower.find("quasar rat") != std::string::npos ||
+      lower.find("nanocore") != std::string::npos ||
+      lower.find("darkcomet") != std::string::npos ||
+      lower.find("dcrat") != std::string::npos ||
+      lower.find("lummastealer") != std::string::npos ||
+      lower.find("lumma_stealer") != std::string::npos ||
+      lower.find("vidarstealer") != std::string::npos ||
+      lower.find("redlinestealer") != std::string::npos ||
+      lower.find("agenttesla") != std::string::npos ||
+      lower.find("castleloader") != std::string::npos ||
+      lower.find("latrodectus") != std::string::npos ||
+      lower.find("deerstealer") != std::string::npos ||
+      lower.find("stealc") != std::string::npos) {
+    return SignatureHit{
+        true,
+        "malware:rat_stealer",
+        "بدافزار کنترل از راه دور یا سرقت اطلاعات (RAT / Infostealer)",
+        "malware",
+        "critical",
+        "امضای تروجان کنترل از راه دور (RAT) یا بدافزار سرقت اطلاعات روی دستگاه شناسایی شد.",
+    };
   }
   if (lower.find("hiddify") != std::string::npos ||
       lower.find("hiddifynext") != std::string::npos ||
@@ -599,13 +818,145 @@ struct RunningProcessInfo {
   std::string name;
   std::string lower_name;
   std::string path;
+  std::string cmdline;
   std::string product_name;
   std::string company_name;
 };
 
+struct NtUnicodeString64 {
+  USHORT Length;
+  USHORT MaximumLength;
+  ULONGLONG Buffer;
+};
+
+struct NtProcessBasicInfo64 {
+  ULONGLONG Reserved1;
+  ULONGLONG PebBaseAddress;
+  ULONGLONG Reserved2[2];
+  ULONGLONG UniqueProcessId;
+  ULONGLONG Reserved3;
+};
+
+bool IsLolbinProcessName(const std::string& lower_name) {
+  return lower_name == "powershell.exe" || lower_name == "pwsh.exe" ||
+         lower_name == "cmd.exe" || lower_name == "mshta.exe" ||
+         lower_name == "wscript.exe" || lower_name == "cscript.exe" ||
+         lower_name == "rundll32.exe" || lower_name == "regsvr32.exe" ||
+         lower_name == "certutil.exe" || lower_name == "bitsadmin.exe" ||
+         lower_name == "msbuild.exe" || lower_name == "finger.exe" ||
+         lower_name == "curl.exe";
+}
+
+std::string ReadRemoteProcessCommandLine(DWORD pid) {
+#ifdef _WIN64
+  using NtQueryInfoProcFn = LONG(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+  static NtQueryInfoProcFn query_fn = []() -> NtQueryInfoProcFn {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    return ntdll ? reinterpret_cast<NtQueryInfoProcFn>(
+                       GetProcAddress(ntdll, "NtQueryInformationProcess"))
+                 : nullptr;
+  }();
+  if (query_fn == nullptr) return std::string();
+
+  HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+  if (proc == nullptr) return std::string();
+
+  std::string cmd_utf8;
+  BOOL is_wow64 = FALSE;
+  if (IsWow64Process(proc, &is_wow64) && !is_wow64) {
+    NtProcessBasicInfo64 pbi = {};
+    ULONG ret_len = 0;
+    if (query_fn(proc, 0, &pbi, sizeof(pbi), &ret_len) == 0 &&
+        pbi.PebBaseAddress != 0) {
+      ULONGLONG proc_params = 0;
+      SIZE_T bytes_read = 0;
+      // On x64 Windows PEB, ProcessParameters pointer sits at offset 0x20.
+      if (ReadProcessMemory(
+              proc, reinterpret_cast<LPCVOID>(pbi.PebBaseAddress + 0x20),
+              &proc_params, sizeof(proc_params), &bytes_read) &&
+          proc_params != 0) {
+        NtUnicodeString64 cmd_us = {};
+        // In RTL_USER_PROCESS_PARAMETERS (x64), CommandLine UNICODE_STRING sits at offset 0x70.
+        if (ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(proc_params + 0x70),
+                              &cmd_us, sizeof(cmd_us), &bytes_read) &&
+            cmd_us.Length > 0 && cmd_us.Buffer != 0) {
+          const size_t wchar_count =
+              std::min<size_t>(cmd_us.Length / sizeof(wchar_t), 2048);
+          std::wstring wide_cmd(wchar_count, L'\0');
+          if (ReadProcessMemory(proc, reinterpret_cast<LPCVOID>(cmd_us.Buffer),
+                                wide_cmd.data(), wchar_count * sizeof(wchar_t),
+                                &bytes_read)) {
+            cmd_utf8 = ToUtf8(wide_cmd);
+          }
+        }
+      }
+    }
+  }
+  CloseHandle(proc);
+  return cmd_utf8;
+#else
+  (void)pid;
+  return std::string();
+#endif
+}
+
+bool IsSuspiciousLolbinCommandLine(const std::string& lower_name,
+                                   const std::string& raw_cmd) {
+  if (raw_cmd.empty()) return false;
+  const std::string cmd = ToLowerAscii(raw_cmd);
+  if (IsUmbrellaSafeBinary(cmd)) return false;
+
+  const bool obfuscated_exec =
+      cmd.find(" -enc") != std::string::npos ||
+      cmd.find(" /enc") != std::string::npos ||
+      cmd.find("encodedcommand") != std::string::npos ||
+      cmd.find("frombase64string") != std::string::npos ||
+      cmd.find("-bxor") != std::string::npos ||
+      cmd.find("gzipstream") != std::string::npos ||
+      cmd.find("deflatestream") != std::string::npos ||
+      cmd.find("iex(") != std::string::npos ||
+      cmd.find("invoke-expression") != std::string::npos ||
+      cmd.find("downloadstring") != std::string::npos ||
+      cmd.find("urldownloadtofile") != std::string::npos ||
+      cmd.find("scrobj.dll") != std::string::npos ||
+      cmd.find("ms-msdt:") != std::string::npos;
+
+  if ((lower_name == "powershell.exe" || lower_name == "pwsh.exe" ||
+       lower_name == "cmd.exe" || lower_name == "wscript.exe" ||
+       lower_name == "cscript.exe") &&
+      (obfuscated_exec ||
+       ((cmd.find("irm ") != std::string::npos ||
+         cmd.find("invoke-restmethod") != std::string::npos ||
+         cmd.find("invoke-webrequest") != std::string::npos) &&
+        (cmd.find("iex") != std::string::npos ||
+         cmd.find("invoke-expression") != std::string::npos ||
+         cmd.find("http://") != std::string::npos ||
+         cmd.find("https://") != std::string::npos)))) {
+    return true;
+  }
+  if ((lower_name == "mshta.exe" || lower_name == "rundll32.exe" ||
+       lower_name == "regsvr32.exe" || lower_name == "finger.exe") &&
+      (obfuscated_exec ||
+       cmd.find("javascript:") != std::string::npos ||
+       cmd.find("vbscript:") != std::string::npos ||
+       cmd.find("http://") != std::string::npos ||
+       cmd.find("https://") != std::string::npos)) {
+    return true;
+  }
+  if (lower_name == "certutil.exe" &&
+      (cmd.find("-urlcache") != std::string::npos ||
+       cmd.find("-split") != std::string::npos) &&
+      (cmd.find("http://") != std::string::npos ||
+       cmd.find("https://") != std::string::npos)) {
+    return true;
+  }
+  return false;
+}
+
 std::vector<RunningProcessInfo> SnapshotProcesses(
     bool include_version_info = true,
-    const std::string& skip_version_prefix_lower = std::string()) {
+    const std::string& skip_version_prefix_lower = std::string(),
+    bool capture_lolbin_cmdline = false) {
   std::vector<RunningProcessInfo> out;
   HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snap == INVALID_HANDLE_VALUE) return out;
@@ -619,6 +970,9 @@ std::vector<RunningProcessInfo> SnapshotProcesses(
       info.name = ToUtf8(entry.szExeFile);
       info.lower_name = ToLowerAscii(info.name);
       if (info.pid > 4 && !info.lower_name.empty()) {
+        if (capture_lolbin_cmdline && IsLolbinProcessName(info.lower_name)) {
+          info.cmdline = ReadRemoteProcessCommandLine(info.pid);
+        }
         HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, info.pid);
         if (proc != nullptr) {
           wchar_t pbuf[MAX_PATH * 2] = {0};
@@ -1120,6 +1474,334 @@ bool ContainsDangerousUrlOrPayload(const std::string& lower_text) {
   return false;
 }
 
+bool IsOfficialPngChunk(const char t[4]) {
+  static const char* kPublic[] = {
+      "IHDR", "PLTE", "IDAT", "IEND", "tRNS", "cHRM", "gAMA", "iCCP",
+      "sBIT", "sRGB", "tEXt", "zTXt", "iTXt", "bKGD", "hIST", "pHYs",
+      "sPLT", "tIME", "eXIf", "acTL", "fcTL", "fdAT", "oFFs", "pCAL",
+      "sCAL", "sTER", "dSIG",
+  };
+  for (const char* item : kPublic) {
+    if (std::memcmp(t, item, 4) == 0) return true;
+  }
+  // Standard PNG rule: uppercase 2nd letter = critical/public chunk, lowercase = private.
+  return !(t[1] >= 'a' && t[1] <= 'z');
+}
+
+bool HasSafeMotionPhotoTrailer(const std::vector<BYTE>& tail) {
+  if (ContainsBinderOrPayloadBytes(tail, 0)) return false;
+  return ContainsAsciiBytesCi(tail, "ftypmp4") ||
+         ContainsAsciiBytesCi(tail, "ftypisom") ||
+         ContainsAsciiBytesCi(tail, "seft");
+}
+
+bool InspectImagePolyglotW(const std::wstring& path,
+                           const std::string& lower_fn,
+                           uint64_t fsize,
+                           std::string* reason_out,
+                           std::string* key_tag_out) {
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+
+  BYTE hdr[16] = {0};
+  DWORD hread = 0;
+  if (ReadFile(file, hdr, 12, &hread, nullptr) == 0 || hread < 4) {
+    CloseHandle(file);
+    return false;
+  }
+
+  // 1. PNG Chunk Structure & Post-IEND Appended Payload Detection
+  if (EndsWithCi(lower_fn, ".png") && hread >= 8 &&
+      hdr[0] == 0x89 && hdr[1] == 0x50 && hdr[2] == 0x4E && hdr[3] == 0x47 &&
+      hdr[4] == 0x0D && hdr[5] == 0x0A && hdr[6] == 0x1A && hdr[7] == 0x0A) {
+    uint64_t offset = 8;
+    uint64_t iend_eof = 0;
+    while (offset + 12 <= fsize) {
+      LARGE_INTEGER li = {};
+      li.QuadPart = static_cast<LONGLONG>(offset);
+      BYTE chdr[8] = {0};
+      DWORD cread = 0;
+      if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) == 0 ||
+          ReadFile(file, chdr, 8, &cread, nullptr) == 0 || cread < 8) {
+        break;
+      }
+      const uint32_t clen = (static_cast<uint32_t>(chdr[0]) << 24) |
+                            (static_cast<uint32_t>(chdr[1]) << 16) |
+                            (static_cast<uint32_t>(chdr[2]) << 8) |
+                            static_cast<uint32_t>(chdr[3]);
+      const char ctype[4] = {static_cast<char>(chdr[4]), static_cast<char>(chdr[5]),
+                             static_cast<char>(chdr[6]), static_cast<char>(chdr[7])};
+      if (clen > 64U * 1024U * 1024U || offset + 12ULL + clen > fsize) break;
+
+      const bool inspect_chunk =
+          std::memcmp(ctype, "tEXt", 4) == 0 ||
+          std::memcmp(ctype, "zTXt", 4) == 0 ||
+          std::memcmp(ctype, "iTXt", 4) == 0 ||
+          !IsOfficialPngChunk(ctype);
+      if (inspect_chunk && clen > 0) {
+        const size_t cap = static_cast<size_t>(std::min<uint32_t>(clen, 512U * 1024U));
+        std::vector<BYTE> cbuf(cap);
+        DWORD d_read = 0;
+        if (ReadFile(file, cbuf.data(), static_cast<DWORD>(cap), &d_read, nullptr) != 0 &&
+            d_read > 0) {
+          cbuf.resize(d_read);
+          if (ContainsBinderOrPayloadBytes(cbuf, 0) ||
+              (!IsOfficialPngChunk(ctype) && d_read >= 8192 &&
+               ComputeShannonEntropy(cbuf.data(), d_read) >= 7.65)) {
+            CloseHandle(file);
+            *key_tag_out = "dl:png_chunk:";
+            *reason_out = "پی لود یا فایل بایندشده درون چانک مخفی تصویر PNG شناسایی شد.";
+            return true;
+          }
+        }
+      }
+      offset += 12ULL + clen;
+      if (std::memcmp(ctype, "IEND", 4) == 0) {
+        iend_eof = offset;
+        break;
+      }
+    }
+    if (iend_eof > 0 && fsize > iend_eof) {
+      const size_t cap = static_cast<size_t>(
+          std::min<uint64_t>(fsize - iend_eof, 2ULL * 1024ULL * 1024ULL));
+      std::vector<BYTE> trailer(cap);
+      LARGE_INTEGER li = {};
+      li.QuadPart = static_cast<LONGLONG>(iend_eof);
+      DWORD tread = 0;
+      if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) != 0 &&
+          ReadFile(file, trailer.data(), static_cast<DWORD>(cap), &tread, nullptr) != 0 &&
+          tread > 0) {
+        trailer.resize(tread);
+        size_t first_nz = 0;
+        while (first_nz < trailer.size() && trailer[first_nz] == 0) first_nz++;
+        const size_t meaningful = trailer.size() - first_nz;
+        if (meaningful >= 16) {
+          if (ContainsBinderOrPayloadBytes(trailer, first_nz) ||
+              (meaningful >= 512 &&
+               ComputeShannonEntropy(trailer.data() + first_nz, meaningful) >= 7.35)) {
+            CloseHandle(file);
+            *key_tag_out = "dl:png_eof:";
+            *reason_out = "فایل یا بدافزار بایندشده پس از پایان تصویر PNG (بعد از IEND) شناسایی شد.";
+            return true;
+          }
+        }
+      }
+    }
+    CloseHandle(file);
+    return false;
+  }
+
+  // 2. JPEG Marker Structure Traversal (skips EXIF thumbnails) + Post-EOI Appended Payload
+  if ((EndsWithCi(lower_fn, ".jpg") || EndsWithCi(lower_fn, ".jpeg")) &&
+      hread >= 3 && hdr[0] == 0xFF && hdr[1] == 0xD8 && hdr[2] == 0xFF) {
+    uint64_t pos = 2;
+    bool hit_sos = false;
+    while (pos + 4 <= fsize) {
+      LARGE_INTEGER li = {};
+      li.QuadPart = static_cast<LONGLONG>(pos);
+      BYTE m[4] = {0};
+      DWORD mread = 0;
+      if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) == 0 ||
+          ReadFile(file, m, 4, &mread, nullptr) == 0 || mread < 2) {
+        break;
+      }
+      if (m[0] != 0xFF) break;
+      BYTE marker = m[1];
+      while (marker == 0xFF && pos + 2 < fsize) {
+        pos++;
+        li.QuadPart = static_cast<LONGLONG>(pos);
+        if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) == 0 ||
+            ReadFile(file, m, 4, &mread, nullptr) == 0 || mread < 2) {
+          break;
+        }
+        marker = m[1];
+      }
+      if (marker == 0xD9 || marker == 0x00) break;
+      if (marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01) {
+        pos += 2;
+        continue;
+      }
+      if (mread < 4) break;
+      const uint16_t seg_len =
+          (static_cast<uint16_t>(m[2]) << 8) | static_cast<uint16_t>(m[3]);
+      if (seg_len < 2 || pos + 2 + seg_len > fsize) break;
+      if (marker == 0xDA) {
+        hit_sos = true;
+        pos += 2 + seg_len;
+        break;
+      }
+      if ((marker >= 0xE0 && marker <= 0xEF) || marker == 0xFE) {
+        const size_t seg_cap = std::min<size_t>(seg_len - 2, 131072);
+        if (seg_cap >= 8) {
+          std::vector<BYTE> seg(seg_cap);
+          DWORD sread = 0;
+          if (ReadFile(file, seg.data(), static_cast<DWORD>(seg_cap), &sread, nullptr) != 0 &&
+              sread > 0) {
+            seg.resize(sread);
+            if (ContainsAsciiBytesCi(seg, "<script") ||
+                ContainsAsciiBytesCi(seg, "basestart-") ||
+                ContainsAsciiBytesCi(seg, "tvqqaam") ||
+                ContainsAsciiBytesCi(seg, "frombase64string") ||
+                ContainsAsciiBytesCi(seg, "powershell -enc") ||
+                ContainsAsciiBytesCi(seg, "wscript.shell")) {
+              CloseHandle(file);
+              *key_tag_out = "dl:jpg_meta:";
+              *reason_out = "کد یا پی لود تروجانی تزریق شده درون متادیتای تصویر JPEG شناسایی شد.";
+              return true;
+            }
+          }
+        }
+      }
+      pos += 2 + seg_len;
+    }
+
+    if (hit_sos && pos < fsize) {
+      const uint64_t tail_window = std::min<uint64_t>(fsize - pos, 2ULL * 1024ULL * 1024ULL);
+      const uint64_t scan_start = fsize - tail_window;
+      std::vector<BYTE> tail(static_cast<size_t>(tail_window));
+      LARGE_INTEGER li = {};
+      li.QuadPart = static_cast<LONGLONG>(scan_start);
+      DWORD tread = 0;
+      if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) != 0 &&
+          ReadFile(file, tail.data(), static_cast<DWORD>(tail.size()), &tread, nullptr) != 0 &&
+          tread > 4) {
+        tail.resize(tread);
+        size_t last_eoi = std::string::npos;
+        for (size_t i = tail.size() - 2; i > 0; --i) {
+          if (tail[i] == 0xFF && tail[i + 1] == 0xD9) {
+            last_eoi = i + 2;
+            break;
+          }
+        }
+        if (last_eoi != std::string::npos && last_eoi < tail.size()) {
+          size_t first_nz = last_eoi;
+          while (first_nz < tail.size() && tail[first_nz] == 0) first_nz++;
+          const size_t extra = tail.size() - first_nz;
+          if (extra >= 64) {
+            std::vector<BYTE> appended(
+                tail.begin() + static_cast<std::ptrdiff_t>(first_nz), tail.end());
+            if (!HasSafeMotionPhotoTrailer(appended) &&
+                (ContainsBinderOrPayloadBytes(appended, 0) ||
+                 (extra >= 1024 &&
+                  ComputeShannonEntropy(appended.data(), appended.size()) >= 7.45))) {
+              CloseHandle(file);
+              *key_tag_out = "dl:jpg_eoi:";
+              *reason_out = "فایل یا بدافزار بایندشده پس از پایان تصویر JPEG (بعد از FFD9) شناسایی شد.";
+              return true;
+            }
+          }
+        }
+      }
+    }
+    CloseHandle(file);
+    return false;
+  }
+
+  // 3. BMP Header Declared-Size Mismatch (Appended Binder)
+  if (EndsWithCi(lower_fn, ".bmp") && hread >= 6 &&
+      hdr[0] == 'B' && hdr[1] == 'M') {
+    const uint32_t declared =
+        static_cast<uint32_t>(hdr[2]) |
+        (static_cast<uint32_t>(hdr[3]) << 8) |
+        (static_cast<uint32_t>(hdr[4]) << 16) |
+        (static_cast<uint32_t>(hdr[5]) << 24);
+    if (declared >= 54 && fsize > static_cast<uint64_t>(declared) + 64ULL) {
+      const size_t cap = static_cast<size_t>(
+          std::min<uint64_t>(fsize - declared, 2ULL * 1024ULL * 1024ULL));
+      std::vector<BYTE> extra(cap);
+      LARGE_INTEGER li = {};
+      li.QuadPart = static_cast<LONGLONG>(declared);
+      DWORD tread = 0;
+      if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) != 0 &&
+          ReadFile(file, extra.data(), static_cast<DWORD>(cap), &tread, nullptr) != 0 &&
+          tread >= 64) {
+        extra.resize(tread);
+        if (ContainsBinderOrPayloadBytes(extra, 0) ||
+            ComputeShannonEntropy(extra.data(), extra.size()) >= 7.35) {
+          CloseHandle(file);
+          *key_tag_out = "dl:bmp_eof:";
+          *reason_out = "داده یا فایل اجرایی بایندشده در انتهای تصویر BMP شناسایی شد.";
+          return true;
+        }
+      }
+    }
+  }
+
+  // 4. GIF87a/89a Trailer Appended Payload Detection
+  if (EndsWithCi(lower_fn, ".gif") && hread >= 6 &&
+      hdr[0] == 'G' && hdr[1] == 'I' && hdr[2] == 'F' && hdr[3] == '8') {
+    const uint64_t tail_window = std::min<uint64_t>(fsize, 1024ULL * 1024ULL);
+    const uint64_t scan_start = fsize - tail_window;
+    std::vector<BYTE> tail(static_cast<size_t>(tail_window));
+    LARGE_INTEGER li = {};
+    li.QuadPart = static_cast<LONGLONG>(scan_start);
+    DWORD tread = 0;
+    if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) != 0 &&
+        ReadFile(file, tail.data(), static_cast<DWORD>(tail.size()), &tread, nullptr) != 0 &&
+        tread > 8) {
+      tail.resize(tread);
+      size_t last_trailer = std::string::npos;
+      for (size_t i = tail.size(); i > 0; --i) {
+        if (tail[i - 1] == 0x3B) {
+          last_trailer = i;
+          break;
+        }
+      }
+      if (last_trailer != std::string::npos && last_trailer + 64 <= tail.size()) {
+        size_t first_nz = last_trailer;
+        while (first_nz < tail.size() && tail[first_nz] == 0) first_nz++;
+        const size_t extra = tail.size() - first_nz;
+        if (extra >= 64) {
+          std::vector<BYTE> appended(
+              tail.begin() + static_cast<std::ptrdiff_t>(first_nz), tail.end());
+          if (ContainsBinderOrPayloadBytes(appended, 0) ||
+              (extra >= 1024 &&
+               ComputeShannonEntropy(appended.data(), appended.size()) >= 7.45)) {
+            CloseHandle(file);
+            *key_tag_out = "dl:gif_eof:";
+            *reason_out = "فایل یا بدافزار بایندشده در انتهای تصویر GIF شناسایی شد.";
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  CloseHandle(file);
+  return false;
+}
+
+bool InspectPdfPayload(const std::vector<BYTE>& doc_bytes,
+                       std::string* reason_out) {
+  if (doc_bytes.size() < 8) return false;
+  const bool has_js_or_launch =
+      ContainsAsciiBytesCi(doc_bytes, "/js") ||
+      ContainsAsciiBytesCi(doc_bytes, "/javascript") ||
+      ContainsAsciiBytesCi(doc_bytes, "/launch");
+  const bool has_auto_or_embed =
+      ContainsAsciiBytesCi(doc_bytes, "/openaction") ||
+      ContainsAsciiBytesCi(doc_bytes, "/aa ") ||
+      ContainsAsciiBytesCi(doc_bytes, "/aa<<") ||
+      ContainsAsciiBytesCi(doc_bytes, "/embeddedfile") ||
+      ContainsAsciiBytesCi(doc_bytes, "/richmedia");
+  if (has_js_or_launch && has_auto_or_embed) {
+    *reason_out = "سند PDF حاوی اسکریپت یا فرمان خودکار اجرایی مخرب است.";
+    return true;
+  }
+  const std::string tail_text = ToLowerAscii(std::string(
+      reinterpret_cast<const char*>(doc_bytes.data()), doc_bytes.size()));
+  const size_t last_eof = tail_text.rfind("%%eof");
+  if (last_eof != std::string::npos && last_eof + 64 < doc_bytes.size()) {
+    if (ContainsBinderOrPayloadBytes(doc_bytes, last_eof + 5)) {
+      *reason_out = "فایل بایندشده یا کد اجرایی مخفی شده پس از پایان PDF شناسایی شد.";
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ContainsElfHeaderAt(const std::vector<BYTE>& buf, size_t offset) {
   return offset + 4 <= buf.size() && buf[offset] == 0x7F &&
          buf[offset + 1] == 'E' && buf[offset + 2] == 'L' &&
@@ -1279,7 +1961,6 @@ std::vector<ScanDirSpec> CandidateScanDirectories(bool quick) {
 bool ShouldSkipSubdirLower(const std::string& lower_dir_name) {
   return lower_dir_name == "." || lower_dir_name == ".." ||
          lower_dir_name == ".git" || lower_dir_name == "node_modules" ||
-         lower_dir_name == "umbrella" || lower_dir_name == "umbrellavpn" ||
          lower_dir_name == "__pycache__";
 }
 
@@ -1558,12 +2239,13 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
   const std::string win_dir = ToLowerAscii(ToUtf8(win_dir_w));
 
   // 1. Running processes inspection (cached PE version metadata; skip Windows system binaries)
-  const auto processes = SnapshotProcesses(true, win_dir);
+  const auto processes = SnapshotProcesses(true, win_dir, true);
   report.scanned_processes = static_cast<int>(processes.size());
   for (const auto& proc : processes) {
     if (IsUmbrellaSafeBinary(proc.path.empty() ? proc.name : proc.path)) continue;
     const std::string combined =
-        proc.name + " " + proc.path + " " + proc.product_name + " " + proc.company_name;
+        proc.name + " " + proc.path + " " + proc.product_name + " " +
+        proc.company_name + " " + proc.cmdline;
     const SignatureHit sig = MatchKnownThreatText(combined);
     if (sig.matched) {
       SecurityThreatEntry item;
@@ -1582,6 +2264,26 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
         item.signed_valid = VerifyAuthenticodeSignature(wpath);
         item.sha256 = ComputeFileSha256(wpath);
       }
+      add_finding(std::move(item));
+      continue;
+    }
+
+    // Live 2026 Fileless / ClickFix LOLBin execution monitor (command-line inspection via PEB)
+    if (IsLolbinProcessName(proc.lower_name) &&
+        IsSuspiciousLolbinCommandLine(proc.lower_name, proc.cmdline)) {
+      SecurityThreatEntry item;
+      item.key = "proc:lolbin:" + std::to_string(proc.pid);
+      item.name = "اجرای فرمان پنهان یا بی فایل در حافظه (" + proc.name + ")";
+      item.category = "malware";
+      item.severity = "critical";
+      item.target = !proc.path.empty() ? proc.path : proc.name;
+      item.detail =
+          "یک پردازش سیستمی (LOLBin) در حال اجرای فرمان رمزنگاری شده یا بارگذاری پی لود تروجانی در حافظه (الگوی ClickFix/RAT) است.";
+      item.remediation_kind = "process";
+      item.path = proc.path;
+      item.process_name = proc.name;
+      item.active = true;
+      item.signed_valid = false;
       add_finding(std::move(item));
       continue;
     }
@@ -1705,6 +2407,126 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
       item.registry_path = run.reg_path_utf8;
       item.registry_value = run.value_name;
       add_finding(std::move(item));
+    }
+  }
+
+  // 3B. ClickFix RunMRU forensic persistence & suspicious user Scheduled Tasks
+  {
+    HKEY mru_key = nullptr;
+    const wchar_t* mru_path =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU";
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, mru_path, 0, KEY_READ, &mru_key) ==
+        ERROR_SUCCESS) {
+      DWORD idx = 0;
+      wchar_t vname[128] = {0};
+      DWORD vlen = 128;
+      BYTE vdata[2048] = {0};
+      DWORD dlen = sizeof(vdata);
+      DWORD vtype = 0;
+      while (RegEnumValueW(mru_key, idx++, vname, &vlen, nullptr, &vtype, vdata,
+                           &dlen) == ERROR_SUCCESS) {
+        if ((vtype == REG_SZ || vtype == REG_EXPAND_SZ) &&
+            std::wcscmp(vname, L"MRUList") != 0) {
+          const std::string cmd_str = ToUtf8(reinterpret_cast<wchar_t*>(vdata));
+          const std::string cmd_l = ToLowerAscii(cmd_str);
+          const bool clickfix_mru =
+              !IsUmbrellaSafeBinary(cmd_l) &&
+              (cmd_l.find("powershell") != std::string::npos ||
+               cmd_l.find("pwsh") != std::string::npos ||
+               cmd_l.find("mshta") != std::string::npos ||
+               cmd_l.find("cmd ") != std::string::npos ||
+               cmd_l.find("rundll32") != std::string::npos ||
+               cmd_l.find("finger ") != std::string::npos) &&
+              (cmd_l.find(" -enc") != std::string::npos ||
+               cmd_l.find("encodedcommand") != std::string::npos ||
+               cmd_l.find("frombase64string") != std::string::npos ||
+               cmd_l.find("iex(") != std::string::npos ||
+               cmd_l.find("invoke-expression") != std::string::npos ||
+               cmd_l.find("invoke-restmethod") != std::string::npos ||
+               cmd_l.find("irm ") != std::string::npos ||
+               cmd_l.find("downloadstring") != std::string::npos ||
+               cmd_l.find("http://") != std::string::npos ||
+               cmd_l.find("https://") != std::string::npos);
+          if (clickfix_mru) {
+            const std::string vn = ToUtf8(vname);
+            SecurityThreatEntry item;
+            item.key = "reg_runmru:" + ToLowerAscii(vn);
+            item.name = "فرمان مشکوک ClickFix در تاریخچه اجرای ویندوز";
+            item.category = "malware";
+            item.severity = "high";
+            item.target = "HKCU\\...\\RunMRU\\" + vn;
+            item.detail =
+                "یک دستور پرخطر برای اجرای کد از طریق پنجره Run (الگوی ClickFix) در رجیستری ثبت شده است.";
+            item.remediation_kind = "registry_run";
+            item.registry_root = "HKCU";
+            item.registry_path =
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU";
+            item.registry_value = vn;
+            add_finding(std::move(item));
+          }
+        }
+        vlen = 128;
+        dlen = sizeof(vdata);
+      }
+      RegCloseKey(mru_key);
+    }
+
+    if (win_dir_w[0] != L'\0') {
+      const std::wstring tasks_root = std::wstring(win_dir_w) + L"\\System32\\Tasks";
+      std::vector<ScannedFileEntry> task_files;
+      WIN32_FIND_DATAW fd = {};
+      HANDLE find = FindFirstFileW((tasks_root + L"\\*").c_str(), &fd);
+      if (find != INVALID_HANDLE_VALUE) {
+        do {
+          const std::wstring tn(fd.cFileName);
+          if (tn == L"." || tn == L"..") continue;
+          if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+          if (task_files.size() >= 120) break;
+          task_files.push_back(ScannedFileEntry{
+              tasks_root + L"\\" + tn, tn, 0, 0});
+        } while (FindNextFileW(find, &fd));
+        FindClose(find);
+      }
+      for (const auto& tf : task_files) {
+        std::vector<BYTE> tbytes;
+        if (!ReadFileSampleBytes(tf.path, 256 * 1024, &tbytes)) continue;
+        // Task XMLs may be UTF-16LE or UTF-8; compact ASCII view catches both.
+        std::string compact;
+        compact.reserve(tbytes.size());
+        for (BYTE b : tbytes) {
+          if (b >= 32 && b <= 126) {
+            compact.push_back(static_cast<char>(std::tolower(b)));
+          }
+        }
+        if (IsUmbrellaSafeBinary(compact)) continue;
+        const bool bad_task =
+            ((compact.find("powershell") != std::string::npos &&
+              (compact.find("-enc") != std::string::npos ||
+               compact.find("frombase64string") != std::string::npos ||
+               compact.find("downloadstring") != std::string::npos ||
+               compact.find("invoke-expression") != std::string::npos)) ||
+             compact.find("mshtahttp") != std::string::npos ||
+             (compact.find("\\temp\\") != std::string::npos &&
+              (compact.find(".vbs") != std::string::npos ||
+               compact.find(".js") != std::string::npos ||
+               compact.find(".ps1") != std::string::npos)));
+        if (bad_task) {
+          const std::string tfname = ToUtf8(tf.name);
+          const std::string tfull = ToUtf8(tf.path);
+          SecurityThreatEntry item;
+          item.key = "task:" + ToLowerAscii(tfname);
+          item.name = "وظیفه زمان بندی شده مخرب (" + tfname + ")";
+          item.category = "malware";
+          item.severity = "high";
+          item.target = tfull;
+          item.detail =
+              "یک وظیفه زمان بندی شده برای اجرای خودکار اسکریپت یا فرمان مخفی در سیستم یافت شد.";
+          item.remediation_kind = "file";
+          item.path = tfull;
+          item.process_name = tfname;
+          add_finding(std::move(item));
+        }
+      }
     }
   }
 
@@ -1898,6 +2720,28 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
           }
 
           const bool valid_magic = HasValidImageMagic(lower_fn, header_bytes);
+          if (valid_magic) {
+            std::string poly_reason;
+            std::string poly_tag;
+            if (InspectImagePolyglotW(wfull, lower_fn, fsize, &poly_reason, &poly_tag)) {
+              const std::string sha = ComputeFileSha256(wfull);
+              SecurityThreatEntry item;
+              item.key = !sha.empty() ? (poly_tag + sha.substr(0, 16))
+                                      : (poly_tag + lower_fn);
+              item.name = "تصویر حاوی فایل یا بدافزار بایندشده (" + fname + ")";
+              item.category = "malicious_download";
+              item.severity = "critical";
+              item.target = full;
+              item.detail = poly_reason;
+              item.remediation_kind = "file";
+              item.path = full;
+              item.process_name = fname;
+              item.sha256 = sha;
+              add_finding(std::move(item));
+              return false;
+            }
+          }
+
           std::vector<BYTE> img_bytes;
           if (valid_magic && fsize > 768ULL * 1024ULL) {
             if (!ReadFileHeadAndTailBytes(wfull, 256 * 1024, 512 * 1024, &img_bytes)) {
@@ -1917,6 +2761,8 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
                ContainsAsciiBytesCi(img_bytes, "wscript.shell") ||
                ContainsAsciiBytesCi(img_bytes, "activexobject") ||
                ContainsAsciiBytesCi(img_bytes, "powershell") ||
+               ContainsAsciiBytesCi(img_bytes, "frombase64string") ||
+               ContainsAsciiBytesCi(img_bytes, "basestart-") ||
                ContainsAsciiBytesCi(img_bytes, "eicar-standard-antivirus-test-file"))) {
             const std::string sha = ComputeFileSha256(wfull);
             SecurityThreatEntry item;
@@ -1936,20 +2782,24 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             return false;
           }
 
-          bool embedded_pe = false;
+          bool embedded_payload = false;
           for (size_t pos = 16; pos + 0x40 < img_bytes.size(); ++pos) {
             if ((img_bytes[pos] == 0x4D && img_bytes[pos + 1] == 0x5A &&
                  HasPeHeaderAt(img_bytes, pos)) ||
-                ContainsElfHeaderAt(img_bytes, pos)) {
-              embedded_pe = true;
+                ContainsElfHeaderAt(img_bytes, pos) ||
+                ContainsDexHeaderAt(img_bytes, pos)) {
+              embedded_payload = true;
               break;
             }
           }
-          if (embedded_pe ||
+          if (embedded_payload ||
               ContainsAsciiBytesCi(img_bytes, "eicar-standard-antivirus-test-file") ||
               ContainsAsciiBytesCi(img_bytes, "<script") ||
               ContainsAsciiBytesCi(img_bytes, "wscript.shell") ||
               ContainsAsciiBytesCi(img_bytes, "urldownloadtofile") ||
+              ContainsAsciiBytesCi(img_bytes, "frombase64string") ||
+              ContainsAsciiBytesCi(img_bytes, "basestart-") ||
+              ContainsAsciiBytesCi(img_bytes, "tvqqaam") ||
               ContainsAsciiBytesCi(img_bytes, "powershell -enc")) {
             const std::string sha = ComputeFileSha256(wfull);
             SecurityThreatEntry item;
@@ -2009,11 +2859,24 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               ContainsAsciiBytesCi(media_bytes, "<script") ||
               ContainsAsciiBytesCi(media_bytes, "wscript.shell") ||
               ContainsAsciiBytesCi(media_bytes, "urldownloadtofile") ||
+              ContainsAsciiBytesCi(media_bytes, "frombase64string") ||
+              ContainsAsciiBytesCi(media_bytes, "basestart-") ||
+              ContainsAsciiBytesCi(media_bytes, "tvqqaam") ||
               ContainsAsciiBytesCi(media_bytes, "powershell -enc");
           if (!media_threat) {
             for (size_t pos = 16; pos + 0x40 < media_bytes.size(); ++pos) {
-              if (media_bytes[pos] == 0x4D && media_bytes[pos + 1] == 0x5A &&
-                  HasPeHeaderAt(media_bytes, pos)) {
+              if ((media_bytes[pos] == 0x4D && media_bytes[pos + 1] == 0x5A &&
+                   HasPeHeaderAt(media_bytes, pos)) ||
+                  ContainsElfHeaderAt(media_bytes, pos) ||
+                  ContainsDexHeaderAt(media_bytes, pos) ||
+                  (pos + 7 <= media_bytes.size() && media_bytes[pos] == 'R' &&
+                   media_bytes[pos + 1] == 'a' && media_bytes[pos + 2] == 'r' &&
+                   media_bytes[pos + 3] == '!' && media_bytes[pos + 4] == 0x1A &&
+                   media_bytes[pos + 5] == 0x07) ||
+                  (pos + 6 <= media_bytes.size() && media_bytes[pos] == '7' &&
+                   media_bytes[pos + 1] == 'z' && media_bytes[pos + 2] == 0xBC &&
+                   media_bytes[pos + 3] == 0xAF && media_bytes[pos + 4] == 0x27 &&
+                   media_bytes[pos + 5] == 0x1C)) {
                 media_threat = true;
                 break;
               }
@@ -2095,6 +2958,10 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               const bool has_bad_zip_entry =
                   check_zip &&
                   InspectZipBufferForPayloads(doc_bytes, is_office, &dangerous_entry);
+              std::string pdf_reason;
+              const bool bad_pdf =
+                  EndsWithCi(lower_fn, ".pdf") &&
+                  InspectPdfPayload(doc_bytes, &pdf_reason);
               bool embedded_pe = HasPeHeaderAt(doc_bytes, 0) ||
                                  ContainsElfHeaderAt(doc_bytes, 0);
               if (!embedded_pe && !is_archive) {
@@ -2106,10 +2973,12 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
                   }
                 }
               }
-              if (has_bad_zip_entry || embedded_pe ||
+              if (has_bad_zip_entry || bad_pdf || embedded_pe ||
                   ContainsAsciiBytesCi(doc_bytes, "eicar-standard-antivirus-test-file") ||
                   ContainsAsciiBytesCi(doc_bytes, "wscript.shell") ||
                   ContainsAsciiBytesCi(doc_bytes, "urldownloadtofile") ||
+                  ContainsAsciiBytesCi(doc_bytes, "frombase64string") ||
+                  ContainsAsciiBytesCi(doc_bytes, "basestart-") ||
                   ContainsAsciiBytesCi(doc_bytes, "powershell -enc")) {
                 const std::string sha = ComputeFileSha256(wfull);
                 SecurityThreatEntry item;
@@ -2123,7 +2992,8 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
                 item.target = full;
                 item.detail = has_bad_zip_entry
                                   ? ("فایل خطرناک درون بسته یا سند یافت شد: " + dangerous_entry)
-                                  : "پی لود اجرایی، اسکریپت مخرب یا امضای بدافزار درون فایل دانلود شده یافت شد.";
+                                  : (bad_pdf ? pdf_reason
+                                             : "پی لود اجرایی، اسکریپت مخرب یا امضای بدافزار درون فایل دانلود شده یافت شد.");
                 item.remediation_kind = "file";
                 item.path = full;
                 item.process_name = fname;
@@ -2249,6 +3119,48 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
           return false;
         }
 
+        if (!EndsWithCi(lower_fn, ".exe") && !EndsWithCi(lower_fn, ".dll") &&
+            !EndsWithCi(lower_fn, ".msi") && !EndsWithCi(lower_fn, ".apk") &&
+            !EndsWithCi(lower_fn, ".scr")) {
+          std::vector<BYTE> script_bytes;
+          if (ReadFileSampleBytes(wfull, 1024 * 1024, &script_bytes)) {
+            const bool obfuscated_dropper =
+                (ContainsAsciiBytesCi(script_bytes, "frombase64string") &&
+                 (ContainsAsciiBytesCi(script_bytes, "invoke-expression") ||
+                  ContainsAsciiBytesCi(script_bytes, "iex(") ||
+                  ContainsAsciiBytesCi(script_bytes, "-bxor") ||
+                  ContainsAsciiBytesCi(script_bytes, "gzipstream"))) ||
+                (ContainsAsciiBytesCi(script_bytes, "wscript.shell") &&
+                 (ContainsAsciiBytesCi(script_bytes, "http://") ||
+                  ContainsAsciiBytesCi(script_bytes, "https://") ||
+                  ContainsAsciiBytesCi(script_bytes, "powershell") ||
+                  ContainsAsciiBytesCi(script_bytes, "urldownloadtofile"))) ||
+                ContainsAsciiBytesCi(script_bytes, "urldownloadtofile") ||
+                ContainsAsciiBytesCi(script_bytes, "eval(atob(") ||
+                ContainsAsciiBytesCi(script_bytes, "basestart-") ||
+                ContainsAsciiBytesCi(script_bytes, "tvqqaam") ||
+                ContainsAsciiBytesCi(script_bytes, "eicar-standard-antivirus-test-file");
+            if (obfuscated_dropper) {
+              const std::string sha = ComputeFileSha256(wfull);
+              SecurityThreatEntry item;
+              item.key = !sha.empty() ? ("dl:script:" + sha.substr(0, 16))
+                                      : ("dl:script:" + lower_fn);
+              item.name = "اسکریپت تروجانی یا دراپر مخرب (" + fname + ")";
+              item.category = "malicious_download";
+              item.severity = "critical";
+              item.target = full;
+              item.detail =
+                  "اسکریپت دانلود شده حاوی الگوی رمزگشایی پی لود، اجرای بی فایل یا دانلود تروجان است.";
+              item.remediation_kind = "file";
+              item.path = full;
+              item.process_name = fname;
+              item.sha256 = sha;
+              add_finding(std::move(item));
+              return false;
+            }
+          }
+        }
+
         if (EndsWithCi(lower_fn, ".exe") || EndsWithCi(lower_fn, ".scr")) {
           const bool looks_official_setup =
               EndsWithCi(lower_fn, ".exe") &&
@@ -2317,7 +3229,24 @@ RemediationOutcome SecurityScanner::RemediateThreat(
   RemediationOutcome out;
   bool took_action = false;
 
-  if (!target.process_name.empty() || !target.path.empty()) {
+  if (target.key.rfind("proc:lolbin:", 0) == 0) {
+    DWORD target_pid = 0;
+    try {
+      target_pid = static_cast<DWORD>(std::stoul(target.key.substr(12)));
+    } catch (...) {
+      target_pid = 0;
+    }
+    if (target_pid > 4) {
+      HANDLE h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, target_pid);
+      if (h != nullptr) {
+        if (TerminateProcess(h, 1)) {
+          WaitForSingleObject(h, 2500);
+          took_action = true;
+        }
+        CloseHandle(h);
+      }
+    }
+  } else if (!target.process_name.empty() || !target.path.empty()) {
     if (TerminateProcessesMatching(target.process_name, target.path)) {
       took_action = true;
     }

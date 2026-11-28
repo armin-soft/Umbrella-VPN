@@ -1786,6 +1786,15 @@ void main() {
         expect(scannerKt, isNot(contains('if (lower.contains("umbrella")) return null')));
         expect(scannerKt, isNot(contains('lowerEntry.contains("umbrella")')));
         expect(scannerKt, contains('deleteTargetInBackground'));
+        expect(scannerKt, contains('inspectImagePolyglotFile'));
+        expect(scannerKt, contains('isSafeMotionPhotoTrailer'));
+        expect(scannerKt, contains('inspectPdfPayload'));
+        expect(scannerKt, contains('shannonEntropy'));
+        expect(scannerKt, contains('inspectDownloadedApk'));
+        expect(scannerKt, contains('inspectInstalledAppBehavioralRisk'));
+        expect(scannerKt, contains('hasHiddenPayloadEntriesInApk'));
+        expect(scannerKt, contains('craxsrat'));
+        expect(scannerKt, contains('spynote'));
 
         final String handlerKt = File(
           'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',

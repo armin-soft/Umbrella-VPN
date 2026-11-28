@@ -27,6 +27,8 @@ import java.io.FileInputStream
 import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.ZipInputStream
+import kotlin.math.log2
 
 object UmbrellaSecurityScanner {
     data class SignatureMatch(
@@ -48,6 +50,7 @@ object UmbrellaSecurityScanner {
     // In-memory clean-file and APK-label caches only store verified non-threat entries.
     private val cleanFileCache = ConcurrentHashMap<String, CleanFileStamp>()
     private val appLabelCache = ConcurrentHashMap<String, Pair<String, String>>()
+    private val apkDropperCache = ConcurrentHashMap<String, Pair<Long, Boolean>>()
 
     private fun isCleanFileCached(pathLower: String, size: Long, lastModified: Long): Boolean {
         val cached = cleanFileCache[pathLower] ?: return false
@@ -79,6 +82,25 @@ object UmbrellaSecurityScanner {
             return null
         }
         val combined = "${packageName.lowercase()} ${label.lowercase()}"
+        if (combined.contains("spynote") ||
+            combined.contains("spymax") ||
+            combined.contains("craxsrat") ||
+            combined.contains("ahmyth") ||
+            combined.contains("cypherrat") ||
+            combined.contains("droidjack") ||
+            combined.contains("androrat") ||
+            combined.contains("eaglespy") ||
+            combined.contains("ermac") ||
+            combined.contains("hookbot")
+        ) {
+            return SignatureMatch(
+                key = "malware:android_rat",
+                name = "بدافزار کنترل از راه دور اندروید (RAT)",
+                category = "malware",
+                severity = "critical",
+                detail = "امضای یک تروجان یا ابزار کنترل مخفی دستگاه اندرویدی (RAT) شناسایی شد.",
+            )
+        }
         if (combined.contains("hiddify")) {
             return SignatureMatch(
                 key = "vpn:hiddify",
@@ -336,6 +358,612 @@ object UmbrellaSecurityScanner {
             return true
         }
         return false
+    }
+
+    private fun shannonEntropy(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset): Double {
+        if (length <= 0 || offset < 0 || offset + length > bytes.size) return 0.0
+        val freq = IntArray(256)
+        for (i in offset until (offset + length)) {
+            freq[bytes[i].toInt() and 0xFF]++
+        }
+        var ent = 0.0
+        val lenD = length.toDouble()
+        for (c in freq) {
+            if (c == 0) continue
+            val p = c.toDouble() / lenD
+            ent -= p * log2(p)
+        }
+        return ent
+    }
+
+    private fun containsBinderOrPayloadBytes(buf: ByteArray, startOffset: Int = 0): Boolean {
+        if (startOffset < 0 || startOffset >= buf.size) return false
+        val elfSig = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
+        val dexSig = "dex\n03".encodeToByteArray()
+        for (pos in startOffset until (buf.size - 4)) {
+            if (pos + 0x40 <= buf.size && buf[pos] == 0x4D.toByte() && buf[pos + 1] == 0x5A.toByte() &&
+                hasPeHeaderAt(buf, pos)
+            ) {
+                return true
+            }
+            if (pos + 4 <= buf.size && buf[pos] == elfSig[0] && buf[pos + 1] == elfSig[1] &&
+                buf[pos + 2] == elfSig[2] && buf[pos + 3] == elfSig[3]
+            ) {
+                return true
+            }
+            if (buf[pos] == 'P'.code.toByte() && buf[pos + 1] == 'K'.code.toByte() &&
+                buf[pos + 2] == 0x03.toByte() && buf[pos + 3] == 0x04.toByte()
+            ) {
+                return true
+            }
+            if (pos + 7 <= buf.size && buf[pos] == 'R'.code.toByte() && buf[pos + 1] == 'a'.code.toByte() &&
+                buf[pos + 2] == 'r'.code.toByte() && buf[pos + 3] == '!'.code.toByte() &&
+                buf[pos + 4] == 0x1A.toByte() && buf[pos + 5] == 0x07.toByte()
+            ) {
+                return true
+            }
+            if (pos + 6 <= buf.size && buf[pos] == '7'.code.toByte() && buf[pos + 1] == 'z'.code.toByte() &&
+                buf[pos + 2] == 0xBC.toByte() && buf[pos + 3] == 0xAF.toByte() &&
+                buf[pos + 4] == 0x27.toByte() && buf[pos + 5] == 0x1C.toByte()
+            ) {
+                return true
+            }
+        }
+        val slice = if (startOffset == 0) buf else buf.copyOfRange(startOffset, buf.size)
+        return containsBytes(slice, dexSig, 0) ||
+            (containsAsciiCi(slice, "androidmanifest.xml") && containsAsciiCi(slice, "classes.dex")) ||
+            containsAsciiCi(slice, "eicar-standard-antivirus-test-file") ||
+            containsAsciiCi(slice, "<script") ||
+            containsAsciiCi(slice, "wscript.shell") ||
+            containsAsciiCi(slice, "urldownloadtofile") ||
+            containsAsciiCi(slice, "frombase64string") ||
+            containsAsciiCi(slice, "invoke-expression") ||
+            containsAsciiCi(slice, "powershell -enc") ||
+            containsAsciiCi(slice, "basestart-") ||
+            containsAsciiCi(slice, "-baseend") ||
+            containsAsciiCi(slice, "tvqqaam") ||
+            containsAsciiCi(slice, "uesdb") ||
+            containsAsciiCi(slice, "dexclassloader")
+    }
+
+    private fun isOfficialPngChunkType(t: String): Boolean {
+        val official = setOf(
+            "IHDR", "PLTE", "IDAT", "IEND", "tRNS", "cHRM", "gAMA", "iCCP",
+            "sBIT", "sRGB", "tEXt", "zTXt", "iTXt", "bKGD", "hIST", "pHYs",
+            "sPLT", "tIME", "eXIf", "acTL", "fcTL", "fdAT", "oFFs", "pCAL",
+            "sCAL", "sTER", "dSIG",
+        )
+        if (official.contains(t)) return true
+        return t.length == 4 && t[1] !in 'a'..'z'
+    }
+
+    private fun isSafeMotionPhotoTrailer(tail: ByteArray): Boolean {
+        if (containsBinderOrPayloadBytes(tail, 0)) return false
+        return containsAsciiCi(tail, "ftypmp4") ||
+            containsAsciiCi(tail, "ftypisom") ||
+            containsAsciiCi(tail, "seft")
+    }
+
+    private fun inspectImagePolyglotFile(file: File, fname: String, lower: String): SignatureMatch? {
+        val totalLen = file.length()
+        if (totalLen < 12L) return null
+        return runCatching {
+            RandomAccessFile(file, "r").use { raf ->
+                val hdr = ByteArray(12)
+                val hRead = raf.read(hdr)
+                if (hRead < 4) return@use null
+
+                // 1. PNG Chunk Traversal + Post-IEND Binder Detection
+                if (lower.endsWith(".png") && hRead >= 8 &&
+                    hdr[0] == 0x89.toByte() && hdr[1] == 0x50.toByte() &&
+                    hdr[2] == 0x4E.toByte() && hdr[3] == 0x47.toByte() &&
+                    hdr[4] == 0x0D.toByte() && hdr[5] == 0x0A.toByte() &&
+                    hdr[6] == 0x1A.toByte() && hdr[7] == 0x0A.toByte()
+                ) {
+                    var offset = 8L
+                    var iendEof = 0L
+                    val chdr = ByteArray(8)
+                    while (offset + 12L <= totalLen) {
+                        raf.seek(offset)
+                        if (raf.read(chdr) < 8) break
+                        val clen = ((chdr[0].toLong() and 0xFFL) shl 24) or
+                            ((chdr[1].toLong() and 0xFFL) shl 16) or
+                            ((chdr[2].toLong() and 0xFFL) shl 8) or
+                            (chdr[3].toLong() and 0xFFL)
+                        val ctype = String(chdr, 4, 4, Charsets.US_ASCII)
+                        if (clen < 0L || clen > 64L * 1024L * 1024L || offset + 12L + clen > totalLen) break
+
+                        val inspectChunk = ctype == "tEXt" || ctype == "zTXt" ||
+                            ctype == "iTXt" || !isOfficialPngChunkType(ctype)
+                        if (inspectChunk && clen > 0L) {
+                            val cap = minOf(clen, 512L * 1024L).toInt()
+                            val cbuf = ByteArray(cap)
+                            val cRead = raf.read(cbuf)
+                            if (cRead > 0) {
+                                val slice = if (cRead == cap) cbuf else cbuf.copyOf(cRead)
+                                if (containsBinderOrPayloadBytes(slice, 0) ||
+                                    (!isOfficialPngChunkType(ctype) && cRead >= 8192 &&
+                                        shannonEntropy(slice) >= 7.65)
+                                ) {
+                                    return@use SignatureMatch(
+                                        key = "dl:png_chunk:${lower.hashCode()}",
+                                        name = "تصویر PNG حاوی پی لود مخفی ($fname)",
+                                        category = "malicious_download",
+                                        severity = "critical",
+                                        detail = "کد اجرایی یا داده مخرب درون چانک متادیتا/خصوصی تصویر PNG شناسایی شد.",
+                                    )
+                                }
+                            }
+                        }
+                        offset += 12L + clen
+                        if (ctype == "IEND") {
+                            iendEof = offset
+                            break
+                        }
+                    }
+                    if (iendEof > 0L && totalLen > iendEof) {
+                        val cap = minOf(totalLen - iendEof, 2L * 1024L * 1024L).toInt()
+                        val trailer = ByteArray(cap)
+                        raf.seek(iendEof)
+                        val tRead = raf.read(trailer)
+                        if (tRead > 0) {
+                            var firstNz = 0
+                            while (firstNz < tRead && trailer[firstNz] == 0.toByte()) firstNz++
+                            val meaningful = tRead - firstNz
+                            if (meaningful >= 16) {
+                                val sub = trailer.copyOfRange(firstNz, tRead)
+                                if (containsBinderOrPayloadBytes(sub, 0) ||
+                                    (meaningful >= 512 && shannonEntropy(sub) >= 7.35)
+                                ) {
+                                    return@use SignatureMatch(
+                                        key = "dl:png_eof:${lower.hashCode()}",
+                                        name = "تصویر PNG با فایل بایندشده ($fname)",
+                                        category = "malicious_download",
+                                        severity = "critical",
+                                        detail = "فایل اجرایی، آرشیو یا پی لود مخرب چسبیده به انتهای تصویر PNG (بعد از IEND) شناسایی شد.",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    return@use null
+                }
+
+                // 2. JPEG Marker Traversal (skips EXIF thumbnails) + Post-EOI Binder Detection
+                if ((lower.endsWith(".jpg") || lower.endsWith(".jpeg")) && hRead >= 3 &&
+                    hdr[0] == 0xFF.toByte() && hdr[1] == 0xD8.toByte() && hdr[2] == 0xFF.toByte()
+                ) {
+                    var pos = 2L
+                    var hitSos = false
+                    val m = ByteArray(4)
+                    while (pos + 4L <= totalLen) {
+                        raf.seek(pos)
+                        val mRead = raf.read(m)
+                        if (mRead < 2 || m[0] != 0xFF.toByte()) break
+                        var marker = m[1].toInt() and 0xFF
+                        while (marker == 0xFF && pos + 2L < totalLen) {
+                            pos++
+                            raf.seek(pos)
+                            if (raf.read(m) < 2) break
+                            marker = m[1].toInt() and 0xFF
+                        }
+                        if (marker == 0xD9 || marker == 0x00) break
+                        if (marker == 0xD8 || marker in 0xD0..0xD7 || marker == 0x01) {
+                            pos += 2L
+                            continue
+                        }
+                        if (mRead < 4) break
+                        val segLen = ((m[2].toInt() and 0xFF) shl 8) or (m[3].toInt() and 0xFF)
+                        if (segLen < 2 || pos + 2L + segLen > totalLen) break
+                        if (marker == 0xDA) {
+                            hitSos = true
+                            pos += 2L + segLen
+                            break
+                        }
+                        if (marker in 0xE0..0xEF || marker == 0xFE) {
+                            val segCap = minOf(segLen - 2, 131072)
+                            if (segCap >= 8) {
+                                val seg = ByteArray(segCap)
+                                val sRead = raf.read(seg)
+                                if (sRead > 0) {
+                                    val sSlice = if (sRead == segCap) seg else seg.copyOf(sRead)
+                                    if (containsAsciiCi(sSlice, "<script") ||
+                                        containsAsciiCi(sSlice, "basestart-") ||
+                                        containsAsciiCi(sSlice, "tvqqaam") ||
+                                        containsAsciiCi(sSlice, "frombase64string") ||
+                                        containsAsciiCi(sSlice, "powershell -enc") ||
+                                        containsAsciiCi(sSlice, "dexclassloader")
+                                    ) {
+                                        return@use SignatureMatch(
+                                            key = "dl:jpg_meta:${lower.hashCode()}",
+                                            name = "کد مخرب در متادیتای تصویر JPEG ($fname)",
+                                            category = "malicious_download",
+                                            severity = "critical",
+                                            detail = "پی لود یا اسکریپت تروجانی درون متادیتای تصویر JPEG تزریق شده است.",
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        pos += 2L + segLen
+                    }
+                    if (hitSos && pos < totalLen) {
+                        val tailWin = minOf(totalLen - pos, 2L * 1024L * 1024L).toInt()
+                        val scanStart = totalLen - tailWin
+                        val tail = ByteArray(tailWin)
+                        raf.seek(scanStart)
+                        val tRead = raf.read(tail)
+                        if (tRead > 4) {
+                            var lastEoi = -1
+                            for (i in (tRead - 2) downTo 1) {
+                                if (tail[i] == 0xFF.toByte() && tail[i + 1] == 0xD9.toByte()) {
+                                    lastEoi = i + 2
+                                    break
+                                }
+                            }
+                            if (lastEoi in 1 until tRead) {
+                                var firstNz = lastEoi
+                                while (firstNz < tRead && tail[firstNz] == 0.toByte()) firstNz++
+                                val extra = tRead - firstNz
+                                if (extra >= 64) {
+                                    val appended = tail.copyOfRange(firstNz, tRead)
+                                    if (!isSafeMotionPhotoTrailer(appended) &&
+                                        (containsBinderOrPayloadBytes(appended, 0) ||
+                                            (extra >= 1024 && shannonEntropy(appended) >= 7.45))
+                                    ) {
+                                        return@use SignatureMatch(
+                                            key = "dl:jpg_eoi:${lower.hashCode()}",
+                                            name = "تصویر JPEG با فایل بایندشده ($fname)",
+                                            category = "malicious_download",
+                                            severity = "critical",
+                                            detail = "فایل اجرایی، آرشیو یا بدافزار چسبیده به انتهای تصویر JPEG (بعد از FFD9) شناسایی شد.",
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return@use null
+                }
+
+                // 3. BMP Declared Size Mismatch & GIF Post-Trailer Check
+                if (lower.endsWith(".bmp") && hRead >= 6 &&
+                    hdr[0] == 'B'.code.toByte() && hdr[1] == 'M'.code.toByte()
+                ) {
+                    val declared = (hdr[2].toLong() and 0xFFL) or
+                        ((hdr[3].toLong() and 0xFFL) shl 8) or
+                        ((hdr[4].toLong() and 0xFFL) shl 16) or
+                        ((hdr[5].toLong() and 0xFFL) shl 24)
+                    if (declared >= 54L && totalLen > declared + 64L) {
+                        val cap = minOf(totalLen - declared, 2L * 1024L * 1024L).toInt()
+                        val extra = ByteArray(cap)
+                        raf.seek(declared)
+                        val tRead = raf.read(extra)
+                        if (tRead >= 64) {
+                            val slice = if (tRead == cap) extra else extra.copyOf(tRead)
+                            if (containsBinderOrPayloadBytes(slice, 0) || shannonEntropy(slice) >= 7.35) {
+                                return@use SignatureMatch(
+                                    key = "dl:bmp_eof:${lower.hashCode()}",
+                                    name = "تصویر BMP با فایل بایندشده ($fname)",
+                                    category = "malicious_download",
+                                    severity = "critical",
+                                    detail = "داده یا بدافزار بایندشده در انتهای تصویر BMP شناسایی شد.",
+                                )
+                            }
+                        }
+                    }
+                }
+                if (lower.endsWith(".gif") && hRead >= 6 &&
+                    hdr[0] == 'G'.code.toByte() && hdr[1] == 'I'.code.toByte() &&
+                    hdr[2] == 'F'.code.toByte() && hdr[3] == '8'.code.toByte()
+                ) {
+                    val win = minOf(totalLen, 1024L * 1024L).toInt()
+                    val tail = ByteArray(win)
+                    raf.seek(totalLen - win)
+                    val tRead = raf.read(tail)
+                    if (tRead > 8) {
+                        var trailerPos = -1
+                        for (i in (tRead - 1) downTo 0) {
+                            if (tail[i] == 0x3B.toByte()) {
+                                trailerPos = i + 1
+                                break
+                            }
+                        }
+                        if (trailerPos > 0 && trailerPos + 64 <= tRead) {
+                            var firstNz = trailerPos
+                            while (firstNz < tRead && tail[firstNz] == 0.toByte()) firstNz++
+                            if (tRead - firstNz >= 64) {
+                                val appended = tail.copyOfRange(firstNz, tRead)
+                                if (containsBinderOrPayloadBytes(appended, 0) ||
+                                    (appended.size >= 1024 && shannonEntropy(appended) >= 7.45)
+                                ) {
+                                    return@use SignatureMatch(
+                                        key = "dl:gif_eof:${lower.hashCode()}",
+                                        name = "تصویر GIF با فایل بایندشده ($fname)",
+                                        category = "malicious_download",
+                                        severity = "critical",
+                                        detail = "داده یا بدافزار بایندشده پس از پایان تصویر GIF شناسایی شد.",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                null
+            }
+        }.getOrNull()
+    }
+
+    private fun inspectPdfPayload(sample: ByteArray, fname: String, lower: String): SignatureMatch? {
+        val hasJsOrLaunch = containsAsciiCi(sample, "/js") ||
+            containsAsciiCi(sample, "/javascript") ||
+            containsAsciiCi(sample, "/launch")
+        val hasAutoOrEmbed = containsAsciiCi(sample, "/openaction") ||
+            containsAsciiCi(sample, "/aa ") ||
+            containsAsciiCi(sample, "/aa<<") ||
+            containsAsciiCi(sample, "/embeddedfile") ||
+            containsAsciiCi(sample, "/richmedia")
+        if (hasJsOrLaunch && hasAutoOrEmbed) {
+            return SignatureMatch(
+                key = "dl:pdf_act:${lower.hashCode()}",
+                name = "سند PDF حاوی اسکریپت یا فرمان مخرب ($fname)",
+                category = "malicious_download",
+                severity = "critical",
+                detail = "فایل PDF حاوی اسکریپت یا فایل اجرایی با اجرای خودکار است.",
+            )
+        }
+        val text = String(sample, Charsets.ISO_8859_1).lowercase()
+        val lastEof = text.lastIndexOf("%%eof")
+        if (lastEof >= 0 && lastEof + 64 < sample.size &&
+            containsBinderOrPayloadBytes(sample, lastEof + 5)
+        ) {
+            return SignatureMatch(
+                key = "dl:pdf_eof:${lower.hashCode()}",
+                name = "فایل بایندشده در انتهای سند PDF ($fname)",
+                category = "malicious_download",
+                severity = "critical",
+                detail = "پی لود مخفی شده پس از پایان رسمی سند PDF شناسایی شد.",
+            )
+        }
+        return null
+    }
+
+    private fun hasHiddenPayloadEntriesInApk(apkFile: File): Boolean {
+        return runCatching {
+            var count = 0
+            ZipInputStream(FileInputStream(apkFile)).use { zis ->
+                while (count < 1500) {
+                    val entry = zis.nextEntry ?: break
+                    count++
+                    val eLower = entry.name.lowercase()
+                    if (!entry.isDirectory) {
+                        val inHiddenAssetDir = eLower.startsWith("assets/") || eLower.startsWith("res/raw/")
+                        if (inHiddenAssetDir && (eLower.endsWith(".apk") ||
+                                eLower.endsWith(".dex") ||
+                                eLower.endsWith(".jar") ||
+                                eLower.endsWith(".exe"))
+                        ) {
+                            return@use true
+                        }
+                        if (eLower.contains("craxsrat") ||
+                            eLower.contains("spynote") ||
+                            eLower.contains("spymax") ||
+                            eLower.contains("ahmyth") ||
+                            eLower.contains("cypherrat") ||
+                            eLower.contains("eaglespy")
+                        ) {
+                            return@use true
+                        }
+                    }
+                    zis.closeEntry()
+                }
+                false
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun inspectDownloadedApk(
+        context: Context,
+        file: File,
+        selfPkg: String,
+    ): SignatureMatch? {
+        val fname = file.name
+        val lower = fname.lowercase()
+        val pm = context.packageManager
+        val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS
+        val pkgInfo = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(
+                    file.absolutePath,
+                    PackageManager.PackageInfoFlags.of(flags.toLong()),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(file.absolutePath, flags)
+            }
+        }.getOrNull()
+
+        if (pkgInfo != null) {
+            val pkgName = pkgInfo.packageName ?: ""
+            val appInfo = pkgInfo.applicationInfo
+            val label = if (appInfo != null) {
+                appInfo.sourceDir = file.absolutePath
+                appInfo.publicSourceDir = file.absolutePath
+                runCatching { pm.getApplicationLabel(appInfo).toString() }.getOrDefault(pkgName)
+            } else {
+                pkgName
+            }
+            val knownHit = matchKnownPackageOrLabel(pkgName, "$label $lower", selfPkg)
+            if (knownHit != null) {
+                return knownHit.copy(
+                    key = "${knownHit.key}:apk:${lower.hashCode()}",
+                    name = "${knownHit.name} (فایل نصبی)",
+                    detail = "فایل نصبی مخرب یا ناسازگار روی حافظه دستگاه یافت شد.",
+                )
+            }
+            if (pkgName == selfPkg || pkgName.startsWith("ir.umbrella.")) {
+                return null
+            }
+
+            val perms = pkgInfo.requestedPermissions?.toSet() ?: emptySet()
+            val hasA11yService = pkgInfo.services?.any {
+                it.permission == Manifest.permission.BIND_ACCESSIBILITY_SERVICE
+            } == true
+            val hasDeviceAdmin = pkgInfo.receivers?.any {
+                it.permission == Manifest.permission.BIND_DEVICE_ADMIN
+            } == true
+            val hasSms = perms.contains(Manifest.permission.READ_SMS) ||
+                perms.contains(Manifest.permission.RECEIVE_SMS) ||
+                perms.contains(Manifest.permission.SEND_SMS)
+            val hasOverlay = perms.contains(Manifest.permission.SYSTEM_ALERT_WINDOW)
+            val hasMicOrCam = perms.contains(Manifest.permission.RECORD_AUDIO) ||
+                perms.contains(Manifest.permission.CAMERA)
+            val hasInstallPerm = perms.contains(Manifest.permission.REQUEST_INSTALL_PACKAGES)
+
+            if (hasA11yService && (hasDeviceAdmin || (hasOverlay && (hasSms || hasMicOrCam || hasInstallPerm)))) {
+                return SignatureMatch(
+                    key = "dl:apk_rat:${lower.hashCode()}",
+                    name = "فایل نصبی تروجانی با دسترسی کنترل کامل ($fname)",
+                    category = "malicious_download",
+                    severity = "critical",
+                    detail = "این فایل نصبی ترکیبی بسیار پرخطر از سرویس دسترسی پذیری، مدیر دستگاه، پیامک یا روکش صفحه (الگوی RAT) را درخواست می کند.",
+                )
+            }
+        } else {
+            val nameHit = matchKnownPackageOrLabel(lower, lower, selfPkg)
+            if (nameHit != null) {
+                return nameHit.copy(
+                    key = "${nameHit.key}:apk:${lower.hashCode()}",
+                    name = "${nameHit.name} (فایل نصبی)",
+                    detail = "فایل نصبی مخرب یا ناسازگار روی حافظه دستگاه یافت شد.",
+                )
+            }
+        }
+
+        if (hasHiddenPayloadEntriesInApk(file)) {
+            return SignatureMatch(
+                key = "dl:apk_dropper:${lower.hashCode()}",
+                name = "فایل نصبی حاوی پی لود یا کد مخفی ($fname)",
+                category = "malicious_download",
+                severity = "critical",
+                detail = "درون منابع این APK فایل اجرایی .dex/.apk/.jar پنهان شده (الگوی Dropper/SpyNote) یافت شد.",
+            )
+        }
+        return null
+    }
+
+    private fun inspectInstalledAppBehavioralRisk(
+        context: Context,
+        pm: PackageManager,
+        app: ApplicationInfo,
+        label: String,
+        enabledA11y: String,
+    ): SignatureMatch? {
+        val pkg = app.packageName ?: return null
+        val pkgLower = pkg.lowercase()
+        if (pkg == context.packageName ||
+            pkgLower.startsWith("ir.umbrella.") ||
+            pkgLower.startsWith("com.android.") ||
+            pkgLower.startsWith("com.google.android.") ||
+            pkgLower.startsWith("com.samsung.") ||
+            pkgLower.startsWith("com.sec.") ||
+            pkgLower.startsWith("com.miui.") ||
+            pkgLower.startsWith("com.xiaomi.") ||
+            pkgLower.startsWith("com.huawei.") ||
+            pkgLower.startsWith("com.oppo.") ||
+            pkgLower.startsWith("com.vivo.") ||
+            pkgLower.startsWith("org.telegram.")
+        ) {
+            return null
+        }
+        if ((app.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0) {
+            return null
+        }
+
+        val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS
+        val pkgInfo = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(pkg, flags)
+            }
+        }.getOrNull() ?: return null
+
+        val perms = pkgInfo.requestedPermissions?.toSet() ?: emptySet()
+        val hasA11y = pkgInfo.services?.any {
+            it.permission == Manifest.permission.BIND_ACCESSIBILITY_SERVICE
+        } == true
+        val hasDeviceAdmin = pkgInfo.receivers?.any {
+            it.permission == Manifest.permission.BIND_DEVICE_ADMIN
+        } == true
+        val hasSms = perms.contains(Manifest.permission.READ_SMS) ||
+            perms.contains(Manifest.permission.RECEIVE_SMS) ||
+            perms.contains(Manifest.permission.SEND_SMS)
+        val hasOverlay = perms.contains(Manifest.permission.SYSTEM_ALERT_WINDOW)
+        val hasMicOrCam = perms.contains(Manifest.permission.RECORD_AUDIO) ||
+            perms.contains(Manifest.permission.CAMERA)
+        val hasInstallPerm = perms.contains(Manifest.permission.REQUEST_INSTALL_PACKAGES)
+
+        if (!hasA11y && !(hasInstallPerm && hasSms)) {
+            return null
+        }
+
+        val installer = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                pm.getInstallSourceInfo(pkg).installingPackageName ?: ""
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstallerPackageName(pkg) ?: ""
+            }
+        }.getOrDefault("").lowercase()
+        val trustedStore = installer == "com.android.vending" ||
+            installer == "com.sec.android.app.samsungapps" ||
+            installer == "com.farsitel.bazaar" ||
+            installer == "ir.mservices.market" ||
+            installer == "com.xiaomi.market"
+
+        if (!trustedStore && hasA11y && hasDeviceAdmin && (hasSms || hasOverlay || hasMicOrCam)) {
+            return SignatureMatch(
+                key = "malware:rat_behav:${pkgLower.hashCode()}",
+                name = "$label (تروجان با دسترسی کامل)",
+                category = "malware",
+                severity = "critical",
+                detail = "اپلیکیشن خارج از فروشگاه رسمی با ترکیب خطرناک دسترسی پذیری، مدیر دستگاه و پیامک/روکش صفحه (الگوی SpyNote/CraxsRAT) شناسایی شد.",
+            )
+        }
+
+        val isA11yActive = enabledA11y.contains(pkgLower)
+        if (!trustedStore && (isA11yActive || hasInstallPerm) && (hasSms || hasOverlay)) {
+            val srcPath = app.sourceDir
+            if (!srcPath.isNullOrBlank()) {
+                val srcFile = File(srcPath)
+                if (srcFile.exists() && srcFile.isFile) {
+                    val lastUpd = pkgInfo.lastUpdateTime
+                    val cached = apkDropperCache[pkg]
+                    val hiddenDropper = if (cached != null && cached.first == lastUpd) {
+                        cached.second
+                    } else {
+                        val detected = hasHiddenPayloadEntriesInApk(srcFile)
+                        if (apkDropperCache.size >= MAX_LABEL_CACHE_ENTRIES) {
+                            apkDropperCache.clear()
+                        }
+                        apkDropperCache[pkg] = lastUpd to detected
+                        detected
+                    }
+                    if (hiddenDropper) {
+                        return SignatureMatch(
+                            key = "malware:apk_dropper:${pkgLower.hashCode()}",
+                            name = "$label (دراپر بدافزار)",
+                            category = "malware",
+                            severity = "critical",
+                            detail = "درون فایل نصبی این برنامه، پی لود مخفی .dex/.apk/.jar به همراه مجوزهای حساس شناسایی شد.",
+                        )
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun hasPeHeaderAt(buf: ByteArray, offset: Int): Boolean {
@@ -692,9 +1320,86 @@ object UmbrellaSecurityScanner {
         }
     }
 
-    private fun inspectDownloadedFile(file: File, selfPkg: String): SignatureMatch? {
+    private fun inspectImageTailBuffer(sample: ByteArray, fname: String, lower: String): SignatureMatch? {
+        if (lower.endsWith(".png")) {
+            val iendSig = byteArrayOf(
+                'I'.code.toByte(), 'E'.code.toByte(), 'N'.code.toByte(), 'D'.code.toByte(),
+            )
+            for (pos in (sample.size - 8) downTo 8) {
+                if (sample[pos] == iendSig[0] && sample[pos + 1] == iendSig[1] &&
+                    sample[pos + 2] == iendSig[2] && sample[pos + 3] == iendSig[3]
+                ) {
+                    val afterEof = pos + 8
+                    if (afterEof < sample.size) {
+                        var firstNz = afterEof
+                        while (firstNz < sample.size && sample[firstNz] == 0.toByte()) firstNz++
+                        if (sample.size - firstNz >= 16) {
+                            val sub = sample.copyOfRange(firstNz, sample.size)
+                            if (containsBinderOrPayloadBytes(sub, 0) ||
+                                (sub.size >= 512 && shannonEntropy(sub) >= 7.35)
+                            ) {
+                                return SignatureMatch(
+                                    key = "dl:png_eof:${lower.hashCode()}",
+                                    name = "تصویر PNG با فایل بایندشده ($fname)",
+                                    category = "malicious_download",
+                                    severity = "critical",
+                                    detail = "فایل اجرایی، آرشیو یا پی لود مخرب پس از IEND در تصویر PNG شناسایی شد.",
+                                )
+                            }
+                        }
+                    }
+                    break
+                }
+            }
+        } else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            for (pos in (sample.size - 2) downTo 12) {
+                if (sample[pos] == 0xFF.toByte() && sample[pos + 1] == 0xD9.toByte()) {
+                    var firstNz = pos + 2
+                    while (firstNz < sample.size && sample[firstNz] == 0.toByte()) firstNz++
+                    if (sample.size - firstNz >= 64) {
+                        val sub = sample.copyOfRange(firstNz, sample.size)
+                        if (!isSafeMotionPhotoTrailer(sub) &&
+                            (containsBinderOrPayloadBytes(sub, 0) ||
+                                (sub.size >= 1024 && shannonEntropy(sub) >= 7.45))
+                        ) {
+                            return SignatureMatch(
+                                key = "dl:jpg_eoi:${lower.hashCode()}",
+                                name = "تصویر JPEG با فایل بایندشده ($fname)",
+                                category = "malicious_download",
+                                severity = "critical",
+                                detail = "فایل اجرایی، آرشیو یا بدافزار چسبیده به انتهای تصویر JPEG شناسایی شد.",
+                            )
+                        }
+                    }
+                    break
+                }
+            }
+        }
+        return null
+    }
+
+    private fun inspectDownloadedFile(context: Context, file: File, selfPkg: String): SignatureMatch? {
+        val fname = file.name
+        val lower = fname.lowercase()
+        if (hasRloOrDoubleExtension(fname)) {
+            return SignatureMatch(
+                key = "dl:masq:${lower.hashCode()}",
+                name = "فایل تروجانی با نام فریبنده ($fname)",
+                category = "malicious_download",
+                severity = "critical",
+                detail = "این فایل با پسوند دوگانه یا کاراکتر تغییر جهت سعی در پنهان کردن فایل اجرایی یا نصبی به جای تصویر/سند دارد.",
+            )
+        }
+        if (lower.endsWith(".apk")) {
+            return inspectDownloadedApk(context, file, selfPkg)
+        }
+        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+            lower.endsWith(".bmp") || lower.endsWith(".gif")
+        ) {
+            inspectImagePolyglotFile(file, fname, lower)?.let { return it }
+        }
         return inspectDownloadedPayload(
-            fname = file.name,
+            fname = fname,
             totalLength = file.length(),
             selfPkg = selfPkg,
             readHead = { readSampleBytes(file, 64 * 1024) },
@@ -826,6 +1531,10 @@ object UmbrellaSecurityScanner {
                     containsBytes(sample, dexSig, 0) ||
                     containsAsciiCi(sample, "androidmanifest.xml") ||
                     containsAsciiCi(sample, "<script") ||
+                    containsAsciiCi(sample, "frombase64string") ||
+                    containsAsciiCi(sample, "basestart-") ||
+                    containsAsciiCi(sample, "tvqqaam") ||
+                    containsAsciiCi(sample, "dexclassloader") ||
                     containsAsciiCi(sample, "eicar-standard-antivirus-test-file"))
             ) {
                 return SignatureMatch(
@@ -853,7 +1562,13 @@ object UmbrellaSecurityScanner {
                 containsBytes(sample, dexSig, 16) ||
                 (containsAsciiCi(sample, "androidmanifest.xml") && containsAsciiCi(sample, "classes.dex")) ||
                 containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "<script")
+                containsAsciiCi(sample, "<script") ||
+                containsAsciiCi(sample, "wscript.shell") ||
+                containsAsciiCi(sample, "frombase64string") ||
+                containsAsciiCi(sample, "basestart-") ||
+                containsAsciiCi(sample, "tvqqaam") ||
+                containsAsciiCi(sample, "powershell -enc") ||
+                containsAsciiCi(sample, "dexclassloader")
             ) {
                 return SignatureMatch(
                     key = "dl:poly_img:${lower.hashCode()}",
@@ -862,6 +1577,9 @@ object UmbrellaSecurityScanner {
                     severity = "critical",
                     detail = "کد اجرایی یا اسکریپت تروجانی پنهان شده داخل تصویر شناسایی شد.",
                 )
+            }
+            if (validMagic) {
+                inspectImageTailBuffer(sample, fname, lower)?.let { return it }
             }
             return null
         }
@@ -880,8 +1598,15 @@ object UmbrellaSecurityScanner {
             var hasEmbeddedBinary = binaryHeader
             if (!hasEmbeddedBinary) {
                 for (pos in 16 until (sample.size - 0x40).coerceAtLeast(16)) {
-                    if (sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
-                        hasPeHeaderAt(sample, pos)
+                    if ((sample[pos] == 0x4D.toByte() && sample[pos + 1] == 0x5A.toByte() &&
+                            hasPeHeaderAt(sample, pos)) ||
+                        (pos + 4 <= sample.size && sample[pos] == 0x7F.toByte() &&
+                            sample[pos + 1] == 'E'.code.toByte() && sample[pos + 2] == 'L'.code.toByte() &&
+                            sample[pos + 3] == 'F'.code.toByte()) ||
+                        (pos + 7 <= sample.size && sample[pos] == 'R'.code.toByte() &&
+                            sample[pos + 1] == 'a'.code.toByte() && sample[pos + 2] == 'r'.code.toByte() &&
+                            sample[pos + 3] == '!'.code.toByte() && sample[pos + 4] == 0x1A.toByte() &&
+                            sample[pos + 5] == 0x07.toByte())
                     ) {
                         hasEmbeddedBinary = true
                         break
@@ -889,9 +1614,15 @@ object UmbrellaSecurityScanner {
                 }
             }
             if (hasEmbeddedBinary ||
+                containsBytes(sample, dexSig, 16) ||
                 (containsAsciiCi(sample, "androidmanifest.xml") && containsAsciiCi(sample, "classes.dex")) ||
                 containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
-                containsAsciiCi(sample, "<script")
+                containsAsciiCi(sample, "<script") ||
+                containsAsciiCi(sample, "frombase64string") ||
+                containsAsciiCi(sample, "basestart-") ||
+                containsAsciiCi(sample, "tvqqaam") ||
+                containsAsciiCi(sample, "dexclassloader") ||
+                containsAsciiCi(sample, "powershell -enc")
             ) {
                 return SignatureMatch(
                     key = "dl:media:${lower.hashCode()}",
@@ -927,10 +1658,15 @@ object UmbrellaSecurityScanner {
                     detail = "درون آرشیو یا سند، فایل مشکوک و مخرب شناسایی شد: $badEntry",
                 )
             }
+            if (lower.endsWith(".pdf")) {
+                inspectPdfPayload(sample, fname, lower)?.let { return it }
+            }
             if (hasPeHeaderAt(sample, 0) ||
                 containsBytes(sample, elfSig, 0) ||
                 containsBytes(sample, dexSig, 0) ||
-                containsAsciiCi(sample, "eicar-standard-antivirus-test-file")
+                containsAsciiCi(sample, "eicar-standard-antivirus-test-file") ||
+                containsAsciiCi(sample, "frombase64string") ||
+                containsAsciiCi(sample, "basestart-")
             ) {
                 return SignatureMatch(
                     key = "dl:doc:${lower.hashCode()}",
@@ -951,7 +1687,14 @@ object UmbrellaSecurityScanner {
                 containsAsciiCi(sample, "iplogger.org") ||
                 containsAsciiCi(sample, "iplogger.com") ||
                 containsAsciiCi(sample, "2no.co") ||
-                containsAsciiCi(sample, "blasze.com")
+                containsAsciiCi(sample, "blasze.com") ||
+                (containsAsciiCi(sample, "frombase64string") &&
+                    (containsAsciiCi(sample, "invoke-expression") || containsAsciiCi(sample, "iex("))) ||
+                containsAsciiCi(sample, "eval(atob(") ||
+                containsAsciiCi(sample, "wscript.shell") ||
+                containsAsciiCi(sample, "urldownloadtofile") ||
+                containsAsciiCi(sample, "basestart-") ||
+                containsAsciiCi(sample, "tvqqaam")
             ) {
                 return SignatureMatch(
                     key = "dl:web:${lower.hashCode()}",
@@ -1128,6 +1871,13 @@ object UmbrellaSecurityScanner {
             }
         }.getOrDefault(emptyList())
 
+        val enabledA11y = runCatching {
+            AndroidSettings.Secure.getString(
+                context.contentResolver,
+                AndroidSettings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: ""
+        }.getOrDefault("").lowercase()
+
         var scannedFiles = 0
         for (app in packages) {
             if (app.packageName == selfPkg) continue
@@ -1147,7 +1897,9 @@ object UmbrellaSecurityScanner {
                 appLabelCache[app.packageName] = sourceKey to loaded
                 loaded
             }
-            val hit = matchKnownPackageOrLabel(app.packageName, label, selfPkg) ?: continue
+            val hit = matchKnownPackageOrLabel(app.packageName, label, selfPkg)
+                ?: inspectInstalledAppBehavioralRisk(context, pm, app, label, enabledA11y)
+                ?: continue
             val sha = packageSigningSha256(pm, app.packageName)
             findings.putIfAbsent(
                 hit.key,
@@ -1197,7 +1949,7 @@ object UmbrellaSecurityScanner {
                 if (isCleanFileCached(absLower, fsize, fmtime)) {
                     continue
                 }
-                val hit = inspectDownloadedFile(file, selfPkg)
+                val hit = inspectDownloadedFile(context, file, selfPkg)
                 if (hit == null) {
                     recordCleanFileCache(absLower, fsize, fmtime)
                     continue

@@ -1872,6 +1872,20 @@ void main() {
         expect(heartbeatPayloads, hasLength(1));
         expect(heartbeatPayloads.single['security_status'], 'safe');
         expect(heartbeatPayloads.single['scanned_files'], 340);
+
+        final String cpp = File(
+          'packages/umbrella_native/windows/security_scanner.cpp',
+        ).readAsStringSync();
+        expect(cpp, contains('InspectImagePolyglotW'));
+        expect(cpp, contains('HasSafeMotionPhotoTrailer'));
+        expect(cpp, contains('InspectPdfPayload'));
+        expect(cpp, contains('ComputeShannonEntropy'));
+        expect(cpp, contains('ReadRemoteProcessCommandLine'));
+        expect(cpp, contains('IsSuspiciousLolbinCommandLine'));
+        expect(cpp, contains('RunMRU'));
+        expect(cpp, contains('xworm'));
+        expect(cpp, contains('lummastealer'));
+        expect(cpp, isNot(contains('lower.find("umbrella") != std::string::npos')));
       },
     );
   });
