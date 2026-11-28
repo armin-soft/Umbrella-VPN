@@ -5196,14 +5196,20 @@ class VpnController extends ChangeNotifier {
 
   Future<({bool ok, String message})> removeHttpsCa() async {
     final LocalCaManager ca = await _ensureCaInitialized();
-    final ({bool ok, String message}) res = await _native.removeHttpsCa(
+    final bool removed = await _native.removeHttpsCa(
       sha1Hex: ca.caSha1Hex,
     );
     await refreshHttpsCaStatus();
     if (!_httpsCaTrusted && _settings.httpsAdFilter && _status.active) {
       scheduleLiveReload();
     }
-    return res;
+    final bool ok = removed || !_httpsCaTrusted;
+    return (
+      ok: ok,
+      message: ok
+          ? 'گواهی محلی آمبرلا از مخزن ویندوز حذف شد.'
+          : 'حذف گواهی از مخزن ویندوز لغو شد یا ناموفق بود.',
+    );
   }
 
   static String _generateSessionSecret() {

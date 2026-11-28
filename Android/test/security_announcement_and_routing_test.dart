@@ -2065,7 +2065,7 @@ void main() {
             reason: 'Expected adult block for $h',
           );
           expect(
-            ContentBlockServer.classifyBlockedHost(h, filter: filter)?.category,
+            ContentBlockServer.classifyBlockedHost(h, filter: filter).category,
             'adult',
           );
         }
@@ -2104,7 +2104,7 @@ void main() {
             reason: 'Expected gambling block for $h',
           );
           expect(
-            ContentBlockServer.classifyBlockedHost(h, filter: filter)?.category,
+            ContentBlockServer.classifyBlockedHost(h, filter: filter).category,
             'gambling',
           );
         }
