@@ -423,19 +423,20 @@ $Raw_Rows = [];
 if (!$Has_Active_Sub) {
 $Raw_Rows[] = [['💎مدیریت اشتراک', 'user_subscriptions_menu']];
 }
+$Raw_Rows[] = [['👤حساب کاربری', 'user_account_menu']];
+if ($Has_Active_Sub) {
+$Raw_Rows[] = [['📱دستگاه من', 'user_device_menu']];
+}
+if ($Shield_Info !== null) {
+$Raw_Rows[] = [$Shield_Info['button']];
+}
 $Raw_Rows = array_merge($Raw_Rows, [
-[['👤حساب کاربری', 'user_account_menu']],
-[['📱دستگاه من', 'user_device_menu']],
 [['💰کیف پول و مالی', 'user_wallet_menu']],
 [['📊سوابق و آمار', 'user_stats_menu']],
 [['🖥️نرم افزار/اپلیکیشن', 'app_download_menu']],
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]);
-if ($Shield_Info !== null) {
-$Insert_Pos = $Has_Active_Sub ? 2 : 3;
-array_splice($Raw_Rows, $Insert_Pos, 0, [[$Shield_Info['button']]]);
-}
 $Menu_Rows = Menu::rows($Raw_Rows);
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 

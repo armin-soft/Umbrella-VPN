@@ -269,7 +269,7 @@ check(str_contains($Body, "Menu::back('منوی قبلی', '{$Parent}')"), $Meth
 check(str_contains($Body, 'Menu::adminHome()'), $Method . ': leaf keeps main menu');
 }
 $UserMenus = [
-'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
+'serviceMenu' => ['منوی خدمات ربات', ['user_subscriptions_menu', 'user_account_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه']],
 'subscriptionsMenu' => ['user_subscriptions_menu', ['اشتراک آماده', 'اشتراک دلخواه', 'اشتراک رایگان اول']],
 'walletMenu' => ['user_wallet_menu', ['شارژ اعتبار حساب کاربری', 'سابقه تراکنش']],
 'accountMenu' => ['user_account_menu', ['پروفایل کاربری']],
@@ -278,7 +278,7 @@ $UserMenus = [
 'supportMenu' => ['منوی پشتیبانی', ['لیست تیکت های من', 'تیکت جدید']],
 ];
 $UserWidths = [
-'serviceMenu' => [1, 1, 1, 1, 1, 1, 1, 1],
+'serviceMenu' => [1, 1, 1, 1, 1, 1, 1],
 'subscriptionsMenu' => [2, 1, 1], 'walletMenu' => [1, 1, 1],
 'accountMenu' => [1, 1], 'deviceMenu' => [1, 1, 1, 1, 1], 'statsMenu' => [2, 1], 'supportMenu' => [1, 1, 1],
 ];
@@ -298,6 +298,12 @@ $UserContext->CallbackData = $Call;
 $Route->invoke(null, $UserContext);
 check(calls() === $Expected, 'user ' . $Method . ': dispatcher routes category');
 }
+Repository::$User = ['Client_ID' => 'test', 'Subscription' => 'monthly', 'Client_Status' => 'فعال', 'Expiration_Time_Stamp' => time() + 86400];
+$ActiveUserContext = new Context(false);
+$ActiveUserContext->IsCallback = true;
+UserFlow::serviceMenu($ActiveUserContext);
+check(calls() === ['user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'], 'active subscriber serviceMenu displays user_device_menu and hides user_subscriptions_menu');
+Repository::$User = [];
 foreach (['singleSmsMenu' => 'single', 'notifySingleMenu' => 'notify', 'broadcastMenu' => 'broadcast', 'serverNotifyCustomStart' => 'custom'] as $Method => $Scope) {
 AdminFlow::$Method($Context);
 check(calls() === ['delivery_mode:' . $Scope . ':telegram', 'delivery_mode:' . $Scope . ':sms', 'delivery_mode:' . $Scope . ':app', 'delivery_mode:' . $Scope . ':all', 'منوی پیامک', 'مدیریت'], $Scope . ': four delivery channels and navigation');

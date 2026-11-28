@@ -68,7 +68,7 @@ function check(bool $ok, string $message): void { if (!$ok) throw new RuntimeExc
 function buttons(): array { return array_column(array_merge(...TelegramClient::$Rows), 'callback_data'); }
 $context = new Context();
 $now = time();
-$Base_Expected = ['user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'];
+$Shared_Tail = ['user_wallet_menu', 'user_stats_menu', 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه'];
 foreach ([
 'no plan' => [[], true],
 'no local plan with client ID' => [['Client_ID' => 'client'], true],
@@ -87,8 +87,10 @@ Repository::$User = $user;
 ServerClient::$Calls = 0;
 Repository::$Session = ['Flow' => 'custom_plan', 'Pending_Payment' => 'keep'];
 UserFlow::serviceMenu($context);
-$Expected = $showSubMenu ? array_merge(['user_subscriptions_menu'], $Base_Expected) : $Base_Expected;
-check(buttons() === $Expected, $label . ': serviceMenu hides subscriptions menu only for active subscribers');
+$Expected = $showSubMenu
+? array_merge(['user_subscriptions_menu', 'user_account_menu'], $Shared_Tail)
+: array_merge(['user_account_menu', 'user_device_menu'], $Shared_Tail);
+check(buttons() === $Expected, $label . ': serviceMenu hides subscriptions for active users and hides My Device when user has no active subscription');
 check(ServerClient::$Calls === 0, $label . ': service menu performs no extra panel lookup');
 check(Menu::problems(TelegramClient::$Rows) === [], $label . ': valid keyboard');
 check(Repository::$Session === ['Flow' => null, 'Pending_Payment' => 'keep'], $label . ': payment preserved');

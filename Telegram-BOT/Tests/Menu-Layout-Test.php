@@ -220,8 +220,10 @@ $Body = substr($Source, $Start, $End - $Start);
 $this->check(str_contains($Body, "['Flow' => null]"), 'user home cancels input');
 $this->check(str_contains($Body, 'hasActiveMenuSubscription($User)'), 'service menu checks active subscription status');
 $this->check(str_contains($Body, "['💎مدیریت اشتراک', 'user_subscriptions_menu']"), 'subscription menu row is defined for non-active users');
+$this->check(str_contains($Body, "['👤حساب کاربری', 'user_account_menu']"), 'account menu row is always present');
+$this->check(str_contains($Body, "if (\$Has_Active_Sub) {\n\$Raw_Rows[] = [['📱دستگاه من', 'user_device_menu']];"), 'my-device menu row is only added for active subscribers');
 $this->check_main_rows($Body, 'Raw_Rows', [
-'user_account_menu', 'user_device_menu', 'user_wallet_menu', 'user_stats_menu',
+'user_wallet_menu', 'user_stats_menu',
 'app_download_menu', 'منوی پشتیبانی', 'تغییرات نسخه',
 ], '/\$Raw_Rows = array_merge\(\$Raw_Rows, (\[.*?\])\);/s');
 }
