@@ -352,6 +352,19 @@ Future<void> main(List<String> arguments) async {
     });
     final UpdateController updates = UpdateController(native)
       ..onExitForInstall = window.quit;
+    bool wasHiddenToTray = startHidden;
+    window.onVisibilityChanged = () {
+      motion.setAppVisible(window.isVisible);
+      if (window.isHiddenToTray) {
+        wasHiddenToTray = true;
+      } else if (wasHiddenToTray) {
+        wasHiddenToTray = false;
+        updates.resetBannerDismissal();
+        if (settings.settings.checkUpdatesOnStart) {
+          unawaited(updates.checkIfDue(silent: true));
+        }
+      }
+    };
     await OccasionService.instance.load();
 
     runApp(

@@ -445,7 +445,7 @@ class _ConnectPageState extends State<ConnectPage> {
                             message: account.accessReason,
                           ),
                         ),
-                      if (updates != null && availableUpdate != null)
+                      if (updates != null && availableUpdate != null && updates.showBanner)
                         Padding(
                           padding:
                               const EdgeInsets.only(top: AppMetrics.space3),
@@ -1049,11 +1049,11 @@ class _UpdateBanner extends StatelessWidget {
             const SizedBox(width: AppMetrics.space1),
             IconButton(
               key: const ValueKey<String>('connect-update-dismiss-button'),
-              tooltip: 'بعدا',
+              tooltip: 'بستن',
               visualDensity: VisualDensity.compact,
               onPressed: withUiClick(
                 context,
-                () => unawaited(updates.skipCurrent()),
+                updates.dismissBanner,
               ),
               icon: Icon(
                 Icons.close_rounded,

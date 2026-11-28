@@ -89,12 +89,45 @@ class UpdateController extends ChangeNotifier {
   String _skippedVersion = '';
   String get skippedVersion => _skippedVersion;
 
+  String _dismissedBannerVersion = '';
+  String _activeDownloadVersion = '';
+  String get activeDownloadVersion => _activeDownloadVersion;
+
+  bool _disposed = false;
+
+  /// نمایش بنر اعلان نسخه جدید در صفحه اتصال؛ بستن موقت فقط در همین اجرا
+  /// بنر را پنهان می کند تا پس از بستن و باز کردن دوباره برنامه یا انتشار
+  /// نسخه جدیدتر دوباره نمایش داده شود و بخش «به روز رسانی» همیشه گزینه
+  /// دانلود و نصب را حفظ کند.
+  bool get showBanner =>
+      _available != null &&
+      (_available!.mandatory || _dismissedBannerVersion != _available!.version);
+
+  void _safeNotify() {
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Future<void> loadSkipped() async {
-    _skippedVersion = LocalStore.instance.read(StoreKeys.updateSkipped) ?? '';
+    if (!LocalStore.instance.isReady) {
+      return;
+    }
+    _skippedVersion = '';
+    final String? legacySkipped = LocalStore.instance.read(StoreKeys.updateSkipped);
+    if (legacySkipped != null && legacySkipped.isNotEmpty) {
+      await LocalStore.instance.remove(StoreKeys.updateSkipped);
+    }
     _channel = UpdateChannelX.fromStorage(
       LocalStore.instance.read(StoreKeys.updateChannel),
     );
-    notifyListeners();
+    _safeNotify();
   }
 
   /// تغییر کانال بین اصلی (پایدار) و بتا (آزمایشی) و بررسی فوری نسخه های آن کانال.
@@ -104,11 +137,14 @@ class UpdateController extends ChangeNotifier {
     }
     _channel = next;
     _available = null;
+    _dismissedBannerVersion = '';
     _error = '';
     _phase = '';
-    await LocalStore.instance.write(StoreKeys.updateChannel, next.storageValue);
+    if (LocalStore.instance.isReady) {
+      await LocalStore.instance.write(StoreKeys.updateChannel, next.storageValue);
+    }
     _log.add('کانال به روز رسانی: ${next.label}');
-    notifyListeners();
+    _safeNotify();
     await check(silent: false, ignoreSkipped: true);
   }
 
@@ -129,7 +165,7 @@ class UpdateController extends ChangeNotifier {
     if (!silent) {
       _phase = 'بررسی کانال ${_channel.label}...';
     }
-    notifyListeners();
+    _safeNotify();
     try {
       final ({UpdateInfo? available, List<UpdateInfo> releases}) catalog =
           await _service.fetchCatalog(channel: _channel);
@@ -141,20 +177,12 @@ class UpdateController extends ChangeNotifier {
       if (info == null) {
         _available = null;
         _phase = '';
-        notifyListeners();
-        return false;
-      }
-      if (!ignoreSkipped &&
-          !info.mandatory &&
-          info.version == _skippedVersion) {
-        _available = null;
-        _phase = '';
-        notifyListeners();
+        _safeNotify();
         return false;
       }
       _available = info;
       _phase = '';
-      notifyListeners();
+      _safeNotify();
       return true;
     } catch (_) {
       _checking = false;
@@ -166,20 +194,33 @@ class UpdateController extends ChangeNotifier {
       if (!silent) {
         _error = 'ارتباط با مخزن انتشار برقرار نشد؛ کمی بعد دوباره تلاش کنید.';
       }
-      notifyListeners();
+      _safeNotify();
       return false;
     }
   }
 
-  Future<void> skipCurrent() async {
+  /// بستن موقت اعلان به روز رسانی فقط در نشست فعلی؛ با بستن و باز کردن
+  /// دوباره برنامه یا برای نسخه جدیدتر باز هم نمایش داده می شود.
+  void dismissBanner() {
     final UpdateInfo? info = _available;
-    if (info == null || _downloading || _installing) {
+    if (info == null || info.mandatory || _downloading || _installing) {
       return;
     }
-    _skippedVersion = info.version;
-    await LocalStore.instance.write(StoreKeys.updateSkipped, info.version);
-    _available = null;
-    notifyListeners();
+    _dismissedBannerVersion = info.version;
+    _safeNotify();
+  }
+
+  /// بازگردانی امکان نمایش اعلان به روز رسانی پس از بستن موقت پنجره یا خروج از برنامه.
+  void resetBannerDismissal() {
+    if (_dismissedBannerVersion.isEmpty) {
+      return;
+    }
+    _dismissedBannerVersion = '';
+    _safeNotify();
+  }
+
+  Future<void> skipCurrent() async {
+    dismissBanner();
   }
 
   void cancelDownload() {
@@ -188,21 +229,22 @@ class UpdateController extends ChangeNotifier {
     }
     _cancelRequested = true;
     _phase = 'در حال لغو دانلود...';
-    notifyListeners();
+    _safeNotify();
   }
 
-  Future<bool> downloadAndInstall() async {
-    final UpdateInfo? info = _available;
+  Future<bool> downloadAndInstall({UpdateInfo? release}) async {
+    final UpdateInfo? info = release ?? _available;
     if (info == null || _downloading || _installing) {
       return false;
     }
     if (!UpdateService.hasValidSha256(info.sha256)) {
       _error = 'برای امنیت، نصب این نسخه بدون SHA-256 معتبر متوقف شد.';
       _log.add(_error, level: 'error');
-      notifyListeners();
+      _safeNotify();
       return false;
     }
     _downloading = true;
+    _activeDownloadVersion = info.version;
     _cancelRequested = false;
     _progress = 0;
     _received = 0;
@@ -210,7 +252,7 @@ class UpdateController extends ChangeNotifier {
     _speedBytesPerSec = 0;
     _error = '';
     _phase = Fa.num('آماده سازی دانلود نسخه ${info.version}...');
-    notifyListeners();
+    _safeNotify();
 
     final Stopwatch clock = Stopwatch()..start();
     int sampleBytes = 0;
@@ -240,18 +282,19 @@ class UpdateController extends ChangeNotifier {
               : 'در حال دانلود بسته نصب در برنامه...';
           if (nowMs - lastNotifyMs >= 100 || progress >= 1.0) {
             lastNotifyMs = nowMs;
-            notifyListeners();
+            _safeNotify();
           }
         },
       );
       if (_cancelRequested) {
         _downloading = false;
+        _activeDownloadVersion = '';
         _cancelRequested = false;
         _speedBytesPerSec = 0;
         _progress = 0;
         _received = 0;
         _phase = '';
-        notifyListeners();
+        _safeNotify();
         return false;
       }
       if (file == null) {
@@ -260,9 +303,10 @@ class UpdateController extends ChangeNotifier {
             : 'دانلود بسته به روز رسانی ناموفق بود. دوباره تلاش کنید.';
         _log.add(_error, level: 'error');
         _downloading = false;
+        _activeDownloadVersion = '';
         _speedBytesPerSec = 0;
         _phase = '';
-        notifyListeners();
+        _safeNotify();
         return false;
       }
 
@@ -273,7 +317,7 @@ class UpdateController extends ChangeNotifier {
       _pendingInstallSha256 = '';
       _pendingInstallVersion = '';
       _phase = Fa.num('در حال نصب خودکار نسخه ${info.version}...');
-      notifyListeners();
+      _safeNotify();
 
       final ({bool ok, String reason}) installRes =
           await _service.installDetailed(
@@ -282,6 +326,7 @@ class UpdateController extends ChangeNotifier {
         expectedSha256: info.sha256,
       );
       if (!installRes.ok) {
+        _activeDownloadVersion = '';
         return _handleInstallFailure(
           reason: installRes.reason,
           file: file,
@@ -294,7 +339,8 @@ class UpdateController extends ChangeNotifier {
       _log.add(Fa.num('نصب نسخه ${info.version} به اندروید سپرده شد.'));
       _installing = false;
       _downloading = false;
-      notifyListeners();
+      _activeDownloadVersion = '';
+      _safeNotify();
 
       final Future<void> Function()? exitHook = onExitForInstall;
       if (exitHook != null) {
@@ -307,9 +353,10 @@ class UpdateController extends ChangeNotifier {
       _log.add(_error, level: 'error');
       _downloading = false;
       _installing = false;
+      _activeDownloadVersion = '';
       _speedBytesPerSec = 0;
       _phase = '';
-      notifyListeners();
+      _safeNotify();
       return false;
     }
   }
@@ -332,7 +379,7 @@ class UpdateController extends ChangeNotifier {
     _installing = true;
     _error = '';
     _phase = Fa.num('در حال اجرای نصب نسخه $_pendingInstallVersion...');
-    notifyListeners();
+    _safeNotify();
 
     final ({bool ok, String reason}) installRes =
         await _service.installDetailed(
@@ -355,7 +402,7 @@ class UpdateController extends ChangeNotifier {
     _phase = 'صفحه نصب نسخه جدید باز شد؛ گزینه «به روز رسانی» را تایید کنید.';
     _log.add('نصب خودکار نسخه جدید پس از تایید دسترسی آغاز شد.');
     _installing = false;
-    notifyListeners();
+    _safeNotify();
     return true;
   }
 
@@ -407,7 +454,7 @@ class UpdateController extends ChangeNotifier {
         break;
     }
     _log.add(_error, level: 'warning');
-    notifyListeners();
+    _safeNotify();
     return false;
   }
 

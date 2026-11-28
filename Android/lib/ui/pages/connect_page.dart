@@ -503,7 +503,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   dense: phoneSized || landscapeSplit,
                 ),
               ),
-            if (updates != null && availableUpdate != null)
+            if (updates != null && availableUpdate != null && updates.showBanner)
               Padding(
                 padding: EdgeInsets.only(
                   top: landscapeSplit ? AppMetrics.space1 : AppMetrics.space2,
@@ -1369,13 +1369,13 @@ class _UpdateBanner extends StatelessWidget {
     final Widget? dismissButton = (!active && !info.mandatory)
         ? IconButton(
             key: const ValueKey<String>('connect-update-dismiss-button'),
-            tooltip: 'بعدا',
+            tooltip: 'بستن',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             visualDensity: VisualDensity.compact,
             onPressed: withUiClick(
               context,
-              () => unawaited(updates.skipCurrent()),
+              updates.dismissBanner,
             ),
             icon: Icon(
               Icons.close_rounded,

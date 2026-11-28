@@ -2854,10 +2854,108 @@ void main() {
       await tester.tap(dismissBtn);
       await tester.pump();
       expect(find.byKey(const ValueKey<String>('connect-update-banner')), findsNothing);
+      expect(updates.available, isNotNull);
+      expect(updates.showBanner, isFalse);
+      expect(LocalStore.instance.read(StoreKeys.updateSkipped), isNull);
+
+      // حتی پس از بستن بنر صفحه اتصال، منوی به روز رسانی همچنان گزینه دانلود و نصب را دارد.
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<UpdateController>.value(value: updates),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: UpdatesPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey<String>('updates-page-download-card')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsOneWidget);
+      expect(find.text('دانلود و نصب در برنامه'), findsOneWidget);
+
+      // با بازگشت از بستن موقت یا بستن و باز کردن مجدد برنامه (حتی با وجود کلید قدیمی updateSkipped)،
+      // اعلان به روز رسانی دوباره روی صفحه اتصال ظاهر می شود.
+      updates.resetBannerDismissal();
+      expect(updates.showBanner, isTrue);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<NativeBridge>.value(value: native),
+            Provider<SoundService>.value(value: sound),
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<SubscriptionController>.value(value: subs),
+            ChangeNotifierProvider<VpnController>.value(value: vpn),
+            ChangeNotifierProvider<UpdateController>.value(value: updates),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: ConnectPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey<String>('connect-update-banner')), findsOneWidget);
+
+      await tester.runAsync(() => LocalStore.instance.write(StoreKeys.updateSkipped, '9.9.9'));
+      final UpdateController relaunched = UpdateController(
+        native,
+        service: UpdateService(client: updateHttp, preferredAbi: 'arm64-v8a'),
+      );
+      await tester.runAsync(() async {
+        await relaunched.loadSkipped();
+        await relaunched.check(silent: false);
+      });
+      expect(LocalStore.instance.read(StoreKeys.updateSkipped), isNull);
+      expect(relaunched.available, isNotNull);
+      expect(relaunched.showBanner, isTrue);
+      relaunched.dispose();
+
+      // حتی زمانی که نسخه جدیدی در دسترس نباشد، منوی به روز رسانی دکمه دانلود و نصب دارد.
+      final MockClient idleHttp = MockClient(
+        (http.Request _) async => http.Response('[]', 200),
+      );
+      final UpdateController idleUpdates = UpdateController(
+        native,
+        service: UpdateService(client: idleHttp, preferredAbi: 'arm64-v8a'),
+      );
+      await tester.runAsync(() => idleUpdates.check(silent: false));
+      expect(idleUpdates.available, isNull);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<UpdateController>.value(value: idleUpdates),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: UpdatesPage()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey<String>('updates-page-download-card')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsOneWidget);
+      expect(find.text('دانلود و نصب به روز رسانی'), findsOneWidget);
 
       toasts.clear();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 5));
+      idleUpdates.dispose();
+      idleHttp.close();
       updates.dispose();
       updateHttp.close();
       subs.dispose();

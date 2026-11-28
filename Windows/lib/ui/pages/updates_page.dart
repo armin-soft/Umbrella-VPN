@@ -7,6 +7,7 @@ import '../../core/app_config.dart';
 import '../../core/persian.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
+import '../../platform/services.dart';
 import '../../state/toast_controller.dart';
 import '../../state/update_controller.dart';
 import '../shell/app_shell.dart';
@@ -62,16 +63,25 @@ class _UpdatesPageState extends State<UpdatesPage> {
     final UpdateController updates = context.read<UpdateController>();
     if (updates.checking ||
         updates.downloading ||
-        updates.installing ||
-        !updates.autoCheckDue) {
+        updates.installing) {
+      return;
+    }
+    final bool needsImmediateCheck = updates.available == null &&
+        (updates.lastCheckedAt == null || updates.error.isNotEmpty);
+    if (!needsImmediateCheck && !updates.autoCheckDue) {
       return;
     }
     unawaited(updates.loadSkipped().then((_) {
-      if (mounted &&
-          !updates.checking &&
-          !updates.downloading &&
-          !updates.installing &&
-          updates.autoCheckDue) {
+      if (!mounted ||
+          updates.checking ||
+          updates.downloading ||
+          updates.installing) {
+        return;
+      }
+      if (updates.available == null &&
+          (updates.lastCheckedAt == null || updates.error.isNotEmpty)) {
+        unawaited(updates.check(silent: false, ignoreSkipped: true));
+      } else if (updates.autoCheckDue) {
         unawaited(updates.checkIfDue(silent: true));
       }
     }));
@@ -207,10 +217,11 @@ class _UpdatesPageState extends State<UpdatesPage> {
             ),
           ],
 
-          // ── کارت دانلود و نصب درون برنامه ای ────────────────────────────
-          if (hasUpdate) ...<Widget>[
-            const SizedBox(height: AppMetrics.space4),
+          // ── کارت دانلود و نصب درون برنامه ای (همیشه در دسترس) ─────────────
+          const SizedBox(height: AppMetrics.space4),
+          if (hasUpdate)
             GlassCard(
+              key: const ValueKey<String>('updates-page-download-card'),
               padding: AppMetrics.cardPadding,
               radius: AppMetrics.radiusXl,
               borderColor: (available.preRelease ? colors.info : colors.primary)
@@ -304,6 +315,9 @@ class _UpdatesPageState extends State<UpdatesPage> {
                       SizedBox(
                         width: AppMetrics.buttonMaxWidth,
                         child: GradientButton(
+                          key: const ValueKey<String>(
+                            'updates-page-download-action-button',
+                          ),
                           label: updates.installing
                               ? 'در حال نصب خودکار...'
                               : (updates.downloading
@@ -316,48 +330,118 @@ class _UpdatesPageState extends State<UpdatesPage> {
                           height: AppMetrics.controlHeightSmall,
                           onPressed: activeTransfer
                               ? null
-                              : () async {
-                                  final bool ok =
-                                      await updates.downloadAndInstall();
-                                  if (!context.mounted) {
-                                    return;
-                                  }
-                                  if (ok) {
-                                    toasts.success(
-                                      'نصب نسخه جدید آغاز شد',
-                                      'برنامه به صورت خودکار ارتقا و دوباره باز می شود.',
-                                    );
-                                  } else if (updates.error.isNotEmpty) {
-                                    toasts.error(
-                                      'به روز رسانی انجام نشد',
-                                      updates.error,
-                                    );
-                                  }
-                                },
+                              : () => _installUpdate(
+                                    updates,
+                                    toasts,
+                                    release: available,
+                                  ),
                         ),
                       ),
                       if (updates.downloading && !updates.installing)
                         SizedBox(
                           height: AppMetrics.controlHeightSmall,
                           child: OutlinedButton.icon(
-                            onPressed: withUiClick(context, updates.cancelDownload),
+                            onPressed:
+                                withUiClick(context, updates.cancelDownload),
                             icon: const Icon(
                               Icons.close_rounded,
                               size: AppMetrics.iconSm,
                             ),
                             label: const Text('لغو دانلود'),
                           ),
-                        )
-                      else if (!activeTransfer && !available.mandatory)
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            )
+          else
+            GlassCard(
+              key: const ValueKey<String>('updates-page-download-card'),
+              padding: AppMetrics.cardPadding,
+              radius: AppMetrics.radiusXl,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  SectionHeader(
+                    icon: Icons.download_for_offline_rounded,
+                    title: 'دانلود و نصب به روز رسانی',
+                    subtitle: updates.checking
+                        ? Fa.num(
+                            'در حال جستجو برای آخرین نسخه در کانال ${updates.channel.label}...',
+                          )
+                        : (updates.error.isNotEmpty ||
+                                updates.lastCheckedAt == null)
+                            ? 'اطلاعات نسخه جدید هنوز دریافت نشده است؛ برای بررسی، دانلود و نصب مستقیم دکمه زیر را بزنید.'
+                            : Fa.num(
+                                'نسخه نصب شده (${AppConfig.version}) با آخرین انتشار کانال ${updates.channel.label} بررسی شده است؛ برای دریافت و نصب مستقیم کلیک کنید.',
+                              ),
+                    trailing: Pill(
+                      label: updates.checking
+                          ? 'در حال بررسی'
+                          : (updates.error.isNotEmpty
+                              ? 'نیاز به بررسی'
+                              : (updates.lastCheckedAt == null
+                                  ? 'آماده دریافت'
+                                  : 'به روز')),
+                      color: updates.checking
+                          ? colors.primary
+                          : (updates.error.isNotEmpty
+                              ? colors.warning
+                              : colors.success),
+                      dense: true,
+                    ),
+                  ),
+                  if (activeTransfer) ...<Widget>[
+                    const SizedBox(height: AppMetrics.space4),
+                    ProgressLine(
+                      value: updates.progress,
+                      label: _progressLabel(updates),
+                    ),
+                  ],
+                  const SizedBox(height: AppMetrics.space4),
+                  Wrap(
+                    spacing: AppMetrics.space3,
+                    runSpacing: AppMetrics.space2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      SizedBox(
+                        width: AppMetrics.buttonMaxWidth,
+                        child: GradientButton(
+                          key: const ValueKey<String>(
+                            'updates-page-download-action-button',
+                          ),
+                          label: updates.installing
+                              ? 'در حال نصب خودکار...'
+                              : (updates.downloading
+                                  ? Fa.num(
+                                      'دریافت ${Fa.percent(updates.progress * 100)}',
+                                    )
+                                  : (updates.checking
+                                      ? 'در حال بررسی...'
+                                      : 'دانلود و نصب به روز رسانی')),
+                          icon: Icons.system_update_alt_rounded,
+                          loading: updates.checking || activeTransfer,
+                          height: AppMetrics.controlHeightSmall,
+                          onPressed: (updates.checking || activeTransfer)
+                              ? null
+                              : () => _onDownloadAndInstallUpdates(
+                                    updates,
+                                    toasts,
+                                  ),
+                        ),
+                      ),
+                      if (updates.downloading && !updates.installing)
                         SizedBox(
                           height: AppMetrics.controlHeightSmall,
                           child: OutlinedButton.icon(
-                            onPressed: withUiClick(context, updates.skipCurrent),
+                            onPressed:
+                                withUiClick(context, updates.cancelDownload),
                             icon: const Icon(
-                              Icons.skip_next_rounded,
+                              Icons.close_rounded,
                               size: AppMetrics.iconSm,
                             ),
-                            label: const Text('نادیده گرفتن این نسخه'),
+                            label: const Text('لغو دانلود'),
                           ),
                         ),
                     ],
@@ -365,7 +449,6 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 ],
               ),
             ),
-          ],
 
           const SizedBox(height: AppMetrics.space4),
 
@@ -412,6 +495,23 @@ class _UpdatesPageState extends State<UpdatesPage> {
                             ],
                       current: item.isCurrentVersion,
                       preRelease: item.preRelease,
+                      installLabel: (item.url.isNotEmpty &&
+                              UpdateService.hasValidSha256(item.sha256) &&
+                              (item.isNewer || item.isCurrentVersion))
+                          ? (item.isNewer ? 'دانلود و نصب' : 'دانلود و نصب مجدد')
+                          : null,
+                      busy: activeTransfer || updates.checking,
+                      downloadingThis: activeTransfer &&
+                          updates.activeDownloadVersion == item.version,
+                      onInstall: (item.url.isNotEmpty &&
+                              UpdateService.hasValidSha256(item.sha256) &&
+                              (item.isNewer || item.isCurrentVersion))
+                          ? () => _installUpdate(
+                                updates,
+                                toasts,
+                                release: item,
+                              )
+                          : null,
                     ),
               ],
             ),
@@ -429,6 +529,55 @@ class _UpdatesPageState extends State<UpdatesPage> {
         ? '  •  ${Fa.speed(updates.speedBytesPerSec.toDouble())}'
         : '';
     return Fa.num('${updates.phase}  |  $sizeText$speedText');
+  }
+
+  Future<void> _installUpdate(
+    UpdateController updates,
+    ToastController toasts, {
+    required UpdateInfo release,
+  }) async {
+    final bool ok = await updates.downloadAndInstall(release: release);
+    if (!mounted) {
+      return;
+    }
+    if (ok) {
+      toasts.success(
+        'نصب نسخه جدید آغاز شد',
+        'برنامه به صورت خودکار ارتقا و دوباره باز می شود.',
+      );
+    } else if (updates.error.isNotEmpty) {
+      toasts.error(
+        'به روز رسانی انجام نشد',
+        updates.error,
+      );
+    }
+  }
+
+  Future<void> _onDownloadAndInstallUpdates(
+    UpdateController updates,
+    ToastController toasts,
+  ) async {
+    if (updates.available == null) {
+      await updates.check(silent: false, ignoreSkipped: true);
+      if (!mounted) {
+        return;
+      }
+    }
+    final UpdateInfo? target = updates.available;
+    if (target == null) {
+      if (updates.error.isNotEmpty) {
+        toasts.error('دریافت به روز رسانی ناموفق بود', updates.error);
+      } else {
+        toasts.info(
+          'نسخه جدیدتری موجود نیست',
+          Fa.num(
+            'شما هم اکنون از آخرین نسخه (${AppConfig.version}) استفاده می کنید.',
+          ),
+        );
+      }
+      return;
+    }
+    await _installUpdate(updates, toasts, release: target);
   }
 
   Future<void> _onSelectChannel(
@@ -560,6 +709,10 @@ class _VersionRow extends StatelessWidget {
     required this.noteItems,
     this.current = false,
     this.preRelease = false,
+    this.installLabel,
+    this.busy = false,
+    this.downloadingThis = false,
+    this.onInstall,
   });
 
   final String version;
@@ -567,6 +720,10 @@ class _VersionRow extends StatelessWidget {
   final List<String> noteItems;
   final bool current;
   final bool preRelease;
+  final String? installLabel;
+  final bool busy;
+  final bool downloadingThis;
+  final VoidCallback? onInstall;
 
   @override
   Widget build(BuildContext context) {
@@ -586,32 +743,42 @@ class _VersionRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Text(
-                Fa.num('نسخه $version'),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppMetrics.space2,
+              runSpacing: AppMetrics.space1,
+              children: <Widget>[
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space1,
+                  children: <Widget>[
+                    Text(
+                      Fa.num('نسخه $version'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Pill(
-                label: preRelease ? 'بتا' : 'پایدار',
-                color: preRelease ? colors.info : colors.success,
-                dense: true,
-              ),
-              if (current) ...<Widget>[
-                const SizedBox(width: AppMetrics.space2),
-                Pill(label: 'نصب شده', color: colors.primary, dense: true),
+                    Pill(
+                      label: preRelease ? 'بتا' : 'پایدار',
+                      color: preRelease ? colors.info : colors.success,
+                      dense: true,
+                    ),
+                    if (current)
+                      Pill(label: 'نصب شده', color: colors.primary, dense: true),
+                  ],
+                ),
+                Text(
+                  Fa.num(date),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
               ],
-              const Spacer(),
-              Text(
-                Fa.num(date),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: AppMetrics.space2),
           for (int i = 0; i < noteItems.length; i++)
@@ -638,6 +805,19 @@ class _VersionRow extends StatelessWidget {
                 ],
               ),
             ),
+          if (installLabel != null && onInstall != null) ...<Widget>[
+            const SizedBox(height: AppMetrics.space3),
+            OutlinedButton.icon(
+              onPressed: busy ? null : withUiClick(context, onInstall!),
+              icon: const Icon(
+                Icons.download_rounded,
+                size: AppMetrics.iconSm,
+              ),
+              label: Text(
+                downloadingThis ? 'در حال دریافت...' : installLabel!,
+              ),
+            ),
+          ],
         ],
       ),
     );

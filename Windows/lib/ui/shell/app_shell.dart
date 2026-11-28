@@ -49,6 +49,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _index = 0;
   bool _appVisible = true;
+  bool _wasLeftApp = false;
   bool _assetsPrecached = false;
   bool _telegramPromptOpen = false;
   StreamSubscription<String>? _traySub;
@@ -231,6 +232,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final bool visible = AppShell.isLifecycleVisible(state);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _wasLeftApp = true;
+    }
     _propagateVisibility(visible);
     if (_appVisible != visible && mounted) {
       setState(() => _appVisible = visible);
@@ -240,6 +246,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       final AuthController? auth = context.maybeRead<AuthController>();
       if (auth != null) {
         unawaited(auth.syncAnnouncement());
+      }
+      final UpdateController? updates = context.maybeRead<UpdateController>();
+      final SettingsController? settings =
+          context.maybeRead<SettingsController>();
+      if (updates != null) {
+        if (_wasLeftApp) {
+          _wasLeftApp = false;
+          updates.resetBannerDismissal();
+        }
+        if (settings == null || settings.settings.checkUpdatesOnStart) {
+          unawaited(updates.checkIfDue(silent: true));
+        }
       }
       unawaited(_maybeShowTelegramChannelPrompt());
     }
