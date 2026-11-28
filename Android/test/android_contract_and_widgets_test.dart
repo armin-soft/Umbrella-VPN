@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -36,6 +37,7 @@ import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/ui/pages/settings_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
+import 'package:umbrella_vpn/ui/widgets/brand_widgets.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
@@ -3266,6 +3268,77 @@ void main() {
       expect(controller.status, VpnStatus.failed);
       await Future<void>.delayed(const Duration(milliseconds: 250));
       expect(native.startCalls.length, 3);
+    });
+  });
+
+  group('Animated Connection-State GIFs', () {
+    testWidgets('all connection-state assets are multi-frame GIFs and render cleanly',
+        (WidgetTester tester) async {
+      for (final String asset in BrandAssets.connectionStates) {
+        expect(asset.toLowerCase().endsWith('.gif'), isTrue, reason: asset);
+      }
+      for (final VpnStatus status in VpnStatus.values) {
+        expect(status.image.toLowerCase().endsWith('.gif'), isTrue, reason: status.name);
+      }
+
+      await tester.runAsync(() async {
+        for (final String asset in <String>[
+          BrandAssets.logo,
+          BrandAssets.iconRound,
+          ...BrandAssets.all,
+        ]) {
+          final ByteData bytes = await rootBundle.load(asset);
+          expect(bytes.lengthInBytes, greaterThan(1024), reason: asset);
+          final ui.Codec codec =
+              await ui.instantiateImageCodec(bytes.buffer.asUint8List());
+          if (BrandAssets.connectionStates.contains(asset)) {
+            expect(
+              codec.frameCount,
+              greaterThan(1),
+              reason: '$asset must be multi-frame GIF',
+            );
+          }
+          final ui.FrameInfo frame = await codec.getNextFrame();
+          expect(frame.image.width, greaterThanOrEqualTo(256), reason: asset);
+          expect(frame.image.height, greaterThanOrEqualTo(256), reason: asset);
+          frame.image.dispose();
+          codec.dispose();
+        }
+      });
+
+      for (final VpnStatus status in VpnStatus.values) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.dark(),
+            home: Scaffold(
+              body: TickerMode(
+                enabled: false,
+                child: SingleChildScrollView(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        StatusOrb(
+                          image: status.image,
+                          color: const Color(0xFF0A84FF),
+                          size: 220,
+                          active: status.busy,
+                        ),
+                        StateGallery(current: status, compact: true),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        final Image image = tester.widget<Image>(find.byType(Image).first);
+        expect(image.gaplessPlayback, isTrue, reason: status.name);
+        expect(find.byIcon(Icons.shield_outlined), findsNothing, reason: status.name);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
     });
   });
 }

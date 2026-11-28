@@ -727,29 +727,29 @@ class AppTheme {
   }
 }
 
-/// تصاویر وضعیت اتصال، همان لوگوهای پوشه Image.
+/// گیف های انیمیشنی وضعیت اتصال و تصاویر برند پوشه Image.
 class BrandAssets {
   const BrandAssets._();
 
   static const String logo = 'assets/images/logo.png';
   static const String iconRound = 'assets/icons/icon_round.png';
 
-  static const String connected = 'assets/images/Connected.png';
-  static const String connecting = 'assets/images/Connecting.png';
-  static const String disconnected = 'assets/images/Disconnected.png';
-  static const String failed = 'assets/images/Failed.png';
-  static const String paused = 'assets/images/Paused.png';
-  static const String reconnecting = 'assets/images/Reconnecting.png';
-  static const String switching = 'assets/images/Switching-Server.png';
-  static const String killSwitch = 'assets/images/Kill-Switch.png';
-  static const String maxProtection = 'assets/images/Max-Protection.png';
-  static const String noInternet = 'assets/images/No-Internet.png';
-  static const String turbo = 'assets/images/Turbo-Speed.png';
-  static const String weakSignal = 'assets/images/Weak-Signal.png';
+  static const String connected = 'assets/images/Connected.gif';
+  static const String connecting = 'assets/images/Connecting.gif';
+  static const String disconnected = 'assets/images/Disconnected.gif';
+  static const String failed = 'assets/images/Failed.gif';
+  static const String paused = 'assets/images/Paused.gif';
+  static const String reconnecting = 'assets/images/Reconnecting.gif';
+  static const String switching = 'assets/images/Switching-Server.gif';
+  static const String killSwitch = 'assets/images/Kill-Switch.gif';
+  static const String maxProtection = 'assets/images/Max-Protection.gif';
+  static const String noInternet = 'assets/images/No-Internet.gif';
+  static const String turbo = 'assets/images/Turbo-Speed.gif';
+  static const String weakSignal = 'assets/images/Weak-Signal.gif';
   static const String securityShield = 'assets/images/Security-Shield.png';
   static const String securityAlert = 'assets/images/Security-Alert.png';
 
-  static const List<String> all = <String>[
+  static const List<String> connectionStates = <String>[
     connected,
     connecting,
     disconnected,
@@ -762,6 +762,10 @@ class BrandAssets {
     noInternet,
     turbo,
     weakSignal,
+  ];
+
+  static const List<String> all = <String>[
+    ...connectionStates,
     securityShield,
     securityAlert,
   ];

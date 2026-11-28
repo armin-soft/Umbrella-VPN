@@ -14,6 +14,7 @@ import 'package:umbrella_vpn/models/models.dart';
 import 'package:umbrella_vpn/platform/services.dart';
 import 'package:umbrella_vpn/state/subscription_controller.dart';
 import 'package:umbrella_vpn/ui/shell/app_shell.dart';
+import 'package:umbrella_vpn/ui/widgets/brand_widgets.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/link_preparation.dart';
@@ -31,8 +32,15 @@ void main() {
     expect(AppShell.isLifecycleVisible(AppLifecycleState.detached), isFalse);
   });
 
-  testWidgets('every brand and status PNG decodes and transitions without blanking',
+  testWidgets('every brand asset and animated connection-state GIF decodes and transitions without blanking',
       (WidgetTester tester) async {
+    for (final String stateAsset in BrandAssets.connectionStates) {
+      expect(stateAsset.toLowerCase().endsWith('.gif'), isTrue, reason: stateAsset);
+    }
+    for (final VpnStatus status in VpnStatus.values) {
+      expect(status.image.toLowerCase().endsWith('.gif'), isTrue, reason: status.name);
+    }
+
     await tester.runAsync(() async {
       for (final String asset in <String>[
         BrandAssets.logo,
@@ -43,6 +51,9 @@ void main() {
         expect(bytes.lengthInBytes, greaterThan(1024), reason: asset);
         final ui.Codec codec =
             await ui.instantiateImageCodec(bytes.buffer.asUint8List());
+        if (BrandAssets.connectionStates.contains(asset)) {
+          expect(codec.frameCount, greaterThan(1), reason: '$asset must be multi-frame GIF');
+        }
         final ui.FrameInfo frame = await codec.getNextFrame();
         expect(frame.image.width, greaterThanOrEqualTo(256), reason: asset);
         expect(frame.image.height, greaterThanOrEqualTo(256), reason: asset);
@@ -60,12 +71,20 @@ void main() {
             // StatusOrb keeps its image TickerMode enabled and gapless.
             body: TickerMode(
               enabled: false,
-              child: Center(
-                child: StatusOrb(
-                  image: status.image,
-                  color: const Color(0xFF0A84FF),
-                  size: 240,
-                  active: status.busy,
+              child: SingleChildScrollView(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      StatusOrb(
+                        image: status.image,
+                        color: const Color(0xFF0A84FF),
+                        size: 240,
+                        active: status.busy,
+                      ),
+                      StateGallery(current: status, compact: true),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -79,6 +98,7 @@ void main() {
       expect(image.height, closeTo(240 * .84, .01), reason: status.name);
       expect(find.byIcon(Icons.shield_outlined), findsNothing, reason: status.name);
     }
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('subscription deduplication collapses overlapping formats without losing distinct clients', () {

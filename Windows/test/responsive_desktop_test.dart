@@ -241,7 +241,8 @@ void main() {
             );
             await tester.ensureVisible(settingsButton);
             await tester.tap(settingsButton);
-            await tester.pumpAndSettle();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 350));
             expect(
               find.byKey(const ValueKey<String>('connection-settings-sheet')),
               findsOneWidget,
@@ -268,7 +269,8 @@ void main() {
             await tester.tap(
               find.byKey(const ValueKey<String>('quick-settings-close')),
             );
-            await tester.pumpAndSettle();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 350));
           }
         }
         await tester.pumpWidget(const SizedBox());
