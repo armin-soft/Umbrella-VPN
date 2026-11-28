@@ -616,9 +616,9 @@ class _VersionRow extends StatelessWidget {
           const SizedBox(height: AppMetrics.space2),
           for (int i = 0; i < noteItems.length; i++)
             Padding(
-              padding: EdgeInsets.only(
-                bottom: i == noteItems.length - 1 ? 0 : AppMetrics.space1,
-              ),
+              padding: i == noteItems.length - 1
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.only(bottom: AppMetrics.space1),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[

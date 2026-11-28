@@ -2157,6 +2157,9 @@ void main() {
           networkSettings: const AppSettings(blockAds: true),
         );
         final Map<String, dynamic> compiled = <String, dynamic>{
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{},
+          },
           'outbounds': <dynamic>[
             <String, dynamic>{'tag': 'direct §hide§', 'type': 'direct'},
             <String, dynamic>{'tag': 'select', 'type': 'selector'},

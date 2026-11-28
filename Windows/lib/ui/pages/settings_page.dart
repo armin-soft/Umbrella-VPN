@@ -767,7 +767,7 @@ class _SettingsPageState extends State<SettingsPage>
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: AppMetrics.space1),
                         Text(
                           'حذف دامنه های تبلیغاتی، ردیاب ها و تبلیغات ویدیویی در سطح هسته همواره فعال است',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1101,8 +1101,8 @@ class _SettingsPageState extends State<SettingsPage>
                           child: FilledButton.icon(
                             icon: _httpsCaBusy
                                 ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
+                                    width: AppMetrics.iconSm,
+                                    height: AppMetrics.iconSm,
                                     child: CircularProgressIndicator(strokeWidth: 2),
                                   )
                                 : const Icon(Icons.download_rounded, size: AppMetrics.iconSm),

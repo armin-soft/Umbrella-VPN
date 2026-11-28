@@ -785,8 +785,8 @@ class PromoBannerBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppMetrics.radiusLg),
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: dense ? AppMetrics.space2 + 2 : AppMetrics.space3,
-            vertical: dense ? AppMetrics.space2 : AppMetrics.space2 + 2,
+            horizontal: AppMetrics.space3,
+            vertical: dense ? AppMetrics.space2 : AppMetrics.space3,
           ),
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -823,8 +823,7 @@ class PromoBannerBar extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       titleText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
                       style: (dense
                               ? theme.textTheme.labelLarge
                               : theme.textTheme.titleSmall)
@@ -834,11 +833,10 @@ class PromoBannerBar extends StatelessWidget {
                       ),
                     ),
                     if (bodyText.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: AppMetrics.space1),
                       Text(
                         bodyText,
-                        maxLines: dense ? 1 : 2,
-                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colors.textSecondary,
                           fontSize: dense ? AppMetrics.fontMicro : null,
@@ -870,13 +868,15 @@ class PromoBannerBar extends StatelessWidget {
                       ),
                     ),
                     onPressed: withUiClick(context, onAction),
-                    child: Text(
-                      actionText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onPrimary,
-                        fontWeight: FontWeight.w700,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        actionText,
+                        softWrap: false,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colors.onPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
@@ -1188,10 +1188,12 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
                   ),
                 ),
               Padding(
-                padding: EdgeInsets.only(
-                  top: hasAction ? 0 : AppMetrics.space2,
-                  bottom: AppMetrics.space3,
-                ),
+                padding: hasAction
+                    ? const EdgeInsets.only(bottom: AppMetrics.space3)
+                    : const EdgeInsets.only(
+                        top: AppMetrics.space2,
+                        bottom: AppMetrics.space3,
+                      ),
                 child: Center(
                   child: TextButton(
                     key: const Key('promo_dialog_close_button'),

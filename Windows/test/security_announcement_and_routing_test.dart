@@ -1930,6 +1930,13 @@ void main() {
         expect(coreNoFilter['block-ads'], isTrue);
 
         final Map<String, dynamic> runtimeNoBlockPage = <String, dynamic>{
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{},
+          },
+          'outbounds': <dynamic>[
+            <String, dynamic>{'tag': 'direct §hide§', 'type': 'direct'},
+            <String, dynamic>{'tag': 'select', 'type': 'selector'},
+          ],
           'route': <String, dynamic>{
             'rules': <dynamic>[
               <String, dynamic>{'action': 'sniff'},
@@ -2152,6 +2159,9 @@ void main() {
           networkSettings: const AppSettings(blockAds: true),
         );
         final Map<String, dynamic> compiled = <String, dynamic>{
+          'experimental': <String, dynamic>{
+            'monitoring': <String, dynamic>{},
+          },
           'outbounds': <dynamic>[
             <String, dynamic>{'tag': 'direct §hide§', 'type': 'direct'},
             <String, dynamic>{'tag': 'select', 'type': 'selector'},

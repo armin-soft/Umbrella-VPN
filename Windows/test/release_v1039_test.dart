@@ -146,7 +146,7 @@ void main() {
           settings['route-rule'] as Map<String, dynamic>;
       final List<Map<String, dynamic>> rules =
           (routeRule['rules'] as List<dynamic>).cast<Map<String, dynamic>>();
-      expect(rules, hasLength(10));
+      expect(rules, hasLength(13));
       expect(
         rules.every((Map<String, dynamic> item) => item['outbound'] == 'block'),
         isTrue,
@@ -1068,7 +1068,7 @@ void main() {
       );
       expect(Fa.num('کد وضعیت 503'), 'کد وضعیت 503');
       expect(AppConfig.versionPhrase, isNot(contains(RegExp(r'[0-9]'))));
-      expect(AppConfig.versionPhrase, contains('۱٫۰٫۲'));
+      expect(AppConfig.versionPhrase, contains('۱٫۰٫۳'));
 
       // ۳. تمام برچسب های نمایشی مدل ها فارسی خالص، بدون لاتین، بدون رقم لاتین و بدون نیم فاصله اند.
       final RegExp forbidden = RegExp(r'[A-Za-z0-9\u200C]');
