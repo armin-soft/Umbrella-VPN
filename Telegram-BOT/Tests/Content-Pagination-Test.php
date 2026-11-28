@@ -77,8 +77,10 @@ return TelegramClient::$Rows === [] ? [] : array_column(array_merge(...TelegramC
 }
 $Context = new Context();
 AppFlow::filterMenu($Context);
-check(calls() === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_toggle:ads', 'app_filter_domains', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact three categories, custom domains menu, master switch and navigation');
-check(array_map('count', TelegramClient::$Rows) === [2, 1, 1, 1, 1, 1], 'filter categories are paired; odd trailing category, custom domains, switch and navigation remain separate');
+$Menu_Calls = calls();
+check($Menu_Calls === ['app_filter_toggle:adult', 'app_filter_toggle:gambling', 'app_filter_domains', 'app_filter_toggle:enabled', 'user_device_menu', 'منوی خدمات ربات'], 'exact two bot categories (ads removed as always-on), custom domains menu, master switch and navigation');
+check(!in_array('app_filter_toggle:ads', $Menu_Calls, true), 'ads toggle is no longer exposed in Telegram bot content filter');
+check(array_map('count', TelegramClient::$Rows) === [2, 1, 1, 1, 1], 'filter categories are paired; custom domains, switch and navigation remain separate');
 check(str_contains(TelegramClient::$Text, 'دامنه') && !str_contains(TelegramClient::$Text, 'اجتماعی'), 'custom domain count shown and removed social absent from summary');
 $Before = Database::$Filter;
 AppFlow::filterToggle($Context, 'social');

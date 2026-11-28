@@ -102,6 +102,26 @@ object Settings {
         get() = decodePackages(prefs.getString("per_app_exclude_packages", "") ?: "")
         set(value) = prefs.edit().putString("per_app_exclude_packages", encodePackages(value)).apply()
 
+    var bgGatewayBase: String
+        get() = prefs.getString("bg_gateway_base", "") ?: ""
+        set(value) = prefs.edit().putString("bg_gateway_base", value.trim()).apply()
+
+    var bgAuthToken: String
+        get() = prefs.getString("bg_auth_token", "") ?: ""
+        set(value) = prefs.edit().putString("bg_auth_token", value.trim()).apply()
+
+    var bgDeviceId: String
+        get() = prefs.getString("bg_device_id", "") ?: ""
+        set(value) = prefs.edit().putString("bg_device_id", value.trim()).apply()
+
+    var bgAppVersion: String
+        get() = prefs.getString("bg_app_version", "") ?: ""
+        set(value) = prefs.edit().putString("bg_app_version", value.trim()).apply()
+
+    var pendingBgSecurityEventsJson: String
+        get() = prefs.getString("pending_bg_security_events_json", "") ?: ""
+        set(value) = prefs.edit().putString("pending_bg_security_events_json", value).apply()
+
     val perAppProxyList: List<String>
         get() = if (perAppProxyMode == PerAppProxyMode.INCLUDE) {
             perAppIncludePackages

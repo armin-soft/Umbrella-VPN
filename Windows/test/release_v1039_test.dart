@@ -70,15 +70,15 @@ void main() {
   });
 
   group('v1.0.39 — همگام سازی کامل کنترل محتوا با ربات تلگرام', () {
-    test('دقیقاً سه دسته رسمی ربات تلگرام پشتیبانی و همگام می شوند', () {
+    test('دقیقاً دو دسته رسمی ربات تلگرام در کنترل محتوا پشتیبانی می شوند و تبلیغات همیشه فعال است', () {
       expect(
         FilterSettings.categoryLabels.keys.toList(),
-        <String>['adult', 'gambling', 'ads'],
+        <String>['adult', 'gambling'],
       );
 
       final FilterSettings parsed = FilterSettings.fromJson(<String, dynamic>{
         'enabled': true,
-        'categories': <String>['adult', 'social', 'ads', 'unknown', 'dating'],
+        'categories': <String>['adult', 'social', 'ads', 'unknown', 'dating', 'gambling'],
         'custom_domains': <String>[
           'https://WWW.Example.com/path',
           '*.tracker.net.',
@@ -89,7 +89,7 @@ void main() {
         'updated_by': 'telegram',
       });
       expect(parsed.enabled, isTrue);
-      expect(parsed.categories, <String>['adult', 'ads']);
+      expect(parsed.categories, <String>['adult', 'gambling']);
       expect(
         parsed.normalizedCustomDomains,
         <String>['example.com', 'tracker.net'],
@@ -130,7 +130,7 @@ void main() {
       expect(FilterSettings.normalizeDomainSuffix(''), isNull);
     });
 
-    test('قوانین مسدودسازی کنترل محتوا وارد تنظیمات هسته می شوند', () {
+    test('قوانین مسدودسازی کنترل محتوا و تبلیغات همیشگی وارد تنظیمات هسته می شوند', () {
       final Map<String, dynamic> settings = UmbrellaCore.settingsJson(
         tun: false,
         systemProxy: true,
@@ -138,7 +138,7 @@ void main() {
         logFile: 'core.log',
         contentFilter: const FilterSettings(
           enabled: true,
-          categories: <String>['adult', 'gambling', 'ads'],
+          categories: <String>['adult', 'gambling'],
           customDomains: <String>['custom-block.test'],
         ),
       );
@@ -151,7 +151,14 @@ void main() {
         rules.every((Map<String, dynamic> item) => item['outbound'] == 'block'),
         isTrue,
       );
-      expect(rules.last['domain_suffix'], contains('custom-block.test'));
+      expect(
+        jsonEncode(rules),
+        contains('custom-block.test'),
+      );
+      expect(
+        rules.any((Map<String, dynamic> r) => r['name'] == 'umbrella-block-ads'),
+        isTrue,
+      );
 
       final Map<String, dynamic> disabled = UmbrellaCore.settingsJson(
         tun: false,
@@ -160,10 +167,23 @@ void main() {
         logFile: 'core.log',
         contentFilter: const FilterSettings(
           enabled: false,
-          categories: <String>['adult', 'ads'],
+          categories: <String>['adult', 'gambling'],
         ),
       );
-      expect(disabled.containsKey('route-rule'), isFalse);
+      final List<Map<String, dynamic>> disabledRules =
+          ((disabled['route-rule'] as Map<String, dynamic>)['rules']
+                  as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      expect(
+        disabledRules
+            .any((Map<String, dynamic> r) => r['name']!.toString().startsWith('umbrella-filter-')),
+        isFalse,
+      );
+      expect(
+        disabledRules
+            .every((Map<String, dynamic> r) => r['name'] == 'umbrella-block-ads'),
+        isTrue,
+      );
     });
   });
 
@@ -906,6 +926,15 @@ void main() {
       expect(coreJson['region'], 'ir');
       expect(coreJson['bypass-lan'], isTrue);
       expect(coreJson['block-ads'], isTrue);
+      expect(
+        UmbrellaCore.settingsJson(
+          tun: false,
+          systemProxy: false,
+          port: restored.mixedPort,
+          networkSettings: restored.copyWith(blockAds: false),
+        )['block-ads'],
+        isTrue,
+      );
       expect(coreJson['resolve-destination'], isTrue);
       expect(coreJson['block-quic'], isTrue);
       expect(coreJson['ipv6-mode'], 'prefer_ipv6');

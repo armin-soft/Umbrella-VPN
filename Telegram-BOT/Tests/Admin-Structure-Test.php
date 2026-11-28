@@ -102,7 +102,6 @@ public const DOMAINS_PER_PAGE = 8;
 public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'gambling' => 'شرط بندی',
-'ads' => 'تبلیغات',
 ];
 public static function loadGlobal(): array {
 return ['enabled' => false, 'categories' => ['adult'], 'custom_domains' => ['example.com']];

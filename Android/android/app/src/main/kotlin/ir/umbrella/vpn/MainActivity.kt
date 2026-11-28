@@ -42,6 +42,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         private const val REQ_STORAGE_TREE_ACCESS = 2004
         private const val REQ_ALL_FILES_ACCESS = 2005
         private const val REQ_LEGACY_STORAGE_ACCESS = 2006
+        private const val REQ_MEDIA_ACCESS = 2007
 
         fun extractVerificationCode(message: String?): String {
             if (message.isNullOrBlank()) return ""
@@ -102,14 +103,22 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
     override fun onDestroy() {
         ir.umbrella.vpn.bg.DefaultNetworkMonitor.onNetworkStateChanged = null
         UmbrellaSecurityScanner.stopFileObservers()
+        val appCtx = applicationContext
+        runCatching {
+            UmbrellaSecurityScanner.startFileObservers {
+                ir.umbrella.vpn.bg.UmbrellaBackgroundMonitor.triggerDebouncedQuickScan(appCtx)
+            }
+        }
         unregisterSmsReceiver()
         runCatching { serviceConnection.disconnect() }
         super.onDestroy()
     }
 
     fun startSecurityFileWatcher(): Boolean {
+        val appCtx = applicationContext
         return UmbrellaSecurityScanner.startFileObservers { path ->
             eventHandler.onSecurityFileEvent(path)
+            ir.umbrella.vpn.bg.UmbrellaBackgroundMonitor.triggerDebouncedQuickScan(appCtx)
         }
     }
 
@@ -250,6 +259,19 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
 
     fun launchAllFilesAccessSettings(): Boolean {
         if (UmbrellaSecurityScanner.hasStorageScanAccess(this)) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !UmbrellaSecurityScanner.hasMediaScanAccess(this)
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.READ_MEDIA_VIDEO,
+                    Manifest.permission.READ_MEDIA_AUDIO,
+                ),
+                REQ_MEDIA_ACCESS,
+            )
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val appIntent = Intent(
                 AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -361,9 +383,11 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
                 notificationPermissionDeferred?.complete(granted)
                 notificationPermissionDeferred = null
             }
-            REQ_LEGACY_STORAGE_ACCESS -> {
-                val hasAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this)
-                lastKnownStorageAccess = hasAccess
+            REQ_LEGACY_STORAGE_ACCESS,
+            REQ_MEDIA_ACCESS, -> {
+                val hasAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this) ||
+                    UmbrellaSecurityScanner.hasMediaScanAccess(this)
+                lastKnownStorageAccess = UmbrellaSecurityScanner.hasStorageScanAccess(this)
                 UmbrellaSecurityScanner.invalidateAllCleanCache()
                 if (hasAccess) {
                     startSecurityFileWatcher()

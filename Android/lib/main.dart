@@ -156,6 +156,7 @@ Future<void> main(List<String> arguments) async {
       auth: auth,
       isVpnActive: () => vpn.status.active,
     );
+    auth.securityStateProvider = security.buildSecurityStatePayload;
 
     vpn = VpnController(
       native: native,

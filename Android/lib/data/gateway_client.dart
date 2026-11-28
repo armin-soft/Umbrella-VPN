@@ -628,6 +628,11 @@ class GatewayClient {
         const <NeutralizedSecurityEvent>[],
     List<String> resolvedKeys = const <String>[],
     bool syncAll = false,
+    String? securityStatus,
+    int? scannedAtMs,
+    int? scannedFiles,
+    int? scannedApps,
+    int? scannedProcesses,
   }) async {
     return _post('app/security-alert', <String, dynamic>{
       'token': token,
@@ -641,6 +646,14 @@ class GatewayClient {
             .toList(),
       if (resolvedKeys.isNotEmpty) 'resolved_keys': resolvedKeys,
       if (syncAll) 'sync_all': true,
+      if (securityStatus != null && securityStatus.isNotEmpty)
+        'security_status': securityStatus,
+      if (scannedAtMs != null && scannedAtMs > 0) 'scanned_at_ms': scannedAtMs,
+      if (scannedFiles != null && scannedFiles >= 0)
+        'scanned_files': scannedFiles,
+      if (scannedApps != null && scannedApps >= 0) 'scanned_apps': scannedApps,
+      if (scannedProcesses != null && scannedProcesses >= 0)
+        'scanned_processes': scannedProcesses,
     });
   }
 
@@ -660,6 +673,11 @@ class GatewayClient {
     String deviceName = '',
     String platform = '',
     String appVersion = '',
+    String? securityStatus,
+    int? scannedAtMs,
+    int? scannedFiles,
+    int? scannedApps,
+    int? scannedProcesses,
   }) async {
     final Map<String, dynamic> body = <String, dynamic>{
       'token': token,
@@ -668,6 +686,14 @@ class GatewayClient {
       if (platform.isNotEmpty) 'platform': platform,
       if (appVersion.isNotEmpty) 'app_version': appVersion,
       if (activity.isNotEmpty) 'activity': activity,
+      if (securityStatus != null && securityStatus.isNotEmpty)
+        'security_status': securityStatus,
+      if (scannedAtMs != null && scannedAtMs > 0) 'scanned_at_ms': scannedAtMs,
+      if (scannedFiles != null && scannedFiles >= 0)
+        'scanned_files': scannedFiles,
+      if (scannedApps != null && scannedApps >= 0) 'scanned_apps': scannedApps,
+      if (scannedProcesses != null && scannedProcesses >= 0)
+        'scanned_processes': scannedProcesses,
     };
     final Map<String, dynamic> json = await _post('auth/device', body);
     final Map<String, dynamic> accountMap = JsonX.asMap(json['account']);

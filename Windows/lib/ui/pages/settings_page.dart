@@ -365,7 +365,7 @@ class _SettingsPageState extends State<SettingsPage> {
         if (hasBypass) {
           return 'عبور مستقیم';
         }
-        return cfg.blockAds ? 'ضد تبلیغات' : null;
+        return 'ضد تبلیغات';
       case SettingsCategory.dns:
         return cfg.enableFakeDns ? 'دی ان اس مجازی' : null;
       case SettingsCategory.inbound:
@@ -719,13 +719,44 @@ class _SettingsPageState extends State<SettingsPage> {
                   _applyRuntime(vpn, () => settings.setBypassLan(v)),
             ),
             const Divider(height: AppMetrics.space3),
-            ToggleRow(
-              icon: Icons.gpp_bad_outlined,
-              title: 'مسدودسازی تبلیغات و بدافزار',
-              subtitle: 'مسدود کردن دامنه های تبلیغاتی و ردیاب در سطح هسته',
-              value: cfg.blockAds,
-              onChanged: (bool v) =>
-                  _applyRuntime(vpn, () => settings.setBlockAds(v)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppMetrics.space2),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.verified_user_rounded,
+                    size: AppMetrics.iconSm,
+                    color: colors.success,
+                  ),
+                  const SizedBox(width: AppMetrics.space3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'مسدودسازی تبلیغات و ردیاب ها',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'حذف دامنه های تبلیغاتی، ردیاب ها و تبلیغات ویدیویی در سطح هسته همواره فعال است',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colors.textSecondary,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppMetrics.space2),
+                  Pill(
+                    label: 'همیشه فعال',
+                    color: colors.success,
+                    dense: true,
+                  ),
+                ],
+              ),
             ),
             const Divider(height: AppMetrics.space3),
             ToggleRow(

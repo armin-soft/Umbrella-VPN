@@ -199,6 +199,17 @@ class MethodHandler(
                     )
                 }
             }
+            "syncBackgroundSecurityAuth" -> result.answerNow(call.method) {
+                Settings.bgGatewayBase = call.argument<String>("gatewayBase") ?: ""
+                Settings.bgAuthToken = call.argument<String>("token") ?: ""
+                Settings.bgDeviceId = call.argument<String>("deviceId") ?: ""
+                Settings.bgAppVersion = call.argument<String>("appVersion") ?: ""
+                ir.umbrella.vpn.bg.UmbrellaBackgroundMonitor.initialize(activity.applicationContext)
+                true
+            }
+            "consumePendingBackgroundSecurityEvents" -> result.answerNow(call.method) {
+                ir.umbrella.vpn.bg.UmbrellaBackgroundMonitor.consumePendingEvents()
+            }
             else -> result.notImplemented()
         }
     }

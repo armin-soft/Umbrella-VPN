@@ -8,9 +8,185 @@ require_once __DIR__ . '/../Core/Telegram/Telegram.php';
 /** Only undo the suspension this channel policy actually applied. */
 final class ChannelMembership {
 private const REASON = '🚫قطع به دلیل عدم عضویت';
+private const PENDING_JOIN_KEY = 'App_Channel_Pending_Users';
+private const PENDING_JOIN_TTL = 86400;
+private const PENDING_JOIN_CAP = 300;
 private static function success(array $Response): bool {
 $Code = (int)($Response['StatusCode'] ?? 0);
 return $Code >= 200 && $Code < 300;
+}
+
+/**
+ * ذخیره وضعیت انتظار عضویت در کانال تا به محض پیوستن کاربر به کانال،
+ * ربات بدون نیاز به زدن هیچ دکمه ای دسترسی را خودکار فعال کند.
+ */
+public static function markPendingJoin(int $UserId, int $ChatId = 0, ?int $MessageId = null): void {
+if ($UserId <= 0 || !method_exists(Repository::class, 'getSetting') || !method_exists(Repository::class, 'setSetting')) return;
+$Lock = 'channel_pending_map';
+$Locked = method_exists(Repository::class, 'tryCronLock') ? Repository::tryCronLock($Lock, 15) : true;
+try {
+$Map = self::readPendingJoinMap();
+$Now = time();
+$Chat = $ChatId > 0 ? $ChatId : $UserId;
+$PrevMsg = (int)($Map[(string)$UserId]['message_id'] ?? 0);
+$MsgId = ($MessageId !== null && $MessageId > 0) ? $MessageId : $PrevMsg;
+$Map[(string)$UserId] = [
+'chat_id' => $Chat,
+'message_id' => $MsgId,
+'at' => $Now,
+];
+if (count($Map) > self::PENDING_JOIN_CAP) {
+uasort($Map, static fn(array $A, array $B): int => ((int)($B['at'] ?? 0)) <=> ((int)($A['at'] ?? 0)));
+$Map = array_slice($Map, 0, self::PENDING_JOIN_CAP, true);
+}
+Repository::setSetting(self::PENDING_JOIN_KEY, json_encode($Map, JSON_UNESCAPED_SLASHES) ?: '{}');
+} catch (Throwable) {
+} finally {
+if ($Locked && method_exists(Repository::class, 'releaseCronLock')) {
+Repository::releaseCronLock($Lock);
+}
+}
+}
+
+public static function clearPendingJoin(int $UserId): ?array {
+if ($UserId <= 0 || !method_exists(Repository::class, 'getSetting') || !method_exists(Repository::class, 'setSetting')) return null;
+$Lock = 'channel_pending_map';
+$Locked = method_exists(Repository::class, 'tryCronLock') ? Repository::tryCronLock($Lock, 15) : true;
+try {
+$Map = self::readPendingJoinMap();
+$Key = (string)$UserId;
+if (!isset($Map[$Key])) return null;
+$Entry = $Map[$Key];
+unset($Map[$Key]);
+Repository::setSetting(self::PENDING_JOIN_KEY, json_encode($Map, JSON_UNESCAPED_SLASHES) ?: '{}');
+return $Entry;
+} catch (Throwable) {
+return null;
+} finally {
+if ($Locked && method_exists(Repository::class, 'releaseCronLock')) {
+Repository::releaseCronLock($Lock);
+}
+}
+}
+
+/** @return list<int> */
+public static function pendingUserIds(): array {
+$Map = self::readPendingJoinMap();
+if ($Map === []) return [];
+$Out = [];
+foreach ($Map as $Uid => $_Entry) {
+$Id = (int)$Uid;
+if ($Id > 0) $Out[] = $Id;
+}
+return $Out;
+}
+
+public static function isPendingJoin(int $UserId): bool {
+if ($UserId <= 0) return false;
+$Map = self::readPendingJoinMap();
+return isset($Map[(string)$UserId]);
+}
+
+/** @return array<string, array{chat_id: int, message_id: int, at: int}> */
+private static function readPendingJoinMap(): array {
+if (!method_exists(Repository::class, 'getSetting')) return [];
+try {
+$Raw = trim((string)Repository::getSetting(self::PENDING_JOIN_KEY, ''));
+if ($Raw === '') return [];
+$Decoded = json_decode($Raw, true);
+if (!is_array($Decoded)) return [];
+$Cutoff = time() - self::PENDING_JOIN_TTL;
+$Clean = [];
+foreach ($Decoded as $Uid => $Item) {
+if (!is_array($Item)) continue;
+$At = (int)($Item['at'] ?? 0);
+if ($At <= 0 || $At < $Cutoff) continue;
+$Id = (int)$Uid;
+if ($Id <= 0) continue;
+$Clean[(string)$Id] = [
+'chat_id' => (int)($Item['chat_id'] ?? $Id),
+'message_id' => (int)($Item['message_id'] ?? 0),
+'at' => $At,
+];
+}
+return $Clean;
+} catch (Throwable) {
+return [];
+}
+}
+
+/**
+ * فعال سازی خودکار منوی کاربر و درخواست های معلق به محض پیوستن کاربر به کانال.
+ */
+public static function fulfillPendingJoin(int $UserId, bool $AlreadyRestored = false): bool {
+if ($UserId <= 0) return false;
+$Lock = 'channel_fulfill_' . $UserId;
+if (method_exists(Repository::class, 'tryCronLock') && !Repository::tryCronLock($Lock, 60)) {
+return false;
+}
+try {
+$Pending = self::clearPendingJoin($UserId);
+$User = Repository::getUser($UserId);
+if (!$AlreadyRestored) {
+$DisabledAt = (int)($User['Channel_Client_Disabled_At'] ?? 0);
+$GraceAt = (int)($User['Channel_Grace_Started_At'] ?? 0);
+if ($DisabledAt > 0 || $GraceAt > 0) {
+$Restore = self::restore($UserId);
+if ($Restore === 'restored') {
+return true;
+}
+}
+}
+if ($Pending === null) return false;
+
+$ChatId = (int)($Pending['chat_id'] ?? 0);
+if ($ChatId <= 0) $ChatId = (int)($User['Chat_ID'] ?? $UserId);
+if ($ChatId <= 0) return false;
+
+$MessageId = (int)($Pending['message_id'] ?? 0);
+$FullName = trim((string)($User['Full_Name'] ?? ($User['First_Name'] ?? 'کاربر')));
+if ($FullName === '') $FullName = 'کاربر';
+$Frame = method_exists('Helper', 'frame')
+? Helper::frame('کاربر', $FullName, 'منوی خدمات ربات', $UserId)
+: '';
+$Footer = method_exists('Helper', 'userFooter') ? Helper::userFooter() : '';
+$WelcomeText = $Frame
+. "✅عضویت شما در کانال به صورت خودکار تأیید شد!\n\n"
+. "🎉به ربات فیلترشکن آمبرلا خوش آمدید.\n👇برای دیدن خدمات ربات، دکمه زیر را بزنید:"
+. $Footer;
+$Markup = TelegramClient::inlineKeyboard([
+[['text' => '🤖📋منوی خدمات ربات', 'callback_data' => 'منوی خدمات ربات']],
+]);
+
+$Edited = false;
+if ($MessageId > 0 && method_exists('TelegramClient', 'editMessageText')) {
+try {
+$Res = TelegramClient::editMessageText($ChatId, $MessageId, $WelcomeText, $Markup);
+if (is_array($Res) && (($Res['ok'] ?? false) === true)) {
+$Edited = true;
+}
+} catch (Throwable) {}
+}
+if (!$Edited) {
+try {
+TelegramClient::sendMessage($ChatId, $WelcomeText, $Markup);
+} catch (Throwable) {}
+}
+
+if (class_exists('UserFlow') && method_exists('UserFlow', 'onAutoChannelJoinedById')) {
+try {
+UserFlow::onAutoChannelJoinedById($UserId, $ChatId, $FullName);
+} catch (Throwable) {}
+}
+return true;
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Channel-Fulfill] ' . $Error->getMessage());
+return false;
+} finally {
+if (method_exists(Repository::class, 'releaseCronLock')) {
+Repository::releaseCronLock($Lock);
+}
+}
 }
 public static function restore(int $UserId): string {
 $Lock = 'channel_client_' . $UserId;
@@ -36,6 +212,7 @@ if ($Limit > 0 && (float)($Data['current_usage_GB'] ?? 0) >= $Limit) return 'ine
 $Response = ServerClient::updateUser($Client, ['is_active' => true, 'enable' => true]);
 if (!self::success($Response)) { error_log('[Umbrella-Bot][Channel-Restore] server refused user=' . $UserId); return 'pending'; }
 Repository::updateUser($UserId, ['Channel_Grace_Started_At' => null, 'Channel_Client_Disabled_At' => null, 'Channel_Member_Check_At' => time(), 'Client_Status' => 'فعال', 'Server_Is_Active' => 1, 'Server_Enable' => 1]);
+self::clearPendingJoin($UserId);
 $Text = 'عضویت شما در کانال تایید شد و اشتراکی که به دلیل خروج از کانال متوقف شده بود، دوباره فعال شد.';
 if (!method_exists(Repository::class, 'claimDailyNotice') || Repository::claimDailyNotice('channel_restored_app', $UserId)) {
 SystemNotifications::queue($UserId, 'فعالسازی پس از عضویت کانال', $Text, 'channel-restored:' . $Disabled, 'success');
@@ -120,6 +297,7 @@ $Changed = ($Restore === 'restored');
 } else {
 Repository::updateUser($UserId, ['Channel_Member_Check_At' => $Now]);
 }
+self::fulfillPendingJoin($UserId, true);
 $User = Repository::getUser($UserId);
 } elseif ($MemberState === 'not_member') {
 Repository::updateUser($UserId, ['Channel_Member_Check_At' => $Now]);

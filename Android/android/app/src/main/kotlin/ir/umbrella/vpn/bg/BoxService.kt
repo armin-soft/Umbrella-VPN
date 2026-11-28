@@ -242,6 +242,11 @@ class BoxService(
                 status.value = Status.Started
             }
             notification.startPolling()
+            runCatching {
+                val appCtx = service.applicationContext
+                UmbrellaBackgroundMonitor.initialize(appCtx)
+                UmbrellaBackgroundMonitor.triggerDebouncedQuickScan(appCtx, delayMs = 3_000L)
+            }
             null
         } catch (e: Exception) {
             if (e is CancellationException) throw e

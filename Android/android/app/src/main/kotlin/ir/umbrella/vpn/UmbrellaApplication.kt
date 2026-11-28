@@ -34,6 +34,7 @@ class UmbrellaApplication : Application() {
             AppCrashRecorder.install(app)
             Seq.setContext(app)
             initialized = true
+            runCatching { ir.umbrella.vpn.bg.UmbrellaBackgroundMonitor.initialize(app) }
         }
 
         val notification: NotificationManager

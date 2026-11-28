@@ -75,10 +75,7 @@ object UmbrellaSecurityScanner {
         label: String,
         selfPkg: String,
     ): SignatureMatch? {
-        if (packageName == selfPkg ||
-            packageName.startsWith("ir.umbrella.") ||
-            label.lowercase().contains("umbrella")
-        ) {
+        if (packageName == selfPkg || packageName.startsWith("ir.umbrella.")) {
             return null
         }
         val combined = "${packageName.lowercase()} ${label.lowercase()}"
@@ -368,7 +365,7 @@ object UmbrellaSecurityScanner {
     }
 
     private fun isDangerousArchiveEntry(lowerEntry: String, isOfficeOpenXml: Boolean): Boolean {
-        if (lowerEntry.isBlank() || lowerEntry.contains("umbrella")) return false
+        if (lowerEntry.isBlank()) return false
         if (hasRloOrDoubleExtension(lowerEntry)) return true
         if (matchKnownPackageOrLabel(lowerEntry, lowerEntry, "") != null) return true
         if (isOfficeOpenXml && lowerEntry.contains("vbaproject.bin")) return true
@@ -417,6 +414,10 @@ object UmbrellaSecurityScanner {
                 publicDownloads,
                 publicDownloads?.let { File(it, "Telegram") },
                 extStorage?.let { File(it, "Telegram/Telegram Documents") },
+                extStorage?.let { File(it, "Telegram/Telegram Images") },
+                extStorage?.let { File(it, "Telegram/Telegram Video") },
+                runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES) }.getOrNull(),
+                runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) }.getOrNull(),
             )
         }
         return listOfNotNull(
@@ -466,7 +467,6 @@ object UmbrellaSecurityScanner {
                     val name = relativePath.orEmpty()
                     val lower = name.lowercase()
                     if (name.isNotBlank() &&
-                        !lower.contains("umbrella") &&
                         !lower.endsWith(".tmp") &&
                         !lower.endsWith(".crdownload") &&
                         !lower.endsWith(".part")
@@ -522,8 +522,7 @@ object UmbrellaSecurityScanner {
                 if (depth < maxDepth &&
                     lower != ".git" &&
                     lower != "node_modules" &&
-                    !lower.startsWith(".trash") &&
-                    !lower.contains("umbrella")
+                    !lower.startsWith(".trash")
                 ) {
                     subdirs.add(child)
                 }
@@ -667,8 +666,7 @@ object UmbrellaSecurityScanner {
                         if (depth < maxDepth &&
                             lower != ".git" &&
                             lower != "node_modules" &&
-                            !lower.startsWith(".trash") &&
-                            !lower.contains("umbrella")
+                            !lower.startsWith(".trash")
                         ) {
                             subdirs.add(childId)
                         }
@@ -725,7 +723,6 @@ object UmbrellaSecurityScanner {
         readHeadAndTail: (Int, Int) -> ByteArray,
     ): SignatureMatch? {
         val lower = fname.lowercase()
-        if (lower.contains("umbrella")) return null
 
         if (hasRloOrDoubleExtension(fname)) {
             return SignatureMatch(
@@ -1036,6 +1033,26 @@ object UmbrellaSecurityScanner {
         return allIntent.resolveActivity(context.packageManager) != null
     }
 
+    fun hasMediaScanAccess(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+            return true
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_MEDIA_IMAGES,
+            ) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.READ_MEDIA_VIDEO,
+                ) == PackageManager.PERMISSION_GRANTED
+        }
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     fun hasStorageScanAccess(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
@@ -1167,8 +1184,7 @@ object UmbrellaSecurityScanner {
                 val absLower = abs.lowercase()
                 if (!visited.add(absLower)) continue
                 val fname = file.name.lowercase()
-                if (fname.contains("umbrella") ||
-                    fname.endsWith(".tmp") ||
+                if (fname.endsWith(".tmp") ||
                     fname.endsWith(".crdownload") ||
                     fname.endsWith(".part")
                 ) {
@@ -1224,8 +1240,7 @@ object UmbrellaSecurityScanner {
             val uriLower = uriStr.lowercase()
             if (!visited.add(uriLower)) continue
             val fname = doc.name.lowercase()
-            if (fname.contains("umbrella") ||
-                fname.endsWith(".tmp") ||
+            if (fname.endsWith(".tmp") ||
                 fname.endsWith(".crdownload") ||
                 fname.endsWith(".part")
             ) {
@@ -1299,8 +1314,24 @@ object UmbrellaSecurityScanner {
             "scannedFiles" to scannedFiles,
             "scannedAtMs" to System.currentTimeMillis(),
             "storageAccessGranted" to hasStorageScanAccess(context),
+            "mediaAccessGranted" to hasMediaScanAccess(context),
             "threats" to sortedThreats,
         )
+    }
+
+    fun deleteTargetInBackground(context: Context, path: String): Boolean {
+        if (path.isBlank()) return false
+        val deleted = if (path.startsWith("content://")) {
+            val docUri = Uri.parse(path)
+            runCatching {
+                DocumentsContract.deleteDocument(context.contentResolver, docUri)
+            }.getOrDefault(false)
+        } else {
+            val file = File(path)
+            !file.exists() || runCatching { file.delete() }.getOrDefault(false)
+        }
+        invalidateCleanFileCache(path)
+        return deleted
     }
 
     fun remediate(

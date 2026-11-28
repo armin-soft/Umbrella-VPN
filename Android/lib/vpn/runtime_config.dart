@@ -492,7 +492,13 @@ class RuntimeConfig {
 
       final bool hasTrojanRule = rewrittenRules.any((dynamic item) {
         if (item is! Map) return false;
-        if (item['outbound'] != blockPageOutboundTag) return false;
+        if (hasBlockPage) {
+          if (item['outbound'] != blockPageOutboundTag) return false;
+        } else {
+          if (item['action'] != 'reject' && item['outbound'] != 'block') {
+            return false;
+          }
+        }
         return _containsString(item['domain_suffix'], 'grabify.link');
       });
 
@@ -508,20 +514,34 @@ class RuntimeConfig {
       final List<dynamic> promotedBlocks = <dynamic>[];
       final List<dynamic> suffix = <dynamic>[];
 
-      if (hasBlockPage && !hasTrojanRule) {
-        promotedBlocks.addAll(<Map<String, dynamic>>[
-          <String, dynamic>{
-            'domain_suffix':
-                MaliciousLinkGuard.knownMaliciousDomains.toList(growable: false),
-            'action': 'route',
-            'outbound': blockPageOutboundTag,
-          },
-          <String, dynamic>{
-            'domain_keyword': MaliciousLinkGuard.phishingPhrases,
-            'action': 'route',
-            'outbound': blockPageOutboundTag,
-          },
-        ]);
+      if (!hasTrojanRule) {
+        if (hasBlockPage) {
+          promotedBlocks.addAll(<Map<String, dynamic>>[
+            <String, dynamic>{
+              'domain_suffix': MaliciousLinkGuard.knownMaliciousDomains
+                  .toList(growable: false),
+              'action': 'route',
+              'outbound': blockPageOutboundTag,
+            },
+            <String, dynamic>{
+              'domain_keyword': MaliciousLinkGuard.phishingPhrases,
+              'action': 'route',
+              'outbound': blockPageOutboundTag,
+            },
+          ]);
+        } else {
+          promotedBlocks.addAll(<Map<String, dynamic>>[
+            <String, dynamic>{
+              'domain_suffix': MaliciousLinkGuard.knownMaliciousDomains
+                  .toList(growable: false),
+              'action': 'reject',
+            },
+            <String, dynamic>{
+              'domain_keyword': MaliciousLinkGuard.phishingPhrases,
+              'action': 'reject',
+            },
+          ]);
+        }
       }
 
       for (int i = 0; i < rewrittenRules.length; i++) {
@@ -566,6 +586,29 @@ class RuntimeConfig {
           continue;
         }
         rewrittenDns.addAll(_expandDnsBlockRule(item));
+      }
+      if (!hasBlockPage) {
+        final bool hasTrojanDnsRule = rewrittenDns.any((dynamic item) {
+          if (item is! Map) return false;
+          final bool isRejectDns = item['action'] == 'reject' ||
+              item['server'] == 'dns-block' ||
+              item['outbound'] == 'block';
+          return isRejectDns &&
+              _containsString(item['domain_suffix'], 'grabify.link');
+        });
+        if (!hasTrojanDnsRule) {
+          rewrittenDns.insertAll(0, <Map<String, dynamic>>[
+            <String, dynamic>{
+              'domain_suffix': MaliciousLinkGuard.knownMaliciousDomains
+                  .toList(growable: false),
+              'action': 'reject',
+            },
+            <String, dynamic>{
+              'domain_keyword': MaliciousLinkGuard.phishingPhrases,
+              'action': 'reject',
+            },
+          ]);
+        }
       }
       rawDns['rules'] = rewrittenDns;
     }

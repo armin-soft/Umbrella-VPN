@@ -925,7 +925,7 @@ void main() {
         final ContentBlockServer server = ContentBlockServer(
           filterProvider: () => const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads'],
+            categories: <String>['adult', 'gambling'],
             customDomains: <String>['blocked.example.test'],
           ),
           onIntercepted: events.add,
@@ -1217,10 +1217,10 @@ void main() {
           tun: true,
           systemProxy: false,
           port: 12334,
-          includeFilterRuleSets: false,
+          includeFilterRuleSets: true,
           contentFilter: const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads'],
+            categories: <String>['adult', 'gambling'],
             customDomains: <String>['custom-blocked.example'],
           ),
         );
@@ -1251,6 +1251,7 @@ void main() {
             'filter-adult.srs': 'data/filter-adult.srs',
             'filter-gambling.srs': 'data/filter-gambling.srs',
             'filter-ads.srs': 'data/filter-ads.srs',
+            'filter-youtube-ads.srs': 'data/filter-youtube-ads.srs',
           },
         );
         final List<Map<String, dynamic>> ruleSets =
@@ -1756,6 +1757,121 @@ void main() {
         expect(blocked.ok, isFalse);
         expect(blocked.message, contains('Psiphon'));
         expect(native.closeConflictingCalls, 2);
+      },
+    );
+
+    test(
+      'always-on AdBlock, native filename hardening, and live security-state sync work end-to-end',
+      () async {
+        final String scannerCpp = File(
+          'packages/umbrella_native/windows/security_scanner.cpp',
+        ).readAsStringSync();
+        expect(
+          scannerCpp,
+          isNot(contains('if (IsUmbrellaSafeBinary(full) || lower_fn.find("umbrella") != std::string::npos)')),
+        );
+        expect(
+          scannerCpp,
+          isNot(contains('if (lower_name.find("umbrella") != std::string::npos) return false;')),
+        );
+
+        final String settingsUi = File(
+          'lib/ui/pages/settings_page.dart',
+        ).readAsStringSync();
+        expect(settingsUi, isNot(contains('settings.setBlockAds(')));
+        expect(settingsUi, contains('همیشه فعال'));
+
+        final Map<String, dynamic> coreNoFilter = UmbrellaCore.settingsJson(
+          tun: false,
+          systemProxy: true,
+          port: 12334,
+          networkSettings: const AppSettings(blockAds: false),
+          contentFilter: FilterSettings.empty,
+        );
+        expect(coreNoFilter['block-ads'], isTrue);
+
+        final Map<String, dynamic> runtimeNoBlockPage = <String, dynamic>{
+          'route': <String, dynamic>{
+            'rules': <dynamic>[
+              <String, dynamic>{'action': 'sniff'},
+            ],
+          },
+          'dns': <String, dynamic>{'rules': <dynamic>[]},
+        };
+        RuntimeConfig.finalize(
+          runtimeNoBlockPage,
+          profileTags: const <String>{},
+          coreSettings: coreNoFilter,
+          blockPagePort: 0,
+        );
+        expect(
+          jsonEncode(runtimeNoBlockPage['route']),
+          allOf(contains('grabify.link'), contains('"reject"')),
+        );
+
+        final List<Map<String, dynamic>> alertPayloads =
+            <Map<String, dynamic>>[];
+        final List<Map<String, dynamic>> heartbeatPayloads =
+            <Map<String, dynamic>>[];
+        final _FakeNative native = _FakeNative();
+        native.scanResult = const SecurityScanResult(
+          clean: true,
+          scannedProcesses: 51,
+          scannedApps: 22,
+          scannedFiles: 340,
+          scannedAtMs: 1760000123456,
+        );
+        final GatewayClient gateway = GatewayClient(
+          client: MockClient((http.Request req) async {
+            final Map<String, dynamic> body =
+                jsonDecode(req.body) as Map<String, dynamic>;
+            if (req.url.path.endsWith('/app/security-alert')) {
+              alertPayloads.add(body);
+            } else if (req.url.path.endsWith('/auth/device')) {
+              heartbeatPayloads.add(body);
+            }
+            return http.Response('{"ok":true}', 200);
+          }),
+        );
+        final _SignedAuth auth = _SignedAuth(
+          native: native,
+          gateway: gateway,
+          store: LocalStore.instance,
+        );
+        final SecurityScannerController sec = SecurityScannerController(
+          native: native,
+          auth: auth,
+        );
+        auth.securityStateProvider = sec.buildSecurityStatePayload;
+        addTearDown(() {
+          sec.dispose();
+          auth.dispose();
+        });
+
+        await sec.scanNow(silent: true);
+        expect(alertPayloads, hasLength(1));
+        expect(alertPayloads.single['security_status'], 'safe');
+        expect(alertPayloads.single['scanned_files'], 340);
+        expect(alertPayloads.single['scanned_apps'], 22);
+        expect(alertPayloads.single['scanned_processes'], 51);
+        expect(alertPayloads.single['scanned_at_ms'], 1760000123456);
+
+        await gateway.heartbeat(
+          token: 'tok-sec-1',
+          deviceId: 'dev-win-sec-1',
+          securityStatus: sec.buildSecurityStatePayload()['security_status']
+              as String?,
+          scannedAtMs:
+              sec.buildSecurityStatePayload()['scanned_at_ms'] as int?,
+          scannedFiles:
+              sec.buildSecurityStatePayload()['scanned_files'] as int?,
+          scannedApps: sec.buildSecurityStatePayload()['scanned_apps'] as int?,
+          scannedProcesses:
+              sec.buildSecurityStatePayload()['scanned_processes'] as int?,
+        );
+        expect(heartbeatPayloads, hasLength(1));
+        expect(heartbeatPayloads.single['security_status'], 'safe');
+        expect(heartbeatPayloads.single['scanned_files'], 340);
       },
     );
   });

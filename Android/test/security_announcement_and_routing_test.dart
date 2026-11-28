@@ -1032,7 +1032,7 @@ void main() {
         final ContentBlockServer server = ContentBlockServer(
           filterProvider: () => const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads'],
+            categories: <String>['adult', 'gambling'],
             customDomains: <String>['blocked.example.test'],
           ),
           onIntercepted: events.add,
@@ -1500,7 +1500,7 @@ void main() {
           includeFilterRuleSets: false,
           contentFilter: const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads'],
+            categories: <String>['adult', 'gambling'],
             customDomains: <String>['custom-blocked.example'],
           ),
         );
@@ -1691,6 +1691,179 @@ void main() {
         expect(blocked.ok, isFalse);
         expect(blocked.message, contains('Psiphon'));
         expect(native.closeConflictingCalls, 2);
+      },
+    );
+
+    test(
+      'Android end-to-end: always-on AdBlock, 2-category filter UI, Trojan reject fallback, background scanner hardening, and telemetry',
+      () async {
+        expect(FilterSettings.categoryLabels.keys.toList(), <String>['adult', 'gambling']);
+        expect(FilterSettings.categoryLabels.containsKey('ads'), isFalse);
+
+        final Map<String, dynamic> fullAlwaysAd = UmbrellaCore.settingsJson(
+          tun: true,
+          systemProxy: false,
+          port: 12334,
+          networkSettings: const AppSettings(blockAds: false),
+          contentFilter: const FilterSettings(enabled: false),
+          includeFilterRuleSets: true,
+        );
+        expect(fullAlwaysAd['block-ads'], isTrue);
+
+        final Map<String, dynamic> fastStart = UmbrellaCore.settingsJson(
+          tun: true,
+          systemProxy: false,
+          port: 12334,
+          networkSettings: const AppSettings(blockAds: false),
+          contentFilter: const FilterSettings(enabled: false),
+          includeFilterRuleSets: false,
+        );
+        expect(fastStart['block-ads'], isFalse);
+
+        final Map<String, dynamic> runtimeNoBlockPage = <String, dynamic>{
+          'experimental': <String, dynamic>{'monitoring': <String, dynamic>{}},
+          'outbounds': <dynamic>[
+            <String, dynamic>{'tag': 'direct', 'type': 'direct'},
+            <String, dynamic>{'tag': 'select', 'type': 'selector'},
+          ],
+          'dns': <String, dynamic>{'rules': <dynamic>[]},
+          'route': <String, dynamic>{
+            'rule_set': <dynamic>[],
+            'rules': <dynamic>[
+              <String, dynamic>{'action': 'sniff'},
+            ],
+          },
+        };
+        RuntimeConfig.finalize(
+          runtimeNoBlockPage,
+          profileTags: const <String>{},
+          coreSettings: fullAlwaysAd,
+          blockPagePort: 0,
+          localRuleSetPaths: const <String, String>{
+            'filter-ads.srs': '/data/user/0/ir.umbrella.vpn/files/data/filter-ads.srs',
+          },
+        );
+        final List<dynamic> routeRules =
+            (runtimeNoBlockPage['route'] as Map<String, dynamic>)['rules']
+                as List<dynamic>;
+        final List<dynamic> dnsRules =
+            (runtimeNoBlockPage['dns'] as Map<String, dynamic>)['rules']
+                as List<dynamic>;
+        expect(
+          routeRules.any((dynamic r) =>
+              r is Map && r['action'] == 'reject' && '$r'.contains('grabify.link')),
+          isTrue,
+        );
+        expect(
+          dnsRules.any((dynamic r) =>
+              r is Map && r['action'] == 'reject' && '$r'.contains('grabify.link')),
+          isTrue,
+        );
+        expect(
+          routeRules.any((dynamic r) =>
+              r is Map && r['action'] == 'reject' && '$r'.contains('filter-ads')),
+          isTrue,
+        );
+
+        final String manifest = File(
+          'android/app/src/main/AndroidManifest.xml',
+        ).readAsStringSync();
+        expect(manifest, contains('READ_MEDIA_IMAGES'));
+        expect(manifest, contains('READ_MEDIA_VIDEO'));
+        expect(manifest, contains('UmbrellaSecurityJobService'));
+
+        final String bgMonitorKt = File(
+          'android/app/src/main/kotlin/ir/umbrella/vpn/bg/UmbrellaBackgroundMonitor.kt',
+        ).readAsStringSync();
+        expect(bgMonitorKt, contains('class UmbrellaSecurityJobService : JobService()'));
+        expect(bgMonitorKt, contains('deleteTargetInBackground'));
+        expect(bgMonitorKt, contains('AppApi'));
+        expect(bgMonitorKt, contains('app/security-alert'));
+
+        final String scannerKt = File(
+          'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
+        ).readAsStringSync();
+        expect(scannerKt, isNot(contains('if (lower.contains("umbrella")) return null')));
+        expect(scannerKt, isNot(contains('lowerEntry.contains("umbrella")')));
+        expect(scannerKt, contains('deleteTargetInBackground'));
+
+        final String handlerKt = File(
+          'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+        ).readAsStringSync();
+        expect(handlerKt, contains('"syncBackgroundSecurityAuth"'));
+        expect(handlerKt, contains('"consumePendingBackgroundSecurityEvents"'));
+
+        final String appKt = File(
+          'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaApplication.kt',
+        ).readAsStringSync();
+        expect(appKt, contains('UmbrellaBackgroundMonitor.initialize'));
+
+        final String settingsPageDart = File(
+          'lib/ui/pages/settings_page.dart',
+        ).readAsStringSync();
+        expect(settingsPageDart, contains('همیشه فعال'));
+
+        final Map<String, dynamic> capturedRefresh = <String, dynamic>{};
+        final Map<String, dynamic> capturedAlert = <String, dynamic>{};
+        final GatewayClient gateway = GatewayClient(
+          baseUrl: 'https://example.invalid/index.php?AppApi=',
+          enableNativeTransport: false,
+          client: MockClient((http.Request req) async {
+            final Map<String, dynamic> body =
+                jsonDecode(req.body) as Map<String, dynamic>;
+            if (req.url.queryParameters['AppApi'] == 'account/refresh') {
+              capturedRefresh.addAll(body);
+              return http.Response(
+                jsonEncode(<String, dynamic>{
+                  'ok': true,
+                  'subscription_url': '',
+                }),
+                200,
+              );
+            }
+            if (req.url.queryParameters['AppApi'] == 'app/security-alert') {
+              capturedAlert.addAll(body);
+              return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
+            }
+            return http.Response('{}', 200);
+          }),
+        );
+        await gateway.refreshAccount(
+          token: 'tok-android',
+          deviceId: 'dev-android',
+          securityState: <String, dynamic>{
+            'security_status': 'safe',
+            'scanned_at_ms': 1763800000000,
+            'scanned_files': 42,
+            'scanned_apps': 19,
+            'scanned_processes': 19,
+          },
+        );
+        expect(capturedRefresh['security_status'], 'safe');
+        expect(capturedRefresh['scanned_files'], 42);
+
+        await gateway.reportSecurityAlert(
+          token: 'tok-android',
+          deviceId: 'dev-android',
+          neutralized: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'key': 'dl:poly_img:umbrella_decoy',
+              'name': 'تصویر آلوده',
+              'category': 'malicious_download',
+              'severity': 'critical',
+              'action': 'deleted',
+              'target': '/sdcard/Download/umbrella_photo.jpg',
+            },
+          ],
+          securityStatus: 'safe',
+          scannedAtMs: 1763800005000,
+          scannedFiles: 43,
+          scannedApps: 19,
+          scannedProcesses: 19,
+        );
+        expect(capturedAlert['security_status'], 'safe');
+        expect(capturedAlert['scanned_files'], 43);
+        expect((capturedAlert['neutralized'] as List<dynamic>).length, 1);
       },
     );
   });

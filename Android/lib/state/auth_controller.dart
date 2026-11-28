@@ -54,6 +54,20 @@ class AuthController extends ChangeNotifier {
   bool notificationsEnabled = true;
   bool soundEnabled = true;
 
+  /// گزارش لحظه ای وضعیت سپر امنیتی دستگاه برای ارسال در heartbeat.
+  Map<String, dynamic> Function()? securityStateProvider;
+
+  Future<void> _syncNativeBackgroundSecurityAuth() async {
+    final SessionData? s = _session;
+    await NativeBridge.syncBackgroundSecurityAuth(
+      _native,
+      gatewayBase: _gateway.baseUrl,
+      token: s?.token ?? '',
+      deviceId: _deviceId,
+      appVersion: AppConfig.version,
+    );
+  }
+
   /// شناسه اعلان هایی که یک بار اعلام شده اند تا با هر به روز رسانی حساب،
   /// صدا و بالون تکرار نشود.
   final Set<String> _announced = <String>{};
@@ -448,6 +462,7 @@ class AuthController extends ChangeNotifier {
         await _syncNotificationOwner(_session!.ownerKey);
         onFilterChanged?.call(filter);
         _startHeartbeat();
+        unawaited(_syncNativeBackgroundSecurityAuth());
         unawaited(refreshAccount(silent: true).then<void>((_) {}));
       }
     }
@@ -773,6 +788,7 @@ class AuthController extends ChangeNotifier {
       await _store.writeJson(StoreKeys.filter, session.filter.toJson());
       onFilterChanged?.call(session.filter);
       _startHeartbeat();
+      unawaited(_syncNativeBackgroundSecurityAuth());
       _log.add('ورود موفق؛ خوش آمدید ${session.account.displayName}.');
       notifyListeners();
       // نشست فقط خلاصه حساب را دارد؛ پروفایل کامل و نشانی اشتراک از همین
@@ -888,6 +904,7 @@ class AuthController extends ChangeNotifier {
     try {
       final List<Map<String, dynamic>> pendingActivity =
           ActivityMonitorBuffer.instance.snapshotPayload();
+      final Map<String, dynamic>? secState = securityStateProvider?.call();
       final ({
         Account? account,
         FilterSettings? filter,
@@ -904,6 +921,11 @@ class AuthController extends ChangeNotifier {
             ? 'Android'
             : 'Windows',
         appVersion: AppConfig.version,
+        securityStatus: secState?['security_status'] as String?,
+        scannedAtMs: secState?['scanned_at_ms'] as int?,
+        scannedFiles: secState?['scanned_files'] as int?,
+        scannedApps: secState?['scanned_apps'] as int?,
+        scannedProcesses: secState?['scanned_processes'] as int?,
       );
       if (pendingActivity.isNotEmpty) {
         ActivityMonitorBuffer.instance.confirmSent(pendingActivity);
@@ -1859,6 +1881,7 @@ class AuthController extends ChangeNotifier {
     _error = '';
     _info = '';
     await _store.remove(StoreKeys.session);
+    unawaited(_syncNativeBackgroundSecurityAuth());
     notifyListeners();
     if (callServer && session != null) {
       try {

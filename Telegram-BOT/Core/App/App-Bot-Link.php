@@ -62,6 +62,35 @@ self::presentPrompt($Context, $Token);
 return true;
 }
 
+public static function resumePendingById(int $UserId, int $ChatId = 0, string $FullName = 'کاربر'): bool {
+$TargetChat = $ChatId > 0 ? $ChatId : $UserId;
+if ($UserId <= 0 || $TargetChat !== $UserId) return false;
+if (class_exists('UserFlow') && method_exists('UserFlow', 'membershipStatus') && UserFlow::membershipStatus($UserId) !== 'member') {
+return false;
+}
+$Token = self::popPendingToken($UserId);
+if ($Token === '') return false;
+$Db = Database::getInstance();
+$Hash = hash('sha256', $Token);
+$Db->execute('UPDATE `App_Bot_Link_Requests` SET `Telegram_ID` = ? WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = ?)', [$UserId, $Hash, time(), $UserId]);
+$Row = $Db->fetch('SELECT `Phone`, `Telegram_ID` FROM `App_Bot_Link_Requests` WHERE `Token_Hash` = ? AND `Used_At` IS NULL AND `Expires_At` >= ?', [$Hash, time()]);
+$Greeting = method_exists('Helper', 'frame')
+? Helper::frame('کاربر', $FullName !== '' ? $FullName : 'کاربر', 'اتصال برنامه به تلگرام', $UserId)
+: '';
+if ($Row === null || (int)$Row['Telegram_ID'] !== $UserId) {
+TelegramClient::sendMessage($TargetChat, $Greeting . '⚠️این لینک منقضی شده یا متعلق به درخواست دیگری است؛ از حساب من لینک جدید بگیرید.' . self::footerText());
+return true;
+}
+$Phone = (string)$Row['Phone'];
+$PhoneLabel = method_exists('Helper', 'formatPhoneDisplay')
+? Helper::formatPhoneDisplay($Phone, true)
+: Helper::toPersian(substr($Phone, 0, 4) . '***' . substr($Phone, -4));
+TelegramClient::sendMessage($TargetChat, $Greeting . '🔗آیا اتصال حساب برنامه با شماره ' . $PhoneLabel . ' به همین حساب تلگرام را تأیید می کنید؟ اگر خودتان درخواست نداده اید، تأیید نکنید.' . self::footerText(), TelegramClient::inlineKeyboard([
+[['text' => '✅تأیید اتصال حساب', 'callback_data' => 'app_link:' . $Token]],
+]));
+return true;
+}
+
 public static function issue(array $Session): array {
 $UUID = trim((string)($Session['User_UUID'] ?? ''));
 $Device = (string)($Session['Device_ID'] ?? '');

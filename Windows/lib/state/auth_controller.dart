@@ -54,6 +54,9 @@ class AuthController extends ChangeNotifier {
   bool notificationsEnabled = true;
   bool soundEnabled = true;
 
+  /// گزارش لحظه ای وضعیت سپر امنیتی دستگاه برای ارسال در heartbeat.
+  Map<String, dynamic> Function()? securityStateProvider;
+
   /// شناسه اعلان هایی که یک بار اعلام شده اند تا با هر به روز رسانی حساب،
   /// صدا و بالون تکرار نشود.
   final Set<String> _announced = <String>{};
@@ -884,6 +887,7 @@ class AuthController extends ChangeNotifier {
     try {
       final List<Map<String, dynamic>> pendingActivity =
           ActivityMonitorBuffer.instance.snapshotPayload();
+      final Map<String, dynamic>? secState = securityStateProvider?.call();
       final ({
         Account? account,
         FilterSettings? filter,
@@ -900,6 +904,11 @@ class AuthController extends ChangeNotifier {
             ? 'Android'
             : 'Windows',
         appVersion: AppConfig.version,
+        securityStatus: secState?['security_status'] as String?,
+        scannedAtMs: secState?['scanned_at_ms'] as int?,
+        scannedFiles: secState?['scanned_files'] as int?,
+        scannedApps: secState?['scanned_apps'] as int?,
+        scannedProcesses: secState?['scanned_processes'] as int?,
       );
       if (pendingActivity.isNotEmpty) {
         ActivityMonitorBuffer.instance.confirmSent(pendingActivity);

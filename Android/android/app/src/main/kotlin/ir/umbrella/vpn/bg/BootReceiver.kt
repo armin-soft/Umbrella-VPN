@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import ir.umbrella.vpn.Settings
+import ir.umbrella.vpn.UmbrellaApplication
 import ir.umbrella.vpn.constant.ServiceMode
 
 class BootReceiver : BroadcastReceiver() {
@@ -15,6 +16,9 @@ class BootReceiver : BroadcastReceiver() {
             -> Unit
             else -> return
         }
+        UmbrellaApplication.initialize(context)
+        UmbrellaBackgroundMonitor.initialize(context)
+        UmbrellaBackgroundMonitor.triggerDebouncedQuickScan(context, delayMs = 2_500L)
         if (!Settings.startOnBoot) return
         if (Settings.activeConfigPath.isBlank()) return
         if (Settings.serviceMode == ServiceMode.VPN && VpnService.prepare(context) != null) {

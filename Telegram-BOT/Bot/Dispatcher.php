@@ -21,6 +21,7 @@ private const ROUTES = [
 'user_wallet_menu' => [UserFlow::class, 'walletMenu'],
 'user_account_menu' => [UserFlow::class, 'accountMenu'],
 'user_device_menu' => [UserFlow::class, 'deviceMenu'],
+'user_security_shield' => [UserFlow::class, 'securityShieldMenu'],
 // سازگاری با پیام های قدیمی؛ دسته امنیت دیگر نمایش داده نمی شود.
 'user_security_menu' => [UserFlow::class, 'accountMenu'],
 'user_stats_menu' => [UserFlow::class, 'statsMenu'],
@@ -149,14 +150,20 @@ $Client_ID = (string)($User['Client_ID'] ?? '');
 $Has_Client = $Client_ID !== '' && $Client_ID !== '_';
 $Markup = TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
-[['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
 ]);
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin(
+$Context->UserId,
+$Context->ChatId,
+($Context->IsCallback && $Context->MessageId !== null) ? $Context->MessageId : null
+);
+}
 
 if (!$Has_Client) {
 $Text = $Greeting . Helper::noticeBlock(
 '📢جهت استفاده از امکانات ربات باید عضو کانال شوید.',
 '⚠️علت:🚫عدم عضویت در کانال اطلاع رسانی',
-'ℹ️پس از عضویت، دسترسی شما به ربات فعال می شود.'
+'✨پس از عضویت در کانال، ربات به صورت خودکار عضویت شما را بررسی و دسترسی را فعال می کند.'
 ) . Helper::userFooter();
 }
 
@@ -181,7 +188,7 @@ $Text = $Greeting . Helper::noticeBlock(
 '⛔️شما از کانال اطلاع رسانی خارج شده اید.',
 "⚠️علت:🚫عدم عضویت در کانال اطلاع رسانی\n"
 . "⏳مهلت باقیمانده: *{$Remaining_Label}*\n"
-. 'ℹ️پس از عضویت مجدد، دسترسی شما به ربات فعال می شود؛ در غیر این صورت کلاینت شما به طور خودکار قطع خواهد شد.'
+. '✨پس از عضویت مجدد، ربات خودش به صورت خودکار دسترسی شما را فعال می کند؛ در غیر این صورت کلاینت شما به طور خودکار قطع خواهد شد.'
 ) . Helper::userFooter();
 }
 
@@ -564,6 +571,14 @@ if (str_starts_with($Data, 'app_fdom_del:')) {
 $Rest = substr($Data, strlen('app_fdom_del:'));
 if (preg_match('/^([a-f0-9]{12}):([0-9]+)$/D', $Rest, $Match) === 1) {
 AppFlow::filterDomainDelete($Context, $Match[1], (int)$Match[2]);
+}
+return;
+}
+
+if (str_starts_with($Data, 'user_security_shield:')) {
+$Rest = substr($Data, strlen('user_security_shield:'));
+if (preg_match('/^[0-9]+$/D', $Rest) === 1) {
+UserFlow::securityShieldMenu($Context, (int)$Rest);
 }
 return;
 }

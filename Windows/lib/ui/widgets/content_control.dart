@@ -350,7 +350,7 @@ class _ContentControlCardState extends State<ContentControlCard> {
             icon: Icons.gpp_good_rounded,
             title: 'کنترل محتوا',
             subtitle: auth.signedIn
-                ? 'هر تغییر به صورت خودکار ذخیره و بی درنگ روی اتصال و ربات تلگرام اعمال می شود'
+                ? 'هر تغییر به صورت خودکار ذخیره و بی درنگ روی اتصال و ربات تلگرام اعمال می شود؛ مسدودسازی تبلیغات نیز همیشه فعال است'
                 : 'برای مدیریت و همگام سازی کنترل محتوا ابتدا وارد حساب کاربری خود شوید',
             trailing: Row(
               mainAxisSize: MainAxisSize.min,

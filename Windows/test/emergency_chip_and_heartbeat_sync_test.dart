@@ -161,7 +161,7 @@ void main() {
           'account': currentAccountPayload(),
           'filter': <String, dynamic>{
             'enabled': upgraded,
-            'categories': upgraded ? <String>['ads'] : <String>[],
+            'categories': upgraded ? <String>['gambling'] : <String>[],
           },
           'offers': <String, dynamic>{
             'free_available': false,
@@ -176,7 +176,7 @@ void main() {
           'account': currentAccountPayload(),
           'filter': <String, dynamic>{
             'enabled': upgraded,
-            'categories': upgraded ? <String>['ads'] : <String>[],
+            'categories': upgraded ? <String>['gambling'] : <String>[],
           },
           'offers': <String, dynamic>{
             'free_available': false,
@@ -211,7 +211,7 @@ void main() {
     expect(auth.account.packageDays, 30);
     expect(auth.account.emergencyEnabled, isTrue);
     expect(auth.filter.enabled, isTrue);
-    expect(auth.filter.categories, <String>['ads']);
+    expect(auth.filter.categories, <String>['gambling']);
     expect(subResyncs, 1);
   });
 

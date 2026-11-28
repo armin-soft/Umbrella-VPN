@@ -597,7 +597,7 @@ void main() {
           remoteDns: 'https://sky.rethinkdns.com/dns-query',
           contentFilter: const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads'],
+            categories: <String>['adult', 'gambling'],
             customDomains: <String>['blocked.example.com'],
             bypassDomains: <String>['direct-example.org'],
             bypassIran: true,
@@ -733,7 +733,7 @@ void main() {
           ),
           contentFilter: const FilterSettings(
             enabled: true,
-            categories: <String>['adult', 'gambling', 'ads'],
+            categories: <String>['adult', 'gambling'],
             customDomains: <String>[
               'https://www.My-Blocked-Site.TEST/path',
               'second-blocked.example',
@@ -1186,7 +1186,7 @@ void main() {
       final List<InterceptedBlockEvent> intercepted = <InterceptedBlockEvent>[];
       const FilterSettings filter = FilterSettings(
         enabled: true,
-        categories: <String>['adult', 'gambling', 'ads'],
+        categories: <String>['adult', 'gambling'],
         customDomains: <String>['my-blocked-site.test'],
       );
       final ContentBlockServer blockServer = ContentBlockServer(

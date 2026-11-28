@@ -67,6 +67,20 @@ class SecurityScannerController extends ChangeNotifier {
   /// کلیدهایی که اخیراً به سرور گزارش شده اند تا پیش از تغییر وضعیت تکرار نشوند.
   Set<String> _reportedActiveKeys = <String>{};
   bool _hasCompletedInitialScan = false;
+  bool _initialStateSynced = false;
+
+  Map<String, dynamic> buildSecurityStatePayload() {
+    final int scannedAt = _lastResult.scannedAtMs > 0
+        ? _lastResult.scannedAtMs
+        : (_lastScannedAt?.millisecondsSinceEpoch ?? 0);
+    return <String, dynamic>{
+      'security_status': _lastResult.hasThreats ? 'warning' : 'safe',
+      if (scannedAt > 0) 'scanned_at_ms': scannedAt,
+      'scanned_files': _lastResult.scannedFiles,
+      'scanned_apps': _lastResult.scannedApps,
+      'scanned_processes': _lastResult.scannedProcesses,
+    };
+  }
 
   bool get alwaysActive => true;
   bool get scanning => _scanning;
@@ -177,14 +191,13 @@ class SecurityScannerController extends ChangeNotifier {
             .listen(
           (FileSystemEvent event) {
             final String lower = event.path.toLowerCase();
-            if (lower.contains('umbrella') ||
-                lower.endsWith('.tmp') ||
+            if (lower.endsWith('.tmp') ||
                 lower.endsWith('.crdownload') ||
                 lower.endsWith('.part')) {
               return;
             }
             _watchDebounce?.cancel();
-            _watchDebounce = Timer(const Duration(milliseconds: 800), () {
+            _watchDebounce = Timer(const Duration(milliseconds: 500), () {
               unawaited(scanNow(silent: true));
             });
           },
@@ -241,12 +254,49 @@ class SecurityScannerController extends ChangeNotifier {
     return task;
   }
 
+  Future<void> _absorbPendingBackgroundEvents() async {
+    final List<Map<String, dynamic>> bgEvents =
+        await NativeBridge.consumePendingBackgroundSecurityEvents(_native);
+    if (bgEvents.isEmpty) return;
+    for (final Map<String, dynamic> raw in bgEvents) {
+      final String key = JsonX.text(raw['key']);
+      final String name = JsonX.text(raw['name']);
+      if (key.isEmpty || name.isEmpty) continue;
+      final bool alreadyRecorded = _neutralizedEvents.any(
+        (NeutralizedSecurityEvent e) =>
+            e.key == key &&
+            (e.timestampMs - JsonX.integer(raw['timestampMs'])).abs() < 5000,
+      );
+      if (alreadyRecorded) continue;
+      final bool syncedByBg = JsonX.boolean(raw['synced']);
+      final NeutralizedSecurityEvent event = NeutralizedSecurityEvent(
+        key: key,
+        name: name,
+        category: JsonX.text(raw['category'], 'malicious_download'),
+        severity: JsonX.text(raw['severity'], 'critical'),
+        target: JsonX.text(raw['target']),
+        detail: JsonX.text(raw['detail']),
+        action: JsonX.text(raw['action'], 'deleted'),
+        timestampMs: JsonX.integer(
+          raw['timestampMs'],
+          DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      _recordNeutralizedEvent(event, queueTelegram: !syncedByBg);
+      AppLogger.instance.add(
+        'سپر پس زمینه آمبرلا تهدید را خنثی کرد: $name',
+        level: 'warning',
+      );
+    }
+  }
+
   Future<SecurityScanResult> _performScan({required bool silent}) async {
     _scanning = true;
     if (!silent) {
       notifyListeners();
     }
     try {
+      await _absorbPendingBackgroundEvents();
       final SecurityScanResult rawResult = await _native.scanDeviceSecurity();
       return await _evaluateScanResult(rawResult, updateLastResult: true);
     } catch (error) {
@@ -588,10 +638,12 @@ class SecurityScannerController extends ChangeNotifier {
         currentKeys.any((String k) => !_reportedActiveKeys.contains(k));
     final List<NeutralizedSecurityEvent> pendingBatch =
         List<NeutralizedSecurityEvent>.from(_pendingNeutralizedForTelegram);
-    if (!hasNew && resolved.isEmpty && pendingBatch.isEmpty) {
+    final bool needInitialSync = !_initialStateSynced && _hasCompletedInitialScan;
+    if (!hasNew && resolved.isEmpty && pendingBatch.isEmpty && !needInitialSync) {
       return;
     }
 
+    final Map<String, dynamic> state = buildSecurityStatePayload();
     try {
       await auth.gateway.reportSecurityAlert(
         token: session.token,
@@ -602,8 +654,14 @@ class SecurityScannerController extends ChangeNotifier {
         neutralized: pendingBatch,
         resolvedKeys: resolved,
         syncAll: true,
+        securityStatus: state['security_status'] as String?,
+        scannedAtMs: state['scanned_at_ms'] as int?,
+        scannedFiles: state['scanned_files'] as int?,
+        scannedApps: state['scanned_apps'] as int?,
+        scannedProcesses: state['scanned_processes'] as int?,
       );
       _reportedActiveKeys = currentKeys;
+      _initialStateSynced = true;
       for (final NeutralizedSecurityEvent sent in pendingBatch) {
         _pendingNeutralizedForTelegram.remove(sent);
       }
@@ -614,6 +672,7 @@ class SecurityScannerController extends ChangeNotifier {
 
   void resetReportedCache() {
     _reportedActiveKeys = <String>{};
+    _initialStateSynced = false;
   }
 
   @override

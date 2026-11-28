@@ -205,6 +205,47 @@ class ServiceNotification(
             )
         }
 
+        fun showSecurityThreatBalloon(
+            context: Context,
+            title: String,
+            body: String,
+        ) {
+            if (!Settings.notificationsEnabled) return
+            ensureSecurityAlertChannel(context)
+            val cleanTitle = sanitizePersian(title).ifEmpty { "هشدار سپر امنیتی آمبرلا" }
+            val cleanBody = sanitizePersian(body).ifEmpty { "فایل آلوده شناسایی و پاکسازی شد." }
+            val openPending = PendingIntent.getActivity(
+                context,
+                4,
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK
+                },
+                pendingFlags,
+            )
+            val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.ic_notif_failed)
+            val builder = NotificationCompat.Builder(context, SECURITY_ALERT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_umbrella)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(cleanTitle)
+                .setContentText(cleanBody)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody))
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(false)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setTimeoutAfter(15000L)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_ERROR)
+                .setContentIntent(openPending)
+            if (largeIcon != null) {
+                builder.setLargeIcon(largeIcon)
+            }
+            UmbrellaApplication.notification.notify(
+                SECURITY_ALERT_NOTIFICATION_ID + 1,
+                builder.build(),
+            )
+        }
+
         fun cancelStandaloneBalloon() {
             runCatching {
                 UmbrellaApplication.notification.cancel(BALLOON_NOTIFICATION_ID)

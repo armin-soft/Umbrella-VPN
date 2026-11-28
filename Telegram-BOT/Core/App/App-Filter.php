@@ -24,7 +24,6 @@ private const GLOBAL_SETTINGS_KEY = 'App_Content_Filter_Global';
 public const BOT_CATEGORIES = [
 'adult' => 'محتوای بزرگسال',
 'gambling' => 'شرط بندی',
-'ads' => 'تبلیغات',
 ];
 
 public const CATEGORIES = [

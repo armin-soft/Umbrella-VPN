@@ -72,6 +72,11 @@ class MaliciousLinkGuard {
     'myprivate.pics',
     'photovault.pics',
     'imagevault.cloud',
+    'canarytokens.com',
+    'webhook.site',
+    'requestbin.net',
+    'pipedream.net',
+    'ngrok-free.app',
     'trojan-test.umbrella.invalid',
   };
 

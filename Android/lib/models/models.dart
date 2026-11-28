@@ -1138,13 +1138,11 @@ class FilterSettings {
   static const Map<String, String> categoryLabels = <String, String>{
     'adult': 'محتوای بزرگسال',
     'gambling': 'شرط بندی',
-    'ads': 'تبلیغات',
   };
 
   static const Map<String, String> categorySubtitles = <String, String>{
     'adult': 'مسدودسازی دامنه ها و سایت های بزرگسال',
     'gambling': 'مسدودسازی سایت های قمار و شرط بندی',
-    'ads': 'حذف تبلیغات مزاحم و ردیاب ها',
   };
 
   /// دامنه های زیرساخت خود آمبرلا که مسدودسازی آن ها همگام سازی فیلتر را قفل می کند.
@@ -2461,7 +2459,7 @@ class AppSettings {
     this.enableFakeDns = false,
     this.routingRegion = RoutingRegion.other,
     this.bypassLan = false,
-    this.blockAds = false,
+    this.blockAds = true,
     this.resolveDestination = false,
     this.blockQuic = false,
     this.tlsTricks = const TlsTricksSettings(),
@@ -2868,7 +2866,7 @@ class AppSettings {
         RoutingRegion.other,
       ),
       bypassLan: JsonX.boolean(json['bypassLan']),
-      blockAds: JsonX.boolean(json['blockAds']),
+      blockAds: true,
       resolveDestination: JsonX.boolean(json['resolveDestination']),
       blockQuic: JsonX.boolean(json['blockQuic']),
       tlsTricks: TlsTricksSettings.fromJson(JsonX.asMap(json['tlsTricks'])),

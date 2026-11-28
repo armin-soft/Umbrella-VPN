@@ -1137,7 +1137,6 @@ bool IsDangerousArchiveEntryName(const std::string& lower_name,
                                  bool is_office_openxml) {
   if (lower_name.empty()) return false;
   if (HasDoubleMasqueradeExtension(lower_name)) return true;
-  if (lower_name.find("umbrella") != std::string::npos) return false;
   if (MatchKnownThreatText(lower_name).matched) return true;
   if (is_office_openxml && lower_name.find("vbaproject.bin") != std::string::npos) {
     return true;
@@ -1206,11 +1205,9 @@ struct ScannedFileEntry {
 
 std::vector<ScanDirSpec> CandidateScanDirectories(bool quick) {
   std::vector<ScanDirSpec> dirs;
-  if (!quick) {
-    wchar_t temp[MAX_PATH * 2] = {0};
-    if (GetTempPathW(MAX_PATH * 2, temp) > 0) {
-      dirs.push_back(ScanDirSpec{std::wstring(temp), 1, 120});
-    }
+  wchar_t temp[MAX_PATH * 2] = {0};
+  if (GetTempPathW(MAX_PATH * 2, temp) > 0) {
+    dirs.push_back(ScanDirSpec{std::wstring(temp), 1, quick ? 80 : 160});
   }
   PWSTR downloads = nullptr;
   if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloads)) &&
@@ -1726,7 +1723,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
       const std::string fname = ToUtf8(fname_w);
       const std::string lower_fn = ToLowerAscii(fname);
       const std::string full = ToUtf8(wfull);
-      if (IsUmbrellaSafeBinary(full) || lower_fn.find("umbrella") != std::string::npos) {
+      if (IsUmbrellaSafeBinary(full)) {
         continue;
       }
       if (EndsWithCi(lower_fn, ".tmp") || EndsWithCi(lower_fn, ".crdownload") ||
@@ -2253,24 +2250,36 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
         }
 
         if (EndsWithCi(lower_fn, ".exe") || EndsWithCi(lower_fn, ".scr")) {
-          const PeHeuristicResult pe = AnalyzeFileHeuristics(wfull);
-          if (pe.suspicious && !VerifyAuthenticodeSignature(wfull)) {
-            const std::string sha = ComputeFileSha256(wfull);
-            SecurityThreatEntry item;
-            item.key = !sha.empty() ? ("heur:" + sha.substr(0, 16))
-                                    : ("heur:" + lower_fn);
-            item.name = "فایل مشکوک و پرخطر (" + fname + ")";
-            item.category = "malicious_download";
-            item.severity = "high";
-            item.target = full;
-            item.detail = pe.reason;
-            item.remediation_kind = "file";
-            item.path = full;
-            item.process_name = fname;
-            item.sha256 = sha;
-            item.signed_valid = false;
-            add_finding(std::move(item));
-            return false;
+          const bool looks_official_setup =
+              EndsWithCi(lower_fn, ".exe") &&
+              !HasDoubleMasqueradeExtension(lower_fn) &&
+              (lower_fn.rfind("umbrella-vpn-", 0) == 0 ||
+               lower_fn.rfind("umbrellavpn", 0) == 0) &&
+              lower_fn.find("setup") != std::string::npos &&
+              lower_fn.find("crack") == std::string::npos &&
+              lower_fn.find("patch") == std::string::npos &&
+              lower_fn.find("keygen") == std::string::npos &&
+              ToLowerAscii(company).find("armin") != std::string::npos;
+          if (!looks_official_setup) {
+            const PeHeuristicResult pe = AnalyzeFileHeuristics(wfull);
+            if (pe.suspicious && !VerifyAuthenticodeSignature(wfull)) {
+              const std::string sha = ComputeFileSha256(wfull);
+              SecurityThreatEntry item;
+              item.key = !sha.empty() ? ("heur:" + sha.substr(0, 16))
+                                      : ("heur:" + lower_fn);
+              item.name = "فایل مشکوک و پرخطر (" + fname + ")";
+              item.category = "malicious_download";
+              item.severity = "high";
+              item.target = full;
+              item.detail = pe.reason;
+              item.remediation_kind = "file";
+              item.path = full;
+              item.process_name = fname;
+              item.sha256 = sha;
+              item.signed_valid = false;
+              add_finding(std::move(item));
+              return false;
+            }
           }
         }
         return true;

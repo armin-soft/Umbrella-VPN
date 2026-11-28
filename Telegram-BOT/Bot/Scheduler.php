@@ -110,6 +110,7 @@ public static function tick(int $MinInterval = 60): void {
 $Now = time();
 
 try {
+self::checkPendingChannelJoins();
 $Last = (int)Repository::getSetting('Last_Scheduler_Tick', 0);
 }
 catch (Throwable) {
@@ -913,13 +914,58 @@ Repository::releaseCronLock('channel_membership');
 }
 
 public static function channelMembershipChanged(array $Update): void {
-$Channel = (string)BotConfig::getTelegramChannelId();
+$Channel = trim((string)BotConfig::getTelegramChannelId());
+$Channel_Url = BotConfig::getChannelUrl();
+$Channel_Name = self::extractChannelName($Channel_Url);
 $Member = $Update['chat_member'] ?? [];
-if ($Channel === '' || (string)($Member['chat']['id'] ?? '') !== $Channel) return;
+$Chat_Id = trim((string)($Member['chat']['id'] ?? ''));
+$Chat_User = strtolower(ltrim(trim((string)($Member['chat']['username'] ?? '')), '@'));
+$Id_Matches = $Channel !== '' && $Chat_Id !== '' && $Chat_Id === $Channel;
+$Name_Matches = $Channel_Name !== '' && $Chat_User !== '' && $Chat_User === strtolower($Channel_Name);
+if (!$Id_Matches && !$Name_Matches) return;
+
 $UserId = (int)($Member['new_chat_member']['user']['id'] ?? 0);
 if ($UserId <= 0) return;
-// Recheck through Telegram; do not trust a callback or a different channel.
-self::checkMembership($UserId, self::extractChannelName(BotConfig::getChannelUrl()), $Channel, Environment::getChannelGraceSeconds());
+
+$NewStatus = strtolower(trim((string)($Member['new_chat_member']['status'] ?? '')));
+$EffectiveChannel = $Channel !== '' ? $Channel : $Chat_Id;
+self::checkMembership($UserId, $Channel_Name, $EffectiveChannel, Environment::getChannelGraceSeconds());
+
+if (in_array($NewStatus, ['member', 'administrator', 'creator'], true)) {
+ChannelMembership::fulfillPendingJoin($UserId, true);
+}
+}
+
+private static function checkPendingChannelJoins(): void {
+if (!method_exists('ChannelMembership', 'pendingUserIds')) return;
+$Pending = ChannelMembership::pendingUserIds();
+if ($Pending === []) return;
+$Now = time();
+$Last = (int)Repository::getSetting('Last_Pending_Join_Check', 0);
+if ($Last > 0 && ($Now - $Last) < 15) return;
+if (!Repository::tryCronLock('pending_channel_joins', 30)) return;
+try {
+$Fresh = (int)Repository::getSetting('Last_Pending_Join_Check', 0);
+if ($Fresh > 0 && ($Now - $Fresh) < 15) return;
+Repository::setSetting('Last_Pending_Join_Check', (string)$Now);
+
+$Channel_Url = BotConfig::getChannelUrl();
+$Channel_Name = self::extractChannelName($Channel_Url);
+$Channel_ID = BotConfig::getTelegramChannelId();
+if ($Channel_Name === '' && $Channel_ID === '') return;
+
+foreach (array_slice($Pending, 0, 20) as $Uid) {
+$Uid = (int)$Uid;
+if ($Uid <= 0) continue;
+$Status = TelegramClient::channelMemberStatus($Uid, $Channel_Name, $Channel_ID);
+if ($Status === 'member') {
+ChannelMembership::fulfillPendingJoin($Uid, false);
+}
+}
+} catch (Throwable) {
+} finally {
+Repository::releaseCronLock('pending_channel_joins');
+}
 }
 
 private static function checkMembership(int $User_ID, string $Channel_Name, string $Channel_ID, int $Grace_Seconds): void {
@@ -951,6 +997,7 @@ $Is_Member = $Status === 'member';
 
 if ($Is_Member) {
 ChannelMembership::restore($User_ID);
+ChannelMembership::fulfillPendingJoin($User_ID, true);
 return;
 }
 
@@ -982,10 +1029,12 @@ self::sendChannelDisabledSms($User_ID, $Phone, $Channel_Url);
 }
 
 if ($Chat_ID > 0 && self::claimDaily('channel_disabled_tg', $User_ID)) {
+if (method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin($User_ID, $Chat_ID);
+}
 $Greeting = Common::greet(new Context([], $User_ID, $Chat_ID, $Full_Name, false, null, null, null, null), 'عضویت در کانال');
-TelegramClient::sendMessage($Chat_ID, "{$Greeting}⛔️مهلت عضویت شما به اتمام رسید.\n\n⚠️کلاینت شما به دلیل عدم عضویت در کانال اطلاع رسانی قطع گردید.\n👌جهت اتصال مجدد باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Chat_ID, "{$Greeting}⛔️مهلت عضویت شما به اتمام رسید.\n\n⚠️کلاینت شما به دلیل عدم عضویت در کانال اطلاع رسانی قطع گردید.\n✨جهت اتصال مجدد کافی است عضو کانال شوید؛ ربات خودش به صورت خودکار اتصال شما را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
-[['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
 Common::mainButton(),
 ]));
 }
@@ -1029,14 +1078,16 @@ self::sendChannelWarningSms($User_ID, $Phone, $Channel_Url, $Minutes);
 
 if ($Chat_ID <= 0) return;
 if (!self::claimDaily('channel_warn_tg', $User_ID)) return;
+if (method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin($User_ID, $Chat_ID);
+}
 $Greeting = Common::greet(new Context([], $User_ID, $Chat_ID, $Full_Name, false, null, null, null, null), 'عضویت در کانال');
 $Title = $First
 ? "⚠️شما از کانال اطلاع رسانی خارج شده اید."
 : "🔔یادآور: هنوز عضو کانال نشده اید.";
-$Body = "⚠️شما از کانال اطلاع رسانی خارج شده اید.\n🕒مهلت باقیمانده: *" . self::graceLabel(max(0, $Minutes) * 60) . "*\n⛔️در غیر این صورت کلاینت شما قطع می گردد.";
+$Body = "⚠️شما از کانال اطلاع رسانی خارج شده اید.\n🕒مهلت باقیمانده: *" . self::graceLabel(max(0, $Minutes) * 60) . "*\n⛔️در غیر این صورت کلاینت شما قطع می گردد.\n✨پس از عضویت مجدد، ربات خودکار عضویت شما را بررسی و وضعیت را عادی می کند.";
 TelegramClient::sendMessage($Chat_ID, $Greeting . $Title . "\n" . $Body . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
-[['text' => '✅بررسی عضویت', 'callback_data' => 'بررسی عضویت کانال']],
 Common::mainButton(),
 ]));
 }

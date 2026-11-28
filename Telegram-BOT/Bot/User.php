@@ -43,13 +43,19 @@ $Channel_Url = BotConfig::getChannelUrl();
 $Status = self::membershipStatus($Context->UserId);
 
 if (in_array($Status, ['unknown', 'unknown_participant'], true)) {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️در حال حاضر امکان بررسی عضویت در کانال وجود ندارد. لطفاً چند لحظه دیگر دوباره بررسی کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin($Context->UserId, $Context->ChatId);
+}
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️در حال حاضر امکان استعلام خودکار عضویت در کانال وجود ندارد.\n\n✨پس از عضویت در کانال، ربات به صورت خودکار عضویت شما را بررسی و دسترسی را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+[['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 ]));
 return;
 }
 
 if ($Status === 'member') {
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'clearPendingJoin')) {
+ChannelMembership::clearPendingJoin($Context->UserId);
+}
 self::registerNewUserFeedback($Context);
 $Welcome_Text = $Greeting . "🎉به ربات فیلترشکن آمبرلا خوش آمدید.\n👇برای دیدن خدمات ربات، دکمه زیر را بزنید:" . Helper::userFooter();
 TelegramClient::sendMessage($Context->ChatId, $Welcome_Text, TelegramClient::inlineKeyboard([
@@ -65,9 +71,11 @@ AppBotLink::resumePendingIfAny($Context);
 }
 
 else {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🔒برای استفاده از امکانات ربات باید ابتدا عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin($Context->UserId, $Context->ChatId);
+}
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🔒برای استفاده از امکانات ربات باید ابتدا عضو کانال شوید.\n\n✨پس از عضویت در کانال، نیازی به زدن دکمه بررسی نیست؛ ربات خودش به صورت خودکار دسترسی شما را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
-[['text' => '📢🔍بررسی عضویت در کانال', 'callback_data' => 'start']],
 ]));
 }
 }
@@ -77,23 +85,29 @@ if ($Context->CallbackId !== null) {
 TelegramClient::answerCallbackQuery($Context->CallbackId, '🔄در حال بررسی عضویت...', false);
 }
 
-$Greeting = Common::greet($Context, 'بررسی عضویت کانال');
+$Greeting = Common::greet($Context, 'عضویت در کانال');
 $Channel_Url = BotConfig::getChannelUrl();
 $Status = self::membershipStatus($Context->UserId);
 $Is_Member = $Status === 'member';
 
 if (in_array($Status, ['unknown', 'unknown_participant'], true)) {
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️در حال حاضر امکان بررسی عضویت در کانال وجود ندارد. لطفاً چند لحظه دیگر دوباره بررسی کنید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
-[['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin($Context->UserId, $Context->ChatId);
+}
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️در حال حاضر امکان استعلام خودکار عضویت در کانال وجود ندارد.\n\n✨پس از عضویت در کانال، ربات به صورت خودکار عضویت شما را بررسی و دسترسی را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+[['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 ]));
 return;
 }
 
 if ($Is_Member) {
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'clearPendingJoin')) {
+ChannelMembership::clearPendingJoin($Context->UserId);
+}
 $Result = ChannelMembership::restore($Context->UserId);
 $Notice = match ($Result) {
 'restored' => '✅عضویت تأیید و کلاینت دوباره فعال شد.',
-'pending' => '⚠️عضویت تأیید شد، اما فعال سازی هنوز موفق نشده؛ دوباره تلاش کنید. بررسی خودکار نیز تکرار می شود.',
+'pending' => '⚠️عضویت تأیید شد، اما فعال سازی هنوز موفق نشده؛ بررسی خودکار تکرار می شود.',
 'ineligible' => '✅عضویت تأیید شد؛ اشتراک منقضی یا محدودیت دیگری مانع فعال سازی خودکار است. با پشتیبانی تماس بگیرید.',
 default => '✅عضویت شما در کانال تأیید گردید.',
 };
@@ -108,11 +122,73 @@ AppBotLink::resumePendingIfAny($Context);
 return;
 }
 
-$Minutes = (int)ceil(Environment::getChannelGraceSeconds() / 60);
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما عضو کانال اطلاع رسانی نیستید.\n\n🔒برای استفاده از امکانات ربات باید عضو کانال شوید." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'markPendingJoin')) {
+ChannelMembership::markPendingJoin($Context->UserId, $Context->ChatId);
+}
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}⚠️شما هنوز عضو کانال اطلاع رسانی نیستید.\n\n🔒پس از عضویت در کانال، ربات به صورت خودکار دسترسی شما را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
-[['text' => '✅بررسی مجدد عضویت', 'callback_data' => 'بررسی عضویت کانال']],
 ]));
+}
+
+public static function onAutoChannelJoinedById(int $UserId, int $ChatId = 0, string $FullName = ''): void {
+if ($UserId <= 0) return;
+try {
+$User = Repository::getUser($UserId);
+if (($User['Registered_At'] ?? null) === null) {
+if (method_exists(Repository::class, 'touchUserTime')) {
+Repository::touchUserTime($UserId, 'Registered_At');
+}
+$UUID = trim((string)($User['Client_ID'] ?? ''));
+if ($UUID === '') {
+$Phone = method_exists('Helper', 'normalizePhone')
+? Helper::normalizePhone((string)($User['Phone'] ?? ''))
+: trim((string)($User['Phone'] ?? ''));
+if ($Phone !== '' && class_exists('PanelClient') && method_exists('PanelClient', 'findByPhone')) {
+try {
+$Account = PanelClient::findByPhone($Phone);
+$UUID = trim((string)($Account['uuid'] ?? ''));
+if ($UUID !== '') {
+Repository::updateUser($UserId, ['Client_ID' => $UUID]);
+}
+} catch (Throwable) {}
+}
+}
+if ($UUID !== '' && $UUID !== '_' && class_exists('PanelClient')) {
+try {
+$Current = PanelClient::get($UUID);
+if (is_array($Current) && (string)($Current['telegram_id'] ?? '') !== (string)$UserId) {
+PanelClient::update($UUID, ['telegram_id' => (string)$UserId]);
+}
+} catch (Throwable) {}
+}
+$Admin = (int)Repository::getSetting('Administrator', (string)Environment::getAdminUserId());
+if ($Admin > 0) {
+$Display = trim($FullName) !== '' ? $FullName : (trim((string)($User['Full_Name'] ?? ($User['First_Name'] ?? 'کاربر'))) ?: 'کاربر');
+try {
+TelegramClient::sendSystemMessage(
+$Admin,
+Helper::adminGreetingNamed(
+(string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName()),
+'کاربران جدید',
+$Admin
+) . "✅لحظاتی پیش کاربر جدیدی عضو ربات گردید.\n\n👤نام: "
+. "[" . $Display . "](tg://user?id=" . $UserId . ")\n🆔آیدی عددی: `"
+. Helper::toPersian((int)$UserId) . "`"
+. Helper::adminFooter()
+);
+} catch (Throwable) {}
+}
+}
+if (!class_exists('AppBotLink')) {
+$AppLinkPath = __DIR__ . '/../Core/App/App-Bot-Link.php';
+if (is_file($AppLinkPath)) require_once $AppLinkPath;
+}
+if (class_exists('AppBotLink') && method_exists('AppBotLink', 'resumePendingById')) {
+AppBotLink::resumePendingById($UserId, $ChatId > 0 ? $ChatId : $UserId, $FullName);
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][AutoJoin] ' . $Error->getMessage());
+}
 }
 
 public static function membershipStatus(int $UserId): string {
@@ -128,13 +204,15 @@ public static function checkChannelMembershipCached(int $UserId): bool {
 $User = Repository::getUser($UserId);
 $Client_ID = trim((string)($User['Client_ID'] ?? ''));
 $Has_Client = $Client_ID !== '' && $Client_ID !== '_';
+$Has_Pending = class_exists('ChannelMembership') && method_exists('ChannelMembership', 'isPendingJoin')
+&& ChannelMembership::isPendingJoin($UserId);
 
-if (!$Has_Client) return true;
+if (!$Has_Client && !$Has_Pending) return true;
 $Last_Check = (int)($User['Channel_Member_Check_At'] ?? 0);
 $Grace_Started_At = (int)($User['Channel_Grace_Started_At'] ?? 0);
 $Is_Disabled = (int)($User['Channel_Client_Disabled_At'] ?? 0) > 0;
 $TTL = 1800;
-$Should_Call = $Last_Check <= 0 || (time() - $Last_Check) >= $TTL || $Grace_Started_At > 0 || $Is_Disabled;
+$Should_Call = $Last_Check <= 0 || (time() - $Last_Check) >= $TTL || $Grace_Started_At > 0 || $Is_Disabled || $Has_Pending;
 
 if (!$Should_Call) return true;
 $Status = self::membershipStatus($UserId);
@@ -145,15 +223,20 @@ return true;
 }
 
 if ($Status === 'not_member') {
+if ($Has_Client) {
 $Grace_Started_At = (int)($User['Channel_Grace_Started_At'] ?? 0);
 
 if ($Grace_Started_At <= 0) {
 Repository::updateUser($UserId, ['Channel_Grace_Started_At' => time()]);
 }
+}
 
 return false;
 }
 
+if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'clearPendingJoin')) {
+ChannelMembership::clearPendingJoin($UserId);
+}
 ChannelMembership::restore($UserId);
 return true;
 }
@@ -291,7 +374,10 @@ return;
 
 $User = Repository::getUser($Context->UserId) ?? [];
 $Has_Active_Sub = self::hasActiveMenuSubscription($User);
-$Text = Common::greet($Context, 'منوی خدمات ربات') . "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
+$Shield_Info = self::securityShieldServiceInfo($Context->UserId, $User);
+$Text = Common::greet($Context, 'منوی خدمات ربات')
+. ($Shield_Info !== null ? ("\n" . $Shield_Info['summary'] . "\n") : '')
+. "\n📌*بخش مورد نظر را انتخاب کنید:*" . Helper::userFooter();
 $Raw_Rows = [];
 if (!$Has_Active_Sub) {
 $Raw_Rows[] = [['💎مدیریت اشتراک', 'user_subscriptions_menu']];
@@ -305,6 +391,10 @@ $Raw_Rows = array_merge($Raw_Rows, [
 [['🎫پشتیبانی', 'منوی پشتیبانی']],
 [['🔄تغییرات نسخه', 'تغییرات نسخه']],
 ]);
+if ($Shield_Info !== null) {
+$Insert_Pos = $Has_Active_Sub ? 2 : 3;
+array_splice($Raw_Rows, $Insert_Pos, 0, [[$Shield_Info['button']]]);
+}
 $Menu_Rows = Menu::rows($Raw_Rows);
 $Keyboard = TelegramClient::inlineKeyboard($Menu_Rows);
 
@@ -1569,6 +1659,376 @@ Menu::rows([
 [Menu::back('منوی قبلی', 'user_stats_menu'), Menu::userHome()]
 );
 TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Markup));
+}
+
+/**
+ * فهرست دستگاه های نصب شده و متصل کاربر در نرم افزار ویندوز یا اپلیکیشن اندروید.
+ * در تست های فاقد دیتابیس یا کاربرانی که هنوز اپ را نصب نکرده اند، آرایه خالی برمی گرداند.
+ *
+ * @return list<array<string, mixed>>
+ */
+public static function installedAppDevices(int $UserId, ?array $User = null): array {
+if ($UserId <= 0 || !class_exists('Database') || !method_exists('Database', 'getInstance')) {
+return [];
+}
+try {
+$Db = Database::getInstance();
+if (!is_object($Db) || !method_exists($Db, 'fetchAll')) {
+return [];
+}
+$User ??= (Repository::getUser($UserId) ?? []);
+$Uuid = trim((string)($User['Client_ID'] ?? ''));
+if ($Uuid === '_') $Uuid = '';
+$Raw_Phone = (string)($User['Phone'] ?? '');
+$Phone = method_exists('Helper', 'normalizePhone')
+? Helper::normalizePhone($Raw_Phone)
+: trim($Raw_Phone);
+
+$Where = ['`Telegram_ID` = ?'];
+$Params = [$UserId];
+if ($Uuid !== '') {
+$Where[] = '`User_UUID` = ?';
+$Params[] = $Uuid;
+}
+$Rows = $Db->fetchAll(
+'SELECT `ID`, `Device_ID`, `Device_Name`, `Platform`, `App_Version`, `User_UUID`, `Telegram_ID`, `Phone`, `Last_Seen_At`, `Is_Trusted`
+FROM `App_Devices`
+WHERE (' . implode(' OR ', $Where) . ')
+ORDER BY `Is_Trusted` DESC, `Last_Seen_At` DESC, `ID` DESC',
+$Params
+);
+if ((!is_array($Rows) || $Rows === []) && $Phone !== '') {
+$Rows = $Db->fetchAll(
+'SELECT `ID`, `Device_ID`, `Device_Name`, `Platform`, `App_Version`, `User_UUID`, `Telegram_ID`, `Phone`, `Last_Seen_At`, `Is_Trusted`
+FROM `App_Devices`
+WHERE `Phone` = ? AND (`Telegram_ID` IS NULL OR `Telegram_ID` = 0 OR `Telegram_ID` = ?)
+ORDER BY `Is_Trusted` DESC, `Last_Seen_At` DESC, `ID` DESC',
+[$Phone, $UserId]
+);
+}
+if (!is_array($Rows) || $Rows === []) {
+return [];
+}
+$Out = [];
+$Seen = [];
+foreach ($Rows as $Row) {
+if (!is_array($Row)) continue;
+$Device_Id = trim((string)($Row['Device_ID'] ?? ''));
+if ($Device_Id === '' || isset($Seen[$Device_Id])) continue;
+$Row_Tg = (int)($Row['Telegram_ID'] ?? 0);
+$Row_Uuid = trim((string)($Row['User_UUID'] ?? ''));
+$Row_Phone = method_exists('Helper', 'normalizePhone')
+? Helper::normalizePhone((string)($Row['Phone'] ?? ''))
+: trim((string)($Row['Phone'] ?? ''));
+$Owned = ($Row_Tg > 0 && $Row_Tg === $UserId)
+|| ($Uuid !== '' && $Row_Uuid !== '' && $Row_Uuid === $Uuid)
+|| ($Row_Tg <= 0 && $Phone !== '' && $Row_Phone === $Phone);
+if (!$Owned) continue;
+$Platform = trim((string)($Row['Platform'] ?? ''));
+if ($Platform === '' && trim((string)($Row['Device_Name'] ?? '')) === '') continue;
+$Seen[$Device_Id] = true;
+$Out[] = $Row;
+}
+return $Out;
+} catch (Throwable) {
+return [];
+}
+}
+
+/** @return ?array{button: array{0: string, 1: string}, summary: string, active_count: int, cleaned_count: int, device_count: int} */
+private static function securityShieldServiceInfo(int $UserId, array $User): ?array {
+$Devices = self::installedAppDevices($UserId, $User);
+if ($Devices === []) return null;
+
+$Device_Ids = array_values(array_filter(array_map(
+static fn(array $D): string => trim((string)($D['Device_ID'] ?? '')),
+$Devices
+)));
+$Active = 0;
+$Cleaned = 0;
+try {
+$Db = Database::getInstance();
+if ($Device_Ids !== [] && method_exists($Db, 'fetchAll')) {
+$Marks = implode(',', array_fill(0, count($Device_Ids), '?'));
+$Counts = $Db->fetchAll(
+"SELECT `Resolved`, COUNT(*) AS `Cnt` FROM `App_Security_Alerts` WHERE `Device_ID` IN ({$Marks}) GROUP BY `Resolved`",
+$Device_Ids
+);
+if (is_array($Counts)) {
+foreach ($Counts as $Row) {
+$Count = (int)($Row['Cnt'] ?? 0);
+if ((int)($Row['Resolved'] ?? 0) === 0) {
+$Active += $Count;
+} else {
+$Cleaned += $Count;
+}
+}
+}
+}
+} catch (Throwable) {}
+
+$Dev_Fa = Helper::toPersian((string)count($Devices));
+$Act_Fa = Helper::toPersian((string)$Active);
+$Clean_Fa = Helper::toPersian((string)$Cleaned);
+if ($Active > 0) {
+$Button = ["⚠️سپر امنیتی ({$Act_Fa} هشدار)", 'user_security_shield'];
+$Summary = "🛡 <b>وضعیت سپر امنیتی:</b> ⚠️ {$Act_Fa} تهدید نیازمند بررسی روی {$Dev_Fa} دستگاه";
+} else {
+$Button = ['🛡سپر امنیتی دستگاه (🟢ایمن)', 'user_security_shield'];
+$Summary = $Cleaned > 0
+? "🛡 <b>وضعیت سپر امنیتی:</b> 🟢 ایمن ({$Dev_Fa} دستگاه تحت حفاظت · {$Clean_Fa} مورد پاکسازی شده)"
+: "🛡 <b>وضعیت سپر امنیتی:</b> 🟢 ایمن و فعال در پس زمینه ({$Dev_Fa} دستگاه تحت حفاظت)";
+}
+return [
+'button' => $Button,
+'summary' => $Summary,
+'active_count' => $Active,
+'cleaned_count' => $Cleaned,
+'device_count' => count($Devices),
+];
+}
+
+private static function securityStateForDevice(string $Device_Id): array {
+if ($Device_Id === '' || !method_exists(Repository::class, 'getSetting')) return [];
+try {
+$Raw = trim((string)Repository::getSetting('App_Security_State_' . sha1($Device_Id), ''));
+if ($Raw === '') return [];
+$Decoded = json_decode($Raw, true);
+return is_array($Decoded) ? $Decoded : [];
+} catch (Throwable) {
+return [];
+}
+}
+
+private static function formatSecurityTimeLabel(mixed $Raw_Ts): string {
+if (is_int($Raw_Ts) || (is_string($Raw_Ts) && ctype_digit($Raw_Ts))) {
+$Ts = (int)$Raw_Ts;
+if ($Ts > 1000000000000) $Ts = intdiv($Ts, 1000);
+if ($Ts > 0) {
+if (method_exists('Helper', 'formatPersianDate')) {
+return (string)Helper::formatPersianDate($Ts, true);
+}
+return Helper::toPersian(gmdate('Y-m-d H:i', $Ts));
+}
+}
+$Text = trim((string)$Raw_Ts);
+if ($Text !== '') {
+return method_exists('Helper', 'formatDateTimeText')
+? (string)Helper::formatDateTimeText($Text)
+: Helper::toPersian($Text);
+}
+return 'ثبت نشده';
+}
+
+private static function securityCategoryFa(string $Category): string {
+return match (strtolower(trim($Category))) {
+'conflicting_vpn' => 'فیلترشکن ناسازگار',
+'adware' => 'تبلیغ افزار مزاحم',
+'suspicious' => 'فایل یا فعالیت مشکوک',
+'malicious_download' => 'فایل یا مدیای مخرب',
+'malicious_link' => 'لینک تروجانی / فیشینگ',
+default => 'ویروس / بدافزار / تروجان',
+};
+}
+
+/** نمایش صفحه وضعیت سپر امنیتی و گزارش مرتب موارد شناسایی و حذف شده کاربر. */
+public static function securityShieldMenu(Context $Context, int $Page = 0): void {
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+TelegramClient::sendChatAction($Context->ChatId);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '🛡در حال دریافت گزارش سپر امنیتی...', false);
+}
+
+$Esc = static fn(string $Value): string => htmlspecialchars(
+str_replace(['*', '`', '[', ']'], ['＊', '｀', '［', '］'], $Value),
+ENT_QUOTES | ENT_SUBSTITUTE,
+'UTF-8'
+);
+
+$User = Repository::getUser($Context->UserId) ?? [];
+$Devices = self::installedAppDevices($Context->UserId, $User);
+$Greeting = Common::greet($Context, 'سپر امنیتی دستگاه');
+
+if ($Devices === []) {
+$EmptyText = $Greeting
+. "🛡 <b>سپر امنیتی آمبرلا</b>\n"
+. "➖➖➖➖➖➖➖➖➖\n"
+. "ℹ️ هنوز نرم افزار ویندوز یا اپلیکیشن اندرویدی به حساب شما متصل نشده است.\n"
+. "پس از نصب و ورود در برنامه آمبرلا، وضعیت سپر امنیتی دستگاه ها و گزارش پاکسازی بدافزارها به صورت خودکار اینجا نمایش داده می شود."
+. Helper::userFooter();
+TelegramClient::editOrSendMessage(
+$Context->ChatId,
+$Context->MessageId,
+$EmptyText,
+TelegramClient::inlineKeyboard([
+[['text' => '🖥️دانلود نرم افزار / اپلیکیشن', 'callback_data' => 'app_download_menu']],
+Menu::userHome(),
+])
+);
+return;
+}
+
+$Device_By_Id = [];
+foreach ($Devices as $Dev) {
+$Id = trim((string)($Dev['Device_ID'] ?? ''));
+if ($Id !== '') $Device_By_Id[$Id] = $Dev;
+}
+$Device_Ids = array_keys($Device_By_Id);
+
+$All_Alerts = [];
+try {
+$Db = Database::getInstance();
+if ($Device_Ids !== [] && method_exists($Db, 'fetchAll')) {
+$Marks = implode(',', array_fill(0, count($Device_Ids), '?'));
+$Rows = $Db->fetchAll(
+"SELECT `ID`, `Device_ID`, `Threat_Key`, `Threat_Name`, `Category`, `Severity`, `Target`, `First_Detected_At`, `Last_Detected_At`, `Hit_Count`, `Resolved`
+FROM `App_Security_Alerts`
+WHERE `Device_ID` IN ({$Marks})
+ORDER BY `Resolved` ASC, `Last_Detected_At` DESC, `ID` DESC",
+$Device_Ids
+);
+if (is_array($Rows)) $All_Alerts = $Rows;
+}
+} catch (Throwable) {}
+
+$Active_Alerts = [];
+$Resolved_Alerts = [];
+$Active_By_Dev = [];
+$Cleaned_By_Dev = [];
+foreach ($All_Alerts as $Alert) {
+if (!is_array($Alert)) continue;
+$Dev_Id = trim((string)($Alert['Device_ID'] ?? ''));
+if ($Dev_Id === '' || !isset($Device_By_Id[$Dev_Id])) continue;
+if ((int)($Alert['Resolved'] ?? 0) === 0) {
+$Active_Alerts[] = $Alert;
+$Active_By_Dev[$Dev_Id] = ($Active_By_Dev[$Dev_Id] ?? 0) + 1;
+} else {
+$Resolved_Alerts[] = $Alert;
+$Cleaned_By_Dev[$Dev_Id] = ($Cleaned_By_Dev[$Dev_Id] ?? 0) + 1;
+}
+}
+
+$Total_Active = count($Active_Alerts);
+$Total_Cleaned = count($Resolved_Alerts);
+
+$Lines = [
+$Greeting . '🛡 <b>وضعیت سپر امنیتی دستگاه ها</b>',
+'➖➖➖➖➖➖➖➖➖',
+'🚦 <b>وضعیت کلی:</b> ' . ($Total_Active > 0
+? ('⚠️ دارای <b>' . Helper::toPersian((string)$Total_Active) . '</b> مورد نیازمند بررسی')
+: '🟢 <b>دستگاه ها ایمن هستند</b> (پایش پیوسته پس زمینه فعال)'),
+'🧹 <b>کل موارد خنثی و حذف شده:</b> ' . Helper::toPersian((string)$Total_Cleaned) . ' مورد',
+'',
+'💻 <b>دستگاه های تحت حفاظت:</b>',
+];
+
+foreach ($Devices as $Idx => $Dev) {
+$Dev_Id = trim((string)($Dev['Device_ID'] ?? ''));
+$Plat_Raw = (string)($Dev['Platform'] ?? '');
+$Plat_Label = method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($Plat_Raw) : ($Plat_Raw !== '' ? $Plat_Raw : 'دستگاه');
+$Plat_Icon = str_contains(strtolower($Plat_Raw), 'android') ? '📱' : '💻';
+$Name = trim((string)($Dev['Device_Name'] ?? '')) ?: 'دستگاه آمبرلا';
+$Ver = trim((string)($Dev['App_Version'] ?? ''));
+$Dev_Active = (int)($Active_By_Dev[$Dev_Id] ?? 0);
+$Dev_Cleaned = (int)($Cleaned_By_Dev[$Dev_Id] ?? 0);
+$State = self::securityStateForDevice($Dev_Id);
+$Badge = $Dev_Active > 0
+? ('⚠️ ' . Helper::toPersian((string)$Dev_Active) . ' هشدار فعال')
+: '🟢 ایمن';
+
+$Lines[] = Helper::toPersian((string)($Idx + 1)) . ') ' . $Plat_Icon . ' <b>' . $Esc($Name) . '</b> (' . $Esc($Plat_Label) . ($Ver !== '' ? ' · نسخه ' . $Esc(Helper::toPersian($Ver)) : '') . ')';
+$Lines[] = '   ├─ وضعیت سپر: <b>' . $Badge . '</b> | پاکسازی شده: <b>' . Helper::toPersian((string)$Dev_Cleaned) . '</b>';
+
+$Scan_Ts = $State['scanned_at_ms'] ?? ($Dev['Last_Seen_At'] ?? '');
+$Scan_Label = self::formatSecurityTimeLabel($Scan_Ts);
+$Scanned_Files = (int)($State['scanned_files'] ?? 0);
+$Scanned_Apps = (int)($State['scanned_apps'] ?? 0);
+$Scanned_Procs = (int)($State['scanned_processes'] ?? 0);
+if ($Scanned_Files > 0 || $Scanned_Apps > 0 || $Scanned_Procs > 0) {
+$Stat_Parts = [];
+if ($Scanned_Procs > 0) $Stat_Parts[] = Helper::toPersian((string)$Scanned_Procs) . ' پردازش';
+if ($Scanned_Apps > 0) $Stat_Parts[] = Helper::toPersian((string)$Scanned_Apps) . ' برنامه';
+if ($Scanned_Files > 0) $Stat_Parts[] = Helper::toPersian((string)$Scanned_Files) . ' فایل/مدیا';
+$Lines[] = '   ├─ آخرین پایش: ' . $Esc($Scan_Label);
+$Lines[] = '   └─ محدوده اسکن شده: ' . implode(' · ', $Stat_Parts);
+} else {
+$Lines[] = '   └─ آخرین پایش: ' . $Esc($Scan_Label);
+}
+}
+
+if ($Active_Alerts !== []) {
+$Lines[] = '';
+$Lines[] = '🚨 <b>تهدیدات فعال نیازمند اقدام:</b>';
+foreach (array_slice($Active_Alerts, 0, 5) as $Item) {
+$Dev_Name = trim((string)($Device_By_Id[(string)$Item['Device_ID']]['Device_Name'] ?? 'دستگاه'));
+$Cat_Fa = self::securityCategoryFa((string)($Item['Category'] ?? 'malware'));
+$Target = trim((string)($Item['Target'] ?? ''));
+$Lines[] = '• ⚠️ <b>' . $Esc((string)($Item['Threat_Name'] ?? 'تهدید امنیتی')) . '</b>';
+$Lines[] = '  ├─ دسته: ' . $Cat_Fa . ' | دستگاه: ' . $Esc($Dev_Name);
+$Lines[] = '  ├─ زمان: ' . $Esc(self::formatSecurityTimeLabel($Item['Last_Detected_At'] ?? 0));
+if ($Target !== '') {
+$Lines[] = '  └─ مسیر: <code>' . $Esc(mb_substr($Target, 0, 110)) . '</code>';
+}
+}
+if (count($Active_Alerts) > 5) {
+$Lines[] = '… و ' . Helper::toPersian((string)(count($Active_Alerts) - 5)) . ' مورد فعال دیگر در لیست برنامه.';
+}
+}
+
+$Lines[] = '';
+$Per_Page = 5;
+$Page_Count = max(1, (int)ceil($Total_Cleaned / $Per_Page));
+$Page = max(0, min($Page, $Page_Count - 1));
+$Slice = array_slice($Resolved_Alerts, $Page * $Per_Page, $Per_Page);
+
+$Lines[] = '📋 <b>گزارش موارد شناسایی، مسدود و حذف شده سپر امنیتی:</b>';
+if ($Page_Count > 1) {
+$Lines[] = '📄 صفحه ' . Helper::toPersian((string)($Page + 1)) . ' از ' . Helper::toPersian((string)$Page_Count);
+}
+
+if ($Slice === []) {
+$Lines[] = '✅ تاکنون هیچ فایل ویروسی، تروجان، بدافزار یا لینک مخربی روی دستگاه های شما یافت نشده است؛ سپر امنیتی آمبرلا به صورت پیوسته در پس زمینه فعال است.';
+} else {
+$Offset = $Page * $Per_Page;
+foreach ($Slice as $Pos => $Item) {
+$Num = Helper::toPersian((string)($Offset + $Pos + 1));
+$Cat = strtolower(trim((string)($Item['Category'] ?? 'malware')));
+$Cat_Fa = self::securityCategoryFa($Cat);
+$Action_Label = match ($Cat) {
+'malicious_link' => '🚫 مسدودسازی لینک/اتصال مخرب',
+'malicious_download' => '🗑 حذف خودکار فایل/مدیای آلوده',
+default => '✅ شناسایی و برطرف سازی تهدید',
+};
+$Dev_Name = trim((string)($Device_By_Id[(string)$Item['Device_ID']]['Device_Name'] ?? 'دستگاه'));
+$Target = trim((string)($Item['Target'] ?? ''));
+$Hits = max(1, (int)($Item['Hit_Count'] ?? 1));
+$When = self::formatSecurityTimeLabel($Item['Last_Detected_At'] ?? 0);
+
+$Lines[] = $Num . ') <b>' . $Action_Label . '</b>';
+$Lines[] = '   ├─ عنوان: ' . $Esc((string)($Item['Threat_Name'] ?? 'تهدید'));
+$Lines[] = '   ├─ دسته: ' . $Cat_Fa . ' | دستگاه: ' . $Esc($Dev_Name);
+$Lines[] = '   ├─ زمان: ' . $Esc($When) . ' (تعداد رصد: ' . Helper::toPersian((string)$Hits) . ')';
+if ($Target !== '') {
+$Lines[] = '   └─ مسیر/نشانی: <code>' . $Esc(mb_substr($Target, 0, 120)) . '</code>';
+} else {
+$Lines[] = '   └─ وضعیت: برطرف شده و ایمن';
+}
+}
+}
+
+$Lines[] = '';
+$Lines[] = 'ℹ️ پایش پس زمینه در ویندوز و اندروید به صورت خودکار فعال است و هر فایل یا مدیای دریافتی را پیش از باز شدن بررسی می کند.';
+
+$Text = implode("\n", $Lines) . Helper::userFooter();
+$Rows = [];
+if ($Page_Count > 1) {
+$Rows = array_merge($Rows, Menu::pages($Page, $Page_Count, 'user_security_shield:'));
+}
+$Rows[] = [['text' => '🔄بروزرسانی وضعیت و گزارش', 'callback_data' => 'user_security_shield:' . $Page]];
+$Rows[] = Menu::userHome();
+
+TelegramClient::editOrSendMessage($Context->ChatId, $Context->MessageId, $Text, TelegramClient::inlineKeyboard($Rows));
 }
 
 

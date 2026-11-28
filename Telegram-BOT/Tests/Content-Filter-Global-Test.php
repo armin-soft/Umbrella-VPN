@@ -91,8 +91,9 @@ $Check(!in_array('global.example', $Personal_After['custom_domains'], true), 'ad
 $Check(in_array('new-personal.example', $Personal_After['custom_domains'], true), 'app can still save personal domains');
 $Check(in_array('adult', $Saved['categories'], true) && in_array('global.example', $Saved['custom_domains'], true), 'saved response still enforces global policy');
 
-// The Windows UI exposes only the three bot categories, so mimic its model
-// dropping a legacy category from both the effective list and personal snapshot.
+// The Windows UI and bot expose only the two bot categories (`adult`, `gambling`),
+// so mimic its model dropping legacy/removed categories from both views.
+$Check(!array_key_exists('ads', AppFilter::BOT_CATEGORIES), 'ads is removed from BOT_CATEGORIES because ad blocking is always active');
 $Windows_View = AppFilter::loadEffective('account-one');
 $Windows_View['categories'] = array_values(array_intersect($Windows_View['categories'], array_keys(AppFilter::BOT_CATEGORIES)));
 $Windows_View['personal']['categories'] = array_values(array_intersect($Windows_View['personal']['categories'], array_keys(AppFilter::BOT_CATEGORIES)));

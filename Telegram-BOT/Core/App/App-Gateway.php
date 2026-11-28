@@ -344,7 +344,14 @@ $Linked_Telegram = (int)($Row['Telegram_ID'] ?? 0);
 if ($Linked_Telegram <= 0) {
 $Linked_Telegram = (int)(Repository::findUserByPhone($Phone)['Telegram_ID'] ?? 0);
 }
-$Account = self::resolveAccount($Phone, trim((string)($Row['Full_Name'] ?? '')), $Linked_Telegram);
+$Device_Meta = [
+'device_id' => trim((string)($Row['Device_ID'] ?? '')),
+'device_name' => trim((string)($Row['Device_Name'] ?? '')),
+'platform' => trim((string)($Row['Platform'] ?? '')),
+'app_version' => trim((string)($Row['App_Version'] ?? '')),
+'ip' => trim((string)($Row['IP'] ?? self::clientIp())),
+];
+$Account = self::resolveAccount($Phone, trim((string)($Row['Full_Name'] ?? '')), $Linked_Telegram, $Device_Meta);
 $UUID = trim((string)($Account['uuid'] ?? ''));
 
 if ($UUID === '') {
@@ -961,6 +968,7 @@ $Payload['offers'] = self::offersPayload($UUID, $LinkedTg, $PanelAccount);
 if (isset($Body['activity'])) {
 $Payload['activity_stored'] = self::storeActivity($DeviceId, $UUID, $LinkedTg, $Body);
 }
+self::storeSecurityDeviceState($DeviceId, $Body);
 self::ok($Payload);
 }
 
@@ -2524,6 +2532,7 @@ $DeviceName = trim((string)($DeviceRow['Device_Name'] ?? ''));
 if ($Platform === '' && $DeviceRow !== null) {
 $Platform = trim((string)($DeviceRow['Platform'] ?? ''));
 }
+self::storeSecurityDeviceState($EffectiveDeviceId, $Payload);
 
 $Now = time();
 $Cooldown = 86400; // 24 hours per active threat key per device to prevent spam
@@ -2804,7 +2813,10 @@ $MsgLines[] = '🔒 برای محافظت از امنیت حساب و جلوگی
 
 $Message = implode("\n", $MsgLines);
 try {
-if (TelegramClient::sendReadableMessage($ChatId, null, $Message, TelegramClient::inlineKeyboard([Menu::userHome()]))) {
+if (TelegramClient::sendReadableMessage($ChatId, null, $Message, TelegramClient::inlineKeyboard([
+[['text' => '🛡گزارش کامل سپر امنیتی', 'callback_data' => 'user_security_shield']],
+Menu::userHome(),
+]))) {
 $Notified = true;
 }
 } catch (Throwable $Error) {
@@ -2983,7 +2995,7 @@ return true;
 }
 
 /** Finds the panel account for a phone, creating one when the person is new. */
-private static function resolveAccount(string $Phone, string $Full_Name, int $Telegram_Id = 0): array {
+private static function resolveAccount(string $Phone, string $Full_Name, int $Telegram_Id = 0, array $Device_Meta = []): array {
 [$Account] = self::findCustomerAccount($Phone);
 
 if (is_array($Account) && $Account !== []) {
@@ -3049,6 +3061,7 @@ self::syncLinkedBotUserFromPanel($New_UUID, $Telegram_Id, $Created);
 }
 
 Repository::addNotification(null, 'app_signup', 'حساب جدید ساخته شد', $Phone . ' - ' . $Full_Name);
+self::notifyAdminNewAppSignup($Created, $Phone, $Full_Name, $Telegram_Id, $Device_Meta);
 return $Created;
 }
 
@@ -3065,6 +3078,102 @@ Database::getInstance()->execute(
 catch (Throwable $Error) {
 error_log('[Umbrella-Bot][Gateway] Users.Client_ID sync failed: ' . $Error->getMessage());
 }
+}
+
+/**
+ * Notifies bot administrator(s) immediately when a brand-new customer signs up
+ * through the Windows or Android app and receives the automatic 1-time free plan.
+ */
+private static function notifyAdminNewAppSignup(
+array $Account,
+string $Phone,
+string $Full_Name,
+int $Telegram_Id = 0,
+array $Device_Meta = []
+): void {
+try {
+$Admin_Ids = self::administratorTelegramIds();
+if ($Admin_Ids === []) return;
+
+$Display_Name = self::isMeaningfulName($Full_Name)
+? $Full_Name
+: trim((string)($Account['name'] ?? ''));
+if (!self::isMeaningfulName($Display_Name)) {
+$Display_Name = 'کاربر جدید آمبرلا';
+}
+$UUID = trim((string)($Account['uuid'] ?? ''));
+$Platform_Raw = trim((string)($Device_Meta['platform'] ?? ''));
+$Platform_Fa = $Platform_Raw !== ''
+? (method_exists('Helper', 'formatPlatform') ? Helper::formatPlatform($Platform_Raw) : $Platform_Raw)
+: 'اپلیکیشن آمبرلا';
+$Device_Name = trim((string)($Device_Meta['device_name'] ?? ''));
+$App_Version = trim((string)($Device_Meta['app_version'] ?? ''));
+$Ip = trim((string)($Device_Meta['ip'] ?? self::clientIp()));
+$Usage_GB = (float)($Account['usage_limit_GB'] ?? self::FREE_PLAN_GB);
+$Days = (int)($Account['package_days'] ?? self::FREE_PLAN_DAYS);
+$Gb_Fa = Helper::toPersian(rtrim(rtrim(number_format($Usage_GB, 2, '.', ''), '0'), '.'));
+$Days_Fa = Helper::toPersian((string)$Days);
+$Now_Label = method_exists('Helper', 'formatPersianDate')
+? Helper::formatPersianDate(time(), true)
+: Helper::toPersian(gmdate('Y-m-d H:i'));
+$Tg_Label = $Telegram_Id > 0
+? ('متصل (<code>' . Helper::toPersian((string)$Telegram_Id) . '</code>)')
+: 'در انتظار اولین اتصال ربات';
+$Admin_Name = (string)(Repository::getSetting('Admin_Full_Name') ?: Environment::getAdminFullName());
+
+foreach ($Admin_Ids as $Admin_Id) {
+$Lines = [
+Helper::adminGreetingNamed($Admin_Name, 'ثبت نام کاربر جدید (اپلیکیشن)', (int)$Admin_Id),
+'🎉 <b>اشتراک رایگان کاربر فعال شد</b>',
+'🆕 <b>ثبت نام کاربر جدید از طریق برنامه آمبرلا</b>',
+'➖➖➖➖➖➖➖➖➖',
+'👤 <b>نام و نام خانوادگی:</b> ' . self::supportEsc($Display_Name),
+'📱 <b>شماره موبایل:</b> <code>' . self::supportEsc($Phone) . '</code>',
+'📲 <b>پلتفرم / نسخه:</b> ' . self::supportEsc($Platform_Fa . ($App_Version !== '' ? ' · نسخه ' . Helper::toPersian($App_Version) : '')),
+];
+if ($Device_Name !== '') {
+$Lines[] = '💻 <b>دستگاه:</b> ' . self::supportEsc($Device_Name);
+}
+if ($Ip !== '') {
+$Lines[] = '🌐 <b>آی پی:</b> <code>' . self::supportEsc($Ip) . '</code>';
+}
+$Lines[] = "🎁 <b>اشتراک فعال شده:</b> اشتراک رایگان ({$Gb_Fa} گیگابایت · {$Days_Fa} روز)";
+$Lines[] = '🤖 <b>حساب تلگرام:</b> ' . $Tg_Label;
+if ($UUID !== '') {
+$Lines[] = '🆔 <b>شناسه کلاینت:</b> <code>' . self::supportEsc($UUID) . '</code>';
+}
+$Lines[] = '🕒 <b>زمان ثبت نام:</b> ' . self::supportEsc($Now_Label);
+$Lines[] = Helper::adminFooter();
+
+$Markup = class_exists('Menu') && method_exists('Menu', 'adminHome')
+? TelegramClient::inlineKeyboard([Menu::adminHome()])
+: null;
+TelegramClient::sendReadableMessage((int)$Admin_Id, null, implode("\n", $Lines), $Markup);
+}
+} catch (Throwable $Error) {
+error_log('[Umbrella-Bot][Gateway] notifyAdminNewAppSignup failed: ' . $Error->getMessage());
+}
+}
+
+private static function storeSecurityDeviceState(string $Device_Id, array $Payload): void {
+if ($Device_Id === '' || !class_exists('Repository') || !method_exists('Repository', 'setSetting')) return;
+$Has_Shield = isset($Payload['security_status'])
+|| isset($Payload['scanned_at_ms'])
+|| isset($Payload['scanned_files'])
+|| isset($Payload['scanned_apps'])
+|| isset($Payload['scanned_processes']);
+if (!$Has_Shield) return;
+try {
+$State = [
+'status' => trim((string)($Payload['security_status'] ?? 'safe')),
+'scanned_at_ms' => (int)($Payload['scanned_at_ms'] ?? (int)($Payload['timestamp'] ?? (time() * 1000))),
+'scanned_files' => max(0, (int)($Payload['scanned_files'] ?? 0)),
+'scanned_apps' => max(0, (int)($Payload['scanned_apps'] ?? 0)),
+'scanned_processes' => max(0, (int)($Payload['scanned_processes'] ?? 0)),
+'updated_at' => time(),
+];
+Repository::setSetting('App_Security_State_' . sha1($Device_Id), json_encode($State, JSON_UNESCAPED_UNICODE));
+} catch (Throwable) {}
 }
 
 /**

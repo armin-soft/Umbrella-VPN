@@ -657,6 +657,47 @@ class NativeBridge {
     return SecurityScanResult.fromJson(JsonX.asMap(raw));
   }
 
+  /// ذخیره یا پاکسازی اطلاعات احراز هویت برای گزارش دهی خودکار سپر امنیتی در پس زمینه.
+  static Future<void> syncBackgroundSecurityAuth(
+    NativeBridge bridge, {
+    required String gatewayBase,
+    required String token,
+    required String deviceId,
+    required String appVersion,
+  }) async {
+    if (bridge.runtimeType != NativeBridge || !bridge.available) {
+      return;
+    }
+    await bridge._invoke<bool>(
+      'syncBackgroundSecurityAuth',
+      <String, dynamic>{
+        'gatewayBase': gatewayBase,
+        'token': token,
+        'deviceId': deviceId,
+        'appVersion': appVersion,
+      },
+    );
+  }
+
+  /// دریافت رویدادهای حذف خودکار یا تهدیدهایی که توسط سرویس پس زمینه بومی ثبت شده اند.
+  static Future<List<Map<String, dynamic>>>
+      consumePendingBackgroundSecurityEvents(NativeBridge bridge) async {
+    if (bridge.runtimeType != NativeBridge || !bridge.available) {
+      return const <Map<String, dynamic>>[];
+    }
+    final List<Object?>? raw = await bridge._invoke<List<Object?>>(
+      'consumePendingBackgroundSecurityEvents',
+    );
+    if (raw == null || raw.isEmpty) {
+      return const <Map<String, dynamic>>[];
+    }
+    return raw
+        .whereType<Map<Object?, Object?>>()
+        .map(JsonX.asMap)
+        .where((Map<String, dynamic> m) => m.isNotEmpty)
+        .toList(growable: false);
+  }
+
   Future<SecurityScanResult> scanDeviceSecurity() async {
     final Map<Object?, Object?>? raw =
         await _invoke<Map<Object?, Object?>>('scanDeviceSecurity');

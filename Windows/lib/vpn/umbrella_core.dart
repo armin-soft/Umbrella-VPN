@@ -347,6 +347,20 @@ class UmbrellaCore {
     return false;
   }
 
+  /// بررسی اینکه آیا نام میزبان در فهرست تبلیغات/ردیاب مسدودی همیشگی قرار دارد یا خیر.
+  static bool isAlwaysBlockedAdHost(String rawHost) {
+    final String? host = FilterSettings.normalizeDomainSuffix(rawHost);
+    final String probe = (host ?? rawHost.trim().toLowerCase())
+        .replaceFirst(RegExp(r'\.+$'), '');
+    if (probe.isEmpty) return false;
+    final _CategoryFilterSpec? adSpec = _categoryFilterSpecs['ads'];
+    if (adSpec == null) return false;
+    bool matchesSuffix(String suffix) =>
+        probe == suffix || probe.endsWith('.$suffix');
+    return adSpec.suffixes.any(matchesSuffix) ||
+        adSpec.keywords.any(probe.contains);
+  }
+
   static const Map<String, _CategoryFilterSpec> _categoryFilterSpecs =
       <String, _CategoryFilterSpec>{
     'adult': _CategoryFilterSpec(
@@ -836,18 +850,43 @@ class UmbrellaCore {
         }
       }
 
-      if (combinedRules.isNotEmpty && networkSettings != null) {
+      if (!isolatedProbe && includeFilterRuleSets) {
         final bool adsAlreadyInFilter = (contentFilter?.enabled ?? false) &&
             (contentFilter?.activeBotCategories.contains('ads') ?? false);
-        if (networkSettings.blockAds && !adsAlreadyInFilter) {
+        final _CategoryFilterSpec? adSpec = _categoryFilterSpecs['ads'];
+        if (!adsAlreadyInFilter && adSpec != null) {
+          if (adSpec.suffixes.isNotEmpty) {
+            combinedRules.add(<String, dynamic>{
+              'list_order': combinedRules.length,
+              'enabled': true,
+              'name': 'umbrella-block-ads',
+              'outbound': 'block',
+              'domain_suffix': adSpec.suffixes,
+            });
+          }
+          if (adSpec.keywords.isNotEmpty) {
+            combinedRules.add(<String, dynamic>{
+              'list_order': combinedRules.length,
+              'enabled': true,
+              'name': 'umbrella-block-ads',
+              'outbound': 'block',
+              'domain_keyword': adSpec.keywords,
+            });
+          }
           combinedRules.add(<String, dynamic>{
             'list_order': combinedRules.length,
             'enabled': true,
             'name': 'umbrella-block-ads',
             'outbound': 'block',
-            'rule_set': adBlockRuleSetUrls,
+            'rule_set': <String>[
+              ...adBlockRuleSetUrls,
+              ...adSpec.ruleSets,
+            ],
           });
         }
+      }
+
+      if (networkSettings != null) {
         final RoutingRegion region = networkSettings.routingRegion;
         if (region != RoutingRegion.other) {
           final String code = region.coreValue;
@@ -961,7 +1000,7 @@ class UmbrellaCore {
       'bypass-lan': networkSettings?.bypassLan ?? false,
       'allow-connection-from-lan': lanShared,
       'block-quic': networkSettings?.blockQuic ?? false,
-      'block-ads': networkSettings?.blockAds ?? false,
+      'block-ads': !isolatedProbe && includeFilterRuleSets,
       'enable-full-config': false,
       'use-xray-core-when-possible': false,
       // رابط کلش روشن است؛ خود هسته در حالت `run` آن را روی ۱۶۷۵۶ باز می
