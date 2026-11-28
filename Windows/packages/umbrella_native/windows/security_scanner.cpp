@@ -16,6 +16,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
@@ -294,6 +295,290 @@ bool VerifyAuthenticodeSignature(const std::wstring& path) {
   return status == ERROR_SUCCESS;
 }
 
+struct UmbrellaCatalogInfo {
+  DWORD cbStruct;
+  WCHAR wszCatalogFile[MAX_PATH];
+};
+
+bool VerifyWindowsCatalogSignature(const std::wstring& path) {
+  if (!FileExistsW(path)) return false;
+  static HMODULE wintrust_mod = LoadLibraryW(L"wintrust.dll");
+  if (wintrust_mod == nullptr) return false;
+
+  using AcquireCtxFn = BOOL(WINAPI*)(HANDLE*, const GUID*, DWORD);
+  using AcquireCtx2Fn = BOOL(WINAPI*)(HANDLE*, const GUID*, LPCWSTR, PVOID, DWORD);
+  using ReleaseCtxFn = BOOL(WINAPI*)(HANDLE, DWORD);
+  using CalcHashFn = BOOL(WINAPI*)(HANDLE, DWORD*, BYTE*, DWORD);
+  using CalcHash2Fn = BOOL(WINAPI*)(HANDLE, HANDLE, DWORD*, BYTE*, DWORD);
+  using EnumCatFn = HANDLE(WINAPI*)(HANDLE, BYTE*, DWORD, DWORD, HANDLE*);
+  using CatInfoFn = BOOL(WINAPI*)(HANDLE, UmbrellaCatalogInfo*, DWORD);
+  using ReleaseCatFn = BOOL(WINAPI*)(HANDLE, HANDLE, DWORD);
+
+  static AcquireCtxFn acquire_fn =
+      reinterpret_cast<AcquireCtxFn>(GetProcAddress(wintrust_mod, "CryptCATAdminAcquireContext"));
+  static AcquireCtx2Fn acquire2_fn =
+      reinterpret_cast<AcquireCtx2Fn>(GetProcAddress(wintrust_mod, "CryptCATAdminAcquireContext2"));
+  static ReleaseCtxFn release_fn =
+      reinterpret_cast<ReleaseCtxFn>(GetProcAddress(wintrust_mod, "CryptCATAdminReleaseContext"));
+  static CalcHashFn calc_hash_fn =
+      reinterpret_cast<CalcHashFn>(GetProcAddress(wintrust_mod, "CryptCATAdminCalcHashFromFileHandle"));
+  static CalcHash2Fn calc_hash2_fn =
+      reinterpret_cast<CalcHash2Fn>(GetProcAddress(wintrust_mod, "CryptCATAdminCalcHashFromFileHandle2"));
+  static EnumCatFn enum_cat_fn =
+      reinterpret_cast<EnumCatFn>(GetProcAddress(wintrust_mod, "CryptCATAdminEnumCatalogFromHash"));
+  static CatInfoFn cat_info_fn =
+      reinterpret_cast<CatInfoFn>(GetProcAddress(wintrust_mod, "CryptCATCatalogInfoFromContext"));
+  static ReleaseCatFn release_cat_fn =
+      reinterpret_cast<ReleaseCatFn>(GetProcAddress(wintrust_mod, "CryptCATAdminReleaseCatalogContext"));
+
+  if (!release_fn || !enum_cat_fn || !cat_info_fn || !release_cat_fn ||
+      (!acquire_fn && !acquire2_fn) || (!calc_hash_fn && !calc_hash2_fn)) {
+    return false;
+  }
+
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+
+  static const GUID kDriverActionVerify = {
+      0xf750e6c3, 0x38ee, 0x11d1, {0x85, 0xe5, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee}};
+  const GUID* subsystems[2] = {&kDriverActionVerify, nullptr};
+  const wchar_t* hash_algs[2] = {BCRYPT_SHA256_ALGORITHM, BCRYPT_SHA1_ALGORITHM};
+  static const wchar_t kHexW[] = L"0123456789ABCDEF";
+  bool verified = false;
+
+  for (const wchar_t* alg : hash_algs) {
+    for (const GUID* subsys : subsystems) {
+      HANDLE cat_admin = nullptr;
+      bool acquired = false;
+      if (acquire2_fn) {
+        acquired = acquire2_fn(&cat_admin, subsys, alg, nullptr, 0) != FALSE;
+      } else if (alg == hash_algs[1] && acquire_fn) {
+        acquired = acquire_fn(&cat_admin, subsys, 0) != FALSE;
+      }
+      if (!acquired || cat_admin == nullptr) {
+        continue;
+      }
+
+      DWORD hash_len = 0;
+      if (calc_hash2_fn) {
+        calc_hash2_fn(cat_admin, file, &hash_len, nullptr, 0);
+      } else if (calc_hash_fn) {
+        calc_hash_fn(file, &hash_len, nullptr, 0);
+      }
+      if (hash_len == 0 || hash_len > 128) {
+        release_fn(cat_admin, 0);
+        continue;
+      }
+      std::vector<BYTE> hash(hash_len);
+      const bool got_hash = calc_hash2_fn
+          ? (calc_hash2_fn(cat_admin, file, &hash_len, hash.data(), 0) != FALSE)
+          : (calc_hash_fn(file, &hash_len, hash.data(), 0) != FALSE);
+      if (!got_hash) {
+        release_fn(cat_admin, 0);
+        continue;
+      }
+
+      std::wstring hash_hex;
+      hash_hex.reserve(static_cast<size_t>(hash_len) * 2);
+      for (DWORD i = 0; i < hash_len; ++i) {
+        hash_hex.push_back(kHexW[(hash[i] >> 4) & 0x0F]);
+        hash_hex.push_back(kHexW[hash[i] & 0x0F]);
+      }
+
+      HANDLE cat_ctx = nullptr;
+      while ((cat_ctx = enum_cat_fn(cat_admin, hash.data(), hash_len, 0, &cat_ctx)) != nullptr) {
+        UmbrellaCatalogInfo cinfo = {};
+        cinfo.cbStruct = sizeof(UmbrellaCatalogInfo);
+        if (cat_info_fn(cat_ctx, &cinfo, 0)) {
+          WINTRUST_CATALOG_INFO wci = {};
+          wci.cbStruct = sizeof(WINTRUST_CATALOG_INFO);
+          wci.dwCatalogVersion = 0;
+          wci.pcwszCatalogFilePath = cinfo.wszCatalogFile;
+          wci.pcwszMemberTag = hash_hex.c_str();
+          wci.pcwszMemberFilePath = path.c_str();
+          wci.hMemberFile = file;
+          wci.pbCalculatedFileHash = hash.data();
+          wci.cbCalculatedFileHash = hash_len;
+
+          GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+          WINTRUST_DATA trust = {};
+          trust.cbStruct = sizeof(WINTRUST_DATA);
+          trust.dwUIChoice = WTD_UI_NONE;
+          trust.fdwRevocationChecks = WTD_REVOKE_NONE;
+          trust.dwUnionChoice = WTD_CHOICE_CATALOG;
+          trust.dwStateAction = WTD_STATEACTION_VERIFY;
+          trust.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+          trust.pCatalog = &wci;
+
+          LONG st = WinVerifyTrust(nullptr, &action, &trust);
+          trust.dwStateAction = WTD_STATEACTION_CLOSE;
+          WinVerifyTrust(nullptr, &action, &trust);
+          if (st == ERROR_SUCCESS) {
+            release_cat_fn(cat_admin, cat_ctx, 0);
+            verified = true;
+            break;
+          }
+        }
+      }
+      release_fn(cat_admin, 0);
+      if (verified) break;
+    }
+    if (verified) break;
+  }
+
+  CloseHandle(file);
+  return verified;
+}
+
+bool VerifyTrustedWindowsSignature(const std::wstring& path) {
+  return VerifyAuthenticodeSignature(path) || VerifyWindowsCatalogSignature(path);
+}
+
+std::string NormalizeWinPathLower(std::string value) {
+  for (char& ch : value) {
+    if (ch == '/') ch = '\\';
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return value;
+}
+
+std::string WindowsDirPrefixLower() {
+  wchar_t win_dir_w[MAX_PATH] = {0};
+  UINT len = GetWindowsDirectoryW(win_dir_w, MAX_PATH);
+  if (len == 0) return std::string();
+  std::string out = NormalizeWinPathLower(ToUtf8(std::wstring(win_dir_w, len)));
+  if (!out.empty() && out.back() != '\\') out.push_back('\\');
+  return out;
+}
+
+bool IsProtectedWindowsSystemPath(const std::string& path_utf8) {
+  if (path_utf8.empty()) return false;
+  const std::string p = NormalizeWinPathLower(path_utf8);
+  const std::string win_dir = WindowsDirPrefixLower();
+  if (!win_dir.empty() && p.rfind(win_dir, 0) == 0) {
+    // Allow user-writable Temp directory to be checked normally unless file itself is locked/non-removable.
+    if (p.rfind(win_dir + "temp\\", 0) == 0 ||
+        p.rfind(win_dir + "system32\\tasks\\", 0) == 0) {
+      return p.rfind(win_dir + "system32\\tasks\\microsoft\\", 0) == 0;
+    }
+    return true;
+  }
+  static const char* kProtectedSegments[] = {
+      ":\\windows\\",
+      ":\\program files\\windowsapps\\",
+      ":\\program files (x86)\\windowsapps\\",
+      ":\\program files\\windows defender\\",
+      ":\\program files\\windows security\\",
+      ":\\program files\\windows nt\\",
+      ":\\program files\\windows mail\\",
+      ":\\program files\\windows media player\\",
+      ":\\program files\\windows photo viewer\\",
+      ":\\program files\\windows powershell\\",
+      ":\\program files\\common files\\microsoft shared\\",
+      ":\\program files (x86)\\common files\\microsoft shared\\",
+      ":\\programdata\\microsoft\\windows\\",
+      ":\\programdata\\microsoft\\windows defender\\",
+      ":\\programdata\\microsoft\\windows security health\\",
+      ":\\programdata\\microsoft\\diagnosis\\",
+      ":\\programdata\\microsoft\\network\\",
+      ":\\programdata\\microsoft\\search\\",
+      ":\\programdata\\microsoft\\cryptneturlcache\\",
+      ":\\programdata\\package cache\\",
+      "\\appdata\\local\\microsoft\\windowsapps\\",
+      "\\appdata\\local\\microsoft\\windows\\",
+      "\\appdata\\local\\packages\\",
+      ":\\system volume information\\",
+      ":\\$recycle.bin\\",
+  };
+  for (const char* seg : kProtectedSegments) {
+    if (seg[0] == ':' && p.size() > 1 && p[1] == ':' && p.rfind(seg, 1) == 1) {
+      if (std::strcmp(seg, ":\\windows\\") == 0 &&
+          (p.find("\\windows\\temp\\") != std::string::npos ||
+           (p.find("\\windows\\system32\\tasks\\") != std::string::npos &&
+            p.find("\\windows\\system32\\tasks\\microsoft\\") == std::string::npos))) {
+        return false;
+      }
+      return true;
+    }
+    if (seg[0] == '\\' && p.find(seg) != std::string::npos) {
+      return true;
+    }
+  }
+  const std::string base = BaseNameLower(p);
+  return base == "pagefile.sys" || base == "hiberfil.sys" ||
+         base == "swapfile.sys" || base == "bootmgr" || base == "bootnxt" ||
+         base == "desktop.ini";
+}
+
+bool CanCurrentUserDeleteFileW(const std::wstring& path) {
+  if (path.empty()) return true;
+  DWORD attrs = GetFileAttributesW(path.c_str());
+  if (attrs == INVALID_FILE_ATTRIBUTES) return true;
+  HANDLE h = CreateFileW(path.c_str(), DELETE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS,
+                         nullptr);
+  if (h != INVALID_HANDLE_VALUE) {
+    CloseHandle(h);
+    return true;
+  }
+  const DWORD err = GetLastError();
+  // ERROR_SHARING_VIOLATION means a running process holds the file open, not OS non-removability.
+  if (err == ERROR_ACCESS_DENIED || err == ERROR_WRITE_PROTECT) {
+    return false;
+  }
+  return true;
+}
+
+bool IsMicrosoftSystemPublisher(const std::wstring& wpath,
+                                const std::string& company_hint = std::string()) {
+  const std::string company = ToLowerAscii(
+      !company_hint.empty() ? company_hint : ReadVersionStringW(wpath, L"CompanyName"));
+  const bool looks_ms =
+      company.find("microsoft corporation") != std::string::npos ||
+      company.find("microsoft windows") != std::string::npos ||
+      company == "microsoft";
+  if (!looks_ms) return false;
+  return VerifyTrustedWindowsSignature(wpath);
+}
+
+bool IsNonRemovableSystemFileW(const std::wstring& wpath,
+                               const std::string& path_lower) {
+  if (IsUmbrellaSafeBinary(path_lower)) return true;
+  if (IsProtectedWindowsSystemPath(path_lower)) return true;
+  if (wpath.empty()) return false;
+  const DWORD attrs = GetFileAttributesW(wpath.c_str());
+  if (attrs == INVALID_FILE_ATTRIBUTES) return false;
+  if (!CanCurrentUserDeleteFileW(wpath)) return true;
+  if ((attrs & FILE_ATTRIBUTE_SYSTEM) != 0 &&
+      (path_lower.find("\\downloads\\") == std::string::npos &&
+       path_lower.find("\\desktop\\") == std::string::npos)) {
+    return true;
+  }
+  if (IsMicrosoftSystemPublisher(wpath)) return true;
+  return false;
+}
+
+bool ContainsIdentifierToken(const std::string& haystack_lower,
+                             const std::string& token_lower) {
+  if (haystack_lower.empty() || token_lower.empty()) return false;
+  size_t pos = 0;
+  while ((pos = haystack_lower.find(token_lower, pos)) != std::string::npos) {
+    const bool before_ok =
+        (pos == 0) ||
+        !std::isalnum(static_cast<unsigned char>(haystack_lower[pos - 1]));
+    const size_t after_idx = pos + token_lower.size();
+    const bool after_ok =
+        (after_idx >= haystack_lower.size()) ||
+        !std::isalnum(static_cast<unsigned char>(haystack_lower[after_idx]));
+    if (before_ok && after_ok) return true;
+    ++pos;
+  }
+  return false;
+}
+
 /// Optional live Windows Antimalware Scan Interface (AMSI) check via dynamic loading.
 class AmsiScanner {
  public:
@@ -552,7 +837,7 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
         res.suspicious = true;
         res.deterministic = true;
         res.reason =
-            "فایل بایندر با پی لود اجرایی یا آرشیو پنهان شده در بخش انتهایی (Overlay) شناسایی شد";
+            "فایل بایندر با داده اجرایی یا آرشیو پنهان شده در بخش انتهایی شناسایی شد.";
         return res;
       }
     }
@@ -610,22 +895,22 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
       combined_view.find("setwindowshookexw") != std::string::npos;
 
   const bool rat_family_marker =
-      combined_view.find("xworm") != std::string::npos ||
-      combined_view.find("asyncrat") != std::string::npos ||
-      combined_view.find("asyncclient") != std::string::npos ||
-      combined_view.find("remcos") != std::string::npos ||
-      combined_view.find("njrat") != std::string::npos ||
-      combined_view.find("lummastealer") != std::string::npos ||
-      combined_view.find("agenttesla") != std::string::npos ||
-      combined_view.find("nanocore") != std::string::npos ||
-      combined_view.find("darkcomet") != std::string::npos ||
-      combined_view.find("castleloader") != std::string::npos ||
-      combined_view.find("latrodectus") != std::string::npos ||
-      combined_view.find("deerstealer") != std::string::npos ||
-      combined_view.find("redlinestealer") != std::string::npos ||
-      combined_view.find("vidarstealer") != std::string::npos ||
-      combined_view.find("cobaltstrike") != std::string::npos ||
-      combined_view.find("meterpreter") != std::string::npos;
+      ContainsIdentifierToken(combined_view, "xworm") ||
+      ContainsIdentifierToken(combined_view, "asyncrat") ||
+      ContainsIdentifierToken(combined_view, "asyncclient") ||
+      ContainsIdentifierToken(combined_view, "remcos") ||
+      ContainsIdentifierToken(combined_view, "njrat") ||
+      ContainsIdentifierToken(combined_view, "lummastealer") ||
+      ContainsIdentifierToken(combined_view, "agenttesla") ||
+      ContainsIdentifierToken(combined_view, "nanocore") ||
+      ContainsIdentifierToken(combined_view, "darkcomet") ||
+      ContainsIdentifierToken(combined_view, "castleloader") ||
+      ContainsIdentifierToken(combined_view, "latrodectus") ||
+      ContainsIdentifierToken(combined_view, "deerstealer") ||
+      ContainsIdentifierToken(combined_view, "redlinestealer") ||
+      ContainsIdentifierToken(combined_view, "vidarstealer") ||
+      ContainsIdentifierToken(combined_view, "cobaltstrike") ||
+      ContainsIdentifierToken(combined_view, "meterpreter");
 
   const bool double_ext =
       ContainsCi(ToUtf8(path), ".pdf.exe") ||
@@ -638,31 +923,31 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
   if (double_ext) {
     res.suspicious = true;
     res.deterministic = true;
-    res.reason = "فایل تروجانی با پسوند دوگانه فریبنده شناسایی شد";
+    res.reason = "فایل تروجانی با پسوند دوگانه فریبنده شناسایی شد.";
     return res;
   }
   if (rat_family_marker) {
     res.suspicious = true;
     res.deterministic = true;
-    res.reason = "امضای بدافزار سرقت اطلاعات یا کنترل از راه دور (RAT) در فایل شناسایی شد";
+    res.reason = "امضای بدافزار سرقت اطلاعات یا کنترل از راه دور در فایل شناسایی شد.";
     return res;
   }
   if (amsi_etw_bypass) {
     res.suspicious = true;
     res.deterministic = true;
-    res.reason = "الگوی دور زدن موتور امنیتی AMSI / ETW در فایل بدون امضا شناسایی شد";
+    res.reason = "الگوی دور زدن موتور امنیتی ویندوز در فایل بدون امضا شناسایی شد.";
     return res;
   }
   if (injection_apis && (ent >= 6.6 || high_entropy_code_section)) {
     res.suspicious = true;
     res.deterministic = true;
-    res.reason = "الگوی تزریق کد یا Process Hollowing به همراه باینری فشرده شده شناسایی شد";
+    res.reason = "الگوی تزریق کد یا پنهان سازی کد اجرایی در باینری فشرده شده شناسایی شد.";
     return res;
   }
   if (keylogger_apis && (ent >= 6.9 || high_entropy_code_section)) {
     res.suspicious = true;
     res.deterministic = true;
-    res.reason = "الگوی شنود کلیدها (کی لاگر) درون باینری رمزگذاری شده شناسایی شد";
+    res.reason = "الگوی شنود کلیدها (کی لاگر) درون باینری رمزگذاری شده شناسایی شد.";
     return res;
   }
   return res;
@@ -677,35 +962,37 @@ struct SignatureHit {
   std::string detail;
 };
 
-SignatureHit MatchKnownThreatText(const std::string& text) {
+SignatureHit MatchKnownThreatText(const std::string& text,
+                                  bool include_malware_signatures = true) {
   const std::string lower = ToLowerAscii(text);
   if (lower.empty() || IsUmbrellaSafeBinary(lower)) {
     return SignatureHit{};
   }
-  if (lower.find("xworm") != std::string::npos ||
-      lower.find("asyncrat") != std::string::npos ||
-      lower.find("remcos") != std::string::npos ||
-      lower.find("njrat") != std::string::npos ||
-      lower.find("quasar rat") != std::string::npos ||
-      lower.find("nanocore") != std::string::npos ||
-      lower.find("darkcomet") != std::string::npos ||
-      lower.find("dcrat") != std::string::npos ||
-      lower.find("lummastealer") != std::string::npos ||
-      lower.find("lumma_stealer") != std::string::npos ||
-      lower.find("vidarstealer") != std::string::npos ||
-      lower.find("redlinestealer") != std::string::npos ||
-      lower.find("agenttesla") != std::string::npos ||
-      lower.find("castleloader") != std::string::npos ||
-      lower.find("latrodectus") != std::string::npos ||
-      lower.find("deerstealer") != std::string::npos ||
-      lower.find("stealc") != std::string::npos) {
+  if (include_malware_signatures &&
+      (ContainsIdentifierToken(lower, "xworm") ||
+       ContainsIdentifierToken(lower, "asyncrat") ||
+       ContainsIdentifierToken(lower, "remcos") ||
+       ContainsIdentifierToken(lower, "njrat") ||
+       lower.find("quasar rat") != std::string::npos ||
+       ContainsIdentifierToken(lower, "nanocore") ||
+       ContainsIdentifierToken(lower, "darkcomet") ||
+       ContainsIdentifierToken(lower, "dcrat") ||
+       ContainsIdentifierToken(lower, "lummastealer") ||
+       lower.find("lumma_stealer") != std::string::npos ||
+       ContainsIdentifierToken(lower, "vidarstealer") ||
+       ContainsIdentifierToken(lower, "redlinestealer") ||
+       ContainsIdentifierToken(lower, "agenttesla") ||
+       ContainsIdentifierToken(lower, "castleloader") ||
+       ContainsIdentifierToken(lower, "latrodectus") ||
+       ContainsIdentifierToken(lower, "deerstealer") ||
+       ContainsIdentifierToken(lower, "stealc"))) {
     return SignatureHit{
         true,
         "malware:rat_stealer",
-        "بدافزار کنترل از راه دور یا سرقت اطلاعات (RAT / Infostealer)",
+        "بدافزار کنترل از راه دور یا سرقت اطلاعات",
         "malware",
         "critical",
-        "امضای تروجان کنترل از راه دور (RAT) یا بدافزار سرقت اطلاعات روی دستگاه شناسایی شد.",
+        "امضای تروجان کنترل از راه دور یا بدافزار سرقت اطلاعات روی دستگاه شناسایی شد.",
     };
   }
   if (lower.find("hiddify") != std::string::npos ||
@@ -718,7 +1005,7 @@ SignatureHit MatchKnownThreatText(const std::string& text) {
         "Hiddify / Hiddify Next (فیلترشکن ناسازگار)",
         "conflicting_vpn",
         "high",
-        "نرم افزار Hiddify روی سیستم یافت شد؛ پیش از اتصال به آمبرلا باید آن را حذف کنید.",
+        "نرم افزار هیدیفای روی سیستم یافت شد؛ پیش از اتصال به آمبرلا باید آن را حذف کنید.",
     };
   }
   if (lower.find("jumpjump") != std::string::npos ||
@@ -727,10 +1014,10 @@ SignatureHit MatchKnownThreatText(const std::string& text) {
     return SignatureHit{
         true,
         "malware:jumpjump",
-        "JumpJump VPN (بدافزار / ابزار مخرب)",
+        "جامپ جامپ (بدافزار مخرب)",
         "malware",
         "critical",
-        "نرم افزار مخرب JumpJump VPN شناسایی شد و اتصال تا حذف کامل مسدود است.",
+        "نرم افزار مخرب جامپ جامپ شناسایی شد و اتصال تا حذف کامل مسدود است.",
     };
   }
   if (lower.find("psiphon") != std::string::npos) {
@@ -740,7 +1027,7 @@ SignatureHit MatchKnownThreatText(const std::string& text) {
         "Psiphon (فیلترشکن ناسازگار)",
         "conflicting_vpn",
         "high",
-        "برنامه Psiphon روی سیستم یافت شد؛ اجرای هم زمان آن با آمبرلا تداخل و ناامنی ایجاد می کند.",
+        "برنامه سایفون روی سیستم یافت شد؛ اجرای هم زمان آن با آمبرلا تداخل و ناامنی ایجاد می کند.",
     };
   }
   if (lower.find("holavpn") != std::string::npos ||
@@ -751,7 +1038,7 @@ SignatureHit MatchKnownThreatText(const std::string& text) {
     return SignatureHit{
         true,
         "adware:hola_luminati",
-        "Hola / Luminati Proxy (تبلیغ افزار و اشتراک پهنای باند)",
+        "تبلیغ افزار و اشتراک پهنای باند ناشناس",
         "adware",
         "high",
         "سرویس اشتراک گذاری پهنای باند ناشناس شناسایی شد.",
@@ -1053,8 +1340,10 @@ struct RegistryAppRecord {
   std::string display_name;
   std::string publisher;
   std::string exe_path;
+  std::string install_location;
   std::string uninstall_cmd;
   bool system_component = false;
+  bool no_remove = false;
 };
 
 void EnumerateUninstallRoot(HKEY root, const wchar_t* subkey,
@@ -1081,30 +1370,31 @@ void EnumerateUninstallRoot(HKEY root, const wchar_t* subkey,
         }
         return std::string();
       };
-      DWORD sys_comp = 0;
-      DWORD sys_sz = sizeof(sys_comp);
-      DWORD sys_type = 0;
-      bool is_sys = false;
-      if (RegQueryValueExW(item, L"SystemComponent", nullptr, &sys_type,
-                           reinterpret_cast<LPBYTE>(&sys_comp), &sys_sz) == ERROR_SUCCESS &&
-          sys_type == REG_DWORD && sys_comp == 1) {
-        is_sys = true;
-      }
+      auto read_dword_flag = [&](const wchar_t* val) -> bool {
+        DWORD dval = 0;
+        DWORD dsz = sizeof(dval);
+        DWORD dtype = 0;
+        return RegQueryValueExW(item, val, nullptr, &dtype,
+                                reinterpret_cast<LPBYTE>(&dval), &dsz) == ERROR_SUCCESS &&
+               dtype == REG_DWORD && dval == 1;
+      };
 
       RegistryAppRecord rec;
       rec.display_name = Trim(read_str(L"DisplayName"));
       rec.publisher = Trim(read_str(L"Publisher"));
+      rec.install_location = Trim(read_str(L"InstallLocation"));
       rec.uninstall_cmd = Trim(read_str(L"QuietUninstallString"));
       if (rec.uninstall_cmd.empty()) {
         rec.uninstall_cmd = Trim(read_str(L"UninstallString"));
       }
-      rec.system_component = is_sys;
+      rec.system_component = read_dword_flag(L"SystemComponent");
+      rec.no_remove = read_dword_flag(L"NoRemove");
 
       std::string icon_path = ExtractExePathFromCommand(read_str(L"DisplayIcon"));
       if (!icon_path.empty() && FileExistsW(ToWide(icon_path))) {
         rec.exe_path = icon_path;
       } else if (!skip_install_glob) {
-        std::string loc = Trim(read_str(L"InstallLocation"));
+        std::string loc = rec.install_location;
         if (!loc.empty() && loc.back() != '\\') loc.push_back('\\');
         if (!loc.empty()) {
           std::wstring pattern = ToWide(loc + "*.exe");
@@ -1576,7 +1866,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
                ComputeShannonEntropy(cbuf.data(), d_read) >= 7.65)) {
             CloseHandle(file);
             *key_tag_out = "dl:png_chunk:";
-            *reason_out = "پی لود یا فایل بایندشده درون چانک مخفی تصویر PNG شناسایی شد.";
+            *reason_out = "داده یا فایل چسبیده شده درون بخش مخفی تصویر پی ان جی شناسایی شد.";
             return true;
           }
         }
@@ -1607,7 +1897,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
                ComputeShannonEntropy(trailer.data() + first_nz, meaningful) >= 7.35)) {
             CloseHandle(file);
             *key_tag_out = "dl:png_eof:";
-            *reason_out = "فایل یا بدافزار بایندشده پس از پایان تصویر PNG (بعد از IEND) شناسایی شد.";
+            *reason_out = "فایل یا بدافزار چسبیده شده پس از پایان تصویر پی ان جی شناسایی شد.";
             return true;
           }
         }
@@ -1672,7 +1962,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
                 ContainsAsciiBytesCi(seg, "wscript.shell")) {
               CloseHandle(file);
               *key_tag_out = "dl:jpg_meta:";
-              *reason_out = "کد یا پی لود تروجانی تزریق شده درون متادیتای تصویر JPEG شناسایی شد.";
+              *reason_out = "کد یا برنامه تروجانی تزریق شده درون اطلاعات تصویر جپگ شناسایی شد.";
               return true;
             }
           }
@@ -1712,7 +2002,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
                   ComputeShannonEntropy(appended.data(), appended.size()) >= 7.45))) {
               CloseHandle(file);
               *key_tag_out = "dl:jpg_eoi:";
-              *reason_out = "فایل یا بدافزار بایندشده پس از پایان تصویر JPEG (بعد از FFD9) شناسایی شد.";
+              *reason_out = "فایل یا بدافزار چسبیده شده پس از پایان تصویر جپگ شناسایی شد.";
               return true;
             }
           }
@@ -1746,7 +2036,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
             ComputeShannonEntropy(extra.data(), extra.size()) >= 7.35) {
           CloseHandle(file);
           *key_tag_out = "dl:bmp_eof:";
-          *reason_out = "داده یا فایل اجرایی بایندشده در انتهای تصویر BMP شناسایی شد.";
+          *reason_out = "داده یا فایل اجرایی چسبیده شده در انتهای تصویر بی ام پی شناسایی شد.";
           return true;
         }
       }
@@ -1785,7 +2075,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
                ComputeShannonEntropy(appended.data(), appended.size()) >= 7.45)) {
             CloseHandle(file);
             *key_tag_out = "dl:gif_eof:";
-            *reason_out = "فایل یا بدافزار بایندشده در انتهای تصویر GIF شناسایی شد.";
+            *reason_out = "فایل یا بدافزار چسبیده شده در انتهای تصویر گیف شناسایی شد.";
             return true;
           }
         }
@@ -1818,7 +2108,7 @@ bool InspectImagePolyglotW(const std::wstring& path,
             ComputeShannonEntropy(extra.data(), extra.size()) >= 7.35) {
           CloseHandle(file);
           *key_tag_out = "dl:webp_eof:";
-          *reason_out = "داده یا فایل اجرایی بایندشده در انتهای تصویر WebP شناسایی شد.";
+          *reason_out = "داده یا فایل اجرایی چسبیده شده در انتهای تصویر وب پی شناسایی شد.";
           return true;
         }
       }
@@ -1879,7 +2169,7 @@ bool InspectPdfPayload(const std::vector<BYTE>& doc_bytes,
       ContainsAsciiBytesCi(doc_bytes, "/embeddedfile") ||
       ContainsAsciiBytesCi(doc_bytes, "/richmedia");
   if (has_js_or_launch && has_auto_or_embed) {
-    *reason_out = "سند PDF حاوی اسکریپت یا فرمان خودکار اجرایی مخرب است.";
+    *reason_out = "سند پی دی اف حاوی اسکریپت یا فرمان خودکار اجرایی مخرب است.";
     return true;
   }
   const std::string tail_text = ToLowerAscii(std::string(
@@ -1887,7 +2177,7 @@ bool InspectPdfPayload(const std::vector<BYTE>& doc_bytes,
   const size_t last_eof = tail_text.rfind("%%eof");
   if (last_eof != std::string::npos && last_eof + 64 < doc_bytes.size()) {
     if (ContainsBinderOrPayloadBytes(doc_bytes, last_eof + 5)) {
-      *reason_out = "فایل بایندشده یا کد اجرایی مخفی شده پس از پایان PDF شناسایی شد.";
+      *reason_out = "فایل چسبیده شده یا کد اجرایی مخفی شده پس از پایان سند پی دی اف شناسایی شد.";
       return true;
     }
   }
@@ -2060,7 +2350,9 @@ std::vector<ScanDirSpec> CandidateScanDirectories(bool quick) {
 bool ShouldSkipSubdirLower(const std::string& lower_dir_name) {
   return lower_dir_name == "." || lower_dir_name == ".." ||
          lower_dir_name == ".git" || lower_dir_name == "node_modules" ||
-         lower_dir_name == "__pycache__";
+         lower_dir_name == "__pycache__" ||
+         lower_dir_name == "system volume information" ||
+         lower_dir_name == "$recycle.bin";
 }
 
 void CollectFilesRecursiveBounded(
@@ -2070,6 +2362,7 @@ void CollectFilesRecursiveBounded(
     int max_files,
     std::vector<ScannedFileEntry>* out) {
   if (static_cast<int>(out->size()) >= max_files || depth > max_depth) return;
+  if (IsProtectedWindowsSystemPath(ToUtf8(root_dir) + "\\")) return;
   WIN32_FIND_DATAW fd = {};
   HANDLE find = FindFirstFileW((root_dir + L"\\*").c_str(), &fd);
   if (find == INVALID_HANDLE_VALUE) return;
@@ -2082,8 +2375,10 @@ void CollectFilesRecursiveBounded(
       if (depth < max_depth &&
           (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
         const std::string lower_sub = ToLowerAscii(ToUtf8(fname_w));
-        if (!ShouldSkipSubdirLower(lower_sub)) {
-          subdirs.push_back(root_dir + L"\\" + fname_w);
+        const std::wstring sub_full_w = root_dir + L"\\" + fname_w;
+        if (!ShouldSkipSubdirLower(lower_sub) &&
+            !IsProtectedWindowsSystemPath(ToUtf8(sub_full_w) + "\\")) {
+          subdirs.push_back(sub_full_w);
         }
       }
       continue;
@@ -2150,7 +2445,7 @@ bool DeleteTargetFile(const std::string& path_utf8) {
   if (path_utf8.empty()) return false;
   std::wstring wide = ToWide(path_utf8);
   if (!FileExistsW(wide)) return false;
-  if (IsUmbrellaSafeBinary(path_utf8)) return false;
+  if (IsNonRemovableSystemFileW(wide, ToLowerAscii(path_utf8))) return false;
   SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_NORMAL);
   if (DeleteFileW(wide.c_str())) return true;
   // Schedule removal on reboot if file handle was held by Windows Explorer.
@@ -2342,42 +2637,18 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
   report.scanned_processes = static_cast<int>(processes.size());
   for (const auto& proc : processes) {
     if (IsUmbrellaSafeBinary(proc.path.empty() ? proc.name : proc.path)) continue;
-    const std::string combined =
-        proc.name + " " + proc.path + " " + proc.product_name + " " +
-        proc.company_name + " " + proc.cmdline;
-    const SignatureHit sig = MatchKnownThreatText(combined);
-    if (sig.matched) {
-      SecurityThreatEntry item;
-      item.key = sig.family_key;
-      item.name = sig.name;
-      item.category = sig.category;
-      item.severity = sig.severity;
-      item.target = !proc.path.empty() ? proc.path : proc.name;
-      item.detail = sig.detail;
-      item.remediation_kind = "process";
-      item.path = proc.path;
-      item.process_name = proc.name;
-      item.active = true;
-      if (!proc.path.empty()) {
-        std::wstring wpath = ToWide(proc.path);
-        item.signed_valid = VerifyAuthenticodeSignature(wpath);
-        item.sha256 = ComputeFileSha256(wpath);
-      }
-      add_finding(std::move(item));
-      continue;
-    }
 
     // Live 2026 Fileless / ClickFix LOLBin execution monitor (command-line inspection via PEB)
     if (IsLolbinProcessName(proc.lower_name) &&
         IsSuspiciousLolbinCommandLine(proc.lower_name, proc.cmdline)) {
       SecurityThreatEntry item;
       item.key = "proc:lolbin:" + std::to_string(proc.pid);
-      item.name = "اجرای فرمان پنهان یا بی فایل در حافظه (" + proc.name + ")";
+      item.name = "اجرای فرمان پنهان یا مخرب در حافظه (" + proc.name + ")";
       item.category = "malware";
       item.severity = "critical";
       item.target = !proc.path.empty() ? proc.path : proc.name;
       item.detail =
-          "یک پردازش سیستمی (LOLBin) در حال اجرای فرمان رمزنگاری شده یا بارگذاری پی لود تروجانی در حافظه (الگوی ClickFix/RAT) است.";
+          "یک پردازش سیستمی در حال اجرای فرمان رمزنگاری شده یا بارگذاری کد تروجانی در حافظه است.";
       item.remediation_kind = "process";
       item.path = proc.path;
       item.process_name = proc.name;
@@ -2394,7 +2665,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
         !proc.path.empty() && !win_dir.empty() &&
         ToLowerAscii(proc.path).rfind(win_dir, 0) != 0) {
       std::wstring wpath = ToWide(proc.path);
-      const bool signed_ok = VerifyAuthenticodeSignature(wpath);
+      const bool signed_ok = VerifyTrustedWindowsSignature(wpath);
       if (!signed_ok) {
         const std::string sha = ComputeFileSha256(wpath);
         SecurityThreatEntry item;
@@ -2417,22 +2688,52 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
       }
     }
 
+    if (IsSystemNoiseProcess(proc.lower_name)) continue;
+    const std::wstring proc_wpath = ToWide(proc.path);
+    const std::string proc_plower = ToLowerAscii(proc.path);
+    if (!proc.path.empty() && IsNonRemovableSystemFileW(proc_wpath, proc_plower)) {
+      continue;
+    }
+
+    const bool proc_signed = !proc.path.empty() && VerifyTrustedWindowsSignature(proc_wpath);
+    const std::string combined =
+        proc.name + " " + proc.path + " " + proc.product_name + " " +
+        proc.company_name + " " + proc.cmdline;
+    const SignatureHit sig = MatchKnownThreatText(combined, !proc_signed);
+    if (sig.matched) {
+      SecurityThreatEntry item;
+      item.key = sig.family_key;
+      item.name = sig.name;
+      item.category = sig.category;
+      item.severity = sig.severity;
+      item.target = !proc.path.empty() ? proc.path : proc.name;
+      item.detail = sig.detail;
+      item.remediation_kind = "process";
+      item.path = proc.path;
+      item.process_name = proc.name;
+      item.active = true;
+      if (!proc.path.empty()) {
+        item.signed_valid = proc_signed;
+        item.sha256 = ComputeFileSha256(proc_wpath);
+      }
+      add_finding(std::move(item));
+      continue;
+    }
+
     // Live binary + AMSI inspection for active non-system unsigned processes outside Program Files
-    if (!proc.path.empty() && !win_dir.empty()) {
-      const std::string p_lower = ToLowerAscii(proc.path);
-      const bool in_windows = p_lower.rfind(win_dir, 0) == 0;
+    if (!proc.path.empty() && !win_dir.empty() && !proc_signed) {
+      const bool in_windows = proc_plower.rfind(win_dir, 0) == 0;
       const bool in_program_files =
-          p_lower.find(":\\program files\\") != std::string::npos ||
-          p_lower.find(":\\program files (x86)\\") != std::string::npos;
+          proc_plower.find(":\\program files\\") != std::string::npos ||
+          proc_plower.find(":\\program files (x86)\\") != std::string::npos;
       if (!in_windows && !in_program_files) {
-        std::wstring wpath = ToWide(proc.path);
         uint64_t psize = 0;
         uint64_t pmtime = 0;
-        if (GetFileStampW(wpath, &psize, &pmtime) &&
-            !IsCleanFileCached(p_lower, psize, pmtime)) {
+        if (GetFileStampW(proc_wpath, &psize, &pmtime) &&
+            !IsCleanFileCached(proc_plower, psize, pmtime)) {
           int proc_amsi = 0;
-          if (amsi.ScanFile(wpath, &proc_amsi)) {
-            const std::string sha = ComputeFileSha256(wpath);
+          if (amsi.ScanFile(proc_wpath, &proc_amsi)) {
+            const std::string sha = ComputeFileSha256(proc_wpath);
             SecurityThreatEntry item;
             item.key = !sha.empty() ? ("proc:amsi:" + sha.substr(0, 16))
                                     : ("proc:amsi:" + proc.lower_name);
@@ -2441,7 +2742,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             item.severity = "critical";
             item.target = proc.path;
             item.detail =
-                "موتور امنیتی ویندوز (AMSI) فایل اجرایی این پردازش فعال را به عنوان بدافزار شناسایی کرد.";
+                "موتور امنیتی ویندوز فایل اجرایی این پردازش فعال را به عنوان بدافزار شناسایی کرد.";
             item.remediation_kind = "composite";
             item.path = proc.path;
             item.process_name = proc.name;
@@ -2451,14 +2752,14 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             add_finding(std::move(item));
             continue;
           }
-          const PeHeuristicResult pe = AnalyzeFileHeuristics(wpath);
-          if (pe.suspicious && !VerifyAuthenticodeSignature(wpath)) {
-            const std::string sha = ComputeFileSha256(wpath);
+          const PeHeuristicResult pe = AnalyzeFileHeuristics(proc_wpath);
+          if (pe.suspicious) {
+            const std::string sha = ComputeFileSha256(proc_wpath);
             SecurityThreatEntry item;
             item.key = !sha.empty() ? ("proc:heur:" + sha.substr(0, 16))
                                     : ("proc:heur:" + proc.lower_name);
             item.name = pe.deterministic
-                            ? ("بدافزار / تروجان فعال در حافظه (" + proc.name + ")")
+                            ? ("بدافزار یا تروجان فعال در حافظه (" + proc.name + ")")
                             : ("فرایند پرخطر در حال اجرا (" + proc.name + ")");
             item.category = "malware";
             item.severity = pe.deterministic ? "critical" : "high";
@@ -2473,7 +2774,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             add_finding(std::move(item));
             continue;
           }
-          RecordCleanFileCache(p_lower, psize, pmtime);
+          RecordCleanFileCache(proc_plower, psize, pmtime);
         }
       }
     }
@@ -2496,9 +2797,24 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
   report.scanned_apps = static_cast<int>(reg_apps.size());
 
   for (const auto& app : reg_apps) {
+    if (app.system_component || app.no_remove) continue;
+    const std::string pub_lower = ToLowerAscii(app.publisher);
+    const std::string exe_lower = ToLowerAscii(app.exe_path);
+    const std::wstring exe_wpath = ToWide(app.exe_path);
+    const bool protected_app =
+        (!app.exe_path.empty() && IsNonRemovableSystemFileW(exe_wpath, exe_lower)) ||
+        (!app.install_location.empty() &&
+         IsProtectedWindowsSystemPath(app.install_location + "\\"));
+    if (app.uninstall_cmd.empty() &&
+        (protected_app ||
+         pub_lower.find("microsoft") != std::string::npos ||
+         (!app.exe_path.empty() && !CanCurrentUserDeleteFileW(exe_wpath)))) {
+      continue;
+    }
+    const bool app_signed = !app.exe_path.empty() && VerifyTrustedWindowsSignature(exe_wpath);
     const std::string combined =
         app.display_name + " " + app.publisher + " " + app.exe_path + " " + app.uninstall_cmd;
-    const SignatureHit sig = MatchKnownThreatText(combined);
+    const SignatureHit sig = MatchKnownThreatText(combined, !protected_app && !app_signed);
     if (sig.matched) {
       SecurityThreatEntry item;
       item.key = sig.family_key;
@@ -2513,7 +2829,8 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
       item.process_name = ExtractFileName(app.exe_path);
       item.uninstall_cmd = app.uninstall_cmd;
       if (!app.exe_path.empty()) {
-        item.sha256 = ComputeFileSha256(ToWide(app.exe_path));
+        item.sha256 = ComputeFileSha256(exe_wpath);
+        item.signed_valid = app_signed;
       }
       add_finding(std::move(item));
     }
@@ -2521,9 +2838,14 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
 
   // 3. Persistence Run / RunOnce Registry entries
   for (const auto& run : EnumerateRunKeys()) {
+    const std::wstring run_wexe = ToWide(run.exe_path);
+    const bool protected_run =
+        !run.exe_path.empty() &&
+        IsNonRemovableSystemFileW(run_wexe, ToLowerAscii(run.exe_path));
+    const bool run_signed = !run.exe_path.empty() && VerifyTrustedWindowsSignature(run_wexe);
     const std::string combined =
         run.value_name + " " + run.command + " " + run.exe_path;
-    const SignatureHit sig = MatchKnownThreatText(combined);
+    const SignatureHit sig = MatchKnownThreatText(combined, !protected_run && !run_signed);
     if (sig.matched) {
       SecurityThreatEntry item;
       item.key = sig.family_key;
@@ -2545,6 +2867,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
     // Suspicious obfuscated PowerShell / script autostart persistence
     const std::string cmd_lower = ToLowerAscii(run.command);
     if (!IsUmbrellaSafeBinary(run.command) &&
+        !protected_run &&
         ((cmd_lower.find("powershell") != std::string::npos &&
           (cmd_lower.find(" -enc") != std::string::npos ||
            cmd_lower.find("encodedcommand") != std::string::npos ||
@@ -2612,12 +2935,12 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             const std::string vn = ToUtf8(vname);
             SecurityThreatEntry item;
             item.key = "reg_runmru:" + ToLowerAscii(vn);
-            item.name = "فرمان مشکوک ClickFix در تاریخچه اجرای ویندوز";
+            item.name = "فرمان مشکوک در تاریخچه اجرای ویندوز";
             item.category = "malware";
             item.severity = "high";
-            item.target = "HKCU\\...\\RunMRU\\" + vn;
+            item.target = "تاریخچه اجرای سیستم (" + vn + ")";
             item.detail =
-                "یک دستور پرخطر برای اجرای کد از طریق پنجره Run (الگوی ClickFix) در رجیستری ثبت شده است.";
+                "یک دستور پرخطر برای اجرای کد از طریق پنجره اجرای ویندوز در رجیستری ثبت شده است.";
             item.remediation_kind = "registry_run";
             item.registry_root = "HKCU";
             item.registry_path =
@@ -2649,6 +2972,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
         FindClose(find);
       }
       for (const auto& tf : task_files) {
+        if (!CanCurrentUserDeleteFileW(tf.path)) continue;
         std::vector<BYTE> tbytes;
         if (!ReadFileSampleBytes(tf.path, 256 * 1024, &tbytes)) continue;
         // Task XMLs may be UTF-16LE or UTF-8; compact ASCII view catches both.
@@ -2660,6 +2984,10 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
           }
         }
         if (IsUmbrellaSafeBinary(compact)) continue;
+        if (compact.find("<author>microsoft") != std::string::npos ||
+            compact.find("\\microsoft\\windows\\") != std::string::npos) {
+          continue;
+        }
         const bool bad_task =
             ((compact.find("powershell") != std::string::npos &&
               (compact.find("-enc") != std::string::npos ||
@@ -2706,14 +3034,14 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
       const std::string fname = ToUtf8(fname_w);
       const std::string lower_fn = ToLowerAscii(fname);
       const std::string full = ToUtf8(wfull);
-      if (IsUmbrellaSafeBinary(full)) {
+      const std::string full_lower = ToLowerAscii(full);
+      if (IsNonRemovableSystemFileW(wfull, full_lower)) {
         continue;
       }
       if (EndsWithCi(lower_fn, ".tmp") || EndsWithCi(lower_fn, ".crdownload") ||
           EndsWithCi(lower_fn, ".part")) {
         continue;
       }
-      const std::string full_lower = ToLowerAscii(full);
       if (!visited_paths.insert(full_lower).second) continue;
 
       report.scanned_files++;
@@ -2846,11 +3174,11 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               SecurityThreatEntry item;
               item.key = !sha.empty() ? ("dl:svg:" + sha.substr(0, 16))
                                       : ("dl:svg:" + lower_fn);
-              item.name = "تصویر SVG حاوی کد تروجانی (" + fname + ")";
+              item.name = "تصویر اس وی جی حاوی کد تروجانی (" + fname + ")";
               item.category = "malicious_download";
               item.severity = "critical";
               item.target = full;
-              item.detail = "فایل تصویر SVG حاوی اسکریپت یا کد مخرب است.";
+              item.detail = "فایل تصویر اس وی جی حاوی اسکریپت یا کد مخرب است.";
               item.remediation_kind = "file";
               item.path = full;
               item.process_name = fname;
@@ -2869,7 +3197,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               item.severity = "critical";
               item.target = full;
               item.detail =
-                  "موتور امنیتی ویندوز (AMSI) این تصویر دانلودی را به عنوان بدافزار شناسایی کرد.";
+                  "موتور امنیتی ویندوز این تصویر دانلودی را به عنوان بدافزار شناسایی کرد.";
               item.remediation_kind = "file";
               item.path = full;
               item.process_name = fname;
@@ -2889,7 +3217,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               SecurityThreatEntry item;
               item.key = !sha.empty() ? (poly_tag + sha.substr(0, 16))
                                       : (poly_tag + lower_fn);
-              item.name = "تصویر حاوی فایل یا بدافزار بایندشده (" + fname + ")";
+              item.name = "تصویر حاوی فایل یا بدافزار چسبیده شده (" + fname + ")";
               item.category = "malicious_download";
               item.severity = "critical";
               item.target = full;
@@ -2966,7 +3294,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             SecurityThreatEntry item;
             item.key = !sha.empty() ? ("dl:poly_img:" + sha.substr(0, 16))
                                     : ("dl:poly_img:" + lower_fn);
-            item.name = "تصویر آلوده به پی لود تروجانی (" + fname + ")";
+            item.name = "تصویر آلوده به برنامه تروجانی (" + fname + ")";
             item.category = "malicious_download";
             item.severity = "critical";
             item.target = full;
@@ -2991,7 +3319,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               item.severity = "critical";
               item.target = full;
               item.detail =
-                  "موتور امنیتی ویندوز (AMSI) این تصویر دانلودی را به عنوان بدافزار شناسایی کرد.";
+                  "موتور امنیتی ویندوز این تصویر دانلودی را به عنوان بدافزار شناسایی کرد.";
               item.remediation_kind = "file";
               item.path = full;
               item.process_name = fname;
@@ -3073,7 +3401,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               item.severity = "critical";
               item.target = full;
               item.detail =
-                  "موتور امنیتی ویندوز (AMSI) این فایل صوتی/ویدیویی را به عنوان بدافزار شناسایی کرد.";
+                  "موتور امنیتی ویندوز این فایل صوتی یا ویدیویی را به عنوان بدافزار شناسایی کرد.";
               item.remediation_kind = "file";
               item.path = full;
               item.process_name = fname;
@@ -3099,7 +3427,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
                 SecurityThreatEntry item;
                 item.key = !sha.empty() ? ("dl:web:" + sha.substr(0, 16))
                                         : ("dl:web:" + lower_fn);
-                item.name = "فایل لینک / صفحه تروجانی (" + fname + ")";
+                item.name = "فایل لینک یا صفحه تروجانی (" + fname + ")";
                 item.category = "malicious_download";
                 item.severity = "high";
                 item.target = full;
@@ -3146,7 +3474,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
                 item.key = !sha.empty() ? ("dl:doc:" + sha.substr(0, 16))
                                         : ("dl:doc:" + lower_fn);
                 item.name = has_bad_zip_entry
-                                ? ("آرشیو / سند حاوی فایل مخرب (" + fname + ")")
+                                ? ("بسته یا سند حاوی فایل مخرب (" + fname + ")")
                                 : ("سند یا فایل دانلودی آلوده (" + fname + ")");
                 item.category = "malicious_download";
                 item.severity = "critical";
@@ -3154,7 +3482,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
                 item.detail = has_bad_zip_entry
                                   ? ("فایل خطرناک درون بسته یا سند یافت شد: " + dangerous_entry)
                                   : (bad_pdf ? pdf_reason
-                                             : "پی لود اجرایی، اسکریپت مخرب یا امضای بدافزار درون فایل دانلود شده یافت شد.");
+                                             : "کد اجرایی، اسکریپت مخرب یا امضای بدافزار درون فایل دانلود شده یافت شد.");
                 item.remediation_kind = "file";
                 item.path = full;
                 item.process_name = fname;
@@ -3176,7 +3504,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               item.severity = "critical";
               item.target = full;
               item.detail =
-                  "موتور امنیتی ویندوز (AMSI) این فایل دانلود شده را به عنوان بدافزار شناسایی کرد.";
+                  "موتور امنیتی ویندوز این فایل دانلود شده را به عنوان بدافزار شناسایی کرد.";
               item.remediation_kind = "file";
               item.path = full;
               item.process_name = fname;
@@ -3227,7 +3555,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             item.severity = "critical";
             item.target = full;
             item.detail =
-                "موتور امنیتی ویندوز (AMSI) این فایل را به عنوان بدافزار شناسایی کرد.";
+                "موتور امنیتی ویندوز این فایل را به عنوان بدافزار شناسایی کرد.";
             item.remediation_kind = "file";
             item.path = full;
             item.process_name = fname;
@@ -3239,10 +3567,11 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
         }
 
         // G. Executables & script installers in Downloads / Temp / Desktop
+        const bool file_signed = VerifyTrustedWindowsSignature(wfull);
         const std::string product = ReadVersionStringW(wfull, L"ProductName");
         const std::string company = ReadVersionStringW(wfull, L"CompanyName");
         const SignatureHit sig =
-            MatchKnownThreatText(fname + " " + full + " " + product + " " + company);
+            MatchKnownThreatText(fname + " " + full + " " + product + " " + company, !file_signed);
         if (sig.matched) {
           SecurityThreatEntry item;
           item.key = sig.family_key + ":file";
@@ -3255,13 +3584,13 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
           item.path = full;
           item.process_name = fname;
           item.sha256 = ComputeFileSha256(wfull);
-          item.signed_valid = VerifyAuthenticodeSignature(wfull);
+          item.signed_valid = file_signed;
           add_finding(std::move(item));
           return false;
         }
 
         int amsi_result = 0;
-        if (amsi.ScanFile(wfull, &amsi_result)) {
+        if (!file_signed && amsi.ScanFile(wfull, &amsi_result)) {
           const std::string sha = ComputeFileSha256(wfull);
           SecurityThreatEntry item;
           item.key = !sha.empty() ? ("amsi:" + sha.substr(0, 16))
@@ -3271,7 +3600,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
           item.severity = "critical";
           item.target = full;
           item.detail =
-              "موتور امنیتی ویندوز (AMSI) این فایل را به عنوان بدافزار شناسایی کرد.";
+              "موتور امنیتی ویندوز این فایل را به عنوان بدافزار شناسایی کرد.";
           item.remediation_kind = "file";
           item.path = full;
           item.process_name = fname;
@@ -3314,7 +3643,7 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               item.severity = "critical";
               item.target = full;
               item.detail =
-                  "اسکریپت دانلود شده حاوی الگوی رمزگشایی پی لود، اجرای بی فایل یا دانلود تروجان است.";
+                  "اسکریپت دانلود شده حاوی الگوی رمزگشایی و اجرای مخفی یا دانلود تروجان است.";
               item.remediation_kind = "file";
               item.path = full;
               item.process_name = fname;
@@ -3336,15 +3665,15 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               lower_fn.find("patch") == std::string::npos &&
               lower_fn.find("keygen") == std::string::npos &&
               ToLowerAscii(company).find("armin") != std::string::npos;
-          if (!looks_official_setup) {
+          if (!looks_official_setup && !file_signed) {
             const PeHeuristicResult pe = AnalyzeFileHeuristics(wfull);
-            if (pe.suspicious && !VerifyAuthenticodeSignature(wfull)) {
+            if (pe.suspicious) {
               const std::string sha = ComputeFileSha256(wfull);
               SecurityThreatEntry item;
               item.key = !sha.empty() ? ("heur:" + sha.substr(0, 16))
                                       : ("heur:" + lower_fn);
               item.name = pe.deterministic
-                              ? ("بدافزار / تروجان شناسایی شده (" + fname + ")")
+                              ? ("بدافزار یا تروجان شناسایی شده (" + fname + ")")
                               : ("فایل پرخطر غیرمعتبر (" + fname + ")");
               item.category = "malicious_download";
               item.severity = pe.deterministic ? "critical" : "high";
@@ -3395,13 +3724,20 @@ RemediationOutcome SecurityScanner::RemediateThreat(
   RemediationOutcome out;
   bool took_action = false;
 
+  if (!target.path.empty() &&
+      IsNonRemovableSystemFileW(ToWide(target.path), ToLowerAscii(target.path)) &&
+      target.key.rfind("proc:lolbin:", 0) != 0) {
+    out.action_taken = false;
+    out.still_present = false;
+    out.ok = true;
+    out.message = "این مورد جزو فایل ها یا نرم افزارهای سیستمی مجاز دستگاه است.";
+    return out;
+  }
+
   if (target.key.rfind("proc:lolbin:", 0) == 0) {
-    DWORD target_pid = 0;
-    try {
-      target_pid = static_cast<DWORD>(std::stoul(target.key.substr(12)));
-    } catch (...) {
-      target_pid = 0;
-    }
+    const unsigned long parsed_pid =
+        std::strtoul(target.key.substr(12).c_str(), nullptr, 10);
+    const DWORD target_pid = static_cast<DWORD>(parsed_pid);
     if (target_pid > 4) {
       HANDLE h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, target_pid);
       if (h != nullptr) {

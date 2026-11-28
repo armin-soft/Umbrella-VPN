@@ -73,6 +73,96 @@ object UmbrellaSecurityScanner {
         cleanFileCache.remove(path.lowercase())
     }
 
+    private fun containsIdentifierToken(haystackLower: String, tokenLower: String): Boolean {
+        if (haystackLower.isEmpty() || tokenLower.isEmpty()) return false
+        var start = 0
+        while (start <= haystackLower.length - tokenLower.length) {
+            val idx = haystackLower.indexOf(tokenLower, start)
+            if (idx < 0) return false
+            val beforeOk = idx == 0 || !haystackLower[idx - 1].isLetterOrDigit()
+            val afterIdx = idx + tokenLower.length
+            val afterOk = afterIdx >= haystackLower.length || !haystackLower[afterIdx].isLetterOrDigit()
+            if (beforeOk && afterOk) return true
+            start = idx + 1
+        }
+        return false
+    }
+
+    private fun isProtectedSystemPath(rawPath: String): Boolean {
+        if (rawPath.isBlank()) return false
+        val norm = rawPath.replace('\\', '/').lowercase()
+        val prefixes = arrayOf(
+            "/system/", "/system_ext/", "/vendor/", "/product/", "/odm/",
+            "/apex/", "/oem/", "/framework/", "/bin/", "/sbin/", "/etc/",
+            "/lib/", "/lib64/", "/proc/", "/sys/", "/dev/", "/data/system/",
+            "/data/misc/", "/mnt/vendor/", "/mnt/product/",
+        )
+        if (prefixes.any { norm.startsWith(it) || norm.contains(it) }) return true
+        return norm == "/system" || norm == "/vendor" || norm == "/product" ||
+            norm == "/system_ext" || norm == "/apex" || norm == "/odm" ||
+            norm == "/oem"
+    }
+
+    private fun isProtectedSystemApp(
+        context: Context,
+        pm: PackageManager,
+        app: ApplicationInfo,
+    ): Boolean {
+        val pkg = app.packageName ?: return true
+        val pkgLower = pkg.lowercase()
+        if (pkg == context.packageName ||
+            pkgLower.startsWith("ir.umbrella.") ||
+            pkgLower == "android" ||
+            pkgLower.startsWith("com.android.")
+        ) {
+            return true
+        }
+        val sysFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+        if ((app.flags and sysFlags) != 0) {
+            return true
+        }
+        if (isProtectedSystemPath(app.sourceDir ?: "") ||
+            isProtectedSystemPath(app.publicSourceDir ?: "")
+        ) {
+            return true
+        }
+        val platformMatch = runCatching {
+            pm.checkSignatures("android", pkg) == PackageManager.SIGNATURE_MATCH
+        }.getOrDefault(false)
+        return platformMatch
+    }
+
+    private fun isPlatformSignedArchive(pm: PackageManager, archivePath: String): Boolean {
+        return runCatching {
+            val androidInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pm.getPackageInfo("android", PackageManager.GET_SIGNING_CERTIFICATES)
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo("android", PackageManager.GET_SIGNATURES)
+            }
+            val archInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pm.getPackageArchiveInfo(archivePath, PackageManager.GET_SIGNING_CERTIFICATES)
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(archivePath, PackageManager.GET_SIGNATURES)
+            } ?: return@runCatching false
+
+            val sysSig = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                androidInfo.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
+            } else {
+                @Suppress("DEPRECATION")
+                androidInfo.signatures?.firstOrNull()?.toByteArray()
+            } ?: return@runCatching false
+            val archSig = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                archInfo.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
+            } else {
+                @Suppress("DEPRECATION")
+                archInfo.signatures?.firstOrNull()?.toByteArray()
+            } ?: return@runCatching false
+            sysSig.contentEquals(archSig)
+        }.getOrDefault(false)
+    }
+
     private fun matchKnownPackageOrLabel(
         packageName: String,
         label: String,
@@ -90,32 +180,32 @@ object UmbrellaSecurityScanner {
             combined.contains("droidjack") ||
             combined.contains("androrat") ||
             combined.contains("eaglespy") ||
-            combined.contains("ermac") ||
-            combined.contains("hookbot") ||
-            combined.contains("brata") ||
-            combined.contains("octo") ||
-            combined.contains("godfather") ||
-            combined.contains("flubot") ||
-            combined.contains("teabot") ||
-            combined.contains("sharkbot") ||
-            combined.contains("vultur") ||
-            combined.contains("cerberus")
+            containsIdentifierToken(combined, "ermac") ||
+            containsIdentifierToken(combined, "hookbot") ||
+            containsIdentifierToken(combined, "brata") ||
+            containsIdentifierToken(combined, "octo") ||
+            containsIdentifierToken(combined, "godfather") ||
+            containsIdentifierToken(combined, "flubot") ||
+            containsIdentifierToken(combined, "teabot") ||
+            containsIdentifierToken(combined, "sharkbot") ||
+            containsIdentifierToken(combined, "vultur") ||
+            containsIdentifierToken(combined, "cerberus")
         ) {
             return SignatureMatch(
                 key = "malware:android_rat",
-                name = "بدافزار کنترل از راه دور اندروید (RAT)",
+                name = "بدافزار کنترل از راه دور اندروید",
                 category = "malware",
                 severity = "critical",
-                detail = "امضای یک تروجان یا ابزار کنترل مخفی دستگاه اندرویدی (RAT) شناسایی شد.",
+                detail = "امضای یک تروجان یا ابزار کنترل مخفی دستگاه اندرویدی شناسایی شد.",
             )
         }
         if (combined.contains("hiddify")) {
             return SignatureMatch(
                 key = "vpn:hiddify",
-                name = "Hiddify (فیلترشکن ناسازگار)",
+                name = "فیلترشکن ناسازگار هیدیفای",
                 category = "conflicting_vpn",
                 severity = "high",
-                detail = "اپلیکیشن Hiddify روی دستگاه نصب است؛ پیش از اتصال به آمبرلا باید آن را حذف کنید.",
+                detail = "اپلیکیشن هیدیفای روی دستگاه نصب است؛ پیش از اتصال به آمبرلا باید آن را حذف کنید.",
             )
         }
         if (combined.contains("jumpjump") ||
@@ -124,19 +214,19 @@ object UmbrellaSecurityScanner {
         ) {
             return SignatureMatch(
                 key = "malware:jumpjump",
-                name = "JumpJump VPN (بدافزار / ابزار مخرب)",
+                name = "برنامه مخرب جامپ جامپ",
                 category = "malware",
                 severity = "critical",
-                detail = "برنامه مخرب JumpJump روی دستگاه نصب است؛ تا زمان حذف کامل، اتصال آمبرلا مسدود می ماند.",
+                detail = "برنامه مخرب جامپ جامپ روی دستگاه نصب است؛ تا زمان حذف کامل، اتصال آمبرلا مسدود می ماند.",
             )
         }
         if (combined.contains("psiphon")) {
             return SignatureMatch(
                 key = "vpn:psiphon",
-                name = "Psiphon (فیلترشکن ناسازگار)",
+                name = "فیلترشکن ناسازگار سایفون",
                 category = "conflicting_vpn",
                 severity = "high",
-                detail = "اپلیکیشن Psiphon روی دستگاه شناسایی شد و با تونل آمبرلا تداخل دارد.",
+                detail = "اپلیکیشن سایفون روی دستگاه شناسایی شد و با تونل آمبرلا تداخل دارد.",
             )
         }
         if (combined.contains("holavpn") ||
@@ -146,7 +236,7 @@ object UmbrellaSecurityScanner {
         ) {
             return SignatureMatch(
                 key = "adware:hola_luminati",
-                name = "Hola / Luminati Proxy (تبلیغ افزار و اشتراک پهنای باند)",
+                name = "تبلیغ افزار و پروکسی هولا",
                 category = "adware",
                 severity = "high",
                 detail = "اپلیکیشن اشتراک گذاری ترافیک و پروکسی ناشناس روی دستگاه یافت شد.",
@@ -243,10 +333,12 @@ object UmbrellaSecurityScanner {
             val pkgLower = pkg.lowercase()
             if (pkg == selfPkg ||
                 pkgLower.startsWith("ir.umbrella.") ||
-                pkgLower.startsWith("org.telegram.") ||
-                pkgLower == "android" ||
-                pkgLower.startsWith("com.android.")
+                pkgLower.startsWith("org.telegram.")
             ) {
+                continue
+            }
+            val appInfo = pkgInfo.applicationInfo
+            if (appInfo != null && isProtectedSystemApp(context, pm, appInfo)) {
                 continue
             }
             val declaresVpnService = pkgInfo.services?.any { svc ->
@@ -495,10 +587,10 @@ object UmbrellaSecurityScanner {
                                 ) {
                                     return@use SignatureMatch(
                                         key = "dl:png_chunk:${lower.hashCode()}",
-                                        name = "تصویر PNG حاوی پی لود مخفی ($fname)",
+                                        name = "تصویر پی ان جی حاوی کد مخفی ($fname)",
                                         category = "malicious_download",
                                         severity = "critical",
-                                        detail = "کد اجرایی یا داده مخرب درون چانک متادیتا/خصوصی تصویر PNG شناسایی شد.",
+                                        detail = "کد اجرایی یا داده مخرب درون متادیتای تصویر پی ان جی شناسایی شد.",
                                     )
                                 }
                             }
@@ -525,10 +617,10 @@ object UmbrellaSecurityScanner {
                                 ) {
                                     return@use SignatureMatch(
                                         key = "dl:png_eof:${lower.hashCode()}",
-                                        name = "تصویر PNG با فایل بایندشده ($fname)",
+                                        name = "تصویر پی ان جی با فایل چسبیده شده ($fname)",
                                         category = "malicious_download",
                                         severity = "critical",
-                                        detail = "فایل اجرایی، آرشیو یا پی لود مخرب چسبیده به انتهای تصویر PNG (بعد از IEND) شناسایی شد.",
+                                        detail = "فایل اجرایی، آرشیو یا داده مخرب چسبیده به انتهای تصویر پی ان جی شناسایی شد.",
                                     )
                                 }
                             }
@@ -584,10 +676,10 @@ object UmbrellaSecurityScanner {
                                     ) {
                                         return@use SignatureMatch(
                                             key = "dl:jpg_meta:${lower.hashCode()}",
-                                            name = "کد مخرب در متادیتای تصویر JPEG ($fname)",
+                                            name = "کد مخرب در متادیتای تصویر جپگ ($fname)",
                                             category = "malicious_download",
                                             severity = "critical",
-                                            detail = "پی لود یا اسکریپت تروجانی درون متادیتای تصویر JPEG تزریق شده است.",
+                                            detail = "اسکریپت یا داده تروجانی درون متادیتای تصویر جپگ تزریق شده است.",
                                         )
                                     }
                                 }
@@ -621,10 +713,10 @@ object UmbrellaSecurityScanner {
                                     ) {
                                         return@use SignatureMatch(
                                             key = "dl:jpg_eoi:${lower.hashCode()}",
-                                            name = "تصویر JPEG با فایل بایندشده ($fname)",
+                                            name = "تصویر جپگ با فایل چسبیده شده ($fname)",
                                             category = "malicious_download",
                                             severity = "critical",
-                                            detail = "فایل اجرایی، آرشیو یا بدافزار چسبیده به انتهای تصویر JPEG (بعد از FFD9) شناسایی شد.",
+                                            detail = "فایل اجرایی، آرشیو یا بدافزار چسبیده به انتهای تصویر جپگ شناسایی شد.",
                                         )
                                     }
                                 }
@@ -652,10 +744,10 @@ object UmbrellaSecurityScanner {
                             if (containsBinderOrPayloadBytes(slice, 0) || shannonEntropy(slice) >= 7.35) {
                                 return@use SignatureMatch(
                                     key = "dl:bmp_eof:${lower.hashCode()}",
-                                    name = "تصویر BMP با فایل بایندشده ($fname)",
+                                    name = "تصویر بی ام پی با فایل چسبیده شده ($fname)",
                                     category = "malicious_download",
                                     severity = "critical",
-                                    detail = "داده یا بدافزار بایندشده در انتهای تصویر BMP شناسایی شد.",
+                                    detail = "داده یا بدافزار چسبیده شده در انتهای تصویر بی ام پی شناسایی شد.",
                                 )
                             }
                         }
@@ -687,10 +779,10 @@ object UmbrellaSecurityScanner {
                                 ) {
                                     return@use SignatureMatch(
                                         key = "dl:gif_eof:${lower.hashCode()}",
-                                        name = "تصویر GIF با فایل بایندشده ($fname)",
+                                        name = "تصویر گیف با فایل چسبیده شده ($fname)",
                                         category = "malicious_download",
                                         severity = "critical",
-                                        detail = "داده یا بدافزار بایندشده پس از پایان تصویر GIF شناسایی شد.",
+                                        detail = "داده یا بدافزار چسبیده شده پس از پایان تصویر گیف شناسایی شد.",
                                     )
                                 }
                             }
@@ -719,10 +811,10 @@ object UmbrellaSecurityScanner {
                             if (containsBinderOrPayloadBytes(slice, 0) || shannonEntropy(slice) >= 7.35) {
                                 return@use SignatureMatch(
                                     key = "dl:webp_eof:${lower.hashCode()}",
-                                    name = "تصویر WebP با فایل بایندشده ($fname)",
+                                    name = "تصویر وب پی با فایل چسبیده شده ($fname)",
                                     category = "malicious_download",
                                     severity = "critical",
-                                    detail = "داده یا بدافزار بایندشده در انتهای تصویر WebP شناسایی شد.",
+                                    detail = "داده یا بدافزار چسبیده شده در انتهای تصویر وب پی شناسایی شد.",
                                 )
                             }
                         }
@@ -745,10 +837,10 @@ object UmbrellaSecurityScanner {
         if (hasJsOrLaunch && hasAutoOrEmbed) {
             return SignatureMatch(
                 key = "dl:pdf_act:${lower.hashCode()}",
-                name = "سند PDF حاوی اسکریپت یا فرمان مخرب ($fname)",
+                name = "سند پی دی اف حاوی اسکریپت یا فرمان مخرب ($fname)",
                 category = "malicious_download",
                 severity = "critical",
-                detail = "فایل PDF حاوی اسکریپت یا فایل اجرایی با اجرای خودکار است.",
+                detail = "فایل پی دی اف حاوی اسکریپت یا فایل اجرایی با اجرای خودکار است.",
             )
         }
         val text = String(sample, Charsets.ISO_8859_1).lowercase()
@@ -758,10 +850,10 @@ object UmbrellaSecurityScanner {
         ) {
             return SignatureMatch(
                 key = "dl:pdf_eof:${lower.hashCode()}",
-                name = "فایل بایندشده در انتهای سند PDF ($fname)",
+                name = "فایل چسبیده شده در انتهای سند پی دی اف ($fname)",
                 category = "malicious_download",
                 severity = "critical",
-                detail = "پی لود مخفی شده پس از پایان رسمی سند PDF شناسایی شد.",
+                detail = "داده مخفی شده پس از پایان رسمی سند پی دی اف شناسایی شد.",
             )
         }
         return null
@@ -806,9 +898,15 @@ object UmbrellaSecurityScanner {
         file: File,
         selfPkg: String,
     ): SignatureMatch? {
+        if (isProtectedSystemPath(file.absolutePath)) {
+            return null
+        }
         val fname = file.name
         val lower = fname.lowercase()
         val pm = context.packageManager
+        if (isPlatformSignedArchive(pm, file.absolutePath)) {
+            return null
+        }
         val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS
         val pkgInfo = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -824,6 +922,23 @@ object UmbrellaSecurityScanner {
 
         if (pkgInfo != null) {
             val pkgName = pkgInfo.packageName ?: ""
+            if (pkgName == selfPkg ||
+                pkgName.startsWith("ir.umbrella.") ||
+                pkgName == "android"
+            ) {
+                return null
+            }
+            val installedApp = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getApplicationInfo(pkgName, PackageManager.ApplicationInfoFlags.of(0L))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getApplicationInfo(pkgName, 0)
+                }
+            }.getOrNull()
+            if (installedApp != null && isProtectedSystemApp(context, pm, installedApp)) {
+                return null
+            }
             val appInfo = pkgInfo.applicationInfo
             val label = if (appInfo != null) {
                 appInfo.sourceDir = file.absolutePath
@@ -839,9 +954,6 @@ object UmbrellaSecurityScanner {
                     name = "${knownHit.name} (فایل نصبی)",
                     detail = "فایل نصبی مخرب یا ناسازگار روی حافظه دستگاه یافت شد.",
                 )
-            }
-            if (pkgName == selfPkg || pkgName.startsWith("ir.umbrella.")) {
-                return null
             }
 
             val perms = pkgInfo.requestedPermissions?.toSet() ?: emptySet()
@@ -865,7 +977,7 @@ object UmbrellaSecurityScanner {
                     name = "فایل نصبی تروجانی با دسترسی کنترل کامل ($fname)",
                     category = "malicious_download",
                     severity = "critical",
-                    detail = "این فایل نصبی ترکیبی بسیار پرخطر از سرویس دسترسی پذیری، مدیر دستگاه، پیامک یا روکش صفحه (الگوی RAT) را درخواست می کند.",
+                    detail = "این فایل نصبی ترکیبی بسیار پرخطر از سرویس دسترسی پذیری، مدیر دستگاه، پیامک یا روکش صفحه را درخواست می کند.",
                 )
             }
         } else {
@@ -882,10 +994,10 @@ object UmbrellaSecurityScanner {
         if (hasHiddenPayloadEntriesInApk(file)) {
             return SignatureMatch(
                 key = "dl:apk_dropper:${lower.hashCode()}",
-                name = "فایل نصبی حاوی پی لود یا کد مخفی ($fname)",
+                name = "فایل نصبی حاوی برنامه یا کد مخفی ($fname)",
                 category = "malicious_download",
                 severity = "critical",
-                detail = "درون منابع این APK فایل اجرایی .dex/.apk/.jar پنهان شده (الگوی Dropper/SpyNote) یافت شد.",
+                detail = "درون منابع این فایل نصبی، کد یا برنامه اجرایی پنهان شده یافت شد.",
             )
         }
         return null
@@ -898,12 +1010,12 @@ object UmbrellaSecurityScanner {
         label: String,
         enabledA11y: String,
     ): SignatureMatch? {
+        if (isProtectedSystemApp(context, pm, app)) {
+            return null
+        }
         val pkg = app.packageName ?: return null
         val pkgLower = pkg.lowercase()
-        if (pkg == context.packageName ||
-            pkgLower.startsWith("ir.umbrella.") ||
-            pkgLower.startsWith("com.android.") ||
-            pkgLower.startsWith("com.google.android.") ||
+        if (pkgLower.startsWith("com.google.android.") ||
             pkgLower.startsWith("com.samsung.") ||
             pkgLower.startsWith("com.sec.") ||
             pkgLower.startsWith("com.miui.") ||
@@ -913,9 +1025,6 @@ object UmbrellaSecurityScanner {
             pkgLower.startsWith("com.vivo.") ||
             pkgLower.startsWith("org.telegram.")
         ) {
-            return null
-        }
-        if ((app.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0) {
             return null
         }
 
@@ -968,7 +1077,7 @@ object UmbrellaSecurityScanner {
                 name = "$label (تروجان با دسترسی کامل)",
                 category = "malware",
                 severity = "critical",
-                detail = "اپلیکیشن خارج از فروشگاه رسمی با ترکیب خطرناک دسترسی پذیری، مدیر دستگاه و پیامک/روکش صفحه (الگوی SpyNote/CraxsRAT) شناسایی شد.",
+                detail = "اپلیکیشن خارج از فروشگاه رسمی با ترکیب خطرناک دسترسی پذیری، مدیر دستگاه و پیامک یا روکش صفحه شناسایی شد.",
             )
         }
 
@@ -993,10 +1102,10 @@ object UmbrellaSecurityScanner {
                     if (hiddenDropper) {
                         return SignatureMatch(
                             key = "malware:apk_dropper:${pkgLower.hashCode()}",
-                            name = "$label (دراپر بدافزار)",
+                            name = "$label (نصب کننده بدافزار)",
                             category = "malware",
                             severity = "critical",
-                            detail = "درون فایل نصبی این برنامه، پی لود مخفی .dex/.apk/.jar به همراه مجوزهای حساس شناسایی شد.",
+                            detail = "درون فایل نصبی این برنامه، برنامه مخفی پنهان شده به همراه مجوزهای حساس شناسایی شد.",
                         )
                     }
                 }
@@ -1211,6 +1320,7 @@ object UmbrellaSecurityScanner {
         val name: String,
         val size: Long,
         val lastModified: Long,
+        val supportsDelete: Boolean,
     )
 
     private fun readSafSampleBytes(context: Context, docUri: Uri, limitBytes: Int = 2 * 1024 * 1024): ByteArray {
@@ -1312,6 +1422,7 @@ object UmbrellaSecurityScanner {
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_FLAGS,
         )
         val subdirs = mutableListOf<String>()
         runCatching {
@@ -1321,6 +1432,7 @@ object UmbrellaSecurityScanner {
                 val mimeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
                 val sizeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
                 val modIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                val flagsIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_FLAGS)
                 while (cursor.moveToNext()) {
                     if (idIdx < 0) continue
                     val childId = cursor.getString(idIdx) ?: continue
@@ -1328,7 +1440,16 @@ object UmbrellaSecurityScanner {
                     val childMime = if (mimeIdx >= 0) cursor.getString(mimeIdx) ?: "" else ""
                     val childSize = if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) cursor.getLong(sizeIdx) else 0L
                     val childMod = if (modIdx >= 0 && !cursor.isNull(modIdx)) cursor.getLong(modIdx) else 0L
+                    val docFlags = if (flagsIdx >= 0 && !cursor.isNull(flagsIdx)) cursor.getInt(flagsIdx) else DocumentsContract.Document.FLAG_SUPPORTS_DELETE
+                    val supportsDelete = (docFlags and DocumentsContract.Document.FLAG_SUPPORTS_DELETE) != 0
                     val lower = childName.lowercase()
+                    val childIdLower = childId.lowercase()
+                    if (isProtectedSystemPath(childIdLower) ||
+                        childIdLower.contains("android/obb") ||
+                        childIdLower.contains("android/data/com.android.")
+                    ) {
+                        continue
+                    }
                     if (childMime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         if (depth < maxDepth &&
                             lower != ".git" &&
@@ -1347,6 +1468,7 @@ object UmbrellaSecurityScanner {
                             name = childName,
                             size = childSize,
                             lastModified = childMod,
+                            supportsDelete = supportsDelete,
                         ),
                     )
                     if (out.size >= maxFiles) break
@@ -1379,10 +1501,10 @@ object UmbrellaSecurityScanner {
                             ) {
                                 return SignatureMatch(
                                     key = "dl:png_eof:${lower.hashCode()}",
-                                    name = "تصویر PNG با فایل بایندشده ($fname)",
+                                    name = "تصویر پی ان جی با فایل چسبیده شده ($fname)",
                                     category = "malicious_download",
                                     severity = "critical",
-                                    detail = "فایل اجرایی، آرشیو یا پی لود مخرب پس از IEND در تصویر PNG شناسایی شد.",
+                                    detail = "فایل اجرایی، آرشیو یا داده مخرب پس از پایان تصویر پی ان جی شناسایی شد.",
                                 )
                             }
                         }
@@ -1403,10 +1525,10 @@ object UmbrellaSecurityScanner {
                         ) {
                             return SignatureMatch(
                                 key = "dl:jpg_eoi:${lower.hashCode()}",
-                                name = "تصویر JPEG با فایل بایندشده ($fname)",
+                                name = "تصویر جپگ با فایل چسبیده شده ($fname)",
                                 category = "malicious_download",
                                 severity = "critical",
-                                detail = "فایل اجرایی، آرشیو یا بدافزار چسبیده به انتهای تصویر JPEG شناسایی شد.",
+                                detail = "فایل اجرایی، آرشیو یا بدافزار چسبیده به انتهای تصویر جپگ شناسایی شد.",
                             )
                         }
                     }
@@ -1418,6 +1540,9 @@ object UmbrellaSecurityScanner {
     }
 
     private fun inspectDownloadedFile(context: Context, file: File, selfPkg: String): SignatureMatch? {
+        if (isProtectedSystemPath(file.absolutePath)) {
+            return null
+        }
         val fname = file.name
         val lower = fname.lowercase()
         if (hasRloOrDoubleExtension(fname)) {
@@ -1426,7 +1551,7 @@ object UmbrellaSecurityScanner {
                 name = "فایل تروجانی با نام فریبنده ($fname)",
                 category = "malicious_download",
                 severity = "critical",
-                detail = "این فایل با پسوند دوگانه یا کاراکتر تغییر جهت سعی در پنهان کردن فایل اجرایی یا نصبی به جای تصویر/سند دارد.",
+                detail = "این فایل با پسوند دوگانه یا کاراکتر تغییر جهت سعی در پنهان کردن فایل اجرایی یا نصبی به جای تصویر یا سند دارد.",
             )
         }
         if (lower.endsWith(".apk")) {
@@ -1448,6 +1573,9 @@ object UmbrellaSecurityScanner {
     }
 
     private fun inspectSafDocument(context: Context, doc: SafDocumentEntry, selfPkg: String): SignatureMatch? {
+        if (!doc.supportsDelete) {
+            return null
+        }
         return inspectDownloadedPayload(
             fname = doc.name,
             totalLength = doc.size,
@@ -1474,7 +1602,7 @@ object UmbrellaSecurityScanner {
                 name = "فایل تروجانی با نام فریبنده ($fname)",
                 category = "malicious_download",
                 severity = "critical",
-                detail = "این فایل با پسوند دوگانه یا کاراکتر تغییر جهت سعی در پنهان کردن فایل اجرایی یا نصبی به جای تصویر/سند دارد.",
+                detail = "این فایل با پسوند دوگانه یا کاراکتر تغییر جهت سعی در پنهان کردن فایل اجرایی یا نصبی به جای تصویر یا سند دارد.",
             )
         }
 
@@ -1527,10 +1655,10 @@ object UmbrellaSecurityScanner {
             ) {
                 return SignatureMatch(
                     key = "dl:svg:${lower.hashCode()}",
-                    name = "تصویر SVG حاوی کد تروجانی ($fname)",
+                    name = "تصویر اس وی جی حاوی کد تروجانی ($fname)",
                     category = "malicious_download",
                     severity = "critical",
-                    detail = "فایل تصویر SVG حاوی اسکریپت یا کد مخرب است.",
+                    detail = "فایل تصویر اس وی جی حاوی اسکریپت یا کد مخرب است.",
                 )
             }
             return null
@@ -1611,7 +1739,7 @@ object UmbrellaSecurityScanner {
             ) {
                 return SignatureMatch(
                     key = "dl:poly_img:${lower.hashCode()}",
-                    name = "تصویر آلوده به پی لود تروجانی ($fname)",
+                    name = "تصویر آلوده به برنامه تروجانی ($fname)",
                     category = "malicious_download",
                     severity = "critical",
                     detail = "کد اجرایی یا اسکریپت تروجانی پنهان شده داخل تصویر شناسایی شد.",
@@ -1668,7 +1796,7 @@ object UmbrellaSecurityScanner {
                     name = "فایل رسانه ای حاوی بدافزار ($fname)",
                     category = "malicious_download",
                     severity = "critical",
-                    detail = "این فایل صوتی یا ویدیویی حاوی کد اجرایی یا پی لود تروجانی است.",
+                    detail = "این فایل صوتی یا ویدیویی حاوی کد اجرایی یا برنامه تروجانی است.",
                 )
             }
             return null
@@ -1737,7 +1865,7 @@ object UmbrellaSecurityScanner {
             ) {
                 return SignatureMatch(
                     key = "dl:web:${lower.hashCode()}",
-                    name = "فایل لینک / اسکریپت تروجانی ($fname)",
+                    name = "فایل لینک یا اسکریپت تروجانی ($fname)",
                     category = "malicious_download",
                     severity = "high",
                     detail = "فایل دانلود شده حاوی لینک یا اسکریپت تروجانی و فیشینگ است.",
@@ -1768,10 +1896,10 @@ object UmbrellaSecurityScanner {
             ) {
                 return SignatureMatch(
                     key = "dl:bin:${lower.hashCode()}",
-                    name = "فایل اجرایی یا پی لود مشکوک ($fname)",
+                    name = "فایل اجرایی یا برنامه مشکوک ($fname)",
                     category = "malicious_download",
                     severity = "critical",
-                    detail = "فایل اجرایی ناشناس یا پی لود مشکوک در پوشه دانلودها شناسایی شد.",
+                    detail = "فایل اجرایی ناشناس یا برنامه مشکوک در پوشه دانلودها شناسایی شد.",
                 )
             }
         }
@@ -1919,9 +2047,7 @@ object UmbrellaSecurityScanner {
 
         var scannedFiles = 0
         for (app in packages) {
-            if (app.packageName == selfPkg) continue
-            val isSystem = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-            if (isSystem && app.packageName.startsWith("com.android.")) continue
+            if (isProtectedSystemApp(context, pm, app)) continue
 
             val sourceKey = app.sourceDir ?: ""
             val cachedLabel = appLabelCache[app.packageName]
@@ -1972,6 +2098,7 @@ object UmbrellaSecurityScanner {
             for (file in files) {
                 if (!file.isFile) continue
                 val abs = file.absolutePath
+                if (isProtectedSystemPath(abs)) continue
                 val absLower = abs.lowercase()
                 if (!visited.add(absLower)) continue
                 val fname = file.name.lowercase()
@@ -2078,8 +2205,8 @@ object UmbrellaSecurityScanner {
                     "name" to "تونل وی پی ان فعال دیگر در سیستم",
                     "category" to "conflicting_vpn",
                     "severity" to "high",
-                    "target" to "Android VPN Service",
-                    "detail" to "یک فیلترشکن دیگر هم اکنون در اندروید فعال است؛ هنگام اتصال تونل آمبرلا اتصال قبلی خودکار بسته می شود (مگر اینکه VPN همیشه روشن سیستم فعال باشد).",
+                    "target" to "سرویس وی پی ان فعال دیگر در اندروید",
+                    "detail" to "یک فیلترشکن دیگر هم اکنون در اندروید فعال است؛ هنگام اتصال تونل آمبرلا اتصال قبلی خودکار بسته می شود، مگر اینکه وی پی ان همیشه روشن سیستم فعال باشد.",
                     "remediationKind" to "vpn_settings",
                     "active" to true,
                     "signedValid" to true,
@@ -2111,7 +2238,7 @@ object UmbrellaSecurityScanner {
     }
 
     fun deleteTargetInBackground(context: Context, path: String): Boolean {
-        if (path.isBlank()) return false
+        if (path.isBlank() || isProtectedSystemPath(path)) return false
         val deleted = if (path.startsWith("content://")) {
             val docUri = Uri.parse(path)
             runCatching {
@@ -2133,6 +2260,34 @@ object UmbrellaSecurityScanner {
         path: String,
     ): Map<String, Any> {
         var actionTaken = false
+        val pm = activity.packageManager
+
+        if (packageName.isNotBlank()) {
+            val targetApp = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0L))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getApplicationInfo(packageName, 0)
+                }
+            }.getOrNull()
+            if (targetApp != null && isProtectedSystemApp(activity, pm, targetApp)) {
+                return mapOf(
+                    "ok" to true,
+                    "actionTaken" to false,
+                    "stillPresent" to false,
+                    "message" to "این برنامه جزو اجزای سیستمی مجاز دستگاه است.",
+                )
+            }
+        }
+        if (remediationKind == "file" && isProtectedSystemPath(path)) {
+            return mapOf(
+                "ok" to true,
+                "actionTaken" to false,
+                "stillPresent" to false,
+                "message" to "این فایل جزو فایل های سیستمی مجاز دستگاه است.",
+            )
+        }
 
         if (remediationKind == "file" && path.isNotBlank()) {
             if (path.startsWith("content://")) {

@@ -2205,7 +2205,7 @@ $LastSent = (int)Repository::getSetting($RateKey, '0');
 $Now = time();
 if ($LastSent > 0 && ($Now - $LastSent) < 20) {
 $Wait = 20 - ($Now - $LastSent);
-self::fail(429, 'rate_limited', 'گزارش پشتیبانی شما لحظاتی پیش ارسال شد؛ ' . $Wait . ' ثانیه دیگر می توانید دوباره ارسال کنید.');
+self::fail(429, 'rate_limited', 'گزارش پشتیبانی شما لحظاتی پیش ارسال شد؛ ' . Helper::toPersian((string)$Wait) . ' ثانیه دیگر می توانید دوباره ارسال کنید.');
 }
 
 $Admins = self::administratorTelegramIds();
@@ -2830,7 +2830,7 @@ $MsgLines[] = '  توضیح: ' . self::supportEsc(mb_substr($Item['detail'], 0, 
 }
 }
 if (count($ToNotifyNeutralized) > 8) {
-$MsgLines[] = '… و ' . (count($ToNotifyNeutralized) - 8) . ' مورد دیگر';
+$MsgLines[] = '… و ' . Helper::toPersian((string)(count($ToNotifyNeutralized) - 8)) . ' مورد دیگر';
 }
 }
 
@@ -2852,7 +2852,7 @@ $MsgLines[] = '  مسیر/شناسه: <code>' . self::supportEsc(mb_substr($Item
 }
 }
 if (count($ToNotify) > 8) {
-$MsgLines[] = '… و ' . (count($ToNotify) - 8) . ' مورد دیگر';
+$MsgLines[] = '… و ' . Helper::toPersian((string)(count($ToNotify) - 8)) . ' مورد دیگر';
 }
 $MsgLines[] = '';
 $MsgLines[] = '🔒 برای محافظت از امنیت حساب و جلوگیری از تداخل شبکه، اتصال آمبرلا تا پاکسازی موارد فعال بالا مسدود است. از بخش <b>سپر امنیتی</b> داخل برنامه آمبرلا نسبت به حذف اقدام کنید.';

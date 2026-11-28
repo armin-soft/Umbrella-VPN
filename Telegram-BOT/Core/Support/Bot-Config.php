@@ -716,7 +716,7 @@ throw new InvalidArgumentException('بازه تکرار باید حداکثر ۵
 }
 return $Hours;
 }
-throw new InvalidArgumentException('فرمت بازه معتبر نیست؛ مثلاً 0 (فقط یک بار)، 24 (ساعت) یا «3 روز» وارد کنید.');
+throw new InvalidArgumentException('فرمت بازه معتبر نیست؛ مثلاً ۰ (فقط یک بار)، ۲۴ (ساعت) یا «۳ روز» وارد کنید.');
 }
 
 public static function parseAnnouncementStartTime(string $Input, ?int $Now = null): int {
@@ -762,7 +762,7 @@ if (preg_match('/^(\d{1,2}):(\d{2})$/', $Clean, $M)) {
 $H = (int)$M[1];
 $Mi = (int)$M[2];
 if ($H > 23 || $Mi > 59) {
-throw new InvalidArgumentException('ساعت باید بین 00:00 تا 23:59 باشد.');
+throw new InvalidArgumentException('ساعت باید بین ۰۰:۰۰ تا ۲۳:۵۹ باشد.');
 }
 $Dt = (new DateTimeImmutable('@' . $Ref))->setTimezone($Zone)->setTime($H, $Mi, 0);
 if ($Dt->getTimestamp() <= $Ref) {
@@ -771,7 +771,7 @@ $Dt = $Dt->modify('+1 day');
 return $Dt->getTimestamp();
 }
 
-throw new InvalidArgumentException('فرمت زمان شروع معتبر نیست؛ مثلاً «الان»، «+2 ساعت»، «18:30» یا «1405/09/15 18:00» بفرستید.');
+throw new InvalidArgumentException('فرمت زمان شروع معتبر نیست؛ مثلاً «الان»، «+۲ ساعت»، «۱۸:۳۰» یا «۱۴۰۵/۰۹/۱۵ ۱۸:۰۰» بفرستید.');
 }
 
 /** @return array{0:int,1:int,2:int} */

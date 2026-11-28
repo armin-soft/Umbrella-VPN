@@ -398,7 +398,7 @@ class MethodHandler(
                     "ok" to false,
                     "error" to "vpn_permission_denied",
                     "message" to if (blockedByOther) {
-                        "فیلترشکن دیگر یا VPN همیشه روشن سیستم اجازه جایگزینی تونل را نداد؛ در تنظیمات گوشی Always-on VPN را غیرفعال کنید."
+                        "فیلترشکن دیگر یا وی پی ان همیشه روشن سیستم اجازه جایگزینی تونل را نداد؛ در تنظیمات گوشی بخش وی پی ان همیشه روشن را غیرفعال کنید."
                     } else {
                         "مجوز ایجاد تونل وی پی ان در اندروید تایید نشد."
                     },
@@ -1055,7 +1055,7 @@ class MethodHandler(
             "message" to if (saved) {
                 "فایل گواهی در پوشه Downloads (به نام Umbrella-HTTPS-CA.crt) ذخیره شد؛ در تنظیمات امنیت گوشی از بخش Install a certificate -> CA certificate آن را نصب کنید."
             } else {
-                "تنظیمات امنیت گوشی برای نصب گواهی CA باز شد."
+                "تنظیمات امنیت گوشی برای نصب گواهی امنیتی باز شد."
             },
         )
     }

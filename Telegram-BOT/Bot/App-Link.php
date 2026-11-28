@@ -724,7 +724,7 @@ foreach ($Rows as $Row) {
 $Body = (string)($Row['Body'] ?? '');
 $Text .= self::notificationText($Row, mb_substr($Body, 0, 650) . (mb_strlen($Body) > 650 ? '…' : ''));
 if (mb_strlen($Body) > 650) {
-$Buttons[] = [Menu::button('📄متن کامل اعلان #' . $Row['ID'], 'app_notification:' . $Row['ID'] . ':' . $Page . ':0')];
+$Buttons[] = [Menu::button('📄متن کامل اعلان #' . Helper::toPersian((string)$Row['ID']), 'app_notification:' . $Row['ID'] . ':' . $Page . ':0')];
 }
 }
 $Buttons = array_merge($Buttons, Menu::pages($Page, $PageCount, 'app_notifications_page:'));

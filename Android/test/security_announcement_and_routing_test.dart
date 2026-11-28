@@ -2513,4 +2513,146 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('معافیت فایل های سیستمی غیرقابل حذف و استاندارد نگارش فارسی', () {
+    test('اسکنر اندروید فایل ها و برنامه های سیستمی غیرقابل حذف و امضای پلتفرم را معاف می کند', () {
+      final String scannerKt = File(
+        'android/app/src/main/kotlin/ir/umbrella/vpn/UmbrellaSecurityScanner.kt',
+      ).readAsStringSync();
+      final String methodKt = File(
+        'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
+      ).readAsStringSync();
+      final String guardDart = File(
+        'lib/core/malicious_link_guard.dart',
+      ).readAsStringSync();
+      final String dialogDart = File(
+        'lib/ui/widgets/security_shield_dialog.dart',
+      ).readAsStringSync();
+      final String controllerDart = File(
+        'lib/state/security_controller.dart',
+      ).readAsStringSync();
+
+      expect(scannerKt, contains('containsIdentifierToken'));
+      expect(scannerKt, contains('isProtectedSystemPath'));
+      expect(scannerKt, contains('isProtectedSystemApp'));
+      expect(scannerKt, contains('isPlatformSignedArchive'));
+      expect(scannerKt, contains('FLAG_SUPPORTS_DELETE'));
+      expect(scannerKt, contains('/system/'));
+      expect(scannerKt, contains('/vendor/'));
+      expect(scannerKt, contains('/product/'));
+      expect(scannerKt, contains('/apex/'));
+      final Iterable<String> persianLiterals = RegExp(
+        r'"[^"\n]*[\u0600-\u06FF][^"\n]*"',
+      ).allMatches(scannerKt).map((RegExpMatch m) => m.group(0)!);
+      expect(persianLiterals, isNotEmpty);
+      for (final String lit in persianLiterals) {
+        expect(lit, isNot(contains('(RAT)')));
+        expect(lit, isNot(contains('PNG')));
+        expect(lit, isNot(contains('JPEG')));
+        expect(lit, isNot(contains('PDF')));
+        expect(lit, isNot(contains('SVG')));
+      }
+
+      for (final String src in <String>[
+        scannerKt,
+        methodKt,
+        guardDart,
+        dialogDart,
+        controllerDart,
+      ]) {
+        expect(src.contains('\u200C'), isFalse);
+      }
+      expect(dialogDart, isNot(contains('(JumpJump)')));
+    });
+
+    test('پایشگر لینک مخرب پیام های خالص فارسی بدون واژگان فنی انگلیسی تولید می کند', () {
+      final List<MaliciousLinkMatch?> samples = <MaliciousLinkMatch?>[
+        MaliciousLinkGuard.inspectUrl('data:text/html,<script>alert(1)</script>'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/\u202Egpj.exe'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/?q=powershell%20-enc%20AAAA'),
+        MaliciousLinkGuard.inspectUrl('https://185.10.20.30:4444/connect'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/?u=TVqQAAMAAAA'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/#https://grabify.link/x'),
+      ];
+      for (final MaliciousLinkMatch? hit in samples) {
+        expect(hit, isNotNull);
+        final String combined = '${hit!.title} ${hit.detail}';
+        expect(combined.contains('\u200C'), isFalse);
+        expect(combined, isNot(contains('Punycode')));
+        expect(combined, isNot(contains('DGA')));
+        expect(combined, isNot(contains('Data URI')));
+        expect(combined, isNot(contains('RLO')));
+        expect(combined, isNot(contains('ClickFix')));
+        expect(combined, isNot(contains('Base64')));
+        expect(combined, isNot(contains('Fragment')));
+        expect(combined, isNot(contains('RAT')));
+      }
+      final MaliciousLinkMatch? c2Hit = MaliciousLinkGuard.inspectUrl(
+        'https://185.10.20.30:4444/connect',
+      );
+      expect(c2Hit, isNotNull);
+      expect(c2Hit!.title, contains('۴۴۴۴'));
+      expect(c2Hit.detail, contains('۴۴۴۴'));
+    });
+
+    testWidgets('SecurityShieldDialog ارقام فارسی نمایش می دهد و متن وضعیت امن را تمیز رندر می کند', (WidgetTester tester) async {
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: false,
+          scannedApps: 12,
+          scannedFiles: 45,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'dl:sample_2026',
+              name: 'فایل مشکوک 2026',
+              category: 'malicious_download',
+              severity: 'critical',
+              target: '/sdcard/Download/sample.exe',
+              detail: 'کد خطای امنیتی 99 در بررسی فایل ثبت شد.',
+              path: '/sdcard/Download/sample.exe',
+              remediationKind: 'file',
+              active: false,
+            ),
+          ],
+        );
+      final SecurityScannerController sec = SecurityScannerController(native: native);
+      final ToastController toasts = ToastController();
+      await sec.scanNow();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SecurityScannerController>.value(value: sec),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: SecurityShieldDialog()),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('فایل مشکوک ۲۰۲۶'), findsOneWidget);
+      expect(find.text('کد خطای امنیتی ۹۹ در بررسی فایل ثبت شد.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const ValueKey<String>('security-remediate-all-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('دستگاه در برابر بدافزارها، فایل های آلوده و فیلترشکن های ناسازگار ایمن است.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+      sec.dispose();
+      toasts.dispose();
+    });
+  });
 }

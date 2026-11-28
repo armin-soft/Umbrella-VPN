@@ -586,4 +586,27 @@ $AnnPayloadMethod = new ReflectionMethod(AppGateway::class, 'announcementPayload
 $Payload = $AnnPayloadMethod->invoke(null);
 check(($Payload['title'] ?? '') === 'اعلان ویژه آمبرلا' && ($Payload['interval_hours'] ?? 0) === 24, 'AppGateway::announcementPayload reflects updated BotConfig');
 
+// Overflow (>8) neutralized alerts format remaining count using Persian digits
+$BulkNeutralized = [];
+for ($i = 1; $i <= 10; $i++) {
+$BulkNeutralized[] = [
+'key' => "dl:bulk_{$i}",
+'name' => "فایل آلوده {$i}",
+'category' => 'malicious_download',
+'severity' => 'critical',
+'action' => 'deleted',
+'target' => "C:\\Users\\Test\\Downloads\\bad{$i}.exe",
+'detail' => 'حذف خودکار فایل مخرب',
+];
+}
+$Res6 = $ProcessAlert->invoke(null, [
+'token' => $Token,
+'device_id' => $DeviceId,
+'threats' => [],
+'neutralized' => $BulkNeutralized,
+]);
+check($Res6['neutralized_count'] === 10 && $Res6['notified'] === true, 'bulk neutralized threats (>8) trigger notification');
+$BulkMsg = TelegramClient::$SentReadable[count(TelegramClient::$SentReadable) - 1][1] ?? '';
+check(str_contains($BulkMsg, '… و ۲ مورد دیگر'), 'overflow count in Telegram security alert uses Persian digits');
+
 echo "OK app announcement & security alert tests ({$Passed} assertions)\n";

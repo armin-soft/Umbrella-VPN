@@ -967,11 +967,11 @@ class NativeBridge {
       if (n.contains('jumpjump') || n.contains('jump-jump')) {
         found.add(SecurityThreat(
           key: 'malware:jumpjump',
-          name: 'JumpJump VPN (بدافزار / ابزار مخرب)',
+          name: 'جامپ جامپ (بدافزار مخرب)',
           category: 'malware',
           severity: 'critical',
           target: n,
-          detail: 'نرم افزار مخرب JumpJump VPN در حال اجرا شناسایی شد.',
+          detail: 'نرم افزار مخرب جامپ جامپ در حال اجرا شناسایی شد.',
           remediationKind: 'process',
           processName: n,
           active: true,
@@ -983,7 +983,7 @@ class NativeBridge {
           category: 'conflicting_vpn',
           severity: 'high',
           target: n,
-          detail: 'فیلترشکن Psiphon در حال اجرا است و با آمبرلا تداخل دارد.',
+          detail: 'فیلترشکن سایفون در حال اجرا است و با آمبرلا تداخل دارد.',
           remediationKind: 'process',
           processName: n,
           active: true,

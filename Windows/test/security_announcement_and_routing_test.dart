@@ -2518,6 +2518,151 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('معافیت فایل های سیستمی غیرقابل حذف و استاندارد نگارش فارسی در ویندوز', () {
+    test('اسکنر ویندوز امضای کاتالوگ، فایل های سیستمی غیرقابل حذف و نرم افزارهای سیستمی را معاف می کند', () {
+      final String scannerCpp = File(
+        'packages/umbrella_native/windows/security_scanner.cpp',
+      ).readAsStringSync();
+      final String guardDart = File(
+        'lib/core/malicious_link_guard.dart',
+      ).readAsStringSync();
+      final String dialogDart = File(
+        'lib/ui/widgets/security_shield_dialog.dart',
+      ).readAsStringSync();
+      final String controllerDart = File(
+        'lib/state/security_controller.dart',
+      ).readAsStringSync();
+
+      expect(scannerCpp, contains('VerifyWindowsCatalogSignature'));
+      expect(scannerCpp, contains('WTD_CHOICE_CATALOG'));
+      expect(scannerCpp, contains('CryptCATAdminAcquireContext'));
+      expect(scannerCpp, contains('VerifyTrustedWindowsSignature'));
+      expect(scannerCpp, contains('IsProtectedWindowsSystemPath'));
+      expect(scannerCpp, contains('CanCurrentUserDeleteFileW'));
+      expect(scannerCpp, contains('IsMicrosoftSystemPublisher'));
+      expect(scannerCpp, contains('IsNonRemovableSystemFileW'));
+      expect(scannerCpp, contains('ContainsIdentifierToken'));
+      expect(scannerCpp, contains('no_remove'));
+      expect(scannerCpp, contains('system_component'));
+      expect(RegExp(r'\b(try|catch)\b').hasMatch(scannerCpp), isFalse);
+
+      final Iterable<String> persianLiterals = RegExp(
+        r'"[^"\n]*[\u0600-\u06FF][^"\n]*"',
+      ).allMatches(scannerCpp).map((RegExpMatch m) => m.group(0)!);
+      expect(persianLiterals, isNotEmpty);
+      for (final String lit in persianLiterals) {
+        expect(lit, isNot(contains('(AMSI)')));
+        expect(lit, isNot(contains('PNG')));
+        expect(lit, isNot(contains('JPEG')));
+        expect(lit, isNot(contains('PDF')));
+        expect(lit, isNot(contains('SVG')));
+        expect(lit, isNot(contains('ClickFix')));
+        expect(lit, isNot(contains('RAT / Infostealer')));
+      }
+
+      for (final String src in <String>[
+        scannerCpp,
+        guardDart,
+        dialogDart,
+        controllerDart,
+      ]) {
+        expect(src.contains('\u200C'), isFalse);
+      }
+      expect(dialogDart, isNot(contains('(JumpJump)')));
+    });
+
+    test('پایشگر لینک مخرب در ویندوز پیام های خالص فارسی با ارقام فارسی تولید می کند', () {
+      final List<MaliciousLinkMatch?> samples = <MaliciousLinkMatch?>[
+        MaliciousLinkGuard.inspectUrl('data:text/html,<script>alert(1)</script>'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/\u202Egpj.exe'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/?q=powershell%20-enc%20AAAA'),
+        MaliciousLinkGuard.inspectUrl('https://185.10.20.30:4444/connect'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/?u=TVqQAAMAAAA'),
+        MaliciousLinkGuard.inspectUrl('https://example.com/#https://grabify.link/x'),
+      ];
+      for (final MaliciousLinkMatch? hit in samples) {
+        expect(hit, isNotNull);
+        final String combined = '${hit!.title} ${hit.detail}';
+        expect(combined.contains('\u200C'), isFalse);
+        expect(combined, isNot(contains('Punycode')));
+        expect(combined, isNot(contains('DGA')));
+        expect(combined, isNot(contains('Data URI')));
+        expect(combined, isNot(contains('RLO')));
+        expect(combined, isNot(contains('ClickFix')));
+        expect(combined, isNot(contains('Base64')));
+        expect(combined, isNot(contains('Fragment')));
+        expect(combined, isNot(contains('RAT')));
+      }
+      final MaliciousLinkMatch? c2Hit = MaliciousLinkGuard.inspectUrl(
+        'https://185.10.20.30:4444/connect',
+      );
+      expect(c2Hit, isNotNull);
+      expect(c2Hit!.title, contains('۴۴۴۴'));
+      expect(c2Hit.detail, contains('۴۴۴۴'));
+    });
+
+    testWidgets('SecurityShieldDialog در ویندوز ارقام فارسی و متن وضعیت امن تمیز رندر می کند', (WidgetTester tester) async {
+      final _FakeNative native = _FakeNative()
+        ..scanResult = const SecurityScanResult(
+          clean: false,
+          scannedProcesses: 40,
+          scannedApps: 14,
+          scannedFiles: 55,
+          threats: <SecurityThreat>[
+            SecurityThreat(
+              key: 'dl:sample_2026',
+              name: 'فایل مشکوک 2026',
+              category: 'malicious_download',
+              severity: 'critical',
+              target: 'C:\\Users\\Test\\Downloads\\sample.exe',
+              detail: 'کد خطای امنیتی 99 در بررسی فایل ثبت شد.',
+              path: 'C:\\Users\\Test\\Downloads\\sample.exe',
+              remediationKind: 'file',
+              active: false,
+            ),
+          ],
+        );
+      final SecurityScannerController sec = SecurityScannerController(native: native);
+      final ToastController toasts = ToastController();
+      await sec.scanNow();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SecurityScannerController>.value(value: sec),
+            ChangeNotifierProvider<ToastController>.value(value: toasts),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: SecurityShieldDialog()),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('فایل مشکوک ۲۰۲۶'), findsOneWidget);
+      expect(find.text('کد خطای امنیتی ۹۹ در بررسی فایل ثبت شد.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const ValueKey<String>('security-remediate-all-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('دستگاه در برابر بدافزارها، فایل های آلوده و فیلترشکن های ناسازگار ایمن است.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+      sec.dispose();
+      toasts.dispose();
+    });
+  });
 }
 
 extension<T> on T {

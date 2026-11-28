@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'persian.dart';
+
 /// نتیجه شناسایی یک نشانی، دامنه یا فایل پیوند مخرب پیش از باز شدن.
 class MaliciousLinkMatch {
   const MaliciousLinkMatch({
@@ -883,7 +885,7 @@ class MaliciousLinkGuard {
               target: host,
               title: 'دامنه جعلی هموگراف / فیشینگ ($host)',
               detail:
-                  'نشانی از کدگذاری جعلی Punycode یا کاراکترهای شبه همسان برای شبیه سازی «$brand» استفاده می کند.',
+                  'نشانی از کدگذاری جعلی یا کاراکترهای شبه همسان برای شبیه سازی «$brand» استفاده می کند.',
               severity: 'critical',
               riskScore: 96,
             );
@@ -1015,7 +1017,7 @@ class MaliciousLinkGuard {
         key: 'link:dga:$host',
         host: host,
         target: host,
-        title: 'دامنه تصادفی و مشکوک DGA ($host)',
+        title: 'دامنه تصادفی و مشکوک ($host)',
         detail:
             'این دامنه دارای الگوی نام تصادفی با آنتروپی بالا روی پسوند پرخطر (.${parts.tld}) است.',
         severity: 'high',
@@ -1026,7 +1028,7 @@ class MaliciousLinkGuard {
     return null;
   }
 
-  /// بررسی کامل یک نشانی اینترنتی قبل از باز کردن برای کاربر (فیشینگ، ClickFix، ریدایرکت پنهان، تروجان).
+  /// بررسی کامل یک نشانی اینترنتی قبل از باز کردن برای کاربر (فیشینگ، اجرای مخفی، ریدایرکت پنهان، تروجان).
   static MaliciousLinkMatch? inspectUrl(String rawInput, {int depth = 0}) {
     if (depth > 2) {
       return null;
@@ -1037,7 +1039,7 @@ class MaliciousLinkGuard {
     }
     final String lower = raw.toLowerCase();
 
-    // 1. اسکیماهای غیرمتعارف مخرب، ClickFix و Fileless Execution
+    // 1. اسکیماهای غیرمتعارف مخرب و اجرای کد از راه دور
     const List<String> dangerousSchemes = <String>[
       'javascript:',
       'vbscript:',
@@ -1076,8 +1078,8 @@ class MaliciousLinkGuard {
           key: 'link:data_payload',
           host: 'data-uri',
           target: raw.length > 180 ? raw.substring(0, 180) : raw,
-          title: 'پیوند Data URI مخرب یا باینری پنهان',
-          detail: 'باز کردن صفحات یا فایل های باینری تعبیه شده در Data URI مسدود شد.',
+          title: 'پیوند داده ای مخرب یا فایل پنهان',
+          detail: 'باز کردن صفحات یا فایل های اجرایی تعبیه شده در پیوند داده ای مسدود شد.',
           severity: 'critical',
           riskScore: 98,
         );
@@ -1093,19 +1095,19 @@ class MaliciousLinkGuard {
         host: 'local-file',
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
         title: 'فراخوانی فایل اجرایی محلی مسدود شد',
-        detail: 'لینک file:// اشاره کننده به فایل اجرایی یا اسکریپت سیستمی مجاز نیست.',
+        detail: 'پیوند محلی اشاره کننده به فایل اجرایی یا اسکریپت سیستمی مجاز نیست.',
         severity: 'critical',
         riskScore: 95,
       );
     }
 
-    // 2. دستکاری ترتیب نوشتار برای فریب پسوند فایل (Right-to-Left Override / Bidi Controls)
+    // 2. دستکاری ترتیب نوشتار برای فریب پسوند فایل (Bidi Controls)
     if (RegExp(r'[\u202A-\u202E\u2066-\u2069]').hasMatch(raw)) {
       return MaliciousLinkMatch(
         key: 'link:rlo:${raw.hashCode}',
         host: 'spoofed-rlo',
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
-        title: 'نشانی فریبنده با کاراکتر تغییر جهت مخفی (RLO)',
+        title: 'نشانی فریبنده با کاراکتر تغییر جهت مخفی',
         detail:
             'این پیوند از کاراکترهای پنهان یونیکد برای تغییر ظاهر پسوند فایل خطرناک استفاده می کند.',
         severity: 'critical',
@@ -1113,7 +1115,7 @@ class MaliciousLinkGuard {
       );
     }
 
-    // 3. تشخیص الگوهای ClickFix / فرمان های پنهان پاورشل داخل متن یا پارامتر لینک
+    // 3. تشخیص الگوهای اجرای فرمان پنهان داخل متن یا پارامتر لینک
     String decodedLower = lower;
     try {
       decodedLower = Uri.decodeFull(raw).toLowerCase();
@@ -1128,8 +1130,8 @@ class MaliciousLinkGuard {
         key: 'link:clickfix:${raw.hashCode}',
         host: 'clickfix-command',
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
-        title: 'دستور مخرب ClickFix / اجرای از راه دور در پیوند',
-        detail: 'نشانی حاوی کد فرمان اجرایی پاورشل یا بارگیری اسکریپت آلوده است.',
+        title: 'دستور مخرب اجرای کد از راه دور در پیوند',
+        detail: 'نشانی حاوی کد فرمان اجرایی یا بارگیری اسکریپت آلوده است.',
         severity: 'critical',
         riskScore: 100,
       );
@@ -1216,9 +1218,9 @@ class MaliciousLinkGuard {
         key: 'link:script_dropper:$host',
         host: host,
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
-        title: 'لینک مستقیم فایل اسکریپتی/اجرایی خطرناک ($host)',
+        title: 'لینک مستقیم فایل اسکریپتی یا اجرایی خطرناک ($host)',
         detail:
-            'لینک بیرونی مستقیماً به فایل اسکریپتی یا تروجانی (.scr/.hta/.vbs/.ps1/.bat) اشاره دارد و برای امنیت مسدود شد.',
+            'لینک بیرونی مستقیماً به فایل اسکریپتی یا تروجانی خطرناک اشاره دارد و برای امنیت مسدود شد.',
         severity: 'critical',
         riskScore: 95,
       );
@@ -1228,9 +1230,9 @@ class MaliciousLinkGuard {
         key: 'link:payload:$host',
         host: host,
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
-        title: 'لینک دانلود پرخطر فایل اجرایی/تروجانی ($host)',
+        title: 'لینک دانلود پرخطر فایل اجرایی و نصبی ($host)',
         detail:
-            'دانلود مستقیم فایل اجرایی یا نصبی از آی پی عمومی مستقیم یا دامنه پرریسک مسدود شد.',
+            'دانلود مستقیم فایل اجرایی یا نصبی از نشانی عمومی مستقیم یا دامنه پرریسک مسدود شد.',
         severity: 'high',
         riskScore: 90,
       );
@@ -1242,14 +1244,14 @@ class MaliciousLinkGuard {
         key: 'link:trojan:$host',
         host: host,
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
-        title: 'لینک دانلود بدافزار / تروجان ($host)',
+        title: 'لینک دانلود بدافزار و تروجان ($host)',
         detail: 'نشانی دانلود حاوی امضای فایل تروجانی شناسایی و مسدود شد.',
         severity: 'critical',
         riskScore: 98,
       );
     }
 
-    // 6. درگاه های C2/RAT غیرمعمول در پیوند بیرونی
+    // 6. درگاه های کنترل از راه دور غیرمعمول در پیوند بیرونی
     if (!loopback &&
         !trusted &&
         uri.hasPort &&
@@ -1259,15 +1261,15 @@ class MaliciousLinkGuard {
         key: 'link:c2_port:$host:${uri.port}',
         host: host,
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
-        title: 'ارتباط با درگاه مشکوک کنترل از راه دور (${uri.port})',
+        title: 'ارتباط با درگاه مشکوک کنترل از راه دور (${Fa.num(uri.port)})',
         detail:
-            'درگاه ${uri.port} روی نشانی مشکوک جزو درگاه های رایج سرورهای RAT/بدافزار است.',
+            'درگاه ${Fa.num(uri.port)} روی نشانی مشکوک جزو درگاه های رایج سرورهای بدافزاری است.',
         severity: 'high',
         riskScore: 86,
       );
     }
 
-    // 7. بازرسی بازگشتی پارامترهای Open-Redirect و Base64 Payload در Query (نه برای صفحه محلی مسدودی)
+    // 7. بازرسی بازگشتی پارامترهای ریدایرکت و کد اجرایی پنهان
     if (!loopback) {
       final MaliciousLinkMatch? redirectHit = _inspectQueryAndFragment(
         uri,
@@ -1280,7 +1282,7 @@ class MaliciousLinkGuard {
       }
     }
 
-    // 8. بررسی ترکیب چند شاخص قطعی فیشینگ ۲۰۲۶ (آی پی عمومی مستقیم + ورود/پرداخت، یا الگوی DGA + TLD پرریسک؛ آی پی روتر محلی مستثنی است)
+    // 8. بررسی ترکیب چند شاخص قطعی فیشینگ (آی پی عمومی مستقیم + ورود/پرداخت، یا الگوی تصادفی + دامنه پرریسک)
     if (!loopback && !trusted && !isPrivateIp) {
       final int score = _computeUrlRiskScore(
         uri: uri,
@@ -1298,7 +1300,7 @@ class MaliciousLinkGuard {
           target: raw.length > 180 ? raw.substring(0, 180) : raw,
           title: 'پیوند فیشینگ با ساختار پرخطر ($host)',
           detail:
-              'این نشانی هم زمان چندین الگوی خطرناک فیشینگ/تخلف (شاخص تطبیق $score از ۱۰۰) را در آدرس و دامنه دارد و مسدود شد.',
+              'این نشانی هم زمان چندین الگوی خطرناک فیشینگ و تخلف (شاخص تطبیق ${Fa.num(score)} از ۱۰۰) را در آدرس و دامنه دارد و مسدود شد.',
           severity: score >= 85 ? 'critical' : 'high',
           riskScore: score,
         );
@@ -1342,13 +1344,13 @@ class MaliciousLinkGuard {
         continue;
       }
       final String valLower = val.toLowerCase();
-      // نشانه باینری PE/ZIP پنهان شده به صورت Base64 داخل URL
+      // نشانه باینری پنهان شده داخل پیوند
       if (valLower.contains('tvqqaam') || valLower.contains('uesdb')) {
         return MaliciousLinkMatch(
           key: 'link:b64_payload:$parentHost',
           host: parentHost,
           target: rawUrl.length > 180 ? rawUrl.substring(0, 180) : rawUrl,
-          title: 'محتوای اجرایی Base64 پنهان در پارامتر پیوند',
+          title: 'محتوای اجرایی پنهان شده در پارامتر پیوند',
           detail:
               'در پارامتر «${entry.key}» این پیوند داده اجرایی رمزنگاری شده شناسایی شد.',
           severity: 'critical',
@@ -1410,7 +1412,7 @@ class MaliciousLinkGuard {
             key: 'link:frag_redirect:${fragHit.key}',
             host: fragHit.host,
             target: rawUrl.length > 180 ? rawUrl.substring(0, 180) : rawUrl,
-            title: 'نشانی مخرب پنهان در بخش Fragment پیوند',
+            title: 'نشانی مخرب پنهان در بخش پایانی پیوند',
             detail: fragHit.detail,
             severity: 'critical',
             riskScore: math.max(90, fragHit.riskScore),

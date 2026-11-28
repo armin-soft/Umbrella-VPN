@@ -6835,7 +6835,7 @@ $Days <= 90 => '۳ ماهه',
 $Days <= 180 => '۶ ماهه',
 $Days <= 365 => '۱۲ ماهه',
 $Days <= 730 => '۲ ساله',
-default => ceil($Days / 30) . ' ماهه',
+default => Helper::toPersian((string)ceil($Days / 30)) . ' ماهه',
 };
 }
 

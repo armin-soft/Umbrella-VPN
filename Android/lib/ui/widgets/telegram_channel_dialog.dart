@@ -435,12 +435,14 @@ class _TelegramChannelDialogState extends State<TelegramChannelDialog>
     final AppAnnouncement? ann = widget.announcement;
     final String effectiveHandle =
         ann != null ? ann.displaySubtitleHandle : widget.channelHandle;
-    final String titleText = ann?.title ?? 'به کانال رسمی آمبرلا بپیوندید';
+    final String titleText = Fa.num(
+      ann?.title ?? 'به کانال رسمی آمبرلا بپیوندید',
+    );
     final String bodyText = Fa.num(
       ann?.body ??
           '☂️ فیلترشکن آمبرلا؛ برای دریافت به روز رسانی ها و اخبار، عضو کانال رسمی تلگرام شوید.',
     );
-    final String buttonText = ann?.buttonText ?? 'عضویت در کانال رسمی';
+    final String buttonText = Fa.num(ann?.buttonText ?? 'عضویت در کانال رسمی');
     final bool isTelegramTarget = ann == null ||
         ann.isDefaultChannelLink ||
         ann.buttonUrl.toLowerCase().contains('t.me') ||

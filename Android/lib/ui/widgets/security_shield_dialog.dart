@@ -222,7 +222,7 @@ class SecurityShieldDialog extends StatelessWidget {
                         Text(
                           danger
                               ? 'برای امنیت اتصال، اجرای هم زمان بدافزارها و فیلترشکن های ناسازگار مسدود است.'
-                              : 'دستگاه در برابر بدافزارها (JumpJump)، فایل های آلوده و فیلترشکن های ناسازگار ایمن است.',
+                              : 'دستگاه در برابر بدافزارها، فایل های آلوده و فیلترشکن های ناسازگار ایمن است.',
                           style: TextStyle(
                             fontSize: AppMetrics.fontSmall,
                             color: colors.textSecondary,
@@ -556,7 +556,7 @@ class SecurityShieldDialog extends StatelessWidget {
                                 } else {
                                   toasts.warning(
                                     'نیاز به تایید حذف',
-                                    security.lastMessage,
+                                    Fa.num(security.lastMessage),
                                   );
                                 }
                               }
@@ -615,7 +615,7 @@ class _ThreatCard extends StatelessWidget {
               const SizedBox(width: AppMetrics.space2),
               Expanded(
                 child: Text(
-                  item.name,
+                  Fa.num(item.name),
                   style: TextStyle(
                     fontSize: AppMetrics.fontBody,
                     fontWeight: FontWeight.w800,
@@ -646,7 +646,7 @@ class _ThreatCard extends StatelessWidget {
           ),
           const SizedBox(height: AppMetrics.space2),
           Text(
-            item.detail,
+            Fa.num(item.detail),
             style: TextStyle(
               fontSize: AppMetrics.fontSmall,
               color: colors.textSecondary,
@@ -689,11 +689,11 @@ class _ThreatCard extends StatelessWidget {
                           await security!.remediateThreat(item);
                       if (toasts != null) {
                         if (res.ok) {
-                          toasts!.success('تهدید برطرف شد', res.message);
+                          toasts!.success('تهدید برطرف شد', Fa.num(res.message));
                         } else {
                           toasts!.warning(
                             'تکمیل حذف در سیستم عامل',
-                            res.message,
+                            Fa.num(res.message),
                           );
                         }
                       }
@@ -736,7 +736,7 @@ class _NeutralizedCard extends StatelessWidget {
               const SizedBox(width: AppMetrics.space2),
               Expanded(
                 child: Text(
-                  event.name,
+                  Fa.num(event.name),
                   style: TextStyle(
                     fontSize: AppMetrics.fontSmall,
                     fontWeight: FontWeight.w700,

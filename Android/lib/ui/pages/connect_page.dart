@@ -1200,7 +1200,7 @@ class _SecurityBlockBanner extends StatelessWidget {
                       ),
                 ),
                 Text(
-                  'برنامه ناسازگار یا مخرب شناسایی شد: $names$extra',
+                  Fa.num('برنامه ناسازگار یا مخرب شناسایی شد: $names$extra'),
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
