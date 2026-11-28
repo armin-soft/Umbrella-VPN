@@ -13,8 +13,8 @@ void main() {
 
   group('AppConfig Android invariants', () {
     test('pins expected package ID, ports, and TUN defaults', () {
-      expect(AppConfig.version, '1.0.2');
-      expect(AppConfig.buildNumber, 3);
+      expect(AppConfig.version, '1.0.3');
+      expect(AppConfig.buildNumber, 4);
       expect(AppConfig.androidPackageId, 'ir.umbrella.vpn');
       expect(AppConfig.tunAdapterHint, 'tun0');
       expect(AppConfig.coreGrpcPort, 17078);

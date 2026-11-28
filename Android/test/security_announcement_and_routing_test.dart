@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -131,7 +130,7 @@ class _FakeNative implements NativeBridge {
   }) async {}
 
   @override
-  Future<void> showPromoBalloon({
+  Future<bool> showPromoBalloon({
     required String title,
     required String body,
     String actionUrl = '',
@@ -143,6 +142,7 @@ class _FakeNative implements NativeBridge {
       actionUrl: actionUrl,
       imageBytes: imageBytes,
     ));
+    return true;
   }
 
   @override
@@ -923,15 +923,15 @@ void main() {
 
     test('تاریخچه نسخه ها در UpdatesPage موارد تغییرات را زیر هم تفکیک می کند', () {
       const UpdateInfo rel = UpdateInfo(
-        version: '1.0.2',
-        downloadUrl: 'https://example.invalid/app.apk',
+        version: '1.0.3',
+        url: 'https://example.invalid/app.apk',
         notes:
-            '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.2 • امضای دائمی و یکپارچه نسخه اندروید • ارتقای اسکنر امنیتی اندروید',
+            '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.3 • طرح رایگان ۳ گیگابایتی • مسدودسازی عمیق تبلیغات HTTPS',
       );
       expect(rel.changelogItems, <String>[
-        '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.2',
-        'امضای دائمی و یکپارچه نسخه اندروید',
-        'ارتقای اسکنر امنیتی اندروید',
+        '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.3',
+        'طرح رایگان ۳ گیگابایتی',
+        'مسدودسازی عمیق تبلیغات HTTPS',
       ]);
 
       final String updatesUi = File(
@@ -1949,7 +1949,7 @@ void main() {
         ).readAsStringSync();
         expect(settingsPageDart, contains('همیشه فعال'));
 
-        final Map<String, dynamic> capturedRefresh = <String, dynamic>{};
+        final Map<String, dynamic> capturedHeartbeat = <String, dynamic>{};
         final Map<String, dynamic> capturedAlert = <String, dynamic>{};
         final GatewayClient gateway = GatewayClient(
           baseUrl: 'https://example.invalid/index.php?AppApi=',
@@ -1957,8 +1957,8 @@ void main() {
           client: MockClient((http.Request req) async {
             final Map<String, dynamic> body =
                 jsonDecode(req.body) as Map<String, dynamic>;
-            if (req.url.queryParameters['AppApi'] == 'account/refresh') {
-              capturedRefresh.addAll(body);
+            if (req.url.queryParameters['AppApi'] == 'auth/device') {
+              capturedHeartbeat.addAll(body);
               return http.Response(
                 jsonEncode(<String, dynamic>{
                   'ok': true,
@@ -1974,32 +1974,35 @@ void main() {
             return http.Response('{}', 200);
           }),
         );
-        await gateway.refreshAccount(
+        await gateway.heartbeat(
           token: 'tok-android',
           deviceId: 'dev-android',
-          securityState: <String, dynamic>{
-            'security_status': 'safe',
-            'scanned_at_ms': 1763800000000,
-            'scanned_files': 42,
-            'scanned_apps': 19,
-            'scanned_processes': 19,
-          },
+          securityStatus: 'safe',
+          scannedAtMs: 1763800000000,
+          scannedFiles: 42,
+          scannedApps: 19,
+          scannedProcesses: 19,
         );
-        expect(capturedRefresh['security_status'], 'safe');
-        expect(capturedRefresh['scanned_files'], 42);
+        expect(capturedHeartbeat['security_status'], 'safe');
+        expect(capturedHeartbeat['scanned_files'], 42);
 
         await gateway.reportSecurityAlert(
           token: 'tok-android',
           deviceId: 'dev-android',
-          neutralized: <Map<String, dynamic>>[
-            <String, dynamic>{
-              'key': 'dl:poly_img:umbrella_decoy',
-              'name': 'تصویر آلوده',
-              'category': 'malicious_download',
-              'severity': 'critical',
-              'action': 'deleted',
-              'target': '/sdcard/Download/umbrella_photo.jpg',
-            },
+          platform: 'Android',
+          appVersion: '1.0.3',
+          threats: const <SecurityThreat>[],
+          neutralized: const <NeutralizedSecurityEvent>[
+            NeutralizedSecurityEvent(
+              key: 'dl:poly_img:umbrella_decoy',
+              name: 'تصویر آلوده',
+              category: 'malicious_download',
+              severity: 'critical',
+              action: 'deleted',
+              target: '/sdcard/Download/umbrella_photo.jpg',
+              detail: 'تصویر آلوده در بررسی پس زمینه پاکسازی شد.',
+              timestampMs: 1763800005000,
+            ),
           ],
           securityStatus: 'safe',
           scannedAtMs: 1763800005000,

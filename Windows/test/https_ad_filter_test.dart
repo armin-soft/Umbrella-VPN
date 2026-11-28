@@ -133,7 +133,16 @@ class _MockSocks5Relay {
 void main() {
   group('Option 1 & 2 - AdBlock Domains, Local CA & HTTPS Deep Filter', () {
     test('Option 1 includes PersianBlocker, Brave, and uAssets ad/tracker suffixes', () {
-      final List<String> ads = UmbrellaCore.categoryFilterRules('ads');
+      final List<Map<String, dynamic>> adsRules =
+          UmbrellaCore.contentControlRules(
+        const FilterSettings(enabled: true, categories: <String>['ads']),
+        includeRemoteRuleSets: false,
+      );
+      final List<String> ads = <String>[
+        for (final Map<String, dynamic> r in adsRules)
+          if (r['domain_suffix'] is List<dynamic>)
+            ...(r['domain_suffix'] as List<dynamic>).cast<String>(),
+      ];
       expect(ads, contains('hadeseh.simra.cloud'));
       expect(ads, contains('dsp.aparat.com'));
       expect(ads, contains('adengine.telewebion.ir'));

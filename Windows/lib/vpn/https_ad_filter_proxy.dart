@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -925,7 +924,7 @@ class HttpsAdFilterProxy {
     }
     final Socket tunnelSide =
         await Socket.connect(InternetAddress.loopbackIPv4, bridge.port);
-    final int lp = tunnelSide.localPort;
+    final int lp = tunnelSide.port;
     final Socket? early = _earlyBridgeAccepts.remove(lp);
     if (early != null) {
       return (tunnelSide: tunnelSide, tlsServerSide: early);
@@ -1209,17 +1208,18 @@ class HttpsAdFilterProxy {
             ).timeout(const Duration(seconds: 12));
             upstreamReader = _HttpStreamReader(upstreamTls);
           }
+          final SecureSocket activeUpstream = upstreamTls;
 
           try {
-            upstreamTls.add(wireBytes);
+            activeUpstream.add(wireBytes);
             if (bufferedReqBody != null) {
               if (bufferedReqBody.isNotEmpty) {
-                upstreamTls.add(bufferedReqBody);
+                activeUpstream.add(bufferedReqBody);
               }
             } else if (reqHasBody) {
-              await _forwardRequestBody(clientReader, reqHead, upstreamTls);
+              await _forwardRequestBody(clientReader, reqHead, activeUpstream);
             }
-            await upstreamTls.flush();
+            await activeUpstream.flush();
           } catch (_) {
             await closeUpstream();
             if (attempt == 0 && reused && (!reqHasBody || bufferedReqBody != null)) {
@@ -1233,7 +1233,7 @@ class HttpsAdFilterProxy {
               aReader: clientReader,
               aSink: tlsClient,
               bReader: upstreamReader!,
-              bSink: upstreamTls,
+              bSink: activeUpstream,
             );
             return;
           }
@@ -1273,7 +1273,7 @@ class HttpsAdFilterProxy {
             aReader: clientReader,
             aSink: tlsClient,
             bReader: upstreamReader!,
-            bSink: upstreamTls,
+            bSink: upstreamTls!,
           );
           break;
         }

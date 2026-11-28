@@ -138,7 +138,6 @@ class MaliciousLinkGuard {
     'quest',
     'monster',
     'cyou',
-    'cfd',
     'beauty',
     'skin',
   };
@@ -945,7 +944,7 @@ class MaliciousLinkGuard {
         final bool hasIntent = _phishingIntentTokens.any(
           (String tok) =>
               host.contains('-$tok') ||
-              host.contains('${tok}-') ||
+              host.contains('$tok-') ||
               host.contains('.$tok.') ||
               host.startsWith('$tok.'),
         );
@@ -1471,7 +1470,7 @@ class MaliciousLinkGuard {
     final bool hasCredentialWord = _credentialPathKeywords.any(
       (String kw) =>
           pathLower.contains('/$kw') ||
-          pathLower.contains('${kw}.') ||
+          pathLower.contains('$kw.') ||
           uri.query.toLowerCase().contains(kw),
     );
     if (hasCredentialWord) {

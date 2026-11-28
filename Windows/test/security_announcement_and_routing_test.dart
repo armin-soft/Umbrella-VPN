@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -837,15 +836,15 @@ void main() {
 
     test('تاریخچه نسخه ها در UpdatesPage موارد تغییرات را زیر هم تفکیک می کند', () {
       const UpdateInfo rel = UpdateInfo(
-        version: '1.0.2',
-        downloadUrl: 'https://example.invalid/setup.exe',
+        version: '1.0.3',
+        url: 'https://example.invalid/setup.exe',
         notes:
-            '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.2 • ارتقای سپر امنیتی • بهینه سازی مصرف پردازنده',
+            '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.3 • طرح رایگان ۳ گیگابایتی • مسدودسازی عمیق تبلیغات HTTPS',
       );
       expect(rel.changelogItems, <String>[
-        '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.2',
-        'ارتقای سپر امنیتی',
-        'بهینه سازی مصرف پردازنده',
+        '🇮🇷 فیلترشکن آمبرلا نسخه 1.0.3',
+        'طرح رایگان ۳ گیگابایتی',
+        'مسدودسازی عمیق تبلیغات HTTPS',
       ]);
 
       final String updatesUi = File(

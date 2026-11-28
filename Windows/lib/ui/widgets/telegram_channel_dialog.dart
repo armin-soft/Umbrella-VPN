@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -804,7 +803,7 @@ class PromoBannerBar extends StatelessWidget {
                   colors.surfaceHigh,
                 ),
                 Color.alphaBlend(
-                  colors.accent.withValues(alpha: isDark ? 0.14 : 0.08),
+                  colors.primaryDeep.withValues(alpha: isDark ? 0.14 : 0.08),
                   colors.surface,
                 ),
               ],

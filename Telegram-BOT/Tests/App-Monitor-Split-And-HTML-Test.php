@@ -102,7 +102,6 @@ foreach (self::$Devices as $D) if (($D['Device_ID'] ?? '') === ($P[0] ?? '')) re
 return null;
 }
 public function fetchAll(string $Q, array $P = []): array {
-if (str_contains($Q, 'FROM `App_SignIn_Requests`')) return self::$SignIns;
 if (str_contains($Q, 'FROM `App_Devices` AS `D`')) {
 $Out = array_map(static function (array $D): array {
 $Tg = (int)($D['Telegram_ID'] ?? 0);
@@ -132,6 +131,7 @@ return array_slice($Out, (int)$P[1], (int)$P[0]);
 }
 return $Out;
 }
+if (str_contains($Q, 'FROM `App_SignIn_Requests`')) return self::$SignIns;
 if (str_contains($Q, 'GROUP BY `Device_ID`, `Category`')) {
 $Buckets = [];
 foreach (self::$Activities as $A) {

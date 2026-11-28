@@ -1968,6 +1968,8 @@ class PromoAnnouncement {
   static const PromoAnnouncement empty = PromoAnnouncement();
 
   bool get hasImage => imageUrl.trim().isNotEmpty;
+  bool get hasButton =>
+      buttonText.trim().isNotEmpty && buttonUrl.trim().isNotEmpty;
   bool get hasLink => buttonUrl.trim().isNotEmpty;
   bool get hasContent =>
       body.trim().isNotEmpty || hasImage || title.trim() != defaultTitle;

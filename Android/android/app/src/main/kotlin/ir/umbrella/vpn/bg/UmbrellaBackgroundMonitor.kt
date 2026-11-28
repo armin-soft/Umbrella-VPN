@@ -303,7 +303,7 @@ object UmbrellaBackgroundMonitor {
             } else {
                 "$base/$route"
             }
-            val appVer = Settings.bgAppVersion.ifBlank { "1.0.2" }
+            val appVer = Settings.bgAppVersion.ifBlank { "1.0.3" }
             val req = Request.Builder()
                 .url(url)
                 .header("Accept", "application/json, text/plain, */*")

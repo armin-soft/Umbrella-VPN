@@ -100,12 +100,13 @@ class _FakeNative implements NativeBridge {
   }) async {}
 
   @override
-  Future<void> showPromoBalloon({
+  Future<bool> showPromoBalloon({
     required String title,
     required String body,
     String actionUrl = '',
     Uint8List? imageBytes,
-  }) async {}
+  }) async =>
+      true;
 
   @override
   Stream<String> smsCodeEvents() => const Stream<String>.empty();
