@@ -182,6 +182,7 @@ class TitleBar extends StatelessWidget {
     this.status,
     this.unread = 0,
     this.onNotifications,
+    this.onShare,
     this.onToggleTheme,
     this.darkTheme = true,
   });
@@ -193,6 +194,7 @@ class TitleBar extends StatelessWidget {
   final VoidCallback onClose;
   final int unread;
   final VoidCallback? onNotifications;
+  final VoidCallback? onShare;
 
   /// تغییر تم روشن و تاریک از نوار بالای پنجره (نه از تنظیمات).
   final VoidCallback? onToggleTheme;
@@ -259,7 +261,17 @@ class TitleBar extends StatelessWidget {
             ),
           ),
 
-          // ── چپ: اعلان و تم ────────────────────────────────────────
+          // ── چپ: اشتراک گذاری، اعلان و تم ──────────────────────────
+          if (onShare != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space1),
+              child: _HeaderIconButton(
+                key: const ValueKey<String>('titlebar-share-button'),
+                icon: Icons.share_rounded,
+                tooltip: 'اشتراک گذاری',
+                onTap: onShare!,
+              ),
+            ),
           if (onNotifications != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppMetrics.space1),
@@ -323,6 +335,7 @@ class TitleBar extends StatelessWidget {
 /// دکمه گرد و مدرن نوار بالا (اعلان و تم) با عدد نشان.
 class _HeaderIconButton extends StatefulWidget {
   const _HeaderIconButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.onTap,
@@ -484,6 +497,7 @@ class SideNav extends StatelessWidget {
     required this.onSelect,
     required this.status,
     this.onStatusTap,
+    this.onShare,
     this.updateAvailable = false,
   });
 
@@ -492,6 +506,7 @@ class SideNav extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final VpnStatus status;
   final VoidCallback? onStatusTap;
+  final VoidCallback? onShare;
   final bool updateAvailable;
 
   @override
@@ -538,6 +553,23 @@ class SideNav extends StatelessWidget {
                               i == destinations.length - 1,
                           onTap: () => onSelect(i),
                         ),
+                      if (onShare != null) ...<Widget>[
+                        Divider(
+                          height: AppMetrics.space4,
+                          color: colors.border.withValues(alpha: 0.5),
+                        ),
+                        _NavItem(
+                          key: const ValueKey<String>('sidenav-share-button'),
+                          destination: const NavDestination(
+                            label: 'اشتراک گذاری',
+                            icon: Icons.share_outlined,
+                            activeIcon: Icons.share_rounded,
+                          ),
+                          selected: false,
+                          compact: compact,
+                          onTap: onShare!,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -681,6 +713,7 @@ class SideNav extends StatelessWidget {
 
 class _NavItem extends StatefulWidget {
   const _NavItem({
+    super.key,
     required this.destination,
     required this.selected,
     required this.onTap,

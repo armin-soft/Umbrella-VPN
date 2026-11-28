@@ -484,6 +484,7 @@ class SideNav extends StatelessWidget {
     required this.onSelect,
     required this.status,
     this.onStatusTap,
+    this.onShare,
     this.updateAvailable = false,
   });
 
@@ -492,6 +493,7 @@ class SideNav extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final VpnStatus status;
   final VoidCallback? onStatusTap;
+  final VoidCallback? onShare;
   final bool updateAvailable;
 
   @override
@@ -535,6 +537,23 @@ class SideNav extends StatelessWidget {
                               i == destinations.length - 1,
                           onTap: () => onSelect(i),
                         ),
+                      if (onShare != null) ...<Widget>[
+                        Divider(
+                          height: AppMetrics.space4,
+                          color: colors.border.withValues(alpha: 0.5),
+                        ),
+                        _NavItem(
+                          key: const ValueKey<String>('sidenav-share-button'),
+                          destination: const NavDestination(
+                            label: 'اشتراک گذاری',
+                            icon: Icons.share_outlined,
+                            activeIcon: Icons.share_rounded,
+                          ),
+                          selected: false,
+                          compact: compact,
+                          onTap: onShare!,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -681,6 +700,7 @@ class SideNav extends StatelessWidget {
 
 class _NavItem extends StatefulWidget {
   const _NavItem({
+    super.key,
     required this.destination,
     required this.selected,
     required this.onTap,

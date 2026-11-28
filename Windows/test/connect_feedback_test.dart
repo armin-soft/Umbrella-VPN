@@ -4,11 +4,13 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
 import 'package:umbrella_vpn/data/gateway_client.dart';
@@ -22,6 +24,9 @@ import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/state/update_controller.dart';
 import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
+import 'package:umbrella_vpn/ui/widgets/common.dart';
+import 'package:umbrella_vpn/ui/widgets/share_app_dialog.dart';
+import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
@@ -460,7 +465,9 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey<String>('updates-page-download-card')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsOneWidget);
-    expect(find.text('دانلود و نصب در برنامه'), findsOneWidget);
+    expect(find.text('دانلود و بروز رسانی'), findsOneWidget);
+    expect(find.text('بروز رسانی'), findsOneWidget);
+    expect(find.textContaining('نصب مجدد'), findsNothing);
 
     // با بازگشت از سینی یا بستن و باز کردن مجدد برنامه (حتی با کلید قدیمی updateSkipped)،
     // اعلان به روز رسانی دوباره روی صفحه اتصال ظاهر می شود.
@@ -503,9 +510,32 @@ void main() {
     expect(relaunched.showBanner, isTrue);
     relaunched.dispose();
 
-    // حتی زمانی که نسخه جدیدی در دسترس نباشد، منوی به روز رسانی دکمه دانلود و نصب دارد.
+    // وقتی آخرین نسخه بروز است، نیازی به دکمه دانلود و نصب مجدد نیست و حذف شده است.
     final MockClient idleHttp = MockClient(
-      (http.Request _) async => http.Response('[]', 200),
+      (http.Request _) async => http.Response.bytes(
+        utf8.encode(jsonEncode(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'tag_name': AppConfig.version,
+            'prerelease': false,
+            'draft': false,
+            'published_at': '2026-11-25T12:00:00Z',
+            'body': '- آخرین نسخه رسمی منتشرشده',
+            'assets': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'name': 'UmbrellaVPN-Setup-${AppConfig.version}-x64.exe',
+                'browser_download_url':
+                    'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/${AppConfig.version}/UmbrellaVPN-Setup-${AppConfig.version}-x64.exe',
+                'size': 40000000,
+                'digest': 'sha256:$sampleHash',
+              },
+            ],
+          },
+        ])),
+        200,
+        headers: const <String, String>{
+          'content-type': 'application/json; charset=utf-8',
+        },
+      ),
     );
     final UpdateController idleUpdates = UpdateController(
       native,
@@ -513,6 +543,7 @@ void main() {
     );
     await tester.runAsync(() => idleUpdates.check(silent: false));
     expect(idleUpdates.available, isNull);
+    expect(idleUpdates.releases, isNotEmpty);
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -529,9 +560,11 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.byKey(const ValueKey<String>('updates-page-download-card')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsOneWidget);
-    expect(find.text('دانلود و نصب به روز رسانی'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('updates-page-up-to-date-card')), findsOneWidget);
+    expect(find.text('برنامه به روز است'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsNothing);
+    expect(find.text('بروز رسانی'), findsNothing);
+    expect(find.textContaining('نصب مجدد'), findsNothing);
 
     toasts.clear();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -545,6 +578,137 @@ void main() {
     settings.dispose();
     auth.dispose();
     gateway.close();
+    toasts.dispose();
+  });
+
+  testWidgets('نوار عنوان و نوار کنار ویندوز دکمه اشتراک گذاری دارند و بارکد و لینک مستقیم را باز می کنند', (WidgetTester tester) async {
+    addTearDown(() async => await tester.binding.setSurfaceSize(null));
+
+    String? copiedText;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (MethodCall call) async {
+      if (call.method == 'Clipboard.setData') {
+        final Map<dynamic, dynamic>? args = call.arguments as Map<dynamic, dynamic>?;
+        copiedText = args?['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    final _ConnectNative native = _ConnectNative();
+    final MockClient emptyHttp = MockClient(
+      (http.Request _) async => http.Response('[]', 200),
+    );
+    final UpdateController updates = UpdateController(
+      native,
+      service: UpdateService(client: emptyHttp),
+    );
+    final ToastController toasts = ToastController();
+    final _ConnectSound sound = _ConnectSound();
+
+    const List<NavDestination> destinations = <NavDestination>[
+      NavDestination(label: 'اتصال', icon: Icons.shield_outlined, activeIcon: Icons.shield_rounded),
+      NavDestination(label: 'درباره', icon: Icons.info_outline_rounded, activeIcon: Icons.info_rounded),
+      NavDestination(label: 'به روز رسانی', icon: Icons.system_update_outlined, activeIcon: Icons.system_update_rounded),
+    ];
+
+    await tester.binding.setSurfaceSize(const Size(1280, 760));
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<SoundService>.value(value: sound),
+          ChangeNotifierProvider<UpdateController>.value(value: updates),
+          ChangeNotifierProvider<ToastController>.value(value: toasts),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Builder(
+              builder: (BuildContext ctx) {
+                void openShare() => ShareAppDialog.show(
+                      ctx,
+                      initialPlatform: ShareTargetPlatform.windows,
+                    );
+                return Scaffold(
+                  body: Column(
+                    children: <Widget>[
+                      TitleBar(
+                        status: VpnStatus.disconnected,
+                        onDragStart: () {},
+                        onMinimize: () {},
+                        onMaximize: () {},
+                        onClose: () {},
+                        onShare: openShare,
+                      ),
+                      Expanded(
+                        child: Row(
+                          children: <Widget>[
+                            SideNav(
+                              destinations: destinations,
+                              index: 0,
+                              onSelect: (_) {},
+                              status: VpnStatus.disconnected,
+                              onShare: openShare,
+                            ),
+                            const Expanded(child: SizedBox.expand()),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey<String>('titlebar-share-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('sidenav-share-button')), findsOneWidget);
+    expect(find.text('اشتراک گذاری'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('sidenav-share-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.takeException(), isNull);
+    expect(find.text('اشتراک گذاری برنامه'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('share-app-qr-box')), findsOneWidget);
+    expect(find.text(AppConfig.directWindowsDownloadUrl()), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('share-platform-android')));
+    await tester.pump();
+    expect(find.text(AppConfig.directAndroidDownloadUrl()), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey<String>('share-app-copy-button')));
+    await tester.tap(find.byKey(const ValueKey<String>('share-app-copy-button')));
+    await tester.pump();
+    expect(copiedText, AppConfig.directAndroidDownloadUrl());
+    expect(find.text('کپی شد'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('بستن'));
+    await tester.tap(find.text('بستن'));
+    await tester.pump();
+
+    // همچنین در کوچک ترین پنجره دسکتاپ (800x480) دیالوگ اشتراک گذاری بدون سرریز رندر می شود.
+    await tester.binding.setSurfaceSize(const Size(800, 480));
+    await tester.tap(find.byKey(const ValueKey<String>('titlebar-share-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey<String>('share-app-qr-box')), findsOneWidget);
+    expect(find.text(AppConfig.directWindowsDownloadUrl()), findsOneWidget);
+
+    toasts.clear();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
+    updates.dispose();
+    emptyHttp.close();
     toasts.dispose();
   });
 }

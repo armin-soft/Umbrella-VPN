@@ -73,6 +73,18 @@ class AppConfig {
   static const String allReleasesPageUrl =
       'https://github.com/armin-soft/Umbrella-VPN-Releases/releases';
 
+  static String directAndroidDownloadUrl([String targetVersion = version]) {
+    final String clean =
+        targetVersion.trim().isEmpty ? version : targetVersion.trim();
+    return 'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/$clean/UmbrellaVPN-$clean-universal.apk';
+  }
+
+  static String directWindowsDownloadUrl([String targetVersion = version]) {
+    final String clean =
+        targetVersion.trim().isEmpty ? version : targetVersion.trim();
+    return 'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/$clean/UmbrellaVPN-Setup-$clean-x64.exe';
+  }
+
   static const String tunAdapterHint = 'tun0';
   static const String tunAddress = '172.19.0.1/28';
   static const String tunAddress6 = 'fdfe:dcba:9876::1/126';

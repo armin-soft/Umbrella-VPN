@@ -22,6 +22,7 @@ import '../pages/device_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
 import '../widgets/common.dart';
+import '../widgets/share_app_dialog.dart';
 import '../widgets/shell_widgets.dart';
 import '../widgets/telegram_channel_dialog.dart';
 
@@ -355,6 +356,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
   }
 
+  void _openShareDialog() {
+    ShareAppDialog.show(
+      context,
+      initialPlatform: ShareTargetPlatform.windows,
+    );
+  }
+
   int _settingsNavVersion = 0;
 
   Widget _buildActivePage(int index) {
@@ -403,6 +411,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             onClose: () => widget.windowService.onWindowClose(),
             unread: unreadCount,
             onNotifications: _openNotifications,
+            onShare: _openShareDialog,
             onToggleTheme: () => settings.toggleTheme(
               effectiveBrightness: Theme.of(context).brightness,
             ),
@@ -435,6 +444,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       setState(() => _index = 0);
                     }
                   },
+                  onShare: _openShareDialog,
                   updateAvailable: hasUpdate,
                 ),
                 Expanded(

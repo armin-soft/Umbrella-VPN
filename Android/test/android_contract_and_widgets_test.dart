@@ -41,6 +41,7 @@ import 'package:umbrella_vpn/ui/widgets/brand_widgets.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/content_control.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
+import 'package:umbrella_vpn/ui/widgets/share_app_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/vpn/balancer.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
@@ -1142,11 +1143,27 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.text('دستگاه من'), findsOneWidget);
         expect(find.text('به روز رسانی'), findsOneWidget);
+        expect(find.text('اشتراک گذاری'), findsOneWidget);
         expect(find.text('درباره'), findsOneWidget);
         expect(find.text('خروج'), findsNothing);
-        Navigator.of(tester.element(find.text('درباره'))).pop();
+
+        await tester.ensureVisible(find.byKey(const ValueKey<String>('more-share-app-tile')));
+        await tester.tap(find.byKey(const ValueKey<String>('more-share-app-tile')));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
+        expect(tester.takeException(), isNull);
+        expect(find.byType(ShareAppDialog), findsOneWidget);
+        expect(find.text('اشتراک گذاری برنامه'), findsOneWidget);
+        expect(find.byKey(const ValueKey<String>('share-app-qr-box')), findsOneWidget);
+        expect(find.text(AppConfig.directAndroidDownloadUrl()), findsOneWidget);
+        await tester.ensureVisible(find.byKey(const ValueKey<String>('share-platform-windows')));
+        await tester.tap(find.byKey(const ValueKey<String>('share-platform-windows')));
+        await tester.pump();
+        expect(find.text(AppConfig.directWindowsDownloadUrl()), findsOneWidget);
+        await tester.ensureVisible(find.text('بستن'));
+        await tester.tap(find.text('بستن'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
 
         final String shellSource = File('lib/ui/shell/app_shell.dart').readAsStringSync();
         expect(shellSource, isNot(contains("title: 'خروج'")));
@@ -1158,6 +1175,7 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.byType(NavigationBar), findsNothing);
         expect(find.byType(SideNav), findsOneWidget);
+        expect(find.byKey(const ValueKey<String>('sidenav-share-button')), findsOneWidget);
 
         setViewport(const Size(1024, 768));
         await tester.pumpWidget(buildShell());
@@ -1165,6 +1183,7 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.byType(NavigationBar), findsNothing);
         expect(find.byType(SideNav), findsOneWidget);
+        expect(find.byKey(const ValueKey<String>('sidenav-share-button')), findsOneWidget);
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump();
@@ -2881,7 +2900,9 @@ void main() {
       await tester.pump();
       expect(find.byKey(const ValueKey<String>('updates-page-download-card')), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsOneWidget);
-      expect(find.text('دانلود و نصب در برنامه'), findsOneWidget);
+      expect(find.text('دانلود و بروز رسانی'), findsOneWidget);
+      expect(find.text('بروز رسانی'), findsOneWidget);
+      expect(find.textContaining('نصب مجدد'), findsNothing);
 
       // با بازگشت از بستن موقت یا بستن و باز کردن مجدد برنامه (حتی با وجود کلید قدیمی updateSkipped)،
       // اعلان به روز رسانی دوباره روی صفحه اتصال ظاهر می شود.
@@ -2925,9 +2946,32 @@ void main() {
       expect(relaunched.showBanner, isTrue);
       relaunched.dispose();
 
-      // حتی زمانی که نسخه جدیدی در دسترس نباشد، منوی به روز رسانی دکمه دانلود و نصب دارد.
+      // وقتی آخرین نسخه بروز است، نیازی به دکمه دانلود و نصب مجدد نیست و حذف شده است.
       final MockClient idleHttp = MockClient(
-        (http.Request _) async => http.Response('[]', 200),
+        (http.Request _) async => http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, dynamic>>[
+            <String, dynamic>{
+              'tag_name': AppConfig.version,
+              'prerelease': false,
+              'draft': false,
+              'published_at': '2026-11-25T12:00:00Z',
+              'body': '- آخرین نسخه رسمی منتشرشده',
+              'assets': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'name': 'UmbrellaVPN-${AppConfig.version}-arm64-v8a.apk',
+                  'browser_download_url':
+                      'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/${AppConfig.version}/UmbrellaVPN-${AppConfig.version}-arm64-v8a.apk',
+                  'size': 40000000,
+                  'digest': 'sha256:$sampleHash',
+                },
+              ],
+            },
+          ])),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        ),
       );
       final UpdateController idleUpdates = UpdateController(
         native,
@@ -2935,6 +2979,7 @@ void main() {
       );
       await tester.runAsync(() => idleUpdates.check(silent: false));
       expect(idleUpdates.available, isNull);
+      expect(idleUpdates.releases, isNotEmpty);
       await tester.pumpWidget(
         MultiProvider(
           providers: [
@@ -2951,9 +2996,11 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byKey(const ValueKey<String>('updates-page-download-card')), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsOneWidget);
-      expect(find.text('دانلود و نصب به روز رسانی'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('updates-page-up-to-date-card')), findsOneWidget);
+      expect(find.text('برنامه به روز است'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('updates-page-download-action-button')), findsNothing);
+      expect(find.text('بروز رسانی'), findsNothing);
+      expect(find.textContaining('نصب مجدد'), findsNothing);
 
       toasts.clear();
       await tester.pumpWidget(const SizedBox.shrink());

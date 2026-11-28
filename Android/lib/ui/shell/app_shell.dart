@@ -22,6 +22,7 @@ import '../pages/logs_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/updates_page.dart';
 import '../widgets/common.dart';
+import '../widgets/share_app_dialog.dart';
 import '../widgets/shell_widgets.dart';
 import '../widgets/telegram_channel_dialog.dart';
 
@@ -328,6 +329,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   },
                 ),
                 _MoreTile(
+                  key: const ValueKey<String>('more-share-app-tile'),
+                  icon: Icons.share_rounded,
+                  title: 'اشتراک گذاری',
+                  subtitle: 'بارکد و لینک مستقیم دانلود برای اندروید و ویندوز',
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _openShareDialog();
+                  },
+                ),
+                _MoreTile(
                   icon: Icons.info_rounded,
                   title: 'درباره',
                   subtitle:
@@ -343,6 +354,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ),
         );
       },
+    );
+  }
+
+  void _openShareDialog() {
+    ShareAppDialog.show(
+      context,
+      initialPlatform: ShareTargetPlatform.android,
     );
   }
 
@@ -491,6 +509,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                               playUiClick(context);
                             }
                           },
+                          onShare: _openShareDialog,
                           updateAvailable: hasUpdate,
                         ),
                         Expanded(child: pageStack),
@@ -598,6 +617,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
 class _MoreTile extends StatelessWidget {
   const _MoreTile({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,

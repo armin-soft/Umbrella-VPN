@@ -98,6 +98,20 @@ class AppConfig {
   static const String allReleasesPageUrl =
       'https://github.com/armin-soft/Umbrella-VPN-Releases/releases';
 
+  /// لینک مستقیم دانلود نسخه اندروید (نسخه همگانی سازگار با همه گوشی ها).
+  static String directAndroidDownloadUrl([String targetVersion = version]) {
+    final String clean =
+        targetVersion.trim().isEmpty ? version : targetVersion.trim();
+    return 'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/$clean/UmbrellaVPN-$clean-universal.apk';
+  }
+
+  /// لینک مستقیم دانلود نصاب ویندوز ۶۴ بیتی.
+  static String directWindowsDownloadUrl([String targetVersion = version]) {
+    final String clean =
+        targetVersion.trim().isEmpty ? version : targetVersion.trim();
+    return 'https://github.com/armin-soft/Umbrella-VPN-Releases/releases/download/$clean/UmbrellaVPN-Setup-$clean-x64.exe';
+  }
+
   /// پیشوند نام آداپتور تونل که برای خواندن آمار مصرف استفاده می شود.
   ///
   /// این رشته فقط برای پیدا کردن آداپتور در فهرست شبکه است و هیچ جا نمایش داده

@@ -217,7 +217,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
             ),
           ],
 
-          // ── کارت دانلود و نصب درون برنامه ای (همیشه در دسترس) ─────────────
+          // ── کارت وضعیت و بروز رسانی درون برنامه ای ─────────────────────────
           const SizedBox(height: AppMetrics.space4),
           if (hasUpdate)
             GlassCard(
@@ -231,7 +231,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 children: <Widget>[
                   SectionHeader(
                     icon: Icons.download_for_offline_rounded,
-                    title: Fa.num('دانلود و نصب نسخه ${available.version}'),
+                    title: Fa.num('بروز رسانی به نسخه ${available.version}'),
                     subtitle: available.publishedAt != null
                         ? Fa.num(
                             'انتشار در ${Fa.tehranDate(available.publishedAt)}  •  دریافت و نصب درون برنامه ای',
@@ -324,7 +324,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                                   ? Fa.num(
                                       'دریافت ${Fa.percent(updates.progress * 100)}',
                                     )
-                                  : 'دانلود و نصب در برنامه'),
+                                  : 'دانلود و بروز رسانی'),
                           icon: Icons.system_update_alt_rounded,
                           loading: activeTransfer,
                           height: AppMetrics.controlHeightSmall,
@@ -355,6 +355,26 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 ],
               ),
             )
+          else if (!updates.checking &&
+              updates.lastCheckedAt != null &&
+              updates.error.isEmpty)
+            GlassCard(
+              key: const ValueKey<String>('updates-page-up-to-date-card'),
+              padding: AppMetrics.responsiveCardPadding(context),
+              radius: AppMetrics.radiusXl,
+              child: SectionHeader(
+                icon: Icons.verified_rounded,
+                title: 'برنامه به روز است',
+                subtitle: Fa.num(
+                  'شما هم اکنون از آخرین نسخه (${AppConfig.version}) در کانال ${updates.channel.label} استفاده می کنید.',
+                ),
+                trailing: Pill(
+                  label: 'به روز',
+                  color: colors.success,
+                  dense: true,
+                ),
+              ),
+            )
           else
             GlassCard(
               key: const ValueKey<String>('updates-page-download-card'),
@@ -365,30 +385,16 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 children: <Widget>[
                   SectionHeader(
                     icon: Icons.download_for_offline_rounded,
-                    title: 'وضعیت و دریافت به روز رسانی',
+                    title: 'وضعیت بروز رسانی',
                     subtitle: updates.checking
                         ? Fa.num(
                             'در حال جستجو برای آخرین نسخه در کانال ${updates.channel.label}...',
                           )
-                        : (updates.error.isNotEmpty ||
-                                updates.lastCheckedAt == null)
-                            ? 'اطلاعات نسخه جدید هنوز دریافت نشده است؛ برای بررسی، دانلود و نصب مستقیم دکمه زیر را بزنید.'
-                            : Fa.num(
-                                'نسخه نصب شده (${AppConfig.version}) با آخرین انتشار کانال ${updates.channel.label} بررسی شده است؛ برای دریافت و نصب مستقیم کلیک کنید.',
-                              ),
+                        : 'اطلاعات آخرین نسخه هنوز دریافت نشده است؛ برای بررسی و دریافت بروز رسانی اقدام کنید.',
                     trailing: Pill(
-                      label: updates.checking
-                          ? 'در حال بررسی'
-                          : (updates.error.isNotEmpty
-                              ? 'نیاز به بررسی'
-                              : (updates.lastCheckedAt == null
-                                  ? 'آماده دریافت'
-                                  : 'به روز')),
-                      color: updates.checking
-                          ? colors.primary
-                          : (updates.error.isNotEmpty
-                              ? colors.warning
-                              : colors.success),
+                      label: updates.checking ? 'در حال بررسی' : 'نیاز به بررسی',
+                      color:
+                          updates.checking ? colors.primary : colors.warning,
                       dense: true,
                     ),
                   ),
@@ -419,7 +425,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
                                     )
                                   : (updates.checking
                                       ? 'در حال بررسی...'
-                                      : 'دانلود و نصب به روز رسانی')),
+                                      : 'بروز رسانی')),
                           icon: Icons.system_update_alt_rounded,
                           loading: updates.checking || activeTransfer,
                           height: AppMetrics.controlHeightSmall,
@@ -497,15 +503,15 @@ class _UpdatesPageState extends State<UpdatesPage> {
                       preRelease: item.preRelease,
                       installLabel: (item.url.isNotEmpty &&
                               UpdateService.hasValidSha256(item.sha256) &&
-                              (item.isNewer || item.isCurrentVersion))
-                          ? (item.isNewer ? 'دانلود و نصب' : 'دانلود و نصب مجدد')
+                              item.isNewer)
+                          ? 'بروز رسانی'
                           : null,
                       busy: activeTransfer || updates.checking,
                       downloadingThis: activeTransfer &&
                           updates.activeDownloadVersion == item.version,
                       onInstall: (item.url.isNotEmpty &&
                               UpdateService.hasValidSha256(item.sha256) &&
-                              (item.isNewer || item.isCurrentVersion))
+                              item.isNewer)
                           ? () => _installUpdate(
                                 updates,
                                 toasts,
