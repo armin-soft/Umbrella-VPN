@@ -8,6 +8,7 @@
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <wininet.h>
+#include <wincrypt.h>
 #include <winsvc.h>
 #include <winver.h>
 #include <ws2tcpip.h>
@@ -26,6 +27,7 @@
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "version.lib")
@@ -1751,6 +1753,144 @@ int64_t SystemOps::ProcessCpuTimeMicros() {
   u.LowPart = user_time.dwLowDateTime;
   u.HighPart = user_time.dwHighDateTime;
   return static_cast<int64_t>((k.QuadPart + u.QuadPart) / 10ULL);
+}
+
+namespace {
+
+bool DecodeHexSha1(const std::string& hex, std::vector<BYTE>* out_bytes) {
+  std::string cleaned;
+  cleaned.reserve(40);
+  for (char c : hex) {
+    if (std::isxdigit(static_cast<unsigned char>(c))) {
+      cleaned.push_back(c);
+    }
+  }
+  if (cleaned.size() != 40) return false;
+  out_bytes->resize(20);
+  for (size_t i = 0; i < 20; ++i) {
+    auto nib = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9') return ch - '0';
+      if (ch >= 'a' && ch <= 'f') return 10 + (ch - 'a');
+      if (ch >= 'A' && ch <= 'F') return 10 + (ch - 'A');
+      return 0;
+    };
+    (*out_bytes)[i] = static_cast<BYTE>((nib(cleaned[i * 2]) << 4) |
+                                        nib(cleaned[i * 2 + 1]));
+  }
+  return true;
+}
+
+bool FindCertInRootStore(DWORD store_location, const std::vector<BYTE>& sha1_bytes) {
+  HCERTSTORE store = CertOpenStore(
+      CERT_STORE_PROV_SYSTEM_W, 0, 0,
+      store_location | CERT_STORE_OPEN_EXISTING_FLAG | CERT_STORE_READONLY_FLAG,
+      L"Root");
+  if (!store) return false;
+  CRYPT_HASH_BLOB blob = {};
+  blob.cbData = static_cast<DWORD>(sha1_bytes.size());
+  blob.pbData = const_cast<BYTE*>(sha1_bytes.data());
+  PCCERT_CONTEXT found = CertFindCertificateInStore(
+      store, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SHA1_HASH,
+      &blob, nullptr);
+  const bool exists = found != nullptr;
+  if (found) CertFreeCertificateContext(found);
+  CertCloseStore(store, 0);
+  return exists;
+}
+
+bool DeleteCertFromRootStore(DWORD store_location,
+                             const std::vector<BYTE>& sha1_bytes) {
+  HCERTSTORE store = CertOpenStore(
+      CERT_STORE_PROV_SYSTEM_W, 0, 0,
+      store_location | CERT_STORE_OPEN_EXISTING_FLAG, L"Root");
+  if (!store) return false;
+  bool removed = false;
+  CRYPT_HASH_BLOB blob = {};
+  blob.cbData = static_cast<DWORD>(sha1_bytes.size());
+  blob.pbData = const_cast<BYTE*>(sha1_bytes.data());
+  while (true) {
+    PCCERT_CONTEXT found = CertFindCertificateInStore(
+        store, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SHA1_HASH,
+        &blob, nullptr);
+    if (!found) break;
+    if (CertDeleteCertificateFromStore(found)) {
+      removed = true;
+    } else {
+      break;
+    }
+  }
+  CertCloseStore(store, 0);
+  return removed;
+}
+
+}  // namespace
+
+bool SystemOps::IsHttpsCaTrusted(const std::string& sha1_hex) {
+  std::vector<BYTE> sha1_bytes;
+  if (!DecodeHexSha1(sha1_hex, &sha1_bytes)) return false;
+  if (FindCertInRootStore(CERT_SYSTEM_STORE_CURRENT_USER, sha1_bytes)) {
+    return true;
+  }
+  return FindCertInRootStore(CERT_SYSTEM_STORE_LOCAL_MACHINE, sha1_bytes);
+}
+
+bool SystemOps::InstallHttpsCa(const std::string& cert_pem) {
+  if (cert_pem.empty()) return false;
+  DWORD der_len = 0;
+  if (!CryptStringToBinaryA(cert_pem.c_str(),
+                            static_cast<DWORD>(cert_pem.size()),
+                            CRYPT_STRING_BASE64HEADER, nullptr, &der_len,
+                            nullptr, nullptr) ||
+      der_len == 0) {
+    return false;
+  }
+  std::vector<BYTE> der(der_len);
+  if (!CryptStringToBinaryA(cert_pem.c_str(),
+                            static_cast<DWORD>(cert_pem.size()),
+                            CRYPT_STRING_BASE64HEADER, der.data(), &der_len,
+                            nullptr, nullptr)) {
+    return false;
+  }
+  PCCERT_CONTEXT cert = CertCreateCertificateContext(
+      X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, der.data(), der_len);
+  if (!cert) return false;
+
+  BYTE hash[20] = {};
+  DWORD hash_len = sizeof(hash);
+  if (CertGetCertificateContextProperty(cert, CERT_SHA1_HASH_PROP_ID, hash,
+                                        &hash_len) &&
+      hash_len == 20) {
+    std::vector<BYTE> sha1_vec(hash, hash + 20);
+    if (FindCertInRootStore(CERT_SYSTEM_STORE_CURRENT_USER, sha1_vec) ||
+        FindCertInRootStore(CERT_SYSTEM_STORE_LOCAL_MACHINE, sha1_vec)) {
+      CertFreeCertificateContext(cert);
+      return true;
+    }
+  }
+
+  HCERTSTORE store = CertOpenStore(
+      CERT_STORE_PROV_SYSTEM_W, 0, 0, CERT_SYSTEM_STORE_CURRENT_USER, L"Root");
+  if (!store) {
+    CertFreeCertificateContext(cert);
+    return false;
+  }
+  const BOOL added = CertAddCertificateContextToStore(
+      store, cert, CERT_STORE_ADD_REPLACE_EXISTING, nullptr);
+  CertCloseStore(store, 0);
+  CertFreeCertificateContext(cert);
+  return added == TRUE;
+}
+
+bool SystemOps::RemoveHttpsCa(const std::string& sha1_hex) {
+  std::vector<BYTE> sha1_bytes;
+  if (!DecodeHexSha1(sha1_hex, &sha1_bytes)) return false;
+  bool any = DeleteCertFromRootStore(CERT_SYSTEM_STORE_CURRENT_USER, sha1_bytes);
+  if (IsElevated()) {
+    if (DeleteCertFromRootStore(CERT_SYSTEM_STORE_LOCAL_MACHINE, sha1_bytes)) {
+      any = true;
+    }
+  }
+  return any;
 }
 
 }  // namespace umbrella

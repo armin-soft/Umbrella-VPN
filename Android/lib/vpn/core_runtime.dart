@@ -18,7 +18,7 @@ import 'runtime_config.dart';
 class CoreRuntime {
   const CoreRuntime._();
 
-  static const String cacheSchemaVersion = 'umbrella-android-runtime-v10';
+  static const String cacheSchemaVersion = 'umbrella-android-runtime-v11';
 
   static String runtimeCacheKey({
     required List<String> preparedLinks,
@@ -26,6 +26,8 @@ class CoreRuntime {
     required int stickyMinutes,
     required String serviceMode,
     required bool hasBlockPage,
+    bool hasHttpsFilter = false,
+    bool httpsFilterBroadMode = false,
     Map<String, String>? localRuleSetPaths,
   }) {
     final Map<String, dynamic> strippedSettings =
@@ -43,6 +45,8 @@ class CoreRuntime {
       'mode': serviceMode,
       'sticky': stickyMinutes,
       'blockPage': hasBlockPage,
+      'httpsFilter': hasHttpsFilter,
+      'httpsBroad': httpsFilterBroadMode,
       'links': preparedLinks,
       'settings': _canonicalize(strippedSettings),
       'local': localKeys,
@@ -68,8 +72,12 @@ class CoreRuntime {
     required String runDir,
     required String runtimeKey,
     int? blockPagePort,
+    int? httpsFilterPort,
+    int? httpsFilterEgressPort,
+    String? httpsFilterSecret,
     String coreLogPath = '',
     bool hasBlockPage = false,
+    bool hasHttpsFilter = false,
   }) async {
     final String sep = Platform.pathSeparator;
     final File runtimeFile = File('$runDir${sep}runtime-android.json');
@@ -128,6 +136,50 @@ class CoreRuntime {
           }
         }
         if (!foundBlockOutbound) {
+          return null;
+        }
+      }
+
+      if (hasHttpsFilter) {
+        bool foundHttpsOutbound = false;
+        for (final dynamic item in outbounds) {
+          if (item is Map &&
+              item['tag'] == RuntimeConfig.httpsFilterOutboundTag) {
+            foundHttpsOutbound = true;
+            if (httpsFilterPort != null &&
+                httpsFilterPort > 0 &&
+                item['server_port'] != httpsFilterPort) {
+              item['server_port'] = httpsFilterPort;
+              mutated = true;
+            }
+            break;
+          }
+        }
+        bool foundEgressInbound = false;
+        for (final dynamic item in inbounds) {
+          if (item is Map &&
+              item['tag'] == RuntimeConfig.httpsFilterEgressInboundTag) {
+            foundEgressInbound = true;
+            if (httpsFilterEgressPort != null &&
+                httpsFilterEgressPort > 0 &&
+                item['listen_port'] != httpsFilterEgressPort) {
+              item['listen_port'] = httpsFilterEgressPort;
+              mutated = true;
+            }
+            if (httpsFilterSecret != null && httpsFilterSecret.isNotEmpty) {
+              final List<Map<String, String>> nextUsers = <Map<String, String>>[
+                <String, String>{
+                  'username': 'umbrella',
+                  'password': httpsFilterSecret,
+                },
+              ];
+              item['users'] = nextUsers;
+              mutated = true;
+            }
+            break;
+          }
+        }
+        if (!foundHttpsOutbound || !foundEgressInbound) {
           return null;
         }
       }

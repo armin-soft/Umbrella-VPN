@@ -780,6 +780,30 @@ void UmbrellaNativePlugin::HandleMethodCall(
     });
     return;
   }
+  if (method == "isHttpsCaTrusted") {
+    const std::string sha1_hex = StringOf(args, "sha1Hex");
+    RunOffUiThread(reply_guard_, std::move(result), [sha1_hex]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().IsHttpsCaTrusted(sha1_hex));
+    });
+    return;
+  }
+  if (method == "installHttpsCa") {
+    const std::string cert_pem = StringOf(args, "certPem");
+    RunOffUiThread(reply_guard_, std::move(result), [cert_pem]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().InstallHttpsCa(cert_pem));
+    });
+    return;
+  }
+  if (method == "removeHttpsCa") {
+    const std::string sha1_hex = StringOf(args, "sha1Hex");
+    RunOffUiThread(reply_guard_, std::move(result), [sha1_hex]() {
+      return flutter::EncodableValue(
+          SystemOps::Instance().RemoveHttpsCa(sha1_hex));
+    });
+    return;
+  }
 
   result->NotImplemented();
 }

@@ -12,6 +12,7 @@ import '../../state/auth_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/power_controller.dart';
 import '../../state/toast_controller.dart';
+import '../../vpn/https_ad_filter_proxy.dart';
 import '../../vpn/vpn_controller.dart';
 import '../widgets/advanced_network_settings.dart';
 import '../widgets/common.dart';
@@ -135,13 +136,40 @@ class SettingsPage extends StatefulWidget {
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends State<SettingsPage>
+    with WidgetsBindingObserver {
   SettingsCategory? _section;
+  bool _httpsCaBusy = false;
 
   @override
   void initState() {
     super.initState();
     _section = widget.initialSection;
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      final VpnController vpn = context.read<VpnController>();
+      final SettingsController settings = context.read<SettingsController>();
+      unawaited(() async {
+        final bool wasTrusted = vpn.httpsCaTrusted;
+        final bool nowTrusted = await vpn.refreshHttpsCaStatus();
+        if (!wasTrusted &&
+            nowTrusted &&
+            settings.settings.httpsAdFilter &&
+            vpn.status.active) {
+          vpn.scheduleLiveReload();
+        }
+      }());
+    }
   }
 
   @override
@@ -759,6 +787,8 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Divider(height: AppMetrics.space3),
+            _buildHttpsAdFilterSection(context, colors, settings, vpn, toasts, cfg),
+            const Divider(height: AppMetrics.space3),
             ToggleRow(
               icon: Icons.travel_explore_rounded,
               title: 'گشودن نشانی مقصد',
@@ -854,6 +884,344 @@ class _SettingsPageState extends State<SettingsPage> {
           title: 'عبور مستقیم سایت ها',
           subtitle: 'سایت های انتخاب شده خارج از وی پی ان، همگام با ربات تلگرام',
           children: <Widget>[BypassControlCard()],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleInstallWindowsHttpsCa(
+    VpnController vpn,
+    SettingsController settings,
+    ToastController toasts, {
+    bool enableAfterInstall = false,
+  }) async {
+    if (_httpsCaBusy) return;
+    setState(() => _httpsCaBusy = true);
+    try {
+      final ({bool ok, bool needsManualConfirm, String message}) res =
+          await vpn.installHttpsCa();
+      if (!mounted) return;
+      if (res.ok && vpn.httpsCaTrusted) {
+        if (enableAfterInstall && !settings.settings.httpsAdFilter) {
+          await _applyRuntime(vpn, () => settings.setHttpsAdFilter(true));
+        }
+        toasts.success(
+          'گواهی محلی در ویندوز نصب شد',
+          'فیلتر عمیق HTTPS برای حذف تبلیغات یوتیوب و سایت ها آماده است.',
+        );
+      } else {
+        toasts.warning(
+          'نصب گواهی انجام نشد',
+          res.message.isEmpty
+              ? 'پنجره تایید گواهی ویندوز تایید نشد؛ برای فعال سازی دوباره تلاش کنید.'
+              : res.message,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _httpsCaBusy = false);
+    }
+  }
+
+  Future<void> _handleRemoveWindowsHttpsCa(
+    VpnController vpn,
+    SettingsController settings,
+    ToastController toasts,
+  ) async {
+    if (_httpsCaBusy) return;
+    setState(() => _httpsCaBusy = true);
+    try {
+      final ({bool ok, String message}) res = await vpn.removeHttpsCa();
+      if (!mounted) return;
+      if (res.ok && !vpn.httpsCaTrusted) {
+        if (settings.settings.httpsAdFilter) {
+          await _applyRuntime(vpn, () => settings.setHttpsAdFilter(false));
+        }
+        toasts.info('گواهی محلی از مخزن ویندوز حذف شد');
+      } else {
+        toasts.warning(
+          'حذف کامل گواهی نیاز به تایید دارد',
+          res.message.isEmpty ? 'حذف گواهی توسط کاربر لغو شد.' : res.message,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _httpsCaBusy = false);
+    }
+  }
+
+  Future<void> _confirmAndInstallWindowsHttpsCa(
+    VpnController vpn,
+    SettingsController settings,
+    ToastController toasts, {
+    bool enableAfterInstall = false,
+  }) async {
+    final UmbrellaColors colors = context.colors;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Row(
+          children: <Widget>[
+            Icon(Icons.shield_rounded, color: colors.info, size: AppMetrics.iconMd),
+            const SizedBox(width: AppMetrics.space3),
+            const Expanded(child: Text('نصب گواهی محلی آمبرلا در ویندوز')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'برای حذف تبلیغات درون ویدیویی یوتیوب و بنرهای درون صفحه ای سایت ها، '
+              'نیاز است یک گواهی محلی در مخزن ریشه مطمئن ویندوز (CurrentUser Root) ثبت شود.\n\n'
+              'این گواهی به صورت اختصاصی و تصادفی فقط روی همین کامپیوتر ساخته شده است، '
+              'هیچ ارتباطی با اینترنت ندارد و در هر لحظه از همین صفحه قابل حذف است.',
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(height: 1.55),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: withUiClick(
+              dialogContext,
+              () => Navigator.of(dialogContext).pop(false),
+            ),
+            child: const Text('انصراف'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.verified_user_rounded, size: AppMetrics.iconSm),
+            label: const Text('نصب گواهی محلی'),
+            onPressed: withUiClick(
+              dialogContext,
+              () => Navigator.of(dialogContext).pop(true),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _handleInstallWindowsHttpsCa(
+        vpn,
+        settings,
+        toasts,
+        enableAfterInstall: enableAfterInstall,
+      );
+    }
+  }
+
+  Widget _buildHttpsAdFilterSection(
+    BuildContext context,
+    UmbrellaColors colors,
+    SettingsController settings,
+    VpnController vpn,
+    ToastController toasts,
+    AppSettings cfg,
+  ) {
+    final bool trusted = vpn.httpsCaTrusted;
+    final HttpsFilterStats stats = vpn.httpsFilterStats;
+    final bool isBroad = cfg.httpsAdFilterMode == 'broad';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        ToggleRow(
+          icon: Icons.filter_center_focus_rounded,
+          title: 'فیلتر عمیق تبلیغات HTTPS (یوتیوب و وبسایت ها)',
+          subtitle:
+              'حذف تبلیغات ویدیویی یوتیوب در مرورگر و پنهان سازی کادرها و بنرهای تبلیغاتی وبسایت ها با گواهی محلی اختصاصی دستگاه',
+          value: cfg.httpsAdFilter,
+          onChanged: (bool next) async {
+            if (!next) {
+              await _applyRuntime(vpn, () => settings.setHttpsAdFilter(false));
+              return;
+            }
+            final bool nowTrusted = vpn.httpsCaStatusChecked
+                ? vpn.httpsCaTrusted
+                : await vpn.refreshHttpsCaStatus();
+            if (!nowTrusted && mounted) {
+              await _confirmAndInstallWindowsHttpsCa(
+                vpn,
+                settings,
+                toasts,
+                enableAfterInstall: true,
+              );
+              return;
+            }
+            await _applyRuntime(vpn, () => settings.setHttpsAdFilter(true));
+          },
+        ),
+        const SizedBox(height: AppMetrics.space2),
+        Container(
+          padding: const EdgeInsets.all(AppMetrics.space3),
+          decoration: BoxDecoration(
+            color: colors.surface.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
+            border: Border.all(
+              color: trusted
+                  ? colors.success.withValues(alpha: 0.35)
+                  : (cfg.httpsAdFilter
+                      ? colors.warning.withValues(alpha: 0.45)
+                      : colors.border),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Wrap(
+                spacing: AppMetrics.space2,
+                runSpacing: AppMetrics.space2,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
+                children: <Widget>[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        trusted ? Icons.verified_rounded : Icons.gpp_maybe_rounded,
+                        size: AppMetrics.iconSm,
+                        color: trusted ? colors.success : colors.warning,
+                      ),
+                      const SizedBox(width: AppMetrics.space2),
+                      Pill(
+                        label: trusted
+                            ? 'گواهی محلی در ویندوز نصب است'
+                            : (cfg.httpsAdFilter
+                                ? 'گواهی نصب نیست (موتور عمیق در حالت ایمن متوقف است)'
+                                : 'نیازمند نصب یک باره گواهی محلی'),
+                        color: trusted ? colors.success : colors.warning,
+                        dense: true,
+                      ),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: AppMetrics.space2,
+                    runSpacing: AppMetrics.space2,
+                    children: <Widget>[
+                      if (!trusted)
+                        SizedBox(
+                          height: AppMetrics.controlHeightSmall,
+                          child: FilledButton.icon(
+                            icon: _httpsCaBusy
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.download_rounded, size: AppMetrics.iconSm),
+                            label: Text(_httpsCaBusy ? 'در حال نصب...' : 'نصب گواهی محلی'),
+                            onPressed: _httpsCaBusy
+                                ? null
+                                : withUiClick(
+                                    context,
+                                    () => _confirmAndInstallWindowsHttpsCa(
+                                      vpn,
+                                      settings,
+                                      toasts,
+                                      enableAfterInstall: !cfg.httpsAdFilter,
+                                    ),
+                                  ),
+                          ),
+                        )
+                      else
+                        SizedBox(
+                          height: AppMetrics.controlHeightSmall,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.delete_outline_rounded, size: AppMetrics.iconSm),
+                            label: const Text('حذف گواهی'),
+                            onPressed: _httpsCaBusy
+                                ? null
+                                : withUiClick(
+                                    context,
+                                    () => _handleRemoveWindowsHttpsCa(
+                                      vpn,
+                                      settings,
+                                      toasts,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      SizedBox(
+                        height: AppMetrics.controlHeightSmall,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.refresh_rounded, size: AppMetrics.iconSm),
+                          label: const Text('بررسی وضعیت'),
+                          onPressed: withUiClick(context, () async {
+                            final bool ok = await vpn.refreshHttpsCaStatus();
+                            if (!mounted) return;
+                            if (ok) {
+                              toasts.success('گواهی محلی در ویندوز تایید شد');
+                              if (cfg.httpsAdFilter && vpn.status.active) {
+                                vpn.scheduleLiveReload();
+                              }
+                            } else {
+                              toasts.info('گواهی محلی در مخزن ویندوز نصب نیست');
+                            }
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (cfg.httpsAdFilter) ...<Widget>[
+                const SizedBox(height: AppMetrics.space3),
+                Text(
+                  'محدوده فیلتر عمیق HTTPS:',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: AppMetrics.space2),
+                Wrap(
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space2,
+                  children: <Widget>[
+                    ChoiceChip(
+                      label: const Text('هوشمند (یوتیوب و سایت های منتخب)'),
+                      selected: !isBroad,
+                      onSelected: (bool sel) {
+                        if (sel && isBroad) {
+                          unawaited(_applyRuntime(
+                            vpn,
+                            () => settings.setHttpsAdFilterMode('smart'),
+                          ));
+                        }
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('گسترده (همه سایت ها به جز بانک ها و پیام رسان ها)'),
+                      selected: isBroad,
+                      onSelected: (bool sel) {
+                        if (sel && !isBroad) {
+                          unawaited(_applyRuntime(
+                            vpn,
+                            () => settings.setHttpsAdFilterMode('broad'),
+                          ));
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+              if (vpn.isHttpsFilterProxyActive || stats.interceptedConnections > 0) ...<Widget>[
+                const SizedBox(height: AppMetrics.space2),
+                Text(
+                  Fa.num(
+                    'اتصال بررسی شده: ${stats.interceptedConnections}  |  تبلیغ خنثی شده: ${stats.blockedRequests}  |  صفحه تمیز شده: ${stats.injectedHtmlPages + stats.prunedJsonResponses}',
+                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
+              ],
+              const SizedBox(height: AppMetrics.space2),
+              Text(
+                'راهنمای یوتیوب بدون تبلیغ: در مرورگرهای Chrome و Edge پس از نصب گواهی و روشن کردن این گزینه، تبلیغات یوتیوب و سایت ها خودکار حذف می شوند؛ برای بهترین نتیجه در مرورگرهای دیگر نیز می توانید افزونه رایگان uBlock Origin را نصب کنید.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                      height: 1.5,
+                    ),
+              ),
+            ],
+          ),
         ),
       ],
     );

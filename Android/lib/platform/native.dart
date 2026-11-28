@@ -834,4 +834,48 @@ class NativeBridge {
       message: JsonX.text(map['message']),
     );
   }
+
+  /// بررسی نصب بودن گواهی ریشه محلی در AndroidCAStore سیستم/کاربر.
+  Future<bool> isHttpsCaTrusted({required String sha256Hex}) async {
+    final String clean = sha256Hex.trim().toLowerCase();
+    if (clean.length != 64) return false;
+    final bool? ok = await _invoke<bool>(
+      'isHttpsCaTrusted',
+      <String, dynamic>{'sha256Hex': clean},
+    );
+    return ok ?? false;
+  }
+
+  /// آغاز فرآیند نصب گواهی ریشه محلی روی گوشی اندروید.
+  Future<({bool ok, bool needsManualConfirm, String message})> installHttpsCa({
+    required String certPath,
+    required String certPem,
+  }) async {
+    final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
+      'installHttpsCa',
+      <String, dynamic>{
+        'certPath': certPath,
+        'certPem': certPem,
+      },
+    );
+    if (raw == null) {
+      return (
+        ok: false,
+        needsManualConfirm: true,
+        message: 'تنظیمات نصب گواهی روی این دستگاه در دسترس نبود.',
+      );
+    }
+    final Map<String, dynamic> map = JsonX.asMap(raw);
+    return (
+      ok: JsonX.boolean(map['ok']),
+      needsManualConfirm: JsonX.boolean(map['needsManualConfirm']),
+      message: JsonX.text(map['message']),
+    );
+  }
+
+  /// باز کردن مستقیم تنظیمات گواهی و امنیت در اندروید.
+  Future<bool> openCertificateSettings() async {
+    final bool? ok = await _invoke<bool>('openCertificateSettings');
+    return ok ?? false;
+  }
 }

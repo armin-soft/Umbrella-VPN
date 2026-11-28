@@ -383,6 +383,18 @@ class SettingsController extends ChangeNotifier {
     await update(_settings.copyWith(blockAds: true));
   }
 
+  Future<void> setHttpsAdFilter(bool value) async {
+    await update(_settings.copyWith(httpsAdFilter: value));
+  }
+
+  Future<void> setHttpsAdFilterMode(String mode) async {
+    await update(
+      _settings.copyWith(
+        httpsAdFilterMode: AppSettings.normalizeHttpsAdFilterMode(mode),
+      ),
+    );
+  }
+
   Future<void> setResolveDestination(bool value) async {
     await update(_settings.copyWith(resolveDestination: value));
   }

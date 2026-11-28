@@ -2,6 +2,7 @@ import 'direct_profile.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,6 +22,8 @@ import 'balancer.dart';
 import 'clash_api.dart';
 import 'content_block_server.dart';
 import 'core_runtime.dart';
+import 'https_ad_filter_proxy.dart';
+import 'local_ca.dart';
 import 'runtime_config.dart';
 import 'startup_verification.dart';
 import 'cores.dart';
@@ -701,6 +704,7 @@ class VpnController extends ChangeNotifier {
 
   Future<void> bootstrap() async {
     await _provisioner.init();
+    unawaited(refreshHttpsCaStatus());
     _device = await _native.deviceInfo();
     if (_device.elevated && _native.available) {
       // پروکسی سیستم از اجرای قبلی پاک می شود.
@@ -1222,6 +1226,8 @@ class VpnController extends ChangeNotifier {
         a.routingRegion != b.routingRegion ||
         a.bypassLan != b.bypassLan ||
         a.blockAds != b.blockAds ||
+        a.httpsAdFilter != b.httpsAdFilter ||
+        a.httpsAdFilterMode != b.httpsAdFilterMode ||
         a.resolveDestination != b.resolveDestination ||
         a.blockQuic != b.blockQuic ||
         a.tlsTricks != b.tlsTricks ||
@@ -3126,6 +3132,10 @@ class VpnController extends ChangeNotifier {
         (blockServer != null && blockServer.proxyPort > 0)
             ? blockServer.proxyPort
             : null;
+    final ({int? filterPort, int? egressPort, String secret, bool broadMode})
+        httpsCfg = await _prepareHttpsFilterForSession();
+    _activeHttpsFilterPort = httpsCfg.filterPort ?? 0;
+    _activeHttpsFilterBroad = httpsCfg.broadMode;
     final String sep = Platform.pathSeparator;
     await _provisioner.ensureDataRuleSets(
       extraDataDir: '${_provisioner.dataDir}${sep}work${sep}data',
@@ -3152,12 +3162,18 @@ class VpnController extends ChangeNotifier {
     );
 
     final String mode = plan.tun ? 'vpn' : 'proxy';
+    final bool hasHttpsFilter = httpsCfg.filterPort != null &&
+        httpsCfg.filterPort! > 0 &&
+        httpsCfg.egressPort != null &&
+        httpsCfg.egressPort! > 0;
     final String runtimeKey = CoreRuntime.runtimeCacheKey(
       preparedLinks: prepared.links,
       fullSettings: _lastSettingsMap ?? rawSettings,
       stickyMinutes: _settings.stickyMinutes,
       serviceMode: mode,
       hasBlockPage: blockPort != null,
+      hasHttpsFilter: hasHttpsFilter,
+      httpsFilterBroadMode: httpsCfg.broadMode,
       localRuleSetPaths: _provisioner.localRuleSetPaths,
     );
 
@@ -3165,8 +3181,12 @@ class VpnController extends ChangeNotifier {
       runDir: plan.runDir,
       runtimeKey: runtimeKey,
       blockPagePort: blockPort,
+      httpsFilterPort: httpsCfg.filterPort,
+      httpsFilterEgressPort: httpsCfg.egressPort,
+      httpsFilterSecret: httpsCfg.secret,
       coreLogPath: coreLog,
       hasBlockPage: blockPort != null,
+      hasHttpsFilter: hasHttpsFilter,
     );
     bool usedRawConfig = compiledConfig != null;
 
@@ -3294,6 +3314,7 @@ class VpnController extends ChangeNotifier {
         'lowest',
         'balance',
         RuntimeConfig.blockPageOutboundTag,
+        RuntimeConfig.httpsFilterOutboundTag,
       };
       final dynamic outbounds = decoded['outbounds'];
       if (outbounds is List) {
@@ -3328,6 +3349,12 @@ class VpnController extends ChangeNotifier {
       );
 
       final String workDataDir = '${_provisioner.dataDir}${sep}work${sep}data';
+      final int? filterPort =
+          _activeHttpsFilterPort > 0 ? _activeHttpsFilterPort : null;
+      final int? egressPort =
+          (filterPort != null && _httpsFilterEgressPort > 0)
+              ? _httpsFilterEgressPort
+              : null;
       final Map<String, dynamic> fullCopy =
           jsonDecode(rawCurrent) as Map<String, dynamic>;
       RuntimeConfig.finalize(
@@ -3336,6 +3363,10 @@ class VpnController extends ChangeNotifier {
         coreSettings: _lastSettingsMap,
         stickyMinutes: _settings.stickyMinutes,
         blockPagePort: blockPort,
+        httpsFilterPort: filterPort,
+        httpsFilterEgressPort: egressPort,
+        httpsFilterSecret: _httpsFilterSecret,
+        httpsFilterBroadMode: _activeHttpsFilterBroad,
         preserveLogOutput: true,
         hotReloadCompat: false,
         localRuleSetPaths: _provisioner.localRuleSetPaths,
@@ -3353,6 +3384,28 @@ class VpnController extends ChangeNotifier {
         );
       }
 
+      if (filterPort != null) {
+        final Object? rawDecodedInbounds = decoded['inbounds'];
+        final List<String> decodedTags = rawDecodedInbounds is List
+            ? <String>[
+                for (final dynamic item in rawDecodedInbounds)
+                  if (item is Map) '${item['tag'] ?? ''}'.trim(),
+              ]
+            : const <String>[];
+        if (!decodedTags.contains(RuntimeConfig.httpsFilterEgressInboundTag) &&
+            decodedTags.contains('tun-in') &&
+            decodedTags.contains('mixed-in') &&
+            _activeMixedPort > 0) {
+          _httpsFilterProxy?.updateRoutingConfig(
+            broadMode: _activeHttpsFilterBroad,
+            egressPort: _activeMixedPort,
+            egressUsername:
+                _activeLocalProxySecret.isNotEmpty ? LanSharing.coreAuthUser : '',
+            egressSecret: _activeLocalProxySecret,
+          );
+        }
+      }
+
       final String rawNormalized = jsonEncode(decoded);
       RuntimeConfig.finalize(
         decoded,
@@ -3360,6 +3413,10 @@ class VpnController extends ChangeNotifier {
         coreSettings: _lastSettingsMap,
         stickyMinutes: _settings.stickyMinutes,
         blockPagePort: blockPort,
+        httpsFilterPort: filterPort,
+        httpsFilterEgressPort: egressPort,
+        httpsFilterSecret: _httpsFilterSecret,
+        httpsFilterBroadMode: _activeHttpsFilterBroad,
         preserveLogOutput: true,
         hotReloadCompat: true,
         localRuleSetPaths: _provisioner.localRuleSetPaths,
@@ -4597,6 +4654,180 @@ class VpnController extends ChangeNotifier {
   int get contentBlockUiPort => _blockServer?.uiPort ?? 0;
   int get contentBlockProxyPort => _blockServer?.proxyPort ?? 0;
 
+  LocalCaManager? _httpsCaManager;
+  HttpsAdFilterProxy? _httpsFilterProxy;
+  int _activeHttpsFilterPort = 0;
+  int _httpsFilterEgressPort = 0;
+  String _httpsFilterSecret = '';
+  bool _activeHttpsFilterBroad = false;
+  bool _httpsCaTrusted = false;
+  bool _httpsCaStatusChecked = false;
+  HttpsFilterStats _httpsFilterStats = const HttpsFilterStats();
+  Timer? _httpsStatsNotifyTimer;
+
+  bool get httpsCaTrusted => _httpsCaTrusted;
+  bool get httpsCaStatusChecked => _httpsCaStatusChecked;
+  String get httpsCaCertPath => _httpsCaManager?.certPath ?? '';
+  HttpsFilterStats get httpsFilterStats => _httpsFilterStats;
+  bool get isHttpsFilterProxyActive => _httpsFilterProxy?.isRunning ?? false;
+
+  String get _httpsCaStorageDir {
+    final String base = _provisioner.dataDir.trim();
+    if (base.isNotEmpty) {
+      return '$base${Platform.pathSeparator}ca';
+    }
+    return '${Directory.systemTemp.path}${Platform.pathSeparator}umbrella-ca';
+  }
+
+  Future<LocalCaManager> _ensureCaInitialized() async {
+    final LocalCaManager manager =
+        _httpsCaManager ??= LocalCaManager(storageDir: _httpsCaStorageDir);
+    await manager.ensureInitialized();
+    return manager;
+  }
+
+  Future<bool> refreshHttpsCaStatus({bool notify = true}) async {
+    try {
+      final LocalCaManager ca = await _ensureCaInitialized();
+      final bool trusted = _native.available
+          ? await _native.isHttpsCaTrusted(sha256Hex: ca.caSha256Hex)
+          : false;
+      _httpsCaTrusted = trusted;
+      _httpsCaStatusChecked = true;
+      if (notify) {
+        _notify();
+      }
+      return trusted;
+    } catch (_) {
+      _httpsCaTrusted = false;
+      _httpsCaStatusChecked = true;
+      if (notify) {
+        _notify();
+      }
+      return false;
+    }
+  }
+
+  Future<({bool ok, bool needsManualConfirm, String message})> installHttpsCa() async {
+    final LocalCaManager ca = await _ensureCaInitialized();
+    final ({bool ok, bool needsManualConfirm, String message}) res =
+        await _native.installHttpsCa(
+      certPath: ca.certPath,
+      certPem: ca.caCertPem,
+    );
+    await refreshHttpsCaStatus();
+    if (_httpsCaTrusted && _settings.httpsAdFilter && _status.active) {
+      scheduleLiveReload();
+    }
+    return res;
+  }
+
+  Future<bool> openAndroidCertificateSettings() async {
+    return _native.openCertificateSettings();
+  }
+
+  static String _generateSessionSecret() {
+    final Random rng = Random.secure();
+    const String alphabet =
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    return List<String>.generate(
+      24,
+      (_) => alphabet[rng.nextInt(alphabet.length)],
+    ).join();
+  }
+
+  static Future<int> _reserveFreeLoopbackPort() async {
+    final ServerSocket sock =
+        await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final int port = sock.port;
+    await sock.close();
+    return port;
+  }
+
+  void _onHttpsFilterStats(HttpsFilterStats stats) {
+    _httpsFilterStats = stats;
+    if (_httpsStatsNotifyTimer != null) {
+      return;
+    }
+    _httpsStatsNotifyTimer = Timer(const Duration(milliseconds: 800), () {
+      _httpsStatsNotifyTimer = null;
+      if (!_disposed && !_shuttingDown) {
+        _notify();
+      }
+    });
+  }
+
+  Future<({int? filterPort, int? egressPort, String secret, bool broadMode})>
+      _prepareHttpsFilterForSession() async {
+    final bool broad = _settings.httpsAdFilterMode == 'broad';
+    if (!_settings.blockAds || !_settings.httpsAdFilter || _disposed || _shuttingDown) {
+      await _stopHttpsFilterProxy();
+      return (filterPort: null, egressPort: null, secret: '', broadMode: broad);
+    }
+
+    final bool trusted = await refreshHttpsCaStatus(notify: false);
+    if (!trusted) {
+      await _stopHttpsFilterProxy();
+      _log.add(
+        'فیلتر عمیق HTTPS به دلیل نصب نبودن گواهی محلی روی سیستم متوقف ماند تا مرورگرها خطای گواهی ندهند.',
+        level: 'warning',
+      );
+      return (filterPort: null, egressPort: null, secret: '', broadMode: broad);
+    }
+
+    try {
+      final LocalCaManager ca = await _ensureCaInitialized();
+      if (_httpsFilterEgressPort <= 0) {
+        _httpsFilterEgressPort = await _reserveFreeLoopbackPort();
+      }
+      if (_httpsFilterSecret.isEmpty) {
+        _httpsFilterSecret = _generateSessionSecret();
+      }
+      final HttpsAdFilterProxy proxy = _httpsFilterProxy ??= HttpsAdFilterProxy(
+        caManager: ca,
+        broadMode: broad,
+        egressPort: _httpsFilterEgressPort,
+        egressUsername: 'umbrella',
+        egressSecret: _httpsFilterSecret,
+        onStatsChanged: _onHttpsFilterStats,
+        onLog: (String msg, {String level = 'info'}) =>
+            _log.add('[HTTPS-Filter] $msg', level: level),
+      );
+      proxy.updateRoutingConfig(
+        broadMode: broad,
+        egressPort: _httpsFilterEgressPort,
+        egressUsername: 'umbrella',
+        egressSecret: _httpsFilterSecret,
+      );
+      await proxy.start();
+      _httpsFilterStats = proxy.stats;
+      return (
+        filterPort: proxy.proxyPort,
+        egressPort: _httpsFilterEgressPort,
+        secret: _httpsFilterSecret,
+        broadMode: broad,
+      );
+    } catch (error) {
+      await _stopHttpsFilterProxy();
+      _log.add(
+        'راه اندازی موتور فیلتر عمیق HTTPS ممکن نشد: $error',
+        level: 'warning',
+      );
+      return (filterPort: null, egressPort: null, secret: '', broadMode: broad);
+    }
+  }
+
+  Future<void> _stopHttpsFilterProxy() async {
+    _activeHttpsFilterPort = 0;
+    _httpsFilterEgressPort = 0;
+    _httpsFilterSecret = '';
+    _httpsStatsNotifyTimer?.cancel();
+    _httpsStatsNotifyTimer = null;
+    try {
+      await _httpsFilterProxy?.stop();
+    } catch (_) {}
+  }
+
   static String _throttleHostKey(String host) {
     final String clean = ContentBlockServer.sanitizeHost(host);
     if (clean.isEmpty ||
@@ -4964,6 +5195,7 @@ class VpnController extends ChangeNotifier {
     await _stopProbes();
     await _stopCoreBlockLogMonitor();
     await _stopCores();
+    await _stopHttpsFilterProxy();
     await _disableProxy();
     _statsTimer?.cancel();
     _healthTimer?.cancel();
@@ -5017,6 +5249,7 @@ class VpnController extends ChangeNotifier {
     _stopLiveMeasurement();
     await _stopCoreBlockLogMonitor();
     await _blockServer?.stop();
+    await _stopHttpsFilterProxy();
     cancelSpeedTest();
 
     // آیکون سینی در همان ابتدا برداشته می شود تا روی نوار وظیفه باقی نماند.
@@ -5174,6 +5407,7 @@ class VpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     unawaited(_stopCoreBlockLogMonitor());
     unawaited(_blockServer?.stop());
+    unawaited(_stopHttpsFilterProxy());
     unawaited(_serviceEventSub?.cancel());
     unawaited(_stopCores());
     super.dispose();

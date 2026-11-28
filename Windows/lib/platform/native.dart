@@ -1024,4 +1024,106 @@ class NativeBridge {
       message: 'حذف خودکار نیازمند دسترسی کامل سیستم است.',
     );
   }
+
+  /// بررسی نصب بودن گواهی ریشه محلی آمبرلا در Trusted Root Certification Authorities ویندوز.
+  Future<bool> isHttpsCaTrusted({required String sha1Hex}) async {
+    final String clean = sha1Hex.trim().toLowerCase();
+    if (clean.length != 40) return false;
+    final bool? nativeRes = await _invoke<bool>(
+      'isHttpsCaTrusted',
+      <String, dynamic>{'sha1Hex': clean},
+    );
+    if (nativeRes != null) return nativeRes;
+    if (!Platform.isWindows ||
+        Platform.environment.containsKey('FLUTTER_TEST')) {
+      return false;
+    }
+    try {
+      final ProcessResult res = await Process.run(
+        'certutil',
+        <String>['-user', '-verifystore', 'Root', clean],
+        runInShell: false,
+      );
+      return res.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// نصب گواهی ریشه محلی آمبرلا در مخزن گواهی های قابل اعتماد کاربر جاری ویندوز.
+  Future<({bool ok, bool needsManualConfirm, String message})> installHttpsCa({
+    required String certPath,
+    required String certPem,
+  }) async {
+    final bool? nativeRes = await _invoke<bool>(
+      'installHttpsCa',
+      <String, dynamic>{
+        'certPem': certPem,
+        'certPath': certPath,
+      },
+    );
+    if (nativeRes != null) {
+      return (
+        ok: nativeRes,
+        needsManualConfirm: false,
+        message: nativeRes
+            ? 'گواهی محلی آمبرلا در ویندوز نصب و تایید شد.'
+            : 'نصب گواهی در ویندوز لغو شد یا ناموفق بود.',
+      );
+    }
+    if (!Platform.isWindows ||
+        Platform.environment.containsKey('FLUTTER_TEST')) {
+      return (
+        ok: false,
+        needsManualConfirm: true,
+        message: 'دسترسی به مخزن گواهی ویندوز برقرار نشد.',
+      );
+    }
+    try {
+      final ProcessResult res = await Process.run(
+        'certutil',
+        <String>['-user', '-addstore', '-f', 'Root', certPath],
+        runInShell: false,
+      );
+      final bool ok = res.exitCode == 0;
+      return (
+        ok: ok,
+        needsManualConfirm: false,
+        message: ok
+            ? 'گواهی محلی آمبرلا در ویندوز نصب شد.'
+            : 'کاربر نصب گواهی را تایید نکرد.',
+      );
+    } catch (_) {
+      return (
+        ok: false,
+        needsManualConfirm: true,
+        message: 'اجرای نصب گواهی با خطا روبرو شد.',
+      );
+    }
+  }
+
+  /// حذف گواهی ریشه محلی آمبرلا از مخزن ویندوز.
+  Future<bool> removeHttpsCa({required String sha1Hex}) async {
+    final String clean = sha1Hex.trim().toLowerCase();
+    if (clean.length != 40) return false;
+    final bool? nativeRes = await _invoke<bool>(
+      'removeHttpsCa',
+      <String, dynamic>{'sha1Hex': clean},
+    );
+    if (nativeRes != null) return nativeRes;
+    if (!Platform.isWindows ||
+        Platform.environment.containsKey('FLUTTER_TEST')) {
+      return false;
+    }
+    try {
+      final ProcessResult res = await Process.run(
+        'certutil',
+        <String>['-user', '-delstore', 'Root', clean],
+        runInShell: false,
+      );
+      return res.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
 }

@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.ClipData
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -17,7 +18,9 @@ import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.provider.Settings as AndroidSettings
+import android.security.KeyChain
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.hiddify.core.api.v2.hcommon.ResponseCode
@@ -50,12 +53,15 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Proxy
+import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.cert.CertificateFactory
 import java.util.concurrent.TimeUnit
 
 class MethodHandler(
@@ -209,6 +215,22 @@ class MethodHandler(
             }
             "consumePendingBackgroundSecurityEvents" -> result.answerNow(call.method) {
                 ir.umbrella.vpn.bg.UmbrellaBackgroundMonitor.consumePendingEvents()
+            }
+            "isHttpsCaTrusted" -> scope.launch {
+                result.answer(call.method) {
+                    handleIsHttpsCaTrusted(call.argument<String>("sha256Hex") ?: "")
+                }
+            }
+            "installHttpsCa" -> scope.launch {
+                result.answer(call.method) {
+                    handleInstallHttpsCa(
+                        certPath = call.argument<String>("certPath") ?: "",
+                        certPem = call.argument<String>("certPem") ?: "",
+                    )
+                }
+            }
+            "openCertificateSettings" -> result.answerNow(call.method) {
+                handleOpenCertificateSettings()
             }
             else -> result.notImplemented()
         }
@@ -911,5 +933,136 @@ class MethodHandler(
         }.getOrElse { err ->
             mapOf("ok" to false, "message" to (err.message ?: err.toString()))
         }
+    }
+
+    private fun handleIsHttpsCaTrusted(sha256Hex: String): Boolean {
+        val target = sha256Hex.trim().lowercase()
+        if (target.length != 64) return false
+        return runCatching {
+            val ks = KeyStore.getInstance("AndroidCAStore")
+            ks.load(null, null)
+            val md = MessageDigest.getInstance("SHA-256")
+            val aliases = ks.aliases()
+            while (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement()
+                val cert = ks.getCertificate(alias) ?: continue
+                val digest = md.digest(cert.encoded)
+                    .joinToString("") { "%02x".format(it) }
+                if (digest == target) {
+                    return@runCatching true
+                }
+            }
+            false
+        }.getOrDefault(false)
+    }
+
+    private fun decodeCertificateDer(certPath: String, certPem: String): ByteArray? {
+        val rawBytes = when {
+            certPem.isNotBlank() -> certPem.toByteArray(Charsets.UTF_8)
+            certPath.isNotBlank() && File(certPath).exists() -> File(certPath).readBytes()
+            else -> return null
+        }
+        return runCatching {
+            val cf = CertificateFactory.getInstance("X.509")
+            val cert = cf.generateCertificate(ByteArrayInputStream(rawBytes))
+            cert.encoded
+        }.getOrNull()
+    }
+
+    private fun exportCaToDownloads(derBytes: ByteArray): Boolean {
+        val fileName = "Umbrella-HTTPS-CA.crt"
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = activity.contentResolver
+                runCatching {
+                    resolver.delete(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                        arrayOf(fileName),
+                    )
+                }
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/x-x509-ca-cert")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return@runCatching false
+                resolver.openOutputStream(uri)?.use { out ->
+                    out.write(derBytes)
+                    out.flush()
+                }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                true
+            } else {
+                @Suppress("DEPRECATION")
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                dir.mkdirs()
+                File(dir, fileName).writeBytes(derBytes)
+                true
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun handleInstallHttpsCa(certPath: String, certPem: String): Map<String, Any> {
+        val derBytes = decodeCertificateDer(certPath, certPem)
+            ?: return mapOf(
+                "ok" to false,
+                "needsManualConfirm" to true,
+                "savedToDownloads" to false,
+                "message" to "فایل گواهی محلی یافت نشد یا معتبر نبود.",
+            )
+
+        val saved = exportCaToDownloads(derBytes)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            val launchedKeyChain = runCatching {
+                @Suppress("DEPRECATION")
+                val intent = KeyChain.createInstallIntent().apply {
+                    putExtra(KeyChain.EXTRA_CERTIFICATE, derBytes)
+                    putExtra(KeyChain.EXTRA_NAME, "Umbrella Local HTTPS Filter CA")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activity.startActivity(intent)
+                true
+            }.getOrDefault(false)
+            if (launchedKeyChain) {
+                return mapOf(
+                    "ok" to true,
+                    "needsManualConfirm" to true,
+                    "savedToDownloads" to saved,
+                    "message" to "پنجره نصب گواهی اندروید باز شد؛ نام دلخواه بدهید و تایید کنید.",
+                )
+            }
+        }
+
+        val openedSettings = handleOpenCertificateSettings()
+        return mapOf(
+            "ok" to (saved || openedSettings),
+            "needsManualConfirm" to true,
+            "savedToDownloads" to saved,
+            "message" to if (saved) {
+                "فایل گواهی در پوشه Downloads (به نام Umbrella-HTTPS-CA.crt) ذخیره شد؛ در تنظیمات امنیت گوشی از بخش Install a certificate -> CA certificate آن را نصب کنید."
+            } else {
+                "تنظیمات امنیت گوشی برای نصب گواهی CA باز شد."
+            },
+        )
+    }
+
+    private fun handleOpenCertificateSettings(): Boolean {
+        val candidates = listOf(
+            Intent("android.app.action.SECURITY_SETTINGS"),
+            Intent(AndroidSettings.ACTION_SECURITY_SETTINGS),
+        )
+        for (intent in candidates) {
+            val launched = runCatching {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                true
+            }.getOrDefault(false)
+            if (launched) return true
+        }
+        return false
     }
 }

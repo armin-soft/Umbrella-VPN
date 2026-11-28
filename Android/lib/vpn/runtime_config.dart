@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../core/malicious_link_guard.dart';
 import '../models/advanced_network.dart';
+import 'https_ad_filter_proxy.dart';
 import 'umbrella_core.dart';
 
 /// Finalize the pinned core's `build` output for `srun`, matching official
@@ -64,6 +65,8 @@ class RuntimeConfig {
 
   static const String directOutboundTag = 'direct §hide§';
   static const String blockPageOutboundTag = 'umbrella-block-page';
+  static const String httpsFilterOutboundTag = 'umbrella-https-filter';
+  static const String httpsFilterEgressInboundTag = 'umbrella-egress-in';
 
   /// Profiles up to this size behave identically to Hiddify's default
   /// `keep-top = -1` (immediate full-pool `cycleOrder` without batch gating).
@@ -79,6 +82,10 @@ class RuntimeConfig {
     Map<String, dynamic>? coreSettings,
     int stickyMinutes = 15,
     int? blockPagePort,
+    int? httpsFilterPort,
+    int? httpsFilterEgressPort,
+    String? httpsFilterSecret,
+    bool httpsFilterBroadMode = false,
     bool preserveLogOutput = false,
     bool hotReloadCompat = false,
     Map<String, String>? localRuleSetPaths,
@@ -273,6 +280,15 @@ class RuntimeConfig {
       coreSettings,
       localRuleSetPaths: localRuleSetPaths,
       localDataDir: localDataDir,
+    );
+    _configureHttpsFilterRouting(
+      config,
+      outbounds,
+      httpsFilterPort: httpsFilterPort,
+      httpsFilterEgressPort: httpsFilterEgressPort,
+      httpsFilterSecret: httpsFilterSecret,
+      httpsFilterBroadMode: httpsFilterBroadMode,
+      hotReloadCompat: hotReloadCompat,
     );
   }
 
@@ -1786,6 +1802,206 @@ class RuntimeConfig {
     if (value is int) return value == needle;
     if (value is List) return value.any((Object? item) => item == needle);
     return false;
+  }
+
+  /// پیکربندی مسیریابی بدون حلقه برای موتور فیلترینگ عمیق HTTPS:
+  /// ترافیک ۴۴۳ دامنه های هدف را به `umbrella-https-filter` می فرستد و خروجی
+  /// بالادست پراکسی محلی را از ورودی ایزوله `umbrella-egress-in` وارد تونل
+  /// اصلی (همراه با حفظ تمام قوانین direct/select) می کند.
+  static void _configureHttpsFilterRouting(
+    Map<String, dynamic> config,
+    List<dynamic> outbounds, {
+    int? httpsFilterPort,
+    int? httpsFilterEgressPort,
+    String? httpsFilterSecret,
+    bool httpsFilterBroadMode = false,
+    bool hotReloadCompat = false,
+  }) {
+    final bool hasFilterPort = httpsFilterPort != null &&
+        httpsFilterPort > 0 &&
+        httpsFilterPort <= 65535;
+    if (!hasFilterPort) {
+      return;
+    }
+
+    final Object? rawInbounds = config['inbounds'];
+    final List<dynamic> inbounds =
+        rawInbounds is List<dynamic> ? rawInbounds : <dynamic>[];
+    if (rawInbounds == null) {
+      config['inbounds'] = inbounds;
+    }
+
+    final bool hasValidEgressPort = httpsFilterEgressPort != null &&
+        httpsFilterEgressPort > 0 &&
+        httpsFilterEgressPort <= 65535;
+    if (!hotReloadCompat && hasValidEgressPort) {
+      final Map<String, dynamic> egressInbound = <String, dynamic>{
+        'type': 'socks',
+        'tag': httpsFilterEgressInboundTag,
+        'listen': '127.0.0.1',
+        'listen_port': httpsFilterEgressPort,
+        if (httpsFilterSecret != null && httpsFilterSecret.isNotEmpty)
+          'users': <Map<String, String>>[
+            <String, String>{
+              'username': 'umbrella',
+              'password': httpsFilterSecret,
+            },
+          ],
+      };
+      final int existingIdx = inbounds.indexWhere(
+        (dynamic item) =>
+            item is Map && item['tag'] == httpsFilterEgressInboundTag,
+      );
+      if (existingIdx >= 0) {
+        inbounds[existingIdx] = egressInbound;
+      } else {
+        inbounds.add(egressInbound);
+      }
+    }
+
+    final bool hasEgressInbound = inbounds.any(
+      (dynamic item) =>
+          item is Map && item['tag'] == httpsFilterEgressInboundTag,
+    );
+    final List<String> allClientInbounds = <String>[
+      for (final dynamic item in inbounds)
+        if (item is Map &&
+            '${item['tag'] ?? ''}'.trim().isNotEmpty &&
+            item['tag'] != httpsFilterEgressInboundTag)
+          '${item['tag']}'.trim(),
+    ];
+
+    List<String> effectiveClientInbounds;
+    if (hasEgressInbound) {
+      effectiveClientInbounds = allClientInbounds;
+    } else if (hotReloadCompat &&
+        allClientInbounds.contains('tun-in') &&
+        allClientInbounds.contains('mixed-in')) {
+      // اجرای بار اول بدون کش در اندروید: پراکسی بالادست از mixed-in عبور
+      // می کند، پس فقط ترافیک tun-in مرورگرها به فیلتر HTTPS هدایت می شود.
+      effectiveClientInbounds = <String>['tun-in'];
+    } else {
+      return;
+    }
+
+    if (effectiveClientInbounds.isEmpty) {
+      return;
+    }
+
+    final int existingOutboundIdx = outbounds.indexWhere(
+      (dynamic item) => item is Map && item['tag'] == httpsFilterOutboundTag,
+    );
+    final Map<String, dynamic> filterOutbound = <String, dynamic>{
+      'type': 'http',
+      'tag': httpsFilterOutboundTag,
+      'server': '127.0.0.1',
+      'server_port': httpsFilterPort,
+    };
+    if (existingOutboundIdx >= 0) {
+      outbounds[existingOutboundIdx] = filterOutbound;
+    } else {
+      outbounds.add(filterOutbound);
+    }
+
+    final Object? rawRoute = config['route'];
+    if (rawRoute is! Map<String, dynamic> || rawRoute['rules'] is! List) {
+      return;
+    }
+    final List<dynamic> rawRules = rawRoute['rules'] as List<dynamic>;
+
+    // حذف قوانین قبلی همین بخش جهت idempotent بودن بازسازی ها
+    rawRules.removeWhere((dynamic item) {
+      if (item is! Map) return false;
+      if (item['outbound'] == httpsFilterOutboundTag) return true;
+      if (item['action'] == 'reject' &&
+          _containsString(item['protocol'], 'quic') &&
+          item['inbound'] is List &&
+          _nonEmptyRuleField(item['domain_suffix'])) {
+        return true;
+      }
+      if (item['type'] == 'logical' &&
+          item['action'] == 'reject' &&
+          item['rules'] is List &&
+          (item['rules'] as List).any(
+            (dynamic sub) =>
+                sub is Map && _containsString(sub['protocol'], 'quic'),
+          ) &&
+          (item['rules'] as List).any(
+            (dynamic sub) => sub is Map && sub['invert'] == true,
+          )) {
+        return true;
+      }
+      return false;
+    });
+
+    int insertAt = 0;
+    for (int i = 0; i < rawRules.length; i++) {
+      final dynamic item = rawRules[i];
+      if (item is! Map) {
+        insertAt = i + 1;
+        continue;
+      }
+      final bool isPreOrResolve =
+          _isPreRouteRule(item) || item['action'] == 'resolve';
+      final bool isBlock = item['action'] == 'reject' ||
+          item['outbound'] == 'block' ||
+          item['outbound'] == blockPageOutboundTag;
+      if (isPreOrResolve || isBlock) {
+        insertAt = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    final List<Map<String, dynamic>> httpsRules = httpsFilterBroadMode
+        ? <Map<String, dynamic>>[
+            <String, dynamic>{
+              'type': 'logical',
+              'mode': 'and',
+              'rules': <Map<String, dynamic>>[
+                <String, dynamic>{'inbound': effectiveClientInbounds},
+                <String, dynamic>{'protocol': <String>['quic']},
+                <String, dynamic>{
+                  'domain_suffix': HttpsAdFilterProxy.neverInterceptSuffixes,
+                  'invert': true,
+                },
+              ],
+              'action': 'reject',
+            },
+            <String, dynamic>{
+              'type': 'logical',
+              'mode': 'and',
+              'rules': <Map<String, dynamic>>[
+                <String, dynamic>{'inbound': effectiveClientInbounds},
+                <String, dynamic>{'network': <String>['tcp']},
+                <String, dynamic>{'port': <int>[443]},
+                <String, dynamic>{
+                  'domain_suffix': HttpsAdFilterProxy.neverInterceptSuffixes,
+                  'invert': true,
+                },
+              ],
+              'action': 'route',
+              'outbound': httpsFilterOutboundTag,
+            },
+          ]
+        : <Map<String, dynamic>>[
+            <String, dynamic>{
+              'inbound': effectiveClientInbounds,
+              'protocol': <String>['quic'],
+              'domain_suffix': HttpsAdFilterProxy.smartTargetDomains,
+              'action': 'reject',
+            },
+            <String, dynamic>{
+              'inbound': effectiveClientInbounds,
+              'network': <String>['tcp'],
+              'port': <int>[443],
+              'domain_suffix': HttpsAdFilterProxy.smartTargetDomains,
+              'action': 'route',
+              'outbound': httpsFilterOutboundTag,
+            },
+          ];
+
+    rawRules.insertAll(insertAt, httpsRules);
   }
 }
 

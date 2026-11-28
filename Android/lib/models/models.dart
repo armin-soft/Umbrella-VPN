@@ -2460,6 +2460,8 @@ class AppSettings {
     this.routingRegion = RoutingRegion.other,
     this.bypassLan = false,
     this.blockAds = true,
+    this.httpsAdFilter = false,
+    this.httpsAdFilterMode = 'smart',
     this.resolveDestination = false,
     this.blockQuic = false,
     this.tlsTricks = const TlsTricksSettings(),
@@ -2521,6 +2523,8 @@ class AppSettings {
   final RoutingRegion routingRegion;
   final bool bypassLan;
   final bool blockAds;
+  final bool httpsAdFilter;
+  final String httpsAdFilterMode;
   final bool resolveDestination;
   final bool blockQuic;
   final TlsTricksSettings tlsTricks;
@@ -2584,6 +2588,8 @@ class AppSettings {
     RoutingRegion? routingRegion,
     bool? bypassLan,
     bool? blockAds,
+    bool? httpsAdFilter,
+    String? httpsAdFilterMode,
     bool? resolveDestination,
     bool? blockQuic,
     TlsTricksSettings? tlsTricks,
@@ -2652,6 +2658,9 @@ class AppSettings {
       routingRegion: routingRegion ?? this.routingRegion,
       bypassLan: bypassLan ?? this.bypassLan,
       blockAds: blockAds ?? this.blockAds,
+      httpsAdFilter: httpsAdFilter ?? this.httpsAdFilter,
+      httpsAdFilterMode:
+          normalizeHttpsAdFilterMode(httpsAdFilterMode ?? this.httpsAdFilterMode),
       resolveDestination: resolveDestination ?? this.resolveDestination,
       blockQuic: blockQuic ?? this.blockQuic,
       tlsTricks: tlsTricks ?? this.tlsTricks,
@@ -2684,6 +2693,9 @@ class AppSettings {
   }
 
   static const int currentCoreDefaultsVersion = 1;
+
+  static String normalizeHttpsAdFilterMode(String raw) =>
+      raw.trim().toLowerCase() == 'broad' ? 'broad' : 'smart';
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'theme': theme.name,
@@ -2722,6 +2734,8 @@ class AppSettings {
         'routingRegion': routingRegion.name,
         'bypassLan': bypassLan,
         'blockAds': blockAds,
+        'httpsAdFilter': httpsAdFilter,
+        'httpsAdFilterMode': httpsAdFilterMode,
         'resolveDestination': resolveDestination,
         'blockQuic': blockQuic,
         'tlsTricks': tlsTricks.toJson(),
@@ -2867,6 +2881,9 @@ class AppSettings {
       ),
       bypassLan: JsonX.boolean(json['bypassLan']),
       blockAds: true,
+      httpsAdFilter: JsonX.boolean(json['httpsAdFilter'], fallback: false),
+      httpsAdFilterMode:
+          normalizeHttpsAdFilterMode(JsonX.text(json['httpsAdFilterMode'])),
       resolveDestination: JsonX.boolean(json['resolveDestination']),
       blockQuic: JsonX.boolean(json['blockQuic']),
       tlsTricks: TlsTricksSettings.fromJson(JsonX.asMap(json['tlsTricks'])),

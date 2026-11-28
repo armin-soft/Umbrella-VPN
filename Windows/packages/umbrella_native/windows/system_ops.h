@@ -124,6 +124,10 @@ class SystemOps {
   bool AutostartEnabled(const std::string& app_name);
   int64_t ProcessCpuTimeMicros();
 
+  bool IsHttpsCaTrusted(const std::string& sha1_hex);
+  bool InstallHttpsCa(const std::string& cert_pem);
+  bool RemoveHttpsCa(const std::string& sha1_hex);
+
   std::string ExecutablePath();
 
  private:

@@ -16,7 +16,7 @@ class CoreRuntime {
 
   /// Bump whenever [RuntimeConfig.finalize] semantics change so cached
   /// `runtime.json` files from older app versions rebuild automatically.
-  static const String cacheSchemaVersion = 'umbrella-runtime-v9';
+  static const String cacheSchemaVersion = 'umbrella-runtime-v10';
 
   static int _nonce = 0;
 
@@ -31,6 +31,10 @@ class CoreRuntime {
     void Function(Process)? onFinished,
     int? clashApiPort,
     int? blockPagePort,
+    int? httpsFilterPort,
+    int? httpsFilterEgressPort,
+    String? httpsFilterSecret,
+    bool httpsFilterBroadMode = false,
     int stickyMinutes = 15,
     bool useCache = true,
     Map<String, String>? localRuleSetPaths,
@@ -61,7 +65,7 @@ class CoreRuntime {
       ..sort();
     final String runtimeKey = _sha256(<List<int>>[
       utf8.encode(
-        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|block=${blockPagePort ?? 'none'}|sticky=$stickyMinutes|local=${localKeys.join(',')}|',
+        '$cacheSchemaVersion|runtime|$parsedKey|clash=${clashApiPort ?? 'default'}|block=${blockPagePort ?? 'none'}|https=${httpsFilterPort ?? 'none'}|egress=${httpsFilterEgressPort ?? 'none'}|broad=$httpsFilterBroadMode|sticky=$stickyMinutes|local=${localKeys.join(',')}|',
       ),
       _canonicalSettingsBytes(settingsBytes),
     ]);
@@ -74,6 +78,8 @@ class CoreRuntime {
           runtimeFile,
           clashApiPort: clashApiPort,
           blockPagePort: blockPagePort,
+          httpsFilterPort: httpsFilterPort,
+          httpsFilterEgressPort: httpsFilterEgressPort,
         )) {
       if (cancelled()) throw const FormatException('Core preparation cancelled');
       return runtimeFile;
@@ -171,6 +177,10 @@ class CoreRuntime {
         coreSettings: decodedSettings,
         stickyMinutes: stickyMinutes,
         blockPagePort: blockPagePort,
+        httpsFilterPort: httpsFilterPort,
+        httpsFilterEgressPort: httpsFilterEgressPort,
+        httpsFilterSecret: httpsFilterSecret,
+        httpsFilterBroadMode: httpsFilterBroadMode,
         localRuleSetPaths: localRuleSetPaths,
         localDataDir: '$runDir${sep}data',
       );
@@ -274,6 +284,8 @@ class CoreRuntime {
     File runtime, {
     required int? clashApiPort,
     int? blockPagePort,
+    int? httpsFilterPort,
+    int? httpsFilterEgressPort,
   }) async {
     try {
       if (!await runtime.exists()) return false;
@@ -296,6 +308,25 @@ class CoreRuntime {
               o['server_port'] == blockPagePort,
         );
         if (!hasBlockOutbound) return false;
+      }
+      if (httpsFilterPort != null && httpsFilterPort > 0) {
+        final bool hasHttpsOutbound = outbounds.any(
+          (dynamic o) =>
+              o is Map &&
+              o['tag'] == RuntimeConfig.httpsFilterOutboundTag &&
+              o['server_port'] == httpsFilterPort,
+        );
+        final Object? inbounds = decoded['inbounds'];
+        final bool hasEgressInbound = httpsFilterEgressPort == null ||
+            httpsFilterEgressPort <= 0 ||
+            (inbounds is List &&
+                inbounds.any(
+                  (dynamic i) =>
+                      i is Map &&
+                      i['tag'] == RuntimeConfig.httpsFilterEgressInboundTag &&
+                      i['listen_port'] == httpsFilterEgressPort,
+                ));
+        if (!hasHttpsOutbound || !hasEgressInbound) return false;
       }
       return true;
     } on Object {
