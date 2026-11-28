@@ -624,13 +624,13 @@ class _TelegramHeader extends StatelessWidget {
     final Widget avatarInner;
     if (showImage) {
       avatarInner = Padding(
-        padding: const EdgeInsets.all(3),
+        padding: const EdgeInsets.all(AppMetrics.space1),
         child: ClipOval(
           child: Image.memory(
             rawImage,
             key: imageKey,
-            width: AppMetrics.telegramAvatarSize - 6,
-            height: AppMetrics.telegramAvatarSize - 6,
+            width: AppMetrics.telegramAvatarSize - AppMetrics.space2,
+            height: AppMetrics.telegramAvatarSize - AppMetrics.space2,
             fit: BoxFit.cover,
             gaplessPlayback: true,
             errorBuilder: (_, __, ___) {
@@ -644,8 +644,8 @@ class _TelegramHeader extends StatelessWidget {
       );
     } else if (loadingImage) {
       avatarInner = SizedBox(
-        width: 28,
-        height: 28,
+        width: AppMetrics.space7,
+        height: AppMetrics.space7,
         child: CircularProgressIndicator(
           strokeWidth: 2.5,
           color: colors.primary,
@@ -1036,7 +1036,7 @@ class _PromoThumbnail extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      padding: const EdgeInsets.all(2),
+      padding: const EdgeInsets.all(AppMetrics.space1),
       decoration: BoxDecoration(
         color: colors.onPrimary,
         shape: BoxShape.circle,
@@ -1045,8 +1045,8 @@ class _PromoThumbnail extends StatelessWidget {
       child: ClipOval(
         child: Image.memory(
           raw,
-          width: size - 4,
-          height: size - 4,
+          width: size - AppMetrics.space2,
+          height: size - AppMetrics.space2,
           fit: BoxFit.cover,
           gaplessPlayback: true,
           errorBuilder: (_, __, ___) => fallback,

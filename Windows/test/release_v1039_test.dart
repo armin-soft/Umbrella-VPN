@@ -1076,7 +1076,7 @@ void main() {
         r'مسیر C:\Users\Ali123\Downloads\bad2.exe و /sdcard/Download/2026/app1.apk',
       );
       expect(AppConfig.versionPhrase, isNot(contains(RegExp(r'[0-9]'))));
-      expect(AppConfig.versionPhrase, contains('۱٫۰٫۳'));
+      expect(AppConfig.versionPhrase, contains('۱٫۰٫۴'));
 
       // ۳. تمام برچسب های نمایشی مدل ها فارسی خالص، بدون لاتین، بدون رقم لاتین و بدون نیم فاصله اند.
       final RegExp forbidden = RegExp(r'[A-Za-z0-9\u200C]');
