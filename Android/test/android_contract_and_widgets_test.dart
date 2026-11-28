@@ -44,6 +44,7 @@ import 'package:umbrella_vpn/vpn/balancer.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/core_runtime.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
+import 'package:umbrella_vpn/vpn/https_ad_filter_proxy.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
@@ -315,6 +316,31 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   Future<void> shutdownForExit() async {
     shutdownCalled = true;
   }
+
+  @override
+  bool get httpsCaTrusted => false;
+
+  @override
+  bool get httpsCaStatusChecked => true;
+
+  @override
+  String get httpsCaCertPath => '';
+
+  @override
+  HttpsFilterStats get httpsFilterStats => const HttpsFilterStats();
+
+  @override
+  bool get isHttpsFilterProxyActive => false;
+
+  @override
+  Future<bool> refreshHttpsCaStatus({bool notify = true}) async => false;
+
+  @override
+  Future<({bool ok, bool needsManualConfirm, String message})> installHttpsCa() async =>
+      (ok: false, needsManualConfirm: false, message: '');
+
+  @override
+  Future<bool> openAndroidCertificateSettings() async => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

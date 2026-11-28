@@ -12,10 +12,20 @@ void main() {
 
   test('default and old saved settings keep chain and process rules off', () {
     final AppSettings old = AppSettings.fromJson(<String, dynamic>{'mtu': 1400});
-    expect(core(old)['chain-status'], 'off');
-    expect(core(old).containsKey('route-rule'), false);
-    expect(core(old)['local-proxy-in-vpn'], true);
-    expect(core(old)['allow-connection-from-lan'], false);
+    final Map<String, dynamic> defaults = core(old);
+    expect(defaults['chain-status'], 'off');
+    final List<dynamic> rules =
+        ((defaults['route-rule'] as Map<String, dynamic>?)?['rules']
+                as List<dynamic>?) ??
+            const <dynamic>[];
+    expect(
+      rules.every(
+        (dynamic r) => r is Map && r['name'] == 'umbrella-block-ads',
+      ),
+      true,
+    );
+    expect(defaults['local-proxy-in-vpn'], true);
+    expect(defaults['allow-connection-from-lan'], false);
   });
   test('every exposed hop maps to real pinned-core keys in both directions', () {
     for (final ChainPosition position in <ChainPosition>[ChainPosition.extraSecurity, ChainPosition.unblocker]) {
@@ -80,15 +90,22 @@ void main() {
     final AppSettings reloaded = AppSettings.fromJson(jsonDecode(jsonEncode(settings.toJson())) as Map<String, dynamic>);
     expect(reloaded.appRoutes, hasLength(3));
     expect(reloaded.appRoutes[2].enabled, false);
-    final List<dynamic> rules = (core(reloaded)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    final List<dynamic> allRules = (core(reloaded)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    final List<dynamic> rules = allRules
+        .where((dynamic r) => r is Map && (r['process_name'] != null || r['process_path'] != null))
+        .toList(growable: false);
     expect(rules, hasLength(2));
+    expect(allRules.any((dynamic r) => r is Map && r['name'] == 'umbrella-block-ads'), isTrue);
     expect(rules[0]['process_name'], <String>['browser.exe']);
     expect(rules[1]['process_path'], <String>[r'C:\Apps\blocked.exe']);
     expect(rules[0]['outbound'], 'direct');
     expect(rules[1]['outbound'], 'block');
     expect(rules[0]['list_order'], 0);
     expect(rules[1]['list_order'], 1);
-    final List<dynamic> proxyRules = (core(reloaded, tun: false)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    final List<dynamic> allProxyRules = (core(reloaded, tun: false)['route-rule'] as Map<String, dynamic>)['rules'] as List<dynamic>;
+    final List<dynamic> proxyRules = allProxyRules
+        .where((dynamic r) => r is Map && (r['process_name'] != null || r['process_path'] != null))
+        .toList(growable: false);
     expect(proxyRules, hasLength(2));
   });
   test('rules never become unconditional and diagnostic processes cannot bypass', () {

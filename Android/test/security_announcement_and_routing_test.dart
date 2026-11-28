@@ -30,6 +30,7 @@ import 'package:umbrella_vpn/ui/widgets/telegram_channel_dialog.dart';
 import 'package:umbrella_vpn/vpn/clash_api.dart';
 import 'package:umbrella_vpn/vpn/content_block_server.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';
+import 'package:umbrella_vpn/vpn/https_ad_filter_proxy.dart';
 import 'package:umbrella_vpn/vpn/runtime_config.dart';
 import 'package:umbrella_vpn/vpn/umbrella_core.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
@@ -190,6 +191,24 @@ class _FakeVpn extends ChangeNotifier implements VpnController {
   void scheduleLiveReload() {
     reloadCalls++;
   }
+
+  @override
+  bool get httpsCaTrusted => false;
+
+  @override
+  bool get httpsCaStatusChecked => true;
+
+  @override
+  String get httpsCaCertPath => '';
+
+  @override
+  HttpsFilterStats get httpsFilterStats => const HttpsFilterStats();
+
+  @override
+  bool get isHttpsFilterProxyActive => false;
+
+  @override
+  Future<bool> refreshHttpsCaStatus({bool notify = true}) async => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -507,7 +526,9 @@ void main() {
       expect(manifest, isNot(contains('android.permission.RECEIVE_SMS')));
       expect(manifest, isNot(contains('android.permission.BIND_ACCESSIBILITY_SERVICE')));
       expect(manifest, isNot(contains('android.permission.BIND_NOTIFICATION_LISTENER_SERVICE')));
-      expect(manifest, isNot(contains('android.permission.READ_MEDIA_IMAGES')));
+      expect(manifest, contains('android.permission.READ_MEDIA_IMAGES'));
+      expect(manifest, contains('android.permission.READ_MEDIA_VIDEO'));
+      expect(manifest, contains('android.permission.READ_MEDIA_AUDIO'));
       expect(manifest, contains('android.permission.MANAGE_EXTERNAL_STORAGE'));
       expect(manifest, contains('android.permission.READ_EXTERNAL_STORAGE'));
       expect(manifest, contains('android.permission.WRITE_EXTERNAL_STORAGE'));
@@ -795,7 +816,9 @@ void main() {
       expect(kt.contains('DocumentsContract'), isTrue);
 
       final String manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
-      expect(manifest.contains('READ_MEDIA_IMAGES'), isFalse);
+      expect(manifest.contains('READ_MEDIA_IMAGES'), isTrue);
+      expect(manifest.contains('READ_MEDIA_VIDEO'), isTrue);
+      expect(manifest.contains('READ_MEDIA_AUDIO'), isTrue);
       expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isTrue);
       expect(manifest.contains('REQUEST_INSTALL_PACKAGES'), isTrue);
       expect(manifest.contains('READ_SMS'), isFalse);
@@ -2042,7 +2065,7 @@ void main() {
             reason: 'Expected adult block for $h',
           );
           expect(
-            ContentBlockServer.classifyBlockedHost(h, filter: filter),
+            ContentBlockServer.classifyBlockedHost(h, filter: filter)?.category,
             'adult',
           );
         }
@@ -2081,7 +2104,7 @@ void main() {
             reason: 'Expected gambling block for $h',
           );
           expect(
-            ContentBlockServer.classifyBlockedHost(h, filter: filter),
+            ContentBlockServer.classifyBlockedHost(h, filter: filter)?.category,
             'gambling',
           );
         }
@@ -2298,7 +2321,7 @@ void main() {
       });
 
       final GatewayClient gw = GatewayClient(
-        baseUrl: 'https://armin-soft.ir/Umbrella-Vpn/',
+        baseUrl: 'https://armin-soft.ir/Umbrella-Vpn/index.php?AppApi=',
         client: mockHttp,
         enableNativeTransport: false,
       );
@@ -2359,7 +2382,7 @@ void main() {
 
       final _FakeNative native = _FakeNative();
       final GatewayClient gw = GatewayClient(
-        baseUrl: 'https://armin-soft.ir/Umbrella-Vpn/',
+        baseUrl: 'https://armin-soft.ir/Umbrella-Vpn/index.php?AppApi=',
         client: mockHttp,
         enableNativeTransport: false,
       );

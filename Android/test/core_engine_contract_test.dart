@@ -16,11 +16,21 @@ void main() {
 
   test('default and partial saved settings keep chain and rules clean', () {
     final AppSettings old = AppSettings.fromJson(<String, dynamic>{'mtu': 1400});
-    expect(core(old)['chain-status'], 'off');
-    expect(core(old).containsKey('route-rule'), isFalse);
-    expect(core(old)['local-proxy-in-vpn'], isTrue);
-    expect(core(old)['allow-connection-from-lan'], isFalse);
-    expect(core(old)['enable-tun'], isTrue);
+    final Map<String, dynamic> defaults = core(old);
+    expect(defaults['chain-status'], 'off');
+    final List<dynamic> rules =
+        ((defaults['route-rule'] as Map<String, dynamic>?)?['rules']
+                as List<dynamic>?) ??
+            const <dynamic>[];
+    expect(
+      rules.every(
+        (dynamic r) => r is Map && r['name'] == 'umbrella-block-ads',
+      ),
+      isTrue,
+    );
+    expect(defaults['local-proxy-in-vpn'], isTrue);
+    expect(defaults['allow-connection-from-lan'], isFalse);
+    expect(defaults['enable-tun'], isTrue);
   });
 
   test('every exposed auxiliary hop maps to pinned-core keys', () {
@@ -77,10 +87,17 @@ void main() {
     expect(reloaded.appRoutes, hasLength(3));
     expect(reloaded.appRoutes[2].enabled, isFalse);
 
-    final List<dynamic> rules =
+    final List<dynamic> allRules =
         (core(reloaded)['route-rule'] as Map<String, dynamic>)['rules']
             as List<dynamic>;
+    final List<dynamic> rules = allRules
+        .where((dynamic r) => r is Map && r['package_name'] != null)
+        .toList(growable: false);
     expect(rules, hasLength(2));
+    expect(
+      allRules.any((dynamic r) => r is Map && r['name'] == 'umbrella-block-ads'),
+      isTrue,
+    );
     expect(rules[0]['package_name'], <String>['org.telegram.messenger']);
     expect(rules[1]['package_name'], <String>['com.example.blocked']);
     expect(rules[0]['outbound'], 'direct');

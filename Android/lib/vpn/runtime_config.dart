@@ -1331,7 +1331,9 @@ class RuntimeConfig {
         }
       }
     }
-    if (coreSettings?['block-ads'] == true) {
+    if (coreSettings?['block-ads'] == true ||
+        localPaths.containsKey('filter-ads') ||
+        localPaths.containsKey('filter-youtube-ads')) {
       requestedRegexCategories.add('ads');
       for (final String tag in const <String>[
         'filter-ads',

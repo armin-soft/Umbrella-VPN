@@ -1545,7 +1545,7 @@ $Html = '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><m
 . '<main id="cards">' . $CardsHtml . '</main>'
 . '<div id="noMatch" class="empty-state" style="display:none">' . self::monitorSvg('i-search', 'ico-lg') . '<span>هیچ کاربری با عبارت یا فیلتر انتخابی پیدا نشد.</span></div>'
 . '<footer class="foot"><span class="live-dot"></span><span>داشبورد گزارش رصد آمبرلا · طراحی راست چین با فونت رسمی Vazirmatn</span></footer>'
-. '</div><button type="button" id="topBtn" class="top-btn" onclick="window.scrollTo({top:0,behavior:\'smooth\'})" title="بازگشت به بالا" aria-label="بازگشت به بالا">' . self::monitorSvg('i-arrow-up') . '</button>'
+. '</div><button type="button" id="topBtn" class="top-btn" onclick="window.scrollTo({top:0,behavior:\'smooth\'})" title="رفتن به بالا" aria-label="رفتن به بالا">' . self::monitorSvg('i-arrow-up') . '</button>'
 . '<div id="toast" class="toast">کپی شد</div><script>'
 . 'var currentCat="all",actOnly=false,allCollapsed=false;'
 . 'function faNum(n){var f=["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];return String(n).replace(/[0-9]/g,function(d){return f[+d]});}'
@@ -3172,7 +3172,7 @@ $Rows = [];
 if ($Url !== '') {
 $Rows[] = [['text' => (string)$Promo['button_text'], 'url' => $Url]];
 }
-$Rows[] = Menu::back('بازگشت به تبلیغاتی', 'admin_promo_announcement');
+$Rows[] = Menu::back('منوی قبلی', 'admin_promo_announcement');
 $Markup = TelegramClient::inlineKeyboard($Rows);
 $Caption = implode("\n", $Lines) . Helper::adminFooter();
 

@@ -133,22 +133,27 @@ class _MockSocks5Relay {
 void main() {
   group('Option 1 & 2 - AdBlock Domains, Local CA & HTTPS Deep Filter', () {
     test('Option 1 includes PersianBlocker, Brave, and uAssets ad/tracker suffixes', () {
-      final List<Map<String, dynamic>> adsRules =
-          UmbrellaCore.contentControlRules(
-        const FilterSettings(enabled: true, categories: <String>['ads']),
-        includeRemoteRuleSets: false,
+      for (final String adHost in const <String>[
+        'hadeseh.simra.cloud',
+        'dsp.aparat.com',
+        'adengine.telewebion.ir',
+        'analytics.zoomit.ir',
+        'pagead.l.doubleclick.net',
+        'youtube.cleverads.vn',
+      ]) {
+        expect(
+          UmbrellaCore.isAlwaysBlockedAdHost(adHost),
+          isTrue,
+          reason: 'Expected always-on adblock to block $adHost',
+        );
+      }
+      expect(
+        UmbrellaCore.contentControlRules(
+          const FilterSettings(enabled: true, categories: <String>['adult', 'gambling']),
+          includeRemoteRuleSets: false,
+        ),
+        isNotEmpty,
       );
-      final List<String> ads = <String>[
-        for (final Map<String, dynamic> r in adsRules)
-          if (r['domain_suffix'] is List<dynamic>)
-            ...(r['domain_suffix'] as List<dynamic>).cast<String>(),
-      ];
-      expect(ads, contains('hadeseh.simra.cloud'));
-      expect(ads, contains('dsp.aparat.com'));
-      expect(ads, contains('adengine.telewebion.ir'));
-      expect(ads, contains('analytics.zoomit.ir'));
-      expect(ads, contains('pagead.l.doubleclick.net'));
-      expect(ads, contains('youtube.cleverads.vn'));
     });
 
     test('LocalCaManager generates persistent P-256 CA and valid 395-day leaf certs', () async {
@@ -306,6 +311,9 @@ void main() {
 
     test('RuntimeConfig wires anti-loop HTTPS filter routing and QUIC reject', () {
       final Map<String, dynamic> config = <String, dynamic>{
+        'experimental': <String, dynamic>{
+          'monitoring': <String, dynamic>{},
+        },
         'inbounds': <Map<String, dynamic>>[
           <String, dynamic>{'type': 'tun', 'tag': 'tun-in'},
           <String, dynamic>{'type': 'mixed', 'tag': 'mixed-in', 'listen_port': 12334},

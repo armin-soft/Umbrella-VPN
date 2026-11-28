@@ -11,6 +11,7 @@ import 'package:umbrella_vpn/state/settings_controller.dart';
 import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/ui/widgets/quick_connection_panel.dart';
 import 'package:umbrella_vpn/ui/widgets/common.dart';
+import 'package:umbrella_vpn/vpn/https_ad_filter_proxy.dart';
 import 'package:umbrella_vpn/vpn/vpn_controller.dart';
 
 class _Native implements NativeBridge {
@@ -47,6 +48,18 @@ class _Vpn extends ChangeNotifier implements VpnController {
   VpnStatus get status => current;
   @override
   void scheduleLiveReload() { reloads++; }
+  @override
+  bool get httpsCaTrusted => false;
+  @override
+  bool get httpsCaStatusChecked => true;
+  @override
+  String get httpsCaCertPath => '';
+  @override
+  HttpsFilterStats get httpsFilterStats => const HttpsFilterStats();
+  @override
+  bool get isHttpsFilterProxyActive => false;
+  @override
+  Future<bool> refreshHttpsCaStatus({bool notify = true}) async => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

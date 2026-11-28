@@ -74,7 +74,7 @@ else {
 if (class_exists('ChannelMembership') && method_exists('ChannelMembership', 'markPendingJoin')) {
 ChannelMembership::markPendingJoin($Context->UserId, $Context->ChatId);
 }
-TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🔒برای استفاده از امکانات ربات باید ابتدا عضو کانال شوید.\n\n✨پس از عضویت در کانال، نیازی به زدن دکمه بررسی نیست؛ ربات خودش به صورت خودکار دسترسی شما را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
+TelegramClient::sendMessage($Context->ChatId, "{$Greeting}🔒برای استفاده از امکانات ربات باید عضو کانال شوید.\n\n✨پس از عضویت در کانال، نیازی به زدن دکمه بررسی نیست؛ ربات خودش به صورت خودکار دسترسی شما را فعال می کند." . Helper::userFooter(), TelegramClient::inlineKeyboard([
 [['text' => '📢عضویت در کانال', 'url' => $Channel_Url]],
 ]));
 }

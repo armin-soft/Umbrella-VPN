@@ -491,6 +491,11 @@ class MaliciousLinkGuard {
 
   static String _normalizeHost(String rawHost) {
     String h = rawHost.trim().toLowerCase();
+    if (h.contains('%')) {
+      try {
+        h = Uri.decodeComponent(h).trim().toLowerCase();
+      } catch (_) {}
+    }
     if (h.startsWith('[') && h.contains(']')) {
       final int end = h.indexOf(']');
       return h.substring(0, end + 1);
