@@ -1,4 +1,4 @@
-name: Publish Combined 1.0.3 Release
+name: Publish Combined 1.0.4 Release
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download latest Windows and Android 1.0.3 installers
+      - name: Download latest Windows and Android 1.0.4 installers
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REPO: ${{ github.repository }}
@@ -25,20 +25,20 @@ jobs:
           rm -rf release-assets
           mkdir -p release-assets
 
-          # 1. Latest Windows x64 installer from the v1.0.3-windows draft release
-          gh release download v1.0.3-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.3-x64.exe' --dir release-assets --clobber
-          test -s release-assets/UmbrellaVPN-Setup-1.0.3-x64.exe
+          # 1. Latest Windows x64 installer from the v1.0.4-windows draft release
+          gh release download v1.0.4-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.4-x64.exe' --dir release-assets --clobber
+          test -s release-assets/UmbrellaVPN-Setup-1.0.4-x64.exe
 
-          # 2. Latest signed Android APKs from the v1.0.3-android draft release
-          gh release download v1.0.3-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
+          # 2. Latest signed Android APKs from the v1.0.4-android draft release
+          gh release download v1.0.4-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
           rm -f release-assets/SHA256SUMS.txt
 
           for apk in \
-            UmbrellaVPN-1.0.3-universal.apk \
-            UmbrellaVPN-1.0.3-arm64-v8a.apk \
-            UmbrellaVPN-1.0.3-armeabi-v7a.apk \
-            UmbrellaVPN-1.0.3-x86_64.apk; do
+            UmbrellaVPN-1.0.4-universal.apk \
+            UmbrellaVPN-1.0.4-arm64-v8a.apk \
+            UmbrellaVPN-1.0.4-armeabi-v7a.apk \
+            UmbrellaVPN-1.0.4-x86_64.apk; do
             test -s "release-assets/$apk"
           done
 
@@ -46,16 +46,16 @@ jobs:
           (
             cd release-assets
             sha256sum \
-              UmbrellaVPN-Setup-1.0.3-x64.exe \
-              UmbrellaVPN-1.0.3-universal.apk \
-              UmbrellaVPN-1.0.3-arm64-v8a.apk \
-              UmbrellaVPN-1.0.3-armeabi-v7a.apk \
-              UmbrellaVPN-1.0.3-x86_64.apk > SHA256SUMS.txt
+              UmbrellaVPN-Setup-1.0.4-x64.exe \
+              UmbrellaVPN-1.0.4-universal.apk \
+              UmbrellaVPN-1.0.4-arm64-v8a.apk \
+              UmbrellaVPN-1.0.4-armeabi-v7a.apk \
+              UmbrellaVPN-1.0.4-x86_64.apk > SHA256SUMS.txt
           )
           ls -lh release-assets
           cat release-assets/SHA256SUMS.txt
 
-      - name: Publish 1.0.3 release with Windows and Android assets
+      - name: Publish 1.0.4 release with Windows and Android assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -64,16 +64,15 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          TAG="1.0.3"
-          TITLE="Umbrella VPN 1.0.3"
+          TAG="1.0.4"
+          TITLE="Umbrella VPN 1.0.4"
           printf '%s\n' \
-            '🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۳' \
+            '🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۴' \
             '' \
-            '- ارتقای کامل سپر امنیتی بومی و اسکنر پیشرفته (کشف فایل های چندشکلی مخفی، لینک های مخرب هموگراف و ClickFix، پایش آفلاین پس زمینه اندروید و همگام سازی زنده وضعیت امنیت با تلگرام)' \
-            '- مسدودسازی دائمی و همیشگی تبلیغات و ردیاب ها همراه با فهرست دامنه های فارسی و جهانی و فیلتر عمیق اختیاری HTTPS برای حذف تبلیغات یوتیوب و کادرهای تبلیغاتی وب' \
-            '- تقویت کنترل محتوای بزرگسالان و قمار با پوشش دامنه های جدید و مسدودسازی دور زدن DNS و ریدایرکت مستقیم روی صفحه هشدار محلی' \
-            '- افزایش بسته رایگان و معرفی به ۳ گیگابایت و افزودن سیستم پیام و بنر تبلیغاتی پویا همراه با تصویر و اعلان سیستم در اندروید، ویندوز و ربات' \
-            '- باز شدن خودکار دسترسی ربات بلافاصله پس از عضویت در کانال بدون نیاز به دکمه تایید و بهبود چیدمان رابط کاربری در نمایش تاریخچه نسخه ها' \
+            '- هم سان سازی کامل طراحی و تجربه کاربری پنجره اعلان های تبلیغاتی در ویندوز و اندروید با کارت کانال رسمی آمبرلا همراه با سربرگ پویانمایی، تصویر گرد اعلان و نمایش خودکار زمان بندی شده' \
+            '- تثبیت و همگام سازی یکپارچه شناسه تلگرام میان پنل مدیریت، ربات و برنامه های ویندوز و اندروید' \
+            '- نگهداری پایدار و بازیابی خودکار شناسه یکتای دستگاه در سیستم فایل و جلوگیری از ثبت دستگاه های تکراری با نام ها و سامانه های مختلف' \
+            '- همسان سازی گزارش نام دستگاه، پلتفرم و نسخه در برنامه های ویندوز و اندروید و به روز رسانی نشانگرهای تایید هویت' \
             > notes.txt
 
           publish_to_repo() {

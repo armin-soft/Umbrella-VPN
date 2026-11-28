@@ -6,7 +6,7 @@ on:
       tag:
         description: 'Release tag to scan (leave empty for latest release)'
         required: false
-        default: '1.0.3'
+        default: '1.0.4'
         type: string
       include_windows:
         description: 'Also scan Windows .exe installer'
