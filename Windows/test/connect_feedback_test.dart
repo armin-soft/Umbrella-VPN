@@ -24,7 +24,6 @@ import 'package:umbrella_vpn/state/toast_controller.dart';
 import 'package:umbrella_vpn/state/update_controller.dart';
 import 'package:umbrella_vpn/ui/pages/connect_page.dart';
 import 'package:umbrella_vpn/ui/pages/updates_page.dart';
-import 'package:umbrella_vpn/ui/widgets/common.dart';
 import 'package:umbrella_vpn/ui/widgets/share_app_dialog.dart';
 import 'package:umbrella_vpn/ui/widgets/shell_widgets.dart';
 import 'package:umbrella_vpn/vpn/cores.dart';

@@ -127,7 +127,7 @@ class _ShareAppDialogState extends State<ShareAppDialog> {
   }
 
   Future<void> _openLink(String url) async {
-    final bool opened = await SafeUrlLauncher.open(url);
+    final bool opened = await SafeUrlLauncher.openString(url);
     if (!mounted) {
       return;
     }
@@ -523,7 +523,7 @@ class _AppQrBox extends StatelessWidget {
                 color: colors.primary,
               ),
               dataModuleStyle: const QrDataModuleStyle(
-                dataModuleShape: QrDataModuleStyle.square,
+                dataModuleShape: QrDataModuleShape.square,
                 color: Color(0xFF151822),
               ),
             ),
