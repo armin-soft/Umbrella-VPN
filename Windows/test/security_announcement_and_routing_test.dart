@@ -155,6 +155,9 @@ class _FakeNative implements NativeBridge {
   Future<bool> trayDestroy() async => true;
 
   @override
+  Future<DeviceProfile> deviceInfo() async => DeviceProfile.empty;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -2711,7 +2714,9 @@ void main() {
       expect(authSrc.contains('\u200C'), isFalse);
       expect(authSrc.contains("readFileSync('device_id.txt')"), isTrue);
       expect(authSrc.contains("writeFileSync('device_id.txt', _deviceId)"), isTrue);
-      expect(authSrc.contains('platform: _device.platformLabel'), isFalse);
+      expect(authSrc.contains('platform: _device.platformLabel'), isTrue);
+      expect(authSrc.contains('_device.platformLabel.isNotEmpty'), isTrue);
+      expect(authSrc.contains('deviceName: _device.hostname'), isFalse);
       expect(authSrc.contains('deviceName: _device.deviceName'), isTrue);
 
       await LocalStore.instance.init();

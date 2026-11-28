@@ -808,9 +808,7 @@ class AuthController extends ChangeNotifier {
           phone: phone,
           deviceId: _deviceId,
           deviceName: _device.deviceName,
-          platform: defaultTargetPlatform == TargetPlatform.android
-              ? 'Android'
-              : 'Windows',
+          platform: _device.platformLabel,
         ),
       );
       _challenge = start.challenge;
@@ -860,9 +858,7 @@ class AuthController extends ChangeNotifier {
           phone: _phone,
           deviceId: _deviceId,
           deviceName: _device.deviceName,
-          platform: defaultTargetPlatform == TargetPlatform.android
-              ? 'Android'
-              : 'Windows',
+          platform: _device.platformLabel,
           firstName: _firstName,
           lastName: _lastName,
         ),
@@ -1106,9 +1102,11 @@ class AuthController extends ChangeNotifier {
         deviceId: _deviceId,
         activity: pendingActivity,
         deviceName: _device.deviceName,
-        platform: defaultTargetPlatform == TargetPlatform.android
-            ? 'Android'
-            : 'Windows',
+        platform: _device.platformLabel.isNotEmpty
+            ? _device.platformLabel
+            : (defaultTargetPlatform == TargetPlatform.android
+                ? 'Android'
+                : 'Windows'),
         appVersion: AppConfig.version,
         securityStatus: secState?['security_status'] as String?,
         scannedAtMs: secState?['scanned_at_ms'] as int?,
