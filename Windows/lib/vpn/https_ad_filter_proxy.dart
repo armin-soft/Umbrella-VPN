@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -1200,15 +1201,16 @@ class HttpsAdFilterProxy {
           final bool reused = upstreamTls != null;
           if (upstreamTls == null) {
             final Socket rawUp = await _dialUpstreamTcp(host, port);
-            upstreamTls = await SecureSocket.secure(
+            final SecureSocket secured = await SecureSocket.secure(
               rawUp,
               host: host,
               context: upstreamSecurityContext,
               supportedProtocols: const <String>['http/1.1'],
             ).timeout(const Duration(seconds: 12));
-            upstreamReader = _HttpStreamReader(upstreamTls);
+            upstreamTls = secured;
+            upstreamReader = _HttpStreamReader(secured);
           }
-          final SecureSocket activeUpstream = upstreamTls;
+          final SecureSocket activeUpstream = upstreamTls!;
 
           try {
             activeUpstream.add(wireBytes);

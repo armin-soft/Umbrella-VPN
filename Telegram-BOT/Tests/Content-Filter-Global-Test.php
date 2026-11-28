@@ -126,10 +126,10 @@ $Check(AppFilter::load('account-two')['enabled'] === false, 'saving an unchanged
 $Check($Unchanged['enabled'] === true, 'global filter remains active after a personal save');
 
 $Edit_Personal = $Disabled_Personal;
-$Edit_Personal['categories'][] = 'ads';
+$Edit_Personal['custom_domains'][] = 'added-personal.example';
 $Enabled_Personal = AppFilter::saveFromApp('account-two', $Edit_Personal);
 $Check(AppFilter::load('account-two')['enabled'] === true, 'adding a personal rule enables that personal policy');
-$Check(in_array('dating', $Enabled_Personal['categories'], true) && in_array('ads', $Enabled_Personal['categories'], true), 'adding a personal rule preserves its saved settings');
+$Check(in_array('dating', $Enabled_Personal['categories'], true) && in_array('added-personal.example', $Enabled_Personal['custom_domains'], true), 'adding a personal rule preserves its saved settings');
 
 AppFilter::saveGlobal([
 'enabled' => false,
