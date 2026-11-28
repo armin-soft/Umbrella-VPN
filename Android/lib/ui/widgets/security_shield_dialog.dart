@@ -604,6 +604,7 @@ class _ThreatCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Icon(
                 item.isConflictingVpn
@@ -614,32 +615,39 @@ class _ThreatCard extends StatelessWidget {
               ),
               const SizedBox(width: AppMetrics.space2),
               Expanded(
-                child: Text(
-                  Fa.num(item.name),
-                  style: TextStyle(
-                    fontSize: AppMetrics.fontBody,
-                    fontWeight: FontWeight.w800,
-                    color: colors.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppMetrics.space2),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppMetrics.space2,
-                  vertical: AppMetrics.space1,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.danger.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
-                ),
-                child: Text(
-                  item.categoryLabelFa,
-                  style: TextStyle(
-                    fontSize: AppMetrics.fontCaption,
-                    fontWeight: FontWeight.w700,
-                    color: colors.danger,
-                  ),
+                child: Wrap(
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space1,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    Text(
+                      Fa.num(item.name),
+                      style: TextStyle(
+                        fontSize: AppMetrics.fontBody,
+                        fontWeight: FontWeight.w800,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppMetrics.space2,
+                        vertical: AppMetrics.space1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.danger.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
+                      ),
+                      child: Text(
+                        item.categoryLabelFa,
+                        style: TextStyle(
+                          fontSize: AppMetrics.fontCaption,
+                          fontWeight: FontWeight.w700,
+                          color: colors.danger,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -725,6 +733,7 @@ class _NeutralizedCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Icon(
                 event.action == 'blocked_connection'
@@ -735,31 +744,39 @@ class _NeutralizedCard extends StatelessWidget {
               ),
               const SizedBox(width: AppMetrics.space2),
               Expanded(
-                child: Text(
-                  Fa.num(event.name),
-                  style: TextStyle(
-                    fontSize: AppMetrics.fontSmall,
-                    fontWeight: FontWeight.w700,
-                    color: colors.textPrimary,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppMetrics.space2,
-                  vertical: AppMetrics.space1,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.success.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
-                ),
-                child: Text(
-                  event.actionLabelFa,
-                  style: TextStyle(
-                    fontSize: AppMetrics.fontCaption,
-                    fontWeight: FontWeight.w700,
-                    color: colors.success,
-                  ),
+                child: Wrap(
+                  spacing: AppMetrics.space2,
+                  runSpacing: AppMetrics.space1,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    Text(
+                      Fa.num(event.name),
+                      style: TextStyle(
+                        fontSize: AppMetrics.fontSmall,
+                        fontWeight: FontWeight.w700,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppMetrics.space2,
+                        vertical: AppMetrics.space1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.success.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(AppMetrics.radiusSm),
+                      ),
+                      child: Text(
+                        event.actionLabelFa,
+                        style: TextStyle(
+                          fontSize: AppMetrics.fontCaption,
+                          fontWeight: FontWeight.w700,
+                          color: colors.success,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

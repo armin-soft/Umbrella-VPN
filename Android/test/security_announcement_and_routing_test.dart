@@ -1953,8 +1953,8 @@ void main() {
         expect(scannerKt, contains('craxsrat'));
         expect(scannerKt, contains('spynote'));
         expect(scannerKt, contains('dl:webp_eof:'));
-        expect(scannerKt, contains('combined.contains("brata")'));
-        expect(scannerKt, contains('combined.contains("godfather")'));
+        expect(scannerKt, contains('containsIdentifierToken(combined, "brata")'));
+        expect(scannerKt, contains('containsIdentifierToken(combined, "godfather")'));
 
         final String handlerKt = File(
           'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
@@ -2596,7 +2596,7 @@ void main() {
     });
 
     testWidgets('SecurityShieldDialog ارقام فارسی نمایش می دهد و متن وضعیت امن را تمیز رندر می کند', (WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(420, 820));
+      await tester.binding.setSurfaceSize(const Size(360, 740));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final _FakeNative native = _FakeNative()
