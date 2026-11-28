@@ -668,7 +668,7 @@ self::republishPromoAnnouncement();
 }
 
 public static function validateAnnouncementUrl(string $Input): string {
-$Raw = trim($Input);
+$Raw = Helper::toEnglish(trim($Input));
 if ($Raw === '') {
 throw new InvalidArgumentException('لینک دکمه نمی تواند خالی باشد.');
 }

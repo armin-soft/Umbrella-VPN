@@ -2091,7 +2091,7 @@ class VpnController extends ChangeNotifier {
               LogDetail(
                 title: 'تنظیم پروکسی ویندوز',
                 text: <String>[
-                  'نشانی پروکسی: ${Fa.num('127.0.0.1')}:${Fa.num(plan.proxyPort)}',
+                  'نشانی پروکسی: 127.0.0.1:${plan.proxyPort}',
                   'پورت محلی هسته: ${Fa.num(plan.proxyPort)}',
                   if (plan.proxyPort > 0)
                     'پورت باز است: '

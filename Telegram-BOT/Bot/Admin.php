@@ -957,7 +957,8 @@ return self::faDigits($Text);
 
 private static function faTargetDisplay(string $Target): string {
 if ($Target === '') return '—';
-if (preg_match('/[A-Za-z]/', $Target) === 1) {
+if (preg_match('/[A-Za-z:\\\\\/]/', $Target) === 1
+|| preg_match('/^\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?$/', $Target) === 1) {
 return $Target;
 }
 return self::faDigits($Target);
@@ -2537,10 +2538,11 @@ $Stored = Helper::formatGB($GB);
 break;
 case 'link':
 if ($Key === 'Channel_Url') {
-try { $Id = BotConfig::configureChannel(trim($Text)); $Stored = BotConfig::getChannelUrl() . "\n🆔" . $Id; }
+try { $Id = BotConfig::configureChannel(Helper::toEnglish(trim($Text))); $Stored = BotConfig::getChannelUrl() . "\n🆔" . $Id; }
 catch (Throwable $Exception) { $Error = 'نام کاربری کانال معتبر نیست یا دریافت شناسه از تلگرام ممکن نشد؛ تنظیمات قبلی تغییر نکرد.'; }
 break;
 }
+$Value = Helper::toEnglish($Value);
 if ($Value !== '' && str_starts_with($Value, '@')) {
 $Value = 'https://t.me/' . substr($Value, 1);
 }

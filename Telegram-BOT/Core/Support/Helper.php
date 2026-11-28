@@ -103,8 +103,25 @@ return static::cleanPersian($Raw);
 }
 
 /**
+ * بررسی می کند آیا بخش داخل تگ کد یا بک تیک حاوی داده فنی نیازمند حفظ ارقام لاتین است یا خیر.
+ */
+private static function hasTechnicalPayload(string $Inner): bool {
+if (preg_match('/[A-Za-z]/', $Inner) === 1) {
+return true;
+}
+if (preg_match('/\b(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?::\d{1,5})?(?:\/\d{1,2})?\b(?:[\/?#][^\s<>"`]*)?/', $Inner) === 1) {
+return true;
+}
+$Trimmed = trim($Inner, "[] \t\r\n.,;!?");
+if (str_contains($Trimmed, ':') && filter_var(preg_replace('/%[A-Za-z0-9_.\-]+$/', '', $Trimmed) ?? $Trimmed, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+return true;
+}
+return false;
+}
+
+/**
  * تبدیل تمام ارقام لاتین و عربی پیام به ارقام فارسی به جز مقادیر فنی قابل کپی
- * (کلیدها، شناسه های یکتا، نشانی های اینترنتی، رایانامه و نام های کاربری تلگرام).
+ * (کلیدها، شناسه های یکتا، نشانی های اینترنتی، مسیرها، آی پی، رایانامه و نام های کاربری تلگرام).
  */
 public static function digitsToPersian(string $Text): string {
 if ($Text === '' || preg_match('/[0-9\x{0660}-\x{0669}]/u', $Text) !== 1) {
@@ -112,34 +129,71 @@ return $Text;
 }
 
 $Hold = [];
-$Keep = static function (string $Value) use (&$Hold): string {
-$Key = "\x01" . str_repeat("\x02", count($Hold) + 1) . "\x01";
+$Keep = static function (string $Value) use (&$Hold, &$Text): string {
+$Idx = count($Hold) + 1;
+do {
+$Encoded = strtr((string)$Idx, '0123456789', "\x02\x03\x04\x05\x06\x07\x0E\x0F\x10\x11");
+$Key = "\x01" . $Encoded . "\x01";
+$Idx++;
+} while (isset($Hold[$Key]) || str_contains($Text, $Key));
 $Hold[$Key] = $Value;
 
 return $Key;
 };
-// بلوک های کد حاوی حروف لاتین (کلید، لینک، شناسه کلاینت، دامنه) دست نخورده می مانند؛
+// بلوک های کد حاوی حروف لاتین یا داده فنی (کلید، لینک، شناسه کلاینت، دامنه، مسیر، آی پی) دست نخورده می مانند؛
 // بلوک های صرفا عددی (شناسه تلگرام، شماره موبایل، کد رهگیری، مبلغ، نسخه) فارسی می شوند.
-$Text = (string)preg_replace_callback('/`([^`\n]*)`/u', static fn (array $M): string => preg_match('/[A-Za-z]/', $M[1]) === 1 ? $Keep($M[0]) : $M[0], $Text);
+$Text = (string)preg_replace_callback('/`([^`\n]*)`/u', static fn (array $M): string => self::hasTechnicalPayload($M[1]) ? $Keep($M[0]) : $M[0], $Text);
 $Text = (string)preg_replace_callback('#<(code|pre)((?:\s[^>]*)?)>(.*?)</\1>#isu', static function (array $M) use ($Keep): string {
 $Inner = preg_replace('/&(?:amp|lt|gt|quot|apos);/i', '', $M[3]) ?? $M[3];
-return preg_match('/[A-Za-z]/', $Inner) === 1 ? $Keep($M[0]) : $M[0];
+return self::hasTechnicalPayload($Inner) ? $Keep($M[0]) : $M[0];
 }, $Text);
-// حفظ برچسب های قالب بندی و موجودیت های عددی، نشانی های اینترنتی، رایانامه و نام کاربری.
+// حفظ تگ های HTML تلگرام پیش از الگوهای دیگر تا صفاتی مانند href و emoji-id بدون تودرتویی بمانند.
+$Text = (string)preg_replace_callback('#</?(?:a|tg-emoji|tg-spoiler|blockquote|b|i|u|s|span|strong|em)(?:\s+[^>\x01-\x1F]*)?>#iu', static fn (array $M): string => $Keep($M[0]), $Text);
+// حفظ پیوندهای Markdown، صفت href، موجودیت های عددی، نشانی های اینترنتی، مسیر فایل، آی پی، رایانامه و نام کاربری.
 $Text = (string)preg_replace_callback('/&#[0-9]+;/u', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('/\]\([^)\n]*\)/u', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('/href="[^"]*"/iu', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('#(?:https?|tg|vless|vmess|trojan|ss|ssr|hysteria2?|tuic|wg|wireguard)://[^\s<>"`]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
-$Text = (string)preg_replace_callback('/(?<![\w\x01])@[A-Za-z][A-Za-z0-9_]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
-// محافظت از نام دامنه های فنی که شامل عدد هستند (مانند sub1.example.com).
-$Text = (string)preg_replace_callback('/\b(?=[A-Za-z0-9.\-]*[A-Za-z])(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/\]\([^)\n\x01-\x1F]*\)/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/href=(?:"[^"\x01-\x1F]*"|\'[^\'\x01-\x1F]*\')/iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#(?<![A-Za-z0-9+.\-])(?:[A-Za-z][A-Za-z0-9+.\-]*://|mailto:|tel:|magnet:)[^\s<>"`\x01-\x1F]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}(?::\d{1,5})?/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/(?<![\w\x01-\x1F])@[A-Za-z][A-Za-z0-9_]{2,}/u', static fn (array $M): string => $Keep($M[0]), $Text);
+// محافظت از دامنه ها و لینک های بدون پروتکل شامل پورت یا مسیر (مانند t.me/channel/123 و site.ir:8443/sub).
+$Text = (string)preg_replace_callback('/\b(?=[A-Za-z0-9.\-]*[A-Za-z])(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[\/?#][^\s<>"`\x01-\x1F]*)?/u', static fn (array $M): string => $Keep($M[0]), $Text);
+// محافظت از مسیرهای فایل ویندوز و اندروید / یونیکس.
+$Text = (string)preg_replace_callback('/(?<![A-Za-z0-9])[A-Za-z]:\\\\[^\s<>"`\x01-\x1F]+/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('#(?<![A-Za-z0-9/])/(?:sdcard|storage|data|system|vendor|product|apex|mnt|usr|etc|var|opt|home|root|tmp|downloads?|app)/[^\s<>"`\x01-\x1F]+#iu', static fn (array $M): string => $Keep($M[0]), $Text);
+// محافظت از نشانی های IPv6، UUID، MAC، IPv4 (همراه با پورت و مسیر) و کدهای فنی ترکیب حرف و عدد.
+$Text = (string)preg_replace_callback('/(?<![A-Za-z0-9])(?:\[[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.\-]+)?\](?::\d{1,5})?(?:[\/?#][^\s<>"`\x01-\x1F]*)?|[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(?:%[A-Za-z0-9_.\-]+)?)(?![A-Za-z0-9])/u', static function (array $M) use ($Keep): string {
+$Candidate = $M[0];
+$Bracketed = str_starts_with($Candidate, '[');
+$Address = $Bracketed ? substr($Candidate, 1, (int)strpos($Candidate, ']') - 1) : (preg_replace('/[.,;!?]+$/', '', $Candidate) ?? $Candidate);
+$AddrNoZone = preg_replace('/%[A-Za-z0-9_.\-]+$/', '', $Address) ?? $Address;
+if (str_contains($AddrNoZone, ':') && filter_var($AddrNoZone, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+return $Keep($Candidate);
+}
+return $Candidate;
+}, $Text);
+$Text = (string)preg_replace_callback('/\b[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\b/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/\b(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?::\d{1,5})?(?:\/\d{1,2})?\b(?:[\/?#][^\s<>"`\x01-\x1F]*)?/u', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/\b0x[0-9A-Fa-f]+\b/iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/\b(?:IPv[46]|(?:TLS|SSL|HTTP|SOCKS|TCP|UDP|QUIC)\s*v?\d+(?:\.\d+)*|(?:TCP|UDP|HTTP|HTTPS|TLS|SSL|SOCKS|QUIC)[\/:]\d{1,5}(?:\.\d+)*)\b/iu', static fn (array $M): string => $Keep($M[0]), $Text);
+$Text = (string)preg_replace_callback('/\b(?=[A-Za-z0-9._\/\-]*[A-Za-z])(?=[A-Za-z0-9._\/\-]*\d)[A-Za-z0-9][A-Za-z0-9._\/\-]*\b/u', static fn (array $M): string => $Keep($M[0]), $Text);
 $Text = strtr($Text, array_merge(
 array_combine(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS),
 array_combine(self::ARABIC_DIGITS, self::PERSIAN_DIGITS)
 ));
 
-return $Hold === [] ? $Text : strtr($Text, $Hold);
+while ($Hold !== []) {
+$Next = strtr($Text, $Hold);
+if ($Next === $Text) {
+break;
+}
+$Text = $Next;
+if (!str_contains($Text, "\x01")) {
+break;
+}
+}
+return $Text;
 }
 
 public static function toPersian(int|float|string $Number): string {

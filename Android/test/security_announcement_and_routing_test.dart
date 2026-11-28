@@ -11,6 +11,7 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:umbrella_vpn/core/malicious_link_guard.dart';
+import 'package:umbrella_vpn/core/persian.dart';
 import 'package:umbrella_vpn/core/safe_url_launcher.dart';
 import 'package:umbrella_vpn/core/storage.dart';
 import 'package:umbrella_vpn/core/theme.dart';
@@ -2659,6 +2660,38 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
       sec.dispose();
       toasts.dispose();
+    });
+
+    test('حفظ اعداد انگلیسی در لینک ها، مسیرهای فایل و کدهای فنی داخل Fa.num و درگاه', () {
+      expect(
+        Fa.num('لینک کانال t.me/UmbrellaVPN_Channel/123 و ساب site.ir:8443/sub/99?x=2 و نسخه 1.0.3'),
+        'لینک کانال t.me/UmbrellaVPN_Channel/123 و ساب site.ir:8443/sub/99?x=2 و نسخه ۱.۰.۳',
+      );
+      expect(
+        Fa.num('پروکسی hy2://pw9@185.10.20.30:8443?sni=a1.ir#Srv1 و socks5://user1:pass2@127.0.0.1:10808'),
+        'پروکسی hy2://pw9@185.10.20.30:8443?sni=a1.ir#Srv1 و socks5://user1:pass2@127.0.0.1:10808',
+      );
+      expect(
+        Fa.num(r'مسیر C:\Users\Ali123\Downloads\bad2.exe و /sdcard/Download/2026/app1.apk'),
+        r'مسیر C:\Users\Ali123\Downloads\bad2.exe و /sdcard/Download/2026/app1.apk',
+      );
+      expect(
+        Fa.num('[مشاهده 2](https://site.ir/v1/23) و [https://site.ir/12](https://site.ir/12)'),
+        '[مشاهده ۲](https://site.ir/v1/23) و [https://site.ir/12](https://site.ir/12)',
+      );
+      expect(
+        Fa.num("<a href='https://t.me/c/123/4'>پست 5</a>"),
+        "<a href='https://t.me/c/123/4'>پست ۵</a>",
+      );
+      expect(
+        Fa.num('ابزار 3x-ui و فایل Umbrella-VPN-1.0.3-universal.apk و کلید wg-key-99'),
+        'ابزار 3x-ui و فایل Umbrella-VPN-1.0.3-universal.apk و کلید wg-key-99',
+      );
+
+      final String authSrc = File('lib/state/auth_controller.dart').readAsStringSync();
+      final String parsersSrc = File('lib/data/parsers.dart').readAsStringSync();
+      expect(authSrc.contains('Fa.toEn(base.trim())'), isTrue);
+      expect(parsersSrc.contains(r'Fa.num(host)'), isFalse);
     });
   });
 }

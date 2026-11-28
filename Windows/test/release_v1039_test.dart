@@ -1067,6 +1067,14 @@ void main() {
         'پروتکل IPv4 و TLS 1.3 یا TLS/1.3، وضعیت HTTP/404 و نسخه برنامه ۱.۰.۳۹',
       );
       expect(Fa.num('کد وضعیت 503'), 'کد وضعیت 503');
+      expect(
+        Fa.num('لینک t.me/UmbrellaVPN_Channel/123 و site.ir:8443/sub/99?a=1 و نسخه 1.0.3'),
+        'لینک t.me/UmbrellaVPN_Channel/123 و site.ir:8443/sub/99?a=1 و نسخه ۱.۰.۳',
+      );
+      expect(
+        Fa.num(r'مسیر C:\Users\Ali123\Downloads\bad2.exe و /sdcard/Download/2026/app1.apk'),
+        r'مسیر C:\Users\Ali123\Downloads\bad2.exe و /sdcard/Download/2026/app1.apk',
+      );
       expect(AppConfig.versionPhrase, isNot(contains(RegExp(r'[0-9]'))));
       expect(AppConfig.versionPhrase, contains('۱٫۰٫۳'));
 

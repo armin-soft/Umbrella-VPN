@@ -72,7 +72,7 @@ class AdvancedNetworkSettings extends StatelessWidget {
                       const SizedBox(width: AppMetrics.space2),
                       Flexible(
                         child: Text(
-                          Fa.num(settings.appRoutes[i].process),
+                          settings.appRoutes[i].process,
                           textDirection: TextDirection.ltr,
                           style: Theme.of(context).textTheme.labelLarge?.copyWith(
                                 color: colors.textPrimary,

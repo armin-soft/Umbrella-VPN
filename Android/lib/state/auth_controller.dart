@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../core/app_config.dart';
+import '../core/persian.dart';
 import '../core/storage.dart';
 import '../core/utils.dart';
 import '../data/gateway_client.dart';
@@ -760,7 +761,7 @@ class AuthController extends ChangeNotifier {
   /// نشانی درگاه را عوض می کند و کلاینت را با نشانی تازه می سازد؛ مقدار
   /// خالی یعنی بازگشت به پیش فرض برنامه.
   Future<void> setGatewayBase(String base) async {
-    final String cleaned = base.trim();
+    final String cleaned = Fa.toEn(base.trim());
     if (cleaned.isEmpty) {
       await _store.remove(AppConfig.gatewayStoreKey);
       _gateway.close();

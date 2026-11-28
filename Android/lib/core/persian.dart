@@ -49,20 +49,34 @@ class Fa {
     'یکشنبه',
   ];
 
-  static final List<RegExp> _technicalValuePatterns = <RegExp>[
+  static final List<RegExp> _preIpv6Patterns = <RegExp>[
+    // پیوندهای Markdown و صفت href در HTML باید با ارقام انگلیسی دست نخورده بمانند.
+    RegExp(r'\]\([^)\n\uE000-\uF8FF]*\)'),
+    RegExp(r'''href=(?:"[^"\uE000-\uF8FF]*"|'[^'\uE000-\uF8FF]*')''', caseSensitive: false),
+    // تمام نشانی های دارای پروتکل (وب، تلگرام، پروکسی ها، ایمیل و لینک های سیستمی)
     RegExp(
-      r'\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>"`]+',
+      r'(?<![A-Za-z0-9+.-])(?:[A-Za-z][A-Za-z0-9+.-]*://|mailto:|tel:|magnet:)[^\s<>"`\uE000-\uF8FF]+',
       caseSensitive: false,
     ),
     RegExp(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'),
     RegExp(r'@[A-Za-z][A-Za-z0-9_]{2,}\b'),
+    // نشانی ها و دامنه های دارای پورت یا مسیر بدون پروتکل (مانند t.me/c/123 و site.ir:8443/sub)
     RegExp(
-      r'\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?::\d{1,5})?\b(?:[/?#][^\s<>"`]*)?',
+      r'\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#][^\s<>"`\uE000-\uF8FF]*)?',
     ),
+    // مسیرهای فایل ویندوز و اندروید / یونیکس
+    RegExp(r'(?<![A-Za-z0-9])[A-Za-z]:\\[^\s<>"`\uE000-\uF8FF]+'),
+    RegExp(
+      r'(?<![A-Za-z0-9/])/(?:sdcard|storage|data|system|vendor|product|apex|mnt|usr|etc|var|opt|home|root|tmp|downloads?|app)/[^\s<>"`\uE000-\uF8FF]+',
+      caseSensitive: false,
+    ),
+  ];
+
+  static final List<RegExp> _postIpv6Patterns = <RegExp>[
     RegExp(r'\b[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\b'),
     RegExp(r'\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b'),
     RegExp(
-      r'\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:/\d{1,2})?\b(?:[/?#][^\s<>"`]*)?',
+      r'\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:/\d{1,2})?\b(?:[/?#][^\s<>"`\uE000-\uF8FF]*)?',
     ),
     RegExp(r'\b0x[0-9A-Fa-f]+\b', caseSensitive: false),
     RegExp(
@@ -81,10 +95,10 @@ class Fa {
   ];
 
   static final RegExp _ipv6Candidate = RegExp(
-    r'(?<![A-Za-z0-9])(?:\[[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.-]+)?\](?::\d{1,5})?(?:[/?#][^\s<>"`]*)?|[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(?:%[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9])',
+    r'(?<![A-Za-z0-9])(?:\[[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.-]+)?\](?::\d{1,5})?(?:[/?#][^\s<>"`\uE000-\uF8FF]*)?|[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(?:%[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9])',
   );
   static final RegExp _technicalCodePattern = RegExp(
-    r'\b(?=[A-Za-z0-9._/-]*[A-Za-z])(?=[A-Za-z0-9._/-]*\d)[A-Za-z][A-Za-z0-9._/-]*\b',
+    r'\b(?=[A-Za-z0-9._/-]*[A-Za-z])(?=[A-Za-z0-9._/-]*\d)[A-Za-z0-9][A-Za-z0-9._/-]*\b',
   );
   static final RegExp _needsPersianNormalization =
       RegExp(r'[0-9\u0660-\u0669\u200C]');
@@ -99,7 +113,7 @@ class Fa {
     String hold(String value) {
       String token;
       do {
-        token = String.fromCharCode(0xF0000 + tokenIndex++);
+        token = String.fromCharCode(0xE000 + (tokenIndex++));
       } while (text.contains(token));
       preserved[token] = value;
       return token;
@@ -107,8 +121,8 @@ class Fa {
 
     String keep(Match match) => hold(match[0]!);
 
-    // حفظ URIها و نام های دامنه پیش از تشخیص IPv6 تا نشانی های کامل یکپارچه بمانند.
-    for (final RegExp pattern in _technicalValuePatterns.take(4)) {
+    // حفظ URIها، پیوندها، مسیر فایل ها و دامنه ها پیش از تشخیص IPv6 تا نشانی های کامل یکپارچه بمانند.
+    for (final RegExp pattern in _preIpv6Patterns) {
       text = text.replaceAllMapped(pattern, keep);
     }
     text = text.replaceAllMapped(_ipv6Candidate, (Match match) {
@@ -133,7 +147,7 @@ class Fa {
       return candidate;
     });
     // سپس UUID، MAC، IPv4، کدها و مقدارهای دارای برچسب حفظ می شوند.
-    for (final RegExp pattern in _technicalValuePatterns.skip(4)) {
+    for (final RegExp pattern in _postIpv6Patterns) {
       text = text.replaceAllMapped(pattern, keep);
     }
     text = text.replaceAllMapped(_technicalCodePattern, keep);

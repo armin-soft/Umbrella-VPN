@@ -526,8 +526,7 @@ class SubscriptionParser {
     }
     _normalizeSecurity(params);
 
-    final String label =
-        name.isNotEmpty ? name : '$titlePrefix ${Fa.num(host)}';
+    final String label = name.isNotEmpty ? name : '$titlePrefix $host';
     final String idSeed = name.isNotEmpty
         ? '$sourceId|$scheme|$payload|$name'
         : '$sourceId|$scheme|$payload';
@@ -633,9 +632,7 @@ class SubscriptionParser {
       'allowInsecure':
           JsonX.boolean(data['allowInsecure'] ?? data['verify_cert']),
     };
-    final String label = name.isNotEmpty
-        ? name
-        : JsonX.text(data['ps'], 'وی مس ${Fa.num(host)}');
+    final String label = name.isNotEmpty ? name : JsonX.text(data['ps'], 'وی مس $host');
     return VpnNode(
       id: stableId('$sourceId|$scheme|$payload'),
       name: label,
@@ -960,7 +957,7 @@ class SubscriptionParser {
       if (JsonX.boolean(proxy['skip-cert-verify'])) {
         params['allowInsecure'] = true;
       }
-      final String name = JsonX.text(proxy['name'], '${protocol.label} ${Fa.num(host)}');
+      final String name = JsonX.text(proxy['name'], '${protocol.label} $host');
       report.nodes.add(
         VpnNode(
           id: stableId('$sourceId|clash|${JsonX.text(proxy['name'])}|$host|$port'),
