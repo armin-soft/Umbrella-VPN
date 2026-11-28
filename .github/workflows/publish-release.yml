@@ -1,4 +1,4 @@
-name: Publish Combined 1.0.2 Release
+name: Publish Combined 1.0.3 Release
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download latest Windows and Android 1.0.2 installers
+      - name: Download latest Windows and Android 1.0.3 installers
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REPO: ${{ github.repository }}
@@ -25,20 +25,20 @@ jobs:
           rm -rf release-assets
           mkdir -p release-assets
 
-          # 1. Latest Windows x64 installer from the v1.0.2-windows draft release
-          gh release download v1.0.2-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.2-x64.exe' --dir release-assets --clobber
-          test -s release-assets/UmbrellaVPN-Setup-1.0.2-x64.exe
+          # 1. Latest Windows x64 installer from the v1.0.3-windows draft release
+          gh release download v1.0.3-windows --repo "$SOURCE_REPO" -p 'UmbrellaVPN-Setup-1.0.3-x64.exe' --dir release-assets --clobber
+          test -s release-assets/UmbrellaVPN-Setup-1.0.3-x64.exe
 
-          # 2. Latest signed Android APKs from the v1.0.2-android draft release
-          gh release download v1.0.2-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
+          # 2. Latest signed Android APKs from the v1.0.3-android draft release
+          gh release download v1.0.3-android --repo "$SOURCE_REPO" -p '*.apk' -p 'SHA256SUMS.txt' --dir release-assets --clobber
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
           rm -f release-assets/SHA256SUMS.txt
 
           for apk in \
-            UmbrellaVPN-1.0.2-universal.apk \
-            UmbrellaVPN-1.0.2-arm64-v8a.apk \
-            UmbrellaVPN-1.0.2-armeabi-v7a.apk \
-            UmbrellaVPN-1.0.2-x86_64.apk; do
+            UmbrellaVPN-1.0.3-universal.apk \
+            UmbrellaVPN-1.0.3-arm64-v8a.apk \
+            UmbrellaVPN-1.0.3-armeabi-v7a.apk \
+            UmbrellaVPN-1.0.3-x86_64.apk; do
             test -s "release-assets/$apk"
           done
 
@@ -46,16 +46,16 @@ jobs:
           (
             cd release-assets
             sha256sum \
-              UmbrellaVPN-Setup-1.0.2-x64.exe \
-              UmbrellaVPN-1.0.2-universal.apk \
-              UmbrellaVPN-1.0.2-arm64-v8a.apk \
-              UmbrellaVPN-1.0.2-armeabi-v7a.apk \
-              UmbrellaVPN-1.0.2-x86_64.apk > SHA256SUMS.txt
+              UmbrellaVPN-Setup-1.0.3-x64.exe \
+              UmbrellaVPN-1.0.3-universal.apk \
+              UmbrellaVPN-1.0.3-arm64-v8a.apk \
+              UmbrellaVPN-1.0.3-armeabi-v7a.apk \
+              UmbrellaVPN-1.0.3-x86_64.apk > SHA256SUMS.txt
           )
           ls -lh release-assets
           cat release-assets/SHA256SUMS.txt
 
-      - name: Publish 1.0.2 release with Windows and Android assets
+      - name: Publish 1.0.3 release with Windows and Android assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -64,18 +64,16 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          TAG="1.0.2"
-          TITLE="Umbrella VPN 1.0.2"
+          TAG="1.0.3"
+          TITLE="Umbrella VPN 1.0.3"
           printf '%s\n' \
-            '🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۲' \
+            '🇮🇷فیلترشکن آمبرلا نسخه ۱.۰.۳' \
             '' \
-            '- امضای دائمی و یکپارچه نسخه اندروید با گواهی رسمی انتشار برای سازگاری با بروزرسانی درون برنامه ای و Google Play Protect' \
-            '- ارتقای اسکنر امنیتی اندروید به دسترسی کامل مدیریت فایل با رعایت اصول سپر امنیتی گوگل پلی (پایش محلی بدون ارسال فایل به سرور)' \
-            '- حذف گزینه خروج از بخش «بیشتر» در نسخه اندروید برای یکدستی با پوسته ویندوز' \
-            '- حفظ کامل اسکنر امنیتی بومی، مسدودسازی لینک های مخرب، پایش خودکار دانلودها و بروزرسانی درون برنامه ای با تایید SHA-256' \
-            '- بستن خودکار فیلترشکن ها، سرویس ها و تونل های وی پی ان فعال قبلی هنگام اتصال تونل در اندروید و ویندوز' \
-            '- نمایش فوری وضعیت «در حال اتصال»، لغو سریع اتصال و کاهش محسوس زمان اتصال در اندروید و ویندوز' \
-            '- رفع مشکل بازاتصال خودکار اندروید، بهبود مدیریت دستگاه های فعال، حفظ نشست در خروج و هماهنگی کامل ربات تلگرام و کلاینت ها' \
+            '- ارتقای کامل سپر امنیتی بومی و اسکنر پیشرفته (کشف فایل های چندشکلی مخفی، لینک های مخرب هموگراف و ClickFix، پایش آفلاین پس زمینه اندروید و همگام سازی زنده وضعیت امنیت با تلگرام)' \
+            '- مسدودسازی دائمی و همیشگی تبلیغات و ردیاب ها همراه با فهرست دامنه های فارسی و جهانی و فیلتر عمیق اختیاری HTTPS برای حذف تبلیغات یوتیوب و کادرهای تبلیغاتی وب' \
+            '- تقویت کنترل محتوای بزرگسالان و قمار با پوشش دامنه های جدید و مسدودسازی دور زدن DNS و ریدایرکت مستقیم روی صفحه هشدار محلی' \
+            '- افزایش بسته رایگان و معرفی به ۳ گیگابایت و افزودن سیستم پیام و بنر تبلیغاتی پویا همراه با تصویر و اعلان سیستم در اندروید، ویندوز و ربات' \
+            '- باز شدن خودکار دسترسی ربات بلافاصله پس از عضویت در کانال بدون نیاز به دکمه تایید و بهبود چیدمان رابط کاربری در نمایش تاریخچه نسخه ها' \
             > notes.txt
 
           publish_to_repo() {
