@@ -59,6 +59,14 @@ private const ROUTES = [
 'admin_ann_reset' => [AdminFlow::class, 'appAnnouncementReset'],
 'admin_ann_schedule' => [AdminFlow::class, 'appAnnouncementScheduleMenu'],
 'admin_ann_start_now' => [AdminFlow::class, 'appAnnouncementStartNow'],
+'admin_promo_announcement' => [AdminFlow::class, 'promoAnnouncementMenu'],
+'admin_promo_toggle' => [AdminFlow::class, 'promoAnnouncementToggle'],
+'admin_promo_republish' => [AdminFlow::class, 'promoAnnouncementRepublish'],
+'admin_promo_reset' => [AdminFlow::class, 'promoAnnouncementReset'],
+'admin_promo_schedule' => [AdminFlow::class, 'promoAnnouncementScheduleMenu'],
+'admin_promo_start_now' => [AdminFlow::class, 'promoAnnouncementStartNow'],
+'admin_promo_clear_image' => [AdminFlow::class, 'promoAnnouncementClearImage'],
+'admin_promo_preview' => [AdminFlow::class, 'promoAnnouncementPreview'],
 'آمار کلی' => [AdminFlow::class, 'globalStats'],
 'تنظیمات' => [AdminFlow::class, 'menu'],
 'اعتبار حساب کاربری' => [AdminFlow::class, 'creditMenu'],
@@ -530,6 +538,16 @@ return;
 
 if (str_starts_with($Data, 'admin_ann_interval:')) {
 AdminFlow::appAnnouncementSetInterval($Context, max(0, (int)substr($Data, strlen('admin_ann_interval:'))));
+return;
+}
+
+if (str_starts_with($Data, 'admin_promo_edit:')) {
+AdminFlow::promoAnnouncementEditStart($Context, substr($Data, strlen('admin_promo_edit:')));
+return;
+}
+
+if (str_starts_with($Data, 'admin_promo_interval:')) {
+AdminFlow::promoAnnouncementSetInterval($Context, max(0, (int)substr($Data, strlen('admin_promo_interval:'))));
 return;
 }
 

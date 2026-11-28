@@ -20,6 +20,7 @@ import '../widgets/flag_view.dart';
 import '../widgets/live_clock.dart';
 import '../widgets/quick_connection_panel.dart';
 import '../widgets/security_shield_dialog.dart';
+import '../widgets/telegram_channel_dialog.dart';
 
 /// صفحه اصلی اتصال؛ وضعیت و کنترل اتصال را در اولویت نگه می دارد.
 ///
@@ -300,6 +301,8 @@ class _ConnectPageState extends State<ConnectPage> {
     final String shownIp = _deviceIp(vpn);
     final String flagCode = _flagForIp(vpn, connected, shownIp);
     final String countryName = CountryNames.fa(flagCode);
+    final PromoAnnouncement promo = auth.promoAnnouncement;
+    final bool hasPromoBanner = auth.shouldShowPromoBanner();
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -458,6 +461,32 @@ class _ConnectPageState extends State<ConnectPage> {
                           child: OccasionBanner(
                             occasion: OccasionService.instance.active,
                             enabled: settings.settings.occasionEffects,
+                          ),
+                        ),
+                      if (hasPromoBanner)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: AppMetrics.space3),
+                          child: PromoBannerBar(
+                            promo: promo,
+                            imageBytes: auth.promoImageBytes,
+                            onOpen: () => unawaited(
+                              PromoAnnouncementPrompt.show(
+                                context,
+                                promo: promo,
+                                initialImageBytes: auth.promoImageBytes,
+                                loadImage: auth.loadPromoImageBytes,
+                              ),
+                            ),
+                            onAction: promo.buttonUrl.trim().isNotEmpty
+                                ? () => unawaited(
+                                      TelegramChannelPrompt.openActionUrl(
+                                        promo.buttonUrl,
+                                      ),
+                                    )
+                                : null,
+                            onDismiss: () =>
+                                unawaited(auth.dismissPromoBanner()),
                           ),
                         ),
                     ],

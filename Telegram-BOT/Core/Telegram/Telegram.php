@@ -390,6 +390,40 @@ if (!empty($Markup)) $Payload['reply_markup'] = $Markup;
 return self::call('sendPhoto', $Payload);
 }
 
+/** Downloads a Telegram image file safely without exposing the bot token in logs. */
+public static function downloadFile(string $FileId, int $MaxBytes = 4194304): ?array {
+$Token = self::token();
+$CleanId = trim($FileId);
+if ($Token === '' || $CleanId === '' || $MaxBytes <= 0) return null;
+
+$Meta = self::call('getFile', ['file_id' => $CleanId]);
+if (($Meta['ok'] ?? false) !== true || !is_array($Meta['result'] ?? null)) {
+return null;
+}
+
+$FilePath = trim((string)($Meta['result']['file_path'] ?? ''));
+$FileSize = (int)($Meta['result']['file_size'] ?? 0);
+if ($FilePath === '' || str_contains($FilePath, '..') || ($FileSize > 0 && $FileSize > $MaxBytes)) {
+return null;
+}
+
+$Url = 'https://api.telegram.org/file/bot' . $Token . '/' . ltrim($FilePath, '/');
+$Resp = HttpClient::get($Url, [], 25);
+$Status = (int)($Resp['StatusCode'] ?? 0);
+$Bytes = (string)($Resp['Body'] ?? '');
+if ($Status < 200 || $Status >= 300 || $Bytes === '' || strlen($Bytes) > $MaxBytes) {
+return null;
+}
+
+$Info = @getimagesizefromstring($Bytes);
+$Mime = is_array($Info) ? strtolower((string)($Info['mime'] ?? '')) : '';
+if (!in_array($Mime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
+return null;
+}
+
+return ['bytes' => $Bytes, 'mime' => $Mime];
+}
+
 public static function sendMediaGroup(int $Chat_ID, array $Media, array $Markup = []): array {
 foreach ($Media as $Index => $Item) {
 if (is_array($Item) && isset($Item['caption']) && is_string($Item['caption']) && $Item['caption'] !== '') {

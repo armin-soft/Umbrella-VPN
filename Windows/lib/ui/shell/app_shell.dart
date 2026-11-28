@@ -197,6 +197,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       _triggerAutoSync(force: _index == 2);
+      final AuthController? auth = context.maybeRead<AuthController>();
+      if (auth != null) {
+        unawaited(auth.syncAnnouncement());
+      }
       unawaited(_maybeShowTelegramChannelPrompt());
     }
   }
@@ -212,6 +216,34 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         }
         _triggerAutoSync(force: true);
         unawaited(_maybeShowTelegramChannelPrompt());
+        break;
+      case 'balloon_click':
+        await widget.windowService.show();
+        _propagateVisibility(true);
+        if (mounted) {
+          setState(() {
+            _appVisible = true;
+            _index = 0;
+          });
+        }
+        _triggerAutoSync(force: true);
+        final TrayService? tray = context.maybeRead<TrayService>();
+        final AuthController? auth = context.maybeRead<AuthController>();
+        final String? promoUrl = tray?.consumeRecentPromoActionUrl();
+        if (promoUrl != null &&
+            auth != null &&
+            auth.promoAnnouncement.isActive) {
+          unawaited(
+            PromoAnnouncementPrompt.show(
+              context,
+              promo: auth.promoAnnouncement,
+              initialImageBytes: auth.promoImageBytes,
+              loadImage: auth.loadPromoImageBytes,
+            ),
+          );
+        } else {
+          unawaited(_maybeShowTelegramChannelPrompt());
+        }
         break;
       case 'servers':
         await widget.windowService.show();

@@ -88,11 +88,11 @@ $Assert(str_contains($Panel_Code, "'added_by_uuid' => Environment::getUmbrellaAp
 $Assert(str_contains($Panel_Code, "'current_usage_GB' => 0"), 'PanelClient::create() must include current_usage_GB');
 $Assert(str_contains($Panel_Code, "'results'"), 'PanelClient::fullClientList() must support results wrapper');
 $Assert(str_contains($Panel_Code, "'records'"), 'PanelClient::fullClientList() must support records wrapper');
-$Assert(str_contains($Panel_Code, "'usage_limit_GB' => 1") && str_contains($Panel_Code, "'package_days' => 1"), 'new app-created panel users default to the free 1 GB / 1 day plan, not 30 days');
+$Assert(str_contains($Panel_Code, "'usage_limit_GB' => 3") && str_contains($Panel_Code, "'package_days' => 1"), 'new app-created panel users default to the free 3 GB / 1 day plan, not 30 days');
 
 // New app sign-ups receive the existing free plan only after SMS verification;
 // the UUID marker prevents another free claim through either app or Telegram.
-$Assert(str_contains($Gateway_Code, 'private const FREE_PLAN_GB = 1;') && str_contains($Gateway_Code, 'private const FREE_PLAN_DAYS = 1;'), 'the app free plan matches the established 1 GB / 1 day offer');
+$Assert(str_contains($Gateway_Code, 'private const FREE_PLAN_GB = 3;') && str_contains($Gateway_Code, 'private const FREE_PLAN_DAYS = 1;'), 'the app free plan matches the 3 GB / 1 day offer');
 $Resolve_Start = strpos($Gateway_Code, 'private static function resolveAccount(');
 $Resolve_End = $Resolve_Start === false ? false : strpos($Gateway_Code, 'private static function syncBotUserClientId(', $Resolve_Start);
 $Resolve_Code = $Resolve_Start === false || $Resolve_End === false ? '' : substr($Gateway_Code, $Resolve_Start, $Resolve_End - $Resolve_Start);

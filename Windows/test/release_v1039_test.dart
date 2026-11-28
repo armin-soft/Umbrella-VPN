@@ -239,6 +239,8 @@ void main() {
         nowruzClaimed: false,
       );
       expect(initial.showFree, isTrue);
+      expect(initial.freeGb, 3);
+      expect(initial.freeDays, 1);
       expect(initial.showNowruz, isFalse);
       expect(initial.hasVisibleOffer, isTrue);
 

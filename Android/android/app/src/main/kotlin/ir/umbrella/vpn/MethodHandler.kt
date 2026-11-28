@@ -149,6 +149,16 @@ class MethodHandler(
                 }
                 true
             }
+            "showPromoBalloon" -> scope.launch {
+                val title = call.argument<String>("title") ?: ""
+                val body = call.argument<String>("body") ?: ""
+                val actionUrl = call.argument<String>("actionUrl") ?: ""
+                val imageBytes = call.argument<ByteArray>("imageBytes")
+                result.answer(call.method) {
+                    ServiceNotification.showPromoBalloon(activity, title, body, actionUrl, imageBytes)
+                    true
+                }
+            }
             "scanDeviceSecurity" -> scope.launch {
                 val quick = call.argument<Boolean>("quick") ?: false
                 result.answer(call.method) {

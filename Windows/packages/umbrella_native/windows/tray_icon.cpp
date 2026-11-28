@@ -264,8 +264,10 @@ LRESULT TrayIcon::HandleMessage(HWND window, UINT message, WPARAM wparam,
   if (message == kTrayMessage) {
     UINT event = LOWORD(lparam);
     if (event == NIN_SELECT || event == NIN_KEYSELECT ||
-        event == WM_LBUTTONDBLCLK || event == NIN_BALLOONUSERCLICK) {
+        event == WM_LBUTTONDBLCLK) {
       if (callback_ != nullptr) callback_("show");
+    } else if (event == NIN_BALLOONUSERCLICK) {
+      if (callback_ != nullptr) callback_("balloon_click");
     } else if (event == WM_RBUTTONUP || event == WM_CONTEXTMENU) {
       ShowMenu();
     }

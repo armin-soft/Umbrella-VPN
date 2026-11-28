@@ -43,6 +43,9 @@ public ?int $MessageId = 42;
 public ?string $CallbackId = 'cb-1';
 public bool $IsCallback = true;
 public ?string $CallbackData = '';
+public ?string $Photo = null;
+public ?string $Caption = null;
+public array $Raw = [];
 public function __construct(private bool $Admin = true) {}
 public function isAdmin(): bool { return $this->Admin; }
 public function profileName(): string { return 'مدیر'; }
@@ -101,12 +104,19 @@ public static function getTicketMessages(int $Id): array { return []; }
 final class TelegramClient {
 public static array $SentReadable = [];
 public static array $SentMessages = [];
+public static array $SentPhotos = [];
 public static array $LastMarkup = [];
 public static string $LastText = '';
 public static bool $FailNextReadable = false;
+public static ?array $NextDownloadedFile = null;
 public static function call(string $Method, array $Args): array { return ['ok' => false]; }
 public static function inlineKeyboard(array $Rows): array { return ['inline_keyboard' => $Rows]; }
 public static function answerCallbackQuery(?string $Id, string $Text = '', bool $Alert = false): void {}
+public static function downloadFile(string $FileId, int $MaxBytes = 4194304): ?array { return self::$NextDownloadedFile; }
+public static function sendPhoto(int $ChatId, string $Photo, string $Caption = '', array $Markup = []): array {
+self::$SentPhotos[] = [$ChatId, $Photo, $Caption, $Markup];
+return ['ok' => true];
+}
 public static function sendMessage(int $ChatId, string $Text, array $Markup = []): array {
 self::$SentMessages[] = [$ChatId, $Text, $Markup];
 self::$LastMarkup = $Markup;
@@ -139,10 +149,15 @@ final class Database {
 public static array $Devices = [];
 public static array $Sessions = [];
 public static array $Alerts = [];
+public static array $PromoMedia = [];
 public static function getInstance(): self { return new self(); }
 public function transaction(callable $Fn): mixed { return $Fn($this); }
 public function scalar(string $Q, array $P = [], mixed $Default = 0): mixed { return $Default; }
 public function fetch(string $Q, array $P = []): ?array {
+if (str_contains($Q, 'FROM `App_Promo_Media`')) {
+$Key = (string)($P[0] ?? '');
+return self::$PromoMedia[$Key] ?? null;
+}
 if (str_contains($Q, 'FROM `App_Sessions`')) {
 foreach (self::$Sessions as $S) {
 if (($S['Token_Hash'] ?? '') === ($P[0] ?? '')) return $S;
@@ -219,6 +234,22 @@ self::$Alerts[$Composite]['Resolved'] = 0;
 }
 return;
 }
+if (str_contains($Q, 'INSERT INTO `App_Promo_Media`')) {
+[$Key, $Mime, $Bytes, $Updated] = $P;
+self::$PromoMedia[$Key] = ['Media_Key' => $Key, 'Mime_Type' => $Mime, 'Image_Blob' => $Bytes, 'Updated_At' => $Updated];
+return;
+}
+if (str_contains($Q, 'DELETE FROM `App_Promo_Media`')) {
+if ($P === []) {
+self::$PromoMedia = [];
+} else {
+$Keep = (string)$P[0];
+foreach (array_keys(self::$PromoMedia) as $K) {
+if ($K !== $Keep) unset(self::$PromoMedia[$K]);
+}
+}
+return;
+}
 if (str_contains($Q, 'UPDATE `App_Security_Alerts` SET `Last_Notified_At` = ?')) {
 $Ts = (int)$P[0];
 $Dev = (string)$P[1];
@@ -286,6 +317,7 @@ $Passed++;
 $SchemaApp = (string)file_get_contents(dirname(__DIR__) . '/Core/Database/Schema-App.php');
 $SchemaSql = (string)file_get_contents(dirname(__DIR__) . '/Database/Schema.SQL');
 check(str_contains($SchemaApp, "'App_Security_Alerts'") && str_contains($SchemaSql, 'CREATE TABLE IF NOT EXISTS `App_Security_Alerts`'), 'App_Security_Alerts exists in Schema-App.php and Schema.SQL');
+check(str_contains($SchemaApp, "'App_Promo_Media'") && str_contains($SchemaSql, 'CREATE TABLE IF NOT EXISTS `App_Promo_Media`'), 'App_Promo_Media exists in Schema-App.php and Schema.SQL');
 
 // 2. BotConfig announcement defaults, setters, validation & schedule parsing
 $DefaultAnn = BotConfig::getAppAnnouncement();
@@ -319,7 +351,74 @@ $AdminCtx->CallbackData = 'admin_app_announcement';
 $Route->invoke(null, $AdminCtx);
 check(str_contains(TelegramClient::$LastText, 'پنجره اطلاع رسانی در اپلیکیشن'), 'dispatcher opens app announcement menu');
 $Btns = array_column(array_merge(...(TelegramClient::$LastMarkup['inline_keyboard'] ?? [[]])), 'callback_data');
-check(in_array('admin_ann_toggle', $Btns, true) && in_array('admin_ann_republish', $Btns, true) && in_array('admin_ann_schedule', $Btns, true), 'announcement menu exposes toggle, republish, and schedule');
+check(in_array('admin_ann_toggle', $Btns, true) && in_array('admin_ann_republish', $Btns, true) && in_array('admin_ann_schedule', $Btns, true) && in_array('admin_promo_announcement', $Btns, true), 'announcement menu exposes toggle, republish, schedule, and promotional announcement button');
+
+// 3b. Promotional announcement workflow (image, text, link, repeat schedule, preview, gateway payload)
+$DefaultPromo = BotConfig::getPromoAnnouncement();
+check($DefaultPromo['enabled'] === false && $DefaultPromo['version'] === 1, 'promo announcement starts disabled at v1');
+
+$AdminCtx->CallbackData = 'admin_promo_announcement';
+$Route->invoke(null, $AdminCtx);
+check(str_contains(TelegramClient::$LastText, 'اعلان تبلیغاتی'), 'dispatcher opens promo announcement menu');
+
+$AdminCtx->CallbackData = 'admin_promo_toggle';
+$Route->invoke(null, $AdminCtx);
+check(BotConfig::getPromoAnnouncement()['enabled'] === false, 'empty promo cannot be enabled before setting text or image');
+
+$AdminCtx->CallbackData = 'admin_promo_edit:image';
+$Route->invoke(null, $AdminCtx);
+check((Repository::$Session['Flow'] ?? '') === 'admin:promo_image', 'edit promo image opens promo_image flow');
+
+TelegramClient::$NextDownloadedFile = ['bytes' => 'FAKEPNGDATA', 'mime' => 'image/png'];
+$AdminCtx->IsCallback = false;
+$AdminCtx->Photo = 'tg-photo-123';
+$AdminCtx->Caption = 'تخفیف ۵۰ درصدی اشتراک ها';
+AdminFlow::handleInput($AdminCtx, 'admin:promo_image', '');
+$PromoAfterPhoto = BotConfig::getPromoAnnouncement();
+check(str_starts_with($PromoAfterPhoto['image_url'], 'app/promo-image?k=') && $PromoAfterPhoto['body'] === 'تخفیف ۵۰ درصدی اشتراک ها', 'promo image upload stores DB media and sets caption when body empty');
+$AdminCtx->Photo = null;
+$AdminCtx->Caption = null;
+$AdminCtx->IsCallback = true;
+
+$AdminCtx->CallbackData = 'admin_promo_edit:btn_url';
+$Route->invoke(null, $AdminCtx);
+AdminFlow::handleInput($AdminCtx, 'admin:promo_btn_url', '@UmbrellaPromo');
+check(BotConfig::getPromoAnnouncement()['button_url'] === 'https://t.me/UmbrellaPromo', 'promo url normalizes @handle');
+
+$AdminCtx->CallbackData = 'admin_promo_interval:12';
+$Route->invoke(null, $AdminCtx);
+check(BotConfig::getPromoAnnouncement()['interval_hours'] === 12, 'promo quick interval sets 12h');
+
+$AdminCtx->CallbackData = 'admin_promo_toggle';
+$Route->invoke(null, $AdminCtx);
+check(BotConfig::getPromoAnnouncement()['enabled'] === true, 'promo announcement enables after content is set');
+
+$AdminCtx->CallbackData = 'admin_promo_republish';
+$Route->invoke(null, $AdminCtx);
+check(BotConfig::getPromoAnnouncement()['version'] === 2, 'promo republish increments version');
+
+$AdminCtx->CallbackData = 'admin_promo_preview';
+$Route->invoke(null, $AdminCtx);
+check(count(TelegramClient::$SentPhotos) >= 1, 'promo preview sends photo to admin');
+
+$PromoPayloadMethod = new ReflectionMethod(AppGateway::class, 'promoAnnouncementPayload');
+$PromoPayload = $PromoPayloadMethod->invoke(null);
+check(($PromoPayload['enabled'] ?? false) === true && ($PromoPayload['version'] ?? 0) === 2 && !array_key_exists('image_file_id', $PromoPayload), 'AppGateway::promoAnnouncementPayload returns live promo without internal file_id');
+
+$AdminCtx->CallbackData = 'admin_promo_clear_image';
+$Route->invoke(null, $AdminCtx);
+check(BotConfig::getPromoAnnouncement()['image_url'] === '' && Database::$PromoMedia === [], 'promo clear image deletes media');
+
+$AdminCtx->CallbackData = 'admin_promo_edit:image';
+$Route->invoke(null, $AdminCtx);
+AdminFlow::handleInput($AdminCtx, 'admin:promo_image', 'https://cdn.example.com/sale.jpg');
+check(BotConfig::getPromoAnnouncement()['image_url'] === 'https://cdn.example.com/sale.jpg', 'promo image accepts direct HTTPS URL');
+
+// Restore default promo disabled state before remaining guest/alert tests
+$GuestCtxPromo = new Context(false);
+$GuestCtxPromo->CallbackData = 'admin_promo_republish';
+$Route->invoke(null, $GuestCtxPromo);
+check(BotConfig::getPromoAnnouncement()['version'] === 2, 'non-admin cannot republish promo');
 
 $AdminCtx->CallbackData = 'admin_ann_toggle';
 $Route->invoke(null, $AdminCtx);

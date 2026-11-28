@@ -899,7 +899,7 @@ return;
 }
 
 if ($Type === 'free') {
-$Name = '۱ روزه'; $Gb = 1; $Days = 1;
+$Name = '۱ روزه'; $Gb = 3; $Days = 1;
 }
 
 elseif ($Type === 'nowruz') {

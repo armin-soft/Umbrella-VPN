@@ -250,6 +250,35 @@ class TrayService {
     );
   }
 
+  Future<void> promoBalloon({
+    required String title,
+    required String body,
+    String actionUrl = '',
+    Uint8List? imageBytes,
+  }) async {
+    final String cleanTitle = Fa.num(title.trim().isEmpty ? 'پیشنهاد ویژه آمبرلا' : title.trim());
+    final String cleanBody = Fa.num(body.trim());
+    if (!notificationsEnabled) return;
+    AppLogger.instance.add(
+      cleanBody.isEmpty ? cleanTitle : '$cleanTitle: $cleanBody',
+      level: 'info',
+    );
+    try {
+      await _native.showPromoBalloon(
+        title: cleanTitle,
+        body: cleanBody,
+        actionUrl: actionUrl,
+        imageBytes: imageBytes,
+      );
+    } catch (_) {
+      await _native.showTrayBalloon(
+        title: cleanTitle,
+        body: cleanBody,
+        warning: false,
+      );
+    }
+  }
+
   Future<void> destroy() async {}
 }
 

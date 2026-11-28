@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -355,8 +356,19 @@ class AuthController extends ChangeNotifier {
   /// وقتی تنظیمات اعلان داخل برنامه از سرور دریافت یا به روزرسانی شد صدا زده می شود.
   void Function(AppAnnouncement announcement)? onAnnouncementUpdated;
 
+  /// وقتی اعلان تبلیغاتی از سرور دریافت یا به روزرسانی شد صدا زده می شود.
+  void Function(PromoAnnouncement promo)? onPromoAnnouncementUpdated;
+
   AppAnnouncement _announcement = AppAnnouncement.fallback();
   AppAnnouncement get announcement => _announcement;
+
+  PromoAnnouncement _promoAnnouncement = PromoAnnouncement.empty;
+  PromoAnnouncement get promoAnnouncement => _promoAnnouncement;
+
+  Uint8List? _promoImageBytes;
+  Uint8List? get promoImageBytes => _promoImageBytes;
+  String _promoImageUrlLoaded = '';
+  Future<Uint8List?>? _promoImageFetch;
 
   bool _cancellingSignIn = false;
   Timer? _pollTimer;
@@ -436,6 +448,12 @@ class AuthController extends ChangeNotifier {
     if (cachedAnn.isNotEmpty) {
       _announcement = AppAnnouncement.fromJson(cachedAnn);
     }
+    final Map<String, dynamic> promoState =
+        _store.readJson(StoreKeys.promoAnnouncementState);
+    final Map<String, dynamic> cachedPromo = JsonX.asMap(promoState['cached']);
+    if (cachedPromo.isNotEmpty) {
+      _promoAnnouncement = PromoAnnouncement.fromJson(cachedPromo);
+    }
     final Map<String, dynamic> json = _store.readJson(StoreKeys.session);
     if (json.isNotEmpty) {
       _session = SessionData.fromJson(json);
@@ -444,6 +462,13 @@ class AuthController extends ChangeNotifier {
       } else {
         if (_session!.announcement != null) {
           await _applyAnnouncement(_session!.announcement, notify: false);
+        }
+        if (_session!.promoAnnouncement != null) {
+          await _applyPromoAnnouncement(
+            _session!.promoAnnouncement,
+            notify: false,
+            triggerSystemBar: false,
+          );
         }
         _phase = AuthPhase.done;
         _phone = _session!.account.phone;
@@ -478,12 +503,172 @@ class AuthController extends ChangeNotifier {
 
   Future<void> syncAnnouncement() async {
     try {
-      final AppAnnouncement? latest = await _gateway.fetchAnnouncement();
-      if (latest != null) {
-        await _applyAnnouncement(latest);
+      final ({
+        AppAnnouncement? announcement,
+        PromoAnnouncement? promoAnnouncement,
+      }) latest = await _gateway.fetchAnnouncements();
+      if (latest.announcement != null) {
+        await _applyAnnouncement(latest.announcement);
+      }
+      if (latest.promoAnnouncement != null) {
+        await _applyPromoAnnouncement(latest.promoAnnouncement);
       }
     } catch (_) {
       // دریافت اعلان در پس زمینه بی صدا است.
+    }
+  }
+
+  Future<void> _applyPromoAnnouncement(
+    PromoAnnouncement? incoming, {
+    bool notify = true,
+    bool triggerSystemBar = true,
+  }) async {
+    if (incoming == null) return;
+    final bool changed = !_promoAnnouncement.sameContentAs(incoming);
+    if (incoming.imageUrl.trim() != _promoImageUrlLoaded) {
+      _promoImageBytes = null;
+      _promoImageUrlLoaded = '';
+      _promoImageFetch = null;
+    }
+    _promoAnnouncement = incoming;
+    final Map<String, dynamic> state = Map<String, dynamic>.from(
+      _store.readJson(StoreKeys.promoAnnouncementState),
+    );
+    state['cached'] = incoming.toJson();
+    await _store.writeJson(StoreKeys.promoAnnouncementState, state);
+    if (incoming.isActive && incoming.hasImage) {
+      unawaited(loadPromoImageBytes());
+    }
+    if (changed) {
+      onPromoAnnouncementUpdated?.call(incoming);
+      if (notify) {
+        notifyListeners();
+      }
+    }
+    if (triggerSystemBar && incoming.isActive) {
+      unawaited(_notifyPromoSystemBarIfDue());
+    }
+  }
+
+  Future<Uint8List?> loadPromoImageBytes({bool force = false}) async {
+    final String url = _promoAnnouncement.imageUrl.trim();
+    if (url.isEmpty) {
+      _promoImageBytes = null;
+      _promoImageUrlLoaded = '';
+      return null;
+    }
+    if (!force && _promoImageBytes != null && _promoImageUrlLoaded == url) {
+      return _promoImageBytes;
+    }
+    if (_promoImageFetch != null && !force && _promoImageUrlLoaded == url) {
+      return _promoImageFetch!;
+    }
+    _promoImageUrlLoaded = url;
+    final Future<Uint8List?> task = _gateway.fetchPromoImage(url);
+    _promoImageFetch = task;
+    try {
+      final Uint8List? bytes = await task;
+      if (_promoAnnouncement.imageUrl.trim() == url && bytes != null) {
+        _promoImageBytes = bytes;
+        notifyListeners();
+      }
+      return bytes;
+    } finally {
+      if (identical(_promoImageFetch, task)) {
+        _promoImageFetch = null;
+      }
+    }
+  }
+
+  /// بررسی نمایش نوار بار تبلیغاتی داخل صفحه (با رعایت زمان بندی تکرار و نسخه).
+  bool shouldShowPromoBanner({DateTime? now}) {
+    final PromoAnnouncement promo = _promoAnnouncement;
+    if (!promo.isActive) {
+      return false;
+    }
+    final DateTime current = (now ?? DateTime.now()).toUtc();
+    if (promo.isScheduledInFutureAt(current)) {
+      return false;
+    }
+    final Map<String, dynamic> state =
+        _store.readJson(StoreKeys.promoAnnouncementState);
+    final int dismissedVersion = JsonX.integer(state['banner_dismissed_version']);
+    final int dismissedAtMs = JsonX.integer(state['banner_dismissed_at_ms']);
+    if (dismissedAtMs <= 0 || dismissedVersion != promo.version) {
+      return true;
+    }
+    if (dismissedAtMs > current.millisecondsSinceEpoch) {
+      return true;
+    }
+    if (promo.intervalHours <= 0) {
+      return false;
+    }
+    final int requiredMs = promo.intervalHours * 3600 * 1000;
+    return (current.millisecondsSinceEpoch - dismissedAtMs) >= requiredMs;
+  }
+
+  Future<void> dismissPromoBanner({DateTime? now}) async {
+    final Map<String, dynamic> state = Map<String, dynamic>.from(
+      _store.readJson(StoreKeys.promoAnnouncementState),
+    );
+    state['banner_dismissed_version'] = _promoAnnouncement.version;
+    state['banner_dismissed_at_ms'] =
+        (now ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
+    await _store.writeJson(StoreKeys.promoAnnouncementState, state);
+    notifyListeners();
+  }
+
+  Future<bool> shouldNotifyPromoSystemBar({DateTime? now}) async {
+    final PromoAnnouncement promo = _promoAnnouncement;
+    if (!promo.isActive) {
+      return false;
+    }
+    final DateTime current = (now ?? DateTime.now()).toUtc();
+    if (promo.isScheduledInFutureAt(current)) {
+      return false;
+    }
+    final Map<String, dynamic> state =
+        _store.readJson(StoreKeys.promoAnnouncementState);
+    final int notifiedVersion = JsonX.integer(state['bar_notified_version']);
+    final int notifiedAtMs = JsonX.integer(state['bar_notified_at_ms']);
+    if (notifiedAtMs <= 0 || notifiedVersion != promo.version) {
+      return true;
+    }
+    if (notifiedAtMs > current.millisecondsSinceEpoch) {
+      return false;
+    }
+    if (promo.intervalHours <= 0) {
+      return false;
+    }
+    final int requiredMs = promo.intervalHours * 3600 * 1000;
+    return (current.millisecondsSinceEpoch - notifiedAtMs) >= requiredMs;
+  }
+
+  Future<void> _notifyPromoSystemBarIfDue({DateTime? now}) async {
+    try {
+      final TrayService? tray = _tray;
+      if (!notificationsEnabled || tray == null) {
+        return;
+      }
+      if (!await shouldNotifyPromoSystemBar(now: now)) {
+        return;
+      }
+      final PromoAnnouncement promo = _promoAnnouncement;
+      final Map<String, dynamic> state = Map<String, dynamic>.from(
+        _store.readJson(StoreKeys.promoAnnouncementState),
+      );
+      state['bar_notified_version'] = promo.version;
+      state['bar_notified_at_ms'] =
+          (now ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
+      await _store.writeJson(StoreKeys.promoAnnouncementState, state);
+
+      await tray.promoBalloon(
+        title: promo.title,
+        body: promo.body,
+        actionUrl: promo.buttonUrl,
+      );
+    } catch (_) {
+      // خطای نوار اعلان سیستم نباید همگام سازی را متوقف کند.
     }
   }
 
@@ -770,6 +955,7 @@ class AuthController extends ChangeNotifier {
       await _store.writeJson(StoreKeys.session, session.toJson());
       await _store.writeJson(StoreKeys.filter, session.filter.toJson());
       await _applyAnnouncement(session.announcement, notify: false);
+      await _applyPromoAnnouncement(session.promoAnnouncement, notify: false);
       onFilterChanged?.call(session.filter);
       _startHeartbeat();
       _log.add('ورود موفق؛ خوش آمدید ${session.account.displayName}.');
@@ -893,6 +1079,7 @@ class AuthController extends ChangeNotifier {
         FilterSettings? filter,
         SubscriptionOffers? offers,
         AppAnnouncement? announcement,
+        PromoAnnouncement? promoAnnouncement,
         bool? emergencyEnabled,
         bool? botLinked,
       }) beat = await _gateway.heartbeat(
@@ -918,6 +1105,7 @@ class AuthController extends ChangeNotifier {
         filter: beat.filter,
         offers: beat.offers,
         announcement: beat.announcement,
+        promoAnnouncement: beat.promoAnnouncement,
         emergencyEnabled: beat.emergencyEnabled,
         botLinked: beat.botLinked,
       );
@@ -1109,11 +1297,13 @@ class AuthController extends ChangeNotifier {
         filter: fresh.filter,
         offers: fresh.offers,
         announcement: fresh.announcement,
+        promoAnnouncement: fresh.promoAnnouncement,
       );
       await _syncNotificationOwner(_session!.ownerKey);
       await _store.writeJson(StoreKeys.session, _session!.toJson());
       await _store.writeJson(StoreKeys.filter, fresh.filter.toJson());
       await _applyAnnouncement(fresh.announcement, notify: false);
+      await _applyPromoAnnouncement(fresh.promoAnnouncement, notify: false);
       if (!previousFilter.sameEffectAs(fresh.filter)) {
         onFilterChanged?.call(fresh.filter);
       }
@@ -1145,6 +1335,7 @@ class AuthController extends ChangeNotifier {
     FilterSettings? filter,
     SubscriptionOffers? offers,
     AppAnnouncement? announcement,
+    PromoAnnouncement? promoAnnouncement,
     bool? emergencyEnabled,
     bool? botLinked,
   }) async {
@@ -1153,6 +1344,7 @@ class AuthController extends ChangeNotifier {
       return;
     }
     await _applyAnnouncement(announcement, notify: false);
+    await _applyPromoAnnouncement(promoAnnouncement, notify: false);
 
     Account nextAccount = current.account;
     if (account != null) {
@@ -1444,7 +1636,7 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// فعال سازی اشتراک رایگان (۱ گیگ / ۱ روز) یا نوروزی (۵ گیگ / ۱۳ روز) همگام با ربات.
+  /// فعال سازی اشتراک رایگان (۳ گیگ / ۱ روز) یا نوروزی (۵ گیگ / ۱۳ روز) همگام با ربات.
   Future<String?> claimSubscriptionOffer(String type) async {
     final SessionData? session = _session;
     if (session == null || _claimingOffer) {

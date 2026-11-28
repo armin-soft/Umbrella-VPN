@@ -42,6 +42,7 @@ class ServiceNotification(
         private const val NOTIFICATION_ID = 1
         private const val BALLOON_NOTIFICATION_ID = 2
         private const val SECURITY_ALERT_NOTIFICATION_ID = 3
+        private const val PROMO_NOTIFICATION_ID = 4
         private const val CHANNEL_ID = "umbrella_service_v2"
         private const val BALLOON_CHANNEL_ID = "umbrella_alerts_v3"
         private const val SECURITY_ALERT_CHANNEL_ID = "umbrella_security_alerts_v2"
@@ -161,6 +162,90 @@ class ServiceNotification(
                 builder.setLargeIcon(largeIcon)
             }
             UmbrellaApplication.notification.notify(BALLOON_NOTIFICATION_ID, builder.build())
+        }
+
+        fun showPromoBalloon(
+            context: Context,
+            title: String,
+            body: String,
+            actionUrl: String = "",
+            imageBytes: ByteArray? = null,
+        ) {
+            if (!Settings.notificationsEnabled) return
+            ensureAlertChannel(context)
+            val cleanTitle = sanitizePersian(title).ifEmpty { "پیشنهاد ویژه آمبرلا" }
+            val cleanBody = sanitizePersian(body)
+            val cleanUrl = actionUrl.trim()
+            val targetIntent = if (
+                cleanUrl.startsWith("https://", ignoreCase = true) ||
+                cleanUrl.startsWith("http://", ignoreCase = true) ||
+                cleanUrl.startsWith("tg://", ignoreCase = true)
+            ) {
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(cleanUrl)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            } else {
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            }
+            val openPending = PendingIntent.getActivity(
+                context,
+                PROMO_NOTIFICATION_ID,
+                targetIntent,
+                pendingFlags,
+            )
+
+            val bitmap = decodePromoBitmap(imageBytes)
+            val builder = NotificationCompat.Builder(context, BALLOON_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_umbrella)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(cleanTitle)
+                .setContentText(cleanBody.ifEmpty { cleanTitle })
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(false)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_PROMO)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(openPending)
+
+            if (bitmap != null) {
+                builder.setLargeIcon(bitmap)
+                builder.setStyle(
+                    NotificationCompat.BigPictureStyle()
+                        .bigPicture(bitmap)
+                        .bigLargeIcon(null as Bitmap?)
+                        .setBigContentTitle(cleanTitle)
+                        .setSummaryText(cleanBody.ifEmpty { null }),
+                )
+            } else {
+                val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.ic_notif_connected)
+                if (largeIcon != null) {
+                    builder.setLargeIcon(largeIcon)
+                }
+                if (cleanBody.isNotEmpty()) {
+                    builder.setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody))
+                }
+            }
+            UmbrellaApplication.notification.notify(PROMO_NOTIFICATION_ID, builder.build())
+        }
+
+        private fun decodePromoBitmap(bytes: ByteArray?): Bitmap? {
+            if (bytes == null || bytes.isEmpty() || bytes.size > 4 * 1024 * 1024) return null
+            return try {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+                var sample = 1
+                while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 512) {
+                    sample *= 2
+                }
+                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            } catch (_: Throwable) {
+                null
+            }
         }
 
         fun showBlockedUrlBalloon(

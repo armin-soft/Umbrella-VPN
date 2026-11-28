@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -135,13 +136,18 @@ class _FakeNative implements NativeBridge {
   }) async =>
       true;
 
+  final List<({String title, String body, bool warning})> trayBalloons =
+      <({String title, String body, bool warning})>[];
+
   @override
   Future<bool> trayBalloon({
     required String title,
     required String body,
     bool warning = false,
-  }) async =>
-      true;
+  }) async {
+    trayBalloons.add((title: title, body: body, warning: warning));
+    return true;
+  }
 
   @override
   Future<bool> trayDestroy() async => true;
@@ -233,6 +239,7 @@ void main() {
   setUp(() async {
     await LocalStore.instance.remove(StoreKeys.telegramChannelPromptAt);
     await LocalStore.instance.remove(StoreKeys.appAnnouncementState);
+    await LocalStore.instance.remove(StoreKeys.promoAnnouncementState);
   });
 
   group('اعلان پویای داخل برنامه (مدیریت شده در ربات)', () {
@@ -2222,6 +2229,262 @@ void main() {
         expect(threatEvents, 0);
       },
     );
+  });
+
+  group('اعلان تبلیغاتی و اشتراک رایگان ۳ گیگابایتی ویندوز', () {
+    final Uint8List validPng = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+      0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+      0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+      0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+      0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99,
+      0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+      0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]);
+
+    test('پیش فرض حجم اشتراک رایگان ۳ گیگابایت است', () {
+      const SubscriptionOffers defaults = SubscriptionOffers();
+      expect(defaults.freeGb, 3);
+      expect(defaults.freeDays, 1);
+      final SubscriptionOffers parsed =
+          SubscriptionOffers.fromJson(const <String, dynamic>{});
+      expect(parsed.freeGb, 3);
+    });
+
+    test('دریافت اعلان تبلیغاتی و کش ایمن تصویر با رد پاسخ نامعتبر HTML', () async {
+      int imageFetches = 0;
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        final String api = req.url.queryParameters['AppApi'] ?? req.url.path;
+        if (api.contains('app/announcement')) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, dynamic>{
+                'ok': true,
+                'announcement': AppAnnouncement.fallback().toJson(),
+                'promo_announcement': <String, dynamic>{
+                  'enabled': true,
+                  'version': 7,
+                  'title': 'جشنواره ویژه آمبرلا',
+                  'body': 'تخفیف ویژه اشتراک های یک ساله با سرعت بالا',
+                  'image_url': 'app/promo-image?k=abc123def456',
+                  'button_text': 'خرید اشتراک',
+                  'button_url': 'https://t.me/UmbrellaSupport',
+                  'interval_hours': 24,
+                  'starts_at': 0,
+                },
+              }),
+            ),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }
+        if (api.contains('app/promo-image')) {
+          imageFetches++;
+          if (req.url.queryParameters['k'] == 'bad') {
+            return http.Response('<html>error</html>', 200);
+          }
+          return http.Response.bytes(
+            validPng,
+            200,
+            headers: const <String, String>{'content-type': 'image/png'},
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final GatewayClient gw = GatewayClient(
+        baseUrl: 'https://armin-soft.ir/Umbrella-Vpn/',
+        client: mockHttp,
+        enableNativeTransport: false,
+      );
+      addTearDown(gw.close);
+
+      final resolved = gw.resolveMediaUri('app/promo-image?k=abc123def456');
+      expect(resolved, isNotNull);
+      expect(resolved!.queryParameters['AppApi'], 'app/promo-image');
+      expect(resolved.queryParameters['k'], 'abc123def456');
+
+      final both = await gw.fetchAnnouncements();
+      expect(both.promoAnnouncement, isNotNull);
+      expect(both.promoAnnouncement!.isActive, isTrue);
+      expect(both.promoAnnouncement!.version, 7);
+
+      final Uint8List? img1 = await gw.fetchPromoImage('app/promo-image?k=abc123def456');
+      expect(img1, isNotNull);
+      expect(img1, equals(validPng));
+
+      final Uint8List? imgCached = await gw.fetchPromoImage('app/promo-image?k=abc123def456');
+      expect(imgCached, equals(validPng));
+      expect(imageFetches, 1);
+
+      final Uint8List? rejectedHtml = await gw.fetchPromoImage('app/promo-image?k=bad');
+      expect(rejectedHtml, isNull);
+    });
+
+    test('زمان بندی نوار تبلیغاتی، ارسال بالون سینی ویندوز و ذخیره وضعیت بسته شدن', () async {
+      final MockClient mockHttp = MockClient((http.Request req) async {
+        final String api = req.url.queryParameters['AppApi'] ?? req.url.path;
+        if (api.contains('app/announcement')) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, dynamic>{
+                'ok': true,
+                'announcement': AppAnnouncement.fallback().toJson(),
+                'promo_announcement': <String, dynamic>{
+                  'enabled': true,
+                  'version': 9,
+                  'title': 'کمپین ویژه بهار',
+                  'body': '۲۵ درصد حجم هدیه روی تمام بسته ها',
+                  'image_url': 'app/promo-image?k=spring9',
+                  'button_text': 'مشاهده پیشنهاد',
+                  'button_url': 'https://armin-soft.ir/spring',
+                  'interval_hours': 24,
+                  'starts_at': 0,
+                },
+              }),
+            ),
+            200,
+          );
+        }
+        if (api.contains('app/promo-image')) {
+          return http.Response.bytes(validPng, 200);
+        }
+        return http.Response('{}', 200);
+      });
+
+      final _FakeNative native = _FakeNative();
+      final GatewayClient gw = GatewayClient(
+        baseUrl: 'https://armin-soft.ir/Umbrella-Vpn/',
+        client: mockHttp,
+        enableNativeTransport: false,
+      );
+      final TrayService tray = TrayService(native);
+      await tray.init();
+      native.trayBalloons.clear();
+      final AuthController auth = AuthController(
+        native: native,
+        gateway: gw,
+        store: LocalStore.instance,
+        tray: tray,
+      );
+      addTearDown(() {
+        auth.dispose();
+        gw.close();
+      });
+
+      await auth.syncAnnouncement();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(auth.promoAnnouncement.isActive, isTrue);
+      expect(auth.promoAnnouncement.version, 9);
+      expect(auth.shouldShowPromoBanner(), isTrue);
+      expect(native.trayBalloons, hasLength(1));
+      expect(native.trayBalloons.single.title, 'کمپین ویژه بهار');
+      expect(tray.consumeRecentPromoActionUrl(), 'https://armin-soft.ir/spring');
+      expect(tray.consumeRecentPromoActionUrl(), isNull);
+
+      await auth.syncAnnouncement();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(native.trayBalloons, hasLength(1));
+
+      final DateTime now = DateTime.now().toUtc();
+      await auth.dismissPromoBanner(now: now);
+      expect(auth.shouldShowPromoBanner(now: now), isFalse);
+      expect(
+        auth.shouldShowPromoBanner(now: now.add(const Duration(hours: 25))),
+        isTrue,
+      );
+    });
+
+    testWidgets('PromoBannerBar و PromoAnnouncementDialog روی دسکتاپ ویندوز بی نقص رندر می شوند', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(960, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      bool opened = false;
+      bool dismissed = false;
+      bool acted = false;
+      const PromoAnnouncement promo = PromoAnnouncement(
+        enabled: true,
+        version: 11,
+        title: 'فروش ویژه تابستانه آمبرلا با پهنای باند نامحدود',
+        body: 'اشتراک های پرسرعت با تخفیف استثنایی همین حالا در دسترس است.',
+        imageUrl: 'app/promo-image?k=sum11',
+        buttonText: 'فعال سازی',
+        buttonUrl: 'https://t.me/UmbrellaSupport',
+        intervalHours: 24,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: <Widget>[
+                    PromoBannerBar(
+                      promo: promo,
+                      imageBytes: validPng,
+                      onOpen: () => opened = true,
+                      onAction: () => acted = true,
+                      onDismiss: () => dismissed = true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('promo_banner_bar')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('promo_banner_action_button')));
+      await tester.pump();
+      expect(acted, isTrue);
+
+      await tester.tap(find.byKey(const Key('promo_banner_dismiss_button')));
+      await tester.pump();
+      expect(dismissed, isTrue);
+
+      await tester.tap(find.byKey(const Key('promo_banner_bar')));
+      await tester.pump();
+      expect(opened, isTrue);
+
+      bool launchedFromDialog = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: PromoAnnouncementDialog(
+                promo: promo,
+                initialImageBytes: validPng,
+                onActionLaunch: () async {
+                  launchedFromDialog = true;
+                  return true;
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('promo_announcement_dialog')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_image')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('promo_dialog_action_button')));
+      await tester.pumpAndSettle();
+      expect(launchedFromDialog, isTrue);
+      expect(tester.takeException(), isNull);
+    });
   });
 }
 

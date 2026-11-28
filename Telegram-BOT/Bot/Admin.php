@@ -2726,6 +2726,8 @@ try { TelegramClient::answerCallbackQuery($Context->CallbackId, '📢تنظیم�
 
 Repository::updateUserSession($Context->UserId, ['Flow' => null]);
 $Ann = BotConfig::getAppAnnouncement();
+$Promo = BotConfig::getPromoAnnouncement();
+$Promo_Status = $Promo['enabled'] ? '🟢فعال' : '🔴غیرفعال';
 $Status = $Ann['enabled'] ? '🟢فعال' : '🔴غیرفعال';
 $Interval_Label = BotConfig::formatAnnouncementIntervalLabel((int)$Ann['interval_hours']);
 $Starts_At = (int)$Ann['starts_at'];
@@ -2747,9 +2749,11 @@ $Text = self::header($Context, 'اعلان داخل برنامه')
 'لینک دکمه: `' . $Ann['button_url'] . '`',
 'دوره تکرار: *' . $Interval_Label . '*',
 'شروع نمایش: *' . $Start_Label . '*',
+'وضعیت بخش تبلیغاتی: *' . $Promo_Status . '*',
 ])
 . "\nℹ️با «بازنشر برای همه» حتی کاربرانی که قبلاً این پیام را بسته اند دوباره آن را می بینند.\n"
-. "🖼گرافیک بالای پنجره داخل خود اپلیکیشن ثابت است و نیاز به ارسال عکس ندارد."
+. "🖼گرافیک بالای پنجره داخل خود اپلیکیشن ثابت است و نیاز به ارسال عکس ندارد.\n"
+. "📣برای تنظیم اعلان با عکس دلخواه، متن، لینک و نوار بار تبلیغاتی از دکمه «📣تبلیغاتی» استفاده کنید."
 . Helper::adminFooter();
 
 $Toggle_Label = $Ann['enabled'] ? '🔴خاموش کردن اعلان' : '🟢روشن کردن اعلان';
@@ -2759,6 +2763,7 @@ Menu::rows([
 [['✏️تغییر عنوان', 'admin_ann_edit:title'], ['📝تغییر متن پیام', 'admin_ann_edit:body']],
 [['🔘تغییر متن دکمه', 'admin_ann_edit:btn_text'], ['🔗تغییر لینک دکمه', 'admin_ann_edit:btn_url']],
 [['⏱زمان بندی و تکرار', 'admin_ann_schedule'], ['♻️بازگردانی پیش فرض', 'admin_ann_reset']],
+[['📣تبلیغاتی', 'admin_promo_announcement']],
 ]),
 [Menu::back('منوی قبلی', 'منوی پیامک'), Menu::adminHome()]
 );
@@ -3004,6 +3009,472 @@ $Context->ChatId,
 self::header($Context, $Is_Schedule ? 'زمان بندی اعلان برنامه' : 'اعلان داخل برنامه')
 . $Notice . "\n" . ($Is_Schedule ? '' : "💡برای نمایش مجدد به کاربرانی که قبلاً پنجره را بسته اند، دکمه «📣بازنشر برای همه» را بزنید.") . Helper::adminFooter(),
 TelegramClient::inlineKeyboard(Menu::adminNav('اعلان داخل برنامه', $Back_Target))
+);
+}
+
+public static function promoAnnouncementMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try { TelegramClient::answerCallbackQuery($Context->CallbackId, '📣تنظیمات اعلان تبلیغاتی...', false); } catch (Throwable) {}
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Promo = BotConfig::getPromoAnnouncement();
+$Status = $Promo['enabled'] ? '🟢فعال' : '🔴غیرفعال';
+$Interval_Label = BotConfig::formatAnnouncementIntervalLabel((int)$Promo['interval_hours']);
+$Starts_At = (int)$Promo['starts_at'];
+$Start_Label = $Starts_At <= 0
+? 'فوری (از همین الان)'
+: Helper::formatDateTimeText((new DateTimeImmutable('@' . $Starts_At))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s'));
+
+$Image_Url = trim((string)($Promo['image_url'] ?? ''));
+if ($Image_Url === '') {
+$Image_Label = '❌تنظیم نشده';
+} elseif (str_starts_with($Image_Url, 'app/promo-image')) {
+$Image_Label = '🖼آپلود شده از تلگرام (آماده نمایش در اپ)';
+} else {
+$Image_Label = '🔗' . mb_substr($Image_Url, 0, 80) . (mb_strlen($Image_Url) > 80 ? '…' : '');
+}
+
+$Raw_Body = trim((string)($Promo['body'] ?? ''));
+$Body_Preview = $Raw_Body === ''
+? '❌تنظیم نشده'
+: mb_substr(str_replace(["\r", "\n"], ' ', $Raw_Body), 0, 120) . (mb_strlen($Raw_Body) > 120 ? '…' : '');
+$Link_Url = trim((string)($Promo['button_url'] ?? ''));
+$Link_Label = $Link_Url === '' ? '❌تنظیم نشده' : '`' . $Link_Url . '`';
+
+$Text = self::header($Context, 'اعلان تبلیغاتی')
+. Menu::section('📣', 'اعلان تبلیغاتی در نرم افزار و اپلیکیشن', [
+'وضعیت نمایش: *' . $Status . '*',
+'نسخه انتشار فعلی: *' . Helper::toPersian((string)$Promo['version']) . '*',
+'عکس تبلیغ: *' . $Image_Label . '*',
+'عنوان تبلیغ: *' . $Promo['title'] . '*',
+'متن تبلیغ: `' . $Body_Preview . '`',
+'متن دکمه: *' . $Promo['button_text'] . '*',
+'لینک تبلیغ: ' . $Link_Label,
+'زمان بندی تکرار: *' . $Interval_Label . '*',
+'شروع نمایش: *' . $Start_Label . '*',
+])
+. "\nℹ️پس از فعالسازی، این اعلان به صورت پنجره، نوار بار داخل نرم افزار ویندوز و اپلیکیشن اندروید و همچنین نوار اعلان سیستم نمایش داده می شود."
+. Helper::adminFooter();
+
+$Toggle_Label = $Promo['enabled'] ? '🔴خاموش کردن تبلیغ' : '🟢روشن کردن تبلیغ';
+$Markup = array_merge(
+Menu::rows([
+[[$Toggle_Label, 'admin_promo_toggle'], ['📣بازنشر برای همه', 'admin_promo_republish']],
+[['🖼عکس تبلیغ', 'admin_promo_edit:image'], ['🗑حذف عکس', 'admin_promo_clear_image']],
+[['✏️تغییر عنوان', 'admin_promo_edit:title'], ['📝متن تبلیغ', 'admin_promo_edit:body']],
+[['🔘تغییر متن دکمه', 'admin_promo_edit:btn_text'], ['🔗تغییر لینک تبلیغ', 'admin_promo_edit:btn_url']],
+[['⏱زمان بندی و تکرار', 'admin_promo_schedule'], ['👁پیش نمایش تبلیغ', 'admin_promo_preview']],
+[['♻️بازگردانی پیش فرض', 'admin_promo_reset']],
+]),
+[Menu::back('منوی قبلی', 'admin_app_announcement'), Menu::adminHome()]
+);
+self::logMenuProblems('promo_announcement', $Markup);
+self::renderCfgScreen($Context, $Text, $Markup);
+}
+
+public static function promoAnnouncementToggle(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Current = BotConfig::getPromoAnnouncement();
+$Next = !$Current['enabled'];
+
+if ($Next && trim((string)$Current['body']) === '' && trim((string)$Current['image_url']) === '') {
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'⚠️ابتدا متن یا عکس تبلیغ را تنظیم کنید و سپس آن را فعال نمایید.',
+true
+);
+} catch (Throwable) {}
+}
+self::promoAnnouncementMenu($Context);
+return;
+}
+
+BotConfig::setPromoAnnouncementEnabled($Next);
+Repository::logAdminAction($Context->UserId, 'app_promo_toggle', null, $Next ? 'enabled=1' : 'enabled=0');
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+$Next ? '✅اعلان تبلیغاتی فعال شد.' : '⛔️اعلان تبلیغاتی خاموش شد.',
+false
+);
+} catch (Throwable) {}
+}
+
+self::promoAnnouncementMenu($Context);
+}
+
+public static function promoAnnouncementRepublish(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Version = BotConfig::republishPromoAnnouncement();
+Repository::logAdminAction($Context->UserId, 'app_promo_republish', null, 'version=' . $Version);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'📣نسخه ' . Helper::toPersian((string)$Version) . ' اعلان تبلیغاتی منتشر شد.',
+false
+);
+} catch (Throwable) {}
+}
+
+self::promoAnnouncementMenu($Context);
+}
+
+public static function promoAnnouncementClearImage(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::clearPromoImage();
+Repository::logAdminAction($Context->UserId, 'app_promo_clear_image', null, null);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '🗑عکس تبلیغ حذف شد.', false);
+} catch (Throwable) {}
+}
+
+self::promoAnnouncementMenu($Context);
+}
+
+public static function promoAnnouncementReset(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::resetPromoAnnouncementToDefaults();
+Repository::logAdminAction($Context->UserId, 'app_promo_reset', null, null);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '♻️اعلان تبلیغاتی به حالت پیش فرض بازگشت و خاموش شد.', false);
+} catch (Throwable) {}
+}
+
+self::promoAnnouncementMenu($Context);
+}
+
+public static function promoAnnouncementPreview(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Promo = BotConfig::getPromoAnnouncement();
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try { TelegramClient::answerCallbackQuery($Context->CallbackId, '👁پیش نمایش تبلیغ ارسال شد.', false); } catch (Throwable) {}
+}
+
+$Lines = ['📣 *پیش نمایش اعلان تبلیغاتی*', '➖➖➖➖➖➖➖➖➖', '*' . $Promo['title'] . '*'];
+if (trim((string)$Promo['body']) !== '') {
+$Lines[] = (string)$Promo['body'];
+}
+$Url = trim((string)($Promo['button_url'] ?? ''));
+$Rows = [];
+if ($Url !== '') {
+$Rows[] = [['text' => (string)$Promo['button_text'], 'url' => $Url]];
+}
+$Rows[] = Menu::back('بازگشت به تبلیغاتی', 'admin_promo_announcement');
+$Markup = TelegramClient::inlineKeyboard($Rows);
+$Caption = implode("\n", $Lines) . Helper::adminFooter();
+
+$Sent = false;
+$FileId = trim((string)($Promo['image_file_id'] ?? ''));
+$ImageUrl = trim((string)($Promo['image_url'] ?? ''));
+
+if ($FileId !== '' && method_exists(TelegramClient::class, 'sendPhoto')) {
+$Res = TelegramClient::sendPhoto($Context->ChatId, $FileId, $Caption, $Markup);
+$Sent = (($Res['ok'] ?? false) === true);
+}
+
+if (!$Sent && str_starts_with($ImageUrl, 'app/promo-image?k=') && method_exists(TelegramClient::class, 'sendPhoto')) {
+$Key = substr($ImageUrl, strlen('app/promo-image?k='));
+$Media = BotConfig::getPromoImageMedia($Key);
+if (is_array($Media) && ($Media['bytes'] ?? '') !== '') {
+$Ext = match((string)$Media['mime']) {
+'image/png' => '.png',
+'image/webp' => '.webp',
+'image/gif' => '.gif',
+default => '.jpg',
+};
+$Temp = sys_get_temp_dir() . '/umbrella_promo_preview_' . bin2hex(random_bytes(6)) . $Ext;
+if (@file_put_contents($Temp, (string)$Media['bytes']) !== false) {
+try {
+$Res = TelegramClient::sendPhoto($Context->ChatId, $Temp, $Caption, $Markup);
+$Sent = (($Res['ok'] ?? false) === true);
+} finally {
+@unlink($Temp);
+}
+}
+}
+}
+
+if (!$Sent && preg_match('~^https?://~i', $ImageUrl) === 1 && method_exists(TelegramClient::class, 'sendPhoto')) {
+$Res = TelegramClient::sendPhoto($Context->ChatId, $ImageUrl, $Caption, $Markup);
+$Sent = (($Res['ok'] ?? false) === true);
+}
+
+if (!$Sent) {
+TelegramClient::sendMessage($Context->ChatId, $Caption, $Markup);
+}
+}
+
+public static function promoAnnouncementScheduleMenu(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try { TelegramClient::answerCallbackQuery($Context->CallbackId, '⏱تنظیم زمان بندی تبلیغ...', false); } catch (Throwable) {}
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+$Promo = BotConfig::getPromoAnnouncement();
+$Interval_Label = BotConfig::formatAnnouncementIntervalLabel((int)$Promo['interval_hours']);
+$Starts_At = (int)$Promo['starts_at'];
+$Start_Label = $Starts_At <= 0
+? 'فوری (از همین الان)'
+: Helper::formatDateTimeText((new DateTimeImmutable('@' . $Starts_At))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s'));
+
+$Text = self::header($Context, 'زمان بندی اعلان تبلیغاتی')
+. Menu::section('⏱', 'زمان بندی تکرار تبلیغ', [
+'دوره تکرار پس از بستن پنجره یا نوار: *' . $Interval_Label . '*',
+'زمان شروع نمایش: *' . $Start_Label . '*',
+])
+. "\n💡*توضیح:* در حالت «فقط یک بار» هر نسخه تبلیغ فقط یک مرتبه نمایش داده می شود. در سایر بازه ها، پس از اتمام زمان تعیین شده دوباره در پنجره و نوار بار نرم افزار و اپلیکیشن نمایش داده می شود.\n"
+. Helper::adminFooter();
+
+$Markup = array_merge(
+Menu::rows([
+[['🔔فقط یک بار', 'admin_promo_interval:0'], ['🕛هر ۱۲ ساعت', 'admin_promo_interval:12']],
+[['📅هر ۲۴ ساعت', 'admin_promo_interval:24'], ['📆هر ۳ روز', 'admin_promo_interval:72']],
+[['🗓هر هفته (۷ روز)', 'admin_promo_interval:168'], ['🗓هر ۳۰ روز', 'admin_promo_interval:720']],
+[['⌨️بازه تکرار دلخواه', 'admin_promo_edit:interval'], ['🕒تنظیم زمان شروع', 'admin_promo_edit:starts_at']],
+[['🚀شروع فوری از الان', 'admin_promo_start_now']],
+]),
+[Menu::back('منوی قبلی', 'admin_promo_announcement'), Menu::adminHome()]
+);
+self::logMenuProblems('promo_announcement_schedule', $Markup);
+self::renderCfgScreen($Context, $Text, $Markup);
+}
+
+public static function promoAnnouncementSetInterval(Context $Context, int $Hours): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::setPromoAnnouncementIntervalHours($Hours);
+Repository::logAdminAction($Context->UserId, 'app_promo_interval', null, 'hours=' . $Hours);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery(
+$Context->CallbackId,
+'✅دوره تکرار تبلیغ روی «' . BotConfig::formatAnnouncementIntervalLabel($Hours) . '» تنظیم شد.',
+false
+);
+} catch (Throwable) {}
+}
+
+self::promoAnnouncementScheduleMenu($Context);
+}
+
+public static function promoAnnouncementStartNow(Context $Context): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+BotConfig::setPromoAnnouncementStartsAt(0);
+Repository::logAdminAction($Context->UserId, 'app_promo_start_now', null, null);
+
+if ($Context->IsCallback && $Context->CallbackId !== null) {
+try {
+TelegramClient::answerCallbackQuery($Context->CallbackId, '🚀شروع نمایش تبلیغ روی فوری تنظیم شد.', false);
+} catch (Throwable) {}
+}
+
+self::promoAnnouncementScheduleMenu($Context);
+}
+
+public static function promoAnnouncementEditStart(Context $Context, string $Field): void {
+if (!$Context->isAdmin()) { self::denyAccess($Context); return; }
+$Promo = BotConfig::getPromoAnnouncement();
+$CurImg = trim((string)($Promo['image_url'] ?? ''));
+$CurImgDesc = $CurImg === '' ? 'تنظیم نشده' : (str_starts_with($CurImg, 'app/promo-image') ? 'عکس آپلودی تلگرام' : $CurImg);
+$CurUrl = trim((string)($Promo['button_url'] ?? '')) ?: 'تنظیم نشده';
+$CurBody = trim((string)($Promo['body'] ?? '')) ?: 'خالی';
+
+$Meta = match($Field) {
+'image' => [
+'flow' => 'admin:promo_image',
+'back' => 'admin_promo_announcement',
+'prompt' => "🖼عکس تبلیغاتی جدید را مستقیماً در همین چت ارسال کنید (یا لینک مستقیم عکس با `https://` بفرستید):\n🧾وضعیت فعلی: <code>{$CurImgDesc}</code>\n💡برای حذف عکس فعلی، کلمه `حذف` را بفرستید.",
+],
+'title' => [
+'flow' => 'admin:promo_title',
+'back' => 'admin_promo_announcement',
+'prompt' => "✏️عنوان جدید اعلان تبلیغاتی را بفرستید:\n🧾عنوان فعلی: <code>{$Promo['title']}</code>\n💡حداکثر ۱۴۰ کاراکتر.",
+],
+'body' => [
+'flow' => 'admin:promo_body',
+'back' => 'admin_promo_announcement',
+'prompt' => "📝متن جدید تبلیغ را بفرستید:\n🧾متن فعلی:\n<code>{$CurBody}</code>\n💡می توانید چند خط بنویسید (حداکثر ۱۲۰۰ کاراکتر).",
+],
+'btn_text' => [
+'flow' => 'admin:promo_btn_text',
+'back' => 'admin_promo_announcement',
+'prompt' => "🔘متن دکمه تبلیغ را بفرستید:\n🧾مقدار فعلی: <code>{$Promo['button_text']}</code>\n💡مثلاً: «مشاهده جزئیات»، «خرید با تخفیف» یا «ورود به لینک».",
+],
+'btn_url' => [
+'flow' => 'admin:promo_btn_url',
+'back' => 'admin_promo_announcement',
+'prompt' => "🔗لینک مقصد تبلیغ را بفرستید:\n🧾لینک فعلی: <code>{$CurUrl}</code>\n💡آدرس `https://...`، آیدی با `@` یا لینک `t.me/...` بفرستید (یا برای حذف لینک کلمه `حذف` را بنویسید).",
+],
+'interval' => [
+'flow' => 'admin:promo_interval',
+'back' => 'admin_promo_schedule',
+'prompt' => "⌨️بازه تکرار دلخواه تبلیغ را بفرستید:\n🧾حالت فعلی: *" . BotConfig::formatAnnouncementIntervalLabel((int)$Promo['interval_hours']) . "*\n💡نمونه ها: `0` (فقط یک بار)، `6` یا `6 ساعت`، `3 روز`، `2 هفته`.",
+],
+'starts_at' => [
+'flow' => 'admin:promo_starts_at',
+'back' => 'admin_promo_schedule',
+'prompt' => "🕒زمان شروع نمایش تبلیغ را بفرستید (به وقت تهران):\n💡نمونه ها:\n• `الان` (نمایش فوری)\n• `+2 ساعت` یا `+30 دقیقه`\n• `18:30` (امروز یا فردا ساعت ۱۸:۳۰)\n• `1405/09/15 18:00` یا `2026-11-25 18:00`",
+],
+default => null,
+};
+
+if ($Meta === null) {
+self::promoAnnouncementMenu($Context);
+return;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => $Meta['flow']]);
+self::renderCfgScreen(
+$Context,
+self::header($Context, $Field === 'interval' || $Field === 'starts_at' ? 'زمان بندی اعلان تبلیغاتی' : 'اعلان تبلیغاتی')
+. $Meta['prompt'] . Helper::adminFooter(),
+Menu::adminNav('بازگشت', $Meta['back'])
+);
+}
+
+private static function promoAnnouncementSaveInput(Context $Context, string $Field, string $Text): void {
+$Raw = trim($Text);
+$Is_Schedule = ($Field === 'interval' || $Field === 'starts_at');
+$Back_Target = $Is_Schedule ? 'admin_promo_schedule' : 'admin_promo_announcement';
+$Audit_Meta = mb_substr($Raw, 0, 120);
+
+try {
+switch ($Field) {
+case 'image':
+$Extracted = class_exists('TicketMedia') ? TicketMedia::extract($Context) : null;
+$FileId = '';
+$DocMime = '';
+if (is_array($Extracted)) {
+$Type = (string)($Extracted['type'] ?? '');
+if ($Type !== 'photo' && $Type !== 'document') {
+throw new InvalidArgumentException('لطفاً فقط عکس یا فایل تصویر (یا لینک مستقیم https://) ارسال کنید.');
+}
+$FileId = trim((string)($Extracted['file_id'] ?? ''));
+if ($Type === 'document' && isset($Context->Raw) && is_array($Context->Raw)) {
+$DocMime = strtolower(trim((string)($Context->Raw['message']['document']['mime_type'] ?? '')));
+}
+} elseif (isset($Context->Photo) && is_string($Context->Photo) && trim($Context->Photo) !== '') {
+$FileId = trim($Context->Photo);
+}
+
+if ($FileId !== '') {
+if ($DocMime !== '' && !str_starts_with($DocMime, 'image/')) {
+throw new InvalidArgumentException('فایل ارسالی باید از نوع تصویر (JPG، PNG، WEBP یا GIF) باشد.');
+}
+$Downloaded = method_exists(TelegramClient::class, 'downloadFile')
+? TelegramClient::downloadFile($FileId)
+: null;
+if (!is_array($Downloaded) || empty($Downloaded['bytes'])) {
+throw new InvalidArgumentException('دریافت فایل تصویر از تلگرام ناموفق بود؛ لطفاً دوباره ارسال کنید یا لینک مستقیم تصویر با https:// بفرستید.');
+}
+$MediaKey = BotConfig::savePromoImageBinary((string)$Downloaded['bytes'], (string)$Downloaded['mime'], $FileId);
+$Audit_Meta = 'media:' . $MediaKey;
+$Notice = '✅عکس تبلیغاتی دریافت و برای نمایش در نرم افزار و اپلیکیشن ذخیره شد.';
+$Caption = (isset($Context->Caption) && is_string($Context->Caption)) ? trim($Context->Caption) : '';
+if ($Caption !== '' && trim((string)BotConfig::getPromoAnnouncement()['body']) === '') {
+BotConfig::setPromoAnnouncementBody($Caption);
+$Notice .= "\n📝متن همراه تصویر نیز به عنوان متن تبلیغ ثبت شد.";
+}
+break;
+}
+
+if (in_array(mb_strtolower($Raw), ['حذف', 'پاک', 'delete', 'clear'], true)) {
+BotConfig::clearPromoImage();
+$Audit_Meta = 'clear';
+$Notice = '🗑عکس تبلیغاتی حذف شد.';
+break;
+}
+
+BotConfig::setPromoImageUrl($Raw);
+$Notice = '✅لینک عکس تبلیغاتی با موفقیت ثبت شد.';
+break;
+
+case 'title':
+if ($Raw === '') {
+throw new InvalidArgumentException('عنوان تبلیغ نمی تواند خالی باشد.');
+}
+BotConfig::setPromoAnnouncementTitle($Raw);
+$Notice = '✅عنوان اعلان تبلیغاتی ثبت شد.';
+break;
+
+case 'body':
+if ($Raw === '') {
+throw new InvalidArgumentException('متن تبلیغ نمی تواند خالی باشد.');
+}
+BotConfig::setPromoAnnouncementBody($Raw);
+$Notice = '✅متن اعلان تبلیغاتی ثبت شد.';
+break;
+
+case 'btn_text':
+if ($Raw === '') {
+throw new InvalidArgumentException('متن دکمه تبلیغ نمی تواند خالی باشد.');
+}
+BotConfig::setPromoAnnouncementButtonText($Raw);
+$Notice = '✅متن دکمه تبلیغ ثبت شد.';
+break;
+
+case 'btn_url':
+if (in_array(mb_strtolower($Raw), ['حذف', 'پاک', 'delete', 'clear'], true)) {
+BotConfig::clearPromoAnnouncementButtonUrl();
+$Audit_Meta = 'clear';
+$Notice = '🗑لینک تبلیغ پاک شد.';
+break;
+}
+BotConfig::setPromoAnnouncementButtonUrl($Raw);
+$Notice = '✅لینک تبلیغ با موفقیت ثبت شد.';
+break;
+
+case 'interval':
+$Hours = BotConfig::parseAnnouncementIntervalHours($Raw);
+BotConfig::setPromoAnnouncementIntervalHours($Hours);
+$Notice = '✅دوره تکرار تبلیغ روی «' . BotConfig::formatAnnouncementIntervalLabel($Hours) . '» ثبت شد.';
+break;
+
+case 'starts_at':
+$Ts = BotConfig::parseAnnouncementStartTime($Raw);
+BotConfig::setPromoAnnouncementStartsAt($Ts);
+$When_Label = $Ts <= 0
+? 'فوری (از همین الان)'
+: Helper::formatDateTimeText((new DateTimeImmutable('@' . $Ts))->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s'));
+$Notice = '✅زمان شروع نمایش تبلیغ تنظیم شد: *' . $When_Label . '*';
+break;
+
+default:
+self::unknownAdminInput($Context);
+return;
+}
+} catch (Throwable $Error) {
+TelegramClient::sendMessage(
+$Context->ChatId,
+self::header($Context, $Is_Schedule ? 'زمان بندی اعلان تبلیغاتی' : 'اعلان تبلیغاتی')
+. '⚠️' . $Error->getMessage() . "\n🔁لطفاً دوباره مقدار معتبر را بفرستید." . Helper::adminFooter(),
+TelegramClient::inlineKeyboard(Menu::adminNav('بازگشت', $Back_Target))
+);
+return;
+}
+
+Repository::updateUserSession($Context->UserId, ['Flow' => null]);
+Repository::logAdminAction($Context->UserId, 'app_promo_' . $Field, null, $Audit_Meta);
+TelegramClient::sendMessage(
+$Context->ChatId,
+self::header($Context, $Is_Schedule ? 'زمان بندی اعلان تبلیغاتی' : 'اعلان تبلیغاتی')
+. $Notice . "\n" . ($Is_Schedule ? '' : "💡برای نمایش مجدد به همه کاربران، از منوی تبلیغاتی دکمه «📣بازنشر برای همه» را بزنید و مطمئن شوید تبلیغ 🟢فعال است.") . Helper::adminFooter(),
+TelegramClient::inlineKeyboard(Menu::adminNav('اعلان تبلیغاتی', $Back_Target))
 );
 }
 
@@ -3864,6 +4335,13 @@ $Flow === 'admin:ann_btn_text' => self::appAnnouncementSaveInput($Context, 'btn_
 $Flow === 'admin:ann_btn_url' => self::appAnnouncementSaveInput($Context, 'btn_url', $Text),
 $Flow === 'admin:ann_interval' => self::appAnnouncementSaveInput($Context, 'interval', $Text),
 $Flow === 'admin:ann_starts_at' => self::appAnnouncementSaveInput($Context, 'starts_at', $Text),
+$Flow === 'admin:promo_image' => self::promoAnnouncementSaveInput($Context, 'image', $Text),
+$Flow === 'admin:promo_title' => self::promoAnnouncementSaveInput($Context, 'title', $Text),
+$Flow === 'admin:promo_body' => self::promoAnnouncementSaveInput($Context, 'body', $Text),
+$Flow === 'admin:promo_btn_text' => self::promoAnnouncementSaveInput($Context, 'btn_text', $Text),
+$Flow === 'admin:promo_btn_url' => self::promoAnnouncementSaveInput($Context, 'btn_url', $Text),
+$Flow === 'admin:promo_interval' => self::promoAnnouncementSaveInput($Context, 'interval', $Text),
+$Flow === 'admin:promo_starts_at' => self::promoAnnouncementSaveInput($Context, 'starts_at', $Text),
 default => self::unknownAdminInput($Context),
 };
 }

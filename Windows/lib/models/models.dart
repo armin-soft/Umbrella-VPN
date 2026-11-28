@@ -1672,7 +1672,7 @@ class SubscriptionOffers {
   const SubscriptionOffers({
     this.freeAvailable = false,
     this.freeClaimed = false,
-    this.freeGb = 1,
+    this.freeGb = 3,
     this.freeDays = 1,
     this.nowruzMenuEnabled = false,
     this.nowruzAvailable = false,
@@ -1725,7 +1725,7 @@ class SubscriptionOffers {
     return SubscriptionOffers(
       freeAvailable: JsonX.boolean(json['free_available']),
       freeClaimed: JsonX.boolean(json['free_claimed']),
-      freeGb: JsonX.integer(json['free_gb'], 1),
+      freeGb: JsonX.integer(json['free_gb'], 3),
       freeDays: JsonX.integer(json['free_days'], 1),
       nowruzMenuEnabled: JsonX.boolean(json['nowruz_menu_enabled']),
       nowruzAvailable: JsonX.boolean(json['nowruz_available']),
@@ -1747,6 +1747,7 @@ class SessionData {
     required this.filter,
     this.offers = SubscriptionOffers.empty,
     this.announcement,
+    this.promoAnnouncement,
     this.signedInAt,
   });
 
@@ -1757,6 +1758,7 @@ class SessionData {
   final FilterSettings filter;
   final SubscriptionOffers offers;
   final AppAnnouncement? announcement;
+  final PromoAnnouncement? promoAnnouncement;
   final DateTime? signedInAt;
 
   /// کلید پایدار مالک نشست برای تفکیک تاریخچه اعلان ها بین حساب های متفاوت.
@@ -1773,6 +1775,7 @@ class SessionData {
     FilterSettings? filter,
     SubscriptionOffers? offers,
     AppAnnouncement? announcement,
+    PromoAnnouncement? promoAnnouncement,
   }) {
     return SessionData(
       token: token,
@@ -1782,6 +1785,7 @@ class SessionData {
       filter: filter ?? this.filter,
       offers: offers ?? this.offers,
       announcement: announcement ?? this.announcement,
+      promoAnnouncement: promoAnnouncement ?? this.promoAnnouncement,
       signedInAt: signedInAt,
     );
   }
@@ -1794,11 +1798,15 @@ class SessionData {
         'filter': filter.toJson(),
         'offers': offers.toJson(),
         if (announcement != null) 'announcement': announcement!.toJson(),
+        if (promoAnnouncement != null)
+          'promo_announcement': promoAnnouncement!.toJson(),
         'signed_in_at': signedInAt?.toIso8601String(),
       };
 
   factory SessionData.fromJson(Map<String, dynamic> json) {
     final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
+    final Map<String, dynamic> promoMap =
+        JsonX.asMap(json['promo_announcement']);
     return SessionData(
       token: JsonX.text(json['token']),
       uuid: JsonX.text(json['uuid']),
@@ -1808,6 +1816,8 @@ class SessionData {
       offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
       announcement:
           annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
+      promoAnnouncement:
+          promoMap.isNotEmpty ? PromoAnnouncement.fromJson(promoMap) : null,
       signedInAt: JsonX.dateTime(json['signed_in_at']),
     );
   }
@@ -1919,6 +1929,119 @@ class AppAnnouncement {
       body: body.isEmpty ? defaultBody : body,
       buttonText: buttonText.isEmpty ? defaultButtonText : buttonText,
       buttonUrl: buttonUrl.isEmpty ? AppConfig.channelUrl : buttonUrl,
+      intervalHours: interval < 0 ? 0 : (interval > 8760 ? 8760 : interval),
+      startsAt: JsonX.integer(json['starts_at']),
+      updatedAt: JsonX.integer(json['updated_at']),
+    );
+  }
+}
+
+/// اعلان تبلیغاتی داخل برنامه و نوار بار (مدیریت شده از بخش تبلیغاتی ربات تلگرام).
+class PromoAnnouncement {
+  const PromoAnnouncement({
+    this.enabled = false,
+    this.version = 1,
+    this.title = defaultTitle,
+    this.body = '',
+    this.imageUrl = '',
+    this.buttonText = defaultButtonText,
+    this.buttonUrl = '',
+    this.intervalHours = 24,
+    this.startsAt = 0,
+    this.updatedAt = 0,
+  });
+
+  final bool enabled;
+  final int version;
+  final String title;
+  final String body;
+  final String imageUrl;
+  final String buttonText;
+  final String buttonUrl;
+  final int intervalHours;
+  final int startsAt;
+  final int updatedAt;
+
+  static const String defaultTitle = 'پیشنهاد ویژه آمبرلا';
+  static const String defaultButtonText = 'مشاهده جزئیات';
+
+  static const PromoAnnouncement empty = PromoAnnouncement();
+
+  bool get hasImage => imageUrl.trim().isNotEmpty;
+  bool get hasLink => buttonUrl.trim().isNotEmpty;
+  bool get hasContent =>
+      body.trim().isNotEmpty || hasImage || title.trim() != defaultTitle;
+  bool get isActive => enabled && hasContent;
+
+  bool isScheduledInFutureAt(DateTime now) =>
+      startsAt > 0 && now.toUtc().millisecondsSinceEpoch < startsAt * 1000;
+
+  bool get isScheduledInFuture => isScheduledInFutureAt(DateTime.now());
+
+  bool get isTelegramLink {
+    final String lower = buttonUrl.trim().toLowerCase();
+    return lower.contains('t.me/') ||
+        lower.contains('telegram.me/') ||
+        lower.startsWith('tg://');
+  }
+
+  String get displaySubtitleHandle {
+    final Uri? parsed = Uri.tryParse(buttonUrl.trim());
+    if (parsed == null) return '';
+    if ((parsed.host == 't.me' || parsed.host == 'telegram.me') &&
+        parsed.pathSegments.isNotEmpty &&
+        !parsed.pathSegments.first.startsWith('+')) {
+      return '@${parsed.pathSegments.first}';
+    }
+    if (parsed.host.isNotEmpty) {
+      return parsed.host;
+    }
+    return '';
+  }
+
+  bool sameContentAs(PromoAnnouncement other) =>
+      enabled == other.enabled &&
+      version == other.version &&
+      title == other.title &&
+      body == other.body &&
+      imageUrl == other.imageUrl &&
+      buttonText == other.buttonText &&
+      buttonUrl == other.buttonUrl &&
+      intervalHours == other.intervalHours &&
+      startsAt == other.startsAt;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'enabled': enabled,
+        'version': version,
+        'title': title,
+        'body': body,
+        'image_url': imageUrl,
+        'button_text': buttonText,
+        'button_url': buttonUrl,
+        'interval_hours': intervalHours,
+        'starts_at': startsAt,
+        'updated_at': updatedAt,
+      };
+
+  factory PromoAnnouncement.fromJson(Map<String, dynamic> json) {
+    if (json.isEmpty) return empty;
+    final String title = JsonX.text(json['title'], defaultTitle).trim();
+    final String body = JsonX.text(json['body']).trim();
+    final String imageUrl = JsonX.text(json['image_url']).trim();
+    final String buttonText =
+        JsonX.text(json['button_text'], defaultButtonText).trim();
+    final String buttonUrl = JsonX.text(json['button_url']).trim();
+    final int version = JsonX.integer(json['version'], 1);
+    final int interval = JsonX.integer(json['interval_hours'], 24);
+    return PromoAnnouncement(
+      enabled:
+          json.containsKey('enabled') ? JsonX.boolean(json['enabled']) : false,
+      version: version < 1 ? 1 : version,
+      title: title.isEmpty ? defaultTitle : title,
+      body: body,
+      imageUrl: imageUrl,
+      buttonText: buttonText.isEmpty ? defaultButtonText : buttonText,
+      buttonUrl: buttonUrl,
       intervalHours: interval < 0 ? 0 : (interval > 8760 ? 8760 : interval),
       startsAt: JsonX.integer(json['starts_at']),
       updatedAt: JsonX.integer(json['updated_at']),

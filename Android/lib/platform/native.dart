@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
@@ -258,6 +259,25 @@ class NativeBridge {
         'warning': warning,
       },
     );
+  }
+
+  /// نمایش اعلان تبلیغاتی در نوار اعلان اندروید (با پشتیبانی از تصویر و لینک).
+  Future<bool> showPromoBalloon({
+    required String title,
+    required String body,
+    String actionUrl = '',
+    Uint8List? imageBytes,
+  }) async {
+    final bool? shown = await _invoke<bool>(
+      'showPromoBalloon',
+      <String, dynamic>{
+        'title': title,
+        'body': body,
+        'actionUrl': actionUrl,
+        if (imageBytes != null && imageBytes.isNotEmpty) 'imageBytes': imageBytes,
+      },
+    );
+    return shown ?? false;
   }
 
   /// جریان کدهای تایید پیامکی استخراج شده در سمت اندروید.

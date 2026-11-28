@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -555,6 +556,8 @@ class GatewayClient {
       'filter': json['filter'],
       'offers': json['offers'],
       if (json['announcement'] != null) 'announcement': json['announcement'],
+      if (json['promo_announcement'] != null)
+        'promo_announcement': json['promo_announcement'],
     });
   }
 
@@ -581,6 +584,8 @@ class GatewayClient {
     final Map<String, dynamic> json =
         await _get('account/refresh', <String, String>{'token': token});
     final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
+    final Map<String, dynamic> promoMap =
+        JsonX.asMap(json['promo_announcement']);
     return SessionData(
       token: token,
       uuid: JsonX.text(JsonX.asMap(json['account'])['uuid']),
@@ -589,6 +594,8 @@ class GatewayClient {
       filter: FilterSettings.fromJson(JsonX.asMap(json['filter'])),
       offers: SubscriptionOffers.fromJson(JsonX.asMap(json['offers'])),
       announcement: annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
+      promoAnnouncement:
+          promoMap.isNotEmpty ? PromoAnnouncement.fromJson(promoMap) : null,
     );
   }
 
@@ -614,6 +621,7 @@ class GatewayClient {
         FilterSettings? filter,
         SubscriptionOffers? offers,
         AppAnnouncement? announcement,
+        PromoAnnouncement? promoAnnouncement,
         bool? emergencyEnabled,
         bool? botLinked,
       })> heartbeat({
@@ -651,6 +659,8 @@ class GatewayClient {
     final Map<String, dynamic> filterMap = JsonX.asMap(json['filter']);
     final Map<String, dynamic> offersMap = JsonX.asMap(json['offers']);
     final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
+    final Map<String, dynamic> promoMap =
+        JsonX.asMap(json['promo_announcement']);
     return (
       account: accountMap.isNotEmpty ? Account.fromJson(accountMap) : null,
       filter: filterMap.isNotEmpty ? FilterSettings.fromJson(filterMap) : null,
@@ -659,20 +669,153 @@ class GatewayClient {
       offers:
           offersMap.isNotEmpty ? SubscriptionOffers.fromJson(offersMap) : null,
       announcement: annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
+      promoAnnouncement:
+          promoMap.isNotEmpty ? PromoAnnouncement.fromJson(promoMap) : null,
       botLinked: json.containsKey('bot_linked')
           ? JsonX.boolean(json['bot_linked']) : null,
     );
   }
 
   Future<AppAnnouncement?> fetchAnnouncement() async {
+    final ({AppAnnouncement? announcement, PromoAnnouncement? promoAnnouncement})
+        both = await fetchAnnouncements();
+    return both.announcement;
+  }
+
+  Future<({AppAnnouncement? announcement, PromoAnnouncement? promoAnnouncement})>
+      fetchAnnouncements() async {
     try {
       final Map<String, dynamic> json = await _get('app/announcement');
       final Map<String, dynamic> annMap = JsonX.asMap(json['announcement']);
-      if (annMap.isEmpty) return null;
-      return AppAnnouncement.fromJson(annMap);
+      final Map<String, dynamic> promoMap =
+          JsonX.asMap(json['promo_announcement']);
+      return (
+        announcement:
+            annMap.isNotEmpty ? AppAnnouncement.fromJson(annMap) : null,
+        promoAnnouncement:
+            promoMap.isNotEmpty ? PromoAnnouncement.fromJson(promoMap) : null,
+      );
     } on ApiError {
+      return (announcement: null, promoAnnouncement: null);
+    }
+  }
+
+  static final Map<String, Uint8List> _promoImageCache = <String, Uint8List>{};
+
+  static void clearPromoImageCacheForTest() => _promoImageCache.clear();
+
+  /// تبدیل مسیر نسبی رسانه درگاه (یا لینک مستقیم https) به نشانی کامل.
+  Uri? resolveMediaUri(String rawUrl) {
+    final String clean = rawUrl.trim();
+    if (clean.isEmpty) return null;
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      final Uri? parsed = Uri.tryParse(clean);
+      if (parsed == null || parsed.host.isEmpty) return null;
+      return parsed;
+    }
+    final int qIdx = clean.indexOf('?');
+    final String route = (qIdx >= 0 ? clean.substring(0, qIdx) : clean)
+        .replaceAll(RegExp(r'^/+'), '');
+    if (route.isEmpty) return null;
+    final Map<String, String>? query = qIdx >= 0
+        ? Uri.splitQueryString(clean.substring(qIdx + 1))
+        : null;
+    return _uri(route, query);
+  }
+
+  static bool _looksLikeImageBytes(Uint8List bytes, String contentType) {
+    if (bytes.length < 12 || bytes.length > 4 * 1024 * 1024) {
+      return false;
+    }
+    final String ct = contentType.toLowerCase();
+    if (ct.contains('text/html') || ct.contains('application/json')) {
+      return false;
+    }
+    if (bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return true;
+    }
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return true;
+    }
+    if (bytes[0] == 0x47 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x38) {
+      return true;
+    }
+    if (bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return true;
+    }
+    return ct.startsWith('image/');
+  }
+
+  /// دریافت باینری تصویر اعلان تبلیغاتی با پشتیبانی از آدرس درگاه و کش حافظه.
+  Future<Uint8List?> fetchPromoImage(String rawUrl) async {
+    final Uri? uri = resolveMediaUri(rawUrl);
+    if (uri == null) return null;
+    final String key = uri.toString();
+    final Uint8List? cached = _promoImageCache[key];
+    if (cached != null) return cached;
+
+    final Map<String, String> headers = <String, String>{
+      'Accept': 'image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) UmbrellaVPN/${AppConfig.version}',
+    };
+
+    try {
+      if (_injectedClient) {
+        final http.Response resp =
+            await _client.get(uri, headers: headers).timeout(_timeout);
+        if (resp.statusCode >= 200 &&
+            resp.statusCode < 300 &&
+            _looksLikeImageBytes(
+              resp.bodyBytes,
+              resp.headers['content-type'] ?? '',
+            )) {
+          if (_promoImageCache.length >= 6) _promoImageCache.clear();
+          _promoImageCache[key] = resp.bodyBytes;
+          return resp.bodyBytes;
+        }
+        return null;
+      }
+
+      final List<String> diagnostics = <String>[];
+      for (final _GatewayTransport transport in _transportOrder()) {
+        final http.Response? resp = await _sendOnTransport(
+          transport: transport,
+          method: 'GET',
+          uri: uri,
+          headers: headers,
+          body: '',
+          diagnostics: diagnostics,
+        );
+        if (resp == null) continue;
+        if (resp.statusCode >= 200 &&
+            resp.statusCode < 300 &&
+            _looksLikeImageBytes(
+              resp.bodyBytes,
+              resp.headers['content-type'] ?? '',
+            )) {
+          if (_promoImageCache.length >= 6) _promoImageCache.clear();
+          _promoImageCache[key] = resp.bodyBytes;
+          return resp.bodyBytes;
+        }
+      }
+    } catch (_) {
       return null;
     }
+    return null;
   }
 
   Future<Map<String, dynamic>> reportSecurityAlert({

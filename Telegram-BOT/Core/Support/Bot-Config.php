@@ -313,6 +313,24 @@ public const DEFAULT_ANN_BODY = '☂️ فیلترشکن آمبرلا؛ برای
 public const DEFAULT_ANN_BTN_TEXT = 'عضویت در کانال رسمی';
 public const DEFAULT_ANN_INTERVAL_HOURS = 168;
 
+// ── app promotional announcement (image, text, link, repeat schedule) ───
+
+public const KEY_PROMO_ENABLED = 'App_Promo_Enabled';
+public const KEY_PROMO_VERSION = 'App_Promo_Version';
+public const KEY_PROMO_TITLE = 'App_Promo_Title';
+public const KEY_PROMO_BODY = 'App_Promo_Body';
+public const KEY_PROMO_IMAGE_URL = 'App_Promo_Image_Url';
+public const KEY_PROMO_IMAGE_FILE_ID = 'App_Promo_Image_File_Id';
+public const KEY_PROMO_BTN_TEXT = 'App_Promo_Button_Text';
+public const KEY_PROMO_BTN_URL = 'App_Promo_Button_Url';
+public const KEY_PROMO_INTERVAL = 'App_Promo_Interval_Hours';
+public const KEY_PROMO_STARTS_AT = 'App_Promo_Starts_At';
+public const KEY_PROMO_UPDATED_AT = 'App_Promo_Updated_At';
+
+public const DEFAULT_PROMO_TITLE = 'پیشنهاد ویژه آمبرلا';
+public const DEFAULT_PROMO_BTN_TEXT = 'مشاهده جزئیات';
+public const DEFAULT_PROMO_INTERVAL_HOURS = 24;
+
 /** @return array{enabled:bool,version:int,title:string,body:string,button_text:string,button_url:string,interval_hours:int,starts_at:int,updated_at:int} */
 public static function getAppAnnouncement(): array {
 $Enabled_Raw = Repository::getSetting(self::KEY_ANN_ENABLED, null);
@@ -430,6 +448,223 @@ Repository::setSetting($Key, '');
 Repository::setSetting(self::KEY_ANN_INTERVAL, (string)self::DEFAULT_ANN_INTERVAL_HOURS);
 Repository::setSetting(self::KEY_ANN_STARTS_AT, '0');
 self::republishAppAnnouncement();
+}
+
+/** @return array{enabled:bool,version:int,title:string,body:string,image_url:string,image_file_id:string,button_text:string,button_url:string,interval_hours:int,starts_at:int,updated_at:int} */
+public static function getPromoAnnouncement(): array {
+$Enabled_Raw = Repository::getSetting(self::KEY_PROMO_ENABLED, null);
+$Enabled = false;
+if ($Enabled_Raw !== null && trim((string)$Enabled_Raw) !== '') {
+$Norm = strtolower(trim((string)$Enabled_Raw));
+$Enabled = in_array($Norm, ['1', 'true', 'on', 'yes'], true);
+}
+
+$Version = max(1, (int)trim((string)Repository::getSetting(self::KEY_PROMO_VERSION, '1')));
+
+$Title = trim((string)Repository::getSetting(self::KEY_PROMO_TITLE, ''));
+if ($Title === '') {
+$Title = self::DEFAULT_PROMO_TITLE;
+}
+
+$Body = trim((string)Repository::getSetting(self::KEY_PROMO_BODY, ''));
+$Image_Url = trim((string)Repository::getSetting(self::KEY_PROMO_IMAGE_URL, ''));
+$Image_File_Id = trim((string)Repository::getSetting(self::KEY_PROMO_IMAGE_FILE_ID, ''));
+
+$Button_Text = trim((string)Repository::getSetting(self::KEY_PROMO_BTN_TEXT, ''));
+if ($Button_Text === '') {
+$Button_Text = self::DEFAULT_PROMO_BTN_TEXT;
+}
+
+$Button_Url = trim((string)Repository::getSetting(self::KEY_PROMO_BTN_URL, ''));
+
+$Interval_Raw = Repository::getSetting(self::KEY_PROMO_INTERVAL, null);
+$Interval_Hours = self::DEFAULT_PROMO_INTERVAL_HOURS;
+if ($Interval_Raw !== null && trim((string)$Interval_Raw) !== '') {
+$Interval_Hours = max(0, min(8760, (int)trim((string)$Interval_Raw)));
+}
+
+$Starts_At = max(0, (int)trim((string)Repository::getSetting(self::KEY_PROMO_STARTS_AT, '0')));
+$Updated_At = max(0, (int)trim((string)Repository::getSetting(self::KEY_PROMO_UPDATED_AT, '0')));
+
+return [
+'enabled' => $Enabled,
+'version' => $Version,
+'title' => Helper::stripZwnj($Title),
+'body' => Helper::stripZwnj($Body),
+'image_url' => $Image_Url,
+'image_file_id' => $Image_File_Id,
+'button_text' => Helper::stripZwnj($Button_Text),
+'button_url' => $Button_Url,
+'interval_hours' => $Interval_Hours,
+'starts_at' => $Starts_At,
+'updated_at' => $Updated_At,
+];
+}
+
+private static function touchPromoAnnouncementUpdatedAt(): void {
+Repository::setSetting(self::KEY_PROMO_UPDATED_AT, (string)time());
+}
+
+public static function setPromoAnnouncementEnabled(bool $Enabled): void {
+Repository::setSetting(self::KEY_PROMO_ENABLED, $Enabled ? '1' : '0');
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function setPromoAnnouncementTitle(string $Title): void {
+$Clean = mb_substr(trim(Helper::stripZwnj($Title)), 0, 140);
+Repository::setSetting(self::KEY_PROMO_TITLE, $Clean);
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function setPromoAnnouncementBody(string $Body): void {
+$Clean = mb_substr(trim(Helper::stripZwnj($Body)), 0, 1200);
+Repository::setSetting(self::KEY_PROMO_BODY, $Clean);
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function setPromoAnnouncementButtonText(string $Text): void {
+$Clean = mb_substr(trim(Helper::stripZwnj($Text)), 0, 80);
+Repository::setSetting(self::KEY_PROMO_BTN_TEXT, $Clean);
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function setPromoAnnouncementButtonUrl(string $Url): void {
+$Normalized = self::validateAnnouncementUrl($Url);
+Repository::setSetting(self::KEY_PROMO_BTN_URL, $Normalized);
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function clearPromoAnnouncementButtonUrl(): void {
+Repository::setSetting(self::KEY_PROMO_BTN_URL, '');
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function validatePromoImageUrl(string $Input): string {
+$Raw = trim($Input);
+if ($Raw === '') {
+throw new InvalidArgumentException('لینک عکس تبلیغاتی نمی تواند خالی باشد.');
+}
+if (!preg_match('~^https?://[^\s<>"]+$~i', $Raw)) {
+throw new InvalidArgumentException('لینک عکس باید با https:// یا http:// شروع شود.');
+}
+$Parts = parse_url($Raw);
+$Scheme = strtolower((string)($Parts['scheme'] ?? ''));
+$Host = strtolower(trim((string)($Parts['host'] ?? '')));
+if (!in_array($Scheme, ['http', 'https'], true) || $Host === '' || !str_contains($Host, '.')) {
+throw new InvalidArgumentException('نشانی اینترنتی تصویر معتبر نیست.');
+}
+if (in_array($Host, ['localhost', '127.0.0.1', '0.0.0.0'], true) || mb_strlen($Raw) > 512) {
+throw new InvalidArgumentException('نشانی تصویر معتبر نیست یا بیش از حد طولانی است.');
+}
+return $Raw;
+}
+
+public static function setPromoImageUrl(string $Url, string $FileId = ''): void {
+$Normalized = self::validatePromoImageUrl($Url);
+Repository::setSetting(self::KEY_PROMO_IMAGE_URL, $Normalized);
+Repository::setSetting(self::KEY_PROMO_IMAGE_FILE_ID, trim($FileId));
+self::cleanupUnusedPromoMedia('');
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function savePromoImageBinary(string $Bytes, string $MimeType, string $FileId = ''): string {
+$Len = strlen($Bytes);
+if ($Len <= 0 || $Len > 4194304) {
+throw new InvalidArgumentException('حجم تصویر باید کمتر از ۴ مگابایت باشد.');
+}
+$CleanMime = strtolower(trim($MimeType));
+if (!in_array($CleanMime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
+throw new InvalidArgumentException('فرمت تصویر باید JPG، PNG، WEBP یا GIF باشد.');
+}
+$MediaKey = bin2hex(random_bytes(12));
+$Now = time();
+if (class_exists('Database')) {
+Database::getInstance()->execute(
+'INSERT INTO `App_Promo_Media` (`Media_Key`, `Mime_Type`, `Image_Blob`, `Updated_At`) VALUES (?, ?, ?, ?) '
+. 'ON DUPLICATE KEY UPDATE `Mime_Type` = VALUES(`Mime_Type`), `Image_Blob` = VALUES(`Image_Blob`), `Updated_At` = VALUES(`Updated_At`)',
+[$MediaKey, $CleanMime, $Bytes, $Now]
+);
+}
+self::cleanupUnusedPromoMedia($MediaKey);
+Repository::setSetting(self::KEY_PROMO_IMAGE_URL, 'app/promo-image?k=' . $MediaKey);
+Repository::setSetting(self::KEY_PROMO_IMAGE_FILE_ID, trim($FileId));
+self::touchPromoAnnouncementUpdatedAt();
+return $MediaKey;
+}
+
+/** @return array{mime:string,bytes:string,updated_at:int}|null */
+public static function getPromoImageMedia(string $MediaKey): ?array {
+$CleanKey = strtolower(trim($MediaKey));
+if (!preg_match('/^[a-f0-9]{16,64}$/', $CleanKey) || !class_exists('Database')) {
+return null;
+}
+$Row = Database::getInstance()->fetch(
+'SELECT `Mime_Type`, `Image_Blob`, `Updated_At` FROM `App_Promo_Media` WHERE `Media_Key` = ? LIMIT 1',
+[$CleanKey]
+);
+if (!is_array($Row) || empty($Row['Image_Blob'])) {
+return null;
+}
+return [
+'mime' => (string)($Row['Mime_Type'] ?? 'image/jpeg'),
+'bytes' => (string)$Row['Image_Blob'],
+'updated_at' => (int)($Row['Updated_At'] ?? 0),
+];
+}
+
+public static function clearPromoImage(): void {
+Repository::setSetting(self::KEY_PROMO_IMAGE_URL, '');
+Repository::setSetting(self::KEY_PROMO_IMAGE_FILE_ID, '');
+self::cleanupUnusedPromoMedia('');
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+private static function cleanupUnusedPromoMedia(string $KeepKey): void {
+if (!class_exists('Database')) return;
+try {
+if ($KeepKey !== '') {
+Database::getInstance()->execute('DELETE FROM `App_Promo_Media` WHERE `Media_Key` <> ?', [$KeepKey]);
+} else {
+Database::getInstance()->execute('DELETE FROM `App_Promo_Media`', []);
+}
+} catch (Throwable) {}
+}
+
+public static function setPromoAnnouncementIntervalHours(int $Hours): void {
+$Bounded = max(0, min(8760, $Hours));
+Repository::setSetting(self::KEY_PROMO_INTERVAL, (string)$Bounded);
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function setPromoAnnouncementStartsAt(int $Timestamp): void {
+Repository::setSetting(self::KEY_PROMO_STARTS_AT, (string)max(0, $Timestamp));
+self::touchPromoAnnouncementUpdatedAt();
+}
+
+public static function republishPromoAnnouncement(): int {
+$Current = max(1, (int)trim((string)Repository::getSetting(self::KEY_PROMO_VERSION, '1')));
+$Next = $Current + 1;
+Repository::setSetting(self::KEY_PROMO_VERSION, (string)$Next);
+self::touchPromoAnnouncementUpdatedAt();
+return $Next;
+}
+
+public static function resetPromoAnnouncementToDefaults(): void {
+foreach ([
+self::KEY_PROMO_TITLE,
+self::KEY_PROMO_BODY,
+self::KEY_PROMO_IMAGE_URL,
+self::KEY_PROMO_IMAGE_FILE_ID,
+self::KEY_PROMO_BTN_TEXT,
+self::KEY_PROMO_BTN_URL,
+] as $Key) {
+Repository::setSetting($Key, '');
+}
+self::cleanupUnusedPromoMedia('');
+Repository::setSetting(self::KEY_PROMO_ENABLED, '0');
+Repository::setSetting(self::KEY_PROMO_INTERVAL, (string)self::DEFAULT_PROMO_INTERVAL_HOURS);
+Repository::setSetting(self::KEY_PROMO_STARTS_AT, '0');
+self::republishPromoAnnouncement();
 }
 
 public static function validateAnnouncementUrl(string $Input): string {

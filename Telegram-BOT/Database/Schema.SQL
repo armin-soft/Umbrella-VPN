@@ -412,3 +412,11 @@ UNIQUE KEY `UQ_Security_Device_Threat` (`Device_ID`, `Threat_Key`),
 KEY `IDX_Security_Tg` (`Telegram_ID`),
 KEY `IDX_Security_Last` (`Last_Detected_At`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `App_Promo_Media` (
+`Media_Key` VARCHAR(64) NOT NULL,
+`Mime_Type` VARCHAR(64) NOT NULL,
+`Image_Blob` MEDIUMBLOB NOT NULL,
+`Updated_At` INT UNSIGNED NOT NULL,
+PRIMARY KEY (`Media_Key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

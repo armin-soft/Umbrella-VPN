@@ -349,6 +349,8 @@ class TrayService {
   String? _lastState;
   String? _lastTooltip;
   bool? _lastConnected;
+  DateTime? _lastPromoBalloonAt;
+  String _lastPromoActionUrl = '';
 
   static const Map<String, String> _iconFiles = <String, String>{
     'connected': 'state-connected.ico',
@@ -435,6 +437,42 @@ class TrayService {
       body: cleanBody,
       warning: warning,
     );
+  }
+
+  Future<void> promoBalloon({
+    required String title,
+    required String body,
+    String actionUrl = '',
+    Uint8List? imageBytes,
+  }) async {
+    if (!_initialized) {
+      return;
+    }
+    _lastPromoBalloonAt = DateTime.now();
+    _lastPromoActionUrl = actionUrl.trim();
+    final String cleanTitle =
+        Fa.num(title.trim().isEmpty ? 'پیشنهاد ویژه آمبرلا' : title.trim());
+    final String cleanBody =
+        Fa.num(AppNotification.summarizeBody(body, title: cleanTitle, maxChars: 140));
+    await _native.trayBalloon(
+      title: cleanTitle,
+      body: cleanBody.isEmpty ? cleanTitle : cleanBody,
+      warning: false,
+    );
+  }
+
+  /// نشانی اقدام آخرین اعلان تبلیغاتی سینی را اگر به تازگی نمایش داده شده باشد برمی گرداند.
+  String? consumeRecentPromoActionUrl({
+    Duration window = const Duration(minutes: 10),
+  }) {
+    final DateTime? at = _lastPromoBalloonAt;
+    if (at == null || DateTime.now().difference(at) > window) {
+      return null;
+    }
+    _lastPromoBalloonAt = null;
+    final String url = _lastPromoActionUrl;
+    _lastPromoActionUrl = '';
+    return url;
   }
 
   Future<void> destroy() async {

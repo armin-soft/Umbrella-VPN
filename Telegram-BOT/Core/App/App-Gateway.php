@@ -49,7 +49,7 @@ require_once dirname(__DIR__, 2) . '/Config/Environment.php';
  */
 final class AppGateway {
 private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
-private const FREE_PLAN_GB = 1;
+private const FREE_PLAN_GB = 3;
 private const FREE_PLAN_DAYS = 1;
 private function __construct() {
 }
@@ -110,6 +110,7 @@ if ($Route === 'app/notifications') { self::notifications(); return; }
 if ($Route === 'app/activity') { self::recordActivityRoute(self::body()); return; }
 if ($Route === 'app/support-report') { self::supportReport(self::body()); return; }
 if ($Route === 'app/announcement') { self::announcement(); return; }
+if ($Route === 'app/promo-image') { self::promoImage(); return; }
 if ($Route === 'app/security-alert') { self::securityAlert(self::body()); return; }
 if ($Route === 'app/ping') { self::ping(); return; }
 if ($Route === 'app/diag') { self::diag(); return; }
@@ -601,6 +602,7 @@ self::ok([
 'filter' => self::filterPayload($UUID),
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 'announcement' => self::announcementPayload(),
+'promo_announcement' => self::promoAnnouncementPayload(),
 ]);
 }
 
@@ -890,6 +892,7 @@ self::ok([
 'offers' => self::offersPayload($UUID, $LinkedTg, $Account),
 'channel_url' => BotConfig::getChannelUrl(),
 'announcement' => self::announcementPayload(),
+'promo_announcement' => self::promoAnnouncementPayload(),
 'checked_at' => gmdate('c'),
 ]);
 }
@@ -950,6 +953,7 @@ $Payload = [
 'emergency_enabled' => BotConfig::showEmergency(),
 'channel_url' => BotConfig::getChannelUrl(),
 'announcement' => self::announcementPayload(),
+'promo_announcement' => self::promoAnnouncementPayload(),
 ];
 $LinkedTg = (int)($Session['Telegram_ID'] ?? 0);
 if ($UUID !== '' && $UUID !== '_') {
@@ -1382,7 +1386,7 @@ return false;
 }
 
 /**
- * Computes eligibility for the welcome free trial (1 GB / 1 day, strictly once)
+ * Computes eligibility for the welcome free trial (3 GB / 1 day, strictly once)
  * and the seasonal Nowruz gift (5 GB / 13 days, gated by the bot's Nowruz menu).
  */
 private static function offersPayload(string $UUID, int $TelegramId = 0, ?array $PanelAccount = null): array {
@@ -1827,7 +1831,7 @@ $Profile = self::accountPayloadWithExtras($Fresh, $UUID, $Uid);
 
 self::ok([
 'message' => $Type === 'free'
-? 'اشتراک رایگان (۱ گیگابایت، ۱ روز) فعال شد.'
+? 'اشتراک رایگان (۳ گیگابایت، ۱ روز) فعال شد.'
 : 'اشتراک نوروزی (۵ گیگابایت، ۱۳ روز) فعال شد.',
 'account' => $Profile,
 'filter' => self::filterPayload($UUID),
@@ -2434,8 +2438,9 @@ private static function ping(): void {
 self::ok([
 'time' => gmdate('c'),
 'version' => '4',
-'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase', 'activity_monitor', 'support_report', 'app_announcement', 'security_alert'],
+'features' => ['signin', 'device_confirm', 'notifications', 'filter', 'offers', 'subscription_fetch', 'paid_plans', 'subscription_purchase', 'activity_monitor', 'support_report', 'app_announcement', 'promo_announcement', 'security_alert'],
 'announcement' => self::announcementPayload(),
+'promo_announcement' => self::promoAnnouncementPayload(),
 ]);
 }
 
@@ -2459,15 +2464,57 @@ return [
 ];
 }
 
+private static function promoAnnouncementPayload(): array {
+if (class_exists('BotConfig') && method_exists('BotConfig', 'getPromoAnnouncement')) {
+$Promo = BotConfig::getPromoAnnouncement();
+unset($Promo['image_file_id']);
+return $Promo;
+}
+return [
+'enabled' => false,
+'version' => 1,
+'title' => 'پیشنهاد ویژه آمبرلا',
+'body' => '',
+'image_url' => '',
+'button_text' => 'مشاهده جزئیات',
+'button_url' => '',
+'interval_hours' => 24,
+'starts_at' => 0,
+'updated_at' => 0,
+];
+}
+
 private static function announcement(): void {
 $Channel = (class_exists('BotConfig') && method_exists('BotConfig', 'getChannelUrl'))
 ? BotConfig::getChannelUrl()
 : 'https://t.me/UmbrellaVPN_Channel';
 self::ok([
 'announcement' => self::announcementPayload(),
+'promo_announcement' => self::promoAnnouncementPayload(),
 'channel_url' => $Channel,
 'checked_at' => gmdate('c'),
 ]);
+}
+
+private static function promoImage(): void {
+$Key = strtolower(trim((string)($_GET['k'] ?? '')));
+$Media = (class_exists('BotConfig') && method_exists('BotConfig', 'getPromoImageMedia'))
+? BotConfig::getPromoImageMedia($Key)
+: null;
+if ($Media === null || ($Media['bytes'] ?? '') === '') {
+http_response_code(404);
+header('Content-Type: application/json; charset=UTF-8');
+echo json_encode(['ok' => false, 'error' => 'image_not_found'], self::JSON_FLAGS);
+return;
+}
+if (function_exists('header_remove')) {
+@header_remove('Cache-Control');
+}
+header('Content-Type: ' . (string)$Media['mime']);
+header('Cache-Control: public, max-age=86400');
+header('X-Content-Type-Options: nosniff');
+header('Content-Length: ' . strlen((string)$Media['bytes']));
+echo (string)$Media['bytes'];
 }
 
 private static function securityAlert(array $Body): void {
