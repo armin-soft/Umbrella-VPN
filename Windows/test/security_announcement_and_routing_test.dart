@@ -1968,12 +1968,15 @@ void main() {
           scannedAtMs: 1760000123456,
         );
         final GatewayClient gateway = GatewayClient(
+          baseUrl: 'https://example.invalid/index.php?AppApi=',
+          enableNativeTransport: false,
           client: MockClient((http.Request req) async {
             final Map<String, dynamic> body =
                 jsonDecode(req.body) as Map<String, dynamic>;
-            if (req.url.path.endsWith('/app/security-alert')) {
+            final String api = req.url.queryParameters['AppApi'] ?? req.url.path;
+            if (api == 'app/security-alert' || api.endsWith('/app/security-alert')) {
               alertPayloads.add(body);
-            } else if (req.url.path.endsWith('/auth/device')) {
+            } else if (api == 'auth/device' || api.endsWith('/auth/device')) {
               heartbeatPayloads.add(body);
             }
             return http.Response('{"ok":true}', 200);
