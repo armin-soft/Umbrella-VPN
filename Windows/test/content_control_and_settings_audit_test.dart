@@ -340,21 +340,32 @@ void main() {
       final List<Map<String, dynamic>> gamblingRules = rules
           .where((Map<String, dynamic> r) => r['name'] == 'umbrella-filter-gambling')
           .toList();
-      expect(adultRules, hasLength(3));
+      expect(adultRules, hasLength(4));
       expect(
         adultRules.any((r) => (r['rule_set'] as List<dynamic>?)?.any((u) => '$u'.contains('filter-adult.srs')) ?? false),
         isTrue,
       );
-      expect(gamblingRules, hasLength(3));
+      expect(
+        adultRules.any((r) => r.containsKey('domain_regex')),
+        isTrue,
+      );
+      expect(gamblingRules, hasLength(4));
       expect(
         gamblingRules.any((r) => (r['rule_set'] as List<dynamic>?)?.any((u) => '$u'.contains('filter-gambling.srs')) ?? false),
         isTrue,
       );
+      expect(
+        gamblingRules.any((r) => r.containsKey('domain_regex')),
+        isTrue,
+      );
       // Every category rule uses a single matcher so sing-box OR-matches safely.
       for (final Map<String, dynamic> r in <Map<String, dynamic>>[...adultRules, ...gamblingRules]) {
-        final int matchers = <String>['domain_suffix', 'domain_keyword', 'rule_set']
-            .where(r.containsKey)
-            .length;
+        final int matchers = <String>[
+          'domain_suffix',
+          'domain_keyword',
+          'domain_regex',
+          'rule_set',
+        ].where(r.containsKey).length;
         expect(matchers, 1);
       }
       final Map<String, dynamic> customRule = rules.firstWhere(

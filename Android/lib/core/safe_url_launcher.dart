@@ -3,14 +3,16 @@ import 'dart:io';
 
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/models.dart';
 import '../platform/services.dart';
+import '../vpn/umbrella_core.dart';
 import 'malicious_link_guard.dart';
 
 /// بازکننده ایمن نشانی های بیرونی (سپر لینک ۲۰۲۶):
 /// هر لینک را پیش از ارسال به مرورگر از لایه های بازرسی `MaliciousLinkGuard`
-/// عبور می دهد و برای پیوندهای کوتاه شده (bit.ly، tinyurl، yun.ir و ...) مسیر
-/// تغییرجهت را پیش از باز شدن با درخواست HEAD بدون دنبال کردن خودکار بازرسی می کند
-/// تا نشانی های فیشینگ، تروجانی یا تغییرجهت مخرب هرگز باز نشوند.
+/// و کنترل محتوای فعال (`FilterSettings`) عبور می دهد و برای پیوندهای کوتاه شده
+/// (bit.ly، tinyurl، yun.ir، gir.ink و ...) مسیر تغییرجهت را پیش از باز شدن بدون
+/// دنبال کردن خودکار بازرسی می کند تا نشانی های فیشینگ، تروجانی یا مسدودشده باز نشوند.
 class SafeUrlLauncher {
   const SafeUrlLauncher._();
 
@@ -19,16 +21,69 @@ class SafeUrlLauncher {
   /// قلاب سراسری برای ثبت رویداد مسدودی در سپر امنیتی و نمایش هشدار فوری.
   static void Function(MaliciousLinkMatch match)? onThreatBlocked;
 
-  /// بازرسی کامل یک نشانی پیش از باز کردن آن (شامل بررسی ساختار + ردیابی امن کوتاه کننده ها).
+  /// قلاب سراسری برای نمایش هشدار هنگام مسدود شدن لینک توسط کنترل محتوای فعال.
+  static void Function(MaliciousLinkMatch match)? onContentBlocked;
+
+  /// تامین کننده تنظیمات کنترل محتوای فعال برای بازرسی پیش از باز کردن لینک ها.
+  static FilterSettings? Function()? activeFilterProvider;
+
+  static MaliciousLinkMatch? _inspectContentFilter(
+    Uri uri,
+    FilterSettings? filter, {
+    Uri? viaShortener,
+  }) {
+    if (filter == null || !filter.enabled || !filter.hasActiveRules) {
+      return null;
+    }
+    final String host = uri.host.trim().toLowerCase();
+    if (host.isEmpty) {
+      return null;
+    }
+    final String? category =
+        UmbrellaCore.matchesContentFilterCategory(filter, host);
+    if (category == null || category == 'ads') {
+      return null;
+    }
+    final String categoryLabel = switch (category) {
+      'adult' => 'محتوای بزرگسالان',
+      'gambling' => 'سایت های شرط بندی',
+      'custom' => 'فهرست مسدودی شخصی',
+      _ => 'کنترل محتوا',
+    };
+    return MaliciousLinkMatch(
+      key: 'link:content_filter:$category:$host',
+      host: host,
+      target: (viaShortener ?? uri).toString(),
+      title: viaShortener != null
+          ? 'پیوند کوتاه شده منتهی به سایت مسدودشده ($host)'
+          : 'باز شدن نشانی مسدودشده در کنترل محتوا ($host)',
+      detail: viaShortener != null
+          ? 'این پیوند کوتاه شده کاربر را به دامنه مسدودشده در بخش «$categoryLabel» هدایت می کرد و متوقف شد.'
+          : 'دامنه «$host» مطابق قوانین فعال «$categoryLabel» مسدود شده است.',
+      severity: 'medium',
+      riskScore: 65,
+    );
+  }
+
+  /// بازرسی کامل یک نشانی پیش از باز کردن آن (شامل بررسی ساختار + کنترل محتوا + ردیابی امن کوتاه کننده ها).
   static Future<MaliciousLinkMatch?> inspectBeforeOpen(
     Uri uri, {
     Future<Uri?> Function(Uri current)? redirectResolver,
     bool inspectShortenerRedirects = true,
+    FilterSettings? contentFilter,
   }) async {
     final MaliciousLinkMatch? immediate =
         MaliciousLinkGuard.inspectUrl(uri.toString());
     if (immediate != null) {
       return immediate;
+    }
+
+    final FilterSettings? effectiveFilter =
+        contentFilter ?? activeFilterProvider?.call();
+    final MaliciousLinkMatch? contentHit =
+        _inspectContentFilter(uri, effectiveFilter);
+    if (contentHit != null) {
+      return contentHit;
     }
 
     if (!inspectShortenerRedirects) {
@@ -40,6 +95,7 @@ class SafeUrlLauncher {
       return _inspectRedirectChain(
         uri,
         redirectResolver: redirectResolver,
+        contentFilter: effectiveFilter,
       );
     }
     return null;
@@ -48,6 +104,7 @@ class SafeUrlLauncher {
   static Future<MaliciousLinkMatch?> _inspectRedirectChain(
     Uri startUri, {
     Future<Uri?> Function(Uri current)? redirectResolver,
+    FilterSettings? contentFilter,
   }) async {
     Uri current = startUri;
     final Set<String> visited = <String>{startUri.toString()};
@@ -73,6 +130,15 @@ class SafeUrlLauncher {
           severity: 'critical',
           riskScore: nextHit.riskScore < 92 ? 92 : nextHit.riskScore,
         );
+      }
+
+      final MaliciousLinkMatch? nextContentHit = _inspectContentFilter(
+        next,
+        contentFilter,
+        viaShortener: startUri,
+      );
+      if (nextContentHit != null) {
+        return nextContentHit;
       }
 
       final String nextStr = next.toString();
@@ -132,6 +198,16 @@ class SafeUrlLauncher {
   }
 
   static void _notifyBlocked(MaliciousLinkMatch hit) {
+    if (hit.key.startsWith('link:content_filter:')) {
+      AppLogger.instance.add(
+        'کنترل محتوا باز شدن پیوند مسدودشده را متوقف کرد: ${hit.target} (${hit.title})',
+        level: 'info',
+      );
+      try {
+        onContentBlocked?.call(hit);
+      } catch (_) {}
+      return;
+    }
     AppLogger.instance.add(
       'سپر امنیتی باز شدن لینک مشکوک را مسدود کرد: ${hit.target} (${hit.title})',
       level: 'warning',
@@ -147,11 +223,13 @@ class SafeUrlLauncher {
     Future<bool> Function(Uri uri, LaunchMode mode)? launcher,
     Future<Uri?> Function(Uri current)? redirectResolver,
     bool inspectShortenerRedirects = true,
+    FilterSettings? contentFilter,
   }) async {
     final MaliciousLinkMatch? hit = await inspectBeforeOpen(
       uri,
       redirectResolver: redirectResolver,
       inspectShortenerRedirects: inspectShortenerRedirects,
+      contentFilter: contentFilter,
     );
     if (hit != null) {
       _notifyBlocked(hit);
@@ -172,6 +250,7 @@ class SafeUrlLauncher {
     Future<bool> Function(Uri uri, LaunchMode mode)? launcher,
     Future<Uri?> Function(Uri current)? redirectResolver,
     bool inspectShortenerRedirects = true,
+    FilterSettings? contentFilter,
   }) async {
     final MaliciousLinkMatch? rawHit = MaliciousLinkGuard.inspectUrl(rawUrl);
     if (rawHit != null) {
@@ -188,6 +267,7 @@ class SafeUrlLauncher {
       launcher: launcher,
       redirectResolver: redirectResolver,
       inspectShortenerRedirects: inspectShortenerRedirects,
+      contentFilter: contentFilter,
     );
   }
 }

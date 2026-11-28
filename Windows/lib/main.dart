@@ -247,9 +247,13 @@ Future<void> main(List<String> arguments) async {
         event.name,
       );
     };
+    SafeUrlLauncher.activeFilterProvider = () => auth.filter;
     SafeUrlLauncher.onThreatBlocked = (MaliciousLinkMatch hit) {
       unawaited(security.recordBlockedExternalUrl(hit));
       toasts.error(hit.title, hit.detail);
+    };
+    SafeUrlLauncher.onContentBlocked = (MaliciousLinkMatch hit) {
+      toasts.warning(hit.title, hit.detail);
     };
     vpn.onNetworkConnectionsObserved = (List<CoreActivitySample> samples) =>
         security.inspectLiveConnections(

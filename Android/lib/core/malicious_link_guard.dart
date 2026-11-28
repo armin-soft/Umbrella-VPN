@@ -104,6 +104,12 @@ class MaliciousLinkGuard {
     'yun.ir',
     'b2n.ir',
     'zil.ink',
+    'gir.ink',
+    'yek.link',
+    'plink.ir',
+    'rizy.ir',
+    'bitly.com',
+    'lnkd.in',
     'u.nu',
     't2m.io',
   };

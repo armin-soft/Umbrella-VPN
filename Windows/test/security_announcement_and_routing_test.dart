@@ -2006,6 +2006,222 @@ void main() {
         expect(cpp, isNot(contains('lower.find("umbrella") != std::string::npos')));
       },
     );
+
+    test(
+      'ارتقای ۲۰۲۶ کنترل محتوا (بزرگسالان و شرط بندی ایرانی/خارجی)، ضدتبلیغات و SafeUrlLauncher با پوشش regex و مسدودی DoH canary کار می کند',
+      () async {
+        const FilterSettings filter = FilterSettings(
+          enabled: true,
+          categories: <String>['adult', 'gambling'],
+        );
+
+        // ۱. بزرگسالان ایرانی و بین المللی بدون false-positive
+        for (final String h in const <String>[
+          'shahvani.com',
+          'shahvani.online',
+          'shahvani2026.xyz',
+          'takporn.com',
+          'looti.net',
+          'loti.ir',
+          'koskade.com',
+          'pornhub.com',
+          'xhamster43.desi',
+        ]) {
+          expect(
+            UmbrellaCore.matchesContentFilterCategory(filter, h),
+            'adult',
+            reason: 'Expected adult block for $h',
+          );
+          expect(
+            ContentBlockServer.classifyBlockedHost(h, filter: filter),
+            'adult',
+          );
+        }
+        for (final String clean in const <String>[
+          'lotion.com',
+          'plotin.org',
+          'essex.ac.uk',
+          'kosher.org',
+        ]) {
+          expect(
+            UmbrellaCore.matchesContentFilterCategory(filter, clean),
+            isNull,
+            reason: 'Unexpected adult false positive for $clean',
+          );
+        }
+
+        // ۲. شرط بندی ایرانی و آینه ها/فورواردهای ۲۰۲۶ بدون false-positive
+        for (final String h in const <String>[
+          'takbet.com',
+          'takbetaddress.com',
+          'takbet405.xyz',
+          'betforward.com',
+          'betfoorward.com',
+          'betfoward.com',
+          'betforwardbet.com',
+          'bet90forward.com',
+          'betforward.mobi',
+          'hazaratbetwin.com',
+          'jetbet90.info',
+          '1win.pro',
+          'bc.game',
+        ]) {
+          expect(
+            UmbrellaCore.matchesContentFilterCategory(filter, h),
+            'gambling',
+            reason: 'Expected gambling block for $h',
+          );
+          expect(
+            ContentBlockServer.classifyBlockedHost(h, filter: filter),
+            'gambling',
+          );
+        }
+        for (final String clean in const <String>[
+          'better.com',
+          'pishbini-hava.ir',
+          'enfejar-noor.ir',
+          'youtube.com',
+          'youtubei.googleapis.com',
+        ]) {
+          expect(
+            UmbrellaCore.matchesContentFilterCategory(filter, clean),
+            isNull,
+            reason: 'Unexpected gambling false positive for $clean',
+          );
+        }
+
+        // ۳. ضدتبلیغات یوتیوب و ایرانی ۲۰۲۶ بدون مسدودی دامنه های اصلی پخش ویدیو
+        for (final String adHost in const <String>[
+          'ads.youtube.com',
+          'adservice.google.de',
+          'ep1.adtrafficquality.google',
+          'pagead2.googlesyndication.com',
+          'raykaad.com',
+          'adnegah.com',
+          'api.yektanet.com',
+          'cdn.tapsell.ir',
+        ]) {
+          expect(
+            UmbrellaCore.isAlwaysBlockedAdHost(adHost),
+            isTrue,
+            reason: 'Expected ad block for $adHost',
+          );
+        }
+        for (final String ytCore in const <String>[
+          'youtube.com',
+          'www.youtube.com',
+          'youtubei.googleapis.com',
+          'i.ytimg.com',
+        ]) {
+          expect(UmbrellaCore.isAlwaysBlockedAdHost(ytCore), isFalse);
+        }
+
+        // ۴. تزریق domain_regex و مسدودی Mozilla DoH canary در RuntimeConfig.finalize
+        final Map<String, dynamic> settings = UmbrellaCore.settingsJson(
+          tun: true,
+          systemProxy: false,
+          port: 12334,
+          logFile: 'core.log',
+          contentFilter: filter,
+          networkSettings: const AppSettings(blockAds: true),
+        );
+        final Map<String, dynamic> compiled = <String, dynamic>{
+          'outbounds': <dynamic>[
+            <String, dynamic>{'tag': 'direct §hide§', 'type': 'direct'},
+            <String, dynamic>{'tag': 'select', 'type': 'selector'},
+          ],
+          'dns': <String, dynamic>{
+            'rules': <dynamic>[
+              <String, dynamic>{'server': 'dns-remote-group'},
+            ],
+          },
+          'route': <String, dynamic>{
+            'rule_set': <dynamic>[],
+            'rules': <dynamic>[
+              <String, dynamic>{'action': 'sniff'},
+            ],
+          },
+        };
+        RuntimeConfig.finalize(
+          compiled,
+          profileTags: const <String>{},
+          coreSettings: settings,
+          blockPagePort: 18080,
+        );
+        final List<dynamic> routeRules =
+            (compiled['route'] as Map<String, dynamic>)['rules']
+                as List<dynamic>;
+        final List<dynamic> dnsRules =
+            (compiled['dns'] as Map<String, dynamic>)['rules']
+                as List<dynamic>;
+        expect(
+          routeRules.any((dynamic r) =>
+              r is Map &&
+              r['outbound'] == RuntimeConfig.blockPageOutboundTag &&
+              '${r['domain_regex']}'.contains('shahvani') &&
+              '${r['domain_regex']}'.contains('loti')),
+          isTrue,
+        );
+        expect(
+          routeRules.any((dynamic r) =>
+              r is Map &&
+              r['outbound'] == RuntimeConfig.blockPageOutboundTag &&
+              '${r['domain_regex']}'.contains('tak-?bet')),
+          isTrue,
+        );
+        expect(
+          dnsRules.any((dynamic r) =>
+              r is Map &&
+              r['action'] == 'reject' &&
+              '${r['domain']}'.contains('use-application-dns.net')),
+          isTrue,
+        );
+        expect(
+          dnsRules.any((dynamic r) =>
+              r is Map &&
+              r['action'] == 'reject' &&
+              '${r['domain_regex']}'.contains('adservice')),
+          isTrue,
+        );
+        // adult/gambling DNS reject باید در حالت صفحه مسدودی فعال برداشته شود تا صفحه مسدودی باز شود.
+        expect(
+          dnsRules.any((dynamic r) =>
+              r is Map &&
+              r['action'] == 'reject' &&
+              '${r['domain_regex']}'.contains('shahvani')),
+          isFalse,
+        );
+
+        // ۵. مسدودی پیش از باز شدن پیوندهای کوتاه شده ایرانی منتهی به سایت شرط بندی بدون ثبت بدافزار
+        int threatEvents = 0;
+        int contentEvents = 0;
+        final void Function(MaliciousLinkMatch)? prevThreat =
+            SafeUrlLauncher.onThreatBlocked;
+        final void Function(MaliciousLinkMatch)? prevContent =
+            SafeUrlLauncher.onContentBlocked;
+        SafeUrlLauncher.onThreatBlocked = (_) => threatEvents++;
+        SafeUrlLauncher.onContentBlocked = (_) => contentEvents++;
+        addTearDown(() {
+          SafeUrlLauncher.onThreatBlocked = prevThreat;
+          SafeUrlLauncher.onContentBlocked = prevContent;
+        });
+
+        bool launched = false;
+        final bool allowed = await SafeUrlLauncher.open(
+          Uri.parse('https://gir.ink/betfoward'),
+          contentFilter: filter,
+          redirectResolver: (_) async => Uri.parse('https://betfoorward.com/'),
+          launcher: (_, __) async {
+            launched = true;
+            return true;
+          },
+        );
+        expect(allowed, isFalse);
+        expect(launched, isFalse);
+        expect(contentEvents, 1);
+        expect(threatEvents, 0);
+      },
+    );
   });
 }
 

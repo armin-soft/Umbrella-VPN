@@ -590,6 +590,7 @@ class RuntimeConfig {
       'domain_suffix',
       'domain',
       'domain_keyword',
+      'domain_regex',
       'rule_set',
     ];
     final List<String> presentKeys = matchKeys
@@ -612,6 +613,7 @@ class RuntimeConfig {
       ..remove('domain')
       ..remove('domain_suffix')
       ..remove('domain_keyword')
+      ..remove('domain_regex')
       ..remove('rule_set');
     return presentKeys
         .map(
@@ -631,6 +633,7 @@ class RuntimeConfig {
       'domain_suffix',
       'domain',
       'domain_keyword',
+      'domain_regex',
       'rule_set',
     ];
     final List<String> presentKeys = matchKeys
@@ -668,6 +671,7 @@ class RuntimeConfig {
       ..remove('domain')
       ..remove('domain_suffix')
       ..remove('domain_keyword')
+      ..remove('domain_regex')
       ..remove('rule_set');
     applyTarget(base);
 
@@ -708,6 +712,7 @@ class RuntimeConfig {
     return _nonEmptyRuleField(item['domain']) ||
         _nonEmptyRuleField(item['domain_suffix']) ||
         _nonEmptyRuleField(item['domain_keyword']) ||
+        _nonEmptyRuleField(item['domain_regex']) ||
         _nonEmptyRuleField(item['rule_set']);
   }
 
@@ -743,6 +748,26 @@ class RuntimeConfig {
       }
     }
 
+    final List<String> regexes = _stringValues(rule['domain_regex']);
+    if (regexes.isNotEmpty) {
+      final String joined = regexes.join(' ').toLowerCase();
+      if (joined.contains('shahvani') ||
+          joined.contains('tak-?porn') ||
+          joined.contains('loti') ||
+          joined.contains('tak-?bet') ||
+          joined.contains('hazarat') ||
+          joined.contains('pishbini') ||
+          joined.contains('pornhub')) {
+        return true;
+      }
+      if (joined.contains('adservice') ||
+          joined.contains('adtrafficquality') ||
+          joined.contains('doubleclick') ||
+          joined.contains('yektanet')) {
+        return false;
+      }
+    }
+
     final List<String> domains = <String>[
       ..._stringValues(rule['domain']),
       ..._stringValues(rule['domain_suffix']),
@@ -766,10 +791,15 @@ class RuntimeConfig {
       'googleadservices.com',
       'google-analytics.com',
       'adservice.google.com',
+      'adtrafficquality.google',
+      'ads.youtube.com',
+      'raykaad.com',
+      'adnegah.com',
       'adnxs.com',
       'taboola.com',
       'outbrain.com',
       'criteo.com',
+      'use-application-dns.net',
     };
     final bool looksLikeAdRule = domains.any(
       (String d) => knownAdMarkers.contains(d.trim().toLowerCase()),
@@ -1159,7 +1189,6 @@ class RuntimeConfig {
     Map<String, dynamic>? coreSettings, {
     required Map<String, String> localPaths,
   }) {
-    if (localPaths.isEmpty) return;
     final Object? rawRoute = config['route'];
     if (rawRoute is! Map<String, dynamic>) return;
 
@@ -1194,6 +1223,7 @@ class RuntimeConfig {
     }
 
     final Set<String> requestedFilterTags = <String>{};
+    final Set<String> requestedRegexCategories = <String>{};
     final Object? routeRule = coreSettings?['route-rule'];
     if (routeRule is Map && routeRule['rules'] is List) {
       for (final dynamic rawRule in routeRule['rules'] as List<dynamic>) {
@@ -1201,6 +1231,9 @@ class RuntimeConfig {
         final String name = '${rawRule['name'] ?? ''}'.trim().toLowerCase();
         if (name.startsWith('umbrella-filter-')) {
           final String category = name.substring('umbrella-filter-'.length);
+          if (UmbrellaCore.regexesForCategory(category).isNotEmpty) {
+            requestedRegexCategories.add(category);
+          }
           final List<String>? mapped = _filterCategoryLocalTags[category];
           if (mapped != null) {
             for (final String tag in mapped) {
@@ -1210,6 +1243,7 @@ class RuntimeConfig {
             }
           }
         } else if (name == 'umbrella-block-ads') {
+          requestedRegexCategories.add('ads');
           for (final String tag in const <String>['filter-ads', 'filter-youtube-ads']) {
             if (localPaths.containsKey(tag)) {
               requestedFilterTags.add(tag);
@@ -1243,13 +1277,24 @@ class RuntimeConfig {
       }
     }
     if (coreSettings?['block-ads'] == true) {
+      requestedRegexCategories.add('ads');
       for (final String tag in const <String>['filter-ads', 'filter-youtube-ads']) {
         if (localPaths.containsKey(tag)) {
           requestedFilterTags.add(tag);
         }
       }
     }
-    if (requestedFilterTags.isEmpty) {
+    if (requestedFilterTags.contains('filter-adult')) {
+      requestedRegexCategories.add('adult');
+    }
+    if (requestedFilterTags.contains('filter-gambling')) {
+      requestedRegexCategories.add('gambling');
+    }
+    if (requestedFilterTags.contains('filter-ads') ||
+        requestedFilterTags.contains('filter-youtube-ads')) {
+      requestedRegexCategories.add('ads');
+    }
+    if (requestedFilterTags.isEmpty && requestedRegexCategories.isEmpty) {
       if (ruleSets.isNotEmpty) {
         rawRoute['rule_set'] = ruleSets;
       }
@@ -1264,6 +1309,25 @@ class RuntimeConfig {
         rawDns is Map<String, dynamic> && rawDns['rules'] is List
             ? rawDns['rules'] as List<dynamic>
             : null;
+
+    int dnsInsertIndex() {
+      if (dnsRules == null) return 0;
+      final int idx = dnsRules.indexWhere((dynamic r) {
+        if (r is! Map) return false;
+        final String srv = '${r['server'] ?? ''}';
+        return srv == 'dns-fake' || srv == 'dns-remote-group';
+      });
+      return idx < 0 ? dnsRules.length : idx;
+    }
+
+    bool hasAllRegexes(List<dynamic> rules, List<String> expected) {
+      final Set<String> wanted = expected.toSet();
+      return rules.any((dynamic r) {
+        if (r is! Map) return false;
+        final List<String> present = _stringValues(r['domain_regex']);
+        return present.isNotEmpty && wanted.every(present.contains);
+      });
+    }
 
     for (final String tag in requestedFilterTags) {
       final String? path = localPaths[tag];
@@ -1293,17 +1357,43 @@ class RuntimeConfig {
           (dynamic r) => r is Map && _containsString(r['rule_set'], finalTag),
         );
         if (!hasDnsRule) {
-          int insertAt = dnsRules.indexWhere((dynamic r) {
-            if (r is! Map) return false;
-            final String srv = '${r['server'] ?? ''}';
-            return srv == 'dns-fake' || srv == 'dns-remote-group';
-          });
-          if (insertAt < 0) insertAt = dnsRules.length;
-          dnsRules.insert(insertAt, <String, dynamic>{
+          dnsRules.insert(dnsInsertIndex(), <String, dynamic>{
             'rule_set': <String>[finalTag],
             'action': 'reject',
           });
         }
+      }
+    }
+
+    // تزریق قوانین domain_regex به route و DNS (حتی اگر نسخه build آن ها را منتقل نکرده باشد)
+    for (final String category in requestedRegexCategories) {
+      final List<String> regexes = UmbrellaCore.regexesForCategory(category);
+      if (regexes.isEmpty) continue;
+      if (!hasAllRegexes(routeRules, regexes)) {
+        routeRules.add(<String, dynamic>{
+          'domain_regex': regexes,
+          'action': 'reject',
+        });
+      }
+      if (dnsRules != null && !hasAllRegexes(dnsRules, regexes)) {
+        dnsRules.insert(dnsInsertIndex(), <String, dynamic>{
+          'domain_regex': regexes,
+          'action': 'reject',
+        });
+      }
+    }
+
+    // جلوگیری از دور زدن DNS فیلترشده توسط فایرفاکس (Mozilla DoH canary) در زمان فعال بودن فیلترینگ
+    if (dnsRules != null) {
+      final bool hasCanaryReject = dnsRules.any(
+        (dynamic r) =>
+            r is Map && _containsString(r['domain'], 'use-application-dns.net'),
+      );
+      if (!hasCanaryReject) {
+        dnsRules.insert(dnsInsertIndex(), <String, dynamic>{
+          'domain': <String>['use-application-dns.net'],
+          'action': 'reject',
+        });
       }
     }
 
