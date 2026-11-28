@@ -570,13 +570,29 @@ class _TelegramHeader extends StatelessWidget {
     required this.float,
     required this.channelHandle,
     required this.icon,
-    required this.onTapHandle,
+    this.onTapHandle,
+    this.headerKey = const Key('telegram_channel_header'),
+    this.avatarKey = const Key('telegram_channel_avatar'),
+    this.handleBadgeKey = const Key('telegram_channel_handle_badge'),
+    this.imageBytes,
+    this.loadingImage = false,
+    this.imageFailed = false,
+    this.onImageError,
+    this.imageKey,
   });
 
   final Animation<double> float;
   final String channelHandle;
   final IconData icon;
-  final VoidCallback onTapHandle;
+  final VoidCallback? onTapHandle;
+  final Key headerKey;
+  final Key avatarKey;
+  final Key handleBadgeKey;
+  final Uint8List? imageBytes;
+  final bool loadingImage;
+  final bool imageFailed;
+  final VoidCallback? onImageError;
+  final Key? imageKey;
 
   static const List<(double, double, double, double)> _sparkles =
       <(double, double, double, double)>[
@@ -594,11 +610,59 @@ class _TelegramHeader extends StatelessWidget {
       colors,
       theme.brightness,
     );
+    final Uint8List? rawImage = imageBytes;
+    final bool showImage =
+        rawImage != null && rawImage.isNotEmpty && !imageFailed;
+    final Widget defaultIcon = Icon(
+      icon,
+      size: icon == Icons.telegram
+          ? AppMetrics.telegramAvatarSize
+          : AppMetrics.telegramAvatarSize * 0.58,
+      color: colors.primary,
+    );
+
+    final Widget avatarInner;
+    if (showImage) {
+      avatarInner = Padding(
+        padding: const EdgeInsets.all(3),
+        child: ClipOval(
+          child: Image.memory(
+            rawImage,
+            key: imageKey,
+            width: AppMetrics.telegramAvatarSize - 6,
+            height: AppMetrics.telegramAvatarSize - 6,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                onImageError?.call();
+              });
+              return defaultIcon;
+            },
+          ),
+        ),
+      );
+    } else if (loadingImage) {
+      avatarInner = SizedBox(
+        width: 28,
+        height: 28,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.5,
+          color: colors.primary,
+        ),
+      );
+    } else {
+      avatarInner = defaultIcon;
+    }
+
+    final bool ltrHandle = channelHandle.startsWith('@') ||
+        RegExp(r'^[A-Za-z0-9]').hasMatch(channelHandle);
+
     return RepaintBoundary(
       child: SizedBox(
         height: AppMetrics.telegramHeaderHeight,
         child: DecoratedBox(
-          key: const Key('telegram_channel_header'),
+          key: headerKey,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -609,105 +673,123 @@ class _TelegramHeader extends StatelessWidget {
               bottom: BorderSide(color: colors.border.withValues(alpha: 0.45)),
             ),
           ),
-          child: AnimatedBuilder(
-            animation: float,
-            builder: (BuildContext context, Widget? child) {
-              final double phase = float.value * 2 * math.pi;
-              return Stack(
-                alignment: Alignment.center,
-                children: <Widget>[
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _TelegramRingsPainter(
-                        phase: phase,
-                        ringColor: colors.onPrimary,
-                      ),
-                    ),
-                  ),
-                  for (final (double x, double y, double offset, double size)
-                      in _sparkles)
-                    Align(
-                      alignment: Alignment(
-                        x,
-                        y + math.sin(phase + offset) * 0.05,
-                      ),
-                      child: Icon(
-                        Icons.auto_awesome,
-                        size: size,
-                        color: colors.onPrimary.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints headerBox) {
+              final double maxBadgeWidth = math.max(
+                120.0,
+                headerBox.maxWidth - AppMetrics.space8,
+              );
+              return AnimatedBuilder(
+                animation: float,
+                builder: (BuildContext context, Widget? child) {
+                  final double phase = float.value * 2 * math.pi;
+                  return Stack(
+                    alignment: Alignment.center,
                     children: <Widget>[
-                      Transform.translate(
-                        offset: Offset(0, math.sin(phase) * 5),
-                        child: Transform.rotate(
-                          angle: math.sin(phase) * 0.05,
-                          child: Container(
-                            key: const Key('telegram_channel_avatar'),
-                            width: AppMetrics.telegramAvatarSize,
-                            height: AppMetrics.telegramAvatarSize,
-                            decoration: BoxDecoration(
-                              color: colors.onPrimary,
-                              shape: BoxShape.circle,
-                              boxShadow: <BoxShadow>[
-                                BoxShadow(
-                                  color:
-                                      colors.primaryDeep.withValues(alpha: 0.5),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              icon,
-                              size: AppMetrics.telegramAvatarSize,
-                              color: colors.primary,
-                            ),
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _TelegramRingsPainter(
+                            phase: phase,
+                            ringColor: colors.onPrimary,
                           ),
                         ),
                       ),
-                      const SizedBox(height: AppMetrics.iconXs),
-                      MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          key: const Key('telegram_channel_handle_badge'),
-                          onTap: onTapHandle,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppMetrics.space3,
-                              vertical: AppMetrics.space1,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.onPrimary.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(
-                                AppMetrics.radiusXl,
-                              ),
-                              border: Border.all(
-                                color: colors.onPrimary.withValues(alpha: 0.36),
-                              ),
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                channelHandle,
-                                textDirection: TextDirection.ltr,
-                                maxLines: 1,
-                                style: theme.textTheme.labelLarge?.copyWith(
+                      for (final (double x, double y, double offset, double size)
+                          in _sparkles)
+                        Align(
+                          alignment: Alignment(
+                            x,
+                            y + math.sin(phase + offset) * 0.05,
+                          ),
+                          child: Icon(
+                            Icons.auto_awesome,
+                            size: size,
+                            color: colors.onPrimary.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Transform.translate(
+                            offset: Offset(0, math.sin(phase) * 5),
+                            child: Transform.rotate(
+                              angle: math.sin(phase) * 0.05,
+                              child: Container(
+                                key: avatarKey,
+                                width: AppMetrics.telegramAvatarSize,
+                                height: AppMetrics.telegramAvatarSize,
+                                decoration: BoxDecoration(
                                   color: colors.onPrimary,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.3,
+                                  shape: BoxShape.circle,
+                                  boxShadow: <BoxShadow>[
+                                    BoxShadow(
+                                      color: colors.primaryDeep
+                                          .withValues(alpha: 0.5),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
                                 ),
+                                alignment: Alignment.center,
+                                child: avatarInner,
                               ),
                             ),
                           ),
-                        ),
+                          if (channelHandle.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: AppMetrics.iconXs),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: maxBadgeWidth,
+                              ),
+                              child: MouseRegion(
+                                cursor: onTapHandle != null
+                                    ? SystemMouseCursors.click
+                                    : SystemMouseCursors.basic,
+                                child: GestureDetector(
+                                  key: handleBadgeKey,
+                                  onTap: onTapHandle,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppMetrics.space3,
+                                      vertical: AppMetrics.space1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: colors.onPrimary
+                                          .withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(
+                                        AppMetrics.radiusXl,
+                                      ),
+                                      border: Border.all(
+                                        color: colors.onPrimary
+                                            .withValues(alpha: 0.36),
+                                      ),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        channelHandle,
+                                        textDirection: ltrHandle
+                                            ? TextDirection.ltr
+                                            : TextDirection.rtl,
+                                        maxLines: 1,
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(
+                                          color: colors.onPrimary,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: ltrHandle ? 0.3 : 0.0,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
-                  ),
-                ],
+                  );
+                },
               );
             },
           ),
@@ -816,6 +898,7 @@ class PromoBannerBar extends StatelessWidget {
                 bytes: imageBytes,
                 size: thumbSize,
                 colors: colors,
+                isTelegram: promo.isTelegramLink,
               ),
               SizedBox(width: dense ? AppMetrics.space2 : AppMetrics.space3),
               Expanded(
@@ -911,11 +994,13 @@ class _PromoThumbnail extends StatelessWidget {
     required this.bytes,
     required this.size,
     required this.colors,
+    this.isTelegram = false,
   });
 
   final Uint8List? bytes;
   final double size;
   final UmbrellaColors colors;
+  final bool isTelegram;
 
   @override
   Widget build(BuildContext context) {
@@ -923,52 +1008,132 @@ class _PromoThumbnail extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.35)),
+        color: colors.onPrimary,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: colors.primary.withValues(alpha: 0.45),
+          width: 1.5,
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: colors.primaryDeep.withValues(alpha: 0.25),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       alignment: Alignment.center,
       child: Icon(
-        Icons.campaign_rounded,
+        isTelegram ? Icons.telegram : Icons.campaign_rounded,
         color: colors.primary,
-        size: size * 0.52,
+        size: isTelegram ? size * 0.85 : size * 0.56,
       ),
     );
     final Uint8List? raw = bytes;
     if (raw == null || raw.isEmpty) {
       return fallback;
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppMetrics.radiusMd),
-      child: Image.memory(
-        raw,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => fallback,
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: colors.onPrimary,
+        shape: BoxShape.circle,
+        border: Border.all(color: colors.primary.withValues(alpha: 0.45)),
+      ),
+      child: ClipOval(
+        child: Image.memory(
+          raw,
+          width: size - 4,
+          height: size - 4,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => fallback,
+        ),
       ),
     );
   }
 }
 
-/// نمایش گفت و گوی کامل اعلان تبلیغاتی همراه با تصویر، متن و دکمه اقدام.
+/// مدیریت زمان بندی و نمایش گفت و گوی اعلان تبلیغاتی هم شکل کارت کانال رسمی.
 class PromoAnnouncementPrompt {
   const PromoAnnouncementPrompt._();
 
+  /// ثبت زمان آخرین نمایش گفت و گوی اعلان تبلیغاتی در انبار محلی.
+  static Future<void> markShown({
+    DateTime? at,
+    LocalStore? store,
+    int? promoVersion,
+  }) async {
+    final LocalStore target = store ?? LocalStore.instance;
+    final int epochMs = (at ?? DateTime.now()).toUtc().millisecondsSinceEpoch;
+    final Map<String, dynamic> state = Map<String, dynamic>.from(
+      target.readJson(StoreKeys.promoAnnouncementState),
+    );
+    if (promoVersion != null) {
+      state['dialog_shown_version'] = promoVersion;
+    }
+    state['dialog_shown_at_ms'] = epochMs;
+    await target.writeJson(StoreKeys.promoAnnouncementState, state);
+  }
+
+  /// بررسی موعد نمایش خودکار گفت و گوی اعلان تبلیغاتی بر پایه تنظیمات ربات.
+  static Future<bool> isPromoDue(
+    PromoAnnouncement promo, {
+    DateTime? now,
+    LocalStore? store,
+  }) async {
+    if (!promo.isActive) {
+      return false;
+    }
+    final DateTime current = (now ?? DateTime.now()).toUtc();
+    if (promo.isScheduledInFutureAt(current)) {
+      return false;
+    }
+    final LocalStore target = store ?? LocalStore.instance;
+    final Map<String, dynamic> state = Map<String, dynamic>.from(
+      target.readJson(StoreKeys.promoAnnouncementState),
+    );
+    final int shownVersion = JsonX.integer(state['dialog_shown_version']);
+    final int shownAtMs = JsonX.integer(state['dialog_shown_at_ms']);
+    if (shownAtMs <= 0 || shownVersion != promo.version) {
+      return true;
+    }
+    if (shownAtMs > current.millisecondsSinceEpoch) {
+      state['dialog_shown_at_ms'] = current.millisecondsSinceEpoch;
+      await target.writeJson(StoreKeys.promoAnnouncementState, state);
+      return false;
+    }
+    if (promo.intervalHours <= 0) {
+      return false;
+    }
+    final int requiredMs = promo.intervalHours * 3600 * 1000;
+    return (current.millisecondsSinceEpoch - shownAtMs) >= requiredMs;
+  }
+
+  /// نمایش گفت و گوی کامل اعلان تبلیغاتی همراه با ثبت زمان نمایش.
   static Future<bool> show(
     BuildContext context, {
     required PromoAnnouncement promo,
     Uint8List? initialImageBytes,
     Future<Uint8List?> Function()? loadImage,
     Future<bool> Function()? onActionLaunch,
+    DateTime? now,
+    LocalStore? store,
+    bool animate = true,
   }) async {
+    await markShown(
+      at: now,
+      store: store,
+      promoVersion: promo.version,
+    );
     if (!context.mounted) {
       return false;
     }
     final Color barrier = Theme.of(context).brightness == Brightness.dark
         ? context.colors.shadow
-        : context.colors.textPrimary.withValues(alpha: 0.48);
+        : context.colors.textPrimary.withValues(alpha: 0.44);
     final bool? acted = await showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
@@ -987,6 +1152,7 @@ class PromoAnnouncementPrompt {
               initialImageBytes: initialImageBytes,
               loadImage: loadImage,
               onActionLaunch: onActionLaunch,
+              animate: animate,
             ),
           ),
         );
@@ -1013,6 +1179,34 @@ class PromoAnnouncementPrompt {
     );
     return acted ?? false;
   }
+
+  /// بررسی موعد نمایش و باز کردن خودکار گفت و گوی اعلان تبلیغاتی.
+  static Future<bool> showIfDue(
+    BuildContext context, {
+    required PromoAnnouncement promo,
+    Uint8List? initialImageBytes,
+    Future<Uint8List?> Function()? loadImage,
+    Future<bool> Function()? onActionLaunch,
+    DateTime? now,
+    LocalStore? store,
+    bool animate = true,
+  }) async {
+    final bool due = await isPromoDue(promo, now: now, store: store);
+    if (!due || !context.mounted) {
+      return false;
+    }
+    await show(
+      context,
+      promo: promo,
+      initialImageBytes: initialImageBytes,
+      loadImage: loadImage,
+      onActionLaunch: onActionLaunch,
+      now: now,
+      store: store,
+      animate: animate,
+    );
+    return true;
+  }
 }
 
 class PromoAnnouncementDialog extends StatefulWidget {
@@ -1022,19 +1216,23 @@ class PromoAnnouncementDialog extends StatefulWidget {
     this.initialImageBytes,
     this.loadImage,
     this.onActionLaunch,
+    this.animate = true,
   });
 
   final PromoAnnouncement promo;
   final Uint8List? initialImageBytes;
   final Future<Uint8List?> Function()? loadImage;
   final Future<bool> Function()? onActionLaunch;
+  final bool animate;
 
   @override
   State<PromoAnnouncementDialog> createState() =>
       _PromoAnnouncementDialogState();
 }
 
-class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
+class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _floatController;
   Uint8List? _imageBytes;
   bool _loadingImage = false;
   bool _imageFailed = false;
@@ -1042,6 +1240,13 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
   @override
   void initState() {
     super.initState();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+    if (widget.animate) {
+      _floatController.repeat();
+    }
     _imageBytes = widget.initialImageBytes;
     if (_imageBytes == null &&
         widget.promo.hasImage &&
@@ -1049,6 +1254,37 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
       _loadingImage = true;
       unawaited(_fetchImage());
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final bool shouldRun = widget.animate && !reduceMotion;
+    if (shouldRun && !_floatController.isAnimating) {
+      _floatController.repeat();
+    } else if (!shouldRun && _floatController.isAnimating) {
+      _floatController.stop();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PromoAnnouncementDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate) {
+      final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+      if (widget.animate && !reduceMotion) {
+        _floatController.repeat();
+      } else {
+        _floatController.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _floatController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchImage() async {
@@ -1072,7 +1308,12 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
   void _handleAction() {
     playUiClick(context);
     final Future<bool> Function() launcher = widget.onActionLaunch ??
-        () => TelegramChannelPrompt.openActionUrl(widget.promo.buttonUrl);
+        () {
+          if (widget.promo.buttonUrl.trim().isNotEmpty) {
+            return TelegramChannelPrompt.openActionUrl(widget.promo.buttonUrl);
+          }
+          return TelegramChannelPrompt.openChannel();
+        };
     Navigator.of(context).pop(true);
     unawaited(launcher());
   }
@@ -1093,9 +1334,12 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
     final String bodyText = Fa.num(promo.body.trim());
     final String buttonText = Fa.num(promo.buttonText.trim());
     final bool hasAction = promo.buttonUrl.trim().isNotEmpty;
-    final bool isTelegramTarget =
+    final bool isTelegramTarget = !hasAction ||
         promo.buttonUrl.toLowerCase().contains('t.me') ||
-            promo.buttonUrl.toLowerCase().contains('telegram.me');
+        promo.buttonUrl.toLowerCase().contains('telegram.me');
+    final String effectiveHandle = promo.displaySubtitleHandle.isNotEmpty
+        ? promo.displaySubtitleHandle
+        : AppConfig.channelHandle;
 
     return Dialog(
       key: const Key('promo_announcement_dialog'),
@@ -1121,7 +1365,24 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              _buildMediaHeader(colors, theme),
+              _TelegramHeader(
+                float: _floatController,
+                channelHandle: effectiveHandle,
+                icon: isTelegramTarget ? Icons.telegram : Icons.campaign_rounded,
+                onTapHandle: _handleAction,
+                headerKey: const Key('promo_dialog_header'),
+                avatarKey: const Key('promo_dialog_avatar'),
+                handleBadgeKey: const Key('promo_dialog_handle_badge'),
+                imageBytes: _imageBytes,
+                loadingImage: _loadingImage,
+                imageFailed: _imageFailed,
+                imageKey: const Key('promo_dialog_image'),
+                onImageError: () {
+                  if (mounted && !_imageFailed) {
+                    setState(() => _imageFailed = true);
+                  }
+                },
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppMetrics.space6,
@@ -1141,13 +1402,13 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
                       ),
                     ),
                     if (bodyText.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppMetrics.space3),
+                      const SizedBox(height: AppMetrics.fontMicro),
                       Text(
                         bodyText,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
-                          height: 1.65,
+                          height: 1.6,
                         ),
                       ),
                     ],
@@ -1206,145 +1467,13 @@ class _PromoAnnouncementDialogState extends State<PromoAnnouncementDialog> {
                       ),
                     ),
                     onPressed: _handleClose,
-                    child: const Text('بستن'),
+                    child: const Text('بعداً'),
                   ),
                 ),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildMediaHeader(UmbrellaColors colors, ThemeData theme) {
-    final Uint8List? bytes = _imageBytes;
-    if (bytes != null && bytes.isNotEmpty && !_imageFailed) {
-      return ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 240, minHeight: 140),
-        child: Stack(
-          fit: StackFit.passthrough,
-          children: <Widget>[
-            Image.memory(
-              bytes,
-              key: const Key('promo_dialog_image'),
-              width: double.infinity,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && !_imageFailed) {
-                    setState(() => _imageFailed = true);
-                  }
-                });
-                return _buildFallbackHeader(colors, theme);
-              },
-            ),
-            PositionedDirectional(
-              top: AppMetrics.space3,
-              start: AppMetrics.space3,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppMetrics.space3,
-                  vertical: AppMetrics.space1,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.background.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(AppMetrics.radiusXl),
-                  border: Border.all(
-                    color: colors.onPrimary.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      Icons.campaign_rounded,
-                      size: AppMetrics.iconSm,
-                      color: colors.primary,
-                    ),
-                    const SizedBox(width: AppMetrics.space1),
-                    Text(
-                      'اطلاعیه ویژه',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    if (_loadingImage) {
-      return Container(
-        height: 150,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: TelegramChannelDialog.headerGradientFor(
-              colors,
-              theme.brightness,
-            ),
-          ),
-        ),
-        alignment: Alignment.center,
-        child: CircularProgressIndicator(
-          strokeWidth: 2.5,
-          color: colors.onPrimary,
-        ),
-      );
-    }
-    return _buildFallbackHeader(colors, theme);
-  }
-
-  Widget _buildFallbackHeader(UmbrellaColors colors, ThemeData theme) {
-    return Container(
-      height: 120,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: TelegramChannelDialog.headerGradientFor(
-            colors,
-            theme.brightness,
-          ),
-        ),
-      ),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: colors.onPrimary.withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: colors.onPrimary.withValues(alpha: 0.40),
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.campaign_rounded,
-              size: 28,
-              color: colors.onPrimary,
-            ),
-          ),
-          const SizedBox(height: AppMetrics.space2),
-          Text(
-            'اطلاعیه ویژه آمبرلا',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: colors.onPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
       ),
     );
   }

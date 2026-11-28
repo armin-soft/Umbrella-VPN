@@ -38,8 +38,8 @@ def dartDefines = (project.findProperty('dart-defines') ?: '').toString().split(
         .findAll { it }
         .collect { new String(it.decodeBase64(), 'UTF-8') }
 
-def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '4'
-def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0.3'
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '5'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0.4'
 
 android {
     namespace 'ir.umbrella.vpn'

@@ -83,9 +83,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
         _boundAuth?.onAnnouncementUpdated = null;
       }
+      if (_boundAuth?.onPromoAnnouncementUpdated ==
+          _onPromoAnnouncementUpdated) {
+        _boundAuth?.onPromoAnnouncementUpdated = null;
+      }
       _boundAuth = auth;
       if (auth != null) {
         auth.onAnnouncementUpdated = _onAnnouncementUpdated;
+        auth.onPromoAnnouncementUpdated = _onPromoAnnouncementUpdated;
       }
     }
     if (_assetsPrecached) {
@@ -106,10 +111,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     unawaited(_maybeShowTelegramChannelPrompt());
   }
 
+  void _onPromoAnnouncementUpdated(PromoAnnouncement _) {
+    unawaited(_maybeShowTelegramChannelPrompt());
+  }
+
   @override
   void dispose() {
     if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
       _boundAuth?.onAnnouncementUpdated = null;
+    }
+    if (_boundAuth?.onPromoAnnouncementUpdated ==
+        _onPromoAnnouncementUpdated) {
+      _boundAuth?.onPromoAnnouncementUpdated = null;
     }
     WidgetsBinding.instance.removeObserver(this);
     _telegramInitTimer?.cancel();
@@ -131,13 +144,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _telegramPromptOpen = true;
     try {
       final AuthController? auth = context.maybeRead<AuthController>();
+      bool shownChannel = false;
       if (auth != null) {
-        await TelegramChannelPrompt.showAnnouncementIfDue(
+        shownChannel = await TelegramChannelPrompt.showAnnouncementIfDue(
           context,
           announcement: auth.announcement,
         );
       } else {
-        await TelegramChannelPrompt.showIfDue(context);
+        shownChannel = await TelegramChannelPrompt.showIfDue(context);
+      }
+      if (!shownChannel &&
+          mounted &&
+          _appVisible &&
+          !widget.windowService.isHiddenToTray &&
+          auth != null &&
+          auth.promoAnnouncement.isActive) {
+        final ModalRoute<dynamic>? currentRoute = ModalRoute.of(context);
+        if (currentRoute == null || currentRoute.isCurrent) {
+          await PromoAnnouncementPrompt.showIfDue(
+            context,
+            promo: auth.promoAnnouncement,
+            initialImageBytes: auth.promoImageBytes,
+            loadImage: auth.loadPromoImageBytes,
+          );
+        }
       }
     } catch (_) {
       // خطای احتمالی انبار محلی هرگز نباید کار پوسته اصلی را متوقف کند.

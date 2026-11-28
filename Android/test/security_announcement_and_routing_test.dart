@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:umbrella_vpn/core/app_config.dart';
 import 'package:umbrella_vpn/core/malicious_link_guard.dart';
 import 'package:umbrella_vpn/core/persian.dart';
 import 'package:umbrella_vpn/core/safe_url_launcher.dart';
@@ -2510,11 +2511,254 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('promo_announcement_dialog')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_header')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_avatar')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_handle_badge')), findsOneWidget);
       expect(find.byKey(const Key('promo_dialog_image')), findsOneWidget);
+      expect(find.text('@UmbrellaSupport'), findsOneWidget);
+      expect(find.text('بعداً'), findsOneWidget);
       await tester.tap(find.byKey(const Key('promo_dialog_action_button')));
       await tester.pumpAndSettle();
       expect(launchedFromDialog, isTrue);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PromoAnnouncementDialog با طراحی هم شکل کارت کانال رسمی در هر دو تم روشن و تاریک رندر می شود', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 740));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // حالت ۱: تم روشن + تصویر + لینک وب غیرتلگرامی (بدون انیمیشن حلقه ای برای pumpAndSettle)
+      const PromoAnnouncement webPromo = PromoAnnouncement(
+        enabled: true,
+        version: 14,
+        title: 'تخفیف ویژه نوروزی آمبرلا',
+        body: '۳۰ درصد تخفیف برای تمدید اشتراک های فعال',
+        imageUrl: 'app/promo-image?k=nowruz14',
+        buttonText: 'مشاهده جزئیات',
+        buttonUrl: 'https://armin-soft.ir/spring',
+        intervalHours: 12,
+      );
+
+      late BuildContext lightHostContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Builder(
+              builder: (BuildContext context) {
+                lightHostContext = context;
+                return const Scaffold(body: SizedBox.shrink());
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final Future<bool> lightDialogResult = PromoAnnouncementPrompt.show(
+        lightHostContext,
+        promo: webPromo,
+        initialImageBytes: validPng,
+        animate: false,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('promo_announcement_dialog')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_header')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_avatar')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_handle_badge')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_image')), findsOneWidget);
+      expect(find.text('armin-soft.ir'), findsOneWidget);
+
+      final Text badgeText = tester.widget<Text>(find.text('armin-soft.ir'));
+      expect(badgeText.textDirection, TextDirection.ltr);
+
+      final Text titleWidget = tester.widget<Text>(
+        find.text(Fa.num(webPromo.title)),
+      );
+      expect(titleWidget.textAlign, TextAlign.center);
+      final Text bodyWidget = tester.widget<Text>(
+        find.text(Fa.num(webPromo.body)),
+      );
+      expect(bodyWidget.textAlign, TextAlign.center);
+
+      final Material actionMat = tester.widget<Material>(
+        find.descendant(
+          of: find.byKey(const Key('promo_dialog_action_button')),
+          matching: find.byType(Material),
+        ),
+      );
+      expect(actionMat.color, UmbrellaColors.light.primary);
+      expect(find.byIcon(Icons.open_in_new_rounded), findsOneWidget);
+      expect(find.text('بعداً'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('promo_dialog_close_button')));
+      await tester.pumpAndSettle();
+      expect(await lightDialogResult, isFalse);
+
+      // حالت ۲: تم تاریک + بدون تصویر و بدون لینک دکمه (انیمیشن فعال + نشان پیش فرض کانال)
+      const PromoAnnouncement darkPromo = PromoAnnouncement(
+        enabled: true,
+        version: 15,
+        title: 'اطلاعیه بروزرسانی سرورها',
+        body: 'سرورهای جدید با پایداری بالاتر اضافه شدند.',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          home: const Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: PromoAnnouncementDialog(
+                promo: darkPromo,
+                animate: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+
+      expect(find.byKey(const Key('promo_announcement_dialog')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_header')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_avatar')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_handle_badge')), findsOneWidget);
+      expect(find.byKey(const Key('promo_dialog_image')), findsNothing);
+      expect(find.byKey(const Key('promo_dialog_action_button')), findsNothing);
+      expect(find.byIcon(Icons.telegram), findsOneWidget);
+      expect(find.text(AppConfig.channelHandle), findsOneWidget);
+      expect(find.text('بعداً'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      final String dialogSrc = File(
+        'lib/ui/widgets/telegram_channel_dialog.dart',
+      ).readAsStringSync();
+      expect(dialogSrc.contains('\u200C'), isFalse);
+    });
+
+    testWidgets('زمان بندی خودکار PromoAnnouncementPrompt.showIfDue و اتصال به AppShell دقیق است', (WidgetTester tester) async {
+      await LocalStore.instance.writeJson(
+        StoreKeys.promoAnnouncementState,
+        const <String, dynamic>{},
+      );
+      final DateTime t0 = DateTime.utc(2026, 11, 22, 10, 0, 0);
+
+      const PromoAnnouncement disabledPromo = PromoAnnouncement(
+        enabled: false,
+        version: 20,
+        title: 'غیرفعال',
+        body: 'متن',
+      );
+      expect(
+        await PromoAnnouncementPrompt.isPromoDue(disabledPromo, now: t0),
+        isFalse,
+      );
+
+      final PromoAnnouncement futurePromo = PromoAnnouncement(
+        enabled: true,
+        version: 21,
+        title: 'آینده',
+        body: 'متن',
+        startsAt: t0.add(const Duration(hours: 2)).millisecondsSinceEpoch ~/ 1000,
+      );
+      expect(
+        await PromoAnnouncementPrompt.isPromoDue(futurePromo, now: t0),
+        isFalse,
+      );
+
+      const PromoAnnouncement activePromo = PromoAnnouncement(
+        enabled: true,
+        version: 22,
+        title: 'طرح ویژه پاییزی',
+        body: 'با تخفیف استثنایی',
+        buttonText: 'عضویت در کانال',
+        buttonUrl: 'https://t.me/UmbrellaVPN_Channel',
+        intervalHours: 24,
+      );
+      expect(
+        await PromoAnnouncementPrompt.isPromoDue(activePromo, now: t0),
+        isTrue,
+      );
+
+      late BuildContext hostContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Builder(
+              builder: (BuildContext context) {
+                hostContext = context;
+                return const Scaffold(body: SizedBox.shrink());
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final Future<bool> firstShow = PromoAnnouncementPrompt.showIfDue(
+        hostContext,
+        promo: activePromo,
+        now: t0,
+        animate: false,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('promo_announcement_dialog')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('promo_dialog_close_button')));
+      await tester.pumpAndSettle();
+      expect(await firstShow, isTrue);
+
+      // پیش از پایان ۲۴ ساعت دوباره نمایش داده نمی شود.
+      expect(
+        await PromoAnnouncementPrompt.isPromoDue(
+          activePromo,
+          now: t0.add(const Duration(hours: 23)),
+        ),
+        isFalse,
+      );
+      expect(
+        await PromoAnnouncementPrompt.showIfDue(
+          hostContext,
+          promo: activePromo,
+          now: t0.add(const Duration(hours: 23)),
+          animate: false,
+        ),
+        isFalse,
+      );
+
+      // با گذشت زمان یا انتشار نسخه جدید دوباره سررسید می شود.
+      expect(
+        await PromoAnnouncementPrompt.isPromoDue(
+          activePromo,
+          now: t0.add(const Duration(hours: 24)),
+        ),
+        isTrue,
+      );
+      const PromoAnnouncement nextVersionPromo = PromoAnnouncement(
+        enabled: true,
+        version: 23,
+        title: 'طرح جدید ۲۳',
+        body: 'جزئیات جدید',
+        intervalHours: 24,
+      );
+      expect(
+        await PromoAnnouncementPrompt.isPromoDue(
+          nextVersionPromo,
+          now: t0.add(const Duration(minutes: 5)),
+        ),
+        isTrue,
+      );
+
+      final String shellSrc = File(
+        'lib/ui/shell/app_shell.dart',
+      ).readAsStringSync();
+      expect(shellSrc, contains('PromoAnnouncementPrompt.showIfDue'));
+      expect(shellSrc, contains('onPromoAnnouncementUpdated'));
+      expect(shellSrc.contains('\u200C'), isFalse);
     });
   });
 

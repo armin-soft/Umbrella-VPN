@@ -7,8 +7,8 @@ class AppConfig {
 
   static const String appName = 'فیلترشکن آمبرلا';
   static const String shortName = 'آمبرلا';
-  static const String version = '1.0.3';
-  static const int buildNumber = 4;
+  static const String version = '1.0.4';
+  static const int buildNumber = 5;
 
   static String get versionLabel => version;
   static String get versionPhrase => Fa.num('نسخه ${version.split('.').join('٫')}');

@@ -54,6 +54,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   StreamSubscription<String>? _traySub;
   Timer? _telegramInitTimer;
   Timer? _telegramPeriodicTimer;
+  AuthController? _boundAuth;
 
   static const List<NavDestination> _destinations = <NavDestination>[
     NavDestination(label: 'اتصال', icon: Icons.shield_outlined, activeIcon: Icons.shield_rounded),
@@ -75,14 +76,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final NativeBridge native = context.read<NativeBridge>();
     _traySub = native.trayEvents.listen(_handleTrayEvent);
-    final AuthController? auth = context.maybeRead<AuthController>();
-    if (auth != null) {
-      auth.onAnnouncementUpdated = (AppAnnouncement _) {
-        if (mounted) {
-          unawaited(_maybeShowTelegramChannelPrompt());
-        }
-      };
-    }
     _telegramInitTimer = Timer(const Duration(milliseconds: 550), () {
       unawaited(_maybeShowTelegramChannelPrompt());
     });
@@ -94,6 +87,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final AuthController? auth = context.maybeRead<AuthController>();
+    if (!identical(_boundAuth, auth)) {
+      if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
+        _boundAuth?.onAnnouncementUpdated = null;
+      }
+      if (_boundAuth?.onPromoAnnouncementUpdated ==
+          _onPromoAnnouncementUpdated) {
+        _boundAuth?.onPromoAnnouncementUpdated = null;
+      }
+      _boundAuth = auth;
+      if (auth != null) {
+        auth.onAnnouncementUpdated = _onAnnouncementUpdated;
+        auth.onPromoAnnouncementUpdated = _onPromoAnnouncementUpdated;
+      }
+    }
     if (_assetsPrecached) {
       return;
     }
@@ -110,8 +118,23 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  void _onAnnouncementUpdated(AppAnnouncement _) {
+    unawaited(_maybeShowTelegramChannelPrompt());
+  }
+
+  void _onPromoAnnouncementUpdated(PromoAnnouncement _) {
+    unawaited(_maybeShowTelegramChannelPrompt());
+  }
+
   @override
   void dispose() {
+    if (_boundAuth?.onAnnouncementUpdated == _onAnnouncementUpdated) {
+      _boundAuth?.onAnnouncementUpdated = null;
+    }
+    if (_boundAuth?.onPromoAnnouncementUpdated ==
+        _onPromoAnnouncementUpdated) {
+      _boundAuth?.onPromoAnnouncementUpdated = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _traySub?.cancel();
     _telegramInitTimer?.cancel();
@@ -133,13 +156,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _telegramPromptOpen = true;
     try {
       final AuthController? auth = context.maybeRead<AuthController>();
+      bool shownChannel = false;
       if (auth != null) {
-        await TelegramChannelPrompt.showAnnouncementIfDue(
+        shownChannel = await TelegramChannelPrompt.showAnnouncementIfDue(
           context,
           announcement: auth.announcement,
         );
       } else {
-        await TelegramChannelPrompt.showIfDue(context);
+        shownChannel = await TelegramChannelPrompt.showIfDue(context);
+      }
+      if (!shownChannel &&
+          mounted &&
+          _appVisible &&
+          !widget.windowService.isHiddenToTray &&
+          auth != null &&
+          auth.promoAnnouncement.isActive) {
+        final ModalRoute<dynamic>? currentRoute = ModalRoute.of(context);
+        if (currentRoute == null || currentRoute.isCurrent) {
+          await PromoAnnouncementPrompt.showIfDue(
+            context,
+            promo: auth.promoAnnouncement,
+            initialImageBytes: auth.promoImageBytes,
+            loadImage: auth.loadPromoImageBytes,
+          );
+        }
       }
     } catch (_) {
       // خطای احتمالی انبار محلی هرگز نباید کار پوسته اصلی را متوقف کند.
